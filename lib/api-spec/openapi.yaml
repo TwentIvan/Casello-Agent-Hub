@@ -3,13 +3,24 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Casello — hub per agentificare applicazioni
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: apps
+    description: Applicazioni registrate
+  - name: agents
+    description: Configurazioni agenti
+  - name: tools
+    description: Strumenti degli agenti
+  - name: runs
+    description: Esecuzioni degli agenti
+  - name: dashboard
+    description: Statistiche aggregate
+
 paths:
   /healthz:
     get:
@@ -24,7 +35,342 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ─── Apps ───────────────────────────────────────────────────────────────────
+
+  /apps:
+    get:
+      operationId: listApps
+      tags: [apps]
+      summary: Elenca tutte le app registrate
+      responses:
+        "200":
+          description: Lista di app
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/App"
+    post:
+      operationId: createApp
+      tags: [apps]
+      summary: Registra una nuova app
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppInput"
+      responses:
+        "201":
+          description: App creata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/App"
+
+  /apps/{id}:
+    get:
+      operationId: getApp
+      tags: [apps]
+      summary: Recupera una app per ID
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: App trovata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/App"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateApp
+      tags: [apps]
+      summary: Aggiorna una app
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppUpdate"
+      responses:
+        "200":
+          description: App aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/App"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteApp
+      tags: [apps]
+      summary: Elimina una app
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: App eliminata
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ─── Agents ─────────────────────────────────────────────────────────────────
+
+  /agents:
+    get:
+      operationId: listAgents
+      tags: [agents]
+      summary: Elenca tutti gli agenti
+      parameters:
+        - name: appId
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Filtra per app
+      responses:
+        "200":
+          description: Lista di agenti
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Agent"
+    post:
+      operationId: createAgent
+      tags: [agents]
+      summary: Crea un nuovo agente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentInput"
+      responses:
+        "201":
+          description: Agente creato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+
+  /agents/{id}:
+    get:
+      operationId: getAgent
+      tags: [agents]
+      summary: Recupera un agente per ID
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Agente trovato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateAgent
+      tags: [agents]
+      summary: Aggiorna un agente
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentUpdate"
+      responses:
+        "200":
+          description: Agente aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteAgent
+      tags: [agents]
+      summary: Elimina un agente
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Agente eliminato
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ─── Tools ──────────────────────────────────────────────────────────────────
+
+  /agents/{id}/tools:
+    get:
+      operationId: listTools
+      tags: [tools]
+      summary: Elenca gli strumenti di un agente
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Lista di strumenti
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tool"
+    post:
+      operationId: createTool
+      tags: [tools]
+      summary: Aggiunge uno strumento a un agente
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ToolInput"
+      responses:
+        "201":
+          description: Strumento creato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tool"
+
+  /agents/{agentId}/tools/{toolId}:
+    delete:
+      operationId: deleteTool
+      tags: [tools]
+      summary: Rimuove uno strumento da un agente
+      parameters:
+        - name: agentId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: toolId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Strumento rimosso
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ─── Runs ───────────────────────────────────────────────────────────────────
+
+  /runs:
+    get:
+      operationId: listRuns
+      tags: [runs]
+      summary: Elenca tutte le esecuzioni
+      parameters:
+        - name: agentId
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Filtra per agente
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/RunStatus"
+          description: Filtra per stato
+      responses:
+        "200":
+          description: Lista di esecuzioni
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Run"
+
+  /agents/{id}/runs:
+    post:
+      operationId: triggerRun
+      tags: [runs]
+      summary: Avvia un'esecuzione dell'agente
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunTrigger"
+      responses:
+        "202":
+          description: Esecuzione avviata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runs/{id}:
+    get:
+      operationId: getRun
+      tags: [runs]
+      summary: Recupera un'esecuzione per ID
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Esecuzione trovata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ─── Dashboard ──────────────────────────────────────────────────────────────
+
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [dashboard]
+      summary: Statistiche aggregate del hub
+      responses:
+        "200":
+          description: Statistiche
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
 components:
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+
+  responses:
+    NotFound:
+      description: Risorsa non trovata
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
   schemas:
     HealthStatus:
       type: object
@@ -34,3 +380,231 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    # ── App ────────────────────────────────────────────────────────────────────
+
+    AppStatus:
+      type: string
+      enum: [active, inactive]
+
+    App:
+      type: object
+      required: [id, name, baseUrl, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        baseUrl:
+          type: string
+        status:
+          $ref: "#/components/schemas/AppStatus"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AppInput:
+      type: object
+      required: [name, baseUrl]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        baseUrl:
+          type: string
+          minLength: 1
+        status:
+          $ref: "#/components/schemas/AppStatus"
+
+    AppUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: ["string", "null"]
+        baseUrl:
+          type: string
+          minLength: 1
+        status:
+          $ref: "#/components/schemas/AppStatus"
+
+    # ── Agent ──────────────────────────────────────────────────────────────────
+
+    AgentStatus:
+      type: string
+      enum: [active, inactive, draft]
+
+    Agent:
+      type: object
+      required: [id, appId, name, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        appId:
+          type: integer
+        name:
+          type: string
+        systemPrompt:
+          type: ["string", "null"]
+        model:
+          type: string
+        status:
+          $ref: "#/components/schemas/AgentStatus"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AgentInput:
+      type: object
+      required: [appId, name]
+      properties:
+        appId:
+          type: integer
+        name:
+          type: string
+          minLength: 1
+        systemPrompt:
+          type: string
+        model:
+          type: string
+        status:
+          $ref: "#/components/schemas/AgentStatus"
+
+    AgentUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        systemPrompt:
+          type: ["string", "null"]
+        model:
+          type: string
+        status:
+          $ref: "#/components/schemas/AgentStatus"
+
+    # ── Tool ───────────────────────────────────────────────────────────────────
+
+    HttpMethod:
+      type: string
+      enum: [GET, POST, PUT, PATCH, DELETE]
+
+    Tool:
+      type: object
+      required: [id, agentId, name, httpMethod, endpoint, createdAt]
+      properties:
+        id:
+          type: integer
+        agentId:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        httpMethod:
+          $ref: "#/components/schemas/HttpMethod"
+        endpoint:
+          type: string
+        parametersSchema:
+          type: ["string", "null"]
+          description: JSON Schema dei parametri accettati dallo strumento
+        createdAt:
+          type: string
+          format: date-time
+
+    ToolInput:
+      type: object
+      required: [name, httpMethod, endpoint]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        httpMethod:
+          $ref: "#/components/schemas/HttpMethod"
+        endpoint:
+          type: string
+          minLength: 1
+        parametersSchema:
+          type: string
+
+    # ── Run ────────────────────────────────────────────────────────────────────
+
+    RunStatus:
+      type: string
+      enum: [pending, running, succeeded, failed]
+
+    Run:
+      type: object
+      required: [id, agentId, status, createdAt]
+      properties:
+        id:
+          type: integer
+        agentId:
+          type: integer
+        status:
+          $ref: "#/components/schemas/RunStatus"
+        input:
+          type: ["string", "null"]
+          description: Input testuale passato all'agente
+        output:
+          type: ["string", "null"]
+          description: Output prodotto dall'agente
+        errorMessage:
+          type: ["string", "null"]
+        durationMs:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    RunTrigger:
+      type: object
+      properties:
+        input:
+          type: string
+          description: Input testuale da passare all'agente
+
+    # ── Dashboard ──────────────────────────────────────────────────────────────
+
+    DashboardStats:
+      type: object
+      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, activeAgents]
+      properties:
+        totalApps:
+          type: integer
+        totalAgents:
+          type: integer
+        activeAgents:
+          type: integer
+        totalRuns:
+          type: integer
+        successfulRuns:
+          type: integer
+        failedRuns:
+          type: integer
+        avgDurationMs:
+          type: ["number", "null"]

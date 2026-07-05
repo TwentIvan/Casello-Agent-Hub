@@ -1,45 +1,62 @@
-# [Project name]
+# Casello
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Hub per agentificare applicazioni: registra le tue app, configurale come agenti autonomi dotati di strumenti e istruzioni, e monitora le loro esecuzioni.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `pnpm --filter @workspace/api-server run dev` — avvia il server API (porta assegnata dal workflow)
+- `pnpm --filter @workspace/casello run dev` — avvia il frontend React
+- `pnpm run typecheck` — typecheck completo su tutti i package
+- `pnpm run build` — typecheck + build di tutti i package
+- `pnpm --filter @workspace/api-spec run codegen` — rigenera gli hook React Query e gli schema Zod dall'OpenAPI spec
+- `pnpm --filter @workspace/db run push` — applica le modifiche allo schema DB (solo dev)
+- Variabile richiesta: `DATABASE_URL` — stringa di connessione Postgres
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
+- Frontend: React + Vite (artifact `casello`)
 - API: Express 5
 - DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Validazione: Zod (`zod/v4`), `drizzle-zod`
+- API codegen: Orval (da spec OpenAPI)
+- Build: esbuild (bundle CJS)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `lib/api-spec/openapi.yaml` — contratto API, source of truth
+- `lib/db/src/schema/` — schema Drizzle (una tabella per file)
+- `artifacts/api-server/src/routes/` — route handlers Express
+- `artifacts/casello/src/` — frontend React + Vite
+
+## Domain Model
+
+Casello ruota attorno a quattro entità principali:
+
+- **App** — un'applicazione registrata che può essere agentificata (URL base, credenziali, stato)
+- **Agent** — configurazione di un agente: quale App usa, prompt di sistema, modello LLM, stato
+- **Tool** — uno strumento HTTP che l'agente può invocare (metodo, endpoint, schema parametri)
+- **Run** — un'esecuzione di un agente: input, output, log, durata, esito
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Contract-first: lo spec OpenAPI è la fonte di verità; tipi e hook vengono generati da esso
+- Il backend valida input/output con gli schema Zod generati da Orval
+- Le esecuzioni degli agenti (Run) vengono archiviate sul DB per audit e replay
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Casello permette a team e sviluppatori di trasformare qualsiasi API REST in un agente autonomo configurabile, senza dover modificare il codice dell'app originale. Dal hub si gestisce il ciclo di vita completo: registrazione, configurazione, esecuzione e monitoraggio.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Lingua: italiano per i commenti e la documentazione interna
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Dopo ogni modifica a `lib/api-spec/openapi.yaml`, rieseguire codegen prima di usare i tipi aggiornati
+- Non aggiungere `artifacts/casello` ai `references` del root `tsconfig.json` (è un leaf package)
 
 ## Pointers
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Vedi la skill `pnpm-workspace` per struttura workspace, TypeScript e convenzioni package

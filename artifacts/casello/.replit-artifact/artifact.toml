@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Casello"
+version = "1.0.0"
+id = "artifacts/casello"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23814
+
+[services.development]
+run = "pnpm --filter @workspace/casello run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/casello", "run", "build" ]
+publicDir = "artifacts/casello/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23814"
+BASE_PATH = "/"

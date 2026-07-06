@@ -1,0 +1,8 @@
+# Esempio di configurazione Repl (rinomina in .replit nel workspace Replit
+# o configura equivalente dalla UI). Il file .replit reale resta fuori dal
+# repo (.gitignore) perché Replit lo gestisce per workspace.
+run = "litellm --config config.yaml --host 0.0.0.0 --port $PORT"
+
+[deployment]
+run = ["sh", "-c", "litellm --config config.yaml --host 0.0.0.0 --port $PORT"]
+# Deploy come Reserved VM (sempre acceso), NON autoscale.

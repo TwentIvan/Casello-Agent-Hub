@@ -1,9 +1,10 @@
 // AI Gateway - Multi-provider AI client for agent execution.
 // All AI calls in this application should go through this gateway.
-// No other file should instantiate OpenAI or Anthropic directly.
+// No other file should instantiate a provider SDK directly - add a module
+// under ./providers instead.
 
 import OpenAI from "openai";
-import Anthropic from "@anthropic-ai/sdk";
+import { directProviders } from "./providers";
 
 export type GatewayMessageContent =
   | string
@@ -31,13 +32,16 @@ export interface GatewayCompleteResult {
   durationMs: number;
 }
 
+const DEFAULT_FALLBACK_MODEL = "openai/gpt-4o-mini";
+
+function getProviderPrefix(modelKey: string): string {
+  const slashIdx = modelKey.indexOf("/");
+  return slashIdx >= 0 ? modelKey.slice(0, slashIdx) : modelKey;
+}
+
 function resolveModelId(modelKey: string): string {
   const slashIdx = modelKey.indexOf("/");
   return slashIdx >= 0 ? modelKey.slice(slashIdx + 1) : modelKey;
-}
-
-function flattenContent(content: GatewayMessageContent): string {
-  return Array.isArray(content) ? content.map((c) => c.text).join("\n") : content;
 }
 
 class AiGateway {
@@ -46,58 +50,6 @@ class AiGateway {
       apiKey: apiKey || process.env.OPENAI_API_KEY,
       ...(baseURL ? { baseURL } : {}),
     });
-  }
-
-  private getAnthropicClient(): Anthropic {
-    return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  }
-
-  private async completeWithAnthropic(
-    opts: GatewayCompleteOptions,
-    rawModelId: string,
-    caller: string,
-    startMs: number
-  ): Promise<GatewayCompleteResult> {
-    const client = this.getAnthropicClient();
-
-    const systemParts: string[] = [];
-    const anthropicMessages: Anthropic.MessageParam[] = [];
-
-    for (const msg of opts.messages) {
-      if (msg.role === "system") {
-        systemParts.push(flattenContent(msg.content));
-      } else if (msg.role === "user" || msg.role === "assistant") {
-        anthropicMessages.push({
-          role: msg.role,
-          content: msg.content ? flattenContent(msg.content as GatewayMessageContent) : "",
-        });
-      }
-    }
-
-    const params: Anthropic.MessageCreateParamsNonStreaming = {
-      model: rawModelId,
-      max_tokens: opts.maxTokens || 4096,
-      messages: anthropicMessages,
-      ...(systemParts.length ? { system: systemParts.join("\n\n") } : {}),
-    };
-
-    console.log(`[AI-GATEWAY] Anthropic call starting: model=${rawModelId} caller=${caller}`);
-    const response = await client.messages.create(params, { timeout: 120_000 });
-
-    const durationMs = Date.now() - startMs;
-    const promptTokens = response.usage?.input_tokens || 0;
-    const completionTokens = response.usage?.output_tokens || 0;
-    const content = response.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as Anthropic.TextBlock).text)
-      .join("");
-
-    console.log(
-      `[AI-GATEWAY] caller=${caller} model=${opts.modelKey}` +
-        ` prompt_tokens=${promptTokens} completion_tokens=${completionTokens} duration=${durationMs}ms`
-    );
-
-    return { content, modelKey: opts.modelKey, promptTokens, completionTokens, durationMs };
   }
 
   async complete(opts: GatewayCompleteOptions): Promise<GatewayCompleteResult> {
@@ -145,45 +97,54 @@ class AiGateway {
       };
     }
 
-    // Route by provider prefix (direct call — rollback path if the proxy is down)
-    if (modelKey.startsWith("openai/")) {
-      const client = this.getOpenAIClient();
-      const rawModelId = resolveModelId(modelKey);
+    // Direct mode (no proxy) — rollback path if the gateway deploy is off.
+    // Resolve which provider module handles this request, falling back to a
+    // configured default model when the requested one has no direct module.
+    let effectiveModelKey = modelKey;
+    let provider = getProviderPrefix(effectiveModelKey);
 
-      const params: any = {
-        model: rawModelId,
-        messages: opts.messages,
-      };
-      if (opts.maxTokens) params.max_completion_tokens = opts.maxTokens;
-      if (opts.temperature !== undefined) params.temperature = opts.temperature;
-
-      const response = await client.chat.completions.create(params);
-      const durationMs = Date.now() - startMs;
-      const promptTokens = response.usage?.prompt_tokens || 0;
-      const completionTokens = response.usage?.completion_tokens || 0;
-
-      console.log(
-        `[AI-GATEWAY] caller=${caller} model=${modelKey}` +
-          ` prompt_tokens=${promptTokens} completion_tokens=${completionTokens} duration=${durationMs}ms`
+    if (!directProviders[provider]) {
+      const fallbackModelKey = process.env.AI_GATEWAY_FALLBACK_MODEL || DEFAULT_FALLBACK_MODEL;
+      const fallbackProvider = getProviderPrefix(fallbackModelKey);
+      if (!directProviders[fallbackProvider]) {
+        throw new Error(
+          `[AI-GATEWAY] Nessun modulo diretto per il provider "${provider}" (model="${modelKey}"), e il ` +
+            `fallback configurato ("${fallbackModelKey}") non è supportato nemmeno lui. Provider diretti ` +
+            `disponibili: ${Object.keys(directProviders).join(", ")}. Per usare "${provider}" senza scrivere ` +
+            `un modulo dedicato, imposta AI_GATEWAY_BASE_URL (modalità proxy).`
+        );
+      }
+      console.warn(
+        `[AI-GATEWAY] Provider "${provider}" non ha un modulo diretto (proxy spento). ` +
+          `Fallback su "${fallbackModelKey}" per questa chiamata (caller=${caller}).`
       );
-
-      return {
-        content: response.choices[0]?.message?.content || "",
-        modelKey,
-        promptTokens,
-        completionTokens,
-        durationMs,
-      };
+      effectiveModelKey = fallbackModelKey;
+      provider = fallbackProvider;
     }
 
-    if (modelKey.startsWith("anthropic/")) {
-      const rawModelId = resolveModelId(modelKey);
-      return this.completeWithAnthropic(opts, rawModelId, caller, startMs);
-    }
+    const rawModelId = resolveModelId(effectiveModelKey);
+    const result = await directProviders[provider]({
+      rawModelId,
+      messages: opts.messages,
+      maxTokens: opts.maxTokens,
+      temperature: opts.temperature,
+      caller,
+    });
+    const durationMs = Date.now() - startMs;
 
-    throw new Error(
-      `[AI-GATEWAY] Cannot route model "${modelKey}": unknown provider. Supported prefixes: openai/, anthropic/. For altri provider, imposta AI_GATEWAY_BASE_URL.`
+    console.log(
+      `[AI-GATEWAY] caller=${caller} model=${effectiveModelKey}` +
+        (effectiveModelKey !== modelKey ? ` (fallback da ${modelKey})` : "") +
+        ` prompt_tokens=${result.promptTokens} completion_tokens=${result.completionTokens} duration=${durationMs}ms`
     );
+
+    return {
+      content: result.content,
+      modelKey: effectiveModelKey,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      durationMs,
+    };
   }
 }
 

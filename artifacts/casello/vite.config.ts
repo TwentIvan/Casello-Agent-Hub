@@ -26,6 +26,13 @@ if (!basePath) {
   );
 }
 
+// In dev le fetch relative a /api vanno inoltrate all'API locale (in produzione lo fa nginx).
+const apiPort = Number(process.env.API_PORT ?? 3000);
+
+if (Number.isNaN(apiPort) || apiPort <= 0) {
+  throw new Error(`Invalid API_PORT value: "${process.env.API_PORT}"`);
+}
+
 export default defineConfig({
   base: basePath,
   plugins: [
@@ -63,6 +70,12 @@ export default defineConfig({
     strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
+    proxy: {
+      "/api": {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: true,
+      },
+    },
     fs: {
       strict: true,
     },

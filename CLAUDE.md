@@ -16,9 +16,12 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 ## Comandi
 
 - `pnpm install` — installa tutto (pnpm 10, Node 24)
-- `pnpm --filter @workspace/api-server run dev` — API su `PORT` (richiesta: es. `PORT=3000`)
-- `pnpm --filter @workspace/casello run dev` — frontend Vite (richiede `PORT` e `BASE_PATH=/`; in dev
-  Vite NON fa da proxy a /api: avvia l'API e il frontend usa fetch relative → serve il proxy Vite, vedi issue "Proxy /api in dev")
+- `pnpm run dev` — avvia insieme API (`API_PORT`, default 3000) e frontend (`WEB_PORT`, default 5173);
+  serve `DATABASE_URL` nell'ambiente. Il frontend Vite inoltra `/api` a `http://localhost:${API_PORT}`
+- `pnpm run dev:api` / `pnpm run dev:web` — gli stessi due processi separati (es. in due terminali)
+- `pnpm --filter @workspace/api-server run dev` — solo API su `PORT` (richiesta: es. `PORT=3000`)
+- `pnpm --filter @workspace/casello run dev` — solo frontend (richiede `PORT` e `BASE_PATH=/`; proxy
+  `/api` verso `API_PORT`, default 3000)
 - `pnpm run typecheck` — typecheck di tutti i package (da far passare prima di ogni commit)
 - `pnpm run build` — typecheck + build
 - `pnpm --filter @workspace/api-spec run codegen` — rigenera hook React Query e schemi Zod da `openapi.yaml`

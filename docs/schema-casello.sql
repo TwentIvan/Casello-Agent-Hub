@@ -17,7 +17,7 @@ CREATE TABLE "agents" (
 	"app_id" integer NOT NULL,
 	"name" text NOT NULL,
 	"system_prompt" text,
-	"model" text DEFAULT 'openai/gpt-4o-mini' NOT NULL,
+	"model" text DEFAULT 'openrouter/auto' NOT NULL,
 	"status" "agent_status" DEFAULT 'draft' NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL

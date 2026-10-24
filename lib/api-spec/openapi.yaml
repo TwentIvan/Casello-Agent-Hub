@@ -20,6 +20,8 @@ tags:
     description: Esecuzioni degli agenti
   - name: dashboard
     description: Statistiche aggregate
+  - name: models
+    description: Modelli AI selezionabili
 
 paths:
   /healthz:
@@ -354,6 +356,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/DashboardStats"
 
+  # ─── Models ─────────────────────────────────────────────────────────────────
+
+  /models:
+    get:
+      operationId: listModels
+      tags: [models]
+      summary: Elenca i modelli selezionabili per gli agenti (model_name di LiteLLM)
+      responses:
+        "200":
+          description: Lista di modelli
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Model"
+
 components:
   parameters:
     IdParam:
@@ -501,6 +520,21 @@ components:
           type: string
         status:
           $ref: "#/components/schemas/AgentStatus"
+
+    # ── Model ──────────────────────────────────────────────────────────────────
+
+    Model:
+      type: object
+      required: [id, label, isDefault]
+      properties:
+        id:
+          type: string
+          description: model_name di LiteLLM, da usare in Agent.model
+        label:
+          type: string
+        isDefault:
+          type: boolean
+          description: Modello usato quando un agente viene creato senza model
 
     # ── Tool ───────────────────────────────────────────────────────────────────
 

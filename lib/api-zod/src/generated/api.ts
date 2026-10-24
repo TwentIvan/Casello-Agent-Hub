@@ -360,3 +360,14 @@ export const GetDashboardStatsResponse = zod.object({
 })
 
 
+/**
+ * @summary Elenca i modelli selezionabili per gli agenti (model_name di LiteLLM)
+ */
+export const ListModelsResponseItem = zod.object({
+  "id": zod.string().describe('model_name di LiteLLM, da usare in Agent.model'),
+  "label": zod.string(),
+  "isDefault": zod.boolean().describe('Modello usato quando un agente viene creato senza model')
+})
+export const ListModelsResponse = zod.array(ListModelsResponseItem)
+
+

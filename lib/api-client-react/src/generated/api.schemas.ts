@@ -90,6 +90,14 @@ export interface AgentUpdate {
   status?: AgentStatus;
 }
 
+export interface Model {
+  /** model_name di LiteLLM, da usare in Agent.model */
+  id: string;
+  label: string;
+  /** Modello usato quando un agente viene creato senza model */
+  isDefault: boolean;
+}
+
 export type HttpMethod = typeof HttpMethod[keyof typeof HttpMethod];
 
 

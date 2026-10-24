@@ -10,6 +10,13 @@ permissions:
   contents: read
   packages: write
 
+# Un run alla volta per branch. Su main i run si accodano e non vengono mai annullati a metà
+# deploy: GitHub tiene in attesa solo il più recente, quindi in produzione vince l'ultimo merge.
+# Sui feat/** un nuovo push annulla il collaudo in corso.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 env:
   REGISTRY: ghcr.io
   IMAGE_API: ghcr.io/twentivan/casello-api
@@ -47,9 +54,10 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           push: true
+          # :latest è quello che deploya Coolify: lo scrive solo main, i feat/** hanno solo il tag sha
           tags: |
-            ${{ matrix.image }}:latest
             ${{ matrix.image }}:${{ github.sha }}
+            ${{ github.ref == 'refs/heads/main' && format('{0}:latest', matrix.image) || '' }}
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,scope=${{ matrix.app }},mode=max
 
@@ -58,12 +66,53 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      COOLIFY_WEBHOOK_API: ${{ secrets.COOLIFY_WEBHOOK_API }}
+      COOLIFY_WEBHOOK_WEB: ${{ secrets.COOLIFY_WEBHOOK_WEB }}
     steps:
-      - name: Deploy API
+      - name: Deploy API e web (con attesa della fine)
+        # Il webhook di Coolify risponde subito e il deploy prosegue in background: se il job
+        # finisse lì, la concurrency non servirebbe e un secondo merge arriverebbe a deploy in
+        # corso (Coolify lo scarta e resta l'immagine vecchia). Quindi si attende lo stato finale.
         run: |
-          curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
-            "${{ secrets.COOLIFY_WEBHOOK_API }}"
-      - name: Deploy web
-        run: |
-          curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
-            "${{ secrets.COOLIFY_WEBHOOK_WEB }}"
+          set -euo pipefail
+
+          deploy() {
+            local name="$1" webhook="$2"
+            local sep='?'
+            [[ "$webhook" == *\?* ]] && sep='&'
+            # force=true: Coolify riscarica l'immagine anche se il tag (latest) è lo stesso
+            local resp
+            resp=$(curl -fsS -X POST -H "Authorization: Bearer $COOLIFY_TOKEN" "${webhook}${sep}force=true")
+            echo "$name: $resp"
+
+            local uuid
+            uuid=$(jq -r '.deployments[0].deployment_uuid // empty' <<<"$resp")
+            if [[ -z "$uuid" ]]; then
+              echo "::error::$name: Coolify non ha messo in coda il deploy"
+              return 1
+            fi
+
+            local api_base="${webhook%%/api/v1/*}/api/v1"
+            local status
+            for _ in $(seq 1 60); do
+              if ! status=$(curl -fsS -H "Authorization: Bearer $COOLIFY_TOKEN" \
+                "$api_base/deployments/$uuid" | jq -r '.status'); then
+                echo "::warning::$name: stato del deploy non leggibile (al token serve il permesso read), non attendo"
+                return 0
+              fi
+              echo "$name: $status"
+              case "$status" in
+                finished) return 0 ;;
+                failed|cancelled*) echo "::error::$name: deploy $status"; return 1 ;;
+              esac
+              sleep 10
+            done
+            echo "::error::$name: deploy non concluso dopo 10 minuti"
+            return 1
+          }
+
+          deploy API "$COOLIFY_WEBHOOK_API"
+          deploy web "$COOLIFY_WEBHOOK_WEB"

@@ -62,6 +62,9 @@ arriva da `GET /api/models` (costante in `lib/models.ts`: va tenuta allineata a 
 
 - Push su `main` → GitHub Actions builda `ghcr.io/twentivan/casello-api` e `casello-web` e chiama i
   webhook Coolify. Push su `feat/**` builda soltanto (collaudo), senza deploy.
+- Il tag `:latest` (quello che deploya Coolify) lo scrive solo `main`; ogni build ha anche il tag
+  `:<sha>`. I run su `main` sono in coda uno alla volta e il job di deploy chiama i webhook con
+  `force=true` e attende la fine del deploy su Coolify: merge ravvicinati non lasciano un'immagine vecchia.
 - Due container su Coolify: `casello-api` (porta 3000, solo rete interna) e `casello-web` (nginx: SPA +
   proxy di `/api/` verso `casello-api:3000`). Il frontend chiama `/api` con URL relativi: un solo dominio.
 - Immagini `node:24-slim` (non alpine: il workspace esclude i binari musl).

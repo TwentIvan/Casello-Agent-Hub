@@ -20,6 +20,7 @@ export * from './healthStatus';
 export * from './httpMethod';
 export * from './listAgentsParams';
 export * from './listRunsParams';
+export * from './model';
 export * from './notFoundResponse';
 export * from './run';
 export * from './runStatus';

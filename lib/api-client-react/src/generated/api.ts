@@ -30,6 +30,7 @@ import type {
   HealthStatus,
   ListAgentsParams,
   ListRunsParams,
+  Model,
   NotFoundResponse,
   Run,
   RunTrigger,
@@ -1396,6 +1397,83 @@ export function useGetDashboardStats<TData = Awaited<ReturnType<typeof getDashbo
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetDashboardStatsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListModelsUrl = () => {
+
+
+
+
+  return `/api/models`
+}
+
+/**
+ * @summary Elenca i modelli selezionabili per gli agenti (model_name di LiteLLM)
+ */
+export const listModels = async ( options?: RequestInit): Promise<Model[]> => {
+
+  return customFetch<Model[]>(getListModelsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListModelsQueryKey = () => {
+    return [
+    `/api/models`
+    ] as const;
+    }
+
+
+export const getListModelsQueryOptions = <TData = Awaited<ReturnType<typeof listModels>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListModelsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listModels>>> = ({ signal }) => listModels({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listModels>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListModelsQueryResult = NonNullable<Awaited<ReturnType<typeof listModels>>>
+export type ListModelsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Elenca i modelli selezionabili per gli agenti (model_name di LiteLLM)
+ */
+
+export function useListModels<TData = Awaited<ReturnType<typeof listModels>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListModelsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

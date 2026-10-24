@@ -5,6 +5,7 @@
 
 import OpenAI from "openai";
 import { directProviders } from "./providers";
+import { DEFAULT_MODEL } from "./models";
 
 export type GatewayMessageContent =
   | string
@@ -32,8 +33,6 @@ export interface GatewayCompleteResult {
   durationMs: number;
 }
 
-const DEFAULT_FALLBACK_MODEL = "openai/gpt-4o-mini";
-
 function getProviderPrefix(modelKey: string): string {
   const slashIdx = modelKey.indexOf("/");
   return slashIdx >= 0 ? modelKey.slice(0, slashIdx) : modelKey;
@@ -45,11 +44,13 @@ function resolveModelId(modelKey: string): string {
 }
 
 class AiGateway {
-  private getOpenAIClient(baseURL?: string, apiKey?: string): OpenAI {
-    return new OpenAI({
-      apiKey: apiKey || process.env.OPENAI_API_KEY,
-      ...(baseURL ? { baseURL } : {}),
-    });
+  // LiteLLM espone un'API compatibile OpenAI: l'SDK openai fa solo da trasporto.
+  private getGatewayClient(): OpenAI {
+    const apiKey = process.env.AI_GATEWAY_API_KEY;
+    if (!apiKey) {
+      throw new Error("[AI-GATEWAY] AI_GATEWAY_BASE_URL è impostata ma manca AI_GATEWAY_API_KEY (chiave virtuale LiteLLM).");
+    }
+    return new OpenAI({ apiKey, baseURL: process.env.AI_GATEWAY_BASE_URL });
   }
 
   async complete(opts: GatewayCompleteOptions): Promise<GatewayCompleteResult> {
@@ -59,10 +60,7 @@ class AiGateway {
 
     // Route: explicit AI_GATEWAY_BASE_URL overrides everything (LiteLLM proxy mode)
     if (process.env.AI_GATEWAY_BASE_URL) {
-      const client = this.getOpenAIClient(
-        process.env.AI_GATEWAY_BASE_URL,
-        process.env.AI_GATEWAY_API_KEY || process.env.OPENAI_API_KEY
-      );
+      const client = this.getGatewayClient();
 
       const params: any = {
         model: modelKey,
@@ -104,7 +102,7 @@ class AiGateway {
     let provider = getProviderPrefix(effectiveModelKey);
 
     if (!directProviders[provider]) {
-      const fallbackModelKey = process.env.AI_GATEWAY_FALLBACK_MODEL || DEFAULT_FALLBACK_MODEL;
+      const fallbackModelKey = process.env.AI_GATEWAY_FALLBACK_MODEL || DEFAULT_MODEL;
       const fallbackProvider = getProviderPrefix(fallbackModelKey);
       if (!directProviders[fallbackProvider]) {
         throw new Error(

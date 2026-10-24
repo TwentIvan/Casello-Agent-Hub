@@ -4,6 +4,7 @@ import appsRouter from "./apps";
 import agentsRouter from "./agents";
 import runsRouter from "./runs";
 import dashboardRouter from "./dashboard";
+import modelsRouter from "./models";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use(appsRouter);
 router.use(agentsRouter);
 router.use(runsRouter);
 router.use(dashboardRouter);
+router.use(modelsRouter);
 
 export default router;

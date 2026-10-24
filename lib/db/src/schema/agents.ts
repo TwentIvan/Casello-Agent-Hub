@@ -12,7 +12,7 @@ export const agentsTable = pgTable("agents", {
     .references(() => appsTable.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   systemPrompt: text("system_prompt"),
-  model: text("model").notNull().default("openai/gpt-4o-mini"),
+  model: text("model").notNull().default("openrouter/auto"),
   status: agentStatusEnum("status").notNull().default("draft"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

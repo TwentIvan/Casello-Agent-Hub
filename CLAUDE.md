@@ -33,7 +33,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `lib/api-client-react/src/generated/` — client generato da Orval: NON modificare a mano
 - `lib/db/src/schema/` — schema Drizzle, una tabella per file (apps, agents, tools, runs)
 - `artifacts/api-server/src/routes/` — route Express 5 (`/api/apps`, `/api/agents`, `/api/agents/:id/tools`,
-  `/api/agents/:id/runs`, `/api/runs`, `/api/dashboard/stats`, `/api/healthz`)
+  `/api/agents/:id/runs`, `/api/runs`, `/api/dashboard/stats`, `/api/models`, `/api/healthz`)
+- `artifacts/api-server/src/lib/models.ts` — modelli selezionabili e default (`openrouter/auto`)
 - `artifacts/api-server/src/lib/ai-gateway.ts` — client verso i modelli (LiteLLM proxy o provider diretti)
 - `artifacts/api-server/src/lib/run-executor.ts` — esecuzione di una run (context pack + prompt caching)
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
@@ -54,7 +55,8 @@ Le chiamate passano da LiteLLM (`AI_GATEWAY_BASE_URL=https://aigateway.fantamist
 virtuale in `AI_GATEWAY_API_KEY`). Il campo `agent.model` deve coincidere con un `model_name` di
 LiteLLM. Non esistono più account OpenAI/Anthropic: i modelli disponibili sono quelli `openrouter/*`
 (`openrouter/auto`, `openrouter/deepseek-chat`, `openrouter/qwen3-235b`, `openrouter/mistral-small`).
-Il default `openai/gpt-4o-mini` nello schema `agents` è obsoleto (vedi issue).
+Il default è `openrouter/auto` (schema `agents` e fallback del gateway); la lista per la UI
+arriva da `GET /api/models` (costante in `lib/models.ts`: va tenuta allineata a LiteLLM).
 
 ## Deploy (non toccare senza motivo)
 

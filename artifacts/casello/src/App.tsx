@@ -7,6 +7,7 @@ import { AuthGate } from "@/components/auth-gate";
 import { AppShell } from "@/components/layout/app-shell";
 import { isUnauthorized } from "@/lib/auth";
 import Dashboard from "@/pages/dashboard";
+import AppsPage from "@/pages/apps";
 import ComingSoon from "@/pages/coming-soon";
 import NotFound from "@/pages/not-found";
 
@@ -35,7 +36,7 @@ function Router() {
     <AppShell>
       <Switch>
         <Route path="/" component={Dashboard} />
-        <Route path="/apps">{() => <ComingSoon title="App" />}</Route>
+        <Route path="/apps" component={AppsPage} />
         <Route path="/agents">{() => <ComingSoon title="Agenti" />}</Route>
         <Route path="/runs">{() => <ComingSoon title="Run" />}</Route>
         <Route component={NotFound} />

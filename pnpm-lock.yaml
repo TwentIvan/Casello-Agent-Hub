@@ -181,6 +181,9 @@ importers:
       express-session:
         specifier: ^1.19.0
         version: 1.19.0
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       openai:
         specifier: ^5.16.0
         version: 5.23.2(zod@3.25.76)
@@ -2324,6 +2327,9 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
+
+  fflate@0.8.3:
+    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
 
   figures@6.1.0:
     resolution: {integrity: sha512-d+l3qxjSesT4V7v2fh+QnmFnUWv9lSpjarhShNTgBOfA0ttejbQUAlHLitbjkoRiDulW0OPoQPYIGhIC8ohejg==}
@@ -5122,6 +5128,8 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.4):
     optionalDependencies:
       picomatch: 4.0.4
+
+  fflate@0.8.3: {}
 
   figures@6.1.0:
     dependencies:

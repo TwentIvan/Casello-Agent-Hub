@@ -21,6 +21,7 @@
     "drizzle-orm": "catalog:",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
+    "fflate": "^0.8.3",
     "openai": "^5.16.0",
     "openid-client": "^6.8.8",
     "pino": "^9.14.0",

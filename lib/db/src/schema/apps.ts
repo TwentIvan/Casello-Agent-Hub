@@ -4,6 +4,9 @@ import { z } from "zod/v4";
 
 export const appStatusEnum = pgEnum("app_status", ["active", "inactive"]);
 
+// Da dove l'architetto legge il codice dell'app
+export const sourceTypeEnum = pgEnum("source_type", ["github", "zip", "none"]);
+
 export type AuthConfig = { header: string; scheme: string | null };
 
 export const appsTable = pgTable("apps", {
@@ -18,6 +21,13 @@ export const appsTable = pgTable("apps", {
   serviceAuth: jsonb("service_auth").$type<AuthConfig>(),
   // Segreto di servizio cifrato (AES-256-GCM): mai in chiaro
   serviceSecretEnc: text("service_secret_enc"),
+  // Sorgenti per l'architetto: il token GitHub (sola lettura) è cifrato, mai in chiaro
+  sourceType: sourceTypeEnum("source_type").notNull().default("none"),
+  sourceRepo: text("source_repo"), // formato owner/nome
+  sourceBranch: text("source_branch"),
+  sourceTokenEnc: text("source_token_enc"),
+  openapiUrl: text("openapi_url"),
+  functionalDescription: text("functional_description"),
   status: appStatusEnum("status").notNull().default("active"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

@@ -1,6 +1,10 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { failInterruptedRuns } from "./lib/run-executor";
+import { assertSecretKey } from "./lib/secrets";
+
+// In produzione la chiave dei segreti è obbligatoria: meglio fallire all'avvio che alla prima cifratura.
+if (process.env["NODE_ENV"] === "production") assertSecretKey();
 
 const rawPort = process.env["PORT"];
 

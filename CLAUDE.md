@@ -24,6 +24,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `pnpm --filter @workspace/api-server run dev` — solo API su `PORT` (richiesta: es. `PORT=3000`)
 - `pnpm --filter @workspace/casello run dev` — solo frontend (richiede `PORT` e `BASE_PATH=/`; proxy
   `/api` verso `API_PORT`, default 3000)
+- `pnpm --filter @workspace/api-server run test` — test dell'API (Vitest; Postgres in memoria con PGlite,
+  schema da `docs/schema-casello.sql`, nessun DB esterno necessario)
 - `pnpm run typecheck` — typecheck di tutti i package (da far passare prima di ogni commit)
 - `pnpm run build` — typecheck + build
 - `pnpm --filter @workspace/api-spec run codegen` — rigenera hook React Query e schemi Zod da `openapi.yaml`
@@ -84,7 +86,9 @@ arriva da `GET /api/models` (costante in `lib/models.ts`: va tenuta allineata a 
   proxy di `/api/` verso `casello-api:3000`). Il frontend chiama `/api` con URL relativi: un solo dominio.
 - Immagini `node:24-slim` (non alpine: il workspace esclude i binari musl).
 - Variabili dell'API: `DATABASE_URL` (Neon, stringa diretta), `PORT`, `NODE_ENV`, `LOG_LEVEL`,
-  `AI_GATEWAY_BASE_URL`, `AI_GATEWAY_API_KEY`, `AI_GATEWAY_FALLBACK_MODEL`; `PUBLIC_APP_URL`
+  `AI_GATEWAY_BASE_URL`, `AI_GATEWAY_API_KEY`, `AI_GATEWAY_FALLBACK_MODEL`, `CASELLO_SECRET_KEY`
+  (64 caratteri esadecimali, `openssl rand -hex 32`; cifra i segreti a riposo, obbligatoria con
+  `NODE_ENV=production`); `PUBLIC_APP_URL`
   (origine della UI, `https://casello.fantamister.cloud`: usata dal login e dal CORS, che in produzione
   accetta solo quella e in dev qualsiasi `localhost`); per il login `GOOGLE_CLIENT_ID`,
   `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, `ALLOWED_EMAILS` (separati da virgola); `OIDC_ISSUER` solo per i test.

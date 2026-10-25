@@ -1,7 +1,8 @@
 -- Migrazione di produzione: fase 1 (agenti operativi).
 -- Catalogo dei tool per app, ruoli degli agenti, passi delle run; la vecchia tabella `tools` viene
 -- convertita in `app_tools` + `agent_tools` e poi eliminata.
--- Eseguire una volta sul DB Neon (psql -f). Idempotente: una seconda esecuzione non cambia nulla.
+-- Eseguire sul DB Neon con: psql -v ON_ERROR_STOP=1 -f docs/migrations/2026-10-fase-1.sql
+-- (senza ON_ERROR_STOP psql proseguirebbe dopo un errore). Idempotente: una seconda esecuzione non cambia nulla.
 -- I nuovi valori di `run_status` sono aggiunti qui ma non usati nella stessa transazione.
 
 BEGIN;
@@ -21,20 +22,20 @@ ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "user_auth" jsonb;
 ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "service_auth" jsonb;
 ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "service_secret_enc" text;
 
--- slug da name: minuscolo, non alfanumerici -> '-'; sui duplicati (dal secondo in poi) suffisso '-<id>'
-WITH base AS (
-  SELECT id,
-         COALESCE(NULLIF(trim(both '-' from lower(regexp_replace(name, '[^a-zA-Z0-9]+', '-', 'g'))), ''), 'app') AS s
-  FROM "apps"
-  WHERE "slug" IS NULL
-), ranked AS (
-  SELECT id, s, row_number() OVER (PARTITION BY s ORDER BY id) AS rn FROM base
-)
-UPDATE "apps" a
-SET "slug" = CASE WHEN r.rn = 1 AND NOT EXISTS (SELECT 1 FROM "apps" o WHERE o.slug = r.s AND o.id <> a.id)
-                  THEN r.s ELSE r.s || '-' || a.id END
-FROM ranked r
-WHERE a.id = r.id;
+-- slug da name: minuscolo, non alfanumerici -> '-'. Se è già preso (anche da uno slug già esistente o
+-- generato prima) si aggiunge '-<id>', ripetuto finché non è unico.
+DO $slug$
+DECLARE r record; cand text;
+BEGIN
+  FOR r IN SELECT id, name FROM "apps" WHERE "slug" IS NULL ORDER BY id LOOP
+    cand := COALESCE(NULLIF(trim(both '-' from lower(regexp_replace(r.name, '[^a-zA-Z0-9]+', '-', 'g'))), ''), 'app');
+    WHILE EXISTS (SELECT 1 FROM "apps" WHERE "slug" = cand) LOOP
+      cand := cand || '-' || r.id;
+    END LOOP;
+    UPDATE "apps" SET "slug" = cand WHERE id = r.id;
+  END LOOP;
+END
+$slug$;
 
 ALTER TABLE "apps" ALTER COLUMN "slug" SET NOT NULL;
 DO $$ BEGIN
@@ -99,46 +100,54 @@ CREATE TABLE IF NOT EXISTS "run_steps" (
 );
 
 -- Conversione dei vecchi tool -------------------------------------------------------------------
--- Funzione di appoggio: restituisce lo schema solo se è JSON valido e di tipo oggetto
+-- Funzione di appoggio: restituisce lo schema solo se è JSON valido, oggetto con "type": "object"
 -- (un cast ::jsonb su testo non valido farebbe abortire la transazione).
 CREATE OR REPLACE FUNCTION pg_temp.casello_safe_schema(t text) RETURNS jsonb LANGUAGE plpgsql AS $fn$
 DECLARE j jsonb;
 BEGIN
   IF t IS NULL THEN RETURN NULL; END IF;
   j := t::jsonb;
-  IF jsonb_typeof(j) <> 'object' THEN RETURN NULL; END IF;
+  IF jsonb_typeof(j) <> 'object' OR j->>'type' IS DISTINCT FROM 'object' THEN RETURN NULL; END IF;
   RETURN j;
 EXCEPTION WHEN others THEN
   RETURN NULL;
 END
 $fn$;
 
+-- Il nome del tool arriva al modello come nome di funzione (^[a-zA-Z0-9_-]{1,64}$): si traslitterano gli
+-- accenti, ogni altro carattere diventa '_', minuscolo, al massimo 50 caratteri (spazio per il suffisso).
+CREATE OR REPLACE FUNCTION pg_temp.casello_tool_name(n text) RETURNS text LANGUAGE sql AS $fn$
+  SELECT left(COALESCE(NULLIF(trim(both '_' from regexp_replace(
+    lower(translate(n, 'àáâãäåèéêëìíîïòóôõöùúûüçñÀÁÂÃÄÅÈÉÊËÌÍÎÏÒÓÔÕÖÙÚÛÜÇÑ',
+                       'aaaaaaeeeeiiiiooooouuuucnaaaaaaeeeeiiiiooooouuuucn')),
+    '[^a-z0-9]+', '_', 'g')), ''), 'tool'), 50)
+$fn$;
+
 DO $mig$
+DECLARE r record; cand text; new_id integer;
 BEGIN
   IF to_regclass('public.tools') IS NOT NULL THEN
-    ALTER TABLE "app_tools" ADD COLUMN "legacy_tool_id" integer;
+    FOR r IN
+      SELECT t.id, t.agent_id, t.name, t.description, t.http_method, t.endpoint, t.parameters_schema, ag.app_id
+      FROM "tools" t JOIN "agents" ag ON ag.id = t.agent_id
+      ORDER BY t.id
+    LOOP
+      -- Nome duplicato nella stessa app (anche da agenti diversi): suffisso '-<id>', ripetuto finché è unico.
+      cand := pg_temp.casello_tool_name(r.name);
+      WHILE EXISTS (SELECT 1 FROM "app_tools" WHERE "app_id" = r.app_id AND "name" = cand) LOOP
+        cand := cand || '-' || r.id;
+      END LOOP;
 
-    -- Se due agenti della stessa app hanno un tool con lo stesso nome, dal secondo in poi si aggiunge '-<id>'.
-    INSERT INTO "app_tools" ("app_id", "name", "description", "kind", "status", "params_schema", "definition", "legacy_tool_id")
-    SELECT ag.app_id,
-           CASE WHEN row_number() OVER (PARTITION BY ag.app_id, t.name ORDER BY t.id) = 1
-                THEN t.name ELSE t.name || '-' || t.id END,
-           t.description,
-           'http',
-           'draft',
-           COALESCE(pg_temp.casello_safe_schema(t.parameters_schema), '{"type":"object","properties":{}}'::jsonb),
-           jsonb_build_object('method', t.http_method::text, 'path', t.endpoint, 'paramLocations', '{}'::jsonb),
-           t.id
-    FROM "tools" t
-    JOIN "agents" ag ON ag.id = t.agent_id
-    ORDER BY t.id;
+      INSERT INTO "app_tools" ("app_id", "name", "description", "kind", "status", "params_schema", "definition")
+      VALUES (
+        r.app_id, cand, r.description, 'http', 'draft',
+        COALESCE(pg_temp.casello_safe_schema(r.parameters_schema), '{"type":"object","properties":{}}'::jsonb),
+        jsonb_build_object('method', r.http_method::text, 'path', r.endpoint, 'paramLocations', '{}'::jsonb)
+      ) RETURNING id INTO new_id;
 
-    INSERT INTO "agent_tools" ("agent_id", "tool_id")
-    SELECT t.agent_id, at.id
-    FROM "tools" t
-    JOIN "app_tools" at ON at.legacy_tool_id = t.id;
+      INSERT INTO "agent_tools" ("agent_id", "tool_id") VALUES (r.agent_id, new_id);
+    END LOOP;
 
-    ALTER TABLE "app_tools" DROP COLUMN "legacy_tool_id";
     DROP TABLE "tools";
   END IF;
 END

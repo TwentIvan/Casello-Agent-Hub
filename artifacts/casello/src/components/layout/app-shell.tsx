@@ -16,6 +16,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
+import { UserMenu } from "./user-menu";
 
 interface NavItem {
   href: string;
@@ -82,6 +83,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-2 h-4" />
           <h1 className="text-sm font-medium">{current?.label ?? "Casello"}</h1>
+          <div className="ml-auto">
+            <UserMenu />
+          </div>
         </header>
         <main className="flex-1 p-4 md:p-6">{children}</main>
       </SidebarInset>

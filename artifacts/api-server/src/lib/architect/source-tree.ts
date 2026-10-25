@@ -19,6 +19,7 @@ export const SOURCE_LIMITS = {
 
 const MAX_RAW_ENTRIES = 50_000;
 const MAX_REGEX_PATTERN_CHARS = 200;
+const MAX_GLOB_CHARS = 200;
 const MAX_REGEX_LINE_CHARS = 10_000;
 const MAX_LIST_DEPTH = 5;
 const MAX_SEARCH_TEXT_CHARS = 200;
@@ -96,34 +97,75 @@ function hasNul(bytes: Uint8Array): boolean {
   return false;
 }
 
-function escapeRegex(ch: string): string {
-  return ch.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
-}
+type GlobToken =
+  | { t: "lit"; c: string }
+  | { t: "q" }
+  | { t: "star" }
+  | { t: "dstar" }
+  | { t: "dstarslash" };
 
-/** Converte un glob (`*`, `**`, `?`) in una regex ancorata sul percorso. */
-function globToRegex(glob: string): RegExp {
-  let out = "";
+/**
+ * Compila un glob (`*`, `**`, `?`) in un matcher a programmazione dinamica, O(glob × percorso)
+ * nel caso peggiore: niente backtracking, quindi nessun ReDoS con glob o percorsi ostili.
+ * `?` = un carattere tranne `/`; `*` = qualsiasi sequenza senza `/`; `**` = qualsiasi sequenza,
+ * `/` compresi; `**\/` accetta anche zero cartelle.
+ */
+function compileGlob(glob: string): (path: string) => boolean {
+  if (glob.length > MAX_GLOB_CHARS) {
+    throw new SourceTreeError(`Glob troppo lungo (massimo ${MAX_GLOB_CHARS} caratteri).`);
+  }
+  const tokens: GlobToken[] = [];
   for (let i = 0; i < glob.length; i++) {
     const ch = glob[i]!;
     if (ch === "*") {
-      if (glob[i + 1] === "*") {
-        if (glob[i + 2] === "/") {
-          out += "(?:.*/)?";
-          i += 2;
-        } else {
-          out += ".*";
-          i += 1;
-        }
-      } else {
-        out += "[^/]*";
-      }
+      let run = 1;
+      while (glob[i + run] === "*") run++;
+      i += run - 1;
+      if (run === 1) tokens.push({ t: "star" });
+      else if (glob[i + 1] === "/") {
+        tokens.push({ t: "dstarslash" });
+        i += 1;
+      } else tokens.push({ t: "dstar" });
     } else if (ch === "?") {
-      out += "[^/]";
+      tokens.push({ t: "q" });
     } else {
-      out += escapeRegex(ch);
+      tokens.push({ t: "lit", c: ch });
     }
   }
-  return new RegExp(`^${out}$`);
+  return (path) => {
+    const n = path.length;
+    let prev = new Uint8Array(n + 1);
+    let cur = new Uint8Array(n + 1);
+    prev[0] = 1;
+    for (const tok of tokens) {
+      cur.fill(0);
+      let seen = 0; // OR dei prev[0..j-1], per dstarslash
+      for (let j = 0; j <= n; j++) {
+        let v = 0;
+        switch (tok.t) {
+          case "lit":
+            v = j > 0 && prev[j - 1] && path[j - 1] === tok.c ? 1 : 0;
+            break;
+          case "q":
+            v = j > 0 && prev[j - 1] && path[j - 1] !== "/" ? 1 : 0;
+            break;
+          case "star":
+            v = prev[j] || (j > 0 && cur[j - 1] && path[j - 1] !== "/") ? 1 : 0;
+            break;
+          case "dstar":
+            v = prev[j] || (j > 0 && cur[j - 1]) ? 1 : 0;
+            break;
+          case "dstarslash":
+            v = prev[j] || (j > 0 && path[j - 1] === "/" && seen) ? 1 : 0;
+            break;
+        }
+        cur[j] = v;
+        if (prev[j]) seen = 1;
+      }
+      [prev, cur] = [cur, prev];
+    }
+    return prev[n] === 1;
+  };
 }
 
 function countLines(content: string): number {
@@ -315,7 +357,7 @@ export class SourceTree {
     pattern: string,
     opts: { glob?: string; regex?: boolean } = {},
   ): Promise<{ path: string; line: number; text: string }[]> {
-    const globRe = opts.glob ? globToRegex(opts.glob) : null;
+    const globMatch = opts.glob ? compileGlob(opts.glob) : null;
 
     if (opts.regex) {
       if (pattern.length > MAX_REGEX_PATTERN_CHARS) {
@@ -330,7 +372,8 @@ export class SourceTree {
       }
       this.regexWorker ??= new RegexSearchWorker(() => [...this.files.entries()]);
       try {
-        return await this.regexWorker.search(pattern, globRe ? globRe.source : null, {
+        const paths = globMatch ? this.sortedPaths.filter(globMatch) : null;
+        return await this.regexWorker.search(pattern, paths, {
           max: SOURCE_LIMITS.maxSearchResults,
           maxText: MAX_SEARCH_TEXT_CHARS,
           maxLine: MAX_REGEX_LINE_CHARS,
@@ -350,7 +393,7 @@ export class SourceTree {
     const needle = pattern.toLowerCase();
     const results: { path: string; line: number; text: string }[] = [];
     for (const path of this.sortedPaths) {
-      if (globRe && !globRe.test(path)) continue;
+      if (globMatch && !globMatch(path)) continue;
       const lines = this.files.get(path)!.split("\n");
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i]!;

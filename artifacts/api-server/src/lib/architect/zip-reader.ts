@@ -39,7 +39,8 @@ export function readZipEntries(bytes: Uint8Array, maxEntries: number): RawZipEnt
   // End Of Central Directory: ultimi 22 byte + commento (max 65 535).
   let eocd = -1;
   for (let i = len - 22; i >= Math.max(0, len - 22 - 0xffff); i--) {
-    if (view.getUint32(i, true) === EOCD_SIG) {
+    // Solo un EOCD che chiude davvero l'archivio (un finto EOCD nel commento non vale).
+    if (view.getUint32(i, true) === EOCD_SIG && i + 22 + view.getUint16(i + 20, true) === len) {
       eocd = i;
       break;
     }

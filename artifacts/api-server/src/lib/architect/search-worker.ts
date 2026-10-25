@@ -20,10 +20,10 @@ parentPort.on("message", (m) => {
     return;
   }
   const re = new RegExp(m.pattern);
-  const glob = m.glob ? new RegExp(m.glob) : null;
+  const allowed = m.paths ? new Set(m.paths) : null;
   const results = [];
   outer: for (const [path, text] of files) {
-    if (glob && !glob.test(path)) continue;
+    if (allowed && !allowed.has(path)) continue;
     const lines = text.split("\\n");
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -107,7 +107,7 @@ export class RegexSearchWorker {
 
   async search(
     pattern: string,
-    glob: string | null,
+    paths: string[] | null,
     limits: { max: number; maxText: number; maxLine: number },
   ): Promise<SearchHit[]> {
     if (this.disabled) throw new RegexSearchUnavailable("disabilitata");
@@ -131,7 +131,7 @@ export class RegexSearchWorker {
           reject(e);
         },
       });
-      worker.postMessage({ type: "search", id, pattern, glob, ...limits });
+      worker.postMessage({ type: "search", id, pattern, paths, ...limits });
     });
   }
 

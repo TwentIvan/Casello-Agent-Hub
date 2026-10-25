@@ -347,3 +347,49 @@ function rawZip(entries: RawEntry[], opts: { zip64?: boolean } = {}): Uint8Array
   }
   return out;
 }
+
+describe("SourceTree: glob e EOCD", () => {
+  it("glob patologico: nessun blocco (DP, non regex)", async () => {
+    const tree = SourceTree.fromZip(zip({ [`src/${"a".repeat(50)}.ts`]: "x" }));
+    for (const glob of ["src/*a*a*a*a*a*a*a*a*aZ", "**a**a**a**a**a**a**a**a**aZ"]) {
+      const t0 = Date.now();
+      expect(await tree.search("x", { glob })).toEqual([]);
+      expect(Date.now() - t0).toBeLessThan(50);
+    }
+    await expect(tree.search("x", { glob: "a".repeat(201) })).rejects.toThrow(SourceTreeError);
+  });
+
+  it("semantica del glob", async () => {
+    const tree = SourceTree.fromZip(
+      zip({ "a.ts": "x", "src/b.ts": "x", "src/d/c.ts": "x", "src/d/e/f.ts": "x", "q/x.ts": "x" }),
+    );
+    const g = async (glob: string) =>
+      (await tree.search("x", { glob })).map((r) => r.path);
+    expect(await g("**/*.ts")).toEqual(["a.ts", "q/x.ts", "src/b.ts", "src/d/c.ts", "src/d/e/f.ts"]);
+    expect(await g("src/**/c.ts")).toEqual(["src/d/c.ts"]);
+    expect(await g("src/**/b.ts")).toEqual(["src/b.ts"]); // zero cartelle
+    expect(await g("src/***/b.ts")).toEqual(["src/b.ts"]);
+    expect(await g("src/**")).toEqual(["src/b.ts", "src/d/c.ts", "src/d/e/f.ts"]);
+    expect(await g("src/*")).toEqual(["src/b.ts"]);
+    expect(await g("src?b.ts")).toEqual([]); // ? non vale "/"
+    expect(await g("src/?.ts")).toEqual(["src/b.ts"]);
+  });
+
+  it("finto EOCD nel commento non vale", () => {
+    const good = zip({ "a.ts": "x" });
+    const fake = new Uint8Array(27); // EOCD finto + 5 byte di commento
+    new DataView(fake.buffer).setUint32(0, 0x06054b50, true);
+    // vero EOCD con commento = EOCD finto
+    const out = new Uint8Array(good.length + fake.length);
+    out.set(good);
+    out.set(fake, good.length);
+    new DataView(out.buffer).setUint16(good.length - 2, fake.length, true);
+    const tree = SourceTree.fromZip(out);
+    expect(tree.has("a.ts")).toBe(true);
+    // EOCD finto in coda senza commento corrispondente: archivio non valido
+    const bad = new Uint8Array(good.length + fake.length);
+    bad.set(good);
+    bad.set(fake, good.length);
+    expect(() => SourceTree.fromZip(bad)).toThrow(SourceTreeError);
+  });
+});

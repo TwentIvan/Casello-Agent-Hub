@@ -65,15 +65,17 @@ ammessi, come oggi), registrazione aperta, webhook di GitHub.
   `account_login`, `account_type` (`User` | `Organization`), `repository_selection` (`all` |
   `selected`), `created_at`, `updated_at`; unica su (`user_id`, `installation_id`).
 - **Installazione**: la console offre "Installa Casello su GitHub" →
-  `https://github.com/apps/<GITHUB_APP_SLUG>/installations/new`. GitHub torna al *Setup URL*
-  `GET /api/github/setup?installation_id=…&setup_action=…&code=…`. L'`installation_id` nell'URL non è
-  attendibile: con il `code` (autorizzazione utente durante l'installazione) si ottiene il token utente,
-  si legge `GET /user/installations` e si salvano/aggiornano **tutte e sole** le installazioni dell'App
-  visibili all'utente (quelle non più visibili vengono rimosse per quell'utente). Il setup richiede la
-  sessione Casello; senza, si torna al login. Se l'identità GitHub del token non è quella collegata
-  all'utente corrente (o è collegata a un altro) → errore, nessuna modifica.
-- Per aggiornare le installazioni si ripassa dal setup: "Gestisci su GitHub" porta alla pagina
-  dell'installazione, che al salvataggio torna al Setup URL. Nessuna route di aggiornamento separata.
+  `https://github.com/apps/<GITHUB_APP_SLUG>/installations/new`. Con "Request user authorization
+  (OAuth) during installation" GitHub non usa il Setup URL: torna alla **callback OAuth**
+  (`/api/auth/github/callback`) con `code`, `installation_id` e `setup_action`, senza il nostro `state`.
+  Un codice senza `state` valido non viene mai scambiato: se c'è una sessione Casello si riparte con il
+  flusso di collegamento (`/api/auth/github/link`, che GitHub approva subito), altrimenti si torna al
+  login. L'`installation_id` nell'URL non è mai usato.
+- **Sincronizzazione**: a ogni callback GitHub valida (login, collegamento) si legge
+  `GET /user/installations` con il token utente appena ottenuto e si salvano/aggiornano **tutte e sole**
+  le installazioni dell'App visibili all'utente (quelle non più visibili vengono rimosse per
+  quell'utente). "Gestisci su GitHub" porta alla pagina dell'installazione; al ritorno si ripassa dalla
+  callback. Nessuna route di aggiornamento separata.
 - **Elenco dei repository**: `GET /api/github/repos` → per ogni installazione dell'utente, token di
   installazione e `GET /installation/repositories` (paginato, al massimo 1000 repo in tutto);
   risposta: `{ installationId, fullName, defaultBranch, private }[]` ordinati per nome. Un'installazione
@@ -106,8 +108,9 @@ Nuove variabili dell'API, tutte facoltative: `GITHUB_APP_ID`, `GITHUB_APP_SLUG`,
 a capo veri sia `\n`). Se ne manca una, GitHub è **disattivato**: pulsanti nascosti, route GitHub → 404
 "GitHub non configurato", token manuale ancora disponibile; l'API parte comunque. Il login Google resta
 obbligatorio in produzione come oggi. Sull'App GitHub: Callback URL
-`${PUBLIC_APP_URL}/api/auth/github/callback`, Setup URL `${PUBLIC_APP_URL}/api/github/setup` (con
-"Redirect on update"). Solo per i test, come `OIDC_ISSUER`: `GITHUB_API_BASE` e `GITHUB_WEB_BASE`
+`${PUBLIC_APP_URL}/api/auth/github/callback` (usata anche al ritorno dall'installazione), nessun Setup
+URL. `GET /api/auth/providers` (pubblica) dice alla pagina di login se GitHub è disponibile. Identità e
+installazioni si gestiscono da una pagina **Account** raggiungibile dal menu utente. Solo per i test, come `OIDC_ISSUER`: `GITHUB_API_BASE` e `GITHUB_WEB_BASE`
 (ignorate in produzione).
 
 ## 7. Sicurezza

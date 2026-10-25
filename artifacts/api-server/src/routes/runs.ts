@@ -15,8 +15,7 @@ import {
 import { runRateLimit } from "../middlewares/rate-limit";
 import { ResumeConflictError, claimResume } from "../lib/run-executor";
 import { logger } from "../lib/logger";
-import { userTokenFrom } from "./agents";
-import { toPublicRun } from "./serializers";
+import { toPublicRun, userTokenFrom } from "./serializers";
 
 const router: IRouter = Router();
 

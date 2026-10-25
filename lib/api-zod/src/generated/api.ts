@@ -615,6 +615,10 @@ export const ResumeRunParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const ResumeRunHeader = zod.object({
+  "X-App-User-Token": zod.string().optional().describe('Token dell\'utente finale nell\'app, se quello dato all\'avvio non è più in memoria (riavvio del server o pausa lunga). Non viene mai salvato né scritto nei log.')
+})
+
 export const ResumeRunBody = zod.object({
   "decision": zod.enum(['approved', 'rejected'])
 })

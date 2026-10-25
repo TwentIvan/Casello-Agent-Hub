@@ -14,7 +14,7 @@ import {
   DeleteAppParams,
 } from "@workspace/api-zod";
 import { encryptSecret } from "../lib/secrets";
-import { uniqueSlug } from "../lib/slug";
+import { uniqueSlug, withSlugRetry } from "../lib/slug";
 import { toPublicApp } from "./serializers";
 
 const router: IRouter = Router();
@@ -26,12 +26,13 @@ router.get("/apps", async (_req, res) => {
 
 // Creazione dell'app e del suo agente generale in un'unica transazione. Lo slug segue la regola
 // della migrazione, che in caso di collisione usa l'id: si inserisce con uno slug provvisorio
-// univoco e lo si sostituisce appena noto l'id.
+// univoco e lo si sostituisce appena noto l'id. Se una creazione concorrente prende lo stesso slug,
+// la transazione fallisce sulla unique e si riprova da capo (withSlugRetry).
 router.post("/apps", async (req, res) => {
   const { serviceSecret, ...body } = CreateAppBody.parse(req.body);
   const serviceSecretEnc = serviceSecret !== undefined ? encryptSecret(serviceSecret) : null;
 
-  const app = await db.transaction(async (tx) => {
+  const app = await withSlugRetry(() => db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(appsTable)
       .values({ ...body, slug: `tmp-${randomUUID()}`, serviceSecretEnc })
@@ -52,7 +53,7 @@ router.post("/apps", async (req, res) => {
       status: "draft",
     });
     return created!;
-  });
+  }));
 
   res.status(201).json(CreateAppResponse.parse(toPublicApp(app)));
 });

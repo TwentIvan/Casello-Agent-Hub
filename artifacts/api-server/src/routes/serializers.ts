@@ -1,3 +1,4 @@
+import type { Request } from "express";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db, agentToolsTable, appToolsTable, type Agent, type App, type Run } from "@workspace/db";
 
@@ -66,12 +67,11 @@ export async function withToolIdsOne(agent: Agent) {
   return result!;
 }
 
-/** Violazione di un vincolo di unicità di Postgres (drizzle avvolge l'errore del driver in `cause`). */
-export function isUniqueViolation(err: unknown): boolean {
-  let current: unknown = err;
-  for (let i = 0; i < 3 && current; i++) {
-    if ((current as { code?: unknown }).code === "23505") return true;
-    current = (current as { cause?: unknown }).cause;
-  }
-  return false;
+/**
+ * Token dell'utente finale dall'header X-App-User-Token (vuoto = assente). Resta solo in memoria
+ * per la durata della run: mai salvato né scritto nei log (pino-http registra solo metodo e URL).
+ */
+export function userTokenFrom(req: Request): string | undefined {
+  const value = req.get("x-app-user-token")?.trim();
+  return value ? value : undefined;
 }

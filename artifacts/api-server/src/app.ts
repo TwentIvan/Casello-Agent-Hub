@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { sessionMiddleware } from "./lib/auth";
+import { errorHandler } from "./middlewares/error-handler";
 
 const app: Express = express();
 
@@ -60,5 +61,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(sessionMiddleware());
 
 app.use("/api", router);
+// Dopo il router: errori di validazione → 400, il resto → 500, sempre in JSON
+app.use("/api", errorHandler);
 
 export default app;

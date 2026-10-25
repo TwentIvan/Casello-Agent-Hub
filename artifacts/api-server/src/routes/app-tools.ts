@@ -14,7 +14,7 @@ import {
 } from "@workspace/api-zod";
 import { checkParamsSchema, checkPathPlaceholders, parseDefinition } from "../lib/tools/definition";
 import type { HttpDefinition, ToolKind } from "../lib/tools/types";
-import { isUniqueViolation } from "./serializers";
+import { isUniqueViolation } from "../lib/pg-errors";
 
 // Catalogo dei tool di un'app: i tool appartengono all'app e si assegnano agli agenti con
 // PUT /agents/:id/tools.
@@ -74,7 +74,7 @@ router.post("/apps/:id/tools", async (req, res) => {
       .returning();
     res.status(201).json(CreateAppToolResponse.parse(tool));
   } catch (err) {
-    if (!isUniqueViolation(err)) throw err;
+    if (!isUniqueViolation(err, "app_tools_app_id_name_unique")) throw err;
     res.status(409).json({ error: DUPLICATE_NAME });
   }
 });
@@ -116,7 +116,7 @@ router.patch("/apps/:id/tools/:toolId", async (req, res) => {
     }
     res.json(UpdateAppToolResponse.parse(tool));
   } catch (err) {
-    if (!isUniqueViolation(err)) throw err;
+    if (!isUniqueViolation(err, "app_tools_app_id_name_unique")) throw err;
     res.status(409).json({ error: DUPLICATE_NAME });
   }
 });

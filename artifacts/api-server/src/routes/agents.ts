@@ -1,6 +1,6 @@
-import { Router, type IRouter, type Request } from "express";
+import { Router, type IRouter } from "express";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { db, agentsTable, agentToolsTable, appToolsTable, runsTable } from "@workspace/db";
+import { db, agentsTable, agentToolsTable, appsTable, appToolsTable, runsTable } from "@workspace/db";
 import { runRateLimit } from "../middlewares/rate-limit";
 import {
   ListAgentsQueryParams,
@@ -22,18 +22,9 @@ import {
 } from "@workspace/api-zod";
 import { startRun } from "../lib/run-executor";
 import { logger } from "../lib/logger";
-import { toPublicRun, withToolIds, withToolIdsOne } from "./serializers";
+import { toPublicRun, userTokenFrom, withToolIds, withToolIdsOne } from "./serializers";
 
 const router: IRouter = Router();
-
-/**
- * Token dell'utente finale dall'header X-App-User-Token (vuoto = assente). Resta solo in memoria
- * per la durata della run: mai salvato né scritto nei log (pino-http registra solo metodo e URL).
- */
-export function userTokenFrom(req: Request): string | undefined {
-  const value = req.get("x-app-user-token")?.trim();
-  return value ? value : undefined;
-}
 
 router.get("/agents", async (req, res) => {
   const { appId } = ListAgentsQueryParams.parse(req.query);
@@ -48,6 +39,11 @@ router.get("/agents", async (req, res) => {
 // Gli agenti creati dalla UI sono sempre di area: il generale nasce con l'app
 router.post("/agents", async (req, res) => {
   const body = CreateAgentBody.parse(req.body);
+  const [app] = await db.select({ id: appsTable.id }).from(appsTable).where(eq(appsTable.id, body.appId)).limit(1);
+  if (!app) {
+    res.status(404).json({ error: "App non trovata" });
+    return;
+  }
   const [agent] = await db
     .insert(agentsTable)
     .values({ ...body, role: "area" })

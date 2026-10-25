@@ -1738,7 +1738,7 @@ export const resumeRun = async (id: number,
 
 
 
-export const getResumeRunMutationOptions = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+export const getResumeRunMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeRun>>, TError,{id: number;data: BodyType<RunResume>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof resumeRun>>, TError,{id: number;data: BodyType<RunResume>}, TContext> => {
 
@@ -1767,12 +1767,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type ResumeRunMutationResult = NonNullable<Awaited<ReturnType<typeof resumeRun>>>
     export type ResumeRunMutationBody = BodyType<RunResume>
-    export type ResumeRunMutationError = ErrorType<NotFoundResponse | ConflictResponse>
+    export type ResumeRunMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
 
     /**
  * @summary Riprende un'esecuzione in attesa del client
  */
-export const useResumeRun = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+export const useResumeRun = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeRun>>, TError,{id: number;data: BodyType<RunResume>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof resumeRun>>,

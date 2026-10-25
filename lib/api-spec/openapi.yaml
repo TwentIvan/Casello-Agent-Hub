@@ -470,6 +470,14 @@ paths:
         riavvia in background. Risponde 409 se la run non è in pausa o la pausa è scaduta.
       parameters:
         - $ref: "#/components/parameters/IdParam"
+        - name: X-App-User-Token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: >-
+            Token dell'utente finale nell'app, se quello dato all'avvio non è più in memoria
+            (riavvio del server o pausa lunga). Non viene mai salvato né scritto nei log.
       requestBody:
         required: true
         content:
@@ -483,6 +491,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Run"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":

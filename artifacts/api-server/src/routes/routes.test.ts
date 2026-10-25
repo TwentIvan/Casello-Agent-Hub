@@ -283,6 +283,54 @@ describe("agenti", () => {
   });
 });
 
+describe("errori di richiesta", () => {
+  it("tool senza kind → 400 JSON con il percorso del campo", async () => {
+    const app = await createApp();
+    const { kind: _kind, ...withoutKind } = HTTP_TOOL;
+    const res = await api("POST", `/apps/${app.id}/tools`, withoutKind);
+    expect(res.status).toBe(400);
+    expect(res.json.error).toMatch(/^richiesta non valida: kind: /);
+  });
+
+  it("resume con decision non ammessa → 400", async () => {
+    const res = await api("POST", "/runs/1/resume", { decision: "maybe" });
+    expect(res.status).toBe(400);
+    expect(res.json.error).toContain("decision");
+  });
+
+  it(":id non numerico → 400 JSON", async () => {
+    const res = await api("GET", "/apps/abc");
+    expect(res.status).toBe(400);
+    expect(res.json.error).toContain("id");
+  });
+
+  it("JSON malformato → 400 JSON", async () => {
+    const res = await fetch(`${base}/api/apps`, { method: "POST", headers: { "content-type": "application/json" }, body: "{non json" });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("JSON");
+  });
+
+  it("errore inatteso (Postgres rifiuta il byte NUL) → 500 JSON generico", async () => {
+    const res = await api("POST", "/apps", { name: "Mis\u0000ter", baseUrl: "http://x" });
+    expect(res.status).toBe(500);
+    expect(res.json).toEqual({ error: "Errore interno" });
+  });
+
+  it("POST /agents con app inesistente → 404", async () => {
+    const res = await api("POST", "/agents", { appId: 9999, name: "Rosa" });
+    expect(res.status).toBe(404);
+    expect(res.json.error).toBe("App non trovata");
+  });
+
+  it("creazioni concorrenti con lo stesso nome: tutte 201, slug distinti", async () => {
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () => api("POST", "/apps", { name: "Mister", baseUrl: "http://mister.example" })),
+    );
+    expect(results.map((r) => r.status)).toEqual([201, 201, 201, 201]);
+    expect(new Set(results.map((r) => r.json.slug)).size).toBe(4);
+  });
+});
+
 describe("run", () => {
   async function pausedRun(): Promise<number> {
     const app = await createApp();

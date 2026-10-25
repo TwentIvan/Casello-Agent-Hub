@@ -108,4 +108,5 @@ arriva da `GET /api/models` (costante in `lib/models.ts`: va tenuta allineata a 
 - Non aggiungere `artifacts/casello` ai `references` del `tsconfig.json` di root (leaf package).
 - `pnpm-workspace.yaml` ha `minimumReleaseAge`: una versione npm uscita da meno di un giorno non si installa.
 - `vite.config.ts` del frontend pretende `PORT` e `BASE_PATH` anche solo per buildare.
-- I residui di Replit sono stati rimossi; restano solo i plugin `@replit/*` di `artifacts/mockup-sandbox`.
+- Replit è dismesso: nessuna dipendenza `@replit/*` nel workspace. La cartella `gateway/` è storica (la
+  copia viva di LiteLLM è nel repo `TwentIvan/AIGateway`) e la sua documentazione cita ancora Replit.

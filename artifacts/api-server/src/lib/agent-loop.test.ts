@@ -3,6 +3,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import type { ChatResult } from "./ai-gateway";
 import {
   DEFAULT_LIMITS,
+  PendingMismatchError,
   resolvePending,
   runAgentLoop,
   type LoopDeps,
@@ -259,6 +260,45 @@ describe("runAgentLoop", () => {
     expect(JSON.stringify(out.state)).toBe(before);
   });
 
+  it("resolvePending con id diverso dalla testa della coda → errore", async () => {
+    const { deps } = makeDeps([
+      callTools([
+        { id: "c1", name: "proponi_scambio", args: "{}" },
+        { id: "c2", name: "leggi_rosa", args: "{}" },
+      ]),
+    ]);
+    const out = await runAgentLoop(initialState(), deps);
+    if (out.type !== "paused") throw new Error("atteso paused");
+    expect(() => resolvePending(out.state, { ...out.pending, toolCallId: "c2" }, { ok: true, content: "x" })).toThrow(
+      PendingMismatchError,
+    );
+    expect(() => resolvePending(out.state, { ...out.pending, toolCallId: "zz" }, { ok: true, content: "x" })).toThrow(
+      PendingMismatchError,
+    );
+  });
+
+  it("resolvePending due volte sulla stessa azione → errore, nessun messaggio duplicato", async () => {
+    const { deps } = makeDeps([callTools([{ id: "c1", name: "proponi_scambio", args: "{}" }])]);
+    const out = await runAgentLoop(initialState(), deps);
+    if (out.type !== "paused") throw new Error("atteso paused");
+    const once = resolvePending(out.state, out.pending, { ok: true, content: "ok" });
+    expect(() => resolvePending(once, out.pending, { ok: true, content: "ok" })).toThrow(PendingMismatchError);
+    expect(once.messages.filter((m) => m.role === "tool")).toHaveLength(1);
+  });
+
+  it("id duplicati dal modello: resolvePending toglie solo la testa", async () => {
+    const { deps } = makeDeps([
+      callTools([
+        { id: "dup", name: "proponi_scambio", args: "{}" },
+        { id: "dup", name: "leggi_rosa", args: "{}" },
+      ]),
+    ]);
+    const out = await runAgentLoop(initialState(), deps);
+    if (out.type !== "paused") throw new Error("atteso paused");
+    const resumed = resolvePending(out.state, out.pending, { ok: true, content: "ok" });
+    expect(resumed.queue).toEqual([{ id: "dup", name: "leggi_rosa", arguments: "{}" }]);
+  });
+
   it("azione di interfaccia → pausa ui", async () => {
     const { deps, executeTool } = makeDeps([callTools([{ id: "c1", name: "apri_pagina", args: '{"pagina":"rosa"}' }])]);
     const out = await runAgentLoop(initialState(), deps);
@@ -357,29 +397,34 @@ describe("runAgentLoop", () => {
 
   it("le chiamate non readOnly sono eseguite in sequenza", async () => {
     const scrivi = makeTool({ name: "scrivi", readOnly: false });
-    let running = 0;
-    let maxRunning = 0;
+    const started: string[] = [];
+    const resolvers: ((r: ToolResult) => void)[] = [];
     const { deps } = makeDeps(
       [
         callTools([
-          { id: "c1", name: "scrivi", args: "{}" },
-          { id: "c2", name: "scrivi", args: "{}" },
+          { id: "c1", name: "scrivi", args: '{"n":1}' },
+          { id: "c2", name: "scrivi", args: '{"n":2}' },
         ]),
         reply("ok"),
       ],
       {
         tools: [scrivi],
-        executeTool: async () => {
-          running++;
-          maxRunning = Math.max(maxRunning, running);
-          await new Promise((r) => setTimeout(r, 5));
-          running--;
-          return { ok: true, content: "ok" };
-        },
+        executeTool: (_tool, args) =>
+          new Promise<ToolResult>((resolve) => {
+            started.push(String(args.n));
+            resolvers.push(resolve);
+          }),
       },
     );
-    await runAgentLoop(initialState(), deps);
-    expect(maxRunning).toBe(1);
+    const promise = runAgentLoop(initialState(), deps);
+    await vi.waitFor(() => expect(started).toEqual(["1"]));
+    // la seconda non parte finché la prima non termina
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(started).toEqual(["1"]);
+    resolvers[0]({ ok: true, content: "ok" });
+    await vi.waitFor(() => expect(started).toEqual(["1", "2"]));
+    resolvers[1]({ ok: true, content: "ok" });
+    expect((await promise).type).toBe("finished");
   });
 
   it("eccezione di executeTool → errore al modello, il turno continua", async () => {
@@ -418,8 +463,14 @@ describe("runAgentLoop", () => {
   });
 
   it("limite di token", async () => {
-    const { deps, chat } = makeDeps([
-      callTools([{ id: "c1", name: "leggi_rosa", args: "{}" }], 70_000),
+    const { deps, chat, executeTool, steps } = makeDeps([
+      callTools(
+        [
+          { id: "c1", name: "leggi_rosa", args: "{}" },
+          { id: "c2", name: "proponi_scambio", args: "{}" },
+        ],
+        70_000,
+      ),
       reply("mai"),
     ]);
     const out = await runAgentLoop(initialState(), deps);
@@ -429,6 +480,21 @@ describe("runAgentLoop", () => {
     expect(out.error).toBe("limite di token per turno superato");
     expect(chat).toHaveBeenCalledTimes(1);
     expect(out.state.tokens).toBe(70_005);
+    // le chiamate richieste non vengono eseguite né messe in pausa
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(steps.map((s) => s.type)).toEqual(["model"]);
+    expect(out.state.queue).toEqual([]);
+    expect(out.state.messages.slice(-2)).toEqual([
+      { role: "tool", tool_call_id: "c1", content: "non eseguito: limite di token per turno superato" },
+      { role: "tool", tool_call_id: "c2", content: "non eseguito: limite di token per turno superato" },
+    ]);
+    expectValidHistory(out.state.messages);
+  });
+
+  it("limite di token raggiunto con una risposta finale → finished", async () => {
+    const { deps } = makeDeps([reply("eccola", 70_000)]);
+    const out = await runAgentLoop(initialState(), deps);
+    expect(out).toMatchObject({ type: "finished", content: "eccola" });
   });
 
   it("limite di tempo attivo e tempo in pausa escluso", async () => {
@@ -443,7 +509,7 @@ describe("runAgentLoop", () => {
       clock += 50_000; // ogni chiamata al modello dura 50 s
       return responses.shift()!;
     });
-    const { deps } = makeDeps([], { now: () => clock, chat });
+    const { deps, executeTool } = makeDeps([], { now: () => clock, chat });
     const out = await runAgentLoop(initialState(), deps);
     if (out.type !== "paused") throw new Error("atteso paused");
     expect(out.state.activeMs).toBe(50_000);
@@ -451,22 +517,31 @@ describe("runAgentLoop", () => {
     clock += 9 * 60_000; // la pausa non conta come tempo attivo
     const resumed = resolvePending(JSON.parse(JSON.stringify(out.state)), out.pending, { ok: true, content: "ok" });
     const final = await runAgentLoop(resumed, deps);
-    // 50 s → 100 s (seconda chiamata) → 150 s (terza): la quarta è bloccata
+    // 50 s → 100 s (seconda chiamata, c2 eseguito) → 150 s (terza: c3 non eseguito)
     expect(final).toMatchObject({ type: "failed", error: "tempo massimo del turno superato" });
     expect(chat).toHaveBeenCalledTimes(3);
+    expect(executeTool).toHaveBeenCalledTimes(1);
     expect(final.state.activeMs).toBe(150_000);
+    expect(final.state.messages.at(-1)).toEqual({
+      role: "tool",
+      tool_call_id: "c3",
+      content: "non eseguito: tempo massimo del turno superato",
+    });
+    expectValidHistory(final.state.messages);
   });
 
-  it("tempo massimo superato prima della chiamata al modello", async () => {
+  it("tempo massimo superato durante la chiamata al modello: tool non eseguiti", async () => {
     let clock = 0;
     const chat = vi.fn(async () => {
       clock += 130_000;
       return callTools([{ id: "c1", name: "leggi_rosa", args: "{}" }]);
     });
-    const { deps } = makeDeps([], { now: () => clock, chat });
+    const { deps, executeTool } = makeDeps([], { now: () => clock, chat });
     const out = await runAgentLoop(initialState(), deps);
     expect(out).toMatchObject({ type: "failed", error: "tempo massimo del turno superato" });
     expect(chat).toHaveBeenCalledTimes(1);
+    expect(executeTool).not.toHaveBeenCalled();
+    expectValidHistory(out.state.messages);
   });
 
   it("errore del modello → failed con il messaggio", async () => {

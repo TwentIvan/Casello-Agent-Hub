@@ -13,6 +13,8 @@ export interface LoopLimits {
   maxTokens: number;
 }
 
+// Confronto con `>=`: il limite è raggiunto al valore indicato
+// (es. con maxRounds 8 la nona chiamata al modello non parte; con 60 000 token esatti il turno si ferma)
 export const DEFAULT_LIMITS: LoopLimits = { maxRounds: 8, maxActiveMs: 120_000, maxTokens: 60_000 };
 
 export interface ToolCall {
@@ -130,14 +132,30 @@ function toolMessage(toolCallId: string, content: string): ChatCompletionMessage
   return { role: "tool", tool_call_id: toolCallId, content };
 }
 
+/** L'azione in sospeso non corrisponde alla testa della coda (id errato o già risolta) */
+export class PendingMismatchError extends Error {
+  constructor(toolCallId: string, headId: string | undefined) {
+    super(
+      headId === undefined
+        ? `l'azione in sospeso "${toolCallId}" non è in attesa: la coda è vuota`
+        : `l'azione in sospeso "${toolCallId}" non corrisponde alla chiamata in attesa "${headId}"`,
+    );
+    this.name = "PendingMismatchError";
+  }
+}
+
 /**
  * Aggiunge il risultato della chiamata in sospeso come messaggio `tool` e la toglie dalla coda.
+ * La chiamata in pausa è sempre in testa alla coda: se l'id non coincide (azione errata o già
+ * risolta) lancia `PendingMismatchError` invece di aggiungere un messaggio orfano o duplicato.
  * Non modifica lo stato ricevuto.
  */
 export function resolvePending(state: LoopState, pending: PendingAction, result: ToolResult): LoopState {
+  const headId = state.queue[0]?.id;
+  if (headId !== pending.toolCallId) throw new PendingMismatchError(pending.toolCallId, headId);
   const next = cloneState(state);
   next.messages.push(toolMessage(pending.toolCallId, result.content));
-  next.queue = next.queue.filter((c) => c.id !== pending.toolCallId);
+  next.queue.shift();
   return next;
 }
 
@@ -277,6 +295,21 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
         function: { name: c.name, arguments: c.arguments },
       })),
     });
+
+    // Limiti superati da questa stessa chiamata: le richieste non vengono eseguite (né messe in
+    // pausa); ognuna riceve un messaggio `tool` così la storia resta valida per i turni successivi
+    syncActive();
+    const exceeded =
+      state.tokens >= limits.maxTokens
+        ? "limite di token per turno superato"
+        : state.activeMs >= limits.maxActiveMs
+          ? "tempo massimo del turno superato"
+          : null;
+    if (exceeded) {
+      for (const c of reply.toolCalls) state.messages.push(toolMessage(c.id, `non eseguito: ${exceeded}`));
+      return finish({ type: "failed", error: exceeded, state });
+    }
+
     state.queue = reply.toolCalls.map((c) => ({ id: c.id, name: c.name, arguments: c.arguments }));
   }
 }

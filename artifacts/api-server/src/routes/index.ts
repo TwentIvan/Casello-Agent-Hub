@@ -5,10 +5,14 @@ import agentsRouter from "./agents";
 import runsRouter from "./runs";
 import dashboardRouter from "./dashboard";
 import modelsRouter from "./models";
+import { authRouter, requireAuth } from "../lib/auth";
 
 const router: IRouter = Router();
 
+// Pubbliche: healthcheck e login. Tutto il resto richiede una sessione.
 router.use(healthRouter);
+router.use(authRouter());
+router.use(requireAuth);
 router.use(appsRouter);
 router.use(agentsRouter);
 router.use(runsRouter);

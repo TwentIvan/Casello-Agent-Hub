@@ -3,13 +3,16 @@ import cors, { type CorsOptions } from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { sessionMiddleware } from "./lib/auth";
 
 const app: Express = express();
 
 const isProduction = process.env.NODE_ENV === "production";
 
 // In produzione davanti all'API ci sono due proxy (Traefik di Coolify, poi nginx di casello-web):
-// req.ip deve essere il client reale, non nginx, per il rate limit delle run.
+// req.ip deve essere il client reale, non nginx, per il rate limit delle run, e X-Forwarded-Proto
+// dice se la richiesta originale era HTTPS, necessario per il cookie di sessione "secure".
+// Un numero di hop e non `true`: con `true` l'IP arriverebbe da X-Forwarded-For, falsificabile.
 if (isProduction) app.set("trust proxy", 2);
 
 // CORS: in produzione solo l'origine pubblica della UI (PUBLIC_APP_URL), in dev qualsiasi localhost.
@@ -54,6 +57,7 @@ app.use(
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(sessionMiddleware());
 
 app.use("/api", router);
 

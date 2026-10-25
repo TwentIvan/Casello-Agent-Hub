@@ -1,13 +1,34 @@
 import { Switch, Route, Router as WouterRouter } from "wouter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { getGetCurrentUserQueryKey } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthGate } from "@/components/auth-gate";
 import { AppShell } from "@/components/layout/app-shell";
+import { isUnauthorized } from "@/lib/auth";
 import Dashboard from "@/pages/dashboard";
 import ComingSoon from "@/pages/coming-soon";
 import NotFound from "@/pages/not-found";
 
-const queryClient = new QueryClient();
+const currentUserKey = getGetCurrentUserQueryKey();
+
+// Un 401 su qualunque chiamata vuol dire sessione scaduta: si ricontrolla l'utente e AuthGate
+// mostra la pagina di login. Il 401 della query utente stessa va escluso, o si ricarica all'infinito.
+function onApiError(error: unknown, queryKey?: readonly unknown[]) {
+  const isCurrentUserQuery =
+    queryKey?.length === currentUserKey.length && queryKey.every((part, i) => part === currentUserKey[i]);
+  if (isUnauthorized(error) && !isCurrentUserQuery) {
+    void queryClient.invalidateQueries({ queryKey: currentUserKey });
+  }
+}
+
+const queryClient: QueryClient = new QueryClient({
+  queryCache: new QueryCache({ onError: (error, query) => onApiError(error, query.queryKey) }),
+  mutationCache: new MutationCache({ onError: (error) => onApiError(error) }),
+  defaultOptions: {
+    queries: { retry: (failureCount, error) => !isUnauthorized(error) && failureCount < 3 },
+  },
+});
 
 function Router() {
   return (
@@ -28,7 +49,9 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
+          <AuthGate>
+            <Router />
+          </AuthGate>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

@@ -49,3 +49,11 @@ CREATE TABLE "runs" (
 ALTER TABLE "agents" ADD CONSTRAINT "agents_app_id_apps_id_fk" FOREIGN KEY ("app_id") REFERENCES "public"."apps"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "tools" ADD CONSTRAINT "tools_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "runs" ADD CONSTRAINT "runs_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;
+
+CREATE TABLE "sessions" (
+	"sid" varchar PRIMARY KEY NOT NULL,
+	"sess" json NOT NULL,
+	"expire" timestamp (6) NOT NULL
+);
+
+CREATE INDEX "IDX_session_expire" ON "sessions" USING btree ("expire");

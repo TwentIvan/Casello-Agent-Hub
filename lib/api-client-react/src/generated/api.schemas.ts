@@ -13,6 +13,14 @@ export interface ErrorResponse {
   error: string;
 }
 
+export interface CurrentUser {
+  email: string;
+  /** @nullable */
+  name: string | null;
+  /** @nullable */
+  picture: string | null;
+}
+
 export type AppStatus = typeof AppStatus[keyof typeof AppStatus];
 
 
@@ -183,6 +191,11 @@ export interface DashboardStats {
   /** @nullable */
   avgDurationMs?: number | null;
 }
+
+/**
+ * Login richiesto
+ */
+export type UnauthorizedResponse = ErrorResponse;
 
 /**
  * Risorsa non trovata

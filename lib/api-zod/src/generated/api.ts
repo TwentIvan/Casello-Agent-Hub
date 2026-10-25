@@ -18,6 +18,22 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * @summary Utente della sessione corrente
+ */
+export const GetCurrentUserResponse = zod.object({
+  "email": zod.string(),
+  "name": zod.string().nullable(),
+  "picture": zod.string().nullable()
+})
+
+
+/**
+ * @summary Chiude la sessione
+ */
+export const LogoutResponse = zod.void()
+
+
+/**
  * @summary Elenca tutte le app registrate
  */
 export const ListAppsResponseItem = zod.object({

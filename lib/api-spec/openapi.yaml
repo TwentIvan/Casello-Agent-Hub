@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Login Google e sessione (tutte le altre route richiedono la sessione, tranne /healthz)
   - name: apps
     description: Applicazioni registrate
   - name: agents
@@ -37,6 +39,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ─── Auth ───────────────────────────────────────────────────────────────────
+  # /auth/login e /auth/callback sono redirect del flusso OIDC (Google), non chiamate JSON.
+
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [auth]
+      summary: Utente della sessione corrente
+      responses:
+        "200":
+          description: Utente autenticato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUser"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Chiude la sessione
+      responses:
+        "204":
+          description: Sessione chiusa
 
   # ─── Apps ───────────────────────────────────────────────────────────────────
 
@@ -383,6 +412,13 @@ components:
         type: integer
 
   responses:
+    Unauthorized:
+      description: Login richiesto
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
     NotFound:
       description: Risorsa non trovata
       content:
@@ -406,6 +442,19 @@ components:
           type: string
       required:
         - error
+
+    # ── Auth ───────────────────────────────────────────────────────────────────
+
+    CurrentUser:
+      type: object
+      required: [email, name, picture]
+      properties:
+        email:
+          type: string
+        name:
+          type: ["string", "null"]
+        picture:
+          type: ["string", "null"]
 
     # ── App ────────────────────────────────────────────────────────────────────
 

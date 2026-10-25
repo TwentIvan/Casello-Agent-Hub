@@ -125,7 +125,9 @@ export function safeReturnTo(value: unknown): string {
   // eslint-disable-next-line no-control-regex
   if (typeof value !== "string" || !/^\/(?![/\\])/.test(value) || /[\\\x00-\x1f\x7f]/.test(value)) return "/";
   try {
-    if (new URL(value, RETURN_TO_BASE).origin !== RETURN_TO_BASE) return "/";
+    const url = new URL(value, RETURN_TO_BASE);
+    // Dopo la normalizzazione (`/..//evil.com`, `/.%2e//evil.com`) il percorso non deve iniziare con `//`
+    if (url.origin !== RETURN_TO_BASE || url.pathname.startsWith("//")) return "/";
   } catch {
     return "/";
   }

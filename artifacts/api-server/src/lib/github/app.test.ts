@@ -76,6 +76,7 @@ beforeEach(() => {
   clearInstallationTokenCache();
   gh.requests.length = 0;
   gh.failWith = null;
+  gh.failHeaders = {};
   gh.revoked.clear();
   gh.tokenTtlMs = 3_600_000;
   gh.installations.clear();
@@ -238,6 +239,80 @@ describe("listInstallationRepos", () => {
   });
 });
 
+/** Finto upstream che risponde sempre con pagine piene di elementi malformati; conta le richieste di elenco. */
+async function withMalformedUpstream(run: (apiBase: string, listRequests: () => number) => Promise<void>): Promise<void> {
+  let listed = 0;
+  const srv = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      const path = req.url ?? "";
+      res.setHeader("content-type", "application/json");
+      if (req.method === "POST" && path.includes("/access_tokens")) {
+        res.writeHead(201).end(JSON.stringify({ token: "ghs_x", expires_at: new Date(Date.now() + 3_600_000).toISOString() }));
+        return;
+      }
+      listed++;
+      const junk = Array.from({ length: 100 }, () => ({}));
+      res.writeHead(200).end(JSON.stringify(path.startsWith("/installation/repositories") ? { repositories: junk } : { installations: junk }));
+    });
+  });
+  await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+  try {
+    await run(`http://127.0.0.1:${(srv.address() as AddressInfo).port}`, () => listed);
+  } finally {
+    srv.closeAllConnections();
+    await new Promise<void>((r) => srv.close(() => r()));
+  }
+}
+
+describe("tetto di pagine", () => {
+  it("listInstallationRepos: al massimo 10 pagine anche se gli elementi sono tutti scartati", async () => {
+    await withMalformedUpstream(async (apiBase, listed) => {
+      expect(await listInstallationRepos({ ...cfg, apiBase }, 77)).toEqual([]);
+      expect(listed()).toBe(10);
+    });
+  });
+
+  it("listUserInstallations: al massimo 10 pagine anche se gli elementi sono tutti scartati", async () => {
+    await withMalformedUpstream(async (apiBase, listed) => {
+      expect(await listUserInstallations({ ...cfg, apiBase }, USER_TOKEN)).toEqual([]);
+      expect(listed()).toBe(10);
+    });
+  });
+});
+
+describe("403 per rate limit", () => {
+  beforeEach(() => {
+    gh.addInstallation({ id: 7, appId: Number(gh.appId), accountLogin: "ivan", accountType: "User", repositorySelection: "all" }, []);
+    gh.addUser(USER_TOKEN, { id: 1, login: "ivanlt", name: null, avatarUrl: null }, { emails: [], installations: [7] });
+    gh.failWith = () => 403;
+  });
+
+  it.each([
+    ["x-ratelimit-remaining: 0", { "x-ratelimit-remaining": "0" }],
+    ["retry-after", { "retry-after": "60" }],
+  ])("con %s: GitHub non risponde (403), su ogni chiamata", async (_name, headers) => {
+    gh.failHeaders = headers;
+    await expectGithubError(installationToken(cfg, 7), UNAVAILABLE, 403);
+    await expectGithubError(listInstallationRepos(cfg, 7), UNAVAILABLE, 403);
+    await expectGithubError(repoInstallationId(cfg, "ivan/mister"), UNAVAILABLE, 403);
+    await expectGithubError(getGithubUser(cfg, USER_TOKEN), UNAVAILABLE, 403);
+    await expectGithubError(getVerifiedEmails(cfg, USER_TOKEN), UNAVAILABLE, 403);
+    await expectGithubError(listUserInstallations(cfg, USER_TOKEN), UNAVAILABLE, 403);
+    await expectGithubError(exchangeCode(cfg, "codice", null), UNAVAILABLE, 403);
+  });
+
+  it("403 senza header di limite: resta un rifiuto di accesso", async () => {
+    await expectGithubError(installationToken(cfg, 7), NO_ACCESS, 403);
+    await expectGithubError(getGithubUser(cfg, USER_TOKEN), "accesso con GitHub non riuscito", 403);
+  });
+
+  it("x-ratelimit-remaining diverso da 0: resta un rifiuto di accesso", async () => {
+    gh.failHeaders = { "x-ratelimit-remaining": "42" };
+    await expectGithubError(installationToken(cfg, 7), NO_ACCESS, 403);
+  });
+});
+
 describe("repoInstallationId", () => {
   it("id dell'installazione che vede il repo, null se nessuna (404)", async () => {
     gh.addInstallation({ id: 12, appId: Number(gh.appId), accountLogin: "ivan", accountType: "User", repositorySelection: "selected" }, [
@@ -266,6 +341,7 @@ describe("OAuth e dati dell'utente", () => {
     expect(await exchangeCode(cfg, "codice-1", "verifier-abc")).toBe(USER_TOKEN);
     const req = gh.requests.find((r) => r.host === "web")!;
     expect(req).toMatchObject({ method: "POST", path: "/login/oauth/access_token" });
+    expect(req.accept).toBe("application/json");
     expect(req.body).toEqual({ client_id: gh.clientId, client_secret: "***", code: "codice-1", code_verifier: "***" });
   });
 

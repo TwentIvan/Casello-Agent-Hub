@@ -31,7 +31,8 @@ const MAX_JSON_BYTES = 1_048_576;
 const API_VERSION = "2022-11-28";
 const PER_PAGE = 100;
 const MAX_REPOS = 1000;
-const MAX_INSTALLATION_PAGES = 10;
+/** Tetto di pagine per ogni elenco paginato: un upstream che risponde sempre con elementi scartati non fa girare il ciclo all'infinito. */
+const MAX_PAGES = 10;
 const JWT_BACKDATE_S = 60;
 const JWT_TTL_S = 540;
 /** Un token di installazione in cache si riusa solo se scade fra più di 5 minuti. */
@@ -99,6 +100,11 @@ async function call(
   if (res.status >= 500 || res.status === 429 || (res.status >= 300 && res.status < 400)) {
     await res.body?.cancel().catch(() => {});
     throw new GithubError(GITHUB_MESSAGES.unavailable, res.status);
+  }
+  // 403 per limite di richieste (primario o secondario): GitHub non è disponibile, non è un rifiuto di accesso
+  if (res.status === 403 && (res.headers.get("x-ratelimit-remaining") === "0" || res.headers.has("retry-after"))) {
+    await res.body?.cancel().catch(() => {});
+    throw new GithubError(GITHUB_MESSAGES.unavailable, 403);
   }
   if (!res.ok) {
     await res.body?.cancel().catch(() => {});
@@ -187,7 +193,7 @@ export async function listInstallationRepos(
 ): Promise<{ fullName: string; defaultBranch: string; private: boolean }[]> {
   const token = await installationToken(cfg, installationId);
   const out: { fullName: string; defaultBranch: string; private: boolean }[] = [];
-  for (let page = 1; out.length < MAX_REPOS; page++) {
+  for (let page = 1; page <= MAX_PAGES && out.length < MAX_REPOS; page++) {
     const { status, json } = await call(cfg, {
       base: "api",
       method: "GET",
@@ -267,7 +273,7 @@ export async function listUserInstallations(
   userToken: string,
 ): Promise<{ installationId: number; accountLogin: string; accountType: string; repositorySelection: string }[]> {
   const out: { installationId: number; accountLogin: string; accountType: string; repositorySelection: string }[] = [];
-  for (let page = 1; page <= MAX_INSTALLATION_PAGES; page++) {
+  for (let page = 1; page <= MAX_PAGES; page++) {
     const { status, json } = await userGet(cfg, userToken, `/user/installations?per_page=${PER_PAGE}&page=${page}`);
     if (!isObj(json) || !Array.isArray(json["installations"])) throw badShape(status);
     const list = json["installations"] as unknown[];

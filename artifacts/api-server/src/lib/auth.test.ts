@@ -120,6 +120,9 @@ describe("safeReturnTo", () => {
   it.each([
     ["/\\evil.com", "/"],
     ["//evil.com", "/"],
+    ["/..//evil.com", "/"],
+    ["/.%2e//evil.com", "/"],
+    ["/%2e%2e//evil.com", "/"],
     ["/\t/evil.com", "/"],
     ["/\n/evil.com", "/"],
     ["/runs\\x", "/"],

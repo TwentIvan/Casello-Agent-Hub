@@ -64,6 +64,8 @@ export interface FakeGithubRequest {
   body: unknown;
   /** Header Authorization così come ricevuto. */
   auth: string | undefined;
+  /** Header Accept così come ricevuto. */
+  accept: string | undefined;
 }
 
 export interface FakeGithub {
@@ -100,6 +102,8 @@ export interface FakeGithub {
   authorizeAs: string | null;
   /** Se restituisce uno stato, la richiesta riceve quello (es. 500) invece della risposta normale. */
   failWith: ((req: FakeGithubRequest) => number | null) | null;
+  /** Header aggiunti alle risposte forzate da `failWith` (es. `x-ratelimit-remaining: 0`). */
+  failHeaders: Record<string, string>;
   requests: FakeGithubRequest[];
   /** Registra utente, email e installazioni visibili sotto il token utente indicato. */
   addUser(userToken: string, user: FakeGithubUser, opts?: { emails?: FakeGithubEmail[]; installations?: number[] }): void;
@@ -195,6 +199,7 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
     tokenTtlMs: 3_600_000,
     authorizeAs: null,
     failWith: null,
+    failHeaders: {},
     requests: [],
     addUser(userToken, user, o = {}) {
       fake.users.set(userToken, user);
@@ -396,10 +401,14 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
       void (async () => {
         const url = new URL(req.url ?? "/", "http://fake.github");
         const body = await readBody(req);
-        const entry: FakeGithubRequest = { host, method: req.method ?? "GET", path: url.pathname + url.search, body: redact(body), auth: req.headers.authorization };
+        const entry: FakeGithubRequest = { host, method: req.method ?? "GET", path: url.pathname + url.search, body: redact(body), auth: req.headers.authorization, accept: req.headers.accept };
         fake.requests.push(entry);
         const forced = fake.failWith?.(entry) ?? null;
-        if (forced !== null) return send(res, forced, { message: "forced failure" });
+        if (forced !== null) {
+          res.writeHead(forced, { "content-type": "application/json; charset=utf-8", ...fake.failHeaders });
+          res.end(JSON.stringify({ message: "forced failure" }));
+          return;
+        }
         await handle(req, res, url, body);
       })().catch(() => {
         if (!res.headersSent) res.writeHead(500);

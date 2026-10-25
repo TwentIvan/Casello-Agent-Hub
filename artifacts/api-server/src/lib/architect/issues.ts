@@ -16,10 +16,24 @@ function cleanTitle(raw: string): string {
   return title || "Senza titolo";
 }
 
+/** Testo libero del modello: un `#` a inizio riga non deve diventare un'intestazione. */
+function text(raw: string): string {
+  return raw.replace(/^( {0,3})#/gm, "$1\\#");
+}
+
+/** Blocco di codice con una recinzione più lunga di ogni serie di apici inversi contenuta. */
+function fenced(raw: string): string {
+  const longest = Math.max(0, ...[...raw.matchAll(/`+/g)].map((m) => m[0].length));
+  const fence = "`".repeat(Math.max(3, longest + 1));
+  return `${fence}\n${raw}\n${fence}`;
+}
+
+const oneLine = (raw: string) => raw.replace(/\s+/g, " ").trim();
+
 function evidenceLines(evidence: Evidence[]): string {
   if (!evidence.length) return "Nessuna prova allegata.";
   return evidence
-    .map((e) => `- ${e.source}: ${e.location.replace(/\s+/g, " ")}${e.note ? ` (${e.note.replace(/\s+/g, " ")})` : ""}`)
+    .map((e) => `- ${e.source}: ${oneLine(e.location)}${e.note ? ` (${oneLine(e.note)})` : ""}`)
     .join("\n");
 }
 
@@ -42,11 +56,11 @@ function sectionsOf(item: AnalysisItem, depTitles: string[]): Sections {
         const c = data as unknown as CompletionItem;
         return {
           title: c.title,
-          contesto: `Area: ${c.area}. Fase ${c.phase}, impegno ${c.effort}.\n\n${c.missing}${deps}`,
-          daFare: [c.goal, c.implementation, c.files.length ? `File coinvolti:\n${c.files.map((f) => `- ${f}`).join("\n")}` : ""]
+          contesto: `Area: ${c.area}. Fase ${c.phase}, impegno ${c.effort}.\n\n${text(c.missing)}${deps}`,
+          daFare: [text(c.goal), text(c.implementation), c.files.length ? `File coinvolti:\n${c.files.map((f) => `- ${oneLine(f)}`).join("\n")}` : ""]
             .filter(Boolean)
             .join("\n\n"),
-          prontoQuando: c.doneWhen,
+          prontoQuando: text(c.doneWhen),
           prove: evidenceLines(c.evidence),
         };
       }
@@ -54,8 +68,8 @@ function sectionsOf(item: AnalysisItem, depTitles: string[]): Sections {
         const e = data as unknown as EndpointProposal;
         return {
           title: `Aggiungere l'endpoint ${e.method.toUpperCase()} ${e.path}`,
-          contesto: `Area: ${e.area}.\n\n${e.motivation}`,
-          daFare: e.patch ? `Modifica proposta:\n\n${e.patch}` : "Aggiungere l'endpoint descritto nel contesto.",
+          contesto: `Area: ${e.area}.\n\n${text(e.motivation)}`,
+          daFare: e.patch ? `Modifica proposta:\n\n${fenced(e.patch)}` : "Aggiungere l'endpoint descritto nel contesto.",
           prontoQuando: `L'endpoint ${e.method.toUpperCase()} ${e.path} risponde come descritto e l'app lo documenta nell'OpenAPI.`,
           prove: evidenceLines(e.evidence),
         };
@@ -64,9 +78,9 @@ function sectionsOf(item: AnalysisItem, depTitles: string[]): Sections {
         const e = data as unknown as EvolutionItem;
         return {
           title: e.title,
-          contesto: `Area: ${e.area}. Tipo: ${e.type}, impatto ${e.impact}, impegno ${e.effort}, priorità ${e.priority}.\n\n${e.motivation}`,
-          daFare: e.implementation,
-          prontoQuando: e.benefit,
+          contesto: `Area: ${e.area}. Tipo: ${e.type}, impatto ${e.impact}, impegno ${e.effort}, priorità ${e.priority}.\n\n${text(e.motivation)}`,
+          daFare: text(e.implementation),
+          prontoQuando: text(e.benefit),
           prove: evidenceLines(e.evidence),
         };
       }

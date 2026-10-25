@@ -215,3 +215,80 @@ describe("applyItem: capitoli senza scritture", () => {
     expect(await tools()).toHaveLength(0);
   });
 });
+
+describe("applyItem: transazione", () => {
+  it("rollback: se i collegamenti falliscono dopo l'update, l'agente resta com'era", async () => {
+    await applyItem(await item("tool", "new", toolPayload()), appId);
+    await applyItem(await item("agent", "new", agentPayload()), appId);
+    const [before] = await db.select().from(agentsTable).where(eq(agentsTable.role, "area"));
+    // Trigger che fa fallire l'inserimento dei collegamenti, quando l'agente è già stato aggiornato
+    await pool.query(`
+      CREATE FUNCTION fail_links() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'collegamenti rifiutati'; END; $$ LANGUAGE plpgsql;
+      CREATE TRIGGER fail_links BEFORE INSERT ON agent_tools FOR EACH ROW EXECUTE FUNCTION fail_links();
+    `);
+    try {
+      await expect(
+        applyItem(await item("agent", "changed", agentPayload({ name: "Rinominato", toolNames: ["list_teams"] })), appId),
+      ).rejects.toThrow();
+    } finally {
+      await pool.query("DROP TRIGGER fail_links ON agent_tools; DROP FUNCTION fail_links();");
+    }
+    const [after] = await db.select().from(agentsTable).where(eq(agentsTable.id, before!.id));
+    expect(after!.name).toBe("Agente squadre");
+    expect(await db.select().from(agentToolsTable).where(eq(agentToolsTable.agentId, before!.id))).toHaveLength(1);
+  });
+
+  it("con una tx del chiamante non ne apre un'altra: il rollback esterno annulla tutto", async () => {
+    const it1 = await item("tool", "new", toolPayload());
+    await expect(
+      db.transaction(async (tx) => {
+        await applyItem(it1, appId, tx);
+        expect(await tx.select().from(appToolsTable)).toHaveLength(1);
+        throw new Error("annulla");
+      }),
+    ).rejects.toThrow("annulla");
+    expect(await tools()).toHaveLength(0);
+  });
+
+  it("violazione di unicità non prevista: ApplyError in italiano", async () => {
+    await applyItem(await item("tool", "new", toolPayload()), appId);
+    await applyItem(await item("agent", "new", agentPayload()), appId);
+    await pool.query(`
+      CREATE FUNCTION dup_skill() RETURNS trigger AS $$ BEGIN
+        RAISE EXCEPTION 'dup' USING ERRCODE = '23505', CONSTRAINT = 'agent_skills_agent_id_name_unique';
+      END; $$ LANGUAGE plpgsql;
+      CREATE TRIGGER dup_skill BEFORE INSERT ON agent_skills FOR EACH ROW EXECUTE FUNCTION dup_skill();
+    `);
+    try {
+      const skill = {
+        agentRole: "area", agentArea: "Squadre", name: "s", description: "d", instructions: "i",
+        toolNames: ["list_teams"], paramsSchema: null,
+      };
+      await expect(applyItem(await item("skill", "new", skill), appId)).rejects.toThrow(/Esiste già una skill/);
+    } finally {
+      await pool.query("DROP TRIGGER dup_skill ON agent_skills; DROP FUNCTION dup_skill();");
+    }
+  });
+});
+
+describe("applyItem: altra app e aree con spazi", () => {
+  it("un tool con lo stesso nome in un'altra app non si collega", async () => {
+    const [other] = await db.insert(appsTable).values({ name: "B", slug: "b", baseUrl: "http://b.test" }).returning();
+    await db.insert(appToolsTable).values({
+      appId: other!.id, name: "solo_b", kind: "http", status: "active",
+      definition: { method: "GET", path: "/x", paramLocations: {} },
+    });
+    await expect(applyItem(await item("agent", "new", agentPayload({ toolNames: ["solo_b"] })), appId)).rejects.toThrow(
+      /"solo_b"/,
+    );
+    expect(await db.select().from(agentsTable).where(eq(agentsTable.role, "area"))).toHaveLength(0);
+  });
+
+  it("l'area si salva e si confronta senza spazi", async () => {
+    await applyItem(await item("agent", "new", agentPayload({ area: " Squadre ", toolNames: [] })), appId);
+    await applyItem(await item("agent", "changed", agentPayload({ area: "Squadre", toolNames: [], name: "Bis" })), appId);
+    const rows = await db.select().from(agentsTable).where(eq(agentsTable.role, "area"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ area: "Squadre", name: "Bis" });
+  });
+});

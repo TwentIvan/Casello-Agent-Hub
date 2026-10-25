@@ -32,12 +32,13 @@ export function jsonEqual(a: unknown, b: unknown): boolean {
   if (isPlainObject(a)) {
     if (!isPlainObject(b)) return false;
     const keys = Object.keys(a);
-    return keys.length === Object.keys(b).length && keys.every((k) => k in b && jsonEqual(a[k], b[k]));
+    return keys.length === Object.keys(b).length && keys.every((k) => Object.hasOwn(b, k) && jsonEqual(a[k], b[k]));
   }
   return Object.is(a, b);
 }
 
-const sorted = (names: string[]) => [...names].sort();
+const sorted = (names: string[]) => [...new Set(names)].sort();
+const trimmed = (area: string | null) => (area ?? "").trim();
 
 // --- Tool ---
 
@@ -75,7 +76,7 @@ export function diffTools(proposed: ToolProposal[], existing: AppTool[]): DiffEn
 
 // --- Agenti e skill ---
 
-export const agentRef = (role: string, area: string | null) => (role === "general" ? "agent:general" : `agent:area:${area ?? ""}`);
+export const agentRef = (role: string, area: string | null) => (role === "general" ? "agent:general" : `agent:area:${trimmed(area)}`);
 export const skillRef = (role: string, area: string | null, name: string) =>
   `skill:${role === "general" ? "general" : `area:${area ?? ""}`}:${name}`;
 
@@ -86,7 +87,7 @@ export function diffAgents(
 ): DiffEntry<AgentProposal>[] {
   return proposed.map((agent) => {
     const current = existing.find(
-      (a) => a.role === agent.role && (agent.role === "general" || (a.area ?? "") === (agent.area ?? "")),
+      (a) => a.role === agent.role && (agent.role === "general" || trimmed(a.area) === trimmed(agent.area)),
     );
     let diff: ItemDiff = "new";
     if (current) {
@@ -111,7 +112,7 @@ export function diffSkills(
       (s) =>
         s.name === skill.name &&
         s.agentRole === skill.agentRole &&
-        (skill.agentRole === "general" || (s.agentArea ?? "") === (skill.agentArea ?? "")),
+        (skill.agentRole === "general" || trimmed(s.agentArea) === trimmed(skill.agentArea)),
     );
     let diff: ItemDiff = "new";
     if (current) {

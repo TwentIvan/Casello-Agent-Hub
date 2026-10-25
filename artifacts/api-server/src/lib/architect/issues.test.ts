@@ -56,7 +56,7 @@ describe("exportIssues", () => {
     ];
     const { markdown, count } = exportIssues(items, "completion");
     expect(count).toBe(3);
-    expect(markdown.indexOf("Voce A")).toBeLessThan(markdown.indexOf("### Voce B"));
+    expect(markdown.indexOf("### Voce A")).toBeLessThan(markdown.indexOf("### Voce B"));
     expect(markdown.indexOf("## Fase 1")).toBeLessThan(markdown.indexOf("## Fase 2"));
     expect(markdown.indexOf("### Voce B")).toBeLessThan(markdown.indexOf("## Fase 2"));
     expect(markdown).toContain("Dipende da: Voce A");
@@ -72,5 +72,24 @@ describe("exportIssues", () => {
 
   it("filtra per capitolo e gestisce il vuoto", () => {
     expect(exportIssues([row(completion({}))], "evolution")).toEqual({ markdown: "", count: 0 });
+  });
+});
+
+describe("sicurezza del markdown", () => {
+  it("il patch sta in un blocco recintato più lungo dei suoi apici e # a inizio riga è neutralizzato", () => {
+    const patch = "codice\n```js\nx\n```";
+    const endpoint = row(
+      { title: "t", area: "A", method: "get", path: "/x", motivation: "ok\n# Intruso", patch, evidence: [] },
+      "endpoint",
+    );
+    const { body } = issueMarkdown(endpoint);
+    expect(body).toContain("````\ncodice");
+    expect(body).toContain("\\# Intruso");
+    expect(body).not.toMatch(/^# Intruso/m);
+  });
+
+  it("i file su più righe restano su una riga", () => {
+    const { body } = issueMarkdown(row(completion({ files: ["a.ts\n## Intruso"] })));
+    expect(body).toContain("- a.ts ## Intruso");
   });
 });

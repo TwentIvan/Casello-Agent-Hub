@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { phasePrompt, SYSTEM_BASE } from "./prompts";
-import { ITEM_SCHEMAS, PHASE_SCHEMAS, PHASES, ToolProposalSchema } from "./schemas";
+import {
+  AgentProposalSchema,
+  AgentsResultSchema,
+  CatalogResultSchema,
+  ITEM_SCHEMAS,
+  PHASE_SCHEMAS,
+  PHASES,
+  SkillProposalSchema,
+  ToolProposalSchema,
+} from "./schemas";
 
 const evidence = [{ source: "code" as const, location: "src/routes/squadre.ts:12" }];
 
@@ -231,5 +240,50 @@ describe("prompt", () => {
       }
     }
     }
+  });
+});
+
+describe("unicità dei riferimenti e coerenza ruolo/area", () => {
+  const tool = (name: string) => ({
+    name, description: "d", kind: "http", identity: "user", requiresConfirmation: false, readOnly: true,
+    paramsSchema: { type: "object", properties: {} },
+    definition: { method: "GET", path: "/x", paramLocations: {} },
+    area: "A", evidence: [], needsVerification: false,
+  });
+  const endpoint = (method: string, path: string) => ({
+    title: "t", area: "A", method, path, motivation: "m", patch: "p", evidence: [],
+  });
+  const agent = (role: string, area: string | null) => ({
+    role, area, name: "n", systemPrompt: "p", defaultIdentity: "user", toolNames: [],
+  });
+  const skill = (role: string, area: string | null, name: string) => ({
+    agentRole: role, agentArea: area, name, description: "d", instructions: "i", toolNames: [], paramsSchema: null,
+  });
+
+  it("catalogo: nomi di tool ed endpoint duplicati sono rifiutati", () => {
+    expect(CatalogResultSchema.safeParse({ tools: [tool("a"), tool("b")], endpoints: [endpoint("GET", "/x")] }).success).toBe(true);
+    const dupTool = CatalogResultSchema.safeParse({ tools: [tool("a"), tool("a")], endpoints: [] });
+    expect(dupTool.success).toBe(false);
+    expect(JSON.stringify(dupTool.error?.issues)).toContain("più volte");
+    const dupEp = CatalogResultSchema.safeParse({ tools: [], endpoints: [endpoint("get", "/x"), endpoint("GET", "/x ")] });
+    expect(dupEp.success).toBe(false);
+  });
+
+  it("agenti: area duplicata (anche con spazi) e skill duplicata sono rifiutate", () => {
+    const g = agent("general", null);
+    expect(AgentsResultSchema.safeParse({ agents: [g, agent("area", "S"), agent("area", " S ")], skills: [] }).success).toBe(false);
+    expect(AgentsResultSchema.safeParse({ agents: [g, agent("area", "S"), agent("area", "T")], skills: [] }).success).toBe(true);
+    expect(
+      AgentsResultSchema.safeParse({ agents: [g], skills: [skill("general", null, "s"), skill("general", null, "s")] }).success,
+    ).toBe(false);
+  });
+
+  it("ruolo/area incoerenti sono rifiutati da agente e skill", () => {
+    expect(AgentProposalSchema.safeParse(agent("general", "X")).success).toBe(false);
+    expect(AgentProposalSchema.safeParse(agent("area", null)).success).toBe(false);
+    expect(AgentProposalSchema.safeParse(agent("area", "  ")).success).toBe(false);
+    expect(SkillProposalSchema.safeParse(skill("general", "X", "s")).success).toBe(false);
+    expect(SkillProposalSchema.safeParse(skill("area", null, "s")).success).toBe(false);
+    expect(SkillProposalSchema.safeParse(skill("area", "S", "s")).success).toBe(true);
   });
 });

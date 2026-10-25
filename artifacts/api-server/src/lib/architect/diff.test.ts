@@ -108,6 +108,14 @@ describe("diffAgents e diffSkills", () => {
     ]);
   });
 
+  it("agenti: area con spazi e tool duplicati non lasciano 'changed'", () => {
+    const r = diffAgents(
+      [agent({ area: " Squadre ", toolNames: ["a", "a", "b"] })],
+      [existingAgent()],
+    );
+    expect(r[0]).toMatchObject({ ref: "agent:area:Squadre", diff: "unchanged" });
+  });
+
   it("skill: per agente e nome", () => {
     const skill = (over: Partial<SkillProposal> = {}): SkillProposal => ({
       agentRole: "area",

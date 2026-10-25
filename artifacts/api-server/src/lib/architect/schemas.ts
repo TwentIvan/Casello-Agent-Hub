@@ -149,14 +149,45 @@ export const EndpointProposalSchema = obj({
   evidence: evidenceList(),
 });
 
+/** Segnala i valori ripetuti: i riferimenti degli elementi devono essere unici nell'analisi. */
+function addDuplicates(ctx: z.RefinementCtx, keys: string[], path: (string | number)[], what: (k: string) => string) {
+  const seen = new Set<string>();
+  const reported = new Set<string>();
+  for (const key of keys) {
+    if (seen.has(key) && !reported.has(key)) {
+      reported.add(key);
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: what(key) });
+    }
+    seen.add(key);
+  }
+}
+
 export const CatalogResultSchema = obj({
   tools: list(ToolProposalSchema, MAX_TOOLS),
   endpoints: list(EndpointProposalSchema, MAX_ITEMS),
+}).superRefine((res, ctx) => {
+  addDuplicates(ctx, res.tools.map((t) => t.name), ["tools"], (k) => `il tool "${k}" è proposto più volte: i nomi devono essere unici`);
+  addDuplicates(
+    ctx,
+    res.endpoints.map((e) => `${e.method.trim().toUpperCase()} ${e.path.trim()}`),
+    ["endpoints"],
+    (k) => `l'endpoint "${k}" è proposto più volte: metodo e percorso devono essere unici`,
+  );
 });
 
 // --- Fase 4: agenti e skill ---
 
 const role = () => en(["general", "area"]);
+
+/** Coerenza ruolo/area: `general` senza area, `area` con un'area non vuota. */
+function checkRoleArea(value: { role: string; area: string | null }, ctx: z.RefinementCtx, path: string) {
+  if (value.role === "general" && value.area !== null) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message: "l'agente generale non ha un'area: deve essere null" });
+  }
+  if (value.role === "area" && (value.area === null || value.area.trim() === "")) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message: "un agente di area richiede il nome dell'area" });
+  }
+}
 
 export const AgentProposalSchema = obj({
   role: role(),
@@ -165,7 +196,7 @@ export const AgentProposalSchema = obj({
   systemPrompt: str(LONG),
   defaultIdentity: identity(),
   toolNames: list(nonEmpty(64), MAX_TOOLS),
-});
+}).superRefine((agent, ctx) => checkRoleArea(agent, ctx, "area"));
 
 export const SkillProposalSchema = obj({
   agentRole: role(),
@@ -175,7 +206,7 @@ export const SkillProposalSchema = obj({
   instructions: str(LONG),
   toolNames: list(nonEmpty(64), MAX_TOOLS),
   paramsSchema: jsonObject().nullable(),
-});
+}).superRefine((skill, ctx) => checkRoleArea({ role: skill.agentRole, area: skill.agentArea }, ctx, "agentArea"));
 
 export const AgentsResultSchema = obj({
   agents: list(AgentProposalSchema, MAX_ITEMS),
@@ -189,6 +220,18 @@ export const AgentsResultSchema = obj({
       message: `serve esattamente un agente generale (trovati ${generals})`,
     });
   }
+  addDuplicates(
+    ctx,
+    res.agents.filter((a) => a.role === "area").map((a) => (a.area ?? "").trim()),
+    ["agents"],
+    (k) => `l'area "${k}" ha più di un agente: ogni area ne vuole uno solo`,
+  );
+  addDuplicates(
+    ctx,
+    res.skills.map((sk) => `${sk.agentRole === "general" ? "general" : (sk.agentArea ?? "").trim()}/${sk.name}`),
+    ["skills"],
+    (k) => `la skill "${k}" è proposta più volte: (agente, nome) devono essere unici`,
+  );
 });
 
 // --- Fase 5: completamento ---

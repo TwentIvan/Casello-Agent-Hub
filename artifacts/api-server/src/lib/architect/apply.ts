@@ -25,7 +25,8 @@ export class ApplyError extends Error {
   }
 }
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+/** Transazione di drizzle: si può passare a `applyItem` per eseguirlo dentro una transazione del chiamante. */
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /** Rivalida il payload (può essere stato modificato dall'utente): primo errore di Zod in italiano. */
 function parsePayload<T>(item: AnalysisItem): T {
@@ -142,6 +143,8 @@ async function resolveTools(
   return ids;
 }
 
+const trimArea = (area: string | null): string | null => (area === null ? null : area.trim());
+
 /** Agente dell'app individuato da (ruolo, area); per `general` l'area è ignorata. */
 async function findAgent(tx: Tx, appId: number, role: "general" | "area", area: string | null) {
   const rows = await tx
@@ -149,12 +152,13 @@ async function findAgent(tx: Tx, appId: number, role: "general" | "area", area: 
     .from(agentsTable)
     .where(and(eq(agentsTable.appId, appId), eq(agentsTable.role, role)))
     .orderBy(agentsTable.id);
-  return role === "general" ? rows[0] : rows.find((a) => a.area === area);
+  return role === "general" ? rows[0] : rows.find((a) => trimArea(a.area) === area);
 }
 
 async function applyAgent(tx: Tx, item: AnalysisItem, appId: number): Promise<void> {
   if (item.diff === "unchanged" || item.diff === "removed") return;
-  const agent = parsePayload<AgentProposal>(item);
+  const parsedAgent = parsePayload<AgentProposal>(item);
+  const agent = { ...parsedAgent, area: trimArea(parsedAgent.area) };
   checkRoleArea(agent.role, agent.area, "agente");
 
   const current = await findAgent(tx, appId, agent.role, agent.area);
@@ -209,7 +213,8 @@ async function applyAgent(tx: Tx, item: AnalysisItem, appId: number): Promise<vo
 
 async function applySkill(tx: Tx, item: AnalysisItem, appId: number): Promise<void> {
   if (item.diff === "unchanged" || item.diff === "removed") return;
-  const skill = parsePayload<SkillProposal>(item);
+  const parsedSkill = parsePayload<SkillProposal>(item);
+  const skill = { ...parsedSkill, agentArea: trimArea(parsedSkill.agentArea) };
   checkRoleArea(skill.agentRole, skill.agentArea, "skill");
 
   const agent = await findAgent(tx, appId, skill.agentRole, skill.agentArea);
@@ -241,20 +246,41 @@ async function applySkill(tx: Tx, item: AnalysisItem, appId: number): Promise<vo
   }
 }
 
+/** Violazione di unicità non prevista dai controlli: si traduce in un errore comprensibile. */
+function translateUnique(err: unknown): never {
+  if (isUniqueViolation(err, "agent_skills_agent_id_name_unique")) {
+    throw new ApplyError("Esiste già una skill con questo nome per l'agente");
+  }
+  if (isUniqueViolation(err, "app_tools_app_id_name_unique")) {
+    throw new ApplyError("Esiste già uno strumento con questo nome nell'app");
+  }
+  if (isUniqueViolation(err)) throw new ApplyError("L'elemento è in conflitto con uno già presente");
+  throw err;
+}
+
 /**
  * Applica un elemento approvato alle tabelle di destinazione, in una sola transazione: se qualcosa
- * non è applicabile si lancia `ApplyError` e non resta scritto nulla. Non cambia lo stato
- * dell'elemento (lo fa la route). `endpoint`, `completion` ed `evolution` non scrivono nulla.
+ * non è applicabile si lancia `ApplyError` e non resta scritto nulla. Con `tx` si usa la transazione
+ * del chiamante (che così può cambiare lo stato dell'elemento atomicamente) e non se ne apre un'altra.
+ * `endpoint`, `completion` ed `evolution` non scrivono nulla.
  */
-export async function applyItem(item: AnalysisItem, appId: number): Promise<void> {
-  switch (item.chapter) {
-    case "tool":
-      return db.transaction((tx) => applyTool(tx, item, appId));
-    case "agent":
-      return db.transaction((tx) => applyAgent(tx, item, appId));
-    case "skill":
-      return db.transaction((tx) => applySkill(tx, item, appId));
-    default:
-      return;
+export async function applyItem(item: AnalysisItem, appId: number, tx?: Tx): Promise<void> {
+  const run = async (t: Tx): Promise<void> => {
+    switch (item.chapter) {
+      case "tool":
+        return applyTool(t, item, appId);
+      case "agent":
+        return applyAgent(t, item, appId);
+      case "skill":
+        return applySkill(t, item, appId);
+      default:
+        return;
+    }
+  };
+  try {
+    await (tx ? run(tx) : db.transaction(run));
+  } catch (err) {
+    if (err instanceof ApplyError) throw err;
+    return translateUnique(err);
   }
 }

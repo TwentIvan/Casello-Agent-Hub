@@ -12,7 +12,13 @@ import {
   runStepsTable,
   type InsertAppTool,
 } from "@workspace/db";
-import { ResumeConflictError, expireStalePausedRuns, resumeRun, startRun } from "./run-executor";
+import {
+  ResumeConflictError,
+  expireStalePausedRuns,
+  failInterruptedRuns,
+  resumeRun,
+  startRun,
+} from "./run-executor";
 import { clearUserToken } from "./user-tokens";
 
 // Finto LiteLLM: risposte in coda, una per chiamata
@@ -20,6 +26,8 @@ let llmReplies: unknown[];
 let llmRequests: any[];
 // Finta app: registra le richieste ricevute
 let appRequests: { method: string; url: string; auth: string | undefined; body: string }[];
+// Ritardo della finta app (ms), per misurare il tempo attivo
+let appDelayMs = 0;
 
 let llm: http.Server;
 let app: http.Server;
@@ -60,6 +68,7 @@ beforeEach(async () => {
   llmReplies = [];
   llmRequests = [];
   appRequests = [];
+  appDelayMs = 0;
   llm = http.createServer((req, res) => {
     let raw = "";
     req.on("data", (c) => (raw += c));
@@ -75,8 +84,10 @@ beforeEach(async () => {
     req.on("data", (c) => (raw += c));
     req.on("end", () => {
       appRequests.push({ method: req.method ?? "", url: req.url ?? "", auth: req.headers.authorization, body: raw });
-      res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({ id: 42, name: "Rosa" }));
+      setTimeout(() => {
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ id: 42, name: "Rosa" }));
+      }, appDelayMs);
     });
   });
   const llmPort = await listen(llm);
@@ -126,6 +137,21 @@ const DELETE_ITEM: Partial<InsertAppTool> = {
   status: "active",
   paramsSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
   definition: { method: "DELETE", path: "/items/{id}", paramLocations: { id: "path" } },
+};
+
+const SET_PASSWORD: Partial<InsertAppTool> = {
+  name: "set_password",
+  description: "Cambia la password",
+  kind: "http",
+  identity: "user",
+  requiresConfirmation: true,
+  status: "active",
+  paramsSchema: {
+    type: "object",
+    properties: { id: { type: "string" }, password: { type: "string", "x-sensitive": true } },
+    required: ["id", "password"],
+  },
+  definition: { method: "PATCH", path: "/items/{id}", paramLocations: { id: "path", password: "body" } },
 };
 
 async function seedRun(tool: Partial<InsertAppTool>): Promise<number> {
@@ -329,6 +355,9 @@ describe("orchestrazione delle run", () => {
     expect(run.status).toBe("cancelled");
     expect(run.errorMessage).toBe("Conferma non arrivata entro 10 minuti.");
     expect(run.finishedAt).not.toBeNull();
+    // R12: a run chiusa non restano argomenti dei tool
+    expect(run.pendingAction).toBeNull();
+    expect(run.loopState).toBeNull();
     expect(appRequests).toHaveLength(0);
     expect(await expireStalePausedRuns()).toBe(0);
   });
@@ -385,5 +414,85 @@ describe("orchestrazione delle run", () => {
     const run = await getRun(id);
     expect(run.status).toBe("failed");
     expect(run.errorMessage).toContain("errore nella chiamata al modello");
+  });
+
+  it("failInterruptedRuns: la run ripresa e interrotta perde stato e azione in sospeso", async () => {
+    const id = await seedRun(DELETE_ITEM);
+    llmReplies = [toolCallReply("delete_item", { id: "42" })];
+    await startRun(id, { userToken: "t" });
+    // Come dopo la transizione della ripresa: running con stato ancora salvato
+    await db.update(runsTable).set({ status: "running" }).where(eq(runsTable.id, id));
+
+    expect(await failInterruptedRuns()).toBe(1);
+    const run = await getRun(id);
+    expect(run.status).toBe("failed");
+    expect(run.pendingAction).toBeNull();
+    expect(run.loopState).toBeNull();
+    clearUserToken(id);
+  });
+
+  it("tool disattivato durante la pausa: errore al modello, argomenti sensibili oscurati nel passo", async () => {
+    const id = await seedRun(SET_PASSWORD);
+    llmReplies = [toolCallReply("set_password", { id: "42", password: "segreta-123" }), textReply("Non disponibile.")];
+    await startRun(id, { userToken: "t" });
+    await db.update(appToolsTable).set({ status: "disabled" }).where(eq(appToolsTable.name, "set_password"));
+
+    await resumeRun(id, "approved");
+
+    expect(appRequests).toHaveLength(0);
+    expect((await getRun(id)).status).toBe("succeeded");
+    const tool = (await getSteps(id)).find((s) => s.type === "tool")!;
+    expect(tool.ok).toBe(false);
+    expect(tool.error).toContain("non è più disponibile");
+    expect(tool.args).toEqual({ id: "42", password: "***" });
+    const steps = await pool.query("select row_to_json(s)::text as j from run_steps s");
+    for (const row of steps.rows) expect(row.j).not.toContain("segreta-123");
+  });
+
+  it("tool cancellato durante la pausa: il passo non registra gli argomenti", async () => {
+    const id = await seedRun(SET_PASSWORD);
+    llmReplies = [toolCallReply("set_password", { id: "42", password: "segreta-123" }), textReply("Non disponibile.")];
+    await startRun(id, { userToken: "t" });
+    await db.delete(appToolsTable).where(eq(appToolsTable.name, "set_password"));
+
+    await resumeRun(id, "approved");
+
+    const tool = (await getSteps(id)).find((s) => s.type === "tool")!;
+    expect(tool.ok).toBe(false);
+    expect(tool.args).toBeNull();
+  });
+
+  it("il tempo del tool confermato alla ripresa conta nel tempo attivo del turno", async () => {
+    const id = await seedRun(DELETE_ITEM);
+    llmReplies = [
+      toolCallReply("delete_item", { id: "1" }, "call_1"),
+      toolCallReply("delete_item", { id: "2" }, "call_2"),
+    ];
+    await startRun(id, { userToken: "t" });
+    const before = (await getRun(id)).loopState as { activeMs: number };
+    appDelayMs = 150;
+
+    await resumeRun(id, "approved");
+
+    const run = await getRun(id);
+    expect(run.status).toBe("awaiting_client");
+    const after = run.loopState as { activeMs: number };
+    expect(after.activeMs - before.activeMs).toBeGreaterThanOrEqual(150);
+    clearUserToken(id);
+  });
+
+  it("errore inatteso a metà turno: la run failed conserva i token già consumati", async () => {
+    const id = await seedRun(GET_ITEM);
+    // Un carattere NUL negli argomenti non è memorizzabile in jsonb: la scrittura del passo fallisce
+    llmReplies = [toolCallReply("get_item", { id: "a\u0000b" })];
+
+    await startRun(id, { userToken: "t" });
+
+    const run = await getRun(id);
+    expect(run.status).toBe("failed");
+    expect(run.errorMessage).toContain("Errore durante l'esecuzione");
+    expect(run.promptTokens).toBe(10);
+    expect(run.completionTokens).toBe(5);
+    expect(run.durationMs).not.toBeNull();
   });
 });

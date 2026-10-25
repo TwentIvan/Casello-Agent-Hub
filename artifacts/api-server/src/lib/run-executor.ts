@@ -1,4 +1,4 @@
-import { db, agentsTable, appsTable, runsTable, runStepsTable, type Agent, type App, type Run } from "@workspace/db";
+import { db, agentsTable, appsTable, appToolsTable, runsTable, runStepsTable, type Agent, type App, type Run } from "@workspace/db";
 import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { aiGateway } from "./ai-gateway";
 import {
@@ -11,7 +11,13 @@ import {
   type StepRecord,
 } from "./agent-loop";
 import { logger } from "./logger";
-import { loadAgentTools, loadAppConnection, maskSensitiveArgs, toFunctionTools } from "./tools/catalog";
+import {
+  loadAgentTools,
+  loadAppConnection,
+  maskArgsWithSchema,
+  maskSensitiveArgs,
+  toFunctionTools,
+} from "./tools/catalog";
 import { executeTool } from "./tools/executor";
 import type { AppConnection, CatalogTool, ToolResult } from "./tools/types";
 import { PAUSE_TTL_MS, clearUserToken, getUserToken, setUserToken } from "./user-tokens";
@@ -81,12 +87,29 @@ async function nextPosition(runId: number): Promise<number> {
   return Number(row?.next ?? 0);
 }
 
+/**
+ * Argomenti da registrare: oscurati con lo schema del tool attivo; se il tool non è (più) tra
+ * quelli attivi si usa la sua riga del catalogo in qualunque stato; se la riga non esiste
+ * (tool inesistente o cancellato) gli argomenti non vengono registrati.
+ */
+async function argsForStep(appId: number, tools: CatalogTool[], step: StepRecord): Promise<unknown> {
+  if (step.args === undefined) return null;
+  if (!step.toolName) return null;
+  const tool = tools.find((t) => t.name === step.toolName);
+  if (tool) return maskSensitiveArgs(tool, step.args);
+  const [row] = await db
+    .select({ paramsSchema: appToolsTable.paramsSchema })
+    .from(appToolsTable)
+    .where(and(eq(appToolsTable.appId, appId), eq(appToolsTable.name, step.toolName)))
+    .limit(1);
+  return row ? maskArgsWithSchema(row.paramsSchema, step.args) : null;
+}
+
 /** Scrive i passi della run con posizioni crescenti, oscurando gli argomenti sensibili. */
-function stepWriter(runId: number, startPosition: number, tools: CatalogTool[]) {
+function stepWriter(runId: number, appId: number, startPosition: number, tools: CatalogTool[]) {
   let position = startPosition;
   return async (step: StepRecord): Promise<void> => {
-    const tool = step.toolName ? tools.find((t) => t.name === step.toolName) : undefined;
-    const args = step.args === undefined ? null : tool ? maskSensitiveArgs(tool, step.args) : step.args;
+    const args = await argsForStep(appId, tools, step);
     await db.insert(runStepsTable).values({
       runId,
       position: position++,
@@ -109,15 +132,19 @@ function runTool(ctx: RunContext, tool: CatalogTool, args: Record<string, unknow
  * Esegue il ciclo dell'agente dallo stato dato e salva l'esito nella run.
  * Token e durata si sommano a quelli già registrati (la run può attraversare più pause).
  */
+interface SegmentUsage {
+  promptTokens: number;
+  completionTokens: number;
+}
+
 async function driveLoop(
   ctx: RunContext,
   state: LoopState,
   segmentStart: number,
   writeStep: (step: StepRecord) => Promise<void>,
+  usage: SegmentUsage,
 ): Promise<void> {
   const runId = ctx.run.id;
-  let promptTokens = 0;
-  let completionTokens = 0;
   const functionTools = toFunctionTools(ctx.tools);
 
   const deps: LoopDeps = {
@@ -131,8 +158,8 @@ async function driveLoop(
         maxTokens: 2000,
         temperature: 0.3,
       });
-      promptTokens += reply.promptTokens;
-      completionTokens += reply.completionTokens;
+      usage.promptTokens += reply.promptTokens;
+      usage.completionTokens += reply.completionTokens;
       return reply;
     },
     tools: ctx.tools,
@@ -143,8 +170,8 @@ async function driveLoop(
   const outcome = await runAgentLoop(state, deps);
 
   const totals = {
-    promptTokens: (ctx.run.promptTokens ?? 0) + promptTokens,
-    completionTokens: (ctx.run.completionTokens ?? 0) + completionTokens,
+    promptTokens: (ctx.run.promptTokens ?? 0) + usage.promptTokens,
+    completionTokens: (ctx.run.completionTokens ?? 0) + usage.completionTokens,
     durationMs: (ctx.run.durationMs ?? 0) + (Date.now() - segmentStart),
   };
 
@@ -198,8 +225,17 @@ async function driveLoop(
   }
 }
 
-/** Chiude la run come fallita dopo un errore inatteso; non lancia. Il token non finisce nei log. */
-async function failRun(runId: number, err: unknown, durationMs: number): Promise<void> {
+/**
+ * Chiude la run come fallita dopo un errore inatteso; non lancia. Il token non finisce nei log.
+ * Durata e token sono i totali della run (segmenti precedenti + quello interrotto).
+ */
+async function failRun(
+  run: Run,
+  err: unknown,
+  segmentStart: number,
+  usage: SegmentUsage,
+): Promise<void> {
+  const runId = run.id;
   clearUserToken(runId);
   const message = errorMessage(err);
   logger.error({ runId, error: message }, "Run fallita per un errore inatteso");
@@ -212,7 +248,9 @@ async function failRun(runId: number, err: unknown, durationMs: number): Promise
         loopState: null,
         pendingAction: null,
         pausedAt: null,
-        durationMs,
+        durationMs: (run.durationMs ?? 0) + (Date.now() - segmentStart),
+        promptTokens: (run.promptTokens ?? 0) + usage.promptTokens,
+        completionTokens: (run.completionTokens ?? 0) + usage.completionTokens,
         finishedAt: new Date(),
       })
       .where(eq(runsTable.id, runId));
@@ -236,6 +274,7 @@ export async function startRun(runId: number, opts: { userToken?: string } = {})
 
   if (opts.userToken) setUserToken(runId, opts.userToken);
   const segmentStart = Date.now();
+  const usage: SegmentUsage = { promptTokens: 0, completionTokens: 0 };
   try {
     const ctx = await loadContext(run);
     const initial: LoopState = {
@@ -248,9 +287,10 @@ export async function startRun(runId: number, opts: { userToken?: string } = {})
       tokens: 0,
       activeMs: 0,
     };
-    await driveLoop(ctx, initial, segmentStart, stepWriter(runId, await nextPosition(runId), ctx.tools));
+    const writeStep = stepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools);
+    await driveLoop(ctx, initial, segmentStart, writeStep, usage);
   } catch (err) {
-    await failRun(runId, err, (run.durationMs ?? 0) + (Date.now() - segmentStart));
+    await failRun(run, err, segmentStart, usage);
   }
 }
 
@@ -292,7 +332,7 @@ export async function resumeRun(
   }
 
   const segmentStart = Date.now();
-  const elapsed = () => (run.durationMs ?? 0) + (Date.now() - segmentStart);
+  const usage: SegmentUsage = { promptTokens: 0, completionTokens: 0 };
   try {
     const state = run.loopState;
     const pending = run.pendingAction;
@@ -303,7 +343,7 @@ export async function resumeRun(
     resolvePending(state, pending, { ok: false, content: "" });
 
     const ctx = await loadContext(run);
-    const writeStep = stepWriter(runId, await nextPosition(runId), ctx.tools);
+    const writeStep = stepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools);
 
     let result: ToolResult;
     let durationMs = 0;
@@ -332,9 +372,12 @@ export async function resumeRun(
       error: result.ok ? undefined : result.content,
     });
 
-    await driveLoop(ctx, resolvePending(state, pending, result), segmentStart, writeStep);
+    const next = resolvePending(state, pending, result);
+    // Il tempo del tool confermato è tempo attivo del turno (conta per il limite di 120 s)
+    next.activeMs += durationMs;
+    await driveLoop(ctx, next, segmentStart, writeStep, usage);
   } catch (err) {
-    await failRun(runId, err, elapsed());
+    await failRun(run, err, segmentStart, usage);
     if (err instanceof PendingMismatchError) {
       throw new ResumeConflictError(`La run non può essere ripresa: ${err.message}`);
     }
@@ -349,7 +392,9 @@ export async function expireStalePausedRuns(now: Date = new Date()): Promise<num
     .set({
       status: "cancelled",
       errorMessage: PAUSE_EXPIRED_MESSAGE,
+      // R12: a run chiusa non restano argomenti dei tool (pending_action li ha in chiaro)
       loopState: null,
+      pendingAction: null,
       finishedAt: now,
     })
     .where(and(eq(runsTable.status, "awaiting_client"), lt(runsTable.pausedAt, cutoff)))
@@ -368,6 +413,10 @@ export async function failInterruptedRuns(): Promise<number> {
     .set({
       status: "failed",
       errorMessage: "Esecuzione interrotta dal riavvio del server.",
+      // R12: una run ripresa e interrotta può avere ancora stato e azione in sospeso
+      loopState: null,
+      pendingAction: null,
+      pausedAt: null,
       finishedAt: new Date(),
     })
     .where(inArray(runsTable.status, ["pending", "running"]))

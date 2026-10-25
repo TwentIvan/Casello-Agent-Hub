@@ -114,6 +114,11 @@ export function maskSensitiveArgs(tool: CatalogTool, args: unknown): unknown {
   return maskWith(tool.paramsSchema, args);
 }
 
+/** Come maskSensitiveArgs, a partire dal solo schema dei parametri (es. riga di un tool non più attivo). */
+export function maskArgsWithSchema(paramsSchema: unknown, args: unknown): unknown {
+  return maskWith(paramsSchema, args);
+}
+
 export async function loadAppConnection(appId: number): Promise<AppConnection> {
   const [app] = await db.select().from(appsTable).where(eq(appsTable.id, appId)).limit(1);
   if (!app) throw new Error(`App ${appId} non trovata`);

@@ -112,12 +112,15 @@ function sourceError(body: SourceFields, current?: { sourceType: string; sourceR
 }
 
 /**
- * Token GitHub: stringa vuota o assente → invariato (alla creazione: nessun token), null →
+ * Token GitHub, senza spazi ai bordi (un a capo incollato renderebbe il token inutilizzabile):
+ * stringa vuota, solo spazi o assente → invariato (alla creazione: nessun token), null →
  * cancellato, altrimenti cifrato. Il modulo della console lascia il campo vuoto per non cambiarlo.
  */
 function sourceTokenChange(token: string | null | undefined): { sourceTokenEnc?: string | null } {
-  if (token === undefined || token === "") return {};
-  return { sourceTokenEnc: token === null ? null : encryptSecret(token) };
+  if (token === null) return { sourceTokenEnc: null };
+  const trimmed = token?.trim();
+  if (!trimmed) return {};
+  return { sourceTokenEnc: encryptSecret(trimmed) };
 }
 
 router.get("/apps", async (_req, res) => {

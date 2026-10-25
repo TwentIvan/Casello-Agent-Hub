@@ -14,6 +14,7 @@ import {
   appToolsTable,
   type AnalysisItem,
 } from "@workspace/db";
+import { decryptSecret } from "../lib/secrets";
 
 // Route dell'architetto su un'app Express vera (porta 0), senza login (AUTH_DISABLED=true).
 // Il finto LiteLLM trattiene le richieste: le analisi avviate restano in corso finché il test non
@@ -278,6 +279,26 @@ describe("sorgenti dell'app", () => {
 
     const empty = await createApp({ sourceToken: "" });
     expect(empty.sourceTokenSet).toBe(false);
+  });
+
+  it("il token GitHub si salva senza spazi ai bordi; solo spazi lo lascia invariato", async () => {
+    const storedToken = async (id: number) => {
+      const { rows } = await pool.query("select source_token_enc from apps where id = $1", [id]);
+      return rows[0].source_token_enc === null ? null : decryptSecret(rows[0].source_token_enc as string);
+    };
+    const created = await createApp({ sourceType: "github", sourceRepo: "ivan/mister", sourceToken: `${GITHUB_TOKEN}\n` });
+    expect(await storedToken(created.id)).toBe(GITHUB_TOKEN);
+
+    let res = await api("PATCH", `/apps/${created.id}`, { sourceToken: "  nuovo-token \r\n" });
+    expect(res.status).toBe(200);
+    expect(await storedToken(created.id)).toBe("nuovo-token");
+
+    res = await api("PATCH", `/apps/${created.id}`, { sourceToken: " \n " });
+    expect(res.json.sourceTokenSet).toBe(true);
+    expect(await storedToken(created.id)).toBe("nuovo-token");
+
+    const blank = await createApp({ sourceToken: "\n" });
+    expect(blank.sourceTokenSet).toBe(false);
   });
 
   it("repo, tipo di sorgente, openapiUrl e descrizione validati → 400 in italiano", async () => {

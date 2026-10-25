@@ -9,6 +9,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 ## Stato (ottobre 2026)
 
 - API completa per il CRUD di App / Agent / Tool / Run e per l'esecuzione delle run via AI gateway.
+- Fase 1 "Agenti che agiscono": gli agenti chiamano i tool HTTP delle app (catalogo per app), con
+  conferma dell'utente per le azioni marcate, timeline dei passi e pausa/ripresa (vedi "Agenti operativi").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -29,21 +31,34 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `pnpm run typecheck` — typecheck di tutti i package (da far passare prima di ogni commit)
 - `pnpm run build` — typecheck + build
 - `pnpm --filter @workspace/api-spec run codegen` — rigenera hook React Query e schemi Zod da `openapi.yaml`
-- `pnpm --filter @workspace/db run push` — applica lo schema Drizzle al DB (`DATABASE_URL` richiesta)
+- `pnpm --filter @workspace/db run push` — applica lo schema Drizzle a un DB di SVILUPPO (`DATABASE_URL`
+  richiesta). MAI in produzione: vedi "Schema DB" in "Deploy"
 
 ## Dove stanno le cose
 
 - `lib/api-spec/openapi.yaml` — contratto API, fonte di verità (contract-first)
 - `lib/api-client-react/src/generated/` — client generato da Orval: NON modificare a mano
-- `lib/db/src/schema/` — schema Drizzle, una tabella per file (apps, agents, tools, runs, sessions)
-- `artifacts/api-server/src/routes/` — route Express 5 (`/api/apps`, `/api/agents`, `/api/agents/:id/tools`,
-  `/api/agents/:id/runs`, `/api/runs`, `/api/dashboard/stats`, `/api/models`, `/api/healthz`)
+- `lib/db/src/schema/` — schema Drizzle, una tabella per file (apps, agents, app_tools, agent_tools, runs,
+  run_steps, sessions)
+- `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
+  tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
+  `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
+  `POST /api/runs/:id/resume` (conferma o annulla l'azione in sospeso), `/api/dashboard/stats`,
+  `/api/models`, `/api/healthz`. Body, parametri e query si leggono con `parseRequest` (errore → 400);
+  le risposte con `*Response.parse` (errore → 500, è un bug del server)
 - `artifacts/api-server/src/lib/auth.ts` — login Google (OIDC), sessione e middleware che protegge `/api`
 - `artifacts/api-server/src/lib/models.ts` — modelli selezionabili e default (`openrouter/auto`)
 - `artifacts/api-server/src/lib/ai-gateway.ts` — client verso i modelli (LiteLLM proxy o provider diretti)
-- `artifacts/api-server/src/lib/run-executor.ts` — esecuzione di una run (context pack + prompt caching).
-  `POST /api/agents/:id/runs` risponde subito con la run `pending` e la esegue in background (la UI fa
-  polling su `GET /api/runs/:id`); all'avvio le run rimaste `pending`/`running` vengono chiuse come fallite.
+- `artifacts/api-server/src/lib/agent-loop.ts` — ciclo dell'agente (puro, senza DB né rete): chiamate al
+  modello, esecuzione dei tool, pause, limiti del turno
+- `artifacts/api-server/src/lib/run-executor.ts` — orchestrazione delle run: collega il ciclo al DB,
+  all'esecutore dei tool e al gateway; scrive i passi in `run_steps`, salva lo stato alla pausa
+  (`awaiting_client`) e lo riprende con `resume`. `POST /api/agents/:id/runs` risponde subito con la run
+  `pending` e la esegue in background (la UI fa polling su `GET /api/runs/:id`); all'avvio le run rimaste
+  `pending`/`running` vengono chiuse come fallite.
+- `artifacts/api-server/src/lib/tools/` — catalogo (`catalog.ts`), validazione delle definizioni
+  (`definition.ts`), esecutore HTTP (`executor.ts`), oscuramento degli argomenti sensibili (`sensitive.ts`)
+- `artifacts/api-server/src/lib/secrets.ts` — cifratura AES-256-GCM dei segreti di servizio
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
 - `artifacts/mockup-sandbox/` — sandbox di mockup: NON va in produzione, non toccare
 - `gateway/` — config LiteLLM storica; la copia viva è nel repo `TwentIvan/AIGateway`
@@ -51,10 +66,18 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 
 ## Modello di dominio
 
-- **App**: applicazione registrata (nome, `base_url`, stato)
-- **Agent**: appartiene a una App; `system_prompt`, `model`, stato (draft/active/inactive)
-- **Tool**: strumento HTTP di un Agent (metodo, endpoint, `parameters_schema` JSON)
-- **Run**: esecuzione di un Agent: input, output, errore, durata, stato (pending/running/succeeded/failed)
+- **App**: applicazione registrata: nome, `slug`, `base_url`, `internal_base_url` (raggiunto
+  dall'esecutore al posto di `base_url`), autenticazione utente/servizio (header + scheme), segreto di
+  servizio cifrato (mai esposto: l'API dice solo `serviceSecretSet`), stato
+- **Agent**: appartiene a una App; `system_prompt`, `model`, stato (draft/active/inactive), ruolo:
+  `general` (uno per app, creato con l'app, non eliminabile, usa tutti i tool `active` dell'app) o `area`
+  (usa solo i tool collegati in `agent_tools`)
+- **Tool** (`app_tools`): catalogo per App; `kind` (`http`, `ui`, `composite`: nella fase 1 solo `http`
+  viene offerto al modello), `identity` (`user`: token dell'utente da `X-App-User-Token`; `service`:
+  segreto di servizio), `requiresConfirmation`, `readOnly`, stato (draft/active/disabled), definizione
+  (metodo, path, posizione dei parametri) e `params_schema` JSON (`"x-sensitive": true` oscura un parametro)
+- **Run**: esecuzione di un Agent: input, output, errore, durata, token, stato
+  (pending/running/awaiting_client/succeeded/failed/cancelled); i passi in `run_steps`
 
 ## Modelli AI
 
@@ -64,6 +87,19 @@ LiteLLM. Non esistono più account OpenAI/Anthropic: i modelli disponibili sono 
 (`openrouter/auto`, `openrouter/deepseek-chat`, `openrouter/qwen3-235b`, `openrouter/mistral-small`).
 Il default è `openrouter/auto` (schema `agents` e fallback del gateway); la lista per la UI
 arriva da `GET /api/models` (costante in `lib/models.ts`: va tenuta allineata a LiteLLM).
+
+## Agenti operativi (fase 1)
+
+- Spec: `docs/superpowers/specs/2026-10-25-casello-agenti-operativi-design.md`.
+- Limiti per turno: 8 giri di tool, 120 s di tempo attivo (le pause non contano; ogni chiamata al
+  modello è limitata dal tempo rimasto, minimo 1 s), 60 000 token. Per chiamata HTTP: 15 s, risposta
+  massima 1 048 576 byte. Pausa per la conferma: massimo 10 minuti, poi la run diventa `cancelled`.
+- L'esecutore raggiunge solo `internal_base_url` (o `base_url`) + path del tool: dagli argomenti del
+  modello arrivano solo valori codificati. Gli indirizzi e gli header di autenticazione si validano
+  già al salvataggio dell'app.
+- Il token dell'utente vive solo in memoria per la durata della run: mai nel DB né nei log. Credenziali
+  rimandate dall'app nelle risposte vengono sostituite con `***`; gli argomenti `x-sensitive` sono
+  oscurati nei passi e nell'azione in sospeso pubblica.
 
 ## Autenticazione
 
@@ -98,9 +134,11 @@ arriva da `GET /api/models` (costante in `lib/models.ts`: va tenuta allineata a 
   in Health Check (path `/api/healthz`, porta 3000), altrimenti Coolify non lo usa per il deploy.
 - `POST /api/agents/:id/runs` ha un rate limit in memoria (10 run/minuto per IP, `middlewares/rate-limit.ts`):
   l'IP reale arriva da `trust proxy` = 2 (Traefik di Coolify + nginx di `casello-web`).
-- Schema DB: niente migrazioni, `drizzle-kit push`; in produzione lo schema è stato creato a mano
-  (`docs/schema-casello.sql`). Ogni modifica a `lib/db/src/schema/` va applicata al DB di produzione
-  con `push` o con SQL equivalente, e va segnalata nella PR.
+- Schema DB: le modifiche arrivano in produzione SOLO con gli script SQL in `docs/migrations/`, applicati
+  al DB Neon con `psql -v ON_ERROR_STOP=1 -f docs/migrations/<file>.sql` (prima del deploy dell'API
+  che li usa). MAI `drizzle-kit push` in produzione: cancellerebbe dati (es. la vecchia tabella `tools`
+  convertita dalla migrazione). Ogni modifica a `lib/db/src/schema/` va riportata in
+  `docs/schema-casello.sql` (usato anche dai test) e in uno script di `docs/migrations/`, e va segnalata nella PR.
 
 ## Flusso di lavoro
 

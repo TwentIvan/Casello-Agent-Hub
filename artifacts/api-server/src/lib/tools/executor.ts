@@ -69,7 +69,23 @@ function encodePathValue(name: string, value: unknown): string {
   if (str === "" || str === "." || str === "..") {
     throw new ToolError(`parametro "${name}": valore non ammesso in un percorso`);
   }
-  return encodeURIComponent(str);
+  try {
+    return encodeURIComponent(str);
+  } catch {
+    // URIError su surrogati UTF-16 isolati
+    throw new ToolError(`parametro "${name}": valore non codificabile`);
+  }
+}
+
+/** Nomi delle proprietà dichiarate nello schema dei parametri. */
+function declaredParams(schema: Record<string, unknown>): Set<string> {
+  const props = schema["properties"];
+  return new Set(isPlainObject(props) ? Object.keys(props) : []);
+}
+
+/** Posizione dichiarata di un parametro, senza risalire a Object.prototype. */
+function locationOf(def: HttpDefinition, name: string): "path" | "query" | "body" | undefined {
+  return Object.hasOwn(def.paramLocations, name) ? def.paramLocations[name] : undefined;
 }
 
 function queryValue(value: unknown): string {
@@ -130,14 +146,21 @@ export function buildHttpRequest(
     );
   }
 
+  // R9: solo i parametri dichiarati nello schema arrivano all'app (niente mass assignment)
+  const declared = declaredParams(tool.paramsSchema);
+  const unexpected = Object.keys(args).filter((name) => !declared.has(name));
+  if (unexpected.length > 0) {
+    throw new ToolError(`parametri non previsti: ${unexpected.join(", ")}`);
+  }
+
   const base = resolveBase(conn);
 
   // Segnaposto {nome}: solo i parametri dichiarati "path", ciascuno un singolo segmento codificato
   const path = def.path.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_m, name: string) => {
-    if (def.paramLocations[name] !== "path") {
+    if (locationOf(def, name) !== "path") {
       throw new ToolError(`definizione del tool non valida: il segnaposto {${name}} non è un parametro di percorso`);
     }
-    return encodePathValue(name, args[name]);
+    return encodePathValue(name, Object.hasOwn(args, name) ? args[name] : undefined);
   });
 
   const url = new URL(`${base.origin}${base.path}${path}`);
@@ -148,12 +171,12 @@ export function buildHttpRequest(
     throw new ToolError("URL della richiesta fuori dall'app: richiesta bloccata");
   }
 
-  const body: Record<string, unknown> = {};
+  const body = Object.create(null) as Record<string, unknown>;
   let hasBody = false;
   for (const [name, value] of Object.entries(args)) {
     if (value === undefined) continue;
     // Parametri senza posizione: querystring per GET/DELETE, body altrimenti
-    const location = def.paramLocations[name] ?? (allowsBody ? "body" : "query");
+    const location = locationOf(def, name) ?? (allowsBody ? "body" : "query");
     if (location === "path") continue;
     if (location === "query") {
       if (value === null) continue;
@@ -221,7 +244,7 @@ function tryParseJson(text: string): { ok: true; value: unknown } | { ok: false 
 }
 
 function pick(obj: Record<string, unknown>, fields: string[]): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
+  const out = Object.create(null) as Record<string, unknown>;
   for (const f of fields) if (Object.hasOwn(obj, f)) out[f] = obj[f];
   return out;
 }

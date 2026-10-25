@@ -23,6 +23,12 @@ function handle(req: IncomingMessage, res: ServerResponse, body: string): void {
   requests.push({ method: req.method ?? "", url: req.url ?? "", headers: req.headers, body });
   const url = req.url ?? "";
   if (url.startsWith("/slow")) return; // non risponde mai
+  if (url.startsWith("/stall")) {
+    // header e parte del corpo, poi più nulla
+    res.writeHead(200, { "content-type": "application/json" });
+    res.write('{"parziale":');
+    return;
+  }
   if (url.startsWith("/big")) {
     res.writeHead(200, { "content-type": "application/octet-stream" });
     const chunk = Buffer.alloc(64 * 1024, 120);
@@ -399,6 +405,67 @@ describe("executeTool", () => {
     });
     expect(r.ok).toBe(false);
     expect(r.content).not.toContain("tok-riservato");
+  });
+
+  it("parametri non previsti dallo schema: errore e nessuna richiesta", async () => {
+    const t = tool(
+      { method: "POST", path: "/api/teams", paramLocations: { nome: "body" } },
+      { type: "object", properties: { nome: { type: "string" } }, required: ["nome"] },
+      { readOnly: false },
+    );
+    const r = await executeTool({
+      conn: conn(),
+      tool: t,
+      args: { nome: "Rossi", role: "admin", ownerId: 1 },
+      userToken: "tok",
+    });
+    expect(r.ok).toBe(false);
+    expect(r.content).toContain("parametri non previsti: role, ownerId");
+    expect(requests).toHaveLength(0);
+    const ok = await executeTool({ conn: conn(), tool: t, args: { nome: "Rossi" }, userToken: "tok" });
+    expect(ok.ok).toBe(true);
+    expect(JSON.parse(requests[0]!.body)).toEqual({ nome: "Rossi" });
+  });
+
+  it("nomi come constructor non risolvono membri di Object.prototype", async () => {
+    const t = tool(
+      { method: "GET", path: "/api/x", paramLocations: JSON.parse('{"constructor":"query"}') as HttpDefinition["paramLocations"] },
+      { type: "object", properties: { constructor: { type: "string" } } },
+    );
+    const r = await executeTool({ conn: conn(), tool: t, args: { constructor: "abc" }, userToken: "tok" });
+    expect(r.ok).toBe(true);
+    expect(new URL(requests[0]!.url, origin).searchParams.get("constructor")).toBe("abc");
+    // Dichiarato ma assente: nessun valore ereditato finisce nella query
+    const r2 = await executeTool({ conn: conn(), tool: t, args: {}, userToken: "tok" });
+    expect(r2.ok).toBe(true);
+    expect(requests[1]!.url).toBe("/api/x");
+  });
+
+  it("body con chiave __proto__ dichiarata", async () => {
+    const t = tool(
+      { method: "POST", path: "/api/x", paramLocations: JSON.parse('{"__proto__":"body"}') as HttpDefinition["paramLocations"] },
+      JSON.parse('{"type":"object","properties":{"__proto__":{"type":"string"}}}') as Record<string, unknown>,
+      { readOnly: false },
+    );
+    const args = JSON.parse('{"__proto__":"v"}') as Record<string, unknown>;
+    const r = await executeTool({ conn: conn(), tool: t, args, userToken: "tok" });
+    expect(r.ok).toBe(true);
+    expect(requests[0]!.body).toBe('{"__proto__":"v"}');
+  });
+
+  it("valore di percorso non codificabile (surrogato isolato)", async () => {
+    const r = await executeTool({ conn: conn(), tool: teamTool, args: { teamId: "a\uD800b" }, userToken: "tok" });
+    expect(r).toEqual({ ok: false, content: 'parametro "teamId": valore non codificabile' });
+    expect(requests).toHaveLength(0);
+  });
+
+  it("timeout durante la lettura del corpo", async () => {
+    const t = tool({ method: "GET", path: "/stall", paramLocations: {} });
+    const start = Date.now();
+    const r = await executeTool({ conn: conn(), tool: t, args: {}, userToken: "tok", timeoutMs: 300 });
+    expect(r.ok).toBe(false);
+    expect(r.content).toContain("timeout");
+    expect(Date.now() - start).toBeLessThan(1_000);
   });
 
   it("fetchImpl personalizzato riceve redirect manual", async () => {

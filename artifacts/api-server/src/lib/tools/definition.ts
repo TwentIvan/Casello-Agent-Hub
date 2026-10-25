@@ -112,9 +112,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 // Un'istanza di Ajv per compilazione: così Ajv non trattiene gli schemi compilati
 // e due schemi con lo stesso `$id` non entrano in conflitto. strict: false per
-// ammettere parole chiave sconosciute (es. x-sensitive).
+// ammettere parole chiave sconosciute (es. x-sensitive). ownProperties: true perché un
+// parametro di nome "constructor" o "toString" non risolva i membri di Object.prototype.
 function compileSchema(schema: object): ValidateFunction {
-  return new Ajv({ allErrors: false, strict: false }).compile(schema);
+  return new Ajv({ allErrors: false, strict: false, ownProperties: true }).compile(schema);
 }
 
 /** Cerca `$ref` (non supportati) in tutto lo schema; ignora i nomi di proprietà. */

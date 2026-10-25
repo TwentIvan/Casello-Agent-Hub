@@ -95,6 +95,13 @@ describe("validateArgs", () => {
     properties: { teamId: { type: "integer" } },
     required: ["teamId"],
   };
+  it("non tratta i membri di Object.prototype come argomenti presenti", () => {
+    const schema = { type: "object", properties: { constructor: { type: "string" } } };
+    expect(validateArgs(schema, {})).toBeNull();
+    expect(validateArgs(schema, { constructor: "abc" })).toBeNull();
+    expect(validateArgs({ ...schema, required: ["constructor"] }, {})).toMatch(/constructor/);
+  });
+
   it("accetta argomenti validi", () => {
     expect(validateArgs(schema, { teamId: 3 })).toBeNull();
   });

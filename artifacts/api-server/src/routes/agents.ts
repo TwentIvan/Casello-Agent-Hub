@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
 import { db, agentsTable, toolsTable, runsTable } from "@workspace/db";
+import { rateLimit } from "../middlewares/rate-limit";
 import {
   ListAgentsQueryParams,
   ListAgentsResponse,
@@ -109,7 +110,10 @@ router.delete("/agents/:agentId/tools/:toolId", async (req, res) => {
 
 // ── Runs (triggered on an agent) ────────────────────────────────────────────
 
-router.post("/agents/:id/runs", async (req, res) => {
+// Ogni run consuma token sul gateway: massimo 10 run al minuto per IP.
+const runRateLimit = rateLimit({ limit: 10, windowMs: 60_000 });
+
+router.post("/agents/:id/runs", runRateLimit, async (req, res) => {
   const { id } = TriggerRunParams.parse(req.params);
   const body = TriggerRunBody.parse(req.body);
 

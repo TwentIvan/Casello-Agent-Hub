@@ -28,4 +28,7 @@ WORKDIR /app
 COPY --from=build /deploy /app
 USER node
 EXPOSE 3000
+# node:24-slim non ha curl/wget: l'healthcheck usa fetch di Node
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://localhost:'+(process.env.PORT||3000)+'/api/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 CMD ["node", "--enable-source-maps", "dist/index.mjs"]

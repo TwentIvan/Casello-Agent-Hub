@@ -69,7 +69,14 @@ arriva da `GET /api/models` (costante in `lib/models.ts`: va tenuta allineata a 
   proxy di `/api/` verso `casello-api:3000`). Il frontend chiama `/api` con URL relativi: un solo dominio.
 - Immagini `node:24-slim` (non alpine: il workspace esclude i binari musl).
 - Variabili dell'API: `DATABASE_URL` (Neon, stringa diretta), `PORT`, `NODE_ENV`, `LOG_LEVEL`,
-  `AI_GATEWAY_BASE_URL`, `AI_GATEWAY_API_KEY`, `AI_GATEWAY_FALLBACK_MODEL`.
+  `AI_GATEWAY_BASE_URL`, `AI_GATEWAY_API_KEY`, `AI_GATEWAY_FALLBACK_MODEL`, `PUBLIC_APP_URL`
+  (origine della UI, `https://casello.fantamister.cloud`: in produzione CORS accetta solo quella,
+  in dev qualsiasi `localhost`).
+- Healthcheck di `casello-api`: `GET /api/healthz` sulla porta 3000. È nel `HEALTHCHECK` di
+  `docker/api.Dockerfile` (con `node`, l'immagine slim non ha curl/wget); su Coolify impostarlo anche
+  in Health Check (path `/api/healthz`, porta 3000), altrimenti Coolify non lo usa per il deploy.
+- `POST /api/agents/:id/runs` ha un rate limit in memoria (10 run/minuto per IP, `middlewares/rate-limit.ts`):
+  l'IP reale arriva da `trust proxy` = 2 (Traefik di Coolify + nginx di `casello-web`).
 - Schema DB: niente migrazioni, `drizzle-kit push`; in produzione lo schema è stato creato a mano
   (`docs/schema-casello.sql`). Ogni modifica a `lib/db/src/schema/` va applicata al DB di produzione
   con `push` o con SQL equivalente, e va segnalata nella PR.
@@ -87,4 +94,4 @@ arriva da `GET /api/models` (costante in `lib/models.ts`: va tenuta allineata a 
 - Non aggiungere `artifacts/casello` ai `references` del `tsconfig.json` di root (leaf package).
 - `pnpm-workspace.yaml` ha `minimumReleaseAge`: una versione npm uscita da meno di un giorno non si installa.
 - `vite.config.ts` del frontend pretende `PORT` e `BASE_PATH` anche solo per buildare.
-- `replit.md`, `.replit` e il plugin `@replit/*` sono residui di Replit: non servono più, non estenderli.
+- I residui di Replit sono stati rimossi; restano solo i plugin `@replit/*` di `artifacts/mockup-sandbox`.

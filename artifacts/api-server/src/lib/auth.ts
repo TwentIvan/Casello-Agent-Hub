@@ -9,6 +9,7 @@ import * as oidc from "openid-client";
 import { eq } from "drizzle-orm";
 import { db, pool, usersTable } from "@workspace/db";
 import { GetCurrentUserResponse } from "@workspace/api-zod";
+import { githubConfig } from "./github/config";
 import { logger } from "./logger";
 import { IdentityConflictError, ensureUserByEmail, isAllowed, listIdentities, resolveLogin } from "./users";
 
@@ -187,8 +188,7 @@ export function authRouter(): IRouter {
         name: user.name,
         picture: user.picture,
         identities: await listIdentities(user.id),
-        // Lo imposta il task 3 (configurazione dell'App GitHub): per ora GitHub è sempre spento
-        githubEnabled: false,
+        githubEnabled: githubConfig() !== null,
       }),
     );
   });

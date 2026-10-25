@@ -4,6 +4,7 @@
 // under ./providers instead.
 
 import OpenAI from "openai";
+import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
 import { directProviders } from "./providers";
 import { DEFAULT_MODEL } from "./models";
 
@@ -33,6 +34,32 @@ export interface GatewayCompleteResult {
   durationMs: number;
 }
 
+export interface GatewayChatOptions {
+  modelKey: string;
+  messages: ChatCompletionMessageParam[];
+  tools?: ChatCompletionTool[];
+  maxTokens?: number;
+  temperature?: number;
+  agentId?: number;
+  /** Identifies the calling service in logs (e.g. "run-executor") */
+  caller?: string;
+  signal?: AbortSignal;
+}
+
+export interface ChatToolCall {
+  id: string;
+  name: string;
+  /** Argomenti come stringa JSON, così come li ha prodotti il modello (non validata) */
+  arguments: string;
+}
+
+export interface ChatResult {
+  content: string | null;
+  toolCalls: ChatToolCall[];
+  promptTokens: number;
+  completionTokens: number;
+}
+
 function getProviderPrefix(modelKey: string): string {
   const slashIdx = modelKey.indexOf("/");
   return slashIdx >= 0 ? modelKey.slice(0, slashIdx) : modelKey;
@@ -51,6 +78,84 @@ class AiGateway {
       throw new Error("[AI-GATEWAY] AI_GATEWAY_BASE_URL è impostata ma manca AI_GATEWAY_API_KEY (chiave virtuale LiteLLM).");
     }
     return new OpenAI({ apiKey, baseURL: process.env.AI_GATEWAY_BASE_URL });
+  }
+
+  // Chiamata con function calling (OpenAI-style) via proxy LiteLLM. Senza proxy
+  // supporta solo il testo semplice, delegando a `complete`.
+  async chat(opts: GatewayChatOptions): Promise<ChatResult> {
+    const modelKey = opts.modelKey;
+    const caller = opts.caller || "unknown";
+    const tools = opts.tools ?? [];
+
+    if (!process.env.AI_GATEWAY_BASE_URL) {
+      if (tools.length > 0) {
+        throw new Error("i tool richiedono il gateway LiteLLM (AI_GATEWAY_BASE_URL)");
+      }
+      const messages: GatewayMessage[] = opts.messages.map((m) => {
+        if (
+          (m.role === "system" || m.role === "user" || m.role === "assistant") &&
+          (typeof m.content === "string" || (m.role === "assistant" && m.content == null)) &&
+          !(m.role === "assistant" && m.tool_calls?.length)
+        ) {
+          return { role: m.role, content: m.content as string } as GatewayMessage;
+        }
+        throw new Error(
+          "[AI-GATEWAY] Senza AI_GATEWAY_BASE_URL sono supportati solo messaggi di testo semplice (system, user, assistant).",
+        );
+      });
+      const result = await this.complete({
+        modelKey,
+        messages,
+        maxTokens: opts.maxTokens,
+        temperature: opts.temperature,
+        agentId: opts.agentId,
+        caller,
+      });
+      return {
+        content: result.content,
+        toolCalls: [],
+        promptTokens: result.promptTokens,
+        completionTokens: result.completionTokens,
+      };
+    }
+
+    const client = this.getGatewayClient();
+    const startMs = Date.now();
+    const params: any = {
+      model: modelKey,
+      messages: opts.messages,
+    };
+    if (tools.length > 0) {
+      params.tools = tools;
+      params.tool_choice = "auto";
+    }
+    if (opts.maxTokens) params.max_completion_tokens = opts.maxTokens;
+    if (opts.temperature !== undefined) params.temperature = opts.temperature;
+    params.metadata = {
+      tags: [`caller:${caller}`, ...(opts.agentId !== undefined ? [`agent:${opts.agentId}`] : [])],
+    };
+
+    const response = await client.chat.completions.create(params, { signal: opts.signal });
+    const durationMs = Date.now() - startMs;
+    const promptTokens = response.usage?.prompt_tokens || 0;
+    const completionTokens = response.usage?.completion_tokens || 0;
+    const cachedTokens = (response.usage as any)?.prompt_tokens_details?.cached_tokens ?? 0;
+
+    // I contenuti dei messaggi non finiscono mai nei log.
+    console.log(
+      `[AI-GATEWAY] caller=${caller} model=${modelKey}` +
+        ` prompt_tokens=${promptTokens} completion_tokens=${completionTokens}` +
+        ` cached=${cachedTokens} duration=${durationMs}ms`
+    );
+
+    const message = response.choices[0]?.message;
+    const toolCalls: ChatToolCall[] = [];
+    for (const call of message?.tool_calls ?? []) {
+      if (call.type === "function") {
+        toolCalls.push({ id: call.id, name: call.function.name, arguments: call.function.arguments });
+      }
+    }
+    return { content: message?.content ?? null, toolCalls, promptTokens, completionTokens };
   }
 
   async complete(opts: GatewayCompleteOptions): Promise<GatewayCompleteResult> {

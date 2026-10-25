@@ -11,16 +11,6 @@ import {
   useListAgents,
   useListApps,
 } from "@workspace/api-client-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -32,6 +22,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AppFormDialog } from "@/components/apps/app-form-dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -184,33 +175,16 @@ export default function AppsPage() {
         onOpenChange={(open) => setForm((prev) => ({ ...prev, open }))}
       />
 
-      <AlertDialog open={toDelete !== null} onOpenChange={(open) => !open && setToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Eliminare «{toDelete?.name}»?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteCount > 0
-                ? `Verranno eliminati anche ${agentsLabel(deleteCount)}, con i loro strumenti e tutte le run. `
-                : ""}
-              L'operazione non si può annullare.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Annulla</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleteApp.isPending}
-              onClick={(event) => {
-                // Il dialog si chiude solo a eliminazione riuscita.
-                event.preventDefault();
-                if (toDelete) deleteApp.mutate({ id: toDelete.id });
-              }}
-            >
-              {deleteApp.isPending ? "Eliminazione…" : "Elimina"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={toDelete !== null}
+        onOpenChange={(open) => !open && setToDelete(null)}
+        title={`Eliminare «${toDelete?.name ?? ""}»?`}
+        description={`${
+          deleteCount > 0 ? `Verranno eliminati anche ${agentsLabel(deleteCount)}, con i loro strumenti e tutte le run. ` : ""
+        }L'operazione non si può annullare.`}
+        pending={deleteApp.isPending}
+        onConfirm={() => toDelete && deleteApp.mutate({ id: toDelete.id })}
+      />
     </div>
   );
 }

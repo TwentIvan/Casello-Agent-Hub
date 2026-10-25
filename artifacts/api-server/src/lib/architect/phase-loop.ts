@@ -346,7 +346,8 @@ function omittedStub(name: ReadToolName, args: Record<string, unknown>): string 
  * letti e i token crescono col quadrato dei giri. Restano intatti i messaggi di sistema, utente e
  * assistente (ogni tool_call conserva la sua unica risposta) e le risposte a submit_result; degli
  * output di lettura (indice del messaggio → segnaposto in `stubs`) restano interi i più recenti,
- * fino a `budget` caratteri in tutto (il più recente sempre), gli altri diventano il segnaposto.
+ * fino a `budget` caratteri in tutto, gli altri diventano il segnaposto. Gli output del giro corrente
+ * (dopo l'ultimo messaggio dell'assistente) restano sempre interi: il modello non li ha ancora visti.
  * Modifica `messages` sul posto: un output compattato resta tale.
  */
 export function compactHistory(
@@ -354,6 +355,13 @@ export function compactHistory(
   stubs: Map<number, string>,
   budget = HISTORY_TOOL_OUTPUT_BUDGET,
 ): void {
+  let lastAssistant = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]!.role === "assistant") {
+      lastAssistant = i;
+      break;
+    }
+  }
   let kept = 0;
   let full = false;
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -361,7 +369,7 @@ export function compactHistory(
     const stub = stubs.get(i);
     if (m.role !== "tool" || stub === undefined || typeof m.content !== "string" || m.content === stub) continue;
     const size = m.content.length;
-    if (!full && (kept === 0 || kept + size <= budget)) {
+    if (i > lastAssistant || (!full && (kept === 0 || kept + size <= budget))) {
       kept += size;
       continue;
     }

@@ -387,5 +387,22 @@ describe("runPhase", () => {
       // system e user restano in testa
       expect(s.calls.at(-1)!.messages.slice(0, 2).map((m) => m.content)).toEqual(["sistema", "utente"]);
     });
+
+    it("le letture parallele del giro corrente arrivano intere al modello", async () => {
+      const line = "x".repeat(95);
+      const files: Record<string, string> = {};
+      const paths = [0, 1, 2].map((i) => `src/f${i}.ts`);
+      paths.forEach((p, i) => (files[p] = Array.from({ length: 400 }, (_, n) => `${line}${i}-${n}`).join("\n")));
+      const s = scripted([
+        reply(paths.map((path) => call("read_file", { path }))),
+        reply([call("submit_result", { result: validMap })]),
+      ]);
+      const { input } = base(s.chat, { tree: makeTree(files) });
+      expect((await runPhase(input)).ok).toBe(true);
+      // le tre letture insieme superano il budget, ma nessuna è un segnaposto
+      const tools = toolMessages(s.calls[1]!.messages);
+      expect(tools.reduce((n, t) => n + t!.length, 0)).toBeGreaterThan(HISTORY_TOOL_OUTPUT_BUDGET);
+      paths.forEach((p, i) => expect(tools[i]).toContain(`File ${p}`));
+    });
   });
 });

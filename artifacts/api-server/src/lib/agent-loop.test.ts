@@ -233,6 +233,7 @@ describe("runAgentLoop", () => {
       toolCallId: "c1",
       toolName: "proponi_scambio",
       args: { da: "Totti", a: "Del Piero" },
+      publicArgs: { da: "Totti", a: "Del Piero" },
       summary: "Propone uno scambio: da: Totti, a: Del Piero",
     });
     expect(executeTool).not.toHaveBeenCalled();
@@ -578,5 +579,28 @@ describe("runAgentLoop", () => {
     const state = { ...initialState(), activeMs: 10_000 };
     await runAgentLoop(state, deps);
     expect(remaining).toEqual([110_000, 80_000]);
+  });
+
+  it("pausa su un tool con proprietà sensibili: riassunto e argomenti pubblici oscurati", async () => {
+    const cambiaPassword = makeTool({
+      name: "cambia_password",
+      description: "Cambia la password",
+      requiresConfirmation: true,
+      paramsSchema: {
+        type: "object",
+        properties: { utente: { type: "string" }, password: { type: "string", "x-sensitive": true } },
+      },
+    });
+    const { deps } = makeDeps(
+      [callTools([{ id: "c1", name: "cambia_password", args: '{"utente":"rosa","password":"segreta-123"}' }])],
+      { tools: [cambiaPassword] },
+    );
+    const out = await runAgentLoop(initialState(), deps);
+    if (out.type !== "paused") throw new Error("atteso paused");
+    expect(out.pending.summary).not.toContain("segreta-123");
+    expect(out.pending.summary).toContain("utente: rosa");
+    expect(out.pending.publicArgs).toEqual({ utente: "rosa", password: "***" });
+    // Gli argomenti veri restano per l'esecuzione alla ripresa
+    expect(out.pending.args).toEqual({ utente: "rosa", password: "segreta-123" });
   });
 });

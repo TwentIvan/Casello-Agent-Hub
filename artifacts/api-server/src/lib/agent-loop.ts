@@ -5,6 +5,7 @@
 
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { ChatResult } from "./ai-gateway";
+import { maskSensitiveArgs } from "./tools/sensitive";
 import type { CatalogTool, ToolResult } from "./tools/types";
 
 export interface LoopLimits {
@@ -39,7 +40,11 @@ export interface PendingAction {
   kind: "confirmation" | "ui";
   toolCallId: string;
   toolName: string;
+  /** Argomenti veri: servono per eseguire il tool alla ripresa, mai esposti dall'API */
   args: Record<string, unknown>;
+  /** Argomenti con le proprietà sensibili oscurate ("***"): la forma pubblica */
+  publicArgs: Record<string, unknown>;
+  /** Riassunto per l'utente, costruito dagli argomenti oscurati */
   summary: string;
 }
 
@@ -123,6 +128,7 @@ function formatValue(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
 
+// Riceve gli argomenti già oscurati: i valori sensibili non finiscono nel riassunto
 function buildSummary(tool: CatalogTool, args: Record<string, unknown>): string {
   const label = tool.description?.trim() || tool.name;
   const parts = Object.entries(args).map(([k, v]) => `${k}: ${formatValue(v)}`);
@@ -221,6 +227,7 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
 
       if (needsPause(prepared.tool)) {
         // La chiamata resta in testa alla coda: la toglie resolvePending
+        const publicArgs = maskSensitiveArgs(prepared.tool, prepared.args) as Record<string, unknown>;
         return finish({
           type: "paused",
           pending: {
@@ -228,7 +235,8 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
             toolCallId: prepared.call.id,
             toolName: prepared.tool.name,
             args: prepared.args,
-            summary: buildSummary(prepared.tool, prepared.args),
+            publicArgs,
+            summary: buildSummary(prepared.tool, publicArgs),
           },
           state,
         });

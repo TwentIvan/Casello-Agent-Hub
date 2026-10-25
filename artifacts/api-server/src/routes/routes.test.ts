@@ -454,4 +454,29 @@ describe("run", () => {
     expect(res.status).toBe(500);
     expect(res.json).toEqual({ error: "Errore interno" });
   });
+
+  it("GET della run in pausa: argomenti sensibili oscurati in args e nel riassunto", async () => {
+    const app = await createApp();
+    await api("POST", `/apps/${app.id}/tools`, {
+      ...HTTP_TOOL,
+      name: "set_password",
+      paramsSchema: {
+        type: "object",
+        properties: { id: { type: "string" }, password: { type: "string", "x-sensitive": true } },
+        required: ["id", "password"],
+      },
+      definition: { method: "PATCH", path: "/items/{id}", paramLocations: { id: "path", password: "body" } },
+    });
+    const general = await generalAgentOf(app.id);
+    const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "x" }).returning();
+    llmReplies = [toolCallReply("set_password", { id: "42", password: "segreta-123" })];
+    await startRun(run!.id, { userToken: USER_TOKEN });
+    expect((await getRun(run!.id)).status).toBe("awaiting_client");
+
+    const res = await api("GET", `/runs/${run!.id}`);
+    expect(res.status).toBe(200);
+    expect(res.json.pendingAction.args).toEqual({ id: "42", password: "***" });
+    expect(res.text).not.toContain("segreta-123");
+    expect((await api("GET", "/runs")).text).not.toContain("segreta-123");
+  });
 });

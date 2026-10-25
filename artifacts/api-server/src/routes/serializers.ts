@@ -10,16 +10,34 @@ export function toPublicApp(app: App) {
   return { ...rest, serviceSecretSet: serviceSecretEnc != null };
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Argomenti pubblici dell'azione in sospeso: quelli oscurati con lo schema del tool al momento
+ * della pausa (`publicArgs`). Senza `publicArgs` (azione salvata prima che esistesse) ogni
+ * valore diventa "***": meglio non mostrare che mostrare un segreto.
+ */
+function publicPendingArgs(p: { args?: unknown; publicArgs?: unknown }): Record<string, unknown> {
+  if (isPlainObject(p.publicArgs)) return p.publicArgs;
+  if (!isPlainObject(p.args)) return {};
+  return Object.fromEntries(Object.keys(p.args).map((k) => [k, "***"]));
+}
+
 /**
  * Run senza lo stato del ciclo (`loopState`, contiene la conversazione e gli argomenti) e con
- * l'azione in sospeso ridotta ai campi pubblici, solo mentre la run è in attesa del client.
+ * l'azione in sospeso ridotta ai campi pubblici (argomenti sensibili oscurati), solo mentre la
+ * run è in attesa del client.
  */
 export function toPublicRun(run: Run) {
   const { loopState: _loopState, pausedAt: _pausedAt, pendingAction, ...rest } = run;
-  const p = pendingAction as { kind?: unknown; toolName?: unknown; args?: unknown; summary?: unknown } | null;
+  const p = pendingAction as
+    | { kind?: unknown; toolName?: unknown; args?: unknown; publicArgs?: unknown; summary?: unknown }
+    | null;
   const publicPending =
     run.status === "awaiting_client" && p && typeof p === "object"
-      ? { kind: p.kind, toolName: p.toolName, args: p.args, summary: p.summary }
+      ? { kind: p.kind, toolName: p.toolName, args: publicPendingArgs(p), summary: p.summary }
       : null;
   return { ...rest, pendingAction: publicPending };
 }

@@ -1,4 +1,5 @@
-import { unzipSync } from "fflate";
+import { RegexSearchTimeout, RegexSearchWorker } from "./search-worker";
+import { extractEntry, readZipEntries, ZipFormatError, type RawZipEntry } from "./zip-reader";
 
 /**
  * Vista in memoria, con limiti di dimensione, del sorgente di un'app ricavata da uno zip.
@@ -16,8 +17,9 @@ export const SOURCE_LIMITS = {
   maxSearchResults: 100,
 } as const;
 
-/** Somma delle dimensioni dichiarate oltre la quale l'archivio è rifiutato subito. */
-const MAX_DECLARED_TOTAL_BYTES = SOURCE_LIMITS.maxTotalBytes * 10;
+const MAX_RAW_ENTRIES = 50_000;
+const MAX_REGEX_PATTERN_CHARS = 200;
+const MAX_REGEX_LINE_CHARS = 10_000;
 const MAX_LIST_DEPTH = 5;
 const MAX_SEARCH_TEXT_CHARS = 200;
 const BINARY_SNIFF_BYTES = 8192;
@@ -56,11 +58,6 @@ export interface SourceSkipped {
   binary: number;
   tooLarge: number;
   ignored: number;
-}
-
-interface ZipEntry {
-  name: string;
-  originalSize: number;
 }
 
 /** Normalizza un percorso interno allo zip; null se pericoloso (assoluto, unità, `..`). */
@@ -141,6 +138,7 @@ export class SourceTree {
   readonly skipped: SourceSkipped;
   private readonly files: Map<string, string>;
   private readonly sortedPaths: string[];
+  private regexWorker: RegexSearchWorker | null = null;
 
   private constructor(files: Map<string, string>, totalBytes: number, skipped: SourceSkipped) {
     this.files = files;
@@ -150,36 +148,32 @@ export class SourceTree {
     this.sortedPaths = [...files.keys()].sort();
   }
 
-  static fromZip(bytes: Uint8Array, opts: { stripTopFolder?: boolean } = {}): SourceTree {
+  static fromZip(
+    bytes: Uint8Array,
+    opts: { stripTopFolder?: boolean; limits?: { maxRawEntries?: number } } = {},
+  ): SourceTree {
     if (bytes.length > SOURCE_LIMITS.maxZipBytes) {
       throw new SourceTreeError(
         `L'archivio supera il limite di ${Math.round(SOURCE_LIMITS.maxZipBytes / 1_048_576)} MB.`,
       );
     }
-
-    // Passo 1: solo l'elenco delle voci (il filtro rifiuta tutto, nulla viene decompresso).
-    const entries: ZipEntry[] = [];
     try {
-      unzipSync(bytes, {
-        filter: (f) => {
-          entries.push({ name: f.name, originalSize: f.originalSize });
-          return false;
-        },
-      });
-    } catch {
-      throw new SourceTreeError("L'archivio non è uno zip valido.");
+      return SourceTree.build(bytes, opts);
+    } catch (e) {
+      if (e instanceof ZipFormatError) throw new SourceTreeError(e.message);
+      throw e;
     }
+  }
 
-    let declared = 0;
-    for (const e of entries) declared += e.originalSize;
-    if (declared > MAX_DECLARED_TOTAL_BYTES) {
-      throw new SourceTreeError(
-        "L'archivio decompresso supera il limite di dimensione consentito.",
-      );
-    }
+  private static build(
+    bytes: Uint8Array,
+    opts: { stripTopFolder?: boolean; limits?: { maxRawEntries?: number } },
+  ): SourceTree {
+    // Struttura validata per intero (sovrapposizioni, zip64, cifratura...) prima di leggere dati.
+    const entries = readZipEntries(bytes, opts.limits?.maxRawEntries ?? MAX_RAW_ENTRIES);
 
-    // Percorsi normalizzati; voci pericolose e cartelle scartate, duplicati: vale la prima.
-    const candidates = new Map<string, ZipEntry>();
+    // Percorsi normalizzati; voci pericolose e cartelle scartate; duplicati: vale la prima.
+    const candidates = new Map<string, RawZipEntry>();
     for (const e of entries) {
       if (e.name.endsWith("/")) continue;
       const path = normalizeEntryPath(e.name);
@@ -200,9 +194,9 @@ export class SourceTree {
       if (allNested && tops.size === 1) prefix = `${[...tops][0]}/`;
     }
 
-    // Piano: quali file leggere (in base alla dimensione dichiarata) e quanto contano.
+    // Decisioni prima di decomprimere, sulla dimensione dichiarata (che l'estrazione poi impone).
     const skipped: SourceSkipped = { binary: 0, tooLarge: 0, ignored: 0 };
-    const plan = new Map<string, string>(); // nome nello zip -> percorso finale
+    const plan: [string, RawZipEntry][] = [];
     let plannedBytes = 0;
     for (const [fullPath, e] of candidates) {
       const path = prefix ? fullPath.slice(prefix.length) : fullPath;
@@ -218,40 +212,26 @@ export class SourceTree {
         skipped.tooLarge++;
         continue;
       }
-      plannedBytes += e.originalSize;
-      if (plan.size + 1 > SOURCE_LIMITS.maxFiles) {
+      if (plan.length + 1 > SOURCE_LIMITS.maxFiles) {
         throw new SourceTreeError(
           `L'archivio contiene troppi file: limite di ${SOURCE_LIMITS.maxFiles}.`,
         );
       }
+      plannedBytes += e.originalSize;
       if (plannedBytes > SOURCE_LIMITS.maxTotalBytes) {
         throw new SourceTreeError(
           `Il sorgente supera il limite di ${Math.round(SOURCE_LIMITS.maxTotalBytes / 1_048_576)} MB.`,
         );
       }
-      plan.set(e.name, path);
+      plan.push([path, e]);
     }
 
-    // Passo 2: decomprime solo i file pianificati; ricontrolla la dimensione reale.
+    // Estrazione: output reale == dichiarato, altrimenti l'archivio è rifiutato (ZipFormatError).
     const files = new Map<string, string>();
     const decoder = new TextDecoder("utf-8", { fatal: false });
     let totalBytes = 0;
-    let raw: Record<string, Uint8Array>;
-    try {
-      raw = unzipSync(bytes, {
-        filter: (f) =>
-          plan.has(f.name) && f.originalSize <= SOURCE_LIMITS.maxFileBytes,
-      });
-    } catch {
-      throw new SourceTreeError("L'archivio non è uno zip valido.");
-    }
-    for (const [name, data] of Object.entries(raw)) {
-      const path = plan.get(name);
-      if (path === undefined) continue;
-      if (data.length > SOURCE_LIMITS.maxFileBytes) {
-        skipped.tooLarge++;
-        continue;
-      }
+    for (const [path, e] of plan) {
+      const data = extractEntry(bytes, e);
       if (hasNul(data)) {
         skipped.binary++;
         continue;
@@ -331,32 +311,50 @@ export class SourceTree {
     };
   }
 
-  search(
+  async search(
     pattern: string,
     opts: { glob?: string; regex?: boolean } = {},
-  ): { path: string; line: number; text: string }[] {
-    let test: (line: string) => boolean;
+  ): Promise<{ path: string; line: number; text: string }[]> {
+    const globRe = opts.glob ? globToRegex(opts.glob) : null;
+
     if (opts.regex) {
-      let re: RegExp;
+      if (pattern.length > MAX_REGEX_PATTERN_CHARS) {
+        throw new SourceTreeError(
+          `Espressione regolare troppo lunga (massimo ${MAX_REGEX_PATTERN_CHARS} caratteri).`,
+        );
+      }
       try {
-        re = new RegExp(pattern);
+        new RegExp(pattern); // solo validazione: la costruzione è economica
       } catch {
         throw new SourceTreeError(`Espressione regolare non valida: ${pattern}`);
       }
-      test = (line) => re.test(line);
-    } else {
-      const needle = pattern.toLowerCase();
-      test = (line) => line.toLowerCase().includes(needle);
+      this.regexWorker ??= new RegexSearchWorker(() => [...this.files.entries()]);
+      try {
+        return await this.regexWorker.search(pattern, globRe ? globRe.source : null, {
+          max: SOURCE_LIMITS.maxSearchResults,
+          maxText: MAX_SEARCH_TEXT_CHARS,
+          maxLine: MAX_REGEX_LINE_CHARS,
+        });
+      } catch (e) {
+        if (e instanceof RegexSearchTimeout) {
+          throw new SourceTreeError(
+            "ricerca regex troppo lenta: usa una ricerca testuale",
+          );
+        }
+        throw new SourceTreeError(
+          "ricerca regex non disponibile: usa una ricerca testuale",
+        );
+      }
     }
-    const globRe = opts.glob ? globToRegex(opts.glob) : null;
 
+    const needle = pattern.toLowerCase();
     const results: { path: string; line: number; text: string }[] = [];
     for (const path of this.sortedPaths) {
       if (globRe && !globRe.test(path)) continue;
       const lines = this.files.get(path)!.split("\n");
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i]!;
-        if (!test(line)) continue;
+        if (!line.toLowerCase().includes(needle)) continue;
         results.push({
           path,
           line: i + 1,
@@ -366,5 +364,11 @@ export class SourceTree {
       }
     }
     return results;
+  }
+
+  /** Termina il worker della ricerca regex, se avviato. */
+  async dispose(): Promise<void> {
+    await this.regexWorker?.dispose();
+    this.regexWorker = null;
   }
 }

@@ -1,4 +1,4 @@
-import { strToU8, zipSync } from "fflate";
+import { deflateSync, strToU8, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { SOURCE_LIMITS, SourceTree, SourceTreeError } from "./source-tree";
 
@@ -134,7 +134,7 @@ describe("SourceTree", () => {
     expect(r.truncated).toBe(true);
   });
 
-  it("search", () => {
+  it("search", async () => {
     const tree = SourceTree.fromZip(
       zip({
         "src/a.ts": "const Foo = 1;\nconst bar = 2;\n  foo again\n",
@@ -142,7 +142,7 @@ describe("SourceTree", () => {
         "docs/x.md": "foo doc\n",
       }),
     );
-    const sub = tree.search("FOO");
+    const sub = await tree.search("FOO");
     expect(sub.map((r) => `${r.path}:${r.line}`)).toEqual([
       "docs/x.md:1",
       "src/a.ts:1",
@@ -150,22 +150,200 @@ describe("SourceTree", () => {
       "src/b.js:1",
     ]);
     expect(sub[2]!.text).toBe("foo again");
-    expect(tree.search("^const \\w+ = \\d", { regex: true })).toHaveLength(2);
+    expect(await tree.search("^const \\w+ = \\d", { regex: true })).toHaveLength(2);
     expect(
-      tree.search("foo", { glob: "**/*.ts" }).map((r) => r.path),
+      (await tree.search("foo", { glob: "**/*.ts" })).map((r) => r.path),
     ).toEqual(["src/a.ts", "src/a.ts"]);
-    expect(tree.search("foo", { glob: "src/*.js" })).toHaveLength(1);
-    expect(tree.search("foo", { glob: "src/?.js" })).toHaveLength(1);
-    expect(tree.search("foo", { glob: "*.ts" })).toHaveLength(0);
-    expect(() => tree.search("(", { regex: true })).toThrow(SourceTreeError);
+    expect(
+      (await tree.search("foo", { glob: "**/*.ts", regex: true })).map((r) => r.path),
+    ).toEqual(["src/a.ts"]);
+    expect(await tree.search("foo", { glob: "src/*.js" })).toHaveLength(1);
+    expect(await tree.search("foo", { glob: "src/?.js" })).toHaveLength(1);
+    expect(await tree.search("foo", { glob: "*.ts" })).toHaveLength(0);
+    await expect(tree.search("(", { regex: true })).rejects.toThrow(SourceTreeError);
+    await tree.dispose();
   });
 
-  it("search limita i risultati e il testo", () => {
+  it("search limita i risultati e il testo", async () => {
     const tree = SourceTree.fromZip(
       zip({ "m.txt": Array(250).fill("match " + "z".repeat(500)).join("\n") }),
     );
-    const res = tree.search("match");
+    const res = await tree.search("match");
     expect(res).toHaveLength(SOURCE_LIMITS.maxSearchResults);
     expect(res[0]!.text.length).toBe(200);
   });
+
+  it("percorso __proto__ e duplicati: vale la prima voce", () => {
+    const tree = SourceTree.fromZip(
+      rawZip([
+        { name: "__proto__", data: strToU8("p") },
+        { name: "a.ts", data: strToU8("primo") },
+        { name: "a.ts", data: strToU8("secondo") },
+      ]),
+    );
+    expect(tree.read("__proto__").content).toBe("p");
+    expect(tree.read("a.ts").content).toBe("primo");
+    expect(tree.fileCount).toBe(2);
+  });
+
+  it("ReDoS: la ricerca regex è interrotta e poi disabilitata", async () => {
+    const tree = SourceTree.fromZip(zip({ "a.txt": "a".repeat(40) + "!\nciao\n" }));
+    try {
+      expect(await tree.search("ciao", { regex: true })).toHaveLength(1);
+      const t0 = Date.now();
+      await expect(tree.search("^(a+)+$", { regex: true })).rejects.toThrow(
+        /ricerca regex troppo lenta/,
+      );
+      expect(Date.now() - t0).toBeLessThan(3500);
+      await expect(tree.search("ciao", { regex: true })).rejects.toThrow(SourceTreeError);
+      expect(await tree.search("ciao")).toHaveLength(1);
+    } finally {
+      await tree.dispose();
+    }
+  }, 20_000);
+
+  it("regex: pattern troppo lungo, righe lunghe saltate, dispose", async () => {
+    const tree = SourceTree.fromZip(
+      zip({ "a.txt": "x".repeat(10_001) + "\nx\n" }),
+    );
+    await expect(
+      tree.search("a".repeat(201), { regex: true }),
+    ).rejects.toThrow(SourceTreeError);
+    const res = await tree.search("x", { regex: true });
+    expect(res).toEqual([{ path: "a.txt", line: 2, text: "x" }]);
+    await tree.dispose();
+    await expect(tree.search("x", { regex: true })).resolves.toHaveLength(1);
+    await tree.dispose();
+  }, 20_000);
 });
+
+describe("SourceTree: zip ostili", () => {
+  it("voce stored che mente sulla dimensione", () => {
+    const bytes = rawZip([{ name: "a.txt", data: new Uint8Array(1000).fill(97), usize: 10 }]);
+    expect(() => SourceTree.fromZip(bytes)).toThrow(SourceTreeError);
+  });
+
+  it("due voci della central directory sullo stesso header locale", () => {
+    const bytes = rawZip([
+      { name: "a.txt", data: new Uint8Array(1000).fill(97) },
+      { name: "b.txt", data: new Uint8Array(0), sameLocalAs: 0, csize: 1000, usize: 1000 },
+    ]);
+    expect(() => SourceTree.fromZip(bytes)).toThrow(/sovrapposte/);
+  });
+
+  it("deflate con output reale oltre il dichiarato: rifiutato in fretta", () => {
+    const real = deflateSync(new Uint8Array(8 * 1024 * 1024).fill(97), { level: 9 });
+    const bytes = rawZip([{ name: "a.txt", method: 8, data: real, usize: 100 }]);
+    const t0 = Date.now();
+    expect(() => SourceTree.fromZip(bytes)).toThrow(SourceTreeError);
+    expect(Date.now() - t0).toBeLessThan(2000);
+  });
+
+  it("deflate con output reale inferiore al dichiarato: rifiutato", () => {
+    const real = deflateSync(strToU8("abc"));
+    const bytes = rawZip([{ name: "a.txt", method: 8, data: real, usize: 100 }]);
+    expect(() => SourceTree.fromZip(bytes)).toThrow(SourceTreeError);
+  });
+
+  it("deflate oltre maxFileBytes dichiarato: saltato senza decomprimere", () => {
+    // dati compressi non validi: se venissero decompressi, l'archivio verrebbe rifiutato
+    const bytes = rawZip([
+      { name: "big.txt", method: 8, data: new Uint8Array([1, 2, 3]), usize: 5_000_000 },
+      { name: "ok.txt", data: strToU8("ok") },
+    ]);
+    const tree = SourceTree.fromZip(bytes);
+    expect(tree.skipped.tooLarge).toBe(1);
+    expect(tree.has("ok.txt")).toBe(true);
+  });
+
+  it("voce cifrata o metodo non supportato", () => {
+    expect(() =>
+      SourceTree.fromZip(rawZip([{ name: "a.txt", data: strToU8("x"), flags: 1 }])),
+    ).toThrow(/cifrate/);
+    expect(() =>
+      SourceTree.fromZip(rawZip([{ name: "a.txt", data: strToU8("x"), method: 12 }])),
+    ).toThrow(/metodo/);
+  });
+
+  it("troppe voci grezze", () => {
+    const bytes = zip({ "a.txt": "1", "b.txt": "2", "c.txt": "3" });
+    expect(() => SourceTree.fromZip(bytes, { limits: { maxRawEntries: 2 } })).toThrow(
+      /troppe voci/,
+    );
+    expect(SourceTree.fromZip(bytes, { limits: { maxRawEntries: 3 } }).fileCount).toBe(3);
+  });
+
+  it("zip64 rifiutato", () => {
+    const bytes = rawZip([{ name: "a.txt", data: strToU8("x") }], { zip64: true });
+    expect(() => SourceTree.fromZip(bytes)).toThrow(/zip64 non supportato/);
+  });
+});
+
+interface RawEntry {
+  name: string;
+  data: Uint8Array;
+  method?: number;
+  flags?: number;
+  csize?: number;
+  usize?: number;
+  /** Indice di una voce precedente di cui riusare l'header locale. */
+  sameLocalAs?: number;
+}
+
+/** Costruisce uno zip a mano, anche con intestazioni incoerenti. */
+function rawZip(entries: RawEntry[], opts: { zip64?: boolean } = {}): Uint8Array {
+  const parts: Uint8Array[] = [];
+  const offsets: number[] = [];
+  let pos = 0;
+  const push = (u: Uint8Array) => {
+    parts.push(u);
+    pos += u.length;
+  };
+  for (const e of entries) {
+    if (e.sameLocalAs !== undefined) {
+      offsets.push(offsets[e.sameLocalAs]!);
+      continue;
+    }
+    offsets.push(pos);
+    const name = strToU8(e.name);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true);
+    h.setUint16(6, e.flags ?? 0, true);
+    h.setUint16(8, e.method ?? 0, true);
+    h.setUint32(18, e.csize ?? e.data.length, true);
+    h.setUint32(22, e.usize ?? e.data.length, true);
+    h.setUint16(26, name.length, true);
+    push(new Uint8Array(h.buffer));
+    push(name);
+    push(e.data);
+  }
+  const cdStart = pos;
+  entries.forEach((e, i) => {
+    const name = strToU8(e.name);
+    const h = new DataView(new ArrayBuffer(46));
+    h.setUint32(0, 0x02014b50, true);
+    h.setUint16(8, e.flags ?? 0, true);
+    h.setUint16(10, e.method ?? 0, true);
+    h.setUint32(20, e.csize ?? e.data.length, true);
+    h.setUint32(24, e.usize ?? e.data.length, true);
+    h.setUint16(28, name.length, true);
+    h.setUint32(42, offsets[i]!, true);
+    push(new Uint8Array(h.buffer));
+    push(name);
+  });
+  const cdSize = pos - cdStart;
+  const eocd = new DataView(new ArrayBuffer(22));
+  eocd.setUint32(0, 0x06054b50, true);
+  eocd.setUint16(8, entries.length, true);
+  eocd.setUint16(10, opts.zip64 ? 0xffff : entries.length, true);
+  eocd.setUint32(12, cdSize, true);
+  eocd.setUint32(16, cdStart, true);
+  push(new Uint8Array(eocd.buffer));
+  const out = new Uint8Array(pos);
+  let o = 0;
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.length;
+  }
+  return out;
+}

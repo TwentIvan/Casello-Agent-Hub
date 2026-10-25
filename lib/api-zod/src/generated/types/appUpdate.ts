@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AppStatus } from './appStatus';
+import type { AuthConfig } from './authConfig';
 
 export interface AppUpdate {
   /** @minLength 1 */
@@ -14,5 +15,14 @@ export interface AppUpdate {
   description?: string | null;
   /** @minLength 1 */
   baseUrl?: string;
+  /** @nullable */
+  internalBaseUrl?: string | null;
+  userAuth?: AuthConfig | null;
+  serviceAuth?: AuthConfig | null;
+  /**
+     * Segreto di servizio (solo scrittura); null lo cancella
+     * @nullable
+     */
+  serviceSecret?: string | null;
   status?: AppStatus;
 }

@@ -6,13 +6,24 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AppStatus } from './appStatus';
+import type { AuthConfig } from './authConfig';
 
 export interface App {
   id: number;
   name: string;
+  slug: string;
   /** @nullable */
   description?: string | null;
   baseUrl: string;
+  /**
+     * URL raggiunto dall'esecutore al posto di baseUrl (rete interna)
+     * @nullable
+     */
+  internalBaseUrl?: string | null;
+  userAuth?: AuthConfig | null;
+  serviceAuth?: AuthConfig | null;
+  /** Indica se il segreto di servizio è impostato (il valore non è mai esposto) */
+  serviceSecretSet: boolean;
   status: AppStatus;
   createdAt: Date;
   updatedAt: Date;

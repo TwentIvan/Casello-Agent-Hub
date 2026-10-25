@@ -5,7 +5,9 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { AgentRole } from './agentRole';
 import type { AgentStatus } from './agentStatus';
+import type { ToolIdentity } from './toolIdentity';
 
 export interface Agent {
   id: number;
@@ -15,6 +17,12 @@ export interface Agent {
   systemPrompt?: string | null;
   model?: string;
   status: AgentStatus;
+  role: AgentRole;
+  /** @nullable */
+  area?: string | null;
+  defaultIdentity: ToolIdentity;
+  /** ID dei tool del catalogo assegnati all'agente */
+  toolIds: number[];
   createdAt: Date;
   updatedAt: Date;
 }

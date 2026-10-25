@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AgentStatus } from './agentStatus';
+import type { ToolIdentity } from './toolIdentity';
 
 export interface AgentUpdate {
   /** @minLength 1 */
@@ -14,4 +15,7 @@ export interface AgentUpdate {
   systemPrompt?: string | null;
   model?: string;
   status?: AgentStatus;
+  /** @nullable */
+  area?: string | null;
+  defaultIdentity?: ToolIdentity;
 }

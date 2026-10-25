@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Agent, AgentSkill, AppTool } from "@workspace/db";
-import { diffAgents, diffAlwaysNew, diffSkills, diffTools } from "./diff";
-import type { AgentProposal, SkillProposal, ToolProposal } from "./schemas";
+import { diffAgents, diffAlwaysNew, diffSkills, diffTools, skillRef } from "./diff";
+import { AgentsResultSchema, type AgentProposal, type SkillProposal, type ToolProposal } from "./schemas";
 
 const proposal = (over: Partial<ToolProposal> = {}): ToolProposal => ({
   name: "list_teams",
@@ -154,5 +154,36 @@ describe("diffAgents e diffSkills", () => {
       ["evolution:1", "new"],
       ["evolution:2", "new"],
     ]);
+  });
+});
+
+describe("skillRef", () => {
+  const skill = (agentArea: string, name: string) => ({
+    agentRole: "area",
+    agentArea,
+    name,
+    description: "d",
+    instructions: "i",
+    toolNames: [],
+    paramsSchema: null,
+  });
+  const agents = [
+    { role: "general", area: null, name: "G", systemPrompt: "p", defaultIdentity: "user", toolNames: [] },
+  ];
+
+  it("il separatore non è ambiguo: area \"a:b\" + \"c\" ≠ area \"a\" + \"b:c\"", () => {
+    expect(skillRef("area", "a:b", "c")).not.toBe(skillRef("area", "a", "b:c"));
+    // e lo schema non le considera duplicate
+    expect(AgentsResultSchema.safeParse({ agents, skills: [skill("a:b", "c"), skill("a", "b:c")] }).success).toBe(true);
+  });
+
+  it("area con spazi ai bordi: stesso riferimento e duplicato per lo schema", () => {
+    expect(skillRef("area", " Squadre ", "s")).toBe(skillRef("area", "Squadre", "s"));
+    expect(skillRef("area", "Squadre", "s")).toBe("skill:area:Squadre:s");
+    expect(skillRef("general", null, "s")).toBe("skill:general:s");
+    expect(skillRef("general", null, "s")).not.toBe(skillRef("area", "general", "s"));
+    const dup = AgentsResultSchema.safeParse({ agents, skills: [skill(" Squadre ", "s"), skill("Squadre", "s")] });
+    expect(dup.success).toBe(false);
+    if (!dup.success) expect(dup.error.issues[0]!.message).toContain('"Squadre/s"');
   });
 });

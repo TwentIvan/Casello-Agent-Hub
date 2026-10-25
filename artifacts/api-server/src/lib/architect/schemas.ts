@@ -208,6 +208,16 @@ export const SkillProposalSchema = obj({
   paramsSchema: jsonObject().nullable(),
 }).superRefine((skill, ctx) => checkRoleArea({ role: skill.agentRole, area: skill.agentArea }, ctx, "agentArea"));
 
+/**
+ * Chiave di una skill per (agente, nome), condivisa dal controllo dei duplicati e dal riferimento
+ * dell'elemento (`skillRef`): area senza spazi ai bordi e componenti codificati, così il separatore
+ * ":" non è ambiguo (area "a:b" + nome "c" ≠ area "a" + nome "b:c").
+ */
+export function skillKey(role: string, area: string | null, name: string): string {
+  const agent = role === "general" ? "general" : `area:${encodeURIComponent((area ?? "").trim())}`;
+  return `${agent}:${encodeURIComponent(name)}`;
+}
+
 export const AgentsResultSchema = obj({
   agents: list(AgentProposalSchema, MAX_ITEMS),
   skills: list(SkillProposalSchema, MAX_ITEMS),
@@ -226,11 +236,18 @@ export const AgentsResultSchema = obj({
     ["agents"],
     (k) => `l'area "${k}" ha più di un agente: ogni area ne vuole uno solo`,
   );
+  // Il messaggio mostra agente e nome in chiaro, non la chiave codificata
+  const skillLabels = new Map(
+    res.skills.map((sk) => [
+      skillKey(sk.agentRole, sk.agentArea, sk.name),
+      `${sk.agentRole === "general" ? "general" : (sk.agentArea ?? "").trim()}/${sk.name}`,
+    ]),
+  );
   addDuplicates(
     ctx,
-    res.skills.map((sk) => `${sk.agentRole === "general" ? "general" : (sk.agentArea ?? "").trim()}/${sk.name}`),
+    res.skills.map((sk) => skillKey(sk.agentRole, sk.agentArea, sk.name)),
     ["skills"],
-    (k) => `la skill "${k}" è proposta più volte: (agente, nome) devono essere unici`,
+    (k) => `la skill "${skillLabels.get(k) ?? k}" è proposta più volte: (agente, nome) devono essere unici`,
   );
 });
 

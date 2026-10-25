@@ -1,5 +1,5 @@
 import type { Agent, AgentSkill, AnalysisItem, AppTool } from "@workspace/db";
-import type { AnalysisChapter } from "./schemas";
+import { skillKey, type AnalysisChapter } from "./schemas";
 import type {
   AgentProposal,
   CompletionItem,
@@ -77,8 +77,8 @@ export function diffTools(proposed: ToolProposal[], existing: AppTool[]): DiffEn
 // --- Agenti e skill ---
 
 export const agentRef = (role: string, area: string | null) => (role === "general" ? "agent:general" : `agent:area:${trimmed(area)}`);
-export const skillRef = (role: string, area: string | null, name: string) =>
-  `skill:${role === "general" ? "general" : `area:${area ?? ""}`}:${name}`;
+/** Stessa chiave del controllo dei duplicati dello schema (`skillKey`): non possono divergere. */
+export const skillRef = (role: string, area: string | null, name: string) => `skill:${skillKey(role, area, name)}`;
 
 /** Confronto per (`role`, `area`). Dell'agente generale non si confrontano nome e tool (usa tutti i tool attivi). */
 export function diffAgents(

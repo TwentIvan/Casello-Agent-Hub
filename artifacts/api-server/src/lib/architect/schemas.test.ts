@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { phasePrompt, SYSTEM_BASE } from "./prompts";
+import { PHASE_EXAMPLES, phasePrompt, SYSTEM_BASE } from "./prompts";
 import {
   AgentProposalSchema,
   AgentsResultSchema,
@@ -285,5 +285,28 @@ describe("unicità dei riferimenti e coerenza ruolo/area", () => {
     expect(SkillProposalSchema.safeParse(skill("general", "X", "s")).success).toBe(false);
     expect(SkillProposalSchema.safeParse(skill("area", null, "s")).success).toBe(false);
     expect(SkillProposalSchema.safeParse(skill("area", "S", "s")).success).toBe(true);
+  });
+});
+
+describe("esempi delle fasi nel prompt", () => {
+  it.each(PHASES)("l'esempio della fase %s rispetta il suo schema", (phase) => {
+    const r = PHASE_SCHEMAS[phase].safeParse(PHASE_EXAMPLES[phase]);
+    expect(r.success ? [] : r.error.issues).toEqual([]);
+  });
+
+  it.each(PHASES)("il prompt della fase %s contiene l'esempio", (phase) => {
+    const prompt = phasePrompt(phase, {
+      appName: "App",
+      baseUrl: "https://app.example",
+      functionalDescription: null,
+      hasCode: true,
+      hasOpenApi: false,
+      previous: {},
+    });
+    expect(prompt).toContain(JSON.stringify(PHASE_EXAMPLES[phase]));
+  });
+
+  it("il prompt di sistema chiede di rispettare la forma dell'esempio", () => {
+    expect(SYSTEM_BASE).toContain("Rispetta esattamente la forma dell'esempio");
   });
 });

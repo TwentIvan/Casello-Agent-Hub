@@ -200,6 +200,13 @@ describe("GET /auth/github/login", () => {
     expect(session.github).toMatchObject({ state: url.searchParams.get("state"), mode: "login", returnTo: "/runs/3" });
   });
 
+  it("returnTo con barra rovesciata (/\\evil.com): dopo il login si torna a /", async () => {
+    gh.authorizeAs = TOKEN_IVAN;
+    const client = new Client();
+    const { location } = await client.flow(`/api/auth/github/login?returnTo=${encodeURIComponent("/\\evil.com")}`);
+    expect(location).toBe("/");
+  });
+
   it("returnTo esterno: ignorato", async () => {
     const client = new Client();
     await client.request("/api/auth/github/login?returnTo=//evil.example/x");
@@ -314,6 +321,21 @@ describe("login con GitHub", () => {
     const res = await client.request(`/api/auth/github/callback?error=access_denied&state=${state}`);
     expect(res.headers.get("location")).toBe("/apps?github=cancelled");
     expect(tokenRequests()).toBe(0);
+  });
+
+  it("sincronizzazione delle installazioni fallita: il login riesce comunque, nessuna installazione", async () => {
+    gh.authorizeAs = TOKEN_IVAN;
+    gh.failWith = (r) => (r.path.startsWith("/user/installations") ? 500 : null);
+    const client = new Client();
+    try {
+      const { location } = await client.flow("/api/auth/github/login?returnTo=/apps");
+      expect(location).toBe("/apps");
+    } finally {
+      gh.failWith = null;
+    }
+    const [user] = await db.select().from(usersTable);
+    expect(((await (await client.me()).json()) as { userId: number }).userId).toBe(user!.id);
+    expect(await db.select().from(githubInstallationsTable)).toHaveLength(0);
   });
 
   it("GitHub non risponde allo scambio: /?auth=error, nessun utente", async () => {

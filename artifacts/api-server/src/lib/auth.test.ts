@@ -115,3 +115,31 @@ describe("requireAuth", () => {
     expect(await res.json()).toEqual({ error: "Login richiesto" });
   });
 });
+
+describe("safeReturnTo", () => {
+  it.each([
+    ["/\\evil.com", "/"],
+    ["//evil.com", "/"],
+    ["/\t/evil.com", "/"],
+    ["/\n/evil.com", "/"],
+    ["/runs\\x", "/"],
+    ["https://evil.com", "/"],
+    ["evil.com", "/"],
+    ["", "/"],
+    ["/runs/3?x=1", "/runs/3?x=1"],
+    ["/", "/"],
+  ])("%j → %j", (input, expected) => {
+    expect(auth.safeReturnTo(input)).toBe(expected);
+  });
+
+  it("valori non stringa: /", () => {
+    expect(auth.safeReturnTo(undefined)).toBe("/");
+    expect(auth.safeReturnTo(["/runs"])).toBe("/");
+  });
+
+  it("/%5Cevil.com resta com'è: codificato, si risolve come percorso della nostra origine", () => {
+    const result = auth.safeReturnTo("/%5Cevil.com");
+    expect(result).toBe("/%5Cevil.com");
+    expect(new URL(result, "https://casello.example").origin).toBe("https://casello.example");
+  });
+});

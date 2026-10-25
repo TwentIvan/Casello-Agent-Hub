@@ -113,9 +113,23 @@ function getOidcConfiguration(cfg: AuthConfig): Promise<oidc.Configuration> {
   return discovered;
 }
 
-/** Accetta solo percorsi interni ("/runs/3"), mai URL esterni o "//host". */
+const RETURN_TO_BASE = "http://casello.invalid";
+
+/**
+ * Accetta solo percorsi interni ("/runs/3"), mai URL esterni. Rifiutati "//host" e "/\\host" (i
+ * browser trattano la barra rovesciata come "/"), qualsiasi barra rovesciata e i caratteri di
+ * controllo (che i browser scartano, es. "/\t/host"). Per sicurezza il percorso, risolto su
+ * un'origine fittizia, deve restare su quell'origine.
+ */
 export function safeReturnTo(value: unknown): string {
-  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//") ? value : "/";
+  // eslint-disable-next-line no-control-regex
+  if (typeof value !== "string" || !/^\/(?![/\\])/.test(value) || /[\\\x00-\x1f\x7f]/.test(value)) return "/";
+  try {
+    if (new URL(value, RETURN_TO_BASE).origin !== RETURN_TO_BASE) return "/";
+  } catch {
+    return "/";
+  }
+  return value;
 }
 
 export function sessionMiddleware(): RequestHandler {

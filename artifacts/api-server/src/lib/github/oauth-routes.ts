@@ -34,6 +34,18 @@ function errorSummary(err: unknown): { errName: string; status: number | null } 
   };
 }
 
+/**
+ * Sincronizza le installazioni senza bloccare login o collegamento: se fallisce si registra solo
+ * nome e stato dell'errore; le installazioni si riallineano alla prossima callback valida.
+ */
+async function syncWithoutBlocking(cfg: GithubConfig, userId: number, token: string): Promise<void> {
+  try {
+    await syncInstallations(cfg, userId, token);
+  } catch (err) {
+    logger.warn(errorSummary(err), "Sincronizzazione delle installazioni GitHub fallita");
+  }
+}
+
 export function githubAuthRouter(cfg: GithubConfig, opts: { publicAppUrl: string }): IRouter {
   const router: IRouter = Router();
   const redirectUri = `${opts.publicAppUrl.replace(/\/+$/, "")}/api/auth/github/callback`;
@@ -103,7 +115,7 @@ export function githubAuthRouter(cfg: GithubConfig, opts: { publicAppUrl: string
         }
         const identity = toIdentity(ghUser, emails.all, primaryEmail);
         const dbUser = await resolveLogin(identity);
-        await syncInstallations(cfg, dbUser.id, token);
+        await syncWithoutBlocking(cfg, dbUser.id, token);
         const user: SessionUser = { email: dbUser.email, name: dbUser.name, picture: dbUser.picture };
         // Nuovo id di sessione al login (contro la session fixation), come per Google
         req.session.regenerate((err) => {
@@ -132,7 +144,7 @@ export function githubAuthRouter(cfg: GithubConfig, opts: { publicAppUrl: string
         return;
       }
       await linkIdentity(userId, toIdentity(ghUser, emails.all, primaryEmail));
-      await syncInstallations(cfg, userId, token);
+      await syncWithoutBlocking(cfg, userId, token);
       res.redirect(pending.returnTo);
     } catch (err) {
       if (err instanceof IdentityConflictError) {

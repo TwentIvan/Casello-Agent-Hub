@@ -6,7 +6,13 @@ import type {
 } from "openai/resources/chat/completions";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ChatResult } from "../ai-gateway";
-import { MAX_CORRECTIONS, PHASE_MAX_ROUNDS, runPhase, type PhaseBudget } from "./phase-loop";
+import {
+  HISTORY_TOOL_OUTPUT_BUDGET,
+  MAX_CORRECTIONS,
+  PHASE_MAX_ROUNDS,
+  runPhase,
+  type PhaseBudget,
+} from "./phase-loop";
 import { SourceTree } from "./source-tree";
 import type { OpenApiDoc } from "./sources";
 
@@ -328,5 +334,58 @@ describe("runPhase", () => {
     const msg = toolMessages(s.calls[1]!.messages)[0]!;
     expect(msg).toContain("m.ts:100: match");
     expect(msg).toContain("risultati limitati");
+  });
+
+  describe("compattazione della cronologia", () => {
+    const size = (messages: ChatCompletionMessageParam[]) =>
+      messages.reduce((n, m) => n + JSON.stringify(m).length, 0);
+
+    async function manyReads(rounds: number) {
+      // file da ~100 caratteri per riga: ogni lettura (400 righe) è vicina al tetto di 40 000 caratteri
+      const line = "x".repeat(95);
+      const files: Record<string, string> = {};
+      for (let i = 0; i < rounds; i++) {
+        files[`src/f${i}.ts`] = Array.from({ length: 400 }, (_, n) => `${line}${i}-${n}`).join("\n");
+      }
+      const s = scripted([
+        ...Array.from({ length: rounds }, (_, i) => reply([call("read_file", { path: `src/f${i}.ts` })])),
+        reply([call("submit_result", { result: { ...validMap, stack: "node" } })]),
+        reply([call("submit_result", { result: validMap })]),
+      ]);
+      const { input } = base(s.chat, { tree: makeTree(files) });
+      const out = await runPhase(input);
+      return { s, out };
+    }
+
+    it("dopo molte letture grandi i messaggi inviati restano sotto un tetto", async () => {
+      const rounds = 20;
+      const { s, out } = await manyReads(rounds);
+      expect(out.ok).toBe(true);
+      expect(s.calls).toHaveLength(rounds + 2);
+      // budget della cronologia + l'ultima lettura (sempre intera) + messaggi brevi
+      const bound = HISTORY_TOOL_OUTPUT_BUDGET + 45_000;
+      for (const c of s.calls) expect(size(c.messages)).toBeLessThan(bound);
+      const last = s.calls.at(-1)!.messages;
+      const tools = toolMessages(last);
+      // le letture più vecchie sono segnaposto con nome e percorso, senza contenuto del file
+      expect(tools[0]).toBe("[output di read_file src/f0.ts omesso per spazio: rileggilo se serve]");
+      expect(tools[0]).not.toContain("xxxx");
+      // la più recente è intera; la correzione della consegna non valida resta intatta
+      expect(tools[rounds - 1]).toContain(`File src/f${rounds - 1}.ts`);
+      expect(tools[rounds]).toContain("Esito non valido");
+      expect(tools[rounds]).toContain("forma dell'esempio");
+    });
+
+    it("ogni tool_call conserva esattamente una risposta", async () => {
+      const { s } = await manyReads(12);
+      for (const c of s.calls) {
+        const ids = c.messages.flatMap((m) => (m.role === "assistant" ? (m.tool_calls ?? []).map((t) => t.id) : []));
+        const replies = c.messages.flatMap((m) => (m.role === "tool" ? [m.tool_call_id] : []));
+        expect(replies).toEqual(ids);
+        expect(new Set(ids).size).toBe(ids.length);
+      }
+      // system e user restano in testa
+      expect(s.calls.at(-1)!.messages.slice(0, 2).map((m) => m.content)).toEqual(["sistema", "utente"]);
+    });
   });
 });

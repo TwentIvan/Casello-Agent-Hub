@@ -31,6 +31,12 @@ const MAX_ISSUE_CHARS = 300;
 const MAX_ERROR_CHARS = 1_000;
 const MAX_LOG_ARG_CHARS = 120;
 
+/**
+ * Caratteri di output degli strumenti di lettura che restano interi nella cronologia: si tengono
+ * i più recenti, i più vecchi diventano un segnaposto breve (vedi `compactHistory`).
+ */
+export const HISTORY_TOOL_OUTPUT_BUDGET = 60_000;
+
 /** Budget dell'analisi, condiviso tra le fasi e aggiornato dal ciclo. */
 export interface PhaseBudget {
   tokensUsed: number;
@@ -321,6 +327,49 @@ function errorLog(name: string, args: Record<string, unknown> | null): string {
   return `${name}${target}${pattern} (errore)`;
 }
 
+/** Segnaposto di un output di lettura omesso: nome dello strumento e argomento principale, mai il contenuto. */
+function omittedStub(name: ReadToolName, args: Record<string, unknown>): string {
+  const str = (key: string): string => (typeof args[key] === "string" ? logArg(args[key] as string) : "");
+  const target =
+    name === "read_operation"
+      ? `${str("method").toUpperCase()} ${str("path")}`
+      : name === "search"
+        ? `"${str("pattern")}"`
+        : name === "list_operations"
+          ? ""
+          : str("path") || "/";
+  return `[output di ${name}${target ? ` ${target}` : ""} omesso per spazio: rileggilo se serve]`;
+}
+
+/**
+ * Compatta la cronologia prima di una chiamata al modello: senza, ogni giro rimanda tutti gli output
+ * letti e i token crescono col quadrato dei giri. Restano intatti i messaggi di sistema, utente e
+ * assistente (ogni tool_call conserva la sua unica risposta) e le risposte a submit_result; degli
+ * output di lettura (indice del messaggio → segnaposto in `stubs`) restano interi i più recenti,
+ * fino a `budget` caratteri in tutto (il più recente sempre), gli altri diventano il segnaposto.
+ * Modifica `messages` sul posto: un output compattato resta tale.
+ */
+export function compactHistory(
+  messages: ChatCompletionMessageParam[],
+  stubs: Map<number, string>,
+  budget = HISTORY_TOOL_OUTPUT_BUDGET,
+): void {
+  let kept = 0;
+  let full = false;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    const stub = stubs.get(i);
+    if (m.role !== "tool" || stub === undefined || typeof m.content !== "string" || m.content === stub) continue;
+    const size = m.content.length;
+    if (!full && (kept === 0 || kept + size <= budget)) {
+      kept += size;
+      continue;
+    }
+    full = true;
+    if (size > stub.length) messages[i] = { role: "tool", tool_call_id: m.tool_call_id, content: stub };
+  }
+}
+
 // --- Ciclo -----------------------------------------------------------------------------------
 
 const REMINDER =
@@ -336,6 +385,8 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
     { role: "system", content: input.system },
     { role: "user", content: input.user },
   ];
+  // Indici dei messaggi con un output di lettura compattabile → segnaposto
+  const stubs = new Map<number, string>();
   const fail = (error: string): PhaseOutcome => ({ ok: false, error: sliceChars(error, MAX_ERROR_CHARS) });
 
   let rounds = 0;
@@ -356,6 +407,7 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
     rounds += 1;
     let reply: ChatResult;
     try {
+      compactHistory(messages, stubs);
       reply = await input.chat(messages, tools);
     } catch (err) {
       return fail(`fase ${phase}: errore nella chiamata al modello: ${err instanceof Error ? err.message : String(err)}`);
@@ -378,7 +430,8 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
         function: { name: c.name, arguments: c.arguments },
       })),
     });
-    const answer = (id: string, content: string): void => {
+    const answer = (id: string, content: string, stub?: string): void => {
+      if (stub !== undefined) stubs.set(messages.length, stub);
       messages.push({ role: "tool", tool_call_id: id, content });
     };
 
@@ -402,7 +455,7 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
       }
       try {
         const out = await runReadTool(name, parsed.args, tree, openapi);
-        answer(c.id, out.content);
+        answer(c.id, out.content, omittedStub(name, parsed.args));
         log(out.log);
       } catch (err) {
         // Gli errori del sorgente (percorso inesistente, regex non valida...) tornano al modello
@@ -435,7 +488,7 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
       }
       answer(
         c.id,
-        `Esito non valido (correzione ${invalidSubmits}/${MAX_CORRECTIONS}): correggi questi problemi e richiama submit_result con l'esito completo.\n- ${problems.join("\n- ")}`,
+        `Esito non valido (correzione ${invalidSubmits}/${MAX_CORRECTIONS}): correggi questi problemi e richiama submit_result con l'esito completo, rispettando esattamente la forma dell'esempio della fase.\n- ${problems.join("\n- ")}`,
       );
       log(`submit_result non valido (correzione ${invalidSubmits}/${MAX_CORRECTIONS})`);
     }

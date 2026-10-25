@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AgentCreateDialog } from "@/components/agents/agent-create-dialog";
+import { AgentRoleBadge } from "@/components/agents/agent-role-badge";
 import { AGENT_STATUS_LABELS, StatusBadge } from "@/components/status-badge";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
@@ -129,6 +130,7 @@ export default function AgentsPage() {
                 <TableRow>
                   <TableHead className="pl-4">Nome</TableHead>
                   <TableHead>App</TableHead>
+                  <TableHead>Ruolo</TableHead>
                   <TableHead className="hidden md:table-cell">Modello</TableHead>
                   <TableHead>Stato</TableHead>
                   <TableHead className="hidden pr-4 text-right lg:table-cell">Aggiornato</TableHead>
@@ -145,6 +147,9 @@ export default function AgentsPage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {appNames.get(agent.appId) ?? `App #${agent.appId}`}
+                    </TableCell>
+                    <TableCell>
+                      <AgentRoleBadge agent={agent} />
                     </TableCell>
                     <TableCell className="hidden font-mono text-xs text-muted-foreground md:table-cell">
                       {agent.model ?? "—"}

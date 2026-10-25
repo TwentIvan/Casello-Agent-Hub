@@ -16,6 +16,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { RunStatusBadge } from "@/components/run-status-badge";
+import { ConfirmationCard } from "@/components/runs/confirmation-card";
+import { RunSteps } from "@/components/runs/run-steps";
 import { isRunActive } from "@/components/runs/run-queries";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatDuration, formatRelative } from "@/lib/format";
@@ -117,6 +119,14 @@ export default function RunDetailPage() {
             <dt className="text-muted-foreground">Durata</dt>
             <dd className="tabular-nums">{formatDuration(r.durationMs)}</dd>
           </div>
+          {(r.promptTokens != null || r.completionTokens != null) && (
+            <div>
+              <dt className="text-muted-foreground">Token</dt>
+              <dd className="tabular-nums">
+                {(r.promptTokens ?? 0).toLocaleString("it-IT")} in · {(r.completionTokens ?? 0).toLocaleString("it-IT")} out
+              </dd>
+            </div>
+          )}
         </dl>
       </div>
 
@@ -129,13 +139,25 @@ export default function RunDetailPage() {
         </CardContent>
       </Card>
 
-      {active ? (
+      <RunSteps run={r} />
+
+      {r.status === "awaiting_client" ? (
+        <ConfirmationCard run={r} />
+      ) : active ? (
         <Card>
           <CardContent className="flex items-center gap-3 py-8 text-sm text-muted-foreground">
             <Spinner className="size-5" />
             {r.status === "pending" ? "In attesa di partire…" : "L'agente sta lavorando…"}
           </CardContent>
         </Card>
+      ) : r.status === "cancelled" ? (
+        <Alert>
+          <AlertCircle className="size-4" />
+          <AlertTitle>Run annullata</AlertTitle>
+          <AlertDescription className="whitespace-pre-wrap break-words">
+            {r.errorMessage || "L'azione proposta dall'agente non è stata confermata."}
+          </AlertDescription>
+        </Alert>
       ) : r.status === "failed" ? (
         <Alert variant="destructive">
           <AlertCircle className="size-4" />

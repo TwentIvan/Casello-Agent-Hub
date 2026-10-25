@@ -13,6 +13,31 @@ export interface ErrorResponse {
   error: string;
 }
 
+export interface GithubInstallation {
+  installationId: number;
+  accountLogin: string;
+  /** User o Organization */
+  accountType: string;
+  /** all o selected */
+  repositorySelection: string;
+  /** Pagina di GitHub in cui gestire l'installazione */
+  manageUrl: string;
+}
+
+export interface GithubInstallations {
+  /** Pagina di GitHub in cui installare l'App */
+  installUrl: string;
+  installations: GithubInstallation[];
+}
+
+export interface GithubRepo {
+  installationId: number;
+  /** proprietario/nome */
+  fullName: string;
+  defaultBranch: string;
+  private: boolean;
+}
+
 export type LinkedIdentityProvider = typeof LinkedIdentityProvider[keyof typeof LinkedIdentityProvider];
 
 
@@ -658,6 +683,11 @@ export type UnauthorizedResponse = ErrorResponse;
  * Risorsa non trovata
  */
 export type NotFoundResponse = ErrorResponse;
+
+/**
+ * Servizio esterno non raggiungibile
+ */
+export type BadGatewayResponse = ErrorResponse;
 
 /**
  * Corpo della richiesta troppo grande

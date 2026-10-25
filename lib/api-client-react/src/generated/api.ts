@@ -36,12 +36,15 @@ import type {
   AppToolInput,
   AppToolUpdate,
   AppUpdate,
+  BadGatewayResponse,
   BadRequestResponse,
   ConflictResponse,
   CurrentUser,
   DashboardStats,
   ErrorResponse,
   ExportAnalysisIssuesParams,
+  GithubInstallations,
+  GithubRepo,
   HealthStatus,
   IssueExport,
   ListAgentsParams,
@@ -2480,6 +2483,162 @@ export const useDeleteAgentSkill = <TError = ErrorType<NotFoundResponse>,
       > => {
       return useMutation(getDeleteAgentSkillMutationOptions(options));
     }
+
+export const getListGithubInstallationsUrl = () => {
+
+
+
+
+  return `/api/github/installations`
+}
+
+/**
+ * Installazioni salvate per l'utente corrente, con il link per gestirle e quello per installare l'App su un altro account. 404 se GitHub non è configurato.
+ * @summary Installazioni dell'App GitHub collegate all'utente
+ */
+export const listGithubInstallations = async ( options?: RequestInit): Promise<GithubInstallations> => {
+
+  return customFetch<GithubInstallations>(getListGithubInstallationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListGithubInstallationsQueryKey = () => {
+    return [
+    `/api/github/installations`
+    ] as const;
+    }
+
+
+export const getListGithubInstallationsQueryOptions = <TData = Awaited<ReturnType<typeof listGithubInstallations>>, TError = ErrorType<NotFoundResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGithubInstallations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListGithubInstallationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listGithubInstallations>>> = ({ signal }) => listGithubInstallations({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGithubInstallations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListGithubInstallationsQueryResult = NonNullable<Awaited<ReturnType<typeof listGithubInstallations>>>
+export type ListGithubInstallationsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Installazioni dell'App GitHub collegate all'utente
+ */
+
+export function useListGithubInstallations<TData = Awaited<ReturnType<typeof listGithubInstallations>>, TError = ErrorType<NotFoundResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGithubInstallations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListGithubInstallationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListGithubReposUrl = () => {
+
+
+
+
+  return `/api/github/repos`
+}
+
+/**
+ * Repository di tutte le installazioni dell'utente, ordinati per nome completo, senza doppioni. Un'installazione revocata (401/404 da GitHub) viene eliminata per l'utente e saltata. 404 se GitHub non è configurato; 502 se GitHub non risponde.
+ * @summary Repository visibili all'App nelle installazioni dell'utente
+ */
+export const listGithubRepos = async ( options?: RequestInit): Promise<GithubRepo[]> => {
+
+  return customFetch<GithubRepo[]>(getListGithubReposUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListGithubReposQueryKey = () => {
+    return [
+    `/api/github/repos`
+    ] as const;
+    }
+
+
+export const getListGithubReposQueryOptions = <TData = Awaited<ReturnType<typeof listGithubRepos>>, TError = ErrorType<NotFoundResponse | BadGatewayResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGithubRepos>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListGithubReposQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listGithubRepos>>> = ({ signal }) => listGithubRepos({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGithubRepos>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListGithubReposQueryResult = NonNullable<Awaited<ReturnType<typeof listGithubRepos>>>
+export type ListGithubReposQueryError = ErrorType<NotFoundResponse | BadGatewayResponse>
+
+
+/**
+ * @summary Repository visibili all'App nelle installazioni dell'utente
+ */
+
+export function useListGithubRepos<TData = Awaited<ReturnType<typeof listGithubRepos>>, TError = ErrorType<NotFoundResponse | BadGatewayResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGithubRepos>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListGithubReposQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetDashboardStatsUrl = () => {
 

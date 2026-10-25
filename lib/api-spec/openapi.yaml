@@ -24,6 +24,8 @@ tags:
     description: Statistiche aggregate
   - name: models
     description: Modelli AI selezionabili
+  - name: github
+    description: Installazioni e repository dell'App GitHub di Casello
   - name: architect
     description: Analisi dell'architetto (proposte su tool, agenti, skill, endpoint ed evoluzione) e skill degli agenti
 
@@ -726,6 +728,49 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  # ─── GitHub ─────────────────────────────────────────────────────────────────
+
+  /github/installations:
+    get:
+      operationId: listGithubInstallations
+      tags: [github]
+      summary: Installazioni dell'App GitHub collegate all'utente
+      description: >-
+        Installazioni salvate per l'utente corrente, con il link per gestirle e quello per
+        installare l'App su un altro account. 404 se GitHub non è configurato.
+      responses:
+        "200":
+          description: Installazioni e link di installazione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GithubInstallations"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /github/repos:
+    get:
+      operationId: listGithubRepos
+      tags: [github]
+      summary: Repository visibili all'App nelle installazioni dell'utente
+      description: >-
+        Repository di tutte le installazioni dell'utente, ordinati per nome completo, senza doppioni.
+        Un'installazione revocata (401/404 da GitHub) viene eliminata per l'utente e saltata.
+        404 se GitHub non è configurato; 502 se GitHub non risponde.
+      responses:
+        "200":
+          description: Repository
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GithubRepo"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
   # ─── Dashboard ──────────────────────────────────────────────────────────────
 
   /dashboard/stats:
@@ -810,6 +855,13 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
 
+    BadGateway:
+      description: Servizio esterno non raggiungibile
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
     PayloadTooLarge:
       description: Corpo della richiesta troppo grande
       content:
@@ -833,6 +885,51 @@ components:
           type: string
       required:
         - error
+
+    # ── GitHub ─────────────────────────────────────────────────────────────────
+    GithubInstallation:
+      type: object
+      required: [installationId, accountLogin, accountType, repositorySelection, manageUrl]
+      properties:
+        installationId:
+          type: integer
+        accountLogin:
+          type: string
+        accountType:
+          type: string
+          description: User o Organization
+        repositorySelection:
+          type: string
+          description: all o selected
+        manageUrl:
+          type: string
+          description: Pagina di GitHub in cui gestire l'installazione
+
+    GithubInstallations:
+      type: object
+      required: [installUrl, installations]
+      properties:
+        installUrl:
+          type: string
+          description: Pagina di GitHub in cui installare l'App
+        installations:
+          type: array
+          items:
+            $ref: "#/components/schemas/GithubInstallation"
+
+    GithubRepo:
+      type: object
+      required: [installationId, fullName, defaultBranch, private]
+      properties:
+        installationId:
+          type: integer
+        fullName:
+          type: string
+          description: proprietario/nome
+        defaultBranch:
+          type: string
+        private:
+          type: boolean
 
     # ── Auth ───────────────────────────────────────────────────────────────────
 

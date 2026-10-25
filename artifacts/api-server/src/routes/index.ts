@@ -6,6 +6,7 @@ import agentsRouter from "./agents";
 import runsRouter from "./runs";
 import dashboardRouter from "./dashboard";
 import modelsRouter from "./models";
+import githubRouter from "./github";
 import { createAnalysesRouter } from "./analyses";
 import { authRouter, requireAuth } from "../lib/auth";
 
@@ -21,6 +22,7 @@ router.use(agentsRouter);
 router.use(runsRouter);
 router.use(dashboardRouter);
 router.use(modelsRouter);
+router.use(githubRouter);
 router.use(createAnalysesRouter());
 
 export default router;

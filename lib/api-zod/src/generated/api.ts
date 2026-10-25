@@ -949,6 +949,35 @@ export const DeleteAgentSkillResponse = zod.void()
 
 
 /**
+ * Installazioni salvate per l'utente corrente, con il link per gestirle e quello per installare l'App su un altro account. 404 se GitHub non è configurato.
+ * @summary Installazioni dell'App GitHub collegate all'utente
+ */
+export const ListGithubInstallationsResponse = zod.object({
+  "installUrl": zod.string().describe('Pagina di GitHub in cui installare l\'App'),
+  "installations": zod.array(zod.object({
+  "installationId": zod.number(),
+  "accountLogin": zod.string(),
+  "accountType": zod.string().describe('User o Organization'),
+  "repositorySelection": zod.string().describe('all o selected'),
+  "manageUrl": zod.string().describe('Pagina di GitHub in cui gestire l\'installazione')
+}))
+})
+
+
+/**
+ * Repository di tutte le installazioni dell'utente, ordinati per nome completo, senza doppioni. Un'installazione revocata (401/404 da GitHub) viene eliminata per l'utente e saltata. 404 se GitHub non è configurato; 502 se GitHub non risponde.
+ * @summary Repository visibili all'App nelle installazioni dell'utente
+ */
+export const ListGithubReposResponseItem = zod.object({
+  "installationId": zod.number(),
+  "fullName": zod.string().describe('proprietario\/nome'),
+  "defaultBranch": zod.string(),
+  "private": zod.boolean()
+})
+export const ListGithubReposResponse = zod.array(ListGithubReposResponseItem)
+
+
+/**
  * @summary Statistiche aggregate del hub
  */
 export const GetDashboardStatsResponse = zod.object({

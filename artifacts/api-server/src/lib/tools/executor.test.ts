@@ -57,6 +57,22 @@ function handle(req: IncomingMessage, res: ServerResponse, body: string): void {
     res.end(JSON.stringify({ error: "Squadra non trovata" }));
     return;
   }
+  // L'app rimanda le credenziali ricevute (errore e successo)
+  if (url.startsWith("/echo401")) {
+    res.writeHead(401, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: `credenziali rifiutate: ${req.headers.authorization ?? req.headers["x-api-key"]}` }));
+    return;
+  }
+  if (url.startsWith("/echo-text-401")) {
+    res.writeHead(401, { "content-type": "text/plain" });
+    res.end(`no: ${req.headers.authorization}`);
+    return;
+  }
+  if (url.startsWith("/echo")) {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ auth: req.headers.authorization ?? null, key: req.headers["x-api-key"] ?? null }));
+    return;
+  }
   if (url.startsWith("/players")) {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify([{ id: 1, nome: "Rossi", extra: "x" }]));
@@ -483,5 +499,57 @@ describe("executeTool", () => {
     });
     expect(r.ok).toBe(true);
     expect(seen?.redirect).toBe("manual");
+  });
+
+  describe("credenziali rimandate dall'app", () => {
+    const TOKEN = "tok-utente-segretissimo";
+    const echo = (path: string) => tool({ method: "GET", path, paramLocations: {} });
+
+    it("401 che contiene l'header: il contenuto non ha né il token né l'header", async () => {
+      const r = await executeTool({ conn: conn(), tool: echo("/echo401"), args: {}, userToken: TOKEN });
+      expect(r.ok).toBe(false);
+      expect(r.status).toBe(401);
+      expect(r.content).not.toContain(TOKEN);
+      expect(r.content).toContain("***");
+    });
+
+    it("401 in testo semplice: token oscurato", async () => {
+      const r = await executeTool({ conn: conn(), tool: echo("/echo-text-401"), args: {}, userToken: TOKEN });
+      expect(r.ok).toBe(false);
+      expect(r.content).not.toContain(TOKEN);
+    });
+
+    it("200 che rimanda il token: oscurato nel contenuto", async () => {
+      const r = await executeTool({ conn: conn(), tool: echo("/echo"), args: {}, userToken: TOKEN });
+      expect(r.ok).toBe(true);
+      expect(r.content).not.toContain(TOKEN);
+      expect(JSON.parse(r.content)).toEqual({ auth: "***", key: null });
+    });
+
+    it("segreto di servizio rimandato: oscurato", async () => {
+      const r = await executeTool({
+        conn: conn({
+          userAuth: null,
+          serviceAuth: { header: "X-Api-Key", scheme: null },
+          serviceSecretEnc: encryptSecret("segreto-di-servizio"),
+        }),
+        tool: { ...echo("/echo401"), identity: "service" },
+        args: {},
+      });
+      expect(r.ok).toBe(false);
+      expect(r.content).not.toContain("segreto-di-servizio");
+      expect(r.content).toContain("***");
+    });
+
+    it("valori di meno di 4 caratteri non vengono oscurati", async () => {
+      const r = await executeTool({
+        conn: conn({ userAuth: { header: "Authorization", scheme: null } }),
+        tool: echo("/echo"),
+        args: {},
+        userToken: "abc",
+      });
+      expect(r.ok).toBe(true);
+      expect(JSON.parse(r.content)).toEqual({ auth: "abc", key: null });
+    });
   });
 });

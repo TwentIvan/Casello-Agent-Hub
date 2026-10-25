@@ -12,6 +12,8 @@ export const MAX_RESPONSE_BYTES = 1_048_576;
 export const MAX_RESULT_CHARS = 20_000;
 
 const ERROR_SNIPPET_CHARS = 200;
+// Valori più corti non vengono oscurati: si maschererebbero caratteri banali della risposta
+const MIN_REDACT_CHARS = 4;
 const BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);
 // Token HTTP (RFC 9110) per i nomi di header
 const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
@@ -105,7 +107,13 @@ function authHeader(config: AuthConfig, secret: string, what: string): [string, 
   return [config.header, value];
 }
 
-function resolveAuth(conn: AppConnection, tool: CatalogTool, userToken?: string): [string, string] {
+/** Header di autenticazione e credenziali da oscurare nelle risposte (header completo e valore nudo). */
+interface ResolvedAuth {
+  header: [string, string];
+  secrets: string[];
+}
+
+function resolveAuth(conn: AppConnection, tool: CatalogTool, userToken?: string): ResolvedAuth {
   if (tool.identity === "service") {
     if (!conn.serviceAuth) {
       throw new ToolError("autenticazione di servizio non configurata per l'app");
@@ -119,7 +127,8 @@ function resolveAuth(conn: AppConnection, tool: CatalogTool, userToken?: string)
     } catch {
       throw new ToolError("impossibile decifrare il segreto di servizio dell'app");
     }
-    return authHeader(conn.serviceAuth, secret, "servizio");
+    const header = authHeader(conn.serviceAuth, secret, "servizio");
+    return { header, secrets: [header[1], secret] };
   }
   if (!conn.userAuth) {
     throw new ToolError("autenticazione utente non configurata per l'app");
@@ -127,7 +136,8 @@ function resolveAuth(conn: AppConnection, tool: CatalogTool, userToken?: string)
   if (!userToken) {
     throw new ToolError("token utente mancante: il tool agisce per conto dell'utente");
   }
-  return authHeader(conn.userAuth, userToken, "utente");
+  const header = authHeader(conn.userAuth, userToken, "utente");
+  return { header, secrets: [header[1], userToken] };
 }
 
 export function buildHttpRequest(
@@ -135,7 +145,7 @@ export function buildHttpRequest(
   tool: CatalogTool,
   args: Record<string, unknown>,
   userToken?: string,
-): { url: string; init: RequestInit } {
+): { url: string; init: RequestInit; secrets: string[] } {
   const def = tool.definition as HttpDefinition;
   const pathError = checkHttpPath(def.path);
   if (pathError) throw new ToolError(`definizione del tool non valida: path ${pathError}`);
@@ -192,15 +202,15 @@ export function buildHttpRequest(
   }
 
   const headers = new Headers({ accept: "application/json" });
-  const [authName, authValue] = resolveAuth(conn, tool, userToken);
-  headers.set(authName, authValue);
+  const auth = resolveAuth(conn, tool, userToken);
+  headers.set(auth.header[0], auth.header[1]);
 
   const init: RequestInit = { method: def.method, headers, redirect: "manual" };
   if (allowsBody && (hasBody || Object.values(def.paramLocations).includes("body"))) {
     headers.set("content-type", "application/json");
     init.body = JSON.stringify(body);
   }
-  return { url: url.toString(), init };
+  return { url: url.toString(), init, secrets: auth.secrets };
 }
 
 class ResponseTooLarge extends Error {}
@@ -270,6 +280,20 @@ function errorSnippet(text: string, statusText: string): string {
   return trimmed ? trimmed.slice(0, ERROR_SNIPPET_CHARS) : statusText || "nessun dettaglio";
 }
 
+/**
+ * Sostituisce con "***" ogni occorrenza delle credenziali inviate (header completo, token o
+ * segreto nudo): un'app può rimandarle in un errore o in una risposta, che finirebbero nel
+ * modello, nei passi della run e nello stato del ciclo. Prima i valori più lunghi.
+ */
+function redact(text: string, secrets: string[]): string {
+  let out = text;
+  const values = [...new Set(secrets)]
+    .filter((v) => v.length >= MIN_REDACT_CHARS)
+    .sort((a, b) => b.length - a.length);
+  for (const value of values) out = out.split(value).join("***");
+  return out;
+}
+
 function fail(content: string, status?: number): ToolResult {
   return status === undefined ? { ok: false, content } : { ok: false, status, content };
 }
@@ -299,7 +323,7 @@ export async function executeTool(input: {
     if (argError) return fail(`argomenti non validi: ${argError}`);
     if (!isPlainObject(input.args)) return fail("argomenti non validi: devono essere un oggetto");
 
-    const { url, init } = buildHttpRequest(
+    const { url, init, secrets } = buildHttpRequest(
       conn,
       { ...tool, definition: parsed.value as HttpDefinition },
       input.args,
@@ -320,7 +344,7 @@ export async function executeTool(input: {
 
     let text: string;
     try {
-      text = await readLimited(res);
+      text = redact(await readLimited(res), secrets);
     } catch (err) {
       if (err instanceof ResponseTooLarge) {
         return fail(`risposta troppo grande (oltre ${MAX_RESPONSE_BYTES} byte)`, res.status);
@@ -328,7 +352,9 @@ export async function executeTool(input: {
       return fail(describeFetchError(err, timeoutMs), res.status);
     }
 
-    if (!res.ok) return fail(`HTTP ${res.status}: ${errorSnippet(text, res.statusText)}`, res.status);
+    if (!res.ok) {
+      return fail(`HTTP ${res.status}: ${redact(errorSnippet(text, res.statusText), secrets)}`, res.status);
+    }
 
     const json = tryParseJson(text);
     const content = json.ok
@@ -336,7 +362,8 @@ export async function executeTool(input: {
       : text.trim() === ""
         ? "(risposta vuota)"
         : text;
-    return { ok: true, status: res.status, content: truncate(content) };
+    // Di nuovo dopo JSON.parse/stringify: gli escape JSON possono aver nascosto un valore al primo passaggio
+    return { ok: true, status: res.status, content: truncate(redact(content, secrets)) };
   } catch (err) {
     if (err instanceof ToolError) return fail(err.message);
     // Errore inatteso: nessun dettaglio che possa contenere token o segreti

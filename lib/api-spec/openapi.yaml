@@ -11,7 +11,7 @@ tags:
   - name: health
     description: Health operations
   - name: auth
-    description: Login Google e sessione (tutte le altre route richiedono la sessione, tranne /healthz)
+    description: Login (Google, GitHub) e sessione (tutte le altre route richiedono la sessione, tranne /healthz e /auth/providers)
   - name: apps
     description: Applicazioni registrate
   - name: agents
@@ -62,6 +62,20 @@ paths:
                 $ref: "#/components/schemas/CurrentUser"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /auth/providers:
+    get:
+      operationId: getAuthProviders
+      tags: [auth]
+      summary: Metodi di accesso disponibili
+      description: Pubblica (senza sessione), serve alla pagina di login per mostrare i pulsanti.
+      responses:
+        "200":
+          description: Metodi di accesso configurati sul server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthProviders"
 
   /auth/logout:
     post:
@@ -970,6 +984,16 @@ components:
         githubEnabled:
           type: boolean
           description: Se il login e il collegamento con GitHub sono configurati sul server
+
+    AuthProviders:
+      type: object
+      required: [google, github]
+      properties:
+        google:
+          type: boolean
+        github:
+          type: boolean
+          description: Se il login con GitHub è configurato sul server
 
     LinkedIdentity:
       type: object

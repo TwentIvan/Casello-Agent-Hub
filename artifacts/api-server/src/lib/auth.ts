@@ -8,7 +8,7 @@ import connectPgSimple from "connect-pg-simple";
 import * as oidc from "openid-client";
 import { eq } from "drizzle-orm";
 import { db, pool, usersTable } from "@workspace/db";
-import { GetCurrentUserResponse } from "@workspace/api-zod";
+import { GetAuthProvidersResponse, GetCurrentUserResponse } from "@workspace/api-zod";
 import { githubConfig } from "./github/config";
 import { githubAuthRouter } from "./github/oauth-routes";
 import { logger } from "./logger";
@@ -216,6 +216,11 @@ export function authRouter(): IRouter {
         githubEnabled: githubConfig() !== null,
       }),
     );
+  });
+
+  // Pubblica: la pagina di login la chiama prima che esista una sessione
+  router.get("/auth/providers", (_req, res) => {
+    res.json(GetAuthProvidersResponse.parse({ google: true, github: githubConfig() !== null }));
   });
 
   router.post("/auth/logout", (req, res, next) => {

@@ -34,6 +34,16 @@ export const GetCurrentUserResponse = zod.object({
 
 
 /**
+ * Pubblica (senza sessione), serve alla pagina di login per mostrare i pulsanti.
+ * @summary Metodi di accesso disponibili
+ */
+export const GetAuthProvidersResponse = zod.object({
+  "google": zod.boolean(),
+  "github": zod.boolean().describe('Se il login con GitHub è configurato sul server')
+})
+
+
+/**
  * @summary Chiude la sessione
  */
 export const LogoutResponse = zod.void()

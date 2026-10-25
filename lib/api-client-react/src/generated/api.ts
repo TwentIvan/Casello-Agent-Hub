@@ -36,6 +36,7 @@ import type {
   AppToolInput,
   AppToolUpdate,
   AppUpdate,
+  AuthProviders,
   BadGatewayResponse,
   BadRequestResponse,
   ConflictResponse,
@@ -231,6 +232,84 @@ export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUs
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetCurrentUserQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAuthProvidersUrl = () => {
+
+
+
+
+  return `/api/auth/providers`
+}
+
+/**
+ * Pubblica (senza sessione), serve alla pagina di login per mostrare i pulsanti.
+ * @summary Metodi di accesso disponibili
+ */
+export const getAuthProviders = async ( options?: RequestInit): Promise<AuthProviders> => {
+
+  return customFetch<AuthProviders>(getGetAuthProvidersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAuthProvidersQueryKey = () => {
+    return [
+    `/api/auth/providers`
+    ] as const;
+    }
+
+
+export const getGetAuthProvidersQueryOptions = <TData = Awaited<ReturnType<typeof getAuthProviders>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAuthProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAuthProvidersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAuthProviders>>> = ({ signal }) => getAuthProviders({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAuthProviders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAuthProvidersQueryResult = NonNullable<Awaited<ReturnType<typeof getAuthProviders>>>
+export type GetAuthProvidersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Metodi di accesso disponibili
+ */
+
+export function useGetAuthProviders<TData = Awaited<ReturnType<typeof getAuthProviders>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAuthProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAuthProvidersQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

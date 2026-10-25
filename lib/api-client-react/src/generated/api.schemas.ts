@@ -69,6 +69,12 @@ export interface CurrentUser {
   githubEnabled: boolean;
 }
 
+export interface AuthProviders {
+  google: boolean;
+  /** Se il login con GitHub è configurato sul server */
+  github: boolean;
+}
+
 export type AppStatus = typeof AppStatus[keyof typeof AppStatus];
 
 

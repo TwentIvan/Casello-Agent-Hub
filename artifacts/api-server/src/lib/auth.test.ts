@@ -116,6 +116,22 @@ describe("requireAuth", () => {
   });
 });
 
+describe("GET /auth/providers", () => {
+  it("pubblica: risponde anche senza sessione, con il login attivo", async () => {
+    const app = express();
+    app.use("/api", auth.authRouter());
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    try {
+      const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/auth/providers`);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ google: true, github: expect.any(Boolean) });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
+
 describe("safeReturnTo", () => {
   it.each([
     ["/\\evil.com", "/"],

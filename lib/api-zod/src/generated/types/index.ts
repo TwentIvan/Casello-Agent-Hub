@@ -42,6 +42,7 @@ export * from './appToolUpdateDefinition';
 export * from './appToolUpdateParamsSchema';
 export * from './appUpdate';
 export * from './authConfig';
+export * from './authProviders';
 export * from './badGatewayResponse';
 export * from './badRequestResponse';
 export * from './conflictResponse';

@@ -477,15 +477,23 @@ describe("/auth/me: githubEnabled", () => {
     return ((await res.json()) as { githubEnabled: unknown }).githubEnabled;
   }
 
+  async function providers(): Promise<unknown> {
+    const res = await fetch(`${base}/api/auth/providers`);
+    expect(res.status).toBe(200);
+    return res.json();
+  }
+
   it("GitHub non configurato: false", async () => {
     for (const k of Object.keys(envFor(gh))) delete process.env[k];
     resetGithubConfigForTests();
     expect(await githubEnabled()).toBe(false);
+    expect(await providers()).toEqual({ google: true, github: false });
   });
 
   it("GitHub configurato: true", async () => {
     Object.assign(process.env, envFor(gh));
     resetGithubConfigForTests();
     expect(await githubEnabled()).toBe(true);
+    expect(await providers()).toEqual({ google: true, github: true });
   });
 });

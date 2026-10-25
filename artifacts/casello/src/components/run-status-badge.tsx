@@ -2,7 +2,7 @@ import type { RunStatus } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-const LABELS: Record<RunStatus, string> = {
+export const RUN_STATUS_LABELS: Record<RunStatus, string> = {
   pending: "In attesa",
   running: "In corso",
   succeeded: "Riuscita",
@@ -19,7 +19,7 @@ const STYLES: Record<RunStatus, string> = {
 export function RunStatusBadge({ status, className }: { status: RunStatus; className?: string }) {
   return (
     <Badge variant="outline" className={cn("border-transparent", STYLES[status], className)}>
-      {LABELS[status]}
+      {RUN_STATUS_LABELS[status]}
     </Badge>
   );
 }

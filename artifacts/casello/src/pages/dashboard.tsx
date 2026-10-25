@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { Link } from "wouter";
 import type { LucideIcon } from "lucide-react";
 import { AlertCircle, Bot, Boxes, CheckCircle2, Clock, Loader, PlayCircle, XCircle } from "lucide-react";
 import {
@@ -93,9 +94,12 @@ function RecentRuns() {
             </TableHeader>
             <TableBody>
               {recent.map((run) => (
-                <TableRow key={run.id}>
+                <TableRow key={run.id} className="relative">
                   <TableCell className="font-medium">
-                    {agentNames.get(run.agentId) ?? `Agente #${run.agentId}`}
+                    {/* Il link copre tutta la riga (after:inset-0) */}
+                    <Link href={`/runs/${run.id}`} className="after:absolute after:inset-0 hover:underline">
+                      {agentNames.get(run.agentId) ?? `Agente #${run.agentId}`}
+                    </Link>
                   </TableCell>
                   <TableCell>
                     <RunStatusBadge status={run.status} />

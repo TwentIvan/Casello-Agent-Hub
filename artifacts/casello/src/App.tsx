@@ -11,7 +11,8 @@ import Dashboard from "@/pages/dashboard";
 import AppsPage from "@/pages/apps";
 import AgentsPage from "@/pages/agents";
 import AgentDetailPage from "@/pages/agent-detail";
-import ComingSoon from "@/pages/coming-soon";
+import RunsPage from "@/pages/runs";
+import RunDetailPage from "@/pages/run-detail";
 import NotFound from "@/pages/not-found";
 
 const currentUserKey = getGetCurrentUserQueryKey();
@@ -42,7 +43,8 @@ function Router() {
         <Route path="/apps" component={AppsPage} />
         <Route path="/agents" component={AgentsPage} />
         <Route path="/agents/:id" component={AgentDetailPage} />
-        <Route path="/runs">{() => <ComingSoon title="Run" />}</Route>
+        <Route path="/runs" component={RunsPage} />
+        <Route path="/runs/:id" component={RunDetailPage} />
         <Route component={NotFound} />
       </Switch>
     </AppShell>

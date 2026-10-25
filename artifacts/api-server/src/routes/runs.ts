@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db, runsTable } from "@workspace/db";
 import { ListRunsQueryParams, ListRunsResponse, GetRunParams, GetRunResponse } from "@workspace/api-zod";
 
@@ -14,7 +14,8 @@ router.get("/runs", async (req, res) => {
   const runs = await db
     .select()
     .from(runsTable)
-    .where(conditions.length ? and(...conditions) : undefined);
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(runsTable.createdAt), desc(runsTable.id));
   res.json(ListRunsResponse.parse(runs));
 });
 

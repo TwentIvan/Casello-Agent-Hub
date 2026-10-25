@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useModelOptions } from "@/components/agents/model-options";
 import { ToolsSection } from "@/components/agents/tools-section";
+import { RunPanel } from "@/components/runs/run-panel";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { AGENT_STATUS_LABELS, StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/hooks/use-toast";
@@ -278,6 +279,7 @@ export default function AgentDetailPage() {
         </div>
       </div>
 
+      <RunPanel agent={agent.data} />
       <AgentConfigForm key={agent.data.id} agent={agent.data} />
       <ToolsSection agentId={agent.data.id} />
 

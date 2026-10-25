@@ -297,7 +297,7 @@ export const DeleteToolResponse = zod.void()
 
 
 /**
- * @summary Elenca tutte le esecuzioni
+ * @summary Elenca tutte le esecuzioni (dalla più recente)
  */
 export const ListRunsQueryParams = zod.object({
   "agentId": zod.coerce.number().optional().describe('Filtra per agente'),
@@ -319,6 +319,7 @@ export const ListRunsResponse = zod.array(ListRunsResponseItem)
 
 
 /**
+ * Crea la run e la avvia in background: risponde subito con la run in stato pending. Lo stato (running, poi succeeded o failed) si segue con GET /runs/{id}.
  * @summary Avvia un'esecuzione dell'agente
  */
 export const TriggerRunParams = zod.object({

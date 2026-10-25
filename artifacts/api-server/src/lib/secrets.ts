@@ -5,6 +5,8 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_BYTES = 12;
+// Tag GCM sempre completo: un tag troncato renderebbe l'autenticazione indovinabile
+const AUTH_TAG_BYTES = 16;
 const VERSION = "v1";
 
 function getKey(): Buffer {
@@ -25,7 +27,7 @@ export function assertSecretKey(): void {
 
 export function encryptSecret(plain: string): string {
   const iv = randomBytes(IV_BYTES);
-  const cipher = createCipheriv(ALGORITHM, getKey(), iv);
+  const cipher = createCipheriv(ALGORITHM, getKey(), iv, { authTagLength: AUTH_TAG_BYTES });
   const ciphertext = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return [VERSION, iv.toString("base64"), tag.toString("base64"), ciphertext.toString("base64")].join(":");
@@ -39,7 +41,10 @@ export function decryptSecret(enc: string): string {
   const iv = Buffer.from(parts[1]!, "base64");
   const tag = Buffer.from(parts[2]!, "base64");
   const ciphertext = Buffer.from(parts[3]!, "base64");
-  const decipher = createDecipheriv(ALGORITHM, getKey(), iv);
+  if (tag.length !== AUTH_TAG_BYTES) {
+    throw new Error(`Segreto cifrato non valido: il tag di autenticazione deve essere di ${AUTH_TAG_BYTES} byte`);
+  }
+  const decipher = createDecipheriv(ALGORITHM, getKey(), iv, { authTagLength: AUTH_TAG_BYTES });
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
 }

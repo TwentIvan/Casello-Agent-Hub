@@ -30,6 +30,13 @@ describe("secrets", () => {
     expect(() => decryptSecret(parts.join(":"))).toThrow();
   });
 
+  it("rifiuta un tag di autenticazione troncato (meno di 16 byte)", () => {
+    const parts = encryptSecret("segreto").split(":");
+    // I primi 4 byte del tag vero: senza authTagLength GCM li accetterebbe
+    parts[2] = Buffer.from(parts[2]!, "base64").subarray(0, 4).toString("base64");
+    expect(() => decryptSecret(parts.join(":"))).toThrow(/tag/);
+  });
+
   it("chiave mancante", () => {
     delete process.env["CASELLO_SECRET_KEY"];
     expect(() => assertSecretKey()).toThrow(/CASELLO_SECRET_KEY/);

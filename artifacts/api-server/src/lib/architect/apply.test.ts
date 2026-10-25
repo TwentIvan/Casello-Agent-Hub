@@ -103,14 +103,32 @@ describe("applyItem: tool", () => {
     expect(await tools()).toHaveLength(1);
   });
 
-  it("changed aggiorna e riattiva un tool disattivato, ma conserva draft", async () => {
+  it("changed aggiorna e rende active un tool disattivato o in bozza", async () => {
     await applyItem(await item("tool", "new", toolPayload()), appId);
     await db.update(appToolsTable).set({ status: "disabled" }).where(eq(appToolsTable.appId, appId));
     await applyItem(await item("tool", "changed", toolPayload({ description: "nuova", readOnly: false })), appId);
     expect((await tools())[0]).toMatchObject({ description: "nuova", readOnly: false, status: "active" });
     await db.update(appToolsTable).set({ status: "draft" }).where(eq(appToolsTable.appId, appId));
     await applyItem(await item("tool", "changed", toolPayload({ description: "ancora" })), appId);
-    expect((await tools())[0]).toMatchObject({ description: "ancora", status: "draft" });
+    expect((await tools())[0]).toMatchObject({ description: "ancora", status: "active" });
+  });
+
+  it("unchanged rende active un tool in bozza; poi un agente di area che lo usa si approva", async () => {
+    await applyItem(await item("tool", "new", toolPayload()), appId);
+    const old = new Date("2026-01-01T00:00:00Z");
+    await db.update(appToolsTable).set({ status: "draft", updatedAt: old }).where(eq(appToolsTable.appId, appId));
+    await expect(applyItem(await item("agent", "new", agentPayload()), appId)).rejects.toThrow(/non è attivo/);
+    await applyItem(await item("tool", "unchanged", toolPayload()), appId);
+    const [t] = await tools();
+    expect(t).toMatchObject({ status: "active", description: toolPayload().description });
+    expect(t!.updatedAt.getTime()).toBeGreaterThan(old.getTime());
+    await applyItem(await item("agent", "new", agentPayload()), appId);
+    const [a] = await db.select().from(agentsTable).where(eq(agentsTable.role, "area"));
+    expect(a!.status).toBe("active");
+  });
+
+  it("unchanged di un tool che non esiste più: ApplyError", async () => {
+    await expect(applyItem(await item("tool", "unchanged", toolPayload()), appId)).rejects.toThrow(/non esiste/);
   });
 
   it("removed mette disabled e non cancella", async () => {
@@ -124,27 +142,40 @@ describe("applyItem: tool", () => {
 });
 
 describe("applyItem: agenti", () => {
-  it("l'agente generale aggiorna prompt e identità, senza collegamenti", async () => {
+  it("l'agente generale aggiorna prompt e identità e diventa active, senza collegamenti", async () => {
+    await db.update(agentsTable).set({ status: "draft" }).where(eq(agentsTable.id, generalId));
     await applyItem(
       await item("agent", "changed", agentPayload({ role: "general", area: null, name: "Altro", toolNames: ["x"] })),
       appId,
     );
     const [g] = await db.select().from(agentsTable).where(eq(agentsTable.id, generalId));
-    expect(g).toMatchObject({ systemPrompt: "prompt", defaultIdentity: "service", name: "Generale" });
+    expect(g).toMatchObject({ systemPrompt: "prompt", defaultIdentity: "service", name: "Generale", status: "active" });
     expect(await db.select().from(agentToolsTable)).toHaveLength(0);
   });
 
-  it("un agente di area nuovo è draft e collega esattamente i tool nominati", async () => {
+  it("un agente di area nuovo è active e collega esattamente i tool nominati", async () => {
     await applyItem(await item("tool", "new", toolPayload()), appId);
     await applyItem(await item("agent", "new", agentPayload()), appId);
     const [a] = await db.select().from(agentsTable).where(eq(agentsTable.role, "area"));
-    expect(a).toMatchObject({ status: "draft", area: "Squadre", model: "openrouter/auto" });
+    expect(a).toMatchObject({ status: "active", area: "Squadre", model: "openrouter/auto" });
     expect(await db.select().from(agentToolsTable).where(eq(agentToolsTable.agentId, a!.id))).toHaveLength(1);
-    // Aggiornamento: i collegamenti vengono sostituiti
+    // Aggiornamento: i collegamenti vengono sostituiti e l'agente torna active
+    await db.update(agentsTable).set({ status: "inactive" }).where(eq(agentsTable.id, a!.id));
     await applyItem(await item("agent", "changed", agentPayload({ toolNames: [], name: "Rinominato" })), appId);
     const [b] = await db.select().from(agentsTable).where(eq(agentsTable.role, "area"));
-    expect(b!.name).toBe("Rinominato");
+    expect(b).toMatchObject({ name: "Rinominato", status: "active" });
     expect(await db.select().from(agentToolsTable)).toHaveLength(0);
+  });
+
+  it("unchanged rende active l'agente senza toccarne i contenuti", async () => {
+    await applyItem(await item("tool", "new", toolPayload()), appId);
+    await applyItem(await item("agent", "new", agentPayload()), appId);
+    await db.update(agentsTable).set({ status: "draft" });
+    await applyItem(await item("agent", "unchanged", agentPayload({ systemPrompt: "ignorato" })), appId);
+    await applyItem(await item("agent", "unchanged", agentPayload({ role: "general", area: null })), appId);
+    const rows = await db.select().from(agentsTable).orderBy(agentsTable.id);
+    expect(rows.map((r) => r.status)).toEqual(["active", "active"]);
+    expect(rows[1]!.systemPrompt).toBe("prompt");
   });
 
   it("tool inesistente: ApplyError e nessun agente creato", async () => {

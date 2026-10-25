@@ -49,8 +49,20 @@ function checkRoleArea(role: "general" | "area", area: string | null, what: stri
 
 // --- Tool ---
 
+// Spec §6: approvare un tool o un agente li crea/aggiorna nello stato `active` (anche se invariati).
+
 async function applyTool(tx: Tx, item: AnalysisItem, appId: number): Promise<void> {
-  if (item.diff === "unchanged") return;
+  if (item.diff === "unchanged") {
+    // Invariato: la definizione resta com'è, il tool diventa attivo (es. una bozza creata a mano)
+    const tool = parsePayload<ToolProposal>(item);
+    const [row] = await tx
+      .update(appToolsTable)
+      .set({ status: "active", updatedAt: new Date() })
+      .where(and(eq(appToolsTable.appId, appId), eq(appToolsTable.name, tool.name)))
+      .returning({ id: appToolsTable.id });
+    if (!row) throw new ApplyError(`Lo strumento "${tool.name}" non esiste nell'app`);
+    return;
+  }
 
   if (item.diff === "removed") {
     // Il payload è il tool esistente: serve solo il nome. Non si cancella mai, si disattiva.
@@ -103,15 +115,11 @@ async function applyTool(tx: Tx, item: AnalysisItem, appId: number): Promise<voi
     return;
   }
 
-  // changed: si conserva lo stato, ma un tool disattivato che torna nel catalogo si riattiva
+  // changed: aggiornato e attivo (anche se era in bozza o disattivato)
   if (!current) throw new ApplyError(`Lo strumento "${tool.name}" non esiste nell'app`);
   await tx
     .update(appToolsTable)
-    .set({
-      ...fields,
-      status: current.status === "disabled" ? "active" : current.status,
-      updatedAt: new Date(),
-    })
+    .set({ ...fields, status: "active", updatedAt: new Date() })
     .where(eq(appToolsTable.id, current.id));
 }
 
@@ -156,19 +164,33 @@ async function findAgent(tx: Tx, appId: number, role: "general" | "area", area: 
 }
 
 async function applyAgent(tx: Tx, item: AnalysisItem, appId: number): Promise<void> {
-  if (item.diff === "unchanged" || item.diff === "removed") return;
+  if (item.diff === "removed") return;
   const parsedAgent = parsePayload<AgentProposal>(item);
   const agent = { ...parsedAgent, area: trimArea(parsedAgent.area) };
   checkRoleArea(agent.role, agent.area, "agente");
 
   const current = await findAgent(tx, appId, agent.role, agent.area);
 
+  if (item.diff === "unchanged") {
+    // Invariato: nessuna modifica ai contenuti, l'agente diventa attivo
+    if (!current) throw new ApplyError("L'agente non esiste nell'app");
+    // Un agente di area attivo usa solo tool attivi, come quando è nuovo o modificato
+    if (agent.role === "area") await resolveTools(tx, appId, agent.toolNames, true);
+    await tx.update(agentsTable).set({ status: "active", updatedAt: new Date() }).where(eq(agentsTable.id, current.id));
+    return;
+  }
+
   if (agent.role === "general") {
     // L'agente generale esiste già (creato con l'app) e usa tutti i tool attivi: nessun collegamento
     if (!current) throw new ApplyError("L'app non ha un agente generale");
     await tx
       .update(agentsTable)
-      .set({ systemPrompt: agent.systemPrompt, defaultIdentity: agent.defaultIdentity, updatedAt: new Date() })
+      .set({
+        systemPrompt: agent.systemPrompt,
+        defaultIdentity: agent.defaultIdentity,
+        status: "active",
+        updatedAt: new Date(),
+      })
       .where(eq(agentsTable.id, current.id));
     return;
   }
@@ -184,11 +206,12 @@ async function applyAgent(tx: Tx, item: AnalysisItem, appId: number): Promise<vo
         area: agent.area,
         systemPrompt: agent.systemPrompt,
         defaultIdentity: agent.defaultIdentity,
+        status: "active",
         updatedAt: new Date(),
       })
       .where(eq(agentsTable.id, current.id));
   } else {
-    // Nuovo agente di area: bozza, modello di default dello schema
+    // Nuovo agente di area: attivo, modello di default dello schema
     const [created] = await tx
       .insert(agentsTable)
       .values({
@@ -198,7 +221,7 @@ async function applyAgent(tx: Tx, item: AnalysisItem, appId: number): Promise<vo
         name: agent.name,
         systemPrompt: agent.systemPrompt,
         defaultIdentity: agent.defaultIdentity,
-        status: "draft",
+        status: "active",
       })
       .returning({ id: agentsTable.id });
     agentId = created!.id;

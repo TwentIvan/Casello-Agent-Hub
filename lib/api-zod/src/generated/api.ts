@@ -23,7 +23,13 @@ export const HealthCheckResponse = zod.object({
 export const GetCurrentUserResponse = zod.object({
   "email": zod.string(),
   "name": zod.string().nullable(),
-  "picture": zod.string().nullable()
+  "picture": zod.string().nullable(),
+  "identities": zod.array(zod.object({
+  "provider": zod.enum(['google', 'github']),
+  "username": zod.string().nullable().describe('Login GitHub (null per Google)'),
+  "email": zod.string().nullable()
+})).describe('Account esterni collegati (Google, GitHub)'),
+  "githubEnabled": zod.boolean().describe('Se il login e il collegamento con GitHub sono configurati sul server')
 })
 
 

@@ -53,6 +53,8 @@ export * from './healthStatus';
 export * from './issueExport';
 export * from './itemDiff';
 export * from './itemStatus';
+export * from './linkedIdentity';
+export * from './linkedIdentityProvider';
 export * from './listAgentsParams';
 export * from './listRunsParams';
 export * from './model';

@@ -13,12 +13,35 @@ export interface ErrorResponse {
   error: string;
 }
 
+export type LinkedIdentityProvider = typeof LinkedIdentityProvider[keyof typeof LinkedIdentityProvider];
+
+
+export const LinkedIdentityProvider = {
+  google: 'google',
+  github: 'github',
+} as const;
+
+export interface LinkedIdentity {
+  provider: LinkedIdentityProvider;
+  /**
+     * Login GitHub (null per Google)
+     * @nullable
+     */
+  username: string | null;
+  /** @nullable */
+  email: string | null;
+}
+
 export interface CurrentUser {
   email: string;
   /** @nullable */
   name: string | null;
   /** @nullable */
   picture: string | null;
+  /** Account esterni collegati (Google, GitHub) */
+  identities: LinkedIdentity[];
+  /** Se il login e il collegamento con GitHub sono configurati sul server */
+  githubEnabled: boolean;
 }
 
 export type AppStatus = typeof AppStatus[keyof typeof AppStatus];

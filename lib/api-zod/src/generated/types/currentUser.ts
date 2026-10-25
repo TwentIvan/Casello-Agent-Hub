@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { LinkedIdentity } from './linkedIdentity';
 
 export interface CurrentUser {
   email: string;
@@ -12,4 +13,8 @@ export interface CurrentUser {
   name: string | null;
   /** @nullable */
   picture: string | null;
+  /** Account esterni collegati (Google, GitHub) */
+  identities: LinkedIdentity[];
+  /** Se il login e il collegamento con GitHub sono configurati sul server */
+  githubEnabled: boolean;
 }

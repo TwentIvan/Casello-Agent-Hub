@@ -820,13 +820,34 @@ components:
 
     CurrentUser:
       type: object
-      required: [email, name, picture]
+      required: [email, name, picture, identities, githubEnabled]
       properties:
         email:
           type: string
         name:
           type: ["string", "null"]
         picture:
+          type: ["string", "null"]
+        identities:
+          type: array
+          description: Account esterni collegati (Google, GitHub)
+          items:
+            $ref: "#/components/schemas/LinkedIdentity"
+        githubEnabled:
+          type: boolean
+          description: Se il login e il collegamento con GitHub sono configurati sul server
+
+    LinkedIdentity:
+      type: object
+      required: [provider, username, email]
+      properties:
+        provider:
+          type: string
+          enum: [google, github]
+        username:
+          type: ["string", "null"]
+          description: Login GitHub (null per Google)
+        email:
           type: ["string", "null"]
 
     # ── App ────────────────────────────────────────────────────────────────────

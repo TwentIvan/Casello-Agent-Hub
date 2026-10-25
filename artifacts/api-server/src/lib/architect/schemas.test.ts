@@ -185,4 +185,51 @@ describe("prompt", () => {
   it.each(PHASES)("esiste un prompt per %s", (phase) => {
     expect(phasePrompt(phase, ctx).length).toBeGreaterThan(100);
   });
+  it("nomina gli strumenti OpenAPI effettivi (list_operations, read_operation)", () => {
+    const p = phasePrompt("map", { ...ctx, hasOpenApi: true });
+    expect(p).toContain("list_operations");
+    expect(SYSTEM_BASE).toContain("read_operation");
+    expect(SYSTEM_BASE).not.toContain("read_openapi");
+  });
+  it("ogni fase precedente ha il suo budget: un esito enorme non spinge fuori il catalogo", () => {
+    const huge = { summary: "x".repeat(100_000) };
+    const catalog = { tools: [{ ...tool, name: "ultimo_tool" }], endpoints: [] };
+    const p = phasePrompt("agents", {
+      ...ctx,
+      previous: { map: huge, capabilities: huge, catalog },
+    });
+    expect(p.includes('"name":"ultimo_tool"')).toBe(true);
+    expect(p.length).toBeLessThan(40_000);
+    expect(p).toContain("[...troncato]");
+  });
+  it("con il catalogo elenca sempre i nomi dei tool proposti, anche se il catalogo è troncato", () => {
+    const tools = Array.from({ length: 150 }, (_, i) => ({
+      ...tool,
+      name: `tool_${i}`,
+      description: "d".repeat(2_000),
+    }));
+    const p = phasePrompt("agents", { ...ctx, previous: { catalog: { tools, endpoints: [] } } });
+    expect(p.includes("Nomi dei tool proposti nel catalogo")).toBe(true);
+    expect(p.includes("tool_0, tool_1,")).toBe(true);
+    expect(p.includes("tool_149")).toBe(true);
+    const evo = phasePrompt("evolution", { ...ctx, previous: { catalog: { tools, endpoints: [] } } });
+    expect(evo.includes("tool_149")).toBe(true);
+  });
+  it("non taglia una coppia surrogata a metà", () => {
+    for (const pad of ["", "a"]) {
+    const emoji = pad + "\u{1F600}".repeat(40_000);
+    const p = phasePrompt("capabilities", { ...ctx, previous: { map: { summary: emoji } } });
+    expect(p.length).toBeLessThan(40_000);
+    for (let i = 0; i < p.length; i++) {
+      const c = p.charCodeAt(i);
+      if (c >= 0xd800 && c <= 0xdbff) {
+        const n = p.charCodeAt(i + 1);
+        expect(n >= 0xdc00 && n <= 0xdfff).toBe(true);
+        i++;
+      } else {
+        expect(c >= 0xdc00 && c <= 0xdfff).toBe(false);
+      }
+    }
+    }
+  });
 });

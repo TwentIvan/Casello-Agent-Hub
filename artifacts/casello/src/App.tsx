@@ -5,9 +5,12 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthGate } from "@/components/auth-gate";
 import { AppShell } from "@/components/layout/app-shell";
+import { isClientError } from "@/lib/api-errors";
 import { isUnauthorized } from "@/lib/auth";
 import Dashboard from "@/pages/dashboard";
 import AppsPage from "@/pages/apps";
+import AgentsPage from "@/pages/agents";
+import AgentDetailPage from "@/pages/agent-detail";
 import ComingSoon from "@/pages/coming-soon";
 import NotFound from "@/pages/not-found";
 
@@ -27,7 +30,7 @@ const queryClient: QueryClient = new QueryClient({
   queryCache: new QueryCache({ onError: (error, query) => onApiError(error, query.queryKey) }),
   mutationCache: new MutationCache({ onError: (error) => onApiError(error) }),
   defaultOptions: {
-    queries: { retry: (failureCount, error) => !isUnauthorized(error) && failureCount < 3 },
+    queries: { retry: (failureCount, error) => !isClientError(error) && failureCount < 3 },
   },
 });
 
@@ -37,7 +40,8 @@ function Router() {
       <Switch>
         <Route path="/" component={Dashboard} />
         <Route path="/apps" component={AppsPage} />
-        <Route path="/agents">{() => <ComingSoon title="Agenti" />}</Route>
+        <Route path="/agents" component={AgentsPage} />
+        <Route path="/agents/:id" component={AgentDetailPage} />
         <Route path="/runs">{() => <ComingSoon title="Run" />}</Route>
         <Route component={NotFound} />
       </Switch>

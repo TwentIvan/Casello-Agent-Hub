@@ -1,0 +1,332 @@
+import { strToU8, zipSync } from "fflate";
+import type {
+  ChatCompletionFunctionTool,
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+} from "openai/resources/chat/completions";
+import { afterEach, describe, expect, it } from "vitest";
+import type { ChatResult } from "../ai-gateway";
+import { MAX_CORRECTIONS, PHASE_MAX_ROUNDS, runPhase, type PhaseBudget } from "./phase-loop";
+import { SourceTree } from "./source-tree";
+import type { OpenApiDoc } from "./sources";
+
+const SECRET_LINE = "const segreto = 'contenuto-riservato-42';";
+
+const validMap = {
+  stack: ["node"],
+  structure: "monorepo",
+  routes: [{ method: "GET", path: "/api/x", file: "src/a.ts" }],
+  dataModels: [{ name: "Squadra", fields: ["id"] }],
+  auth: { mechanism: "cookie", userToken: "header Authorization" },
+  uiAreas: [{ name: "Squadre", description: "d", pages: ["/squadre"] }],
+  summary: "riassunto-dell-esito",
+};
+
+const trees: SourceTree[] = [];
+function makeTree(files: Record<string, string> = {}): SourceTree {
+  const entries: Record<string, Uint8Array> = {};
+  const all = { "src/a.ts": `${SECRET_LINE}\nexport const a = 1;\n`, ...files };
+  for (const [k, v] of Object.entries(all)) entries[k] = strToU8(v);
+  const tree = SourceTree.fromZip(zipSync(entries));
+  trees.push(tree);
+  return tree;
+}
+afterEach(async () => {
+  await Promise.all(trees.splice(0).map((t) => t.dispose()));
+});
+
+const openapi: OpenApiDoc = {
+  source: "https://app.example/openapi.json",
+  operations: [{ method: "GET", path: "/api/squadre", operationId: "listSquadre", summary: "Elenco squadre" }],
+  raw: {
+    paths: {
+      "/api/squadre": { get: { operationId: "listSquadre", summary: "Elenco squadre", responses: { "200": { description: "ok" } } } },
+    },
+  },
+};
+
+let callSeq = 0;
+function call(name: string, args: unknown): ChatResult["toolCalls"][number] {
+  callSeq += 1;
+  return { id: `c${callSeq}`, name, arguments: typeof args === "string" ? args : JSON.stringify(args) };
+}
+function reply(toolCalls: ChatResult["toolCalls"], content: string | null = null, tokens = 10): ChatResult {
+  return { content, toolCalls, promptTokens: tokens, completionTokens: 0 };
+}
+
+/** Chat finta a copione: ogni chiamata usa la risposta successiva (l'ultima si ripete). */
+function scripted(replies: ChatResult[]) {
+  const calls: { messages: ChatCompletionMessageParam[]; tools: ChatCompletionFunctionTool[] }[] = [];
+  const chat = async (messages: ChatCompletionMessageParam[], tools: ChatCompletionTool[]): Promise<ChatResult> => {
+    calls.push({ messages: structuredClone(messages), tools: tools.filter((t) => t.type === "function") });
+    return replies[Math.min(calls.length - 1, replies.length - 1)]!;
+  };
+  return { chat, calls };
+}
+
+function budget(over: Partial<PhaseBudget> = {}): PhaseBudget {
+  return { tokensUsed: 0, maxTokens: 400_000, deadline: 1_000_000, ...over };
+}
+
+function toolMessages(messages: ChatCompletionMessageParam[]): string[] {
+  return messages.filter((m) => m.role === "tool").map((m) => String(m.content));
+}
+
+function base(chat: ReturnType<typeof scripted>["chat"], over: Partial<Parameters<typeof runPhase>[0]> = {}) {
+  const logs: string[] = [];
+  const input: Parameters<typeof runPhase>[0] = {
+    phase: "map",
+    system: "sistema",
+    user: "utente",
+    tree: makeTree(),
+    openapi: null,
+    chat,
+    budget: budget(),
+    log: (m) => logs.push(m),
+    now: () => 0,
+    ...over,
+  };
+  return { input, logs };
+}
+
+describe("runPhase", () => {
+  it("legge un file e consegna un esito valido", async () => {
+    const s = scripted([
+      reply([call("read_file", { path: "src/a.ts" })]),
+      reply([call("submit_result", { result: validMap })]),
+      reply([]),
+    ]);
+    const { input, logs } = base(s.chat);
+    const out = await runPhase(input);
+    expect(out).toEqual({ ok: true, result: validMap });
+    expect(s.calls).toHaveLength(2);
+    const read = toolMessages(s.calls[1]!.messages)[0]!;
+    expect(read).toContain(`1: ${SECRET_LINE}`);
+    expect(read).toContain("2: export const a = 1;");
+    expect(logs).toContain("read_file src/a.ts (2 righe)");
+    expect(input.budget.tokensUsed).toBe(20);
+    // i messaggi iniziali sono system e user
+    expect(s.calls[0]!.messages.map((m) => m.role)).toEqual(["system", "user"]);
+  });
+
+  it("consegna non valida una volta, poi valida: invia la correzione", async () => {
+    const s = scripted([
+      reply([call("submit_result", { result: { ...validMap, stack: "node" } })]),
+      reply([call("submit_result", { result: validMap })]),
+    ]);
+    const { input, logs } = base(s.chat);
+    const out = await runPhase(input);
+    expect(out.ok).toBe(true);
+    const correction = toolMessages(s.calls[1]!.messages)[0]!;
+    expect(correction).toContain("stack");
+    expect(correction).toContain("deve essere un elenco");
+    expect(correction).toContain("1/2");
+    expect(logs).toContain("submit_result non valido (correzione 1/2)");
+    expect(logs).toContain("submit_result valido");
+  });
+
+  it("tre consegne non valide: fallisce dopo 2 correzioni", async () => {
+    const s = scripted([reply([call("submit_result", { result: { stack: 1 } })])]);
+    const { input } = base(s.chat);
+    const out = await runPhase(input);
+    expect(MAX_CORRECTIONS).toBe(2);
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.error).toContain("esito della fase map non valido dopo 2 correzioni");
+      expect(out.error).toContain("stack");
+    }
+    expect(s.calls).toHaveLength(3);
+  });
+
+  it("submit_result senza il campo result conta come consegna non valida", async () => {
+    const s = scripted([reply([call("submit_result", validMap)]), reply([call("submit_result", { result: validMap })])]);
+    const { input } = base(s.chat);
+    expect((await runPhase(input)).ok).toBe(true);
+    expect(toolMessages(s.calls[1]!.messages)[0]).toContain("result");
+  });
+
+  it("read_file su un file inesistente: errore al modello e il ciclo continua", async () => {
+    const s = scripted([
+      reply([call("read_file", { path: "nope.ts" })]),
+      reply([call("submit_result", { result: validMap })]),
+    ]);
+    const { input, logs } = base(s.chat);
+    const out = await runPhase(input);
+    expect(out.ok).toBe(true);
+    expect(toolMessages(s.calls[1]!.messages)[0]).toMatch(/^Errore: File inesistente: nope\.ts/);
+    expect(logs).toContain("read_file nope.ts (errore)");
+  });
+
+  it("argomenti malformati: errore in italiano al modello, il ciclo continua e il giro conta", async () => {
+    const s = scripted([
+      reply([call("read_file", "{non json"), call("read_file", { path: 3 }), call("list_dir", { depth: "x" })]),
+      reply([call("submit_result", { result: validMap })]),
+    ]);
+    const { input } = base(s.chat);
+    const out = await runPhase(input);
+    expect(out.ok).toBe(true);
+    const msgs = toolMessages(s.calls[1]!.messages);
+    expect(msgs[0]).toContain("non sono JSON valido");
+    expect(msgs[1]).toContain("path");
+    expect(msgs[1]).toContain("stringa");
+    expect(msgs[2]).toContain("path");
+  });
+
+  it("strumento sconosciuto: errore al modello", async () => {
+    const s = scripted([reply([call("rm_rf", {})]), reply([call("submit_result", { result: validMap })])]);
+    const { input } = base(s.chat);
+    expect((await runPhase(input)).ok).toBe(true);
+    expect(toolMessages(s.calls[1]!.messages)[0]).toContain('lo strumento "rm_rf" non esiste');
+  });
+
+  it("più chiamate nello stesso messaggio: risponde a tutte, la consegna per ultima", async () => {
+    const submit = call("submit_result", { result: { ...validMap, stack: 1 } });
+    const read = call("read_file", { path: "src/a.ts" });
+    const s = scripted([reply([submit, read]), reply([call("submit_result", { result: validMap })])]);
+    const { input } = base(s.chat);
+    expect((await runPhase(input)).ok).toBe(true);
+    const tools = s.calls[1]!.messages.filter((m) => m.role === "tool") as { tool_call_id: string; content: string }[];
+    expect(tools.map((t) => t.tool_call_id)).toEqual([read.id, submit.id]);
+  });
+
+  it("una consegna valida chiude la fase anche dopo letture nello stesso messaggio", async () => {
+    const s = scripted([reply([call("list_dir", { path: "" }), call("submit_result", { result: validMap })])]);
+    const { input, logs } = base(s.chat);
+    expect(await runPhase(input)).toEqual({ ok: true, result: validMap });
+    expect(s.calls).toHaveLength(1);
+    expect(logs[0]).toBe("list_dir / (1 voce)");
+  });
+
+  it("risposta senza strumenti: promemoria, contato come giro", async () => {
+    const s = scripted([reply([], "ho finito"), reply([call("submit_result", { result: validMap })])]);
+    const { input } = base(s.chat);
+    expect((await runPhase(input)).ok).toBe(true);
+    const last = s.calls[1]!.messages.at(-1)!;
+    expect(last.role).toBe("user");
+    expect(String(last.content)).toContain("consegna l'esito con submit_result");
+  });
+
+  it(`${PHASE_MAX_ROUNDS} giri senza consegna: fallisce nominando i giri`, async () => {
+    const s = scripted([reply([call("list_dir", { path: "src" })])]);
+    const { input } = base(s.chat);
+    const out = await runPhase(input);
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error).toContain(`${PHASE_MAX_ROUNDS} giri`);
+    expect(s.calls).toHaveLength(PHASE_MAX_ROUNDS);
+  });
+
+  it("token oltre il budget: fallisce prima della chiamata successiva", async () => {
+    const s = scripted([reply([call("list_dir", { path: "src" })], null, 150)]);
+    const { input } = base(s.chat, { budget: budget({ maxTokens: 100 }) });
+    const out = await runPhase(input);
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error).toContain("token");
+    expect(s.calls).toHaveLength(1);
+    expect(input.budget.tokensUsed).toBe(150);
+  });
+
+  it("budget di token già esaurito: nessuna chiamata al modello", async () => {
+    const s = scripted([reply([])]);
+    const { input } = base(s.chat, { budget: budget({ tokensUsed: 100, maxTokens: 100 }) });
+    const out = await runPhase(input);
+    expect(out.ok).toBe(false);
+    expect(s.calls).toHaveLength(0);
+  });
+
+  it("scadenza superata: fallisce nominando il tempo", async () => {
+    let t = 0;
+    const s = scripted([reply([call("list_dir", { path: "src" })])]);
+    const { input } = base(s.chat, { budget: budget({ deadline: 30 }), now: () => (t += 10) });
+    const out = await runPhase(input);
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error).toContain("tempo");
+    expect(s.calls.length).toBeGreaterThan(0);
+    expect(s.calls.length).toBeLessThan(3);
+  });
+
+  it("errore della chiamata al modello: esito fallito", async () => {
+    const { input } = base(async () => {
+      throw new Error("gateway giù");
+    });
+    const out = await runPhase(input);
+    expect(out).toEqual({ ok: false, error: "fase map: errore nella chiamata al modello: gateway giù" });
+  });
+
+  it("senza codice non offre list_dir/read_file/search; con OpenAPI offre le operazioni", async () => {
+    const s = scripted([
+      reply([call("list_operations", {}), call("read_operation", { method: "get", path: "/api/squadre" }), call("read_file", { path: "src/a.ts" })]),
+      reply([call("submit_result", { result: validMap })]),
+    ]);
+    const { input, logs } = base(s.chat, { tree: null, openapi });
+    expect((await runPhase(input)).ok).toBe(true);
+    const names = s.calls[0]!.tools.map((t) => t.function.name);
+    expect(names).toEqual(["list_operations", "read_operation", "submit_result"]);
+    const msgs = toolMessages(s.calls[1]!.messages);
+    expect(msgs[0]).toContain("GET /api/squadre — listSquadre — Elenco squadre");
+    expect(msgs[1]).toContain("operationId: listSquadre");
+    expect(msgs[2]).toContain('lo strumento "read_file" non esiste');
+    expect(logs).toContain("list_operations (1 operazione)");
+    expect(logs).toContain("read_operation GET /api/squadre");
+  });
+
+  it("con il solo codice non offre gli strumenti OpenAPI", async () => {
+    const s = scripted([reply([call("submit_result", { result: validMap })])]);
+    const { input } = base(s.chat);
+    await runPhase(input);
+    const tools = s.calls[0]!.tools;
+    expect(tools.map((t) => t.function.name)).toEqual(["list_dir", "read_file", "search", "submit_result"]);
+    const submit = tools.find((t) => t.function.name === "submit_result")!;
+    expect(submit.function.parameters).toEqual({
+      type: "object",
+      properties: { result: { type: "object" } },
+      required: ["result"],
+    });
+  });
+
+  it("i log non contengono il contenuto dei file, i risultati della ricerca né l'esito", async () => {
+    const s = scripted([
+      reply([
+        call("read_file", { path: "src/a.ts" }),
+        call("search", { pattern: "segreto" }),
+        call("search", { pattern: "segr.to", regex: true, glob: "src/**" }),
+      ]),
+      reply([call("submit_result", { result: { ...validMap, stack: 1 } })]),
+      reply([call("submit_result", { result: validMap })]),
+    ]);
+    const { input, logs } = base(s.chat);
+    expect((await runPhase(input)).ok).toBe(true);
+    const all = logs.join("\n");
+    expect(all).not.toContain("contenuto-riservato-42");
+    expect(all).not.toContain("riassunto-dell-esito");
+    expect(logs).toContain('search "segreto" (1 risultato)');
+    expect(toolMessages(s.calls[1]!.messages)[1]).toContain(`src/a.ts:1: ${SECRET_LINE}`);
+  });
+
+  it("read_file lungo: numera le righe e indica come continuare", async () => {
+    const big = Array.from({ length: 1_000 }, (_, i) => `riga ${i + 1}`).join("\n");
+    const s = scripted([
+      reply([call("read_file", { path: "big.ts", fromLine: 10 })]),
+      reply([call("submit_result", { result: validMap })]),
+    ]);
+    const { input, logs } = base(s.chat, { tree: makeTree({ "big.ts": big }) });
+    await runPhase(input);
+    const msg = toolMessages(s.calls[1]!.messages)[0]!;
+    expect(msg).toContain("10: riga 10");
+    expect(msg).toContain("409: riga 409");
+    expect(msg).not.toContain("410: riga 410");
+    expect(msg).toContain("fromLine=410");
+    expect(msg).toContain("1000");
+    expect(msg.length).toBeLessThanOrEqual(41_000);
+    expect(logs).toContain("read_file big.ts (400 righe)");
+  });
+
+  it("search con molti risultati: segnala il taglio", async () => {
+    const many = Array.from({ length: 300 }, () => "match").join("\n");
+    const s = scripted([reply([call("search", { pattern: "match" })]), reply([call("submit_result", { result: validMap })])]);
+    const { input } = base(s.chat, { tree: makeTree({ "m.ts": many }) });
+    await runPhase(input);
+    const msg = toolMessages(s.calls[1]!.messages)[0]!;
+    expect(msg).toContain("m.ts:100: match");
+    expect(msg).toContain("risultati limitati");
+  });
+});

@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, pgEnum, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, bigint, text, timestamp, pgEnum, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -26,6 +26,8 @@ export const appsTable = pgTable("apps", {
   sourceRepo: text("source_repo"), // formato owner/nome
   sourceBranch: text("source_branch"),
   sourceTokenEnc: text("source_token_enc"),
+  // Installazione dell'App GitHub di Casello da cui si legge il repo (alternativa al token)
+  sourceInstallationId: bigint("source_installation_id", { mode: "number" }),
   openapiUrl: text("openapi_url"),
   functionalDescription: text("functional_description"),
   status: appStatusEnum("status").notNull().default("active"),

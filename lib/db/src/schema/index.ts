@@ -8,3 +8,6 @@ export * from "./sessions";
 export * from "./analyses";
 export * from "./analysis-items";
 export * from "./agent-skills";
+export * from "./users";
+export * from "./user-identities";
+export * from "./github-installations";

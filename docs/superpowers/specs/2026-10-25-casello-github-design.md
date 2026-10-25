@@ -97,6 +97,11 @@ ammessi, come oggi), registrazione aperta, webhook di GitHub.
   `contents: read`** e lo passa a `fetchGithubTree` al posto del token manuale. 401/404 da GitHub →
   analisi `failed` con "l'App Casello non ha più accesso a questo repository: reinstallala o scegli un
   altro repo".
+- **Limite noto**: l'ambito di un'installazione può essere più largo dei repository a cui l'utente ha
+  accesso su GitHub (un'organizzazione installa l'App su "tutti i repository" e un membro con accesso a un
+  solo repo vede comunque l'installazione). Oggi è accettabile perché accedono solo gli utenti di
+  `ALLOWED_EMAILS`; prima di aprire Casello a chiunque va verificato l'accesso al repo con il token
+  dell'utente (es. `GET /user/installations/{id}/repositories` al collegamento, salvando i repo ammessi).
 - Console, scheda Sorgenti: con GitHub collegato, combo "Repository" con i repo di `GET /api/github/repos`
   (scelta = installazione + repo, branch predefinito suggerito); link "usa un token manuale" che mostra i
   campi della fase 3. Senza GitHub collegato: invito "Collega GitHub" e campi manuali.

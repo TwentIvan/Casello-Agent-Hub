@@ -24,6 +24,7 @@ import {
   TriggerRunResponse,
 } from "@workspace/api-zod";
 import { executeRun } from "../lib/run-executor";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -128,10 +129,12 @@ router.post("/agents/:id/runs", runRateLimit, async (req, res) => {
     .values({ agentId: id, status: "pending", input: body.input ?? null })
     .returning();
 
-  await executeRun(run.id);
+  // La run prosegue in background (da secondi a decine di secondi): si risponde subito con la run
+  // in attesa e la UI ne segue lo stato con GET /runs/:id. executeRun registra da sé gli errori del
+  // modello sulla run; qui si intercetta solo l'imprevisto, che altrimenti farebbe cadere il processo.
+  executeRun(run.id).catch((err: unknown) => logger.error({ err, runId: run.id }, "Esecuzione della run fallita"));
 
-  const [finished] = await db.select().from(runsTable).where(eq(runsTable.id, run.id)).limit(1);
-  res.status(202).json(TriggerRunResponse.parse(finished));
+  res.status(202).json(TriggerRunResponse.parse(run));
 });
 
 export default router;

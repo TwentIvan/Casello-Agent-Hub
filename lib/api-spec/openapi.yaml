@@ -306,7 +306,7 @@ paths:
     get:
       operationId: listRuns
       tags: [runs]
-      summary: Elenca tutte le esecuzioni
+      summary: Elenca tutte le esecuzioni (dalla più recente)
       parameters:
         - name: agentId
           in: query
@@ -343,9 +343,12 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/RunTrigger"
+      description: >-
+        Crea la run e la avvia in background: risponde subito con la run in stato pending.
+        Lo stato (running, poi succeeded o failed) si segue con GET /runs/{id}.
       responses:
         "202":
-          description: Esecuzione avviata
+          description: Esecuzione avviata (stato pending)
           content:
             application/json:
               schema:

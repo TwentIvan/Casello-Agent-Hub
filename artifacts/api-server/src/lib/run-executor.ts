@@ -1,5 +1,5 @@
 import { db, agentsTable, appsTable, toolsTable, runsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { aiGateway, type GatewayMessage } from "./ai-gateway";
 
 // The context block below is stable for a given agent between config edits:
@@ -35,6 +35,23 @@ async function assembleAgentContext(agentId: number): Promise<string> {
   ]
     .filter((line) => line !== "")
     .join("\n");
+}
+
+/**
+ * Le run girano nel processo dell'API: se il processo si riavvia (deploy, crash) quelle in corso non
+ * finiranno mai. All'avvio si chiudono come fallite, così la UI non le mostra "in corso" per sempre.
+ */
+export async function failInterruptedRuns(): Promise<number> {
+  const interrupted = await db
+    .update(runsTable)
+    .set({
+      status: "failed",
+      errorMessage: "Esecuzione interrotta dal riavvio del server.",
+      finishedAt: new Date(),
+    })
+    .where(inArray(runsTable.status, ["pending", "running"]))
+    .returning({ id: runsTable.id });
+  return interrupted.length;
 }
 
 export async function executeRun(runId: number): Promise<void> {

@@ -1265,7 +1265,7 @@ export const getListRunsUrl = (params?: ListRunsParams,) => {
 }
 
 /**
- * @summary Elenca tutte le esecuzioni
+ * @summary Elenca tutte le esecuzioni (dalla più recente)
  */
 export const listRuns = async (params?: ListRunsParams, options?: RequestInit): Promise<Run[]> => {
 
@@ -1312,7 +1312,7 @@ export type ListRunsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Elenca tutte le esecuzioni
+ * @summary Elenca tutte le esecuzioni (dalla più recente)
  */
 
 export function useListRuns<TData = Awaited<ReturnType<typeof listRuns>>, TError = ErrorType<unknown>>(
@@ -1342,6 +1342,7 @@ export const getTriggerRunUrl = (id: number,) => {
 }
 
 /**
+ * Crea la run e la avvia in background: risponde subito con la run in stato pending. Lo stato (running, poi succeeded o failed) si segue con GET /runs/{id}.
  * @summary Avvia un'esecuzione dell'agente
  */
 export const triggerRun = async (id: number,

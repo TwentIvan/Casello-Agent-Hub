@@ -9,8 +9,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 ## Stato (ottobre 2026)
 
 - API completa per il CRUD di App / Agent / Tool / Run e per l'esecuzione delle run via AI gateway.
-- Frontend `artifacts/casello`: SOLO lo scheletro (App.tsx con un placeholder, shadcn/ui già installato,
-  wouter + React Query configurati). La UI è il lavoro in corso: vedi le GitHub Issues.
+- Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
+  monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
+  generati da Orval, mai fetch a mano.
 - In produzione su https://casello.fantamister.cloud (vedi "Deploy").
 
 ## Comandi
@@ -38,7 +39,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `artifacts/api-server/src/lib/auth.ts` — login Google (OIDC), sessione e middleware che protegge `/api`
 - `artifacts/api-server/src/lib/models.ts` — modelli selezionabili e default (`openrouter/auto`)
 - `artifacts/api-server/src/lib/ai-gateway.ts` — client verso i modelli (LiteLLM proxy o provider diretti)
-- `artifacts/api-server/src/lib/run-executor.ts` — esecuzione di una run (context pack + prompt caching)
+- `artifacts/api-server/src/lib/run-executor.ts` — esecuzione di una run (context pack + prompt caching).
+  `POST /api/agents/:id/runs` risponde subito con la run `pending` e la esegue in background (la UI fa
+  polling su `GET /api/runs/:id`); all'avvio le run rimaste `pending`/`running` vengono chiuse come fallite.
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
 - `artifacts/mockup-sandbox/` — sandbox di mockup: NON va in produzione, non toccare
 - `gateway/` — config LiteLLM storica; la copia viva è nel repo `TwentIvan/AIGateway`

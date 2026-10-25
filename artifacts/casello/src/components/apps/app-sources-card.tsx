@@ -41,13 +41,16 @@ export function AppSourcesCard({ app }: { app: App }) {
   });
 
   const save = () => {
-    const tokenChange = token ? { sourceToken: token } : clearToken ? { sourceToken: null } : {};
+    const isGithub = sourceType === "github";
+    const tokenChange = token && isGithub ? { sourceToken: token } : clearToken ? { sourceToken: null } : {};
     updateApp.mutate({
       id: app.id,
       data: {
         sourceType,
-        sourceRepo: repo.trim() || null,
-        sourceBranch: branch.trim() || null,
+        // Repo e branch servono solo con GitHub: con gli altri tipi si azzerano, così un valore nascosto
+        // e non valido non fa fallire il salvataggio.
+        sourceRepo: isGithub ? repo.trim() || null : null,
+        sourceBranch: isGithub ? branch.trim() || null : null,
         openapiUrl: openapiUrl.trim() || null,
         functionalDescription: description.trim() || null,
         ...tokenChange,

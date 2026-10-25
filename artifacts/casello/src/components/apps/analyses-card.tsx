@@ -74,12 +74,16 @@ export function AnalysesCard({ app }: { app: App }) {
     setFileInputKey((k) => k + 1);
     toast({ title: "Analisi avviata" });
   };
-  const onError = (error: unknown) =>
+  const onError = (error: unknown) => {
+    const status = error instanceof ApiError ? error.status : null;
     toast({
       variant: "destructive",
-      title: error instanceof ApiError && error.status === 409 ? "c'è già un'analisi in corso" : "Avvio non riuscito",
-      description: error instanceof ApiError && error.status === 409 ? undefined : apiErrorMessage(error),
+      title: status === 409 ? "c'è già un'analisi in corso" : "Avvio non riuscito",
+      // Il 413 può arrivare anche da nginx con una pagina HTML: messaggio fisso
+      description:
+        status === 409 ? undefined : status === 413 ? "L'archivio supera il limite di 50 MB." : apiErrorMessage(error),
     });
+  };
   const startAnalysis = useStartAnalysis({ mutation: { onSuccess: onStarted, onError } });
   const startZip = useStartZipAnalysis({ mutation: { onSuccess: onStarted, onError } });
   const starting = startAnalysis.isPending || startZip.isPending;

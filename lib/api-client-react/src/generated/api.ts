@@ -309,6 +309,77 @@ export const useLogout = <TError = ErrorType<unknown>,
       return useMutation(getLogoutMutationOptions(options));
     }
 
+export const getUnlinkGithubUrl = () => {
+
+
+
+
+  return `/api/auth/github`
+}
+
+/**
+ * Rimuove l'identità GitHub dell'utente corrente e le installazioni dell'App a lui collegate. Risponde 409 se l'utente resterebbe senza modo di entrare (nessun'altra identità ed email non ammessa).
+ * @summary Scollega l'account GitHub e le sue installazioni
+ */
+export const unlinkGithub = async ( options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getUnlinkGithubUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getUnlinkGithubMutationOptions = <TError = ErrorType<UnauthorizedResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unlinkGithub>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unlinkGithub>>, TError,void, TContext> => {
+
+const mutationKey = ['unlinkGithub'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unlinkGithub>>, void> = () => {
+
+
+          return  unlinkGithub(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnlinkGithubMutationResult = NonNullable<Awaited<ReturnType<typeof unlinkGithub>>>
+
+    export type UnlinkGithubMutationError = ErrorType<UnauthorizedResponse | ConflictResponse>
+
+    /**
+ * @summary Scollega l'account GitHub e le sue installazioni
+ */
+export const useUnlinkGithub = <TError = ErrorType<UnauthorizedResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unlinkGithub>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unlinkGithub>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getUnlinkGithubMutationOptions(options));
+    }
+
 export const getListAppsUrl = () => {
 
 

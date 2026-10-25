@@ -44,6 +44,7 @@ paths:
 
   # ─── Auth ───────────────────────────────────────────────────────────────────
   # /auth/login e /auth/callback sono redirect del flusso OIDC (Google), non chiamate JSON.
+  # Lo stesso vale per /auth/github/login, /auth/github/link e /auth/github/callback (GitHub).
 
   /auth/me:
     get:
@@ -68,6 +69,23 @@ paths:
       responses:
         "204":
           description: Sessione chiusa
+
+  /auth/github:
+    delete:
+      operationId: unlinkGithub
+      tags: [auth]
+      summary: Scollega l'account GitHub e le sue installazioni
+      description: >
+        Rimuove l'identità GitHub dell'utente corrente e le installazioni dell'App a lui collegate.
+        Risponde 409 se l'utente resterebbe senza modo di entrare (nessun'altra identità ed email
+        non ammessa).
+      responses:
+        "204":
+          description: Account GitHub scollegato
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   # ─── Apps ───────────────────────────────────────────────────────────────────
 

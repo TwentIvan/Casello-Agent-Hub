@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { db, pool, usersTable } from "@workspace/db";
 import { GetCurrentUserResponse } from "@workspace/api-zod";
 import { githubConfig } from "./github/config";
+import { githubAuthRouter } from "./github/oauth-routes";
 import { logger } from "./logger";
 import { IdentityConflictError, ensureUserByEmail, isAllowed, listIdentities, resolveLogin } from "./users";
 
@@ -113,7 +114,7 @@ function getOidcConfiguration(cfg: AuthConfig): Promise<oidc.Configuration> {
 }
 
 /** Accetta solo percorsi interni ("/runs/3"), mai URL esterni o "//host". */
-function safeReturnTo(value: unknown): string {
+export function safeReturnTo(value: unknown): string {
   return typeof value === "string" && value.startsWith("/") && !value.startsWith("//") ? value : "/";
 }
 
@@ -150,10 +151,18 @@ async function devUserId(): Promise<number> {
   return (await ensureUserByEmail(DEV_USER.email, DEV_USER.name, DEV_USER.picture)).id;
 }
 
+/**
+ * Id dell'utente della richiesta senza rispondere 401 (route pubbliche come la callback GitHub):
+ * utente di sviluppo con AUTH_DISABLED, altrimenti quello della sessione; null senza utente.
+ */
+export async function sessionUserId(req: Request): Promise<number | null> {
+  return authDisabled ? devUserId() : resolveSessionUserId(req.session);
+}
+
 /** Protegge /api (o una singola route): imposta req.userId oppure risponde 401. */
 export const requireAuth: RequestHandler = async (req, res, next) => {
   try {
-    const userId = authDisabled ? await devUserId() : await resolveSessionUserId(req.session);
+    const userId = await sessionUserId(req);
     if (userId === null) {
       res.status(401).json({ error: "Login richiesto" });
       return;
@@ -176,7 +185,7 @@ export function authRouter(): IRouter {
 
   router.get("/auth/me", async (req, res) => {
     // Anche qui una sessione della fase 1 viene convertita (è la prima richiesta della UI)
-    const userId = authDisabled ? await devUserId() : await resolveSessionUserId(req.session);
+    const userId = await sessionUserId(req);
     const [user] = userId === null ? [] : await db.select().from(usersTable).where(eq(usersTable.id, userId));
     if (!user) {
       res.status(401).json({ error: "Login richiesto" });
@@ -203,6 +212,14 @@ export function authRouter(): IRouter {
       res.status(204).end();
     });
   });
+
+  // Login e collegamento GitHub solo se l'App è configurata. Con AUTH_DISABLED non c'è la config
+  // del login: l'origine della UI si prende da PUBLIC_APP_URL o dal Vite locale.
+  const github = githubConfig();
+  if (github) {
+    const publicAppUrl = config?.publicAppUrl ?? (process.env.PUBLIC_APP_URL ?? "http://localhost:5173").replace(/\/$/, "");
+    router.use(githubAuthRouter(github, { publicAppUrl }));
+  }
 
   if (!config) return router;
   const cfg = config;

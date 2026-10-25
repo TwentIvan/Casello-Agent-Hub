@@ -40,6 +40,13 @@ export const LogoutResponse = zod.void()
 
 
 /**
+ * Rimuove l'identità GitHub dell'utente corrente e le installazioni dell'App a lui collegate. Risponde 409 se l'utente resterebbe senza modo di entrare (nessun'altra identità ed email non ammessa).
+ * @summary Scollega l'account GitHub e le sue installazioni
+ */
+export const UnlinkGithubResponse = zod.void()
+
+
+/**
  * @summary Elenca tutte le app registrate
  */
 

@@ -597,7 +597,24 @@ describe("startAnalysis con l'installazione della GitHub App", () => {
     expect(llmRequests).toHaveLength(0);
   });
 
-  it("revocata dopo il token in cache: il download risponde 404 → messaggio della spec e cache svuotata", async () => {
+  it("branch inesistente: failed con il messaggio sul branch, il token in cache resta", async () => {
+    const wrong = await createApp({ sourceType: "github", sourceRepo: "ivan/fanta", sourceBranch: "nope", sourceInstallationId: 11, functionalDescription: "Squadre" });
+    const id = await createAnalysis(wrong);
+    await startAnalysis(id, { githubConfig: cfg });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe("repository o branch non trovato: controlla il branch nelle sorgenti dell'app");
+    expect(gh.requests.find((r) => r.path.startsWith("/repos/ivan/fanta/zipball"))?.path).toBe("/repos/ivan/fanta/zipball/nope");
+    for (const t of issued()) expect(JSON.stringify(a)).not.toContain(t);
+
+    // Token non scartato: l'analisi sul branch giusto riusa quello in cache
+    const id2 = await createAnalysis(await installationApp());
+    await startAnalysis(id2, { githubConfig: cfg });
+    expect((await loadAnalysis(id2)).status).toBe("completed");
+    expect(gh.requests.filter((r) => r.path === "/app/installations/11/access_tokens")).toHaveLength(1);
+  });
+
+  it("revocata dopo il token in cache: il download risponde 401 → messaggio della spec e cache svuotata", async () => {
     const appWithInst = await installationApp();
     const first = await createAnalysis(appWithInst);
     await startAnalysis(first, { githubConfig: cfg });

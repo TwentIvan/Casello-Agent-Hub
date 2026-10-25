@@ -5,6 +5,7 @@ import { ListGithubInstallationsResponse, ListGithubReposResponse } from "@works
 import { currentUserId } from "../lib/auth";
 import { GITHUB_MESSAGES, GithubError, forgetInstallationTokens, listInstallationRepos } from "../lib/github/app";
 import { githubConfig, type GithubConfig } from "../lib/github/config";
+import { logger } from "../lib/logger";
 
 // Installazioni dell'App GitHub dell'utente e repository che l'App vede: base per scegliere la
 // sorgente di un'app e per la console. Nessun token esce da qui.
@@ -24,6 +25,15 @@ function manageUrl(cfg: GithubConfig, accountType: string, accountLogin: string,
  */
 function isRevoked(err: unknown): boolean {
   return err instanceof GithubError && err.message === GITHUB_MESSAGES.noAccess && (err.status === 401 || err.status === 404);
+}
+
+/**
+ * Installazione che GitHub rifiuta senza averla rimossa (403/422, es. sospesa dal proprietario):
+ * non si elimina, si salta solo in questo elenco. I limiti di richieste arrivano come "GitHub non
+ * risponde" e non passano di qui.
+ */
+function isRefused(err: unknown): err is GithubError {
+  return err instanceof GithubError && err.message === GITHUB_MESSAGES.noAccess && !isRevoked(err);
 }
 
 const router: IRouter = Router();
@@ -78,6 +88,11 @@ router.get("/github/repos", async (req, res) => {
         await db
           .delete(githubInstallationsTable)
           .where(and(eq(githubInstallationsTable.userId, userId), eq(githubInstallationsTable.installationId, installationId)));
+        continue;
+      }
+      if (isRefused(err)) {
+        // Sospesa o rifiutata: la riga resta, gli altri repo arrivano lo stesso
+        logger.warn({ installationId, status: err.status }, "Installazione GitHub rifiutata: saltata nell'elenco dei repo");
         continue;
       }
       if (err instanceof GithubError) {

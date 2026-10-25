@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
  * Finto GitHub per i test: API REST (`apiBase`) e sito web (`webBase`, OAuth) su due porte locali.
  * Lo stato è modificabile direttamente dai test. Riproduce le forme JSON reali di GitHub per le sole
  * chiamate usate da Casello: token di installazione (JWT RS256 verificato), utente, email,
- * installazioni, repository di un'installazione, installazione di un repo, zipball e scambio del
+ * installazioni, repository di un'installazione, installazione di un repo, zipball (per branch) e scambio del
  * codice OAuth (con PKCE S256 facoltativo).
  */
 
@@ -37,6 +37,8 @@ export interface FakeGithubRepo {
   fullName: string;
   defaultBranch: string;
   private: boolean;
+  /** Branch oltre al default che lo zipball accetta come ref (default: solo `defaultBranch`). */
+  branches?: string[];
 }
 
 export interface FakeGithubCode {
@@ -316,9 +318,14 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
     }
 
     if (method === "GET" && (m = /^\/repos\/([^/]+)\/([^/]+)\/zipball(?:\/(.+))?$/.exec(path))) {
+      // Come GitHub: token revocato o scaduto → 401; repo fuori dal token o ref sconosciuto → 404
       const issued = liveToken(req);
+      if (!issued) return send(res, 401, BAD_CREDENTIALS);
       const fullName = `${decodeURIComponent(m[1]!)}/${decodeURIComponent(m[2]!)}`;
-      if (!issued || !reposOf(issued).some((r) => r.fullName === fullName)) return send(res, 404, NOT_FOUND);
+      const repo = reposOf(issued).find((r) => r.fullName === fullName);
+      if (!repo) return send(res, 404, NOT_FOUND);
+      const ref = m[3] === undefined ? null : decodeURIComponent(m[3]);
+      if (ref !== null && ref !== repo.defaultBranch && !(repo.branches ?? []).includes(ref)) return send(res, 404, NOT_FOUND);
       res.writeHead(200, { "content-type": "application/zip" });
       res.end(Buffer.from(fake.zipballs.get(fullName) ?? EMPTY_ZIP));
       return;

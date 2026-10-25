@@ -89,10 +89,13 @@ class AnalysisError extends Error {
   }
 }
 
+const BRANCH_NOT_FOUND = "repository o branch non trovato: controlla il branch nelle sorgenti dell'app";
+
 /**
  * Codice dal repo tramite l'installazione della GitHub App: token ristretto al repo e a
- * `contents: read`, generato subito prima del download. 401/404 sul download con quel token
- * vogliono dire accesso revocato: si scarta il token in cache e si usa il messaggio della spec.
+ * `contents: read`, generato subito prima del download. 401 sul download con quel token vuol dire
+ * accesso revocato: si scarta il token in cache e si usa il messaggio della spec; 404 vuol dire
+ * repo o branch inesistente.
  */
 async function fetchViaInstallation(app: App & { sourceRepo: string }, installationId: number, opts: StartAnalysisOptions): Promise<SourceTree> {
   const cfg = opts.githubConfig !== undefined ? opts.githubConfig : githubConfig();
@@ -107,10 +110,13 @@ async function fetchViaInstallation(app: App & { sourceRepo: string }, installat
   try {
     return await fetchGithubTree({ repo: app.sourceRepo, branch: app.sourceBranch, token, apiBase: cfg.apiBase });
   } catch (err) {
-    if (err instanceof SourceError && (err.status === 401 || err.status === 404)) {
+    if (err instanceof SourceError && err.status === 401) {
       forgetInstallationTokens(installationId);
       throw new AnalysisError(GITHUB_MESSAGES.noAccess);
     }
+    // Il token appena emesso è ristretto proprio a questo repo: l'installazione lo vede, quindi un
+    // 404 vuol dire repo o branch inesistente, non accesso perso (il token resta valido)
+    if (err instanceof SourceError && err.status === 404) throw new AnalysisError(BRANCH_NOT_FOUND);
     throw err;
   }
 }

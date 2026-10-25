@@ -87,13 +87,41 @@ beforeEach(() => {
 
 describe("loadGithubConfig", () => {
   it("null se manca (o è vuota) una variabile", () => {
+    const silent = { warn: () => {} };
     const env = envFor(gh);
     for (const k of ["GITHUB_APP_ID", "GITHUB_APP_SLUG", "GITHUB_APP_CLIENT_ID", "GITHUB_APP_CLIENT_SECRET", "GITHUB_APP_PRIVATE_KEY"]) {
       const partial: Record<string, string> = { ...env };
       delete partial[k];
-      expect(loadGithubConfig(partial)).toBeNull();
-      expect(loadGithubConfig({ ...env, [k]: "  " })).toBeNull();
+      expect(loadGithubConfig(partial, silent)).toBeNull();
+      expect(loadGithubConfig({ ...env, [k]: "  " }, silent)).toBeNull();
     }
+  });
+
+  it("configurazione parziale: avviso con i soli nomi delle variabili mancanti, mai i valori", () => {
+    const warnings: { obj: object; msg: string }[] = [];
+    const log = { warn: (obj: object, msg: string) => warnings.push({ obj, msg }) };
+    const { GITHUB_APP_CLIENT_SECRET: _s, GITHUB_APP_PRIVATE_KEY: _k, ...partial } = envFor(gh);
+    expect(loadGithubConfig(partial, log)).toBeNull();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.obj).toEqual({ missing: ["GITHUB_APP_CLIENT_SECRET", "GITHUB_APP_PRIVATE_KEY"] });
+    const text = JSON.stringify(warnings);
+    for (const value of [gh.appId, gh.slug, gh.clientId]) expect(text).not.toContain(value);
+  });
+
+  it("nessuna variabile GitHub: disattivato senza avvisi", () => {
+    const warnings: unknown[] = [];
+    expect(loadGithubConfig({ NODE_ENV: "test" }, { warn: (o) => warnings.push(o) })).toBeNull();
+    expect(warnings).toHaveLength(0);
+  });
+
+  it("PEM non valida: null e avviso senza la chiave", () => {
+    const warnings: { obj: object; msg: string }[] = [];
+    const log = { warn: (obj: object, msg: string) => warnings.push({ obj, msg }) };
+    const bad = "-----BEGIN RSA PRIVATE KEY-----\nnon-una-chiave-segreta\n-----END RSA PRIVATE KEY-----";
+    expect(loadGithubConfig({ ...envFor(gh), GITHUB_APP_PRIVATE_KEY: bad }, log)).toBeNull();
+    expect(warnings.map((w) => w.msg)).toEqual(["GITHUB_APP_PRIVATE_KEY non valida: GitHub resta disattivato"]);
+    expect(JSON.stringify(warnings)).not.toContain("non-una-chiave-segreta");
+    expect(JSON.stringify(warnings)).not.toContain(gh.clientSecret);
   });
 
   it("`\\n` letterali diventano a capo: la PEM è valida", () => {

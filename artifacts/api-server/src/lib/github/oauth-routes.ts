@@ -83,6 +83,12 @@ export function githubAuthRouter(cfg: GithubConfig, opts: { publicAppUrl: string
       res.redirect(withParam(pending?.returnTo ?? "/", "github", "cancelled"));
       return;
     }
+    // Altri errori di GitHub (es. application_suspended): nessuno scambio; il collegamento torna
+    // alla pagina Account, il login alla pagina di accesso
+    if (req.query.error !== undefined) {
+      res.redirect(pending?.mode === "link" ? "/account?github=error" : "/?auth=error");
+      return;
+    }
 
     if (!pending || !sameState(pending.state, req.query.state) || typeof code !== "string" || !code) {
       // Codice senza il nostro state (ritorno dall'installazione, o richiesta forgiata): mai

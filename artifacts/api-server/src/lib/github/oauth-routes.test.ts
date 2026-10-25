@@ -323,6 +323,15 @@ describe("login con GitHub", () => {
     expect(tokenRequests()).toBe(0);
   });
 
+  it("altro errore di GitHub al login (application_suspended): /?auth=error, nessuno scambio", async () => {
+    const client = new Client();
+    const start = await client.request("/api/auth/github/login?returnTo=/apps");
+    const state = new URL(start.headers.get("location")!).searchParams.get("state")!;
+    const res = await client.request(`/api/auth/github/callback?error=application_suspended&state=${state}`);
+    expect(res.headers.get("location")).toBe("/?auth=error");
+    expect(tokenRequests()).toBe(0);
+  });
+
   it("sincronizzazione delle installazioni fallita: il login riesce comunque, nessuna installazione", async () => {
     gh.authorizeAs = TOKEN_IVAN;
     gh.failWith = (r) => (r.path.startsWith("/user/installations") ? 500 : null);
@@ -413,6 +422,18 @@ describe("collegamento da loggato", () => {
       expect.objectContaining({ userId: user.id, provider: "github", providerUserId: "3003", username: "estraneo" }),
     ]);
     expect(await installationsOf(user.id)).toEqual([502]);
+  });
+
+  it("altro errore di GitHub nel collegamento (application_suspended): /account?github=error, nessuno scambio", async () => {
+    const user = await users.ensureUserByEmail("ivan@example.com");
+    const client = new Client();
+    await client.loginAs(user.id);
+    const start = await client.request("/api/auth/github/link?returnTo=/account");
+    const state = new URL(start.headers.get("location")!).searchParams.get("state")!;
+    const res = await client.request(`/api/auth/github/callback?error=application_suspended&state=${state}`);
+    expect(res.headers.get("location")).toBe("/account?github=error");
+    expect(tokenRequests()).toBe(0);
+    expect(await db.select().from(userIdentitiesTable)).toHaveLength(0);
   });
 
   it("account GitHub già di un altro utente: /account?github=conflict e nessuna modifica", async () => {

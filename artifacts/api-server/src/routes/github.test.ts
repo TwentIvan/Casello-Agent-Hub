@@ -215,11 +215,32 @@ describe("GET /github/repos", () => {
     expect(res.json).toEqual([]);
   });
 
+  it.each([403, 422])("installazione sospesa (%s sul token): saltata, la riga resta, gli altri repo arrivano", async (status) => {
+    fakeInstallation(11, "ivan", "User", [{ fullName: "ivan/mister" }]);
+    fakeInstallation(22, "acme", "Organization", [{ fullName: "acme/app" }]);
+    await addRow(11, "ivan", "User");
+    await addRow(22, "acme", "Organization");
+    gh.failWith = (r) => (r.path === "/app/installations/11/access_tokens" ? status : null);
+    const res = await get("/github/repos");
+    expect(res.status, res.text).toBe(200);
+    expect(res.json).toEqual([{ installationId: 22, fullName: "acme/app", defaultBranch: "main", private: false }]);
+    expect(await rowIds()).toEqual([11, 22]);
+  });
+
+  it("403 sull'elenco dei repo (non revoca): installazione saltata, la riga resta", async () => {
+    fakeInstallation(11, "ivan", "User", [{ fullName: "ivan/mister" }]);
+    await addRow(11, "ivan", "User");
+    gh.failWith = (r) => (r.path.startsWith("/installation/repositories") ? 403 : null);
+    const res = await get("/github/repos");
+    expect(res.status, res.text).toBe(200);
+    expect(res.json).toEqual([]);
+    expect(await rowIds()).toEqual([11]);
+  });
+
   it.each([
     ["500", () => 500, {}],
-    ["403", () => 403, {}],
-    ["422", () => 422, {}],
     ["403 con rate limit", () => 403, { "x-ratelimit-remaining": "0" }],
+    ["403 con retry-after", () => 403, { "retry-after": "60" }],
   ])("errore %s da GitHub: 502 e l'installazione resta", async (_n, status, headers) => {
     fakeInstallation(11, "ivan", "User", [{ fullName: "ivan/mister" }]);
     fakeInstallation(22, "acme", "Organization", [{ fullName: "acme/app" }]);

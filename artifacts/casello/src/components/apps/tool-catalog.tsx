@@ -20,10 +20,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AppToolDialog, TOOL_IDENTITY_LABELS, TOOL_STATUS_LABELS } from "@/components/apps/app-tool-dialog";
+import { AppToolDialog } from "@/components/apps/app-tool-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { TOOL_IDENTITY_LABELS, TOOL_STATUS_LABELS } from "@/lib/tool-labels";
 import { cn } from "@/lib/utils";
 
 const STATUS_STYLES: Record<AppTool["status"], string> = {

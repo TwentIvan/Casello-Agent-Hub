@@ -142,7 +142,16 @@ export default function RunDetailPage() {
       <RunSteps run={r} />
 
       {r.status === "awaiting_client" ? (
-        <ConfirmationCard run={r} />
+        r.pendingAction ? (
+          <ConfirmationCard run={r} />
+        ) : (
+          <Card>
+            <CardContent className="flex items-center gap-3 py-8 text-sm text-muted-foreground">
+              <Spinner className="size-5" />
+              In attesa di una risposta del client…
+            </CardContent>
+          </Card>
+        )
       ) : active ? (
         <Card>
           <CardContent className="flex items-center gap-3 py-8 text-sm text-muted-foreground">

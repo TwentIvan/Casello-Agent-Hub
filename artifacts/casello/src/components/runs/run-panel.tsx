@@ -88,7 +88,7 @@ export function RunPanel({ agent }: { agent: Agent }) {
           <CollapsibleContent className="space-y-2 border-t px-3 py-3">
             <Input
               type="password"
-              autoComplete="off"
+              autoComplete="new-password"
               value={testToken}
               onChange={(event) => setTestToken(event.target.value)}
               placeholder="Token dell'utente dell'app"

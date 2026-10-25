@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -15,9 +15,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TOOL_IDENTITY_LABELS, TOOL_STATUS_LABELS } from "@/components/apps/app-tool-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { TOOL_IDENTITY_LABELS, TOOL_STATUS_LABELS } from "@/lib/tool-labels";
 
 function ToolBadges({ tool }: { tool: AppTool }) {
   return (
@@ -59,12 +59,8 @@ export function AgentToolsSection({ agent }: { agent: Agent }) {
     [tools.data],
   );
   const [selected, setSelected] = useState<Set<number>>(() => new Set(agent.toolIds));
-  // Si riallinea alla selezione salvata quando l'agente viene ricaricato (dopo il salvataggio).
+  // Il componente viene rimontato a ogni cambio di agente (key): la selezione parte sempre da quella salvata.
   const savedKey = [...agent.toolIds].sort((a, b) => a - b).join(",");
-  useEffect(() => {
-    setSelected(new Set(agent.toolIds));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedKey]);
   const dirty = savedKey !== [...selected].sort((a, b) => a - b).join(",");
 
   const setTools = useSetAgentTools({

@@ -28,6 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { jsonObjectInput, parseJsonObject } from "@/lib/json-schema-input";
+import { TOOL_IDENTITY_LABELS, TOOL_STATUS_LABELS } from "@/lib/tool-labels";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 
@@ -37,16 +38,6 @@ const LOCATIONS: { value: ParamLocation; label: string }[] = [
   { value: "query", label: "Query string" },
   { value: "body", label: "Corpo" },
 ];
-
-export const TOOL_STATUS_LABELS: Record<ToolStatus, string> = {
-  draft: "Bozza",
-  active: "Attivo",
-  disabled: "Disattivato",
-};
-export const TOOL_IDENTITY_LABELS: Record<ToolIdentity, string> = {
-  user: "Utente",
-  service: "Servizio",
-};
 
 const toolFormSchema = z.object({
   name: z

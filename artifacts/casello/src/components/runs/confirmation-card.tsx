@@ -4,6 +4,7 @@ import {
   ApiError,
   type Run,
   type RunDecision,
+  getGetDashboardStatsQueryKey,
   getGetRunQueryKey,
   getListRunStepsQueryKey,
   getListRunsQueryKey,
@@ -21,7 +22,7 @@ export function ConfirmationCard({ run }: { run: Run }) {
   const pending = run.pendingAction;
 
   const refresh = () => {
-    for (const queryKey of [getGetRunQueryKey(run.id), getListRunStepsQueryKey(run.id), getListRunsQueryKey()]) {
+    for (const queryKey of [getGetRunQueryKey(run.id), getListRunStepsQueryKey(run.id), getListRunsQueryKey(), getGetDashboardStatsQueryKey()]) {
       void queryClient.invalidateQueries({ queryKey });
     }
   };
@@ -54,9 +55,7 @@ export function ConfirmationCard({ run }: { run: Run }) {
           <CardDescription>{pending.summary}</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Azione sull'interfaccia: verrà gestita dal widget dell'app. Da qui non c'è nulla da confermare.
-          </p>
+          <p className="text-sm text-muted-foreground">Verrà gestita dal widget dell'app: da qui non c'è nulla da confermare.</p>
         </CardContent>
       </Card>
     );

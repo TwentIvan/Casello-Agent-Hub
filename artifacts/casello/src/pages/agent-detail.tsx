@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import {
   type Agent,
+  ToolIdentity,
   ApiError,
   getGetAgentQueryKey,
   getGetDashboardStatsQueryKey,
@@ -28,12 +29,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { useModelOptions } from "@/components/agents/model-options";
 import { AgentRoleBadge } from "@/components/agents/agent-role-badge";
 import { AgentToolsSection } from "@/components/agents/agent-tools-section";
-import { TOOL_IDENTITY_LABELS } from "@/components/apps/app-tool-dialog";
 import { RunPanel } from "@/components/runs/run-panel";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { AGENT_STATUS_LABELS, StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { TOOL_IDENTITY_LABELS } from "@/lib/tool-labels";
 
 const agentSchema = z.object({
   name: z.string().trim().min(1, "Il nome è obbligatorio."),
@@ -214,9 +215,9 @@ function AgentConfigForm({ agent }: { agent: Agent }) {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {Object.entries(TOOL_IDENTITY_LABELS).map(([value, label]) => (
+                        {Object.values(ToolIdentity).map((value) => (
                           <SelectItem key={value} value={value}>
-                            {label}
+                            {TOOL_IDENTITY_LABELS[value]}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -337,9 +338,9 @@ export default function AgentDetailPage() {
         </div>
       </div>
 
-      <RunPanel agent={agent.data} />
-      <AgentConfigForm key={agent.data.id} agent={agent.data} />
-      <AgentToolsSection agent={agent.data} />
+      <RunPanel key={`run-${agent.data.id}`} agent={agent.data} />
+      <AgentConfigForm key={`config-${agent.data.id}`} agent={agent.data} />
+      <AgentToolsSection key={`tools-${agent.data.id}`} agent={agent.data} />
 
       <ConfirmDialog
         open={confirmDelete}

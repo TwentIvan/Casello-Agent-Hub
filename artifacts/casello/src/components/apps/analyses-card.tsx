@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useModelOptions } from "@/components/agents/model-options";
+import { phaseLabel } from "@/components/analysis/payload";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { cn } from "@/lib/utils";
@@ -209,7 +210,7 @@ export function AnalysesCard({ app }: { app: App }) {
                     </span>
                     <span className="text-xs text-muted-foreground">{formatDateTime(a.createdAt)}</span>
                   </div>
-                  {isActive(a) && a.phase && <p className="text-xs text-muted-foreground">Fase: {a.phase}</p>}
+                  {isActive(a) && a.phase && <p className="text-xs text-muted-foreground">Fase: {phaseLabel(a.phase)}</p>}
                   {a.error && <p className="text-xs text-destructive">{a.error}</p>}
                 </li>
               ))}

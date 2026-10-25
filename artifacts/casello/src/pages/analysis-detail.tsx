@@ -48,11 +48,13 @@ function formatTime(value: string): string {
 function AnalysisLog({ log }: { log: AnalysisLogEntry[] }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  // Il log ha un tetto di voci: la lunghezza smette di cambiare, l'ultima voce no
+  const last = log.at(-1);
 
   useEffect(() => {
     const box = boxRef.current;
     if (box && stickToBottom.current) box.scrollTop = box.scrollHeight;
-  }, [log.length]);
+  }, [log.length, last?.at, last?.message]);
 
   return (
     <Card>

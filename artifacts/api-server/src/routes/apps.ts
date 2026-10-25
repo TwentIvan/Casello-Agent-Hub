@@ -17,6 +17,7 @@ import { encryptSecret } from "../lib/secrets";
 import { checkAuthHeaderName, parseAppBaseUrl } from "../lib/tools/executor";
 import type { AuthConfig } from "../lib/tools/types";
 import { uniqueSlug, withSlugRetry } from "../lib/slug";
+import { isValidGithubRepo } from "../lib/architect/sources";
 import { toPublicApp } from "./serializers";
 import { parseRequest } from "../middlewares/error-handler";
 
@@ -50,6 +51,78 @@ function connectionError(body: ConnectionFields): string | null {
   return null;
 }
 
+// ── Sorgenti dell'architetto ────────────────────────────────────────────────
+
+/** Tetto della descrizione funzionale: finisce intera nel prompt dell'architetto. */
+const MAX_FUNCTIONAL_DESCRIPTION = 20_000;
+
+interface SourceFields {
+  sourceType?: "github" | "zip" | "none";
+  sourceRepo?: string | null;
+  sourceBranch?: string | null;
+  openapiUrl?: string | null;
+  functionalDescription?: string | null;
+}
+
+/** Stringa vuota o di soli spazi → null, il resto senza spazi ai lati; assente resta assente. */
+function blankToNull(value: string | null | undefined): string | null | undefined {
+  if (value === undefined || value === null) return value;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+/** Repo, branch e URL dell'OpenAPI ripuliti: un campo lasciato vuoto nel modulo vale null. */
+function normalizeSources<T extends SourceFields>(body: T): T {
+  const result = { ...body };
+  if (body.sourceRepo !== undefined) result.sourceRepo = blankToNull(body.sourceRepo);
+  if (body.sourceBranch !== undefined) result.sourceBranch = blankToNull(body.sourceBranch);
+  if (body.openapiUrl !== undefined) result.openapiUrl = blankToNull(body.openapiUrl);
+  return result;
+}
+
+/**
+ * Sorgenti dell'architetto: repo nel formato proprietario/nome, OpenAPI solo http(s), descrizione
+ * entro il tetto e, con la sorgente `github`, un repo nello stato risultante (`current` = valori
+ * già salvati, per la PATCH). Restituisce il primo errore ("<campo>: <motivo>") o null.
+ */
+function sourceError(body: SourceFields, current?: { sourceType: string; sourceRepo: string | null }): string | null {
+  if (body.sourceRepo != null && !isValidGithubRepo(body.sourceRepo)) {
+    return "sourceRepo: repo GitHub non valido, atteso il formato proprietario/nome";
+  }
+  if (body.openapiUrl != null) {
+    let url: URL | null = null;
+    try {
+      url = new URL(body.openapiUrl);
+    } catch {
+      url = null;
+    }
+    if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
+      return "openapiUrl: indirizzo non valido, sono ammessi solo http e https";
+    }
+  }
+  if (body.functionalDescription != null && body.functionalDescription.length > MAX_FUNCTIONAL_DESCRIPTION) {
+    return `functionalDescription: testo troppo lungo (massimo ${MAX_FUNCTIONAL_DESCRIPTION} caratteri)`;
+  }
+  const type = body.sourceType ?? current?.sourceType ?? "none";
+  const repo = body.sourceRepo !== undefined ? body.sourceRepo : (current?.sourceRepo ?? null);
+  if (type === "github" && !repo) {
+    return "sourceRepo: obbligatorio con la sorgente github (formato proprietario/nome)";
+  }
+  return null;
+}
+
+/**
+ * Token GitHub, senza spazi ai bordi (un a capo incollato renderebbe il token inutilizzabile):
+ * stringa vuota, solo spazi o assente → invariato (alla creazione: nessun token), null →
+ * cancellato, altrimenti cifrato. Il modulo della console lascia il campo vuoto per non cambiarlo.
+ */
+function sourceTokenChange(token: string | null | undefined): { sourceTokenEnc?: string | null } {
+  if (token === null) return { sourceTokenEnc: null };
+  const trimmed = token?.trim();
+  if (!trimmed) return {};
+  return { sourceTokenEnc: encryptSecret(trimmed) };
+}
+
 router.get("/apps", async (_req, res) => {
   const apps = await db.select().from(appsTable).orderBy(asc(appsTable.id));
   res.json(ListAppsResponse.parse(apps.map(toPublicApp)));
@@ -60,18 +133,20 @@ router.get("/apps", async (_req, res) => {
 // univoco e lo si sostituisce appena noto l'id. Se una creazione concorrente prende lo stesso slug,
 // la transazione fallisce sulla unique e si riprova da capo (withSlugRetry).
 router.post("/apps", async (req, res) => {
-  const { serviceSecret, ...body } = parseRequest(CreateAppBody, req.body);
-  const invalid = connectionError(body);
+  const { serviceSecret, sourceToken, ...parsed } = parseRequest(CreateAppBody, req.body);
+  const body = normalizeSources(parsed);
+  const invalid = connectionError(body) ?? sourceError(body);
   if (invalid) {
     res.status(400).json({ error: invalid });
     return;
   }
   const serviceSecretEnc = serviceSecret !== undefined ? encryptSecret(serviceSecret) : null;
+  const sourceTokenEnc = sourceTokenChange(sourceToken).sourceTokenEnc ?? null;
 
   const app = await withSlugRetry(() => db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(appsTable)
-      .values({ ...body, slug: `tmp-${randomUUID()}`, serviceSecretEnc })
+      .values({ ...body, slug: `tmp-${randomUUID()}`, serviceSecretEnc, sourceTokenEnc })
       .returning();
     const slug = await uniqueSlug(body.name, inserted!.id, async (candidate) => {
       const [row] = await tx
@@ -106,8 +181,18 @@ router.get("/apps/:id", async (req, res) => {
 
 router.patch("/apps/:id", async (req, res) => {
   const { id } = parseRequest(UpdateAppParams, req.params);
-  const { serviceSecret, ...body } = parseRequest(UpdateAppBody, req.body);
-  const invalid = connectionError(body);
+  const { serviceSecret, sourceToken, ...parsed } = parseRequest(UpdateAppBody, req.body);
+  const body = normalizeSources(parsed);
+  const [current] = await db
+    .select({ sourceType: appsTable.sourceType, sourceRepo: appsTable.sourceRepo })
+    .from(appsTable)
+    .where(eq(appsTable.id, id))
+    .limit(1);
+  if (!current) {
+    res.status(404).json({ error: "App non trovata" });
+    return;
+  }
+  const invalid = connectionError(body) ?? sourceError(body, current);
   if (invalid) {
     res.status(400).json({ error: invalid });
     return;
@@ -117,9 +202,10 @@ router.patch("/apps/:id", async (req, res) => {
     serviceSecret === undefined
       ? {}
       : { serviceSecretEnc: serviceSecret === null ? null : encryptSecret(serviceSecret) };
+  const tokenChange = sourceTokenChange(sourceToken);
   const [app] = await db
     .update(appsTable)
-    .set({ ...body, ...secretChange, updatedAt: new Date() })
+    .set({ ...body, ...secretChange, ...tokenChange, updatedAt: new Date() })
     .where(eq(appsTable.id, id))
     .returning();
   if (!app) {

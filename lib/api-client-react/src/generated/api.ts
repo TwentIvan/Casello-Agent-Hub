@@ -22,8 +22,14 @@ import type {
 import type {
   Agent,
   AgentInput,
+  AgentSkill,
   AgentToolsInput,
   AgentUpdate,
+  Analysis,
+  AnalysisDetail,
+  AnalysisItem,
+  AnalysisItemUpdate,
+  AnalysisStart,
   App,
   AppInput,
   AppTool,
@@ -35,15 +41,19 @@ import type {
   CurrentUser,
   DashboardStats,
   ErrorResponse,
+  ExportAnalysisIssuesParams,
   HealthStatus,
+  IssueExport,
   ListAgentsParams,
   ListRunsParams,
   Model,
   NotFoundResponse,
+  PayloadTooLargeResponse,
   Run,
   RunResume,
   RunStep,
   RunTrigger,
+  StartZipAnalysisParams,
   UnauthorizedResponse
 } from './api.schemas';
 
@@ -1781,6 +1791,623 @@ export const useResumeRun = <TError = ErrorType<BadRequestResponse | NotFoundRes
         TContext
       > => {
       return useMutation(getResumeRunMutationOptions(options));
+    }
+
+export const getListAnalysesUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/analyses`
+}
+
+/**
+ * @summary Elenca le analisi dell'architetto di una app
+ */
+export const listAnalyses = async (id: number, options?: RequestInit): Promise<Analysis[]> => {
+
+  return customFetch<Analysis[]>(getListAnalysesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAnalysesQueryKey = (id: number,) => {
+    return [
+    `/api/apps/${id}/analyses`
+    ] as const;
+    }
+
+
+export const getListAnalysesQueryOptions = <TData = Awaited<ReturnType<typeof listAnalyses>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAnalyses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAnalysesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAnalyses>>> = ({ signal }) => listAnalyses(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAnalyses>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAnalysesQueryResult = NonNullable<Awaited<ReturnType<typeof listAnalyses>>>
+export type ListAnalysesQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Elenca le analisi dell'architetto di una app
+ */
+
+export function useListAnalyses<TData = Awaited<ReturnType<typeof listAnalyses>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAnalyses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAnalysesQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getStartAnalysisUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/analyses`
+}
+
+/**
+ * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso.
+ * @summary Avvia un'analisi leggendo le sorgenti configurate sull'app
+ */
+export const startAnalysis = async (id: number,
+    analysisStart: AnalysisStart, options?: RequestInit): Promise<Analysis> => {
+
+  return customFetch<Analysis>(getStartAnalysisUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(analysisStart)
+  }
+);}
+
+
+
+
+export const getStartAnalysisMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startAnalysis>>, TError,{id: number;data: BodyType<AnalysisStart>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startAnalysis>>, TError,{id: number;data: BodyType<AnalysisStart>}, TContext> => {
+
+const mutationKey = ['startAnalysis'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startAnalysis>>, {id: number;data: BodyType<AnalysisStart>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  startAnalysis(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartAnalysisMutationResult = NonNullable<Awaited<ReturnType<typeof startAnalysis>>>
+    export type StartAnalysisMutationBody = BodyType<AnalysisStart>
+    export type StartAnalysisMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Avvia un'analisi leggendo le sorgenti configurate sull'app
+ */
+export const useStartAnalysis = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startAnalysis>>, TError,{id: number;data: BodyType<AnalysisStart>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startAnalysis>>,
+        TError,
+        {id: number;data: BodyType<AnalysisStart>},
+        TContext
+      > => {
+      return useMutation(getStartAnalysisMutationOptions(options));
+    }
+
+export const getStartZipAnalysisUrl = (id: number,
+    params: StartZipAnalysisParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/apps/${id}/analyses/zip?${stringifiedParams}` : `/api/apps/${id}/analyses/zip`
+}
+
+/**
+ * Il corpo è l'archivio zip (application/zip, al massimo 50 MB). Il codice resta solo in memoria per la durata dell'analisi. Risponde 409 se per l'app c'è già un'analisi in corso.
+ * @summary Avvia un'analisi caricando il codice come archivio zip
+ */
+export const startZipAnalysis = async (id: number,
+    startZipAnalysisBody: Blob,
+    params: StartZipAnalysisParams, options?: RequestInit): Promise<Analysis> => {
+
+  return customFetch<Analysis>(getStartZipAnalysisUrl(id,params),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/zip', ...options?.headers },
+    body: startZipAnalysisBody
+  }
+);}
+
+
+
+
+export const getStartZipAnalysisMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | PayloadTooLargeResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startZipAnalysis>>, TError,{id: number;data: BodyType<Blob>;params: StartZipAnalysisParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startZipAnalysis>>, TError,{id: number;data: BodyType<Blob>;params: StartZipAnalysisParams}, TContext> => {
+
+const mutationKey = ['startZipAnalysis'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startZipAnalysis>>, {id: number;data: BodyType<Blob>;params: StartZipAnalysisParams}> = (props) => {
+          const {id,data,params} = props ?? {};
+
+          return  startZipAnalysis(id,data,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartZipAnalysisMutationResult = NonNullable<Awaited<ReturnType<typeof startZipAnalysis>>>
+    export type StartZipAnalysisMutationBody = BodyType<Blob>
+    export type StartZipAnalysisMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | PayloadTooLargeResponse>
+
+    /**
+ * @summary Avvia un'analisi caricando il codice come archivio zip
+ */
+export const useStartZipAnalysis = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | PayloadTooLargeResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startZipAnalysis>>, TError,{id: number;data: BodyType<Blob>;params: StartZipAnalysisParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startZipAnalysis>>,
+        TError,
+        {id: number;data: BodyType<Blob>;params: StartZipAnalysisParams},
+        TContext
+      > => {
+      return useMutation(getStartZipAnalysisMutationOptions(options));
+    }
+
+export const getGetAnalysisUrl = (id: number,) => {
+
+
+
+
+  return `/api/analyses/${id}`
+}
+
+/**
+ * @summary Recupera un'analisi con mappa, log ed elementi della proposta
+ */
+export const getAnalysis = async (id: number, options?: RequestInit): Promise<AnalysisDetail> => {
+
+  return customFetch<AnalysisDetail>(getGetAnalysisUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAnalysisQueryKey = (id: number,) => {
+    return [
+    `/api/analyses/${id}`
+    ] as const;
+    }
+
+
+export const getGetAnalysisQueryOptions = <TData = Awaited<ReturnType<typeof getAnalysis>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAnalysis>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAnalysisQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAnalysis>>> = ({ signal }) => getAnalysis(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAnalysis>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAnalysisQueryResult = NonNullable<Awaited<ReturnType<typeof getAnalysis>>>
+export type GetAnalysisQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Recupera un'analisi con mappa, log ed elementi della proposta
+ */
+
+export function useGetAnalysis<TData = Awaited<ReturnType<typeof getAnalysis>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAnalysis>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAnalysisQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getExportAnalysisIssuesUrl = (id: number,
+    params: ExportAnalysisIssuesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/analyses/${id}/issues?${stringifiedParams}` : `/api/analyses/${id}/issues`
+}
+
+/**
+ * @summary Esporta in Markdown gli elementi di un capitolo come issue
+ */
+export const exportAnalysisIssues = async (id: number,
+    params: ExportAnalysisIssuesParams, options?: RequestInit): Promise<IssueExport> => {
+
+  return customFetch<IssueExport>(getExportAnalysisIssuesUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getExportAnalysisIssuesQueryKey = (id: number,
+    params?: ExportAnalysisIssuesParams,) => {
+    return [
+    `/api/analyses/${id}/issues`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getExportAnalysisIssuesQueryOptions = <TData = Awaited<ReturnType<typeof exportAnalysisIssues>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(id: number,
+    params: ExportAnalysisIssuesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAnalysisIssues>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportAnalysisIssuesQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportAnalysisIssues>>> = ({ signal }) => exportAnalysisIssues(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportAnalysisIssues>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportAnalysisIssuesQueryResult = NonNullable<Awaited<ReturnType<typeof exportAnalysisIssues>>>
+export type ExportAnalysisIssuesQueryError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+
+/**
+ * @summary Esporta in Markdown gli elementi di un capitolo come issue
+ */
+
+export function useExportAnalysisIssues<TData = Awaited<ReturnType<typeof exportAnalysisIssues>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(
+ id: number,
+    params: ExportAnalysisIssuesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAnalysisIssues>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportAnalysisIssuesQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateAnalysisItemUrl = (id: number,) => {
+
+
+
+
+  return `/api/analysis-items/${id}`
+}
+
+/**
+ * Approvando un elemento dei capitoli tool, agent o skill la proposta viene applicata. Se non è applicabile risponde 400 e l'elemento resta in attesa.
+ * @summary Rivede un elemento della proposta (approva, scarta, rimanda, modifica)
+ */
+export const updateAnalysisItem = async (id: number,
+    analysisItemUpdate: AnalysisItemUpdate, options?: RequestInit): Promise<AnalysisItem> => {
+
+  return customFetch<AnalysisItem>(getUpdateAnalysisItemUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(analysisItemUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateAnalysisItemMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAnalysisItem>>, TError,{id: number;data: BodyType<AnalysisItemUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAnalysisItem>>, TError,{id: number;data: BodyType<AnalysisItemUpdate>}, TContext> => {
+
+const mutationKey = ['updateAnalysisItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAnalysisItem>>, {id: number;data: BodyType<AnalysisItemUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateAnalysisItem(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAnalysisItemMutationResult = NonNullable<Awaited<ReturnType<typeof updateAnalysisItem>>>
+    export type UpdateAnalysisItemMutationBody = BodyType<AnalysisItemUpdate>
+    export type UpdateAnalysisItemMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Rivede un elemento della proposta (approva, scarta, rimanda, modifica)
+ */
+export const useUpdateAnalysisItem = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAnalysisItem>>, TError,{id: number;data: BodyType<AnalysisItemUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAnalysisItem>>,
+        TError,
+        {id: number;data: BodyType<AnalysisItemUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateAnalysisItemMutationOptions(options));
+    }
+
+export const getListAgentSkillsUrl = (id: number,) => {
+
+
+
+
+  return `/api/agents/${id}/skills`
+}
+
+/**
+ * @summary Elenca le skill di un agente
+ */
+export const listAgentSkills = async (id: number, options?: RequestInit): Promise<AgentSkill[]> => {
+
+  return customFetch<AgentSkill[]>(getListAgentSkillsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAgentSkillsQueryKey = (id: number,) => {
+    return [
+    `/api/agents/${id}/skills`
+    ] as const;
+    }
+
+
+export const getListAgentSkillsQueryOptions = <TData = Awaited<ReturnType<typeof listAgentSkills>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentSkills>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAgentSkillsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAgentSkills>>> = ({ signal }) => listAgentSkills(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAgentSkills>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAgentSkillsQueryResult = NonNullable<Awaited<ReturnType<typeof listAgentSkills>>>
+export type ListAgentSkillsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Elenca le skill di un agente
+ */
+
+export function useListAgentSkills<TData = Awaited<ReturnType<typeof listAgentSkills>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentSkills>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAgentSkillsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDeleteAgentSkillUrl = (id: number,
+    skillId: number,) => {
+
+
+
+
+  return `/api/agents/${id}/skills/${skillId}`
+}
+
+/**
+ * @summary Elimina una skill di un agente
+ */
+export const deleteAgentSkill = async (id: number,
+    skillId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteAgentSkillUrl(id,skillId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteAgentSkillMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAgentSkill>>, TError,{id: number;skillId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteAgentSkill>>, TError,{id: number;skillId: number}, TContext> => {
+
+const mutationKey = ['deleteAgentSkill'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteAgentSkill>>, {id: number;skillId: number}> = (props) => {
+          const {id,skillId} = props ?? {};
+
+          return  deleteAgentSkill(id,skillId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteAgentSkillMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAgentSkill>>>
+
+    export type DeleteAgentSkillMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Elimina una skill di un agente
+ */
+export const useDeleteAgentSkill = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAgentSkill>>, TError,{id: number;skillId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteAgentSkill>>,
+        TError,
+        {id: number;skillId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteAgentSkillMutationOptions(options));
     }
 
 export const getGetDashboardStatsUrl = () => {

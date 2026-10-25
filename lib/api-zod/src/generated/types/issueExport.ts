@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-/**
- * @nullable
- */
-export type AppToolUpdateEvidence = { [key: string]: unknown } | null;
+export interface IssueExport {
+  markdown: string;
+  count: number;
+}

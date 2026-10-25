@@ -11,6 +11,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - API completa per il CRUD di App / Agent / Tool / Run e per l'esecuzione delle run via AI gateway.
 - Fase 1 "Agenti che agiscono": gli agenti chiamano i tool HTTP delle app (catalogo per app), con
   conferma dell'utente per le azioni marcate, timeline dei passi e pausa/ripresa (vedi "Agenti operativi").
+- Fase 3 "Architetto": analizza un'app (codice da GitHub o zip, OpenAPI, descrizione) e propone tool,
+  agenti, skill, endpoint mancanti, piano di completamento ed evoluzione; nulla si attiva senza
+  approvazione nella console (vedi "Architetto").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -39,12 +42,14 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `lib/api-spec/openapi.yaml` — contratto API, fonte di verità (contract-first)
 - `lib/api-client-react/src/generated/` — client generato da Orval: NON modificare a mano
 - `lib/db/src/schema/` — schema Drizzle, una tabella per file (apps, agents, app_tools, agent_tools, runs,
-  run_steps, sessions)
+  run_steps, sessions, analyses, analysis_items, agent_skills)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
   `POST /api/runs/:id/resume` (conferma o annulla l'azione in sospeso), `/api/dashboard/stats`,
-  `/api/models`, `/api/healthz`. Body, parametri e query si leggono con `parseRequest` (errore → 400);
+  `/api/models`, `/api/healthz`; architetto: `GET|POST /api/apps/:id/analyses`,
+  `POST /api/apps/:id/analyses/zip` (corpo zip grezzo), `GET /api/analyses/:id`,
+  `GET /api/analyses/:id/issues`, `PATCH /api/analysis-items/:id`, `GET|DELETE /api/agents/:id/skills`. Body, parametri e query si leggono con `parseRequest` (errore → 400);
   le risposte con `*Response.parse` (errore → 500, è un bug del server)
 - `artifacts/api-server/src/lib/auth.ts` — login Google (OIDC), sessione e middleware che protegge `/api`
 - `artifacts/api-server/src/lib/models.ts` — modelli selezionabili e default (`openrouter/auto`)
@@ -58,7 +63,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `pending`/`running` vengono chiuse come fallite.
 - `artifacts/api-server/src/lib/tools/` — catalogo (`catalog.ts`), validazione delle definizioni
   (`definition.ts`), esecutore HTTP (`executor.ts`), oscuramento degli argomenti sensibili (`sensitive.ts`)
-- `artifacts/api-server/src/lib/secrets.ts` — cifratura AES-256-GCM dei segreti di servizio
+- `artifacts/api-server/src/lib/secrets.ts` — cifratura AES-256-GCM dei segreti di servizio (anche il token GitHub)
+- `artifacts/api-server/src/lib/architect/` — architetto: sorgenti in memoria (`source-tree.ts`, `zip-reader.ts`,
+  `search-worker.ts`, `sources.ts`), schemi ed esempi delle fasi (`schemas.ts`, `prompts.ts`), ciclo di fase
+  (`phase-loop.ts`), orchestrazione (`run-analysis.ts`), differenze/applicazione/issue (`diff.ts`, `apply.ts`, `issues.ts`)
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
 - `artifacts/mockup-sandbox/` — sandbox di mockup: NON va in produzione, non toccare
 - `gateway/` — config LiteLLM storica; la copia viva è nel repo `TwentIvan/AIGateway`
@@ -100,6 +108,22 @@ arriva da `GET /api/models` (costante in `lib/models.ts`: va tenuta allineata a 
 - Il token dell'utente vive solo in memoria per la durata della run: mai nel DB né nei log. Credenziali
   rimandate dall'app nelle risposte vengono sostituite con `***`; gli argomenti `x-sensitive` sono
   oscurati nei passi e nell'azione in sospeso pubblica.
+
+## Architetto (fase 3)
+
+- Spec: stessa di sopra, §4 e §6; piano `docs/superpowers/plans/2026-10-25-fase-3-architetto.md`.
+- Sorgenti dell'app (`apps.source_*`, `openapi_url`, `functional_description`): codice da GitHub (zipball con
+  token di sola lettura, cifrato, mai restituito: l'API dice solo `sourceTokenSet`) o da zip caricato
+  (max 50 MB; nginx ha `client_max_body_size 51m`). Il codice vive SOLO in memoria per la durata
+  dell'analisi: niente file su disco, niente log del contenuto.
+- Limiti: zip letto con un parser proprio (anti zip bomb), regex di ricerca in un worker con timeout 2 s,
+  OpenAPI max 2 MB; analisi max 30 minuti e 400 000 token (default), 40 giri e 2 correzioni per fase.
+- Sei fasi (map, capabilities, catalog, agents, completion, evolution): ogni esito è validato con Zod
+  (`schemas.ts`, esempi in `prompts.ts` verificati dai test). Gli elementi (`analysis_items`) sono
+  confrontati con lo stato attuale dell'app (`diff`: new/changed/unchanged/removed).
+- Revisione: approvare un tool/agente/skill lo applica in una transazione e lo rende `active` (un tool
+  `removed` diventa `disabled`, mai cancellato); endpoint/completamento/evoluzione si esportano come issue.
+  Un'analisi alla volta per app; all'avvio le analisi rimaste aperte diventano `interrupted`.
 
 ## Autenticazione
 

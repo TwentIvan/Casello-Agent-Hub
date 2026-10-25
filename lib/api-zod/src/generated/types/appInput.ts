@@ -7,6 +7,7 @@
  */
 import type { AppStatus } from './appStatus';
 import type { AuthConfig } from './authConfig';
+import type { SourceType } from './sourceType';
 
 export interface AppInput {
   /** @minLength 1 */
@@ -20,5 +21,16 @@ export interface AppInput {
   serviceAuth?: AuthConfig | null;
   /** Segreto di servizio (solo scrittura, salvato cifrato) */
   serviceSecret?: string;
+  sourceType?: SourceType;
+  /** @nullable */
+  sourceRepo?: string | null;
+  /** @nullable */
+  sourceBranch?: string | null;
+  /** Token GitHub di sola lettura (solo scrittura, salvato cifrato) */
+  sourceToken?: string;
+  /** @nullable */
+  openapiUrl?: string | null;
+  /** @nullable */
+  functionalDescription?: string | null;
   status?: AppStatus;
 }

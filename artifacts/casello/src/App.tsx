@@ -14,6 +14,7 @@ import AgentsPage from "@/pages/agents";
 import AgentDetailPage from "@/pages/agent-detail";
 import RunsPage from "@/pages/runs";
 import RunDetailPage from "@/pages/run-detail";
+import AnalysisDetailPage from "@/pages/analysis-detail";
 import NotFound from "@/pages/not-found";
 
 const currentUserKey = getGetCurrentUserQueryKey();
@@ -47,6 +48,7 @@ function Router() {
         <Route path="/agents/:id" component={AgentDetailPage} />
         <Route path="/runs" component={RunsPage} />
         <Route path="/runs/:id" component={RunDetailPage} />
+        <Route path="/analyses/:id" component={AnalysisDetailPage} />
         <Route component={NotFound} />
       </Switch>
     </AppShell>

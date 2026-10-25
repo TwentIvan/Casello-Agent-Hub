@@ -1,6 +1,14 @@
 import { Router, type IRouter } from "express";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { db, agentsTable, agentToolsTable, appsTable, appToolsTable, runsTable } from "@workspace/db";
+import {
+  db,
+  agentSkillsTable,
+  agentsTable,
+  agentToolsTable,
+  appsTable,
+  appToolsTable,
+  runsTable,
+} from "@workspace/db";
 import { runRateLimit } from "../middlewares/rate-limit";
 import {
   ListAgentsQueryParams,
@@ -19,6 +27,9 @@ import {
   TriggerRunParams,
   TriggerRunBody,
   TriggerRunResponse,
+  ListAgentSkillsParams,
+  ListAgentSkillsResponse,
+  DeleteAgentSkillParams,
 } from "@workspace/api-zod";
 import { startRun } from "../lib/run-executor";
 import { logger } from "../lib/logger";
@@ -131,6 +142,37 @@ router.put("/agents/:id/tools", async (req, res) => {
     return row!;
   });
   res.json(SetAgentToolsResponse.parse(await withToolIdsOne(updated)));
+});
+
+// ── Skill dell'agente (create approvando le proposte dell'architetto) ───────
+
+router.get("/agents/:id/skills", async (req, res) => {
+  const { id } = parseRequest(ListAgentSkillsParams, req.params);
+  const [agent] = await db.select({ id: agentsTable.id }).from(agentsTable).where(eq(agentsTable.id, id)).limit(1);
+  if (!agent) {
+    res.status(404).json({ error: "Agente non trovato" });
+    return;
+  }
+  const skills = await db
+    .select()
+    .from(agentSkillsTable)
+    .where(eq(agentSkillsTable.agentId, id))
+    .orderBy(asc(agentSkillsTable.id));
+  res.json(ListAgentSkillsResponse.parse(skills));
+});
+
+// La skill deve appartenere all'agente del percorso: altrimenti 404, come se non esistesse
+router.delete("/agents/:id/skills/:skillId", async (req, res) => {
+  const { id, skillId } = parseRequest(DeleteAgentSkillParams, req.params);
+  const [skill] = await db
+    .delete(agentSkillsTable)
+    .where(and(eq(agentSkillsTable.id, skillId), eq(agentSkillsTable.agentId, id)))
+    .returning({ id: agentSkillsTable.id });
+  if (!skill) {
+    res.status(404).json({ error: "Skill non trovata" });
+    return;
+  }
+  res.status(204).end();
 });
 
 // ── Run (avviate su un agente) ──────────────────────────────────────────────

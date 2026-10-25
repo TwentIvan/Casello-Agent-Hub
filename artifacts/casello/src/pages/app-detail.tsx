@@ -3,6 +3,8 @@ import { ArrowLeft } from "lucide-react";
 import { ApiError, getGetAppQueryKey, useGetApp } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AnalysesCard } from "@/components/apps/analyses-card";
+import { AppSourcesCard } from "@/components/apps/app-sources-card";
 import { ToolCatalog } from "@/components/apps/tool-catalog";
 import { StatusBadge } from "@/components/status-badge";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -53,6 +55,8 @@ export default function AppDetailPage() {
             </dl>
           </div>
           <ToolCatalog appId={appId} />
+          <AppSourcesCard app={app.data} />
+          <AnalysesCard app={app.data} />
         </>
       )}
     </div>

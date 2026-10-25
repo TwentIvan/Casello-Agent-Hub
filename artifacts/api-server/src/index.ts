@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { failInterruptedAnalyses } from "./lib/architect/run-analysis";
 import { expireStalePausedRuns, failInterruptedRuns } from "./lib/run-executor";
 import { assertSecretKey } from "./lib/secrets";
 
@@ -26,6 +27,13 @@ failInterruptedRuns()
     if (count > 0) logger.warn({ count }, "Run interrotte dal riavvio chiuse come fallite");
   })
   .catch((err: unknown) => logger.error({ err }, "Chiusura delle run interrotte non riuscita"));
+
+// Lo stesso vale per le analisi dell'architetto in coda o in corso: diventano `interrupted`.
+failInterruptedAnalyses()
+  .then((count) => {
+    if (count > 0) logger.warn({ count }, "Analisi rimaste aperte al riavvio segnate come interrotte");
+  })
+  .catch((err: unknown) => logger.error({ err }, "Chiusura delle analisi interrotte non riuscita"));
 
 // Le run in pausa senza conferma entro 10 minuti vengono annullate; il timer non tiene in vita il processo.
 setInterval(() => {

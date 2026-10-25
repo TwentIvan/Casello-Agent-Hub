@@ -24,6 +24,8 @@ tags:
     description: Statistiche aggregate
   - name: models
     description: Modelli AI selezionabili
+  - name: architect
+    description: Analisi dell'architetto (proposte su tool, agenti, skill, endpoint ed evoluzione) e skill degli agenti
 
 paths:
   /healthz:
@@ -498,6 +500,214 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  # ─── Architetto ─────────────────────────────────────────────────────────────
+
+  /apps/{id}/analyses:
+    get:
+      operationId: listAnalyses
+      tags: [architect]
+      summary: Elenca le analisi dell'architetto di una app
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Analisi, dalla più recente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Analysis"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: startAnalysis
+      tags: [architect]
+      summary: Avvia un'analisi leggendo le sorgenti configurate sull'app
+      description: >-
+        Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI,
+        descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisStart"
+      responses:
+        "202":
+          description: Analisi avviata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analysis"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /apps/{id}/analyses/zip:
+    post:
+      operationId: startZipAnalysis
+      tags: [architect]
+      summary: Avvia un'analisi caricando il codice come archivio zip
+      description: >-
+        Il corpo è l'archivio zip (application/zip, al massimo 50 MB). Il codice resta solo in
+        memoria per la durata dell'analisi. Risponde 409 se per l'app c'è già un'analisi in corso.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: model
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+          description: Modello AI (model_name di LiteLLM)
+        - name: maxTokens
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 50000
+            maximum: 2000000
+          description: Tetto di token per l'analisi (default 400000)
+      requestBody:
+        required: true
+        content:
+          application/zip:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "202":
+          description: Analisi avviata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analysis"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+
+  /analyses/{id}:
+    get:
+      operationId: getAnalysis
+      tags: [architect]
+      summary: Recupera un'analisi con mappa, log ed elementi della proposta
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Analisi trovata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /analyses/{id}/issues:
+    get:
+      operationId: exportAnalysisIssues
+      tags: [architect]
+      summary: Esporta in Markdown gli elementi di un capitolo come issue
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: chapter
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [endpoint, completion, evolution]
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ItemStatus"
+          description: Stato degli elementi da esportare (default approved)
+      responses:
+        "200":
+          description: Issue in Markdown
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueExport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /analysis-items/{id}:
+    patch:
+      operationId: updateAnalysisItem
+      tags: [architect]
+      summary: Rivede un elemento della proposta (approva, scarta, rimanda, modifica)
+      description: >-
+        Approvando un elemento dei capitoli tool, agent o skill la proposta viene applicata.
+        Se non è applicabile risponde 400 e l'elemento resta in attesa.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisItemUpdate"
+      responses:
+        "200":
+          description: Elemento aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisItem"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /agents/{id}/skills:
+    get:
+      operationId: listAgentSkills
+      tags: [architect]
+      summary: Elenca le skill di un agente
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Skill dell'agente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentSkill"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /agents/{id}/skills/{skillId}:
+    delete:
+      operationId: deleteAgentSkill
+      tags: [architect]
+      summary: Elimina una skill di un agente
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/SkillIdParam"
+      responses:
+        "204":
+          description: Skill eliminata
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   # ─── Dashboard ──────────────────────────────────────────────────────────────
 
   /dashboard/stats:
@@ -546,6 +756,13 @@ components:
       schema:
         type: integer
 
+    SkillIdParam:
+      name: skillId
+      in: path
+      required: true
+      schema:
+        type: integer
+
   responses:
     BadRequest:
       description: Richiesta non valida
@@ -570,6 +787,13 @@ components:
 
     NotFound:
       description: Risorsa non trovata
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    PayloadTooLarge:
+      description: Corpo della richiesta troppo grande
       content:
         application/json:
           schema:
@@ -622,9 +846,14 @@ components:
         scheme:
           type: ["string", "null"]
 
+    SourceType:
+      type: string
+      enum: [github, zip, none]
+      description: Da dove l'architetto legge il codice dell'app
+
     App:
       type: object
-      required: [id, name, slug, baseUrl, status, serviceSecretSet, createdAt, updatedAt]
+      required: [id, name, slug, baseUrl, status, serviceSecretSet, sourceType, sourceRepo, sourceBranch, sourceTokenSet, openapiUrl, functionalDescription, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -650,6 +879,22 @@ components:
         serviceSecretSet:
           type: boolean
           description: Indica se il segreto di servizio è impostato (il valore non è mai esposto)
+        sourceType:
+          $ref: "#/components/schemas/SourceType"
+        sourceRepo:
+          type: ["string", "null"]
+          description: Repository GitHub nel formato owner/nome
+        sourceBranch:
+          type: ["string", "null"]
+        sourceTokenSet:
+          type: boolean
+          description: Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto)
+        openapiUrl:
+          type: ["string", "null"]
+          description: URL dell'OpenAPI dell'app, letto (GET) dall'architetto
+        functionalDescription:
+          type: ["string", "null"]
+          description: Descrizione funzionale dell'app per l'architetto
         status:
           $ref: "#/components/schemas/AppStatus"
         createdAt:
@@ -684,6 +929,19 @@ components:
         serviceSecret:
           type: string
           description: Segreto di servizio (solo scrittura, salvato cifrato)
+        sourceType:
+          $ref: "#/components/schemas/SourceType"
+        sourceRepo:
+          type: ["string", "null"]
+        sourceBranch:
+          type: ["string", "null"]
+        sourceToken:
+          type: string
+          description: Token GitHub di sola lettura (solo scrittura, salvato cifrato)
+        openapiUrl:
+          type: ["string", "null"]
+        functionalDescription:
+          type: ["string", "null"]
         status:
           $ref: "#/components/schemas/AppStatus"
 
@@ -711,6 +969,19 @@ components:
         serviceSecret:
           type: ["string", "null"]
           description: Segreto di servizio (solo scrittura); null lo cancella
+        sourceType:
+          $ref: "#/components/schemas/SourceType"
+        sourceRepo:
+          type: ["string", "null"]
+        sourceBranch:
+          type: ["string", "null"]
+        sourceToken:
+          type: ["string", "null"]
+          description: Token GitHub di sola lettura (solo scrittura); null lo cancella
+        openapiUrl:
+          type: ["string", "null"]
+        functionalDescription:
+          type: ["string", "null"]
         status:
           $ref: "#/components/schemas/AppStatus"
 
@@ -873,9 +1144,10 @@ components:
           additionalProperties: true
           description: Definizione dell'esecuzione (dipende da kind)
         evidence:
-          type: ["object", "null"]
-          additionalProperties: true
-          description: Evidenze da cui il tool è stato derivato
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ToolEvidence"
+          description: Evidenze da cui il tool è stato derivato (proposte dall'architetto)
         needsVerification:
           type: boolean
         createdAt:
@@ -884,6 +1156,17 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    ToolEvidence:
+      type: object
+      required: [source, location]
+      properties:
+        source:
+          type: string
+        location:
+          type: string
+        note:
+          type: string
 
     AppToolInput:
       type: object
@@ -911,8 +1194,9 @@ components:
           type: object
           additionalProperties: true
         evidence:
-          type: ["object", "null"]
-          additionalProperties: true
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ToolEvidence"
         needsVerification:
           type: boolean
 
@@ -941,8 +1225,9 @@ components:
           type: object
           additionalProperties: true
         evidence:
-          type: ["object", "null"]
-          additionalProperties: true
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ToolEvidence"
         needsVerification:
           type: boolean
 
@@ -1074,3 +1359,197 @@ components:
           type: integer
         avgDurationMs:
           type: ["number", "null"]
+
+    # ── Architetto ─────────────────────────────────────────────────────────────
+
+    AnalysisStatus:
+      type: string
+      enum: [queued, running, completed, failed, interrupted]
+
+    AnalysisChapter:
+      type: string
+      enum: [tool, agent, skill, endpoint, completion, evolution]
+
+    ItemDiff:
+      type: string
+      enum: [new, changed, removed, unchanged]
+      description: Differenza rispetto allo stato approvato
+
+    ItemStatus:
+      type: string
+      enum: [pending, approved, discarded, postponed]
+      description: postponed solo per i capitoli endpoint, completion ed evolution
+
+    AnalysisSources:
+      type: object
+      required: [code, openapi, description]
+      properties:
+        code:
+          $ref: "#/components/schemas/SourceType"
+        openapi:
+          type: boolean
+        description:
+          type: boolean
+
+    Analysis:
+      type: object
+      required: [id, appId, model, status, sources, maxTokens, tokensUsed, phase, error, createdAt, finishedAt]
+      properties:
+        id:
+          type: integer
+        appId:
+          type: integer
+        model:
+          type: string
+        status:
+          $ref: "#/components/schemas/AnalysisStatus"
+        sources:
+          $ref: "#/components/schemas/AnalysisSources"
+        maxTokens:
+          type: integer
+        tokensUsed:
+          type: integer
+        phase:
+          type: ["string", "null"]
+          description: Fase corrente
+        error:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    AnalysisLogEntry:
+      type: object
+      required: [at, phase, message]
+      properties:
+        at:
+          type: string
+          format: date-time
+        phase:
+          type: string
+        message:
+          type: string
+
+    AnalysisEvidence:
+      type: object
+      required: [source, location, note]
+      properties:
+        source:
+          type: string
+        location:
+          type: string
+        note:
+          type: string
+
+    AnalysisItem:
+      type: object
+      required: [id, analysisId, chapter, ref, position, payload, diff, evidence, status, reviewNote, appliedAt]
+      properties:
+        id:
+          type: integer
+        analysisId:
+          type: integer
+        chapter:
+          $ref: "#/components/schemas/AnalysisChapter"
+        ref:
+          type: string
+          description: Chiave stabile nell'analisi, es. tool:rosa_squadra
+        position:
+          type: integer
+        payload:
+          type: object
+          additionalProperties: true
+          description: Contenuto della proposta, la cui forma dipende dal capitolo
+        diff:
+          $ref: "#/components/schemas/ItemDiff"
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalysisEvidence"
+        status:
+          $ref: "#/components/schemas/ItemStatus"
+        reviewNote:
+          type: ["string", "null"]
+        appliedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    AnalysisDetail:
+      allOf:
+        - $ref: "#/components/schemas/Analysis"
+        - type: object
+          required: [architectureMap, log, items]
+          properties:
+            architectureMap:
+              type: ["object", "null"]
+              additionalProperties: true
+            log:
+              type: array
+              items:
+                $ref: "#/components/schemas/AnalysisLogEntry"
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/AnalysisItem"
+
+    AnalysisStart:
+      type: object
+      required: [model]
+      properties:
+        model:
+          type: string
+          minLength: 1
+          description: Modello AI (model_name di LiteLLM)
+        maxTokens:
+          type: integer
+          minimum: 50000
+          maximum: 2000000
+          description: Tetto di token per l'analisi (default 400000)
+
+    AnalysisItemUpdate:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/ItemStatus"
+        payload:
+          type: object
+          additionalProperties: true
+        reviewNote:
+          type: ["string", "null"]
+
+    IssueExport:
+      type: object
+      required: [markdown, count]
+      properties:
+        markdown:
+          type: string
+        count:
+          type: integer
+
+    AgentSkill:
+      type: object
+      required: [id, agentId, name, description, instructions, toolNames, paramsSchema, status]
+      properties:
+        id:
+          type: integer
+        agentId:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        instructions:
+          type: string
+        toolNames:
+          type: array
+          items:
+            type: string
+        paramsSchema:
+          type: ["object", "null"]
+          additionalProperties: true
+        status:
+          type: string
+          enum: [draft, active]

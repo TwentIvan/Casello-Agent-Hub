@@ -6,8 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-/**
- * Evidenze da cui il tool è stato derivato
- * @nullable
- */
-export type AppToolEvidence = { [key: string]: unknown } | null;
+export interface AnalysisLogEntry {
+  at: Date;
+  phase: string;
+  message: string;
+}

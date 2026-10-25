@@ -1,7 +1,8 @@
 # Casello: agenti operativi, catalogo MCP e agente architetto
 
 - Data: 2026-10-25
-- Stato: design approvato in conversazione, spec in revisione
+- Stato: fase 1 in produzione; revisione del 2026-10-25 (architetto anticipato, capitoli
+  Completamento ed Evoluzione) in revisione
 - Ambito: primo sottoprogetto dell'evoluzione di Casello (agenti che agiscono davvero + architetto).
   Widget nelle app e interazione vocale sono progetti successivi con spec propria (vedi §11).
 
@@ -17,8 +18,10 @@ Vogliamo che:
    per conto dell'utente o con un account di servizio;
 2. un **agente architetto** studi l'app (codice, API esposte, descrizione funzionale), proponga il
    catalogo, un **agente generale** che conosce tutta l'app, **agenti di area** per le diverse zone
-   della UI, le loro **skill**, gli endpoint mancanti e, in un capitolo a parte, **miglioramenti
-   dell'app stessa**;
+   della UI, le loro **skill**, gli endpoint mancanti e, in capitoli a parte, un **piano di
+   completamento** (cosa manca per finire l'app, in ordine) e l'**evoluzione** delle aree applicative
+   (best practice e integrazioni da aggiungere): l'architetto è anche lo strumento con cui Ivan
+   pianifica la chiusura dei suoi progetti;
 3. gli agenti si usino in **conversazioni** con streaming, interruzione e integrazione di informazioni
    durante la risposta, conferme per le azioni importanti: la base per il widget nelle app e per la
    voce.
@@ -151,9 +154,9 @@ viene sostituito dalle route del catalogo.
   `failed` / `interrupted`), log di avanzamento, token consumati, `architectureMap` (mappa
   dell'architettura emersa), `createdAt`, `finishedAt`.
 - `analysis_items`: `analysisId`, `chapter` (`tool` / `agent` / `skill` / `endpoint` /
-  `improvement`), `payload` (JSON dell'elemento), `diff` rispetto a quanto esiste (`new` / `changed` /
-  `removed` / `unchanged`), `evidence`, `status` (`pending` / `approved` / `discarded`; per
-  `improvement` anche `postponed`), note di revisione.
+  `completion` / `evolution`), `payload` (JSON dell'elemento), `diff` rispetto a quanto esiste
+  (`new` / `changed` / `removed` / `unchanged`), `evidence`, `status` (`pending` / `approved` /
+  `discarded`; per `endpoint`, `completion` ed `evolution` anche `postponed`), note di revisione.
 
 ## 5. Esecuzione: ciclo dell'agente ed esecutore
 
@@ -237,9 +240,21 @@ Ciclo con tool di sola lettura sul codice: `list_dir`, `read_file` (con limite d
    adatto, **proposte di endpoint** come patch nello stack e nelle convenzioni dell'app.
 4. **Agenti e skill**: agente generale, agenti di area con istruzioni, tool e identità; skill per le
    procedure ricorrenti.
-5. **Miglioramenti dell'app** (capitolo a parte): processi migliorabili e best practice non usate,
-   nel backend o nel frontend. Per ciascuno: area, titolo, problema osservato con prove, beneficio,
-   impatto, stima dello sforzo, traccia di implementazione (eventualmente patch).
+5. **Completamento** (capitolo a parte): cosa manca per *finire* l'app così com'è stata pensata.
+   L'architetto cerca funzionalità iniziate e non concluse: pagine senza backend o backend senza
+   pagina, route mai chiamate dal frontend, flussi interrotti, stub, TODO/FIXME, debito tecnico
+   dichiarato (es. `TECH_DEBT.md`), documenti di progetto (README, brief) non ancora realizzati.
+   Le ordina in un **piano di completamento** a fasi che rispetta le dipendenze. Per ogni voce:
+   area, titolo, cosa manca con prove (file:riga), obiettivo, dipendenze (altre voci), file
+   coinvolti, stima dello sforzo (S/M/L), criterio "pronto quando", traccia di implementazione
+   (eventualmente patch).
+6. **Evoluzione** (capitolo a parte, assorbe i "miglioramenti"): come far crescere ogni area
+   applicativa oltre lo stato attuale. Per area: best practice non usate (sicurezza, prestazioni,
+   UX, qualità del codice), funzioni che un prodotto di quel tipo di solito offre e qui mancano,
+   integrazioni con altri servizi o con le altre app di Ivan, e come gli agenti di Casello possono
+   arricchire l'area. Per ogni voce: area, tipo (`best_practice` / `funzione` / `integrazione` /
+   `agentica`), titolo, motivazione con prove, beneficio, impatto, stima dello sforzo, priorità
+   proposta, traccia di implementazione.
 
 Output finale: JSON validato contro uno schema; se non valido, richiesta di correzione al modello
 (massimo 2 volte), poi `failed` con il log. Senza codice né OpenAPI i tool sono `needsVerification`.
@@ -252,10 +267,13 @@ skill per agente+`name`) e marcato `new` / `changed` / `removed` / `unchanged`.
 ### Revisione (console)
 
 Pagina "Analisi" dell'app: mappa dell'architettura; elementi raggruppati per capitolo con prove e
-differenze; per ciascuno modifica, approva, scarta (e rimanda per i miglioramenti). Approvare un tool
-o un agente li crea/aggiorna nello stato `active`; approvare una skill la attiva. Patch e
-miglioramenti accettati si copiano come testo pronto per una issue nel repo dell'app. Token
-consumati visibili; tetto di token per analisi configurabile.
+differenze; per ciascuno modifica, approva, scarta (e rimanda per endpoint, completamento ed
+evoluzione). Approvare un tool o un agente li crea/aggiorna nello stato `active`; approvare una skill
+la salva (attiva). Il capitolo Completamento si mostra come piano a fasi nell'ordine delle
+dipendenze; Evoluzione raggruppato per area. Endpoint, voci di completamento ed evoluzione accettate
+si copiano come testo pronto per una issue nel repo dell'app (titolo, contesto, da fare, pronto
+quando), singolarmente o come elenco. Token consumati visibili; tetto di token per analisi
+configurabile.
 
 ## 7. Conversazioni e interfaccia agentica
 
@@ -303,6 +321,11 @@ suggerite; copia, rigenera, 👍/👎 (salvati sul messaggio); storico delle con
 
 Ogni fase: issue, branch `feat/…`, PR, merge (= produzione), SQL di produzione nella PR.
 
+**Ordine deciso il 2026-10-25**: 1 → 3 → 2 → 4 → 5. L'architetto viene anticipato rispetto alle
+conversazioni perché serve subito a pianificare il completamento di tutti i progetti; non dipende
+dalla fase 2. La tabella `agent_skills` nasce quindi con la fase 3 (le skill approvate si salvano);
+il loro uso nella chat arriva con la fase 2.
+
 1. **Agenti che agiscono**: estensioni App (+ segreti cifrati), `app_tools` con migrazione, `agent_tools`,
    ruolo generale/area, esecutore `http`, ciclo dell'agente con tool, `run_steps` e timeline nella
    pagina run, pausa per conferma e ripresa, gestione del catalogo a mano nella console, campo
@@ -311,9 +334,10 @@ Ogni fase: issue, branch `feat/…`, PR, merge (= produzione), SQL di produzione
    legge i dati veri.
 2. **Conversazioni e chat**: conversazioni, messaggi, SSE, stop, messaggi aggiunti, skill a mano,
    `uiConfig`, chat completa nella console.
-3. **Architetto**: sorgenti, analisi, proposta con capitoli (tool, agenti, skill, endpoint,
-   miglioramenti), differenze, pagina di revisione. Collaudo: analisi di Mister confrontata con il
-   catalogo della fase 1.
+3. **Architetto** (seconda in ordine): sorgenti, analisi, proposta con capitoli (tool, agenti,
+   skill, endpoint, completamento, evoluzione), differenze, pagina di revisione, esportazione come
+   issue, tabella `agent_skills`. Collaudo: analisi di Mister (app incompleta), con piano di
+   completamento ed evoluzione rivisti da Ivan e tool proposti confrontati con quelli scritti a mano.
 4. **Server MCP**: `/mcp/<slug>`, chiavi API. Collaudo: un client MCP esterno.
 5. **Tool composti**: esecuzione dei `composite`.
 

@@ -9,4 +9,4 @@
 /**
  * @nullable
  */
-export type AppToolInputEvidence = { [key: string]: unknown } | null;
+export type AgentSkillParamsSchema = { [key: string]: unknown } | null;

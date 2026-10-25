@@ -305,15 +305,17 @@ function isPendingAction(value: unknown): value is PendingAction {
 }
 
 /**
- * Riprende una run in pausa con la decisione dell'utente. La transizione
- * `awaiting_client → running` è un UPDATE condizionato: una seconda chiamata (anche concorrente)
- * o una pausa scaduta non trovano righe e lanciano `ResumeConflictError`, senza eseguire il tool.
+ * Prima fase della ripresa, da attendere: porta la run da `awaiting_client` a `running` con un
+ * UPDATE condizionato e verifica che l'azione in sospeso sia coerente con lo stato del ciclo.
+ * Una seconda chiamata (anche concorrente), una pausa scaduta o un'azione incoerente lanciano
+ * `ResumeConflictError` senza eseguire nulla. Restituisce la run presa in carico e la
+ * continuazione (`proceed`), che esegue il tool confermato e il resto del turno e non lancia.
  */
-export async function resumeRun(
+export async function claimResume(
   runId: number,
   decision: "approved" | "rejected",
   opts: { userToken?: string } = {},
-): Promise<void> {
+): Promise<{ run: Run; proceed: () => Promise<void> }> {
   const cutoff = new Date(Date.now() - PAUSE_TTL_MS);
   const [run] = await db
     .update(runsTable)
@@ -333,55 +335,78 @@ export async function resumeRun(
 
   const segmentStart = Date.now();
   const usage: SegmentUsage = { promptTokens: 0, completionTokens: 0 };
+  const state = run.loopState;
+  const pending = run.pendingAction;
+  if (!isLoopState(state) || !isPendingAction(pending)) {
+    // Stato della pausa mancante: la run si chiude come fallita, la ripresa in sé non è in conflitto
+    const err = new Error("stato della pausa mancante o non valido");
+    return { run, proceed: () => failRun(run, err, segmentStart, usage) };
+  }
   try {
-    const state = run.loopState;
-    const pending = run.pendingAction;
-    if (!isLoopState(state) || !isPendingAction(pending)) {
-      throw new Error("stato della pausa mancante o non valido");
-    }
     // Verifica che l'azione sia davvero quella in attesa PRIMA di eseguire il tool
     resolvePending(state, pending, { ok: false, content: "" });
-
-    const ctx = await loadContext(run);
-    const writeStep = stepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools);
-
-    let result: ToolResult;
-    let durationMs = 0;
-    if (decision === "approved") {
-      // Il tool deve essere ancora attivo e visibile all'agente
-      const tool = ctx.tools.find((t) => t.name === pending.toolName);
-      if (!tool) {
-        result = { ok: false, content: `Errore: lo strumento "${pending.toolName}" non è più disponibile` };
-      } else {
-        const t0 = Date.now();
-        result = await runTool(ctx, tool, pending.args);
-        durationMs = Date.now() - t0;
-      }
-    } else {
-      result = { ok: false, content: REJECTED_ACTION_MESSAGE };
-    }
-
-    // resolvePending non registra passi: il passo `tool` della chiamata confermata/rifiutata va scritto qui
-    await writeStep({
-      type: "tool",
-      toolName: pending.toolName,
-      args: pending.args,
-      ok: result.ok,
-      httpStatus: result.status,
-      durationMs,
-      error: result.ok ? undefined : result.content,
-    });
-
-    const next = resolvePending(state, pending, result);
-    // Il tempo del tool confermato è tempo attivo del turno (conta per il limite di 120 s)
-    next.activeMs += durationMs;
-    await driveLoop(ctx, next, segmentStart, writeStep, usage);
   } catch (err) {
     await failRun(run, err, segmentStart, usage);
     if (err instanceof PendingMismatchError) {
       throw new ResumeConflictError(`La run non può essere ripresa: ${err.message}`);
     }
+    throw err;
   }
+
+  const proceed = async (): Promise<void> => {
+    try {
+      const ctx = await loadContext(run);
+      const writeStep = stepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools);
+
+      let result: ToolResult;
+      let durationMs = 0;
+      if (decision === "approved") {
+        // Il tool deve essere ancora attivo e visibile all'agente
+        const tool = ctx.tools.find((t) => t.name === pending.toolName);
+        if (!tool) {
+          result = { ok: false, content: `Errore: lo strumento "${pending.toolName}" non è più disponibile` };
+        } else {
+          const t0 = Date.now();
+          result = await runTool(ctx, tool, pending.args);
+          durationMs = Date.now() - t0;
+        }
+      } else {
+        result = { ok: false, content: REJECTED_ACTION_MESSAGE };
+      }
+
+      // resolvePending non registra passi: il passo `tool` della chiamata confermata/rifiutata va scritto qui
+      await writeStep({
+        type: "tool",
+        toolName: pending.toolName,
+        args: pending.args,
+        ok: result.ok,
+        httpStatus: result.status,
+        durationMs,
+        error: result.ok ? undefined : result.content,
+      });
+
+      const next = resolvePending(state, pending, result);
+      // Il tempo del tool confermato è tempo attivo del turno (conta per il limite di 120 s)
+      next.activeMs += durationMs;
+      await driveLoop(ctx, next, segmentStart, writeStep, usage);
+    } catch (err) {
+      await failRun(run, err, segmentStart, usage);
+    }
+  };
+  return { run, proceed };
+}
+
+/**
+ * Riprende una run in pausa con la decisione dell'utente e attende la fine del turno.
+ * Lancia `ResumeConflictError` se la run non è (più) in attesa di conferma (vedi `claimResume`).
+ */
+export async function resumeRun(
+  runId: number,
+  decision: "approved" | "rejected",
+  opts: { userToken?: string } = {},
+): Promise<void> {
+  const { proceed } = await claimResume(runId, decision, opts);
+  await proceed();
 }
 
 /** Chiude come `cancelled` le run in pausa da più di PAUSE_TTL_MS. Restituisce quante ne ha chiuse. */
@@ -422,12 +447,4 @@ export async function failInterruptedRuns(): Promise<number> {
     .where(inArray(runsTable.status, ["pending", "running"]))
     .returning({ id: runsTable.id });
   return interrupted.length;
-}
-
-/**
- * Compatibilità temporanea per `routes/agents.ts` (migrata nel Task 9): avvia la run senza token
- * utente. Da rimuovere quando le route useranno `startRun`.
- */
-export function executeRun(runId: number): Promise<void> {
-  return startRun(runId);
 }

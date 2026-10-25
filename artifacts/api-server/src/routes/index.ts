@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
 import appsRouter from "./apps";
+import appToolsRouter from "./app-tools";
 import agentsRouter from "./agents";
 import runsRouter from "./runs";
 import dashboardRouter from "./dashboard";
@@ -14,6 +15,7 @@ router.use(healthRouter);
 router.use(authRouter());
 router.use(requireAuth);
 router.use(appsRouter);
+router.use(appToolsRouter);
 router.use(agentsRouter);
 router.use(runsRouter);
 router.use(dashboardRouter);

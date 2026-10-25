@@ -1,6 +1,6 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { asc, eq } from "drizzle-orm";
 import { strToU8, zipSync } from "fflate";
 import {
@@ -14,6 +14,9 @@ import {
   type AnalysisLogEntry,
 } from "@workspace/db";
 import { encryptSecret } from "../secrets";
+import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
+import { clearInstallationTokenCache } from "../github/app";
+import type { GithubConfig } from "../github/config";
 import {
   ANALYSIS_DEFAULT_MAX_TOKENS,
   ANALYSIS_LOG_MAX,
@@ -513,6 +516,142 @@ describe("startAnalysis", () => {
     expect(llmRequests).toHaveLength(0);
     // Analisi inesistente: nessuna eccezione
     await expect(startAnalysis(99_999)).resolves.toBeUndefined();
+  });
+});
+
+describe("startAnalysis con l'installazione della GitHub App", () => {
+  const NO_ACCESS = "l'App Casello non ha più accesso a questo repository: reinstallala o scegli un altro repo";
+  let gh: FakeGithub;
+  let cfg: GithubConfig;
+
+  beforeAll(async () => {
+    gh = await startFakeGithub();
+    cfg = {
+      appId: gh.appId,
+      slug: gh.slug,
+      clientId: gh.clientId,
+      clientSecret: gh.clientSecret,
+      privateKey: gh.privateKeyPem,
+      apiBase: gh.apiBase,
+      webBase: gh.webBase,
+    };
+  });
+
+  afterAll(async () => {
+    await gh.close();
+  });
+
+  beforeEach(() => {
+    clearInstallationTokenCache();
+    gh.installations.clear();
+    gh.repos.clear();
+    gh.revoked.clear();
+    gh.issuedTokens.clear();
+    gh.requests.length = 0;
+    gh.failWith = null;
+    gh.addInstallation({ id: 11, appId: Number(gh.appId), accountLogin: "ivan", accountType: "User", repositorySelection: "all" }, [
+      { fullName: "ivan/fanta", defaultBranch: "main", private: true },
+      { fullName: "ivan/altro", defaultBranch: "main", private: true },
+    ]);
+    gh.zipballs.set("ivan/fanta", testZip());
+  });
+
+  const installationApp = () =>
+    createApp({ sourceType: "github", sourceRepo: "ivan/fanta", sourceBranch: "main", sourceInstallationId: 11, functionalDescription: "Squadre" });
+
+  /** Token di installazione emessi dal finto GitHub: non devono comparire nell'analisi salvata. */
+  const issued = () => [...gh.issuedTokens.keys()];
+
+  it("token ristretto al repo sul download; log senza token", async () => {
+    const id = await createAnalysis(await installationApp());
+    await startAnalysis(id, { githubConfig: cfg });
+
+    const a = await loadAnalysis(id);
+    expect(a.error).toBeNull();
+    expect(a.status).toBe("completed");
+    expect(a.sources).toMatchObject({ code: "github" });
+
+    const tokenReq = gh.requests.filter((r) => r.path === "/app/installations/11/access_tokens");
+    expect(tokenReq).toHaveLength(1);
+    expect(tokenReq[0]!.body).toEqual({ repositories: ["fanta"], permissions: { contents: "read" } });
+    const [token] = issued();
+    expect(gh.issuedTokens.get(token!)).toMatchObject({ installationId: 11, repositories: ["ivan/fanta"], permissions: { contents: "read" } });
+    const zipball = gh.requests.find((r) => r.path.startsWith("/repos/ivan/fanta/zipball"));
+    expect(zipball?.path).toBe("/repos/ivan/fanta/zipball/main");
+    expect(zipball?.auth).toBe(`Bearer ${token}`);
+
+    const log = a.log as AnalysisLogEntry[];
+    expect(log.some((e) => e.message === "codice: GitHub ivan/fanta tramite l'App (2 file)")).toBe(true);
+    expect(JSON.stringify(a)).not.toContain(token!);
+    expect(JSON.stringify(a)).not.toContain("ghs_");
+  });
+
+  it("installazione revocata: failed con il messaggio della spec, senza token", async () => {
+    gh.revoked.add(11);
+    const id = await createAnalysis(await installationApp());
+    await startAnalysis(id, { githubConfig: cfg });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe(NO_ACCESS);
+    expect(JSON.stringify(a)).not.toContain("ghs_");
+    expect(llmRequests).toHaveLength(0);
+  });
+
+  it("revocata dopo il token in cache: il download risponde 404 → messaggio della spec e cache svuotata", async () => {
+    const appWithInst = await installationApp();
+    const first = await createAnalysis(appWithInst);
+    await startAnalysis(first, { githubConfig: cfg });
+    expect((await loadAnalysis(first)).status).toBe("completed");
+
+    gh.revoked.add(11);
+    const second = await createAnalysis(appWithInst);
+    await startAnalysis(second, { githubConfig: cfg });
+    const a = await loadAnalysis(second);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe(NO_ACCESS);
+    for (const t of issued()) expect(JSON.stringify(a)).not.toContain(t);
+
+    // Il token scartato non si riusa: la prossima analisi ne chiede uno nuovo
+    gh.revoked.delete(11);
+    gh.requests.length = 0;
+    const third = await createAnalysis(appWithInst);
+    await startAnalysis(third, { githubConfig: cfg });
+    expect((await loadAnalysis(third)).status).toBe("completed");
+    expect(gh.requests.filter((r) => r.path === "/app/installations/11/access_tokens")).toHaveLength(1);
+  });
+
+  it("GitHub non risponde sul token: failed con il testo fisso", async () => {
+    gh.failWith = (r) => (r.path.includes("/access_tokens") ? 503 : null);
+    const id = await createAnalysis(await installationApp());
+    await startAnalysis(id, { githubConfig: cfg });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe("GitHub non risponde (riprova più tardi)");
+  });
+
+  it("GitHub non configurato e app con installazione: failed 'GitHub non configurato'", async () => {
+    const id = await createAnalysis(await installationApp());
+    await startAnalysis(id, { githubConfig: null });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe("GitHub non configurato");
+    expect(gh.requests).toHaveLength(0);
+  });
+
+  it("GitHub non configurato e app senza installazione: token manuale come nella fase 3", async () => {
+    const manual = await createApp({
+      sourceType: "github",
+      sourceRepo: "ivan/fanta",
+      sourceBranch: "main",
+      sourceTokenEnc: encryptSecret(GITHUB_TOKEN),
+    });
+    const id = await createAnalysis(manual);
+    await startAnalysis(id, { githubApiBase: githubBase, githubConfig: null });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toMatch(/token GitHub non valido/);
+    expect(githubAuth).toEqual([`Bearer ${GITHUB_TOKEN}`]);
+    expect(gh.requests).toHaveLength(0);
   });
 });
 

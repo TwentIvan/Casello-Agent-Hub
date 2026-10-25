@@ -43,6 +43,7 @@ import type {
   DashboardStats,
   ErrorResponse,
   ExportAnalysisIssuesParams,
+  ForbiddenResponse,
   GithubInstallations,
   GithubRepo,
   HealthStatus,
@@ -485,7 +486,7 @@ export const createApp = async (appInput: AppInput, options?: RequestInit): Prom
 
 
 
-export const getCreateAppMutationOptions = <TError = ErrorType<unknown>,
+export const getCreateAppMutationOptions = <TError = ErrorType<BadRequestResponse | BadGatewayResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createApp>>, TError,{data: BodyType<AppInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createApp>>, TError,{data: BodyType<AppInput>}, TContext> => {
 
@@ -514,12 +515,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateAppMutationResult = NonNullable<Awaited<ReturnType<typeof createApp>>>
     export type CreateAppMutationBody = BodyType<AppInput>
-    export type CreateAppMutationError = ErrorType<unknown>
+    export type CreateAppMutationError = ErrorType<BadRequestResponse | BadGatewayResponse>
 
     /**
  * @summary Registra una nuova app
  */
-export const useCreateApp = <TError = ErrorType<unknown>,
+export const useCreateApp = <TError = ErrorType<BadRequestResponse | BadGatewayResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createApp>>, TError,{data: BodyType<AppInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createApp>>,
@@ -633,7 +634,7 @@ export const updateApp = async (id: number,
 
 
 
-export const getUpdateAppMutationOptions = <TError = ErrorType<NotFoundResponse>,
+export const getUpdateAppMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | BadGatewayResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateApp>>, TError,{id: number;data: BodyType<AppUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateApp>>, TError,{id: number;data: BodyType<AppUpdate>}, TContext> => {
 
@@ -662,12 +663,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateAppMutationResult = NonNullable<Awaited<ReturnType<typeof updateApp>>>
     export type UpdateAppMutationBody = BodyType<AppUpdate>
-    export type UpdateAppMutationError = ErrorType<NotFoundResponse>
+    export type UpdateAppMutationError = ErrorType<BadRequestResponse | NotFoundResponse | BadGatewayResponse>
 
     /**
  * @summary Aggiorna una app
  */
-export const useUpdateApp = <TError = ErrorType<NotFoundResponse>,
+export const useUpdateApp = <TError = ErrorType<BadRequestResponse | NotFoundResponse | BadGatewayResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateApp>>, TError,{id: number;data: BodyType<AppUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updateApp>>,
@@ -1953,7 +1954,7 @@ export const getStartAnalysisUrl = (id: number,) => {
 }
 
 /**
- * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso.
+ * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso. Con sourceInstallationId non serve il token manuale, ma l'utente corrente deve avere quell'installazione (altrimenti 403 "installazione non trovata o non tua").
  * @summary Avvia un'analisi leggendo le sorgenti configurate sull'app
  */
 export const startAnalysis = async (id: number,
@@ -1971,7 +1972,7 @@ export const startAnalysis = async (id: number,
 
 
 
-export const getStartAnalysisMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+export const getStartAnalysisMutationOptions = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startAnalysis>>, TError,{id: number;data: BodyType<AnalysisStart>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof startAnalysis>>, TError,{id: number;data: BodyType<AnalysisStart>}, TContext> => {
 
@@ -2000,12 +2001,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type StartAnalysisMutationResult = NonNullable<Awaited<ReturnType<typeof startAnalysis>>>
     export type StartAnalysisMutationBody = BodyType<AnalysisStart>
-    export type StartAnalysisMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+    export type StartAnalysisMutationError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse>
 
     /**
  * @summary Avvia un'analisi leggendo le sorgenti configurate sull'app
  */
-export const useStartAnalysis = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+export const useStartAnalysis = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startAnalysis>>, TError,{id: number;data: BodyType<AnalysisStart>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof startAnalysis>>,

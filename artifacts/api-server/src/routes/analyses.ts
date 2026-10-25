@@ -26,6 +26,7 @@ import {
   UpdateAnalysisItemBody,
   UpdateAnalysisItemResponse,
 } from "@workspace/api-zod";
+import { currentUserId } from "../lib/auth";
 import { AVAILABLE_MODELS } from "../lib/models";
 import { isUniqueViolation } from "../lib/pg-errors";
 import { ANALYSIS_DEFAULT_MAX_TOKENS, startAnalysis } from "../lib/architect/run-analysis";
@@ -35,6 +36,7 @@ import { ITEM_SCHEMAS, PHASES, type AnalysisChapter } from "../lib/architect/sch
 import { SOURCE_LIMITS } from "../lib/architect/source-tree";
 import { runRateLimit } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
+import { INSTALLATION_NOT_YOURS, userHasInstallation } from "./apps";
 import { toPublicAnalysis, toPublicItem } from "./serializers";
 
 // Route dell'architetto: avvio delle analisi (sorgenti dell'app o zip caricato), dettaglio,
@@ -152,12 +154,18 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
       res.status(400).json({ error: "Il codice di questa app arriva da un archivio: usa il caricamento dello zip" });
       return;
     }
-    if (app.sourceType === "github" && (!app.sourceRepo || app.sourceTokenEnc == null)) {
-      res.status(400).json({
-        error: !app.sourceRepo
-          ? "Repo GitHub mancante: impostalo nelle sorgenti dell'app"
-          : "token GitHub mancante: impostalo nelle sorgenti dell'app",
-      });
+    if (app.sourceType === "github" && !app.sourceRepo) {
+      res.status(400).json({ error: "Repo GitHub mancante: impostalo nelle sorgenti dell'app" });
+      return;
+    }
+    if (app.sourceType === "github" && app.sourceInstallationId != null) {
+      // Tramite l'App: niente token manuale, ma l'installazione deve essere di chi avvia
+      if (!(await userHasInstallation(currentUserId(req), app.sourceInstallationId))) {
+        res.status(403).json({ error: INSTALLATION_NOT_YOURS });
+        return;
+      }
+    } else if (app.sourceType === "github" && app.sourceTokenEnc == null) {
+      res.status(400).json({ error: "token GitHub mancante: impostalo nelle sorgenti dell'app" });
       return;
     }
     try {

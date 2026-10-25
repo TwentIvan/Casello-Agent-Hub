@@ -9,9 +9,12 @@ import { SOURCE_LIMITS, SourceTree, SourceTreeError } from "./source-tree";
  */
 
 export class SourceError extends Error {
-  constructor(message: string) {
+  /** Stato HTTP della risposta che ha causato l'errore (401/403/404 dal download GitHub), se c'è. */
+  readonly status: number | null;
+  constructor(message: string, status: number | null = null) {
     super(message);
     this.name = "SourceError";
+    this.status = status;
   }
 }
 
@@ -112,11 +115,11 @@ export async function fetchGithubTree(input: {
 
   if (res.status === 401 || res.status === 403) {
     await res.body?.cancel().catch(() => {});
-    throw new SourceError("token GitHub non valido o senza accesso al repo");
+    throw new SourceError("token GitHub non valido o senza accesso al repo", res.status);
   }
   if (res.status === 404) {
     await res.body?.cancel().catch(() => {});
-    throw new SourceError("repo o branch non trovato");
+    throw new SourceError("repo o branch non trovato", 404);
   }
   if (!res.ok) {
     await res.body?.cancel().catch(() => {});

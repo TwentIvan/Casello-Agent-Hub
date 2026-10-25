@@ -28,6 +28,11 @@ export interface AppInput {
   sourceBranch?: string | null;
   /** Token GitHub di sola lettura (solo scrittura, salvato cifrato) */
   sourceToken?: string;
+  /**
+     * Installazione della GitHub App dell'utente che vede sourceRepo (solo con sourceType github); altrimenti 400 "installazione non trovata o non tua"
+     * @nullable
+     */
+  sourceInstallationId?: number | null;
   /** @nullable */
   openapiUrl?: string | null;
   /** @nullable */

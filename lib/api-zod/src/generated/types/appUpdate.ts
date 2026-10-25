@@ -35,6 +35,11 @@ export interface AppUpdate {
      * @nullable
      */
   sourceToken?: string | null;
+  /**
+     * Installazione della GitHub App dell'utente che vede sourceRepo; null torna al token manuale. Passando a un sourceType diverso da github diventa null da sola
+     * @nullable
+     */
+  sourceInstallationId?: number | null;
   /** @nullable */
   openapiUrl?: string | null;
   /** @nullable */

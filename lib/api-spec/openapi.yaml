@@ -122,6 +122,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/App"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          $ref: "#/components/responses/BadGateway"
 
   /apps/{id}:
     get:
@@ -158,8 +162,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/App"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/BadGateway"
     delete:
       operationId: deleteApp
       tags: [apps]
@@ -546,7 +554,9 @@ paths:
       summary: Avvia un'analisi leggendo le sorgenti configurate sull'app
       description: >-
         Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI,
-        descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso.
+        descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso. Con
+        sourceInstallationId non serve il token manuale, ma l'utente corrente deve avere quell'installazione
+        (altrimenti 403 "installazione non trovata o non tua").
       parameters:
         - $ref: "#/components/parameters/IdParam"
       requestBody:
@@ -564,6 +574,8 @@ paths:
                 $ref: "#/components/schemas/Analysis"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -848,6 +860,13 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
 
+    Forbidden:
+      description: Risorsa non accessibile all'utente corrente
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
     NotFound:
       description: Risorsa non trovata
       content:
@@ -989,7 +1008,7 @@ components:
 
     App:
       type: object
-      required: [id, name, slug, baseUrl, status, serviceSecretSet, sourceType, sourceRepo, sourceBranch, sourceTokenSet, openapiUrl, functionalDescription, createdAt, updatedAt]
+      required: [id, name, slug, baseUrl, status, serviceSecretSet, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -1025,6 +1044,11 @@ components:
         sourceTokenSet:
           type: boolean
           description: Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto)
+        sourceInstallationId:
+          type: ["integer", "null"]
+          description: >-
+            Installazione della GitHub App da cui l'architetto scarica il repo (con un token ristretto
+            a quel repo); null = token manuale della fase 3
         openapiUrl:
           type: ["string", "null"]
           description: URL dell'OpenAPI dell'app, letto (GET) dall'architetto
@@ -1074,6 +1098,11 @@ components:
         sourceToken:
           type: string
           description: Token GitHub di sola lettura (solo scrittura, salvato cifrato)
+        sourceInstallationId:
+          type: ["integer", "null"]
+          description: >-
+            Installazione della GitHub App dell'utente che vede sourceRepo (solo con sourceType github);
+            altrimenti 400 "installazione non trovata o non tua"
         openapiUrl:
           type: ["string", "null"]
         functionalDescription:
@@ -1114,6 +1143,11 @@ components:
         sourceToken:
           type: ["string", "null"]
           description: Token GitHub di sola lettura (solo scrittura); null lo cancella
+        sourceInstallationId:
+          type: ["integer", "null"]
+          description: >-
+            Installazione della GitHub App dell'utente che vede sourceRepo; null torna al token manuale.
+            Passando a un sourceType diverso da github diventa null da sola
         openapiUrl:
           type: ["string", "null"]
         functionalDescription:

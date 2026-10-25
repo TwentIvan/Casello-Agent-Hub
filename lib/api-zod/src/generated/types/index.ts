@@ -50,6 +50,7 @@ export * from './dashboardStats';
 export * from './errorResponse';
 export * from './exportAnalysisIssuesChapter';
 export * from './exportAnalysisIssuesParams';
+export * from './forbiddenResponse';
 export * from './githubInstallation';
 export * from './githubInstallations';
 export * from './githubRepo';

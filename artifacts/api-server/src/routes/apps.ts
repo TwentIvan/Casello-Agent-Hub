@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { asc, eq } from "drizzle-orm";
-import { db, appsTable, agentsTable } from "@workspace/db";
+import { and, asc, eq } from "drizzle-orm";
+import { db, appsTable, agentsTable, githubInstallationsTable } from "@workspace/db";
 import {
   ListAppsResponse,
   CreateAppBody,
@@ -18,6 +18,9 @@ import { checkAuthHeaderName, parseAppBaseUrl } from "../lib/tools/executor";
 import type { AuthConfig } from "../lib/tools/types";
 import { uniqueSlug, withSlugRetry } from "../lib/slug";
 import { isValidGithubRepo } from "../lib/architect/sources";
+import { currentUserId } from "../lib/auth";
+import { GITHUB_MESSAGES, GithubError, repoInstallationId } from "../lib/github/app";
+import { githubConfig } from "../lib/github/config";
 import { toPublicApp } from "./serializers";
 import { parseRequest } from "../middlewares/error-handler";
 
@@ -123,6 +126,49 @@ function sourceTokenChange(token: string | null | undefined): { sourceTokenEnc?:
   return { sourceTokenEnc: encryptSecret(trimmed) };
 }
 
+/** Messaggio della spec per un'installazione che non c'è, non è dell'utente o non vede il repo. */
+export const INSTALLATION_NOT_YOURS = "installazione non trovata o non tua";
+
+/** L'utente ha collegato quell'installazione (riga in `github_installations`). */
+export async function userHasInstallation(userId: number, installationId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ id: githubInstallationsTable.id })
+    .from(githubInstallationsTable)
+    .where(and(eq(githubInstallationsTable.userId, userId), eq(githubInstallationsTable.installationId, installationId)))
+    .limit(1);
+  return !!row;
+}
+
+interface InstallationState {
+  sourceType: string;
+  sourceRepo: string | null;
+  sourceInstallationId: number;
+}
+
+/**
+ * Sorgente tramite l'installazione della GitHub App, sullo stato risultante: GitHub configurato,
+ * sorgente `github` con un repo, installazione collegata dall'utente e che vede quel repo (chiesto a
+ * GitHub con il JWT dell'App). Restituisce stato HTTP ed errore, o null se va bene.
+ */
+async function installationError(userId: number, state: InstallationState): Promise<{ status: 400 | 502; error: string } | null> {
+  const cfg = githubConfig();
+  if (!cfg) return { status: 400, error: GITHUB_MESSAGES.notConfigured };
+  const id = state.sourceInstallationId;
+  if (!Number.isSafeInteger(id) || id <= 0 || state.sourceType !== "github" || !state.sourceRepo) {
+    return { status: 400, error: INSTALLATION_NOT_YOURS };
+  }
+  if (!(await userHasInstallation(userId, id))) return { status: 400, error: INSTALLATION_NOT_YOURS };
+  try {
+    if ((await repoInstallationId(cfg, state.sourceRepo)) !== id) return { status: 400, error: INSTALLATION_NOT_YOURS };
+  } catch (err) {
+    if (!(err instanceof GithubError)) throw err;
+    if (err.message === GITHUB_MESSAGES.unavailable) return { status: 502, error: GITHUB_MESSAGES.unavailable };
+    if (err.message === GITHUB_MESSAGES.notConfigured) return { status: 400, error: GITHUB_MESSAGES.notConfigured };
+    return { status: 400, error: INSTALLATION_NOT_YOURS };
+  }
+  return null;
+}
+
 router.get("/apps", async (_req, res) => {
   const apps = await db.select().from(appsTable).orderBy(asc(appsTable.id));
   res.json(ListAppsResponse.parse(apps.map(toPublicApp)));
@@ -139,6 +185,17 @@ router.post("/apps", async (req, res) => {
   if (invalid) {
     res.status(400).json({ error: invalid });
     return;
+  }
+  if (body.sourceInstallationId != null) {
+    const failure = await installationError(currentUserId(req), {
+      sourceType: body.sourceType ?? "none",
+      sourceRepo: body.sourceRepo ?? null,
+      sourceInstallationId: body.sourceInstallationId,
+    });
+    if (failure) {
+      res.status(failure.status).json({ error: failure.error });
+      return;
+    }
   }
   const serviceSecretEnc = serviceSecret !== undefined ? encryptSecret(serviceSecret) : null;
   const sourceTokenEnc = sourceTokenChange(sourceToken).sourceTokenEnc ?? null;
@@ -184,7 +241,11 @@ router.patch("/apps/:id", async (req, res) => {
   const { serviceSecret, sourceToken, ...parsed } = parseRequest(UpdateAppBody, req.body);
   const body = normalizeSources(parsed);
   const [current] = await db
-    .select({ sourceType: appsTable.sourceType, sourceRepo: appsTable.sourceRepo })
+    .select({
+      sourceType: appsTable.sourceType,
+      sourceRepo: appsTable.sourceRepo,
+      sourceInstallationId: appsTable.sourceInstallationId,
+    })
     .from(appsTable)
     .where(eq(appsTable.id, id))
     .limit(1);
@@ -197,6 +258,25 @@ router.patch("/apps/:id", async (req, res) => {
     res.status(400).json({ error: invalid });
     return;
   }
+  // Installazione nello stato risultante: lasciando github si azzera da sola. Si ricontrolla con
+  // GitHub solo se cambia tipo, repo o installazione (una PATCH del nome non chiama GitHub).
+  const type = body.sourceType ?? current.sourceType;
+  const repo = body.sourceRepo !== undefined ? body.sourceRepo : current.sourceRepo;
+  const installationId =
+    body.sourceInstallationId !== undefined
+      ? body.sourceInstallationId
+      : type === "github"
+        ? current.sourceInstallationId
+        : null;
+  const sourceChanged =
+    type !== current.sourceType || repo !== current.sourceRepo || installationId !== current.sourceInstallationId;
+  if (installationId != null && sourceChanged) {
+    const failure = await installationError(currentUserId(req), { sourceType: type, sourceRepo: repo, sourceInstallationId: installationId });
+    if (failure) {
+      res.status(failure.status).json({ error: failure.error });
+      return;
+    }
+  }
   // serviceSecret: stringa → cifrato e salvato; null → cancellato; assente → invariato
   const secretChange =
     serviceSecret === undefined
@@ -205,7 +285,7 @@ router.patch("/apps/:id", async (req, res) => {
   const tokenChange = sourceTokenChange(sourceToken);
   const [app] = await db
     .update(appsTable)
-    .set({ ...body, ...secretChange, ...tokenChange, updatedAt: new Date() })
+    .set({ ...body, sourceInstallationId: installationId, ...secretChange, ...tokenChange, updatedAt: new Date() })
     .where(eq(appsTable.id, id))
     .returning();
   if (!app) {

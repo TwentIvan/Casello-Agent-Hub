@@ -7,6 +7,7 @@
  */
 import type { AppStatus } from './appStatus';
 import type { AuthConfig } from './authConfig';
+import type { SourceType } from './sourceType';
 
 export interface AppUpdate {
   /** @minLength 1 */
@@ -24,5 +25,19 @@ export interface AppUpdate {
      * @nullable
      */
   serviceSecret?: string | null;
+  sourceType?: SourceType;
+  /** @nullable */
+  sourceRepo?: string | null;
+  /** @nullable */
+  sourceBranch?: string | null;
+  /**
+     * Token GitHub di sola lettura (solo scrittura); null lo cancella
+     * @nullable
+     */
+  sourceToken?: string | null;
+  /** @nullable */
+  openapiUrl?: string | null;
+  /** @nullable */
+  functionalDescription?: string | null;
   status?: AppStatus;
 }

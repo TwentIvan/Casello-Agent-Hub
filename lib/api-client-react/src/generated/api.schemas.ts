@@ -39,6 +39,18 @@ export interface AuthConfig {
   scheme: string | null;
 }
 
+/**
+ * Da dove l'architetto legge il codice dell'app
+ */
+export type SourceType = typeof SourceType[keyof typeof SourceType];
+
+
+export const SourceType = {
+  github: 'github',
+  zip: 'zip',
+  none: 'none',
+} as const;
+
 export interface App {
   id: number;
   name: string;
@@ -55,6 +67,26 @@ export interface App {
   serviceAuth?: AuthConfig | null;
   /** Indica se il segreto di servizio è impostato (il valore non è mai esposto) */
   serviceSecretSet: boolean;
+  sourceType: SourceType;
+  /**
+     * Repository GitHub nel formato owner/nome
+     * @nullable
+     */
+  sourceRepo: string | null;
+  /** @nullable */
+  sourceBranch: string | null;
+  /** Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto) */
+  sourceTokenSet: boolean;
+  /**
+     * URL dell'OpenAPI dell'app, letto (GET) dall'architetto
+     * @nullable
+     */
+  openapiUrl: string | null;
+  /**
+     * Descrizione funzionale dell'app per l'architetto
+     * @nullable
+     */
+  functionalDescription: string | null;
   status: AppStatus;
   createdAt: string;
   updatedAt: string;
@@ -72,6 +104,17 @@ export interface AppInput {
   serviceAuth?: AuthConfig | null;
   /** Segreto di servizio (solo scrittura, salvato cifrato) */
   serviceSecret?: string;
+  sourceType?: SourceType;
+  /** @nullable */
+  sourceRepo?: string | null;
+  /** @nullable */
+  sourceBranch?: string | null;
+  /** Token GitHub di sola lettura (solo scrittura, salvato cifrato) */
+  sourceToken?: string;
+  /** @nullable */
+  openapiUrl?: string | null;
+  /** @nullable */
+  functionalDescription?: string | null;
   status?: AppStatus;
 }
 
@@ -91,6 +134,20 @@ export interface AppUpdate {
      * @nullable
      */
   serviceSecret?: string | null;
+  sourceType?: SourceType;
+  /** @nullable */
+  sourceRepo?: string | null;
+  /** @nullable */
+  sourceBranch?: string | null;
+  /**
+     * Token GitHub di sola lettura (solo scrittura); null lo cancella
+     * @nullable
+     */
+  sourceToken?: string | null;
+  /** @nullable */
+  openapiUrl?: string | null;
+  /** @nullable */
+  functionalDescription?: string | null;
   status?: AppStatus;
 }
 
@@ -393,6 +450,182 @@ export interface DashboardStats {
   avgDurationMs?: number | null;
 }
 
+export type AnalysisStatus = typeof AnalysisStatus[keyof typeof AnalysisStatus];
+
+
+export const AnalysisStatus = {
+  queued: 'queued',
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed',
+  interrupted: 'interrupted',
+} as const;
+
+export type AnalysisChapter = typeof AnalysisChapter[keyof typeof AnalysisChapter];
+
+
+export const AnalysisChapter = {
+  tool: 'tool',
+  agent: 'agent',
+  skill: 'skill',
+  endpoint: 'endpoint',
+  completion: 'completion',
+  evolution: 'evolution',
+} as const;
+
+/**
+ * Differenza rispetto allo stato approvato
+ */
+export type ItemDiff = typeof ItemDiff[keyof typeof ItemDiff];
+
+
+export const ItemDiff = {
+  new: 'new',
+  changed: 'changed',
+  removed: 'removed',
+  unchanged: 'unchanged',
+} as const;
+
+/**
+ * postponed solo per i capitoli endpoint, completion ed evolution
+ */
+export type ItemStatus = typeof ItemStatus[keyof typeof ItemStatus];
+
+
+export const ItemStatus = {
+  pending: 'pending',
+  approved: 'approved',
+  discarded: 'discarded',
+  postponed: 'postponed',
+} as const;
+
+export interface AnalysisSources {
+  code: SourceType;
+  openapi: boolean;
+  description: boolean;
+}
+
+export interface Analysis {
+  id: number;
+  appId: number;
+  model: string;
+  status: AnalysisStatus;
+  sources: AnalysisSources;
+  maxTokens: number;
+  tokensUsed: number;
+  /**
+     * Fase corrente
+     * @nullable
+     */
+  phase: string | null;
+  /** @nullable */
+  error: string | null;
+  createdAt: string;
+  /** @nullable */
+  finishedAt: string | null;
+}
+
+export interface AnalysisLogEntry {
+  at: string;
+  phase: string;
+  message: string;
+}
+
+export interface AnalysisEvidence {
+  source: string;
+  location: string;
+  note: string;
+}
+
+/**
+ * Contenuto della proposta, la cui forma dipende dal capitolo
+ */
+export type AnalysisItemPayload = { [key: string]: unknown };
+
+export interface AnalysisItem {
+  id: number;
+  analysisId: number;
+  chapter: AnalysisChapter;
+  /** Chiave stabile nell'analisi, es. tool:rosa_squadra */
+  ref: string;
+  position: number;
+  /** Contenuto della proposta, la cui forma dipende dal capitolo */
+  payload: AnalysisItemPayload;
+  diff: ItemDiff;
+  evidence: AnalysisEvidence[];
+  status: ItemStatus;
+  /** @nullable */
+  reviewNote: string | null;
+  /** @nullable */
+  appliedAt: string | null;
+}
+
+/**
+ * @nullable
+ */
+export type AnalysisDetailArchitectureMap = { [key: string]: unknown } | null;
+
+export type AnalysisDetail = Analysis & {
+  /** @nullable */
+  architectureMap: AnalysisDetailArchitectureMap;
+  log: AnalysisLogEntry[];
+  items: AnalysisItem[];
+};
+
+export interface AnalysisStart {
+  /**
+     * Modello AI (model_name di LiteLLM)
+     * @minLength 1
+     */
+  model: string;
+  /**
+     * Tetto di token per l'analisi (default 400000)
+     * @minimum 50000
+     * @maximum 2000000
+     */
+  maxTokens?: number;
+}
+
+export type AnalysisItemUpdatePayload = { [key: string]: unknown };
+
+export interface AnalysisItemUpdate {
+  status?: ItemStatus;
+  payload?: AnalysisItemUpdatePayload;
+  /** @nullable */
+  reviewNote?: string | null;
+}
+
+export interface IssueExport {
+  markdown: string;
+  count: number;
+}
+
+/**
+ * @nullable
+ */
+export type AgentSkillParamsSchema = { [key: string]: unknown } | null;
+
+export type AgentSkillStatus = typeof AgentSkillStatus[keyof typeof AgentSkillStatus];
+
+
+export const AgentSkillStatus = {
+  draft: 'draft',
+  active: 'active',
+} as const;
+
+export interface AgentSkill {
+  id: number;
+  agentId: number;
+  name: string;
+  /** @nullable */
+  description: string | null;
+  instructions: string;
+  toolNames: string[];
+  /** @nullable */
+  paramsSchema: AgentSkillParamsSchema;
+  status: AgentSkillStatus;
+}
+
 /**
  * Richiesta non valida
  */
@@ -413,6 +646,11 @@ export type UnauthorizedResponse = ErrorResponse;
  */
 export type NotFoundResponse = ErrorResponse;
 
+/**
+ * Corpo della richiesta troppo grande
+ */
+export type PayloadTooLargeResponse = ErrorResponse;
+
 export type ListAgentsParams = {
 /**
  * Filtra per app
@@ -430,4 +668,35 @@ agentId?: number;
  */
 status?: RunStatus;
 };
+
+export type StartZipAnalysisParams = {
+/**
+ * Modello AI (model_name di LiteLLM)
+ * @minLength 1
+ */
+model: string;
+/**
+ * Tetto di token per l'analisi (default 400000)
+ * @minimum 50000
+ * @maximum 2000000
+ */
+maxTokens?: number;
+};
+
+export type ExportAnalysisIssuesParams = {
+chapter: ExportAnalysisIssuesChapter;
+/**
+ * Stato degli elementi da esportare (default approved)
+ */
+status?: ItemStatus;
+};
+
+export type ExportAnalysisIssuesChapter = typeof ExportAnalysisIssuesChapter[keyof typeof ExportAnalysisIssuesChapter];
+
+
+export const ExportAnalysisIssuesChapter = {
+  endpoint: 'endpoint',
+  completion: 'completion',
+  evolution: 'evolution',
+} as const;
 

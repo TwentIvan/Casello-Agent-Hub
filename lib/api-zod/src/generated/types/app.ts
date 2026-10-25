@@ -7,6 +7,7 @@
  */
 import type { AppStatus } from './appStatus';
 import type { AuthConfig } from './authConfig';
+import type { SourceType } from './sourceType';
 
 export interface App {
   id: number;
@@ -24,6 +25,26 @@ export interface App {
   serviceAuth?: AuthConfig | null;
   /** Indica se il segreto di servizio è impostato (il valore non è mai esposto) */
   serviceSecretSet: boolean;
+  sourceType: SourceType;
+  /**
+     * Repository GitHub nel formato owner/nome
+     * @nullable
+     */
+  sourceRepo: string | null;
+  /** @nullable */
+  sourceBranch: string | null;
+  /** Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto) */
+  sourceTokenSet: boolean;
+  /**
+     * URL dell'OpenAPI dell'app, letto (GET) dall'architetto
+     * @nullable
+     */
+  openapiUrl: string | null;
+  /**
+     * Descrizione funzionale dell'app per l'architetto
+     * @nullable
+     */
+  functionalDescription: string | null;
   status: AppStatus;
   createdAt: Date;
   updatedAt: Date;

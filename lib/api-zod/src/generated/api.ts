@@ -56,6 +56,12 @@ export const ListAppsResponseItem = zod.object({
   "scheme": zod.string().nullable()
 }).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
   "serviceSecretSet": zod.boolean().describe('Indica se il segreto di servizio è impostato (il valore non è mai esposto)'),
+  "sourceType": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
+  "sourceRepo": zod.string().nullable().describe('Repository GitHub nel formato owner\/nome'),
+  "sourceBranch": zod.string().nullable(),
+  "sourceTokenSet": zod.boolean().describe('Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto)'),
+  "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
+  "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -86,6 +92,12 @@ export const CreateAppBody = zod.object({
   "scheme": zod.string().nullable()
 }).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
   "serviceSecret": zod.string().optional().describe('Segreto di servizio (solo scrittura, salvato cifrato)'),
+  "sourceType": zod.enum(['github', 'zip', 'none']).optional().describe('Da dove l\'architetto legge il codice dell\'app'),
+  "sourceRepo": zod.string().nullish(),
+  "sourceBranch": zod.string().nullish(),
+  "sourceToken": zod.string().optional().describe('Token GitHub di sola lettura (solo scrittura, salvato cifrato)'),
+  "openapiUrl": zod.string().nullish(),
+  "functionalDescription": zod.string().nullish(),
   "status": zod.enum(['active', 'inactive']).optional()
 })
 
@@ -109,6 +121,12 @@ export const CreateAppResponse = zod.object({
   "scheme": zod.string().nullable()
 }).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
   "serviceSecretSet": zod.boolean().describe('Indica se il segreto di servizio è impostato (il valore non è mai esposto)'),
+  "sourceType": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
+  "sourceRepo": zod.string().nullable().describe('Repository GitHub nel formato owner\/nome'),
+  "sourceBranch": zod.string().nullable(),
+  "sourceTokenSet": zod.boolean().describe('Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto)'),
+  "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
+  "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -142,6 +160,12 @@ export const GetAppResponse = zod.object({
   "scheme": zod.string().nullable()
 }).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
   "serviceSecretSet": zod.boolean().describe('Indica se il segreto di servizio è impostato (il valore non è mai esposto)'),
+  "sourceType": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
+  "sourceRepo": zod.string().nullable().describe('Repository GitHub nel formato owner\/nome'),
+  "sourceBranch": zod.string().nullable(),
+  "sourceTokenSet": zod.boolean().describe('Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto)'),
+  "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
+  "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -175,6 +199,12 @@ export const UpdateAppBody = zod.object({
   "scheme": zod.string().nullable()
 }).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
   "serviceSecret": zod.string().nullish().describe('Segreto di servizio (solo scrittura); null lo cancella'),
+  "sourceType": zod.enum(['github', 'zip', 'none']).optional().describe('Da dove l\'architetto legge il codice dell\'app'),
+  "sourceRepo": zod.string().nullish(),
+  "sourceBranch": zod.string().nullish(),
+  "sourceToken": zod.string().nullish().describe('Token GitHub di sola lettura (solo scrittura); null lo cancella'),
+  "openapiUrl": zod.string().nullish(),
+  "functionalDescription": zod.string().nullish(),
   "status": zod.enum(['active', 'inactive']).optional()
 })
 
@@ -198,6 +228,12 @@ export const UpdateAppResponse = zod.object({
   "scheme": zod.string().nullable()
 }).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
   "serviceSecretSet": zod.boolean().describe('Indica se il segreto di servizio è impostato (il valore non è mai esposto)'),
+  "sourceType": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
+  "sourceRepo": zod.string().nullable().describe('Repository GitHub nel formato owner\/nome'),
+  "sourceBranch": zod.string().nullable(),
+  "sourceTokenSet": zod.boolean().describe('Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto)'),
+  "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
+  "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -642,6 +678,241 @@ export const ResumeRunResponse = zod.object({
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish()
 })
+
+
+/**
+ * @summary Elenca le analisi dell'architetto di una app
+ */
+export const ListAnalysesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListAnalysesResponseItem = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "model": zod.string(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
+  "sources": zod.object({
+  "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
+  "openapi": zod.boolean(),
+  "description": zod.boolean()
+}),
+  "maxTokens": zod.number(),
+  "tokensUsed": zod.number(),
+  "phase": zod.string().nullable().describe('Fase corrente'),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+})
+export const ListAnalysesResponse = zod.array(ListAnalysesResponseItem)
+
+
+/**
+ * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso.
+ * @summary Avvia un'analisi leggendo le sorgenti configurate sull'app
+ */
+export const StartAnalysisParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+export const startAnalysisBodyMaxTokensMin = 50000;
+export const startAnalysisBodyMaxTokensMax = 2000000;
+
+
+
+export const StartAnalysisBody = zod.object({
+  "model": zod.string().min(1).describe('Modello AI (model_name di LiteLLM)'),
+  "maxTokens": zod.number().min(startAnalysisBodyMaxTokensMin).max(startAnalysisBodyMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 400000)')
+})
+
+export const StartAnalysisResponse = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "model": zod.string(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
+  "sources": zod.object({
+  "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
+  "openapi": zod.boolean(),
+  "description": zod.boolean()
+}),
+  "maxTokens": zod.number(),
+  "tokensUsed": zod.number(),
+  "phase": zod.string().nullable().describe('Fase corrente'),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Il corpo è l'archivio zip (application/zip, al massimo 50 MB). Il codice resta solo in memoria per la durata dell'analisi. Risponde 409 se per l'app c'è già un'analisi in corso.
+ * @summary Avvia un'analisi caricando il codice come archivio zip
+ */
+export const StartZipAnalysisParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+export const startZipAnalysisQueryMaxTokensMin = 50000;
+export const startZipAnalysisQueryMaxTokensMax = 2000000;
+
+
+
+export const StartZipAnalysisQueryParams = zod.object({
+  "model": zod.coerce.string().min(1).describe('Modello AI (model_name di LiteLLM)'),
+  "maxTokens": zod.coerce.number().min(startZipAnalysisQueryMaxTokensMin).max(startZipAnalysisQueryMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 400000)')
+})
+
+export const StartZipAnalysisResponse = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "model": zod.string(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
+  "sources": zod.object({
+  "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
+  "openapi": zod.boolean(),
+  "description": zod.boolean()
+}),
+  "maxTokens": zod.number(),
+  "tokensUsed": zod.number(),
+  "phase": zod.string().nullable().describe('Fase corrente'),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Recupera un'analisi con mappa, log ed elementi della proposta
+ */
+export const GetAnalysisParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetAnalysisResponse = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "model": zod.string(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
+  "sources": zod.object({
+  "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
+  "openapi": zod.boolean(),
+  "description": zod.boolean()
+}),
+  "maxTokens": zod.number(),
+  "tokensUsed": zod.number(),
+  "phase": zod.string().nullable().describe('Fase corrente'),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+}).and(zod.object({
+  "architectureMap": zod.record(zod.string(), zod.unknown()).nullable(),
+  "log": zod.array(zod.object({
+  "at": zod.coerce.date(),
+  "phase": zod.string(),
+  "message": zod.string()
+})),
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "analysisId": zod.number(),
+  "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
+  "ref": zod.string().describe('Chiave stabile nell\'analisi, es. tool:rosa_squadra'),
+  "position": zod.number(),
+  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo'),
+  "diff": zod.enum(['new', 'changed', 'removed', 'unchanged']).describe('Differenza rispetto allo stato approvato'),
+  "evidence": zod.array(zod.object({
+  "source": zod.string(),
+  "location": zod.string(),
+  "note": zod.string()
+})),
+  "status": zod.enum(['pending', 'approved', 'discarded', 'postponed']).describe('postponed solo per i capitoli endpoint, completion ed evolution'),
+  "reviewNote": zod.string().nullable(),
+  "appliedAt": zod.coerce.date().nullable()
+}))
+}))
+
+
+/**
+ * @summary Esporta in Markdown gli elementi di un capitolo come issue
+ */
+export const ExportAnalysisIssuesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ExportAnalysisIssuesQueryParams = zod.object({
+  "chapter": zod.enum(['endpoint', 'completion', 'evolution']),
+  "status": zod.enum(['pending', 'approved', 'discarded', 'postponed']).optional().describe('Stato degli elementi da esportare (default approved)')
+})
+
+export const ExportAnalysisIssuesResponse = zod.object({
+  "markdown": zod.string(),
+  "count": zod.number()
+})
+
+
+/**
+ * Approvando un elemento dei capitoli tool, agent o skill la proposta viene applicata. Se non è applicabile risponde 400 e l'elemento resta in attesa.
+ * @summary Rivede un elemento della proposta (approva, scarta, rimanda, modifica)
+ */
+export const UpdateAnalysisItemParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateAnalysisItemBody = zod.object({
+  "status": zod.enum(['pending', 'approved', 'discarded', 'postponed']).optional().describe('postponed solo per i capitoli endpoint, completion ed evolution'),
+  "payload": zod.record(zod.string(), zod.unknown()).optional(),
+  "reviewNote": zod.string().nullish()
+})
+
+export const UpdateAnalysisItemResponse = zod.object({
+  "id": zod.number(),
+  "analysisId": zod.number(),
+  "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
+  "ref": zod.string().describe('Chiave stabile nell\'analisi, es. tool:rosa_squadra'),
+  "position": zod.number(),
+  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo'),
+  "diff": zod.enum(['new', 'changed', 'removed', 'unchanged']).describe('Differenza rispetto allo stato approvato'),
+  "evidence": zod.array(zod.object({
+  "source": zod.string(),
+  "location": zod.string(),
+  "note": zod.string()
+})),
+  "status": zod.enum(['pending', 'approved', 'discarded', 'postponed']).describe('postponed solo per i capitoli endpoint, completion ed evolution'),
+  "reviewNote": zod.string().nullable(),
+  "appliedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Elenca le skill di un agente
+ */
+export const ListAgentSkillsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListAgentSkillsResponseItem = zod.object({
+  "id": zod.number(),
+  "agentId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "instructions": zod.string(),
+  "toolNames": zod.array(zod.string()),
+  "paramsSchema": zod.record(zod.string(), zod.unknown()).nullable(),
+  "status": zod.enum(['draft', 'active'])
+})
+export const ListAgentSkillsResponse = zod.array(ListAgentSkillsResponseItem)
+
+
+/**
+ * @summary Elimina una skill di un agente
+ */
+export const DeleteAgentSkillParams = zod.object({
+  "id": zod.coerce.number(),
+  "skillId": zod.coerce.number()
+})
+
+export const DeleteAgentSkillResponse = zod.void()
 
 
 /**

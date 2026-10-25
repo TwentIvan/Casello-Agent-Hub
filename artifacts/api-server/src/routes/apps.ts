@@ -60,18 +60,19 @@ router.get("/apps", async (_req, res) => {
 // univoco e lo si sostituisce appena noto l'id. Se una creazione concorrente prende lo stesso slug,
 // la transazione fallisce sulla unique e si riprova da capo (withSlugRetry).
 router.post("/apps", async (req, res) => {
-  const { serviceSecret, ...body } = parseRequest(CreateAppBody, req.body);
+  const { serviceSecret, sourceToken, ...body } = parseRequest(CreateAppBody, req.body);
   const invalid = connectionError(body);
   if (invalid) {
     res.status(400).json({ error: invalid });
     return;
   }
   const serviceSecretEnc = serviceSecret !== undefined ? encryptSecret(serviceSecret) : null;
+  const sourceTokenEnc = sourceToken !== undefined ? encryptSecret(sourceToken) : null;
 
   const app = await withSlugRetry(() => db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(appsTable)
-      .values({ ...body, slug: `tmp-${randomUUID()}`, serviceSecretEnc })
+      .values({ ...body, slug: `tmp-${randomUUID()}`, serviceSecretEnc, sourceTokenEnc })
       .returning();
     const slug = await uniqueSlug(body.name, inserted!.id, async (candidate) => {
       const [row] = await tx
@@ -106,7 +107,7 @@ router.get("/apps/:id", async (req, res) => {
 
 router.patch("/apps/:id", async (req, res) => {
   const { id } = parseRequest(UpdateAppParams, req.params);
-  const { serviceSecret, ...body } = parseRequest(UpdateAppBody, req.body);
+  const { serviceSecret, sourceToken, ...body } = parseRequest(UpdateAppBody, req.body);
   const invalid = connectionError(body);
   if (invalid) {
     res.status(400).json({ error: invalid });
@@ -117,9 +118,14 @@ router.patch("/apps/:id", async (req, res) => {
     serviceSecret === undefined
       ? {}
       : { serviceSecretEnc: serviceSecret === null ? null : encryptSecret(serviceSecret) };
+  // sourceToken (token GitHub): stessa regola del segreto di servizio
+  const tokenChange =
+    sourceToken === undefined
+      ? {}
+      : { sourceTokenEnc: sourceToken === null ? null : encryptSecret(sourceToken) };
   const [app] = await db
     .update(appsTable)
-    .set({ ...body, ...secretChange, updatedAt: new Date() })
+    .set({ ...body, ...secretChange, ...tokenChange, updatedAt: new Date() })
     .where(eq(appsTable.id, id))
     .returning();
   if (!app) {

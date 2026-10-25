@@ -4,10 +4,10 @@ import { db, agentToolsTable, appToolsTable, type Agent, type App, type Run } fr
 
 // Forma pubblica delle risorse: cosa esce dall'API e cosa no.
 
-/** App senza il segreto di servizio: solo l'indicazione che è impostato. */
+/** App senza i segreti (servizio e token GitHub): solo l'indicazione che sono impostati. */
 export function toPublicApp(app: App) {
-  const { serviceSecretEnc, ...rest } = app;
-  return { ...rest, serviceSecretSet: serviceSecretEnc != null };
+  const { serviceSecretEnc, sourceTokenEnc, ...rest } = app;
+  return { ...rest, serviceSecretSet: serviceSecretEnc != null, sourceTokenSet: sourceTokenEnc != null };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

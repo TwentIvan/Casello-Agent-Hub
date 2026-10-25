@@ -4,7 +4,12 @@
 // under ./providers instead.
 
 import OpenAI from "openai";
-import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
+import type {
+  ChatCompletion,
+  ChatCompletionCreateParamsNonStreaming,
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+} from "openai/resources/chat/completions";
 import { directProviders } from "./providers";
 import { DEFAULT_MODEL } from "./models";
 
@@ -70,6 +75,46 @@ function resolveModelId(modelKey: string): string {
   return slashIdx >= 0 ? modelKey.slice(slashIdx + 1) : modelKey;
 }
 
+// Telemetry tags for the join between transport (LiteLLM spend log) and
+// semantic (runs table) telemetry.
+function buildTelemetryMetadata(caller: string, agentId: number | undefined): { tags: string[] } {
+  return { tags: [`caller:${caller}`, ...(agentId !== undefined ? [`agent:${agentId}`] : [])] };
+}
+
+function buildProxyParams(
+  base: { model: string; messages: ChatCompletionMessageParam[] },
+  opts: { maxTokens?: number; temperature?: number; agentId?: number },
+  caller: string,
+): ChatCompletionCreateParamsNonStreaming {
+  const params: ChatCompletionCreateParamsNonStreaming = { ...base };
+  if (opts.maxTokens) params.max_completion_tokens = opts.maxTokens;
+  if (opts.temperature !== undefined) params.temperature = opts.temperature;
+  // `metadata` è un'estensione LiteLLM: nel tipo OpenAI ha un'altra forma.
+  (params as { metadata?: unknown }).metadata = buildTelemetryMetadata(caller, opts.agentId);
+  return params;
+}
+
+function readUsage(response: ChatCompletion): { promptTokens: number; completionTokens: number; cachedTokens: number } {
+  return {
+    promptTokens: response.usage?.prompt_tokens || 0,
+    completionTokens: response.usage?.completion_tokens || 0,
+    cachedTokens: response.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+  };
+}
+
+function logProxyUsage(
+  caller: string,
+  modelKey: string,
+  usage: { promptTokens: number; completionTokens: number; cachedTokens: number },
+  durationMs: number,
+): void {
+  console.log(
+    `[AI-GATEWAY] caller=${caller} model=${modelKey}` +
+      ` prompt_tokens=${usage.promptTokens} completion_tokens=${usage.completionTokens}` +
+      ` cached=${usage.cachedTokens} duration=${durationMs}ms`
+  );
+}
+
 class AiGateway {
   // LiteLLM espone un'API compatibile OpenAI: l'SDK openai fa solo da trasporto.
   private getGatewayClient(): OpenAI {
@@ -103,6 +148,7 @@ class AiGateway {
           "[AI-GATEWAY] Senza AI_GATEWAY_BASE_URL sono supportati solo messaggi di testo semplice (system, user, assistant).",
         );
       });
+      opts.signal?.throwIfAborted();
       const result = await this.complete({
         modelKey,
         messages,
@@ -121,32 +167,17 @@ class AiGateway {
 
     const client = this.getGatewayClient();
     const startMs = Date.now();
-    const params: any = {
-      model: modelKey,
-      messages: opts.messages,
-    };
+    const params = buildProxyParams({ model: modelKey, messages: opts.messages }, opts, caller);
     if (tools.length > 0) {
       params.tools = tools;
       params.tool_choice = "auto";
     }
-    if (opts.maxTokens) params.max_completion_tokens = opts.maxTokens;
-    if (opts.temperature !== undefined) params.temperature = opts.temperature;
-    params.metadata = {
-      tags: [`caller:${caller}`, ...(opts.agentId !== undefined ? [`agent:${opts.agentId}`] : [])],
-    };
 
     const response = await client.chat.completions.create(params, { signal: opts.signal });
     const durationMs = Date.now() - startMs;
-    const promptTokens = response.usage?.prompt_tokens || 0;
-    const completionTokens = response.usage?.completion_tokens || 0;
-    const cachedTokens = (response.usage as any)?.prompt_tokens_details?.cached_tokens ?? 0;
-
+    const { promptTokens, completionTokens, cachedTokens } = readUsage(response);
     // I contenuti dei messaggi non finiscono mai nei log.
-    console.log(
-      `[AI-GATEWAY] caller=${caller} model=${modelKey}` +
-        ` prompt_tokens=${promptTokens} completion_tokens=${completionTokens}` +
-        ` cached=${cachedTokens} duration=${durationMs}ms`
-    );
+    logProxyUsage(caller, modelKey, { promptTokens, completionTokens, cachedTokens }, durationMs);
 
     const message = response.choices[0]?.message;
     const toolCalls: ChatToolCall[] = [];
@@ -167,29 +198,17 @@ class AiGateway {
     if (process.env.AI_GATEWAY_BASE_URL) {
       const client = this.getGatewayClient();
 
-      const params: any = {
-        model: modelKey,
-        messages: opts.messages,
-      };
-      if (opts.maxTokens) params.max_completion_tokens = opts.maxTokens;
-      if (opts.temperature !== undefined) params.temperature = opts.temperature;
-      // Telemetry tags for the join between transport (LiteLLM spend log) and
-      // semantic (runs table) telemetry.
-      params.metadata = {
-        tags: [`caller:${caller}`, ...(opts.agentId !== undefined ? [`agent:${opts.agentId}`] : [])],
-      };
+      const params = buildProxyParams(
+        { model: modelKey, messages: opts.messages as ChatCompletionMessageParam[] },
+        opts,
+        caller,
+      );
 
       const response = await client.chat.completions.create(params);
       const durationMs = Date.now() - startMs;
-      const promptTokens = response.usage?.prompt_tokens || 0;
-      const completionTokens = response.usage?.completion_tokens || 0;
-      const cachedTokens = (response.usage as any)?.prompt_tokens_details?.cached_tokens ?? 0;
-
-      console.log(
-        `[AI-GATEWAY] caller=${caller} model=${modelKey}` +
-          ` prompt_tokens=${promptTokens} completion_tokens=${completionTokens}` +
-          ` cached=${cachedTokens} duration=${durationMs}ms`
-      );
+      const usage = readUsage(response);
+      const { promptTokens, completionTokens } = usage;
+      logProxyUsage(caller, modelKey, usage, durationMs);
 
       return {
         content: response.choices[0]?.message?.content || "",

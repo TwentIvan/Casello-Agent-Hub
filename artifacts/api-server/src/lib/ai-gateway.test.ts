@@ -122,6 +122,40 @@ describe("aiGateway.chat", () => {
     expect(requests).toHaveLength(0);
   });
 
+  it("complete in modalita proxy: corpo, log e risultato invariati", async () => {
+    const log = vi.mocked(console.log);
+    const res = await aiGateway.complete({
+      modelKey: "m",
+      messages: [{ role: "user", content: "x" }],
+      maxTokens: 50,
+      temperature: 0,
+      agentId: 3,
+      caller: "c",
+    });
+    expect(requests[0]!.body).toEqual({
+      model: "m",
+      messages: [{ role: "user", content: "x" }],
+      max_completion_tokens: 50,
+      temperature: 0,
+      metadata: { tags: ["caller:c", "agent:3"] },
+    });
+    expect(res).toMatchObject({ content: "ciao", modelKey: "m", promptTokens: 11, completionTokens: 5 });
+    expect(log.mock.calls[0]![0]).toMatch(
+      /^\[AI-GATEWAY\] caller=c model=m prompt_tokens=11 completion_tokens=5 cached=0 duration=\d+ms$/,
+    );
+  });
+
+  it("senza proxy rispetta il signal gia annullato", async () => {
+    delete process.env["AI_GATEWAY_BASE_URL"];
+    const spy = vi.spyOn(aiGateway, "complete");
+    const ac = new AbortController();
+    ac.abort();
+    await expect(
+      aiGateway.chat({ modelKey: "m", messages: [{ role: "user", content: "x" }], signal: ac.signal }),
+    ).rejects.toThrow();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   it("senza proxy e con tool lancia un errore", async () => {
     delete process.env["AI_GATEWAY_BASE_URL"];
     await expect(

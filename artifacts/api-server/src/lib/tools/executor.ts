@@ -39,21 +39,40 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Base dell'app, già verificata (http/https, niente credenziali, query o frammento). */
-function resolveBase(conn: AppConnection): { origin: string; path: string } {
-  const raw = (conn.internalBaseUrl ?? conn.baseUrl ?? "").trim();
+/**
+ * Verifica un indirizzo dell'app (baseUrl o internalBaseUrl): http/https, niente credenziali,
+ * query o frammento. Restituisce l'URL o il motivo (in italiano) per cui non è valido.
+ * Usata dall'esecutore e dalle route delle app, così le regole sono le stesse al salvataggio.
+ */
+export function parseAppBaseUrl(raw: string): { ok: true; url: URL } | { ok: false; error: string } {
   let base: URL;
   try {
-    base = new URL(raw);
+    base = new URL(raw.trim());
   } catch {
-    throw new ToolError("indirizzo dell'app non valido");
+    return { ok: false, error: "indirizzo dell'app non valido" };
   }
   if (base.protocol !== "http:" && base.protocol !== "https:") {
-    throw new ToolError("indirizzo dell'app non valido: serve http o https");
+    return { ok: false, error: "indirizzo dell'app non valido: serve http o https" };
   }
-  if (base.search || base.hash || base.username || base.password) {
-    throw new ToolError("indirizzo dell'app non valido: niente credenziali, query o frammento");
+  // Un "?" o "#" finali lasciano search/hash vuoti ma restano nel testo
+  if (base.search || base.hash || base.username || base.password || /[?#]/.test(raw)) {
+    return { ok: false, error: "indirizzo dell'app non valido: niente credenziali, query o frammento" };
   }
+  return { ok: true, url: base };
+}
+
+/** Motivo (in italiano) per cui un nome di header di autenticazione non è ammesso, o null. */
+export function checkAuthHeaderName(header: string): string | null {
+  if (!HEADER_NAME.test(header)) return "nome di header non valido";
+  if (RESERVED_HEADERS.has(header.toLowerCase())) return `l'header "${header}" è riservato`;
+  return null;
+}
+
+/** Base dell'app, già verificata (http/https, niente credenziali, query o frammento). */
+function resolveBase(conn: AppConnection): { origin: string; path: string } {
+  const parsed = parseAppBaseUrl(conn.internalBaseUrl ?? conn.baseUrl ?? "");
+  if (!parsed.ok) throw new ToolError(parsed.error);
+  const base = parsed.url;
   // Prefisso senza slash finale ("" per la radice): il path del tool inizia sempre con "/"
   return { origin: base.origin, path: base.pathname.replace(/\/+$/, "") };
 }
@@ -96,7 +115,7 @@ function queryValue(value: unknown): string {
 
 /** Valore dell'header di autenticazione; mai incluso nei messaggi di errore. */
 function authHeader(config: AuthConfig, secret: string, what: string): [string, string] {
-  if (!HEADER_NAME.test(config.header) || RESERVED_HEADERS.has(config.header.toLowerCase())) {
+  if (checkAuthHeaderName(config.header) !== null) {
     throw new ToolError(`header di autenticazione ${what} non valido nella configurazione dell'app`);
   }
   const value = config.scheme ? `${config.scheme} ${secret}` : secret;

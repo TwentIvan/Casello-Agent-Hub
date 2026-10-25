@@ -208,6 +208,55 @@ describe("app", () => {
   });
 });
 
+describe("validazione del collegamento all'app", () => {
+  const BAD_URLS = [
+    "ftp://mister.example",
+    "javascript:alert(1)",
+    "http://utente:pw@mister.example",
+    "http://mister.example/?x=1",
+    "http://mister.example/#frammento",
+    "non un url",
+  ];
+
+  it("POST: baseUrl o internalBaseUrl non validi → 400 con messaggio italiano", async () => {
+    for (const url of BAD_URLS) {
+      const a = await api("POST", "/apps", { name: "Mister", baseUrl: url });
+      expect(a.status, url).toBe(400);
+      expect(a.json.error, url).toMatch(/^baseUrl: indirizzo dell'app non valido/);
+      const b = await api("POST", "/apps", { name: "Mister", baseUrl: "http://mister.example", internalBaseUrl: url });
+      expect(b.status, url).toBe(400);
+      expect(b.json.error, url).toMatch(/^internalBaseUrl: indirizzo dell'app non valido/);
+    }
+    expect((await api("GET", "/apps")).json).toEqual([]);
+  });
+
+  it("POST: header di autenticazione non valido o riservato → 400", async () => {
+    for (const header of ["X Api Key", "Authorization:", "X-Token\r\nEvil", "Host", "content-type"]) {
+      const res = await api("POST", "/apps", { name: "Mister", baseUrl: "http://mister.example", userAuth: { header, scheme: null } });
+      expect(res.status, header).toBe(400);
+      expect(res.json.error, header).toMatch(/^userAuth\.header: /);
+      const svc = await api("POST", "/apps", { name: "Mister", baseUrl: "http://mister.example", serviceAuth: { header, scheme: null } });
+      expect(svc.status, header).toBe(400);
+      expect(svc.json.error, header).toMatch(/^serviceAuth\.header: /);
+    }
+  });
+
+  it("PATCH: stesse regole sui campi presenti; valori validi accettati", async () => {
+    const app = await createApp();
+    expect((await api("PATCH", `/apps/${app.id}`, { internalBaseUrl: "http://mister:3000/api?x=1" })).status).toBe(400);
+    expect((await api("PATCH", `/apps/${app.id}`, { baseUrl: "file:///etc/passwd" })).status).toBe(400);
+    expect((await api("PATCH", `/apps/${app.id}`, { serviceAuth: { header: "Bad Header", scheme: null } })).status).toBe(400);
+    const ok = await api("PATCH", `/apps/${app.id}`, {
+      baseUrl: "https://mister.example/app/",
+      internalBaseUrl: null,
+      userAuth: { header: "X-Api-Key", scheme: null },
+      serviceAuth: null,
+    });
+    expect(ok.status).toBe(200);
+    expect(ok.json.baseUrl).toBe("https://mister.example/app/");
+  });
+});
+
 describe("catalogo dei tool", () => {
   it("tool con definizione valida → 201", async () => {
     const app = await createApp();

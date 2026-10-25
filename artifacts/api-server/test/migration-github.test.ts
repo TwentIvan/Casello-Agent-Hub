@@ -56,10 +56,20 @@ describe("migrazione 2026-10-github", () => {
     const id1 = await userId("ivan@example.com");
     await ins(id1, "github", "100");
     // stessa identità del provider su un altro utente
-    await expect(ins(2, "github", "100")).rejects.toThrow(/user_identities_provider_user_unique/);
+    await expect(ins(id2, "github", "100")).rejects.toThrow(/user_identities_provider_user_unique/);
     // stesso utente, stesso provider, altro account
     await expect(ins(id1, "github", "101")).rejects.toThrow(/user_identities_user_provider_unique/);
     await ins(id1, "google", "100"); // altro provider: ammessa
+    // provider non previsto dall'enum
+    await expect(ins(id1, "gitlab", "100")).rejects.toThrow(/identity_provider/);
+  });
+
+  it("user_identities: eliminando l'utente si eliminano le sue identità (cascade)", async () => {
+    await db.exec(`INSERT INTO users (email) VALUES ('cascata@example.com')`);
+    const id = await userId("cascata@example.com");
+    await db.query(`INSERT INTO user_identities (user_id, provider, provider_user_id) VALUES ($1, 'github', '555')`, [id]);
+    await db.query("DELETE FROM users WHERE id = $1", [id]);
+    expect((await db.query("SELECT 1 FROM user_identities WHERE provider_user_id = '555'")).rows).toHaveLength(0);
   });
 
   it("github_installations: unica (user_id, installation_id) e cascade sull'utente", async () => {

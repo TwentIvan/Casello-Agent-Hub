@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import {
   type Agent,
+  ToolIdentity,
   ApiError,
   getGetAgentQueryKey,
   getGetDashboardStatsQueryKey,
@@ -26,18 +27,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useModelOptions } from "@/components/agents/model-options";
-import { ToolsSection } from "@/components/agents/tools-section";
+import { AgentRoleBadge } from "@/components/agents/agent-role-badge";
+import { AgentToolsSection } from "@/components/agents/agent-tools-section";
 import { RunPanel } from "@/components/runs/run-panel";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { AGENT_STATUS_LABELS, StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { TOOL_IDENTITY_LABELS } from "@/lib/tool-labels";
 
 const agentSchema = z.object({
   name: z.string().trim().min(1, "Il nome è obbligatorio."),
   systemPrompt: z.string(),
   model: z.string().min(1, "Scegli un modello."),
   status: z.enum(["active", "inactive", "draft"]),
+  area: z.string(),
+  defaultIdentity: z.enum(["user", "service"]),
 });
 
 type AgentValues = z.infer<typeof agentSchema>;
@@ -48,6 +53,8 @@ function toValues(agent: Agent): AgentValues {
     systemPrompt: agent.systemPrompt ?? "",
     model: agent.model ?? "",
     status: agent.status,
+    area: agent.area ?? "",
+    defaultIdentity: agent.defaultIdentity,
   };
 }
 
@@ -71,10 +78,16 @@ function AgentConfigForm({ agent }: { agent: Agent }) {
     },
   });
 
-  const onSubmit = (values: AgentValues) =>
+  const isGeneral = agent.role === "general";
+  const onSubmit = ({ area, ...values }: AgentValues) =>
     updateAgent.mutate({
       id: agent.id,
-      data: { ...values, systemPrompt: values.systemPrompt.trim() ? values.systemPrompt : null },
+      data: {
+        ...values,
+        systemPrompt: values.systemPrompt.trim() ? values.systemPrompt : null,
+        // L'area è solo degli agenti di area: il generale non la manda.
+        ...(isGeneral ? {} : { area: area.trim() ? area.trim() : null }),
+      },
     });
 
   return (
@@ -172,6 +185,49 @@ function AgentConfigForm({ agent }: { agent: Agent }) {
                 )}
               />
             </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {!isGeneral && (
+                <FormField
+                  control={form.control}
+                  name="area"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Area</FormLabel>
+                      <FormControl>
+                        <Input placeholder="es. Formazioni" {...field} />
+                      </FormControl>
+                      <FormDescription>Il dominio di cui l'agente si occupa.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+              <FormField
+                control={form.control}
+                name="defaultIdentity"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Identità predefinita</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {Object.values(ToolIdentity).map((value) => (
+                          <SelectItem key={value} value={value}>
+                            {TOOL_IDENTITY_LABELS[value]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>Con quale identità l'agente chiama i tool dell'app.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
             <div className="flex justify-end gap-2">
               <Button
                 type="button"
@@ -263,31 +319,34 @@ export default function AgentDetailPage() {
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-2xl font-semibold tracking-tight">{agent.data.name}</h2>
               <StatusBadge kind="agent" status={agent.data.status} />
+              <AgentRoleBadge agent={agent.data} />
             </div>
             <p className="text-sm text-muted-foreground">
               App:{" "}
-              <Link href="/apps" className="font-medium text-foreground hover:underline">
+              <Link href={`/apps/${agent.data.appId}`} className="font-medium text-foreground hover:underline">
                 {app.data?.name ?? "…"}
               </Link>
               {app.data && <span className="ml-2 font-mono text-xs">{app.data.baseUrl}</span>}
             </p>
           </div>
-          <Button variant="outline" className="text-destructive" onClick={() => setConfirmDelete(true)}>
-            <Trash2 />
-            Elimina agente
-          </Button>
+          {agent.data.role !== "general" && (
+            <Button variant="outline" className="text-destructive" onClick={() => setConfirmDelete(true)}>
+              <Trash2 />
+              Elimina agente
+            </Button>
+          )}
         </div>
       </div>
 
-      <RunPanel agent={agent.data} />
-      <AgentConfigForm key={agent.data.id} agent={agent.data} />
-      <ToolsSection agentId={agent.data.id} />
+      <RunPanel key={`run-${agent.data.id}`} agent={agent.data} />
+      <AgentConfigForm key={`config-${agent.data.id}`} agent={agent.data} />
+      <AgentToolsSection key={`tools-${agent.data.id}`} agent={agent.data} />
 
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title={`Eliminare «${agent.data.name}»?`}
-        description="Verranno eliminati anche i suoi strumenti e tutte le sue run. L'operazione non si può annullare."
+        description="Verranno eliminate anche tutte le sue run e l'assegnazione dei tool. L'operazione non si può annullare."
         pending={deleteAgent.isPending}
         onConfirm={() => deleteAgent.mutate({ id: agentId })}
       />

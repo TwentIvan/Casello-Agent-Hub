@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { PendingAction } from './pendingAction';
 import type { RunStatus } from './runStatus';
 
 export interface Run {
@@ -28,4 +29,10 @@ export interface Run {
   createdAt: Date;
   /** @nullable */
   finishedAt?: Date | null;
+  /** Azione in attesa del client (solo con stato awaiting_client) */
+  pendingAction?: PendingAction | null;
+  /** @nullable */
+  promptTokens?: number | null;
+  /** @nullable */
+  completionTokens?: number | null;
 }

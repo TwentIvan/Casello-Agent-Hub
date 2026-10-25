@@ -14,4 +14,6 @@ export const RunStatus = {
   running: 'running',
   succeeded: 'succeeded',
   failed: 'failed',
+  awaiting_client: 'awaiting_client',
+  cancelled: 'cancelled',
 } as const;

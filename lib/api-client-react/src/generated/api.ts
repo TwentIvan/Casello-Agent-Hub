@@ -22,21 +22,28 @@ import type {
 import type {
   Agent,
   AgentInput,
+  AgentToolsInput,
   AgentUpdate,
   App,
   AppInput,
+  AppTool,
+  AppToolInput,
+  AppToolUpdate,
   AppUpdate,
+  BadRequestResponse,
+  ConflictResponse,
   CurrentUser,
   DashboardStats,
+  ErrorResponse,
   HealthStatus,
   ListAgentsParams,
   ListRunsParams,
   Model,
   NotFoundResponse,
   Run,
+  RunResume,
+  RunStep,
   RunTrigger,
-  Tool,
-  ToolInput,
   UnauthorizedResponse
 } from './api.schemas';
 
@@ -984,7 +991,7 @@ export const deleteAgent = async (id: number, options?: RequestInit): Promise<vo
 
 
 
-export const getDeleteAgentMutationOptions = <TError = ErrorType<NotFoundResponse>,
+export const getDeleteAgentMutationOptions = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAgent>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteAgent>>, TError,{id: number}, TContext> => {
 
@@ -1013,12 +1020,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type DeleteAgentMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAgent>>>
 
-    export type DeleteAgentMutationError = ErrorType<NotFoundResponse>
+    export type DeleteAgentMutationError = ErrorType<NotFoundResponse | ErrorResponse>
 
     /**
  * @summary Elimina un agente
  */
-export const useDeleteAgent = <TError = ErrorType<NotFoundResponse>,
+export const useDeleteAgent = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAgent>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof deleteAgent>>,
@@ -1029,20 +1036,20 @@ export const useDeleteAgent = <TError = ErrorType<NotFoundResponse>,
       return useMutation(getDeleteAgentMutationOptions(options));
     }
 
-export const getListToolsUrl = (id: number,) => {
+export const getListAppToolsUrl = (id: number,) => {
 
 
 
 
-  return `/api/agents/${id}/tools`
+  return `/api/apps/${id}/tools`
 }
 
 /**
- * @summary Elenca gli strumenti di un agente
+ * @summary Elenca i tool del catalogo di un'app
  */
-export const listTools = async (id: number, options?: RequestInit): Promise<Tool[]> => {
+export const listAppTools = async (id: number, options?: RequestInit): Promise<AppTool[]> => {
 
-  return customFetch<Tool[]>(getListToolsUrl(id),
+  return customFetch<AppTool[]>(getListAppToolsUrl(id),
   {
     ...options,
     method: 'GET'
@@ -1055,45 +1062,45 @@ export const listTools = async (id: number, options?: RequestInit): Promise<Tool
 
 
 
-export const getListToolsQueryKey = (id: number,) => {
+export const getListAppToolsQueryKey = (id: number,) => {
     return [
-    `/api/agents/${id}/tools`
+    `/api/apps/${id}/tools`
     ] as const;
     }
 
 
-export const getListToolsQueryOptions = <TData = Awaited<ReturnType<typeof listTools>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTools>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListAppToolsQueryOptions = <TData = Awaited<ReturnType<typeof listAppTools>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAppTools>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListToolsQueryKey(id);
+  const queryKey =  queryOptions?.queryKey ?? getListAppToolsQueryKey(id);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTools>>> = ({ signal }) => listTools(id, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAppTools>>> = ({ signal }) => listAppTools(id, { signal, ...requestOptions });
 
 
 
 
 
-   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTools>>, TError, TData> & { queryKey: QueryKey }
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAppTools>>, TError, TData> & { queryKey: QueryKey }
 }
 
-export type ListToolsQueryResult = NonNullable<Awaited<ReturnType<typeof listTools>>>
-export type ListToolsQueryError = ErrorType<unknown>
+export type ListAppToolsQueryResult = NonNullable<Awaited<ReturnType<typeof listAppTools>>>
+export type ListAppToolsQueryError = ErrorType<NotFoundResponse>
 
 
 /**
- * @summary Elenca gli strumenti di un agente
+ * @summary Elenca i tool del catalogo di un'app
  */
 
-export function useListTools<TData = Awaited<ReturnType<typeof listTools>>, TError = ErrorType<unknown>>(
- id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTools>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export function useListAppTools<TData = Awaited<ReturnType<typeof listAppTools>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAppTools>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListToolsQueryOptions(id,options)
+  const queryOptions = getListAppToolsQueryOptions(id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -1106,37 +1113,37 @@ export function useListTools<TData = Awaited<ReturnType<typeof listTools>>, TErr
 
 
 
-export const getCreateToolUrl = (id: number,) => {
+export const getCreateAppToolUrl = (id: number,) => {
 
 
 
 
-  return `/api/agents/${id}/tools`
+  return `/api/apps/${id}/tools`
 }
 
 /**
- * @summary Aggiunge uno strumento a un agente
+ * @summary Aggiunge un tool al catalogo di un'app
  */
-export const createTool = async (id: number,
-    toolInput: ToolInput, options?: RequestInit): Promise<Tool> => {
+export const createAppTool = async (id: number,
+    appToolInput: AppToolInput, options?: RequestInit): Promise<AppTool> => {
 
-  return customFetch<Tool>(getCreateToolUrl(id),
+  return customFetch<AppTool>(getCreateAppToolUrl(id),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(toolInput)
+    body: JSON.stringify(appToolInput)
   }
 );}
 
 
 
 
-export const getCreateToolMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTool>>, TError,{id: number;data: BodyType<ToolInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createTool>>, TError,{id: number;data: BodyType<ToolInput>}, TContext> => {
+export const getCreateAppToolMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAppTool>>, TError,{id: number;data: BodyType<AppToolInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createAppTool>>, TError,{id: number;data: BodyType<AppToolInput>}, TContext> => {
 
-const mutationKey = ['createTool'];
+const mutationKey = ['createAppTool'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -1146,10 +1153,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTool>>, {id: number;data: BodyType<ToolInput>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAppTool>>, {id: number;data: BodyType<AppToolInput>}> = (props) => {
           const {id,data} = props ?? {};
 
-          return  createTool(id,data,requestOptions)
+          return  createAppTool(id,data,requestOptions)
         }
 
 
@@ -1159,40 +1166,113 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type CreateToolMutationResult = NonNullable<Awaited<ReturnType<typeof createTool>>>
-    export type CreateToolMutationBody = BodyType<ToolInput>
-    export type CreateToolMutationError = ErrorType<unknown>
+    export type CreateAppToolMutationResult = NonNullable<Awaited<ReturnType<typeof createAppTool>>>
+    export type CreateAppToolMutationBody = BodyType<AppToolInput>
+    export type CreateAppToolMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
 
     /**
- * @summary Aggiunge uno strumento a un agente
+ * @summary Aggiunge un tool al catalogo di un'app
  */
-export const useCreateTool = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTool>>, TError,{id: number;data: BodyType<ToolInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useCreateAppTool = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAppTool>>, TError,{id: number;data: BodyType<AppToolInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
-        Awaited<ReturnType<typeof createTool>>,
+        Awaited<ReturnType<typeof createAppTool>>,
         TError,
-        {id: number;data: BodyType<ToolInput>},
+        {id: number;data: BodyType<AppToolInput>},
         TContext
       > => {
-      return useMutation(getCreateToolMutationOptions(options));
+      return useMutation(getCreateAppToolMutationOptions(options));
     }
 
-export const getDeleteToolUrl = (agentId: number,
+export const getUpdateAppToolUrl = (id: number,
     toolId: number,) => {
 
 
 
 
-  return `/api/agents/${agentId}/tools/${toolId}`
+  return `/api/apps/${id}/tools/${toolId}`
 }
 
 /**
- * @summary Rimuove uno strumento da un agente
+ * @summary Aggiorna un tool del catalogo
  */
-export const deleteTool = async (agentId: number,
+export const updateAppTool = async (id: number,
+    toolId: number,
+    appToolUpdate: AppToolUpdate, options?: RequestInit): Promise<AppTool> => {
+
+  return customFetch<AppTool>(getUpdateAppToolUrl(id,toolId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(appToolUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateAppToolMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAppTool>>, TError,{id: number;toolId: number;data: BodyType<AppToolUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAppTool>>, TError,{id: number;toolId: number;data: BodyType<AppToolUpdate>}, TContext> => {
+
+const mutationKey = ['updateAppTool'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAppTool>>, {id: number;toolId: number;data: BodyType<AppToolUpdate>}> = (props) => {
+          const {id,toolId,data} = props ?? {};
+
+          return  updateAppTool(id,toolId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAppToolMutationResult = NonNullable<Awaited<ReturnType<typeof updateAppTool>>>
+    export type UpdateAppToolMutationBody = BodyType<AppToolUpdate>
+    export type UpdateAppToolMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Aggiorna un tool del catalogo
+ */
+export const useUpdateAppTool = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAppTool>>, TError,{id: number;toolId: number;data: BodyType<AppToolUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAppTool>>,
+        TError,
+        {id: number;toolId: number;data: BodyType<AppToolUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateAppToolMutationOptions(options));
+    }
+
+export const getDeleteAppToolUrl = (id: number,
+    toolId: number,) => {
+
+
+
+
+  return `/api/apps/${id}/tools/${toolId}`
+}
+
+/**
+ * @summary Elimina un tool dal catalogo
+ */
+export const deleteAppTool = async (id: number,
     toolId: number, options?: RequestInit): Promise<void> => {
 
-  return customFetch<void>(getDeleteToolUrl(agentId,toolId),
+  return customFetch<void>(getDeleteAppToolUrl(id,toolId),
   {
     ...options,
     method: 'DELETE'
@@ -1204,11 +1284,11 @@ export const deleteTool = async (agentId: number,
 
 
 
-export const getDeleteToolMutationOptions = <TError = ErrorType<NotFoundResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTool>>, TError,{agentId: number;toolId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof deleteTool>>, TError,{agentId: number;toolId: number}, TContext> => {
+export const getDeleteAppToolMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAppTool>>, TError,{id: number;toolId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteAppTool>>, TError,{id: number;toolId: number}, TContext> => {
 
-const mutationKey = ['deleteTool'];
+const mutationKey = ['deleteAppTool'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -1218,10 +1298,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTool>>, {agentId: number;toolId: number}> = (props) => {
-          const {agentId,toolId} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteAppTool>>, {id: number;toolId: number}> = (props) => {
+          const {id,toolId} = props ?? {};
 
-          return  deleteTool(agentId,toolId,requestOptions)
+          return  deleteAppTool(id,toolId,requestOptions)
         }
 
 
@@ -1231,22 +1311,94 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type DeleteToolMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTool>>>
+    export type DeleteAppToolMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAppTool>>>
 
-    export type DeleteToolMutationError = ErrorType<NotFoundResponse>
+    export type DeleteAppToolMutationError = ErrorType<NotFoundResponse>
 
     /**
- * @summary Rimuove uno strumento da un agente
+ * @summary Elimina un tool dal catalogo
  */
-export const useDeleteTool = <TError = ErrorType<NotFoundResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTool>>, TError,{agentId: number;toolId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useDeleteAppTool = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAppTool>>, TError,{id: number;toolId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
-        Awaited<ReturnType<typeof deleteTool>>,
+        Awaited<ReturnType<typeof deleteAppTool>>,
         TError,
-        {agentId: number;toolId: number},
+        {id: number;toolId: number},
         TContext
       > => {
-      return useMutation(getDeleteToolMutationOptions(options));
+      return useMutation(getDeleteAppToolMutationOptions(options));
+    }
+
+export const getSetAgentToolsUrl = (id: number,) => {
+
+
+
+
+  return `/api/agents/${id}/tools`
+}
+
+/**
+ * Sostituisce l'insieme dei tool assegnati all'agente. I tool devono appartenere alla stessa app dell'agente.
+ * @summary Imposta i tool di un agente
+ */
+export const setAgentTools = async (id: number,
+    agentToolsInput: AgentToolsInput, options?: RequestInit): Promise<Agent> => {
+
+  return customFetch<Agent>(getSetAgentToolsUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(agentToolsInput)
+  }
+);}
+
+
+
+
+export const getSetAgentToolsMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAgentTools>>, TError,{id: number;data: BodyType<AgentToolsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setAgentTools>>, TError,{id: number;data: BodyType<AgentToolsInput>}, TContext> => {
+
+const mutationKey = ['setAgentTools'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setAgentTools>>, {id: number;data: BodyType<AgentToolsInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  setAgentTools(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetAgentToolsMutationResult = NonNullable<Awaited<ReturnType<typeof setAgentTools>>>
+    export type SetAgentToolsMutationBody = BodyType<AgentToolsInput>
+    export type SetAgentToolsMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Imposta i tool di un agente
+ */
+export const useSetAgentTools = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAgentTools>>, TError,{id: number;data: BodyType<AgentToolsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setAgentTools>>,
+        TError,
+        {id: number;data: BodyType<AgentToolsInput>},
+        TContext
+      > => {
+      return useMutation(getSetAgentToolsMutationOptions(options));
     }
 
 export const getListRunsUrl = (params?: ListRunsParams,) => {
@@ -1481,6 +1633,155 @@ export function useGetRun<TData = Awaited<ReturnType<typeof getRun>>, TError = E
 
 
 
+
+export const getListRunStepsUrl = (id: number,) => {
+
+
+
+
+  return `/api/runs/${id}/steps`
+}
+
+/**
+ * @summary Elenca i passi di un'esecuzione (in ordine di posizione)
+ */
+export const listRunSteps = async (id: number, options?: RequestInit): Promise<RunStep[]> => {
+
+  return customFetch<RunStep[]>(getListRunStepsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListRunStepsQueryKey = (id: number,) => {
+    return [
+    `/api/runs/${id}/steps`
+    ] as const;
+    }
+
+
+export const getListRunStepsQueryOptions = <TData = Awaited<ReturnType<typeof listRunSteps>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRunSteps>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListRunStepsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listRunSteps>>> = ({ signal }) => listRunSteps(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRunSteps>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListRunStepsQueryResult = NonNullable<Awaited<ReturnType<typeof listRunSteps>>>
+export type ListRunStepsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Elenca i passi di un'esecuzione (in ordine di posizione)
+ */
+
+export function useListRunSteps<TData = Awaited<ReturnType<typeof listRunSteps>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRunSteps>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListRunStepsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getResumeRunUrl = (id: number,) => {
+
+
+
+
+  return `/api/runs/${id}/resume`
+}
+
+/**
+ * Conferma o rifiuta l'azione in sospeso di una run in stato awaiting_client e la riavvia in background. Risponde 409 se la run non è in pausa o la pausa è scaduta.
+ * @summary Riprende un'esecuzione in attesa del client
+ */
+export const resumeRun = async (id: number,
+    runResume: RunResume, options?: RequestInit): Promise<Run> => {
+
+  return customFetch<Run>(getResumeRunUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(runResume)
+  }
+);}
+
+
+
+
+export const getResumeRunMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeRun>>, TError,{id: number;data: BodyType<RunResume>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resumeRun>>, TError,{id: number;data: BodyType<RunResume>}, TContext> => {
+
+const mutationKey = ['resumeRun'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resumeRun>>, {id: number;data: BodyType<RunResume>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  resumeRun(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResumeRunMutationResult = NonNullable<Awaited<ReturnType<typeof resumeRun>>>
+    export type ResumeRunMutationBody = BodyType<RunResume>
+    export type ResumeRunMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Riprende un'esecuzione in attesa del client
+ */
+export const useResumeRun = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeRun>>, TError,{id: number;data: BodyType<RunResume>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resumeRun>>,
+        TError,
+        {id: number;data: BodyType<RunResume>},
+        TContext
+      > => {
+      return useMutation(getResumeRunMutationOptions(options));
+    }
 
 export const getGetDashboardStatsUrl = () => {
 

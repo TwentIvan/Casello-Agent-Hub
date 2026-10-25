@@ -36,11 +36,26 @@ export const LogoutResponse = zod.void()
 /**
  * @summary Elenca tutte le app registrate
  */
+
+
+
+
 export const ListAppsResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
+  "slug": zod.string(),
   "description": zod.string().nullish(),
   "baseUrl": zod.string(),
+  "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
+  "userAuth": zod.union([zod.object({
+  "header": zod.string().min(1),
+  "scheme": zod.string().nullable()
+}).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
+  "serviceAuth": zod.union([zod.object({
+  "header": zod.string().min(1),
+  "scheme": zod.string().nullable()
+}).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
+  "serviceSecretSet": zod.boolean().describe('Indica se il segreto di servizio è impostato (il valore non è mai esposto)'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -55,18 +70,45 @@ export const ListAppsResponse = zod.array(ListAppsResponseItem)
 
 
 
+
+
 export const CreateAppBody = zod.object({
   "name": zod.string().min(1),
   "description": zod.string().optional(),
   "baseUrl": zod.string().min(1),
+  "internalBaseUrl": zod.string().nullish(),
+  "userAuth": zod.union([zod.object({
+  "header": zod.string().min(1),
+  "scheme": zod.string().nullable()
+}).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
+  "serviceAuth": zod.union([zod.object({
+  "header": zod.string().min(1),
+  "scheme": zod.string().nullable()
+}).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
+  "serviceSecret": zod.string().optional().describe('Segreto di servizio (solo scrittura, salvato cifrato)'),
   "status": zod.enum(['active', 'inactive']).optional()
 })
+
+
+
+
 
 export const CreateAppResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
+  "slug": zod.string(),
   "description": zod.string().nullish(),
   "baseUrl": zod.string(),
+  "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
+  "userAuth": zod.union([zod.object({
+  "header": zod.string().min(1),
+  "scheme": zod.string().nullable()
+}).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
+  "serviceAuth": zod.union([zod.object({
+  "header": zod.string().min(1),
+  "scheme": zod.string().nullable()
+}).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
+  "serviceSecretSet": zod.boolean().describe('Indica se il segreto di servizio è impostato (il valore non è mai esposto)'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -80,11 +122,26 @@ export const GetAppParams = zod.object({
   "id": zod.coerce.number()
 })
 
+
+
+
+
 export const GetAppResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
+  "slug": zod.string(),
   "description": zod.string().nullish(),
   "baseUrl": zod.string(),
+  "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
+  "userAuth": zod.union([zod.object({
+  "header": zod.string().min(1),
+  "scheme": zod.string().nullable()
+}).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
+  "serviceAuth": zod.union([zod.object({
+  "header": zod.string().min(1),
+  "scheme": zod.string().nullable()
+}).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
+  "serviceSecretSet": zod.boolean().describe('Indica se il segreto di servizio è impostato (il valore non è mai esposto)'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -102,18 +159,45 @@ export const UpdateAppParams = zod.object({
 
 
 
+
+
 export const UpdateAppBody = zod.object({
   "name": zod.string().min(1).optional(),
   "description": zod.string().nullish(),
   "baseUrl": zod.string().min(1).optional(),
+  "internalBaseUrl": zod.string().nullish(),
+  "userAuth": zod.union([zod.object({
+  "header": zod.string().min(1),
+  "scheme": zod.string().nullable()
+}).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
+  "serviceAuth": zod.union([zod.object({
+  "header": zod.string().min(1),
+  "scheme": zod.string().nullable()
+}).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
+  "serviceSecret": zod.string().nullish().describe('Segreto di servizio (solo scrittura); null lo cancella'),
   "status": zod.enum(['active', 'inactive']).optional()
 })
+
+
+
+
 
 export const UpdateAppResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
+  "slug": zod.string(),
   "description": zod.string().nullish(),
   "baseUrl": zod.string(),
+  "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
+  "userAuth": zod.union([zod.object({
+  "header": zod.string().min(1),
+  "scheme": zod.string().nullable()
+}).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
+  "serviceAuth": zod.union([zod.object({
+  "header": zod.string().min(1),
+  "scheme": zod.string().nullable()
+}).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
+  "serviceSecretSet": zod.boolean().describe('Indica se il segreto di servizio è impostato (il valore non è mai esposto)'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -144,6 +228,10 @@ export const ListAgentsResponseItem = zod.object({
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional(),
   "status": zod.enum(['active', 'inactive', 'draft']),
+  "role": zod.enum(['general', 'area']),
+  "area": zod.string().nullish(),
+  "defaultIdentity": zod.enum(['user', 'service']),
+  "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -171,6 +259,10 @@ export const CreateAgentResponse = zod.object({
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional(),
   "status": zod.enum(['active', 'inactive', 'draft']),
+  "role": zod.enum(['general', 'area']),
+  "area": zod.string().nullish(),
+  "defaultIdentity": zod.enum(['user', 'service']),
+  "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -190,6 +282,10 @@ export const GetAgentResponse = zod.object({
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional(),
   "status": zod.enum(['active', 'inactive', 'draft']),
+  "role": zod.enum(['general', 'area']),
+  "area": zod.string().nullish(),
+  "defaultIdentity": zod.enum(['user', 'service']),
+  "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -209,7 +305,9 @@ export const UpdateAgentBody = zod.object({
   "name": zod.string().min(1).optional(),
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional(),
-  "status": zod.enum(['active', 'inactive', 'draft']).optional()
+  "status": zod.enum(['active', 'inactive', 'draft']).optional(),
+  "area": zod.string().nullish(),
+  "defaultIdentity": zod.enum(['user', 'service']).optional()
 })
 
 export const UpdateAgentResponse = zod.object({
@@ -219,6 +317,10 @@ export const UpdateAgentResponse = zod.object({
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional(),
   "status": zod.enum(['active', 'inactive', 'draft']),
+  "role": zod.enum(['general', 'area']),
+  "area": zod.string().nullish(),
+  "defaultIdentity": zod.enum(['user', 'service']),
+  "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -235,65 +337,156 @@ export const DeleteAgentResponse = zod.void()
 
 
 /**
- * @summary Elenca gli strumenti di un agente
+ * @summary Elenca i tool del catalogo di un'app
  */
-export const ListToolsParams = zod.object({
+export const ListAppToolsParams = zod.object({
   "id": zod.coerce.number()
 })
 
-export const ListToolsResponseItem = zod.object({
+export const ListAppToolsResponseItem = zod.object({
   "id": zod.number(),
-  "agentId": zod.number(),
+  "appId": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
-  "httpMethod": zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
-  "endpoint": zod.string(),
-  "parametersSchema": zod.string().nullish().describe('JSON Schema dei parametri accettati dallo strumento'),
-  "createdAt": zod.coerce.date()
+  "kind": zod.enum(['http', 'ui', 'composite']),
+  "identity": zod.enum(['user', 'service']),
+  "requiresConfirmation": zod.boolean(),
+  "readOnly": zod.boolean(),
+  "status": zod.enum(['draft', 'active', 'disabled']),
+  "paramsSchema": zod.record(zod.string(), zod.unknown()).describe('JSON Schema dei parametri accettati dal tool'),
+  "definition": zod.record(zod.string(), zod.unknown()).describe('Definizione dell\'esecuzione (dipende da kind)'),
+  "evidence": zod.record(zod.string(), zod.unknown()).nullish().describe('Evidenze da cui il tool è stato derivato'),
+  "needsVerification": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
 })
-export const ListToolsResponse = zod.array(ListToolsResponseItem)
+export const ListAppToolsResponse = zod.array(ListAppToolsResponseItem)
 
 
 /**
- * @summary Aggiunge uno strumento a un agente
+ * @summary Aggiunge un tool al catalogo di un'app
  */
-export const CreateToolParams = zod.object({
+export const CreateAppToolParams = zod.object({
   "id": zod.coerce.number()
 })
 
 
 
 
-
-export const CreateToolBody = zod.object({
+export const CreateAppToolBody = zod.object({
   "name": zod.string().min(1),
-  "description": zod.string().optional(),
-  "httpMethod": zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
-  "endpoint": zod.string().min(1),
-  "parametersSchema": zod.string().optional()
+  "description": zod.string().nullish(),
+  "kind": zod.enum(['http', 'ui', 'composite']),
+  "identity": zod.enum(['user', 'service']).optional(),
+  "requiresConfirmation": zod.boolean().optional(),
+  "readOnly": zod.boolean().optional(),
+  "status": zod.enum(['draft', 'active', 'disabled']).optional(),
+  "paramsSchema": zod.record(zod.string(), zod.unknown()).optional(),
+  "definition": zod.record(zod.string(), zod.unknown()),
+  "evidence": zod.record(zod.string(), zod.unknown()).nullish(),
+  "needsVerification": zod.boolean().optional()
 })
 
-export const CreateToolResponse = zod.object({
+export const CreateAppToolResponse = zod.object({
   "id": zod.number(),
-  "agentId": zod.number(),
+  "appId": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
-  "httpMethod": zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
-  "endpoint": zod.string(),
-  "parametersSchema": zod.string().nullish().describe('JSON Schema dei parametri accettati dallo strumento'),
-  "createdAt": zod.coerce.date()
+  "kind": zod.enum(['http', 'ui', 'composite']),
+  "identity": zod.enum(['user', 'service']),
+  "requiresConfirmation": zod.boolean(),
+  "readOnly": zod.boolean(),
+  "status": zod.enum(['draft', 'active', 'disabled']),
+  "paramsSchema": zod.record(zod.string(), zod.unknown()).describe('JSON Schema dei parametri accettati dal tool'),
+  "definition": zod.record(zod.string(), zod.unknown()).describe('Definizione dell\'esecuzione (dipende da kind)'),
+  "evidence": zod.record(zod.string(), zod.unknown()).nullish().describe('Evidenze da cui il tool è stato derivato'),
+  "needsVerification": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
 })
 
 
 /**
- * @summary Rimuove uno strumento da un agente
+ * @summary Aggiorna un tool del catalogo
  */
-export const DeleteToolParams = zod.object({
-  "agentId": zod.coerce.number(),
+export const UpdateAppToolParams = zod.object({
+  "id": zod.coerce.number(),
   "toolId": zod.coerce.number()
 })
 
-export const DeleteToolResponse = zod.void()
+
+
+
+export const UpdateAppToolBody = zod.object({
+  "name": zod.string().min(1).optional(),
+  "description": zod.string().nullish(),
+  "kind": zod.enum(['http', 'ui', 'composite']).optional(),
+  "identity": zod.enum(['user', 'service']).optional(),
+  "requiresConfirmation": zod.boolean().optional(),
+  "readOnly": zod.boolean().optional(),
+  "status": zod.enum(['draft', 'active', 'disabled']).optional(),
+  "paramsSchema": zod.record(zod.string(), zod.unknown()).optional(),
+  "definition": zod.record(zod.string(), zod.unknown()).optional(),
+  "evidence": zod.record(zod.string(), zod.unknown()).nullish(),
+  "needsVerification": zod.boolean().optional()
+})
+
+export const UpdateAppToolResponse = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "kind": zod.enum(['http', 'ui', 'composite']),
+  "identity": zod.enum(['user', 'service']),
+  "requiresConfirmation": zod.boolean(),
+  "readOnly": zod.boolean(),
+  "status": zod.enum(['draft', 'active', 'disabled']),
+  "paramsSchema": zod.record(zod.string(), zod.unknown()).describe('JSON Schema dei parametri accettati dal tool'),
+  "definition": zod.record(zod.string(), zod.unknown()).describe('Definizione dell\'esecuzione (dipende da kind)'),
+  "evidence": zod.record(zod.string(), zod.unknown()).nullish().describe('Evidenze da cui il tool è stato derivato'),
+  "needsVerification": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Elimina un tool dal catalogo
+ */
+export const DeleteAppToolParams = zod.object({
+  "id": zod.coerce.number(),
+  "toolId": zod.coerce.number()
+})
+
+export const DeleteAppToolResponse = zod.void()
+
+
+/**
+ * Sostituisce l'insieme dei tool assegnati all'agente. I tool devono appartenere alla stessa app dell'agente.
+ * @summary Imposta i tool di un agente
+ */
+export const SetAgentToolsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SetAgentToolsBody = zod.object({
+  "toolIds": zod.array(zod.number())
+})
+
+export const SetAgentToolsResponse = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "name": zod.string(),
+  "systemPrompt": zod.string().nullish(),
+  "model": zod.string().optional(),
+  "status": zod.enum(['active', 'inactive', 'draft']),
+  "role": zod.enum(['general', 'area']),
+  "area": zod.string().nullish(),
+  "defaultIdentity": zod.enum(['user', 'service']),
+  "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
 
 
 /**
@@ -301,19 +494,27 @@ export const DeleteToolResponse = zod.void()
  */
 export const ListRunsQueryParams = zod.object({
   "agentId": zod.coerce.number().optional().describe('Filtra per agente'),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed']).optional().describe('Filtra per stato')
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).optional().describe('Filtra per stato')
 })
 
 export const ListRunsResponseItem = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed']),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
   "durationMs": zod.number().nullish(),
   "createdAt": zod.coerce.date(),
-  "finishedAt": zod.coerce.date().nullish()
+  "finishedAt": zod.coerce.date().nullish(),
+  "pendingAction": zod.union([zod.object({
+  "kind": zod.enum(['confirmation', 'ui']),
+  "toolName": zod.string(),
+  "args": zod.record(zod.string(), zod.unknown()),
+  "summary": zod.string()
+}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
+  "promptTokens": zod.number().nullish(),
+  "completionTokens": zod.number().nullish()
 })
 export const ListRunsResponse = zod.array(ListRunsResponseItem)
 
@@ -326,6 +527,10 @@ export const TriggerRunParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const TriggerRunHeader = zod.object({
+  "X-App-User-Token": zod.string().optional().describe('Token dell\'utente finale nell\'app, usato per i tool con identità user. Non viene mai salvato né scritto nei log.')
+})
+
 export const TriggerRunBody = zod.object({
   "input": zod.string().optional().describe('Input testuale da passare all\'agente')
 })
@@ -333,13 +538,21 @@ export const TriggerRunBody = zod.object({
 export const TriggerRunResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed']),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
   "durationMs": zod.number().nullish(),
   "createdAt": zod.coerce.date(),
-  "finishedAt": zod.coerce.date().nullish()
+  "finishedAt": zod.coerce.date().nullish(),
+  "pendingAction": zod.union([zod.object({
+  "kind": zod.enum(['confirmation', 'ui']),
+  "toolName": zod.string(),
+  "args": zod.record(zod.string(), zod.unknown()),
+  "summary": zod.string()
+}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
+  "promptTokens": zod.number().nullish(),
+  "completionTokens": zod.number().nullish()
 })
 
 
@@ -353,13 +566,81 @@ export const GetRunParams = zod.object({
 export const GetRunResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed']),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
   "durationMs": zod.number().nullish(),
   "createdAt": zod.coerce.date(),
-  "finishedAt": zod.coerce.date().nullish()
+  "finishedAt": zod.coerce.date().nullish(),
+  "pendingAction": zod.union([zod.object({
+  "kind": zod.enum(['confirmation', 'ui']),
+  "toolName": zod.string(),
+  "args": zod.record(zod.string(), zod.unknown()),
+  "summary": zod.string()
+}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
+  "promptTokens": zod.number().nullish(),
+  "completionTokens": zod.number().nullish()
+})
+
+
+/**
+ * @summary Elenca i passi di un'esecuzione (in ordine di posizione)
+ */
+export const ListRunStepsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListRunStepsResponseItem = zod.object({
+  "id": zod.number(),
+  "runId": zod.number(),
+  "position": zod.number(),
+  "type": zod.string().describe('model (chiamata al modello) o tool (chiamata a un tool)'),
+  "toolName": zod.string().nullish(),
+  "args": zod.record(zod.string(), zod.unknown()).nullish(),
+  "ok": zod.boolean().nullish(),
+  "httpStatus": zod.number().nullish(),
+  "durationMs": zod.number().nullish(),
+  "error": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+export const ListRunStepsResponse = zod.array(ListRunStepsResponseItem)
+
+
+/**
+ * Conferma o rifiuta l'azione in sospeso di una run in stato awaiting_client e la riavvia in background. Risponde 409 se la run non è in pausa o la pausa è scaduta.
+ * @summary Riprende un'esecuzione in attesa del client
+ */
+export const ResumeRunParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ResumeRunHeader = zod.object({
+  "X-App-User-Token": zod.string().optional().describe('Token dell\'utente finale nell\'app, se quello dato all\'avvio non è più in memoria (riavvio del server o pausa lunga). Non viene mai salvato né scritto nei log.')
+})
+
+export const ResumeRunBody = zod.object({
+  "decision": zod.enum(['approved', 'rejected'])
+})
+
+export const ResumeRunResponse = zod.object({
+  "id": zod.number(),
+  "agentId": zod.number(),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
+  "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
+  "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
+  "errorMessage": zod.string().nullish(),
+  "durationMs": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullish(),
+  "pendingAction": zod.union([zod.object({
+  "kind": zod.enum(['confirmation', 'ui']),
+  "toolName": zod.string(),
+  "args": zod.record(zod.string(), zod.unknown()),
+  "summary": zod.string()
+}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
+  "promptTokens": zod.number().nullish(),
+  "completionTokens": zod.number().nullish()
 })
 
 

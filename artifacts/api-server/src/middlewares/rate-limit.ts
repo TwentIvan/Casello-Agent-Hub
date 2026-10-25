@@ -31,3 +31,7 @@ export function rateLimit({ limit, windowMs }: { limit: number; windowMs: number
     next();
   };
 }
+
+// Ogni run (avvio o ripresa) consuma token sul gateway: massimo 10 al minuto per IP,
+// con un solo contatore condiviso da POST /agents/:id/runs e POST /runs/:id/resume.
+export const runRateLimit = rateLimit({ limit: 10, windowMs: 60_000 });

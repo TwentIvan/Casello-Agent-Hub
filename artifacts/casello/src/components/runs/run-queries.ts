@@ -1,6 +1,6 @@
 import type { Run, RunStatus } from "@workspace/api-client-react";
 
-export const ACTIVE_RUN_STATUSES: RunStatus[] = ["pending", "running"];
+export const ACTIVE_RUN_STATUSES: RunStatus[] = ["pending", "running", "awaiting_client"];
 
 export function isRunActive(run: Pick<Run, "status">): boolean {
   return ACTIVE_RUN_STATUSES.includes(run.status);

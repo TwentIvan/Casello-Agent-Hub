@@ -17,7 +17,7 @@ tags:
   - name: agents
     description: Configurazioni agenti
   - name: tools
-    description: Strumenti degli agenti
+    description: Catalogo dei tool delle app e loro assegnazione agli agenti
   - name: runs
     description: Esecuzioni degli agenti
   - name: dashboard
@@ -239,29 +239,37 @@ paths:
           description: Agente eliminato
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: L'agente generale di un'app non si può eliminare
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   # ─── Tools ──────────────────────────────────────────────────────────────────
 
-  /agents/{id}/tools:
+  /apps/{id}/tools:
     get:
-      operationId: listTools
+      operationId: listAppTools
       tags: [tools]
-      summary: Elenca gli strumenti di un agente
+      summary: Elenca i tool del catalogo di un'app
       parameters:
         - $ref: "#/components/parameters/IdParam"
       responses:
         "200":
-          description: Lista di strumenti
+          description: Lista di tool
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Tool"
+                  $ref: "#/components/schemas/AppTool"
+        "404":
+          $ref: "#/components/responses/NotFound"
     post:
-      operationId: createTool
+      operationId: createAppTool
       tags: [tools]
-      summary: Aggiunge uno strumento a un agente
+      summary: Aggiunge un tool al catalogo di un'app
       parameters:
         - $ref: "#/components/parameters/IdParam"
       requestBody:
@@ -269,34 +277,86 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ToolInput"
+              $ref: "#/components/schemas/AppToolInput"
       responses:
         "201":
-          description: Strumento creato
+          description: Tool creato
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Tool"
+                $ref: "#/components/schemas/AppTool"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
-  /agents/{agentId}/tools/{toolId}:
-    delete:
-      operationId: deleteTool
+  /apps/{id}/tools/{toolId}:
+    patch:
+      operationId: updateAppTool
       tags: [tools]
-      summary: Rimuove uno strumento da un agente
+      summary: Aggiorna un tool del catalogo
       parameters:
-        - name: agentId
-          in: path
-          required: true
-          schema:
-            type: integer
-        - name: toolId
-          in: path
-          required: true
-          schema:
-            type: integer
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/ToolIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppToolUpdate"
+      responses:
+        "200":
+          description: Tool aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppTool"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      operationId: deleteAppTool
+      tags: [tools]
+      summary: Elimina un tool dal catalogo
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/ToolIdParam"
       responses:
         "204":
-          description: Strumento rimosso
+          description: Tool eliminato
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /agents/{id}/tools:
+    put:
+      operationId: setAgentTools
+      tags: [tools]
+      summary: Imposta i tool di un agente
+      description: >-
+        Sostituisce l'insieme dei tool assegnati all'agente. I tool devono appartenere
+        alla stessa app dell'agente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentToolsInput"
+      responses:
+        "200":
+          description: Agente con i tool aggiornati
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -337,6 +397,14 @@ paths:
       summary: Avvia un'esecuzione dell'agente
       parameters:
         - $ref: "#/components/parameters/IdParam"
+        - name: X-App-User-Token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: >-
+            Token dell'utente finale nell'app, usato per i tool con identità user.
+            Non viene mai salvato né scritto nei log.
       requestBody:
         required: true
         content:
@@ -372,6 +440,63 @@ paths:
                 $ref: "#/components/schemas/Run"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /runs/{id}/steps:
+    get:
+      operationId: listRunSteps
+      tags: [runs]
+      summary: Elenca i passi di un'esecuzione (in ordine di posizione)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Passi dell'esecuzione
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RunStep"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runs/{id}/resume:
+    post:
+      operationId: resumeRun
+      tags: [runs]
+      summary: Riprende un'esecuzione in attesa del client
+      description: >-
+        Conferma o rifiuta l'azione in sospeso di una run in stato awaiting_client e la
+        riavvia in background. Risponde 409 se la run non è in pausa o la pausa è scaduta.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: X-App-User-Token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: >-
+            Token dell'utente finale nell'app, se quello dato all'avvio non è più in memoria
+            (riavvio del server o pausa lunga). Non viene mai salvato né scritto nei log.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunResume"
+      responses:
+        "202":
+          description: Esecuzione ripresa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   # ─── Dashboard ──────────────────────────────────────────────────────────────
 
@@ -414,7 +539,28 @@ components:
       schema:
         type: integer
 
+    ToolIdParam:
+      name: toolId
+      in: path
+      required: true
+      schema:
+        type: integer
+
   responses:
+    BadRequest:
+      description: Richiesta non valida
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Conflict:
+      description: Conflitto con lo stato corrente della risorsa
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
     Unauthorized:
       description: Login richiesto
       content:
@@ -465,18 +611,45 @@ components:
       type: string
       enum: [active, inactive]
 
+    AuthConfig:
+      type: object
+      required: [header, scheme]
+      description: Come l'app riceve le credenziali (scheme null = valore grezzo)
+      properties:
+        header:
+          type: string
+          minLength: 1
+        scheme:
+          type: ["string", "null"]
+
     App:
       type: object
-      required: [id, name, baseUrl, status, createdAt, updatedAt]
+      required: [id, name, slug, baseUrl, status, serviceSecretSet, createdAt, updatedAt]
       properties:
         id:
           type: integer
         name:
           type: string
+        slug:
+          type: string
         description:
           type: ["string", "null"]
         baseUrl:
           type: string
+        internalBaseUrl:
+          type: ["string", "null"]
+          description: URL raggiunto dall'esecutore al posto di baseUrl (rete interna)
+        userAuth:
+          oneOf:
+            - $ref: "#/components/schemas/AuthConfig"
+            - type: "null"
+        serviceAuth:
+          oneOf:
+            - $ref: "#/components/schemas/AuthConfig"
+            - type: "null"
+        serviceSecretSet:
+          type: boolean
+          description: Indica se il segreto di servizio è impostato (il valore non è mai esposto)
         status:
           $ref: "#/components/schemas/AppStatus"
         createdAt:
@@ -498,6 +671,19 @@ components:
         baseUrl:
           type: string
           minLength: 1
+        internalBaseUrl:
+          type: ["string", "null"]
+        userAuth:
+          oneOf:
+            - $ref: "#/components/schemas/AuthConfig"
+            - type: "null"
+        serviceAuth:
+          oneOf:
+            - $ref: "#/components/schemas/AuthConfig"
+            - type: "null"
+        serviceSecret:
+          type: string
+          description: Segreto di servizio (solo scrittura, salvato cifrato)
         status:
           $ref: "#/components/schemas/AppStatus"
 
@@ -512,6 +698,19 @@ components:
         baseUrl:
           type: string
           minLength: 1
+        internalBaseUrl:
+          type: ["string", "null"]
+        userAuth:
+          oneOf:
+            - $ref: "#/components/schemas/AuthConfig"
+            - type: "null"
+        serviceAuth:
+          oneOf:
+            - $ref: "#/components/schemas/AuthConfig"
+            - type: "null"
+        serviceSecret:
+          type: ["string", "null"]
+          description: Segreto di servizio (solo scrittura); null lo cancella
         status:
           $ref: "#/components/schemas/AppStatus"
 
@@ -521,9 +720,13 @@ components:
       type: string
       enum: [active, inactive, draft]
 
+    AgentRole:
+      type: string
+      enum: [general, area]
+
     Agent:
       type: object
-      required: [id, appId, name, status, createdAt, updatedAt]
+      required: [id, appId, name, status, role, defaultIdentity, toolIds, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -537,6 +740,17 @@ components:
           type: string
         status:
           $ref: "#/components/schemas/AgentStatus"
+        role:
+          $ref: "#/components/schemas/AgentRole"
+        area:
+          type: ["string", "null"]
+        defaultIdentity:
+          $ref: "#/components/schemas/ToolIdentity"
+        toolIds:
+          type: array
+          items:
+            type: integer
+          description: ID dei tool del catalogo assegnati all'agente
         createdAt:
           type: string
           format: date-time
@@ -572,6 +786,19 @@ components:
           type: string
         status:
           $ref: "#/components/schemas/AgentStatus"
+        area:
+          type: ["string", "null"]
+        defaultIdentity:
+          $ref: "#/components/schemas/ToolIdentity"
+
+    AgentToolsInput:
+      type: object
+      required: [toolIds]
+      properties:
+        toolIds:
+          type: array
+          items:
+            type: integer
 
     # ── Model ──────────────────────────────────────────────────────────────────
 
@@ -590,55 +817,140 @@ components:
 
     # ── Tool ───────────────────────────────────────────────────────────────────
 
-    HttpMethod:
+    ToolKind:
       type: string
-      enum: [GET, POST, PUT, PATCH, DELETE]
+      enum: [http, ui, composite]
 
-    Tool:
+    ToolIdentity:
+      type: string
+      enum: [user, service]
+
+    ToolStatus:
+      type: string
+      enum: [draft, active, disabled]
+
+    AppTool:
       type: object
-      required: [id, agentId, name, httpMethod, endpoint, createdAt]
+      required:
+        - id
+        - appId
+        - name
+        - kind
+        - identity
+        - requiresConfirmation
+        - readOnly
+        - status
+        - paramsSchema
+        - definition
+        - needsVerification
+        - createdAt
+        - updatedAt
       properties:
         id:
           type: integer
-        agentId:
+        appId:
           type: integer
         name:
           type: string
         description:
           type: ["string", "null"]
-        httpMethod:
-          $ref: "#/components/schemas/HttpMethod"
-        endpoint:
-          type: string
-        parametersSchema:
-          type: ["string", "null"]
-          description: JSON Schema dei parametri accettati dallo strumento
+        kind:
+          $ref: "#/components/schemas/ToolKind"
+        identity:
+          $ref: "#/components/schemas/ToolIdentity"
+        requiresConfirmation:
+          type: boolean
+        readOnly:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/ToolStatus"
+        paramsSchema:
+          type: object
+          additionalProperties: true
+          description: JSON Schema dei parametri accettati dal tool
+        definition:
+          type: object
+          additionalProperties: true
+          description: Definizione dell'esecuzione (dipende da kind)
+        evidence:
+          type: ["object", "null"]
+          additionalProperties: true
+          description: Evidenze da cui il tool è stato derivato
+        needsVerification:
+          type: boolean
         createdAt:
           type: string
           format: date-time
+        updatedAt:
+          type: string
+          format: date-time
 
-    ToolInput:
+    AppToolInput:
       type: object
-      required: [name, httpMethod, endpoint]
+      required: [name, kind, definition]
       properties:
         name:
           type: string
           minLength: 1
         description:
-          type: string
-        httpMethod:
-          $ref: "#/components/schemas/HttpMethod"
-        endpoint:
+          type: ["string", "null"]
+        kind:
+          $ref: "#/components/schemas/ToolKind"
+        identity:
+          $ref: "#/components/schemas/ToolIdentity"
+        requiresConfirmation:
+          type: boolean
+        readOnly:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/ToolStatus"
+        paramsSchema:
+          type: object
+          additionalProperties: true
+        definition:
+          type: object
+          additionalProperties: true
+        evidence:
+          type: ["object", "null"]
+          additionalProperties: true
+        needsVerification:
+          type: boolean
+
+    AppToolUpdate:
+      type: object
+      properties:
+        name:
           type: string
           minLength: 1
-        parametersSchema:
-          type: string
+        description:
+          type: ["string", "null"]
+        kind:
+          $ref: "#/components/schemas/ToolKind"
+        identity:
+          $ref: "#/components/schemas/ToolIdentity"
+        requiresConfirmation:
+          type: boolean
+        readOnly:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/ToolStatus"
+        paramsSchema:
+          type: object
+          additionalProperties: true
+        definition:
+          type: object
+          additionalProperties: true
+        evidence:
+          type: ["object", "null"]
+          additionalProperties: true
+        needsVerification:
+          type: boolean
 
     # ── Run ────────────────────────────────────────────────────────────────────
 
     RunStatus:
       type: string
-      enum: [pending, running, succeeded, failed]
+      enum: [pending, running, succeeded, failed, awaiting_client, cancelled]
 
     Run:
       type: object
@@ -666,6 +978,74 @@ components:
         finishedAt:
           type: ["string", "null"]
           format: date-time
+        pendingAction:
+          oneOf:
+            - $ref: "#/components/schemas/PendingAction"
+            - type: "null"
+          description: Azione in attesa del client (solo con stato awaiting_client)
+        promptTokens:
+          type: ["integer", "null"]
+        completionTokens:
+          type: ["integer", "null"]
+
+    PendingActionKind:
+      type: string
+      enum: [confirmation, ui]
+
+    PendingAction:
+      type: object
+      required: [kind, toolName, args, summary]
+      properties:
+        kind:
+          $ref: "#/components/schemas/PendingActionKind"
+        toolName:
+          type: string
+        args:
+          type: object
+          additionalProperties: true
+        summary:
+          type: string
+
+    RunStep:
+      type: object
+      required: [id, runId, position, type, createdAt]
+      properties:
+        id:
+          type: integer
+        runId:
+          type: integer
+        position:
+          type: integer
+        type:
+          type: string
+          description: "model (chiamata al modello) o tool (chiamata a un tool)"
+        toolName:
+          type: ["string", "null"]
+        args:
+          type: ["object", "null"]
+          additionalProperties: true
+        ok:
+          type: ["boolean", "null"]
+        httpStatus:
+          type: ["integer", "null"]
+        durationMs:
+          type: ["integer", "null"]
+        error:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    RunDecision:
+      type: string
+      enum: [approved, rejected]
+
+    RunResume:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          $ref: "#/components/schemas/RunDecision"
 
     RunTrigger:
       type: object

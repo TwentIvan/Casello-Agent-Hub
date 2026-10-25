@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
-import { db, agentsTable, toolsTable, runsTable } from "@workspace/db";
-import { rateLimit } from "../middlewares/rate-limit";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { db, agentsTable, agentToolsTable, appsTable, appToolsTable, runsTable } from "@workspace/db";
+import { runRateLimit } from "../middlewares/rate-limit";
 import {
   ListAgentsQueryParams,
   ListAgentsResponse,
@@ -13,49 +13,58 @@ import {
   UpdateAgentBody,
   UpdateAgentResponse,
   DeleteAgentParams,
-  ListToolsParams,
-  ListToolsResponse,
-  CreateToolParams,
-  CreateToolBody,
-  CreateToolResponse,
-  DeleteToolParams,
+  SetAgentToolsParams,
+  SetAgentToolsBody,
+  SetAgentToolsResponse,
   TriggerRunParams,
   TriggerRunBody,
   TriggerRunResponse,
 } from "@workspace/api-zod";
-import { executeRun } from "../lib/run-executor";
+import { startRun } from "../lib/run-executor";
 import { logger } from "../lib/logger";
+import { toPublicRun, userTokenFrom, withToolIds, withToolIdsOne } from "./serializers";
+import { parseRequest } from "../middlewares/error-handler";
 
 const router: IRouter = Router();
 
 router.get("/agents", async (req, res) => {
-  const { appId } = ListAgentsQueryParams.parse(req.query);
+  const { appId } = parseRequest(ListAgentsQueryParams, req.query);
   const agents = await db
     .select()
     .from(agentsTable)
-    .where(appId !== undefined ? eq(agentsTable.appId, appId) : undefined);
-  res.json(ListAgentsResponse.parse(agents));
+    .where(appId !== undefined ? eq(agentsTable.appId, appId) : undefined)
+    .orderBy(asc(agentsTable.id));
+  res.json(ListAgentsResponse.parse(await withToolIds(agents)));
 });
 
+// Gli agenti creati dalla UI sono sempre di area: il generale nasce con l'app
 router.post("/agents", async (req, res) => {
-  const body = CreateAgentBody.parse(req.body);
-  const [agent] = await db.insert(agentsTable).values(body).returning();
-  res.status(201).json(CreateAgentResponse.parse(agent));
+  const body = parseRequest(CreateAgentBody, req.body);
+  const [app] = await db.select({ id: appsTable.id }).from(appsTable).where(eq(appsTable.id, body.appId)).limit(1);
+  if (!app) {
+    res.status(404).json({ error: "App non trovata" });
+    return;
+  }
+  const [agent] = await db
+    .insert(agentsTable)
+    .values({ ...body, role: "area" })
+    .returning();
+  res.status(201).json(CreateAgentResponse.parse(await withToolIdsOne(agent!)));
 });
 
 router.get("/agents/:id", async (req, res) => {
-  const { id } = GetAgentParams.parse(req.params);
+  const { id } = parseRequest(GetAgentParams, req.params);
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, id)).limit(1);
   if (!agent) {
     res.status(404).json({ error: "Agente non trovato" });
     return;
   }
-  res.json(GetAgentResponse.parse(agent));
+  res.json(GetAgentResponse.parse(await withToolIdsOne(agent)));
 });
 
 router.patch("/agents/:id", async (req, res) => {
-  const { id } = UpdateAgentParams.parse(req.params);
-  const body = UpdateAgentBody.parse(req.body);
+  const { id } = parseRequest(UpdateAgentParams, req.params);
+  const body = parseRequest(UpdateAgentBody, req.body);
   const [agent] = await db
     .update(agentsTable)
     .set({ ...body, updatedAt: new Date() })
@@ -65,58 +74,71 @@ router.patch("/agents/:id", async (req, res) => {
     res.status(404).json({ error: "Agente non trovato" });
     return;
   }
-  res.json(UpdateAgentResponse.parse(agent));
+  res.json(UpdateAgentResponse.parse(await withToolIdsOne(agent)));
 });
 
 router.delete("/agents/:id", async (req, res) => {
-  const { id } = DeleteAgentParams.parse(req.params);
-  const [agent] = await db.delete(agentsTable).where(eq(agentsTable.id, id)).returning();
+  const { id } = parseRequest(DeleteAgentParams, req.params);
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, id)).limit(1);
   if (!agent) {
     res.status(404).json({ error: "Agente non trovato" });
     return;
   }
-  res.status(204).end();
-});
-
-// ── Tools (nested under an agent) ───────────────────────────────────────────
-
-router.get("/agents/:id/tools", async (req, res) => {
-  const { id } = ListToolsParams.parse(req.params);
-  const tools = await db.select().from(toolsTable).where(eq(toolsTable.agentId, id));
-  res.json(ListToolsResponse.parse(tools));
-});
-
-router.post("/agents/:id/tools", async (req, res) => {
-  const { id } = CreateToolParams.parse(req.params);
-  const body = CreateToolBody.parse(req.body);
-  const [tool] = await db
-    .insert(toolsTable)
-    .values({ ...body, agentId: id })
-    .returning();
-  res.status(201).json(CreateToolResponse.parse(tool));
-});
-
-router.delete("/agents/:agentId/tools/:toolId", async (req, res) => {
-  const { agentId, toolId } = DeleteToolParams.parse(req.params);
-  const [tool] = await db
-    .delete(toolsTable)
-    .where(and(eq(toolsTable.id, toolId), eq(toolsTable.agentId, agentId)))
-    .returning();
-  if (!tool) {
-    res.status(404).json({ error: "Strumento non trovato" });
+  if (agent.role === "general") {
+    res.status(409).json({ error: "L'agente generale non si può eliminare" });
     return;
   }
+  await db.delete(agentsTable).where(eq(agentsTable.id, id));
   res.status(204).end();
 });
 
-// ── Runs (triggered on an agent) ────────────────────────────────────────────
+// ── Tool assegnati all'agente ───────────────────────────────────────────────
 
-// Ogni run consuma token sul gateway: massimo 10 run al minuto per IP.
-const runRateLimit = rateLimit({ limit: 10, windowMs: 60_000 });
+router.put("/agents/:id/tools", async (req, res) => {
+  const { id } = parseRequest(SetAgentToolsParams, req.params);
+  const toolIds = [...new Set(parseRequest(SetAgentToolsBody, req.body).toolIds)];
+
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, id)).limit(1);
+  if (!agent) {
+    res.status(404).json({ error: "Agente non trovato" });
+    return;
+  }
+  if (agent.role === "general") {
+    res.status(400).json({ error: "L'agente generale usa tutti i tool attivi dell'app: non gli si assegnano tool" });
+    return;
+  }
+  if (toolIds.length) {
+    const owned = await db
+      .select({ id: appToolsTable.id })
+      .from(appToolsTable)
+      .where(and(eq(appToolsTable.appId, agent.appId), inArray(appToolsTable.id, toolIds)));
+    if (owned.length !== toolIds.length) {
+      res.status(400).json({ error: "Alcuni strumenti non esistono o non appartengono all'app dell'agente" });
+      return;
+    }
+  }
+
+  const updated = await db.transaction(async (tx) => {
+    await tx.delete(agentToolsTable).where(eq(agentToolsTable.agentId, id));
+    if (toolIds.length) {
+      await tx.insert(agentToolsTable).values(toolIds.map((toolId) => ({ agentId: id, toolId })));
+    }
+    const [row] = await tx
+      .update(agentsTable)
+      .set({ updatedAt: new Date() })
+      .where(eq(agentsTable.id, id))
+      .returning();
+    return row!;
+  });
+  res.json(SetAgentToolsResponse.parse(await withToolIdsOne(updated)));
+});
+
+// ── Run (avviate su un agente) ──────────────────────────────────────────────
 
 router.post("/agents/:id/runs", runRateLimit, async (req, res) => {
-  const { id } = TriggerRunParams.parse(req.params);
-  const body = TriggerRunBody.parse(req.body);
+  const { id } = parseRequest(TriggerRunParams, req.params);
+  const body = parseRequest(TriggerRunBody, req.body);
+  const userToken = userTokenFrom(req);
 
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, id)).limit(1);
   if (!agent) {
@@ -130,11 +152,13 @@ router.post("/agents/:id/runs", runRateLimit, async (req, res) => {
     .returning();
 
   // La run prosegue in background (da secondi a decine di secondi): si risponde subito con la run
-  // in attesa e la UI ne segue lo stato con GET /runs/:id. executeRun registra da sé gli errori del
+  // in attesa e la UI ne segue lo stato con GET /runs/:id. startRun registra da sé gli errori del
   // modello sulla run; qui si intercetta solo l'imprevisto, che altrimenti farebbe cadere il processo.
-  executeRun(run.id).catch((err: unknown) => logger.error({ err, runId: run.id }, "Esecuzione della run fallita"));
+  startRun(run!.id, { userToken }).catch((err: unknown) =>
+    logger.error({ err, runId: run!.id }, "Esecuzione della run fallita"),
+  );
 
-  res.status(202).json(TriggerRunResponse.parse(run));
+  res.status(202).json(TriggerRunResponse.parse(toPublicRun(run!)));
 });
 
 export default router;

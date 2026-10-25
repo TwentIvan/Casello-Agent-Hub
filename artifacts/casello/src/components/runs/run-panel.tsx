@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { Play } from "lucide-react";
+import { ChevronDown, Play } from "lucide-react";
 import {
   type Agent,
   getGetDashboardStatsQueryKey,
@@ -11,6 +11,8 @@ import {
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { RunStatusBadge } from "@/components/run-status-badge";
 import { useToast } from "@/hooks/use-toast";
@@ -26,6 +28,8 @@ export function RunPanel({ agent }: { agent: Agent }) {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [input, setInput] = useState("");
+  // Token di prova dell'utente dell'app: vive solo nello stato della pagina, mai in storage.
+  const [testToken, setTestToken] = useState("");
 
   const params = { agentId: agent.id };
   const runs = useListRuns(params, {
@@ -35,7 +39,9 @@ export function RunPanel({ agent }: { agent: Agent }) {
     },
   });
 
+  const token = testToken.trim();
   const triggerRun = useTriggerRun({
+    request: token ? { headers: { "X-App-User-Token": token } } : undefined,
     mutation: {
       onSuccess: (run) => {
         void queryClient.invalidateQueries({ queryKey: getListRunsQueryKey() });
@@ -74,6 +80,26 @@ export function RunPanel({ agent }: { agent: Agent }) {
           placeholder="es. Suggerisci la formazione per la prossima giornata"
           aria-label="Input della run"
         />
+        <Collapsible className="rounded-md border">
+          <CollapsibleTrigger className="group flex w-full items-center justify-between px-3 py-2 text-sm font-medium">
+            Token di prova dell'app
+            <ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-2 border-t px-3 py-3">
+            <Input
+              type="password"
+              autoComplete="new-password"
+              value={testToken}
+              onChange={(event) => setTestToken(event.target.value)}
+              placeholder="Token dell'utente dell'app"
+              aria-label="Token di prova dell'app"
+            />
+            <p className="text-xs text-muted-foreground">
+              Serve ai tool che agiscono con l'identità dell'utente: viene inviato come X-App-User-Token solo con
+              questa run. Resta nella pagina e non viene salvato.
+            </p>
+          </CollapsibleContent>
+        </Collapsible>
         <div className="flex items-center justify-between gap-4">
           <span className="hidden text-xs text-muted-foreground sm:inline">Ctrl/⌘ + Invio per eseguire</span>
           <Button onClick={run} disabled={!canRun} className="ml-auto">

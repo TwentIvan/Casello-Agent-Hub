@@ -29,12 +29,32 @@ export const AppStatus = {
   inactive: 'inactive',
 } as const;
 
+/**
+ * Come l'app riceve le credenziali (scheme null = valore grezzo)
+ */
+export interface AuthConfig {
+  /** @minLength 1 */
+  header: string;
+  /** @nullable */
+  scheme: string | null;
+}
+
 export interface App {
   id: number;
   name: string;
+  slug: string;
   /** @nullable */
   description?: string | null;
   baseUrl: string;
+  /**
+     * URL raggiunto dall'esecutore al posto di baseUrl (rete interna)
+     * @nullable
+     */
+  internalBaseUrl?: string | null;
+  userAuth?: AuthConfig | null;
+  serviceAuth?: AuthConfig | null;
+  /** Indica se il segreto di servizio è impostato (il valore non è mai esposto) */
+  serviceSecretSet: boolean;
   status: AppStatus;
   createdAt: string;
   updatedAt: string;
@@ -46,6 +66,12 @@ export interface AppInput {
   description?: string;
   /** @minLength 1 */
   baseUrl: string;
+  /** @nullable */
+  internalBaseUrl?: string | null;
+  userAuth?: AuthConfig | null;
+  serviceAuth?: AuthConfig | null;
+  /** Segreto di servizio (solo scrittura, salvato cifrato) */
+  serviceSecret?: string;
   status?: AppStatus;
 }
 
@@ -56,6 +82,15 @@ export interface AppUpdate {
   description?: string | null;
   /** @minLength 1 */
   baseUrl?: string;
+  /** @nullable */
+  internalBaseUrl?: string | null;
+  userAuth?: AuthConfig | null;
+  serviceAuth?: AuthConfig | null;
+  /**
+     * Segreto di servizio (solo scrittura); null lo cancella
+     * @nullable
+     */
+  serviceSecret?: string | null;
   status?: AppStatus;
 }
 
@@ -68,6 +103,22 @@ export const AgentStatus = {
   draft: 'draft',
 } as const;
 
+export type AgentRole = typeof AgentRole[keyof typeof AgentRole];
+
+
+export const AgentRole = {
+  general: 'general',
+  area: 'area',
+} as const;
+
+export type ToolIdentity = typeof ToolIdentity[keyof typeof ToolIdentity];
+
+
+export const ToolIdentity = {
+  user: 'user',
+  service: 'service',
+} as const;
+
 export interface Agent {
   id: number;
   appId: number;
@@ -76,6 +127,12 @@ export interface Agent {
   systemPrompt?: string | null;
   model?: string;
   status: AgentStatus;
+  role: AgentRole;
+  /** @nullable */
+  area?: string | null;
+  defaultIdentity: ToolIdentity;
+  /** ID dei tool del catalogo assegnati all'agente */
+  toolIds: number[];
   createdAt: string;
   updatedAt: string;
 }
@@ -96,6 +153,13 @@ export interface AgentUpdate {
   systemPrompt?: string | null;
   model?: string;
   status?: AgentStatus;
+  /** @nullable */
+  area?: string | null;
+  defaultIdentity?: ToolIdentity;
+}
+
+export interface AgentToolsInput {
+  toolIds: number[];
 }
 
 export interface Model {
@@ -106,41 +170,115 @@ export interface Model {
   isDefault: boolean;
 }
 
-export type HttpMethod = typeof HttpMethod[keyof typeof HttpMethod];
+export type ToolKind = typeof ToolKind[keyof typeof ToolKind];
 
 
-export const HttpMethod = {
-  GET: 'GET',
-  POST: 'POST',
-  PUT: 'PUT',
-  PATCH: 'PATCH',
-  DELETE: 'DELETE',
+export const ToolKind = {
+  http: 'http',
+  ui: 'ui',
+  composite: 'composite',
 } as const;
 
-export interface Tool {
+export type ToolStatus = typeof ToolStatus[keyof typeof ToolStatus];
+
+
+export const ToolStatus = {
+  draft: 'draft',
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+/**
+ * JSON Schema dei parametri accettati dal tool
+ */
+export type AppToolParamsSchema = { [key: string]: unknown };
+
+/**
+ * Definizione dell'esecuzione (dipende da kind)
+ */
+export type AppToolDefinition = { [key: string]: unknown };
+
+/**
+ * Evidenze da cui il tool è stato derivato
+ * @nullable
+ */
+export type AppToolEvidence = { [key: string]: unknown } | null;
+
+export interface AppTool {
   id: number;
-  agentId: number;
+  appId: number;
   name: string;
   /** @nullable */
   description?: string | null;
-  httpMethod: HttpMethod;
-  endpoint: string;
+  kind: ToolKind;
+  identity: ToolIdentity;
+  requiresConfirmation: boolean;
+  readOnly: boolean;
+  status: ToolStatus;
+  /** JSON Schema dei parametri accettati dal tool */
+  paramsSchema: AppToolParamsSchema;
+  /** Definizione dell'esecuzione (dipende da kind) */
+  definition: AppToolDefinition;
   /**
-     * JSON Schema dei parametri accettati dallo strumento
+     * Evidenze da cui il tool è stato derivato
      * @nullable
      */
-  parametersSchema?: string | null;
+  evidence?: AppToolEvidence;
+  needsVerification: boolean;
   createdAt: string;
+  updatedAt: string;
 }
 
-export interface ToolInput {
+export type AppToolInputParamsSchema = { [key: string]: unknown };
+
+export type AppToolInputDefinition = { [key: string]: unknown };
+
+/**
+ * @nullable
+ */
+export type AppToolInputEvidence = { [key: string]: unknown } | null;
+
+export interface AppToolInput {
   /** @minLength 1 */
   name: string;
-  description?: string;
-  httpMethod: HttpMethod;
+  /** @nullable */
+  description?: string | null;
+  kind: ToolKind;
+  identity?: ToolIdentity;
+  requiresConfirmation?: boolean;
+  readOnly?: boolean;
+  status?: ToolStatus;
+  paramsSchema?: AppToolInputParamsSchema;
+  definition: AppToolInputDefinition;
+  /** @nullable */
+  evidence?: AppToolInputEvidence;
+  needsVerification?: boolean;
+}
+
+export type AppToolUpdateParamsSchema = { [key: string]: unknown };
+
+export type AppToolUpdateDefinition = { [key: string]: unknown };
+
+/**
+ * @nullable
+ */
+export type AppToolUpdateEvidence = { [key: string]: unknown } | null;
+
+export interface AppToolUpdate {
   /** @minLength 1 */
-  endpoint: string;
-  parametersSchema?: string;
+  name?: string;
+  /** @nullable */
+  description?: string | null;
+  kind?: ToolKind;
+  identity?: ToolIdentity;
+  requiresConfirmation?: boolean;
+  readOnly?: boolean;
+  status?: ToolStatus;
+  paramsSchema?: AppToolUpdateParamsSchema;
+  definition?: AppToolUpdateDefinition;
+  /** @nullable */
+  evidence?: AppToolUpdateEvidence;
+  needsVerification?: boolean;
 }
 
 export type RunStatus = typeof RunStatus[keyof typeof RunStatus];
@@ -151,7 +289,26 @@ export const RunStatus = {
   running: 'running',
   succeeded: 'succeeded',
   failed: 'failed',
+  awaiting_client: 'awaiting_client',
+  cancelled: 'cancelled',
 } as const;
+
+export type PendingActionKind = typeof PendingActionKind[keyof typeof PendingActionKind];
+
+
+export const PendingActionKind = {
+  confirmation: 'confirmation',
+  ui: 'ui',
+} as const;
+
+export type PendingActionArgs = { [key: string]: unknown };
+
+export interface PendingAction {
+  kind: PendingActionKind;
+  toolName: string;
+  args: PendingActionArgs;
+  summary: string;
+}
 
 export interface Run {
   id: number;
@@ -174,6 +331,50 @@ export interface Run {
   createdAt: string;
   /** @nullable */
   finishedAt?: string | null;
+  /** Azione in attesa del client (solo con stato awaiting_client) */
+  pendingAction?: PendingAction | null;
+  /** @nullable */
+  promptTokens?: number | null;
+  /** @nullable */
+  completionTokens?: number | null;
+}
+
+/**
+ * @nullable
+ */
+export type RunStepArgs = { [key: string]: unknown } | null;
+
+export interface RunStep {
+  id: number;
+  runId: number;
+  position: number;
+  /** model (chiamata al modello) o tool (chiamata a un tool) */
+  type: string;
+  /** @nullable */
+  toolName?: string | null;
+  /** @nullable */
+  args?: RunStepArgs;
+  /** @nullable */
+  ok?: boolean | null;
+  /** @nullable */
+  httpStatus?: number | null;
+  /** @nullable */
+  durationMs?: number | null;
+  /** @nullable */
+  error?: string | null;
+  createdAt: string;
+}
+
+export type RunDecision = typeof RunDecision[keyof typeof RunDecision];
+
+
+export const RunDecision = {
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export interface RunResume {
+  decision: RunDecision;
 }
 
 export interface RunTrigger {
@@ -191,6 +392,16 @@ export interface DashboardStats {
   /** @nullable */
   avgDurationMs?: number | null;
 }
+
+/**
+ * Richiesta non valida
+ */
+export type BadRequestResponse = ErrorResponse;
+
+/**
+ * Conflitto con lo stato corrente della risorsa
+ */
+export type ConflictResponse = ErrorResponse;
 
 /**
  * Login richiesto

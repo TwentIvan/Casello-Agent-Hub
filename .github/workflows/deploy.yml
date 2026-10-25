@@ -23,8 +23,29 @@ env:
   IMAGE_WEB: ghcr.io/twentivan/casello-web
 
 jobs:
+  # Test dell'API (Vitest + Postgres in memoria): girano a ogni push e bloccano la build
+  test:
+    name: Test API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @workspace/api-server run test
+
   build:
     name: Build ${{ matrix.app }}
+    needs: test
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

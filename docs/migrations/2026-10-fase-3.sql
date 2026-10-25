@@ -75,4 +75,8 @@ CREATE TABLE IF NOT EXISTS "agent_skills" (
 -- Un'analisi alla volta per app
 CREATE UNIQUE INDEX IF NOT EXISTS "analyses_one_active_per_app" ON "analyses" USING btree ("app_id") WHERE "status" in ('queued', 'running');
 
+-- Le prove di un tool ora sono una lista di { source, location, note? }: un vecchio valore non lista
+-- farebbe rispondere 500 all'elenco dei tool dell'app, quindi si azzera.
+UPDATE "app_tools" SET "evidence" = NULL WHERE "evidence" IS NOT NULL AND jsonb_typeof("evidence") <> 'array';
+
 COMMIT;

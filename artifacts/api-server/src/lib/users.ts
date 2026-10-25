@@ -27,9 +27,21 @@ export class IdentityConflictError extends Error {
   }
 }
 
-const ALREADY_LINKED = "account GitHub già collegato a un altro utente";
+const PROVIDER_LABEL: Record<IdentityProvider, string> = { google: "Google", github: "GitHub" };
+
+/** L'account esterno è già collegato a un altro utente (testo GitHub fissato dalla spec). */
+function alreadyLinkedMessage(provider: IdentityProvider): string {
+  return `account ${PROVIDER_LABEL[provider]} già collegato a un altro utente`;
+}
+
+/** L'utente ha già un altro account dello stesso provider (un solo account per provider). */
+function providerTakenMessage(provider: IdentityProvider): string {
+  return provider === "github"
+    ? "hai già un altro account GitHub collegato: scollegalo prima"
+    : `hai già un altro account ${PROVIDER_LABEL[provider]} collegato`;
+}
+
 const ONLY_IDENTITY = "non puoi scollegare l'unico accesso del tuo account";
-const PROVIDER_TAKEN = "l'utente ha già un altro account collegato per questo provider";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -69,10 +81,30 @@ async function insertIdentity(tx: Tx, userId: number, identity: LoginIdentity): 
       });
     });
   } catch (err) {
-    if (isUniqueViolation(err, "user_identities_provider_user_unique")) throw new IdentityConflictError(ALREADY_LINKED);
-    if (isUniqueViolation(err, "user_identities_user_provider_unique")) throw new IdentityConflictError(PROVIDER_TAKEN);
+    if (isUniqueViolation(err, "user_identities_provider_user_unique")) {
+      throw new IdentityConflictError(alreadyLinkedMessage(identity.provider));
+    }
+    if (isUniqueViolation(err, "user_identities_user_provider_unique")) {
+      throw new IdentityConflictError(providerTakenMessage(identity.provider));
+    }
     throw err;
   }
+}
+
+/**
+ * Crea l'utente con questa email, o restituisce quello creato nel frattempo da un login concorrente:
+ * con ON CONFLICT DO NOTHING l'insert attende l'altra transazione e poi non fa nulla; la select
+ * successiva (READ COMMITTED, nuovo snapshot) vede la riga ormai confermata.
+ */
+async function insertUserOnce(tx: Tx, email: string, name: string | null, picture: string | null): Promise<number> {
+  const [created] = await tx
+    .insert(usersTable)
+    .values({ email, name, picture })
+    .onConflictDoNothing({ target: usersTable.email })
+    .returning({ id: usersTable.id });
+  if (created) return created.id;
+  const [existing] = await tx.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email));
+  return existing!.id;
 }
 
 /**
@@ -115,11 +147,7 @@ export async function resolveLogin(identity: LoginIdentity): Promise<User> {
       if (match) {
         userId = match.id;
       } else {
-        const [created] = await tx
-          .insert(usersTable)
-          .values({ email: normalize(identity.primaryEmail), name: identity.name, picture: identity.picture })
-          .returning({ id: usersTable.id });
-        userId = created!.id;
+        userId = await insertUserOnce(tx, normalize(identity.primaryEmail), identity.name, identity.picture);
       }
       await insertIdentity(tx, userId, identity);
     }
@@ -152,7 +180,7 @@ export async function linkIdentity(userId: number, identity: LoginIdentity): Pro
           eq(userIdentitiesTable.providerUserId, identity.providerUserId),
         ),
       );
-    if (existing && existing.userId !== userId) throw new IdentityConflictError(ALREADY_LINKED);
+    if (existing && existing.userId !== userId) throw new IdentityConflictError(alreadyLinkedMessage(identity.provider));
     if (existing) {
       await tx
         .update(userIdentitiesTable)
@@ -166,19 +194,29 @@ export async function linkIdentity(userId: number, identity: LoginIdentity): Pro
 }
 
 /**
- * Scollega l'identità GitHub e cancella le installazioni GitHub dell'utente. Non si può togliere
- * l'unica identità: l'utente resterebbe senza modo di entrare.
+ * Scollega l'identità GitHub e cancella le installazioni GitHub dell'utente. Si rifiuta solo se
+ * l'utente resterebbe senza modo di entrare: nessun'altra identità E email non ammessa. Un utente
+ * con l'email in ALLOWED_EMAILS rientra comunque con Google, che lo ritrova per email (è il caso
+ * degli utenti creati da ensureUserByEmail: sessioni della fase 1 e utente di sviluppo, senza
+ * identità registrate).
  */
 export async function unlinkIdentity(userId: number, provider: "github"): Promise<void> {
   await db.transaction(async (tx) => {
     // Lock sulla riga dell'utente: due scollegamenti concorrenti non possono lasciarlo senza identità
-    await tx.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, userId)).for("update");
+    const [user] = await tx
+      .select({ id: usersTable.id, email: usersTable.email })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .for("update");
     const identities = await tx
       .select({ provider: userIdentitiesTable.provider })
       .from(userIdentitiesTable)
       .where(eq(userIdentitiesTable.userId, userId));
     const linked = identities.some((i) => i.provider === provider);
-    if (linked && identities.length === 1) throw new IdentityConflictError(ONLY_IDENTITY);
+    const othersRemain = identities.some((i) => i.provider !== provider);
+    if (linked && !othersRemain && !(user && isAllowed([user.email]))) {
+      throw new IdentityConflictError(ONLY_IDENTITY);
+    }
     await tx
       .delete(userIdentitiesTable)
       .where(and(eq(userIdentitiesTable.userId, userId), eq(userIdentitiesTable.provider, provider)));

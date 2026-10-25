@@ -97,9 +97,9 @@ describe("resolveLogin", () => {
 
   it("l'utente trovato per email ha già un altro account dello stesso provider → conflitto", async () => {
     await resolveLogin(github("1", ["ivan@example.com"], "primo"));
-    await expect(resolveLogin(github("2", ["ivan@example.com"], "secondo"))).rejects.toBeInstanceOf(
-      IdentityConflictError,
-    );
+    const err = await resolveLogin(github("2", ["ivan@example.com"], "secondo")).catch((e) => e);
+    expect(err).toBeInstanceOf(IdentityConflictError);
+    expect((err as Error).message).toBe("hai già un altro account GitHub collegato: scollegalo prima");
     expect(await db.select().from(userIdentitiesTable)).toHaveLength(1);
   });
 });
@@ -117,6 +117,23 @@ describe("linkIdentity", () => {
     expect((await identitiesOf(owner.id))[0]).toMatchObject({ username: "owner-gh" });
   });
 
+  it("l'utente ha già un altro account GitHub → IdentityConflictError e nessuna modifica", async () => {
+    const user = await resolveLogin(google("sub-1", "ivan@example.com"));
+    await linkIdentity(user.id, github("42", ["ivan@example.com"], "primo"));
+    const err = await linkIdentity(user.id, github("43", ["ivan@example.com"], "secondo")).catch((e) => e);
+    expect(err).toBeInstanceOf(IdentityConflictError);
+    expect((err as Error).message).toBe("hai già un altro account GitHub collegato: scollegalo prima");
+    expect((await listIdentities(user.id)).find((i) => i.provider === "github")).toMatchObject({ username: "primo" });
+  });
+
+  it("identità Google di un altro utente: messaggio con il provider giusto", async () => {
+    await resolveLogin(google("sub-1", "owner@example.com"));
+    const other = await resolveLogin(github("42", ["other@example.com"]));
+    const err = await linkIdentity(other.id, google("sub-1", "other@example.com")).catch((e) => e);
+    expect(err).toBeInstanceOf(IdentityConflictError);
+    expect((err as Error).message).toBe("account Google già collegato a un altro utente");
+  });
+
   it("collega una nuova identità e, se è già sua, aggiorna username ed email", async () => {
     const user = await resolveLogin(google("sub-1", "ivan@example.com"));
     await linkIdentity(user.id, github("42", ["gh@example.com"], "vecchio"));
@@ -129,12 +146,21 @@ describe("linkIdentity", () => {
 });
 
 describe("unlinkIdentity", () => {
-  it("rifiuta di scollegare l'unica identità", async () => {
+  it("rifiuta di scollegare l'unica identità se l'email non è ammessa", async () => {
+    process.env.ALLOWED_EMAILS = "altro@example.com";
     const user = await resolveLogin(github("42", ["ivan@example.com"]));
     const err = await unlinkIdentity(user.id, "github").catch((e) => e);
     expect(err).toBeInstanceOf(IdentityConflictError);
     expect((err as Error).message).toBe("non puoi scollegare l'unico accesso del tuo account");
     expect(await identitiesOf(user.id)).toHaveLength(1);
+  });
+
+  it("utente senza identità ma con email ammessa (ensureUserByEmail) può scollegare GitHub", async () => {
+    process.env.ALLOWED_EMAILS = "ivan@example.com";
+    const user = await ensureUserByEmail("ivan@example.com");
+    await linkIdentity(user.id, github("42", ["ivan@example.com"]));
+    await unlinkIdentity(user.id, "github");
+    expect(await listIdentities(user.id)).toEqual([]);
   });
 
   it("scollega GitHub ed elimina le installazioni dell'utente", async () => {

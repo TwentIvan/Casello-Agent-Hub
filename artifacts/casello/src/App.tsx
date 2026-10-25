@@ -9,6 +9,7 @@ import { isClientError } from "@/lib/api-errors";
 import { isUnauthorized } from "@/lib/auth";
 import Dashboard from "@/pages/dashboard";
 import AppsPage from "@/pages/apps";
+import AppDetailPage from "@/pages/app-detail";
 import AgentsPage from "@/pages/agents";
 import AgentDetailPage from "@/pages/agent-detail";
 import RunsPage from "@/pages/runs";
@@ -41,6 +42,7 @@ function Router() {
       <Switch>
         <Route path="/" component={Dashboard} />
         <Route path="/apps" component={AppsPage} />
+        <Route path="/apps/:id" component={AppDetailPage} />
         <Route path="/agents" component={AgentsPage} />
         <Route path="/agents/:id" component={AgentDetailPage} />
         <Route path="/runs" component={RunsPage} />

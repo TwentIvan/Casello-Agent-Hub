@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import {
@@ -124,7 +125,9 @@ export default function AppsPage() {
                 {sortedApps.map((app) => (
                   <TableRow key={app.id}>
                     <TableCell className="max-w-xs pl-4">
-                      <div className="font-medium">{app.name}</div>
+                      <Link href={`/apps/${app.id}`} className="font-medium hover:underline">
+                        {app.name}
+                      </Link>
                       {app.description && (
                         <div className="truncate text-xs text-muted-foreground">{app.description}</div>
                       )}

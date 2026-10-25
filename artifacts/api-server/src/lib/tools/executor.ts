@@ -1,3 +1,4 @@
+import { BodyTooLarge, readBytesLimited } from "../http-read";
 import { decryptSecret } from "../secrets";
 import { checkHttpPath, parseDefinition, validateArgs } from "./definition";
 import type { AppConnection, AuthConfig, CatalogTool, HttpDefinition, ToolResult } from "./types";
@@ -232,30 +233,9 @@ export function buildHttpRequest(
   return { url: url.toString(), init, secrets: auth.secrets };
 }
 
-class ResponseTooLarge extends Error {}
-
-/** Legge il corpo a flusso, interrompendo appena supera MAX_RESPONSE_BYTES. */
+/** Legge il corpo (limitato a MAX_RESPONSE_BYTES) e lo decodifica come UTF-8. */
 async function readLimited(res: Response): Promise<string> {
-  const declared = Number(res.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) {
-    await res.body?.cancel().catch(() => {});
-    throw new ResponseTooLarge();
-  }
-  if (!res.body) return "";
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > MAX_RESPONSE_BYTES) {
-      await reader.cancel().catch(() => {});
-      throw new ResponseTooLarge();
-    }
-    chunks.push(value);
-  }
-  return new TextDecoder("utf-8").decode(Buffer.concat(chunks));
+  return new TextDecoder("utf-8").decode(await readBytesLimited(res, MAX_RESPONSE_BYTES));
 }
 
 function truncate(text: string): string {
@@ -365,7 +345,7 @@ export async function executeTool(input: {
     try {
       text = redact(await readLimited(res), secrets);
     } catch (err) {
-      if (err instanceof ResponseTooLarge) {
+      if (err instanceof BodyTooLarge) {
         return fail(`risposta troppo grande (oltre ${MAX_RESPONSE_BYTES} byte)`, res.status);
       }
       return fail(describeFetchError(err, timeoutMs), res.status);

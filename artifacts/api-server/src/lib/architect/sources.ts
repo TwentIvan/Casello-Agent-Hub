@@ -1,4 +1,5 @@
 import YAML from "yaml";
+import { BodyTooLarge, readBytesLimited } from "../http-read";
 import { SOURCE_LIMITS, SourceTree, SourceTreeError } from "./source-tree";
 
 /**
@@ -33,32 +34,6 @@ export const OPENAPI_PATHS = [
   "/swagger.json",
   "/api-docs",
 ];
-
-class BodyTooLarge extends Error {}
-
-/** Legge il corpo a flusso, interrompendo appena supera `max` byte. */
-async function readBytesLimited(res: Response, max: number): Promise<Uint8Array> {
-  const declared = Number(res.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > max) {
-    await res.body?.cancel().catch(() => {});
-    throw new BodyTooLarge();
-  }
-  if (!res.body) return new Uint8Array(0);
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > max) {
-      await reader.cancel().catch(() => {});
-      throw new BodyTooLarge();
-    }
-    chunks.push(value);
-  }
-  return new Uint8Array(Buffer.concat(chunks));
-}
 
 function isTimeout(err: unknown): boolean {
   const name = err instanceof Error ? err.name : "";
@@ -296,12 +271,36 @@ function resolvePointer(root: unknown, ref: string): unknown {
   return cur;
 }
 
-/** Copia di `value` con i `$ref` locali risolti (profondità ≤ 3, cicli e riferimenti esterni lasciati come segnaposto). */
+const MAX_WALK_DEPTH = 64;
+const MAX_WALK_CHARS = 16_000;
+
+/**
+ * Copia di `value` con i `$ref` locali risolti (profondità ≤ 3, cicli e riferimenti esterni lasciati
+ * come segnaposto). Il documento è non attendibile: un budget di caratteri (chiavi e stringhe) ferma
+ * la costruzione appena l'output supera il necessario, e la profondità di annidamento è limitata.
+ */
 function resolveRefs(root: unknown, value: unknown): unknown {
-  let budget = MAX_RESOLVE_NODES;
-  const walk = (v: unknown, depth: number, stack: string[]): unknown => {
-    if (--budget < 0) return "…";
-    if (Array.isArray(v)) return v.map((x) => walk(x, depth, stack));
+  let nodes = MAX_RESOLVE_NODES;
+  let chars = MAX_WALK_CHARS;
+  const walk = (v: unknown, depth: number, stack: string[], nest: number): unknown => {
+    if (--nodes < 0 || chars < 0) return "…";
+    if (nest > MAX_WALK_DEPTH) return "(annidamento troppo profondo)";
+    if (typeof v === "string") {
+      chars -= v.length;
+      // Una stringa enorme non viene mai copiata per intero
+      return v.length > MAX_WALK_CHARS ? `${v.slice(0, 200)}…` : v;
+    }
+    if (Array.isArray(v)) {
+      const out: unknown[] = [];
+      for (const x of v) {
+        if (chars < 0) {
+          out.push("…");
+          break;
+        }
+        out.push(walk(x, depth, stack, nest + 1));
+      }
+      return out;
+    }
     if (!isObj(v)) return v;
     if (typeof v["$ref"] === "string") {
       const ref = v["$ref"];
@@ -309,13 +308,20 @@ function resolveRefs(root: unknown, value: unknown): unknown {
       if (depth >= MAX_REF_DEPTH || stack.includes(ref)) return { $ref: ref };
       const target = resolvePointer(root, ref);
       if (target === undefined) return { $ref: ref };
-      return walk(target, depth + 1, [...stack, ref]);
+      return walk(target, depth + 1, [...stack, ref], nest + 1);
     }
     const out: Record<string, unknown> = {};
-    for (const [k, x] of Object.entries(v)) out[k] = walk(x, depth, stack);
+    for (const [k, x] of Object.entries(v)) {
+      if (chars < 0) {
+        out["…"] = "…";
+        break;
+      }
+      chars -= k.length;
+      out[k] = walk(x, depth, stack, nest + 1);
+    }
     return out;
   };
-  return walk(value, 0, []);
+  return walk(value, 0, [], 0);
 }
 
 /** Descrizione compatta (≤ 8 000 caratteri) di parametri, corpo e risposte di un'operazione. */

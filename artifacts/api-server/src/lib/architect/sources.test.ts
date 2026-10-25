@@ -314,4 +314,24 @@ describe("describeOperation", () => {
     };
     expect(describeOperation({ source: "x", operations: [], raw }, "GET", "/big").length).toBeLessThanOrEqual(8000);
   });
+
+  it("fan-out di $ref verso una stringa enorme: veloce e ≤ 8000 caratteri", () => {
+    const refs = Array.from({ length: 19_000 }, () => ({ $ref: "#/components/big" }));
+    const raw = {
+      openapi: "3.0.0",
+      paths: { "/f": { get: { parameters: refs } } },
+      components: { big: "y".repeat(1_000_000) },
+    };
+    const t0 = Date.now();
+    const text = describeOperation({ source: "x", operations: [], raw }, "GET", "/f");
+    expect(Date.now() - t0).toBeLessThan(1500);
+    expect(text.length).toBeLessThanOrEqual(8000);
+  });
+
+  it("annidamento profondo non lancia", () => {
+    let nested: unknown = "x";
+    for (let i = 0; i < 15_000; i++) nested = [nested];
+    const raw = { openapi: "3.0.0", paths: { "/d": { get: { parameters: nested } } } };
+    expect(() => describeOperation({ source: "x", operations: [], raw }, "GET", "/d")).not.toThrow();
+  });
 });

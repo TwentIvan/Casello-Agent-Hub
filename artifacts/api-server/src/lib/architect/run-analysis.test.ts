@@ -471,7 +471,8 @@ describe("startAnalysis", () => {
     const a = await loadAnalysis(id);
     expect(a.status).toBe("failed");
     expect(a.error).toBeTruthy();
-    expect(a.error).not.toMatch(/errore interno/);
+    expect(a.error).not.toMatch(/errore interno/i);
+    expect(a.error).toMatch(/zip/i);
   });
 
   it("senza codice né OpenAPI le fasi girano sulla descrizione e i tool vanno verificati", async () => {

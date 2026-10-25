@@ -146,7 +146,18 @@ function completionData(item: AnalysisItem): { key: string; phase: number; depen
   };
 }
 
-/** Markdown unico con le issue del capitolo; `completion` per fase e in ordine di dipendenza. */
+function evolutionData(item: AnalysisItem): { area: string; priority: number } {
+  const p = item.payload as Partial<EvolutionItem> | null;
+  return {
+    area: typeof p?.area === "string" ? cleanTitle(p.area) : "Senza area",
+    priority: typeof p?.priority === "number" ? p.priority : Number.MAX_SAFE_INTEGER,
+  };
+}
+
+/**
+ * Markdown unico con le issue del capitolo; `completion` per fase e in ordine di dipendenza,
+ * `evolution` per area (nell'ordine in cui compaiono) e per priorità (1 = massima), poi posizione.
+ */
 export function exportIssues(items: AnalysisItem[], chapter: AnalysisChapter): { markdown: string; count: number } {
   const chosen = items.filter((i) => i.chapter === chapter);
   if (!chosen.length) return { markdown: "", count: 0 };
@@ -161,6 +172,19 @@ export function exportIssues(items: AnalysisItem[], chapter: AnalysisChapter): {
       for (const item of topoSort(inPhase, (i) => completionData(i).key, (i) => completionData(i).dependsOn)) {
         const depTitles = completionData(item).dependsOn.map((d) => titles.get(d) ?? d);
         const s = sectionsOf(item, depTitles);
+        blocks.push(`### ${cleanTitle(s.title)}\n\n${render(s, 4)}`);
+      }
+    }
+  } else if (chapter === "evolution") {
+    const ordered = [...chosen].sort((a, b) => a.position - b.position);
+    const areas = [...new Set(ordered.map((i) => evolutionData(i).area))];
+    for (const area of areas) {
+      blocks.push(`## ${area}`);
+      const inArea = ordered
+        .filter((i) => evolutionData(i).area === area)
+        .sort((a, b) => evolutionData(a).priority - evolutionData(b).priority || a.position - b.position);
+      for (const item of inArea) {
+        const s = sectionsOf(item, []);
         blocks.push(`### ${cleanTitle(s.title)}\n\n${render(s, 4)}`);
       }
     }

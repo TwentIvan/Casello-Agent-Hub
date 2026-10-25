@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AnalysisItem } from "@workspace/db";
 import { exportIssues, issueMarkdown } from "./issues";
-import type { CompletionItem } from "./schemas";
+import type { CompletionItem, EvolutionItem } from "./schemas";
 
 const completion = (over: Partial<CompletionItem>): CompletionItem => ({
   key: "a",
@@ -68,6 +68,38 @@ describe("exportIssues", () => {
       row(completion({ key: "b", title: "Voce B", dependsOn: ["a", "zzz"] })),
     ];
     expect(exportIssues(items, "completion").count).toBe(2);
+  });
+
+  it("evolution: per area, poi per priorità (1 = massima) e posizione", () => {
+    const evo = (over: Partial<EvolutionItem>): EvolutionItem => ({
+      area: "Squadre",
+      type: "funzione",
+      title: "t",
+      motivation: "m",
+      evidence: [],
+      benefit: "b",
+      impact: "medio",
+      effort: "S",
+      priority: 3,
+      implementation: "i",
+      ...over,
+    });
+    const items = [
+      row(evo({ title: "S3 prima", priority: 3 }), "evolution"),
+      row(evo({ title: "Mercato 2", area: "Mercato", priority: 2 }), "evolution"),
+      row(evo({ title: "S1", priority: 1 }), "evolution"),
+      row(evo({ title: "S3 dopo", area: " Squadre ", priority: 3 }), "evolution"),
+    ];
+    const { markdown, count } = exportIssues(items, "evolution");
+    expect(count).toBe(4);
+    const at = (s: string) => markdown.indexOf(s);
+    expect(markdown.match(/^## /gm)).toHaveLength(2);
+    expect(at("## Squadre")).toBeLessThan(at("### S1"));
+    expect(at("### S1")).toBeLessThan(at("### S3 prima"));
+    expect(at("### S3 prima")).toBeLessThan(at("### S3 dopo"));
+    expect(at("### S3 dopo")).toBeLessThan(at("## Mercato"));
+    expect(at("## Mercato")).toBeLessThan(at("### Mercato 2"));
+    expect(markdown).toContain("#### Contesto");
   });
 
   it("filtra per capitolo e gestisce il vuoto", () => {

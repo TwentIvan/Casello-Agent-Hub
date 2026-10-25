@@ -3,8 +3,10 @@ import type { ZodError, ZodIssue } from "zod";
 import { logger } from "../lib/logger";
 
 // Gestore finale degli errori di /api: risposte sempre JSON `{ error }`.
-// Body, parametri o query che non passano gli schemi Zod generati → 400 con il primo problema;
-// ogni altro errore non gestito → 500 generico, registrato senza header della richiesta.
+// Body, parametri o query che non passano gli schemi Zod generati (letti con `parseRequest`) →
+// 400 con il primo problema; ogni altro errore non gestito, compreso uno ZodError nato dal
+// controllo di una risposta (`*Response.parse`, bug del server) → 500 generico, registrato
+// senza header della richiesta.
 
 function isZodError(err: unknown): err is ZodError {
   return (
@@ -37,6 +39,28 @@ function italianIssue(issue: ZodIssue): string {
   }
 }
 
+/** Richiesta (body, parametri, query) che non rispetta il contratto: errore del client → 400. */
+export class RequestValidationError extends Error {
+  constructor(readonly zodError: ZodError) {
+    super(zodError.message);
+    this.name = "RequestValidationError";
+  }
+}
+
+/**
+ * Valida una parte della richiesta con uno schema generato: un fallimento diventa
+ * `RequestValidationError` (400). Le risposte si controllano con `.parse` diretto: un loro
+ * fallimento resta uno ZodError e diventa 500.
+ */
+export function parseRequest<T>(schema: { parse(value: unknown): T }, value: unknown): T {
+  try {
+    return schema.parse(value);
+  } catch (err) {
+    if (isZodError(err)) throw new RequestValidationError(err);
+    throw err;
+  }
+}
+
 /** "richiesta non valida: <percorso>: <motivo>" sul primo problema dello schema. */
 export function zodErrorMessage(err: ZodError): string {
   const issue = err.issues[0];
@@ -51,8 +75,8 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
     next(err);
     return;
   }
-  if (isZodError(err)) {
-    res.status(400).json({ error: zodErrorMessage(err) });
+  if (err instanceof RequestValidationError) {
+    res.status(400).json({ error: zodErrorMessage(err.zodError) });
     return;
   }
   // JSON malformato nel body (express.json): errore del client, non del server

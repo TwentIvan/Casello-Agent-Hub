@@ -119,6 +119,21 @@ export function maskArgsWithSchema(paramsSchema: unknown, args: unknown): unknow
   return maskWith(paramsSchema, args);
 }
 
+const RAW_ARGS_CHARS = 500;
+
+/**
+ * Argomenti pronti per `run_steps.args`, sempre un oggetto (il contratto vuole object|null):
+ * un oggetto viene oscurato come in maskSensitiveArgs; qualunque altro valore (JSON non valido,
+ * array, stringa…) diventa `{ "_raw": "<testo troncato a 500 caratteri>" }`, oppure
+ * `{ "_raw": "***" }` se lo schema ha proprietà sensibili.
+ */
+export function stepArgsWithSchema(paramsSchema: unknown, args: unknown): Record<string, unknown> {
+  if (isPlainObject(args)) return maskWith(paramsSchema, args) as Record<string, unknown>;
+  if (hasSensitive(paramsSchema)) return { _raw: "***" };
+  const text = typeof args === "string" ? args : (JSON.stringify(args) ?? String(args));
+  return { _raw: text.slice(0, RAW_ARGS_CHARS) };
+}
+
 export async function loadAppConnection(appId: number): Promise<AppConnection> {
   const [app] = await db.select().from(appsTable).where(eq(appsTable.id, appId)).limit(1);
   if (!app) throw new Error(`App ${appId} non trovata`);

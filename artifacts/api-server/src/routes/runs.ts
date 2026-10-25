@@ -16,11 +16,12 @@ import { runRateLimit } from "../middlewares/rate-limit";
 import { ResumeConflictError, claimResume } from "../lib/run-executor";
 import { logger } from "../lib/logger";
 import { toPublicRun, userTokenFrom } from "./serializers";
+import { parseRequest } from "../middlewares/error-handler";
 
 const router: IRouter = Router();
 
 router.get("/runs", async (req, res) => {
-  const { agentId, status } = ListRunsQueryParams.parse(req.query);
+  const { agentId, status } = parseRequest(ListRunsQueryParams, req.query);
   const conditions = [
     ...(agentId !== undefined ? [eq(runsTable.agentId, agentId)] : []),
     ...(status !== undefined ? [eq(runsTable.status, status)] : []),
@@ -34,7 +35,7 @@ router.get("/runs", async (req, res) => {
 });
 
 router.get("/runs/:id", async (req, res) => {
-  const { id } = GetRunParams.parse(req.params);
+  const { id } = parseRequest(GetRunParams, req.params);
   const [run] = await db.select().from(runsTable).where(eq(runsTable.id, id)).limit(1);
   if (!run) {
     res.status(404).json({ error: "Esecuzione non trovata" });
@@ -44,7 +45,7 @@ router.get("/runs/:id", async (req, res) => {
 });
 
 router.get("/runs/:id/steps", async (req, res) => {
-  const { id } = ListRunStepsParams.parse(req.params);
+  const { id } = parseRequest(ListRunStepsParams, req.params);
   const [run] = await db.select({ id: runsTable.id }).from(runsTable).where(eq(runsTable.id, id)).limit(1);
   if (!run) {
     res.status(404).json({ error: "Esecuzione non trovata" });
@@ -62,8 +63,8 @@ router.get("/runs/:id/steps", async (req, res) => {
 // è attesa qui: una seconda ripresa, una pausa scaduta o un'azione incoerente rispondono 409 senza
 // eseguire il tool. Il resto del turno prosegue in background, come all'avvio.
 router.post("/runs/:id/resume", runRateLimit, async (req, res) => {
-  const { id } = ResumeRunParams.parse(req.params);
-  const { decision } = ResumeRunBody.parse(req.body);
+  const { id } = parseRequest(ResumeRunParams, req.params);
+  const { decision } = parseRequest(ResumeRunBody, req.body);
 
   const [existing] = await db.select({ id: runsTable.id }).from(runsTable).where(eq(runsTable.id, id)).limit(1);
   if (!existing) {

@@ -16,6 +16,7 @@ import {
 import { encryptSecret } from "../lib/secrets";
 import { uniqueSlug, withSlugRetry } from "../lib/slug";
 import { toPublicApp } from "./serializers";
+import { parseRequest } from "../middlewares/error-handler";
 
 const router: IRouter = Router();
 
@@ -29,7 +30,7 @@ router.get("/apps", async (_req, res) => {
 // univoco e lo si sostituisce appena noto l'id. Se una creazione concorrente prende lo stesso slug,
 // la transazione fallisce sulla unique e si riprova da capo (withSlugRetry).
 router.post("/apps", async (req, res) => {
-  const { serviceSecret, ...body } = CreateAppBody.parse(req.body);
+  const { serviceSecret, ...body } = parseRequest(CreateAppBody, req.body);
   const serviceSecretEnc = serviceSecret !== undefined ? encryptSecret(serviceSecret) : null;
 
   const app = await withSlugRetry(() => db.transaction(async (tx) => {
@@ -59,7 +60,7 @@ router.post("/apps", async (req, res) => {
 });
 
 router.get("/apps/:id", async (req, res) => {
-  const { id } = GetAppParams.parse(req.params);
+  const { id } = parseRequest(GetAppParams, req.params);
   const [app] = await db.select().from(appsTable).where(eq(appsTable.id, id)).limit(1);
   if (!app) {
     res.status(404).json({ error: "App non trovata" });
@@ -69,8 +70,8 @@ router.get("/apps/:id", async (req, res) => {
 });
 
 router.patch("/apps/:id", async (req, res) => {
-  const { id } = UpdateAppParams.parse(req.params);
-  const { serviceSecret, ...body } = UpdateAppBody.parse(req.body);
+  const { id } = parseRequest(UpdateAppParams, req.params);
+  const { serviceSecret, ...body } = parseRequest(UpdateAppBody, req.body);
   // serviceSecret: stringa → cifrato e salvato; null → cancellato; assente → invariato
   const secretChange =
     serviceSecret === undefined
@@ -89,7 +90,7 @@ router.patch("/apps/:id", async (req, res) => {
 });
 
 router.delete("/apps/:id", async (req, res) => {
-  const { id } = DeleteAppParams.parse(req.params);
+  const { id } = parseRequest(DeleteAppParams, req.params);
   const [app] = await db.delete(appsTable).where(eq(appsTable.id, id)).returning();
   if (!app) {
     res.status(404).json({ error: "App non trovata" });

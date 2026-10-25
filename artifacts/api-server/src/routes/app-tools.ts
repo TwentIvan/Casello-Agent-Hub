@@ -15,6 +15,7 @@ import {
 import { checkParamsSchema, checkPathPlaceholders, parseDefinition } from "../lib/tools/definition";
 import type { HttpDefinition, ToolKind } from "../lib/tools/types";
 import { isUniqueViolation } from "../lib/pg-errors";
+import { parseRequest } from "../middlewares/error-handler";
 
 // Catalogo dei tool di un'app: i tool appartengono all'app e si assegnano agli agenti con
 // PUT /agents/:id/tools.
@@ -49,15 +50,15 @@ function appNotFound(res: Response) {
 }
 
 router.get("/apps/:id/tools", async (req, res) => {
-  const { id } = ListAppToolsParams.parse(req.params);
+  const { id } = parseRequest(ListAppToolsParams, req.params);
   if (!(await appExists(id))) return appNotFound(res);
   const tools = await db.select().from(appToolsTable).where(eq(appToolsTable.appId, id)).orderBy(asc(appToolsTable.id));
   res.json(ListAppToolsResponse.parse(tools));
 });
 
 router.post("/apps/:id/tools", async (req, res) => {
-  const { id } = CreateAppToolParams.parse(req.params);
-  const body = CreateAppToolBody.parse(req.body);
+  const { id } = parseRequest(CreateAppToolParams, req.params);
+  const body = parseRequest(CreateAppToolBody, req.body);
   if (!(await appExists(id))) return appNotFound(res);
 
   const paramsSchema = body.paramsSchema ?? DEFAULT_PARAMS_SCHEMA;
@@ -80,8 +81,8 @@ router.post("/apps/:id/tools", async (req, res) => {
 });
 
 router.patch("/apps/:id/tools/:toolId", async (req, res) => {
-  const { id, toolId } = UpdateAppToolParams.parse(req.params);
-  const body = UpdateAppToolBody.parse(req.body);
+  const { id, toolId } = parseRequest(UpdateAppToolParams, req.params);
+  const body = parseRequest(UpdateAppToolBody, req.body);
   const [current] = await db
     .select()
     .from(appToolsTable)
@@ -122,7 +123,7 @@ router.patch("/apps/:id/tools/:toolId", async (req, res) => {
 });
 
 router.delete("/apps/:id/tools/:toolId", async (req, res) => {
-  const { id, toolId } = DeleteAppToolParams.parse(req.params);
+  const { id, toolId } = parseRequest(DeleteAppToolParams, req.params);
   const [tool] = await db
     .delete(appToolsTable)
     .where(and(eq(appToolsTable.id, toolId), eq(appToolsTable.appId, id)))

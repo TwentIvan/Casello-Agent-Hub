@@ -14,8 +14,7 @@ import { logger } from "./logger";
 import {
   loadAgentTools,
   loadAppConnection,
-  maskArgsWithSchema,
-  maskSensitiveArgs,
+  stepArgsWithSchema,
   toFunctionTools,
 } from "./tools/catalog";
 import { executeTool } from "./tools/executor";
@@ -90,19 +89,20 @@ async function nextPosition(runId: number): Promise<number> {
 /**
  * Argomenti da registrare: oscurati con lo schema del tool attivo; se il tool non è (più) tra
  * quelli attivi si usa la sua riga del catalogo in qualunque stato; se la riga non esiste
- * (tool inesistente o cancellato) gli argomenti non vengono registrati.
+ * (tool inesistente o cancellato) gli argomenti non vengono registrati. Argomenti che non sono
+ * un oggetto diventano `{ _raw }` (vedi stepArgsWithSchema).
  */
 async function argsForStep(appId: number, tools: CatalogTool[], step: StepRecord): Promise<unknown> {
   if (step.args === undefined) return null;
   if (!step.toolName) return null;
   const tool = tools.find((t) => t.name === step.toolName);
-  if (tool) return maskSensitiveArgs(tool, step.args);
+  if (tool) return stepArgsWithSchema(tool.paramsSchema, step.args);
   const [row] = await db
     .select({ paramsSchema: appToolsTable.paramsSchema })
     .from(appToolsTable)
     .where(and(eq(appToolsTable.appId, appId), eq(appToolsTable.name, step.toolName)))
     .limit(1);
-  return row ? maskArgsWithSchema(row.paramsSchema, step.args) : null;
+  return row ? stepArgsWithSchema(row.paramsSchema, step.args) : null;
 }
 
 /** Scrive i passi della run con posizioni crescenti, oscurando gli argomenti sensibili. */

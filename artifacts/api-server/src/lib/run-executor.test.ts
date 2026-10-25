@@ -56,6 +56,22 @@ function toolCallReply(name: string, args: Record<string, unknown>, id = "call_1
   };
 }
 
+// Argomenti grezzi, così come li produce il modello (anche JSON non valido)
+function rawToolCallReply(name: string, rawArgs: string, id = "call_1") {
+  return {
+    choices: [
+      {
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: [{ id, type: "function", function: { name, arguments: rawArgs } }],
+        },
+      },
+    ],
+    usage: { prompt_tokens: 10, completion_tokens: 5 },
+  };
+}
+
 function textReply(text: string) {
   return {
     choices: [{ message: { role: "assistant", content: text } }],
@@ -494,5 +510,50 @@ describe("orchestrazione delle run", () => {
     expect(run.promptTokens).toBe(10);
     expect(run.completionTokens).toBe(5);
     expect(run.durationMs).not.toBeNull();
+  });
+
+  it("argomenti JSON non validi: il passo registra un oggetto { _raw } troncato a 500 caratteri", async () => {
+    const id = await seedRun(GET_ITEM);
+    const long = `{non json ${"x".repeat(1000)}`;
+    llmReplies = [rawToolCallReply("get_item", "{non json"), rawToolCallReply("get_item", long), textReply("ok")];
+
+    await startRun(id, { userToken: "t" });
+
+    expect((await getRun(id)).status).toBe("succeeded");
+    const tools = (await getSteps(id)).filter((s) => s.type === "tool");
+    expect(tools[0]!.args).toEqual({ _raw: "{non json" });
+    expect(tools[1]!.args).toEqual({ _raw: long.slice(0, 500) });
+  });
+
+  it("argomenti JSON che non sono un oggetto: registrati come { _raw } con il JSON", async () => {
+    const id = await seedRun(GET_ITEM);
+    llmReplies = [rawToolCallReply("get_item", "[1,2]"), textReply("ok")];
+
+    await startRun(id, { userToken: "t" });
+
+    const tool = (await getSteps(id)).find((s) => s.type === "tool")!;
+    expect(tool.args).toEqual({ _raw: "[1,2]" });
+  });
+
+  it("argomenti non oggetto di un tool con proprietà sensibili: { _raw: '***' }", async () => {
+    const id = await seedRun(SET_PASSWORD);
+    llmReplies = [rawToolCallReply("set_password", '{"password":"segreta-123"'), textReply("ok")];
+
+    await startRun(id, { userToken: "t" });
+
+    const tool = (await getSteps(id)).find((s) => s.type === "tool")!;
+    expect(tool.args).toEqual({ _raw: "***" });
+    const steps = await pool.query("select row_to_json(s)::text as j from run_steps s");
+    for (const row of steps.rows) expect(row.j).not.toContain("segreta-123");
+  });
+
+  it("tool sconosciuto: il passo non registra gli argomenti", async () => {
+    const id = await seedRun(GET_ITEM);
+    llmReplies = [rawToolCallReply("non_esiste", "{non json"), textReply("ok")];
+
+    await startRun(id, { userToken: "t" });
+
+    const tool = (await getSteps(id)).find((s) => s.type === "tool")!;
+    expect(tool.args).toBeNull();
   });
 });

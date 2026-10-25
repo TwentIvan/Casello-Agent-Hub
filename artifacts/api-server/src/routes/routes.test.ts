@@ -46,6 +46,21 @@ function toolCallReply(name: string, args: Record<string, unknown>) {
   };
 }
 
+function rawToolCallReply(name: string, rawArgs: string) {
+  return {
+    choices: [
+      {
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: [{ id: "call_1", type: "function", function: { name, arguments: rawArgs } }],
+        },
+      },
+    ],
+    usage: { prompt_tokens: 10, completion_tokens: 5 },
+  };
+}
+
 function textReply(text: string) {
   return { choices: [{ message: { role: "assistant", content: text } }], usage: { prompt_tokens: 10, completion_tokens: 5 } };
 }
@@ -410,5 +425,33 @@ describe("run", () => {
     const run = await waitForStatus(id, ["succeeded", "failed"]);
     expect(run.status).toBe("succeeded");
     expect(appRequests).toHaveLength(1);
+  });
+
+  it("argomenti del modello non JSON: GET dei passi → 200 con { _raw }", async () => {
+    const app = await createApp();
+    await api("POST", `/apps/${app.id}/tools`, HTTP_TOOL);
+    const general = await generalAgentOf(app.id);
+    const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "x" }).returning();
+    llmReplies = [rawToolCallReply("delete_item", "{non json"), textReply("Non riesco.")];
+    await startRun(run!.id, { userToken: USER_TOKEN });
+
+    const res = await api("GET", `/runs/${run!.id}/steps`);
+    expect(res.status).toBe(200);
+    const tool = res.json.find((s: { type: string }) => s.type === "tool");
+    expect(tool.args).toEqual({ _raw: "{non json" });
+  });
+
+  it("risposta che non rispetta il contratto (ZodError della risposta) → 500 generico", async () => {
+    const app = await createApp();
+    const general = await generalAgentOf(app.id);
+    const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "x" }).returning();
+    // Riga scritta prima della correzione: args come stringa JSON invece di un oggetto
+    await pool.query(
+      `insert into run_steps (run_id, position, type, tool_name, args, ok, duration_ms) values ($1, 0, 'tool', 'x', '"grezzo"'::jsonb, false, 0)`,
+      [run!.id],
+    );
+    const res = await api("GET", `/runs/${run!.id}/steps`);
+    expect(res.status).toBe(500);
+    expect(res.json).toEqual({ error: "Errore interno" });
   });
 });

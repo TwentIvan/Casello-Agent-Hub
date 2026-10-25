@@ -23,11 +23,12 @@ import {
 import { startRun } from "../lib/run-executor";
 import { logger } from "../lib/logger";
 import { toPublicRun, userTokenFrom, withToolIds, withToolIdsOne } from "./serializers";
+import { parseRequest } from "../middlewares/error-handler";
 
 const router: IRouter = Router();
 
 router.get("/agents", async (req, res) => {
-  const { appId } = ListAgentsQueryParams.parse(req.query);
+  const { appId } = parseRequest(ListAgentsQueryParams, req.query);
   const agents = await db
     .select()
     .from(agentsTable)
@@ -38,7 +39,7 @@ router.get("/agents", async (req, res) => {
 
 // Gli agenti creati dalla UI sono sempre di area: il generale nasce con l'app
 router.post("/agents", async (req, res) => {
-  const body = CreateAgentBody.parse(req.body);
+  const body = parseRequest(CreateAgentBody, req.body);
   const [app] = await db.select({ id: appsTable.id }).from(appsTable).where(eq(appsTable.id, body.appId)).limit(1);
   if (!app) {
     res.status(404).json({ error: "App non trovata" });
@@ -52,7 +53,7 @@ router.post("/agents", async (req, res) => {
 });
 
 router.get("/agents/:id", async (req, res) => {
-  const { id } = GetAgentParams.parse(req.params);
+  const { id } = parseRequest(GetAgentParams, req.params);
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, id)).limit(1);
   if (!agent) {
     res.status(404).json({ error: "Agente non trovato" });
@@ -62,8 +63,8 @@ router.get("/agents/:id", async (req, res) => {
 });
 
 router.patch("/agents/:id", async (req, res) => {
-  const { id } = UpdateAgentParams.parse(req.params);
-  const body = UpdateAgentBody.parse(req.body);
+  const { id } = parseRequest(UpdateAgentParams, req.params);
+  const body = parseRequest(UpdateAgentBody, req.body);
   const [agent] = await db
     .update(agentsTable)
     .set({ ...body, updatedAt: new Date() })
@@ -77,7 +78,7 @@ router.patch("/agents/:id", async (req, res) => {
 });
 
 router.delete("/agents/:id", async (req, res) => {
-  const { id } = DeleteAgentParams.parse(req.params);
+  const { id } = parseRequest(DeleteAgentParams, req.params);
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, id)).limit(1);
   if (!agent) {
     res.status(404).json({ error: "Agente non trovato" });
@@ -94,8 +95,8 @@ router.delete("/agents/:id", async (req, res) => {
 // ── Tool assegnati all'agente ───────────────────────────────────────────────
 
 router.put("/agents/:id/tools", async (req, res) => {
-  const { id } = SetAgentToolsParams.parse(req.params);
-  const toolIds = [...new Set(SetAgentToolsBody.parse(req.body).toolIds)];
+  const { id } = parseRequest(SetAgentToolsParams, req.params);
+  const toolIds = [...new Set(parseRequest(SetAgentToolsBody, req.body).toolIds)];
 
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, id)).limit(1);
   if (!agent) {
@@ -135,8 +136,8 @@ router.put("/agents/:id/tools", async (req, res) => {
 // ── Run (avviate su un agente) ──────────────────────────────────────────────
 
 router.post("/agents/:id/runs", runRateLimit, async (req, res) => {
-  const { id } = TriggerRunParams.parse(req.params);
-  const body = TriggerRunBody.parse(req.body);
+  const { id } = parseRequest(TriggerRunParams, req.params);
+  const body = parseRequest(TriggerRunBody, req.body);
   const userToken = userTokenFrom(req);
 
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, id)).limit(1);

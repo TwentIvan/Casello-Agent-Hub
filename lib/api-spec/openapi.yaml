@@ -1144,9 +1144,10 @@ components:
           additionalProperties: true
           description: Definizione dell'esecuzione (dipende da kind)
         evidence:
-          type: ["object", "null"]
-          additionalProperties: true
-          description: Evidenze da cui il tool è stato derivato
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ToolEvidence"
+          description: Evidenze da cui il tool è stato derivato (proposte dall'architetto)
         needsVerification:
           type: boolean
         createdAt:
@@ -1155,6 +1156,17 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    ToolEvidence:
+      type: object
+      required: [source, location]
+      properties:
+        source:
+          type: string
+        location:
+          type: string
+        note:
+          type: string
 
     AppToolInput:
       type: object
@@ -1182,8 +1194,9 @@ components:
           type: object
           additionalProperties: true
         evidence:
-          type: ["object", "null"]
-          additionalProperties: true
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ToolEvidence"
         needsVerification:
           type: boolean
 
@@ -1212,8 +1225,9 @@ components:
           type: object
           additionalProperties: true
         evidence:
-          type: ["object", "null"]
-          additionalProperties: true
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ToolEvidence"
         needsVerification:
           type: boolean
 

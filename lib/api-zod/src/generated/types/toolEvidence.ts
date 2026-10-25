@@ -6,7 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-/**
- * @nullable
- */
-export type AppToolInputEvidence = { [key: string]: unknown } | null;
+export interface ToolEvidence {
+  source: string;
+  location: string;
+  note?: string;
+}

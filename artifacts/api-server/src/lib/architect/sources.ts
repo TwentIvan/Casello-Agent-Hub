@@ -26,6 +26,11 @@ const MAX_REF_DEPTH = 3;
 const MAX_RESOLVE_NODES = 20_000;
 const REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
+/** Repo GitHub nel formato proprietario/nome, senza segmenti `.` o `..` (usato anche al salvataggio dell'app). */
+export function isValidGithubRepo(repo: string): boolean {
+  return REPO_PATTERN.test(repo) && !repo.split("/").some((s) => s === "." || s === "..");
+}
+
 export const OPENAPI_PATHS = [
   "/openapi.json",
   "/api/openapi.json",
@@ -58,7 +63,7 @@ export async function fetchGithubTree(input: {
   /** Solo per i test: limite ridotto dell'archivio. */
   maxZipBytes?: number;
 }): Promise<SourceTree> {
-  if (!REPO_PATTERN.test(input.repo) || input.repo.split("/").some((s) => s === "." || s === "..")) {
+  if (!isValidGithubRepo(input.repo)) {
     throw new SourceError("repo GitHub non valido: atteso il formato proprietario/nome");
   }
   const [owner, name] = input.repo.split("/") as [string, string];

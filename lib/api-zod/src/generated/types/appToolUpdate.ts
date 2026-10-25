@@ -6,8 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AppToolUpdateDefinition } from './appToolUpdateDefinition';
-import type { AppToolUpdateEvidence } from './appToolUpdateEvidence';
 import type { AppToolUpdateParamsSchema } from './appToolUpdateParamsSchema';
+import type { ToolEvidence } from './toolEvidence';
 import type { ToolIdentity } from './toolIdentity';
 import type { ToolKind } from './toolKind';
 import type { ToolStatus } from './toolStatus';
@@ -25,6 +25,6 @@ export interface AppToolUpdate {
   paramsSchema?: AppToolUpdateParamsSchema;
   definition?: AppToolUpdateDefinition;
   /** @nullable */
-  evidence?: AppToolUpdateEvidence;
+  evidence?: ToolEvidence[] | null;
   needsVerification?: boolean;
 }

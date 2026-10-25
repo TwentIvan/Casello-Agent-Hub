@@ -1,6 +1,15 @@
 import type { Request } from "express";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { db, agentToolsTable, appToolsTable, type Agent, type App, type Run } from "@workspace/db";
+import {
+  db,
+  agentToolsTable,
+  appToolsTable,
+  type Agent,
+  type Analysis,
+  type AnalysisItem,
+  type App,
+  type Run,
+} from "@workspace/db";
 
 // Forma pubblica delle risorse: cosa esce dall'API e cosa no.
 
@@ -92,4 +101,33 @@ export async function withToolIdsOne(agent: Agent) {
 export function userTokenFrom(req: Request): string | undefined {
   const value = req.get("x-app-user-token")?.trim();
   return value ? value : undefined;
+}
+
+/** Analisi senza log né mappa (elenco e risposta all'avvio): quelli arrivano solo col dettaglio. */
+export function toPublicAnalysis(analysis: Analysis) {
+  const { log: _log, architectureMap: _map, ...rest } = analysis;
+  return rest;
+}
+
+/**
+ * Prove di un elemento nella forma del contratto: la nota è facoltativa nell'esito del modello
+ * ma sempre presente in uscita (stringa vuota); voci malformate scartate.
+ */
+function publicEvidence(evidence: unknown): { source: string; location: string; note: string }[] {
+  if (!Array.isArray(evidence)) return [];
+  return evidence.filter(isPlainObject).map((e) => ({
+    source: typeof e.source === "string" ? e.source : "",
+    location: typeof e.location === "string" ? e.location : "",
+    note: typeof e.note === "string" ? e.note : "",
+  }));
+}
+
+/** Elemento della proposta: prove normalizzate, payload sempre un oggetto. */
+export function toPublicItem(item: AnalysisItem) {
+  const { createdAt: _createdAt, ...rest } = item;
+  return {
+    ...rest,
+    payload: isPlainObject(item.payload) ? item.payload : {},
+    evidence: publicEvidence(item.evidence),
+  };
 }

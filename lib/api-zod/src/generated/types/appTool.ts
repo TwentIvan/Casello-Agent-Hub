@@ -6,8 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AppToolDefinition } from './appToolDefinition';
-import type { AppToolEvidence } from './appToolEvidence';
 import type { AppToolParamsSchema } from './appToolParamsSchema';
+import type { ToolEvidence } from './toolEvidence';
 import type { ToolIdentity } from './toolIdentity';
 import type { ToolKind } from './toolKind';
 import type { ToolStatus } from './toolStatus';
@@ -28,10 +28,10 @@ export interface AppTool {
   /** Definizione dell'esecuzione (dipende da kind) */
   definition: AppToolDefinition;
   /**
-     * Evidenze da cui il tool è stato derivato
+     * Evidenze da cui il tool è stato derivato (proposte dall'architetto)
      * @nullable
      */
-  evidence?: AppToolEvidence;
+  evidence?: ToolEvidence[] | null;
   needsVerification: boolean;
   createdAt: Date;
   updatedAt: Date;

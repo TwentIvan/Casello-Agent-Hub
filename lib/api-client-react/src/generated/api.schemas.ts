@@ -255,11 +255,11 @@ export type AppToolParamsSchema = { [key: string]: unknown };
  */
 export type AppToolDefinition = { [key: string]: unknown };
 
-/**
- * Evidenze da cui il tool è stato derivato
- * @nullable
- */
-export type AppToolEvidence = { [key: string]: unknown } | null;
+export interface ToolEvidence {
+  source: string;
+  location: string;
+  note?: string;
+}
 
 export interface AppTool {
   id: number;
@@ -277,10 +277,10 @@ export interface AppTool {
   /** Definizione dell'esecuzione (dipende da kind) */
   definition: AppToolDefinition;
   /**
-     * Evidenze da cui il tool è stato derivato
+     * Evidenze da cui il tool è stato derivato (proposte dall'architetto)
      * @nullable
      */
-  evidence?: AppToolEvidence;
+  evidence?: ToolEvidence[] | null;
   needsVerification: boolean;
   createdAt: string;
   updatedAt: string;
@@ -289,11 +289,6 @@ export interface AppTool {
 export type AppToolInputParamsSchema = { [key: string]: unknown };
 
 export type AppToolInputDefinition = { [key: string]: unknown };
-
-/**
- * @nullable
- */
-export type AppToolInputEvidence = { [key: string]: unknown } | null;
 
 export interface AppToolInput {
   /** @minLength 1 */
@@ -308,18 +303,13 @@ export interface AppToolInput {
   paramsSchema?: AppToolInputParamsSchema;
   definition: AppToolInputDefinition;
   /** @nullable */
-  evidence?: AppToolInputEvidence;
+  evidence?: ToolEvidence[] | null;
   needsVerification?: boolean;
 }
 
 export type AppToolUpdateParamsSchema = { [key: string]: unknown };
 
 export type AppToolUpdateDefinition = { [key: string]: unknown };
-
-/**
- * @nullable
- */
-export type AppToolUpdateEvidence = { [key: string]: unknown } | null;
 
 export interface AppToolUpdate {
   /** @minLength 1 */
@@ -334,7 +324,7 @@ export interface AppToolUpdate {
   paramsSchema?: AppToolUpdateParamsSchema;
   definition?: AppToolUpdateDefinition;
   /** @nullable */
-  evidence?: AppToolUpdateEvidence;
+  evidence?: ToolEvidence[] | null;
   needsVerification?: boolean;
 }
 

@@ -391,7 +391,11 @@ export const ListAppToolsResponseItem = zod.object({
   "status": zod.enum(['draft', 'active', 'disabled']),
   "paramsSchema": zod.record(zod.string(), zod.unknown()).describe('JSON Schema dei parametri accettati dal tool'),
   "definition": zod.record(zod.string(), zod.unknown()).describe('Definizione dell\'esecuzione (dipende da kind)'),
-  "evidence": zod.record(zod.string(), zod.unknown()).nullish().describe('Evidenze da cui il tool è stato derivato'),
+  "evidence": zod.array(zod.object({
+  "source": zod.string(),
+  "location": zod.string(),
+  "note": zod.string().optional()
+})).nullish().describe('Evidenze da cui il tool è stato derivato (proposte dall\'architetto)'),
   "needsVerification": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -419,7 +423,11 @@ export const CreateAppToolBody = zod.object({
   "status": zod.enum(['draft', 'active', 'disabled']).optional(),
   "paramsSchema": zod.record(zod.string(), zod.unknown()).optional(),
   "definition": zod.record(zod.string(), zod.unknown()),
-  "evidence": zod.record(zod.string(), zod.unknown()).nullish(),
+  "evidence": zod.array(zod.object({
+  "source": zod.string(),
+  "location": zod.string(),
+  "note": zod.string().optional()
+})).nullish(),
   "needsVerification": zod.boolean().optional()
 })
 
@@ -435,7 +443,11 @@ export const CreateAppToolResponse = zod.object({
   "status": zod.enum(['draft', 'active', 'disabled']),
   "paramsSchema": zod.record(zod.string(), zod.unknown()).describe('JSON Schema dei parametri accettati dal tool'),
   "definition": zod.record(zod.string(), zod.unknown()).describe('Definizione dell\'esecuzione (dipende da kind)'),
-  "evidence": zod.record(zod.string(), zod.unknown()).nullish().describe('Evidenze da cui il tool è stato derivato'),
+  "evidence": zod.array(zod.object({
+  "source": zod.string(),
+  "location": zod.string(),
+  "note": zod.string().optional()
+})).nullish().describe('Evidenze da cui il tool è stato derivato (proposte dall\'architetto)'),
   "needsVerification": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -463,7 +475,11 @@ export const UpdateAppToolBody = zod.object({
   "status": zod.enum(['draft', 'active', 'disabled']).optional(),
   "paramsSchema": zod.record(zod.string(), zod.unknown()).optional(),
   "definition": zod.record(zod.string(), zod.unknown()).optional(),
-  "evidence": zod.record(zod.string(), zod.unknown()).nullish(),
+  "evidence": zod.array(zod.object({
+  "source": zod.string(),
+  "location": zod.string(),
+  "note": zod.string().optional()
+})).nullish(),
   "needsVerification": zod.boolean().optional()
 })
 
@@ -479,7 +495,11 @@ export const UpdateAppToolResponse = zod.object({
   "status": zod.enum(['draft', 'active', 'disabled']),
   "paramsSchema": zod.record(zod.string(), zod.unknown()).describe('JSON Schema dei parametri accettati dal tool'),
   "definition": zod.record(zod.string(), zod.unknown()).describe('Definizione dell\'esecuzione (dipende da kind)'),
-  "evidence": zod.record(zod.string(), zod.unknown()).nullish().describe('Evidenze da cui il tool è stato derivato'),
+  "evidence": zod.array(zod.object({
+  "source": zod.string(),
+  "location": zod.string(),
+  "note": zod.string().optional()
+})).nullish().describe('Evidenze da cui il tool è stato derivato (proposte dall\'architetto)'),
   "needsVerification": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()

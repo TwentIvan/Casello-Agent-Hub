@@ -6,6 +6,7 @@ import agentsRouter from "./agents";
 import runsRouter from "./runs";
 import dashboardRouter from "./dashboard";
 import modelsRouter from "./models";
+import { createAnalysesRouter } from "./analyses";
 import { authRouter, requireAuth } from "../lib/auth";
 
 const router: IRouter = Router();
@@ -20,5 +21,6 @@ router.use(agentsRouter);
 router.use(runsRouter);
 router.use(dashboardRouter);
 router.use(modelsRouter);
+router.use(createAnalysesRouter());
 
 export default router;

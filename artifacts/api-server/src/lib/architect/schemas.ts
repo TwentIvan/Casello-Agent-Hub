@@ -257,13 +257,22 @@ export const CompletionResultSchema = obj({ items: list(CompletionItemSchema, MA
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["items"], message: "le chiavi delle voci devono essere uniche" });
     return;
   }
+  const phaseOf = new Map(res.items.map((i) => [i.key, i.phase]));
   res.items.forEach((item, index) => {
     for (const dep of item.dependsOn) {
-      if (!keys.has(dep)) {
+      const depPhase = phaseOf.get(dep);
+      if (depPhase === undefined) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["items", index, "dependsOn"],
           message: `la dipendenza "${dep}" non corrisponde a nessuna voce`,
+        });
+      } else if (depPhase > item.phase) {
+        // Il piano si completa per fasi: una dipendenza non può arrivare in una fase successiva
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["items", index, "dependsOn"],
+          message: `la voce "${item.key}" (fase ${item.phase}) dipende da "${dep}" che è in una fase successiva (${depPhase}): la dipendenza deve stare nella stessa fase o in una precedente`,
         });
       }
     }

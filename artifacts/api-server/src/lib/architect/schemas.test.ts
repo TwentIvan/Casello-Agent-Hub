@@ -157,6 +157,25 @@ describe("schemi delle fasi", () => {
     if (!cycle.success) expect(cycle.error.issues[0].message).toMatch(/ciclo/);
   });
 
+  it("rifiuta una dipendenza in una fase successiva, nominando le due voci", () => {
+    const later = PHASE_SCHEMAS.completion.safeParse({
+      items: [{ ...completionItem("base"), phase: 2 }, completionItem("uso", ["base"])],
+    });
+    expect(later.success).toBe(false);
+    if (!later.success) {
+      expect(later.error.issues).toHaveLength(1);
+      expect(later.error.issues[0].path).toEqual(["items", 1, "dependsOn"]);
+      expect(later.error.issues[0].message).toMatch(/"uso" \(fase 1\).*"base".*\(2\)/);
+    }
+    // stessa fase o fase precedente: ammesse
+    const same = PHASE_SCHEMAS.completion.safeParse({ items: [completionItem("base"), completionItem("uso", ["base"])] });
+    expect(same.success).toBe(true);
+    const earlier = PHASE_SCHEMAS.completion.safeParse({
+      items: [completionItem("base"), { ...completionItem("uso", ["base"]), phase: 3 }],
+    });
+    expect(earlier.success).toBe(true);
+  });
+
   it("rifiuta un type di evoluzione sconosciuto", () => {
     const item = (valid.evolution as { items: object[] }).items[0];
     expect(PHASE_SCHEMAS.evolution.safeParse({ items: [{ ...item, type: "magia" }] }).success).toBe(false);

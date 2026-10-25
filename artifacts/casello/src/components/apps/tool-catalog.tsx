@@ -44,7 +44,9 @@ export function ToolCatalog({ appId }: { appId: number }) {
 
   // Il dialog si rimonta a ogni apertura (key) per ripartire dai valori giusti.
   const [form, setForm] = useState<{ open: boolean; tool?: AppTool; key: number }>({ open: false, key: 0 });
+  // toDelete resta valorizzato a dialog chiuso, così titolo e toast non perdono il nome durante l'animazione.
   const [toDelete, setToDelete] = useState<AppTool | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: getListAppToolsQueryKey(appId) });
 
   const updateTool = useUpdateAppTool({
@@ -59,12 +61,12 @@ export function ToolCatalog({ appId }: { appId: number }) {
   });
   const deleteTool = useDeleteAppTool({
     mutation: {
-      onSuccess: (_data, { toolId }) => {
+      onSuccess: () => {
         invalidate();
         // Gli agenti perdono il tool assegnato: si aggiornano anche loro.
         void queryClient.invalidateQueries({ queryKey: getListAgentsQueryKey() });
-        toast({ title: "Tool eliminato", description: tools.data?.find((t) => t.id === toolId)?.name });
-        setToDelete(null);
+        toast({ title: "Tool eliminato", description: toDelete?.name });
+        setDeleteOpen(false);
       },
       onError: (error) =>
         toast({ variant: "destructive", title: "Eliminazione non riuscita", description: apiErrorMessage(error) }),
@@ -154,6 +156,7 @@ export function ToolCatalog({ appId }: { appId: number }) {
                             {tool.kind === "http" ? "Modifica" : "Dettagli"}
                           </DropdownMenuItem>
                           <DropdownMenuItem
+                            disabled={updateTool.isPending}
                             onSelect={() =>
                               updateTool.mutate({
                                 id: appId,
@@ -167,7 +170,10 @@ export function ToolCatalog({ appId }: { appId: number }) {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
-                            onSelect={() => setToDelete(tool)}
+                            onSelect={() => {
+                              setToDelete(tool);
+                              setDeleteOpen(true);
+                            }}
                           >
                             <Trash2 />
                             Elimina
@@ -191,8 +197,8 @@ export function ToolCatalog({ appId }: { appId: number }) {
         onOpenChange={(open) => setForm((prev) => ({ ...prev, open }))}
       />
       <ConfirmDialog
-        open={toDelete !== null}
-        onOpenChange={(open) => !open && setToDelete(null)}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
         title={`Eliminare «${toDelete?.name ?? ""}»?`}
         description="Il tool sparisce dal catalogo e dagli agenti che lo usano. L'operazione non si può annullare."
         pending={deleteTool.isPending}

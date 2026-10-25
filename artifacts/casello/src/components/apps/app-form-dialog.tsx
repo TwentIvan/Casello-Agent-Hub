@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -22,7 +22,6 @@ import {
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -57,12 +56,14 @@ function AuthFields({
   prefix,
   title,
   hint,
+  onDisable,
   children,
 }: {
   form: UseFormReturn<AppFormValues>;
   prefix: "user" | "service";
   title: string;
   hint: string;
+  onDisable?: () => void;
   children?: ReactNode;
 }) {
   const enabled = form.watch(`${prefix}AuthEnabled`);
@@ -78,7 +79,14 @@ function AuthFields({
               <p className="text-xs text-muted-foreground">{hint}</p>
             </div>
             <FormControl>
-              <Switch checked={field.value} onCheckedChange={field.onChange} aria-label={title} />
+              <Switch
+                checked={field.value}
+                onCheckedChange={(checked) => {
+                  field.onChange(checked);
+                  if (!checked) onDisable?.();
+                }}
+                aria-label={title}
+              />
             </FormControl>
           </FormItem>
         )}
@@ -176,11 +184,20 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
     };
     if (app) {
       // Segreto: inviato solo se digitato o rimosso; altrimenti resta quello salvato.
-      const secret = serviceSecret ? { serviceSecret } : clearSecret ? { serviceSecret: null } : {};
+      // Con l'auth di servizio spenta il segreto salvato va cancellato; un valore digitato non si invia mai.
+      const secret = !serviceAuthEnabled
+        ? app.serviceSecretSet
+          ? { serviceSecret: null }
+          : {}
+        : serviceSecret
+          ? { serviceSecret }
+          : clearSecret
+            ? { serviceSecret: null }
+            : {};
       updateApp.mutate({ id: app.id, data: { ...common, description: rest.description || null, ...secret } });
     } else {
       createApp.mutate({
-        data: { ...common, description: rest.description || undefined, ...(serviceSecret ? { serviceSecret } : {}) },
+        data: { ...common, description: rest.description || undefined, ...(serviceAuthEnabled && serviceSecret ? { serviceSecret } : {}) },
       });
     }
   };
@@ -274,7 +291,13 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
                 )}
               />
               <AuthFields form={form} prefix="user" title="Autenticazione utente" hint="Il token dell'utente viene inoltrato all'app." />
-              <AuthFields form={form} prefix="service" title="Autenticazione di servizio" hint="Credenziale propria di Casello, per i tool con identità di servizio.">
+              <AuthFields
+                form={form}
+                prefix="service"
+                onDisable={() => {
+                  form.setValue("serviceSecret", "");
+                  setClearSecret(false);
+                }} title="Autenticazione di servizio" hint="Credenziale propria di Casello, per i tool con identità di servizio.">
                 <FormField
                   control={form.control}
                   name="serviceSecret"
@@ -296,8 +319,13 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
                           </Button>
                         )}
                       </div>
-                      {clearSecret && app?.serviceSecretSet && (
-                        <FormDescription>Il segreto verrà cancellato al salvataggio.</FormDescription>
+                      {clearSecret && app?.serviceSecretSet && !field.value && (
+                        <FormDescription>
+                          Il segreto verrà cancellato al salvataggio.{" "}
+                          <button type="button" className="underline" onClick={() => setClearSecret(false)}>
+                            Annulla rimozione
+                          </button>
+                        </FormDescription>
                       )}
                       <FormMessage />
                     </FormItem>

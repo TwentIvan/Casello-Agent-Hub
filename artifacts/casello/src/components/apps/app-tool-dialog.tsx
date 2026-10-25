@@ -159,7 +159,11 @@ export function AppToolDialog({ appId, open, onOpenChange, tool }: AppToolDialog
       .map((field) => field.trim())
       .filter(Boolean);
     const paramLocations = Object.fromEntries(paramNames.map((param) => [param, locationOf(param)]));
+    // In modifica si parte dalla definizione esistente: le chiavi sconosciute restano.
+    const baseDefinition = (tool?.definition ?? {}) as Record<string, unknown>;
+    const { responseFields: _oldFields, ...keptDefinition } = baseDefinition;
     const definition = {
+      ...keptDefinition,
       method: values.method,
       path: values.path,
       paramLocations,

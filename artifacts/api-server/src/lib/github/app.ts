@@ -1,6 +1,7 @@
 import { createPrivateKey, sign } from "node:crypto";
 import { isValidGithubRepo } from "../architect/sources";
 import { readBytesLimited } from "../http-read";
+import { logger } from "../logger";
 import type { GithubConfig } from "./config";
 
 /**
@@ -137,6 +138,15 @@ export function forgetInstallationTokens(installationId: number): void {
   for (const key of tokenCache.keys()) if (key.startsWith(`${installationId}:`)) tokenCache.delete(key);
 }
 
+/**
+ * 401 su una chiamata firmata con il JWT dell'App: GitHub rifiuta le credenziali dell'App stessa
+ * (chiave sbagliata, orologio sfasato), non l'installazione. Non è una revoca: "GitHub non risponde".
+ */
+function appCredentialsRejected(): GithubError {
+  logger.warn("credenziali dell'App GitHub rifiutate");
+  return new GithubError(GITHUB_MESSAGES.unavailable, 401);
+}
+
 function noAccess(installationId: number, status: number | null): GithubError {
   forgetInstallationTokens(installationId);
   return new GithubError(GITHUB_MESSAGES.noAccess, status);
@@ -161,6 +171,8 @@ export async function installationToken(cfg: GithubConfig, installationId: numbe
     token: appJwt(cfg),
     body,
   });
+  if (status === 401) throw appCredentialsRejected();
+  // 404: installazione rimossa o sconosciuta; 403/422: repo non visibile all'installazione
   if (status >= 400) throw noAccess(installationId, status);
   if (!isObj(json) || typeof json["token"] !== "string" || !json["token"]) throw badShape(status);
   const token = json["token"];
@@ -181,6 +193,7 @@ export async function repoInstallationId(cfg: GithubConfig, repo: string): Promi
     token: appJwt(cfg),
   });
   if (status === 404) return null;
+  if (status === 401) throw appCredentialsRejected();
   if (status >= 400) throw new GithubError(GITHUB_MESSAGES.noAccess, status);
   if (!isObj(json) || typeof json["id"] !== "number") throw badShape(status);
   return json["id"];

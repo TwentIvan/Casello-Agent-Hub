@@ -16,9 +16,14 @@ function manageUrl(cfg: GithubConfig, accountType: string, accountLogin: string,
     : `${cfg.webBase}/settings/installations/${installationId}`;
 }
 
-/** Solo questi stati di GitHub indicano un'installazione revocata o rimossa; ogni altro errore è un problema temporaneo. */
+/**
+ * Installazione revocata o rimossa: `access_tokens` risponde 404, oppure l'elenco dei repo risponde
+ * 401 al token di installazione (ottenuto da GitHub, quindi le credenziali dell'App sono buone).
+ * Un 401 sul JWT dell'App arriva come "GitHub non risponde" (credenziali dell'App rifiutate) e non
+ * elimina nulla; ogni altro errore è un problema temporaneo.
+ */
 function isRevoked(err: unknown): boolean {
-  return err instanceof GithubError && (err.status === 401 || err.status === 404);
+  return err instanceof GithubError && err.message === GITHUB_MESSAGES.noAccess && (err.status === 401 || err.status === 404);
 }
 
 const router: IRouter = Router();

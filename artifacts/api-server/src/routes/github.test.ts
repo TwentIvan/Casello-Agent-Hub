@@ -30,6 +30,7 @@ let server: http.Server;
 let base: string;
 let userId: number;
 let resetConfig: () => void;
+let clearTokenCache: () => void;
 
 function configureGithub() {
   Object.assign(process.env, {
@@ -74,6 +75,7 @@ beforeAll(async () => {
   const { default: app } = await import("../app");
   const { resetGithubConfigForTests } = await import("../lib/github/config");
   resetConfig = resetGithubConfigForTests;
+  ({ clearInstallationTokenCache: clearTokenCache } = await import("../lib/github/app"));
   const { ensureUserByEmail } = await import("../lib/users");
   userId = (await ensureUserByEmail("dev@localhost")).id;
 
@@ -102,6 +104,7 @@ beforeEach(async () => {
   gh.requests.length = 0;
   gh.failWith = null;
   gh.failHeaders = {};
+  clearTokenCache();
   configureGithub();
 });
 
@@ -228,6 +231,41 @@ describe("GET /github/repos", () => {
     expect(res.status).toBe(502);
     expect(res.json).toEqual({ error: UNAVAILABLE });
     expect(await rowIds()).toEqual([11, 22]);
+  });
+
+  it("chiave dell'App sbagliata (JWT rifiutato, 401): 502 e nessuna installazione eliminata", async () => {
+    fakeInstallation(11, "ivan", "User", [{ fullName: "ivan/mister" }]);
+    await addRow(11, "ivan", "User");
+    const { generateKeyPairSync } = await import("node:crypto");
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    process.env["GITHUB_APP_PRIVATE_KEY"] = privateKey.export({ type: "pkcs1", format: "pem" }).toString();
+    resetConfig();
+    const res = await get("/github/repos");
+    expect(res.status).toBe(502);
+    expect(res.json).toEqual({ error: UNAVAILABLE });
+    expect(await rowIds()).toEqual([11]);
+  });
+
+  it("le installazioni di un altro utente non si elencano né si eliminano", async () => {
+    const { ensureUserByEmail } = await import("../lib/users");
+    const otherId = (await ensureUserByEmail("altro@example.com")).id;
+    fakeInstallation(11, "ivan", "User", [{ fullName: "ivan/mister" }]);
+    fakeInstallation(22, "acme", "Organization", [{ fullName: "acme/app" }]);
+    await addRow(11, "ivan", "User");
+    await db.insert(githubInstallationsTable).values([
+      { userId: otherId, installationId: 22, accountLogin: "acme", accountType: "Organization", repositorySelection: "all" },
+      // Revocata, ma dell'altro utente: resta com'è
+      { userId: otherId, installationId: 33, accountLogin: "fantasma", accountType: "User", repositorySelection: "all" },
+    ]);
+    const inst = await get("/github/installations");
+    expect(inst.json.installations.map((i: { installationId: number }) => i.installationId)).toEqual([11]);
+    const repos = await get("/github/repos");
+    expect(repos.status).toBe(200);
+    expect(repos.json).toEqual([{ installationId: 11, fullName: "ivan/mister", defaultBranch: "main", private: false }]);
+    // Nessuna chiamata a GitHub per le installazioni dell'altro utente
+    expect(gh.requests.some((r) => r.path.includes("/installations/22/") || r.path.includes("/installations/33/"))).toBe(false);
+    const others = await db.select().from(githubInstallationsTable).where(eq(githubInstallationsTable.userId, otherId));
+    expect(others.map((r) => r.installationId).sort((a, b) => a - b)).toEqual([22, 33]);
   });
 
   it("GitHub irraggiungibile: 502", async () => {

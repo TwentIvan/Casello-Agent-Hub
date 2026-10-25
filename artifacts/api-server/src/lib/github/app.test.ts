@@ -192,10 +192,16 @@ describe("installationToken", () => {
     await expectGithubError(installationToken(cfg, 999, { repo: "ivan/mister" }), NO_ACCESS);
   });
 
-  it("chiave dell'App sbagliata (JWT rifiutato, 401): stesso messaggio", async () => {
+  it("chiave dell'App sbagliata (JWT rifiutato, 401): GitHub non risponde, non è una revoca", async () => {
     const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const other = { ...cfg, privateKey: privateKey.export({ type: "pkcs1", format: "pem" }).toString() };
-    await expectGithubError(installationToken(other, 7), NO_ACCESS, 401);
+    await expectGithubError(installationToken(other, 7), UNAVAILABLE, 401);
+    await expectGithubError(installationToken(other, 7, { repo: "ivan/mister" }), UNAVAILABLE, 401);
+  });
+
+  it("403 e 422 restano un rifiuto di accesso", async () => {
+    // 422: repo non visibile all'installazione
+    await expectGithubError(installationToken(cfg, 7, { repo: "ivan/sconosciuto" }), NO_ACCESS, 422);
   });
 
   it("errore 5xx: GitHub non risponde", async () => {
@@ -321,6 +327,12 @@ describe("repoInstallationId", () => {
     expect(await repoInstallationId(cfg, "ivan/mister")).toBe(12);
     expect(await repoInstallationId(cfg, "ivan/altro")).toBeNull();
     expect(gh.requests.map((r) => r.path)).toEqual(["/repos/ivan/mister/installation", "/repos/ivan/altro/installation"]);
+  });
+
+  it("chiave dell'App sbagliata (401): GitHub non risponde, non null né rifiuto di accesso", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const other = { ...cfg, privateKey: privateKey.export({ type: "pkcs1", format: "pem" }).toString() };
+    await expectGithubError(repoInstallationId(other, "ivan/mister"), UNAVAILABLE, 401);
   });
 });
 

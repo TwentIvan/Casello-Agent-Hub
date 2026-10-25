@@ -16,6 +16,7 @@ interface ConfirmDialogProps {
   title: ReactNode;
   description: ReactNode;
   confirmLabel?: string;
+  pendingLabel?: string;
   pending?: boolean;
   onConfirm: () => void;
 }
@@ -27,6 +28,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel = "Elimina",
+  pendingLabel = "Eliminazione…",
   pending = false,
   onConfirm,
 }: ConfirmDialogProps) {
@@ -47,7 +49,7 @@ export function ConfirmDialog({
               onConfirm();
             }}
           >
-            {pending ? "Eliminazione…" : confirmLabel}
+            {pending ? pendingLabel : confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

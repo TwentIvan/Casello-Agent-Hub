@@ -1,17 +1,29 @@
 import { AlertCircle } from "lucide-react";
+import { getGetAuthProvidersQueryKey, useGetAuthProviders } from "@workspace/api-client-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { loginUrl } from "@/lib/auth";
+import { githubLoginUrl, loginUrl } from "@/lib/auth";
 
 const MESSAGES: Record<string, string> = {
   denied: "Questo account Google non è autorizzato ad accedere a Casello.",
   error: "Accesso non riuscito. Riprova.",
 };
 
+function loginMessage(params: URLSearchParams): string | undefined {
+  const reason = params.get("auth");
+  if (reason === "denied" && params.get("provider") === "github") return "email GitHub non autorizzata";
+  if (reason) return MESSAGES[reason];
+  if (params.get("github") === "cancelled") return "Accesso con GitHub annullato.";
+  return undefined;
+}
+
 export default function Login() {
-  const reason = new URLSearchParams(window.location.search).get("auth");
-  const message = reason ? MESSAGES[reason] : undefined;
+  const message = loginMessage(new URLSearchParams(window.location.search));
+  // Pubblica: dice se mostrare anche l'accesso con GitHub (in caso di errore resta solo Google)
+  const providers = useGetAuthProviders({
+    query: { queryKey: getGetAuthProvidersQueryKey(), retry: false, staleTime: 5 * 60_000 },
+  });
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -30,9 +42,16 @@ export default function Login() {
               <AlertDescription>{message}</AlertDescription>
             </Alert>
           )}
-          <Button asChild className="w-full">
-            <a href={loginUrl()}>Accedi con Google</a>
-          </Button>
+          <div className="flex w-full flex-col gap-2">
+            <Button asChild className="w-full">
+              <a href={loginUrl()}>Accedi con Google</a>
+            </Button>
+            {providers.data?.github && (
+              <Button asChild variant="outline" className="w-full">
+                <a href={githubLoginUrl()}>Accedi con GitHub</a>
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

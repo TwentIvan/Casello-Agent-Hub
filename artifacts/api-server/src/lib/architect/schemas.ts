@@ -289,3 +289,10 @@ export type CatalogResult = z.infer<typeof CatalogResultSchema>;
 export type AgentsResult = z.infer<typeof AgentsResultSchema>;
 export type CompletionResult = z.infer<typeof CompletionResultSchema>;
 export type EvolutionResult = z.infer<typeof EvolutionResultSchema>;
+
+export type ToolProposal = z.infer<typeof ToolProposalSchema>;
+export type EndpointProposal = z.infer<typeof EndpointProposalSchema>;
+export type AgentProposal = z.infer<typeof AgentProposalSchema>;
+export type SkillProposal = z.infer<typeof SkillProposalSchema>;
+export type CompletionItem = z.infer<typeof CompletionItemSchema>;
+export type EvolutionItem = z.infer<typeof EvolutionItemSchema>;

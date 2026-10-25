@@ -26,9 +26,14 @@ function toCatalogTool(row: AppTool): CatalogTool | null {
   return { ...row, paramsSchema: schema, definition: parsed.value };
 }
 
+// Fase 1: solo i tool `http` sono eseguibili. I tool `ui` e `composite` restano nel catalogo
+// ma non vengono offerti al modello finché non esiste un client che li esegue.
+const EXECUTABLE_KIND = "http";
+
 /**
  * Tool disponibili per un agente: l'agente `general` usa tutti i tool `active` della sua app,
- * un agente `area` solo quelli collegati in `agent_tools` e `active`.
+ * un agente `area` solo quelli collegati in `agent_tools` e `active`. In entrambi i casi solo
+ * i tool `http` (vedi EXECUTABLE_KIND).
  */
 export async function loadAgentTools(agentId: number): Promise<CatalogTool[]> {
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId)).limit(1);
@@ -39,7 +44,13 @@ export async function loadAgentTools(agentId: number): Promise<CatalogTool[]> {
     rows = await db
       .select()
       .from(appToolsTable)
-      .where(and(eq(appToolsTable.appId, agent.appId), eq(appToolsTable.status, "active")))
+      .where(
+        and(
+          eq(appToolsTable.appId, agent.appId),
+          eq(appToolsTable.status, "active"),
+          eq(appToolsTable.kind, EXECUTABLE_KIND),
+        ),
+      )
       .orderBy(asc(appToolsTable.id));
   } else {
     const linked = await db
@@ -52,6 +63,7 @@ export async function loadAgentTools(agentId: number): Promise<CatalogTool[]> {
           // Difesa: un collegamento verso il tool di un'altra app non conta
           eq(appToolsTable.appId, agent.appId),
           eq(appToolsTable.status, "active"),
+          eq(appToolsTable.kind, EXECUTABLE_KIND),
         ),
       )
       .orderBy(asc(appToolsTable.id));
@@ -74,7 +86,7 @@ function stripExtensions(node: unknown, isPropertiesMap = false): unknown {
 }
 
 export function toFunctionTools(tools: CatalogTool[]): ChatCompletionTool[] {
-  return tools.map((t) => ({
+  return tools.filter((t) => t.kind === EXECUTABLE_KIND).map((t) => ({
     type: "function" as const,
     function: {
       name: t.name,

@@ -29,12 +29,23 @@ async function seed() {
       { appId: app!.id, name: "draft_c", kind: "http", status: "draft", definition: HTTP_DEF },
       // Definizione non più valida: va saltata
       { appId: app!.id, name: "broken_d", kind: "http", status: "active", definition: { method: "GET" } },
+      // Fase 1: nessun client esegue tool ui o composti, non vanno offerti al modello
+      { appId: app!.id, name: "open_page", kind: "ui", status: "active", definition: { action: "navigate" } },
+      {
+        appId: app!.id,
+        name: "combo",
+        kind: "composite",
+        status: "active",
+        definition: { steps: [{ tool: "list_a", args: {} }], output: {} },
+      },
     ])
     .returning();
   const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
   await db.insert(agentToolsTable).values([
     { agentId: area!.id, toolId: byName["list_b"]!.id },
     { agentId: area!.id, toolId: byName["draft_c"]!.id },
+    { agentId: area!.id, toolId: byName["open_page"]!.id },
+    { agentId: area!.id, toolId: byName["combo"]!.id },
   ]);
   return { app: app!, general: general!, area: area! };
 }
@@ -49,14 +60,14 @@ describe("catalogo dei tool", () => {
     await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
   });
 
-  it("l'agente general vede tutti i tool active dell'app e non i draft", async () => {
+  it("l'agente general vede tutti i tool http active dell'app e non i draft né ui/composite", async () => {
     const { general } = await seed();
     const tools = await loadAgentTools(general.id);
     expect(tools.map((t) => t.name).sort()).toEqual(["list_a", "list_b"]);
     expect(tools[0]!.definition).toMatchObject({ method: "GET", path: "/items" });
   });
 
-  it("l'agente area vede solo i tool collegati e active", async () => {
+  it("l'agente area vede solo i tool http collegati e active", async () => {
     const { area } = await seed();
     const tools = await loadAgentTools(area.id);
     expect(tools.map((t) => t.name)).toEqual(["list_b"]);
@@ -142,5 +153,12 @@ describe("toFunctionTools", () => {
         },
       },
     ]);
+  });
+
+  it("non offre al modello i tool ui e composite", () => {
+    const http = tool({ type: "object", properties: {} });
+    const ui = { ...http, name: "apri", kind: "ui" as const, definition: { action: "navigate" } };
+    const composite = { ...http, name: "combo", kind: "composite" as const, definition: { steps: [], output: {} } };
+    expect(toFunctionTools([http, ui, composite]).map((t) => (t.type === "function" ? t.function.name : t.type))).toEqual(["login"]);
   });
 });

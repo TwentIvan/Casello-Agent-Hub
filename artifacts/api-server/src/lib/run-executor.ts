@@ -6,6 +6,7 @@ import {
   resolvePending,
   runAgentLoop,
   type LoopDeps,
+  type LoopLimits,
   type LoopState,
   type PendingAction,
   type StepRecord,
@@ -29,6 +30,9 @@ import { PAUSE_TTL_MS, clearUserToken, getUserToken, setUserToken } from "./user
 const EXECUTOR_INSTRUCTION =
   "Sei l'esecutore di un agente configurato nell'hub Casello. Usa il contesto fornito per rispondere in modo pertinente al task richiesto. Rispondi in italiano.";
 
+// Tempo minimo concesso a una chiamata al modello, anche a turno quasi esaurito
+const MIN_MODEL_CALL_MS = 1_000;
+
 export const REJECTED_ACTION_MESSAGE = "L'utente ha annullato l'azione.";
 export const PAUSE_EXPIRED_MESSAGE = "Conferma non arrivata entro 10 minuti.";
 
@@ -45,6 +49,12 @@ interface RunContext {
   agent: Agent;
   tools: CatalogTool[];
   conn: AppConnection;
+}
+
+/** Opzioni di avvio e ripresa. `limits` sostituisce i limiti del turno (usato dai test). */
+export interface RunOptions {
+  userToken?: string;
+  limits?: Partial<LoopLimits>;
 }
 
 function errorMessage(err: unknown): string {
@@ -143,12 +153,13 @@ async function driveLoop(
   segmentStart: number,
   writeStep: (step: StepRecord) => Promise<void>,
   usage: SegmentUsage,
+  limits?: Partial<LoopLimits>,
 ): Promise<void> {
   const runId = ctx.run.id;
   const functionTools = toFunctionTools(ctx.tools);
 
   const deps: LoopDeps = {
-    chat: async (messages) => {
+    chat: async (messages, { remainingMs }) => {
       const reply = await aiGateway.chat({
         modelKey: ctx.agent.model,
         messages,
@@ -157,6 +168,8 @@ async function driveLoop(
         caller: "run-executor",
         maxTokens: 2000,
         temperature: 0.3,
+        // La chiamata non può durare oltre il tempo attivo rimasto al turno
+        signal: AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, remainingMs)),
       });
       usage.promptTokens += reply.promptTokens;
       usage.completionTokens += reply.completionTokens;
@@ -165,6 +178,7 @@ async function driveLoop(
     tools: ctx.tools,
     executeTool: (tool, args) => runTool(ctx, tool, args),
     onStep: writeStep,
+    limits,
   };
 
   const outcome = await runAgentLoop(state, deps);
@@ -264,7 +278,7 @@ async function failRun(
  * alla fine, a un errore o a una pausa (`awaiting_client`). Gli errori inattesi chiudono la run
  * come `failed`; lancia solo se la run non esiste o non è `pending`.
  */
-export async function startRun(runId: number, opts: { userToken?: string } = {}): Promise<void> {
+export async function startRun(runId: number, opts: RunOptions = {}): Promise<void> {
   const [run] = await db
     .update(runsTable)
     .set({ status: "running" })
@@ -288,7 +302,7 @@ export async function startRun(runId: number, opts: { userToken?: string } = {})
       activeMs: 0,
     };
     const writeStep = stepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools);
-    await driveLoop(ctx, initial, segmentStart, writeStep, usage);
+    await driveLoop(ctx, initial, segmentStart, writeStep, usage, opts.limits);
   } catch (err) {
     await failRun(run, err, segmentStart, usage);
   }
@@ -314,7 +328,7 @@ function isPendingAction(value: unknown): value is PendingAction {
 export async function claimResume(
   runId: number,
   decision: "approved" | "rejected",
-  opts: { userToken?: string } = {},
+  opts: RunOptions = {},
 ): Promise<{ run: Run; proceed: () => Promise<void> }> {
   const cutoff = new Date(Date.now() - PAUSE_TTL_MS);
   const [run] = await db
@@ -388,7 +402,7 @@ export async function claimResume(
       const next = resolvePending(state, pending, result);
       // Il tempo del tool confermato è tempo attivo del turno (conta per il limite di 120 s)
       next.activeMs += durationMs;
-      await driveLoop(ctx, next, segmentStart, writeStep, usage);
+      await driveLoop(ctx, next, segmentStart, writeStep, usage, opts.limits);
     } catch (err) {
       await failRun(run, err, segmentStart, usage);
     }
@@ -403,7 +417,7 @@ export async function claimResume(
 export async function resumeRun(
   runId: number,
   decision: "approved" | "rejected",
-  opts: { userToken?: string } = {},
+  opts: RunOptions = {},
 ): Promise<void> {
   const { proceed } = await claimResume(runId, decision, opts);
   await proceed();

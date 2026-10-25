@@ -28,6 +28,8 @@ let llmRequests: any[];
 let appRequests: { method: string; url: string; auth: string | undefined; body: string }[];
 // Ritardo della finta app (ms), per misurare il tempo attivo
 let appDelayMs = 0;
+// Finto LiteLLM che non risponde mai
+let llmHangs = false;
 
 let llm: http.Server;
 let app: http.Server;
@@ -85,11 +87,13 @@ beforeEach(async () => {
   llmRequests = [];
   appRequests = [];
   appDelayMs = 0;
+  llmHangs = false;
   llm = http.createServer((req, res) => {
     let raw = "";
     req.on("data", (c) => (raw += c));
     req.on("end", () => {
       llmRequests.push(JSON.parse(raw));
+      if (llmHangs) return;
       const reply = llmReplies.shift() ?? textReply("(nessuna risposta prevista)");
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify(reply));
@@ -125,6 +129,7 @@ afterAll(async () => {
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  llm.closeAllConnections();
   await new Promise((r) => llm.close(r));
   await new Promise((r) => app.close(r));
   for (const k of ENV_KEYS) {
@@ -555,5 +560,20 @@ describe("orchestrazione delle run", () => {
 
     const tool = (await getSteps(id)).find((s) => s.type === "tool")!;
     expect(tool.args).toBeNull();
+  });
+
+  it("modello che non risponde: la run finisce failed entro il tempo attivo del turno", async () => {
+    const id = await seedRun(GET_ITEM);
+    llmHangs = true;
+    const t0 = Date.now();
+
+    await startRun(id, { userToken: "t", limits: { maxActiveMs: 300 } });
+
+    const run = await getRun(id);
+    expect(run.status).toBe("failed");
+    expect(run.errorMessage).toContain("errore nella chiamata al modello");
+    // Tempo rimanente con un minimo di 1 s, più un margine
+    expect(Date.now() - t0).toBeLessThan(3_000);
+    expect(llmRequests).toHaveLength(1);
   });
 });

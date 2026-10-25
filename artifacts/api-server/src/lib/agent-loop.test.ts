@@ -564,4 +564,19 @@ describe("runAgentLoop", () => {
     await runAgentLoop(state, deps);
     expect(JSON.stringify(state)).toBe(before);
   });
+
+  it("chat riceve il tempo attivo rimanente del turno", async () => {
+    let clock = 0;
+    const responses: ChatResult[] = [callTools([{ id: "c1", name: "leggi_rosa", args: "{}" }]), reply("ok")];
+    const remaining: number[] = [];
+    const chat = vi.fn(async (_messages: ChatCompletionMessageParam[], opts: { remainingMs: number }) => {
+      remaining.push(opts.remainingMs);
+      clock += 30_000;
+      return responses.shift()!;
+    });
+    const { deps } = makeDeps([], { now: () => clock, chat });
+    const state = { ...initialState(), activeMs: 10_000 };
+    await runAgentLoop(state, deps);
+    expect(remaining).toEqual([110_000, 80_000]);
+  });
 });

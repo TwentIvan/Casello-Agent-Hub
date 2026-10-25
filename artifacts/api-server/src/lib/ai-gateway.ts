@@ -65,6 +65,11 @@ export interface ChatResult {
   completionTokens: number;
 }
 
+// Chiamate con function calling (run degli agenti): un nuovo tentativo al massimo e un tetto di
+// tempo per singola richiesta. Il tempo del turno lo limita il signal passato da run-executor.
+const CHAT_MAX_RETRIES = 1;
+const CHAT_REQUEST_TIMEOUT_MS = 120_000;
+
 function getProviderPrefix(modelKey: string): string {
   const slashIdx = modelKey.indexOf("/");
   return slashIdx >= 0 ? modelKey.slice(0, slashIdx) : modelKey;
@@ -173,7 +178,11 @@ class AiGateway {
       params.tool_choice = "auto";
     }
 
-    const response = await client.chat.completions.create(params, { signal: opts.signal });
+    const response = await client.chat.completions.create(params, {
+      signal: opts.signal,
+      maxRetries: CHAT_MAX_RETRIES,
+      timeout: CHAT_REQUEST_TIMEOUT_MS,
+    });
     const durationMs = Date.now() - startMs;
     const { promptTokens, completionTokens, cachedTokens } = readUsage(response);
     // I contenuti dei messaggi non finiscono mai nei log.

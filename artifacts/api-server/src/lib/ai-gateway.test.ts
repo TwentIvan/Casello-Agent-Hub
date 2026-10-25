@@ -19,12 +19,14 @@ describe("aiGateway.chat", () => {
   let server: http.Server;
   let requests: { url: string; auth: string | undefined; body: any }[];
   let reply: any;
+  let status: number;
   const saved: Record<string, string | undefined> = {};
 
   beforeEach(async () => {
     saved["base"] = process.env["AI_GATEWAY_BASE_URL"];
     saved["key"] = process.env["AI_GATEWAY_API_KEY"];
     requests = [];
+    status = 200;
     reply = {
       choices: [{ message: { role: "assistant", content: "ciao" } }],
       usage: { prompt_tokens: 11, completion_tokens: 5 },
@@ -34,6 +36,7 @@ describe("aiGateway.chat", () => {
       req.on("data", (c) => (raw += c));
       req.on("end", () => {
         requests.push({ url: req.url ?? "", auth: req.headers.authorization, body: JSON.parse(raw) });
+        res.statusCode = status;
         res.setHeader("content-type", "application/json");
         res.end(JSON.stringify(reply));
       });
@@ -120,6 +123,13 @@ describe("aiGateway.chat", () => {
       aiGateway.chat({ modelKey: "m", messages: [{ role: "user", content: "x" }], signal: ac.signal }),
     ).rejects.toThrow();
     expect(requests).toHaveLength(0);
+  });
+
+  it("chat in modalità proxy: al massimo un nuovo tentativo dopo un errore del gateway", async () => {
+    status = 500;
+    reply = { error: { message: "errore del gateway" } };
+    await expect(aiGateway.chat({ modelKey: "m", messages: [{ role: "user", content: "x" }] })).rejects.toThrow();
+    expect(requests).toHaveLength(2);
   });
 
   it("complete in modalita proxy: corpo, log e risultato invariati", async () => {

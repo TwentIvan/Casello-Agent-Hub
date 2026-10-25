@@ -54,7 +54,8 @@ export interface StepRecord {
 }
 
 export interface LoopDeps {
-  chat(messages: ChatCompletionMessageParam[]): Promise<ChatResult>;
+  /** `remainingMs`: tempo attivo ancora disponibile nel turno, per limitare la chiamata */
+  chat(messages: ChatCompletionMessageParam[], opts: { remainingMs: number }): Promise<ChatResult>;
   tools: CatalogTool[];
   executeTool(tool: CatalogTool, args: Record<string, unknown>): Promise<ToolResult>;
   onStep(step: StepRecord): Promise<void>;
@@ -270,7 +271,7 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
     const t0 = now();
     let reply: ChatResult;
     try {
-      reply = await deps.chat(state.messages);
+      reply = await deps.chat(state.messages, { remainingMs: limits.maxActiveMs - state.activeMs });
     } catch (err) {
       const message = errorMessage(err);
       await deps.onStep({ type: "model", ok: false, durationMs: now() - t0, error: message });

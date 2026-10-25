@@ -27,7 +27,7 @@ const MIN_TOKENS = 50_000;
 const MAX_TOKENS = 2_000_000;
 const MAX_ZIP_BYTES = 50 * 1024 * 1024;
 
-const STATUS_LABELS: Record<Analysis["status"], string> = {
+export const ANALYSIS_STATUS_LABELS: Record<Analysis["status"], string> = {
   queued: "In coda",
   running: "In corso",
   completed: "Completata",
@@ -35,7 +35,7 @@ const STATUS_LABELS: Record<Analysis["status"], string> = {
   interrupted: "Interrotta",
 };
 
-const STATUS_STYLES: Record<Analysis["status"], string> = {
+export const ANALYSIS_STATUS_STYLES: Record<Analysis["status"], string> = {
   queued: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
   running: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
   completed: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
@@ -196,8 +196,8 @@ export function AnalysesCard({ app }: { app: App }) {
                     <Link href={`/analyses/${a.id}`} className="font-medium underline-offset-2 hover:underline">
                       Analisi #{a.id}
                     </Link>
-                    <Badge variant="outline" className={cn("border-transparent", STATUS_STYLES[a.status])}>
-                      {STATUS_LABELS[a.status]}
+                    <Badge variant="outline" className={cn("border-transparent", ANALYSIS_STATUS_STYLES[a.status])}>
+                      {ANALYSIS_STATUS_LABELS[a.status]}
                     </Badge>
                     <span className="font-mono text-xs text-muted-foreground">{a.model}</span>
                     <span className="text-xs text-muted-foreground">

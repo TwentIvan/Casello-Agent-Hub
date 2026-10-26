@@ -12,7 +12,7 @@ import { logger } from "../logger";
 import { isUniqueViolation } from "../pg-errors";
 import { enrichFromCatalog, verifyAccount } from "../ai/accounts";
 import { fetchLiteLlmSource, fetchOpenRouterSource, SourceError, type SourceEntry, type SourceName } from "./sources";
-import { mergeCatalog, type CatalogRecord } from "./merge";
+import { keepFailedSourceFields, mergeCatalog, type CatalogRecord } from "./merge";
 import { summarizeCatalog, type CatalogSummary } from "./summary";
 
 // Aggiornamento del catalogo: scarica le fonti, aggiorna `model_catalog`, riverifica gli account degli
@@ -156,18 +156,24 @@ async function executeRefresh(runId: number, fetchImpl: typeof fetch): Promise<v
   const settled = await Promise.allSettled([fetchOpenRouterSource(fetchImpl), fetchLiteLlmSource(fetchImpl)]);
   const entries: SourceEntry[] = [];
   const failures: string[] = [];
+  const failed: SourceName[] = [];
   settled.forEach((res, i) => {
     if (res.status === "fulfilled") entries.push(...res.value);
-    // Un errore diverso da SourceError diventa comunque il messaggio fisso della fonte
-    else failures.push(res.reason instanceof SourceError ? res.reason.message : new SourceError(names[i]!).message);
+    else {
+      failed.push(names[i]!);
+      // Un errore diverso da SourceError diventa comunque il messaggio fisso della fonte
+      failures.push(res.reason instanceof SourceError ? res.reason.message : new SourceError(names[i]!).message);
+    }
   });
   if (failures.length === names.length) {
     await finishRun(runId, { status: "failed", error: failures.join("; ") });
     return;
   }
 
-  const records = mergeCatalog(entries, new Date());
+  const now = new Date();
   const before = (await db.select().from(modelCatalogTable)).map(toRecord);
+  // Aggiornamento parziale: i dati della fonte caduta restano quelli precedenti
+  const records = keepFailedSourceFields(mergeCatalog(entries, now), before, failed, now);
   await upsertCatalog(records);
   const accounts = await reverifyAccounts();
   await enrichFromCatalog(db, {});

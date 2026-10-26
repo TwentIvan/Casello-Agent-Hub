@@ -68,10 +68,49 @@ export function mergeCatalog(entries: SourceEntry[], now: Date): CatalogRecord[]
       priceOutput: priced?.priceOutput ?? null,
       contextTokens: ctx?.contextTokens ?? null,
       supportsTools: tools?.supportsTools ?? null,
-      status: !deprecationDate ? "available" : deprecationDate.getTime() <= now.getTime() ? "retired" : "deprecated",
+      status: statusFor(deprecationDate, now),
       deprecationDate,
       sources,
     });
   }
   return records;
+}
+
+function statusFor(deprecationDate: Date | null, now: Date): CatalogRecord["status"] {
+  return !deprecationDate ? "available" : deprecationDate.getTime() <= now.getTime() ? "retired" : "deprecated";
+}
+
+/**
+ * Aggiornamento parziale: per i modelli già nel catalogo, i campi che venivano da una fonte caduta
+ * restano quelli precedenti (con la loro fonte) e lo stato si ricalcola dalla dismissione. Funzione pura.
+ */
+export function keepFailedSourceFields(
+  records: CatalogRecord[],
+  before: CatalogRecord[],
+  failed: SourceName[],
+  now: Date,
+): CatalogRecord[] {
+  if (!failed.length) return records;
+  const prev = new Map(before.map((r) => [`${r.provider}\u0000${r.modelId}`, r]));
+  return records.map((rec) => {
+    const old = prev.get(`${rec.provider}\u0000${rec.modelId}`);
+    if (!old) return rec;
+    const out: CatalogRecord = { ...rec, sources: { ...rec.sources } };
+    const kept = (field: SourcedField) => {
+      const src = old.sources[field];
+      if (!src || !failed.includes(src)) return false;
+      out.sources[field] = src;
+      return true;
+    };
+    if (kept("price")) {
+      out.priceInput = old.priceInput;
+      out.priceOutput = old.priceOutput;
+    }
+    if (kept("contextTokens")) out.contextTokens = old.contextTokens;
+    if (kept("supportsTools")) out.supportsTools = old.supportsTools;
+    if (kept("releasedAt")) out.releasedAt = old.releasedAt;
+    if (kept("deprecationDate")) out.deprecationDate = old.deprecationDate;
+    out.status = statusFor(out.deprecationDate, now);
+    return out;
+  });
 }

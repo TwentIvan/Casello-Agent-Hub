@@ -179,6 +179,34 @@ describe("startCatalogRefresh", () => {
     expect(await catalogRow("deepseek", "vecchio")).toMatchObject({ priceInputPerMtok: "1.000000", version: "vecchio" });
   });
 
+  it("una fonte in errore: i dati che venivano da quella fonte restano validi", async () => {
+    await refresh();
+    const before = await catalogRow("gemini", "gemini-2.5-flash");
+    expect(before).toMatchObject({ status: "retired" });
+    expect(before!.deprecationDate).toBeInstanceOf(Date);
+
+    // OpenRouter con un prezzo diverso: non deve sostituire quello che veniva da LiteLLM
+    const openrouter = {
+      data: OPENROUTER_FIXTURE.data.map((m) =>
+        m.id === "google/gemini-2.5-flash" ? { ...m, pricing: { prompt: "0.000001", completion: "0.000004" } } : m,
+      ),
+    };
+    const run = await refresh({ openrouter, litellm: 500 });
+    expect(run.status).toBe("partial");
+    const after = await catalogRow("gemini", "gemini-2.5-flash");
+    expect(after).toMatchObject({
+      status: "retired",
+      deprecationDate: before!.deprecationDate,
+      priceInputPerMtok: before!.priceInputPerMtok,
+      priceOutputPerMtok: before!.priceOutputPerMtok,
+      contextTokens: before!.contextTokens,
+      supportsTools: before!.supportsTools,
+      sources: before!.sources,
+    });
+    const summary = run.summary as CatalogSummary;
+    expect(summary.priceChanged.filter((c) => c.provider === "gemini" && c.modelId === "gemini-2.5-flash")).toEqual([]);
+  });
+
   it("entrambe le fonti in errore: esecuzione fallita e catalogo invariato", async () => {
     await refresh();
     const before = await db.select().from(modelCatalogTable).orderBy(modelCatalogTable.id);

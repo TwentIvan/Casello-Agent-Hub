@@ -7,6 +7,7 @@ import OpenAI from "openai";
 import type {
   ChatCompletion,
   ChatCompletionCreateParamsNonStreaming,
+  ChatCompletionMessageFunctionToolCall,
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
@@ -60,6 +61,12 @@ export interface ChatToolCall {
   name: string;
   /** Argomenti come stringa JSON, così come li ha prodotti il modello (non validata) */
   arguments: string;
+  /**
+   * Campi in più della tool call oltre a quelli OpenAI, da rimandare invariati al turno successivo: per
+   * esempio la firma del ragionamento di Gemini 3 (`extra_content.google.thought_signature`), senza la
+   * quale il provider rifiuta la richiesta con un 400.
+   */
+  extra?: Record<string, unknown>;
 }
 
 export interface ChatResult {
@@ -139,10 +146,23 @@ export function extractToolCalls(response: ChatCompletion): ChatToolCall[] {
   const toolCalls: ChatToolCall[] = [];
   for (const call of response.choices[0]?.message?.tool_calls ?? []) {
     if (call.type === "function") {
-      toolCalls.push({ id: call.id, name: call.function.name, arguments: call.function.arguments });
+      const { id, type: _type, function: fn, ...rest } = call as ChatCompletionMessageFunctionToolCall & Record<string, unknown>;
+      const toolCall: ChatToolCall = { id, name: fn.name, arguments: fn.arguments };
+      if (Object.keys(rest).length) toolCall.extra = rest;
+      toolCalls.push(toolCall);
     }
   }
   return toolCalls;
+}
+
+/** Tool calls da rimettere nella cronologia come messaggio dell'assistente, con i campi in più del provider. */
+export function assistantToolCalls(calls: ChatToolCall[]): ChatCompletionMessageFunctionToolCall[] {
+  return calls.map((c) => ({
+    id: c.id,
+    type: "function" as const,
+    function: { name: c.name, arguments: c.arguments },
+    ...c.extra,
+  }));
 }
 
 class AiGateway {

@@ -10,7 +10,7 @@ import type {
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import type { ZodIssue } from "zod";
-import type { ChatResult } from "../ai-gateway";
+import { assistantToolCalls, type ChatResult } from "../ai-gateway";
 import { PHASE_SCHEMAS, type PhaseName } from "./schemas";
 import { SOURCE_LIMITS, SourceTreeError, type SourceTree } from "./source-tree";
 import { describeOperation, type OpenApiDoc } from "./sources";
@@ -526,11 +526,7 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
     messages.push({
       role: "assistant",
       content: reply.content,
-      tool_calls: reply.toolCalls.map((c) => ({
-        id: c.id,
-        type: "function" as const,
-        function: { name: c.name, arguments: c.arguments },
-      })),
+      tool_calls: assistantToolCalls(reply.toolCalls),
     });
     const answer = (id: string, content: string, stub?: string): void => {
       if (stub !== undefined) stubs.set(messages.length, stub);

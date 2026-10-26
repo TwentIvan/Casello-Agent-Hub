@@ -607,13 +607,19 @@ paths:
         memoria per la durata dell'analisi. Risponde 409 se per l'app c'è già un'analisi in corso.
       parameters:
         - $ref: "#/components/parameters/IdParam"
+        - name: aiModelId
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Modello di un account AI (esattamente uno tra aiModelId e model)
         - name: model
           in: query
-          required: true
+          required: false
           schema:
             type: string
             minLength: 1
-          description: Modello AI (model_name di LiteLLM)
+          description: Compatibilità, modello AI come model_name di LiteLLM
         - name: maxTokens
           in: query
           required: false
@@ -1468,7 +1474,7 @@ components:
 
     Agent:
       type: object
-      required: [id, appId, name, status, role, defaultIdentity, toolIds, createdAt, updatedAt]
+      required: [id, appId, name, aiModelId, status, role, defaultIdentity, toolIds, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -1480,6 +1486,14 @@ components:
           type: ["string", "null"]
         model:
           type: string
+          description: >-
+            Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del
+            modello scelto
+        aiModelId:
+          type: ["integer", "null"]
+          description: >-
+            Modello scelto tra quelli degli account AI; le run usano l'account di questo modello
+            (chi configura paga). Null = vecchio percorso del gateway
         status:
           $ref: "#/components/schemas/AgentStatus"
         role:
@@ -1513,6 +1527,12 @@ components:
           type: string
         model:
           type: string
+          description: Solo compatibilità; con aiModelId è ignorato
+        aiModelId:
+          type: ["integer", "null"]
+          description: >-
+            Modello di un account AI dell'utente o dell'account di sistema (400 "modello non
+            disponibile" altrimenti)
         status:
           $ref: "#/components/schemas/AgentStatus"
 
@@ -1526,6 +1546,12 @@ components:
           type: ["string", "null"]
         model:
           type: string
+          description: Solo compatibilità; con aiModelId è ignorato
+        aiModelId:
+          type: ["integer", "null"]
+          description: >-
+            Se diverso da quello salvato deve essere un modello dell'utente o dell'account di
+            sistema (400 altrimenti); uguale a quello salvato non viene ricontrollato
         status:
           $ref: "#/components/schemas/AgentStatus"
         area:
@@ -1743,6 +1769,9 @@ components:
           type: ["integer", "null"]
         completionTokens:
           type: ["integer", "null"]
+        costUsd:
+          type: ["number", "null"]
+          description: Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)
 
     PendingActionKind:
       type: string
@@ -1864,7 +1893,7 @@ components:
 
     Analysis:
       type: object
-      required: [id, appId, model, status, sources, maxTokens, tokensUsed, phase, error, createdAt, finishedAt]
+      required: [id, appId, model, aiModelId, status, sources, maxTokens, tokensUsed, costUsd, phase, error, createdAt, finishedAt]
       properties:
         id:
           type: integer
@@ -1872,6 +1901,8 @@ components:
           type: integer
         model:
           type: string
+        aiModelId:
+          type: ["integer", "null"]
         status:
           $ref: "#/components/schemas/AnalysisStatus"
         sources:
@@ -1880,6 +1911,9 @@ components:
           type: integer
         tokensUsed:
           type: integer
+        costUsd:
+          type: ["number", "null"]
+          description: Costo in USD; null se un prezzo manca o l'analisi usa il vecchio gateway (costo parziale)
         phase:
           type: ["string", "null"]
           description: Fase corrente
@@ -1968,12 +2002,15 @@ components:
 
     AnalysisStart:
       type: object
-      required: [model]
+      description: Indicare esattamente uno tra aiModelId e model (altrimenti 400 "scegli un modello")
       properties:
+        aiModelId:
+          type: integer
+          description: Modello di un account AI dell'utente o dell'account di sistema
         model:
           type: string
           minLength: 1
-          description: Modello AI (model_name di LiteLLM)
+          description: Compatibilità, modello AI come model_name di LiteLLM
         maxTokens:
           type: integer
           minimum: 50000

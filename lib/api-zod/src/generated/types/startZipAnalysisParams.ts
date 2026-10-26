@@ -8,10 +8,14 @@
 
 export type StartZipAnalysisParams = {
 /**
- * Modello AI (model_name di LiteLLM)
+ * Modello di un account AI (esattamente uno tra aiModelId e model)
+ */
+aiModelId?: number;
+/**
+ * Compatibilità, modello AI come model_name di LiteLLM
  * @minLength 1
  */
-model: string;
+model?: string;
 /**
  * Tetto di token per l'analisi (default 1000000)
  * @minimum 50000

@@ -7,6 +7,9 @@ import {
   db,
   pool,
   agentsTable,
+  aiAccountsTable,
+  aiModelsTable,
+  usersTable,
   analysesTable,
   analysisItemsTable,
   appToolsTable,
@@ -173,6 +176,8 @@ const PHASE_BY_NUMBER: PhaseName[] = ["map", "capabilities", "catalog", "agents"
 
 let llm: http.Server;
 let llmRequests: any[];
+/** Header Authorization ricevuti dal finto LiteLLM, uno per richiesta. */
+let llmAuth: (string | undefined)[];
 let llmHangs: boolean;
 /** Stato HTTP di errore con cui risponde il finto LiteLLM (null = risposta normale). */
 let llmStatus: number | null;
@@ -277,6 +282,7 @@ const loadItems = (id: number) =>
 beforeEach(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   llmRequests = [];
+  llmAuth = [];
   llmHangs = false;
   llmStatus = null;
   llm500Remaining = 0;
@@ -294,6 +300,7 @@ beforeEach(async () => {
     req.on("end", () => {
       const body = JSON.parse(raw);
       llmRequests.push(body);
+      llmAuth.push(req.headers.authorization);
       if (llmHangs) return;
       if (llmDropRemaining > 0) {
         llmDropRemaining -= 1;
@@ -332,7 +339,7 @@ beforeEach(async () => {
   process.env["AI_GATEWAY_API_KEY"] = "sk-test";
   process.env["CASELLO_SECRET_KEY"] = "b".repeat(64);
   vi.spyOn(console, "log").mockImplementation(() => {});
-  await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
+  await pool.query("TRUNCATE apps, ai_accounts, users RESTART IDENTITY CASCADE");
   appId = await createApp({ functionalDescription: "Gestione di squadre di fantacalcio" });
 });
 
@@ -349,7 +356,7 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
+  await pool.query("TRUNCATE apps, ai_accounts, users RESTART IDENTITY CASCADE");
 });
 
 describe("startAnalysis", () => {
@@ -552,6 +559,7 @@ describe("startAnalysis", () => {
 
   it.each([
     [400, " (richiesta rifiutata: spesso contesto troppo lungo per il modello)"],
+    [402, " (credito del provider esaurito: ricarica il conto o scegli un altro modello)"],
     [429, " (limite di richieste: riprova più tardi)"],
     [404, ""],
   ])("gateway con errore %i: failed con lo stato e il suggerimento, senza URL", async (status, hint) => {
@@ -635,6 +643,122 @@ describe("startAnalysis", () => {
     expect(llmRequests).toHaveLength(0);
     // Analisi inesistente: nessuna eccezione
     await expect(startAnalysis(99_999)).resolves.toBeUndefined();
+  });
+});
+
+describe("startAnalysis sugli account AI", () => {
+  const ACCOUNT_KEY = "sk-CHIAVE-ACCOUNT-ARCHITETTO-99";
+
+  /** Account `custom` verso il finto LiteLLM, con un modello ai prezzi dati (USD per Mtok). */
+  async function ownModel(prices: { input: string | null; output: string | null } = { input: "1", output: "2" }) {
+    const [user] = await db.insert(usersTable).values({ email: "a@example.com", name: "A" }).returning();
+    const [account] = await db
+      .insert(aiAccountsTable)
+      .values({
+        userId: user!.id,
+        name: "Account",
+        provider: "custom",
+        baseUrl: process.env["AI_GATEWAY_BASE_URL"]!,
+        allowPrivateNetwork: true,
+        apiKeyEnc: encryptSecret(ACCOUNT_KEY),
+        status: "ok",
+      })
+      .returning();
+    const [model] = await db
+      .insert(aiModelsTable)
+      .values({ accountId: account!.id, modelId: "modello-architetto", displayName: "M", priceInputPerMtok: prices.input, priceOutputPerMtok: prices.output })
+      .returning();
+    return model!;
+  }
+
+  it("modello proprio: completata, chiave dell'account, costo sommato", async () => {
+    const model = await ownModel();
+    const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
+    await startAnalysis(id, { zip: testZip() });
+
+    const a = await loadAnalysis(id);
+    expect(a.error).toBeNull();
+    expect(a.status).toBe("completed");
+    expect(a.tokensUsed).toBe(12 * 120);
+    // 12 × (100 × 1 + 20 × 2) / 1e6
+    expect(Number(a.costUsd)).toBeCloseTo(0.00168, 8);
+    expect(llmRequests[0].model).toBe("modello-architetto");
+    expect(llmAuth.every((h) => h === `Bearer ${ACCOUNT_KEY}`)).toBe(true);
+  });
+
+  it("prezzi non noti: completata con cost_usd null", async () => {
+    const model = await ownModel({ input: null, output: "2" });
+    const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("completed");
+    expect(a.costUsd).toBeNull();
+  });
+
+  it("vecchio percorso (aiModelId null): completata con cost_usd null", async () => {
+    const id = await createAnalysis();
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("completed");
+    expect(a.costUsd).toBeNull();
+    expect(llmAuth.every((h) => h === "Bearer sk-test")).toBe(true);
+  });
+
+  it.each([
+    [402, "credito del provider esaurito: ricarica il conto o scegli un altro modello"],
+    [400, "richiesta rifiutata dal provider (HTTP 400)"],
+    [401, "chiave non valida o senza permessi"],
+    [429, "limite di richieste del provider: riprova più tardi"],
+  ])("provider con errore %i: failed col messaggio fisso, senza nuovi tentativi né chiave", async (status, message) => {
+    llmStatus = status;
+    const model = await ownModel();
+    const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe(`fase map: errore nella chiamata al modello: ${message}`);
+    expect(a.error).not.toContain(ACCOUNT_KEY);
+    expect(a.error).not.toMatch(/http:|openrouter\.example/);
+    expect(llmRequests).toHaveLength(1);
+  });
+
+  it("errore 500 transitorio: un nuovo tentativo e l'analisi prosegue", async () => {
+    llm500Remaining = 1;
+    const model = await ownModel();
+    const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.error).toBeNull();
+    expect(a.status).toBe("completed");
+    expect(llmRequests).toHaveLength(13);
+  });
+
+  it("timeout della singola chiamata: messaggio sul timeout, senza nuovi tentativi", async () => {
+    llmHangs = true;
+    const model = await ownModel();
+    const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
+    await startAnalysis(id, { zip: testZip(), modelTimeoutMs: 300 });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe(
+      "fase map: errore nella chiamata al modello: il modello non ha risposto entro 0.3 s (riprova o scegli un modello più veloce)",
+    );
+    expect(llmRequests).toHaveLength(1);
+  }, 20_000);
+
+  it("account di sistema senza variabili: failed con 'account di sistema non più disponibile'", async () => {
+    const [account] = await db
+      .insert(aiAccountsTable)
+      .values({ userId: null, name: "Gateway Casello", provider: "system_gateway", baseUrl: "http://gw/v1", status: "ok" })
+      .returning();
+    const [model] = await db.insert(aiModelsTable).values({ accountId: account!.id, modelId: "openrouter/auto", displayName: "Auto" }).returning();
+    delete process.env["AI_GATEWAY_API_KEY"];
+    const id = await createAnalysis(appId, { aiModelId: model!.id });
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe("account di sistema non più disponibile");
+    expect(llmRequests).toHaveLength(0);
   });
 });
 

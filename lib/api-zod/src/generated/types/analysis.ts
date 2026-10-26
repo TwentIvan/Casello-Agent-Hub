@@ -12,10 +12,17 @@ export interface Analysis {
   id: number;
   appId: number;
   model: string;
+  /** @nullable */
+  aiModelId: number | null;
   status: AnalysisStatus;
   sources: AnalysisSources;
   maxTokens: number;
   tokensUsed: number;
+  /**
+     * Costo in USD; null se un prezzo manca o l'analisi usa il vecchio gateway (costo parziale)
+     * @nullable
+     */
+  costUsd: number | null;
   /**
      * Fase corrente
      * @nullable

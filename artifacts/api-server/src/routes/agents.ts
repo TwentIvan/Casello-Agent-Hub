@@ -32,6 +32,9 @@ import {
   DeleteAgentSkillParams,
 } from "@workspace/api-zod";
 import { startRun } from "../lib/run-executor";
+import { currentUserId } from "../lib/auth";
+import { ModelChoiceError, chooseByName, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
+import { DEFAULT_MODEL } from "../lib/models";
 import { logger } from "../lib/logger";
 import { toPublicRun, userTokenFrom, withToolIds, withToolIdsOne } from "./serializers";
 import { parseRequest } from "../middlewares/error-handler";
@@ -48,17 +51,30 @@ router.get("/agents", async (req, res) => {
   res.json(ListAgentsResponse.parse(await withToolIds(agents)));
 });
 
-// Gli agenti creati dalla UI sono sempre di area: il generale nasce con l'app
+// Gli agenti creati dalla UI sono sempre di area: il generale nasce con l'app.
+// Modello (chi configura paga): `aiModelId` deve essere un modello dell'utente o dell'account di
+// sistema; senza, il nome in `model` (console precedente) si collega al modello di sistema equivalente.
 router.post("/agents", async (req, res) => {
-  const body = parseRequest(CreateAgentBody, req.body);
+  const { aiModelId, model, ...body } = parseRequest(CreateAgentBody, req.body);
   const [app] = await db.select({ id: appsTable.id }).from(appsTable).where(eq(appsTable.id, body.appId)).limit(1);
   if (!app) {
     res.status(404).json({ error: "App non trovata" });
     return;
   }
+  let choice: ModelChoice;
+  try {
+    choice =
+      aiModelId != null
+        ? await chooseOwnModel(aiModelId, currentUserId(req))
+        : await chooseByName(model ?? DEFAULT_MODEL);
+  } catch (err) {
+    if (!(err instanceof ModelChoiceError)) throw err;
+    res.status(400).json({ error: err.message });
+    return;
+  }
   const [agent] = await db
     .insert(agentsTable)
-    .values({ ...body, role: "area" })
+    .values({ ...body, ...choice, role: "area" })
     .returning();
   res.status(201).json(CreateAgentResponse.parse(await withToolIdsOne(agent!)));
 });
@@ -73,12 +89,49 @@ router.get("/agents/:id", async (req, res) => {
   res.json(GetAgentResponse.parse(await withToolIdsOne(agent)));
 });
 
+/**
+ * Campi del modello da aggiornare. Si controlla solo un modello che CAMBIA: chi modifica un agente
+ * configurato da un altro utente (es. solo il nome) ne conserva il modello, e quindi l'account che
+ * paga, senza poterlo scegliere lui. Con `aiModelId` impostato `model` segue il modello scelto e il
+ * `model` del corpo è ignorato; `aiModelId: null` torna al vecchio percorso del gateway.
+ */
+async function modelUpdate(
+  current: { aiModelId: number | null; model: string },
+  body: { aiModelId?: number | null; model?: string },
+  userId: number,
+): Promise<Partial<ModelChoice>> {
+  const { aiModelId, model } = body;
+  if (aiModelId !== undefined && aiModelId !== current.aiModelId) {
+    if (aiModelId === null) return { aiModelId: null, model: model ?? current.model };
+    return chooseOwnModel(aiModelId, userId);
+  }
+  if (aiModelId === undefined && model !== undefined && model !== current.model) return chooseByName(model);
+  return {};
+}
+
 router.patch("/agents/:id", async (req, res) => {
   const { id } = parseRequest(UpdateAgentParams, req.params);
-  const body = parseRequest(UpdateAgentBody, req.body);
+  const { aiModelId, model, ...body } = parseRequest(UpdateAgentBody, req.body);
+  const [current] = await db
+    .select({ aiModelId: agentsTable.aiModelId, model: agentsTable.model })
+    .from(agentsTable)
+    .where(eq(agentsTable.id, id))
+    .limit(1);
+  if (!current) {
+    res.status(404).json({ error: "Agente non trovato" });
+    return;
+  }
+  let modelFields: Partial<ModelChoice>;
+  try {
+    modelFields = await modelUpdate(current, { aiModelId, model }, currentUserId(req));
+  } catch (err) {
+    if (!(err instanceof ModelChoiceError)) throw err;
+    res.status(400).json({ error: err.message });
+    return;
+  }
   const [agent] = await db
     .update(agentsTable)
-    .set({ ...body, updatedAt: new Date() })
+    .set({ ...body, ...modelFields, updatedAt: new Date() })
     .where(eq(agentsTable.id, id))
     .returning();
   if (!agent) {

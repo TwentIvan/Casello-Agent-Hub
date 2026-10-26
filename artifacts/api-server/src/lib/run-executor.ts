@@ -1,6 +1,9 @@
 import { db, agentsTable, appsTable, appToolsTable, runsTable, runStepsTable, type Agent, type App, type Run } from "@workspace/db";
 import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
-import { aiGateway } from "./ai-gateway";
+import { APIConnectionTimeoutError, APIUserAbortError } from "openai";
+import { aiGateway, type ChatResult } from "./ai-gateway";
+import { ProviderError } from "./ai/discovery";
+import { ModelAccessError, modelChat, resolveModel, type ResolvedModel } from "./ai/executor";
 import {
   PendingMismatchError,
   resolvePending,
@@ -143,14 +146,65 @@ function runTool(ctx: RunContext, tool: CatalogTool, args: Record<string, unknow
 }
 
 /**
- * Esegue il ciclo dell'agente dallo stato dato e salva l'esito nella run.
- * Token e durata si sommano a quelli già registrati (la run può attraversare più pause).
+ * Uso del segmento corrente (dall'avvio o dalla ripresa fino alla pausa o alla fine). Il costo è
+ * parziale se almeno una chiamata con token non ha un costo (prezzo mancante, vecchio gateway).
  */
 interface SegmentUsage {
   promptTokens: number;
   completionTokens: number;
+  costUsd: number;
+  costPartial: boolean;
 }
 
+function newUsage(): SegmentUsage {
+  return { promptTokens: 0, completionTokens: 0, costUsd: 0, costPartial: false };
+}
+
+function addUsage(usage: SegmentUsage, reply: ChatResult & { costUsd?: number | null }): void {
+  usage.promptTokens += reply.promptTokens;
+  usage.completionTokens += reply.completionTokens;
+  const tokens = reply.promptTokens + reply.completionTokens;
+  if (reply.costUsd == null) {
+    if (tokens > 0) usage.costPartial = true;
+  } else {
+    usage.costUsd += reply.costUsd;
+  }
+}
+
+/**
+ * Costo totale della run (segmenti precedenti + questo), come stringa per la colonna numeric.
+ * Null se nessuna chiamata ha consumato token o se il costo è parziale: una run precedente con
+ * token ma senza costo era già parziale e resta tale.
+ */
+function totalCost(run: Run, usage: SegmentUsage): string | null {
+  const priorTokens = (run.promptTokens ?? 0) + (run.completionTokens ?? 0);
+  const segmentTokens = usage.promptTokens + usage.completionTokens;
+  if (usage.costPartial) return null;
+  if (priorTokens > 0 && run.costUsd === null) return null;
+  if (priorTokens + segmentTokens === 0) return null;
+  const total = Number(run.costUsd ?? 0) + usage.costUsd;
+  if (!Number.isFinite(total)) return null;
+  return String(Math.round(total * 1e8) / 1e8);
+}
+
+const MODEL_TIMEOUT_MESSAGE = "il modello non ha risposto in tempo";
+const MODEL_UNEXPECTED_MESSAGE = "errore inatteso nella chiamata al modello";
+
+/**
+ * Errore di una chiamata all'esecutore dei modelli → messaggio italiano fisso (mai quello grezzo
+ * dell'SDK o del provider, che può contenere URL o il corpo della risposta). Il ciclo lo registra
+ * come "errore nella chiamata al modello: <messaggio>".
+ */
+function modelErrorMessage(err: unknown): string {
+  if (err instanceof ProviderError || err instanceof ModelAccessError) return err.message;
+  if (err instanceof APIConnectionTimeoutError || err instanceof APIUserAbortError) return MODEL_TIMEOUT_MESSAGE;
+  return MODEL_UNEXPECTED_MESSAGE;
+}
+
+/**
+ * Esegue il ciclo dell'agente dallo stato dato e salva l'esito nella run.
+ * Token, costo e durata si sommano a quelli già registrati (la run può attraversare più pause).
+ */
 async function driveLoop(
   ctx: RunContext,
   state: LoopState,
@@ -161,23 +215,47 @@ async function driveLoop(
 ): Promise<void> {
   const runId = ctx.run.id;
   const functionTools = toFunctionTools(ctx.tools);
+  const aiModelId = ctx.agent.aiModelId;
+  // Modello dell'agente (chi configura paga): risolto una volta per segmento, alla prima chiamata,
+  // così un errore di risoluzione diventa un passo `model` fallito come gli altri errori del modello.
+  // Il risultato (con la chiave in memoria) non si copia mai: si passa l'oggetto originale.
+  let resolved: Promise<ResolvedModel> | null = null;
 
   const deps: LoopDeps = {
     chat: async (messages, { remainingMs }) => {
-      const reply = await aiGateway.chat({
-        modelKey: ctx.agent.model,
-        messages,
-        tools: functionTools,
-        agentId: ctx.agent.id,
-        caller: "run-executor",
-        maxTokens: 2000,
-        temperature: 0.3,
-        // La chiamata non può durare oltre il tempo attivo rimasto al turno
-        signal: AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, remainingMs)),
-      });
-      usage.promptTokens += reply.promptTokens;
-      usage.completionTokens += reply.completionTokens;
-      return reply;
+      // La chiamata non può durare oltre il tempo attivo rimasto al turno
+      const signal = AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, remainingMs));
+      if (aiModelId === null) {
+        // Transizione: agenti non ancora collegati a un modello degli account AI
+        const reply = await aiGateway.chat({
+          modelKey: ctx.agent.model,
+          messages,
+          tools: functionTools,
+          agentId: ctx.agent.id,
+          caller: "run-executor",
+          maxTokens: 2000,
+          temperature: 0.3,
+          signal,
+        });
+        addUsage(usage, reply);
+        return reply;
+      }
+      try {
+        resolved ??= resolveModel(aiModelId, { userId: null, mustOwn: false });
+        const reply = await modelChat(await resolved, {
+          messages,
+          tools: functionTools,
+          agentId: ctx.agent.id,
+          caller: "run-executor",
+          maxTokens: 2000,
+          temperature: 0.3,
+          signal,
+        });
+        addUsage(usage, reply);
+        return reply;
+      } catch (err) {
+        throw new Error(modelErrorMessage(err));
+      }
     },
     tools: ctx.tools,
     executeTool: (tool, args) => runTool(ctx, tool, args),
@@ -190,6 +268,7 @@ async function driveLoop(
   const totals = {
     promptTokens: (ctx.run.promptTokens ?? 0) + usage.promptTokens,
     completionTokens: (ctx.run.completionTokens ?? 0) + usage.completionTokens,
+    costUsd: totalCost(ctx.run, usage),
     durationMs: (ctx.run.durationMs ?? 0) + (Date.now() - segmentStart),
   };
 
@@ -269,6 +348,7 @@ async function failRun(
         durationMs: (run.durationMs ?? 0) + (Date.now() - segmentStart),
         promptTokens: (run.promptTokens ?? 0) + usage.promptTokens,
         completionTokens: (run.completionTokens ?? 0) + usage.completionTokens,
+        costUsd: totalCost(run, usage),
         finishedAt: new Date(),
       })
       .where(eq(runsTable.id, runId));
@@ -292,7 +372,7 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
 
   if (opts.userToken) setUserToken(runId, opts.userToken);
   const segmentStart = Date.now();
-  const usage: SegmentUsage = { promptTokens: 0, completionTokens: 0 };
+  const usage = newUsage();
   try {
     const ctx = await loadContext(run);
     const initial: LoopState = {
@@ -352,7 +432,7 @@ export async function claimResume(
   }
 
   const segmentStart = Date.now();
-  const usage: SegmentUsage = { promptTokens: 0, completionTokens: 0 };
+  const usage = newUsage();
   const state = run.loopState;
   const pending = run.pendingAction;
   if (!isLoopState(state) || !isPendingAction(pending)) {

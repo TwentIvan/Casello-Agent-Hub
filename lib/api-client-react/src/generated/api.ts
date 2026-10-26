@@ -2107,7 +2107,7 @@ export const useStartAnalysis = <TError = ErrorType<BadRequestResponse | Forbidd
     }
 
 export const getStartZipAnalysisUrl = (id: number,
-    params: StartZipAnalysisParams,) => {
+    params?: StartZipAnalysisParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -2128,7 +2128,7 @@ export const getStartZipAnalysisUrl = (id: number,
  */
 export const startZipAnalysis = async (id: number,
     startZipAnalysisBody: Blob,
-    params: StartZipAnalysisParams, options?: RequestInit): Promise<Analysis> => {
+    params?: StartZipAnalysisParams, options?: RequestInit): Promise<Analysis> => {
 
   return customFetch<Analysis>(getStartZipAnalysisUrl(id,params),
   {
@@ -2143,8 +2143,8 @@ export const startZipAnalysis = async (id: number,
 
 
 export const getStartZipAnalysisMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | PayloadTooLargeResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startZipAnalysis>>, TError,{id: number;data: BodyType<Blob>;params: StartZipAnalysisParams}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof startZipAnalysis>>, TError,{id: number;data: BodyType<Blob>;params: StartZipAnalysisParams}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startZipAnalysis>>, TError,{id: number;data: BodyType<Blob>;params?: StartZipAnalysisParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startZipAnalysis>>, TError,{id: number;data: BodyType<Blob>;params?: StartZipAnalysisParams}, TContext> => {
 
 const mutationKey = ['startZipAnalysis'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -2156,7 +2156,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startZipAnalysis>>, {id: number;data: BodyType<Blob>;params: StartZipAnalysisParams}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startZipAnalysis>>, {id: number;data: BodyType<Blob>;params?: StartZipAnalysisParams}> = (props) => {
           const {id,data,params} = props ?? {};
 
           return  startZipAnalysis(id,data,params,requestOptions)
@@ -2177,11 +2177,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Avvia un'analisi caricando il codice come archivio zip
  */
 export const useStartZipAnalysis = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | PayloadTooLargeResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startZipAnalysis>>, TError,{id: number;data: BodyType<Blob>;params: StartZipAnalysisParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startZipAnalysis>>, TError,{id: number;data: BodyType<Blob>;params?: StartZipAnalysisParams}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof startZipAnalysis>>,
         TError,
-        {id: number;data: BodyType<Blob>;params: StartZipAnalysisParams},
+        {id: number;data: BodyType<Blob>;params?: StartZipAnalysisParams},
         TContext
       > => {
       return useMutation(getStartZipAnalysisMutationOptions(options));

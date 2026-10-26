@@ -80,3 +80,25 @@ export async function ensureSystemAccount(): Promise<{ accountId: number } | nul
     return { accountId };
   });
 }
+
+/**
+ * Modello dell'account di sistema con questo `model_id` (es. "openrouter/auto"), o null se non c'è.
+ * Serve alla transizione: chi sceglie ancora il modello per nome (console precedente) viene collegato
+ * al modello equivalente del gateway, sempre utilizzabile da tutti gli utenti ammessi.
+ */
+export async function findSystemModelId(modelId: string): Promise<number | null> {
+  const [row] = await db
+    .select({ id: aiModelsTable.id })
+    .from(aiModelsTable)
+    .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
+    .where(
+      and(
+        eq(aiAccountsTable.provider, "system_gateway"),
+        isNull(aiAccountsTable.userId),
+        eq(aiModelsTable.modelId, modelId),
+      ),
+    )
+    .orderBy(aiModelsTable.id)
+    .limit(1);
+  return row?.id ?? null;
+}

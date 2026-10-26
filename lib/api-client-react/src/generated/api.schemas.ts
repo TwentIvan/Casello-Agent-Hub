@@ -251,7 +251,13 @@ export interface Agent {
   name: string;
   /** @nullable */
   systemPrompt?: string | null;
+  /** Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto */
   model?: string;
+  /**
+     * Modello scelto tra quelli degli account AI; le run usano l'account di questo modello (chi configura paga). Null = vecchio percorso del gateway
+     * @nullable
+     */
+  aiModelId: number | null;
   status: AgentStatus;
   role: AgentRole;
   /** @nullable */
@@ -268,7 +274,13 @@ export interface AgentInput {
   /** @minLength 1 */
   name: string;
   systemPrompt?: string;
+  /** Solo compatibilità; con aiModelId è ignorato */
   model?: string;
+  /**
+     * Modello di un account AI dell'utente o dell'account di sistema (400 "modello non disponibile" altrimenti)
+     * @nullable
+     */
+  aiModelId?: number | null;
   status?: AgentStatus;
 }
 
@@ -277,7 +289,13 @@ export interface AgentUpdate {
   name?: string;
   /** @nullable */
   systemPrompt?: string | null;
+  /** Solo compatibilità; con aiModelId è ignorato */
   model?: string;
+  /**
+     * Se diverso da quello salvato deve essere un modello dell'utente o dell'account di sistema (400 altrimenti); uguale a quello salvato non viene ricontrollato
+     * @nullable
+     */
+  aiModelId?: number | null;
   status?: AgentStatus;
   /** @nullable */
   area?: string | null;
@@ -453,6 +471,11 @@ export interface Run {
   promptTokens?: number | null;
   /** @nullable */
   completionTokens?: number | null;
+  /**
+     * Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)
+     * @nullable
+     */
+  costUsd?: number | null;
 }
 
 /**
@@ -568,10 +591,17 @@ export interface Analysis {
   id: number;
   appId: number;
   model: string;
+  /** @nullable */
+  aiModelId: number | null;
   status: AnalysisStatus;
   sources: AnalysisSources;
   maxTokens: number;
   tokensUsed: number;
+  /**
+     * Costo in USD; null se un prezzo manca o l'analisi usa il vecchio gateway (costo parziale)
+     * @nullable
+     */
+  costUsd: number | null;
   /**
      * Fase corrente
      * @nullable
@@ -631,12 +661,17 @@ export type AnalysisDetail = Analysis & {
   items: AnalysisItem[];
 };
 
+/**
+ * Indicare esattamente uno tra aiModelId e model (altrimenti 400 "scegli un modello")
+ */
 export interface AnalysisStart {
+  /** Modello di un account AI dell'utente o dell'account di sistema */
+  aiModelId?: number;
   /**
-     * Modello AI (model_name di LiteLLM)
+     * Compatibilità, modello AI come model_name di LiteLLM
      * @minLength 1
      */
-  model: string;
+  model?: string;
   /**
      * Tetto di token per l'analisi (default 1000000)
      * @minimum 50000
@@ -942,10 +977,14 @@ status?: RunStatus;
 
 export type StartZipAnalysisParams = {
 /**
- * Modello AI (model_name di LiteLLM)
+ * Modello di un account AI (esattamente uno tra aiModelId e model)
+ */
+aiModelId?: number;
+/**
+ * Compatibilità, modello AI come model_name di LiteLLM
  * @minLength 1
  */
-model: string;
+model?: string;
 /**
  * Tetto di token per l'analisi (default 1000000)
  * @minimum 50000

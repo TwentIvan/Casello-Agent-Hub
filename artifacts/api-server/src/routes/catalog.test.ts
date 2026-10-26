@@ -252,8 +252,11 @@ describe("elenco dei modelli", () => {
     expect(res.json[0].inMyAccounts).toBe(false);
   });
 
-  it("un provider sconosciuto è 400", async () => {
-    expect((await api("GET", "/catalog/models?provider=nope")).status).toBe(400);
+  it("uno slug di provider non valido è 400; uno ben formato ma assente dà un elenco vuoto", async () => {
+    expect((await api("GET", "/catalog/models?provider=NOPE!")).status).toBe(400);
+    const res = await api("GET", "/catalog/models?provider=nope");
+    expect(res.status).toBe(200);
+    expect(res.json).toEqual([]);
   });
 
   it("le route sono dietro il login (montate nell'app)", async () => {

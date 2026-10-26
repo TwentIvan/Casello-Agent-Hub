@@ -33,6 +33,7 @@ import type {
   AiModelInput,
   AiModelProbeResult,
   AiModelUpdate,
+  AiProviderInfo,
   Analysis,
   AnalysisDetail,
   AnalysisItem,
@@ -2889,6 +2890,84 @@ export function useListModels<TData = Awaited<ReturnType<typeof listModels>>, TE
 
 
 
+export const getListAiProvidersUrl = () => {
+
+
+
+
+  return `/api/ai/providers`
+}
+
+/**
+ * Provider della tabella providers (registro e scoperti), senza system_gateway: prima i gestiti per nome, poi quelli in arrivo, poi i non gestiti.
+ * @summary Provider del registro per la creazione degli account AI
+ */
+export const listAiProviders = async ( options?: RequestInit): Promise<AiProviderInfo[]> => {
+
+  return customFetch<AiProviderInfo[]>(getListAiProvidersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAiProvidersQueryKey = () => {
+    return [
+    `/api/ai/providers`
+    ] as const;
+    }
+
+
+export const getListAiProvidersQueryOptions = <TData = Awaited<ReturnType<typeof listAiProviders>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAiProvidersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAiProviders>>> = ({ signal }) => listAiProviders({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAiProviders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAiProvidersQueryResult = NonNullable<Awaited<ReturnType<typeof listAiProviders>>>
+export type ListAiProvidersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Provider del registro per la creazione degli account AI
+ */
+
+export function useListAiProviders<TData = Awaited<ReturnType<typeof listAiProviders>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAiProvidersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getListAiAccountsUrl = () => {
 
 
@@ -2976,7 +3055,7 @@ export const getCreateAiAccountUrl = () => {
 }
 
 /**
- * Valida il base URL (solo custom può indicarlo; gli altri provider usano quello predefinito), legge /models del provider con la chiave e salva account e modelli. Se il provider non fornisce l'elenco dei modelli l'account si salva comunque (status ok, zero modelli, aggiunta manuale). Ogni altro errore del provider → 400 con il messaggio fisso e nulla di salvato. Il primo account dell'utente diventa predefinito.
+ * Il provider si legge dalla tabella providers: sconosciuto → 400; in arrivo (coming) → 400. Valida il base URL (lo indicano custom, i provider non gestiti e i gestiti senza indirizzo predefinito; gli altri usano quello predefinito), legge /models del provider con la chiave e salva account e modelli. Se il provider non fornisce l'elenco dei modelli l'account si salva comunque (status ok, zero modelli, aggiunta manuale). Ogni altro errore del provider → 400 con il messaggio fisso e nulla di salvato. Il primo account dell'utente diventa predefinito.
  * @summary Crea un account AI e ne legge i modelli
  */
 export const createAiAccount = async (aiAccountInput: AiAccountInput, options?: RequestInit): Promise<AiAccount> => {

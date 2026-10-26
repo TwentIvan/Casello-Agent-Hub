@@ -1040,15 +1040,36 @@ export const ListModelsResponse = zod.array(ListModelsResponseItem)
 
 
 /**
+ * Provider della tabella providers (registro e scoperti), senza system_gateway: prima i gestiti per nome, poi quelli in arrivo, poi i non gestiti.
+ * @summary Provider del registro per la creazione degli account AI
+ */
+export const listAiProvidersResponseSlugRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+
+
+export const ListAiProvidersResponseItem = zod.object({
+  "slug": zod.string().regex(listAiProvidersResponseSlugRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "name": zod.string(),
+  "protocol": zod.enum(['openai_compatible', 'anthropic', 'bedrock', 'vertex', 'azure', 'unknown']),
+  "status": zod.enum(['managed', 'coming', 'unmanaged']).describe('managed: esecutore disponibile; coming: protocollo noto ancora senza esecutore (non selezionabile); unmanaged: sconosciuto al registro, configurabile come compatibile OpenAI con indirizzo dell\'utente'),
+  "defaultBaseUrl": zod.string().nullable().describe('Indirizzo predefinito; null se lo inserisce l\'utente'),
+  "editableBaseUrl": zod.boolean().describe('L\'utente inserisce l\'indirizzo (custom, provider non gestiti e gestiti senza indirizzo predefinito)')
+})
+export const ListAiProvidersResponse = zod.array(ListAiProvidersResponseItem)
+
+
+/**
  * Account dell'utente corrente (il predefinito per primo, poi per nome) seguiti dall'account di sistema, se configurato. La chiave non è mai esposta: solo keySet.
  * @summary Elenca gli account AI dell'utente e l'account di sistema
  */
+export const listAiAccountsResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+
+
 export const ListAiAccountsResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(listAiAccountsResponseProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "baseUrl": zod.string(),
-  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
+  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
   "status": zod.enum(['unverified', 'ok', 'error']),
   "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
@@ -1061,11 +1082,12 @@ export const ListAiAccountsResponse = zod.array(ListAiAccountsResponseItem)
 
 
 /**
- * Valida il base URL (solo custom può indicarlo; gli altri provider usano quello predefinito), legge /models del provider con la chiave e salva account e modelli. Se il provider non fornisce l'elenco dei modelli l'account si salva comunque (status ok, zero modelli, aggiunta manuale). Ogni altro errore del provider → 400 con il messaggio fisso e nulla di salvato. Il primo account dell'utente diventa predefinito.
+ * Il provider si legge dalla tabella providers: sconosciuto → 400; in arrivo (coming) → 400. Valida il base URL (lo indicano custom, i provider non gestiti e i gestiti senza indirizzo predefinito; gli altri usano quello predefinito), legge /models del provider con la chiave e salva account e modelli. Se il provider non fornisce l'elenco dei modelli l'account si salva comunque (status ok, zero modelli, aggiunta manuale). Ogni altro errore del provider → 400 con il messaggio fisso e nulla di salvato. Il primo account dell'utente diventa predefinito.
  * @summary Crea un account AI e ne legge i modelli
  */
 export const createAiAccountBodyNameMax = 100;
 
+export const createAiAccountBodyProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
 export const createAiAccountBodyApiKeyMax = 4096;
 
 export const createAiAccountBodyBaseUrlMax = 2048;
@@ -1074,18 +1096,21 @@ export const createAiAccountBodyBaseUrlMax = 2048;
 
 export const CreateAiAccountBody = zod.object({
   "name": zod.string().min(1).max(createAiAccountBodyNameMax),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(createAiAccountBodyProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "apiKey": zod.string().max(createAiAccountBodyApiKeyMax).nullish().describe('Chiave del provider (solo scrittura, salvata cifrata); vuota solo per custom'),
-  "baseUrl": zod.string().max(createAiAccountBodyBaseUrlMax).nullish().describe('Solo custom (obbligatorio); gli altri provider usano il base URL predefinito'),
-  "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom')
+  "baseUrl": zod.string().max(createAiAccountBodyBaseUrlMax).nullish().describe('Obbligatorio per custom, provider non gestiti e gestiti senza indirizzo predefinito; gli altri usano il base URL predefinito'),
+  "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom e provider non gestiti')
 })
+
+export const createAiAccountResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+
 
 export const CreateAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(createAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "baseUrl": zod.string(),
-  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
+  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
   "status": zod.enum(['unverified', 'ok', 'error']),
   "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
@@ -1115,16 +1140,19 @@ export const updateAiAccountBodyBaseUrlMax = 2048;
 export const UpdateAiAccountBody = zod.object({
   "name": zod.string().min(1).max(updateAiAccountBodyNameMax).optional(),
   "apiKey": zod.string().max(updateAiAccountBodyApiKeyMax).nullish().describe('Assente o \"\" = invariata; null la rimuove (solo custom); un valore la sostituisce'),
-  "baseUrl": zod.string().min(1).max(updateAiAccountBodyBaseUrlMax).optional().describe('Solo custom'),
-  "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom')
+  "baseUrl": zod.string().min(1).max(updateAiAccountBodyBaseUrlMax).optional().describe('Solo se il provider ha l\'indirizzo modificabile (vedi AiProviderInfo.editableBaseUrl)'),
+  "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom e provider non gestiti')
 })
+
+export const updateAiAccountResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+
 
 export const UpdateAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(updateAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "baseUrl": zod.string(),
-  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
+  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
   "status": zod.enum(['unverified', 'ok', 'error']),
   "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
@@ -1154,12 +1182,15 @@ export const VerifyAiAccountParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const verifyAiAccountResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+
+
 export const VerifyAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(verifyAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "baseUrl": zod.string(),
-  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
+  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
   "status": zod.enum(['unverified', 'ok', 'error']),
   "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
@@ -1177,12 +1208,15 @@ export const SetDefaultAiAccountParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const setDefaultAiAccountResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+
+
 export const SetDefaultAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(setDefaultAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "baseUrl": zod.string(),
-  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
+  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
   "status": zod.enum(['unverified', 'ok', 'error']),
   "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
@@ -1360,13 +1394,16 @@ export const ProbeAiModelResponse = zod.object({
  * Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo) e account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi; quelli non selezionabili restano con `selectable: false`. Al massimo un modello consigliato per gruppo.
  * @summary Modelli selezionabili dall'utente, raggruppati per account
  */
+export const listAiModelsResponseAccountProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+
+
 export const ListAiModelsResponseItem = zod.object({
   "account": zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(listAiModelsResponseAccountProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "baseUrl": zod.string(),
-  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
+  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
   "status": zod.enum(['unverified', 'ok', 'error']),
   "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
@@ -1423,13 +1460,19 @@ export const EstimateAnalysisCostResponse = zod.object({
  * Senza `provider` tutti i provider. Ordinati per provider, famiglia e data di uscita decrescente. `inMyAccounts` è vero se un modello di un account dell'utente è collegato alla voce.
  * @summary Catalogo dei modelli
  */
+export const listCatalogModelsQueryProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+
+
 export const ListCatalogModelsQueryParams = zod.object({
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']).optional()
+  "provider": zod.coerce.string().regex(listCatalogModelsQueryProviderRegExp).optional()
 })
+
+export const listCatalogModelsResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+
 
 export const ListCatalogModelsResponseItem = zod.object({
   "id": zod.number(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(listCatalogModelsResponseProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "modelId": zod.string(),
   "family": zod.string(),
   "version": zod.string(),
@@ -1449,6 +1492,16 @@ export const ListCatalogModelsResponse = zod.array(ListCatalogModelsResponseItem
  * `running` dice se un aggiornamento è in corso. Il riepilogo contiene solo gli account dell'utente corrente.
  * @summary Ultimo aggiornamento del catalogo
  */
+export const getCatalogStatusResponseLatestOneSummaryOneAddedItemProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+export const getCatalogStatusResponseLatestOneSummaryOneRetiredItemProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+export const getCatalogStatusResponseLatestOneSummaryOneDeprecatingItemOneProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+export const getCatalogStatusResponseLatestOneSummaryOnePriceChangedItemOneProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+export const getCatalogStatusResponseLastCompletedOneSummaryOneAddedItemProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+export const getCatalogStatusResponseLastCompletedOneSummaryOneRetiredItemProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+export const getCatalogStatusResponseLastCompletedOneSummaryOneDeprecatingItemOneProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+export const getCatalogStatusResponseLastCompletedOneSummaryOnePriceChangedItemOneProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+
+
 export const GetCatalogStatusResponse = zod.object({
   "running": zod.boolean(),
   "latest": zod.union([zod.object({
@@ -1461,24 +1514,24 @@ export const GetCatalogStatusResponse = zod.object({
   "summary": zod.union([zod.object({
   "firstRun": zod.boolean(),
   "added": zod.array(zod.object({
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(getCatalogStatusResponseLatestOneSummaryOneAddedItemProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "modelId": zod.string(),
   "version": zod.string()
 })),
   "retired": zod.array(zod.object({
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(getCatalogStatusResponseLatestOneSummaryOneRetiredItemProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "modelId": zod.string(),
   "version": zod.string()
 })),
   "deprecating": zod.array(zod.object({
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(getCatalogStatusResponseLatestOneSummaryOneDeprecatingItemOneProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "modelId": zod.string(),
   "version": zod.string()
 }).and(zod.object({
   "deprecationDate": zod.string()
 }))),
   "priceChanged": zod.array(zod.object({
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(getCatalogStatusResponseLatestOneSummaryOnePriceChangedItemOneProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "modelId": zod.string(),
   "version": zod.string()
 }).and(zod.object({
@@ -1504,24 +1557,24 @@ export const GetCatalogStatusResponse = zod.object({
   "summary": zod.union([zod.object({
   "firstRun": zod.boolean(),
   "added": zod.array(zod.object({
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(getCatalogStatusResponseLastCompletedOneSummaryOneAddedItemProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "modelId": zod.string(),
   "version": zod.string()
 })),
   "retired": zod.array(zod.object({
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(getCatalogStatusResponseLastCompletedOneSummaryOneRetiredItemProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "modelId": zod.string(),
   "version": zod.string()
 })),
   "deprecating": zod.array(zod.object({
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(getCatalogStatusResponseLastCompletedOneSummaryOneDeprecatingItemOneProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "modelId": zod.string(),
   "version": zod.string()
 }).and(zod.object({
   "deprecationDate": zod.string()
 }))),
   "priceChanged": zod.array(zod.object({
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(getCatalogStatusResponseLastCompletedOneSummaryOnePriceChangedItemOneProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "modelId": zod.string(),
   "version": zod.string()
 }).and(zod.object({
@@ -1544,6 +1597,12 @@ export const GetCatalogStatusResponse = zod.object({
  * Risponde subito con l'esecuzione `running`; prosegue in background. Massimo 2 al minuto per IP.
  * @summary Avvia l'aggiornamento del catalogo
  */
+export const refreshCatalogResponseSummaryOneAddedItemProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+export const refreshCatalogResponseSummaryOneRetiredItemProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+export const refreshCatalogResponseSummaryOneDeprecatingItemOneProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+export const refreshCatalogResponseSummaryOnePriceChangedItemOneProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
+
+
 export const RefreshCatalogResponse = zod.object({
   "id": zod.number(),
   "trigger": zod.enum(['scheduled', 'manual']),
@@ -1554,24 +1613,24 @@ export const RefreshCatalogResponse = zod.object({
   "summary": zod.union([zod.object({
   "firstRun": zod.boolean(),
   "added": zod.array(zod.object({
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(refreshCatalogResponseSummaryOneAddedItemProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "modelId": zod.string(),
   "version": zod.string()
 })),
   "retired": zod.array(zod.object({
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(refreshCatalogResponseSummaryOneRetiredItemProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "modelId": zod.string(),
   "version": zod.string()
 })),
   "deprecating": zod.array(zod.object({
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(refreshCatalogResponseSummaryOneDeprecatingItemOneProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "modelId": zod.string(),
   "version": zod.string()
 }).and(zod.object({
   "deprecationDate": zod.string()
 }))),
   "priceChanged": zod.array(zod.object({
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "provider": zod.string().regex(refreshCatalogResponseSummaryOnePriceChangedItemOneProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "modelId": zod.string(),
   "version": zod.string()
 }).and(zod.object({

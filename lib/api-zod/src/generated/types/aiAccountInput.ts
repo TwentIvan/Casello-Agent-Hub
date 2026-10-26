@@ -21,11 +21,11 @@ export interface AiAccountInput {
      */
   apiKey?: string | null;
   /**
-     * Solo custom (obbligatorio); gli altri provider usano il base URL predefinito
+     * Obbligatorio per custom, provider non gestiti e gestiti senza indirizzo predefinito; gli altri usano il base URL predefinito
      * @maxLength 2048
      * @nullable
      */
   baseUrl?: string | null;
-  /** Solo custom */
+  /** Solo custom e provider non gestiti */
   allowPrivateNetwork?: boolean;
 }

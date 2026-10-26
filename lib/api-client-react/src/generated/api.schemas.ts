@@ -720,20 +720,49 @@ export interface AgentSkill {
   status: AgentSkillStatus;
 }
 
-export type AiProvider = typeof AiProvider[keyof typeof AiProvider];
+/**
+ * Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)
+ * @pattern ^[a-z0-9_-]{1,64}$
+ */
+export type AiProvider = string;
+
+export type AiProviderProtocol = typeof AiProviderProtocol[keyof typeof AiProviderProtocol];
 
 
-export const AiProvider = {
-  deepseek: 'deepseek',
-  openrouter: 'openrouter',
-  huggingface: 'huggingface',
-  mistral: 'mistral',
-  groq: 'groq',
-  together: 'together',
-  gemini: 'gemini',
-  custom: 'custom',
-  system_gateway: 'system_gateway',
+export const AiProviderProtocol = {
+  openai_compatible: 'openai_compatible',
+  anthropic: 'anthropic',
+  bedrock: 'bedrock',
+  vertex: 'vertex',
+  azure: 'azure',
+  unknown: 'unknown',
 } as const;
+
+/**
+ * managed: esecutore disponibile; coming: protocollo noto ancora senza esecutore (non selezionabile); unmanaged: sconosciuto al registro, configurabile come compatibile OpenAI con indirizzo dell'utente
+ */
+export type AiProviderStatus = typeof AiProviderStatus[keyof typeof AiProviderStatus];
+
+
+export const AiProviderStatus = {
+  managed: 'managed',
+  coming: 'coming',
+  unmanaged: 'unmanaged',
+} as const;
+
+export interface AiProviderInfo {
+  slug: AiProvider;
+  name: string;
+  protocol: AiProviderProtocol;
+  status: AiProviderStatus;
+  /**
+     * Indirizzo predefinito; null se lo inserisce l'utente
+     * @nullable
+     */
+  defaultBaseUrl: string | null;
+  /** L'utente inserisce l'indirizzo (custom, provider non gestiti e gestiti senza indirizzo predefinito) */
+  editableBaseUrl: boolean;
+}
 
 export type AiAccountStatus = typeof AiAccountStatus[keyof typeof AiAccountStatus];
 
@@ -749,7 +778,7 @@ export interface AiAccount {
   name: string;
   provider: AiProvider;
   baseUrl: string;
-  /** Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati */
+  /** Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati */
   allowPrivateNetwork: boolean;
   isDefault: boolean;
   status: AiAccountStatus;
@@ -782,12 +811,12 @@ export interface AiAccountInput {
      */
   apiKey?: string | null;
   /**
-     * Solo custom (obbligatorio); gli altri provider usano il base URL predefinito
+     * Obbligatorio per custom, provider non gestiti e gestiti senza indirizzo predefinito; gli altri usano il base URL predefinito
      * @maxLength 2048
      * @nullable
      */
   baseUrl?: string | null;
-  /** Solo custom */
+  /** Solo custom e provider non gestiti */
   allowPrivateNetwork?: boolean;
 }
 
@@ -804,12 +833,12 @@ export interface AiAccountUpdate {
      */
   apiKey?: string | null;
   /**
-     * Solo custom
+     * Solo se il provider ha l'indirizzo modificabile (vedi AiProviderInfo.editableBaseUrl)
      * @minLength 1
      * @maxLength 2048
      */
   baseUrl?: string;
-  /** Solo custom */
+  /** Solo custom e provider non gestiti */
   allowPrivateNetwork?: boolean;
 }
 

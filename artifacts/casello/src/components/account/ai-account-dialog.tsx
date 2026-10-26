@@ -6,6 +6,7 @@ import {
   type AiAccountUpdate,
   type AiProvider,
   useCreateAiAccount,
+  useListAiProviders,
   useUpdateAiAccount,
 } from "@workspace/api-client-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -26,22 +27,16 @@ import { invalidateAiQueries } from "@/components/ai/ai-queries";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 
-/** Provider che l'utente può scegliere; rispecchia PROVIDERS dell'API (system_gateway escluso). */
-type UserProvider = Exclude<AiProvider, "system_gateway">;
-
-export const PROVIDER_INFO: Record<UserProvider, { label: string; defaultBaseUrl: string | null }> = {
-  deepseek: { label: "DeepSeek", defaultBaseUrl: "https://api.deepseek.com/v1" },
-  openrouter: { label: "OpenRouter", defaultBaseUrl: "https://openrouter.ai/api/v1" },
-  huggingface: { label: "Hugging Face", defaultBaseUrl: "https://router.huggingface.co/v1" },
-  mistral: { label: "Mistral", defaultBaseUrl: "https://api.mistral.ai/v1" },
-  groq: { label: "Groq", defaultBaseUrl: "https://api.groq.com/openai/v1" },
-  together: { label: "Together", defaultBaseUrl: "https://api.together.xyz/v1" },
-  gemini: { label: "Google Gemini", defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai" },
-  custom: { label: "Personalizzato", defaultBaseUrl: null },
-};
-
-export function providerLabel(provider: AiProvider): string {
-  return provider === "system_gateway" ? "Gateway di Casello" : PROVIDER_INFO[provider].label;
+/**
+ * Nome di un provider dal registro dell'API (`GET /ai/providers`); finché l'elenco non arriva, o per uno slug
+ * che non vi compare, lo slug stesso. Il gateway di sistema non è nel registro degli account.
+ */
+export function useProviderLabel(): (provider: AiProvider) => string {
+  const { data } = useListAiProviders();
+  return (provider) => {
+    if (provider === "system_gateway") return "Gateway di Casello";
+    return data?.find((p) => p.slug === provider)?.name ?? provider;
+  };
 }
 
 interface AiAccountDialogProps {
@@ -57,7 +52,8 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
   const { toast } = useToast();
   const editing = account !== undefined;
 
-  const [provider, setProvider] = useState<UserProvider>("deepseek");
+  const providers = useListAiProviders();
+  const [provider, setProvider] = useState<AiProvider>("deepseek");
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -110,7 +106,8 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
     }
     setProvider(account && account.provider !== "system_gateway" ? account.provider : "deepseek");
     setName(account?.name ?? "");
-    setBaseUrl(account?.provider === "custom" ? account.baseUrl : "");
+    // Usato solo se il provider ha l'indirizzo modificabile
+    setBaseUrl(account?.baseUrl ?? "");
     setApiKey("");
     setAllowPrivateNetwork(account?.allowPrivateNetwork ?? false);
     setError(null);
@@ -120,14 +117,21 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
 
   const pending = createAccount.isPending || updateAccount.isPending;
 
+  const info = providers.data?.find((p) => p.slug === provider);
   const isCustom = provider === "custom";
+  // Regole dell'API: indirizzo dell'utente per custom, non gestiti e gestiti senza indirizzo predefinito;
+  // rete privata solo per custom e non gestiti
+  const editableUrl = info?.editableBaseUrl ?? false;
+  const privateAllowed = isCustom || info?.status === "unmanaged";
   const trimmedName = name.trim();
   const trimmedUrl = baseUrl.trim();
   const key = apiKey.trim();
   const valid =
     trimmedName.length > 0 &&
     trimmedName.length <= 100 &&
-    (!isCustom || trimmedUrl.length > 0) &&
+    info !== undefined &&
+    info.status !== "coming" &&
+    (!editableUrl || trimmedUrl.length > 0) &&
     // Senza chiave solo i server personalizzati; in modifica la chiave vuota resta quella di prima
     (editing || isCustom || key.length > 0);
 
@@ -141,7 +145,8 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
           name: trimmedName,
           provider,
           ...(key ? { apiKey: key } : {}),
-          ...(isCustom ? { baseUrl: trimmedUrl, allowPrivateNetwork } : {}),
+          ...(editableUrl ? { baseUrl: trimmedUrl } : {}),
+          ...(privateAllowed ? { allowPrivateNetwork } : {}),
         },
       });
       return;
@@ -149,8 +154,8 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
     const data: AiAccountUpdate = {};
     if (trimmedName !== account.name) data.name = trimmedName;
     if (key) data.apiKey = key;
-    if (isCustom && trimmedUrl !== account.baseUrl) data.baseUrl = trimmedUrl;
-    if (isCustom && allowPrivateNetwork !== account.allowPrivateNetwork) data.allowPrivateNetwork = allowPrivateNetwork;
+    if (editableUrl && trimmedUrl !== account.baseUrl) data.baseUrl = trimmedUrl;
+    if (privateAllowed && allowPrivateNetwork !== account.allowPrivateNetwork) data.allowPrivateNetwork = allowPrivateNetwork;
     if (Object.keys(data).length === 0) {
       onOpenChange(false);
       return;
@@ -173,17 +178,18 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
             <Label htmlFor="ai-account-provider">Provider</Label>
             {editing ? (
               <p id="ai-account-provider" className="text-sm">
-                {PROVIDER_INFO[provider].label}
+                {info?.name ?? provider}
               </p>
             ) : (
-              <Select value={provider} onValueChange={(v) => setProvider(v as UserProvider)}>
+              <Select value={provider} onValueChange={setProvider}>
                 <SelectTrigger id="ai-account-provider">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(Object.keys(PROVIDER_INFO) as UserProvider[]).map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {PROVIDER_INFO[value].label}
+                  {/* Quelli in arrivo restano visibili ma non selezionabili */}
+                  {(providers.data ?? []).map((p) => (
+                    <SelectItem key={p.slug} value={p.slug} disabled={p.status === "coming"}>
+                      {p.status === "coming" ? `${p.name} (in arrivo)` : p.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -202,7 +208,7 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
           </div>
           <div className="space-y-2">
             <Label htmlFor="ai-account-base-url">Base URL</Label>
-            {isCustom ? (
+            {editableUrl ? (
               <Input
                 id="ai-account-base-url"
                 value={baseUrl}
@@ -212,7 +218,7 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
               />
             ) : (
               <p id="ai-account-base-url" className="font-mono text-sm break-all text-muted-foreground">
-                {PROVIDER_INFO[provider].defaultBaseUrl}
+                {info?.defaultBaseUrl}
               </p>
             )}
           </div>
@@ -228,7 +234,7 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
               onChange={(e) => setApiKey(e.target.value)}
             />
           </div>
-          {isCustom && (
+          {privateAllowed && (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Checkbox

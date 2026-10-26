@@ -19,11 +19,11 @@ export interface AiAccountUpdate {
      */
   apiKey?: string | null;
   /**
-     * Solo custom
+     * Solo se il provider ha l'indirizzo modificabile (vedi AiProviderInfo.editableBaseUrl)
      * @minLength 1
      * @maxLength 2048
      */
   baseUrl?: string;
-  /** Solo custom */
+  /** Solo custom e provider non gestiti */
   allowPrivateNetwork?: boolean;
 }

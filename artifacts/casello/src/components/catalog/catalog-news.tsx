@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { invalidateAiQueries } from "@/components/ai/ai-queries";
-import { providerLabel } from "@/components/account/ai-account-dialog";
+import { useProviderLabel } from "@/components/account/ai-account-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatModelPrice, formatRelative } from "@/lib/format";
@@ -43,7 +43,10 @@ function formatDateTime(value: string): string {
   });
 }
 
-function modelName(item: { provider: AiProvider; modelId: string; version: string }): string {
+function modelName(
+  item: { provider: AiProvider; modelId: string; version: string },
+  providerLabel: (provider: AiProvider) => string,
+): string {
   return `${providerLabel(item.provider)} · ${item.modelId} (${item.version})`;
 }
 
@@ -77,6 +80,8 @@ export function CatalogNews() {
   });
   const refresh = useRefreshCatalog();
   const running = status.data?.running ?? false;
+  const providerLabel = useProviderLabel();
+  const nameOf = (item: Parameters<typeof modelName>[0]) => modelName(item, providerLabel);
 
   // Alla fine di un aggiornamento catalogo e modelli degli account sono cambiati
   const wasRunning = useRef(false);
@@ -151,19 +156,19 @@ export function CatalogNews() {
             )}
             {summary && (
               <>
-                <NewsList title="Nuovi" items={summary.added.map(modelName)} />
-                <NewsList title="Ritirati" items={summary.retired.map(modelName)} />
+                <NewsList title="Nuovi" items={summary.added.map(nameOf)} />
+                <NewsList title="Ritirati" items={summary.retired.map(nameOf)} />
                 <NewsList
                   title="In dismissione"
                   items={summary.deprecating.map(
-                    (d) => `${modelName(d)}, dal ${new Date(d.deprecationDate).toLocaleDateString("it-IT")}`,
+                    (d) => `${nameOf(d)}, dal ${new Date(d.deprecationDate).toLocaleDateString("it-IT")}`,
                   )}
                 />
                 <NewsList
                   title="Prezzi cambiati"
                   items={summary.priceChanged.map(
                     (p) =>
-                      `${modelName(p)}: ${formatModelPrice(p.oldInput, p.oldOutput)} → ${formatModelPrice(p.newInput, p.newOutput)}`,
+                      `${nameOf(p)}: ${formatModelPrice(p.oldInput, p.oldOutput)} → ${formatModelPrice(p.newInput, p.newOutput)}`,
                   )}
                 />
                 <NewsList

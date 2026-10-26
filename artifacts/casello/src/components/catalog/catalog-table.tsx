@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAiModelGroups } from "@/components/ai/ai-queries";
-import { providerLabel } from "@/components/account/ai-account-dialog";
+import { useProviderLabel } from "@/components/account/ai-account-dialog";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatModelPrice } from "@/lib/format";
 
@@ -20,6 +20,7 @@ export function CatalogTable() {
   const groups = useAiModelGroups();
   const [chosen, setChosen] = useState<AiProvider | null>(null);
   const [showRetired, setShowRetired] = useState(false);
+  const providerLabel = useProviderLabel();
 
   const models = catalog.data ?? [];
   const providers = useMemo(() => [...new Set(models.map((m) => m.provider))], [models]);

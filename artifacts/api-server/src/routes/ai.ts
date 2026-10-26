@@ -7,10 +7,12 @@ import {
   aiModelsTable,
   analysesTable,
   modelCatalogTable,
+  providersTable,
   usersTable,
   type AiAccount,
   type AiModel,
   type CatalogModelRow,
+  type ProviderRow,
 } from "@workspace/db";
 import {
   AddAiAccountModelBody,
@@ -25,6 +27,7 @@ import {
   ListAiAccountModelsResponse,
   ListAiAccountsResponse,
   ListAiModelsResponse,
+  ListAiProvidersResponse,
   ProbeAiModelParams,
   ProbeAiModelResponse,
   SetDefaultAiAccountParams,
@@ -45,7 +48,7 @@ import { upsertDiscovered, verifyAccount, type Tx } from "../lib/ai/accounts";
 import { ModelAccessError } from "../lib/ai/executor";
 import { effectiveStatus, isSelectable, pickRecommended } from "../lib/ai/model-status";
 import { probeModel } from "../lib/ai/probe";
-import { normalizeBaseUrl, PROVIDERS, validateBaseUrl, type AiProvider } from "../lib/ai/providers";
+import { normalizeBaseUrl, validateBaseUrl, type AiProvider } from "../lib/ai/providers";
 import { systemAccountConfigured } from "../lib/ai/system-account";
 import { isUniqueViolation } from "../lib/pg-errors";
 import { decryptSecret, encryptSecret } from "../lib/secrets";
@@ -63,6 +66,9 @@ const PRIVATE_ONLY_CUSTOM = "allowPrivateNetwork è ammesso solo per gli account
 const BASE_URL_ONLY_CUSTOM = "base URL modificabile solo per gli account personalizzati (custom)";
 const BASE_URL_REQUIRED = "base URL obbligatorio per gli account personalizzati (custom)";
 const KEY_REQUIRED = "chiave obbligatoria per questo provider";
+const PROVIDER_UNKNOWN = "provider sconosciuto";
+const PROVIDER_COMING = "esecutore non ancora disponibile per questo provider";
+const UNMANAGED_BASE_URL_REQUIRED = "provider non gestito: inserisci l'indirizzo compatibile OpenAI";
 const NAME_REQUIRED = "nome obbligatorio, senza caratteri di controllo";
 const BAD_MODEL_ID = "id del modello non valido";
 const MODEL_EXISTS = "modello già presente nell'account";
@@ -223,6 +229,26 @@ async function sendAccount(res: Response, id: number, schema: { parse(v: unknown
 }
 
 /** Nome dell'account ripulito; null se vuoto o con caratteri di controllo. */
+/** Provider della tabella `providers` (registro o scoperto); undefined se lo slug non esiste. */
+async function findProvider(slug: string): Promise<ProviderRow | undefined> {
+  const [row] = await db.select().from(providersTable).where(eq(providersTable.slug, slug)).limit(1);
+  return row;
+}
+
+/**
+ * Regole sull'indirizzo di un account secondo il provider: lo inserisce l'utente per custom, per i provider
+ * non gestiti (compatibili OpenAI all'indirizzo dell'utente) e per i gestiti senza indirizzo predefinito;
+ * la rete privata è ammessa solo per custom e i non gestiti.
+ */
+function providerRules(p: ProviderRow): { editableBaseUrl: boolean; privateNetwork: boolean } {
+  const isCustom = p.slug === "custom";
+  const unmanaged = p.status === "unmanaged";
+  const managedNoDefault = p.status === "managed" && p.defaultBaseUrl === null && p.slug !== "system_gateway";
+  return { editableBaseUrl: isCustom || unmanaged || managedNoDefault, privateNetwork: isCustom || unmanaged };
+}
+
+const STATUS_ORDER: Record<ProviderRow["status"], number> = { managed: 0, coming: 1, unmanaged: 2 };
+
 function cleanName(raw: string): string | null {
   const name = raw.trim();
   return name && !CONTROL_RE.test(name) ? name : null;
@@ -307,6 +333,24 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     res.json(ListAiAccountsResponse.parse(accounts.map((a) => toPublicAccount(a, counts.get(a.id) ?? 0))));
   });
 
+  // Registro per la creazione degli account: gestiti per nome, poi in arrivo, poi non gestiti
+  router.get("/ai/providers", async (_req, res) => {
+    const rows = await db.select().from(providersTable).where(ne(providersTable.slug, "system_gateway"));
+    rows.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.name.localeCompare(b.name, "it"));
+    res.json(
+      ListAiProvidersResponse.parse(
+        rows.map((p) => ({
+          slug: p.slug,
+          name: p.name,
+          protocol: p.protocol,
+          status: p.status,
+          defaultBaseUrl: p.defaultBaseUrl,
+          editableBaseUrl: providerRules(p).editableBaseUrl,
+        })),
+      ),
+    );
+  });
+
   router.post("/ai/accounts", providerLimit, async (req, res) => {
     const userId = currentUserId(req);
     const body = parseRequest(CreateAiAccountBody, req.body);
@@ -315,9 +359,20 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       res.status(400).json({ error: "provider non ammesso: l'account di sistema lo gestisce Casello" });
       return;
     }
+    // Dalla tabella: i provider scoperti dall'aggiornamento del catalogo esistono solo lì
+    const info = await findProvider(provider);
+    if (!info) {
+      res.status(400).json({ error: PROVIDER_UNKNOWN });
+      return;
+    }
+    if (info.status === "coming") {
+      res.status(400).json({ error: PROVIDER_COMING });
+      return;
+    }
     const isCustom = provider === "custom";
+    const rules = providerRules(info);
     const allowPrivateNetwork = body.allowPrivateNetwork === true;
-    if (allowPrivateNetwork && !isCustom) {
+    if (allowPrivateNetwork && !rules.privateNetwork) {
       res.status(400).json({ error: PRIVATE_ONLY_CUSTOM });
       return;
     }
@@ -329,19 +384,23 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
 
     let baseUrl: string;
     const requested = body.baseUrl == null ? "" : normalizeBaseUrl(body.baseUrl);
-    if (isCustom) {
+    if (rules.editableBaseUrl) {
       if (!requested) {
-        res.status(400).json({ error: BASE_URL_REQUIRED });
+        res.status(400).json({ error: info.status === "unmanaged" ? UNMANAGED_BASE_URL_REQUIRED : BASE_URL_REQUIRED });
         return;
       }
       baseUrl = requested;
-    } else {
-      baseUrl = PROVIDERS.get(provider)!.defaultBaseUrl!;
+    } else if (info.defaultBaseUrl !== null) {
+      baseUrl = info.defaultBaseUrl;
       // La console può rimandare il base URL precompilato: ammesso solo se coincide
       if (requested && requested !== baseUrl) {
         res.status(400).json({ error: BASE_URL_ONLY_CUSTOM });
         return;
       }
+    } else {
+      // Gestito senza indirizzo e non modificabile: non accade con gli stati di oggi
+      res.status(400).json({ error: PROVIDER_COMING });
+      return;
     }
     const urlError = validateBaseUrl(baseUrl, allowPrivateNetwork);
     if (urlError) {
@@ -405,6 +464,8 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     const account = await findWritableAccount(id, userId, res);
     if (!account) return;
     const isCustom = account.provider === "custom";
+    const info = await findProvider(account.provider);
+    const rules = info ? providerRules(info) : { editableBaseUrl: false, privateNetwork: false };
 
     const set: Partial<typeof aiAccountsTable.$inferInsert> = {};
     if (body.name !== undefined) {
@@ -418,7 +479,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
 
     let allowPrivateNetwork = account.allowPrivateNetwork;
     if (body.allowPrivateNetwork !== undefined) {
-      if (body.allowPrivateNetwork && !isCustom) {
+      if (body.allowPrivateNetwork && !rules.privateNetwork) {
         res.status(400).json({ error: PRIVATE_ONLY_CUSTOM });
         return;
       }
@@ -427,12 +488,12 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     let baseUrl = account.baseUrl;
     if (body.baseUrl !== undefined) {
       const requested = normalizeBaseUrl(body.baseUrl);
-      if (!isCustom && requested !== account.baseUrl) {
+      if (!rules.editableBaseUrl && requested !== account.baseUrl) {
         res.status(400).json({ error: BASE_URL_ONLY_CUSTOM });
         return;
       }
       if (!requested) {
-        res.status(400).json({ error: BASE_URL_REQUIRED });
+        res.status(400).json({ error: info?.status === "unmanaged" ? UNMANAGED_BASE_URL_REQUIRED : BASE_URL_REQUIRED });
         return;
       }
       baseUrl = requested;

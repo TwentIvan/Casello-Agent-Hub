@@ -6,17 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AiProvider = typeof AiProvider[keyof typeof AiProvider];
-
-
-export const AiProvider = {
-  deepseek: 'deepseek',
-  openrouter: 'openrouter',
-  huggingface: 'huggingface',
-  mistral: 'mistral',
-  groq: 'groq',
-  together: 'together',
-  gemini: 'gemini',
-  custom: 'custom',
-  system_gateway: 'system_gateway',
-} as const;
+/**
+ * Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)
+ * @pattern ^[a-z0-9_-]{1,64}$
+ */
+export type AiProvider = string;

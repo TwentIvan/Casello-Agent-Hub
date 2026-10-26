@@ -7,14 +7,22 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 
-/** Riquadro dei provider scoperti nel catalogo ma non ancora gestiti da Casello; assente se non ce ne sono. */
+/** Oltre questo numero di provider il riquadro parte compresso. */
+const COLLAPSED_COUNT = 5;
+
+/**
+ * Riquadro dei provider scoperti nel catalogo ma non ancora riconosciuti nel registro di Casello; assente se
+ * non ce ne sono. Con più di 5 provider mostra i primi 5 e il pulsante per vederli tutti.
+ */
 export function UnmanagedProviders() {
   const { toast } = useToast();
   const providers = useListCatalogProviders({ status: "unmanaged" });
   // Testo dell'issue da copiare a mano quando gli appunti non sono disponibili
   const [manualText, setManualText] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const list = providers.data ?? [];
   if (list.length === 0) return null;
+  const shown = expanded ? list : list.slice(0, COLLAPSED_COUNT);
 
   const copyIssue = async (slug: string) => {
     let text: string;
@@ -39,18 +47,20 @@ export function UnmanagedProviders() {
       <CardHeader>
         <CardTitle className="text-base">Da gestire in Casello</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Provider presenti nel catalogo ma non ancora collegabili con un account.
+          Provider presenti nel catalogo che Casello non riconosce ancora nel registro. Puoi già usarli creando
+          un account compatibile OpenAI e inserendo il loro indirizzo; per farli riconoscere copia il testo
+          dell'issue.
         </p>
       </CardHeader>
       <CardContent>
         <ul className="divide-y">
-          {list.map((p) => (
+          {shown.map((p) => (
             <li key={p.slug} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
               <div>
                 <span className="font-medium">{p.name}</span>
                 <span className="text-muted-foreground">
                   {" "}
-                  · {p.modelCount} voci · comparso il {new Date(p.firstSeenAt).toLocaleDateString("it-IT")}
+                  · {p.modelCount} {p.modelCount === 1 ? "modello" : "modelli"} · comparso il {new Date(p.firstSeenAt).toLocaleDateString("it-IT")}
                 </span>
               </div>
               <Button variant="outline" size="sm" onClick={() => void copyIssue(p.slug)}>
@@ -59,6 +69,11 @@ export function UnmanagedProviders() {
             </li>
           ))}
         </ul>
+        {list.length > COLLAPSED_COUNT && (
+          <Button variant="link" size="sm" className="px-0" onClick={() => setExpanded(!expanded)}>
+            {expanded ? "Mostra meno" : `Mostra tutti (${list.length})`}
+          </Button>
+        )}
       </CardContent>
       <Dialog open={manualText !== null} onOpenChange={(open) => !open && setManualText(null)}>
         <DialogContent>

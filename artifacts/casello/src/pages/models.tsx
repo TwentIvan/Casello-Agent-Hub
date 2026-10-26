@@ -97,7 +97,7 @@ export default function ModelsPage() {
           setTextInput={setTextInput}
           status={state.status}
           onStatus={(status) => update({ status })}
-          onOpen={(slug) => update({ view: "model", providers: [slug], q: "" })}
+          onOpen={(slug) => update({ view: "model", providers: [slug], q: "", mode: "all" })}
         />
       )}
     </div>

@@ -172,6 +172,10 @@ export function CatalogNews() {
                   )}
                 />
                 <NewsList
+                  title="Nuovi provider non gestiti"
+                  items={summary.newProviders.map((p) => `${p.name} (${p.count} voci)`)}
+                />
+                <NewsList
                   title="Spariti dai tuoi account"
                   items={summary.accounts.map((a) => `${a.accountName}: ${a.missing.join(", ")}`)}
                 />

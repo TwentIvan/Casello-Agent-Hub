@@ -77,7 +77,7 @@ describe("mergeUniversal", () => {
 
   it("lo stesso Claude su Bedrock e su Anthropic: un modello, due offerte", async () => {
     const { models, offers } = await merged();
-    const key = "claude-sonnet-4-5-20250929";
+    const key = "claude-sonnet-4-5";
     const ms = models.filter((m) => m.canonicalKey === key);
     expect(ms).toHaveLength(1);
     expect(ms[0]).toMatchObject({ author: "Anthropic", family: "Claude", mode: "chat", supportsTools: true, supportsVision: true, supportsReasoning: true, releasedAt: null });
@@ -115,9 +115,10 @@ describe("mergeUniversal", () => {
     // Nome e rilascio del modello da OpenRouter
     const m = models.find((x) => x.canonicalKey === "deepseek-v4-pro")!;
     expect(m).toMatchObject({ author: "DeepSeek", family: "DeepSeek", version: "V4 Pro", releasedAt: new Date(1767225600 * 1000) });
-    // Offerta diretta ricavata solo da OpenRouter (nessuna voce LiteLLM)
-    const chat = offers.find((o) => o.provider === "deepseek" && o.providerModelId === "deepseek-chat")!;
-    expect(chat.sources.price).toBe("openrouter");
+    // Senza voce LiteLLM, OpenRouter non crea l'offerta diretta: il modello esiste solo su openrouter
+    expect(offers.find((o) => o.provider === "deepseek" && o.providerModelId === "deepseek-chat")).toBeUndefined();
+    expect(offers.filter((o) => o.canonicalKey === "deepseek-chat").map((o) => o.provider)).toEqual(["openrouter"]);
+    expect(models.find((x) => x.canonicalKey === "deepseek-chat")).toBeDefined();
     // Le varianti (`:free`) solo su openrouter
     expect(offers.filter((o) => o.providerModelId.includes(":free")).map((o) => o.provider)).toEqual(["openrouter"]);
   });
@@ -130,6 +131,24 @@ describe("mergeUniversal", () => {
     expect(find((await merged(new Date("2026-01-01T00:00:00Z"))).offers).status).toBe("deprecated");
     const viaOr = (await merged()).offers.find((o) => o.provider === "openrouter" && o.providerModelId === "google/gemini-2.5-flash")!;
     expect(viaOr.status).toBe("available");
+  });
+
+  it("un id di OpenRouter non crea un'offerta diretta, ma si abbina al modello di LiteLLM", () => {
+    const { models, offers } = mergeUniversal(
+      [
+        { ...BASE, source: "openrouter", key: "anthropic/claude-sonnet-4.5", litellmProvider: null, name: "Anthropic: Claude Sonnet 4.5", priceInput: 3, priceOutput: 15, releasedAt: new Date("2025-09-29") },
+        { ...BASE, source: "litellm", key: "claude-sonnet-4-5-20250929", litellmProvider: "anthropic", priceInput: 3, priceOutput: 15 },
+      ],
+      PROVIDER_REGISTRY,
+      NOW,
+    );
+    expect(offers.map((o) => [o.provider, o.providerModelId])).toEqual([
+      ["openrouter", "anthropic/claude-sonnet-4.5"],
+      ["anthropic", "claude-sonnet-4-5-20250929"],
+    ]);
+    expect(offers.find((o) => o.provider === "anthropic")!.sources.price).toBe("litellm");
+    expect(models).toHaveLength(1);
+    expect(models[0]).toMatchObject({ canonicalKey: "claude-sonnet-4-5", author: "Anthropic", version: "Sonnet 4.5", releasedAt: new Date("2025-09-29") });
   });
 
   it("varianti regionali dello stesso provider: offerte distinte dello stesso modello", () => {

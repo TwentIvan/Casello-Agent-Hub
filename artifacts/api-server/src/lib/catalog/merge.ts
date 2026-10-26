@@ -170,7 +170,7 @@ const anyTrue = (values: (boolean | null)[]): boolean | null =>
  * Fonde le voci delle fonti in modelli (indipendenti dal provider) e offerte (modello presso un provider).
  * Ogni voce entra: LiteLLM sotto il provider del registro (o uno scoperto, elencato in `discovered`),
  * OpenRouter sotto `openrouter` e, se un provider del registro serve direttamente l'autore, anche come
- * riserva per l'offerta di quel provider con lo stesso id. Precedenze delle offerte come `mergeCatalog`;
+ * riserva per l'offerta di quel provider con lo stesso id, solo se LiteLLM l'ha già prodotta. Precedenze delle offerte come `mergeCatalog`;
  * nome e rilascio del modello da OpenRouter se c'è. Funzione pura.
  */
 export function mergeUniversal(
@@ -180,6 +180,8 @@ export function mergeUniversal(
 ): { models: ModelRecord[]; offers: OfferRecord[]; discovered: DiscoveredProvider[] } {
   const groups = new Map<string, OfferGroup>();
   const discovered = new Map<string, DiscoveredProvider>();
+  // Dati di OpenRouter per un provider diretto: solo riserva di un'offerta che LiteLLM ha già prodotto
+  const fallbacks: { id: string; entry: SourceEntry }[] = [];
   const add = (provider: string, modelId: string, entry: SourceEntry) => {
     if (!modelId) return;
     const id = `${provider}\u0000${modelId}`;
@@ -197,7 +199,7 @@ export function mergeUniversal(
       const id = providerModelId(entry);
       add("openrouter", id, entry);
       const direct = directProviderFor(entry, registry);
-      if (direct) add(direct, normalizeModelId(entry.key.slice(entry.key.indexOf("/") + 1)), entry);
+      if (direct) fallbacks.push({ id: `${direct}\u0000${normalizeModelId(entry.key.slice(entry.key.indexOf("/") + 1))}`, entry });
       continue;
     }
     const { slug, known } = providerSlugFor(entry, registry);
@@ -207,6 +209,10 @@ export function mergeUniversal(
       else discovered.set(slug, { slug, name: entry.litellmProvider ?? "", count: 1 });
     }
     add(slug, providerModelId(entry), entry);
+  }
+  for (const f of fallbacks) {
+    const g = groups.get(f.id);
+    if (g) g.bySource.openrouter ??= f.entry;
   }
 
   const offers: OfferRecord[] = [];

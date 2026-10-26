@@ -5,6 +5,14 @@ import { findSeedPrice } from "./price-seed";
 
 export const SYSTEM_ACCOUNT_NAME = "Gateway Casello";
 
+/** Il DB o la transazione in corso (dentro una transazione si legge con la stessa connessione). */
+type Executor = Pick<typeof db, "select">;
+
+/** L'account di sistema è utilizzabile solo finché le variabili del gateway sono impostate. */
+export function systemAccountConfigured(): boolean {
+  return !!process.env["AI_GATEWAY_BASE_URL"] && !!process.env["AI_GATEWAY_API_KEY"];
+}
+
 /**
  * Crea o aggiorna l'account di sistema (gateway di Casello) dalle variabili `AI_GATEWAY_*` e collega
  * agenti e analisi esistenti al modello corrispondente. Idempotente, in una sola transazione.
@@ -12,8 +20,7 @@ export const SYSTEM_ACCOUNT_NAME = "Gateway Casello";
  */
 export async function ensureSystemAccount(): Promise<{ accountId: number } | null> {
   const baseUrl = process.env["AI_GATEWAY_BASE_URL"];
-  const apiKey = process.env["AI_GATEWAY_API_KEY"];
-  if (!baseUrl || !apiKey) return null;
+  if (!baseUrl || !systemAccountConfigured()) return null;
 
   return db.transaction(async (tx) => {
     // L'account di sistema è l'unico con provider system_gateway e user_id nullo
@@ -86,8 +93,8 @@ export async function ensureSystemAccount(): Promise<{ accountId: number } | nul
  * Serve alla transizione: chi sceglie ancora il modello per nome (console precedente) viene collegato
  * al modello equivalente del gateway, sempre utilizzabile da tutti gli utenti ammessi.
  */
-export async function findSystemModelId(modelId: string): Promise<number | null> {
-  const [row] = await db
+export async function findSystemModelId(modelId: string, executor: Executor = db): Promise<number | null> {
+  const [row] = await executor
     .select({ id: aiModelsTable.id })
     .from(aiModelsTable)
     .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
@@ -101,4 +108,13 @@ export async function findSystemModelId(modelId: string): Promise<number | null>
     .orderBy(aiModelsTable.id)
     .limit(1);
   return row?.id ?? null;
+}
+
+/**
+ * Come `findSystemModelId`, ma null se l'account di sistema non è configurato (variabili del gateway
+ * assenti): un collegamento nuovo non deve puntare a un modello che nessuno può usare.
+ */
+export async function findUsableSystemModelId(modelId: string, executor: Executor = db): Promise<number | null> {
+  if (!systemAccountConfigured()) return null;
+  return findSystemModelId(modelId, executor);
 }

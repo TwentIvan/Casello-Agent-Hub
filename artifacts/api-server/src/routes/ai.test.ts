@@ -705,7 +705,8 @@ describe("stima del costo", () => {
     // Default 1 000 000 token
     expect((await api("GET", `/ai/estimate?aiModelId=${withPrice!.id}`)).json).toEqual({ maxUsd: 0.287, typicalUsd: 0.1722 });
     res = await api("GET", `/ai/estimate?aiModelId=${withPrice!.id}&maxTokens=123450`);
-    expect(res.json).toEqual({ maxUsd: 0.0354, typicalUsd: 0.0213 });
+    // Fino a 6 decimali: 0.03543015 → 0.03543; tipico 0.02125809 → 0.021258
+    expect(res.json).toEqual({ maxUsd: 0.03543, typicalUsd: 0.021258 });
     // Stessi limiti dell'analisi: 50 000 – 2 000 000
     expect((await api("GET", `/ai/estimate?aiModelId=${withPrice!.id}&maxTokens=50000`)).status).toBe(200);
     expect((await api("GET", `/ai/estimate?aiModelId=${withPrice!.id}&maxTokens=2000000`)).status).toBe(200);
@@ -714,6 +715,15 @@ describe("stima del costo", () => {
 
     res = await api("GET", `/ai/estimate?aiModelId=${noPrice!.id}&maxTokens=1000000`);
     expect(res.json).toEqual({ maxUsd: null, typicalUsd: null });
+
+    // Costo positivo minuscolo (5e-8 $): mai arrotondato a 0
+    await api("PATCH", `/ai/models/${noPrice!.id}`, { priceInput: 0.000001, priceOutput: 0.000001 });
+    res = await api("GET", `/ai/estimate?aiModelId=${noPrice!.id}&maxTokens=50000`);
+    expect(res.json).toEqual({ maxUsd: 0.000001, typicalUsd: 0.000001 });
+    // Prezzi a zero: 0 resta 0
+    await api("PATCH", `/ai/models/${noPrice!.id}`, { priceInput: 0, priceOutput: 0 });
+    res = await api("GET", `/ai/estimate?aiModelId=${noPrice!.id}&maxTokens=50000`);
+    expect(res.json).toEqual({ maxUsd: 0, typicalUsd: 0 });
 
     const sys = await ensureSystemAccount();
     const [sysModel] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.accountId, sys!.accountId)).limit(1);

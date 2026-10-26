@@ -19,10 +19,13 @@ import {
   ResumeConflictError,
   expireStalePausedRuns,
   failInterruptedRuns,
+  modelCallError,
   resumeRun,
   startRun,
 } from "./run-executor";
 import { clearUserToken } from "./user-tokens";
+import { logger } from "./logger";
+import { ProviderError } from "./ai/discovery";
 import { encryptSecret } from "./secrets";
 import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 
@@ -753,5 +756,26 @@ describe("run sugli account AI (chi configura paga)", () => {
     expect(run.costUsd).toBeNull();
     expect(llmRequests).toHaveLength(1);
     expect(fake.requests).toHaveLength(0);
+  });
+});
+
+describe("modelCallError", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("errore inatteso: messaggio fisso e warn nel log con runId e tipo, mai il messaggio grezzo", () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const err = modelCallError(7, new TypeError("boom sk-CHIAVE-NEL-MESSAGGIO http://interno"));
+    expect(err.message).toBe("errore inatteso nella chiamata al modello");
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toEqual({ runId: 7, errName: "TypeError" });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("sk-CHIAVE");
+  });
+
+  it("errori noti (provider, timeout): nessun warn", () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    expect(modelCallError(7, new ProviderError("auth")).message).toBe("chiave non valida o senza permessi");
+    expect(warn).not.toHaveBeenCalled();
   });
 });

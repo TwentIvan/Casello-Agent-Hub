@@ -22,6 +22,8 @@ import { currentUserId } from "../lib/auth";
 import { GITHUB_MESSAGES, GithubError, repoInstallationId } from "../lib/github/app";
 import { githubConfig } from "../lib/github/config";
 import { toPublicApp } from "./serializers";
+import { findUsableSystemModelId } from "../lib/ai/system-account";
+import { DEFAULT_MODEL } from "../lib/models";
 import { parseRequest } from "../middlewares/error-handler";
 
 const router: IRouter = Router();
@@ -200,6 +202,9 @@ router.post("/apps", async (req, res) => {
   const serviceSecretEnc = serviceSecret !== undefined ? encryptSecret(serviceSecret) : null;
   const sourceTokenEnc = sourceTokenChange(sourceToken).sourceTokenEnc ?? null;
 
+  // L'agente generale nasce collegato al modello predefinito dell'account di sistema (null se non c'è)
+  const aiModelId = await findUsableSystemModelId(DEFAULT_MODEL);
+
   const app = await withSlugRetry(() => db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(appsTable)
@@ -219,6 +224,7 @@ router.post("/apps", async (req, res) => {
       name: `${created!.name} – generale`,
       role: "general",
       status: "draft",
+      aiModelId,
     });
     return created!;
   }));

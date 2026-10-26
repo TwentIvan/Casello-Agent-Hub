@@ -38,6 +38,7 @@ import { currentUserId } from "../lib/auth";
 import { ANALYSIS_DEFAULT_MAX_TOKENS } from "../lib/architect/run-analysis";
 import { discoverModels, ProviderError, type DiscoveredModel } from "../lib/ai/discovery";
 import { normalizeBaseUrl, PROVIDERS, validateBaseUrl, type AiProvider } from "../lib/ai/providers";
+import { systemAccountConfigured } from "../lib/ai/system-account";
 import { isUniqueViolation } from "../lib/pg-errors";
 import { decryptSecret, encryptSecret } from "../lib/secrets";
 import { rateLimit } from "../middlewares/rate-limit";
@@ -70,9 +71,7 @@ function isSystemAccount(a: AiAccount): boolean {
 }
 
 /** L'account di sistema compare negli elenchi solo finché le variabili del gateway sono impostate. */
-function systemConfigured(): boolean {
-  return !!process.env["AI_GATEWAY_BASE_URL"] && !!process.env["AI_GATEWAY_API_KEY"];
-}
+const systemConfigured = systemAccountConfigured;
 
 function toNumber(v: string | null): number | null {
   if (v === null) return null;
@@ -330,9 +329,13 @@ function isForeignKeyViolation(err: unknown): boolean {
   return false;
 }
 
-/** Arrotondamento a 4 decimali (USD). */
-function round4(n: number): number {
-  return Math.round(n * 1e4) / 1e4;
+/**
+ * Arrotondamento a 6 decimali (USD, come `cost_usd`): un valore positivo non diventa mai 0 (al minimo
+ * 0,000001), così la console può mostrare "< 0,0001 $" invece di "0 $".
+ */
+function roundUsd(n: number): number {
+  const rounded = Math.round(n * 1e6) / 1e6;
+  return n > 0 && rounded === 0 ? 1e-6 : rounded;
 }
 
 export function createAiRouter(opts: { providerRateLimit?: RequestHandler } = {}): IRouter {
@@ -744,7 +747,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler } = {}
     if (priceIn !== null && priceOut !== null) {
       // Si ipotizza il 95% di token di input; il tipico è il 60% del tetto
       const max = ((maxTokens ?? ANALYSIS_DEFAULT_MAX_TOKENS) * (0.95 * priceIn + 0.05 * priceOut)) / 1e6;
-      estimate = { maxUsd: round4(max), typicalUsd: round4(0.6 * max) };
+      estimate = { maxUsd: roundUsd(max), typicalUsd: roundUsd(0.6 * max) };
     }
     res.json(EstimateAnalysisCostResponse.parse(estimate));
   });

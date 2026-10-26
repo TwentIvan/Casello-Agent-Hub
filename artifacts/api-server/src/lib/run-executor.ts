@@ -202,6 +202,19 @@ function modelErrorMessage(err: unknown): string {
 }
 
 /**
+ * Errore da rilanciare al ciclo per una chiamata al modello fallita. Un errore inatteso si registra nel
+ * log con il solo tipo (`errName`): il messaggio grezzo può contenere URL, chiave o corpo del provider.
+ */
+export function modelCallError(runId: number, err: unknown): Error {
+  const message = modelErrorMessage(err);
+  if (message === MODEL_UNEXPECTED_MESSAGE) {
+    const errName = err instanceof Error ? err.name : typeof err;
+    logger.warn({ runId, errName }, "Errore inatteso nella chiamata al modello");
+  }
+  return new Error(message);
+}
+
+/**
  * Esegue il ciclo dell'agente dallo stato dato e salva l'esito nella run.
  * Token, costo e durata si sommano a quelli già registrati (la run può attraversare più pause).
  */
@@ -254,7 +267,7 @@ async function driveLoop(
         addUsage(usage, reply);
         return reply;
       } catch (err) {
-        throw new Error(modelErrorMessage(err));
+        throw modelCallError(runId, err);
       }
     },
     tools: ctx.tools,

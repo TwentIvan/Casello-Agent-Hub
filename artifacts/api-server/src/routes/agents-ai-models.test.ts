@@ -241,6 +241,31 @@ describe("agenti con aiModelId", () => {
     expect(same.json.model).toBe("di-a");
   });
 
+  it("l'agente generale di una nuova app nasce collegato al modello predefinito di sistema", async () => {
+    await ensureSystemAccount();
+    const sys = await systemModelId("openrouter/auto");
+    const app = await createApp();
+    const [general] = await db.select().from(agentsTable).where(and(eq(agentsTable.appId, app.id), eq(agentsTable.role, "general")));
+    expect(general!.aiModelId).toBe(sys);
+    expect(general!.model).toBe("openrouter/auto");
+  });
+
+  it("senza account di sistema (o senza le sue variabili) l'agente generale resta senza modello", async () => {
+    let app = await createApp();
+    let [general] = await db.select().from(agentsTable).where(and(eq(agentsTable.appId, app.id), eq(agentsTable.role, "general")));
+    expect(general!.aiModelId).toBeNull();
+
+    // L'account esiste ma non è configurato: niente collegamenti nuovi (neppure per nome)
+    await ensureSystemAccount();
+    delete process.env["AI_GATEWAY_API_KEY"];
+    app = await createApp();
+    [general] = await db.select().from(agentsTable).where(and(eq(agentsTable.appId, app.id), eq(agentsTable.role, "general")));
+    expect(general!.aiModelId).toBeNull();
+    const byName = await api("POST", "/agents", { appId: app.id, name: "Area", model: "openrouter/auto" });
+    expect(byName.status, byName.text).toBe(201);
+    expect(byName.json.aiModelId).toBeNull();
+  });
+
   it("GET /agents espone aiModelId", async () => {
     const app = await createApp();
     const res = await api("GET", `/agents?appId=${app.id}`);

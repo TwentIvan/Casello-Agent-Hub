@@ -26,6 +26,7 @@ const PRICE_SOURCE_LABELS: Record<string, string> = {
   provider: "dal provider",
   manual: "manuale",
   seed: "predefinito",
+  catalog: "catalogo",
 };
 
 function formatPrice(value: number | null): string {

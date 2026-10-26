@@ -2067,7 +2067,7 @@ components:
 
     AiProvider:
       type: string
-      enum: [deepseek, openrouter, huggingface, mistral, groq, together, custom, system_gateway]
+      enum: [deepseek, openrouter, huggingface, mistral, groq, together, gemini, custom, system_gateway]
 
     AiAccountStatus:
       type: string
@@ -2173,7 +2173,7 @@ components:
           description: USD per milione di token di output
         priceSource:
           type: ["string", "null"]
-          enum: [provider, manual, seed, null]
+          enum: [provider, manual, seed, catalog, null]
         hidden:
           type: boolean
 

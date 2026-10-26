@@ -1046,7 +1046,7 @@ export const ListModelsResponse = zod.array(ListModelsResponseItem)
 export const ListAiAccountsResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1074,7 +1074,7 @@ export const createAiAccountBodyBaseUrlMax = 2048;
 
 export const CreateAiAccountBody = zod.object({
   "name": zod.string().min(1).max(createAiAccountBodyNameMax),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
   "apiKey": zod.string().max(createAiAccountBodyApiKeyMax).nullish().describe('Chiave del provider (solo scrittura, salvata cifrata); vuota solo per custom'),
   "baseUrl": zod.string().max(createAiAccountBodyBaseUrlMax).nullish().describe('Solo custom (obbligatorio); gli altri provider usano il base URL predefinito'),
   "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom')
@@ -1083,7 +1083,7 @@ export const CreateAiAccountBody = zod.object({
 export const CreateAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1122,7 +1122,7 @@ export const UpdateAiAccountBody = zod.object({
 export const UpdateAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1157,7 +1157,7 @@ export const VerifyAiAccountParams = zod.object({
 export const VerifyAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1180,7 +1180,7 @@ export const SetDefaultAiAccountParams = zod.object({
 export const SetDefaultAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1208,7 +1208,7 @@ export const ListAiAccountModelsResponseItem = zod.object({
   "contextTokens": zod.number().nullable(),
   "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
   "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
-  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal(null)]).nullable(),
+  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal('catalog'),zod.literal(null)]).nullable(),
   "hidden": zod.boolean()
 })
 export const ListAiAccountModelsResponse = zod.array(ListAiAccountModelsResponseItem)
@@ -1251,7 +1251,7 @@ export const AddAiAccountModelResponse = zod.object({
   "contextTokens": zod.number().nullable(),
   "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
   "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
-  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal(null)]).nullable(),
+  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal('catalog'),zod.literal(null)]).nullable(),
   "hidden": zod.boolean()
 })
 
@@ -1289,7 +1289,7 @@ export const UpdateAiModelResponse = zod.object({
   "contextTokens": zod.number().nullable(),
   "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
   "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
-  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal(null)]).nullable(),
+  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal('catalog'),zod.literal(null)]).nullable(),
   "hidden": zod.boolean()
 })
 
@@ -1302,7 +1302,7 @@ export const ListAiModelsResponseItem = zod.object({
   "account": zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1321,7 +1321,7 @@ export const ListAiModelsResponseItem = zod.object({
   "contextTokens": zod.number().nullable(),
   "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
   "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
-  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal(null)]).nullable(),
+  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal('catalog'),zod.literal(null)]).nullable(),
   "hidden": zod.boolean()
 }))
 })

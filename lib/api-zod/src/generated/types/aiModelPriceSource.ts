@@ -16,4 +16,5 @@ export const AiModelPriceSource = {
   provider: 'provider',
   manual: 'manual',
   seed: 'seed',
+  catalog: 'catalog',
 } as const;

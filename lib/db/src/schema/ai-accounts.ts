@@ -9,6 +9,7 @@ export const aiProviderEnum = pgEnum("ai_provider", [
   "mistral",
   "groq",
   "together",
+  "gemini",
   "custom",
   "system_gateway",
 ]);

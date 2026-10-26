@@ -15,3 +15,24 @@ export function formatDuration(ms: number | null | undefined): string {
 export function formatRelative(date: string | Date): string {
   return formatDistanceToNow(new Date(date), { addSuffix: true, locale: it });
 }
+
+/** Importo in dollari con al massimo 4 decimali: "0,0017 $". */
+export function formatUsd(value: number): string {
+  return `${value.toLocaleString("it-IT", { maximumFractionDigits: 4 })} $`;
+}
+
+/** Prezzi per milione di token: "0,28 / 0,42 $ per Mtok", o "prezzo sconosciuto" se ne manca uno. */
+export function formatModelPrice(priceInput: number | null, priceOutput: number | null): string {
+  if (priceInput == null || priceOutput == null) return "prezzo sconosciuto";
+  const fmt = (n: number) => n.toLocaleString("it-IT", { maximumFractionDigits: 4 });
+  return `${fmt(priceInput)} / ${fmt(priceOutput)} $ per Mtok`;
+}
+
+/**
+ * Costo di un'analisi o di una run: l'importo se noto; "costo parziale" se manca ma qualche token è stato
+ * consumato (prezzo mancante o vecchio gateway); null se non c'è nulla da mostrare.
+ */
+export function formatCost(costUsd: number | null | undefined, tokens: number): string | null {
+  if (costUsd != null) return formatUsd(costUsd);
+  return tokens > 0 ? "costo parziale" : null;
+}

@@ -21,7 +21,7 @@ import { ChapterTabs } from "@/components/analysis/chapter-tabs";
 import { isRecord, list, phaseLabel, rec, str, strList } from "@/components/analysis/payload";
 import { ANALYSIS_STATUS_LABELS, ANALYSIS_STATUS_STYLES } from "@/components/apps/analyses-card";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { formatDuration } from "@/lib/format";
+import { formatCost, formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 2000;
@@ -328,6 +328,10 @@ export default function AnalysisDetailPage() {
             <dd className="tabular-nums">
               {a.tokensUsed.toLocaleString("it-IT")} / {a.maxTokens.toLocaleString("it-IT")}
             </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Costo</dt>
+            <dd className="tabular-nums">{formatCost(a.costUsd, a.tokensUsed) ?? "—"}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">Avviata</dt>

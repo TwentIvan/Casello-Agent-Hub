@@ -186,6 +186,63 @@ describe("mergeUniversal", () => {
   });
 });
 
+describe("mergeUniversal: indipendente dall'ordine delle voci", () => {
+  const both = <T>(es: SourceEntry[], pick: (r: ReturnType<typeof mergeUniversal>) => T) => [
+    pick(mergeUniversal(es, PROVIDER_REGISTRY, NOW)),
+    pick(mergeUniversal([...es].reverse(), PROVIDER_REGISTRY, NOW)),
+  ];
+  const l = (over: Partial<SourceEntry>): SourceEntry => ({ ...BASE, source: "litellm", key: "x", litellmProvider: null, priceInput: null, priceOutput: null, ...over });
+
+  it("alias dello stesso provider: vince l'alias che viene prima nel registro", () => {
+    const [a, b] = both(
+      [
+        l({ key: "bedrock_mantle/anthropic.claude-opus-5-5", litellmProvider: "bedrock_mantle", priceInput: 4.4, priceOutput: 22 }),
+        l({ key: "bedrock_converse/anthropic.claude-opus-5-5", litellmProvider: "bedrock_converse", priceInput: 4, priceOutput: 20 }),
+      ],
+      (r) => r.offers,
+    );
+    expect(a).toEqual(b);
+    expect(a).toHaveLength(1);
+    expect(a![0]!.priceInput).toBe(4);
+    const [c, d] = both(
+      [
+        l({ key: "azure_ai/gpt-6-astra", litellmProvider: "azure_ai" }),
+        l({ key: "azure/gpt-6-astra", litellmProvider: "azure", deprecationDate: new Date("2027-01-01") }),
+      ],
+      (r) => r.offers,
+    );
+    expect(c).toEqual(d);
+    expect(c![0]!.status).toBe("deprecated");
+  });
+
+  it("nome, versione e rilascio dalla voce OpenRouter senza data in coda", () => {
+    const or = (key: string, name: string, at: string): SourceEntry => ({ ...BASE, source: "openrouter", key, litellmProvider: null, name, releasedAt: new Date(at), priceInput: 1, priceOutput: 2 });
+    const [a, b] = both(
+      [or("openai/gpt-4o-2024-11-20", "OpenAI: GPT-4o (2024-11-20)", "2024-11-20"), or("openai/gpt-4o", "OpenAI: GPT-4o", "2024-05-13")],
+      (r) => r.models,
+    );
+    expect(a).toEqual(b);
+    expect(a).toHaveLength(1);
+    expect(a![0]).toMatchObject({ canonicalKey: "gpt-4o", releasedAt: new Date("2024-05-13") });
+    expect(a![0]!.version).not.toContain("2024");
+  });
+
+  it("tipo del modello con priorità fissa; nome scoperto deterministico", () => {
+    const [a, b] = both(
+      [l({ key: "img-1", litellmProvider: "openai", mode: "image_generation" }), l({ key: "img-1", litellmProvider: "azure", mode: "image_edit" })],
+      (r) => r.models[0]!.mode,
+    );
+    expect([a, b]).toEqual(["image_edit", "image_edit"]);
+    const [c, d] = both(
+      [l({ key: "m", litellmProvider: "nuovo-x", mode: "completion" }), l({ key: "m", litellmProvider: "nuovo_x", mode: "responses" })],
+      (r) => [r.models[0]!.mode, r.discovered],
+    );
+    expect(c).toEqual(d);
+    // Stessa offerta da due nomi sconosciuti: vince il nome LiteLLM minore
+    expect(c).toEqual(["completion", [{ slug: "nuovo-x", name: "nuovo-x", count: 2 }]]);
+  });
+});
+
 describe("keepFailedOfferFields", () => {
   const offer = (over: Partial<OfferRecord> = {}): OfferRecord => ({
     provider: "bedrock", providerModelId: "us.m", canonicalKey: "m", priceInput: 1, priceOutput: 2, contextTokens: 100,

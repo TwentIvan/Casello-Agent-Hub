@@ -85,6 +85,43 @@ describe("validateBaseUrl", () => {
     expect(validateBaseUrl("https://[2001:db8::1]", false)).toBeNull();
   });
 
+  it("rifiuta CGNAT, IPv4 dentro IPv6, multicast/broadcast, site-local e host interni senza consenso", () => {
+    const vietati = [
+      // 100.64.0.0/10 (CGNAT)
+      "https://100.64.0.1",
+      "https://100.127.255.254",
+      // IPv4 incorporato in IPv6: ::/96, ::ffff:0:0/96, 64:ff9b::/96
+      "https://[::10.0.0.1]",
+      "https://[::ffff:192.168.1.1]",
+      "https://[::ffff:100.64.0.1]",
+      "https://[64:ff9b::7f00:1]",
+      "https://[64:ff9b::a9fe:a9fe]",
+      // multicast e broadcast
+      "https://224.0.0.1",
+      "https://239.255.255.250",
+      "https://255.255.255.255",
+      "https://[ff02::1]",
+      // site-local deprecato
+      "https://[fec0::1]",
+      // host a etichetta singola e suffissi interni
+      "https://intranet",
+      "https://ollama:11434/v1",
+      "https://db.internal",
+      "https://printer.local",
+      "https://api.LOCALHOST",
+    ];
+    for (const u of vietati) {
+      expect(validateBaseUrl(u, false), u).toBe("indirizzo non consentito");
+      expect(validateBaseUrl(u, true), u).toBeNull();
+    }
+    // Vicini pubblici
+    expect(validateBaseUrl("https://100.63.255.255", false)).toBeNull();
+    expect(validateBaseUrl("https://100.128.0.1", false)).toBeNull();
+    expect(validateBaseUrl("https://[64:ff9b::808:808]", false)).toBeNull();
+    expect(validateBaseUrl("https://223.255.255.255", false)).toBeNull();
+    expect(validateBaseUrl("https://api.internal-tools.com/v1", false)).toBeNull();
+  });
+
   it("rifiuta credenziali, query e frammenti nell'indirizzo", () => {
     expect(validateBaseUrl("https://user:pass@api.example.com/v1", false)).toBe("indirizzo non consentito");
     expect(validateBaseUrl("https://api.example.com/v1?x=1", false)).toBe("indirizzo non consentito");
@@ -163,6 +200,34 @@ describe("discoverModels", () => {
     expect(models[0]).toMatchObject({ priceInput: null, priceOutput: 1, priceSource: "provider", contextTokens: null });
     expect(models[1]).toMatchObject({ priceInput: null, priceOutput: null, priceSource: null, contextTokens: null });
     expect(models[2]).toMatchObject({ priceInput: 0, priceOutput: 0, priceSource: "provider", contextTokens: null });
+  });
+
+  it("prezzi solo decimali, finiti e sotto 1e6 per Mtok; contesto da stringa intera", async () => {
+    fake.models = [
+      { id: "hex", pricing: { prompt: "0x10", completion: " 0.000001 " }, context_length: "32768" },
+      { id: "enorme", pricing: { prompt: 1, completion: "2" }, context_length: "32768.5" },
+      { id: "inf", pricing: { prompt: "Infinity", completion: 1e400 }, context_length: "1e3" },
+      { id: "esp", pricing: { prompt: "2.7e-7", completion: "0.00000099" }, context_length: " 4096 " },
+    ];
+    const models = await discoverModels(account("openrouter"));
+    expect(models[0]).toMatchObject({ priceInput: null, priceOutput: 1, contextTokens: 32768 });
+    // 1 USD per token = 1e6 per Mtok: fuori scala
+    expect(models[1]).toMatchObject({ priceInput: null, priceOutput: null, priceSource: null, contextTokens: null });
+    expect(models[2]).toMatchObject({ priceInput: null, priceOutput: null, contextTokens: null });
+    expect(models[3]).toMatchObject({ priceInput: 0.27, priceOutput: 0.99, contextTokens: 4096 });
+  });
+
+  it("id con caratteri di controllo scartati; id e nomi ripuliti, nome al massimo 256 caratteri", async () => {
+    fake.models = [
+      { id: "a\nb" },
+      { id: "c\u0000" },
+      { id: "d\u007f" },
+      { id: "  spazi  ", name: `  ${"n".repeat(300)}  ` },
+      { id: "spazi" },
+    ];
+    const models = await discoverModels(account());
+    expect(models.map((m) => m.modelId)).toEqual(["spazi"]);
+    expect(models[0]!.displayName).toBe("n".repeat(256));
   });
 
   it("scarta voci senza id e duplicati", async () => {

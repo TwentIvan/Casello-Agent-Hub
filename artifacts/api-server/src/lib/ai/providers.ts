@@ -34,7 +34,10 @@ export function normalizeBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, "");
 }
 
-/** IPv4 in loopback, privati, link-local o 0.0.0.0/8. */
+/**
+ * IPv4 non pubblici: 0.0.0.0/8, privati (10/8, 172.16/12, 192.168/16), CGNAT (100.64/10), loopback,
+ * link-local, multicast (224/4) e broadcast.
+ */
 function isPrivateIpv4(ip: string): boolean {
   const p = ip.split(".").map(Number);
   if (p.length !== 4 || p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
@@ -43,9 +46,12 @@ function isPrivateIpv4(ip: string): boolean {
     a === 0 ||
     a === 10 ||
     a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 168) ||
-    (a === 169 && b === 254)
+    (a === 169 && b === 254) ||
+    (a >= 224 && a <= 239) ||
+    ip === "255.255.255.255"
   );
 }
 
@@ -69,24 +75,38 @@ function ipv6Groups(ip: string): number[] | null {
   return groups.some((g) => !Number.isInteger(g) || g < 0 || g > 0xffff) ? null : groups;
 }
 
-/** IPv6 non specificato, loopback, ULA (fc00::/7), link-local (fe80::/10) o IPv4 mappato privato. */
+/**
+ * IPv6 non pubblici: non specificato, loopback, ULA (fc00::/7), link-local (fe80::/10), site-local
+ * (fec0::/10), multicast (ff00::/8) e IPv4 incorporati (::/96, ::ffff:0:0/96, 64:ff9b::/96) che
+ * ricadono nelle regole IPv4.
+ */
 function isPrivateIpv6(ip: string): boolean {
   const g = ipv6Groups(ip);
   if (!g) return true;
   if (g.slice(0, 7).every((x) => x === 0) && (g[7] === 0 || g[7] === 1)) return true;
   if ((g[0]! & 0xfe00) === 0xfc00) return true;
   if ((g[0]! & 0xffc0) === 0xfe80) return true;
-  // ::ffff:a.b.c.d
-  if (g.slice(0, 5).every((x) => x === 0) && g[5] === 0xffff) {
-    return isPrivateIpv4(`${g[6]! >> 8}.${g[6]! & 0xff}.${g[7]! >> 8}.${g[7]! & 0xff}`);
-  }
+  if ((g[0]! & 0xffc0) === 0xfec0) return true;
+  if ((g[0]! & 0xff00) === 0xff00) return true;
+  const embeddedV4 = () => `${g[6]! >> 8}.${g[6]! & 0xff}.${g[7]! >> 8}.${g[7]! & 0xff}`;
+  // ::a.b.c.d (IPv4-compatibile) e ::ffff:a.b.c.d (IPv4 mappato)
+  if (g.slice(0, 5).every((x) => x === 0) && (g[5] === 0 || g[5] === 0xffff)) return isPrivateIpv4(embeddedV4());
+  // 64:ff9b::a.b.c.d (NAT64)
+  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return isPrivateIpv4(embeddedV4());
   return false;
+}
+
+/** Nomi che risolvono solo in rete interna: etichetta singola o suffissi riservati. */
+function isInternalHostname(host: string): boolean {
+  if (!host.includes(".")) return true;
+  return [".localhost", ".local", ".internal"].some((suffix) => host.endsWith(suffix));
 }
 
 /**
  * Valida il base URL di un account: null se va bene, altrimenti il messaggio fisso "indirizzo non
- * consentito". Senza `allowPrivate` servono `https` e un host pubblico (niente `localhost`,
- * `*.localhost` né IP letterali privati, loopback o link-local); con `allowPrivate` (solo provider
+ * consentito". Senza `allowPrivate` servono `https` e un host pubblico (niente nomi a etichetta
+ * singola come `localhost`, suffissi `.localhost`/`.local`/`.internal`, né IP letterali non pubblici:
+ * privati, CGNAT, loopback, link-local, multicast, IPv4 incorporati in IPv6); con `allowPrivate` (solo provider
  * custom con `allow_private_network`) sono ammessi anche `http` e gli indirizzi privati.
  * Credenziali, query e frammento non sono mai ammessi.
  *
@@ -107,9 +127,9 @@ export function validateBaseUrl(url: string, allowPrivate: boolean): string | nu
 
   // Il parser WHATWG normalizza già gli IPv4 (es. 0x7f000001 → 127.0.0.1) e mette gli IPv6 tra []
   const host = u.hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
-  if (host === "localhost" || host.endsWith(".localhost")) return BAD_URL_MESSAGE;
   const kind = isIP(host);
-  if (kind === 4 && isPrivateIpv4(host)) return BAD_URL_MESSAGE;
-  if (kind === 6 && isPrivateIpv6(host)) return BAD_URL_MESSAGE;
+  if (kind === 4) return isPrivateIpv4(host) ? BAD_URL_MESSAGE : null;
+  if (kind === 6) return isPrivateIpv6(host) ? BAD_URL_MESSAGE : null;
+  if (isInternalHostname(host)) return BAD_URL_MESSAGE;
   return null;
 }

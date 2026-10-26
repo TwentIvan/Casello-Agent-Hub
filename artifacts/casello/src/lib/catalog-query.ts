@@ -99,16 +99,53 @@ export function toModelParams(s: CatalogQuery, pageSize: number): ListCatalogMod
   };
 }
 
+/** Campo digitato subito e applicato dopo 300 ms di pausa; non viene sovrascritto dall'URL mentre l'attesa è in corso. */
+function useDebouncedField(value: string, commit: (value: string) => void) {
+  const [input, setInput] = useState(value);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commitRef = useRef(commit);
+  commitRef.current = commit;
+
+  const cancel = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  }, []);
+  const type = useCallback(
+    (next: string) => {
+      setInput(next);
+      cancel();
+      timer.current = setTimeout(() => {
+        timer.current = null;
+        commitRef.current(next);
+      }, DEBOUNCE_MS);
+    },
+    [cancel],
+  );
+  /** Cambio programmatico: annulla l'attesa e imposta il campo. */
+  const set = useCallback(
+    (next: string) => {
+      cancel();
+      setInput(next);
+    },
+    [cancel],
+  );
+  // Se l'URL cambia da fuori (indietro, azzera filtri) il campo si riallinea, salvo attesa in corso
+  useEffect(() => {
+    if (!timer.current) setInput(value);
+  }, [value]);
+  useEffect(() => cancel, [cancel]);
+  return { input, type, set };
+}
+
 /**
  * Stato della pagina Modelli nella query string: vista, filtri, ordinamento e pagina.
- * Il testo (`textInput`) si digita subito e arriva nell'URL, e quindi nella ricerca, dopo 300 ms di pausa.
- * Ogni modifica a un filtro riporta alla pagina 1.
+ * Testo, prezzo massimo e contesto minimo si digitano subito e arrivano nell'URL, e quindi nella ricerca,
+ * dopo 300 ms di pausa. Ogni modifica a un filtro riporta alla pagina 1.
  */
 export function useCatalogQueryState() {
   const search = useSearch();
   const [path, navigate] = useLocation();
   const state = useMemo(() => parse(search), [search]);
-  const [textInput, setTextInput] = useState(state.q);
 
   const latest = useRef({ ...state, path });
   latest.current = { ...state, path };
@@ -122,26 +159,44 @@ export function useCatalogQueryState() {
   );
 
   /** Cambia uno o più campi; la pagina torna a 1 salvo che si cambi proprio la pagina. */
-  const update = useCallback(
+  const rawUpdate = useCallback(
     (patch: Partial<CatalogQuery>) => {
       write({ ...latest.current, ...("page" in patch ? {} : { page: 1 }), ...patch });
     },
     [write],
   );
 
-  // Testo con attesa di 300 ms
-  useEffect(() => {
-    if (textInput === latest.current.q) return;
-    const t = setTimeout(() => update({ q: textInput }), DEBOUNCE_MS);
-    return () => clearTimeout(t);
-  }, [textInput, update]);
-  // Se l'URL cambia da fuori (indietro, azzera filtri) il campo si riallinea
-  useEffect(() => setTextInput(state.q), [state.q]);
+  const text = useDebouncedField(state.q, (q) => rawUpdate({ q }));
+  const price = useDebouncedField(state.maxPrice, (maxPrice) => rawUpdate({ maxPrice }));
+  const context = useDebouncedField(state.minContext, (minContext) => rawUpdate({ minContext }));
+
+  const update = useCallback(
+    (patch: Partial<CatalogQuery>) => {
+      // Un cambio programmatico di un campo ritardato annulla il testo in attesa
+      if ("q" in patch) text.set(patch.q ?? "");
+      if ("maxPrice" in patch) price.set(patch.maxPrice ?? "");
+      if ("minContext" in patch) context.set(patch.minContext ?? "");
+      rawUpdate(patch);
+    },
+    [rawUpdate, text.set, price.set, context.set],
+  );
 
   const reset = useCallback(() => {
-    setTextInput("");
+    text.set("");
+    price.set("");
+    context.set("");
     write({ ...parse(""), view: latest.current.view });
-  }, [write]);
+  }, [write, text.set, price.set, context.set]);
 
-  return { state, update, reset, textInput, setTextInput };
+  return {
+    state,
+    update,
+    reset,
+    textInput: text.input,
+    setTextInput: text.type,
+    priceInput: price.input,
+    setPriceInput: price.type,
+    contextInput: context.input,
+    setContextInput: context.type,
+  };
 }

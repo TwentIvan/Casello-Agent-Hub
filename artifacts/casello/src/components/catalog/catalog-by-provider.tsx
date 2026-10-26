@@ -1,4 +1,5 @@
-import { type AiProviderStatus, useListCatalogProviders } from "@workspace/api-client-react";
+import { keepPreviousData } from "@tanstack/react-query";
+import { type AiProviderStatus, getListCatalogProvidersQueryKey, useListCatalogProviders } from "@workspace/api-client-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,10 @@ interface CatalogByProviderProps {
 
 /** Elenco dei provider con ricerca e filtro di stato. */
 export function CatalogByProvider({ q, textInput, setTextInput, status, onStatus, onOpen }: CatalogByProviderProps) {
-  const providers = useListCatalogProviders({ q: q || undefined, status: status || undefined });
+  const providers = useListCatalogProviders(
+    { q: q || undefined, status: status || undefined },
+    { query: { queryKey: getListCatalogProvidersQueryKey({ q: q || undefined, status: status || undefined }), placeholderData: keepPreviousData } },
+  );
 
   return (
     <div className="space-y-4">

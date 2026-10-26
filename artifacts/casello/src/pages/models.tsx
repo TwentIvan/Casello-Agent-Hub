@@ -1,3 +1,5 @@
+import { keepPreviousData } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { getListCatalogModelsQueryKey, useListCatalogModels, useListCatalogProviders } from "@workspace/api-client-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,14 +15,22 @@ import { type CatalogView, toModelParams, useCatalogQueryState } from "@/lib/cat
 const PAGE_SIZE = 50;
 
 export default function ModelsPage() {
-  const { state, update, reset, textInput, setTextInput } = useCatalogQueryState();
+  const { state, update, reset, textInput, setTextInput, priceInput, setPriceInput, contextInput, setContextInput } = useCatalogQueryState();
   const modelView = state.view === "model";
 
   const params = toModelParams(state, PAGE_SIZE);
   const catalog = useListCatalogModels(params, {
-    query: { queryKey: getListCatalogModelsQueryKey(params), enabled: modelView },
+    query: { queryKey: getListCatalogModelsQueryKey(params), enabled: modelView, placeholderData: keepPreviousData },
   });
   const providers = useListCatalogProviders();
+
+  // Pagina oltre l'ultima (filtri cambiati da un altro link): si va all'ultima
+  const lastPage = catalog.data ? Math.max(1, Math.ceil(catalog.data.total / catalog.data.pageSize)) : 1;
+  useEffect(() => {
+    if (catalog.data && !catalog.isPlaceholderData && catalog.data.total > 0 && state.page > lastPage) {
+      update({ page: lastPage });
+    }
+  }, [catalog.data, catalog.isPlaceholderData, state.page, lastPage, update]);
   const providerOptions = (providers.data ?? [])
     .filter((p) => p.modelCount > 0)
     .map((p) => ({ value: p.slug, label: p.name }));
@@ -50,6 +60,10 @@ export default function ModelsPage() {
             reset={reset}
             textInput={textInput}
             setTextInput={setTextInput}
+            priceInput={priceInput}
+            setPriceInput={setPriceInput}
+            contextInput={contextInput}
+            setContextInput={setContextInput}
             authors={authors}
             providers={providerOptions}
           />
@@ -60,13 +74,20 @@ export default function ModelsPage() {
               <AlertDescription>{apiErrorMessage(catalog.error)}</AlertDescription>
             </Alert>
           ) : catalog.data ? (
-            <CatalogByModel
+            <>
+              {catalog.isPlaceholderData && (
+                <p className="text-sm text-muted-foreground" role="status">
+                  Aggiornamento in corso…
+                </p>
+              )}
+              <CatalogByModel
               items={catalog.data.items}
               total={catalog.data.total}
               page={catalog.data.page}
               pageSize={catalog.data.pageSize}
               onPage={(page) => update({ page })}
-            />
+              />
+            </>
           ) : null}
         </div>
       ) : (

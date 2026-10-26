@@ -84,6 +84,10 @@ interface CatalogFiltersProps {
   reset: () => void;
   textInput: string;
   setTextInput: (value: string) => void;
+  priceInput: string;
+  setPriceInput: (value: string) => void;
+  contextInput: string;
+  setContextInput: (value: string) => void;
   /** Autori presenti nei risultati correnti. */
   authors: string[];
   providers: { value: string; label: string }[];
@@ -99,7 +103,7 @@ function Toggle({ id, label, checked, onChange }: { id: string; label: string; c
 }
 
 /** Barra dei filtri della vista per modello. */
-export function CatalogFilters({ state, update, reset, textInput, setTextInput, authors, providers }: CatalogFiltersProps) {
+export function CatalogFilters({ state, update, reset, textInput, setTextInput, priceInput, setPriceInput, contextInput, setContextInput, authors, providers }: CatalogFiltersProps) {
   const authorOptions = Array.from(new Set([...authors, ...state.authors]))
     .sort((a, b) => a.localeCompare(b))
     .map((a) => ({ value: a, label: a }));
@@ -155,8 +159,8 @@ export function CatalogFilters({ state, update, reset, textInput, setTextInput, 
             min={0}
             step="any"
             className="w-24"
-            value={state.maxPrice}
-            onChange={(e) => update({ maxPrice: e.target.value })}
+            value={priceInput}
+            onChange={(e) => setPriceInput(e.target.value)}
           />
         </div>
         <div className="flex items-center gap-2">
@@ -167,8 +171,8 @@ export function CatalogFilters({ state, update, reset, textInput, setTextInput, 
             min={0}
             step={1000}
             className="w-28"
-            value={state.minContext}
-            onChange={(e) => update({ minContext: e.target.value })}
+            value={contextInput}
+            onChange={(e) => setContextInput(e.target.value)}
           />
         </div>
         <Button variant="ghost" onClick={reset}>

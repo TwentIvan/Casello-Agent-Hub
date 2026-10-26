@@ -1,6 +1,9 @@
+import { useState } from "react";
 import { getProviderIssue, useListCatalogProviders } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 
@@ -8,16 +11,26 @@ import { apiErrorMessage } from "@/lib/api-errors";
 export function UnmanagedProviders() {
   const { toast } = useToast();
   const providers = useListCatalogProviders({ status: "unmanaged" });
+  // Testo dell'issue da copiare a mano quando gli appunti non sono disponibili
+  const [manualText, setManualText] = useState<string | null>(null);
   const list = providers.data ?? [];
   if (list.length === 0) return null;
 
   const copyIssue = async (slug: string) => {
+    let text: string;
     try {
       const issue = await getProviderIssue(slug);
-      await navigator.clipboard.writeText(`${issue.title}\n\n${issue.body}`);
-      toast({ title: "Testo dell'issue copiato" });
+      text = `${issue.title}\n\n${issue.body}`;
     } catch (error) {
       toast({ variant: "destructive", title: apiErrorMessage(error) });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: "Testo dell'issue copiato" });
+    } catch {
+      toast({ variant: "destructive", title: "Impossibile copiare negli appunti" });
+      setManualText(text);
     }
   };
 
@@ -47,6 +60,15 @@ export function UnmanagedProviders() {
           ))}
         </ul>
       </CardContent>
+      <Dialog open={manualText !== null} onOpenChange={(open) => !open && setManualText(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Testo dell'issue</DialogTitle>
+            <DialogDescription>Copialo a mano: gli appunti non sono disponibili.</DialogDescription>
+          </DialogHeader>
+          <Textarea aria-label="Testo dell'issue" readOnly rows={12} value={manualText ?? ""} onFocus={(e) => e.target.select()} />
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

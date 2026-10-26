@@ -1,6 +1,7 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, uniqueIndex, numeric } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { appsTable } from "./apps";
+import { aiModelsTable } from "./ai-models";
 
 export const analysisStatusEnum = pgEnum("analysis_status", [
   "queued",
@@ -22,10 +23,14 @@ export const analysesTable = pgTable(
       .notNull()
       .references(() => appsTable.id, { onDelete: "cascade" }),
     model: text("model").notNull(),
+    // Eliminando il modello l'analisi conclusa perde solo il collegamento: `model` e `cost_usd` restano
+    aiModelId: integer("ai_model_id").references(() => aiModelsTable.id, { onDelete: "set null" }),
     status: analysisStatusEnum("status").notNull().default("queued"),
     sources: jsonb("sources").$type<AnalysisSources>().notNull(),
     maxTokens: integer("max_tokens").notNull(),
     tokensUsed: integer("tokens_used").notNull().default(0),
+    // Costo in USD, null se un prezzo del modello manca
+    costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
     // Fase corrente
     phase: text("phase"),
     // Al massimo 500 voci

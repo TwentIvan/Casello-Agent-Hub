@@ -251,7 +251,13 @@ export interface Agent {
   name: string;
   /** @nullable */
   systemPrompt?: string | null;
+  /** Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto */
   model?: string;
+  /**
+     * Modello scelto tra quelli degli account AI; le run usano l'account di questo modello (chi configura paga). Null = vecchio percorso del gateway
+     * @nullable
+     */
+  aiModelId: number | null;
   status: AgentStatus;
   role: AgentRole;
   /** @nullable */
@@ -268,7 +274,13 @@ export interface AgentInput {
   /** @minLength 1 */
   name: string;
   systemPrompt?: string;
+  /** Solo compatibilità; con aiModelId è ignorato */
   model?: string;
+  /**
+     * Modello di un account AI dell'utente o dell'account di sistema (400 "modello non disponibile" altrimenti)
+     * @nullable
+     */
+  aiModelId?: number | null;
   status?: AgentStatus;
 }
 
@@ -277,7 +289,13 @@ export interface AgentUpdate {
   name?: string;
   /** @nullable */
   systemPrompt?: string | null;
+  /** Solo compatibilità; con aiModelId è ignorato */
   model?: string;
+  /**
+     * Se diverso da quello salvato deve essere un modello dell'utente o dell'account di sistema (400 altrimenti); uguale a quello salvato non viene ricontrollato
+     * @nullable
+     */
+  aiModelId?: number | null;
   status?: AgentStatus;
   /** @nullable */
   area?: string | null;
@@ -453,6 +471,11 @@ export interface Run {
   promptTokens?: number | null;
   /** @nullable */
   completionTokens?: number | null;
+  /**
+     * Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)
+     * @nullable
+     */
+  costUsd?: number | null;
 }
 
 /**
@@ -568,10 +591,17 @@ export interface Analysis {
   id: number;
   appId: number;
   model: string;
+  /** @nullable */
+  aiModelId: number | null;
   status: AnalysisStatus;
   sources: AnalysisSources;
   maxTokens: number;
   tokensUsed: number;
+  /**
+     * Costo in USD; null se un prezzo manca o l'analisi usa il vecchio gateway (costo parziale)
+     * @nullable
+     */
+  costUsd: number | null;
   /**
      * Fase corrente
      * @nullable
@@ -631,12 +661,17 @@ export type AnalysisDetail = Analysis & {
   items: AnalysisItem[];
 };
 
+/**
+ * Indicare esattamente uno tra aiModelId e model (altrimenti 400 "scegli un modello")
+ */
 export interface AnalysisStart {
+  /** Modello di un account AI dell'utente o dell'account di sistema */
+  aiModelId?: number;
   /**
-     * Modello AI (model_name di LiteLLM)
+     * Compatibilità, modello AI come model_name di LiteLLM
      * @minLength 1
      */
-  model: string;
+  model?: string;
   /**
      * Tetto di token per l'analisi (default 1000000)
      * @minimum 50000
@@ -684,6 +719,208 @@ export interface AgentSkill {
   paramsSchema: AgentSkillParamsSchema;
   status: AgentSkillStatus;
 }
+
+export type AiProvider = typeof AiProvider[keyof typeof AiProvider];
+
+
+export const AiProvider = {
+  deepseek: 'deepseek',
+  openrouter: 'openrouter',
+  huggingface: 'huggingface',
+  mistral: 'mistral',
+  groq: 'groq',
+  together: 'together',
+  custom: 'custom',
+  system_gateway: 'system_gateway',
+} as const;
+
+export type AiAccountStatus = typeof AiAccountStatus[keyof typeof AiAccountStatus];
+
+
+export const AiAccountStatus = {
+  unverified: 'unverified',
+  ok: 'ok',
+  error: 'error',
+} as const;
+
+export interface AiAccount {
+  id: number;
+  name: string;
+  provider: AiProvider;
+  baseUrl: string;
+  /** Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati */
+  allowPrivateNetwork: boolean;
+  isDefault: boolean;
+  status: AiAccountStatus;
+  /**
+     * Messaggio fisso dell'ultimo errore del provider
+     * @nullable
+     */
+  lastError: string | null;
+  /** @nullable */
+  lastCheckedAt: string | null;
+  /** Indica se la chiave è impostata (il valore non è mai esposto) */
+  keySet: boolean;
+  /** Account di sistema (gateway di Casello), non modificabile */
+  isSystem: boolean;
+  /** Numero di modelli dell'account (nascosti compresi) */
+  modelCount: number;
+}
+
+export interface AiAccountInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  provider: AiProvider;
+  /**
+     * Chiave del provider (solo scrittura, salvata cifrata); vuota solo per custom
+     * @maxLength 4096
+     * @nullable
+     */
+  apiKey?: string | null;
+  /**
+     * Solo custom (obbligatorio); gli altri provider usano il base URL predefinito
+     * @maxLength 2048
+     * @nullable
+     */
+  baseUrl?: string | null;
+  /** Solo custom */
+  allowPrivateNetwork?: boolean;
+}
+
+export interface AiAccountUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  /**
+     * Assente o "" = invariata; null la rimuove (solo custom); un valore la sostituisce
+     * @maxLength 4096
+     * @nullable
+     */
+  apiKey?: string | null;
+  /**
+     * Solo custom
+     * @minLength 1
+     * @maxLength 2048
+     */
+  baseUrl?: string;
+  /** Solo custom */
+  allowPrivateNetwork?: boolean;
+}
+
+/**
+ * @nullable
+ */
+export type AiModelPriceSource = typeof AiModelPriceSource[keyof typeof AiModelPriceSource] | null;
+
+
+export const AiModelPriceSource = {
+  provider: 'provider',
+  manual: 'manual',
+  seed: 'seed',
+} as const;
+
+export interface AiModel {
+  id: number;
+  accountId: number;
+  /** Id del modello presso il provider (es. deepseek-chat) */
+  modelId: string;
+  displayName: string;
+  /** @nullable */
+  contextTokens: number | null;
+  /**
+     * USD per milione di token di input
+     * @nullable
+     */
+  priceInput: number | null;
+  /**
+     * USD per milione di token di output
+     * @nullable
+     */
+  priceOutput: number | null;
+  /** @nullable */
+  priceSource: AiModelPriceSource;
+  hidden: boolean;
+}
+
+export interface AiModelInput {
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  modelId: string;
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  displayName?: string;
+  /**
+     * @minimum 0
+     * @maximum 999999.999999
+     * @nullable
+     */
+  priceInput?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 999999.999999
+     * @nullable
+     */
+  priceOutput?: number | null;
+  /**
+     * @minimum 1
+     * @maximum 100000000
+     * @nullable
+     */
+  contextTokens?: number | null;
+}
+
+export interface AiModelUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  displayName?: string;
+  /**
+     * @minimum 0
+     * @maximum 999999.999999
+     * @nullable
+     */
+  priceInput?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 999999.999999
+     * @nullable
+     */
+  priceOutput?: number | null;
+  hidden?: boolean;
+}
+
+export interface AiModelGroup {
+  account: AiAccount;
+  models: AiModel[];
+}
+
+export interface CostEstimate {
+  /**
+     * Costo massimo in USD (null se un prezzo manca)
+     * @nullable
+     */
+  maxUsd: number | null;
+  /**
+     * Costo tipico in USD (60% del massimo)
+     * @nullable
+     */
+  typicalUsd: number | null;
+}
+
+/**
+ * Troppe richieste
+ */
+export type TooManyRequestsResponse = ErrorResponse;
 
 /**
  * Richiesta non valida
@@ -740,10 +977,14 @@ status?: RunStatus;
 
 export type StartZipAnalysisParams = {
 /**
- * Modello AI (model_name di LiteLLM)
+ * Modello di un account AI (esattamente uno tra aiModelId e model)
+ */
+aiModelId?: number;
+/**
+ * Compatibilità, modello AI come model_name di LiteLLM
  * @minLength 1
  */
-model: string;
+model?: string;
 /**
  * Tetto di token per l'analisi (default 1000000)
  * @minimum 50000
@@ -768,4 +1009,14 @@ export const ExportAnalysisIssuesChapter = {
   completion: 'completion',
   evolution: 'evolution',
 } as const;
+
+export type EstimateAnalysisCostParams = {
+aiModelId: number;
+/**
+ * Tetto di token dell'analisi, come in AnalysisStart (default 1000000)
+ * @minimum 50000
+ * @maximum 2000000
+ */
+maxTokens?: number;
+};
 

@@ -28,6 +28,7 @@ import {
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
 import { AVAILABLE_MODELS } from "../lib/models";
+import { ModelChoiceError, chooseByName, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
 import { isUniqueViolation } from "../lib/pg-errors";
 import { ANALYSIS_DEFAULT_MAX_TOKENS, startAnalysis } from "../lib/architect/run-analysis";
 import { ApplyError, applyItem } from "../lib/architect/apply";
@@ -37,7 +38,7 @@ import { SOURCE_LIMITS } from "../lib/architect/source-tree";
 import { runRateLimit } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
 import { INSTALLATION_NOT_YOURS, userHasInstallation } from "./apps";
-import { toPublicAnalysis, toPublicItem } from "./serializers";
+import { toPublicAnalysis, toPublicAnalysisDetail, toPublicItem } from "./serializers";
 
 // Route dell'architetto: avvio delle analisi (sorgenti dell'app o zip caricato), dettaglio,
 // revisione degli elementi della proposta ed esportazione delle issue.
@@ -70,6 +71,22 @@ function modelError(model: string): string | null {
   return `modello non disponibile: scegli tra ${AVAILABLE_MODELS.map((m) => m.id).join(", ")}`;
 }
 
+const CHOOSE_MODEL = "scegli un modello";
+
+/**
+ * Modello dell'analisi, indicato con esattamente uno tra `aiModelId` (modello dell'utente che avvia
+ * o dell'account di sistema) e `model` (nome, console precedente: elenco di GET /models, collegato
+ * al modello di sistema equivalente se esiste). Lancia ModelChoiceError con il messaggio per il 400.
+ */
+async function analysisModel(input: { aiModelId?: number; model?: string }, userId: number): Promise<ModelChoice> {
+  const { aiModelId, model } = input;
+  if ((aiModelId === undefined) === (model === undefined)) throw new ModelChoiceError(CHOOSE_MODEL);
+  if (aiModelId !== undefined) return chooseOwnModel(aiModelId, userId);
+  const invalid = modelError(model!);
+  if (invalid) throw new ModelChoiceError(invalid);
+  return chooseByName(model!);
+}
+
 /** L'app ha già un'analisi `queued`/`running` (indice unico parziale `analyses_one_active_per_app`). */
 class AnalysisBusyError extends Error {}
 
@@ -77,14 +94,15 @@ class AnalysisBusyError extends Error {}
  * Crea l'analisi `queued` e la avvia in background. `startAnalysis` non lancia mai: registra da sé
  * ogni errore sulla riga dell'analisi. Lo zip resta solo in memoria (mai su disco né nei log).
  */
-async function createAndStart(app: App, model: string, maxTokens: number | undefined, zip?: Uint8Array) {
+async function createAndStart(app: App, choice: ModelChoice, maxTokens: number | undefined, zip?: Uint8Array) {
   let row;
   try {
     [row] = await db
       .insert(analysesTable)
       .values({
         appId: app.id,
-        model,
+        model: choice.model,
+        aiModelId: choice.aiModelId,
         maxTokens: maxTokens ?? ANALYSIS_DEFAULT_MAX_TOKENS,
         // Valore iniziale: l'orchestratore lo sovrascrive con le sorgenti usate davvero
         sources: { code: zip ? "zip" : app.sourceType, openapi: false, description: !!app.functionalDescription?.trim() },
@@ -139,15 +157,18 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
   // Avvio con le sorgenti configurate sull'app (GitHub, OpenAPI, descrizione funzionale)
   router.post("/apps/:id/analyses", runRateLimit, async (req, res) => {
     const { id } = parseRequest(StartAnalysisParams, req.params);
-    const { model, maxTokens } = parseRequest(StartAnalysisBody, req.body);
+    const { model, aiModelId, maxTokens } = parseRequest(StartAnalysisBody, req.body);
     const app = await findApp(id);
     if (!app) {
       res.status(404).json({ error: "App non trovata" });
       return;
     }
-    const invalidModel = modelError(model);
-    if (invalidModel) {
-      res.status(400).json({ error: invalidModel });
+    let choice: ModelChoice;
+    try {
+      choice = await analysisModel({ aiModelId, model }, currentUserId(req));
+    } catch (err) {
+      if (!(err instanceof ModelChoiceError)) throw err;
+      res.status(400).json({ error: err.message });
       return;
     }
     if (app.sourceType === "zip") {
@@ -169,7 +190,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
       return;
     }
     try {
-      const analysis = await createAndStart(app, model, maxTokens);
+      const analysis = await createAndStart(app, choice, maxTokens);
       res.status(202).json(StartAnalysisResponse.parse(toPublicAnalysis(analysis)));
     } catch (err) {
       if (!(err instanceof AnalysisBusyError)) throw err;
@@ -184,7 +205,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
     zipUpload(opts.zipLimitBytes),
     async (req, res) => {
       const { id } = parseRequest(StartZipAnalysisParams, req.params);
-      const { model, maxTokens } = parseRequest(StartZipAnalysisQueryParams, req.query);
+      const { model, aiModelId, maxTokens } = parseRequest(StartZipAnalysisQueryParams, req.query);
       const body: unknown = req.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
         res.status(400).json({ error: "Archivio zip mancante: invia il file come application/zip" });
@@ -195,14 +216,17 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
         res.status(404).json({ error: "App non trovata" });
         return;
       }
-      const invalidModel = modelError(model);
-      if (invalidModel) {
-        res.status(400).json({ error: invalidModel });
+      let choice: ModelChoice;
+      try {
+        choice = await analysisModel({ aiModelId, model }, currentUserId(req));
+      } catch (err) {
+        if (!(err instanceof ModelChoiceError)) throw err;
+        res.status(400).json({ error: err.message });
         return;
       }
       try {
         const zip = new Uint8Array(body.buffer, body.byteOffset, body.length);
-        const analysis = await createAndStart(app, model, maxTokens, zip);
+        const analysis = await createAndStart(app, choice, maxTokens, zip);
         res.status(202).json(StartZipAnalysisResponse.parse(toPublicAnalysis(analysis)));
       } catch (err) {
         if (!(err instanceof AnalysisBusyError)) throw err;
@@ -225,7 +249,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
       .orderBy(asc(analysisItemsTable.position), asc(analysisItemsTable.id));
     // Capitoli nell'ordine delle fasi; dentro il capitolo per posizione (ordinamento stabile)
     items.sort((a, b) => CHAPTER_ORDER.indexOf(a.chapter) - CHAPTER_ORDER.indexOf(b.chapter));
-    res.json(GetAnalysisResponse.parse({ ...analysis, items: items.map(toPublicItem) }));
+    res.json(GetAnalysisResponse.parse({ ...toPublicAnalysisDetail(analysis), items: items.map(toPublicItem) }));
   });
 
   router.get("/analyses/:id/issues", async (req, res) => {

@@ -7,6 +7,8 @@ import {
   appToolsTable,
   type AnalysisItem,
 } from "@workspace/db";
+import { findUsableSystemModelId } from "../ai/system-account";
+import { DEFAULT_MODEL } from "../models";
 import { isUniqueViolation } from "../pg-errors";
 import { checkParamsSchema, checkPathPlaceholders, parseDefinition } from "../tools/definition";
 import type { HttpDefinition } from "../tools/types";
@@ -211,11 +213,13 @@ async function applyAgent(tx: Tx, item: AnalysisItem, appId: number): Promise<vo
       })
       .where(eq(agentsTable.id, current.id));
   } else {
-    // Nuovo agente di area: attivo, modello di default dello schema
+    // Nuovo agente di area: attivo, modello predefinito collegato all'account di sistema (null se non c'è)
+    const aiModelId = await findUsableSystemModelId(DEFAULT_MODEL, tx);
     const [created] = await tx
       .insert(agentsTable)
       .values({
         appId,
+        aiModelId,
         role: "area",
         area: agent.area,
         name: agent.name,

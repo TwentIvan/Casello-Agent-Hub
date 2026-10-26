@@ -12,6 +12,12 @@ export interface AgentInput {
   /** @minLength 1 */
   name: string;
   systemPrompt?: string;
+  /** Solo compatibilità; con aiModelId è ignorato */
   model?: string;
+  /**
+     * Modello di un account AI dell'utente o dell'account di sistema (400 "modello non disponibile" altrimenti)
+     * @nullable
+     */
+  aiModelId?: number | null;
   status?: AgentStatus;
 }

@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { failInterruptedAnalyses } from "./lib/architect/run-analysis";
 import { expireStalePausedRuns, failInterruptedRuns } from "./lib/run-executor";
+import { ensureSystemAccount } from "./lib/ai/system-account";
 import { assertSecretKey } from "./lib/secrets";
 
 // In produzione la chiave dei segreti è obbligatoria: meglio fallire all'avvio che alla prima cifratura.
@@ -34,6 +35,16 @@ failInterruptedAnalyses()
     if (count > 0) logger.warn({ count }, "Analisi rimaste aperte al riavvio segnate come interrotte");
   })
   .catch((err: unknown) => logger.error({ err }, "Chiusura delle analisi interrotte non riuscita"));
+
+// Account AI di sistema dalle variabili del gateway attuale; collega agenti e analisi esistenti.
+// Un errore non blocca l'avvio: si logga solo il nome, mai il messaggio.
+ensureSystemAccount()
+  .then((res) => {
+    if (res) logger.info({ accountId: res.accountId }, "Account di sistema del gateway allineato");
+  })
+  .catch((err: unknown) =>
+    logger.error({ errorName: err instanceof Error ? err.name : "Error" }, "Allineamento dell'account di sistema non riuscito"),
+  );
 
 // Le run in pausa senza conferma entro 10 minuti vengono annullate; il timer non tiene in vita il processo.
 setInterval(() => {

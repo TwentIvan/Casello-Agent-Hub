@@ -10,8 +10,10 @@ import {
   analysisItemsTable,
   appToolsTable,
   appsTable,
+  aiModelsTable,
   type AnalysisItem,
 } from "@workspace/db";
+import { ensureSystemAccount } from "../ai/system-account";
 import { ApplyError, applyItem } from "./apply";
 import type { ToolProposal } from "./schemas";
 
@@ -165,6 +167,32 @@ describe("applyItem: agenti", () => {
     const [b] = await db.select().from(agentsTable).where(eq(agentsTable.role, "area"));
     expect(b).toMatchObject({ name: "Rinominato", status: "active" });
     expect(await db.select().from(agentToolsTable)).toHaveLength(0);
+  });
+
+  it("un agente di area nuovo nasce collegato al modello predefinito di sistema; senza sistema resta null", async () => {
+    const saved = { url: process.env["AI_GATEWAY_BASE_URL"], key: process.env["AI_GATEWAY_API_KEY"] };
+    try {
+      process.env["AI_GATEWAY_BASE_URL"] = "http://gateway.interno:4000/v1";
+      process.env["AI_GATEWAY_API_KEY"] = "sk-gateway-di-prova";
+      await ensureSystemAccount();
+      const [sys] = await db.select({ id: aiModelsTable.id }).from(aiModelsTable).where(eq(aiModelsTable.modelId, "openrouter/auto"));
+      await applyItem(await item("tool", "new", toolPayload()), appId);
+      await applyItem(await item("agent", "new", agentPayload()), appId);
+      const [linked] = await db.select().from(agentsTable).where(eq(agentsTable.role, "area"));
+      expect(linked!.aiModelId).toBe(sys!.id);
+
+      // Variabili del gateway assenti: il modello di sistema non è utilizzabile, nessun collegamento
+      delete process.env["AI_GATEWAY_API_KEY"];
+      await applyItem(await item("agent", "new", agentPayload({ area: "Partite", name: "Agente partite", toolNames: [] })), appId);
+      const [unlinked] = await db.select().from(agentsTable).where(eq(agentsTable.area, "Partite"));
+      expect(unlinked!.aiModelId).toBeNull();
+    } finally {
+      for (const [k, v] of [["AI_GATEWAY_BASE_URL", saved.url], ["AI_GATEWAY_API_KEY", saved.key]] as const) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      await pool.query("TRUNCATE apps, ai_accounts RESTART IDENTITY CASCADE");
+    }
   });
 
   it("unchanged rende active l'agente senza toccarne i contenuti", async () => {

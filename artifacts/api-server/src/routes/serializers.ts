@@ -19,6 +19,13 @@ export function toPublicApp(app: App) {
   return { ...rest, serviceSecretSet: serviceSecretEnc != null, sourceTokenSet: sourceTokenEnc != null };
 }
 
+/** Colonna numeric (stringa dal driver) → numero, null se assente o non valida. */
+export function toNumberOrNull(value: string | null): number | null {
+  if (value === null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -40,7 +47,7 @@ function publicPendingArgs(p: { args?: unknown; publicArgs?: unknown }): Record<
  * run è in attesa del client.
  */
 export function toPublicRun(run: Run) {
-  const { loopState: _loopState, pausedAt: _pausedAt, pendingAction, ...rest } = run;
+  const { loopState: _loopState, pausedAt: _pausedAt, pendingAction, costUsd, ...rest } = run;
   const p = pendingAction as
     | { kind?: unknown; toolName?: unknown; args?: unknown; publicArgs?: unknown; summary?: unknown }
     | null;
@@ -48,7 +55,7 @@ export function toPublicRun(run: Run) {
     run.status === "awaiting_client" && p && typeof p === "object"
       ? { kind: p.kind, toolName: p.toolName, args: publicPendingArgs(p), summary: p.summary }
       : null;
-  return { ...rest, pendingAction: publicPending };
+  return { ...rest, costUsd: toNumberOrNull(costUsd), pendingAction: publicPending };
 }
 
 /**
@@ -106,7 +113,12 @@ export function userTokenFrom(req: Request): string | undefined {
 /** Analisi senza log né mappa (elenco e risposta all'avvio): quelli arrivano solo col dettaglio. */
 export function toPublicAnalysis(analysis: Analysis) {
   const { log: _log, architectureMap: _map, ...rest } = analysis;
-  return rest;
+  return { ...rest, costUsd: toNumberOrNull(analysis.costUsd) };
+}
+
+/** Dettaglio dell'analisi: con log e mappa, costo come numero. */
+export function toPublicAnalysisDetail(analysis: Analysis) {
+  return { ...analysis, costUsd: toNumberOrNull(analysis.costUsd) };
 }
 
 /**

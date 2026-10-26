@@ -4,6 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { appsTable } from "./apps";
 import { toolIdentityEnum } from "./app-tools";
+import { aiModelsTable } from "./ai-models";
 
 export const agentStatusEnum = pgEnum("agent_status", ["active", "inactive", "draft"]);
 
@@ -17,6 +18,8 @@ export const agentsTable = pgTable("agents", {
   name: text("name").notNull(),
   systemPrompt: text("system_prompt"),
   model: text("model").notNull().default("openrouter/auto"),
+  // Modello scelto tra quelli degli Account AI; `model` (testo) resta per compatibilità durante la transizione
+  aiModelId: integer("ai_model_id").references(() => aiModelsTable.id, { onDelete: "restrict" }),
   status: agentStatusEnum("status").notNull().default("draft"),
   role: agentRoleEnum("role").notNull().default("area"),
   area: text("area"),

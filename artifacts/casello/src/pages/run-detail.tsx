@@ -20,7 +20,7 @@ import { ConfirmationCard } from "@/components/runs/confirmation-card";
 import { RunSteps } from "@/components/runs/run-steps";
 import { isRunActive } from "@/components/runs/run-queries";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { formatDuration, formatRelative } from "@/lib/format";
+import { formatCost, formatDuration, formatRelative } from "@/lib/format";
 
 const POLL_MS = 1500;
 
@@ -89,6 +89,7 @@ export default function RunDetailPage() {
   }
 
   const r = run.data;
+  const cost = formatCost(r.costUsd, (r.promptTokens ?? 0) + (r.completionTokens ?? 0));
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -125,6 +126,12 @@ export default function RunDetailPage() {
               <dd className="tabular-nums">
                 {(r.promptTokens ?? 0).toLocaleString("it-IT")} in · {(r.completionTokens ?? 0).toLocaleString("it-IT")} out
               </dd>
+            </div>
+          )}
+          {cost && (
+            <div>
+              <dt className="text-muted-foreground">Costo</dt>
+              <dd className="tabular-nums">{cost}</dd>
             </div>
           )}
         </dl>

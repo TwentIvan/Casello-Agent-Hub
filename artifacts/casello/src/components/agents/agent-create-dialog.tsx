@@ -24,12 +24,18 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { useModelOptions } from "./model-options";
+import { ModelPicker } from "@/components/ai/model-picker";
+import { useDefaultAiModelId } from "@/components/ai/ai-queries";
 
 const agentCreateSchema = z.object({
   name: z.string().trim().min(1, "Il nome è obbligatorio."),
   appId: z.string().min(1, "Scegli l'app a cui appartiene l'agente."),
-  model: z.string().min(1, "Scegli un modello."),
+  aiModelId: z
+    .number()
+    .nullable()
+    .superRefine((value, ctx) => {
+      if (value === null) ctx.addIssue({ code: "custom", message: "Scegli un modello." });
+    }),
 });
 
 type AgentCreateValues = z.infer<typeof agentCreateSchema>;
@@ -47,16 +53,16 @@ export function AgentCreateDialog({ open, onOpenChange, apps, defaultAppId }: Ag
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const { options: models, defaultModel } = useModelOptions();
+  const defaultModelId = useDefaultAiModelId();
   const form = useForm<AgentCreateValues>({
     resolver: zodResolver(agentCreateSchema),
-    defaultValues: { name: "", appId: defaultAppId ? String(defaultAppId) : "", model: defaultModel ?? "" },
+    defaultValues: { name: "", appId: defaultAppId ? String(defaultAppId) : "", aiModelId: defaultModelId },
   });
 
-  // La lista dei modelli può arrivare dopo l'apertura: si preimposta il default appena noto.
+  // I modelli possono arrivare dopo l'apertura: si preimposta il primo dell'account predefinito appena noto.
   useEffect(() => {
-    if (defaultModel && !form.getValues("model")) form.setValue("model", defaultModel);
-  }, [defaultModel, form]);
+    if (defaultModelId !== null && form.getValues("aiModelId") === null) form.setValue("aiModelId", defaultModelId);
+  }, [defaultModelId, form]);
 
   const createAgent = useCreateAgent({
     mutation: {
@@ -74,7 +80,7 @@ export function AgentCreateDialog({ open, onOpenChange, apps, defaultAppId }: Ag
 
   const onSubmit = (values: AgentCreateValues) =>
     createAgent.mutate({
-      data: { name: values.name, appId: Number(values.appId), model: values.model, status: "draft" },
+      data: { name: values.name, appId: Number(values.appId), aiModelId: values.aiModelId, status: "draft" },
     });
 
   return (
@@ -128,25 +134,13 @@ export function AgentCreateDialog({ open, onOpenChange, apps, defaultAppId }: Ag
             />
             <FormField
               control={form.control}
-              name="model"
+              name="aiModelId"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Modello</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Scegli un modello" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {models.map((model) => (
-                        <SelectItem key={model.id} value={model.id}>
-                          {model.label}
-                          {model.isDefault ? " (predefinito)" : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormControl>
+                    <ModelPicker value={field.value} onChange={field.onChange} />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

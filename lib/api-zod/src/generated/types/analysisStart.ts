@@ -6,12 +6,17 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Indicare esattamente uno tra aiModelId e model (altrimenti 400 "scegli un modello")
+ */
 export interface AnalysisStart {
+  /** Modello di un account AI dell'utente o dell'account di sistema */
+  aiModelId?: number;
   /**
-     * Modello AI (model_name di LiteLLM)
+     * Compatibilità, modello AI come model_name di LiteLLM
      * @minLength 1
      */
-  model: string;
+  model?: string;
   /**
      * Tetto di token per l'analisi (default 1000000)
      * @minimum 50000

@@ -8,6 +8,9 @@ export const logger = pino({
     "req.headers.authorization",
     "req.headers.cookie",
     "res.headers['set-cookie']",
+    // Chiavi dei provider (es. un ResolvedModel finito per errore in un log)
+    "apiKey",
+    "*.apiKey",
   ],
   ...(isProduction
     ? {}

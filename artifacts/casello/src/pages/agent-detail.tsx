@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { useModelOptions } from "@/components/agents/model-options";
+import { ModelPicker } from "@/components/ai/model-picker";
 import { AgentRoleBadge } from "@/components/agents/agent-role-badge";
 import { AgentToolsSection } from "@/components/agents/agent-tools-section";
 import { AgentSkillsSection } from "@/components/agents/agent-skills-section";
@@ -40,7 +40,7 @@ import { TOOL_IDENTITY_LABELS } from "@/lib/tool-labels";
 const agentSchema = z.object({
   name: z.string().trim().min(1, "Il nome è obbligatorio."),
   systemPrompt: z.string(),
-  model: z.string().min(1, "Scegli un modello."),
+  aiModelId: z.number().nullable(),
   status: z.enum(["active", "inactive", "draft"]),
   area: z.string(),
   defaultIdentity: z.enum(["user", "service"]),
@@ -52,7 +52,7 @@ function toValues(agent: Agent): AgentValues {
   return {
     name: agent.name,
     systemPrompt: agent.systemPrompt ?? "",
-    model: agent.model ?? "",
+    aiModelId: agent.aiModelId,
     status: agent.status,
     area: agent.area ?? "",
     defaultIdentity: agent.defaultIdentity,
@@ -62,7 +62,6 @@ function toValues(agent: Agent): AgentValues {
 function AgentConfigForm({ agent }: { agent: Agent }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { options: models } = useModelOptions(agent.model);
   const form = useForm<AgentValues>({ resolver: zodResolver(agentSchema), defaultValues: toValues(agent) });
 
   const updateAgent = useUpdateAgent({
@@ -80,11 +79,13 @@ function AgentConfigForm({ agent }: { agent: Agent }) {
   });
 
   const isGeneral = agent.role === "general";
-  const onSubmit = ({ area, ...values }: AgentValues) =>
+  const onSubmit = ({ area, aiModelId, ...values }: AgentValues) =>
     updateAgent.mutate({
       id: agent.id,
       data: {
         ...values,
+        // Il modello si manda solo se è cambiato: un agente configurato da altri resta sul suo.
+        ...(aiModelId !== null && aiModelId !== agent.aiModelId ? { aiModelId } : {}),
         systemPrompt: values.systemPrompt.trim() ? values.systemPrompt : null,
         // L'area è solo degli agenti di area: il generale non la manda.
         ...(isGeneral ? {} : { area: area.trim() ? area.trim() : null }),
@@ -138,25 +139,19 @@ function AgentConfigForm({ agent }: { agent: Agent }) {
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField
                 control={form.control}
-                name="model"
+                name="aiModelId"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Modello</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Scegli un modello" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {models.map((model) => (
-                          <SelectItem key={model.id} value={model.id}>
-                            {model.label}
-                            {model.isDefault ? " (predefinito)" : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <ModelPicker value={field.value} onChange={field.onChange} />
+                    </FormControl>
+                    {agent.aiModelId === null && (
+                      <FormDescription>
+                        Ora usa <span className="font-mono">{agent.model}</span> dal vecchio gateway: scegli un modello
+                        per passare agli account AI.
+                      </FormDescription>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}

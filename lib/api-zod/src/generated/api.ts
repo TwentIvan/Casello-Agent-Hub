@@ -291,7 +291,8 @@ export const ListAgentsResponseItem = zod.object({
   "appId": zod.number(),
   "name": zod.string(),
   "systemPrompt": zod.string().nullish(),
-  "model": zod.string().optional(),
+  "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
+  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
   "status": zod.enum(['active', 'inactive', 'draft']),
   "role": zod.enum(['general', 'area']),
   "area": zod.string().nullish(),
@@ -313,7 +314,8 @@ export const CreateAgentBody = zod.object({
   "appId": zod.number(),
   "name": zod.string().min(1),
   "systemPrompt": zod.string().optional(),
-  "model": zod.string().optional(),
+  "model": zod.string().optional().describe('Solo compatibilità; con aiModelId è ignorato'),
+  "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente o dell\'account di sistema (400 \"modello non disponibile\" altrimenti)'),
   "status": zod.enum(['active', 'inactive', 'draft']).optional()
 })
 
@@ -322,7 +324,8 @@ export const CreateAgentResponse = zod.object({
   "appId": zod.number(),
   "name": zod.string(),
   "systemPrompt": zod.string().nullish(),
-  "model": zod.string().optional(),
+  "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
+  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
   "status": zod.enum(['active', 'inactive', 'draft']),
   "role": zod.enum(['general', 'area']),
   "area": zod.string().nullish(),
@@ -345,7 +348,8 @@ export const GetAgentResponse = zod.object({
   "appId": zod.number(),
   "name": zod.string(),
   "systemPrompt": zod.string().nullish(),
-  "model": zod.string().optional(),
+  "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
+  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
   "status": zod.enum(['active', 'inactive', 'draft']),
   "role": zod.enum(['general', 'area']),
   "area": zod.string().nullish(),
@@ -369,7 +373,8 @@ export const UpdateAgentParams = zod.object({
 export const UpdateAgentBody = zod.object({
   "name": zod.string().min(1).optional(),
   "systemPrompt": zod.string().nullish(),
-  "model": zod.string().optional(),
+  "model": zod.string().optional().describe('Solo compatibilità; con aiModelId è ignorato'),
+  "aiModelId": zod.number().nullish().describe('Se diverso da quello salvato deve essere un modello dell\'utente o dell\'account di sistema (400 altrimenti); uguale a quello salvato non viene ricontrollato'),
   "status": zod.enum(['active', 'inactive', 'draft']).optional(),
   "area": zod.string().nullish(),
   "defaultIdentity": zod.enum(['user', 'service']).optional()
@@ -380,7 +385,8 @@ export const UpdateAgentResponse = zod.object({
   "appId": zod.number(),
   "name": zod.string(),
   "systemPrompt": zod.string().nullish(),
-  "model": zod.string().optional(),
+  "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
+  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
   "status": zod.enum(['active', 'inactive', 'draft']),
   "role": zod.enum(['general', 'area']),
   "area": zod.string().nullish(),
@@ -563,7 +569,8 @@ export const SetAgentToolsResponse = zod.object({
   "appId": zod.number(),
   "name": zod.string(),
   "systemPrompt": zod.string().nullish(),
-  "model": zod.string().optional(),
+  "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
+  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
   "status": zod.enum(['active', 'inactive', 'draft']),
   "role": zod.enum(['general', 'area']),
   "area": zod.string().nullish(),
@@ -599,7 +606,8 @@ export const ListRunsResponseItem = zod.object({
   "summary": zod.string()
 }),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
-  "completionTokens": zod.number().nullish()
+  "completionTokens": zod.number().nullish(),
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
 })
 export const ListRunsResponse = zod.array(ListRunsResponseItem)
 
@@ -637,7 +645,8 @@ export const TriggerRunResponse = zod.object({
   "summary": zod.string()
 }),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
-  "completionTokens": zod.number().nullish()
+  "completionTokens": zod.number().nullish(),
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
 })
 
 
@@ -665,7 +674,8 @@ export const GetRunResponse = zod.object({
   "summary": zod.string()
 }),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
-  "completionTokens": zod.number().nullish()
+  "completionTokens": zod.number().nullish(),
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
 })
 
 
@@ -725,7 +735,8 @@ export const ResumeRunResponse = zod.object({
   "summary": zod.string()
 }),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
-  "completionTokens": zod.number().nullish()
+  "completionTokens": zod.number().nullish(),
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
 })
 
 
@@ -740,6 +751,7 @@ export const ListAnalysesResponseItem = zod.object({
   "id": zod.number(),
   "appId": zod.number(),
   "model": zod.string(),
+  "aiModelId": zod.number().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
@@ -748,6 +760,7 @@ export const ListAnalysesResponseItem = zod.object({
 }),
   "maxTokens": zod.number(),
   "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
@@ -771,14 +784,16 @@ export const startAnalysisBodyMaxTokensMax = 2000000;
 
 
 export const StartAnalysisBody = zod.object({
-  "model": zod.string().min(1).describe('Modello AI (model_name di LiteLLM)'),
+  "aiModelId": zod.number().optional().describe('Modello di un account AI dell\'utente o dell\'account di sistema'),
+  "model": zod.string().min(1).optional().describe('Compatibilità, modello AI come model_name di LiteLLM'),
   "maxTokens": zod.number().min(startAnalysisBodyMaxTokensMin).max(startAnalysisBodyMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)')
-})
+}).describe('Indicare esattamente uno tra aiModelId e model (altrimenti 400 \"scegli un modello\")')
 
 export const StartAnalysisResponse = zod.object({
   "id": zod.number(),
   "appId": zod.number(),
   "model": zod.string(),
+  "aiModelId": zod.number().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
@@ -787,6 +802,7 @@ export const StartAnalysisResponse = zod.object({
 }),
   "maxTokens": zod.number(),
   "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
@@ -809,7 +825,8 @@ export const startZipAnalysisQueryMaxTokensMax = 2000000;
 
 
 export const StartZipAnalysisQueryParams = zod.object({
-  "model": zod.coerce.string().min(1).describe('Modello AI (model_name di LiteLLM)'),
+  "aiModelId": zod.coerce.number().optional().describe('Modello di un account AI (esattamente uno tra aiModelId e model)'),
+  "model": zod.coerce.string().min(1).optional().describe('Compatibilità, modello AI come model_name di LiteLLM'),
   "maxTokens": zod.coerce.number().min(startZipAnalysisQueryMaxTokensMin).max(startZipAnalysisQueryMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)')
 })
 
@@ -817,6 +834,7 @@ export const StartZipAnalysisResponse = zod.object({
   "id": zod.number(),
   "appId": zod.number(),
   "model": zod.string(),
+  "aiModelId": zod.number().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
@@ -825,6 +843,7 @@ export const StartZipAnalysisResponse = zod.object({
 }),
   "maxTokens": zod.number(),
   "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
@@ -843,6 +862,7 @@ export const GetAnalysisResponse = zod.object({
   "id": zod.number(),
   "appId": zod.number(),
   "model": zod.string(),
+  "aiModelId": zod.number().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
@@ -851,6 +871,7 @@ export const GetAnalysisResponse = zod.object({
 }),
   "maxTokens": zod.number(),
   "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
@@ -1016,5 +1037,314 @@ export const ListModelsResponseItem = zod.object({
   "isDefault": zod.boolean().describe('Modello usato quando un agente viene creato senza model')
 })
 export const ListModelsResponse = zod.array(ListModelsResponseItem)
+
+
+/**
+ * Account dell'utente corrente (il predefinito per primo, poi per nome) seguiti dall'account di sistema, se configurato. La chiave non è mai esposta: solo keySet.
+ * @summary Elenca gli account AI dell'utente e l'account di sistema
+ */
+export const ListAiAccountsResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "baseUrl": zod.string(),
+  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
+  "isDefault": zod.boolean(),
+  "status": zod.enum(['unverified', 'ok', 'error']),
+  "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
+  "lastCheckedAt": zod.coerce.date().nullable(),
+  "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
+  "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
+  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
+})
+export const ListAiAccountsResponse = zod.array(ListAiAccountsResponseItem)
+
+
+/**
+ * Valida il base URL (solo custom può indicarlo; gli altri provider usano quello predefinito), legge /models del provider con la chiave e salva account e modelli. Se il provider non fornisce l'elenco dei modelli l'account si salva comunque (status ok, zero modelli, aggiunta manuale). Ogni altro errore del provider → 400 con il messaggio fisso e nulla di salvato. Il primo account dell'utente diventa predefinito.
+ * @summary Crea un account AI e ne legge i modelli
+ */
+export const createAiAccountBodyNameMax = 100;
+
+export const createAiAccountBodyApiKeyMax = 4096;
+
+export const createAiAccountBodyBaseUrlMax = 2048;
+
+
+
+export const CreateAiAccountBody = zod.object({
+  "name": zod.string().min(1).max(createAiAccountBodyNameMax),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "apiKey": zod.string().max(createAiAccountBodyApiKeyMax).nullish().describe('Chiave del provider (solo scrittura, salvata cifrata); vuota solo per custom'),
+  "baseUrl": zod.string().max(createAiAccountBodyBaseUrlMax).nullish().describe('Solo custom (obbligatorio); gli altri provider usano il base URL predefinito'),
+  "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom')
+})
+
+export const CreateAiAccountResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "baseUrl": zod.string(),
+  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
+  "isDefault": zod.boolean(),
+  "status": zod.enum(['unverified', 'ok', 'error']),
+  "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
+  "lastCheckedAt": zod.coerce.date().nullable(),
+  "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
+  "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
+  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
+})
+
+
+/**
+ * Nome, chiave (assente o "" = invariata, null = rimossa, solo custom), base URL e allowPrivateNetwork (solo custom). Una chiave o un base URL nuovi rileggono i modelli come verifyAiAccount. Account di sistema → 403; account di un altro utente → 404.
+ * @summary Modifica un account AI
+ */
+export const UpdateAiAccountParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const updateAiAccountBodyNameMax = 100;
+
+export const updateAiAccountBodyApiKeyMax = 4096;
+
+export const updateAiAccountBodyBaseUrlMax = 2048;
+
+
+
+export const UpdateAiAccountBody = zod.object({
+  "name": zod.string().min(1).max(updateAiAccountBodyNameMax).optional(),
+  "apiKey": zod.string().max(updateAiAccountBodyApiKeyMax).nullish().describe('Assente o \"\" = invariata; null la rimuove (solo custom); un valore la sostituisce'),
+  "baseUrl": zod.string().min(1).max(updateAiAccountBodyBaseUrlMax).optional().describe('Solo custom'),
+  "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom')
+})
+
+export const UpdateAiAccountResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "baseUrl": zod.string(),
+  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
+  "isDefault": zod.boolean(),
+  "status": zod.enum(['unverified', 'ok', 'error']),
+  "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
+  "lastCheckedAt": zod.coerce.date().nullable(),
+  "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
+  "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
+  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
+})
+
+
+/**
+ * 409 "account usato da: <nomi>" se un agente o un'analisi in coda o in corso usa uno dei suoi modelli; le analisi concluse perdono solo il collegamento (aiModelId null) e tengono modello e costo. Se era il predefinito, diventa predefinito l'account più vecchio rimasto all'utente.
+ * @summary Elimina un account AI e i suoi modelli
+ */
+export const DeleteAiAccountParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteAiAccountResponse = zod.void()
+
+
+/**
+ * Aggiunge i modelli nuovi e aggiorna nome, contesto e prezzi (non quelli inseriti a mano) degli esistenti; i modelli non più elencati restano. Un errore del provider non fa fallire la richiesta: l'account torna con status error e lastError.
+ * @summary Rilegge i modelli del provider
+ */
+export const VerifyAiAccountParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const VerifyAiAccountResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "baseUrl": zod.string(),
+  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
+  "isDefault": zod.boolean(),
+  "status": zod.enum(['unverified', 'ok', 'error']),
+  "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
+  "lastCheckedAt": zod.coerce.date().nullable(),
+  "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
+  "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
+  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
+})
+
+
+/**
+ * @summary Rende l'account il predefinito dell'utente
+ */
+export const SetDefaultAiAccountParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SetDefaultAiAccountResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "baseUrl": zod.string(),
+  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
+  "isDefault": zod.boolean(),
+  "status": zod.enum(['unverified', 'ok', 'error']),
+  "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
+  "lastCheckedAt": zod.coerce.date().nullable(),
+  "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
+  "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
+  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
+})
+
+
+/**
+ * @summary Elenca i modelli di un account (nascosti compresi)
+ */
+export const ListAiAccountModelsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListAiAccountModelsResponseItem = zod.object({
+  "id": zod.number(),
+  "accountId": zod.number(),
+  "modelId": zod.string().describe('Id del modello presso il provider (es. deepseek-chat)'),
+  "displayName": zod.string(),
+  "contextTokens": zod.number().nullable(),
+  "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
+  "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
+  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal(null)]).nullable(),
+  "hidden": zod.boolean()
+})
+export const ListAiAccountModelsResponse = zod.array(ListAiAccountModelsResponseItem)
+
+
+/**
+ * @summary Aggiunge a mano un modello all'account
+ */
+export const AddAiAccountModelParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const addAiAccountModelBodyModelIdMax = 256;
+
+export const addAiAccountModelBodyDisplayNameMax = 256;
+
+export const addAiAccountModelBodyPriceInputMin = 0;
+export const addAiAccountModelBodyPriceInputMax = 999999.999999;
+
+export const addAiAccountModelBodyPriceOutputMin = 0;
+export const addAiAccountModelBodyPriceOutputMax = 999999.999999;
+
+export const addAiAccountModelBodyContextTokensMax = 100000000;
+
+
+
+export const AddAiAccountModelBody = zod.object({
+  "modelId": zod.string().min(1).max(addAiAccountModelBodyModelIdMax),
+  "displayName": zod.string().min(1).max(addAiAccountModelBodyDisplayNameMax).optional(),
+  "priceInput": zod.number().min(addAiAccountModelBodyPriceInputMin).max(addAiAccountModelBodyPriceInputMax).nullish(),
+  "priceOutput": zod.number().min(addAiAccountModelBodyPriceOutputMin).max(addAiAccountModelBodyPriceOutputMax).nullish(),
+  "contextTokens": zod.number().min(1).max(addAiAccountModelBodyContextTokensMax).nullish()
+})
+
+export const AddAiAccountModelResponse = zod.object({
+  "id": zod.number(),
+  "accountId": zod.number(),
+  "modelId": zod.string().describe('Id del modello presso il provider (es. deepseek-chat)'),
+  "displayName": zod.string(),
+  "contextTokens": zod.number().nullable(),
+  "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
+  "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
+  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal(null)]).nullable(),
+  "hidden": zod.boolean()
+})
+
+
+/**
+ * Un prezzo indicato (anche null) rende la fonte dei prezzi "manual".
+ * @summary Modifica nome, prezzi o visibilità di un modello
+ */
+export const UpdateAiModelParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const updateAiModelBodyDisplayNameMax = 256;
+
+export const updateAiModelBodyPriceInputMin = 0;
+export const updateAiModelBodyPriceInputMax = 999999.999999;
+
+export const updateAiModelBodyPriceOutputMin = 0;
+export const updateAiModelBodyPriceOutputMax = 999999.999999;
+
+
+
+export const UpdateAiModelBody = zod.object({
+  "displayName": zod.string().min(1).max(updateAiModelBodyDisplayNameMax).optional(),
+  "priceInput": zod.number().min(updateAiModelBodyPriceInputMin).max(updateAiModelBodyPriceInputMax).nullish(),
+  "priceOutput": zod.number().min(updateAiModelBodyPriceOutputMin).max(updateAiModelBodyPriceOutputMax).nullish(),
+  "hidden": zod.boolean().optional()
+})
+
+export const UpdateAiModelResponse = zod.object({
+  "id": zod.number(),
+  "accountId": zod.number(),
+  "modelId": zod.string().describe('Id del modello presso il provider (es. deepseek-chat)'),
+  "displayName": zod.string(),
+  "contextTokens": zod.number().nullable(),
+  "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
+  "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
+  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal(null)]).nullable(),
+  "hidden": zod.boolean()
+})
+
+
+/**
+ * Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo) e account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi.
+ * @summary Modelli selezionabili dall'utente, raggruppati per account
+ */
+export const ListAiModelsResponseItem = zod.object({
+  "account": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "baseUrl": zod.string(),
+  "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
+  "isDefault": zod.boolean(),
+  "status": zod.enum(['unverified', 'ok', 'error']),
+  "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
+  "lastCheckedAt": zod.coerce.date().nullable(),
+  "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
+  "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
+  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
+}),
+  "models": zod.array(zod.object({
+  "id": zod.number(),
+  "accountId": zod.number(),
+  "modelId": zod.string().describe('Id del modello presso il provider (es. deepseek-chat)'),
+  "displayName": zod.string(),
+  "contextTokens": zod.number().nullable(),
+  "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
+  "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
+  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal(null)]).nullable(),
+  "hidden": zod.boolean()
+}))
+})
+export const ListAiModelsResponse = zod.array(ListAiModelsResponseItem)
+
+
+/**
+ * Massimo = maxTokens × (0.95 × prezzo input + 0.05 × prezzo output) / 1e6; tipico = 60% del massimo; USD arrotondati a 4 decimali, null se un prezzo manca.
+ * @summary Stima del costo di un'analisi
+ */
+export const estimateAnalysisCostQueryMaxTokensMin = 50000;
+export const estimateAnalysisCostQueryMaxTokensMax = 2000000;
+
+
+
+export const EstimateAnalysisCostQueryParams = zod.object({
+  "aiModelId": zod.coerce.number(),
+  "maxTokens": zod.coerce.number().min(estimateAnalysisCostQueryMaxTokensMin).max(estimateAnalysisCostQueryMaxTokensMax).optional().describe('Tetto di token dell\'analisi, come in AnalysisStart (default 1000000)')
+})
+
+export const EstimateAnalysisCostResponse = zod.object({
+  "maxUsd": zod.number().nullable().describe('Costo massimo in USD (null se un prezzo manca)'),
+  "typicalUsd": zod.number().nullable().describe('Costo tipico in USD (60% del massimo)')
+})
 
 

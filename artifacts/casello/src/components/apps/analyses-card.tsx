@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
   type Analysis,
   type App,
+  getEstimateAnalysisCostQueryKey,
   getListAnalysesQueryKey,
+  useEstimateAnalysisCost,
   useListAnalyses,
   useStartAnalysis,
   useStartZipAnalysis,
@@ -15,11 +17,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useModelOptions } from "@/components/agents/model-options";
+import { useDefaultAiModelId } from "@/components/ai/ai-queries";
+import { ModelPicker } from "@/components/ai/model-picker";
 import { phaseLabel } from "@/components/analysis/payload";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { formatCost, formatUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 2000;
@@ -54,13 +57,13 @@ function formatDateTime(value: string): string {
 export function AnalysesCard({ app }: { app: App }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { options, defaultModel } = useModelOptions();
-  const [model, setModel] = useState<string>("");
+  const defaultModelId = useDefaultAiModelId();
+  const [chosenModelId, setChosenModelId] = useState<number | null>(null);
   const [maxTokensText, setMaxTokensText] = useState(String(DEFAULT_MAX_TOKENS));
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const isZip = app.sourceType === "zip";
-  const effectiveModel = model || defaultModel || "";
+  const aiModelId = chosenModelId ?? defaultModelId;
 
   const analyses = useListAnalyses(app.id, {
     query: {
@@ -100,6 +103,21 @@ export function AnalysesCard({ app }: { app: App }) {
   const tokensValid = Number.isInteger(maxTokens) && maxTokens >= MIN_TOKENS && maxTokens <= MAX_TOKENS;
   const hasActive = analyses.data?.some(isActive) ?? false;
 
+  const estimateParams = { aiModelId: aiModelId ?? 0, maxTokens };
+  const estimate = useEstimateAnalysisCost(estimateParams, {
+    query: {
+      queryKey: getEstimateAnalysisCostQueryKey(estimateParams),
+      enabled: aiModelId !== null && tokensValid,
+      // Mentre si digita il tetto resta la stima precedente invece di sparire, ma solo per lo stesso modello:
+      // cambiando modello la stima del precedente non si mostra
+      placeholderData: (previous, previousQuery) => {
+        const previousParams = previousQuery?.queryKey[1] as { aiModelId?: number } | undefined;
+        return previousParams?.aiModelId === aiModelId ? keepPreviousData(previous) : undefined;
+      },
+      staleTime: 60_000,
+    },
+  });
+
   const onFileChange = (picked: File | null) => {
     if (picked && !picked.name.toLowerCase().endsWith(".zip")) {
       toast({ variant: "destructive", title: "File non valido", description: "Carica un archivio con estensione .zip." });
@@ -117,16 +135,16 @@ export function AnalysesCard({ app }: { app: App }) {
   };
 
   const start = () => {
-    if (!effectiveModel || !tokensValid) return;
+    if (aiModelId === null || !tokensValid) return;
     if (isZip) {
       if (!file) return;
-      startZip.mutate({ id: app.id, data: file, params: { model: effectiveModel, maxTokens } });
+      startZip.mutate({ id: app.id, data: file, params: { aiModelId, maxTokens } });
     } else {
-      startAnalysis.mutate({ id: app.id, data: { model: effectiveModel, maxTokens } });
+      startAnalysis.mutate({ id: app.id, data: { aiModelId, maxTokens } });
     }
   };
 
-  const canStart = Boolean(effectiveModel) && tokensValid && (!isZip || file !== null) && !starting;
+  const canStart = aiModelId !== null && tokensValid && (!isZip || file !== null) && !starting;
 
   return (
     <Card>
@@ -140,18 +158,7 @@ export function AnalysesCard({ app }: { app: App }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="analysis-model">Modello</Label>
-            <Select value={effectiveModel} onValueChange={setModel}>
-              <SelectTrigger id="analysis-model">
-                <SelectValue placeholder="Seleziona un modello" />
-              </SelectTrigger>
-              <SelectContent>
-                {options.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ModelPicker id="analysis-model" value={aiModelId} onChange={setChosenModelId} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="analysis-max-tokens">Tetto di token</Label>
@@ -185,8 +192,15 @@ export function AnalysesCard({ app }: { app: App }) {
             <p className="text-xs text-muted-foreground">Massimo 50 MB. Il codice resta in memoria solo per la durata dell'analisi.</p>
           </div>
         )}
-        <div className="flex items-center justify-end gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3">
           {hasActive && <span className="text-xs text-muted-foreground">Un'analisi è già in corso.</span>}
+          {aiModelId !== null && tokensValid && estimate.data && (
+            <span className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
+              {estimate.data.typicalUsd != null && estimate.data.maxUsd != null
+                ? `stima: circa ${formatUsd(estimate.data.typicalUsd)} (massimo ${formatUsd(estimate.data.maxUsd)})`
+                : "costo non stimabile: prezzi del modello sconosciuti"}
+            </span>
+          )}
           <Button onClick={start} disabled={!canStart}>
             {starting ? "Avvio…" : "Avvia analisi"}
           </Button>
@@ -215,6 +229,11 @@ export function AnalysesCard({ app }: { app: App }) {
                     <span className="text-xs text-muted-foreground">
                       {a.tokensUsed.toLocaleString("it-IT")} / {a.maxTokens.toLocaleString("it-IT")} token
                     </span>
+                    {formatCost(a.costUsd, a.tokensUsed) && (
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {formatCost(a.costUsd, a.tokensUsed)}
+                      </span>
+                    )}
                     <span className="text-xs text-muted-foreground">{formatDateTime(a.createdAt)}</span>
                   </div>
                   {isActive(a) && a.phase && <p className="text-xs text-muted-foreground">Fase: {phaseLabel(a.phase)}</p>}

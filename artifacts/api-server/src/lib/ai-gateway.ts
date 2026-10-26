@@ -72,8 +72,8 @@ export interface ChatResult {
 // Chiamate con function calling (run degli agenti): un nuovo tentativo al massimo e un tetto di
 // tempo per singola richiesta. Il tempo del turno lo limita il signal passato da run-executor.
 // Chi ha esigenze diverse (l'architetto) li sovrascrive con `timeoutMs` e `maxRetries`.
-const CHAT_MAX_RETRIES = 1;
-const CHAT_REQUEST_TIMEOUT_MS = 120_000;
+export const CHAT_MAX_RETRIES = 1;
+export const CHAT_REQUEST_TIMEOUT_MS = 120_000;
 
 function getProviderPrefix(modelKey: string): string {
   const slashIdx = modelKey.indexOf("/");
@@ -91,7 +91,8 @@ function buildTelemetryMetadata(caller: string, agentId: number | undefined): { 
   return { tags: [`caller:${caller}`, ...(agentId !== undefined ? [`agent:${agentId}`] : [])] };
 }
 
-function buildProxyParams(
+/** Parametri della chiamata via LiteLLM (account di sistema): `max_completion_tokens` e metadati di telemetria. */
+export function buildProxyParams(
   base: { model: string; messages: ChatCompletionMessageParam[] },
   opts: { maxTokens?: number; temperature?: number; agentId?: number },
   caller: string,
@@ -104,7 +105,7 @@ function buildProxyParams(
   return params;
 }
 
-function readUsage(response: ChatCompletion): { promptTokens: number; completionTokens: number; cachedTokens: number } {
+export function readUsage(response: ChatCompletion): { promptTokens: number; completionTokens: number; cachedTokens: number } {
   return {
     promptTokens: response.usage?.prompt_tokens || 0,
     completionTokens: response.usage?.completion_tokens || 0,
@@ -123,6 +124,25 @@ function logProxyUsage(
       ` prompt_tokens=${usage.promptTokens} completion_tokens=${usage.completionTokens}` +
       ` cached=${usage.cachedTokens} duration=${durationMs}ms`
   );
+}
+
+/** Aggiunge i tool alla richiesta, con scelta automatica del modello. */
+export function applyTools(params: ChatCompletionCreateParamsNonStreaming, tools: ChatCompletionTool[]): void {
+  if (tools.length > 0) {
+    params.tools = tools;
+    params.tool_choice = "auto";
+  }
+}
+
+/** Tool calls di tipo funzione della prima scelta della risposta. */
+export function extractToolCalls(response: ChatCompletion): ChatToolCall[] {
+  const toolCalls: ChatToolCall[] = [];
+  for (const call of response.choices[0]?.message?.tool_calls ?? []) {
+    if (call.type === "function") {
+      toolCalls.push({ id: call.id, name: call.function.name, arguments: call.function.arguments });
+    }
+  }
+  return toolCalls;
 }
 
 class AiGateway {
@@ -178,10 +198,7 @@ class AiGateway {
     const client = this.getGatewayClient();
     const startMs = Date.now();
     const params = buildProxyParams({ model: modelKey, messages: opts.messages }, opts, caller);
-    if (tools.length > 0) {
-      params.tools = tools;
-      params.tool_choice = "auto";
-    }
+    applyTools(params, tools);
 
     const response = await client.chat.completions.create(params, {
       signal: opts.signal,
@@ -193,14 +210,8 @@ class AiGateway {
     // I contenuti dei messaggi non finiscono mai nei log.
     logProxyUsage(caller, modelKey, { promptTokens, completionTokens, cachedTokens }, durationMs);
 
-    const message = response.choices[0]?.message;
-    const toolCalls: ChatToolCall[] = [];
-    for (const call of message?.tool_calls ?? []) {
-      if (call.type === "function") {
-        toolCalls.push({ id: call.id, name: call.function.name, arguments: call.function.arguments });
-      }
-    }
-    return { content: message?.content ?? null, toolCalls, promptTokens, completionTokens };
+    const toolCalls = extractToolCalls(response);
+    return { content: response.choices[0]?.message?.content ?? null, toolCalls, promptTokens, completionTokens };
   }
 
   async complete(opts: GatewayCompleteOptions): Promise<GatewayCompleteResult> {

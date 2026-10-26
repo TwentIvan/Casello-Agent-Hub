@@ -1,25 +1,33 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi, beforeAll } from "vitest";
 import { eq } from "drizzle-orm";
 import {
   db,
   pool,
+  aiAccountsTable,
+  aiModelsTable,
   appsTable,
   agentsTable,
   appToolsTable,
   runsTable,
   runStepsTable,
+  usersTable,
   type InsertAppTool,
 } from "@workspace/db";
 import {
   ResumeConflictError,
   expireStalePausedRuns,
   failInterruptedRuns,
+  modelCallError,
   resumeRun,
   startRun,
 } from "./run-executor";
 import { clearUserToken } from "./user-tokens";
+import { logger } from "./logger";
+import { ProviderError } from "./ai/discovery";
+import { encryptSecret } from "./secrets";
+import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 
 // Finto LiteLLM: risposte in coda, una per chiamata
 let llmReplies: unknown[];
@@ -117,14 +125,14 @@ beforeEach(async () => {
   process.env["AI_GATEWAY_API_KEY"] = "sk-test";
   process.env["CASELLO_SECRET_KEY"] = "a".repeat(64);
   vi.spyOn(console, "log").mockImplementation(() => {});
-  await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
+  await pool.query("TRUNCATE apps, ai_accounts, users RESTART IDENTITY CASCADE");
   // Gli id delle run ripartono da 1: nessun token in memoria deve passare da un test all'altro
   for (let id = 1; id <= 10; id++) clearUserToken(id);
 });
 
 // Il DB di prova è condiviso tra i file: lo si lascia vuoto
 afterAll(async () => {
-  await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
+  await pool.query("TRUNCATE apps, ai_accounts, users RESTART IDENTITY CASCADE");
 });
 
 afterEach(async () => {
@@ -211,6 +219,13 @@ async function getRun(id: number) {
 async function getSteps(id: number) {
   return db.select().from(runStepsTable).where(eq(runStepsTable.runId, id)).orderBy(runStepsTable.position);
 }
+
+// Il finto provider ascolta su 127.0.0.1: deroga dei test al divieto del loopback (vedi allowTestLoopback)
+let restoreLoopback: () => void;
+beforeAll(() => {
+  restoreLoopback = allowTestLoopback();
+});
+afterAll(() => restoreLoopback());
 
 describe("orchestrazione delle run", () => {
   it("run con tool: succeeded, l'app riceve la richiesta, 3 passi", async () => {
@@ -577,5 +592,190 @@ describe("orchestrazione delle run", () => {
     // Tempo rimanente con un minimo di 1 s, più un margine
     expect(Date.now() - t0).toBeLessThan(3_000);
     expect(llmRequests).toHaveLength(1);
+  });
+});
+
+describe("run sugli account AI (chi configura paga)", () => {
+  const ACCOUNT_KEY = "sk-CHIAVE-DELL-ACCOUNT-DELL-AGENTE";
+  let fake: FakeProvider;
+
+  beforeEach(async () => {
+    fake = await startFakeProvider({ apiKey: ACCOUNT_KEY });
+  });
+
+  afterEach(async () => {
+    await fake.close();
+  });
+
+  /** Account `custom` verso il finto provider (prezzi per Mtok), collegato all'agente della run. */
+  async function linkAgentToAccount(runId: number, prices: { input: string | null; output: string | null }) {
+    // Il proprietario dell'account (chi configura paga): non è chi avvia la run
+    const [owner] = await db.insert(usersTable).values({ email: `a${runId}@example.com`, name: "A" }).returning();
+    const [account] = await db
+      .insert(aiAccountsTable)
+      .values({
+        userId: owner!.id,
+        name: "Account dell'agente",
+        provider: "custom",
+        baseUrl: fake.baseUrl,
+        allowPrivateNetwork: true,
+        apiKeyEnc: encryptSecret(ACCOUNT_KEY),
+        status: "ok",
+      })
+      .returning();
+    const [model] = await db
+      .insert(aiModelsTable)
+      .values({
+        accountId: account!.id,
+        modelId: "modello-dell-agente",
+        displayName: "Modello",
+        priceInputPerMtok: prices.input,
+        priceOutputPerMtok: prices.output,
+      })
+      .returning();
+    const run = await getRun(runId);
+    await db.update(agentsTable).set({ aiModelId: model!.id, model: "modello-dell-agente" }).where(eq(agentsTable.id, run.agentId));
+    return model!;
+  }
+
+  function fakeToolCall(name: string, args: Record<string, unknown>, id = "call_1") {
+    return { content: null, toolCalls: [{ id, name, arguments: JSON.stringify(args) }], usage: { prompt_tokens: 1000, completion_tokens: 500 } };
+  }
+
+  it("usa la chiave dell'account del modello dell'agente e salva il costo", async () => {
+    const id = await seedRun(GET_ITEM);
+    await linkAgentToAccount(id, { input: "1", output: "2" });
+    const replies = [fakeToolCall("get_item", { id: "42" }), { content: "Fatto", toolCalls: [], usage: { prompt_tokens: 1000, completion_tokens: 500 } }];
+    fake.chatReply = () => replies.shift()!;
+
+    await startRun(id, { userToken: "t" });
+
+    const run = await getRun(id);
+    expect(run.errorMessage).toBeNull();
+    expect(run.status).toBe("succeeded");
+    expect(run.output).toBe("Fatto");
+    expect(run.promptTokens).toBe(2000);
+    expect(run.completionTokens).toBe(1000);
+    // 2 × (1000 × 1 + 500 × 2) / 1e6
+    expect(Number(run.costUsd)).toBeCloseTo(0.004, 8);
+    const chats = fake.requests.filter((r) => r.path === "/v1/chat/completions");
+    expect(chats).toHaveLength(2);
+    expect(chats.every((r) => r.authorization === `Bearer ${ACCOUNT_KEY}`)).toBe(true);
+    expect((chats[0]!.body as { model: string }).model).toBe("modello-dell-agente");
+    // Il vecchio gateway non è stato chiamato
+    expect(llmRequests).toHaveLength(0);
+  });
+
+  it("il costo si somma attraverso la pausa e la ripresa", async () => {
+    const id = await seedRun(DELETE_ITEM);
+    await linkAgentToAccount(id, { input: "1", output: "2" });
+    const replies = [fakeToolCall("delete_item", { id: "42" }), { content: "Eliminato", toolCalls: [], usage: { prompt_tokens: 1000, completion_tokens: 500 } }];
+    fake.chatReply = () => replies.shift()!;
+
+    await startRun(id, { userToken: "t" });
+    const paused = await getRun(id);
+    expect(paused.status).toBe("awaiting_client");
+    expect(Number(paused.costUsd)).toBeCloseTo(0.002, 8);
+
+    await resumeRun(id, "approved", { userToken: "t" });
+    const run = await getRun(id);
+    expect(run.status).toBe("succeeded");
+    expect(Number(run.costUsd)).toBeCloseTo(0.004, 8);
+  });
+
+  it("prezzi non noti: cost_usd null", async () => {
+    const id = await seedRun(GET_ITEM);
+    await linkAgentToAccount(id, { input: null, output: null });
+
+    await startRun(id);
+
+    const run = await getRun(id);
+    expect(run.status).toBe("succeeded");
+    expect(run.promptTokens).toBe(10);
+    expect(run.costUsd).toBeNull();
+  });
+
+  it("credito esaurito (402): failed con il messaggio italiano, senza chiave né testo del provider", async () => {
+    const id = await seedRun(GET_ITEM);
+    await linkAgentToAccount(id, { input: "1", output: "2" });
+    fake.statusFor.chat = 402;
+
+    await startRun(id);
+
+    const run = await getRun(id);
+    expect(run.status).toBe("failed");
+    expect(run.errorMessage).toContain("credito del provider esaurito: ricarica il conto o scegli un altro modello");
+    expect(run.errorMessage).not.toContain(ACCOUNT_KEY);
+    expect(run.errorMessage).not.toContain(FAKE_PROVIDER_ERROR_TEXT);
+    const steps = await getSteps(id);
+    expect(steps.every((s) => !String(s.error ?? "").includes(FAKE_PROVIDER_ERROR_TEXT))).toBe(true);
+  });
+
+  it("modello che non risponde: 'il modello non ha risposto in tempo'", async () => {
+    const id = await seedRun(GET_ITEM);
+    await linkAgentToAccount(id, { input: "1", output: "2" });
+    fake.delayMs = 5_000;
+
+    await startRun(id, { limits: { maxActiveMs: 300 } });
+
+    const run = await getRun(id);
+    expect(run.status).toBe("failed");
+    expect(run.errorMessage).toContain("il modello non ha risposto in tempo");
+  });
+
+  it("account di sistema senza variabili: failed con 'account di sistema non più disponibile'", async () => {
+    const id = await seedRun(GET_ITEM);
+    const [account] = await db
+      .insert(aiAccountsTable)
+      .values({ userId: null, name: "Gateway Casello", provider: "system_gateway", baseUrl: "http://gw/v1", status: "ok" })
+      .returning();
+    const [model] = await db
+      .insert(aiModelsTable)
+      .values({ accountId: account!.id, modelId: "openrouter/auto", displayName: "Auto" })
+      .returning();
+    const run0 = await getRun(id);
+    await db.update(agentsTable).set({ aiModelId: model!.id }).where(eq(agentsTable.id, run0.agentId));
+    delete process.env["AI_GATEWAY_API_KEY"];
+
+    await startRun(id);
+
+    const run = await getRun(id);
+    expect(run.status).toBe("failed");
+    expect(run.errorMessage).toContain("account di sistema non più disponibile");
+  });
+
+  it("agente senza aiModelId: vecchio percorso del gateway, costo null", async () => {
+    const id = await seedRun(GET_ITEM);
+    llmReplies = [textReply("Dal gateway")];
+
+    await startRun(id);
+
+    const run = await getRun(id);
+    expect(run.status).toBe("succeeded");
+    expect(run.output).toBe("Dal gateway");
+    expect(run.costUsd).toBeNull();
+    expect(llmRequests).toHaveLength(1);
+    expect(fake.requests).toHaveLength(0);
+  });
+});
+
+describe("modelCallError", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("errore inatteso: messaggio fisso e warn nel log con runId e tipo, mai il messaggio grezzo", () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const err = modelCallError(7, new TypeError("boom sk-CHIAVE-NEL-MESSAGGIO http://interno"));
+    expect(err.message).toBe("errore inatteso nella chiamata al modello");
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toEqual({ runId: 7, errName: "TypeError" });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("sk-CHIAVE");
+  });
+
+  it("errori noti (provider, timeout): nessun warn", () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    expect(modelCallError(7, new ProviderError("auth")).message).toBe("chiave non valida o senza permessi");
+    expect(warn).not.toHaveBeenCalled();
   });
 });

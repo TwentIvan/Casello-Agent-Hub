@@ -27,6 +27,8 @@ import {
   type App,
 } from "@workspace/db";
 import { aiGateway, type ChatResult } from "../ai-gateway";
+import { ProviderError } from "../ai/discovery";
+import { ModelAccessError, modelChat as executorChat, resolveModel, type ResolvedModel } from "../ai/executor";
 import { logger } from "../logger";
 import { decryptSecret } from "../secrets";
 import { GITHUB_MESSAGES, GithubError, forgetInstallationTokens, installationToken } from "../github/app";
@@ -146,6 +148,31 @@ function formatDuration(ms: number): string {
 
 // --- Stato in scrittura: log, fase e token, salvati a blocchi -----------------------------------
 
+/**
+ * Costo dell'analisi: somma dei costi delle chiamate; parziale (null) se una chiamata con token non
+ * ha costo (prezzo mancante o vecchio gateway).
+ */
+export class CostTracker {
+  private total = 0;
+  private partial = false;
+  private calls = 0;
+
+  add(reply: ChatResult & { costUsd?: number | null }): void {
+    this.calls += 1;
+    if (reply.costUsd == null) {
+      if (reply.promptTokens + reply.completionTokens > 0) this.partial = true;
+    } else {
+      this.total += reply.costUsd;
+    }
+  }
+
+  /** Valore per la colonna numeric: null se parziale o senza chiamate. */
+  value(): string | null {
+    if (this.partial || this.calls === 0 || !Number.isFinite(this.total)) return null;
+    return String(Math.round(this.total * 1e8) / 1e8);
+  }
+}
+
 class ProgressWriter {
   private log: AnalysisLogEntry[];
   private unsaved = 0;
@@ -156,6 +183,7 @@ class ProgressWriter {
     private readonly analysisId: number,
     initial: AnalysisLogEntry[],
     private readonly budget: PhaseBudget,
+    private readonly cost: CostTracker,
   ) {
     this.log = initial;
   }
@@ -174,6 +202,7 @@ class ProgressWriter {
       log: this.log,
       phase: this.phase,
       tokensUsed: this.budget.tokensUsed,
+      costUsd: this.cost.value(),
       ...extra,
     };
     const write = async () => {
@@ -319,20 +348,30 @@ function formatSeconds(ms: number): string {
   return ms >= 1_000 ? `${Math.round(ms / 1_000)} s` : `${Math.round(ms / 100) / 10} s`;
 }
 
-/** Errori transitori per cui vale un nuovo tentativo: rete (non timeout) e 5xx del gateway. */
+/**
+ * Errori transitori per cui vale un nuovo tentativo: rete (non timeout) e 5xx. Per l'esecutore dei
+ * modelli: `unreachable` senza stato (rete, risposta malformata) o con stato 5xx; mai i 3xx, i 4xx,
+ * le chiavi non valide né i timeout (che l'esecutore non converte).
+ */
 function isRetryable(err: unknown): boolean {
+  if (err instanceof ProviderError) return err.kind === "unreachable" && (err.status === null || err.status >= 500);
   if (err instanceof APIConnectionTimeoutError) return false;
   if (err instanceof APIConnectionError) return true;
   return err instanceof APIError && typeof err.status === "number" && err.status >= 500;
 }
 
+// Suggerimenti del vecchio percorso (gateway): con l'esecutore i messaggi di ProviderError sono già specifici
 const STATUS_HINTS: Record<number, string> = {
   400: " (richiesta rifiutata: spesso contesto troppo lungo per il modello)",
+  402: " (credito del provider esaurito: ricarica il conto o scegli un altro modello)",
   429: " (limite di richieste: riprova più tardi)",
 };
 
 interface ModelChatOptions {
   model: string;
+  /** Modello risolto dell'analisi (account AI); null = vecchio percorso del gateway. */
+  resolved: ResolvedModel | null;
+  cost: CostTracker;
   analysisId: number;
   deadline: number;
   maxMs: number;
@@ -341,22 +380,25 @@ interface ModelChatOptions {
   now: () => number;
 }
 
-function modelChat({ model, analysisId, deadline, maxMs, timeoutMs, retryDelayMs, now }: ModelChatOptions) {
+function architectChat({ model, resolved, cost, analysisId, deadline, maxMs, timeoutMs, retryDelayMs, now }: ModelChatOptions) {
   return async (messages: ChatCompletionMessageParam[], tools: ChatCompletionTool[]): Promise<ChatResult> => {
     // La chiamata non può superare la scadenza complessiva (minimo 1 s)
     const signal = AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, deadline - now()));
-    const call = () =>
-      aiGateway.chat({
-        modelKey: model,
-        messages,
-        tools,
-        caller: "architect",
-        maxTokens: MAX_COMPLETION_TOKENS,
-        temperature: MODEL_TEMPERATURE,
-        signal,
-        timeoutMs,
-        maxRetries: 0,
-      });
+    const options = {
+      messages,
+      tools,
+      caller: "architect",
+      maxTokens: MAX_COMPLETION_TOKENS,
+      temperature: MODEL_TEMPERATURE,
+      signal,
+      timeoutMs,
+      maxRetries: 0,
+    };
+    const call = async (): Promise<ChatResult> => {
+      const reply = resolved ? await executorChat(resolved, options) : await aiGateway.chat({ modelKey: model, ...options });
+      cost.add(reply);
+      return reply;
+    };
     try {
       try {
         return await call();
@@ -375,6 +417,8 @@ function modelChat({ model, analysisId, deadline, maxMs, timeoutMs, retryDelayMs
       if (err instanceof APIConnectionTimeoutError) {
         throw new AnalysisError(`il modello non ha risposto entro ${formatSeconds(timeoutMs)} (riprova o scegli un modello più veloce)`);
       }
+      // Esecutore dei modelli: messaggio fisso già in italiano e specifico (credito, chiave, HTTP 400…)
+      if (err instanceof ProviderError) throw new AnalysisError(err.message);
       if (err instanceof APIError && typeof err.status === "number") {
         throw new AnalysisError(`il gateway dei modelli ha risposto con errore ${err.status}${STATUS_HINTS[err.status] ?? ""}`);
       }
@@ -407,7 +451,8 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
   if (!analysis) return;
 
   const budget: PhaseBudget = { tokensUsed: 0, maxTokens: analysis.maxTokens, deadline: now() + maxMs };
-  const progress = new ProgressWriter(analysisId, analysis.log ?? [], budget);
+  const cost = new CostTracker();
+  const progress = new ProgressWriter(analysisId, analysis.log ?? [], budget, cost);
   const log = (message: string) => progress.add(message);
   let tree: SourceTree | null = null;
   let closed = false;
@@ -426,6 +471,18 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
     const [app] = await db.select().from(appsTable).where(eq(appsTable.id, analysis.appId)).limit(1);
     if (!app) throw new AnalysisError("app non trovata");
 
+    // Modello dell'analisi risolto una volta all'avvio (chi l'ha avviata l'ha già scelto tra i suoi
+    // o quelli di sistema). La chiave resta in memoria nell'oggetto risolto, mai copiato.
+    let resolved: ResolvedModel | null = null;
+    if (analysis.aiModelId !== null) {
+      try {
+        resolved = await resolveModel(analysis.aiModelId, { userId: null, mustOwn: false });
+      } catch (err) {
+        if (err instanceof ModelAccessError || err instanceof ProviderError) throw new AnalysisError(err.message);
+        throw err;
+      }
+    }
+
     const loaded = await loadSources(app, opts, log);
     tree = loaded.tree;
     const { openapi, sources } = loaded;
@@ -433,8 +490,10 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
 
     // Senza codice né OpenAPI i tool derivano solo dalla descrizione: vanno sempre verificati
     const forceVerification = sources.code === "none" && !sources.openapi;
-    const chat = modelChat({
+    const chat = architectChat({
       model: analysis.model,
+      resolved,
+      cost,
       analysisId,
       deadline: budget.deadline,
       maxMs,

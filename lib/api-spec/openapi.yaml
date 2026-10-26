@@ -26,6 +26,8 @@ tags:
     description: Modelli AI selezionabili
   - name: github
     description: Installazioni e repository dell'App GitHub di Casello
+  - name: ai
+    description: Account AI dell'utente (provider, chiave, modelli e prezzi) e stima dei costi
   - name: architect
     description: Analisi dell'architetto (proposte su tool, agenti, skill, endpoint ed evoluzione) e skill degli agenti
 
@@ -605,13 +607,19 @@ paths:
         memoria per la durata dell'analisi. Risponde 409 se per l'app c'è già un'analisi in corso.
       parameters:
         - $ref: "#/components/parameters/IdParam"
+        - name: aiModelId
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Modello di un account AI (esattamente uno tra aiModelId e model)
         - name: model
           in: query
-          required: true
+          required: false
           schema:
             type: string
             minLength: 1
-          description: Modello AI (model_name di LiteLLM)
+          description: Compatibilità, modello AI come model_name di LiteLLM
         - name: maxTokens
           in: query
           required: false
@@ -829,6 +837,275 @@ paths:
                 items:
                   $ref: "#/components/schemas/Model"
 
+  # ─── Account AI ─────────────────────────────────────────────────────────────
+
+  /ai/accounts:
+    get:
+      operationId: listAiAccounts
+      tags: [ai]
+      summary: Elenca gli account AI dell'utente e l'account di sistema
+      description: >-
+        Account dell'utente corrente (il predefinito per primo, poi per nome) seguiti dall'account di
+        sistema, se configurato. La chiave non è mai esposta: solo keySet.
+      responses:
+        "200":
+          description: Account AI
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AiAccount"
+    post:
+      operationId: createAiAccount
+      tags: [ai]
+      summary: Crea un account AI e ne legge i modelli
+      description: >-
+        Valida il base URL (solo custom può indicarlo; gli altri provider usano quello predefinito),
+        legge /models del provider con la chiave e salva account e modelli. Se il provider non
+        fornisce l'elenco dei modelli l'account si salva comunque (status ok, zero modelli, aggiunta
+        manuale). Ogni altro errore del provider → 400 con il messaggio fisso e nulla di salvato. Il
+        primo account dell'utente diventa predefinito.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiAccountInput"
+      responses:
+        "201":
+          description: Account creato e verificato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /ai/accounts/{id}:
+    patch:
+      operationId: updateAiAccount
+      tags: [ai]
+      summary: Modifica un account AI
+      description: >-
+        Nome, chiave (assente o "" = invariata, null = rimossa, solo custom), base URL e
+        allowPrivateNetwork (solo custom). Una chiave o un base URL nuovi rileggono i modelli come
+        verifyAiAccount. Account di sistema → 403; account di un altro utente → 404.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiAccountUpdate"
+      responses:
+        "200":
+          description: Account aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    delete:
+      operationId: deleteAiAccount
+      tags: [ai]
+      summary: Elimina un account AI e i suoi modelli
+      description: >-
+        409 "account usato da: <nomi>" se un agente o un'analisi in coda o in corso usa uno dei suoi
+        modelli; le analisi concluse perdono solo il collegamento (aiModelId null) e tengono modello e
+        costo. Se era il predefinito, diventa predefinito l'account più vecchio rimasto all'utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Account eliminato
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /ai/accounts/{id}/verify:
+    post:
+      operationId: verifyAiAccount
+      tags: [ai]
+      summary: Rilegge i modelli del provider
+      description: >-
+        Aggiunge i modelli nuovi e aggiorna nome, contesto e prezzi (non quelli inseriti a mano) degli
+        esistenti; i modelli non più elencati restano. Un errore del provider non fa fallire la
+        richiesta: l'account torna con status error e lastError.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Stato dell'account dopo la verifica
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiAccount"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /ai/accounts/{id}/default:
+    post:
+      operationId: setDefaultAiAccount
+      tags: [ai]
+      summary: Rende l'account il predefinito dell'utente
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Account predefinito
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiAccount"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /ai/accounts/{id}/models:
+    get:
+      operationId: listAiAccountModels
+      tags: [ai]
+      summary: Elenca i modelli di un account (nascosti compresi)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Modelli dell'account, per nome
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AiModel"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: addAiAccountModel
+      tags: [ai]
+      summary: Aggiunge a mano un modello all'account
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiModelInput"
+      responses:
+        "201":
+          description: Modello aggiunto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiModel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /ai/models/{id}:
+    patch:
+      operationId: updateAiModel
+      tags: [ai]
+      summary: Modifica nome, prezzi o visibilità di un modello
+      description: Un prezzo indicato (anche null) rende la fonte dei prezzi "manual".
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiModelUpdate"
+      responses:
+        "200":
+          description: Modello aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiModel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /ai/models:
+    get:
+      operationId: listAiModels
+      tags: [ai]
+      summary: Modelli selezionabili dall'utente, raggruppati per account
+      description: >-
+        Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo) e
+        account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi.
+      responses:
+        "200":
+          description: Gruppi di modelli
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AiModelGroup"
+
+  /ai/estimate:
+    get:
+      operationId: estimateAnalysisCost
+      tags: [ai]
+      summary: Stima del costo di un'analisi
+      description: >-
+        Massimo = maxTokens × (0.95 × prezzo input + 0.05 × prezzo output) / 1e6; tipico = 60% del
+        massimo; USD arrotondati a 4 decimali, null se un prezzo manca.
+      parameters:
+        - name: aiModelId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: maxTokens
+          in: query
+          required: false
+          description: Tetto di token dell'analisi, come in AnalysisStart (default 1000000)
+          schema:
+            type: integer
+            minimum: 50000
+            maximum: 2000000
+      responses:
+        "200":
+          description: Stima
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CostEstimate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
 components:
   parameters:
     IdParam:
@@ -853,6 +1130,13 @@ components:
         type: integer
 
   responses:
+    TooManyRequests:
+      description: Troppe richieste
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
     BadRequest:
       description: Richiesta non valida
       content:
@@ -1191,7 +1475,7 @@ components:
 
     Agent:
       type: object
-      required: [id, appId, name, status, role, defaultIdentity, toolIds, createdAt, updatedAt]
+      required: [id, appId, name, aiModelId, status, role, defaultIdentity, toolIds, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -1203,6 +1487,14 @@ components:
           type: ["string", "null"]
         model:
           type: string
+          description: >-
+            Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del
+            modello scelto
+        aiModelId:
+          type: ["integer", "null"]
+          description: >-
+            Modello scelto tra quelli degli account AI; le run usano l'account di questo modello
+            (chi configura paga). Null = vecchio percorso del gateway
         status:
           $ref: "#/components/schemas/AgentStatus"
         role:
@@ -1236,6 +1528,12 @@ components:
           type: string
         model:
           type: string
+          description: Solo compatibilità; con aiModelId è ignorato
+        aiModelId:
+          type: ["integer", "null"]
+          description: >-
+            Modello di un account AI dell'utente o dell'account di sistema (400 "modello non
+            disponibile" altrimenti)
         status:
           $ref: "#/components/schemas/AgentStatus"
 
@@ -1249,6 +1547,12 @@ components:
           type: ["string", "null"]
         model:
           type: string
+          description: Solo compatibilità; con aiModelId è ignorato
+        aiModelId:
+          type: ["integer", "null"]
+          description: >-
+            Se diverso da quello salvato deve essere un modello dell'utente o dell'account di
+            sistema (400 altrimenti); uguale a quello salvato non viene ricontrollato
         status:
           $ref: "#/components/schemas/AgentStatus"
         area:
@@ -1466,6 +1770,9 @@ components:
           type: ["integer", "null"]
         completionTokens:
           type: ["integer", "null"]
+        costUsd:
+          type: ["number", "null"]
+          description: Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)
 
     PendingActionKind:
       type: string
@@ -1587,7 +1894,7 @@ components:
 
     Analysis:
       type: object
-      required: [id, appId, model, status, sources, maxTokens, tokensUsed, phase, error, createdAt, finishedAt]
+      required: [id, appId, model, aiModelId, status, sources, maxTokens, tokensUsed, costUsd, phase, error, createdAt, finishedAt]
       properties:
         id:
           type: integer
@@ -1595,6 +1902,8 @@ components:
           type: integer
         model:
           type: string
+        aiModelId:
+          type: ["integer", "null"]
         status:
           $ref: "#/components/schemas/AnalysisStatus"
         sources:
@@ -1603,6 +1912,9 @@ components:
           type: integer
         tokensUsed:
           type: integer
+        costUsd:
+          type: ["number", "null"]
+          description: Costo in USD; null se un prezzo manca o l'analisi usa il vecchio gateway (costo parziale)
         phase:
           type: ["string", "null"]
           description: Fase corrente
@@ -1691,12 +2003,15 @@ components:
 
     AnalysisStart:
       type: object
-      required: [model]
+      description: Indicare esattamente uno tra aiModelId e model (altrimenti 400 "scegli un modello")
       properties:
+        aiModelId:
+          type: integer
+          description: Modello di un account AI dell'utente o dell'account di sistema
         model:
           type: string
           minLength: 1
-          description: Modello AI (model_name di LiteLLM)
+          description: Compatibilità, modello AI come model_name di LiteLLM
         maxTokens:
           type: integer
           minimum: 50000
@@ -1747,3 +2062,182 @@ components:
         status:
           type: string
           enum: [draft, active]
+
+    # ── Account AI ─────────────────────────────────────────────────────────────
+
+    AiProvider:
+      type: string
+      enum: [deepseek, openrouter, huggingface, mistral, groq, together, custom, system_gateway]
+
+    AiAccountStatus:
+      type: string
+      enum: [unverified, ok, error]
+
+    AiAccount:
+      type: object
+      required: [id, name, provider, baseUrl, allowPrivateNetwork, isDefault, status, lastError, lastCheckedAt, keySet, isSystem, modelCount]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        provider:
+          $ref: "#/components/schemas/AiProvider"
+        baseUrl:
+          type: string
+        allowPrivateNetwork:
+          type: boolean
+          description: Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati
+        isDefault:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/AiAccountStatus"
+        lastError:
+          type: ["string", "null"]
+          description: Messaggio fisso dell'ultimo errore del provider
+        lastCheckedAt:
+          type: ["string", "null"]
+          format: date-time
+        keySet:
+          type: boolean
+          description: Indica se la chiave è impostata (il valore non è mai esposto)
+        isSystem:
+          type: boolean
+          description: Account di sistema (gateway di Casello), non modificabile
+        modelCount:
+          type: integer
+          description: Numero di modelli dell'account (nascosti compresi)
+
+    AiAccountInput:
+      type: object
+      required: [name, provider]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        provider:
+          $ref: "#/components/schemas/AiProvider"
+        apiKey:
+          type: ["string", "null"]
+          maxLength: 4096
+          description: Chiave del provider (solo scrittura, salvata cifrata); vuota solo per custom
+        baseUrl:
+          type: ["string", "null"]
+          maxLength: 2048
+          description: Solo custom (obbligatorio); gli altri provider usano il base URL predefinito
+        allowPrivateNetwork:
+          type: boolean
+          description: Solo custom
+
+    AiAccountUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        apiKey:
+          type: ["string", "null"]
+          maxLength: 4096
+          description: Assente o "" = invariata; null la rimuove (solo custom); un valore la sostituisce
+        baseUrl:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: Solo custom
+        allowPrivateNetwork:
+          type: boolean
+          description: Solo custom
+
+    AiModel:
+      type: object
+      required: [id, accountId, modelId, displayName, contextTokens, priceInput, priceOutput, priceSource, hidden]
+      properties:
+        id:
+          type: integer
+        accountId:
+          type: integer
+        modelId:
+          type: string
+          description: Id del modello presso il provider (es. deepseek-chat)
+        displayName:
+          type: string
+        contextTokens:
+          type: ["integer", "null"]
+        priceInput:
+          type: ["number", "null"]
+          description: USD per milione di token di input
+        priceOutput:
+          type: ["number", "null"]
+          description: USD per milione di token di output
+        priceSource:
+          type: ["string", "null"]
+          enum: [provider, manual, seed, null]
+        hidden:
+          type: boolean
+
+    AiModelInput:
+      type: object
+      required: [modelId]
+      properties:
+        modelId:
+          type: string
+          minLength: 1
+          maxLength: 256
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 256
+        priceInput:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 999999.999999
+        priceOutput:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 999999.999999
+        contextTokens:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 100000000
+
+    AiModelUpdate:
+      type: object
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 256
+        priceInput:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 999999.999999
+        priceOutput:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 999999.999999
+        hidden:
+          type: boolean
+
+    AiModelGroup:
+      type: object
+      required: [account, models]
+      properties:
+        account:
+          $ref: "#/components/schemas/AiAccount"
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiModel"
+
+    CostEstimate:
+      type: object
+      required: [maxUsd, typicalUsd]
+      properties:
+        maxUsd:
+          type: ["number", "null"]
+          description: Costo massimo in USD (null se un prezzo manca)
+        typicalUsd:
+          type: ["number", "null"]
+          description: Costo tipico in USD (60% del massimo)

@@ -11,6 +11,7 @@ import {
   useListGithubInstallations,
   useUnlinkGithub,
 } from "@workspace/api-client-react";
+import { AiAccountsSection } from "@/components/account/ai-accounts-section";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -204,13 +205,14 @@ export default function AccountPage() {
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Account</h2>
-        <p className="text-sm text-muted-foreground">Accessi collegati e installazioni dell'App Casello su GitHub.</p>
+        <p className="text-sm text-muted-foreground">Accessi collegati, account AI e installazioni dell'App Casello su GitHub.</p>
       </div>
       {!me.data ? (
         <Skeleton className="h-32 w-full" />
       ) : (
         <>
           <AccessCard user={me.data} />
+          <AiAccountsSection />
           {githubLinked && <InstallationsCard githubEnabled={me.data.githubEnabled} />}
         </>
       )}

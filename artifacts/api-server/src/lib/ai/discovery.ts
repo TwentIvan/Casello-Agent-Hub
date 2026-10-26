@@ -1,5 +1,6 @@
 import { readBytesLimited } from "../http-read";
 import { findSeedPrice } from "./price-seed";
+import { cleanId, cleanName, contextTokens, perMillion } from "./sanitize";
 import { normalizeBaseUrl, validateBaseUrl, type AiProvider } from "./providers";
 
 /**
@@ -72,42 +73,14 @@ export interface DiscoveryAccount {
 const TIMEOUT_MS = 15_000;
 const MAX_BYTES = 2_097_152;
 const MAX_MODELS = 2_000;
-const MAX_ID_LENGTH = 256;
 
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-/** Prezzi oltre questa soglia (USD per milione di token) sono considerati dati sbagliati. */
-const MAX_PRICE_PER_MTOK = 1e6;
-const MAX_DISPLAY_NAME_LENGTH = 256;
-// Solo numeri decimali (con esponente opzionale): niente esadecimali, Infinity, segni
-const DECIMAL_RE = /^\d+(\.\d+)?([eE][-+]?\d+)?$/;
-// Caratteri di controllo C0, DEL e C1
-// eslint-disable-next-line no-control-regex
-const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
-
-/** Prezzo per token (numero o stringa decimale, come OpenRouter) → USD per milione, arrotondato a 6 decimali. */
-function perMillion(v: unknown): number | null {
-  let n: number;
-  if (typeof v === "number") n = v;
-  else if (typeof v === "string" && DECIMAL_RE.test(v.trim())) n = Number(v.trim());
-  else return null;
-  if (!Number.isFinite(n) || n < 0) return null;
-  const perMtok = Math.round(n * 1e12) / 1e6;
-  return Number.isFinite(perMtok) && perMtok < MAX_PRICE_PER_MTOK ? perMtok : null;
-}
-
-/** Contesto in token: intero positivo, anche come stringa decimale intera. */
-function contextTokens(v: unknown): number | null {
-  const n = typeof v === "string" && /^\d+$/.test(v.trim()) ? Number(v.trim()) : v;
-  return typeof n === "number" && Number.isSafeInteger(n) && n > 0 ? n : null;
-}
-
 function toModel(provider: AiProvider, entry: Record<string, unknown>, id: string): DiscoveredModel {
   const nameRaw = typeof entry["name"] === "string" ? entry["name"] : entry["display_name"];
-  const nameTrim = typeof nameRaw === "string" ? nameRaw.trim() : "";
-  const displayName = (nameTrim !== "" && !CONTROL_RE.test(nameTrim) ? nameTrim : id).slice(0, MAX_DISPLAY_NAME_LENGTH);
+  const displayName = cleanName(nameRaw) ?? id;
   const pricing = isObj(entry["pricing"]) ? entry["pricing"] : {};
   let priceInput = perMillion(pricing["prompt"]);
   let priceOutput = perMillion(pricing["completion"]);
@@ -165,10 +138,8 @@ export async function discoverModels(account: DiscoveryAccount, fetchImpl: typeo
   for (const entry of list) {
     if (models.length >= MAX_MODELS) break;
     if (!isObj(entry)) continue;
-    const rawId = entry["id"];
-    if (typeof rawId !== "string") continue;
-    const id = rawId.trim();
-    if (id === "" || id.length > MAX_ID_LENGTH || CONTROL_RE.test(id) || seen.has(id)) continue;
+    const id = cleanId(entry["id"]);
+    if (id === null || seen.has(id)) continue;
     seen.add(id);
     models.push(toModel(account.provider, entry, id));
   }

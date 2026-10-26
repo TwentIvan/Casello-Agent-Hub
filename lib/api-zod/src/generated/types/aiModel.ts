@@ -5,7 +5,9 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { AiModelAvailability } from './aiModelAvailability';
 import type { AiModelPriceSource } from './aiModelPriceSource';
+import type { AiModelStatus } from './aiModelStatus';
 
 export interface AiModel {
   id: number;
@@ -28,4 +30,31 @@ export interface AiModel {
   /** @nullable */
   priceSource: AiModelPriceSource;
   hidden: boolean;
+  /** Disponibilità vista da Casello (verifica dell'account, chiamate reali, prove) */
+  availability: AiModelAvailability;
+  /**
+     * Supporto degli strumenti (null = non noto)
+     * @nullable
+     */
+  supportsTools: boolean | null;
+  /** Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non disponibile, altrimenti disponibile */
+  status: AiModelStatus;
+  /**
+     * Data di dismissione dal catalogo
+     * @nullable
+     */
+  deprecationDate: Date | null;
+  /**
+     * Data di rilascio dal catalogo
+     * @nullable
+     */
+  releasedAt: Date | null;
+  /** Disponibile e con strumenti non esclusi */
+  selectable: boolean;
+  /** Preselezione del gruppo (solo in GET /ai/models) */
+  recommended: boolean;
+  /** @nullable */
+  lastProbeAt: Date | null;
+  /** @nullable */
+  lastProbeOk: boolean | null;
 }

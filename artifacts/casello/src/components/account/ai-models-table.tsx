@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  ApiError,
   type AiAccount,
   type AiModel,
   type AiModelInput,
@@ -8,6 +9,7 @@ import {
   getListAiAccountModelsQueryKey,
   useAddAiAccountModel,
   useListAiAccountModels,
+  useProbeAiModel,
   useUpdateAiModel,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -19,6 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { invalidateAiQueries } from "@/components/ai/ai-queries";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { formatUsd } from "@/lib/format";
 
 const MAX_PRICE = 999_999.999999;
 
@@ -26,7 +29,14 @@ const PRICE_SOURCE_LABELS: Record<string, string> = {
   provider: "dal provider",
   manual: "manuale",
   seed: "predefinito",
+  catalog: "catalogo",
 };
+
+/** Stato effettivo dell'API ("unknown" di availability conta come disponibile: qui si usa solo `status`). */
+function modelStatusLabel(model: AiModel): string {
+  const base = model.status === "retired" ? "Ritirato" : model.status === "unavailable" ? "Non disponibile" : "Disponibile";
+  return model.deprecationDate ? `${base}, dismesso il ${new Date(model.deprecationDate).toLocaleDateString("it-IT")}` : base;
+}
 
 function formatPrice(value: number | null): string {
   return value == null ? "—" : value.toLocaleString("it-IT", { maximumFractionDigits: 6 });
@@ -204,6 +214,26 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
       },
     },
   });
+  const probe = useProbeAiModel({
+    mutation: {
+      onSuccess: (result) => {
+        void invalidateAiQueries(queryClient);
+        if (result.ok) {
+          const cost = result.costUsd != null ? formatUsd(result.costUsd) : "non noto";
+          toast({ title: `Il modello risponde (costo ${cost})` });
+        } else {
+          toast({ variant: "destructive", title: "Il modello non risponde", description: result.error ?? undefined });
+        }
+      },
+      onError: (error) =>
+        toast({
+          variant: "destructive",
+          title: "Prova non riuscita",
+          description:
+            error instanceof ApiError && error.status === 429 ? "troppe prove: riprova tra un minuto" : apiErrorMessage(error),
+        }),
+    },
+  });
   const save = (model: AiModel, data: AiModelUpdate, onError?: () => void) =>
     updateModel.mutate({ id: model.id, data }, { onError });
 
@@ -228,7 +258,10 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
                 <TableHead>$ input / Mtok</TableHead>
                 <TableHead>$ output / Mtok</TableHead>
                 <TableHead>Prezzo</TableHead>
+                <TableHead>Stato</TableHead>
+                <TableHead>Strumenti</TableHead>
                 <TableHead>Nascosto</TableHead>
+                {!readOnly && <TableHead />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -267,6 +300,10 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
                   <TableCell className="text-xs text-muted-foreground">
                     {model.priceSource ? PRICE_SOURCE_LABELS[model.priceSource] : "—"}
                   </TableCell>
+                  <TableCell className="text-xs">{modelStatusLabel(model)}</TableCell>
+                  <TableCell className="text-xs">
+                    {model.supportsTools === null ? "?" : model.supportsTools ? "Sì" : "No"}
+                  </TableCell>
                   <TableCell>
                     <Switch
                       checked={model.hidden}
@@ -275,6 +312,19 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
                       onCheckedChange={(hidden) => save(model, { hidden })}
                     />
                   </TableCell>
+                  {!readOnly && (
+                    <TableCell>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={probe.isPending && probe.variables?.id === model.id}
+                        onClick={() => probe.mutate({ id: model.id })}
+                      >
+                        {probe.isPending && probe.variables?.id === model.id ? "Prova…" : "Prova"}
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

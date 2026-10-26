@@ -22,6 +22,7 @@ export const PROVIDERS: Record<AiProvider, ProviderInfo> = {
   mistral: { label: "Mistral", defaultBaseUrl: "https://api.mistral.ai/v1", editableBaseUrl: false },
   groq: { label: "Groq", defaultBaseUrl: "https://api.groq.com/openai/v1", editableBaseUrl: false },
   together: { label: "Together AI", defaultBaseUrl: "https://api.together.xyz/v1", editableBaseUrl: false },
+  gemini: { label: "Google Gemini", defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", editableBaseUrl: false },
   custom: { label: "Personalizzato (compatibile OpenAI)", defaultBaseUrl: null, editableBaseUrl: true },
   // Il base URL viene da AI_GATEWAY_BASE_URL (account di sistema della transizione)
   system_gateway: { label: "Gateway di Casello", defaultBaseUrl: null, editableBaseUrl: false },

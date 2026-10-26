@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Bot, LayoutDashboard, PlayCircle, Boxes, type LucideIcon } from "lucide-react";
+import { Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, type LucideIcon } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -29,6 +29,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/apps", label: "App", icon: Boxes },
   { href: "/agents", label: "Agenti", icon: Bot },
   { href: "/runs", label: "Run", icon: PlayCircle },
+  { href: "/models", label: "Modelli", icon: Cpu },
 ];
 
 function isActive(href: string, location: string): boolean {

@@ -6,36 +6,21 @@ export function useAiModelGroups() {
   return useListAiModels({ query: { queryKey: getListAiModelsQueryKey(), staleTime: 60_000 } });
 }
 
-/** Modello di un gruppo da preselezionare: il più economico tra quelli con prezzi noti, altrimenti il primo. */
-function cheapestModel<M extends { priceInput: number | null; priceOutput: number | null }>(models: M[]): M | undefined {
-  let best: M | undefined;
-  let bestPrice = Infinity;
-  for (const m of models) {
-    if (m.priceInput == null || m.priceOutput == null) continue;
-    const price = m.priceInput + m.priceOutput;
-    if (price < bestPrice) {
-      best = m;
-      bestPrice = price;
-    }
-  }
-  return best ?? models[0];
-}
-
 /**
- * Modello da preselezionare: il più economico (prezzo di input + output, tra quelli noti) dell'account
- * predefinito, o il primo se nessun prezzo è noto; se nessun account è predefinito (es. solo l'account di
- * sistema) lo stesso criterio sul primo gruppo con account non in errore, poi su qualsiasi gruppo.
- * null finché i modelli non sono arrivati o se non ce ne sono.
+ * Modello da preselezionare: quello consigliato (`recommended`) dell'account predefinito; se nessun account
+ * è predefinito (es. solo l'account di sistema) del primo gruppo con account non in errore, poi di qualsiasi
+ * gruppo. null finché i modelli non sono arrivati o se non ce ne sono.
  */
 export function useDefaultAiModelId(): number | null {
   const groups = useAiModelGroups();
   const data = groups.data ?? [];
-  const preferred = data.find((g) => g.account.isDefault && g.models.length > 0);
+  const hasSelectable = (g: (typeof data)[number]) => g.models.some((m) => m.selectable);
+  const preferred = data.find((g) => g.account.isDefault && hasSelectable(g));
   // In mancanza del predefinito si preferisce un account non in errore
-  const fallback =
-    data.find((g) => g.account.status !== "error" && g.models.length > 0) ?? data.find((g) => g.models.length > 0);
+  const fallback = data.find((g) => g.account.status !== "error" && hasSelectable(g)) ?? data.find(hasSelectable);
   const group = preferred ?? fallback;
-  return group ? (cheapestModel(group.models)?.id ?? null) : null;
+  if (!group) return null;
+  return (group.models.find((m) => m.recommended) ?? group.models.find((m) => m.selectable))?.id ?? null;
 }
 
 /**

@@ -4,6 +4,9 @@ import { db, aiModelsTable } from "@workspace/db";
 import { ProviderError } from "./discovery";
 import { modelChat, ModelAccessError, resolveModel } from "./executor";
 
+// Una prova con 1 token non deve tenere la richiesta aperta per i 120 s di una chiamata normale
+const PROBE_TIMEOUT_MS = 20_000;
+
 /**
  * "Prova" di un modello: una chiamata reale con un messaggio minimo e `max_tokens: 1` (costo di
  * frazioni di centesimo, a carico dell'account). Solo per i modelli degli account dell'utente, mai
@@ -25,6 +28,7 @@ export async function probeModel(
       messages: [{ role: "user", content: "ping" }],
       maxTokens: 1,
       maxRetries: 0,
+      timeoutMs: PROBE_TIMEOUT_MS,
       caller: "probe",
     });
     result = { ok: true, error: null, costUsd: out.costUsd };

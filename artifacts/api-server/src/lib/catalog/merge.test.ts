@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fakeSourcesFetch } from "../../../test/fake-sources";
-import { mergeCatalog } from "./merge";
+import { PROVIDER_REGISTRY } from "./provider-registry-data";
+import { keepFailedOfferFields, mergeCatalog, mergeUniversal, type OfferRecord } from "./merge";
 import { fetchLiteLlmSource, fetchOpenRouterSource } from "./sources";
 import type { SourceEntry } from "./sources";
 
@@ -64,5 +65,129 @@ describe("mergeCatalog", () => {
     const r = recs.find((x) => x.provider === "gemini")!;
     expect([r.priceInput, r.priceOutput]).toEqual([2, 3]);
     expect(r.sources.price).toBe("openrouter");
+  });
+});
+
+const BASE = { name: null, releasedAt: null, contextTokens: null, supportsTools: null, deprecationDate: null, mode: "chat" as const, supportsVision: null, supportsReasoning: null };
+
+describe("mergeUniversal", () => {
+  async function merged(now = NOW) {
+    return mergeUniversal(await fixtureEntries(), PROVIDER_REGISTRY, now);
+  }
+
+  it("lo stesso Claude su Bedrock e su Anthropic: un modello, due offerte", async () => {
+    const { models, offers } = await merged();
+    const key = "claude-sonnet-4-5-20250929";
+    const ms = models.filter((m) => m.canonicalKey === key);
+    expect(ms).toHaveLength(1);
+    expect(ms[0]).toMatchObject({ author: "Anthropic", family: "Claude", mode: "chat", supportsTools: true, supportsVision: true, supportsReasoning: true, releasedAt: null });
+    const os = offers.filter((o) => o.canonicalKey === key);
+    expect(os.map((o) => [o.provider, o.providerModelId]).sort()).toEqual([
+      ["anthropic", "claude-sonnet-4-5-20250929"],
+      ["bedrock", "anthropic.claude-sonnet-4-5-20250929-v1:0"],
+    ]);
+    expect(os.every((o) => o.priceInput === 3 && o.priceOutput === 15 && o.sources.price === "litellm")).toBe(true);
+  });
+
+  it("provider sconosciuto: offerta con lo slug normalizzato e voce in discovered col conteggio", async () => {
+    const { offers, discovered } = await merged();
+    expect(discovered).toEqual([{ slug: "nuovo-provider", name: "nuovo_provider", count: 1 }]);
+    expect(offers.find((o) => o.provider === "nuovo-provider")).toMatchObject({ providerModelId: "modello-x", canonicalKey: "modello-x" });
+  });
+
+  it("i modelli non chat entrano con il loro tipo", async () => {
+    const { models, offers } = await merged();
+    expect(models.find((m) => m.canonicalKey === "text-embedding-3-small")).toMatchObject({ mode: "embedding" });
+    expect(offers.find((o) => o.providerModelId === "text-embedding-3-small")).toMatchObject({ provider: "openai", priceOutput: null });
+  });
+
+  it("precedenze: diretti da LiteLLM con riserva OpenRouter, openrouter da OpenRouter", async () => {
+    const { models, offers } = await merged();
+    const direct = offers.find((o) => o.provider === "deepseek" && o.providerModelId === "deepseek-v4-pro")!;
+    expect(direct.priceInput).toBeCloseTo(1.45);
+    expect(direct.contextTokens).toBe(1000000);
+    expect(direct.sources).toMatchObject({ price: "litellm", contextTokens: "litellm", supportsTools: "litellm" });
+    const or = offers.find((o) => o.provider === "openrouter" && o.providerModelId === "deepseek/deepseek-v4-pro")!;
+    expect(or.priceInput).toBeCloseTo(1.74);
+    expect(or.sources.price).toBe("openrouter");
+    expect(direct.canonicalKey).toBe("deepseek-v4-pro");
+    expect(or.canonicalKey).toBe("deepseek-v4-pro");
+    // Nome e rilascio del modello da OpenRouter
+    const m = models.find((x) => x.canonicalKey === "deepseek-v4-pro")!;
+    expect(m).toMatchObject({ author: "DeepSeek", family: "DeepSeek", version: "V4 Pro", releasedAt: new Date(1767225600 * 1000) });
+    // Offerta diretta ricavata solo da OpenRouter (nessuna voce LiteLLM)
+    const chat = offers.find((o) => o.provider === "deepseek" && o.providerModelId === "deepseek-chat")!;
+    expect(chat.sources.price).toBe("openrouter");
+    // Le varianti (`:free`) solo su openrouter
+    expect(offers.filter((o) => o.providerModelId.includes(":free")).map((o) => o.provider)).toEqual(["openrouter"]);
+  });
+
+  it("dismissione solo da LiteLLM: passata retired, futura deprecated", async () => {
+    const find = (os: OfferRecord[]) => os.find((o) => o.provider === "gemini" && o.providerModelId === "gemini-2.5-flash")!;
+    const old = find((await merged()).offers);
+    expect(old.status).toBe("retired");
+    expect(old.sources.deprecationDate).toBe("litellm");
+    expect(find((await merged(new Date("2026-01-01T00:00:00Z"))).offers).status).toBe("deprecated");
+    const viaOr = (await merged()).offers.find((o) => o.provider === "openrouter" && o.providerModelId === "google/gemini-2.5-flash")!;
+    expect(viaOr.status).toBe("available");
+  });
+
+  it("varianti regionali dello stesso provider: offerte distinte dello stesso modello", () => {
+    const e = (key: string) => ({ ...BASE, source: "litellm" as const, key, litellmProvider: "bedrock", priceInput: 1, priceOutput: 2 });
+    const { models, offers } = mergeUniversal(
+      [e("us.anthropic.claude-x-v1:0"), e("eu.anthropic.claude-x-v1:0"), e("us.anthropic.claude-x-v1:0")],
+      PROVIDER_REGISTRY,
+      NOW,
+    );
+    expect(models).toHaveLength(1);
+    expect(offers.map((o) => o.providerModelId)).toEqual(["us.anthropic.claude-x-v1:0", "eu.anthropic.claude-x-v1:0"]);
+  });
+
+  it("capacità del modello: vero se un'offerta è vera, falso se tutte false, altrimenti null; chat prevale su responses", () => {
+    const l = (provider: string, over: Partial<SourceEntry>): SourceEntry => ({ ...BASE, source: "litellm", key: "m-1", litellmProvider: provider, priceInput: null, priceOutput: null, ...over });
+    const run = (...es: SourceEntry[]) => mergeUniversal(es, PROVIDER_REGISTRY, NOW).models[0]!;
+    expect(run(l("openai", { supportsTools: false }), l("azure", { supportsTools: true })).supportsTools).toBe(true);
+    expect(run(l("openai", { supportsTools: false }), l("azure", { supportsTools: false })).supportsTools).toBe(false);
+    expect(run(l("openai", { supportsTools: false }), l("azure", {})).supportsTools).toBeNull();
+    expect(run(l("openai", { mode: "responses" }), l("azure", { mode: "chat" })).mode).toBe("chat");
+  });
+
+  it("la coppia di prezzi viene dalla prima fonte che li ha entrambi", () => {
+    const { offers } = mergeUniversal(
+      [
+        { ...BASE, source: "litellm", key: "gemini/m", litellmProvider: "gemini", priceInput: 1, priceOutput: null },
+        { ...BASE, source: "openrouter", key: "google/m", litellmProvider: null, priceInput: 2, priceOutput: 3 },
+      ],
+      PROVIDER_REGISTRY,
+      NOW,
+    );
+    const r = offers.find((x) => x.provider === "gemini")!;
+    expect([r.priceInput, r.priceOutput]).toEqual([2, 3]);
+    expect(r.sources.price).toBe("openrouter");
+  });
+});
+
+describe("keepFailedOfferFields", () => {
+  const offer = (over: Partial<OfferRecord> = {}): OfferRecord => ({
+    provider: "bedrock", providerModelId: "us.m", canonicalKey: "m", priceInput: 1, priceOutput: 2, contextTokens: 100,
+    supportsTools: true, status: "available", deprecationDate: null, sources: { price: "litellm", contextTokens: "litellm", supportsTools: "litellm" }, ...over,
+  });
+
+  it("senza fonti cadute non cambia nulla", () => {
+    const recs = [offer()];
+    expect(keepFailedOfferFields(recs, [offer({ priceInput: 9 })], [], NOW)).toBe(recs);
+  });
+  it("tiene i campi della fonte caduta, per provider e id presso il provider", () => {
+    const before = [
+      offer({ priceInput: 5, deprecationDate: new Date("2026-01-01"), sources: { price: "litellm", deprecationDate: "litellm" } }),
+      offer({ providerModelId: "eu.m", priceInput: 7 }),
+    ];
+    const after = [
+      offer({ priceInput: 2, priceOutput: 4, sources: { price: "openrouter" } }),
+      offer({ provider: "anthropic", providerModelId: "us.m", priceInput: 3 }),
+    ];
+    const out = keepFailedOfferFields(after, before, ["litellm"], NOW);
+    expect(out[0]).toMatchObject({ priceInput: 5, priceOutput: 2, status: "retired", sources: { price: "litellm", deprecationDate: "litellm" } });
+    expect(out[1]!.priceInput).toBe(3);
   });
 });

@@ -1,6 +1,8 @@
 import type { AiProvider } from "../ai/providers";
-import { catalogKeysFor, familyAndVersion } from "./normalize";
-import type { SourceEntry, SourceName } from "./sources";
+import { authorFor, canonicalModelKey, directProviderFor, providerModelId, providerSlugFor } from "./canonical";
+import { catalogKeysFor, familyAndVersion, normalizeModelId } from "./normalize";
+import type { RegistryProvider } from "./provider-registry-data";
+import type { ModelMode, SourceEntry, SourceName } from "./sources";
 
 type SourcedField = "price" | "contextTokens" | "supportsTools" | "releasedAt" | "deprecationDate";
 
@@ -109,6 +111,192 @@ export function keepFailedSourceFields(
     if (kept("contextTokens")) out.contextTokens = old.contextTokens;
     if (kept("supportsTools")) out.supportsTools = old.supportsTools;
     if (kept("releasedAt")) out.releasedAt = old.releasedAt;
+    if (kept("deprecationDate")) out.deprecationDate = old.deprecationDate;
+    out.status = statusFor(out.deprecationDate, now);
+    return out;
+  });
+}
+
+/** Un modello presso un provider; identità (provider, id presso il provider). */
+export interface OfferRecord {
+  provider: string;
+  providerModelId: string;
+  canonicalKey: string;
+  priceInput: number | null;
+  priceOutput: number | null;
+  contextTokens: number | null;
+  supportsTools: boolean | null;
+  status: "available" | "deprecated" | "retired";
+  deprecationDate: Date | null;
+  sources: Partial<Record<Exclude<SourcedField, "releasedAt">, SourceName>>;
+}
+
+/** Il modello indipendente dal provider: i campi vengono dalla voce più informativa. */
+export interface ModelRecord {
+  canonicalKey: string;
+  author: string;
+  family: string;
+  version: string;
+  mode: ModelMode;
+  supportsTools: boolean | null;
+  supportsVision: boolean | null;
+  supportsReasoning: boolean | null;
+  releasedAt: Date | null;
+}
+
+export interface DiscoveredProvider {
+  slug: string;
+  /** Nome originale di `litellm_provider`. */
+  name: string;
+  count: number;
+}
+
+type OfferGroup = { provider: string; providerModelId: string; bySource: Partial<Record<SourceName, SourceEntry>> };
+
+/** Prima voce non nulla di un campo, nell'ordine dato. */
+const firstOf = <T>(entries: SourceEntry[], pick: (e: SourceEntry) => T | null): T | null => {
+  for (const e of entries) {
+    const v = pick(e);
+    if (v !== null) return v;
+  }
+  return null;
+};
+
+/** Vero se almeno uno è vero, falso se tutti falsi, altrimenti null. */
+const anyTrue = (values: (boolean | null)[]): boolean | null =>
+  values.includes(true) ? true : values.length > 0 && values.every((v) => v === false) ? false : null;
+
+/**
+ * Fonde le voci delle fonti in modelli (indipendenti dal provider) e offerte (modello presso un provider).
+ * Ogni voce entra: LiteLLM sotto il provider del registro (o uno scoperto, elencato in `discovered`),
+ * OpenRouter sotto `openrouter` e, se un provider del registro serve direttamente l'autore, anche come
+ * riserva per l'offerta di quel provider con lo stesso id. Precedenze delle offerte come `mergeCatalog`;
+ * nome e rilascio del modello da OpenRouter se c'è. Funzione pura.
+ */
+export function mergeUniversal(
+  entries: SourceEntry[],
+  registry: RegistryProvider[],
+  now: Date,
+): { models: ModelRecord[]; offers: OfferRecord[]; discovered: DiscoveredProvider[] } {
+  const groups = new Map<string, OfferGroup>();
+  const discovered = new Map<string, DiscoveredProvider>();
+  const add = (provider: string, modelId: string, entry: SourceEntry) => {
+    if (!modelId) return;
+    const id = `${provider}\u0000${modelId}`;
+    let g = groups.get(id);
+    if (!g) {
+      g = { provider, providerModelId: modelId, bySource: {} };
+      groups.set(id, g);
+    }
+    // Chiave ripetuta nella stessa fonte: vince la prima
+    g.bySource[entry.source] ??= entry;
+  };
+
+  for (const entry of entries) {
+    if (entry.source === "openrouter") {
+      const id = providerModelId(entry);
+      add("openrouter", id, entry);
+      const direct = directProviderFor(entry, registry);
+      if (direct) add(direct, normalizeModelId(entry.key.slice(entry.key.indexOf("/") + 1)), entry);
+      continue;
+    }
+    const { slug, known } = providerSlugFor(entry, registry);
+    if (!known) {
+      const d = discovered.get(slug);
+      if (d) d.count++;
+      else discovered.set(slug, { slug, name: entry.litellmProvider ?? "", count: 1 });
+    }
+    add(slug, providerModelId(entry), entry);
+  }
+
+  const offers: OfferRecord[] = [];
+  const byModel = new Map<string, { offers: OfferRecord[]; ordered: SourceEntry[][] }>();
+  for (const g of groups.values()) {
+    const order: SourceName[] = g.provider === "openrouter" ? ["openrouter", "litellm"] : ["litellm", "openrouter"];
+    const ordered = order.flatMap((s) => (g.bySource[s] ? [g.bySource[s]] : []));
+    const sources: OfferRecord["sources"] = {};
+
+    const priced = ordered.find((e) => e.priceInput !== null && e.priceOutput !== null);
+    if (priced) sources.price = priced.source;
+    const ctx = ordered.find((e) => e.contextTokens !== null);
+    if (ctx) sources.contextTokens = ctx.source;
+    const tools = ordered.find((e) => e.supportsTools !== null);
+    if (tools) sources.supportsTools = tools.source;
+    const deprecationDate = g.bySource.litellm?.deprecationDate ?? null;
+    if (deprecationDate) sources.deprecationDate = "litellm";
+
+    const offer: OfferRecord = {
+      provider: g.provider,
+      providerModelId: g.providerModelId,
+      canonicalKey: canonicalModelKey(g.providerModelId),
+      priceInput: priced?.priceInput ?? null,
+      priceOutput: priced?.priceOutput ?? null,
+      contextTokens: ctx?.contextTokens ?? null,
+      supportsTools: tools?.supportsTools ?? null,
+      status: statusFor(deprecationDate, now),
+      deprecationDate,
+      sources,
+    };
+    offers.push(offer);
+    let m = byModel.get(offer.canonicalKey);
+    if (!m) {
+      m = { offers: [], ordered: [] };
+      byModel.set(offer.canonicalKey, m);
+    }
+    m.offers.push(offer);
+    m.ordered.push(ordered);
+  }
+
+  const models: ModelRecord[] = [];
+  for (const [canonicalKey, m] of byModel) {
+    const all = m.ordered.flat();
+    const openrouter = all.find((e) => e.source === "openrouter") ?? null;
+    const slash = openrouter?.key.indexOf("/") ?? -1;
+    const named = openrouter?.name ? openrouter : (all.find((e) => e.name) ?? null);
+    const { family, version } = familyAndVersion(canonicalKey, named?.name ?? null);
+    // Il tipo di LiteLLM prevale (OpenRouter è sempre chat); tra chat e responses dello stesso modello, chat
+    const modes = all.filter((e) => e.source === "litellm").map((e) => e.mode);
+    const mode: ModelMode = modes.includes("chat") ? "chat" : (modes[0] ?? "chat");
+    models.push({
+      canonicalKey,
+      author: authorFor(canonicalKey, slash > 0 ? openrouter!.key.slice(0, slash) : null),
+      family,
+      version,
+      mode,
+      supportsTools: anyTrue(m.offers.map((o) => o.supportsTools)),
+      supportsVision: anyTrue(m.ordered.map((o) => firstOf(o, (e) => e.supportsVision))),
+      supportsReasoning: anyTrue(m.ordered.map((o) => firstOf(o, (e) => e.supportsReasoning))),
+      releasedAt: openrouter?.releasedAt ?? firstOf(all, (e) => e.releasedAt),
+    });
+  }
+  return { models, offers, discovered: [...discovered.values()] };
+}
+
+/** Come `keepFailedSourceFields`, sulle offerte (chiave provider + id presso il provider). Funzione pura. */
+export function keepFailedOfferFields(
+  offers: OfferRecord[],
+  before: OfferRecord[],
+  failed: SourceName[],
+  now: Date,
+): OfferRecord[] {
+  if (!failed.length) return offers;
+  const prev = new Map(before.map((r) => [`${r.provider}\u0000${r.providerModelId}`, r]));
+  return offers.map((rec) => {
+    const old = prev.get(`${rec.provider}\u0000${rec.providerModelId}`);
+    if (!old) return rec;
+    const out: OfferRecord = { ...rec, sources: { ...rec.sources } };
+    const kept = (field: keyof OfferRecord["sources"]) => {
+      const src = old.sources[field];
+      if (!src || !failed.includes(src)) return false;
+      out.sources[field] = src;
+      return true;
+    };
+    if (kept("price")) {
+      out.priceInput = old.priceInput;
+      out.priceOutput = old.priceOutput;
+    }
+    if (kept("contextTokens")) out.contextTokens = old.contextTokens;
+    if (kept("supportsTools")) out.supportsTools = old.supportsTools;
     if (kept("deprecationDate")) out.deprecationDate = old.deprecationDate;
     out.status = statusFor(out.deprecationDate, now);
     return out;

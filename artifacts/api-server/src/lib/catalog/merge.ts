@@ -1,4 +1,4 @@
-import { authorFor, canonicalModelKey, directProviderFor, providerModelId, providerSlugFor } from "./canonical";
+import { authorFor, canonicalModelKey, directProviderFor, isGenericKey, providerModelId, providerSlugFor } from "./canonical";
 import { familyAndVersion, normalizeModelId } from "./normalize";
 import type { RegistryProvider } from "./provider-registry-data";
 import type { ModelMode, SourceEntry, SourceName } from "./sources";
@@ -147,10 +147,12 @@ export function mergeUniversal(
     const deprecationDate = g.bySource.litellm?.deprecationDate ?? null;
     if (deprecationDate) sources.deprecationDate = "litellm";
 
+    // Una chiave fatta solo di una coda generica (`deepgram/base` → `base`) si prefissa con lo slug del provider
+    const key = canonicalModelKey(g.providerModelId);
     const offer: OfferRecord = {
       provider: g.provider,
       providerModelId: g.providerModelId,
-      canonicalKey: canonicalModelKey(g.providerModelId),
+      canonicalKey: isGenericKey(key) ? `${g.provider}/${key}` : key,
       priceInput: priced?.priceInput ?? null,
       priceOutput: priced?.priceOutput ?? null,
       contextTokens: ctx?.contextTokens ?? null,

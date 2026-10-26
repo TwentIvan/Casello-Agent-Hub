@@ -45,6 +45,11 @@ const AUTHOR_PREFIXES = ["anthropic.", "meta.", "amazon.", "mistral.", "cohere."
 /** Code generiche (`v1.1`, `dev`, `pro`...): da sole non identificano un modello, serve anche il segmento prima. */
 const GENERIC_TAIL = /^(v?\d+([.-]\d+)*|dev|schnell|pro|max|ultra|base|latest|preview|turbo|mini|free)$/;
 
+/** Chiave fatta solo di una coda generica (`base`, `v1`...): da sola non identifica un modello. */
+export function isGenericKey(canonicalKey: string): boolean {
+  return GENERIC_TAIL.test(canonicalKey);
+}
+
 /** Chiave comune a tutti i provider che offrono lo stesso modello (Bedrock, Vertex, diretto...). */
 export function canonicalModelKey(providerModelId: string): string {
   const segs = providerModelId.toLowerCase().split("/");

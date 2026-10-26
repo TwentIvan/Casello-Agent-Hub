@@ -39,6 +39,22 @@ describe("mergeUniversal", () => {
     expect(offers.find((o) => o.provider === "nuovo-provider")).toMatchObject({ providerModelId: "modello-x", canonicalKey: "modello-x" });
   });
 
+  it("chiave canonica fatta solo di una coda generica: prefissata con lo slug del provider", () => {
+    const { models, offers } = mergeUniversal(
+      [
+        { ...BASE, source: "litellm", key: "deepgram/base", litellmProvider: "deepgram", priceInput: null, priceOutput: null },
+        { ...BASE, source: "litellm", key: "base", litellmProvider: "nuovo_provider", priceInput: null, priceOutput: null },
+      ],
+      PROVIDER_REGISTRY,
+      NOW,
+    );
+    expect(offers.map((o) => [o.provider, o.providerModelId, o.canonicalKey]).sort()).toEqual([
+      ["deepgram", "base", "deepgram/base"],
+      ["nuovo-provider", "base", "nuovo-provider/base"],
+    ]);
+    expect(models.map((m) => m.canonicalKey).sort()).toEqual(["deepgram/base", "nuovo-provider/base"]);
+  });
+
   it("i modelli non chat entrano con il loro tipo", async () => {
     const { models, offers } = await merged();
     expect(models.find((m) => m.canonicalKey === "text-embedding-3-small")).toMatchObject({ mode: "embedding" });

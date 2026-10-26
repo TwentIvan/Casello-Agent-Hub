@@ -1,10 +1,11 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Check, ChevronsUpDown } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   type AiAccount,
   type AiAccountUpdate,
   type AiProvider,
+  type AiProviderInfo,
   useCreateAiAccount,
   useListAiProviders,
   useUpdateAiAccount,
@@ -22,10 +23,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { invalidateAiQueries } from "@/components/ai/ai-queries";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { cn } from "@/lib/utils";
 
 /**
  * Nome di un provider dal registro dell'API (`GET /ai/providers`); finché l'elenco non arriva, o per uno slug
@@ -37,6 +40,82 @@ export function useProviderLabel(): (provider: AiProvider) => string {
     if (provider === "system_gateway") return "Gateway di Casello";
     return data?.find((p) => p.slug === provider)?.name ?? provider;
   };
+}
+
+/**
+ * Rete privata ammessa solo per `custom` e provider non gestiti. Copia della regola dell'API
+ * (artifacts/api-server/src/lib/ai/providers.ts): se cambia là, va aggiornata qui.
+ */
+function allowsPrivateNetwork(provider: AiProvider, info: AiProviderInfo | undefined): boolean {
+  return provider === "custom" || info?.status === "unmanaged";
+}
+
+/** Scelta del provider con ricerca su tutto il registro, in gruppi: gestiti, in arrivo, non gestiti. */
+function ProviderCombobox({
+  value,
+  providers,
+  onChange,
+}: {
+  value: AiProvider;
+  providers: AiProviderInfo[];
+  onChange: (slug: AiProvider) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const groups = [
+    { heading: "Gestiti", items: providers.filter((p) => p.status === "managed") },
+    { heading: "In arrivo", items: providers.filter((p) => p.status === "coming") },
+    { heading: "Non gestiti", items: providers.filter((p) => p.status === "unmanaged") },
+  ].filter((g) => g.items.length > 0);
+  const current = providers.find((p) => p.slug === value);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          id="ai-account-provider"
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between font-normal"
+        >
+          <span className="truncate">{current?.name ?? "Scegli un provider"}</span>
+          <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Cerca un provider…" />
+          <CommandList>
+            <CommandEmpty>Nessun provider trovato</CommandEmpty>
+            {groups.map((g) => (
+              <CommandGroup key={g.heading} heading={g.heading}>
+                {g.items.map((p) => (
+                  <CommandItem
+                    key={p.slug}
+                    value={`${p.name} ${p.slug}`}
+                    disabled={p.status === "coming"}
+                    onSelect={() => {
+                      onChange(p.slug);
+                      setOpen(false);
+                    }}
+                  >
+                    <Check className={cn("size-4", p.slug === value ? "opacity-100" : "opacity-0")} />
+                    <span className="truncate">{p.name}</span>
+                    {p.status === "coming" && (
+                      <span className="ml-auto text-xs text-muted-foreground">esecutore in arrivo</span>
+                    )}
+                    {p.status === "unmanaged" && (
+                      <span className="ml-auto text-xs text-muted-foreground">compatibile OpenAI: inserisci l'indirizzo</span>
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 interface AiAccountDialogProps {
@@ -119,18 +198,17 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
 
   const info = providers.data?.find((p) => p.slug === provider);
   const isCustom = provider === "custom";
-  // Regole dell'API: indirizzo dell'utente per custom, non gestiti e gestiti senza indirizzo predefinito;
-  // rete privata solo per custom e non gestiti
+  // Regole dell'API: indirizzo dell'utente per custom, non gestiti e gestiti senza indirizzo predefinito
   const editableUrl = info?.editableBaseUrl ?? false;
-  const privateAllowed = isCustom || info?.status === "unmanaged";
+  const privateAllowed = allowsPrivateNetwork(provider, info);
   const trimmedName = name.trim();
   const trimmedUrl = baseUrl.trim();
   const key = apiKey.trim();
   const valid =
     trimmedName.length > 0 &&
     trimmedName.length <= 100 &&
-    info !== undefined &&
-    info.status !== "coming" &&
+    // In modifica il registro serve solo per l'indirizzo: se non è arrivato si può comunque rinominare
+    (editing || (info !== undefined && info.status !== "coming")) &&
     (!editableUrl || trimmedUrl.length > 0) &&
     // Senza chiave solo i server personalizzati; in modifica la chiave vuota resta quella di prima
     (editing || isCustom || key.length > 0);
@@ -181,19 +259,13 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
                 {info?.name ?? provider}
               </p>
             ) : (
-              <Select value={provider} onValueChange={setProvider}>
-                <SelectTrigger id="ai-account-provider">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {/* Quelli in arrivo restano visibili ma non selezionabili */}
-                  {(providers.data ?? []).map((p) => (
-                    <SelectItem key={p.slug} value={p.slug} disabled={p.status === "coming"}>
-                      {p.status === "coming" ? `${p.name} (in arrivo)` : p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ProviderCombobox value={provider} providers={providers.data ?? []} onChange={setProvider} />
+            )}
+            {providers.isError && (
+              <p className="text-sm text-destructive">
+                Impossibile caricare i provider: {apiErrorMessage(providers.error)}
+                {editing && ". Puoi comunque cambiare il nome."}
+              </p>
             )}
           </div>
           <div className="space-y-2">

@@ -1,21 +1,23 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import type { AiModel } from "@workspace/api-client-react";
+import { Check, ChevronsUpDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatModelPrice } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { useAiModelGroups } from "./ai-queries";
 
 interface ModelPickerProps {
@@ -29,22 +31,25 @@ interface ModelPickerProps {
   "aria-invalid"?: boolean;
 }
 
-/** Voce della tendina: nome, id, prezzo e, se non noto, il "?" sul supporto agli strumenti. */
-function ModelItem({ model }: { model: AiModel }) {
+/** Voce della lista: nome, id, prezzo e, se non noto, il "?" sul supporto agli strumenti. */
+function ModelItem({ model, selected, onPick }: { model: AiModel; selected: boolean; onPick: () => void }) {
   return (
-    <SelectItem value={String(model.id)}>
-      <span>{model.displayName}</span>{" "}
-      <span className="font-mono text-xs text-muted-foreground">({model.modelId})</span>
-      <span className="text-xs text-muted-foreground">
-        {" · "}
-        {formatModelPrice(model.priceInput, model.priceOutput)}
-      </span>
-      {model.supportsTools === null && (
-        <span className="ml-1 text-xs text-muted-foreground" title="supporto agli strumenti non noto">
-          ?
+    <CommandItem value={`${model.displayName} ${model.modelId} #${model.id}`} onSelect={onPick}>
+      <Check className={cn("size-4", selected ? "opacity-100" : "opacity-0")} />
+      <span className="min-w-0">
+        <span>{model.displayName}</span>{" "}
+        <span className="font-mono text-xs text-muted-foreground">({model.modelId})</span>
+        <span className="text-xs text-muted-foreground">
+          {" · "}
+          {formatModelPrice(model.priceInput, model.priceOutput)}
         </span>
-      )}
-    </SelectItem>
+        {model.supportsTools === null && (
+          <span className="ml-1 text-xs text-muted-foreground" title="supporto agli strumenti non noto">
+            ?
+          </span>
+        )}
+      </span>
+    </CommandItem>
   );
 }
 
@@ -57,6 +62,7 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
   const groups = useAiModelGroups();
   // null: nessuna scelta dell'utente, il gruppo "Altri modelli" è aperto se contiene il valore corrente
   const [othersToggled, setOthersToggled] = useState<boolean | null>(null);
+  const [open, setOpen] = useState(false);
 
   if (groups.isError) {
     return <p className="text-sm text-destructive">Impossibile caricare i modelli: {apiErrorMessage(groups.error)}</p>;
@@ -89,66 +95,96 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
     );
   }
 
+  const pick = (id: number) => {
+    onChange(id);
+    setOpen(false);
+  };
+  const triggerLabel = foreign
+    ? systemAvailable
+      ? `modello di un altro utente o nascosto (#${value})`
+      : `account di sistema non più disponibile (#${value})`
+    : current
+      ? staleCurrent
+        ? `${current.displayName} (${current.status === "retired" ? "ritirato" : "non disponibile"})`
+        : current.displayName
+      : null;
+
   return (
     <>
-    <Select
-      value={value != null ? String(value) : ""}
-      onValueChange={(v) => onChange(v ? Number(v) : null)}
-      disabled={disabled}
-    >
-      <SelectTrigger id={id} aria-describedby={aria["aria-describedby"]} aria-invalid={aria["aria-invalid"]}>
-        <SelectValue placeholder="Scegli un modello" />
-      </SelectTrigger>
-      <SelectContent>
-        {foreign && (
-          <>
-            <SelectItem value={String(value)} disabled>
-              {systemAvailable
-                ? `modello di un altro utente o nascosto (#${value})`
-                : `account di sistema non più disponibile (#${value})`}
-            </SelectItem>
-            <SelectSeparator />
-          </>
-        )}
-        {staleCurrent && (
-          <>
-            <SelectItem value={String(staleCurrent.id)} disabled>
-              {staleCurrent.displayName} ({staleCurrent.status === "retired" ? "ritirato" : "non disponibile"})
-            </SelectItem>
-            <SelectSeparator />
-          </>
-        )}
-        {main
-          .filter((e) => e.models.length > 0)
-          .map(({ group, models }, index) => (
-            <SelectGroup key={group.account.id}>
-              {index > 0 && <SelectSeparator />}
-              <SelectLabel className="flex items-center gap-2">
-                <span className="truncate">{group.account.name}</span>
-                {group.account.isSystem && <Badge variant="secondary">sistema</Badge>}
-                {group.account.status === "error" && <Badge variant="destructive">errore</Badge>}
-              </SelectLabel>
-              {models.map((model) => (
-                <ModelItem key={model.id} model={model} />
-              ))}
-            </SelectGroup>
-          ))}
-        {showOthers && others.length > 0 && (
-          <SelectGroup>
-            <SelectSeparator />
-            <SelectLabel>Altri modelli</SelectLabel>
-            {others.map((model) => (
-              <ModelItem key={model.id} model={model} />
-            ))}
-          </SelectGroup>
-        )}
-      </SelectContent>
-    </Select>
-    {others.length > 0 && (
-      <Button type="button" variant="link" size="sm" className="mt-1 h-auto p-0 text-xs" onClick={() => setOthersToggled(!showOthers)}>
-        {showOthers ? "Nascondi altri modelli" : `Mostra altri modelli (${others.length})`}
-      </Button>
-    )}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            id={id}
+            type="button"
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            aria-describedby={aria["aria-describedby"]}
+            aria-invalid={aria["aria-invalid"]}
+            disabled={disabled}
+            className="w-full justify-between font-normal"
+          >
+            <span className={cn("truncate", triggerLabel === null && "text-muted-foreground")}>
+              {triggerLabel ?? "Scegli un modello"}
+            </span>
+            <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+          <Command>
+            <CommandInput placeholder="Cerca un modello…" />
+            <CommandList>
+              <CommandEmpty>Nessun modello trovato</CommandEmpty>
+              {(foreign || staleCurrent) && (
+                <>
+                  <CommandGroup>
+                    <CommandItem value={`${triggerLabel} #${value}`} disabled>
+                      {triggerLabel}
+                    </CommandItem>
+                  </CommandGroup>
+                  <CommandSeparator />
+                </>
+              )}
+              {main
+                .filter((e) => e.models.length > 0)
+                .map(({ group, models }) => (
+                  <CommandGroup
+                    key={group.account.id}
+                    heading={
+                      <span className="flex items-center gap-2">
+                        <span className="truncate">{group.account.name}</span>
+                        {group.account.isSystem && <Badge variant="secondary">sistema</Badge>}
+                        {group.account.status === "error" && <Badge variant="destructive">errore</Badge>}
+                      </span>
+                    }
+                  >
+                    {models.map((model) => (
+                      <ModelItem key={model.id} model={model} selected={model.id === value} onPick={() => pick(model.id)} />
+                    ))}
+                  </CommandGroup>
+                ))}
+              {showOthers && others.length > 0 && (
+                <CommandGroup heading="Altri modelli">
+                  {others.map((model) => (
+                    <ModelItem key={model.id} model={model} selected={model.id === value} onPick={() => pick(model.id)} />
+                  ))}
+                </CommandGroup>
+              )}
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      {others.length > 0 && (
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className="mt-1 h-auto p-0 text-xs"
+          onClick={() => setOthersToggled(!showOthers)}
+        >
+          {showOthers ? "Nascondi altri modelli" : `Mostra altri modelli (${others.length})`}
+        </Button>
+      )}
     </>
   );
 }

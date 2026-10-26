@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { db, pool, catalogRunsTable } from "@workspace/db";
+import { db, pool, catalogRunsTable, modelOffersTable, modelsTable } from "@workspace/db";
 import { CatalogBusyError, type startCatalogRefresh } from "./refresh";
 import { checkWeeklyRefresh, isWeeklyRefreshDue } from "./scheduler";
 
@@ -14,13 +14,21 @@ function fakeStart() {
   }));
 }
 
-beforeEach(async () => {
+async function cleanup() {
   await pool.query("TRUNCATE catalog_runs RESTART IDENTITY");
-});
+  // DELETE e non TRUNCATE CASCADE: ai_models fa riferimento alle offerte (set null)
+  await pool.query("DELETE FROM model_offers");
+  await pool.query("DELETE FROM models");
+}
 
-afterAll(async () => {
-  await pool.query("TRUNCATE catalog_runs RESTART IDENTITY");
-});
+/** Un'offerta qualsiasi: il catalogo non è vuoto. */
+async function someOffer() {
+  const [model] = await db.insert(modelsTable).values({ canonicalKey: "deepseek-chat", author: "DeepSeek", family: "DeepSeek", version: "chat" }).returning();
+  await db.insert(modelOffersTable).values({ modelId: model!.id, provider: "deepseek", providerModelId: "deepseek-chat" });
+}
+
+beforeEach(cleanup);
+afterAll(cleanup);
 
 describe("isWeeklyRefreshDue", () => {
   it("dovuto senza esecuzioni o dopo più di 7 giorni", () => {
@@ -39,11 +47,19 @@ describe("checkWeeklyRefresh", () => {
     expect(start).toHaveBeenCalledWith({ trigger: "scheduled", userId: null });
   });
 
-  it("non avvia nulla se l'ultimo concluso è recente", async () => {
+  it("non avvia nulla se l'ultimo concluso è recente e ci sono offerte", async () => {
+    await someOffer();
     await db.insert(catalogRunsTable).values({ trigger: "scheduled", status: "partial", startedAt: daysAgo(1), finishedAt: daysAgo(1) });
     const start = fakeStart();
     expect(await checkWeeklyRefresh(NOW, start)).toBe(false);
     expect(start).not.toHaveBeenCalled();
+  });
+
+  it("avvia se l'ultimo concluso è recente ma model_offers è vuota", async () => {
+    await db.insert(catalogRunsTable).values({ trigger: "manual", status: "completed", startedAt: daysAgo(1), finishedAt: daysAgo(1) });
+    const start = fakeStart();
+    expect(await checkWeeklyRefresh(NOW, start)).toBe(true);
+    expect(start).toHaveBeenCalledTimes(1);
   });
 
   it("un'esecuzione fallita recente non conta", async () => {

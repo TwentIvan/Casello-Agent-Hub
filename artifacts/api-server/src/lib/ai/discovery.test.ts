@@ -44,14 +44,14 @@ afterAll(() => restoreLoopback());
 
 describe("PROVIDERS", () => {
   it("ha i base URL della spec", () => {
-    expect(PROVIDERS.deepseek.defaultBaseUrl).toBe("https://api.deepseek.com/v1");
-    expect(PROVIDERS.openrouter.defaultBaseUrl).toBe("https://openrouter.ai/api/v1");
-    expect(PROVIDERS.huggingface.defaultBaseUrl).toBe("https://router.huggingface.co/v1");
-    expect(PROVIDERS.mistral.defaultBaseUrl).toBe("https://api.mistral.ai/v1");
-    expect(PROVIDERS.groq.defaultBaseUrl).toBe("https://api.groq.com/openai/v1");
-    expect(PROVIDERS.together.defaultBaseUrl).toBe("https://api.together.xyz/v1");
-    expect(PROVIDERS.custom).toMatchObject({ defaultBaseUrl: null, editableBaseUrl: true });
-    expect(PROVIDERS.system_gateway.defaultBaseUrl).toBeNull();
+    expect(PROVIDERS.get("deepseek")?.defaultBaseUrl).toBe("https://api.deepseek.com/v1");
+    expect(PROVIDERS.get("openrouter")?.defaultBaseUrl).toBe("https://openrouter.ai/api/v1");
+    expect(PROVIDERS.get("huggingface")?.defaultBaseUrl).toBe("https://router.huggingface.co/v1");
+    expect(PROVIDERS.get("mistral")?.defaultBaseUrl).toBe("https://api.mistral.ai/v1");
+    expect(PROVIDERS.get("groq")?.defaultBaseUrl).toBe("https://api.groq.com/openai/v1");
+    expect(PROVIDERS.get("together")?.defaultBaseUrl).toBe("https://api.together.xyz/v1");
+    expect(PROVIDERS.get("custom")).toMatchObject({ defaultBaseUrl: null, editableBaseUrl: true });
+    expect(PROVIDERS.get("system_gateway")?.defaultBaseUrl).toBeNull();
   });
 });
 

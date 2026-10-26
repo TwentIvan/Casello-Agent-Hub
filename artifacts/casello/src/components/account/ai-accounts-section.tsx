@@ -18,7 +18,7 @@ import { invalidateAiQueries } from "@/components/ai/ai-queries";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
-import { AiAccountDialog, providerLabel } from "./ai-account-dialog";
+import { AiAccountDialog, useProviderLabel } from "./ai-account-dialog";
 import { AiModelsTable } from "./ai-models-table";
 
 function AccountStatusBadge({ account }: { account: AiAccount }) {
@@ -47,6 +47,7 @@ function AccountRow({ account, onEdit, onDelete }: { account: AiAccount; onEdit:
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [expanded, setExpanded] = useState(false);
+  const providerLabel = useProviderLabel();
 
   const verify = useVerifyAiAccount({
     mutation: {

@@ -33,6 +33,8 @@ import type {
   AiModelInput,
   AiModelProbeResult,
   AiModelUpdate,
+  AiProvider,
+  AiProviderInfo,
   Analysis,
   AnalysisDetail,
   AnalysisItem,
@@ -47,7 +49,9 @@ import type {
   AuthProviders,
   BadGatewayResponse,
   BadRequestResponse,
-  CatalogModel,
+  CatalogModelPage,
+  CatalogOffer,
+  CatalogProvider,
   CatalogRunView,
   CatalogStatus,
   ConflictResponse,
@@ -64,10 +68,12 @@ import type {
   IssueExport,
   ListAgentsParams,
   ListCatalogModelsParams,
+  ListCatalogProvidersParams,
   ListRunsParams,
   Model,
   NotFoundResponse,
   PayloadTooLargeResponse,
+  ProviderIssueText,
   Run,
   RunResume,
   RunStep,
@@ -2889,6 +2895,84 @@ export function useListModels<TData = Awaited<ReturnType<typeof listModels>>, TE
 
 
 
+export const getListAiProvidersUrl = () => {
+
+
+
+
+  return `/api/ai/providers`
+}
+
+/**
+ * Provider della tabella providers (registro e scoperti), senza system_gateway: prima i gestiti per nome, poi quelli in arrivo, poi i non gestiti.
+ * @summary Provider del registro per la creazione degli account AI
+ */
+export const listAiProviders = async ( options?: RequestInit): Promise<AiProviderInfo[]> => {
+
+  return customFetch<AiProviderInfo[]>(getListAiProvidersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAiProvidersQueryKey = () => {
+    return [
+    `/api/ai/providers`
+    ] as const;
+    }
+
+
+export const getListAiProvidersQueryOptions = <TData = Awaited<ReturnType<typeof listAiProviders>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAiProvidersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAiProviders>>> = ({ signal }) => listAiProviders({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAiProviders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAiProvidersQueryResult = NonNullable<Awaited<ReturnType<typeof listAiProviders>>>
+export type ListAiProvidersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Provider del registro per la creazione degli account AI
+ */
+
+export function useListAiProviders<TData = Awaited<ReturnType<typeof listAiProviders>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAiProvidersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getListAiAccountsUrl = () => {
 
 
@@ -2976,7 +3060,7 @@ export const getCreateAiAccountUrl = () => {
 }
 
 /**
- * Valida il base URL (solo custom può indicarlo; gli altri provider usano quello predefinito), legge /models del provider con la chiave e salva account e modelli. Se il provider non fornisce l'elenco dei modelli l'account si salva comunque (status ok, zero modelli, aggiunta manuale). Ogni altro errore del provider → 400 con il messaggio fisso e nulla di salvato. Il primo account dell'utente diventa predefinito.
+ * Il provider si legge dalla tabella providers: sconosciuto → 400; in arrivo (coming) → 400. Valida il base URL (lo indicano custom, i provider non gestiti e i gestiti senza indirizzo predefinito; gli altri usano quello predefinito), legge /models del provider con la chiave e salva account e modelli. Se il provider non fornisce l'elenco dei modelli l'account si salva comunque (status ok, zero modelli, aggiunta manuale). Ogni altro errore del provider → 400 con il messaggio fisso e nulla di salvato. Il primo account dell'utente diventa predefinito.
  * @summary Crea un account AI e ne legge i modelli
  */
 export const createAiAccount = async (aiAccountInput: AiAccountInput, options?: RequestInit): Promise<AiAccount> => {
@@ -3780,6 +3864,14 @@ export const getListCatalogModelsUrl = (params?: ListCatalogModelsParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
+    const explodeParameters = ["author","provider"];
+
+    if (Array.isArray(value) && explodeParameters.includes(key)) {
+      value.forEach((v) => {
+        normalizedParams.append(key, v === null ? 'null' : String(v));
+      });
+      return;
+    }
 
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : String(value))
@@ -3792,12 +3884,12 @@ export const getListCatalogModelsUrl = (params?: ListCatalogModelsParams,) => {
 }
 
 /**
- * Senza `provider` tutti i provider. Ordinati per provider, famiglia e data di uscita decrescente. `inMyAccounts` è vero se un modello di un account dell'utente è collegato alla voce.
- * @summary Catalogo dei modelli
+ * Modelli con almeno un'offerta visibile (le `retired` sono escluse senza `includeRetired`). `q` cerca, senza distinguere maiuscole, in chiave canonica, famiglia, versione, autore e id presso i provider. `cheapestOffer` è l'offerta con prezzi noti e somma input+output minima; `maxPrice` filtra su quella somma. `usable`: solo modelli offerti dal provider di un account dell'utente. `inMyAccounts`: un modello di un account dell'utente è collegato a una delle offerte. Ordine predefinito per nome (famiglia, versione); `price` crescente (senza prezzo in fondo), `released` e `context` decrescenti.
+ * @summary Catalogo dei modelli, a pagine
  */
-export const listCatalogModels = async (params?: ListCatalogModelsParams, options?: RequestInit): Promise<CatalogModel[]> => {
+export const listCatalogModels = async (params?: ListCatalogModelsParams, options?: RequestInit): Promise<CatalogModelPage> => {
 
-  return customFetch<CatalogModel[]>(getListCatalogModelsUrl(params),
+  return customFetch<CatalogModelPage>(getListCatalogModelsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -3840,7 +3932,7 @@ export type ListCatalogModelsQueryError = ErrorType<BadRequestResponse>
 
 
 /**
- * @summary Catalogo dei modelli
+ * @summary Catalogo dei modelli, a pagine
  */
 
 export function useListCatalogModels<TData = Awaited<ReturnType<typeof listCatalogModels>>, TError = ErrorType<BadRequestResponse>>(
@@ -3849,6 +3941,247 @@ export function useListCatalogModels<TData = Awaited<ReturnType<typeof listCatal
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListCatalogModelsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListCatalogModelOffersUrl = (id: number,) => {
+
+
+
+
+  return `/api/catalog/models/${id}/offers`
+}
+
+/**
+ * Tutte le offerte, anche ritirate, per prezzo (input+output) crescente; senza prezzo in fondo e le ritirate dopo tutte le altre.
+ * @summary Offerte di un modello del catalogo
+ */
+export const listCatalogModelOffers = async (id: number, options?: RequestInit): Promise<CatalogOffer[]> => {
+
+  return customFetch<CatalogOffer[]>(getListCatalogModelOffersUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCatalogModelOffersQueryKey = (id: number,) => {
+    return [
+    `/api/catalog/models/${id}/offers`
+    ] as const;
+    }
+
+
+export const getListCatalogModelOffersQueryOptions = <TData = Awaited<ReturnType<typeof listCatalogModelOffers>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCatalogModelOffers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCatalogModelOffersQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCatalogModelOffers>>> = ({ signal }) => listCatalogModelOffers(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCatalogModelOffers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCatalogModelOffersQueryResult = NonNullable<Awaited<ReturnType<typeof listCatalogModelOffers>>>
+export type ListCatalogModelOffersQueryError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+
+/**
+ * @summary Offerte di un modello del catalogo
+ */
+
+export function useListCatalogModelOffers<TData = Awaited<ReturnType<typeof listCatalogModelOffers>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCatalogModelOffers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCatalogModelOffersQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListCatalogProvidersUrl = (params?: ListCatalogProvidersParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/catalog/providers?${stringifiedParams}` : `/api/catalog/providers`
+}
+
+/**
+ * Provider della tabella providers senza system_gateway: prima i gestiti, poi in arrivo, poi i non gestiti, per nome. `modelCount` conta i modelli con un'offerta non ritirata; `hasMyAccount` dice se l'utente ha un account presso il provider. `q` cerca in slug e nome.
+ * @summary Provider del catalogo
+ */
+export const listCatalogProviders = async (params?: ListCatalogProvidersParams, options?: RequestInit): Promise<CatalogProvider[]> => {
+
+  return customFetch<CatalogProvider[]>(getListCatalogProvidersUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCatalogProvidersQueryKey = (params?: ListCatalogProvidersParams,) => {
+    return [
+    `/api/catalog/providers`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCatalogProvidersQueryOptions = <TData = Awaited<ReturnType<typeof listCatalogProviders>>, TError = ErrorType<BadRequestResponse>>(params?: ListCatalogProvidersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCatalogProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCatalogProvidersQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCatalogProviders>>> = ({ signal }) => listCatalogProviders(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCatalogProviders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCatalogProvidersQueryResult = NonNullable<Awaited<ReturnType<typeof listCatalogProviders>>>
+export type ListCatalogProvidersQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Provider del catalogo
+ */
+
+export function useListCatalogProviders<TData = Awaited<ReturnType<typeof listCatalogProviders>>, TError = ErrorType<BadRequestResponse>>(
+ params?: ListCatalogProvidersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCatalogProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCatalogProvidersQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetProviderIssueUrl = (slug: AiProvider,) => {
+
+
+
+
+  return `/api/catalog/providers/${slug}/issue`
+}
+
+/**
+ * Solo per i provider `unmanaged`; 404 per gli altri.
+ * @summary Testo di issue per gestire un provider non gestito
+ */
+export const getProviderIssue = async (slug: AiProvider, options?: RequestInit): Promise<ProviderIssueText> => {
+
+  return customFetch<ProviderIssueText>(getGetProviderIssueUrl(slug),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProviderIssueQueryKey = (slug: AiProvider,) => {
+    return [
+    `/api/catalog/providers/${slug}/issue`
+    ] as const;
+    }
+
+
+export const getGetProviderIssueQueryOptions = <TData = Awaited<ReturnType<typeof getProviderIssue>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(slug: AiProvider, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProviderIssue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProviderIssueQueryKey(slug);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProviderIssue>>> = ({ signal }) => getProviderIssue(slug, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: slug !== null && slug !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProviderIssue>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetProviderIssueQueryResult = NonNullable<Awaited<ReturnType<typeof getProviderIssue>>>
+export type GetProviderIssueQueryError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+
+/**
+ * @summary Testo di issue per gestire un provider non gestito
+ */
+
+export function useGetProviderIssue<TData = Awaited<ReturnType<typeof getProviderIssue>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(
+ slug: AiProvider, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProviderIssue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetProviderIssueQueryOptions(slug,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

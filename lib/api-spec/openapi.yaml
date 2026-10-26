@@ -841,6 +841,24 @@ paths:
 
   # ─── Account AI ─────────────────────────────────────────────────────────────
 
+  /ai/providers:
+    get:
+      operationId: listAiProviders
+      tags: [ai]
+      summary: Provider del registro per la creazione degli account AI
+      description: >-
+        Provider della tabella providers (registro e scoperti), senza system_gateway: prima i gestiti
+        per nome, poi quelli in arrivo, poi i non gestiti.
+      responses:
+        "200":
+          description: Provider
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AiProviderInfo"
+
   /ai/accounts:
     get:
       operationId: listAiAccounts
@@ -863,8 +881,10 @@ paths:
       tags: [ai]
       summary: Crea un account AI e ne legge i modelli
       description: >-
-        Valida il base URL (solo custom può indicarlo; gli altri provider usano quello predefinito),
-        legge /models del provider con la chiave e salva account e modelli. Se il provider non
+        Il provider si legge dalla tabella providers: sconosciuto → 400; in arrivo (coming) → 400.
+        Valida il base URL (lo indicano custom, i provider non gestiti e i gestiti senza indirizzo
+        predefinito; gli altri usano quello predefinito), legge /models del provider con la chiave e
+        salva account e modelli. Se il provider non
         fornisce l'elenco dei modelli l'account si salva comunque (status ok, zero modelli, aggiunta
         manuale). Ogni altro errore del provider → 400 con il messaggio fisso e nulla di salvato. Il
         primo account dell'utente diventa predefinito.
@@ -1135,27 +1155,201 @@ paths:
     get:
       operationId: listCatalogModels
       tags: [catalog]
-      summary: Catalogo dei modelli
+      summary: Catalogo dei modelli, a pagine
       description: >-
-        Senza `provider` tutti i provider. Ordinati per provider, famiglia e data di uscita
-        decrescente. `inMyAccounts` è vero se un modello di un account dell'utente è collegato alla voce.
+        Modelli con almeno un'offerta visibile (le `retired` sono escluse senza `includeRetired`). `q` cerca,
+        senza distinguere maiuscole, in chiave canonica, famiglia, versione, autore e id presso i provider.
+        `cheapestOffer` è l'offerta con prezzi noti e somma input+output minima; `maxPrice` filtra su quella
+        somma. `usable`: solo modelli offerti dal provider di un account dell'utente. `inMyAccounts`: un
+        modello di un account dell'utente è collegato a una delle offerte. Ordine predefinito per nome
+        (famiglia, versione); `price` crescente (senza prezzo in fondo), `released` e `context` decrescenti.
       parameters:
-        - name: provider
+        - name: q
           in: query
           required: false
           schema:
-            $ref: "#/components/schemas/AiProvider"
+            type: string
+            maxLength: 200
+        - name: mode
+          in: query
+          required: false
+          description: Tipo del modello; `all` per tutti
+          schema:
+            type: string
+            enum: [all, chat, embedding, image_generation, image_edit, audio_transcription, audio_speech, video_generation, rerank, moderation, ocr, search, realtime, responses, completion, other]
+            default: chat
+        - name: author
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 50
+            items:
+              type: string
+              maxLength: 100
+        - name: provider
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 50
+            items:
+              $ref: "#/components/schemas/AiProvider"
+        - name: tools
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: vision
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: reasoning
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: usable
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: maxPrice
+          in: query
+          required: false
+          description: USD per milione di token, input+output dell'offerta più economica
+          schema:
+            type: number
+            minimum: 0
+        - name: minContext
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+        - name: includeRetired
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [name, price, released, context]
+            default: name
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
       responses:
         "200":
-          description: Voci del catalogo
+          description: Pagina di modelli
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogModelPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /catalog/models/{id}/offers:
+    get:
+      operationId: listCatalogModelOffers
+      tags: [catalog]
+      summary: Offerte di un modello del catalogo
+      description: >-
+        Tutte le offerte, anche ritirate, per prezzo (input+output) crescente; senza prezzo in fondo e le
+        ritirate dopo tutte le altre.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Offerte
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/CatalogModel"
+                  $ref: "#/components/schemas/CatalogOffer"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /catalog/providers:
+    get:
+      operationId: listCatalogProviders
+      tags: [catalog]
+      summary: Provider del catalogo
+      description: >-
+        Provider della tabella providers senza system_gateway: prima i gestiti, poi in arrivo, poi i non
+        gestiti, per nome. `modelCount` conta i modelli con un'offerta non ritirata; `hasMyAccount` dice se
+        l'utente ha un account presso il provider. `q` cerca in slug e nome.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/AiProviderStatus"
+      responses:
+        "200":
+          description: Provider
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CatalogProvider"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /catalog/providers/{slug}/issue:
+    get:
+      operationId: getProviderIssue
+      tags: [catalog]
+      summary: Testo di issue per gestire un provider non gestito
+      description: Solo per i provider `unmanaged`; 404 per gli altri.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/AiProvider"
+      responses:
+        "200":
+          description: Titolo e corpo in markdown
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderIssueText"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /catalog/status:
     get:
@@ -2152,7 +2346,38 @@ components:
 
     AiProvider:
       type: string
-      enum: [deepseek, openrouter, huggingface, mistral, groq, together, gemini, custom, system_gateway]
+      pattern: "^[a-z0-9_-]{1,64}$"
+      description: Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)
+
+    AiProviderProtocol:
+      type: string
+      enum: [openai_compatible, anthropic, bedrock, vertex, azure, unknown]
+
+    AiProviderStatus:
+      type: string
+      enum: [managed, coming, unmanaged]
+      description: >-
+        managed: esecutore disponibile; coming: protocollo noto ancora senza esecutore (non selezionabile);
+        unmanaged: sconosciuto al registro, configurabile come compatibile OpenAI con indirizzo dell'utente
+
+    AiProviderInfo:
+      type: object
+      required: [slug, name, protocol, status, defaultBaseUrl, editableBaseUrl]
+      properties:
+        slug:
+          $ref: "#/components/schemas/AiProvider"
+        name:
+          type: string
+        protocol:
+          $ref: "#/components/schemas/AiProviderProtocol"
+        status:
+          $ref: "#/components/schemas/AiProviderStatus"
+        defaultBaseUrl:
+          type: ["string", "null"]
+          description: Indirizzo predefinito; null se lo inserisce l'utente
+        editableBaseUrl:
+          type: boolean
+          description: L'utente inserisce l'indirizzo (custom, provider non gestiti e gestiti senza indirizzo predefinito)
 
     AiAccountStatus:
       type: string
@@ -2172,7 +2397,7 @@ components:
           type: string
         allowPrivateNetwork:
           type: boolean
-          description: Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati
+          description: Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati
         isDefault:
           type: boolean
         status:
@@ -2210,10 +2435,10 @@ components:
         baseUrl:
           type: ["string", "null"]
           maxLength: 2048
-          description: Solo custom (obbligatorio); gli altri provider usano il base URL predefinito
+          description: Obbligatorio per custom, provider non gestiti e gestiti senza indirizzo predefinito; gli altri usano il base URL predefinito
         allowPrivateNetwork:
           type: boolean
-          description: Solo custom
+          description: Solo custom e provider non gestiti
 
     AiAccountUpdate:
       type: object
@@ -2230,10 +2455,10 @@ components:
           type: string
           minLength: 1
           maxLength: 2048
-          description: Solo custom
+          description: Solo se il provider ha l'indirizzo modificabile (vedi AiProviderInfo.editableBaseUrl)
         allowPrivateNetwork:
           type: boolean
-          description: Solo custom
+          description: Solo custom e provider non gestiti
 
     AiModel:
       type: object
@@ -2379,23 +2604,94 @@ components:
 
     # ── Catalogo dei modelli ───────────────────────────────────────────────────
 
-    CatalogModel:
+    CatalogModelMode:
+      type: string
+      enum: [chat, embedding, image_generation, image_edit, audio_transcription, audio_speech, video_generation, rerank, moderation, ocr, search, realtime, responses, completion, other]
+
+    CatalogOfferStatus:
+      type: string
+      enum: [available, deprecated, retired]
+
+    CatalogCheapestOffer:
       type: object
-      required: [id, provider, modelId, family, version, releasedAt, priceInput, priceOutput, contextTokens, supportsTools, status, deprecationDate, inMyAccounts]
+      required: [provider, priceInput, priceOutput]
+      properties:
+        provider:
+          $ref: "#/components/schemas/AiProvider"
+        priceInput:
+          type: number
+          description: USD per milione di token
+        priceOutput:
+          type: number
+          description: USD per milione di token
+
+    CatalogModelSummary:
+      type: object
+      required: [id, canonicalKey, author, family, version, mode, supportsTools, supportsVision, supportsReasoning, releasedAt, offerCount, providerCount, cheapestOffer, inMyAccounts]
       properties:
         id:
           type: integer
-        provider:
-          $ref: "#/components/schemas/AiProvider"
-        modelId:
+        canonicalKey:
+          type: string
+        author:
           type: string
         family:
           type: string
         version:
           type: string
+        mode:
+          $ref: "#/components/schemas/CatalogModelMode"
+        supportsTools:
+          type: ["boolean", "null"]
+        supportsVision:
+          type: ["boolean", "null"]
+        supportsReasoning:
+          type: ["boolean", "null"]
         releasedAt:
           type: ["string", "null"]
           format: date-time
+        offerCount:
+          type: integer
+          description: Offerte visibili (senza le ritirate, salvo includeRetired)
+        providerCount:
+          type: integer
+          description: Provider distinti tra le offerte visibili
+        cheapestOffer:
+          oneOf:
+            - $ref: "#/components/schemas/CatalogCheapestOffer"
+            - type: "null"
+        inMyAccounts:
+          type: boolean
+
+    CatalogModelPage:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogModelSummary"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+
+    CatalogOffer:
+      type: object
+      required: [id, provider, providerName, providerStatus, providerModelId, priceInput, priceOutput, contextTokens, supportsTools, status, deprecationDate, inMyAccounts]
+      properties:
+        id:
+          type: integer
+        provider:
+          $ref: "#/components/schemas/AiProvider"
+        providerName:
+          type: string
+        providerStatus:
+          $ref: "#/components/schemas/AiProviderStatus"
+        providerModelId:
+          type: string
         priceInput:
           type: ["number", "null"]
           description: USD per milione di token
@@ -2407,13 +2703,45 @@ components:
         supportsTools:
           type: ["boolean", "null"]
         status:
-          type: string
-          enum: [available, deprecated, retired]
+          $ref: "#/components/schemas/CatalogOfferStatus"
         deprecationDate:
           type: ["string", "null"]
           format: date-time
         inMyAccounts:
           type: boolean
+
+    CatalogProvider:
+      type: object
+      required: [slug, name, protocol, status, origin, firstSeenAt, modelCount, hasMyAccount]
+      properties:
+        slug:
+          $ref: "#/components/schemas/AiProvider"
+        name:
+          type: string
+        protocol:
+          $ref: "#/components/schemas/AiProviderProtocol"
+        status:
+          $ref: "#/components/schemas/AiProviderStatus"
+        origin:
+          type: string
+          enum: [registry, discovered]
+        firstSeenAt:
+          type: string
+          format: date-time
+        modelCount:
+          type: integer
+        hasMyAccount:
+          type: boolean
+
+    ProviderIssueText:
+      type: object
+      required: [title, body]
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+          description: Markdown in italiano
 
     CatalogChange:
       type: object
@@ -2428,7 +2756,7 @@ components:
 
     CatalogSummaryView:
       type: object
-      required: [firstRun, added, retired, deprecating, priceChanged, accounts]
+      required: [firstRun, added, retired, deprecating, priceChanged, newProviders, accounts]
       properties:
         firstRun:
           type: boolean
@@ -2466,6 +2794,19 @@ components:
                     type: ["number", "null"]
                   newOutput:
                     type: ["number", "null"]
+        newProviders:
+          type: array
+          description: Provider scoperti in questa esecuzione (non gestiti)
+          items:
+            type: object
+            required: [slug, name, count]
+            properties:
+              slug:
+                $ref: "#/components/schemas/AiProvider"
+              name:
+                type: string
+              count:
+                type: integer
         accounts:
           type: array
           description: Solo gli account dell'utente corrente

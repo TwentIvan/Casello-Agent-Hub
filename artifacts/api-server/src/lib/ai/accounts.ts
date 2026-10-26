@@ -1,7 +1,8 @@
 import { eq, sql } from "drizzle-orm";
-import { db, aiAccountsTable, aiModelsTable, type AiAccount } from "@workspace/db";
+import { db, aiAccountsTable, aiModelsTable, providersTable, type AiAccount } from "@workspace/db";
 import { decryptSecret } from "../secrets";
 import { discoverModels, ProviderError, type DiscoveredModel } from "./discovery";
+import { privateNetworkAllowed } from "./providers";
 
 // Modelli degli account AI: salvataggio dei modelli scoperti, verifica di un account e arricchimento
 // dal catalogo. Usati dalle route degli account e dall'aggiornamento del catalogo.
@@ -13,9 +14,10 @@ function toPrice(v: number | null | undefined): string | null {
 }
 
 /**
- * Collega i modelli degli account al catalogo per (provider, id normalizzato come `normalizeModelId`):
- * `catalog_id` (null senza abbinamento), `supports_tools` e, se il prezzo non è manuale e il catalogo
- * li ha entrambi, i prezzi con `price_source = 'catalog'`. Esclusi gli account `custom` e di sistema.
+ * Collega i modelli degli account alle offerte del catalogo per (provider dell'account, id normalizzato come
+ * `normalizeModelId`, cioè come `provider_model_id`): `offer_id` (null senza abbinamento), `supports_tools` e,
+ * se il prezzo non è manuale e l'offerta li ha entrambi, i prezzi con `price_source = 'catalog'`. Esclusi gli
+ * account `custom` e di sistema; quelli di un provider non gestito si abbinano alle offerte di quel provider.
  * L'id del modello non cambia mai (i provider possono distinguere le maiuscole).
  */
 export async function enrichFromCatalog(executor: Tx | typeof db, opts: { accountId?: number }): Promise<void> {
@@ -23,24 +25,24 @@ export async function enrichFromCatalog(executor: Tx | typeof db, opts: { accoun
   await executor.execute(sql`
     WITH matched AS (
       SELECT m.id AS model_row_id,
-             c.id AS catalog_id,
-             c.supports_tools,
-             c.price_input_per_mtok,
-             c.price_output_per_mtok,
-             (c.id IS NOT NULL
+             o.id AS offer_id,
+             o.supports_tools,
+             o.price_input_per_mtok,
+             o.price_output_per_mtok,
+             (o.id IS NOT NULL
                AND m.price_source IS DISTINCT FROM 'manual'
-               AND c.price_input_per_mtok IS NOT NULL
-               AND c.price_output_per_mtok IS NOT NULL) AS take_price
+               AND o.price_input_per_mtok IS NOT NULL
+               AND o.price_output_per_mtok IS NOT NULL) AS take_price
       FROM ai_models m
       JOIN ai_accounts a ON a.id = m.account_id
-      LEFT JOIN model_catalog c
-        ON c.provider = a.provider
-       AND c.model_id = lower(regexp_replace(m.model_id, '^models/', '', 'i'))
+      LEFT JOIN model_offers o
+        ON o.provider = a.provider
+       AND o.provider_model_id = lower(regexp_replace(m.model_id, '^models/', '', 'i'))
       WHERE a.provider NOT IN ('custom', 'system_gateway') ${onlyAccount}
     )
     UPDATE ai_models AS m SET
-      catalog_id = x.catalog_id,
-      supports_tools = CASE WHEN x.catalog_id IS NULL THEN m.supports_tools ELSE x.supports_tools END,
+      offer_id = x.offer_id,
+      supports_tools = CASE WHEN x.offer_id IS NULL THEN m.supports_tools ELSE x.supports_tools END,
       price_input_per_mtok = CASE WHEN x.take_price THEN x.price_input_per_mtok ELSE m.price_input_per_mtok END,
       price_output_per_mtok = CASE WHEN x.take_price THEN x.price_output_per_mtok ELSE m.price_output_per_mtok END,
       price_source = CASE WHEN x.take_price THEN 'catalog' ELSE m.price_source END,
@@ -106,11 +108,17 @@ export async function verifyAccount(account: AiAccount): Promise<DiscoveredModel
         throw new ProviderError("auth");
       }
     }
+    // Il consenso salvato vale solo finché il provider è custom o non gestito (come nell'esecutore)
+    const [provider] = await db
+      .select({ slug: providersTable.slug, status: providersTable.status })
+      .from(providersTable)
+      .where(eq(providersTable.slug, account.provider))
+      .limit(1);
     models = await discoverModels({
       provider: account.provider,
       baseUrl: account.baseUrl,
       apiKey,
-      allowPrivateNetwork: account.provider === "custom" && account.allowPrivateNetwork,
+      allowPrivateNetwork: account.allowPrivateNetwork && provider !== undefined && privateNetworkAllowed(provider),
     });
   } catch (err) {
     if (!(err instanceof ProviderError)) throw err;

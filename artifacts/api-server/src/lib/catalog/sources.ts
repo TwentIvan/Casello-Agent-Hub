@@ -16,6 +16,16 @@ const MAX_BYTES = 20_971_520;
 
 export type SourceName = "openrouter" | "litellm";
 
+export const MODEL_MODES = [
+  "chat", "embedding", "image_generation", "image_edit", "audio_transcription", "audio_speech", "video_generation",
+  "rerank", "moderation", "ocr", "search", "realtime", "responses", "completion", "other",
+] as const;
+export type ModelMode = (typeof MODEL_MODES)[number];
+
+function modeFrom(v: unknown): ModelMode {
+  return typeof v === "string" && (MODEL_MODES as readonly string[]).includes(v) ? (v as ModelMode) : "other";
+}
+
 export interface SourceEntry {
   source: SourceName;
   /** Id OpenRouter o chiave LiteLLM così come arrivano, già ripuliti. */
@@ -29,6 +39,10 @@ export interface SourceEntry {
   contextTokens: number | null;
   supportsTools: boolean | null;
   deprecationDate: Date | null;
+  /** Tipo di modello; i valori fuori elenco di LiteLLM diventano `other`, OpenRouter è sempre `chat`. */
+  mode: ModelMode;
+  supportsVision: boolean | null;
+  supportsReasoning: boolean | null;
 }
 
 const SOURCE_LABELS: Record<SourceName, string> = { openrouter: "OpenRouter", litellm: "LiteLLM" };
@@ -85,6 +99,8 @@ export async function fetchOpenRouterSource(fetchImpl: typeof fetch = fetch): Pr
     const created = item["created"];
     const pricing = isObj(item["pricing"]) ? item["pricing"] : {};
     const params = item["supported_parameters"];
+    const arch = isObj(item["architecture"]) ? item["architecture"] : {};
+    const inputs = arch["input_modalities"];
     entries.push({
       source: "openrouter",
       key,
@@ -97,6 +113,9 @@ export async function fetchOpenRouterSource(fetchImpl: typeof fetch = fetch): Pr
       contextTokens: contextTokens(item["context_length"]),
       supportsTools: Array.isArray(params) ? params.includes("tools") : null,
       deprecationDate: null,
+      mode: "chat",
+      supportsVision: Array.isArray(inputs) ? inputs.includes("image") : null,
+      supportsReasoning: Array.isArray(params) ? params.includes("reasoning") : null,
     });
   }
   return entries;
@@ -124,6 +143,8 @@ export async function fetchLiteLlmSource(fetchImpl: typeof fetch = fetch): Promi
     const key = cleanId(rawKey);
     if (key === null) continue;
     const supportsTools = item["supports_function_calling"];
+    const vision = item["supports_vision"];
+    const reasoning = item["supports_reasoning"];
     entries.push({
       source: "litellm",
       key,
@@ -135,6 +156,9 @@ export async function fetchLiteLlmSource(fetchImpl: typeof fetch = fetch): Promi
       contextTokens: contextTokens(item["max_input_tokens"]),
       supportsTools: typeof supportsTools === "boolean" ? supportsTools : null,
       deprecationDate: parseIsoDay(item["deprecation_date"]),
+      mode: modeFrom(item["mode"]),
+      supportsVision: typeof vision === "boolean" ? vision : null,
+      supportsReasoning: typeof reasoning === "boolean" ? reasoning : null,
     });
   }
   return entries;

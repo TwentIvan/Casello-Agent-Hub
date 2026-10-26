@@ -6,7 +6,7 @@ import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
-import { db, aiAccountsTable, aiModelsTable } from "@workspace/db";
+import { db, aiAccountsTable, aiModelsTable, providersTable } from "@workspace/db";
 import {
   CHAT_MAX_RETRIES,
   CHAT_REQUEST_TIMEOUT_MS,
@@ -20,7 +20,8 @@ import { logger } from "../logger";
 import { decryptSecret } from "../secrets";
 import { ProviderError, providerErrorKindForStatus } from "./discovery";
 import { markModelUnavailable } from "./model-status";
-import { normalizeBaseUrl, validateBaseUrl, type AiProvider } from "./providers";
+import type { ProviderProtocol } from "../catalog/provider-registry-data";
+import { normalizeBaseUrl, privateNetworkAllowed, validateBaseUrl, type AiProvider } from "./providers";
 
 /**
  * Esecutore unico dei modelli: risolve un modello (`ai_models.id`) nel suo account, con base URL,
@@ -30,8 +31,8 @@ import { normalizeBaseUrl, validateBaseUrl, type AiProvider } from "./providers"
  */
 
 /**
- * Tipo di esecutore. Per ora tutti i provider usano `openai_compatible`; `local_agent` è il prossimo
- * sottoprogetto (agente locale via MCP) ed è solo dichiarato.
+ * Tipo di esecutore, dal protocollo del provider: oggi solo `openai_compatible`; `local_agent` è il
+ * prossimo sottoprogetto (agente locale via MCP) ed è solo dichiarato.
  */
 export type ExecutorKind = "openai_compatible" | "local_agent";
 
@@ -84,9 +85,15 @@ const MODEL_UNAVAILABLE = "modello non disponibile";
 const SYSTEM_UNAVAILABLE = "account di sistema non più disponibile";
 const EXECUTOR_UNAVAILABLE = "esecutore non ancora disponibile";
 
-/** Tutti i provider attuali parlano l'API compatibile OpenAI. */
-export function executorKindFor(_provider: AiProvider): ExecutorKind {
-  return "openai_compatible";
+const PROTOCOL_UNSUPPORTED = "esecutore non ancora disponibile per questo provider";
+
+/**
+ * Esecutore dal protocollo del provider: i compatibili OpenAI e i provider non gestiti (`unknown`, configurati
+ * come compatibili OpenAI) usano l'esecutore esistente; gli altri protocolli non hanno ancora un esecutore.
+ */
+export function executorKindFor(protocol: ProviderProtocol): ExecutorKind {
+  if (protocol === "openai_compatible" || protocol === "unknown") return "openai_compatible";
+  throw new ModelAccessError(PROTOCOL_UNSUPPORTED);
 }
 
 /** Costo in USD: null se manca un prezzo; arrotondato a 8 decimali. */
@@ -113,13 +120,14 @@ function toPrice(v: string | null): number | null {
  */
 export async function resolveModel(aiModelId: number, opts: { userId: number | null; mustOwn: boolean }): Promise<ResolvedModel> {
   const [row] = await db
-    .select({ model: aiModelsTable, account: aiAccountsTable })
+    .select({ model: aiModelsTable, account: aiAccountsTable, protocol: providersTable.protocol, providerStatus: providersTable.status })
     .from(aiModelsTable)
     .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
+    .innerJoin(providersTable, eq(aiAccountsTable.provider, providersTable.slug))
     .where(eq(aiModelsTable.id, aiModelId))
     .limit(1);
   if (!row) throw new ModelAccessError(MODEL_UNAVAILABLE);
-  const { model, account } = row;
+  const { model, account, protocol, providerStatus } = row;
   // Difesa in profondità: l'account di sistema non ha proprietario, tutti gli altri sì
   if ((account.provider === "system_gateway") !== (account.userId === null)) {
     throw new ModelAccessError(MODEL_UNAVAILABLE);
@@ -127,6 +135,7 @@ export async function resolveModel(aiModelId: number, opts: { userId: number | n
   if (opts.mustOwn && account.userId !== null && account.userId !== opts.userId) {
     throw new ModelAccessError(MODEL_UNAVAILABLE);
   }
+  const kind = executorKindFor(protocol);
 
   let baseUrl: string;
   let apiKey: string | null;
@@ -138,8 +147,9 @@ export async function resolveModel(aiModelId: number, opts: { userId: number | n
     baseUrl = normalizeBaseUrl(envUrl);
     apiKey = envKey;
   } else {
-    // Rivalidato a ogni chiamata: le regole possono essere cambiate dopo il salvataggio
-    if (validateBaseUrl(account.baseUrl, account.allowPrivateNetwork) !== null) throw new ProviderError("bad_url");
+    // Rivalidato a ogni chiamata: le regole (e lo stato del provider) possono essere cambiate dopo il salvataggio
+    const allowPrivate = account.allowPrivateNetwork && privateNetworkAllowed({ slug: account.provider, status: providerStatus });
+    if (validateBaseUrl(account.baseUrl, allowPrivate) !== null) throw new ProviderError("bad_url");
     baseUrl = normalizeBaseUrl(account.baseUrl);
     if (account.apiKeyEnc === null) {
       apiKey = null;
@@ -156,7 +166,7 @@ export async function resolveModel(aiModelId: number, opts: { userId: number | n
     aiModelId: model.id,
     accountId: account.id,
     provider: account.provider,
-    kind: executorKindFor(account.provider),
+    kind,
     baseUrl,
     modelId: model.modelId,
     priceInput: toPrice(model.priceInputPerMtok),

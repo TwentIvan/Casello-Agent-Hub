@@ -43,7 +43,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `lib/api-client-react/src/generated/` — client generato da Orval: NON modificare a mano
 - `lib/db/src/schema/` — schema Drizzle, una tabella per file (apps, agents, app_tools, agent_tools, runs,
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
-  ai_accounts, ai_models, model_catalog, catalog_runs)
+  ai_accounts, ai_models, providers, models, model_offers, catalog_runs)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -128,26 +128,44 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 
 ## Catalogo dei modelli
 
-- Spec: `docs/superpowers/specs/2026-10-26-casello-catalogo-modelli-design.md`. Provider Gemini (indirizzo
-  compatibile OpenAI `https://generativelanguage.googleapis.com/v1beta/openai`) tra quelli degli account AI.
+- Spec: `docs/superpowers/specs/2026-10-26-casello-catalogo-modelli-design.md` (base) e
+  `docs/superpowers/specs/2026-10-26-casello-catalogo-universale-design.md` (catalogo universale e registro).
+- **Provider come dati**: tabella `providers` (slug, nome, protocollo, indirizzo predefinito, nomi nelle fonti,
+  stato `managed` | `coming` | `unmanaged`, origine `registry` | `discovered`). Il registro vive nel codice
+  (`lib/catalog/provider-registry-data.ts`) ed è allineato all'avvio e a ogni aggiornamento
+  (`ensureProviderRegistry`); `ai_accounts.provider` è testo con FK su `providers.slug`. `managed` = esecutore
+  disponibile (oggi solo `openai_compatible`), `coming` = protocollo noto senza esecutore (Anthropic, Bedrock,
+  Vertex, Azure), `unmanaged` = provider comparso nelle fonti e sconosciuto al registro. **Riconoscere un provider
+  nuovo è un intervento evolutivo**: si aggiunge al registro (la pagina Modelli li elenca in "Da gestire in
+  Casello" ed esporta il testo dell'issue). Un account su un provider `unmanaged` si configura come compatibile
+  OpenAI con l'indirizzo dell'utente (regole di `custom`; rete privata solo per `custom`/`unmanaged` e solo
+  finché il provider lo è).
 - Aggiornamento deterministico, senza chiamare modelli: fonti pubbliche con indirizzi fissi (OpenRouter
   `/api/v1/models` e listino LiteLLM `model_prices_and_context_window.json`), 30 s, niente redirect, max 20 MB.
-  Precedenza: prezzi e strumenti da LiteLLM poi OpenRouter (per il provider `openrouter` il contrario), data di
-  rilascio da OpenRouter, dismissione da LiteLLM. Se una fonte cade l'esecuzione è `partial` e i campi che
-  venivano da quella fonte restano quelli di prima.
-- Tabelle `model_catalog` (comune) e `catalog_runs` (ultime 20, una sola `running` per indice unico parziale);
-  su `ai_models`: `availability`, `supports_tools`, `catalog_id`, `last_probe_*`. I prezzi `manual` non si
-  toccano mai; quelli presi dal catalogo hanno `price_source = catalog`.
-- Quando: ogni 7 giorni (controllo all'avvio dopo 5 minuti e poi ogni 24 h) e a richiesta con
-  `POST /api/catalog/refresh` (2/minuto; 409 se già in corso). Ogni esecuzione rilegge `/models` di tutti gli
-  account non di sistema e arricchisce `ai_models`; all'avvio le esecuzioni rimaste `running` diventano `failed`.
-  Stato e novità: `GET /api/catalog/status` (le novità per account solo al proprietario); catalogo:
-  `GET /api/catalog/models`. Pagina "Modelli" nella console.
-- Stato effettivo di un modello: ritirato (catalogo o data di dismissione passata) > non disponibile
+  Entra tutto (≈4 300 voci, ogni tipo di modello): `models` (chiave canonica: stesso modello tra provider
+  diversi, al meglio) e `model_offers` (modello presso un provider, unico per provider + id). Precedenza: prezzi
+  e strumenti da LiteLLM poi OpenRouter (che è solo riserva di un'offerta diretta già nota a LiteLLM; per il
+  provider `openrouter` il contrario), data di rilascio da OpenRouter, dismissione da LiteLLM. Se una fonte cade
+  l'esecuzione è `partial`, i campi che venivano da quella fonte restano e i modelli esistenti non cambiano.
+- `catalog_runs` (ultime 20, una sola `running` per indice unico parziale, `newProviders` nel riepilogo); su
+  `ai_models`: `availability`, `supports_tools`, `offer_id`, `last_probe_*`. I prezzi `manual` non si toccano
+  mai; quelli presi dal catalogo hanno `price_source = catalog`.
+- Quando: ogni 7 giorni o se `model_offers` è vuota (controllo all'avvio dopo 5 minuti e poi ogni 24 h) e a
+  richiesta con `POST /api/catalog/refresh` (2/minuto; 409 se già in corso). Ogni esecuzione rilegge `/models`
+  di tutti gli account non di sistema e ricollega `ai_models` alle offerte; all'avvio le esecuzioni rimaste
+  `running` diventano `failed`.
+- API: `GET /api/catalog/models` (ricerca, filtri, ordinamento, paginazione ≤ 100, pagina ≤ 10 000),
+  `GET /api/catalog/models/:id/offers`, `GET /api/catalog/providers`, `GET /api/catalog/providers/:slug/issue`,
+  `GET /api/catalog/status` (novità per account solo al proprietario), `GET /api/ai/providers` (registro per gli
+  account). Console: pagina "Modelli" (vista per modello e per provider, filtri nell'indirizzo), scelta del
+  provider e del modello con ricerca.
+- Stato effettivo di un modello: ritirato (offerta ritirata o data di dismissione passata) > non disponibile
   (`availability = unavailable`, messo da un 404 o "model_not_found" di una chiamata vera) > disponibile. La
   tendina propone solo modelli disponibili con strumenti (o non noti, "?"); gli altri disponibili in "Altri
   modelli". "Prova" (5/minuto, solo sui propri account, 1 token, 20 s) riporta un modello a disponibile.
-- Limite noto: un modello dell'account di sistema segnato non disponibile non si può riprovare dalla console.
+- Limiti noti: un modello dell'account di sistema segnato non disponibile non si può riprovare dalla console;
+  l'enum Postgres `ai_provider` resta nel DB inutilizzato (da eliminare in un passo successivo); lo slug storico
+  `system_gateway` contiene `_`.
 
 ## Agenti operativi (fase 1)
 
@@ -242,6 +260,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   che li usa: cioè PRIMA del merge, perché il merge deploya da solo). MAI `drizzle-kit push` in produzione: cancellerebbe dati (es. la vecchia tabella `tools`
   convertita dalla migrazione). Ogni modifica a `lib/db/src/schema/` va riportata in
   `docs/schema-casello.sql` (usato anche dai test) e in uno script di `docs/migrations/`, e va segnalata nella PR.
+  Se uno script elimina tabelle o colonne che la versione in produzione usa ancora, si divide in due: la parte
+  additiva prima del merge, quella distruttiva (`…-post.sql`) dopo il deploy.
 
 ## Flusso di lavoro
 

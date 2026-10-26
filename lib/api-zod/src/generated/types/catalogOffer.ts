@@ -6,16 +6,15 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AiProvider } from './aiProvider';
-import type { CatalogModelStatus } from './catalogModelStatus';
+import type { AiProviderStatus } from './aiProviderStatus';
+import type { CatalogOfferStatus } from './catalogOfferStatus';
 
-export interface CatalogModel {
+export interface CatalogOffer {
   id: number;
   provider: AiProvider;
-  modelId: string;
-  family: string;
-  version: string;
-  /** @nullable */
-  releasedAt: Date | null;
+  providerName: string;
+  providerStatus: AiProviderStatus;
+  providerModelId: string;
   /**
      * USD per milione di token
      * @nullable
@@ -30,7 +29,7 @@ export interface CatalogModel {
   contextTokens: number | null;
   /** @nullable */
   supportsTools: boolean | null;
-  status: CatalogModelStatus;
+  status: CatalogOfferStatus;
   /** @nullable */
   deprecationDate: Date | null;
   inMyAccounts: boolean;

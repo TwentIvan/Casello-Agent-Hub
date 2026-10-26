@@ -1,12 +1,13 @@
 import { isIP } from "node:net";
-import type { aiProviderEnum } from "@workspace/db";
+import { PROVIDER_REGISTRY } from "../catalog/provider-registry-data";
 
 /**
- * Provider AI compatibili OpenAI (`/models`, `/chat/completions`) e validazione del loro base URL.
+ * Provider AI (dal registro in `lib/catalog/provider-registry-data.ts`) e validazione del loro base URL.
  * Modulo puro: niente DB né rete.
  */
 
-export type AiProvider = (typeof aiProviderEnum.enumValues)[number];
+/** Slug di un provider della tabella `providers` (non più un enum: i provider sono dati). */
+export type AiProvider = string;
 
 export interface ProviderInfo {
   label: string;
@@ -15,20 +16,30 @@ export interface ProviderInfo {
   editableBaseUrl: boolean;
 }
 
-export const PROVIDERS: Record<AiProvider, ProviderInfo> = {
-  deepseek: { label: "DeepSeek", defaultBaseUrl: "https://api.deepseek.com/v1", editableBaseUrl: false },
-  openrouter: { label: "OpenRouter", defaultBaseUrl: "https://openrouter.ai/api/v1", editableBaseUrl: false },
-  huggingface: { label: "Hugging Face", defaultBaseUrl: "https://router.huggingface.co/v1", editableBaseUrl: false },
-  mistral: { label: "Mistral", defaultBaseUrl: "https://api.mistral.ai/v1", editableBaseUrl: false },
-  groq: { label: "Groq", defaultBaseUrl: "https://api.groq.com/openai/v1", editableBaseUrl: false },
-  together: { label: "Together AI", defaultBaseUrl: "https://api.together.xyz/v1", editableBaseUrl: false },
-  gemini: { label: "Google Gemini", defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", editableBaseUrl: false },
-  custom: { label: "Personalizzato (compatibile OpenAI)", defaultBaseUrl: null, editableBaseUrl: true },
-  // Il base URL viene da AI_GATEWAY_BASE_URL (account di sistema della transizione)
-  system_gateway: { label: "Gateway di Casello", defaultBaseUrl: null, editableBaseUrl: false },
-};
+/**
+ * Informazioni per provider derivate dal registro. L'indirizzo è modificabile quando non ce n'è uno
+ * predefinito, tranne per system_gateway (arriva da AI_GATEWAY_BASE_URL).
+ */
+export const PROVIDERS: ReadonlyMap<AiProvider, ProviderInfo> = new Map(
+  PROVIDER_REGISTRY.map((p) => [
+    p.slug,
+    {
+      label: p.name,
+      defaultBaseUrl: p.defaultBaseUrl,
+      editableBaseUrl: p.defaultBaseUrl === null && p.slug !== "system_gateway",
+    },
+  ]),
+);
 
 export const BAD_URL_MESSAGE = "indirizzo non consentito";
+
+/**
+ * La rete privata è ammessa solo per custom e per i provider non gestiti, secondo lo stato ATTUALE del
+ * provider: il consenso salvato su un account non vale più se il registro promuove il provider a gestito.
+ */
+export function privateNetworkAllowed(p: { slug: string; status: string }): boolean {
+  return p.slug === "custom" || p.status === "unmanaged";
+}
 
 /** Toglie spazi e barre finali: `https://x/v1/` → `https://x/v1`. */
 export function normalizeBaseUrl(url: string): string {

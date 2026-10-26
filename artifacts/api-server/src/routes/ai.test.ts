@@ -2,7 +2,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import express, { type RequestHandler } from "express";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, notInArray } from "drizzle-orm";
 import {
   db,
   pool,
@@ -11,11 +11,14 @@ import {
   aiModelsTable,
   analysesTable,
   appsTable,
-  modelCatalogTable,
+  modelOffersTable,
+  modelsTable,
+  providersTable,
   usersTable,
 } from "@workspace/db";
 import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 import { encryptSecret } from "../lib/secrets";
+import { ensureProviderRegistry } from "../lib/catalog/provider-registry";
 
 // API degli account AI su un'app Express vera (porta 0), senza login (AUTH_DISABLED=true: utente di
 // sviluppo). Il secondo utente e i suoi account si inseriscono a mano nel DB. La scoperta dei modelli
@@ -151,7 +154,7 @@ afterAll(async () => {
 beforeEach(async () => {
   bodies = [];
   vi.spyOn(console, "log").mockImplementation(() => {});
-  await pool.query("TRUNCATE users, apps, ai_accounts, model_catalog RESTART IDENTITY CASCADE");
+  await pool.query("TRUNCATE users, apps, ai_accounts, models RESTART IDENTITY CASCADE");
   fake = await startFakeProvider({
     apiKey: KEY,
     models: [
@@ -259,10 +262,10 @@ describe("creazione", () => {
 
   it("regole sul provider, base URL, consenso e chiave", async () => {
     const cases: [Record<string, unknown>, string | RegExp][] = [
-      [{ provider: "deepseek" }, /allowPrivateNetwork/],
+      [{ provider: "deepseek" }, "rete privata consentita solo per gli account personalizzati o di provider non gestiti"],
       [{ provider: "system_gateway", allowPrivateNetwork: false, baseUrl: null }, /sistema/],
-      [{ baseUrl: null }, /base URL/],
-      [{ baseUrl: "   " }, /base URL/],
+      [{ baseUrl: null }, "indirizzo obbligatorio per questo provider"],
+      [{ baseUrl: "   " }, "indirizzo obbligatorio per questo provider"],
       [{ allowPrivateNetwork: false }, "indirizzo non consentito"],
       [{ baseUrl: "ftp://x.example.com" }, "indirizzo non consentito"],
       [{ provider: "deepseek", allowPrivateNetwork: false, baseUrl: "https://altro.example.com/v1" }, /base URL/],
@@ -300,6 +303,136 @@ describe("creazione", () => {
     const [m] = await modelsOf(res.json.id);
     expect(m).toMatchObject({ modelId: "deepseek-chat", priceSource: "seed" });
     expect(m!.priceInputPerMtok).not.toBeNull();
+  });
+});
+
+describe("provider del registro", () => {
+  // I provider di oggi, già in docs/schema-casello.sql: alla fine restano solo loro (DB di prova condiviso)
+  const TODAY = ["deepseek", "openrouter", "huggingface", "mistral", "groq", "together", "gemini", "custom", "system_gateway"];
+  const UNMANAGED = "test-non-gestito";
+  beforeAll(async () => {
+    await ensureProviderRegistry();
+    await db.insert(providersTable).values({
+      slug: UNMANAGED,
+      name: "Non gestito di prova",
+      protocol: "unknown",
+      status: "unmanaged",
+      origin: "discovered",
+      sourceKeys: { litellm: ["test_non_gestito"], openrouterAuthor: null },
+    });
+  });
+  afterAll(async () => {
+    // Prima gli account (chiave esterna verso providers), poi i provider aggiunti
+    await pool.query("TRUNCATE ai_accounts RESTART IDENTITY CASCADE");
+    await db.delete(providersTable).where(notInArray(providersTable.slug, TODAY));
+  });
+
+  it("elenco: gestiti per nome, poi in arrivo, poi non gestiti; senza system_gateway", async () => {
+    const res = await api("GET", "/ai/providers");
+    expect(res.status, res.text).toBe(200);
+    const list = res.json as { slug: string; name: string; status: string }[];
+    expect(list.map((p) => p.slug)).not.toContain("system_gateway");
+    const statuses = list.map((p) => p.status);
+    const firstComing = statuses.indexOf("coming");
+    const firstUnmanaged = statuses.indexOf("unmanaged");
+    expect(firstComing).toBeGreaterThan(0);
+    expect(firstUnmanaged).toBeGreaterThan(firstComing);
+    expect(statuses.slice(0, firstComing).every((s) => s === "managed")).toBe(true);
+    expect(statuses.slice(firstComing, firstUnmanaged).every((s) => s === "coming")).toBe(true);
+    expect(statuses.slice(firstUnmanaged).every((s) => s === "unmanaged")).toBe(true);
+    const managedNames = list.slice(0, firstComing).map((p) => p.name);
+    expect(managedNames).toEqual([...managedNames].sort((a, b) => a.localeCompare(b, "it")));
+
+    const bySlug = new Map(list.map((p) => [p.slug, p]));
+    expect(bySlug.get("deepseek")).toEqual({
+      slug: "deepseek",
+      name: "DeepSeek",
+      protocol: "openai_compatible",
+      status: "managed",
+      defaultBaseUrl: "https://api.deepseek.com/v1",
+      editableBaseUrl: false,
+    });
+    expect(bySlug.get("custom")).toMatchObject({ status: "managed", defaultBaseUrl: null, editableBaseUrl: true });
+    expect(bySlug.get("perplexity")).toMatchObject({ status: "managed", defaultBaseUrl: null, editableBaseUrl: true });
+    expect(bySlug.get("bedrock")).toMatchObject({ protocol: "bedrock", status: "coming", editableBaseUrl: false });
+    expect(bySlug.get(UNMANAGED)).toMatchObject({ protocol: "unknown", status: "unmanaged", editableBaseUrl: true });
+  });
+
+  it("provider sconosciuto o con protocollo senza esecutore → 400 col messaggio fisso", async () => {
+    let res = await api("POST", "/ai/accounts", customInput({ provider: "inesistente", allowPrivateNetwork: false, baseUrl: null }));
+    expect(res.status).toBe(400);
+    expect(res.json).toEqual({ error: "provider sconosciuto" });
+    res = await api("POST", "/ai/accounts", customInput({ provider: "bedrock", allowPrivateNetwork: false, baseUrl: null }));
+    expect(res.status).toBe(400);
+    expect(res.json).toEqual({ error: "esecutore non ancora disponibile per questo provider" });
+    expect(fake.requests).toHaveLength(0);
+    expect(await db.select().from(aiAccountsTable)).toHaveLength(0);
+  });
+
+  it("provider non gestito: indirizzo obbligatorio; con l'indirizzo e il consenso → 201 e modelli scoperti", async () => {
+    let res = await api("POST", "/ai/accounts", customInput({ provider: UNMANAGED, baseUrl: null }));
+    expect(res.status).toBe(400);
+    expect(res.json).toEqual({ error: "provider non gestito: inserisci l'indirizzo compatibile OpenAI" });
+    expect(fake.requests).toHaveLength(0);
+
+    res = await api("POST", "/ai/accounts", customInput({ provider: UNMANAGED }));
+    expect(res.status, res.text).toBe(201);
+    expect(res.json).toMatchObject({ provider: UNMANAGED, baseUrl: fake.baseUrl, allowPrivateNetwork: true, modelCount: 2 });
+    expect((await modelsOf(res.json.id)).map((m) => m.modelId)).toEqual(["modello-a", "modello-b"]);
+
+    // Modifica: indirizzo e consenso restano modificabili come per custom
+    const other = await startFakeProvider({ apiKey: KEY, models: [{ id: "modello-c" }] });
+    try {
+      const upd = await api("PATCH", `/ai/accounts/${res.json.id}`, { baseUrl: other.baseUrl });
+      expect(upd.status, upd.text).toBe(200);
+      expect(upd.json).toMatchObject({ baseUrl: other.baseUrl, allowPrivateNetwork: true });
+    } finally {
+      await other.close();
+    }
+  });
+
+  it("rete privata salvata: non vale più se il provider diventa gestito (verifica e modifica rifiutate)", async () => {
+    const created = await api("POST", "/ai/accounts", customInput({ provider: UNMANAGED, name: "Interno" }));
+    expect(created.status, created.text).toBe(201);
+    const requests = fake.requests.length;
+    await db.update(providersTable).set({ status: "managed" }).where(eq(providersTable.slug, UNMANAGED));
+    try {
+      const verify = await api("POST", `/ai/accounts/${created.json.id}/verify`);
+      expect(verify.json).toMatchObject({ status: "error", lastError: "indirizzo non consentito" });
+      const upd = await api("PATCH", `/ai/accounts/${created.json.id}`, { apiKey: "sk-nuova-chiave" });
+      expect(upd.status).toBe(400);
+      expect(upd.json).toEqual({ error: "indirizzo non consentito" });
+      // Il solo nome resta modificabile senza chiamare il provider
+      const renamed = await api("PATCH", `/ai/accounts/${created.json.id}`, { name: "Rinominato" });
+      expect(renamed.status).toBe(200);
+      expect(fake.requests).toHaveLength(requests);
+      // Il consenso esposto è quello effettivo: il provider gestito non ammette la rete privata
+      expect(renamed.json).toMatchObject({ allowPrivateNetwork: false });
+      const listed = (await api("GET", "/ai/accounts")).json.find((a: { id: number }) => a.id === created.json.id);
+      expect(listed).toMatchObject({ allowPrivateNetwork: false });
+      const group = (await api("GET", "/ai/models")).json.find((g: { account: { id: number } }) => g.account.id === created.json.id);
+      expect(group.account).toMatchObject({ allowPrivateNetwork: false });
+    } finally {
+      await db.update(providersTable).set({ status: "unmanaged" }).where(eq(providersTable.slug, UNMANAGED));
+    }
+  });
+
+  it("provider gestito senza indirizzo predefinito: indirizzo obbligatorio, solo https, niente rete privata", async () => {
+    const input = { name: "Perplexity", provider: "perplexity", apiKey: KEY };
+    let res = await api("POST", "/ai/accounts", input);
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe("indirizzo obbligatorio per questo provider");
+    res = await api("POST", "/ai/accounts", { ...input, baseUrl: fake.baseUrl, allowPrivateNetwork: true });
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe("rete privata consentita solo per gli account personalizzati o di provider non gestiti");
+    res = await api("POST", "/ai/accounts", { ...input, baseUrl: fake.baseUrl });
+    expect(res.json).toEqual({ error: "indirizzo non consentito" });
+    expect(fake.requests).toHaveLength(0);
+
+    vi.stubGlobal("fetch", (async () => Response.json({ data: [{ id: "sonar" }] })) as typeof fetch);
+    res = await api("POST", "/ai/accounts", { ...input, baseUrl: "https://api.perplexity.ai/v1/" });
+    expect(res.status, res.text).toBe(201);
+    expect(res.json).toMatchObject({ provider: "perplexity", baseUrl: "https://api.perplexity.ai/v1", allowPrivateNetwork: false, modelCount: 1 });
   });
 });
 
@@ -652,12 +785,17 @@ describe("stato, selezionabilità e preselezione", () => {
     await ensureSystemAccount();
     const acc = await createAccount();
     const [a, b] = await modelsOf(acc.id);
-    // modello-a (il più economico) è ritirato dal catalogo: il consigliato diventa modello-b
-    const [cat] = await db
-      .insert(modelCatalogTable)
-      .values({ provider: "custom", modelId: "modello-a", family: "Modello", version: "A", status: "retired", deprecationDate: new Date("2026-01-01T00:00:00Z") })
+    // modello-a (il più economico) è ritirato dal catalogo: il consigliato diventa modello-b. Stato, dismissione e
+    // strumenti vengono dall'offerta collegata, il rilascio dal suo modello
+    const [model] = await db
+      .insert(modelsTable)
+      .values({ canonicalKey: "modello-a", author: "Prova", family: "Modello", version: "A", releasedAt: new Date("2025-05-01T00:00:00Z") })
       .returning();
-    await db.update(aiModelsTable).set({ catalogId: cat!.id }).where(eq(aiModelsTable.id, a!.id));
+    const [offer] = await db
+      .insert(modelOffersTable)
+      .values({ modelId: model!.id, provider: "custom", providerModelId: "modello-a", supportsTools: true, status: "retired", deprecationDate: new Date("2026-01-01T00:00:00Z") })
+      .returning();
+    await db.update(aiModelsTable).set({ offerId: offer!.id }).where(eq(aiModelsTable.id, a!.id));
 
     const res = await api("GET", "/ai/models");
     expect(res.status, res.text).toBe(200);
@@ -668,9 +806,9 @@ describe("stato, selezionabilità e preselezione", () => {
       selectable: false,
       recommended: false,
       availability: "unknown",
-      supportsTools: null,
+      supportsTools: true,
       deprecationDate: "2026-01-01T00:00:00.000Z",
-      releasedAt: null,
+      releasedAt: "2025-05-01T00:00:00.000Z",
       lastProbeAt: null,
       lastProbeOk: null,
     });

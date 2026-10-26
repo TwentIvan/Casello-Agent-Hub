@@ -1,18 +1,7 @@
 import { pgTable, serial, integer, text, boolean, timestamp, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { usersTable } from "./users";
-
-export const aiProviderEnum = pgEnum("ai_provider", [
-  "deepseek",
-  "openrouter",
-  "huggingface",
-  "mistral",
-  "groq",
-  "together",
-  "gemini",
-  "custom",
-  "system_gateway",
-]);
+import { providersTable } from "./providers";
 
 export const aiAccountStatusEnum = pgEnum("ai_account_status", ["unverified", "ok", "error"]);
 
@@ -24,7 +13,10 @@ export const aiAccountsTable = pgTable(
     id: serial("id").primaryKey(),
     userId: integer("user_id").references(() => usersTable.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    provider: aiProviderEnum("provider").notNull(),
+    // Slug del provider (testo con FK: i provider sono dati, non un enum)
+    provider: text("provider")
+      .notNull()
+      .references(() => providersTable.slug, { onUpdate: "cascade" }),
     baseUrl: text("base_url").notNull(),
     apiKeyEnc: text("api_key_enc"),
     // Solo per il provider custom

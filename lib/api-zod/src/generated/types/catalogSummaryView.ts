@@ -8,6 +8,7 @@
 import type { CatalogChange } from './catalogChange';
 import type { CatalogSummaryViewAccountsItem } from './catalogSummaryViewAccountsItem';
 import type { CatalogSummaryViewDeprecatingItem } from './catalogSummaryViewDeprecatingItem';
+import type { CatalogSummaryViewNewProvidersItem } from './catalogSummaryViewNewProvidersItem';
 import type { CatalogSummaryViewPriceChangedItem } from './catalogSummaryViewPriceChangedItem';
 
 export interface CatalogSummaryView {
@@ -16,6 +17,8 @@ export interface CatalogSummaryView {
   retired: CatalogChange[];
   deprecating: CatalogSummaryViewDeprecatingItem[];
   priceChanged: CatalogSummaryViewPriceChangedItem[];
+  /** Provider scoperti in questa esecuzione (non gestiti) */
+  newProviders: CatalogSummaryViewNewProvidersItem[];
   /** Solo gli account dell'utente corrente */
   accounts: CatalogSummaryViewAccountsItem[];
 }

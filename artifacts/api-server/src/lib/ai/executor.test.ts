@@ -1,13 +1,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { APIConnectionTimeoutError, APIUserAbortError } from "openai";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
-import { eq } from "drizzle-orm";
-import { db, pool, aiAccountsTable, aiModelsTable, usersTable } from "@workspace/db";
+import { eq, inArray } from "drizzle-orm";
+import { db, pool, aiAccountsTable, aiModelsTable, providersTable, usersTable } from "@workspace/db";
 import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
 import { encryptSecret } from "../secrets";
 import { logger } from "../logger";
 import { ProviderError } from "./discovery";
-import { computeCost, modelChat, ModelAccessError, resolveModel, type ResolvedModel } from "./executor";
+import { computeCost, executorKindFor, modelChat, ModelAccessError, resolveModel, type ResolvedModel } from "./executor";
 
 // Chiavi di prova: non devono mai comparire in errori o log
 const KEY = "sk-ACCOUNT-KEY-0001";
@@ -58,7 +58,7 @@ afterEach(async () => {
 
 interface AccountOpts {
   userId?: number | null;
-  provider?: "custom" | "deepseek" | "system_gateway";
+  provider?: string;
   baseUrl?: string;
   apiKeyEnc?: string | null;
   allowPrivateNetwork?: boolean;
@@ -132,6 +132,16 @@ describe("computeCost", () => {
   it("arrotonda a 8 decimali", () => {
     expect(computeCost(1, 0, 0.123456789, 0)).toBe(0.00000012);
     expect(computeCost(3, 7, 0.1, 0.2)).toBe(0.0000017);
+  });
+});
+
+describe("executorKindFor", () => {
+  it("openai_compatible e unknown → esecutore compatibile OpenAI; gli altri protocolli → errore fisso", () => {
+    expect(executorKindFor("openai_compatible")).toBe("openai_compatible");
+    expect(executorKindFor("unknown")).toBe("openai_compatible");
+    for (const p of ["anthropic", "bedrock", "vertex", "azure"] as const) {
+      expect(() => executorKindFor(p)).toThrow(new ModelAccessError("esecutore non ancora disponibile per questo provider"));
+    }
   });
 });
 
@@ -236,6 +246,48 @@ describe("resolveModel", () => {
     const err = await caught(resolveModel(aiModelId, { userId: alice, mustOwn: true }));
     expect(err).toBeInstanceOf(ProviderError);
     expect((err as ProviderError).kind).toBe("auth");
+    expectClean(err);
+  });
+});
+
+describe("resolveModel: esecutore dal protocollo del provider", () => {
+  // Provider di prova (fuori dal registro): uno sconosciuto, uno con protocollo proprio senza esecutore
+  const SLUGS = ["test-sconosciuto", "test-in-arrivo"];
+  const sourceKeys = { litellm: [], openrouterAuthor: null };
+  beforeAll(async () => {
+    await db.insert(providersTable).values([
+      { slug: "test-sconosciuto", name: "Sconosciuto", protocol: "unknown", status: "unmanaged", origin: "discovered", sourceKeys },
+      { slug: "test-in-arrivo", name: "In arrivo", protocol: "anthropic", status: "coming", origin: "discovered", sourceKeys },
+    ]);
+  });
+  afterAll(async () => {
+    await pool.query("TRUNCATE ai_accounts RESTART IDENTITY CASCADE");
+    await db.delete(providersTable).where(inArray(providersTable.slug, SLUGS));
+  });
+
+  it("provider non gestito (unknown) → esecutore compatibile OpenAI", async () => {
+    const { aiModelId } = await seed({ provider: "test-sconosciuto", allowPrivateNetwork: true });
+    const r = await resolveModel(aiModelId, { userId: alice, mustOwn: true });
+    expect(r).toMatchObject({ provider: "test-sconosciuto", kind: "openai_compatible" });
+  });
+
+  it("rete privata salvata: non vale più se il provider diventa gestito → indirizzo non consentito", async () => {
+    const { aiModelId } = await seed({ provider: "test-sconosciuto", allowPrivateNetwork: true });
+    await db.update(providersTable).set({ status: "managed" }).where(eq(providersTable.slug, "test-sconosciuto"));
+    try {
+      const err = await caught(resolveModel(aiModelId, { userId: alice, mustOwn: true }));
+      expect(err).toBeInstanceOf(ProviderError);
+      expect((err as ProviderError).message).toBe("indirizzo non consentito");
+    } finally {
+      await db.update(providersTable).set({ status: "unmanaged" }).where(eq(providersTable.slug, "test-sconosciuto"));
+    }
+  });
+
+  it("protocollo senza esecutore → errore fisso", async () => {
+    const { aiModelId } = await seed({ provider: "test-in-arrivo", allowPrivateNetwork: true });
+    const err = await caught(resolveModel(aiModelId, { userId: alice, mustOwn: true }));
+    expect(err).toBeInstanceOf(ModelAccessError);
+    expect((err as Error).message).toBe("esecutore non ancora disponibile per questo provider");
     expectClean(err);
   });
 });

@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type CatalogModelStatus = typeof CatalogModelStatus[keyof typeof CatalogModelStatus];
+export type CatalogOfferStatus = typeof CatalogOfferStatus[keyof typeof CatalogOfferStatus];
 
 
-export const CatalogModelStatus = {
+export const CatalogOfferStatus = {
   available: 'available',
   deprecated: 'deprecated',
   retired: 'retired',

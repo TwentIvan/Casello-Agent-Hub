@@ -1,6 +1,6 @@
 import { pgTable, serial, integer, text, boolean, timestamp, numeric, unique, pgEnum } from "drizzle-orm/pg-core";
 import { aiAccountsTable } from "./ai-accounts";
-import { modelCatalogTable } from "./model-catalog";
+import { modelOffersTable } from "./model-offers";
 
 export const aiModelAvailabilityEnum = pgEnum("ai_model_availability", ["available", "unavailable", "unknown"]);
 
@@ -25,8 +25,8 @@ export const aiModelsTable = pgTable(
     discovered: boolean("discovered").notNull().default(false),
     availability: aiModelAvailabilityEnum("availability").notNull().default("unknown"),
     supportsTools: boolean("supports_tools"),
-    // Riga del catalogo da cui arrivano prezzi e metadati; si perde se la riga del catalogo sparisce
-    catalogId: integer("catalog_id").references(() => modelCatalogTable.id, { onDelete: "set null" }),
+    // Offerta del catalogo universale da cui arrivano prezzi e metadati; si perde se l'offerta sparisce
+    offerId: integer("offer_id").references(() => modelOffersTable.id, { onDelete: "set null" }),
     lastProbeAt: timestamp("last_probe_at"),
     lastProbeOk: boolean("last_probe_ok"),
     createdAt: timestamp("created_at").notNull().defaultNow(),

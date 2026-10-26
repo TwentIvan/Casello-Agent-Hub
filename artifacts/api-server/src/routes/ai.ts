@@ -6,11 +6,14 @@ import {
   aiAccountsTable,
   aiModelsTable,
   analysesTable,
-  modelCatalogTable,
+  modelOffersTable,
+  modelsTable,
+  providersTable,
   usersTable,
   type AiAccount,
   type AiModel,
-  type CatalogModelRow,
+  type ModelOfferRow,
+  type ProviderRow,
 } from "@workspace/db";
 import {
   AddAiAccountModelBody,
@@ -25,6 +28,7 @@ import {
   ListAiAccountModelsResponse,
   ListAiAccountsResponse,
   ListAiModelsResponse,
+  ListAiProvidersResponse,
   ProbeAiModelParams,
   ProbeAiModelResponse,
   SetDefaultAiAccountParams,
@@ -45,7 +49,7 @@ import { upsertDiscovered, verifyAccount, type Tx } from "../lib/ai/accounts";
 import { ModelAccessError } from "../lib/ai/executor";
 import { effectiveStatus, isSelectable, pickRecommended } from "../lib/ai/model-status";
 import { probeModel } from "../lib/ai/probe";
-import { normalizeBaseUrl, PROVIDERS, validateBaseUrl, type AiProvider } from "../lib/ai/providers";
+import { normalizeBaseUrl, privateNetworkAllowed, validateBaseUrl, type AiProvider } from "../lib/ai/providers";
 import { systemAccountConfigured } from "../lib/ai/system-account";
 import { isUniqueViolation } from "../lib/pg-errors";
 import { decryptSecret, encryptSecret } from "../lib/secrets";
@@ -59,10 +63,13 @@ import { parseRequest } from "../middlewares/error-handler";
 const ACCOUNT_NOT_FOUND = "account non trovato";
 const MODEL_NOT_FOUND = "modello non trovato";
 const SYSTEM_READONLY = "account di sistema non modificabile";
-const PRIVATE_ONLY_CUSTOM = "allowPrivateNetwork è ammesso solo per gli account personalizzati (custom)";
+const PRIVATE_ONLY_CUSTOM = "rete privata consentita solo per gli account personalizzati o di provider non gestiti";
 const BASE_URL_ONLY_CUSTOM = "base URL modificabile solo per gli account personalizzati (custom)";
-const BASE_URL_REQUIRED = "base URL obbligatorio per gli account personalizzati (custom)";
+const BASE_URL_REQUIRED = "indirizzo obbligatorio per questo provider";
 const KEY_REQUIRED = "chiave obbligatoria per questo provider";
+const PROVIDER_UNKNOWN = "provider sconosciuto";
+const PROVIDER_COMING = "esecutore non ancora disponibile per questo provider";
+const UNMANAGED_BASE_URL_REQUIRED = "provider non gestito: inserisci l'indirizzo compatibile OpenAI";
 const NAME_REQUIRED = "nome obbligatorio, senza caratteri di controllo";
 const BAD_MODEL_ID = "id del modello non valido";
 const MODEL_EXISTS = "modello già presente nell'account";
@@ -89,8 +96,11 @@ function toPrice(v: number | null | undefined): string | null {
   return v === null || v === undefined ? null : String(v);
 }
 
-/** Forma pubblica di un account: mai `apiKeyEnc` né `userId`. */
-function toPublicAccount(a: AiAccount, modelCount: number) {
+/**
+ * Forma pubblica di un account: mai `apiKeyEnc` né `userId`. `allowPrivateNetwork` è il consenso effettivo:
+ * quello salvato, solo se lo stato attuale del provider (`providerStatus`) ammette ancora la rete privata.
+ */
+function toPublicAccount(a: AiAccount, modelCount: number, providerStatus: string | undefined) {
   const system = isSystemAccount(a);
   return {
     id: a.id,
@@ -98,7 +108,7 @@ function toPublicAccount(a: AiAccount, modelCount: number) {
     provider: a.provider,
     // L'indirizzo del gateway di sistema (spesso interno) non si espone
     baseUrl: system ? "" : a.baseUrl,
-    allowPrivateNetwork: a.allowPrivateNetwork,
+    allowPrivateNetwork: a.allowPrivateNetwork && privateNetworkAllowed({ slug: a.provider, status: providerStatus ?? "" }),
     isDefault: a.isDefault,
     status: a.status,
     lastError: a.lastError,
@@ -110,16 +120,21 @@ function toPublicAccount(a: AiAccount, modelCount: number) {
   };
 }
 
+/** Offerta del catalogo collegata a un modello di un account, con il rilascio del suo modello. */
+type LinkedOffer = Pick<ModelOfferRow, "status" | "deprecationDate" | "supportsTools"> & { releasedAt: Date | null };
+
 /**
- * Forma pubblica di un modello, con lo stato effettivo calcolato dalla riga del catalogo collegata
- * (null se non c'è). `recommended` lo imposta solo GET /ai/models.
+ * Forma pubblica di un modello, con lo stato effettivo calcolato dall'offerta del catalogo collegata (null se
+ * non c'è): stato, dismissione e strumenti dall'offerta, rilascio dal suo modello. `recommended` lo imposta
+ * solo GET /ai/models.
  */
-function toPublicModel(m: AiModel, catalog: CatalogModelRow | null, now: Date) {
-  const deprecationDate = catalog?.deprecationDate ?? null;
+function toPublicModel(m: AiModel, offer: LinkedOffer | null, now: Date) {
+  const deprecationDate = offer?.deprecationDate ?? null;
   const status = effectiveStatus(
-    { availability: m.availability, catalogStatus: catalog?.status ?? null, deprecationDate },
+    { availability: m.availability, catalogStatus: offer?.status ?? null, deprecationDate },
     now,
   );
+  const supportsTools = offer ? offer.supportsTools : m.supportsTools;
   return {
     id: m.id,
     accountId: m.accountId,
@@ -131,29 +146,35 @@ function toPublicModel(m: AiModel, catalog: CatalogModelRow | null, now: Date) {
     priceSource: m.priceSource as "provider" | "manual" | "seed" | "catalog" | null,
     hidden: m.hidden,
     availability: m.availability,
-    supportsTools: m.supportsTools,
+    supportsTools,
     status,
     deprecationDate,
-    releasedAt: catalog?.releasedAt ?? null,
-    selectable: isSelectable(status, m.supportsTools),
+    releasedAt: offer?.releasedAt ?? null,
+    selectable: isSelectable(status, supportsTools),
     recommended: false,
     lastProbeAt: m.lastProbeAt,
     lastProbeOk: m.lastProbeOk,
   };
 }
 
-/** Modelli con la riga del catalogo collegata (left join). */
+/** Modelli con l'offerta collegata e il suo modello (left join). */
 function selectModelsWithCatalog() {
   return db
-    .select({ model: aiModelsTable, catalog: modelCatalogTable })
+    .select({ model: aiModelsTable, offer: modelOffersTable, releasedAt: modelsTable.releasedAt })
     .from(aiModelsTable)
-    .leftJoin(modelCatalogTable, eq(aiModelsTable.catalogId, modelCatalogTable.id));
+    .leftJoin(modelOffersTable, eq(aiModelsTable.offerId, modelOffersTable.id))
+    .leftJoin(modelsTable, eq(modelOffersTable.modelId, modelsTable.id));
+}
+
+/** Offerta collegata di una riga di `selectModelsWithCatalog`. */
+function linkedOffer(row: { offer: ModelOfferRow | null; releasedAt: Date | null }): LinkedOffer | null {
+  return row.offer ? { ...row.offer, releasedAt: row.releasedAt } : null;
 }
 
 /** Forma pubblica di un modello riletto dal DB; undefined se è sparito. */
 async function publicModel(id: number) {
   const [row] = await selectModelsWithCatalog().where(eq(aiModelsTable.id, id)).limit(1);
-  return row ? toPublicModel(row.model, row.catalog, new Date()) : undefined;
+  return row ? toPublicModel(row.model, linkedOffer(row), new Date()) : undefined;
 }
 
 /**
@@ -204,12 +225,23 @@ async function modelCounts(accountIds: number[]): Promise<Map<number, number>> {
   return new Map(rows.map((r) => [r.accountId, Number(r.n)]));
 }
 
+/** Stato attuale dei provider degli account, per slug. */
+async function providerStatuses(accounts: AiAccount[]): Promise<Map<string, string>> {
+  const slugs = [...new Set(accounts.map((a) => a.provider))];
+  if (!slugs.length) return new Map();
+  const rows = await db
+    .select({ slug: providersTable.slug, status: providersTable.status })
+    .from(providersTable)
+    .where(inArray(providersTable.slug, slugs));
+  return new Map(rows.map((r) => [r.slug, r.status]));
+}
+
 /** Forma pubblica riletta dal DB; undefined se l'account è sparito nel frattempo. */
 async function publicAccount(id: number) {
   const [account] = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.id, id));
   if (!account) return undefined;
-  const counts = await modelCounts([id]);
-  return toPublicAccount(account, counts.get(id) ?? 0);
+  const [counts, statuses] = await Promise.all([modelCounts([id]), providerStatuses([account])]);
+  return toPublicAccount(account, counts.get(id) ?? 0, statuses.get(account.provider));
 }
 
 /** Risponde con l'account riletto, o 404 se è stato eliminato durante la richiesta. */
@@ -221,6 +253,26 @@ async function sendAccount(res: Response, id: number, schema: { parse(v: unknown
   }
   res.status(status).json(schema.parse(account));
 }
+
+/** Provider della tabella `providers` (registro o scoperto); undefined se lo slug non esiste. */
+async function findProvider(slug: string): Promise<ProviderRow | undefined> {
+  const [row] = await db.select().from(providersTable).where(eq(providersTable.slug, slug)).limit(1);
+  return row;
+}
+
+/**
+ * Regole sull'indirizzo di un account secondo il provider: lo inserisce l'utente per custom, per i provider
+ * non gestiti (compatibili OpenAI all'indirizzo dell'utente) e per i gestiti senza indirizzo predefinito;
+ * la rete privata è ammessa solo per custom e i non gestiti.
+ */
+function providerRules(p: ProviderRow): { editableBaseUrl: boolean; privateNetwork: boolean } {
+  const isCustom = p.slug === "custom";
+  const unmanaged = p.status === "unmanaged";
+  const managedNoDefault = p.status === "managed" && p.defaultBaseUrl === null && p.slug !== "system_gateway";
+  return { editableBaseUrl: isCustom || unmanaged || managedNoDefault, privateNetwork: privateNetworkAllowed(p) };
+}
+
+const STATUS_ORDER: Record<ProviderRow["status"], number> = { managed: 0, coming: 1, unmanaged: 2 };
 
 /** Nome dell'account ripulito; null se vuoto o con caratteri di controllo. */
 function cleanName(raw: string): string | null {
@@ -303,8 +355,26 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
 
   router.get("/ai/accounts", async (req, res) => {
     const accounts = await visibleAccountsSorted(currentUserId(req));
-    const counts = await modelCounts(accounts.map((a) => a.id));
-    res.json(ListAiAccountsResponse.parse(accounts.map((a) => toPublicAccount(a, counts.get(a.id) ?? 0))));
+    const [counts, statuses] = await Promise.all([modelCounts(accounts.map((a) => a.id)), providerStatuses(accounts)]);
+    res.json(ListAiAccountsResponse.parse(accounts.map((a) => toPublicAccount(a, counts.get(a.id) ?? 0, statuses.get(a.provider)))));
+  });
+
+  // Registro per la creazione degli account: gestiti per nome, poi in arrivo, poi non gestiti
+  router.get("/ai/providers", async (_req, res) => {
+    const rows = await db.select().from(providersTable).where(ne(providersTable.slug, "system_gateway"));
+    rows.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.name.localeCompare(b.name, "it"));
+    res.json(
+      ListAiProvidersResponse.parse(
+        rows.map((p) => ({
+          slug: p.slug,
+          name: p.name,
+          protocol: p.protocol,
+          status: p.status,
+          defaultBaseUrl: p.defaultBaseUrl,
+          editableBaseUrl: providerRules(p).editableBaseUrl,
+        })),
+      ),
+    );
   });
 
   router.post("/ai/accounts", providerLimit, async (req, res) => {
@@ -315,9 +385,20 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       res.status(400).json({ error: "provider non ammesso: l'account di sistema lo gestisce Casello" });
       return;
     }
+    // Dalla tabella: i provider scoperti dall'aggiornamento del catalogo esistono solo lì
+    const info = await findProvider(provider);
+    if (!info) {
+      res.status(400).json({ error: PROVIDER_UNKNOWN });
+      return;
+    }
+    if (info.status === "coming") {
+      res.status(400).json({ error: PROVIDER_COMING });
+      return;
+    }
     const isCustom = provider === "custom";
+    const rules = providerRules(info);
     const allowPrivateNetwork = body.allowPrivateNetwork === true;
-    if (allowPrivateNetwork && !isCustom) {
+    if (allowPrivateNetwork && !rules.privateNetwork) {
       res.status(400).json({ error: PRIVATE_ONLY_CUSTOM });
       return;
     }
@@ -329,19 +410,23 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
 
     let baseUrl: string;
     const requested = body.baseUrl == null ? "" : normalizeBaseUrl(body.baseUrl);
-    if (isCustom) {
+    if (rules.editableBaseUrl) {
       if (!requested) {
-        res.status(400).json({ error: BASE_URL_REQUIRED });
+        res.status(400).json({ error: info.status === "unmanaged" ? UNMANAGED_BASE_URL_REQUIRED : BASE_URL_REQUIRED });
         return;
       }
       baseUrl = requested;
-    } else {
-      baseUrl = PROVIDERS[provider].defaultBaseUrl!;
+    } else if (info.defaultBaseUrl !== null) {
+      baseUrl = info.defaultBaseUrl;
       // La console può rimandare il base URL precompilato: ammesso solo se coincide
       if (requested && requested !== baseUrl) {
         res.status(400).json({ error: BASE_URL_ONLY_CUSTOM });
         return;
       }
+    } else {
+      // Gestito senza indirizzo e non modificabile: non accade con gli stati di oggi
+      res.status(400).json({ error: PROVIDER_COMING });
+      return;
     }
     const urlError = validateBaseUrl(baseUrl, allowPrivateNetwork);
     if (urlError) {
@@ -405,6 +490,8 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     const account = await findWritableAccount(id, userId, res);
     if (!account) return;
     const isCustom = account.provider === "custom";
+    const info = await findProvider(account.provider);
+    const rules = info ? providerRules(info) : { editableBaseUrl: false, privateNetwork: false };
 
     const set: Partial<typeof aiAccountsTable.$inferInsert> = {};
     if (body.name !== undefined) {
@@ -416,9 +503,11 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       set.name = name;
     }
 
-    let allowPrivateNetwork = account.allowPrivateNetwork;
+    // Il consenso salvato non vale più se il provider è diventato gestito: si usa quello effettivo
+    const storedPrivate = account.allowPrivateNetwork && rules.privateNetwork;
+    let allowPrivateNetwork = storedPrivate;
     if (body.allowPrivateNetwork !== undefined) {
-      if (body.allowPrivateNetwork && !isCustom) {
+      if (body.allowPrivateNetwork && !rules.privateNetwork) {
         res.status(400).json({ error: PRIVATE_ONLY_CUSTOM });
         return;
       }
@@ -427,17 +516,17 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     let baseUrl = account.baseUrl;
     if (body.baseUrl !== undefined) {
       const requested = normalizeBaseUrl(body.baseUrl);
-      if (!isCustom && requested !== account.baseUrl) {
+      if (!rules.editableBaseUrl && requested !== account.baseUrl) {
         res.status(400).json({ error: BASE_URL_ONLY_CUSTOM });
         return;
       }
       if (!requested) {
-        res.status(400).json({ error: BASE_URL_REQUIRED });
+        res.status(400).json({ error: info?.status === "unmanaged" ? UNMANAGED_BASE_URL_REQUIRED : BASE_URL_REQUIRED });
         return;
       }
       baseUrl = requested;
     }
-    const connectionChanged = baseUrl !== account.baseUrl || allowPrivateNetwork !== account.allowPrivateNetwork;
+    const connectionChanged = baseUrl !== account.baseUrl || allowPrivateNetwork !== storedPrivate;
     if (connectionChanged) {
       const urlError = validateBaseUrl(baseUrl, allowPrivateNetwork);
       if (urlError) {
@@ -585,7 +674,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       .where(eq(aiModelsTable.accountId, account.id))
       .orderBy(sql`lower(${aiModelsTable.displayName})`, asc(aiModelsTable.id));
     const now = new Date();
-    res.json(ListAiAccountModelsResponse.parse(rows.map((r) => toPublicModel(r.model, r.catalog, now))));
+    res.json(ListAiAccountModelsResponse.parse(rows.map((r) => toPublicModel(r.model, linkedOffer(r), now))));
   });
 
   router.post("/ai/accounts/:id/models", async (req, res) => {
@@ -620,7 +709,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       res.status(409).json({ error: MODEL_EXISTS });
       return;
     }
-    // Un modello aggiunto a mano non ha ancora un catalogo collegato
+    // Un modello aggiunto a mano non ha ancora un'offerta collegata
     res.status(201).json(AddAiAccountModelResponse.parse(toPublicModel(created!, null, new Date())));
   });
 
@@ -706,15 +795,15 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
           .where(and(inArray(aiModelsTable.accountId, ids), eq(aiModelsTable.hidden, false)))
           .orderBy(sql`lower(${aiModelsTable.displayName})`, asc(aiModelsTable.id))
       : [];
-    const counts = await modelCounts(ids);
+    const [counts, statuses] = await Promise.all([modelCounts(ids), providerStatuses(accounts)]);
     const now = new Date();
-    const models = rows.map((r) => toPublicModel(r.model, r.catalog, now));
+    const models = rows.map((r) => toPublicModel(r.model, linkedOffer(r), now));
     // I non selezionabili restano (con selectable: false): li filtra la console. Un consigliato per gruppo
     const groups = accounts.map((a) => {
       const own = models.filter((m) => m.accountId === a.id);
       const recommended = pickRecommended(own);
       return {
-        account: toPublicAccount(a, counts.get(a.id) ?? 0),
+        account: toPublicAccount(a, counts.get(a.id) ?? 0, statuses.get(a.provider)),
         models: own.map((m) => ({ ...m, recommended: m.id === recommended })),
       };
     });

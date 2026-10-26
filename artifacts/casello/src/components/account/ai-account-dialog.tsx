@@ -67,8 +67,9 @@ function ProviderCombobox({
     { heading: "Non gestiti", items: providers.filter((p) => p.status === "unmanaged") },
   ].filter((g) => g.items.length > 0);
   const current = providers.find((p) => p.slug === value);
+  // modal: dentro un Dialog la rotella scorre la lista
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
           id="ai-account-provider"

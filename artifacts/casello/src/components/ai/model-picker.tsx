@@ -111,7 +111,8 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
 
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
+      {/* modal: dentro un Dialog la rotella scorre la lista */}
+      <Popover open={open} onOpenChange={setOpen} modal>
         <PopoverTrigger asChild>
           <Button
             id={id}

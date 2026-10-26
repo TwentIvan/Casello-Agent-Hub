@@ -1,5 +1,5 @@
 import { pgTable, serial, integer, text, boolean, timestamp, numeric, unique, pgEnum, jsonb } from "drizzle-orm/pg-core";
-import { aiProviderEnum } from "./ai-accounts";
+import { providersTable } from "./providers";
 
 export const modelCatalogStatusEnum = pgEnum("model_catalog_status", ["available", "deprecated", "retired"]);
 
@@ -9,7 +9,9 @@ export const modelCatalogTable = pgTable(
   "model_catalog",
   {
     id: serial("id").primaryKey(),
-    provider: aiProviderEnum("provider").notNull(),
+    provider: text("provider")
+      .notNull()
+      .references(() => providersTable.slug, { onUpdate: "cascade" }),
     // Id del modello presso il provider
     modelId: text("model_id").notNull(),
     family: text("family").notNull(),

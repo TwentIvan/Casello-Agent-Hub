@@ -209,8 +209,35 @@ CREATE TABLE "github_installations" (
 	CONSTRAINT "github_installations_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action
 );
 
+-- Provider AI: dati allineati all'avvio dal registro nel codice; qui i provider usati dagli account esistenti
+CREATE TYPE "public"."provider_protocol" AS ENUM('openai_compatible', 'anthropic', 'bedrock', 'vertex', 'azure', 'unknown');
+CREATE TYPE "public"."provider_status" AS ENUM('managed', 'coming', 'unmanaged');
+CREATE TYPE "public"."provider_origin" AS ENUM('registry', 'discovered');
+
+CREATE TABLE "providers" (
+	"slug" text PRIMARY KEY NOT NULL,
+	"name" text NOT NULL,
+	"protocol" "provider_protocol" NOT NULL,
+	"default_base_url" text,
+	"source_keys" jsonb NOT NULL,
+	"status" "provider_status" NOT NULL,
+	"origin" "provider_origin" NOT NULL,
+	"first_seen_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+
+INSERT INTO "providers" ("slug", "name", "protocol", "default_base_url", "source_keys", "status", "origin") VALUES
+	('deepseek', 'DeepSeek', 'openai_compatible', 'https://api.deepseek.com/v1', '{"litellm": ["deepseek"], "openrouterAuthor": "deepseek"}', 'managed', 'registry'),
+	('openrouter', 'OpenRouter', 'openai_compatible', 'https://openrouter.ai/api/v1', '{"litellm": ["openrouter"], "openrouterAuthor": null}', 'managed', 'registry'),
+	('huggingface', 'Hugging Face', 'openai_compatible', 'https://router.huggingface.co/v1', '{"litellm": ["huggingface"], "openrouterAuthor": null}', 'managed', 'registry'),
+	('mistral', 'Mistral', 'openai_compatible', 'https://api.mistral.ai/v1', '{"litellm": ["mistral", "codestral", "text-completion-codestral"], "openrouterAuthor": "mistralai"}', 'managed', 'registry'),
+	('groq', 'Groq', 'openai_compatible', 'https://api.groq.com/openai/v1', '{"litellm": ["groq"], "openrouterAuthor": null}', 'managed', 'registry'),
+	('together', 'Together AI', 'openai_compatible', 'https://api.together.xyz/v1', '{"litellm": ["together_ai"], "openrouterAuthor": null}', 'managed', 'registry'),
+	('gemini', 'Google Gemini', 'openai_compatible', 'https://generativelanguage.googleapis.com/v1beta/openai', '{"litellm": ["gemini"], "openrouterAuthor": "google"}', 'managed', 'registry'),
+	('custom', 'Personalizzato (compatibile OpenAI)', 'openai_compatible', NULL, '{"litellm": [], "openrouterAuthor": null}', 'managed', 'registry'),
+	('system_gateway', 'Gateway di Casello', 'openai_compatible', NULL, '{"litellm": [], "openrouterAuthor": null}', 'managed', 'registry');
+
 -- Account AI
-CREATE TYPE "public"."ai_provider" AS ENUM('deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway');
 CREATE TYPE "public"."ai_account_status" AS ENUM('unverified', 'ok', 'error');
 CREATE TYPE "public"."ai_model_availability" AS ENUM('available', 'unavailable', 'unknown');
 CREATE TYPE "public"."model_catalog_status" AS ENUM('available', 'deprecated', 'retired');
@@ -222,7 +249,7 @@ CREATE TABLE "ai_accounts" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"user_id" integer,
 	"name" text NOT NULL,
-	"provider" "ai_provider" NOT NULL,
+	"provider" text NOT NULL,
 	"base_url" text NOT NULL,
 	"api_key_enc" text,
 	"allow_private_network" boolean DEFAULT false NOT NULL,
@@ -232,7 +259,8 @@ CREATE TABLE "ai_accounts" (
 	"last_checked_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "ai_accounts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action
+	CONSTRAINT "ai_accounts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "ai_accounts_provider_providers_slug_fk" FOREIGN KEY ("provider") REFERENCES "public"."providers"("slug") ON DELETE no action ON UPDATE cascade
 );
 
 CREATE UNIQUE INDEX "ai_accounts_one_default_per_user" ON "ai_accounts" USING btree ("user_id") WHERE "ai_accounts"."is_default";
@@ -271,7 +299,7 @@ ALTER TABLE "analyses" ADD CONSTRAINT "analyses_ai_model_id_ai_models_id_fk" FOR
 -- Catalogo dei modelli
 CREATE TABLE "model_catalog" (
 	"id" serial PRIMARY KEY NOT NULL,
-	"provider" "ai_provider" NOT NULL,
+	"provider" text NOT NULL,
 	"model_id" text NOT NULL,
 	"family" text NOT NULL,
 	"version" text NOT NULL,
@@ -284,7 +312,8 @@ CREATE TABLE "model_catalog" (
 	"deprecation_date" timestamp,
 	"sources" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "model_catalog_provider_model_unique" UNIQUE("provider","model_id")
+	CONSTRAINT "model_catalog_provider_model_unique" UNIQUE("provider","model_id"),
+	CONSTRAINT "model_catalog_provider_providers_slug_fk" FOREIGN KEY ("provider") REFERENCES "public"."providers"("slug") ON DELETE no action ON UPDATE cascade
 );
 
 -- user_id è null per le esecuzioni pianificate

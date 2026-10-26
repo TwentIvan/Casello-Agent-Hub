@@ -5,6 +5,7 @@ import { expireStalePausedRuns, failInterruptedRuns } from "./lib/run-executor";
 import { ensureSystemAccount } from "./lib/ai/system-account";
 import { failInterruptedCatalogRuns } from "./lib/catalog/refresh";
 import { startCatalogScheduler } from "./lib/catalog/scheduler";
+import { ensureProviderRegistry } from "./lib/catalog/provider-registry";
 import { assertSecretKey } from "./lib/secrets";
 
 // In produzione la chiave dei segreti è obbligatoria: meglio fallire all'avvio che alla prima cifratura.
@@ -48,9 +49,14 @@ failInterruptedCatalogRuns()
   )
   .finally(() => startCatalogScheduler());
 
-// Account AI di sistema dalle variabili del gateway attuale; collega agenti e analisi esistenti.
-// Un errore non blocca l'avvio: si logga solo il nome, mai il messaggio.
-ensureSystemAccount()
+// Registro dei provider allineato alla tabella providers, poi l'account AI di sistema dalle variabili del
+// gateway attuale (collega agenti e analisi esistenti). Un errore non blocca l'avvio: si logga solo il nome,
+// mai il messaggio.
+ensureProviderRegistry()
+  .catch((err: unknown) =>
+    logger.error({ errorName: err instanceof Error ? err.name : "Error" }, "Allineamento del registro dei provider non riuscito"),
+  )
+  .then(() => ensureSystemAccount())
   .then((res) => {
     if (res) logger.info({ accountId: res.accountId }, "Account di sistema del gateway allineato");
   })

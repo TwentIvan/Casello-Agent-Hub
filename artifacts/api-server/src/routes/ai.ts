@@ -336,7 +336,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       }
       baseUrl = requested;
     } else {
-      baseUrl = PROVIDERS[provider].defaultBaseUrl!;
+      baseUrl = PROVIDERS.get(provider)!.defaultBaseUrl!;
       // La console può rimandare il base URL precompilato: ammesso solo se coincide
       if (requested && requested !== baseUrl) {
         res.status(400).json({ error: BASE_URL_ONLY_CUSTOM });

@@ -42,7 +42,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `lib/api-spec/openapi.yaml` — contratto API, fonte di verità (contract-first)
 - `lib/api-client-react/src/generated/` — client generato da Orval: NON modificare a mano
 - `lib/db/src/schema/` — schema Drizzle, una tabella per file (apps, agents, app_tools, agent_tools, runs,
-  run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations)
+  run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
+  ai_accounts, ai_models)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -54,7 +55,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   le risposte con `*Response.parse` (errore → 500, è un bug del server)
 - `artifacts/api-server/src/lib/auth.ts` — login Google (OIDC), sessione e middleware che protegge `/api`
 - `artifacts/api-server/src/lib/models.ts` — modelli selezionabili e default (`openrouter/auto`)
-- `artifacts/api-server/src/lib/ai-gateway.ts` — client verso i modelli (LiteLLM proxy o provider diretti)
+- `artifacts/api-server/src/lib/ai/` — account AI: provider e indirizzi (`providers.ts`), scoperta dei modelli
+  (`discovery.ts`), esecutore unico (`executor.ts`), account di sistema (`system-account.ts`), scelta del modello
+  (`choice.ts`); route in `src/routes/ai.ts`
+- `artifacts/api-server/src/lib/ai-gateway.ts` — client storico verso LiteLLM (agenti non ancora su un account AI)
 - `artifacts/api-server/src/lib/agent-loop.ts` — ciclo dell'agente (puro, senza DB né rete): chiamate al
   modello, esecuzione dei tool, pause, limiti del turno
 - `artifacts/api-server/src/lib/run-executor.ts` — orchestrazione delle run: collega il ciclo al DB,
@@ -92,14 +96,30 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - **Run**: esecuzione di un Agent: input, output, errore, durata, token, stato
   (pending/running/awaiting_client/succeeded/failed/cancelled); i passi in `run_steps`
 
-## Modelli AI
+## Modelli AI (account AI)
 
-Le chiamate passano da LiteLLM (`AI_GATEWAY_BASE_URL=https://aigateway.fantamister.cloud/v1`, chiave
-virtuale in `AI_GATEWAY_API_KEY`). Il campo `agent.model` deve coincidere con un `model_name` di
-LiteLLM. Non esistono più account OpenAI/Anthropic: i modelli disponibili sono quelli `openrouter/*`
-(`openrouter/auto`, `openrouter/deepseek-chat`, `openrouter/qwen3-235b`, `openrouter/mistral-small`).
-Il default è `openrouter/auto` (schema `agents` e fallback del gateway); la lista per la UI
-arriva da `GET /api/models` (costante in `lib/models.ts`: va tenuta allineata a LiteLLM).
+- Casello è l'unico centro di configurazione dei modelli: ogni utente aggiunge i propri **account AI**
+  (tabella `ai_accounts`: DeepSeek, OpenRouter, Hugging Face, Mistral, Groq, Together o endpoint
+  compatibile OpenAI "personalizzato") dalla pagina Account; la chiave è cifrata con `CASELLO_SECRET_KEY`
+  e mai restituita. Al salvataggio Casello verifica la chiave e legge i modelli da `GET /models`
+  (tabella `ai_models`, con prezzi USD per milione di token: dal provider, dalla tabella iniziale
+  `lib/ai/price-seed.ts` o inseriti a mano). Una modifica di chiave o indirizzo si verifica PRIMA di salvare.
+- Esecutore unico `lib/ai/executor.ts`: `resolveModel(aiModelId)` → account, indirizzo, chiave (solo in
+  memoria) e prezzi; `modelChat` chiama il provider e calcola il costo. Errori con messaggi fissi in italiano
+  (`lib/ai/discovery.ts`). Predisposto per un secondo esecutore (agente locale via MCP, prossimo sottoprogetto).
+- "Chi configura paga": un utente sceglie solo modelli dei propri account o dell'account di sistema; le run
+  usano il modello salvato nell'agente (`agents.ai_model_id`), le analisi quello scelto da chi le avvia.
+  Costi in `runs.cost_usd` e `analyses.cost_usd` (null = costo parziale, prezzo mancante); stima prima
+  dell'analisi (`GET /api/ai/estimate`).
+- Indirizzi dei provider: solo `https`; "Consenti rete privata" (solo personalizzato) ammette `http` e reti
+  private, mai loopback, link-local o metadata. Nessun redirect seguito.
+- Transizione: con `AI_GATEWAY_BASE_URL`/`AI_GATEWAY_API_KEY` impostate, all'avvio Casello crea l'account di
+  sistema "Gateway Casello" (LiteLLM, repo `TwentIvan/AIGateway`) con i modelli di `lib/models.ts` e vi collega
+  agenti e analisi esistenti. Gli agenti con `ai_model_id` null usano ancora `lib/ai-gateway.ts`. AIGateway va
+  dismesso (togliendo le variabili) solo dopo aver spostato gli agenti sugli account personali, con conferma.
+- Route: `/api/ai/accounts` (+ `/:id/verify`, `/:id/default`, `/:id/models`), `/api/ai/models`,
+  `/api/ai/estimate`; `GET /api/models` resta come alias del vecchio elenco.
+- Costi sempre sotto controllo: a parità di risultato si preferisce il modello o il percorso più economico.
 
 ## Agenti operativi (fase 1)
 

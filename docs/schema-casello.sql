@@ -278,7 +278,6 @@ CREATE TABLE "ai_models" (
 	"discovered" boolean DEFAULT false NOT NULL,
 	"availability" "ai_model_availability" DEFAULT 'unknown' NOT NULL,
 	"supports_tools" boolean,
-	"catalog_id" integer,
 	"offer_id" integer,
 	"last_probe_at" timestamp,
 	"last_probe_ok" boolean,
@@ -296,26 +295,6 @@ ALTER TABLE "runs" ADD COLUMN "cost_usd" numeric(12, 6);
 
 ALTER TABLE "agents" ADD CONSTRAINT "agents_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "analyses" ADD CONSTRAINT "analyses_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action;
-
--- Catalogo dei modelli
-CREATE TABLE "model_catalog" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"provider" text NOT NULL,
-	"model_id" text NOT NULL,
-	"family" text NOT NULL,
-	"version" text NOT NULL,
-	"released_at" timestamp,
-	"price_input_per_mtok" numeric(12, 6),
-	"price_output_per_mtok" numeric(12, 6),
-	"context_tokens" integer,
-	"supports_tools" boolean,
-	"status" "model_catalog_status" DEFAULT 'available' NOT NULL,
-	"deprecation_date" timestamp,
-	"sources" jsonb DEFAULT '{}'::jsonb NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "model_catalog_provider_model_unique" UNIQUE("provider","model_id"),
-	CONSTRAINT "model_catalog_provider_providers_slug_fk" FOREIGN KEY ("provider") REFERENCES "public"."providers"("slug") ON DELETE no action ON UPDATE cascade
-);
 
 -- Catalogo universale: modelli indipendenti dal provider e loro offerte presso i provider
 CREATE TYPE "public"."model_mode" AS ENUM('chat', 'embedding', 'image_generation', 'image_edit', 'audio_transcription', 'audio_speech', 'video_generation', 'rerank', 'moderation', 'ocr', 'search', 'realtime', 'responses', 'completion', 'other');
@@ -371,5 +350,4 @@ CREATE TABLE "catalog_runs" (
 -- Al massimo un aggiornamento del catalogo in corso alla volta
 CREATE UNIQUE INDEX "catalog_runs_one_running" ON "catalog_runs" USING btree ("status") WHERE "catalog_runs"."status" = 'running';
 
-ALTER TABLE "ai_models" ADD CONSTRAINT "ai_models_catalog_id_model_catalog_id_fk" FOREIGN KEY ("catalog_id") REFERENCES "public"."model_catalog"("id") ON DELETE set null ON UPDATE no action;
 ALTER TABLE "ai_models" ADD CONSTRAINT "ai_models_offer_id_model_offers_id_fk" FOREIGN KEY ("offer_id") REFERENCES "public"."model_offers"("id") ON DELETE set null ON UPDATE no action;

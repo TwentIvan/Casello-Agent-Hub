@@ -21,7 +21,7 @@ import { decryptSecret } from "../secrets";
 import { ProviderError, providerErrorKindForStatus } from "./discovery";
 import { markModelUnavailable } from "./model-status";
 import type { ProviderProtocol } from "../catalog/provider-registry-data";
-import { normalizeBaseUrl, validateBaseUrl, type AiProvider } from "./providers";
+import { normalizeBaseUrl, privateNetworkAllowed, validateBaseUrl, type AiProvider } from "./providers";
 
 /**
  * Esecutore unico dei modelli: risolve un modello (`ai_models.id`) nel suo account, con base URL,
@@ -120,14 +120,14 @@ function toPrice(v: string | null): number | null {
  */
 export async function resolveModel(aiModelId: number, opts: { userId: number | null; mustOwn: boolean }): Promise<ResolvedModel> {
   const [row] = await db
-    .select({ model: aiModelsTable, account: aiAccountsTable, protocol: providersTable.protocol })
+    .select({ model: aiModelsTable, account: aiAccountsTable, protocol: providersTable.protocol, providerStatus: providersTable.status })
     .from(aiModelsTable)
     .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
     .innerJoin(providersTable, eq(aiAccountsTable.provider, providersTable.slug))
     .where(eq(aiModelsTable.id, aiModelId))
     .limit(1);
   if (!row) throw new ModelAccessError(MODEL_UNAVAILABLE);
-  const { model, account, protocol } = row;
+  const { model, account, protocol, providerStatus } = row;
   // Difesa in profondità: l'account di sistema non ha proprietario, tutti gli altri sì
   if ((account.provider === "system_gateway") !== (account.userId === null)) {
     throw new ModelAccessError(MODEL_UNAVAILABLE);
@@ -147,8 +147,9 @@ export async function resolveModel(aiModelId: number, opts: { userId: number | n
     baseUrl = normalizeBaseUrl(envUrl);
     apiKey = envKey;
   } else {
-    // Rivalidato a ogni chiamata: le regole possono essere cambiate dopo il salvataggio
-    if (validateBaseUrl(account.baseUrl, account.allowPrivateNetwork) !== null) throw new ProviderError("bad_url");
+    // Rivalidato a ogni chiamata: le regole (e lo stato del provider) possono essere cambiate dopo il salvataggio
+    const allowPrivate = account.allowPrivateNetwork && privateNetworkAllowed({ slug: account.provider, status: providerStatus });
+    if (validateBaseUrl(account.baseUrl, allowPrivate) !== null) throw new ProviderError("bad_url");
     baseUrl = normalizeBaseUrl(account.baseUrl);
     if (account.apiKeyEnc === null) {
       apiKey = null;

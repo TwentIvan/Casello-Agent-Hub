@@ -6,7 +6,49 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AiProvider } from './aiProvider';
+import type { ListCatalogModelsMode } from './listCatalogModelsMode';
+import type { ListCatalogModelsSort } from './listCatalogModelsSort';
 
 export type ListCatalogModelsParams = {
-provider?: AiProvider;
+/**
+ * @maxLength 200
+ */
+q?: string;
+/**
+ * Tipo del modello; `all` per tutti
+ */
+mode?: ListCatalogModelsMode;
+/**
+ * @maxItems 50
+ * @items.maxLength 100
+ */
+author?: string[];
+/**
+ * @maxItems 50
+ */
+provider?: AiProvider[];
+tools?: boolean;
+vision?: boolean;
+reasoning?: boolean;
+usable?: boolean;
+/**
+ * USD per milione di token, input+output dell'offerta più economica
+ * @minimum 0
+ */
+maxPrice?: number;
+/**
+ * @minimum 0
+ */
+minContext?: number;
+includeRetired?: boolean;
+sort?: ListCatalogModelsSort;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };

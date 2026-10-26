@@ -1014,23 +1014,78 @@ export interface CostEstimate {
   typicalUsd: number | null;
 }
 
-export type CatalogModelStatus = typeof CatalogModelStatus[keyof typeof CatalogModelStatus];
+export type CatalogModelMode = typeof CatalogModelMode[keyof typeof CatalogModelMode];
 
 
-export const CatalogModelStatus = {
+export const CatalogModelMode = {
+  chat: 'chat',
+  embedding: 'embedding',
+  image_generation: 'image_generation',
+  image_edit: 'image_edit',
+  audio_transcription: 'audio_transcription',
+  audio_speech: 'audio_speech',
+  video_generation: 'video_generation',
+  rerank: 'rerank',
+  moderation: 'moderation',
+  ocr: 'ocr',
+  search: 'search',
+  realtime: 'realtime',
+  responses: 'responses',
+  completion: 'completion',
+  other: 'other',
+} as const;
+
+export type CatalogOfferStatus = typeof CatalogOfferStatus[keyof typeof CatalogOfferStatus];
+
+
+export const CatalogOfferStatus = {
   available: 'available',
   deprecated: 'deprecated',
   retired: 'retired',
 } as const;
 
-export interface CatalogModel {
-  id: number;
+export interface CatalogCheapestOffer {
   provider: AiProvider;
-  modelId: string;
+  /** USD per milione di token */
+  priceInput: number;
+  /** USD per milione di token */
+  priceOutput: number;
+}
+
+export interface CatalogModelSummary {
+  id: number;
+  canonicalKey: string;
+  author: string;
   family: string;
   version: string;
+  mode: CatalogModelMode;
+  /** @nullable */
+  supportsTools: boolean | null;
+  /** @nullable */
+  supportsVision: boolean | null;
+  /** @nullable */
+  supportsReasoning: boolean | null;
   /** @nullable */
   releasedAt: string | null;
+  /** Offerte visibili (senza le ritirate, salvo includeRetired) */
+  offerCount: number;
+  cheapestOffer: CatalogCheapestOffer | null;
+  inMyAccounts: boolean;
+}
+
+export interface CatalogModelPage {
+  items: CatalogModelSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface CatalogOffer {
+  id: number;
+  provider: AiProvider;
+  providerName: string;
+  providerStatus: AiProviderStatus;
+  providerModelId: string;
   /**
      * USD per milione di token
      * @nullable
@@ -1045,10 +1100,35 @@ export interface CatalogModel {
   contextTokens: number | null;
   /** @nullable */
   supportsTools: boolean | null;
-  status: CatalogModelStatus;
+  status: CatalogOfferStatus;
   /** @nullable */
   deprecationDate: string | null;
   inMyAccounts: boolean;
+}
+
+export type CatalogProviderOrigin = typeof CatalogProviderOrigin[keyof typeof CatalogProviderOrigin];
+
+
+export const CatalogProviderOrigin = {
+  registry: 'registry',
+  discovered: 'discovered',
+} as const;
+
+export interface CatalogProvider {
+  slug: AiProvider;
+  name: string;
+  protocol: AiProviderProtocol;
+  status: AiProviderStatus;
+  origin: CatalogProviderOrigin;
+  firstSeenAt: string;
+  modelCount: number;
+  hasMyAccount: boolean;
+}
+
+export interface ProviderIssueText {
+  title: string;
+  /** Markdown in italiano */
+  body: string;
 }
 
 export interface CatalogChange {
@@ -1072,6 +1152,12 @@ export type CatalogSummaryViewPriceChangedItem = CatalogChange & ({
   newOutput: number | null;
 });
 
+export type CatalogSummaryViewNewProvidersItem = {
+  slug: AiProvider;
+  name: string;
+  count: number;
+};
+
 export type CatalogSummaryViewAccountsItem = {
   accountId: number;
   accountName: string;
@@ -1084,6 +1170,8 @@ export interface CatalogSummaryView {
   retired: CatalogChange[];
   deprecating: CatalogSummaryViewDeprecatingItem[];
   priceChanged: CatalogSummaryViewPriceChangedItem[];
+  /** Provider scoperti in questa esecuzione (non gestiti) */
+  newProviders: CatalogSummaryViewNewProvidersItem[];
   /** Solo gli account dell'utente corrente */
   accounts: CatalogSummaryViewAccountsItem[];
 }
@@ -1229,6 +1317,86 @@ maxTokens?: number;
 };
 
 export type ListCatalogModelsParams = {
-provider?: AiProvider;
+/**
+ * @maxLength 200
+ */
+q?: string;
+/**
+ * Tipo del modello; `all` per tutti
+ */
+mode?: ListCatalogModelsMode;
+/**
+ * @maxItems 50
+ * @items.maxLength 100
+ */
+author?: string[];
+/**
+ * @maxItems 50
+ */
+provider?: AiProvider[];
+tools?: boolean;
+vision?: boolean;
+reasoning?: boolean;
+usable?: boolean;
+/**
+ * USD per milione di token, input+output dell'offerta più economica
+ * @minimum 0
+ */
+maxPrice?: number;
+/**
+ * @minimum 0
+ */
+minContext?: number;
+includeRetired?: boolean;
+sort?: ListCatalogModelsSort;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type ListCatalogModelsMode = typeof ListCatalogModelsMode[keyof typeof ListCatalogModelsMode];
+
+
+export const ListCatalogModelsMode = {
+  all: 'all',
+  chat: 'chat',
+  embedding: 'embedding',
+  image_generation: 'image_generation',
+  image_edit: 'image_edit',
+  audio_transcription: 'audio_transcription',
+  audio_speech: 'audio_speech',
+  video_generation: 'video_generation',
+  rerank: 'rerank',
+  moderation: 'moderation',
+  ocr: 'ocr',
+  search: 'search',
+  realtime: 'realtime',
+  responses: 'responses',
+  completion: 'completion',
+  other: 'other',
+} as const;
+
+export type ListCatalogModelsSort = typeof ListCatalogModelsSort[keyof typeof ListCatalogModelsSort];
+
+
+export const ListCatalogModelsSort = {
+  name: 'name',
+  price: 'price',
+  released: 'released',
+  context: 'context',
+} as const;
+
+export type ListCatalogProvidersParams = {
+/**
+ * @maxLength 200
+ */
+q?: string;
+status?: AiProviderStatus;
 };
 

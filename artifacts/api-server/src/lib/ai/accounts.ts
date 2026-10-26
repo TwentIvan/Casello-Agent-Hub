@@ -1,7 +1,8 @@
 import { eq, sql } from "drizzle-orm";
-import { db, aiAccountsTable, aiModelsTable, type AiAccount } from "@workspace/db";
+import { db, aiAccountsTable, aiModelsTable, providersTable, type AiAccount } from "@workspace/db";
 import { decryptSecret } from "../secrets";
 import { discoverModels, ProviderError, type DiscoveredModel } from "./discovery";
+import { privateNetworkAllowed } from "./providers";
 
 // Modelli degli account AI: salvataggio dei modelli scoperti, verifica di un account e arricchimento
 // dal catalogo. Usati dalle route degli account e dall'aggiornamento del catalogo.
@@ -107,12 +108,17 @@ export async function verifyAccount(account: AiAccount): Promise<DiscoveredModel
         throw new ProviderError("auth");
       }
     }
+    // Il consenso salvato vale solo finché il provider è custom o non gestito (come nell'esecutore)
+    const [provider] = await db
+      .select({ slug: providersTable.slug, status: providersTable.status })
+      .from(providersTable)
+      .where(eq(providersTable.slug, account.provider))
+      .limit(1);
     models = await discoverModels({
       provider: account.provider,
       baseUrl: account.baseUrl,
       apiKey,
-      // Le route lo consentono solo per custom e per i provider non gestiti (come l'esecutore)
-      allowPrivateNetwork: account.allowPrivateNetwork,
+      allowPrivateNetwork: account.allowPrivateNetwork && provider !== undefined && privateNetworkAllowed(provider),
     });
   } catch (err) {
     if (!(err instanceof ProviderError)) throw err;

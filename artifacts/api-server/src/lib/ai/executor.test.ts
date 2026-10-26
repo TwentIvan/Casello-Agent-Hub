@@ -271,6 +271,18 @@ describe("resolveModel: esecutore dal protocollo del provider", () => {
     expect(r).toMatchObject({ provider: "test-sconosciuto", kind: "openai_compatible" });
   });
 
+  it("rete privata salvata: non vale più se il provider diventa gestito → indirizzo non consentito", async () => {
+    const { aiModelId } = await seed({ provider: "test-sconosciuto", allowPrivateNetwork: true });
+    await db.update(providersTable).set({ status: "managed" }).where(eq(providersTable.slug, "test-sconosciuto"));
+    try {
+      const err = await caught(resolveModel(aiModelId, { userId: alice, mustOwn: true }));
+      expect(err).toBeInstanceOf(ProviderError);
+      expect((err as ProviderError).message).toBe("indirizzo non consentito");
+    } finally {
+      await db.update(providersTable).set({ status: "unmanaged" }).where(eq(providersTable.slug, "test-sconosciuto"));
+    }
+  });
+
   it("protocollo senza esecutore → errore fisso", async () => {
     const { aiModelId } = await seed({ provider: "test-in-arrivo", allowPrivateNetwork: true });
     const err = await caught(resolveModel(aiModelId, { userId: alice, mustOwn: true }));

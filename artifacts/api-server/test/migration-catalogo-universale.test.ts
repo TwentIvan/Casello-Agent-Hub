@@ -20,7 +20,8 @@ describe("migrazione 2026-10-catalogo-universale", () => {
       INSERT INTO ai_accounts (user_id, name, provider, base_url) SELECT id, 'Gemini', 'gemini', 'https://generativelanguage.googleapis.com/v1beta/openai' FROM users;
       INSERT INTO ai_accounts (user_id, name, provider, base_url) VALUES (NULL, 'Gateway Casello', 'system_gateway', 'https://gw.example.com/v1');
       INSERT INTO model_catalog (provider, model_id, family, version) VALUES ('mistral', 'mistral-large', 'Mistral Large', '2');
-      INSERT INTO ai_models (account_id, model_id, display_name) SELECT id, 'deepseek-chat', 'Chat' FROM ai_accounts WHERE name = 'DeepSeek';
+      INSERT INTO ai_models (account_id, model_id, display_name, catalog_id) SELECT id, 'deepseek-chat', 'Chat', (SELECT id FROM model_catalog) FROM ai_accounts WHERE name = 'DeepSeek';
+      INSERT INTO catalog_runs (trigger, status, finished_at) VALUES ('scheduled', 'completed', now());
     `);
     await db.exec(read(SQL));
   });
@@ -40,14 +41,11 @@ describe("migrazione 2026-10-catalogo-universale", () => {
       { name: "Gateway Casello", provider: "system_gateway" },
     ]);
     const types = (
-      await db.query<{ table_name: string; data_type: string }>(
-        `SELECT table_name, data_type FROM information_schema.columns WHERE column_name = 'provider' AND table_name IN ('ai_accounts', 'model_catalog') ORDER BY table_name`,
+      await db.query<{ data_type: string }>(
+        `SELECT data_type FROM information_schema.columns WHERE column_name = 'provider' AND table_name = 'ai_accounts'`,
       )
     ).rows;
-    expect(types).toEqual([
-      { table_name: "ai_accounts", data_type: "text" },
-      { table_name: "model_catalog", data_type: "text" },
-    ]);
+    expect(types).toEqual([{ data_type: "text" }]);
   });
 
   it("providers contiene i provider di oggi, gestiti e dal registro", async () => {
@@ -62,9 +60,6 @@ describe("migrazione 2026-10-catalogo-universale", () => {
     await expect(
       db.exec(`INSERT INTO ai_accounts (name, provider, base_url) VALUES ('X', 'inesistente', 'https://x.example.com/v1')`),
     ).rejects.toThrow(/ai_accounts_provider_providers_slug_fk/);
-    await expect(
-      db.exec(`INSERT INTO model_catalog (provider, model_id, family, version) VALUES ('inesistente', 'm', 'f', '1')`),
-    ).rejects.toThrow(/model_catalog_provider_providers_slug_fk/);
   });
 
   it("rinominare uno slug aggiorna gli account (on update cascade)", async () => {
@@ -102,10 +97,25 @@ describe("migrazione 2026-10-catalogo-universale", () => {
     }
   });
 
+  it("vecchio catalogo eliminato: model_catalog e ai_models.catalog_id spariti, catalog_runs vuota", async () => {
+    const tables = (await db.query<any>("SELECT table_name FROM information_schema.tables WHERE table_name = 'model_catalog'")).rows;
+    expect(tables).toEqual([]);
+    const cols = (
+      await db.query<any>("SELECT column_name FROM information_schema.columns WHERE table_name = 'ai_models' AND column_name = 'catalog_id'")
+    ).rows;
+    expect(cols).toEqual([]);
+    expect((await db.query<any>("SELECT count(*)::int AS n FROM catalog_runs")).rows[0].n).toBe(0);
+    // Il modello dell'account resta (perde solo il collegamento al vecchio catalogo)
+    expect((await db.query<any>("SELECT model_id FROM ai_models")).rows).toEqual([{ model_id: "deepseek-chat" }]);
+  });
+
   it("è idempotente: una seconda esecuzione non dà errori e non cambia nulla", async () => {
     const before = await accountProviders();
+    // Le esecuzioni registrate dopo il deploy non si cancellano più: lo svuotamento vale solo la prima volta
+    await db.exec(`INSERT INTO catalog_runs (trigger, status, finished_at) VALUES ('scheduled', 'completed', now())`);
     await db.exec(read(SQL));
     expect(await accountProviders()).toEqual(before);
+    expect((await db.query<any>("SELECT count(*)::int AS n FROM catalog_runs")).rows[0].n).toBe(1);
     expect((await db.query<any>("SELECT count(*)::int AS n FROM providers")).rows[0].n).toBe(9);
   });
 });

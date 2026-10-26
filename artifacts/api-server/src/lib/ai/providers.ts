@@ -33,6 +33,14 @@ export const PROVIDERS: ReadonlyMap<AiProvider, ProviderInfo> = new Map(
 
 export const BAD_URL_MESSAGE = "indirizzo non consentito";
 
+/**
+ * La rete privata è ammessa solo per custom e per i provider non gestiti, secondo lo stato ATTUALE del
+ * provider: il consenso salvato su un account non vale più se il registro promuove il provider a gestito.
+ */
+export function privateNetworkAllowed(p: { slug: string; status: string }): boolean {
+  return p.slug === "custom" || p.status === "unmanaged";
+}
+
 /** Toglie spazi e barre finali: `https://x/v1/` → `https://x/v1`. */
 export function normalizeBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, "");

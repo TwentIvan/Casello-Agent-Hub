@@ -49,7 +49,7 @@ import { upsertDiscovered, verifyAccount, type Tx } from "../lib/ai/accounts";
 import { ModelAccessError } from "../lib/ai/executor";
 import { effectiveStatus, isSelectable, pickRecommended } from "../lib/ai/model-status";
 import { probeModel } from "../lib/ai/probe";
-import { normalizeBaseUrl, validateBaseUrl, type AiProvider } from "../lib/ai/providers";
+import { normalizeBaseUrl, privateNetworkAllowed, validateBaseUrl, type AiProvider } from "../lib/ai/providers";
 import { systemAccountConfigured } from "../lib/ai/system-account";
 import { isUniqueViolation } from "../lib/pg-errors";
 import { decryptSecret, encryptSecret } from "../lib/secrets";
@@ -256,7 +256,7 @@ function providerRules(p: ProviderRow): { editableBaseUrl: boolean; privateNetwo
   const isCustom = p.slug === "custom";
   const unmanaged = p.status === "unmanaged";
   const managedNoDefault = p.status === "managed" && p.defaultBaseUrl === null && p.slug !== "system_gateway";
-  return { editableBaseUrl: isCustom || unmanaged || managedNoDefault, privateNetwork: isCustom || unmanaged };
+  return { editableBaseUrl: isCustom || unmanaged || managedNoDefault, privateNetwork: privateNetworkAllowed(p) };
 }
 
 const STATUS_ORDER: Record<ProviderRow["status"], number> = { managed: 0, coming: 1, unmanaged: 2 };
@@ -489,7 +489,9 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       set.name = name;
     }
 
-    let allowPrivateNetwork = account.allowPrivateNetwork;
+    // Il consenso salvato non vale più se il provider è diventato gestito: si usa quello effettivo
+    const storedPrivate = account.allowPrivateNetwork && rules.privateNetwork;
+    let allowPrivateNetwork = storedPrivate;
     if (body.allowPrivateNetwork !== undefined) {
       if (body.allowPrivateNetwork && !rules.privateNetwork) {
         res.status(400).json({ error: PRIVATE_ONLY_CUSTOM });
@@ -510,7 +512,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       }
       baseUrl = requested;
     }
-    const connectionChanged = baseUrl !== account.baseUrl || allowPrivateNetwork !== account.allowPrivateNetwork;
+    const connectionChanged = baseUrl !== account.baseUrl || allowPrivateNetwork !== storedPrivate;
     if (connectionChanged) {
       const urlError = validateBaseUrl(baseUrl, allowPrivateNetwork);
       if (urlError) {

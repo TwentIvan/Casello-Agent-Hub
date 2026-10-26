@@ -52,13 +52,14 @@ DO $$ BEGIN
 END $$;
 
 DO $$ BEGIN ALTER TABLE "ai_accounts" ADD CONSTRAINT "ai_accounts_provider_providers_slug_fk" FOREIGN KEY ("provider") REFERENCES "public"."providers"("slug") ON DELETE no action ON UPDATE cascade; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE "model_catalog" ADD CONSTRAINT "model_catalog_provider_providers_slug_fk" FOREIGN KEY ("provider") REFERENCES "public"."providers"("slug") ON DELETE no action ON UPDATE cascade; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+-- model_catalog sparisce nella sezione 3: a una seconda esecuzione la tabella non c'è più (undefined_table)
+DO $$ BEGIN ALTER TABLE "model_catalog" ADD CONSTRAINT "model_catalog_provider_providers_slug_fk" FOREIGN KEY ("provider") REFERENCES "public"."providers"("slug") ON DELETE no action ON UPDATE cascade; EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL; END $$;
 
 -- =================================================================================================
 -- Sezione 2: modelli e offerte
 -- Il catalogo universale: models (indipendenti dal provider) e model_offers (un modello presso un provider).
 -- Si riempiono al primo aggiornamento del catalogo dopo il deploy, che ricollega anche ai_models.offer_id.
--- model_catalog e ai_models.catalog_id restano finché la console non legge le nuove tabelle.
+-- model_catalog e ai_models.catalog_id si eliminano nella sezione 3.
 -- =================================================================================================
 
 DO $$ BEGIN CREATE TYPE "public"."model_mode" AS ENUM('chat', 'embedding', 'image_generation', 'image_edit', 'audio_transcription', 'audio_speech', 'video_generation', 'rerank', 'moderation', 'ocr', 'search', 'realtime', 'responses', 'completion', 'other'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -100,5 +101,23 @@ CREATE INDEX IF NOT EXISTS "model_offers_model_id_idx" ON "model_offers" USING b
 
 ALTER TABLE "ai_models" ADD COLUMN IF NOT EXISTS "offer_id" integer;
 DO $$ BEGIN ALTER TABLE "ai_models" ADD CONSTRAINT "ai_models_offer_id_model_offers_id_fk" FOREIGN KEY ("offer_id") REFERENCES "public"."model_offers"("id") ON DELETE set null ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- =================================================================================================
+-- Sezione 3: eliminazione del vecchio catalogo
+-- La console e l'API leggono ormai solo models e model_offers. Si svuota catalog_runs: i riepiloghi salvati
+-- parlano di model_catalog e, senza esecuzioni, lo scheduler ricostruisce il catalogo 5 minuti dopo il deploy
+-- (e ricollega gli account con ai_models.offer_id); si perde solo lo storico delle esecuzioni. Lo svuotamento
+-- avviene solo se model_catalog esiste ancora, così una seconda esecuzione non cancella le esecuzioni nuove.
+-- =================================================================================================
+
+DO $$ BEGIN
+	IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'model_catalog') THEN
+		DELETE FROM "catalog_runs";
+	END IF;
+END $$;
+
+ALTER TABLE "ai_models" DROP CONSTRAINT IF EXISTS "ai_models_catalog_id_model_catalog_id_fk";
+ALTER TABLE "ai_models" DROP COLUMN IF EXISTS "catalog_id";
+DROP TABLE IF EXISTS "model_catalog";
 
 COMMIT;

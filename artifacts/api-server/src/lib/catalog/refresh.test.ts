@@ -342,9 +342,8 @@ describe("startCatalogRefresh", () => {
     expect(summary.added).toEqual([]);
   });
 
-  it("non scrive più model_catalog", async () => {
+  it("scrive le offerte dei provider", async () => {
     await refresh();
-    expect((await pool.query("SELECT count(*)::int AS n FROM model_catalog")).rows[0].n).toBe(0);
     const offers = await db.select().from(modelOffersTable).where(inArray(modelOffersTable.provider, ["deepseek", "openrouter"]));
     expect(offers.length).toBeGreaterThan(0);
   });

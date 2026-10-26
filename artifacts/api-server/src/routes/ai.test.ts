@@ -391,6 +391,25 @@ describe("provider del registro", () => {
     }
   });
 
+  it("rete privata salvata: non vale più se il provider diventa gestito (verifica e modifica rifiutate)", async () => {
+    const created = await api("POST", "/ai/accounts", customInput({ provider: UNMANAGED, name: "Interno" }));
+    expect(created.status, created.text).toBe(201);
+    const requests = fake.requests.length;
+    await db.update(providersTable).set({ status: "managed" }).where(eq(providersTable.slug, UNMANAGED));
+    try {
+      const verify = await api("POST", `/ai/accounts/${created.json.id}/verify`);
+      expect(verify.json).toMatchObject({ status: "error", lastError: "indirizzo non consentito" });
+      const upd = await api("PATCH", `/ai/accounts/${created.json.id}`, { apiKey: "sk-nuova-chiave" });
+      expect(upd.status).toBe(400);
+      expect(upd.json).toEqual({ error: "indirizzo non consentito" });
+      // Il solo nome resta modificabile senza chiamare il provider
+      expect((await api("PATCH", `/ai/accounts/${created.json.id}`, { name: "Rinominato" })).status).toBe(200);
+      expect(fake.requests).toHaveLength(requests);
+    } finally {
+      await db.update(providersTable).set({ status: "unmanaged" }).where(eq(providersTable.slug, UNMANAGED));
+    }
+  });
+
   it("provider gestito senza indirizzo predefinito: indirizzo obbligatorio, solo https, niente rete privata", async () => {
     const input = { name: "Perplexity", provider: "perplexity", apiKey: KEY };
     let res = await api("POST", "/ai/accounts", input);

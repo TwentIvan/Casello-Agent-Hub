@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, numeric } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { agentsTable } from "./agents";
@@ -27,6 +27,8 @@ export const runsTable = pgTable("runs", {
   pausedAt: timestamp("paused_at"),
   promptTokens: integer("prompt_tokens"),
   completionTokens: integer("completion_tokens"),
+  // Costo in USD, null se un prezzo del modello manca
+  costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   finishedAt: timestamp("finished_at"),
 });

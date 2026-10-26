@@ -11,3 +11,5 @@ export * from "./agent-skills";
 export * from "./users";
 export * from "./user-identities";
 export * from "./github-installations";
+export * from "./ai-accounts";
+export * from "./ai-models";

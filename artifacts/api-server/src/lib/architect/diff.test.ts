@@ -85,6 +85,7 @@ const existingAgent = (over: Partial<Agent & { toolNames: string[] }> = {}) => (
   name: "Agente squadre",
   systemPrompt: "p",
   model: "openrouter/auto",
+  aiModelId: null,
   status: "active" as const,
   role: "area" as const,
   area: "Squadre",

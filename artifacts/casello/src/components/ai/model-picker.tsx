@@ -28,8 +28,8 @@ interface ModelPickerProps {
 
 /**
  * Tendina unica dei modelli: raggruppata per account, con prezzo per milione di token. Un modello che non è
- * tra quelli dell'utente (agente configurato da altri o modello nascosto) resta come voce disabilitata, così
- * il valore non si perde.
+ * tra quelli dell'utente (agente configurato da altri, modello nascosto o account di sistema dismesso) resta
+ * come voce disabilitata, così il valore non si perde.
  */
 export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPickerProps) {
   const groups = useAiModelGroups();
@@ -42,6 +42,9 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
   const data = groups.data;
   const known = data.some((g) => g.models.some((m) => m.id === value));
   const foreign = value != null && !known;
+  // L'account di sistema compare nei gruppi solo finché è configurato: se manca, un modello sconosciuto è
+  // con ogni probabilità un collegamento al vecchio gateway rimasto senza account
+  const systemAvailable = data.some((g) => g.account.isSystem);
   const hasModels = data.some((g) => g.models.length > 0);
 
   if (!hasModels && !foreign) {
@@ -68,7 +71,9 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
         {foreign && (
           <>
             <SelectItem value={String(value)} disabled>
-              modello di un altro utente o nascosto (#{value})
+              {systemAvailable
+                ? `modello di un altro utente o nascosto (#${value})`
+                : `account di sistema non più disponibile (#${value})`}
             </SelectItem>
             <SelectSeparator />
           </>

@@ -16,8 +16,9 @@ export function formatRelative(date: string | Date): string {
   return formatDistanceToNow(new Date(date), { addSuffix: true, locale: it });
 }
 
-/** Importo in dollari con al massimo 4 decimali: "0,0017 $". */
+/** Importo in dollari con al massimo 4 decimali: "0,0017 $"; un importo positivo più piccolo è "< 0,0001 $". */
 export function formatUsd(value: number): string {
+  if (value > 0 && value < 0.0001) return "< 0,0001 $";
   return `${value.toLocaleString("it-IT", { maximumFractionDigits: 4 })} $`;
 }
 

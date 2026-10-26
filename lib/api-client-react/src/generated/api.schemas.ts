@@ -685,6 +685,208 @@ export interface AgentSkill {
   status: AgentSkillStatus;
 }
 
+export type AiProvider = typeof AiProvider[keyof typeof AiProvider];
+
+
+export const AiProvider = {
+  deepseek: 'deepseek',
+  openrouter: 'openrouter',
+  huggingface: 'huggingface',
+  mistral: 'mistral',
+  groq: 'groq',
+  together: 'together',
+  custom: 'custom',
+  system_gateway: 'system_gateway',
+} as const;
+
+export type AiAccountStatus = typeof AiAccountStatus[keyof typeof AiAccountStatus];
+
+
+export const AiAccountStatus = {
+  unverified: 'unverified',
+  ok: 'ok',
+  error: 'error',
+} as const;
+
+export interface AiAccount {
+  id: number;
+  name: string;
+  provider: AiProvider;
+  baseUrl: string;
+  /** Consente http e indirizzi privati (solo provider custom) */
+  allowPrivateNetwork: boolean;
+  isDefault: boolean;
+  status: AiAccountStatus;
+  /**
+     * Messaggio fisso dell'ultimo errore del provider
+     * @nullable
+     */
+  lastError: string | null;
+  /** @nullable */
+  lastCheckedAt: string | null;
+  /** Indica se la chiave è impostata (il valore non è mai esposto) */
+  keySet: boolean;
+  /** Account di sistema (gateway di Casello), non modificabile */
+  isSystem: boolean;
+  /** Numero di modelli dell'account (nascosti compresi) */
+  modelCount: number;
+}
+
+export interface AiAccountInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  provider: AiProvider;
+  /**
+     * Chiave del provider (solo scrittura, salvata cifrata); vuota solo per custom
+     * @maxLength 4096
+     * @nullable
+     */
+  apiKey?: string | null;
+  /**
+     * Solo custom (obbligatorio); gli altri provider usano il base URL predefinito
+     * @maxLength 2048
+     * @nullable
+     */
+  baseUrl?: string | null;
+  /** Solo custom */
+  allowPrivateNetwork?: boolean;
+}
+
+export interface AiAccountUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  /**
+     * Assente o "" = invariata; null la rimuove (solo custom); un valore la sostituisce
+     * @maxLength 4096
+     * @nullable
+     */
+  apiKey?: string | null;
+  /**
+     * Solo custom
+     * @minLength 1
+     * @maxLength 2048
+     */
+  baseUrl?: string;
+  /** Solo custom */
+  allowPrivateNetwork?: boolean;
+}
+
+/**
+ * @nullable
+ */
+export type AiModelPriceSource = typeof AiModelPriceSource[keyof typeof AiModelPriceSource] | null;
+
+
+export const AiModelPriceSource = {
+  provider: 'provider',
+  manual: 'manual',
+  seed: 'seed',
+} as const;
+
+export interface AiModel {
+  id: number;
+  accountId: number;
+  /** Id del modello presso il provider (es. deepseek-chat) */
+  modelId: string;
+  displayName: string;
+  /** @nullable */
+  contextTokens: number | null;
+  /**
+     * USD per milione di token di input
+     * @nullable
+     */
+  priceInput: number | null;
+  /**
+     * USD per milione di token di output
+     * @nullable
+     */
+  priceOutput: number | null;
+  /** @nullable */
+  priceSource: AiModelPriceSource;
+  hidden: boolean;
+}
+
+export interface AiModelInput {
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  modelId: string;
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  displayName?: string;
+  /**
+     * @minimum 0
+     * @maximum 999999.999999
+     * @nullable
+     */
+  priceInput?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 999999.999999
+     * @nullable
+     */
+  priceOutput?: number | null;
+  /**
+     * @minimum 1
+     * @maximum 100000000
+     * @nullable
+     */
+  contextTokens?: number | null;
+}
+
+export interface AiModelUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  displayName?: string;
+  /**
+     * @minimum 0
+     * @maximum 999999.999999
+     * @nullable
+     */
+  priceInput?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 999999.999999
+     * @nullable
+     */
+  priceOutput?: number | null;
+  hidden?: boolean;
+}
+
+export interface AiModelGroup {
+  account: AiAccount;
+  models: AiModel[];
+}
+
+export interface CostEstimate {
+  /**
+     * Costo massimo in USD (null se un prezzo manca)
+     * @nullable
+     */
+  maxUsd: number | null;
+  /**
+     * Costo tipico in USD (60% del massimo)
+     * @nullable
+     */
+  typicalUsd: number | null;
+}
+
+/**
+ * Troppe richieste
+ */
+export type TooManyRequestsResponse = ErrorResponse;
+
 /**
  * Richiesta non valida
  */
@@ -768,4 +970,14 @@ export const ExportAnalysisIssuesChapter = {
   completion: 'completion',
   evolution: 'evolution',
 } as const;
+
+export type EstimateAnalysisCostParams = {
+aiModelId: number;
+/**
+ * Tetto di token dell'analisi (default 1000000)
+ * @minimum 1
+ * @maximum 2000000
+ */
+maxTokens?: number;
+};
 

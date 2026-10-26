@@ -6,14 +6,21 @@ import type { SourceEntry } from "./sources";
 
 const SLUG_RE = /[^a-z0-9]+/g;
 
-/** Slug del provider di una voce; `known` dice se viene dal registro. Sempre conforme a `^[a-z0-9_-]{1,64}$`. */
+const DISCOVERED_SUFFIX = "-litellm";
+
+/**
+ * Slug del provider di una voce; `known` dice se viene dal registro. Sempre conforme a `^[a-z0-9_-]{1,64}$`. Uno
+ * slug scoperto che coincide con uno del registro riceve il suffisso `-litellm`: le sue offerte non finiscono mai
+ * sotto un provider del registro.
+ */
 export function providerSlugFor(entry: SourceEntry, registry: RegistryProvider[]): { slug: string; known: boolean } {
   if (entry.source === "openrouter") return { slug: "openrouter", known: true };
   const name = entry.litellmProvider;
   const hit = name ? registry.find((p) => p.litellm.includes(name)) : undefined;
   if (hit) return { slug: hit.slug, known: true };
-  const slug = (name ?? "").toLowerCase().replace(SLUG_RE, "-").replace(/^-+|-+$/g, "").slice(0, 64).replace(/-+$/, "");
-  return { slug: slug || "sconosciuto", known: false };
+  const slug = (name ?? "").toLowerCase().replace(SLUG_RE, "-").replace(/^-+|-+$/g, "").slice(0, 64).replace(/-+$/, "") || "sconosciuto";
+  if (!registry.some((p) => p.slug === slug)) return { slug, known: false };
+  return { slug: `${slug.slice(0, 64 - DISCOVERED_SUFFIX.length).replace(/-+$/, "")}${DISCOVERED_SUFFIX}`, known: false };
 }
 
 /** Provider del registro che serve direttamente un modello `autore/modello` di OpenRouter (senza varianti). */

@@ -74,6 +74,11 @@ describe("providerSlugFor", () => {
     expect(providerSlugFor(entry({ litellmProvider: null }), PROVIDER_REGISTRY)).toEqual({ slug: "sconosciuto", known: false });
     expect(providerSlugFor(entry({ litellmProvider: "a".repeat(100) }), PROVIDER_REGISTRY).slug).toHaveLength(64);
   });
+  it("slug scoperto uguale a uno del registro → suffisso -litellm (mai attaccato a un provider del registro)", () => {
+    expect(providerSlugFor(entry({ litellmProvider: "Custom" }), PROVIDER_REGISTRY)).toEqual({ slug: "custom-litellm", known: false });
+    expect(providerSlugFor(entry({ litellmProvider: "Anthropic" }), PROVIDER_REGISTRY)).toEqual({ slug: "anthropic-litellm", known: false });
+    expect(providerSlugFor(entry({ litellmProvider: "open router" }), PROVIDER_REGISTRY)).toEqual({ slug: "open-router", known: false });
+  });
   it("OpenRouter → openrouter", () => {
     expect(providerSlugFor(entry({ source: "openrouter", key: "google/gemini-2.5-flash" }), PROVIDER_REGISTRY)).toEqual({ slug: "openrouter", known: true });
   });

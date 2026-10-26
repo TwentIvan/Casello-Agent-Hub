@@ -214,12 +214,13 @@ export function AiAccountsSection() {
           </ul>
         )}
       </CardContent>
-      <AiAccountDialog open={dialogOpen} onOpenChange={setDialogOpen} account={editing} />
+      {/* Montato solo da aperto: chiuso, nessun osservatore delle mutation trattiene la chiave */}
+      {dialogOpen && <AiAccountDialog open onOpenChange={setDialogOpen} account={editing} />}
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
         title={`Eliminare «${deleting?.name ?? ""}»?`}
-        description="Verranno eliminati anche i suoi modelli e la chiave salvata. Non si può eliminare un account usato da agenti o analisi."
+        description="Verranno eliminati anche i suoi modelli e la chiave salvata. Non si può eliminare un account usato da agenti o da analisi in corso."
         pending={deleteAccount.isPending}
         onConfirm={() => deleting && deleteAccount.mutate({ id: deleting.id })}
       />

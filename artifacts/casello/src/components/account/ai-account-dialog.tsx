@@ -63,11 +63,48 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
   const [allowPrivateNetwork, setAllowPrivateNetwork] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+
+  // Le variabili di una mutation (quindi la chiave in chiaro) restano nella MutationCache di React Query:
+  // reset() a fine chiamata stacca l'osservatore e gcTime 0 fa uscire subito la mutation dalla cache.
+  const createAccount = useCreateAiAccount({
+    mutation: {
+      gcTime: 0,
+      onSuccess: (created) => {
+        setApiKey("");
+        createAccount.reset();
+        void invalidateAiQueries(queryClient);
+        onOpenChange(false);
+        toast({ title: `Account aggiunto: ${created.modelCount} modelli trovati` });
+      },
+      onError: (err) => {
+        setError(apiErrorMessage(err));
+        createAccount.reset();
+      },
+    },
+  });
+  const updateAccount = useUpdateAiAccount({
+    mutation: {
+      gcTime: 0,
+      onSuccess: () => {
+        setApiKey("");
+        updateAccount.reset();
+        void invalidateAiQueries(queryClient);
+        onOpenChange(false);
+        toast({ title: "Account aggiornato" });
+      },
+      onError: (err) => {
+        setError(`${apiErrorMessage(err)}: la configurazione precedente resta attiva.`);
+        updateAccount.reset();
+      },
+    },
+  });
   // A ogni apertura si riparte dai dati dell'account (o da un modulo vuoto); la chiave non è mai precompilata.
   useEffect(() => {
     if (!open) {
-      // La chiave non resta in memoria a dialog chiuso
+      // La chiave non resta in memoria a dialog chiuso: né nello stato né nelle variabili delle mutation
       setApiKey("");
+      createAccount.reset();
+      updateAccount.reset();
       return;
     }
     setProvider(account && account.provider !== "system_gateway" ? account.provider : "deepseek");
@@ -80,28 +117,6 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, account?.id]);
 
-  const createAccount = useCreateAiAccount({
-    mutation: {
-      onSuccess: (created) => {
-        setApiKey("");
-        void invalidateAiQueries(queryClient);
-        onOpenChange(false);
-        toast({ title: `Account aggiunto: ${created.modelCount} modelli trovati` });
-      },
-      onError: (err) => setError(apiErrorMessage(err)),
-    },
-  });
-  const updateAccount = useUpdateAiAccount({
-    mutation: {
-      onSuccess: () => {
-        setApiKey("");
-        void invalidateAiQueries(queryClient);
-        onOpenChange(false);
-        toast({ title: "Account aggiornato" });
-      },
-      onError: (err) => setError(`${apiErrorMessage(err)}: la configurazione precedente resta attiva.`),
-    },
-  });
   const pending = createAccount.isPending || updateAccount.isPending;
 
   const isCustom = provider === "custom";

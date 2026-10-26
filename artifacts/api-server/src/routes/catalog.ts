@@ -4,7 +4,7 @@ import { db, aiAccountsTable, aiModelsTable, catalogRunsTable, modelCatalogTable
 import { GetCatalogStatusResponse, ListCatalogModelsQueryParams, ListCatalogModelsResponse, RefreshCatalogResponse } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
 import { CatalogBusyError, startCatalogRefresh } from "../lib/catalog/refresh";
-import type { CatalogSummary } from "../lib/catalog/summary";
+import type { OfferSummary } from "../lib/catalog/summary";
 import { rateLimit } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
 
@@ -19,7 +19,7 @@ function toNumber(v: string | null): number | null {
 
 /** Esecuzione nella forma pubblica: del riepilogo restano solo gli account di `userId`, senza `userId`. */
 function toRunView(run: CatalogRun, userId: number) {
-  const summary = run.summary as CatalogSummary | null;
+  const summary = run.summary as OfferSummary | null;
   return {
     id: run.id,
     trigger: run.trigger,

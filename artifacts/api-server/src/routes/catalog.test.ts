@@ -14,6 +14,8 @@ import { encryptSecret } from "../lib/secrets";
 const realFetch = globalThis.fetch;
 const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY"] as const;
 const saved: Record<string, string | undefined> = {};
+// I provider di oggi, già in docs/schema-casello.sql (DB di prova condiviso)
+const TODAY = ["deepseek", "openrouter", "huggingface", "mistral", "groq", "together", "gemini", "custom", "system_gateway"];
 
 let base: string;
 let fullBase: string;
@@ -78,7 +80,9 @@ afterAll(async () => {
   await waitIdle();
   await close(server);
   await close(fullServer);
-  await pool.query("TRUNCATE users, ai_accounts, catalog_runs, model_catalog RESTART IDENTITY CASCADE");
+  await pool.query("TRUNCATE users, ai_accounts, catalog_runs, model_catalog, models RESTART IDENTITY CASCADE");
+  // L'aggiornamento aggiunge i provider del registro e quelli scoperti: restano solo quelli di oggi
+  await pool.query("DELETE FROM providers WHERE slug <> ALL($1)", [TODAY]);
   for (const k of ENV_KEYS) {
     if (saved[k] === undefined) delete process.env[k];
     else process.env[k] = saved[k];
@@ -89,7 +93,7 @@ beforeEach(async () => {
   vi.spyOn(console, "log").mockImplementation(() => {});
   currentFetch = fakeSourcesFetch();
   await waitIdle();
-  await pool.query("TRUNCATE users, ai_accounts, catalog_runs, model_catalog RESTART IDENTITY CASCADE");
+  await pool.query("TRUNCATE users, ai_accounts, catalog_runs, model_catalog, models RESTART IDENTITY CASCADE");
 });
 
 /** Fonti che rispondono solo dopo `release()`: tiene l'aggiornamento in corso quanto serve al test. */

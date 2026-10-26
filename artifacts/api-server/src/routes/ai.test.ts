@@ -11,7 +11,8 @@ import {
   aiModelsTable,
   analysesTable,
   appsTable,
-  modelCatalogTable,
+  modelOffersTable,
+  modelsTable,
   providersTable,
   usersTable,
 } from "@workspace/db";
@@ -153,7 +154,7 @@ afterAll(async () => {
 beforeEach(async () => {
   bodies = [];
   vi.spyOn(console, "log").mockImplementation(() => {});
-  await pool.query("TRUNCATE users, apps, ai_accounts, model_catalog RESTART IDENTITY CASCADE");
+  await pool.query("TRUNCATE users, apps, ai_accounts, models RESTART IDENTITY CASCADE");
   fake = await startFakeProvider({
     apiKey: KEY,
     models: [
@@ -758,12 +759,17 @@ describe("stato, selezionabilità e preselezione", () => {
     await ensureSystemAccount();
     const acc = await createAccount();
     const [a, b] = await modelsOf(acc.id);
-    // modello-a (il più economico) è ritirato dal catalogo: il consigliato diventa modello-b
-    const [cat] = await db
-      .insert(modelCatalogTable)
-      .values({ provider: "custom", modelId: "modello-a", family: "Modello", version: "A", status: "retired", deprecationDate: new Date("2026-01-01T00:00:00Z") })
+    // modello-a (il più economico) è ritirato dal catalogo: il consigliato diventa modello-b. Stato, dismissione e
+    // strumenti vengono dall'offerta collegata, il rilascio dal suo modello
+    const [model] = await db
+      .insert(modelsTable)
+      .values({ canonicalKey: "modello-a", author: "Prova", family: "Modello", version: "A", releasedAt: new Date("2025-05-01T00:00:00Z") })
       .returning();
-    await db.update(aiModelsTable).set({ catalogId: cat!.id }).where(eq(aiModelsTable.id, a!.id));
+    const [offer] = await db
+      .insert(modelOffersTable)
+      .values({ modelId: model!.id, provider: "custom", providerModelId: "modello-a", supportsTools: true, status: "retired", deprecationDate: new Date("2026-01-01T00:00:00Z") })
+      .returning();
+    await db.update(aiModelsTable).set({ offerId: offer!.id }).where(eq(aiModelsTable.id, a!.id));
 
     const res = await api("GET", "/ai/models");
     expect(res.status, res.text).toBe(200);
@@ -774,9 +780,9 @@ describe("stato, selezionabilità e preselezione", () => {
       selectable: false,
       recommended: false,
       availability: "unknown",
-      supportsTools: null,
+      supportsTools: true,
       deprecationDate: "2026-01-01T00:00:00.000Z",
-      releasedAt: null,
+      releasedAt: "2025-05-01T00:00:00.000Z",
       lastProbeAt: null,
       lastProbeOk: null,
     });

@@ -4,23 +4,27 @@ import {
   aiAccountsTable,
   aiModelsTable,
   catalogRunsTable,
-  modelCatalogTable,
-  type CatalogModelRow,
+  modelOffersTable,
+  modelsTable,
+  providersTable,
   type CatalogRun,
 } from "@workspace/db";
 import { logger } from "../logger";
 import { isUniqueViolation } from "../pg-errors";
-import { enrichFromCatalog, verifyAccount } from "../ai/accounts";
+import { enrichFromCatalog, verifyAccount, type Tx } from "../ai/accounts";
 import { fetchLiteLlmSource, fetchOpenRouterSource, SourceError, type SourceEntry, type SourceName } from "./sources";
-import { keepFailedSourceFields, mergeCatalog, type CatalogRecord } from "./merge";
-import { summarizeCatalog, type CatalogSummary } from "./summary";
+import { keepFailedOfferFields, mergeUniversal, type DiscoveredProvider, type ModelRecord, type OfferRecord } from "./merge";
+import { ensureProviderRegistry } from "./provider-registry";
+import { PROVIDER_REGISTRY } from "./provider-registry-data";
+import { summarizeOffers, type OfferSummary } from "./summary";
 
-// Aggiornamento del catalogo: scarica le fonti, aggiorna `model_catalog`, riverifica gli account degli
-// utenti, arricchisce i loro modelli e registra il riepilogo in `catalog_runs`. Una sola esecuzione alla
-// volta (indice unico parziale sulla riga `running`). Errori sempre a testo fisso: mai chiavi, URL o
-// messaggi grezzi di fonti e provider.
+// Aggiornamento del catalogo: scarica le fonti, aggiorna `models`, `model_offers` e i provider scoperti,
+// riverifica gli account degli utenti, arricchisce i loro modelli e registra il riepilogo in `catalog_runs`.
+// Una sola esecuzione alla volta (indice unico parziale sulla riga `running`). Errori sempre a testo fisso:
+// mai chiavi, URL o messaggi grezzi di fonti e provider.
 
 const KEEP_RUNS = 20;
+const CHUNK = 500;
 const UNEXPECTED_ERROR = "aggiornamento non riuscito";
 const INTERRUPTED_ERROR = "interrotto dal riavvio";
 
@@ -41,65 +45,145 @@ function toPrice(v: number | null): string | null {
   return v === null ? null : String(v);
 }
 
-/** Riga del DB nella forma della fusione, per il confronto del riepilogo. */
-function toRecord(r: CatalogModelRow): CatalogRecord {
-  return {
+/** Offerte del DB nella forma della fusione, per l'aggiornamento parziale e il riepilogo. */
+async function loadOffers(): Promise<OfferRecord[]> {
+  const rows = await db
+    .select({ offer: modelOffersTable, canonicalKey: modelsTable.canonicalKey })
+    .from(modelOffersTable)
+    .innerJoin(modelsTable, eq(modelOffersTable.modelId, modelsTable.id));
+  return rows.map(({ offer: r, canonicalKey }) => ({
     provider: r.provider,
-    modelId: r.modelId,
-    family: r.family,
-    version: r.version,
-    releasedAt: r.releasedAt,
+    providerModelId: r.providerModelId,
+    canonicalKey,
     priceInput: toNumber(r.priceInputPerMtok),
     priceOutput: toNumber(r.priceOutputPerMtok),
     contextTokens: r.contextTokens,
     supportsTools: r.supportsTools,
     status: r.status,
     deprecationDate: r.deprecationDate,
-    sources: r.sources as CatalogRecord["sources"],
-  };
+    sources: r.sources as OfferRecord["sources"],
+  }));
 }
 
-/** Inserisce o aggiorna le righe delle fonti; quelle assenti dalle fonti restano come sono. */
-async function upsertCatalog(records: CatalogRecord[]): Promise<void> {
-  const now = new Date();
-  await db.transaction(async (tx) => {
-    for (let i = 0; i < records.length; i += 500) {
-      await tx
-        .insert(modelCatalogTable)
-        .values(
-          records.slice(i, i + 500).map((r) => ({
-            provider: r.provider,
-            modelId: r.modelId,
-            family: r.family,
-            version: r.version,
-            releasedAt: r.releasedAt,
-            priceInputPerMtok: toPrice(r.priceInput),
-            priceOutputPerMtok: toPrice(r.priceOutput),
-            contextTokens: r.contextTokens,
-            supportsTools: r.supportsTools,
-            status: r.status,
-            deprecationDate: r.deprecationDate,
-            sources: r.sources,
-            updatedAt: now,
-          })),
-        )
-        .onConflictDoUpdate({
-          target: [modelCatalogTable.provider, modelCatalogTable.modelId],
-          set: {
-            family: sql`excluded.family`,
-            version: sql`excluded.version`,
-            releasedAt: sql`excluded.released_at`,
-            priceInputPerMtok: sql`excluded.price_input_per_mtok`,
-            priceOutputPerMtok: sql`excluded.price_output_per_mtok`,
-            contextTokens: sql`excluded.context_tokens`,
-            supportsTools: sql`excluded.supports_tools`,
-            status: sql`excluded.status`,
-            deprecationDate: sql`excluded.deprecation_date`,
-            sources: sql`excluded.sources`,
-            updatedAt: now,
-          },
-        });
+/** Crea i provider scoperti che mancano; quelli esistenti (del registro o già scoperti) non si toccano. */
+async function insertDiscovered(tx: Tx, discovered: DiscoveredProvider[], now: Date): Promise<DiscoveredProvider[]> {
+  if (!discovered.length) return [];
+  const created = await tx
+    .insert(providersTable)
+    .values(
+      discovered.map((d) => ({
+        slug: d.slug,
+        name: d.name || d.slug,
+        protocol: "unknown" as const,
+        defaultBaseUrl: null,
+        sourceKeys: { litellm: d.name ? [d.name] : [], openrouterAuthor: null },
+        status: "unmanaged" as const,
+        origin: "discovered" as const,
+        firstSeenAt: now,
+        updatedAt: now,
+      })),
+    )
+    .onConflictDoNothing({ target: providersTable.slug })
+    .returning({ slug: providersTable.slug });
+  const slugs = new Set(created.map((c) => c.slug));
+  return discovered.filter((d) => slugs.has(d.slug));
+}
+
+/**
+ * Inserisce o aggiorna i modelli. In un aggiornamento parziale i modelli già presenti non cambiano: i loro
+ * campi (tipo, capacità, versione, rilascio) dipendono anche dalla fonte caduta.
+ */
+async function upsertModels(tx: Tx, models: ModelRecord[], partial: boolean, now: Date): Promise<void> {
+  for (let i = 0; i < models.length; i += CHUNK) {
+    const insert = tx.insert(modelsTable).values(
+      models.slice(i, i + CHUNK).map((m) => ({
+        canonicalKey: m.canonicalKey,
+        author: m.author,
+        family: m.family,
+        version: m.version,
+        mode: m.mode,
+        supportsTools: m.supportsTools,
+        supportsVision: m.supportsVision,
+        supportsReasoning: m.supportsReasoning,
+        releasedAt: m.releasedAt,
+        updatedAt: now,
+      })),
+    );
+    if (partial) {
+      await insert.onConflictDoNothing({ target: modelsTable.canonicalKey });
+      continue;
     }
+    await insert.onConflictDoUpdate({
+      target: modelsTable.canonicalKey,
+      set: {
+        author: sql`excluded.author`,
+        family: sql`excluded.family`,
+        version: sql`excluded.version`,
+        mode: sql`excluded.mode`,
+        supportsTools: sql`excluded.supports_tools`,
+        supportsVision: sql`excluded.supports_vision`,
+        supportsReasoning: sql`excluded.supports_reasoning`,
+        releasedAt: sql`excluded.released_at`,
+        updatedAt: now,
+      },
+    });
+  }
+}
+
+/** Inserisce o aggiorna le offerte delle fonti; quelle assenti dalle fonti restano come sono. */
+async function upsertOffers(tx: Tx, offers: OfferRecord[], modelIds: Map<string, number>, now: Date): Promise<void> {
+  for (let i = 0; i < offers.length; i += CHUNK) {
+    await tx
+      .insert(modelOffersTable)
+      .values(
+        offers.slice(i, i + CHUNK).map((o) => ({
+          modelId: modelIds.get(o.canonicalKey)!,
+          provider: o.provider,
+          providerModelId: o.providerModelId,
+          priceInputPerMtok: toPrice(o.priceInput),
+          priceOutputPerMtok: toPrice(o.priceOutput),
+          contextTokens: o.contextTokens,
+          supportsTools: o.supportsTools,
+          status: o.status,
+          deprecationDate: o.deprecationDate,
+          sources: o.sources,
+          updatedAt: now,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [modelOffersTable.provider, modelOffersTable.providerModelId],
+        set: {
+          modelId: sql`excluded.model_id`,
+          priceInputPerMtok: sql`excluded.price_input_per_mtok`,
+          priceOutputPerMtok: sql`excluded.price_output_per_mtok`,
+          contextTokens: sql`excluded.context_tokens`,
+          supportsTools: sql`excluded.supports_tools`,
+          status: sql`excluded.status`,
+          deprecationDate: sql`excluded.deprecation_date`,
+          sources: sql`excluded.sources`,
+          updatedAt: now,
+        },
+      });
+  }
+}
+
+/**
+ * Scrive in una transazione provider scoperti, modelli e offerte. Restituisce i provider creati e la versione
+ * leggibile di ogni modello (per chiave canonica), per il riepilogo.
+ */
+async function writeCatalog(
+  merged: { models: ModelRecord[]; offers: OfferRecord[]; discovered: DiscoveredProvider[] },
+  partial: boolean,
+  now: Date,
+): Promise<{ newProviders: DiscoveredProvider[]; versions: Map<string, string> }> {
+  // I provider del registro servono alla chiave esterna delle offerte (di solito già allineati all'avvio)
+  await ensureProviderRegistry(PROVIDER_REGISTRY);
+  return db.transaction(async (tx) => {
+    const newProviders = await insertDiscovered(tx, merged.discovered, now);
+    await upsertModels(tx, merged.models, partial, now);
+    const rows = await tx.select({ id: modelsTable.id, canonicalKey: modelsTable.canonicalKey, version: modelsTable.version }).from(modelsTable);
+    await upsertOffers(tx, merged.offers, new Map(rows.map((r) => [r.canonicalKey, r.id])), now);
+    return { newProviders, versions: new Map(rows.map((r) => [r.canonicalKey, r.version])) };
   });
 }
 
@@ -108,9 +192,9 @@ async function upsertCatalog(records: CatalogRecord[]): Promise<void> {
  * ferma gli altri. Riporta i modelli scoperti prima e non più elencati, solo per le verifiche riuscite
  * con un elenco non vuoto.
  */
-async function reverifyAccounts(): Promise<CatalogSummary["accounts"]> {
+async function reverifyAccounts(): Promise<OfferSummary["accounts"]> {
   const accounts = await db.select().from(aiAccountsTable).where(isNotNull(aiAccountsTable.userId)).orderBy(asc(aiAccountsTable.id));
-  const out: CatalogSummary["accounts"] = [];
+  const out: OfferSummary["accounts"] = [];
   for (const account of accounts) {
     try {
       const before = await db
@@ -134,7 +218,7 @@ async function reverifyAccounts(): Promise<CatalogSummary["accounts"]> {
   return out;
 }
 
-async function finishRun(id: number, set: Pick<CatalogRun, "status" | "error"> & { summary?: CatalogSummary }): Promise<void> {
+async function finishRun(id: number, set: Pick<CatalogRun, "status" | "error"> & { summary?: OfferSummary }): Promise<void> {
   await db
     .update(catalogRunsTable)
     .set({ ...set, finishedAt: new Date() })
@@ -171,13 +255,18 @@ async function executeRefresh(runId: number, fetchImpl: typeof fetch): Promise<v
   }
 
   const now = new Date();
-  const before = (await db.select().from(modelCatalogTable)).map(toRecord);
+  const before = await loadOffers();
+  const merged = mergeUniversal(entries, PROVIDER_REGISTRY, now);
   // Aggiornamento parziale: i dati della fonte caduta restano quelli precedenti
-  const records = keepFailedSourceFields(mergeCatalog(entries, now), before, failed, now);
-  await upsertCatalog(records);
+  const offers = keepFailedOfferFields(merged.offers, before, failed, now);
+  const { newProviders, versions } = await writeCatalog({ ...merged, offers }, failed.length > 0, now);
   const accounts = await reverifyAccounts();
   await enrichFromCatalog(db, {});
-  const summary: CatalogSummary = { ...summarizeCatalog(before, records), accounts };
+  const summary: OfferSummary = {
+    ...summarizeOffers(before, offers, (o) => versions.get(o.canonicalKey) ?? ""),
+    newProviders,
+    accounts,
+  };
   await finishRun(runId, {
     status: failures.length ? "partial" : "completed",
     error: failures.length ? `aggiornamento parziale: ${failures[0]}` : null,

@@ -14,5 +14,7 @@ export * from "./github-installations";
 export * from "./providers";
 export * from "./ai-accounts";
 export * from "./ai-models";
+export * from "./models";
+export * from "./model-offers";
 export * from "./model-catalog";
 export * from "./catalog-runs";

@@ -6,12 +6,13 @@ import {
   aiAccountsTable,
   aiModelsTable,
   analysesTable,
-  modelCatalogTable,
+  modelOffersTable,
+  modelsTable,
   providersTable,
   usersTable,
   type AiAccount,
   type AiModel,
-  type CatalogModelRow,
+  type ModelOfferRow,
   type ProviderRow,
 } from "@workspace/db";
 import {
@@ -116,16 +117,21 @@ function toPublicAccount(a: AiAccount, modelCount: number) {
   };
 }
 
+/** Offerta del catalogo collegata a un modello di un account, con il rilascio del suo modello. */
+type LinkedOffer = Pick<ModelOfferRow, "status" | "deprecationDate" | "supportsTools"> & { releasedAt: Date | null };
+
 /**
- * Forma pubblica di un modello, con lo stato effettivo calcolato dalla riga del catalogo collegata
- * (null se non c'è). `recommended` lo imposta solo GET /ai/models.
+ * Forma pubblica di un modello, con lo stato effettivo calcolato dall'offerta del catalogo collegata (null se
+ * non c'è): stato, dismissione e strumenti dall'offerta, rilascio dal suo modello. `recommended` lo imposta
+ * solo GET /ai/models.
  */
-function toPublicModel(m: AiModel, catalog: CatalogModelRow | null, now: Date) {
-  const deprecationDate = catalog?.deprecationDate ?? null;
+function toPublicModel(m: AiModel, offer: LinkedOffer | null, now: Date) {
+  const deprecationDate = offer?.deprecationDate ?? null;
   const status = effectiveStatus(
-    { availability: m.availability, catalogStatus: catalog?.status ?? null, deprecationDate },
+    { availability: m.availability, catalogStatus: offer?.status ?? null, deprecationDate },
     now,
   );
+  const supportsTools = offer ? offer.supportsTools : m.supportsTools;
   return {
     id: m.id,
     accountId: m.accountId,
@@ -137,29 +143,35 @@ function toPublicModel(m: AiModel, catalog: CatalogModelRow | null, now: Date) {
     priceSource: m.priceSource as "provider" | "manual" | "seed" | "catalog" | null,
     hidden: m.hidden,
     availability: m.availability,
-    supportsTools: m.supportsTools,
+    supportsTools,
     status,
     deprecationDate,
-    releasedAt: catalog?.releasedAt ?? null,
-    selectable: isSelectable(status, m.supportsTools),
+    releasedAt: offer?.releasedAt ?? null,
+    selectable: isSelectable(status, supportsTools),
     recommended: false,
     lastProbeAt: m.lastProbeAt,
     lastProbeOk: m.lastProbeOk,
   };
 }
 
-/** Modelli con la riga del catalogo collegata (left join). */
+/** Modelli con l'offerta collegata e il suo modello (left join). */
 function selectModelsWithCatalog() {
   return db
-    .select({ model: aiModelsTable, catalog: modelCatalogTable })
+    .select({ model: aiModelsTable, offer: modelOffersTable, releasedAt: modelsTable.releasedAt })
     .from(aiModelsTable)
-    .leftJoin(modelCatalogTable, eq(aiModelsTable.catalogId, modelCatalogTable.id));
+    .leftJoin(modelOffersTable, eq(aiModelsTable.offerId, modelOffersTable.id))
+    .leftJoin(modelsTable, eq(modelOffersTable.modelId, modelsTable.id));
+}
+
+/** Offerta collegata di una riga di `selectModelsWithCatalog`. */
+function linkedOffer(row: { offer: ModelOfferRow | null; releasedAt: Date | null }): LinkedOffer | null {
+  return row.offer ? { ...row.offer, releasedAt: row.releasedAt } : null;
 }
 
 /** Forma pubblica di un modello riletto dal DB; undefined se è sparito. */
 async function publicModel(id: number) {
   const [row] = await selectModelsWithCatalog().where(eq(aiModelsTable.id, id)).limit(1);
-  return row ? toPublicModel(row.model, row.catalog, new Date()) : undefined;
+  return row ? toPublicModel(row.model, linkedOffer(row), new Date()) : undefined;
 }
 
 /**
@@ -646,7 +658,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       .where(eq(aiModelsTable.accountId, account.id))
       .orderBy(sql`lower(${aiModelsTable.displayName})`, asc(aiModelsTable.id));
     const now = new Date();
-    res.json(ListAiAccountModelsResponse.parse(rows.map((r) => toPublicModel(r.model, r.catalog, now))));
+    res.json(ListAiAccountModelsResponse.parse(rows.map((r) => toPublicModel(r.model, linkedOffer(r), now))));
   });
 
   router.post("/ai/accounts/:id/models", async (req, res) => {
@@ -681,7 +693,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       res.status(409).json({ error: MODEL_EXISTS });
       return;
     }
-    // Un modello aggiunto a mano non ha ancora un catalogo collegato
+    // Un modello aggiunto a mano non ha ancora un'offerta collegata
     res.status(201).json(AddAiAccountModelResponse.parse(toPublicModel(created!, null, new Date())));
   });
 
@@ -769,7 +781,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       : [];
     const counts = await modelCounts(ids);
     const now = new Date();
-    const models = rows.map((r) => toPublicModel(r.model, r.catalog, now));
+    const models = rows.map((r) => toPublicModel(r.model, linkedOffer(r), now));
     // I non selezionabili restano (con selectable: false): li filtra la console. Un consigliato per gruppo
     const groups = accounts.map((a) => {
       const own = models.filter((m) => m.accountId === a.id);

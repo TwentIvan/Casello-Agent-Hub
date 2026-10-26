@@ -54,4 +54,51 @@ END $$;
 DO $$ BEGIN ALTER TABLE "ai_accounts" ADD CONSTRAINT "ai_accounts_provider_providers_slug_fk" FOREIGN KEY ("provider") REFERENCES "public"."providers"("slug") ON DELETE no action ON UPDATE cascade; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE "model_catalog" ADD CONSTRAINT "model_catalog_provider_providers_slug_fk" FOREIGN KEY ("provider") REFERENCES "public"."providers"("slug") ON DELETE no action ON UPDATE cascade; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- =================================================================================================
+-- Sezione 2: modelli e offerte
+-- Il catalogo universale: models (indipendenti dal provider) e model_offers (un modello presso un provider).
+-- Si riempiono al primo aggiornamento del catalogo dopo il deploy, che ricollega anche ai_models.offer_id.
+-- model_catalog e ai_models.catalog_id restano finché la console non legge le nuove tabelle.
+-- =================================================================================================
+
+DO $$ BEGIN CREATE TYPE "public"."model_mode" AS ENUM('chat', 'embedding', 'image_generation', 'image_edit', 'audio_transcription', 'audio_speech', 'video_generation', 'rerank', 'moderation', 'ocr', 'search', 'realtime', 'responses', 'completion', 'other'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS "models" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"canonical_key" text NOT NULL,
+	"author" text NOT NULL,
+	"family" text NOT NULL,
+	"version" text NOT NULL,
+	"mode" "model_mode" DEFAULT 'chat' NOT NULL,
+	"supports_tools" boolean,
+	"supports_vision" boolean,
+	"supports_reasoning" boolean,
+	"released_at" timestamp,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "models_canonical_key_unique" UNIQUE("canonical_key")
+);
+
+CREATE TABLE IF NOT EXISTS "model_offers" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"model_id" integer NOT NULL,
+	"provider" text NOT NULL,
+	"provider_model_id" text NOT NULL,
+	"price_input_per_mtok" numeric(12, 6),
+	"price_output_per_mtok" numeric(12, 6),
+	"context_tokens" integer,
+	"supports_tools" boolean,
+	"status" "model_catalog_status" DEFAULT 'available' NOT NULL,
+	"deprecation_date" timestamp,
+	"sources" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "model_offers_provider_model_unique" UNIQUE("provider","provider_model_id"),
+	CONSTRAINT "model_offers_model_id_models_id_fk" FOREIGN KEY ("model_id") REFERENCES "public"."models"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "model_offers_provider_providers_slug_fk" FOREIGN KEY ("provider") REFERENCES "public"."providers"("slug") ON DELETE no action ON UPDATE cascade
+);
+
+CREATE INDEX IF NOT EXISTS "model_offers_model_id_idx" ON "model_offers" USING btree ("model_id");
+
+ALTER TABLE "ai_models" ADD COLUMN IF NOT EXISTS "offer_id" integer;
+DO $$ BEGIN ALTER TABLE "ai_models" ADD CONSTRAINT "ai_models_offer_id_model_offers_id_fk" FOREIGN KEY ("offer_id") REFERENCES "public"."model_offers"("id") ON DELETE set null ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 COMMIT;

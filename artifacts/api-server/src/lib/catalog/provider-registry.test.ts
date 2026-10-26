@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { inArray, notInArray } from "drizzle-orm";
-import { db, providersTable } from "@workspace/db";
+import { db, modelOffersTable, providersTable } from "@workspace/db";
 import { ensureProviderRegistry } from "./provider-registry";
 import { PROVIDER_REGISTRY, statusForProtocol, type RegistryProvider } from "./provider-registry-data";
 import { PROVIDERS } from "../ai/providers";
@@ -82,7 +82,8 @@ describe("PROVIDER_REGISTRY", () => {
 
 describe("ensureProviderRegistry", () => {
   afterAll(async () => {
-    // Il DB di prova è condiviso: restano solo le righe di oggi
+    // Il DB di prova è condiviso: restano solo le righe di oggi (prima le offerte, che fanno riferimento ai provider)
+    await db.delete(modelOffersTable).where(notInArray(modelOffersTable.provider, TODAY));
     await db.delete(providersTable).where(notInArray(providersTable.slug, TODAY));
   });
 

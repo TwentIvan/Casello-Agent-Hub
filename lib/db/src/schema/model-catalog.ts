@@ -1,9 +1,9 @@
-import { pgTable, serial, integer, text, boolean, timestamp, numeric, unique, pgEnum, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, boolean, timestamp, numeric, unique, jsonb } from "drizzle-orm/pg-core";
 import { providersTable } from "./providers";
+import { modelCatalogStatusEnum } from "./model-offers";
 
-export const modelCatalogStatusEnum = pgEnum("model_catalog_status", ["available", "deprecated", "retired"]);
-
-// Catalogo dei modelli per provider, aggiornato dalle fonti pubbliche (non dipende dagli account degli utenti).
+// Catalogo dei modelli per provider della prima versione: non più scritto (sostituito da models e model_offers),
+// letto ancora da GET /catalog/models finché non viene eliminato.
 // I prezzi sono USD per milione di token: numeric, letti da Drizzle come stringa
 export const modelCatalogTable = pgTable(
   "model_catalog",

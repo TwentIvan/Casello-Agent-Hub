@@ -20,6 +20,7 @@ describe("migrazione 2026-10-catalogo-universale", () => {
       INSERT INTO ai_accounts (user_id, name, provider, base_url) SELECT id, 'Gemini', 'gemini', 'https://generativelanguage.googleapis.com/v1beta/openai' FROM users;
       INSERT INTO ai_accounts (user_id, name, provider, base_url) VALUES (NULL, 'Gateway Casello', 'system_gateway', 'https://gw.example.com/v1');
       INSERT INTO model_catalog (provider, model_id, family, version) VALUES ('mistral', 'mistral-large', 'Mistral Large', '2');
+      INSERT INTO ai_models (account_id, model_id, display_name) SELECT id, 'deepseek-chat', 'Chat' FROM ai_accounts WHERE name = 'DeepSeek';
     `);
     await db.exec(read(SQL));
   });
@@ -70,6 +71,35 @@ describe("migrazione 2026-10-catalogo-universale", () => {
     await db.exec(`BEGIN; UPDATE providers SET slug = 'gemini-x' WHERE slug = 'gemini';`);
     expect((await db.query<any>("SELECT provider FROM ai_accounts WHERE name = 'Gemini'")).rows[0].provider).toBe("gemini-x");
     await db.exec("ROLLBACK;");
+  });
+
+  it("modelli e offerte: tabelle vuote, ai_models.offer_id null, vincoli e cascate", async () => {
+    expect((await db.query<any>("SELECT count(*)::int AS n FROM models")).rows[0].n).toBe(0);
+    expect((await db.query<any>("SELECT offer_id FROM ai_models")).rows).toEqual([{ offer_id: null }]);
+
+    await db.exec(`BEGIN;
+      INSERT INTO models (canonical_key, author, family, version, mode) VALUES ('deepseek-chat', 'DeepSeek', 'DeepSeek', 'chat', 'chat');
+      INSERT INTO model_offers (model_id, provider, provider_model_id, price_input_per_mtok) SELECT id, 'deepseek', 'deepseek-chat', 0.28 FROM models;
+      UPDATE ai_models SET offer_id = (SELECT id FROM model_offers);`);
+    try {
+      const offer = (await db.query<any>("SELECT status, sources, price_input_per_mtok FROM model_offers")).rows[0];
+      expect(offer).toEqual({ status: "available", sources: {}, price_input_per_mtok: "0.280000" });
+      // Stesso provider e id presso il provider: rifiutato
+      await expect(
+        db.exec(`SAVEPOINT s; INSERT INTO model_offers (model_id, provider, provider_model_id) SELECT id, 'deepseek', 'deepseek-chat' FROM models;`),
+      ).rejects.toThrow(/model_offers_provider_model_unique/);
+      await db.exec("ROLLBACK TO SAVEPOINT s;");
+      await expect(
+        db.exec(`SAVEPOINT s; INSERT INTO model_offers (model_id, provider, provider_model_id) SELECT id, 'inesistente', 'x' FROM models;`),
+      ).rejects.toThrow(/model_offers_provider_providers_slug_fk/);
+      await db.exec("ROLLBACK TO SAVEPOINT s;");
+      // Eliminare il modello elimina le offerte e lascia ai_models.offer_id null
+      await db.exec("DELETE FROM models;");
+      expect((await db.query<any>("SELECT count(*)::int AS n FROM model_offers")).rows[0].n).toBe(0);
+      expect((await db.query<any>("SELECT offer_id FROM ai_models")).rows).toEqual([{ offer_id: null }]);
+    } finally {
+      await db.exec("ROLLBACK;");
+    }
   });
 
   it("è idempotente: una seconda esecuzione non dà errori e non cambia nulla", async () => {

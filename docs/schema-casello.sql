@@ -279,6 +279,7 @@ CREATE TABLE "ai_models" (
 	"availability" "ai_model_availability" DEFAULT 'unknown' NOT NULL,
 	"supports_tools" boolean,
 	"catalog_id" integer,
+	"offer_id" integer,
 	"last_probe_at" timestamp,
 	"last_probe_ok" boolean,
 	"created_at" timestamp DEFAULT now() NOT NULL,
@@ -316,6 +317,44 @@ CREATE TABLE "model_catalog" (
 	CONSTRAINT "model_catalog_provider_providers_slug_fk" FOREIGN KEY ("provider") REFERENCES "public"."providers"("slug") ON DELETE no action ON UPDATE cascade
 );
 
+-- Catalogo universale: modelli indipendenti dal provider e loro offerte presso i provider
+CREATE TYPE "public"."model_mode" AS ENUM('chat', 'embedding', 'image_generation', 'image_edit', 'audio_transcription', 'audio_speech', 'video_generation', 'rerank', 'moderation', 'ocr', 'search', 'realtime', 'responses', 'completion', 'other');
+
+CREATE TABLE "models" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"canonical_key" text NOT NULL,
+	"author" text NOT NULL,
+	"family" text NOT NULL,
+	"version" text NOT NULL,
+	"mode" "model_mode" DEFAULT 'chat' NOT NULL,
+	"supports_tools" boolean,
+	"supports_vision" boolean,
+	"supports_reasoning" boolean,
+	"released_at" timestamp,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "models_canonical_key_unique" UNIQUE("canonical_key")
+);
+
+CREATE TABLE "model_offers" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"model_id" integer NOT NULL,
+	"provider" text NOT NULL,
+	"provider_model_id" text NOT NULL,
+	"price_input_per_mtok" numeric(12, 6),
+	"price_output_per_mtok" numeric(12, 6),
+	"context_tokens" integer,
+	"supports_tools" boolean,
+	"status" "model_catalog_status" DEFAULT 'available' NOT NULL,
+	"deprecation_date" timestamp,
+	"sources" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "model_offers_provider_model_unique" UNIQUE("provider","provider_model_id"),
+	CONSTRAINT "model_offers_model_id_models_id_fk" FOREIGN KEY ("model_id") REFERENCES "public"."models"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "model_offers_provider_providers_slug_fk" FOREIGN KEY ("provider") REFERENCES "public"."providers"("slug") ON DELETE no action ON UPDATE cascade
+);
+
+CREATE INDEX "model_offers_model_id_idx" ON "model_offers" USING btree ("model_id");
+
 -- user_id è null per le esecuzioni pianificate
 CREATE TABLE "catalog_runs" (
 	"id" serial PRIMARY KEY NOT NULL,
@@ -333,3 +372,4 @@ CREATE TABLE "catalog_runs" (
 CREATE UNIQUE INDEX "catalog_runs_one_running" ON "catalog_runs" USING btree ("status") WHERE "catalog_runs"."status" = 'running';
 
 ALTER TABLE "ai_models" ADD CONSTRAINT "ai_models_catalog_id_model_catalog_id_fk" FOREIGN KEY ("catalog_id") REFERENCES "public"."model_catalog"("id") ON DELETE set null ON UPDATE no action;
+ALTER TABLE "ai_models" ADD CONSTRAINT "ai_models_offer_id_model_offers_id_fk" FOREIGN KEY ("offer_id") REFERENCES "public"."model_offers"("id") ON DELETE set null ON UPDATE no action;

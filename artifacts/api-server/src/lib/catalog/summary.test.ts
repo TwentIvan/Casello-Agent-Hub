@@ -1,47 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { CatalogRecord } from "./merge";
 import type { OfferRecord } from "./merge";
-import { summarizeCatalog, summarizeOffers } from "./summary";
-
-function rec(over: Partial<CatalogRecord> = {}): CatalogRecord {
-  return {
-    provider: "deepseek", modelId: "m", family: "DeepSeek", version: "v1", releasedAt: null,
-    priceInput: 0.28, priceOutput: 1, contextTokens: null, supportsTools: null,
-    status: "available", deprecationDate: null, sources: {}, ...over,
-  };
-}
-
-describe("summarizeCatalog", () => {
-  it("prima esecuzione: liste vuote", () => {
-    expect(summarizeCatalog([], [rec()])).toEqual({ firstRun: true, added: [], retired: [], deprecating: [], priceChanged: [] });
-  });
-  it("riconosce nuovo, ritirato, in dismissione e cambio di prezzo", () => {
-    const before = [rec(), rec({ modelId: "old" }), rec({ modelId: "dep" })];
-    const after = [
-      rec({ priceInput: 0.3 }),
-      rec({ modelId: "old", status: "retired", deprecationDate: new Date("2026-06-17") }),
-      rec({ modelId: "dep", status: "deprecated", deprecationDate: new Date("2027-01-31") }),
-      rec({ modelId: "new", version: "v9" }),
-    ];
-    const s = summarizeCatalog(before, after);
-    expect(s.firstRun).toBe(false);
-    expect(s.added).toEqual([{ provider: "deepseek", modelId: "new", version: "v9" }]);
-    expect(s.retired.map((c) => c.modelId)).toEqual(["old"]);
-    expect(s.deprecating).toEqual([{ provider: "deepseek", modelId: "dep", version: "v1", deprecationDate: "2027-01-31" }]);
-    expect(s.priceChanged).toEqual([
-      { provider: "deepseek", modelId: "m", version: "v1", oldInput: 0.28, oldOutput: 1, newInput: 0.3, newOutput: 1 },
-    ]);
-  });
-  it("prezzo da null a noto non è un cambio; deprecazione invariata non si ripete", () => {
-    const dep = { status: "deprecated" as const, deprecationDate: new Date("2027-01-31") };
-    const s = summarizeCatalog(
-      [rec({ priceInput: null, priceOutput: null }), rec({ modelId: "d", ...dep })],
-      [rec({ priceInput: 1, priceOutput: 2 }), rec({ modelId: "d", ...dep })],
-    );
-    expect(s.priceChanged).toEqual([]);
-    expect(s.deprecating).toEqual([]);
-  });
-});
+import { summarizeOffers } from "./summary";
 
 function offer(over: Partial<OfferRecord> = {}): OfferRecord {
   return {

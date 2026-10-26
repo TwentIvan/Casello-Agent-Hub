@@ -1,45 +1,6 @@
-import type { AiProvider } from "../ai/providers";
-import type { SourceEntry } from "./sources";
-
 /** Id di modello confrontabile tra le fonti: senza `models/` iniziale, in minuscolo. */
 export function normalizeModelId(id: string): string {
   return id.replace(/^models\//i, "").toLowerCase();
-}
-
-type CatalogKey = { provider: AiProvider; modelId: string };
-
-const OPENROUTER_PREFIXES: Record<string, AiProvider> = {
-  "deepseek/": "deepseek",
-  "google/": "gemini",
-  "mistralai/": "mistral",
-};
-
-const LITELLM_PROVIDERS: Record<string, AiProvider> = {
-  deepseek: "deepseek",
-  gemini: "gemini",
-  mistral: "mistral",
-  groq: "groq",
-  together_ai: "together",
-  openrouter: "openrouter",
-};
-
-/** Le chiavi (provider, modello) sotto cui una voce di fonte entra nel catalogo. */
-export function catalogKeysFor(entry: SourceEntry): CatalogKey[] {
-  if (entry.source === "openrouter") {
-    const keys: CatalogKey[] = [{ provider: "openrouter", modelId: normalizeModelId(entry.key) }];
-    for (const [prefix, provider] of Object.entries(OPENROUTER_PREFIXES)) {
-      if (!entry.key.startsWith(prefix)) continue;
-      const rest = entry.key.slice(prefix.length);
-      // Le varianti (`:free`, ...) esistono solo su OpenRouter
-      if (rest && !rest.includes(":")) keys.push({ provider, modelId: normalizeModelId(rest) });
-    }
-    return keys;
-  }
-  const provider = entry.litellmProvider ? LITELLM_PROVIDERS[entry.litellmProvider] : undefined;
-  if (!provider || !entry.litellmProvider) return [];
-  const prefix = `${entry.litellmProvider}/`;
-  const rest = entry.key.startsWith(prefix) ? entry.key.slice(prefix.length) : entry.key;
-  return rest ? [{ provider, modelId: normalizeModelId(rest) }] : [];
 }
 
 const FAMILIES: { label: string; prefixes: string[] }[] = [
@@ -84,9 +45,11 @@ export function familyAndVersion(modelId: string, name: string | null): { family
         break;
       }
     }
-    version = n.trim();
+    version = n.replace(/^[-\s]+/, "").trim();
   } else {
     version = base.slice(matched.length).replace(/^-+/, "").replace(/-/g, " ").trim();
   }
+  // Id che è tutto famiglia (`o1`): la versione è l'id stesso, leggibile
+  if (!version) version = base.replace(/-/g, " ");
   return { family, version };
 }

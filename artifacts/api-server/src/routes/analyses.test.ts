@@ -368,7 +368,7 @@ describe("avvio dell'analisi", () => {
       appId: app.id,
       model: "openrouter/deepseek-chat",
       status: "queued",
-      maxTokens: 400_000,
+      maxTokens: 1_000_000,
       tokensUsed: 0,
       sources: { code: "none", description: true },
     });

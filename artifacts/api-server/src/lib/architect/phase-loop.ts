@@ -16,11 +16,32 @@ import { SOURCE_LIMITS, SourceTreeError, type SourceTree } from "./source-tree";
 import { describeOperation, type OpenApiDoc } from "./sources";
 import { sliceChars } from "./text";
 
-export const PHASE_MAX_ROUNDS = 40;
+export const PHASE_MAX_ROUNDS = 25;
 export const MAX_CORRECTIONS = 2;
 
+/**
+ * Quota del tetto di token dell'analisi assegnata a ogni fase (somma 1). È una quota morbida: serve
+ * solo a sollecitare la consegna; i token non usati da una fase restano alle successive e l'unico
+ * limite rigido è il tetto complessivo dell'analisi.
+ */
+export const PHASE_TOKEN_SHARES: Record<PhaseName, number> = {
+  map: 0.25,
+  capabilities: 0.15,
+  catalog: 0.2,
+  agents: 0.15,
+  completion: 0.15,
+  evolution: 0.1,
+};
+
+/** Frazione della quota di token (o dei giri) oltre la quale si sollecita la consegna. */
+export const PHASE_NUDGE_RATIO = 0.8;
+/** Giri concessi dopo il sollecito prima che la fase fallisca. */
+export const PHASE_NUDGE_GRACE_ROUNDS = 2;
+export const PHASE_NUDGE =
+  "Budget della fase quasi esaurito: consegna ora l'esito con submit_result usando quello che hai già letto.";
+
 // Tetti sul testo restituito al modello per ogni chiamata
-const MAX_TOOL_OUTPUT_CHARS = 40_000;
+export const MAX_TOOL_OUTPUT_CHARS = 12_000;
 const MAX_LIST_ENTRIES = 500;
 const MAX_SEARCH_MATCHES = 200;
 const MAX_OPERATIONS = 500;
@@ -35,7 +56,7 @@ const MAX_LOG_ARG_CHARS = 120;
  * Caratteri di output degli strumenti di lettura che restano interi nella cronologia: si tengono
  * i più recenti, i più vecchi diventano un segnaposto breve (vedi `compactHistory`).
  */
-export const HISTORY_TOOL_OUTPUT_BUDGET = 60_000;
+export const HISTORY_TOOL_OUTPUT_BUDGET = 24_000;
 
 /** Budget dell'analisi, condiviso tra le fasi e aggiornato dal ciclo. */
 export interface PhaseBudget {
@@ -53,6 +74,11 @@ export interface RunPhaseInput {
   openapi: OpenApiDoc | null;
   chat: (messages: ChatCompletionMessageParam[], tools: ChatCompletionTool[]) => Promise<ChatResult>;
   budget: PhaseBudget;
+  /**
+   * Quota morbida di token della fase (di solito `PHASE_TOKEN_SHARES[fase] × maxTokens`): all'80%
+   * il modello riceve il sollecito a consegnare. Senza quota il sollecito scatta solo per i giri.
+   */
+  phaseQuota?: number;
   log: (message: string) => void;
   now?: () => number;
 }
@@ -399,6 +425,25 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
 
   let rounds = 0;
   let invalidSubmits = 0;
+  // Token usati da questa fase (il budget dell'analisi è cumulativo tra le fasi)
+  let phaseTokens = 0;
+  // Giro dopo il quale è stato inviato il sollecito a consegnare (null = non ancora)
+  let nudgedAt: number | null = null;
+  const quota = input.phaseQuota ?? Number.POSITIVE_INFINITY;
+  const nudgeRounds = Math.ceil(PHASE_MAX_ROUNDS * PHASE_NUDGE_RATIO);
+
+  /**
+   * A fine giro, una sola volta: oltre l'80% della quota o dei giri chiede la consegna. È un messaggio
+   * utente aggiunto dopo tutte le risposte agli strumenti del giro, così ogni tool_call resta seguita
+   * dalle sue risposte.
+   */
+  const maybeNudge = (): void => {
+    if (nudgedAt !== null) return;
+    if (phaseTokens < quota * PHASE_NUDGE_RATIO && rounds < nudgeRounds) return;
+    nudgedAt = rounds;
+    messages.push({ role: "user", content: PHASE_NUDGE });
+    log("budget della fase quasi esaurito: sollecito a consegnare");
+  };
 
   for (;;) {
     // Limiti, controllati prima di ogni chiamata al modello
@@ -411,6 +456,9 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
     if (now() >= budget.deadline) {
       return fail(`fase ${phase}: tempo massimo dell'analisi scaduto`);
     }
+    if (nudgedAt !== null && rounds - nudgedAt >= PHASE_NUDGE_GRACE_ROUNDS) {
+      return fail(`fase ${phase}: esito non consegnato entro il budget della fase`);
+    }
 
     rounds += 1;
     let reply: ChatResult;
@@ -420,12 +468,15 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
     } catch (err) {
       return fail(`fase ${phase}: errore nella chiamata al modello: ${err instanceof Error ? err.message : String(err)}`);
     }
-    budget.tokensUsed += reply.promptTokens + reply.completionTokens;
+    const used = reply.promptTokens + reply.completionTokens;
+    budget.tokensUsed += used;
+    phaseTokens += used;
 
     if (reply.toolCalls.length === 0) {
       messages.push({ role: "assistant", content: reply.content ?? "" });
       messages.push({ role: "user", content: REMINDER });
       log("nessuno strumento chiamato: promemoria per submit_result");
+      maybeNudge();
       continue;
     }
 
@@ -500,5 +551,7 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
       );
       log(`submit_result non valido (correzione ${invalidSubmits}/${MAX_CORRECTIONS})`);
     }
+
+    maybeNudge();
   }
 }

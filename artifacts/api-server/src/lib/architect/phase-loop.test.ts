@@ -9,11 +9,15 @@ import type { ChatResult } from "../ai-gateway";
 import {
   HISTORY_TOOL_OUTPUT_BUDGET,
   MAX_CORRECTIONS,
+  MAX_TOOL_OUTPUT_CHARS,
   PHASE_MAX_ROUNDS,
+  PHASE_NUDGE,
+  PHASE_TOKEN_SHARES,
   runPhase,
   type PhaseBudget,
 } from "./phase-loop";
-import { SourceTree } from "./source-tree";
+import { PHASES } from "./schemas";
+import { SOURCE_LIMITS, SourceTree } from "./source-tree";
 import type { OpenApiDoc } from "./sources";
 
 const SECRET_LINE = "const segreto = 'contenuto-riservato-42';";
@@ -212,13 +216,96 @@ describe("runPhase", () => {
     expect(String(last.content)).toContain("consegna l'esito con submit_result");
   });
 
-  it(`${PHASE_MAX_ROUNDS} giri senza consegna: fallisce nominando i giri`, async () => {
-    const s = scripted([reply([call("list_dir", { path: "src" })])]);
-    const { input } = base(s.chat);
-    const out = await runPhase(input);
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.error).toContain(`${PHASE_MAX_ROUNDS} giri`);
-    expect(s.calls).toHaveLength(PHASE_MAX_ROUNDS);
+  describe("budget della fase", () => {
+    const isNudge = (m: ChatCompletionMessageParam) => m.role === "user" && m.content === PHASE_NUDGE;
+    const nudges = (messages: ChatCompletionMessageParam[]) => messages.filter(isNudge).length;
+
+    function expectPairing(messages: ChatCompletionMessageParam[]) {
+      const ids = messages.flatMap((m) => (m.role === "assistant" ? (m.tool_calls ?? []).map((t) => t.id) : []));
+      const replies = messages.flatMap((m) => (m.role === "tool" ? [m.tool_call_id] : []));
+      expect(replies).toEqual(ids);
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+
+    it("quote per fase: sommano a 1", () => {
+      expect(Object.keys(PHASE_TOKEN_SHARES).sort()).toEqual([...PHASES].sort());
+      expect(Object.values(PHASE_TOKEN_SHARES).reduce((a, b) => a + b, 0)).toBeCloseTo(1, 10);
+      expect(PHASE_TOKEN_SHARES).toEqual({
+        map: 0.25,
+        capabilities: 0.15,
+        catalog: 0.2,
+        agents: 0.15,
+        completion: 0.15,
+        evolution: 0.1,
+      });
+    });
+
+    it("all'80% della quota: sollecito una volta, dopo le risposte agli strumenti; poi consegna valida", async () => {
+      const s = scripted([
+        reply([call("read_file", { path: "src/a.ts" })], null, 300),
+        reply([call("list_dir", { path: "" })], null, 300),
+        // terzo giro: 900/1000 token → sollecito dopo le due risposte
+        reply([call("read_file", { path: "src/a.ts" }), call("list_dir", { path: "src" })], null, 300),
+        reply([call("submit_result", { result: validMap })], null, 300),
+      ]);
+      const { input, logs } = base(s.chat, { phaseQuota: 1_000 });
+      expect(await runPhase(input)).toEqual({ ok: true, result: validMap });
+      expect(s.calls).toHaveLength(4);
+      expect(s.calls.slice(0, 3).every((c) => nudges(c.messages) === 0)).toBe(true);
+      const msgs = s.calls[3]!.messages;
+      expect(nudges(msgs)).toBe(1);
+      expect(isNudge(msgs.at(-1)!)).toBe(true);
+      expect(msgs.at(-2)!.role).toBe("tool");
+      expect(msgs.at(-3)!.role).toBe("tool");
+      expect(msgs.at(-4)!.role).toBe("assistant");
+      expectPairing(msgs);
+      expect(logs.filter((l) => l.includes("budget della fase"))).toHaveLength(1);
+    });
+
+    it("dopo il sollecito continua a leggere: fallisce dopo altri 2 giri", async () => {
+      const s = scripted(Array.from({ length: 6 }, () => reply([call("read_file", { path: "src/a.ts" })], null, 400)));
+      const { input } = base(s.chat, { phaseQuota: 1_000 });
+      const out = await runPhase(input);
+      // 2 giri (800/1000) → sollecito, poi 2 giri di grazia
+      expect(out).toEqual({ ok: false, error: "fase map: esito non consegnato entro il budget della fase" });
+      expect(s.calls).toHaveLength(4);
+      expect(nudges(s.calls[1]!.messages)).toBe(0);
+      expect(isNudge(s.calls[2]!.messages.at(-1)!)).toBe(true);
+      // il sollecito non si ripete
+      expect(nudges(s.calls[3]!.messages)).toBe(1);
+      expectPairing(s.calls[3]!.messages);
+      expect(input.budget.tokensUsed).toBe(1_600);
+    });
+
+    it("la quota conta solo i token della fase, non quelli già usati dall'analisi", async () => {
+      const s = scripted([
+        reply([call("read_file", { path: "src/a.ts" })], null, 300),
+        reply([call("submit_result", { result: validMap })], null, 300),
+      ]);
+      const { input } = base(s.chat, { phaseQuota: 1_000, budget: budget({ tokensUsed: 100_000 }) });
+      expect((await runPhase(input)).ok).toBe(true);
+      expect(nudges(s.calls[1]!.messages)).toBe(0);
+    });
+
+    it(`all'80% dei ${PHASE_MAX_ROUNDS} giri: sollecito, poi fallisce dopo altri 2 giri`, async () => {
+      expect(PHASE_MAX_ROUNDS).toBe(25);
+      const s = scripted([reply([call("list_dir", { path: "src" })])]);
+      const { input } = base(s.chat);
+      const out = await runPhase(input);
+      expect(out).toEqual({ ok: false, error: "fase map: esito non consegnato entro il budget della fase" });
+      expect(nudges(s.calls[19]!.messages)).toBe(0);
+      expect(isNudge(s.calls[20]!.messages.at(-1)!)).toBe(true);
+      expect(s.calls).toHaveLength(22);
+    });
+
+    it("sollecito dopo una risposta senza strumenti: resta l'ultimo messaggio", async () => {
+      const s = scripted([reply([], "penso", 900), reply([call("submit_result", { result: validMap })])]);
+      const { input } = base(s.chat, { phaseQuota: 1_000 });
+      expect((await runPhase(input)).ok).toBe(true);
+      const msgs = s.calls[1]!.messages;
+      expect(isNudge(msgs.at(-1)!)).toBe(true);
+      expect(nudges(msgs)).toBe(1);
+    });
   });
 
   it("token oltre il budget: fallisce prima della chiamata successiva", async () => {
@@ -317,13 +404,28 @@ describe("runPhase", () => {
     const { input, logs } = base(s.chat, { tree: makeTree({ "big.ts": big }) });
     await runPhase(input);
     const msg = toolMessages(s.calls[1]!.messages)[0]!;
+    expect(SOURCE_LIMITS.maxReadLines).toBe(200);
     expect(msg).toContain("10: riga 10");
-    expect(msg).toContain("409: riga 409");
-    expect(msg).not.toContain("410: riga 410");
-    expect(msg).toContain("fromLine=410");
+    expect(msg).toContain("209: riga 209");
+    expect(msg).not.toContain("210: riga 210");
+    expect(msg).toContain("fromLine=210");
     expect(msg).toContain("1000");
-    expect(msg.length).toBeLessThanOrEqual(41_000);
-    expect(logs).toContain("read_file big.ts (400 righe)");
+    expect(logs).toContain("read_file big.ts (200 righe)");
+  });
+
+  it("read_file con righe lunghe: resta sotto il tetto dell'output e indica come continuare", async () => {
+    expect(MAX_TOOL_OUTPUT_CHARS).toBe(12_000);
+    const wide = Array.from({ length: 1_000 }, (_, i) => `${"y".repeat(150)}${i + 1}`).join("\n");
+    const s = scripted([
+      reply([call("read_file", { path: "src/molto/annidato/wide.ts", fromLine: 1 })]),
+      reply([call("submit_result", { result: validMap })]),
+    ]);
+    const { input } = base(s.chat, { tree: makeTree({ "src/molto/annidato/wide.ts": wide }) });
+    await runPhase(input);
+    const msg = toolMessages(s.calls[1]!.messages)[0]!;
+    expect(msg.length).toBeLessThanOrEqual(MAX_TOOL_OUTPUT_CHARS);
+    expect(msg).toMatch(/continua con fromLine=\d+/);
+    expect(msg).not.toContain("troncato: output oltre");
   });
 
   it("search con molti risultati: segnala il taglio", async () => {
@@ -341,7 +443,7 @@ describe("runPhase", () => {
       messages.reduce((n, m) => n + JSON.stringify(m).length, 0);
 
     async function manyReads(rounds: number) {
-      // file da ~100 caratteri per riga: ogni lettura (400 righe) è vicina al tetto di 40 000 caratteri
+      // file da ~100 caratteri per riga: ogni lettura arriva al tetto di caratteri per chiamata
       const line = "x".repeat(95);
       const files: Record<string, string> = {};
       for (let i = 0; i < rounds; i++) {
@@ -363,7 +465,8 @@ describe("runPhase", () => {
       expect(out.ok).toBe(true);
       expect(s.calls).toHaveLength(rounds + 2);
       // budget della cronologia + l'ultima lettura (sempre intera) + messaggi brevi
-      const bound = HISTORY_TOOL_OUTPUT_BUDGET + 45_000;
+      expect(HISTORY_TOOL_OUTPUT_BUDGET).toBe(24_000);
+      const bound = HISTORY_TOOL_OUTPUT_BUDGET + MAX_TOOL_OUTPUT_CHARS + 3_000;
       for (const c of s.calls) expect(size(c.messages)).toBeLessThan(bound);
       const last = s.calls.at(-1)!.messages;
       const tools = toolMessages(last);

@@ -1,6 +1,7 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { APIConnectionTimeoutError } from "openai";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { aiGateway } from "./ai-gateway";
 
@@ -20,6 +21,7 @@ describe("aiGateway.chat", () => {
   let requests: { url: string; auth: string | undefined; body: any }[];
   let reply: any;
   let status: number;
+  let hang: boolean;
   const saved: Record<string, string | undefined> = {};
 
   beforeEach(async () => {
@@ -27,6 +29,7 @@ describe("aiGateway.chat", () => {
     saved["key"] = process.env["AI_GATEWAY_API_KEY"];
     requests = [];
     status = 200;
+    hang = false;
     reply = {
       choices: [{ message: { role: "assistant", content: "ciao" } }],
       usage: { prompt_tokens: 11, completion_tokens: 5 },
@@ -36,6 +39,7 @@ describe("aiGateway.chat", () => {
       req.on("data", (c) => (raw += c));
       req.on("end", () => {
         requests.push({ url: req.url ?? "", auth: req.headers.authorization, body: JSON.parse(raw) });
+        if (hang) return;
         res.statusCode = status;
         res.setHeader("content-type", "application/json");
         res.end(JSON.stringify(reply));
@@ -50,6 +54,7 @@ describe("aiGateway.chat", () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    server.closeAllConnections();
     await new Promise((r) => server.close(r));
     if (saved["base"] === undefined) delete process.env["AI_GATEWAY_BASE_URL"];
     else process.env["AI_GATEWAY_BASE_URL"] = saved["base"];
@@ -130,6 +135,14 @@ describe("aiGateway.chat", () => {
     reply = { error: { message: "errore del gateway" } };
     await expect(aiGateway.chat({ modelKey: "m", messages: [{ role: "user", content: "x" }] })).rejects.toThrow();
     expect(requests).toHaveLength(2);
+  });
+
+  it("timeoutMs e maxRetries per chiamata: timeout dell'SDK senza nuovi tentativi", async () => {
+    hang = true;
+    await expect(
+      aiGateway.chat({ modelKey: "m", messages: [{ role: "user", content: "x" }], timeoutMs: 200, maxRetries: 0 }),
+    ).rejects.toBeInstanceOf(APIConnectionTimeoutError);
+    expect(requests).toHaveLength(1);
   });
 
   it("complete in modalita proxy: corpo, log e risultato invariati", async () => {

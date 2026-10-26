@@ -8,8 +8,9 @@
 // Degli errori sconosciuti non si salva il messaggio (potrebbe contenere URL o dati): solo un
 // testo generico in italiano.
 
+import { setTimeout as sleep } from "node:timers/promises";
 import { and, eq, inArray } from "drizzle-orm";
-import { APIError } from "openai";
+import { APIConnectionError, APIConnectionTimeoutError, APIError } from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
 import {
   db,
@@ -32,7 +33,7 @@ import { GITHUB_MESSAGES, GithubError, forgetInstallationTokens, installationTok
 import { githubConfig, type GithubConfig } from "../github/config";
 import { loadAppConnection } from "../tools/catalog";
 import { diffAgents, diffAlwaysNew, diffSkills, diffTools, type DiffEntry } from "./diff";
-import { runPhase, type PhaseBudget } from "./phase-loop";
+import { PHASE_TOKEN_SHARES, runPhase, type PhaseBudget } from "./phase-loop";
 import { phasePrompt, SYSTEM_BASE } from "./prompts";
 import {
   PHASES,
@@ -46,13 +47,20 @@ import {
 import { SourceTree, SourceTreeError } from "./source-tree";
 import { fetchGithubTree, fetchOpenApi, SourceError, type OpenApiDoc } from "./sources";
 
-export const ANALYSIS_DEFAULT_MAX_TOKENS = 400_000;
+export const ANALYSIS_DEFAULT_MAX_TOKENS = 1_000_000;
 export const ANALYSIS_MAX_MS = 1_800_000;
 /** Voci massime del log di un'analisi: si tengono le più recenti. */
 export const ANALYSIS_LOG_MAX = 500;
 
 // Ogni chiamata al modello dura almeno 1 s, poi la limita la scadenza dell'analisi
 const MIN_MODEL_CALL_MS = 1_000;
+// Tetto della singola richiesta al modello: gli esiti delle fasi (es. il catalogo) sono JSON lunghi
+// e i 120 s delle run degli agenti non bastano. Il limite effettivo è min(questo, tempo rimasto).
+export const ARCHITECT_MODEL_TIMEOUT_MS = 300_000;
+// Nuovi tentativi: l'SDK non ne fa (maxRetries 0), altrimenti ritenterebbe anche i timeout e un
+// modello lento costerebbe 2-3 volte l'attesa. Qui si ritenta una sola volta, dopo una breve pausa,
+// solo per errori di rete diversi dal timeout e per le risposte 5xx del gateway.
+const MODEL_RETRY_DELAY_MS = 1_000;
 // Tetto dei token generati per singola risposta (gli esiti delle fasi possono essere lunghi)
 const MAX_COMPLETION_TOKENS = 16_000;
 const MODEL_TEMPERATURE = 0.2;
@@ -71,6 +79,8 @@ export interface StartAnalysisOptions {
   githubConfig?: GithubConfig | null;
   /** Solo per i test: durata massima dell'analisi (default ANALYSIS_MAX_MS). */
   maxMs?: number;
+  /** Solo per i test: tetto della singola chiamata al modello (default ARCHITECT_MODEL_TIMEOUT_MS). */
+  modelTimeoutMs?: number;
   /** Solo per i test: orologio. */
   now?: () => number;
 }
@@ -302,12 +312,29 @@ function evidenceOf(payload: unknown): unknown[] {
 
 // --- Chiamata al modello con la scadenza dell'analisi ----------------------------------------
 
-function modelChat(model: string, analysisId: number, deadline: number, maxMs: number, now: () => number) {
+/** Durata breve in secondi per i messaggi: "300 s", oppure "0.3 s" sotto il secondo. */
+function formatSeconds(ms: number): string {
+  return ms >= 1_000 ? `${Math.round(ms / 1_000)} s` : `${Math.round(ms / 100) / 10} s`;
+}
+
+/** Errori transitori per cui vale un nuovo tentativo: rete (non timeout) e 5xx del gateway. */
+function isRetryable(err: unknown): boolean {
+  if (err instanceof APIConnectionTimeoutError) return false;
+  if (err instanceof APIConnectionError) return true;
+  return err instanceof APIError && typeof err.status === "number" && err.status >= 500;
+}
+
+const STATUS_HINTS: Record<number, string> = {
+  400: " (richiesta rifiutata: spesso contesto troppo lungo per il modello)",
+  429: " (limite di richieste: riprova più tardi)",
+};
+
+function modelChat(model: string, analysisId: number, deadline: number, maxMs: number, timeoutMs: number, now: () => number) {
   return async (messages: ChatCompletionMessageParam[], tools: ChatCompletionTool[]): Promise<ChatResult> => {
     // La chiamata non può superare la scadenza complessiva (minimo 1 s)
     const signal = AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, deadline - now()));
-    try {
-      return await aiGateway.chat({
+    const call = () =>
+      aiGateway.chat({
         modelKey: model,
         messages,
         tools,
@@ -315,15 +342,29 @@ function modelChat(model: string, analysisId: number, deadline: number, maxMs: n
         maxTokens: MAX_COMPLETION_TOKENS,
         temperature: MODEL_TEMPERATURE,
         signal,
+        timeoutMs,
+        maxRetries: 0,
       });
+    try {
+      try {
+        return await call();
+      } catch (err) {
+        if (signal.aborted || !isRetryable(err)) throw err;
+        logger.warn({ analysisId, errName: err instanceof Error ? err.name : "unknown" }, "Chiamata al modello dell'architetto non riuscita: nuovo tentativo");
+        await sleep(MODEL_RETRY_DELAY_MS, undefined, { signal });
+        return await call();
+      }
     } catch (err) {
       // Messaggi propri: quelli del gateway o dell'SDK potrebbero contenere URL
       if (signal.aborted) {
         throw new AnalysisError(`tempo massimo dell'analisi (${formatDuration(maxMs)}) scaduto durante la chiamata al modello`);
       }
       logger.warn({ analysisId, errName: err instanceof Error ? err.name : "unknown" }, "Chiamata al modello dell'architetto non riuscita");
+      if (err instanceof APIConnectionTimeoutError) {
+        throw new AnalysisError(`il modello non ha risposto entro ${formatSeconds(timeoutMs)} (riprova o scegli un modello più veloce)`);
+      }
       if (err instanceof APIError && typeof err.status === "number") {
-        throw new AnalysisError(`il gateway dei modelli ha risposto con errore ${err.status}`);
+        throw new AnalysisError(`il gateway dei modelli ha risposto con errore ${err.status}${STATUS_HINTS[err.status] ?? ""}`);
       }
       throw new AnalysisError("errore di comunicazione con il gateway dei modelli");
     }
@@ -380,7 +421,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
 
     // Senza codice né OpenAPI i tool derivano solo dalla descrizione: vanno sempre verificati
     const forceVerification = sources.code === "none" && !sources.openapi;
-    const chat = modelChat(analysis.model, analysisId, budget.deadline, maxMs, now);
+    const chat = modelChat(analysis.model, analysisId, budget.deadline, maxMs, opts.modelTimeoutMs ?? ARCHITECT_MODEL_TIMEOUT_MS, now);
     const previous: Partial<Record<PhaseName, unknown>> = {};
     let position = 0;
 
@@ -397,7 +438,9 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
         hasOpenApi: openapi !== null,
         previous,
       });
-      const outcome = await runPhase({ phase, system: SYSTEM_BASE, user, tree, openapi, chat, budget, log, now });
+      // Quota morbida della fase: solo il sollecito a consegnare; il tetto rigido resta il totale
+      const phaseQuota = Math.floor(PHASE_TOKEN_SHARES[phase] * budget.maxTokens);
+      const outcome = await runPhase({ phase, system: SYSTEM_BASE, user, tree, openapi, chat, budget, phaseQuota, log, now });
       if (!outcome.ok) {
         log(`fase ${phase} non riuscita`);
         await progress.flush();

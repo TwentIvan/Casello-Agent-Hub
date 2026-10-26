@@ -1476,6 +1476,7 @@ export const listCatalogModelsQueryMinContextMin = 0;
 
 export const listCatalogModelsQuerySortDefault = `name`;
 export const listCatalogModelsQueryPageDefault = 1;
+export const listCatalogModelsQueryPageMax = 10000;
 
 export const listCatalogModelsQueryPageSizeDefault = 50;
 export const listCatalogModelsQueryPageSizeMax = 100;
@@ -1495,7 +1496,7 @@ export const ListCatalogModelsQueryParams = zod.object({
   "minContext": zod.coerce.number().min(listCatalogModelsQueryMinContextMin).optional(),
   "includeRetired": zod.coerce.boolean().optional(),
   "sort": zod.enum(['name', 'price', 'released', 'context']).default(listCatalogModelsQuerySortDefault),
-  "page": zod.coerce.number().min(1).default(listCatalogModelsQueryPageDefault),
+  "page": zod.coerce.number().min(1).max(listCatalogModelsQueryPageMax).default(listCatalogModelsQueryPageDefault),
   "pageSize": zod.coerce.number().min(1).max(listCatalogModelsQueryPageSizeMax).default(listCatalogModelsQueryPageSizeDefault)
 })
 
@@ -1515,6 +1516,7 @@ export const ListCatalogModelsResponse = zod.object({
   "supportsReasoning": zod.boolean().nullable(),
   "releasedAt": zod.coerce.date().nullable(),
   "offerCount": zod.number().describe('Offerte visibili (senza le ritirate, salvo includeRetired)'),
+  "providerCount": zod.number().describe('Provider distinti tra le offerte visibili'),
   "cheapestOffer": zod.union([zod.object({
   "provider": zod.string().regex(listCatalogModelsResponseItemsItemCheapestOfferOneProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "priceInput": zod.number().describe('USD per milione di token'),
@@ -1529,7 +1531,7 @@ export const ListCatalogModelsResponse = zod.object({
 
 
 /**
- * Tutte le offerte, anche ritirate, per prezzo (input+output) crescente; senza prezzo in fondo.
+ * Tutte le offerte, anche ritirate, per prezzo (input+output) crescente; senza prezzo in fondo e le ritirate dopo tutte le altre.
  * @summary Offerte di un modello del catalogo
  */
 export const ListCatalogModelOffersParams = zod.object({

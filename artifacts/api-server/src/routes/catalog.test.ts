@@ -305,12 +305,26 @@ describe("elenco dei modelli", () => {
       supportsReasoning: true,
       releasedAt: "2025-09-29T00:00:00.000Z",
       offerCount: 4,
+      providerCount: 4,
       cheapestOffer: { provider: "openrouter", priceInput: 2.5, priceOutput: 15 },
       // Collegato solo a un account di un altro utente
       inMyAccounts: false,
     });
     expect(d).toMatchObject({ offerCount: 2, cheapestOffer: { provider: "deepseek", priceInput: 0.28, priceOutput: 0.42 }, inMyAccounts: true });
     expect(g).toMatchObject({ offerCount: 1, cheapestOffer: null, inMyAccounts: false });
+  });
+
+  it("providerCount conta i provider distinti, offerCount le offerte", async () => {
+    const { deepseek } = await seedCatalog();
+    await db.insert(modelOffersTable).values({ modelId: deepseek.id, provider: "openrouter", providerModelId: "deepseek/deepseek-chat:free" });
+    const d = (await list("q=deepseek")).json.items[0];
+    expect(d).toMatchObject({ canonicalKey: "deepseek-chat", offerCount: 3, providerCount: 2 });
+  });
+
+  it("page oltre 10000 → 400", async () => {
+    await seedCatalog();
+    expect((await list("page=10000")).status).toBe(200);
+    expect((await list("page=10001")).status).toBe(400);
   });
 
   it("paginazione: total su tutte le pagine; pageSize oltre 100 o page 0 → 400", async () => {
@@ -442,6 +456,26 @@ describe("offerte di un modello", () => {
     expect((await api("GET", `/catalog/models/${old.id}/offers`)).json).toEqual([expect.objectContaining({ status: "retired" })]);
   });
 
+  it("le offerte ritirate in fondo, anche se più economiche", async () => {
+    const { claude } = await seedCatalog();
+    await db.insert(modelOffersTable).values({
+      modelId: claude.id,
+      provider: "anthropic",
+      providerModelId: "claude-sonnet-4-5-old",
+      priceInputPerMtok: "0.1",
+      priceOutputPerMtok: "0.1",
+      status: "retired",
+    });
+    const res = await api("GET", `/catalog/models/${claude.id}/offers`);
+    expect(res.json.map((o: { providerModelId: string }) => o.providerModelId)).toEqual([
+      "anthropic/claude-sonnet-4.5",
+      "claude-sonnet-4-5",
+      "anthropic.claude-sonnet-4-5-v1:0",
+      "claude-sonnet-4-5@20250929",
+      "claude-sonnet-4-5-old",
+    ]);
+  });
+
   it("modello inesistente → 404", async () => {
     expect((await api("GET", "/catalog/models/999999/offers")).status).toBe(404);
   });
@@ -519,5 +553,12 @@ describe("riepilogo con i provider nuovi", () => {
     const res = await api("GET", "/catalog/status");
     expect(res.status, res.text).toBe(200);
     expect(res.json.latest).toMatchObject({ status: "completed", summary: null });
+  });
+  it("voci di accounts che non sono oggetti vengono ignorate (niente 500)", async () => {
+    const base = { firstRun: false, added: [], retired: [], deprecating: [], priceChanged: [], newProviders: [] };
+    await db.insert(catalogRunsTable).values({ trigger: "scheduled", status: "completed", finishedAt: new Date(), summary: { ...base, accounts: [null, 3, "x"] } });
+    const res = await api("GET", "/catalog/status");
+    expect(res.status, res.text).toBe(200);
+    expect(res.json.latest.summary.accounts).toEqual([]);
   });
 });

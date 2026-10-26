@@ -44,6 +44,7 @@ includeRetired?: boolean;
 sort?: ListCatalogModelsSort;
 /**
  * @minimum 1
+ * @maximum 10000
  */
 page?: number;
 /**

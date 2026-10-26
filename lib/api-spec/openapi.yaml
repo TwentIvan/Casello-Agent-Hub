@@ -1250,6 +1250,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 10000
             default: 1
         - name: pageSize
           in: query
@@ -1275,7 +1276,8 @@ paths:
       tags: [catalog]
       summary: Offerte di un modello del catalogo
       description: >-
-        Tutte le offerte, anche ritirate, per prezzo (input+output) crescente; senza prezzo in fondo.
+        Tutte le offerte, anche ritirate, per prezzo (input+output) crescente; senza prezzo in fondo e le
+        ritirate dopo tutte le altre.
       parameters:
         - $ref: "#/components/parameters/IdParam"
       responses:
@@ -2625,7 +2627,7 @@ components:
 
     CatalogModelSummary:
       type: object
-      required: [id, canonicalKey, author, family, version, mode, supportsTools, supportsVision, supportsReasoning, releasedAt, offerCount, cheapestOffer, inMyAccounts]
+      required: [id, canonicalKey, author, family, version, mode, supportsTools, supportsVision, supportsReasoning, releasedAt, offerCount, providerCount, cheapestOffer, inMyAccounts]
       properties:
         id:
           type: integer
@@ -2651,6 +2653,9 @@ components:
         offerCount:
           type: integer
           description: Offerte visibili (senza le ritirate, salvo includeRetired)
+        providerCount:
+          type: integer
+          description: Provider distinti tra le offerte visibili
         cheapestOffer:
           oneOf:
             - $ref: "#/components/schemas/CatalogCheapestOffer"

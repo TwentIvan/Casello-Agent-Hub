@@ -85,6 +85,7 @@ interface ModelPageRow extends Record<string, unknown> {
   supports_reasoning: boolean | null;
   released_at: Date | string | null;
   offer_count: number;
+  provider_count: number;
   cheap_provider: string | null;
   cheap_input: string | null;
   cheap_output: string | null;
@@ -93,7 +94,7 @@ interface ModelPageRow extends Record<string, unknown> {
 
 /**
  * Elenco dei modelli in SQL: `o` sono le offerte visibili (senza le ritirate salvo `includeRetired`), `agg`
- * il loro numero e il contesto massimo per modello, `cheap` l'offerta più economica con entrambi i prezzi
+ * il loro numero, i provider distinti e il contesto massimo per modello, `cheap` l'offerta più economica con entrambi i prezzi
  * (parità: slug del provider, poi id presso il provider). Un modello senza offerte visibili non compare.
  * Restituisce la query della pagina e quella del totale con gli stessi filtri.
  */
@@ -101,7 +102,8 @@ function modelListQueries(f: ListQuery, userId: number): { page: SQL; total: SQL
   const visible = f.includeRetired ? sql`true` : sql`status <> 'retired'`;
   const ctes = sql`
     WITH o AS (SELECT * FROM model_offers WHERE ${visible}),
-    agg AS (SELECT model_id, count(*)::int AS offer_count, max(context_tokens) AS max_context FROM o GROUP BY model_id),
+    agg AS (SELECT model_id, count(*)::int AS offer_count,
+      count(DISTINCT provider)::int AS provider_count, max(context_tokens) AS max_context FROM o GROUP BY model_id),
     cheap AS (
       SELECT DISTINCT ON (model_id) model_id, provider, price_input_per_mtok, price_output_per_mtok,
              price_input_per_mtok + price_output_per_mtok AS total
@@ -143,7 +145,7 @@ function modelListQueries(f: ListQuery, userId: number): { page: SQL; total: SQL
 
   const page = sql`${ctes}
     SELECT m.id, m.canonical_key, m.author, m.family, m.version, m.mode, m.supports_tools, m.supports_vision,
-           m.supports_reasoning, m.released_at AT TIME ZONE 'UTC' AS released_at, agg.offer_count,
+           m.supports_reasoning, m.released_at AT TIME ZONE 'UTC' AS released_at, agg.offer_count, agg.provider_count,
            cheap.provider AS cheap_provider, cheap.price_input_per_mtok AS cheap_input,
            cheap.price_output_per_mtok AS cheap_output,
            EXISTS (
@@ -174,6 +176,7 @@ function toModelSummary(r: ModelPageRow) {
     supportsReasoning: r.supports_reasoning,
     releasedAt: r.released_at === null ? null : new Date(r.released_at),
     offerCount: r.offer_count,
+    providerCount: r.provider_count,
     cheapestOffer:
       r.cheap_provider !== null && cheapInput !== null && cheapOutput !== null
         ? { provider: r.cheap_provider, priceInput: cheapInput, priceOutput: cheapOutput }
@@ -214,7 +217,8 @@ function toRunView(run: CatalogRun, userId: number) {
             ...summary,
             newProviders: list(summary.newProviders),
             accounts: list(summary.accounts)
-              .filter((a) => a.userId === userId)
+              // Voci non oggetto (riepilogo non riconosciuto) ignorate
+              .filter((a) => a !== null && typeof a === "object" && a.userId === userId)
               .map(({ accountId, accountName, missing }) => ({ accountId, accountName, missing })),
           }
         : null,
@@ -261,6 +265,8 @@ export function createCatalogRouter(opts: { refreshRateLimit?: RequestHandler; f
       .innerJoin(providersTable, eq(providersTable.slug, modelOffersTable.provider))
       .where(eq(modelOffersTable.modelId, id))
       .orderBy(
+        // Le ritirate in fondo, anche se più economiche
+        sql`${modelOffersTable.status} = 'retired'`,
         sql`${modelOffersTable.priceInputPerMtok} + ${modelOffersTable.priceOutputPerMtok} ASC NULLS LAST`,
         asc(modelOffersTable.provider),
         asc(modelOffersTable.providerModelId),

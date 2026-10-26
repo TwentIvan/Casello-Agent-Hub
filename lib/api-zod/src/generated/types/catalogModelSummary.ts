@@ -25,6 +25,8 @@ export interface CatalogModelSummary {
   releasedAt: Date | null;
   /** Offerte visibili (senza le ritirate, salvo includeRetired) */
   offerCount: number;
+  /** Provider distinti tra le offerte visibili */
+  providerCount: number;
   cheapestOffer: CatalogCheapestOffer | null;
   inMyAccounts: boolean;
 }

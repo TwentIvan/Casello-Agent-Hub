@@ -3962,7 +3962,7 @@ export const getListCatalogModelOffersUrl = (id: number,) => {
 }
 
 /**
- * Tutte le offerte, anche ritirate, per prezzo (input+output) crescente; senza prezzo in fondo.
+ * Tutte le offerte, anche ritirate, per prezzo (input+output) crescente; senza prezzo in fondo e le ritirate dopo tutte le altre.
  * @summary Offerte di un modello del catalogo
  */
 export const listCatalogModelOffers = async (id: number, options?: RequestInit): Promise<CatalogOffer[]> => {

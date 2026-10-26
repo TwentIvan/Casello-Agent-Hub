@@ -1069,6 +1069,8 @@ export interface CatalogModelSummary {
   releasedAt: string | null;
   /** Offerte visibili (senza le ritirate, salvo includeRetired) */
   offerCount: number;
+  /** Provider distinti tra le offerte visibili */
+  providerCount: number;
   cheapestOffer: CatalogCheapestOffer | null;
   inMyAccounts: boolean;
 }
@@ -1351,6 +1353,7 @@ includeRetired?: boolean;
 sort?: ListCatalogModelsSort;
 /**
  * @minimum 1
+ * @maximum 10000
  */
 page?: number;
 /**

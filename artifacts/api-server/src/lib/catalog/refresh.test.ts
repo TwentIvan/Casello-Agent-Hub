@@ -153,6 +153,21 @@ describe("startCatalogRefresh", () => {
     expect(models.every((m) => m.catalogId === null)).toBe(true);
   });
 
+  it("un provider senza elenco dei modelli non riporta modelli spariti", async () => {
+    fake.models = null;
+    const [account] = await db
+      .insert(aiAccountsTable)
+      .values({ userId, name: "Senza elenco", provider: "custom", baseUrl: fake.baseUrl, allowPrivateNetwork: true, apiKeyEnc: encryptSecret(KEY), status: "ok" })
+      .returning();
+    await db.insert(aiModelsTable).values({ accountId: account!.id, modelId: "modello-a", displayName: "A", discovered: true });
+
+    const run = await refresh();
+    expect(run.status).toBe("completed");
+    expect((run.summary as CatalogSummary).accounts).toEqual([]);
+    const [after] = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.id, account!.id));
+    expect(after!.status).toBe("ok");
+  });
+
   it("una fonte in errore: aggiornamento parziale, righe preesistenti intatte", async () => {
     await db.insert(modelCatalogTable).values({ provider: "deepseek", modelId: "vecchio", family: "DeepSeek", version: "vecchio", priceInputPerMtok: "1" });
     const run = await refresh({ litellm: 500 });

@@ -105,7 +105,8 @@ async function upsertCatalog(records: CatalogRecord[]): Promise<void> {
 
 /**
  * Rilegge `/models` di ogni account degli utenti (non quello di sistema), uno alla volta: un errore non
- * ferma gli altri. Riporta i modelli scoperti prima e non più elencati, solo per le verifiche riuscite.
+ * ferma gli altri. Riporta i modelli scoperti prima e non più elencati, solo per le verifiche riuscite
+ * con un elenco non vuoto.
  */
 async function reverifyAccounts(): Promise<CatalogSummary["accounts"]> {
   const accounts = await db.select().from(aiAccountsTable).where(isNotNull(aiAccountsTable.userId)).orderBy(asc(aiAccountsTable.id));
@@ -118,7 +119,8 @@ async function reverifyAccounts(): Promise<CatalogSummary["accounts"]> {
         .where(and(eq(aiModelsTable.accountId, account.id), eq(aiModelsTable.discovered, true)))
         .orderBy(asc(aiModelsTable.modelId));
       const models = await verifyAccount(account);
-      if (models === null) continue;
+      // Errore o elenco vuoto (provider senza `/models`): l'elenco è ignoto, non "tutto sparito"
+      if (models === null || models.length === 0) continue;
       const listed = new Set(models.map((m) => m.modelId));
       const missing = before.map((m) => m.modelId).filter((id) => !listed.has(id));
       if (missing.length) out.push({ accountId: account.id, userId: account.userId!, accountName: account.name, missing });

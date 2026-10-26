@@ -43,7 +43,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `lib/api-client-react/src/generated/` — client generato da Orval: NON modificare a mano
 - `lib/db/src/schema/` — schema Drizzle, una tabella per file (apps, agents, app_tools, agent_tools, runs,
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
-  ai_accounts, ai_models)
+  ai_accounts, ai_models, model_catalog, catalog_runs)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -57,7 +57,12 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `artifacts/api-server/src/lib/models.ts` — modelli selezionabili e default (`openrouter/auto`)
 - `artifacts/api-server/src/lib/ai/` — account AI: provider e indirizzi (`providers.ts`), scoperta dei modelli
   (`discovery.ts`), esecutore unico (`executor.ts`), account di sistema (`system-account.ts`), scelta del modello
-  (`choice.ts`); route in `src/routes/ai.ts`
+  (`choice.ts`), riverifica e arricchimento dei modelli (`accounts.ts`), stato effettivo e preselezione
+  (`model-status.ts`), prova con 1 token (`probe.ts`); route in `src/routes/ai.ts`
+- `artifacts/api-server/src/lib/catalog/` — catalogo dei modelli: fonti pubbliche (`sources.ts`), normalizzazione
+  e fusione (`normalize.ts`, `merge.ts`), riepilogo delle novità (`summary.ts`), aggiornamento (`refresh.ts`),
+  avvio settimanale (`scheduler.ts`); route in `src/routes/catalog.ts`; fonti finte per i test in
+  `artifacts/api-server/test/fake-sources.ts`
 - `artifacts/api-server/src/lib/ai-gateway.ts` — client storico verso LiteLLM (agenti non ancora su un account AI)
 - `artifacts/api-server/src/lib/agent-loop.ts` — ciclo dell'agente (puro, senza DB né rete): chiamate al
   modello, esecuzione dei tool, pause, limiti del turno
@@ -118,8 +123,31 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   agenti e analisi esistenti. Gli agenti con `ai_model_id` null usano ancora `lib/ai-gateway.ts`. AIGateway va
   dismesso (togliendo le variabili) solo dopo aver spostato gli agenti sugli account personali, con conferma.
 - Route: `/api/ai/accounts` (+ `/:id/verify`, `/:id/default`, `/:id/models`), `/api/ai/models`,
-  `/api/ai/estimate`; `GET /api/models` resta come alias del vecchio elenco.
+  `POST /api/ai/models/:id/probe`, `/api/ai/estimate`; `GET /api/models` resta come alias del vecchio elenco.
 - Costi sempre sotto controllo: a parità di risultato si preferisce il modello o il percorso più economico.
+
+## Catalogo dei modelli
+
+- Spec: `docs/superpowers/specs/2026-10-26-casello-catalogo-modelli-design.md`. Provider Gemini (indirizzo
+  compatibile OpenAI `https://generativelanguage.googleapis.com/v1beta/openai`) tra quelli degli account AI.
+- Aggiornamento deterministico, senza chiamare modelli: fonti pubbliche con indirizzi fissi (OpenRouter
+  `/api/v1/models` e listino LiteLLM `model_prices_and_context_window.json`), 30 s, niente redirect, max 20 MB.
+  Precedenza: prezzi e strumenti da LiteLLM poi OpenRouter (per il provider `openrouter` il contrario), data di
+  rilascio da OpenRouter, dismissione da LiteLLM. Se una fonte cade l'esecuzione è `partial` e i campi che
+  venivano da quella fonte restano quelli di prima.
+- Tabelle `model_catalog` (comune) e `catalog_runs` (ultime 20, una sola `running` per indice unico parziale);
+  su `ai_models`: `availability`, `supports_tools`, `catalog_id`, `last_probe_*`. I prezzi `manual` non si
+  toccano mai; quelli presi dal catalogo hanno `price_source = catalog`.
+- Quando: ogni 7 giorni (controllo all'avvio dopo 5 minuti e poi ogni 24 h) e a richiesta con
+  `POST /api/catalog/refresh` (2/minuto; 409 se già in corso). Ogni esecuzione rilegge `/models` di tutti gli
+  account non di sistema e arricchisce `ai_models`; all'avvio le esecuzioni rimaste `running` diventano `failed`.
+  Stato e novità: `GET /api/catalog/status` (le novità per account solo al proprietario); catalogo:
+  `GET /api/catalog/models`. Pagina "Modelli" nella console.
+- Stato effettivo di un modello: ritirato (catalogo o data di dismissione passata) > non disponibile
+  (`availability = unavailable`, messo da un 404 o "model_not_found" di una chiamata vera) > disponibile. La
+  tendina propone solo modelli disponibili con strumenti (o non noti, "?"); gli altri disponibili in "Altri
+  modelli". "Prova" (5/minuto, solo sui propri account, 1 token, 20 s) riporta un modello a disponibile.
+- Limite noto: un modello dell'account di sistema segnato non disponibile non si può riprovare dalla console.
 
 ## Agenti operativi (fase 1)
 

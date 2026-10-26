@@ -53,7 +53,7 @@ describe("mergeCatalog", () => {
     expect(recs[0]!.priceInput).toBe(first!.priceInput);
   });
   it("la coppia di prezzi viene dalla prima fonte che li ha entrambi", () => {
-    const base = { name: null, releasedAt: null, contextTokens: null, supportsTools: null, deprecationDate: null };
+    const base = { name: null, releasedAt: null, contextTokens: null, supportsTools: null, deprecationDate: null, mode: "chat" as const, supportsVision: null, supportsReasoning: null };
     const recs = mergeCatalog(
       [
         { ...base, source: "litellm", key: "gemini/m", litellmProvider: "gemini", priceInput: 1, priceOutput: null },

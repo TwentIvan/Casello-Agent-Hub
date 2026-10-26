@@ -28,6 +28,9 @@ describe("fetchOpenRouterSource", () => {
       contextTokens: 131072,
       supportsTools: true,
       deprecationDate: null,
+      mode: "chat",
+      supportsVision: false,
+      supportsReasoning: false,
     });
     expect(entries.find((e) => e.key === "google/gemini-2.0-flash-exp:free")?.supportsTools).toBe(false);
   });
@@ -129,6 +132,9 @@ describe("fetchLiteLlmSource", () => {
       contextTokens: 1000000,
       supportsTools: true,
       deprecationDate: null,
+      mode: "chat",
+      supportsVision: null,
+      supportsReasoning: null,
     });
   });
 
@@ -187,5 +193,36 @@ describe("fetchLiteLlmSource", () => {
       expect((err as SourceError).message).toBe(LL_MESSAGE);
       expect((err as SourceError).message).not.toContain("http");
     }
+  });
+});
+
+describe("modalità, visione e ragionamento", () => {
+  it("OpenRouter: chat; visione da input_modalities, ragionamento da supported_parameters", async () => {
+    const [e] = await fetchOpenRouterSource(
+      orWith({ architecture: { input_modalities: ["text", "image"] }, supported_parameters: ["reasoning", "tools"] }),
+    );
+    expect(e).toMatchObject({ mode: "chat", supportsVision: true, supportsReasoning: true });
+    const [t] = await fetchOpenRouterSource(orWith({ architecture: { input_modalities: ["text"] }, supported_parameters: ["tools"] }));
+    expect(t).toMatchObject({ supportsVision: false, supportsReasoning: false });
+    const [n] = await fetchOpenRouterSource(orWith({}));
+    expect(n).toMatchObject({ supportsVision: null, supportsReasoning: null });
+  });
+
+  it("LiteLLM: mode letto, valore sconosciuto o assente → other; visione e ragionamento booleani", async () => {
+    const entries = await fetchLiteLlmSource(
+      llWith({
+        "a/emb": { litellm_provider: "a", mode: "embedding" },
+        "a/new": { litellm_provider: "a", mode: "qualcosa_di_nuovo" },
+        "a/none": { litellm_provider: "a" },
+        "a/vis": { litellm_provider: "a", mode: "chat", supports_vision: true, supports_reasoning: false },
+        "a/bad": { litellm_provider: "a", supports_vision: "si" },
+      }),
+    );
+    const by = (k: string) => entries.find((e) => e.key === k);
+    expect(by("a/emb")?.mode).toBe("embedding");
+    expect(by("a/new")?.mode).toBe("other");
+    expect(by("a/none")?.mode).toBe("other");
+    expect(by("a/vis")).toMatchObject({ mode: "chat", supportsVision: true, supportsReasoning: false });
+    expect(by("a/bad")).toMatchObject({ supportsVision: null, supportsReasoning: null });
   });
 });

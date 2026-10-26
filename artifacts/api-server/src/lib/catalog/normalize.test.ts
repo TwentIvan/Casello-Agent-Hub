@@ -5,7 +5,8 @@ import type { SourceEntry } from "./sources";
 function entry(over: Partial<SourceEntry>): SourceEntry {
   return {
     source: "openrouter", key: "x", litellmProvider: null, name: null, releasedAt: null,
-    priceInput: null, priceOutput: null, contextTokens: null, supportsTools: null, deprecationDate: null, ...over,
+    priceInput: null, priceOutput: null, contextTokens: null, supportsTools: null, deprecationDate: null, mode: "chat",
+    supportsVision: null, supportsReasoning: null, ...over,
   };
 }
 

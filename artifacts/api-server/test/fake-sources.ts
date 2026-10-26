@@ -14,6 +14,7 @@ export const OPENROUTER_FIXTURE = {
       created: 1735084800,
       context_length: 131072,
       pricing: { prompt: "0.00000027", completion: "0.0000011" },
+      architecture: { input_modalities: ["text"] },
       supported_parameters: ["tools", "temperature", "max_tokens"],
     },
     {
@@ -30,7 +31,8 @@ export const OPENROUTER_FIXTURE = {
       created: 1780000000,
       context_length: 1048576,
       pricing: { prompt: "0.0000003", completion: "0.0000025" },
-      supported_parameters: ["tools", "temperature"],
+      architecture: { input_modalities: ["text", "image"] },
+      supported_parameters: ["tools", "temperature", "reasoning"],
     },
     {
       id: "google/gemini-2.5-flash",
@@ -102,6 +104,40 @@ export const LITELLM_FIXTURE: Record<string, unknown> = {
     output_cost_per_token: 0.00000079,
     max_input_tokens: 131072,
     supports_function_calling: true,
+  },
+  // Provider non nel registro, Claude su Bedrock e su Anthropic, un embedding
+  "nuovo_provider/modello-x": {
+    litellm_provider: "nuovo_provider",
+    mode: "chat",
+    input_cost_per_token: 0.000001,
+    output_cost_per_token: 0.000002,
+    max_input_tokens: 32768,
+  },
+  "anthropic.claude-sonnet-4-5-20250929-v1:0": {
+    litellm_provider: "bedrock_converse",
+    mode: "chat",
+    input_cost_per_token: 0.000003,
+    output_cost_per_token: 0.000015,
+    max_input_tokens: 200000,
+    supports_function_calling: true,
+    supports_vision: true,
+    supports_reasoning: true,
+  },
+  "claude-sonnet-4-5-20250929": {
+    litellm_provider: "anthropic",
+    mode: "chat",
+    input_cost_per_token: 0.000003,
+    output_cost_per_token: 0.000015,
+    max_input_tokens: 200000,
+    supports_function_calling: true,
+    supports_vision: true,
+    supports_reasoning: true,
+  },
+  "text-embedding-3-small": {
+    litellm_provider: "openai",
+    mode: "embedding",
+    input_cost_per_token: 0.00000002,
+    max_input_tokens: 8191,
   },
 };
 

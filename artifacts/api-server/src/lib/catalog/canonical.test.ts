@@ -1,0 +1,79 @@
+import { describe, expect, it } from "vitest";
+import { PROVIDER_REGISTRY } from "./provider-registry-data";
+import { authorFor, canonicalModelKey, directProviderFor, providerModelId, providerSlugFor } from "./canonical";
+import type { SourceEntry } from "./sources";
+
+function entry(over: Partial<SourceEntry>): SourceEntry {
+  return {
+    source: "litellm", key: "x", litellmProvider: null, name: null, releasedAt: null, priceInput: null,
+    priceOutput: null, contextTokens: null, supportsTools: null, deprecationDate: null, mode: "chat",
+    supportsVision: null, supportsReasoning: null, ...over,
+  };
+}
+
+describe("canonicalModelKey", () => {
+  it("Bedrock, Anthropic e Vertex dello stesso Claude hanno la stessa chiave", () => {
+    const k = canonicalModelKey("claude-sonnet-4-5-20250929");
+    expect(canonicalModelKey("anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe(k);
+    expect(canonicalModelKey("us.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe(k);
+    expect(canonicalModelKey("claude-sonnet-4-5@20250929")).toBe("claude-sonnet-4-5");
+  });
+  it("toglie regione e autore, suffissi di versione", () => {
+    expect(canonicalModelKey("us.meta.llama3-3-70b-instruct-v1:0")).toBe("llama3-3-70b-instruct");
+    expect(canonicalModelKey("claude-3-5-sonnet@20240620")).toBe("claude-3-5-sonnet");
+    expect(canonicalModelKey("eu.amazon.nova-pro-v1:0")).toBe("nova-pro");
+    expect(canonicalModelKey("jp.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe("claude-sonnet-4-5-20250929");
+  });
+  it("usa l'ultimo segmento, minuscolo, _ → -, punto invariato", () => {
+    expect(canonicalModelKey("meta-llama/Llama_3.3-70B")).toBe("llama-3.3-70b");
+    expect(canonicalModelKey("gemini-2.5-flash")).toBe("gemini-2.5-flash");
+    expect(canonicalModelKey("deepseek/deepseek-chat:free")).toBe("deepseek-chat:free");
+  });
+});
+
+describe("providerSlugFor", () => {
+  it("il registro vince sulla normalizzazione", () => {
+    expect(providerSlugFor(entry({ litellmProvider: "bedrock_converse" }), PROVIDER_REGISTRY)).toEqual({ slug: "bedrock", known: true });
+    expect(providerSlugFor(entry({ litellmProvider: "together_ai" }), PROVIDER_REGISTRY)).toEqual({ slug: "together", known: true });
+  });
+  it("nome sconosciuto → slug normalizzato, known false", () => {
+    expect(providerSlugFor(entry({ litellmProvider: "nuovo_provider" }), PROVIDER_REGISTRY)).toEqual({ slug: "nuovo-provider", known: false });
+    expect(providerSlugFor(entry({ litellmProvider: "  --Å Ü/Ex!! " }), PROVIDER_REGISTRY).slug).toMatch(/^[a-z0-9_-]{1,64}$/);
+    expect(providerSlugFor(entry({ litellmProvider: "!!!" }), PROVIDER_REGISTRY)).toEqual({ slug: "sconosciuto", known: false });
+    expect(providerSlugFor(entry({ litellmProvider: null }), PROVIDER_REGISTRY)).toEqual({ slug: "sconosciuto", known: false });
+    expect(providerSlugFor(entry({ litellmProvider: "a".repeat(100) }), PROVIDER_REGISTRY).slug).toHaveLength(64);
+  });
+  it("OpenRouter → openrouter", () => {
+    expect(providerSlugFor(entry({ source: "openrouter", key: "google/gemini-2.5-flash" }), PROVIDER_REGISTRY)).toEqual({ slug: "openrouter", known: true });
+  });
+});
+
+describe("directProviderFor", () => {
+  it("autore OpenRouter → provider del registro; varianti e litellm → null", () => {
+    expect(directProviderFor(entry({ source: "openrouter", key: "google/gemini-2.5-flash" }), PROVIDER_REGISTRY)).toBe("gemini");
+    expect(directProviderFor(entry({ source: "openrouter", key: "google/gemini-2.0-flash-exp:free" }), PROVIDER_REGISTRY)).toBeNull();
+    expect(directProviderFor(entry({ source: "openrouter", key: "nessuno/modello" }), PROVIDER_REGISTRY)).toBeNull();
+    expect(directProviderFor(entry({ source: "litellm", key: "gemini/x", litellmProvider: "gemini" }), PROVIDER_REGISTRY)).toBeNull();
+  });
+});
+
+describe("providerModelId", () => {
+  it("toglie il prefisso del provider LiteLLM e normalizza", () => {
+    expect(providerModelId(entry({ key: "gemini/models/Gemini-2.5-Flash", litellmProvider: "gemini" }))).toBe("gemini-2.5-flash");
+    expect(providerModelId(entry({ key: "claude-3-5-sonnet-20240620", litellmProvider: "anthropic" }))).toBe("claude-3-5-sonnet-20240620");
+    expect(providerModelId(entry({ source: "openrouter", key: "Google/Gemini-2.5-Flash" }))).toBe("google/gemini-2.5-flash");
+  });
+});
+
+describe("authorFor", () => {
+  it("dal prefisso OpenRouter, poi dalla famiglia", () => {
+    expect(authorFor("claude-sonnet-4-5", null)).toBe("Anthropic");
+    expect(authorFor("x", "meta-llama")).toBe("Meta");
+    expect(authorFor("x", "nuovoautore")).toBe("Nuovoautore");
+    expect(authorFor("gpt-5", null)).toBe("OpenAI");
+    expect(authorFor("o3-mini", null)).toBe("OpenAI");
+    expect(authorFor("llama3-3-70b", null)).toBe("Meta");
+    expect(authorFor("codestral-2501", null)).toBe("Mistral");
+    expect(authorFor("zzz", null)).toBe("Sconosciuto");
+  });
+});

@@ -55,7 +55,8 @@ function ModelItem({ model }: { model: AiModel }) {
  */
 export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPickerProps) {
   const groups = useAiModelGroups();
-  const [showOthers, setShowOthers] = useState(false);
+  // null: nessuna scelta dell'utente, il gruppo "Altri modelli" è aperto se contiene il valore corrente
+  const [othersToggled, setOthersToggled] = useState<boolean | null>(null);
 
   if (groups.isError) {
     return <p className="text-sm text-destructive">Impossibile caricare i modelli: {apiErrorMessage(groups.error)}</p>;
@@ -63,12 +64,13 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
   if (!groups.data) return <Skeleton className="h-9 w-full" />;
 
   const data = groups.data;
-  // Solo i modelli selezionabili; quelli senza strumenti vanno in "Altri modelli"
+  // Solo i modelli selezionabili; quelli disponibili ma senza strumenti vanno in "Altri modelli"
   const main = data.map((g) => ({ group: g, models: g.models.filter((m) => m.selectable && m.supportsTools !== false) }));
-  const others = data.flatMap((g) => g.models.filter((m) => m.selectable && m.supportsTools === false));
+  const others = data.flatMap((g) => g.models.filter((m) => m.status === "available" && m.supportsTools === false));
   const current = value != null ? data.flatMap((g) => g.models).find((m) => m.id === value) : undefined;
   // Valore corrente ritirato o non disponibile: resta come voce disabilitata
-  const staleCurrent = current && !current.selectable ? current : undefined;
+  const staleCurrent = current && current.status !== "available" ? current : undefined;
+  const showOthers = othersToggled ?? (current !== undefined && others.includes(current));
   const known = current !== undefined;
   const foreign = value != null && !known;
   // L'account di sistema compare nei gruppi solo finché è configurato: se manca, un modello sconosciuto è
@@ -143,7 +145,7 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
       </SelectContent>
     </Select>
     {others.length > 0 && (
-      <Button type="button" variant="link" size="sm" className="mt-1 h-auto p-0 text-xs" onClick={() => setShowOthers((v) => !v)}>
+      <Button type="button" variant="link" size="sm" className="mt-1 h-auto p-0 text-xs" onClick={() => setOthersToggled(!showOthers)}>
         {showOthers ? "Nascondi altri modelli" : `Mostra altri modelli (${others.length})`}
       </Button>
     )}

@@ -49,6 +49,10 @@ export interface GatewayChatOptions {
   /** Identifies the calling service in logs (e.g. "run-executor") */
   caller?: string;
   signal?: AbortSignal;
+  /** Tetto di tempo della singola richiesta HTTP (default CHAT_REQUEST_TIMEOUT_MS) */
+  timeoutMs?: number;
+  /** Nuovi tentativi dell'SDK dopo errori di rete, timeout, 408/409/429/5xx (default CHAT_MAX_RETRIES) */
+  maxRetries?: number;
 }
 
 export interface ChatToolCall {
@@ -67,6 +71,7 @@ export interface ChatResult {
 
 // Chiamate con function calling (run degli agenti): un nuovo tentativo al massimo e un tetto di
 // tempo per singola richiesta. Il tempo del turno lo limita il signal passato da run-executor.
+// Chi ha esigenze diverse (l'architetto) li sovrascrive con `timeoutMs` e `maxRetries`.
 const CHAT_MAX_RETRIES = 1;
 const CHAT_REQUEST_TIMEOUT_MS = 120_000;
 
@@ -180,8 +185,8 @@ class AiGateway {
 
     const response = await client.chat.completions.create(params, {
       signal: opts.signal,
-      maxRetries: CHAT_MAX_RETRIES,
-      timeout: CHAT_REQUEST_TIMEOUT_MS,
+      maxRetries: opts.maxRetries ?? CHAT_MAX_RETRIES,
+      timeout: opts.timeoutMs ?? CHAT_REQUEST_TIMEOUT_MS,
     });
     const durationMs = Date.now() - startMs;
     const { promptTokens, completionTokens, cachedTokens } = readUsage(response);

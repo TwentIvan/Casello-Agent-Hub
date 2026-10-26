@@ -122,7 +122,12 @@ arriva da `GET /api/models` (costante in `lib/models.ts`: va tenuta allineata a 
   (max 50 MB; nginx ha `client_max_body_size 51m`). Il codice vive SOLO in memoria per la durata
   dell'analisi: niente file su disco, niente log del contenuto.
 - Limiti: zip letto con un parser proprio (anti zip bomb), regex di ricerca in un worker con timeout 2 s,
-  OpenAPI max 2 MB; analisi max 30 minuti e 400 000 token (default), 40 giri e 2 correzioni per fase.
+  OpenAPI max 2 MB; analisi max 30 minuti e 1 000 000 token (default), 25 giri e 2 correzioni per fase.
+  Ogni fase ha una quota del tetto di token (`PHASE_TOKEN_SHARES`, somma 0,88): all'80% della quota o
+  dei giri il modello riceve un avviso a consegnare e ha 2 giri di margine (più le correzioni di una
+  consegna non valida); il limite rigido resta il tetto complessivo. Chiamata al modello max 300 s
+  (nessun nuovo tentativo sui timeout); letture da 200 righe / 12 000 caratteri per strumento
+  (`list_operations` a pagine con `prefix`/`offset`), cronologia degli output di 24 000 caratteri.
 - Sei fasi (map, capabilities, catalog, agents, completion, evolution): ogni esito è validato con Zod
   (`schemas.ts`, esempi in `prompts.ts` verificati dai test). Gli elementi (`analysis_items`) sono
   confrontati con lo stato attuale dell'app (`diff`: new/changed/unchanged/removed).

@@ -9,11 +9,15 @@ import type { ChatResult } from "../ai-gateway";
 import {
   HISTORY_TOOL_OUTPUT_BUDGET,
   MAX_CORRECTIONS,
+  MAX_TOOL_OUTPUT_CHARS,
   PHASE_MAX_ROUNDS,
+  PHASE_NUDGE,
+  PHASE_TOKEN_SHARES,
   runPhase,
   type PhaseBudget,
 } from "./phase-loop";
-import { SourceTree } from "./source-tree";
+import { PHASES } from "./schemas";
+import { SOURCE_LIMITS, SourceTree } from "./source-tree";
 import type { OpenApiDoc } from "./sources";
 
 const SECRET_LINE = "const segreto = 'contenuto-riservato-42';";
@@ -212,13 +216,149 @@ describe("runPhase", () => {
     expect(String(last.content)).toContain("consegna l'esito con submit_result");
   });
 
-  it(`${PHASE_MAX_ROUNDS} giri senza consegna: fallisce nominando i giri`, async () => {
-    const s = scripted([reply([call("list_dir", { path: "src" })])]);
-    const { input } = base(s.chat);
-    const out = await runPhase(input);
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.error).toContain(`${PHASE_MAX_ROUNDS} giri`);
-    expect(s.calls).toHaveLength(PHASE_MAX_ROUNDS);
+  describe("budget della fase", () => {
+    const isNudge = (m: ChatCompletionMessageParam) => m.role === "user" && m.content === PHASE_NUDGE;
+    const nudges = (messages: ChatCompletionMessageParam[]) => messages.filter(isNudge).length;
+
+    function expectPairing(messages: ChatCompletionMessageParam[]) {
+      const ids = messages.flatMap((m) => (m.role === "assistant" ? (m.tool_calls ?? []).map((t) => t.id) : []));
+      const replies = messages.flatMap((m) => (m.role === "tool" ? [m.tool_call_id] : []));
+      // ogni tool_call ha esattamente una risposta (le consegne rispondono dopo le letture)
+      expect([...replies].sort()).toEqual([...ids].sort());
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+
+    it("quote per fase: lasciano margine sotto il tetto complessivo", () => {
+      expect(Object.keys(PHASE_TOKEN_SHARES).sort()).toEqual([...PHASES].sort());
+      // somma ≤ 0,9: i giri di margine e le correzioni consumano token oltre la quota
+      const sum = Object.values(PHASE_TOKEN_SHARES).reduce((a, b) => a + b, 0);
+      expect(sum).toBeLessThanOrEqual(0.9);
+      expect(sum).toBeCloseTo(0.88, 10);
+      expect(PHASE_TOKEN_SHARES).toEqual({
+        map: 0.22,
+        capabilities: 0.13,
+        catalog: 0.18,
+        agents: 0.13,
+        completion: 0.13,
+        evolution: 0.09,
+      });
+    });
+
+    const invalid = () => reply([call("submit_result", { result: { ...validMap, stack: "node" } })], null, 10);
+
+    it("consegne non valide nel margine: le correzioni restano tutte disponibili", async () => {
+      const s = scripted([
+        reply([call("read_file", { path: "src/a.ts" })], null, 900),
+        invalid(), // N+1
+        invalid(), // N+2
+        reply([call("submit_result", { result: validMap })]), // N+3: ultima correzione
+      ]);
+      const { input } = base(s.chat, { phaseQuota: 1_000 });
+      expect(await runPhase(input)).toEqual({ ok: true, result: validMap });
+      expect(s.calls).toHaveLength(4);
+      expectPairing(s.calls[3]!.messages);
+    });
+
+    it("margine esaurito dopo una consegna non valida: l'errore riporta i problemi", async () => {
+      const s = scripted([
+        reply([call("read_file", { path: "src/a.ts" })], null, 900),
+        invalid(), // N+1
+        invalid(), // N+2: correzioni finite al prossimo errore
+        reply([call("read_file", { path: "src/a.ts" })]), // N+3: nessuna consegna
+        reply([call("submit_result", { result: validMap })]),
+      ]);
+      const { input } = base(s.chat, { phaseQuota: 1_000 });
+      const out = await runPhase(input);
+      expect(out.ok).toBe(false);
+      if (!out.ok) {
+        expect(out.error).toMatch(/^fase map: esito non consegnato entro il budget della fase; ultimo esito non valido: /);
+        expect(out.error).toContain("stack");
+      }
+      expect(s.calls).toHaveLength(4);
+    });
+
+    it("giro del sollecito con letture e consegna non valida: risposte appaiate, sollecito in coda", async () => {
+      const s = scripted([
+        reply([call("read_file", { path: "src/a.ts" }), call("submit_result", { result: { stack: 1 } }), call("list_dir", { path: "" })], null, 900),
+        reply([call("submit_result", { result: validMap })]),
+      ]);
+      const { input } = base(s.chat, { phaseQuota: 1_000 });
+      expect((await runPhase(input)).ok).toBe(true);
+      const msgs = s.calls[1]!.messages;
+      expectPairing(msgs);
+      expect(msgs.slice(-5).map((m) => m.role)).toEqual(["assistant", "tool", "tool", "tool", "user"]);
+      expect(isNudge(msgs.at(-1)!)).toBe(true);
+      expect(String(msgs.at(-2)!.content)).toContain("Esito non valido");
+    });
+
+    it("all'80% della quota: sollecito una volta, dopo le risposte agli strumenti; poi consegna valida", async () => {
+      const s = scripted([
+        reply([call("read_file", { path: "src/a.ts" })], null, 300),
+        reply([call("list_dir", { path: "" })], null, 300),
+        // terzo giro: 900/1000 token → sollecito dopo le due risposte
+        reply([call("read_file", { path: "src/a.ts" }), call("list_dir", { path: "src" })], null, 300),
+        reply([call("submit_result", { result: validMap })], null, 300),
+      ]);
+      const { input, logs } = base(s.chat, { phaseQuota: 1_000 });
+      expect(await runPhase(input)).toEqual({ ok: true, result: validMap });
+      expect(s.calls).toHaveLength(4);
+      expect(s.calls.slice(0, 3).every((c) => nudges(c.messages) === 0)).toBe(true);
+      const msgs = s.calls[3]!.messages;
+      expect(nudges(msgs)).toBe(1);
+      expect(isNudge(msgs.at(-1)!)).toBe(true);
+      expect(msgs.at(-2)!.role).toBe("tool");
+      expect(msgs.at(-3)!.role).toBe("tool");
+      expect(msgs.at(-4)!.role).toBe("assistant");
+      expectPairing(msgs);
+      expect(logs.filter((l) => l.includes("budget della fase"))).toHaveLength(1);
+    });
+
+    it("dopo il sollecito continua a leggere: fallisce dopo altri 2 giri", async () => {
+      const s = scripted(Array.from({ length: 6 }, () => reply([call("read_file", { path: "src/a.ts" })], null, 400)));
+      const { input } = base(s.chat, { phaseQuota: 1_000 });
+      const out = await runPhase(input);
+      // 2 giri (800/1000) → sollecito, poi 2 giri di grazia
+      expect(out).toEqual({ ok: false, error: "fase map: esito non consegnato entro il budget della fase" });
+      expect(s.calls).toHaveLength(4);
+      expect(nudges(s.calls[1]!.messages)).toBe(0);
+      expect(isNudge(s.calls[2]!.messages.at(-1)!)).toBe(true);
+      // il sollecito non si ripete
+      expect(nudges(s.calls[3]!.messages)).toBe(1);
+      expectPairing(s.calls[3]!.messages);
+      expect(input.budget.tokensUsed).toBe(1_600);
+    });
+
+    it("la quota conta solo i token della fase, non quelli già usati dall'analisi", async () => {
+      const s = scripted([
+        reply([call("read_file", { path: "src/a.ts" })], null, 300),
+        reply([call("submit_result", { result: validMap })], null, 300),
+      ]);
+      const { input } = base(s.chat, { phaseQuota: 1_000, budget: budget({ tokensUsed: 100_000 }) });
+      expect((await runPhase(input)).ok).toBe(true);
+      expect(nudges(s.calls[1]!.messages)).toBe(0);
+    });
+
+    it(`all'80% dei ${PHASE_MAX_ROUNDS} giri: sollecito, poi fallisce dopo altri 2 giri`, async () => {
+      expect(PHASE_MAX_ROUNDS).toBe(25);
+      const s = scripted([reply([call("list_dir", { path: "src" })])]);
+      const { input } = base(s.chat);
+      const out = await runPhase(input);
+      expect(out).toEqual({ ok: false, error: "fase map: esito non consegnato entro il budget della fase" });
+      expect(nudges(s.calls[19]!.messages)).toBe(0);
+      expect(isNudge(s.calls[20]!.messages.at(-1)!)).toBe(true);
+      expect(s.calls).toHaveLength(22);
+    });
+
+    it("sollecito dopo una risposta senza strumenti: resta l'ultimo messaggio", async () => {
+      const s = scripted([reply([], "penso", 900), reply([call("submit_result", { result: validMap })])]);
+      const { input } = base(s.chat, { phaseQuota: 1_000 });
+      expect((await runPhase(input)).ok).toBe(true);
+      const msgs = s.calls[1]!.messages;
+      // un solo messaggio utente dopo la risposta: il sollecito al posto del promemoria
+      expect(msgs.slice(-2).map((m) => m.role)).toEqual(["assistant", "user"]);
+      expect(isNudge(msgs.at(-1)!)).toBe(true);
+      expect(nudges(msgs)).toBe(1);
+    });
   });
 
   it("token oltre il budget: fallisce prima della chiamata successiva", async () => {
@@ -317,13 +457,103 @@ describe("runPhase", () => {
     const { input, logs } = base(s.chat, { tree: makeTree({ "big.ts": big }) });
     await runPhase(input);
     const msg = toolMessages(s.calls[1]!.messages)[0]!;
+    expect(SOURCE_LIMITS.maxReadLines).toBe(200);
     expect(msg).toContain("10: riga 10");
-    expect(msg).toContain("409: riga 409");
-    expect(msg).not.toContain("410: riga 410");
-    expect(msg).toContain("fromLine=410");
+    expect(msg).toContain("209: riga 209");
+    expect(msg).not.toContain("210: riga 210");
+    expect(msg).toContain("fromLine=210");
     expect(msg).toContain("1000");
-    expect(msg.length).toBeLessThanOrEqual(41_000);
-    expect(logs).toContain("read_file big.ts (400 righe)");
+    expect(logs).toContain("read_file big.ts (200 righe)");
+  });
+
+  it("read_file con righe lunghe: resta sotto il tetto dell'output e indica come continuare", async () => {
+    expect(MAX_TOOL_OUTPUT_CHARS).toBe(12_000);
+    const wide = Array.from({ length: 1_000 }, (_, i) => `${"y".repeat(150)}${i + 1}`).join("\n");
+    const s = scripted([
+      reply([call("read_file", { path: "src/molto/annidato/wide.ts", fromLine: 1 })]),
+      reply([call("submit_result", { result: validMap })]),
+    ]);
+    const { input } = base(s.chat, { tree: makeTree({ "src/molto/annidato/wide.ts": wide }) });
+    await runPhase(input);
+    const msg = toolMessages(s.calls[1]!.messages)[0]!;
+    expect(msg.length).toBeLessThanOrEqual(MAX_TOOL_OUTPUT_CHARS);
+    expect(msg).toMatch(/continua con fromLine=\d+/);
+    expect(msg).not.toContain("troncato: output oltre");
+  });
+
+  it("list_operations a pagine: suggerimento in coda e offset per la pagina successiva", async () => {
+    const ops = Array.from({ length: 300 }, (_, i) => ({
+      method: "GET",
+      path: `/api/risorse/${String(i).padStart(3, "0")}/dettaglio`,
+      operationId: `operazioneConUnNomeAbbastanzaLungo${i}`,
+      summary: `Descrizione dell'operazione numero ${i} con un testo di lunghezza realistica`,
+    }));
+    const big: OpenApiDoc = { source: "x", operations: ops, raw: { paths: {} } };
+    // il modello legge la prima pagina e chiede la successiva con l'offset del suggerimento
+    const pages: string[] = [];
+    let next = -1;
+    const chat = async (messages: ChatCompletionMessageParam[]): Promise<ChatResult> => {
+      const last = messages.at(-1);
+      if (last?.role === "tool") pages.push(String(last.content));
+      if (pages.length === 0) return reply([call("list_operations", {})]);
+      if (pages.length === 1) {
+        next = Number(/usa offset=(\d+) o un prefix\]$/.exec(pages[0]!)?.[1]);
+        return reply([call("list_operations", { offset: next })]);
+      }
+      return reply([call("submit_result", { result: validMap })]);
+    };
+    const { input, logs } = base(chat, { tree: null, openapi: big });
+    expect((await runPhase(input)).ok).toBe(true);
+    const [first, second] = pages;
+    expect(first!.length).toBeLessThanOrEqual(MAX_TOOL_OUTPUT_CHARS);
+    expect(first!.startsWith("Operazioni 1-")).toBe(true);
+    expect(first).toMatch(/\n\[altre \d+ operazioni: usa offset=\d+ o un prefix\]$/);
+    expect(next).toBeGreaterThan(50);
+    expect(next).toBeLessThan(300);
+    expect(first).toContain(`/api/risorse/${String(next - 1).padStart(3, "0")}/dettaglio`);
+    expect(first).not.toContain(`/api/risorse/${String(next).padStart(3, "0")}/dettaglio`);
+    expect(second!.startsWith(`Operazioni ${next + 1}-`)).toBe(true);
+    expect(second).toContain(`/api/risorse/${String(next).padStart(3, "0")}/dettaglio`);
+    expect(second).not.toContain(`/api/risorse/${String(next - 1).padStart(3, "0")}/dettaglio`);
+    expect(logs).toContain(`list_operations offset=${next} (300 operazioni)`);
+  });
+
+  it("list_operations: offset oltre la fine e filtro per prefisso", async () => {
+    const ops = Array.from({ length: 300 }, (_, i) => ({
+      method: "GET",
+      path: `/api/risorse/${String(i).padStart(3, "0")}`,
+      operationId: null,
+      summary: null,
+    }));
+    const big: OpenApiDoc = { source: "x", operations: ops, raw: { paths: {} } };
+    const s = scripted([
+      reply([call("list_operations", { offset: 9_999 }), call("list_operations", { prefix: "/api/risorse/29" }), call("list_operations", { prefix: "/nope" })]),
+      reply([call("submit_result", { result: validMap })]),
+    ]);
+    const { input } = base(s.chat, { tree: null, openapi: big });
+    expect((await runPhase(input)).ok).toBe(true);
+    const [beyond, prefixed, none] = toolMessages(s.calls[1]!.messages);
+    expect(beyond).toBe("Nessuna operazione oltre offset=9999 (sono 300).");
+    expect(prefixed!.split("\n")).toEqual(Array.from({ length: 10 }, (_, i) => `GET /api/risorse/29${i}`));
+    expect(none).toBe("Nessuna operazione con prefisso /nope nel documento OpenAPI.");
+  });
+
+  it("list_dir e search con output lunghi: il suggerimento resta dentro il tetto", async () => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 400; i++) files[`src/${"nome-di-file-molto-lungo-".repeat(3)}${i}.ts`] = `${"z".repeat(180)} trovami
+`;
+    const s = scripted([
+      reply([call("list_dir", { path: "src" }), call("search", { pattern: "trovami" })]),
+      reply([call("submit_result", { result: validMap })]),
+    ]);
+    const { input } = base(s.chat, { tree: makeTree(files) });
+    expect((await runPhase(input)).ok).toBe(true);
+    const [dir, found] = toolMessages(s.calls[1]!.messages);
+    expect(dir!.length).toBeLessThanOrEqual(MAX_TOOL_OUTPUT_CHARS);
+    expect(dir).toMatch(/\n\[\.\.\.altre \d+ voci non mostrate: elenca una sottocartella o riduci depth\]$/);
+    expect(found!.length).toBeLessThanOrEqual(MAX_TOOL_OUTPUT_CHARS);
+    expect(found).toMatch(/\n\[risultati limitati a \d+: restringi la ricerca/);
+    expect(found).not.toContain("troncato: output oltre");
   });
 
   it("search con molti risultati: segnala il taglio", async () => {
@@ -341,7 +571,7 @@ describe("runPhase", () => {
       messages.reduce((n, m) => n + JSON.stringify(m).length, 0);
 
     async function manyReads(rounds: number) {
-      // file da ~100 caratteri per riga: ogni lettura (400 righe) è vicina al tetto di 40 000 caratteri
+      // file da ~100 caratteri per riga: ogni lettura arriva al tetto di caratteri per chiamata
       const line = "x".repeat(95);
       const files: Record<string, string> = {};
       for (let i = 0; i < rounds; i++) {
@@ -363,7 +593,8 @@ describe("runPhase", () => {
       expect(out.ok).toBe(true);
       expect(s.calls).toHaveLength(rounds + 2);
       // budget della cronologia + l'ultima lettura (sempre intera) + messaggi brevi
-      const bound = HISTORY_TOOL_OUTPUT_BUDGET + 45_000;
+      expect(HISTORY_TOOL_OUTPUT_BUDGET).toBe(24_000);
+      const bound = HISTORY_TOOL_OUTPUT_BUDGET + MAX_TOOL_OUTPUT_CHARS + 3_000;
       for (const c of s.calls) expect(size(c.messages)).toBeLessThan(bound);
       const last = s.calls.at(-1)!.messages;
       const tools = toolMessages(last);

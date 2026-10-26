@@ -638,7 +638,7 @@ export interface AnalysisStart {
      */
   model: string;
   /**
-     * Tetto di token per l'analisi (default 400000)
+     * Tetto di token per l'analisi (default 1000000)
      * @minimum 50000
      * @maximum 2000000
      */
@@ -745,7 +745,7 @@ export type StartZipAnalysisParams = {
  */
 model: string;
 /**
- * Tetto di token per l'analisi (default 400000)
+ * Tetto di token per l'analisi (default 1000000)
  * @minimum 50000
  * @maximum 2000000
  */

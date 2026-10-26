@@ -23,7 +23,7 @@ import { apiErrorMessage } from "@/lib/api-errors";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 2000;
-const DEFAULT_MAX_TOKENS = 400_000;
+const DEFAULT_MAX_TOKENS = 1_000_000;
 const MIN_TOKENS = 50_000;
 const MAX_TOKENS = 2_000_000;
 const MAX_ZIP_BYTES = 50 * 1024 * 1024;

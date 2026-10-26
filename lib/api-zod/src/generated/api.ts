@@ -772,7 +772,7 @@ export const startAnalysisBodyMaxTokensMax = 2000000;
 
 export const StartAnalysisBody = zod.object({
   "model": zod.string().min(1).describe('Modello AI (model_name di LiteLLM)'),
-  "maxTokens": zod.number().min(startAnalysisBodyMaxTokensMin).max(startAnalysisBodyMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 400000)')
+  "maxTokens": zod.number().min(startAnalysisBodyMaxTokensMin).max(startAnalysisBodyMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)')
 })
 
 export const StartAnalysisResponse = zod.object({
@@ -810,7 +810,7 @@ export const startZipAnalysisQueryMaxTokensMax = 2000000;
 
 export const StartZipAnalysisQueryParams = zod.object({
   "model": zod.coerce.string().min(1).describe('Modello AI (model_name di LiteLLM)'),
-  "maxTokens": zod.coerce.number().min(startZipAnalysisQueryMaxTokensMin).max(startZipAnalysisQueryMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 400000)')
+  "maxTokens": zod.coerce.number().min(startZipAnalysisQueryMaxTokensMin).max(startZipAnalysisQueryMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)')
 })
 
 export const StartZipAnalysisResponse = zod.object({

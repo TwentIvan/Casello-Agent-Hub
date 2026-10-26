@@ -12,8 +12,10 @@ export const SOURCE_LIMITS = {
   maxFileBytes: 262_144,
   maxFiles: 5_000,
   maxTotalBytes: 62_914_560,
-  maxReadLines: 400,
-  maxReadChars: 24_000,
+  // Una lettura numerata (righe + prefissi "N: " + intestazione) resta sotto i 12 000 caratteri
+  // dell'output di uno strumento dell'architetto
+  maxReadLines: 200,
+  maxReadChars: 10_000,
   maxSearchResults: 100,
 } as const;
 

@@ -174,6 +174,15 @@ const PHASE_BY_NUMBER: PhaseName[] = ["map", "capabilities", "catalog", "agents"
 let llm: http.Server;
 let llmRequests: any[];
 let llmHangs: boolean;
+/** Stato HTTP di errore con cui risponde il finto LiteLLM (null = risposta normale). */
+let llmStatus: number | null;
+/** Risposte 500 da dare prima di quelle normali. */
+let llm500Remaining: number;
+/** Richieste a cui il finto LiteLLM chiude la connessione senza rispondere. */
+let llmDropRemaining: number;
+let llmPromptTokens: number;
+/** Fasi in cui il modello legge finché non riceve il sollecito del budget della fase. */
+let readUntilNudge: Set<PhaseName>;
 let invalidPhases: Set<PhaseName>;
 let resultOverrides: Partial<Record<PhaseName, unknown>>;
 
@@ -188,7 +197,7 @@ function toolCall(name: string, args: Record<string, unknown>, id: string) {
         },
       },
     ],
-    usage: { prompt_tokens: 100, completion_tokens: 20 },
+    usage: { prompt_tokens: llmPromptTokens, completion_tokens: 20 },
   };
 }
 
@@ -202,6 +211,9 @@ function scriptedReply(body: any) {
   const phase = phaseOf(body);
   const messages: any[] = body.messages ?? [];
   const toolMessages = messages.filter((m) => m.role === "tool").length;
+  const last = messages.at(-1);
+  const nudged = last?.role === "user" && String(last.content).startsWith("Budget della fase quasi esaurito");
+  if (readUntilNudge.has(phase) && !nudged) return toolCall("read_file", { path: "src/a.ts" }, `read_${phase}_${messages.length}`);
   if (toolMessages === 0) return toolCall("read_file", { path: "src/a.ts" }, `read_${phase}`);
   if (invalidPhases.has(phase)) return toolCall("submit_result", { result: { items: "non valido" } }, `bad_${toolMessages}`);
   return toolCall("submit_result", { result: resultOverrides[phase] ?? RESULTS[phase] }, `submit_${phase}`);
@@ -266,6 +278,11 @@ beforeEach(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   llmRequests = [];
   llmHangs = false;
+  llmStatus = null;
+  llm500Remaining = 0;
+  llmDropRemaining = 0;
+  llmPromptTokens = 100;
+  readUntilNudge = new Set();
   invalidPhases = new Set();
   resultOverrides = {};
   serveOpenApi = true;
@@ -278,7 +295,19 @@ beforeEach(async () => {
       const body = JSON.parse(raw);
       llmRequests.push(body);
       if (llmHangs) return;
+      if (llmDropRemaining > 0) {
+        llmDropRemaining -= 1;
+        req.socket.destroy();
+        return;
+      }
       res.setHeader("content-type", "application/json");
+      if (llmStatus !== null || llm500Remaining > 0) {
+        res.statusCode = llmStatus ?? 500;
+        if (llmStatus === null) llm500Remaining -= 1;
+        // Il corpo dell'errore contiene un URL: non deve arrivare nell'errore salvato
+        res.end(JSON.stringify({ error: { message: "upstream error, see https://openrouter.example/docs" } }));
+        return;
+      }
       res.end(JSON.stringify(scriptedReply(body)));
     });
   });
@@ -493,7 +522,7 @@ describe("startAnalysis", () => {
     expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["submit_result"]);
   });
 
-  it("la scadenza complessiva interrompe una chiamata al modello che non risponde", async () => {
+  it("la scadenza complessiva interrompe una chiamata al modello che non risponde, senza nuovi tentativi", async () => {
     llmHangs = true;
     const id = await createAnalysis();
     const started = Date.now();
@@ -507,6 +536,96 @@ describe("startAnalysis", () => {
     // Interrotta dopo circa 1 s (minimo per chiamata), non dopo il timeout del gateway
     expect(elapsed).toBeLessThan(10_000);
   }, 20_000);
+
+  it("timeout della singola chiamata al modello: failed con il messaggio sul timeout, senza nuovi tentativi", async () => {
+    llmHangs = true;
+    const id = await createAnalysis();
+    await startAnalysis(id, { zip: testZip(), modelTimeoutMs: 300 });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe(
+      "fase map: errore nella chiamata al modello: il modello non ha risposto entro 0.3 s (riprova o scegli un modello più veloce)",
+    );
+    expect(a.error).not.toMatch(/http|127\.0\.0\.1/);
+    expect(llmRequests).toHaveLength(1);
+  }, 20_000);
+
+  it.each([
+    [400, " (richiesta rifiutata: spesso contesto troppo lungo per il modello)"],
+    [429, " (limite di richieste: riprova più tardi)"],
+    [404, ""],
+  ])("gateway con errore %i: failed con lo stato e il suggerimento, senza URL", async (status, hint) => {
+    llmStatus = status;
+    const id = await createAnalysis();
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe(`fase map: errore nella chiamata al modello: il gateway dei modelli ha risposto con errore ${status}${hint}`);
+    expect(a.error).not.toMatch(/http|openrouter\.example/);
+    expect(llmRequests).toHaveLength(1);
+  });
+
+  it("errore 500 transitorio: un nuovo tentativo e l'analisi prosegue", async () => {
+    llm500Remaining = 1;
+    const id = await createAnalysis();
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.error).toBeNull();
+    expect(a.status).toBe("completed");
+    expect(llmRequests).toHaveLength(13);
+  });
+
+  it("errore di connessione (non timeout): un nuovo tentativo e l'analisi prosegue", async () => {
+    llmDropRemaining = 1;
+    const id = await createAnalysis();
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.error).toBeNull();
+    expect(a.status).toBe("completed");
+    expect(llmRequests).toHaveLength(13);
+  });
+
+  it("errore di connessione ripetuto: un solo nuovo tentativo, poi il messaggio generico", async () => {
+    llmDropRemaining = 5;
+    const id = await createAnalysis();
+    await startAnalysis(id, { zip: testZip(), modelRetryDelayMs: 10 });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe("fase map: errore nella chiamata al modello: errore di comunicazione con il gateway dei modelli");
+    expect(llmRequests).toHaveLength(2);
+  });
+
+  it("la scadenza durante la pausa prima del nuovo tentativo: nessun nuovo tentativo", async () => {
+    llmDropRemaining = 5;
+    const id = await createAnalysis();
+    const started = Date.now();
+    // la chiamata dura al minimo 1 s: la scadenza arriva durante la pausa di 5 s
+    await startAnalysis(id, { zip: testZip(), maxMs: 400, modelRetryDelayMs: 5_000 });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toMatch(/tempo massimo dell'analisi \(0\.4 s\) scaduto durante la chiamata al modello/);
+    expect(llmRequests).toHaveLength(1);
+    expect(Date.now() - started).toBeLessThan(4_000);
+  }, 20_000);
+
+  it("ogni fase riceve la sua quota (share × maxTokens): il sollecito arriva all'80% della quota", async () => {
+    // 5 000 token per chiamata, tetto 100 000: map ha 22 000 (sollecito a 17 600, dopo 4 chiamate),
+    // capabilities ne ha 13 000 (sollecito a 10 400, dopo 3 chiamate); con quote uguali (1/6 → 13 333,
+    // sollecito a 10 667) map ne farebbe 3
+    llmPromptTokens = 4_980;
+    readUntilNudge = new Set(["map", "capabilities"]);
+    const id = await createAnalysis(appId, { maxTokens: 100_000 });
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.error).toBeNull();
+    expect(a.status).toBe("completed");
+    const perPhase = (p: PhaseName) => llmRequests.filter((r) => phaseOf(r) === p).length;
+    expect(perPhase("map")).toBe(5);
+    expect(perPhase("capabilities")).toBe(4);
+    expect(perPhase("catalog")).toBe(2);
+    // le quote non usate passano alle fasi successive: il tetto vero resta il totale
+    expect(a.tokensUsed).toBe((5 + 4 + 4 * 2) * 5_000);
+  });
 
   it("analisi non in coda: nessun effetto", async () => {
     const id = await createAnalysis(appId, { status: "completed" });
@@ -702,7 +821,7 @@ describe("appendLog", () => {
   });
 
   it("costanti", () => {
-    expect(ANALYSIS_DEFAULT_MAX_TOKENS).toBe(400_000);
+    expect(ANALYSIS_DEFAULT_MAX_TOKENS).toBe(1_000_000);
     expect(ANALYSIS_MAX_MS).toBe(1_800_000);
   });
 });

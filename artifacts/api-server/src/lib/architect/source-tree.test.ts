@@ -114,7 +114,7 @@ describe("SourceTree", () => {
     const first = tree.read("big.txt");
     expect(first.totalLines).toBe(1000);
     expect(first.truncated).toBe(true);
-    expect(first.content.split("\n")).toHaveLength(400);
+    expect(first.content.split("\n")).toHaveLength(200);
     expect(first.content.startsWith("riga 1\n")).toBe(true);
     const part = tree.read("big.txt", 10, 12);
     expect(part.content).toBe("riga 10\nriga 11\nriga 12");
@@ -122,7 +122,7 @@ describe("SourceTree", () => {
     expect(rest.truncated).toBe(false);
     expect(rest.content.endsWith("riga 1000")).toBe(true);
     const wide = tree.read("big.txt", 1, 1000);
-    expect(wide.content.split("\n")).toHaveLength(400);
+    expect(wide.content.split("\n")).toHaveLength(200);
   });
 
   it("read limita i caratteri", () => {

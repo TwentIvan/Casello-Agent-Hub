@@ -37,7 +37,8 @@ const OFFER_STATUS_LABEL = { available: "disponibile", deprecated: "in dismissio
 const yesNo = (v: boolean | null) => (v == null ? "—" : v ? "Sì" : "No");
 const formatDate = (v: string | null) => (v ? new Date(v).toLocaleDateString("it-IT") : "—");
 
-function Offers({ modelId }: { modelId: number }) {
+/** Offerte del modello; quella che coincide con l'offerta più economica del riepilogo è evidenziata. */
+function Offers({ modelId, cheapest }: { modelId: number; cheapest: CatalogModelSummary["cheapestOffer"] }) {
   const offers = useListCatalogModelOffers(modelId);
   if (offers.isLoading) return <Skeleton className="h-16 w-full" />;
   if (offers.isError) {
@@ -47,6 +48,12 @@ function Offers({ modelId }: { modelId: number }) {
       </Alert>
     );
   }
+  // La prima che coincide per provider e prezzi (le offerte sono già in ordine di prezzo)
+  const cheapestId = cheapest
+    ? offers.data?.find(
+        (o) => o.provider === cheapest.provider && o.priceInput === cheapest.priceInput && o.priceOutput === cheapest.priceOutput,
+      )?.id
+    : undefined;
   return (
     <Table>
       <TableHeader>
@@ -70,6 +77,7 @@ function Offers({ modelId }: { modelId: number }) {
                   nei tuoi account
                 </Badge>
               )}
+              {o.id === cheapestId && <Badge className="ml-2">più economica</Badge>}
             </TableCell>
             <TableCell className="font-mono text-xs">{o.providerModelId}</TableCell>
             <TableCell>{formatModelPrice(o.priceInput, o.priceOutput)}</TableCell>
@@ -182,12 +190,12 @@ export function CatalogByModel({ items, total, page, pageSize, onPage }: Catalog
                         "prezzo sconosciuto"
                       )}
                     </TableCell>
-                    <TableCell>{m.offerCount}</TableCell>
+                    <TableCell>{m.providerCount}</TableCell>
                   </TableRow>
                   {expanded && (
                     <TableRow>
                       <TableCell colSpan={8} className="bg-muted/30">
-                        <Offers modelId={m.id} />
+                        <Offers modelId={m.id} cheapest={m.cheapestOffer} />
                       </TableCell>
                     </TableRow>
                   )}

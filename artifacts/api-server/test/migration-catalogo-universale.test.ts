@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 const SQL = "../../../docs/migrations/2026-10-catalogo-universale.sql";
+const POST_SQL = "../../../docs/migrations/2026-10-catalogo-universale-post.sql";
 
 describe("migrazione 2026-10-catalogo-universale", () => {
   let db: PGlite;
@@ -41,11 +42,14 @@ describe("migrazione 2026-10-catalogo-universale", () => {
       { name: "Gateway Casello", provider: "system_gateway" },
     ]);
     const types = (
-      await db.query<{ data_type: string }>(
-        `SELECT data_type FROM information_schema.columns WHERE column_name = 'provider' AND table_name = 'ai_accounts'`,
+      await db.query<{ table_name: string; data_type: string }>(
+        `SELECT table_name, data_type FROM information_schema.columns WHERE column_name = 'provider' AND table_name IN ('ai_accounts', 'model_catalog') ORDER BY table_name`,
       )
     ).rows;
-    expect(types).toEqual([{ data_type: "text" }]);
+    expect(types).toEqual([
+      { table_name: "ai_accounts", data_type: "text" },
+      { table_name: "model_catalog", data_type: "text" },
+    ]);
   });
 
   it("providers contiene i provider di oggi, gestiti e dal registro", async () => {
@@ -60,6 +64,9 @@ describe("migrazione 2026-10-catalogo-universale", () => {
     await expect(
       db.exec(`INSERT INTO ai_accounts (name, provider, base_url) VALUES ('X', 'inesistente', 'https://x.example.com/v1')`),
     ).rejects.toThrow(/ai_accounts_provider_providers_slug_fk/);
+    await expect(
+      db.exec(`INSERT INTO model_catalog (provider, model_id, family, version) VALUES ('inesistente', 'm', 'f', '1')`),
+    ).rejects.toThrow(/model_catalog_provider_providers_slug_fk/);
   });
 
   it("rinominare uno slug aggiorna gli account (on update cascade)", async () => {
@@ -97,25 +104,52 @@ describe("migrazione 2026-10-catalogo-universale", () => {
     }
   });
 
-  it("vecchio catalogo eliminato: model_catalog e ai_models.catalog_id spariti, catalog_runs vuota", async () => {
-    const tables = (await db.query<any>("SELECT table_name FROM information_schema.tables WHERE table_name = 'model_catalog'")).rows;
-    expect(tables).toEqual([]);
-    const cols = (
-      await db.query<any>("SELECT column_name FROM information_schema.columns WHERE table_name = 'ai_models' AND column_name = 'catalog_id'")
-    ).rows;
-    expect(cols).toEqual([]);
+  it("il vecchio catalogo resta per la versione in produzione; catalog_runs svuotata", async () => {
+    expect((await db.query<any>("SELECT model_id FROM model_catalog")).rows).toEqual([{ model_id: "mistral-large" }]);
+    const linked = (await db.query<any>("SELECT model_id, catalog_id IS NOT NULL AS linked FROM ai_models")).rows;
+    expect(linked).toEqual([{ model_id: "deepseek-chat", linked: true }]);
     expect((await db.query<any>("SELECT count(*)::int AS n FROM catalog_runs")).rows[0].n).toBe(0);
-    // Il modello dell'account resta (perde solo il collegamento al vecchio catalogo)
-    expect((await db.query<any>("SELECT model_id FROM ai_models")).rows).toEqual([{ model_id: "deepseek-chat" }]);
   });
 
-  it("è idempotente: una seconda esecuzione non dà errori e non cambia nulla", async () => {
+  it("è idempotente; catalog_runs si svuota solo finché model_offers è vuota", async () => {
     const before = await accountProviders();
-    // Le esecuzioni registrate dopo il deploy non si cancellano più: lo svuotamento vale solo la prima volta
+    // Senza offerte (il nuovo codice non ha ancora aggiornato il catalogo) lo svuotamento si ripete
     await db.exec(`INSERT INTO catalog_runs (trigger, status, finished_at) VALUES ('scheduled', 'completed', now())`);
+    await db.exec(read(SQL));
+    expect((await db.query<any>("SELECT count(*)::int AS n FROM catalog_runs")).rows[0].n).toBe(0);
+    // Dopo il primo aggiornamento le esecuzioni restano
+    await db.exec(`
+      INSERT INTO models (canonical_key, author, family, version) VALUES ('deepseek-chat', 'DeepSeek', 'DeepSeek', 'chat');
+      INSERT INTO model_offers (model_id, provider, provider_model_id) SELECT id, 'deepseek', 'deepseek-chat' FROM models;
+      INSERT INTO catalog_runs (trigger, status, finished_at) VALUES ('scheduled', 'completed', now());
+    `);
     await db.exec(read(SQL));
     expect(await accountProviders()).toEqual(before);
     expect((await db.query<any>("SELECT count(*)::int AS n FROM catalog_runs")).rows[0].n).toBe(1);
     expect((await db.query<any>("SELECT count(*)::int AS n FROM providers")).rows[0].n).toBe(9);
+    expect((await db.query<any>("SELECT count(*)::int AS n FROM model_catalog")).rows[0].n).toBe(1);
+  });
+
+  describe("script post (dopo il deploy)", () => {
+    beforeAll(async () => {
+      await db.exec(read(POST_SQL));
+    });
+
+    it("elimina model_catalog e ai_models.catalog_id; i modelli degli account e lo storico restano", async () => {
+      expect((await db.query<any>("SELECT table_name FROM information_schema.tables WHERE table_name = 'model_catalog'")).rows).toEqual([]);
+      const cols = (
+        await db.query<any>("SELECT column_name FROM information_schema.columns WHERE table_name = 'ai_models' AND column_name = 'catalog_id'")
+      ).rows;
+      expect(cols).toEqual([]);
+      expect((await db.query<any>("SELECT model_id FROM ai_models")).rows).toEqual([{ model_id: "deepseek-chat" }]);
+      expect((await db.query<any>("SELECT count(*)::int AS n FROM catalog_runs")).rows[0].n).toBe(1);
+    });
+
+    it("è idempotente, e lo script precedente si può rieseguire dopo", async () => {
+      await db.exec(read(POST_SQL));
+      await db.exec(read(SQL));
+      expect((await db.query<any>("SELECT count(*)::int AS n FROM catalog_runs")).rows[0].n).toBe(1);
+      expect((await db.query<any>("SELECT table_name FROM information_schema.tables WHERE table_name = 'model_catalog'")).rows).toEqual([]);
+    });
   });
 });

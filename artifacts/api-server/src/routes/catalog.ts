@@ -193,27 +193,33 @@ function linkedToMyAccounts(offerId: SQL | typeof modelOffersTable.id, userId: n
   );
 }
 
-/** Esecuzione nella forma pubblica: del riepilogo restano solo gli account di `userId`, senza `userId`. */
+/**
+ * Esecuzione nella forma pubblica: del riepilogo restano solo gli account di `userId`, senza `userId`. Un
+ * riepilogo scritto da una versione precedente (senza `newProviders`) o non riconosciuto non fa fallire lo
+ * stato: i campi mancanti diventano liste vuote e, se ancora non è valido, il riepilogo è null.
+ */
 function toRunView(run: CatalogRun, userId: number) {
-  const summary = run.summary as OfferSummary | null;
-  return {
+  const summary = run.summary as Partial<OfferSummary> | null;
+  const list = <T>(v: T[] | undefined): T[] => (Array.isArray(v) ? v : []);
+  const view = {
     id: run.id,
     trigger: run.trigger,
     status: run.status,
     startedAt: run.startedAt,
     finishedAt: run.finishedAt,
     error: run.error,
-    summary: summary
-      ? {
-          ...summary,
-          // I riepiloghi precedenti ai provider scoperti non hanno il campo
-          newProviders: summary.newProviders ?? [],
-          accounts: summary.accounts
-            .filter((a) => a.userId === userId)
-            .map(({ accountId, accountName, missing }) => ({ accountId, accountName, missing })),
-        }
-      : null,
+    summary:
+      summary && typeof summary === "object"
+        ? {
+            ...summary,
+            newProviders: list(summary.newProviders),
+            accounts: list(summary.accounts)
+              .filter((a) => a.userId === userId)
+              .map(({ accountId, accountName, missing }) => ({ accountId, accountName, missing })),
+          }
+        : null,
   };
+  return RefreshCatalogResponse.safeParse(view).success ? view : { ...view, summary: null };
 }
 
 export function createCatalogRouter(opts: { refreshRateLimit?: RequestHandler; fetchImpl?: typeof fetch } = {}): IRouter {

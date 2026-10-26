@@ -323,6 +323,11 @@ describe("elenco dei modelli", () => {
     expect((await list("pageSize=101")).status).toBe(400);
     expect((await list("page=0")).status).toBe(400);
     expect((await list("page=1.5")).status).toBe(400);
+    // total conta i modelli filtrati, non quelli della pagina
+    const filtered = await list("provider=openrouter&pageSize=1&sort=price");
+    expect(filtered.json).toMatchObject({ total: 3, page: 1, pageSize: 1 });
+    expect(keys(filtered)).toEqual(["deepseek-chat"]);
+    expect((await list("provider=openrouter&usable=true&pageSize=1")).json).toMatchObject({ total: 1 });
     expect((await list("sort=nope")).status).toBe(400);
   });
 
@@ -484,7 +489,7 @@ describe("provider del catalogo", () => {
     );
     const res = await api("GET", `/catalog/providers/${UNMANAGED}/issue`);
     expect(res.status, res.text).toBe(200);
-    expect(res.json.title).toBe("Gestire il provider Nuovo Provider in Casello");
+    expect(res.json.title).toBe("Gestire il provider `Nuovo Provider` in Casello");
     expect(res.json.body).toContain("6 voci");
     expect(res.json.body).toContain("litellm_provider: nuovo_provider");
     expect(res.json.body).toContain("n-1\nn-2\nn-3\nn-4\nn-5\n");
@@ -507,5 +512,12 @@ describe("riepilogo con i provider nuovi", () => {
     await db.delete(catalogRunsTable).where(eq(catalogRunsTable.status, "completed"));
     await db.insert(catalogRunsTable).values({ trigger: "scheduled", status: "completed", finishedAt: new Date(), summary: base });
     expect((await api("GET", "/catalog/status")).json.latest.summary.newProviders).toEqual([]);
+  });
+
+  it("un riepilogo non riconosciuto non fa fallire lo stato: riepilogo null", async () => {
+    await db.insert(catalogRunsTable).values({ trigger: "scheduled", status: "completed", finishedAt: new Date(), summary: { added: "x", vecchio: 1 } });
+    const res = await api("GET", "/catalog/status");
+    expect(res.status, res.text).toBe(200);
+    expect(res.json.latest).toMatchObject({ status: "completed", summary: null });
   });
 });

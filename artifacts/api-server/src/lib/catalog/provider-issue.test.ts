@@ -11,7 +11,7 @@ const provider = {
 describe("providerIssue", () => {
   it("titolo, nomi nelle fonti, numero di voci, esempi e cosa serve", () => {
     const { title, body } = providerIssue(provider, 7, ["m-1", "m-2", "m-3", "m-4", "m-5", "m-6"]);
-    expect(title).toBe("Gestire il provider nuovo_provider in Casello");
+    expect(title).toBe("Gestire il provider `nuovo_provider` in Casello");
     expect(body).toContain("## Contesto");
     expect(body).toContain("## Da fare");
     expect(body).toContain("7 voci");
@@ -32,9 +32,21 @@ describe("providerIssue", () => {
 
   it("nomi dalle fonti non aprono intestazioni né rompono i blocchi di codice", () => {
     const { title, body } = providerIssue({ ...provider, name: "## Evil\nname" }, 1, ["id```x"]);
-    expect(title).toBe("Gestire il provider Evil name in Casello");
+    expect(title).toBe("Gestire il provider `Evil name` in Casello");
     expect(body).not.toMatch(/^## Evil/m);
     // Recinzione più lunga degli apici inversi contenuti
     expect(body).toContain("````\nid```x\n````");
+  });
+
+  it("link, menzioni, immagini e HTML nel nome o nello slug restano codice in linea", () => {
+    const evil = "x [y](http://e) @user <img src=x> ![i](http://e/i.png)";
+    const { title, body } = providerIssue({ ...provider, name: evil, slug: "a`b" }, 1, []);
+    expect(title).toBe(`Gestire il provider \`${evil}\` in Casello`);
+    expect(body).toContain(`il provider \`${evil}\` (slug \`\`a\`b\`\`)`);
+    // Fuori dal codice in linea non resta nulla del nome
+    const outside = body.replaceAll(`\`${evil}\``, "");
+    for (const bad of ["[y](", "@user", "<img", "![i]"]) expect(outside).not.toContain(bad);
+    // Apici inversi nel nome: recinzione più lunga
+    expect(providerIssue({ ...provider, name: "n``x" }, 0, []).title).toBe("Gestire il provider ```n``x``` in Casello");
   });
 });

@@ -2,6 +2,8 @@
 -- Eseguire sul DB Neon con: psql -v ON_ERROR_STOP=1 -f docs/migrations/2026-10-catalogo-universale.sql
 -- (senza ON_ERROR_STOP psql proseguirebbe dopo un errore), PRIMA del merge. Idempotente: una seconda esecuzione
 -- non cambia nulla. Organizzata in sezioni: ognuna è indipendente dalle successive.
+-- Nessuna colonna o tabella eliminata: la versione in produzione continua a funzionare. Le eliminazioni sono in
+-- 2026-10-catalogo-universale-post.sql, da applicare DOPO il deploy.
 
 BEGIN;
 
@@ -52,14 +54,14 @@ DO $$ BEGIN
 END $$;
 
 DO $$ BEGIN ALTER TABLE "ai_accounts" ADD CONSTRAINT "ai_accounts_provider_providers_slug_fk" FOREIGN KEY ("provider") REFERENCES "public"."providers"("slug") ON DELETE no action ON UPDATE cascade; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
--- model_catalog sparisce nella sezione 3: a una seconda esecuzione la tabella non c'è più (undefined_table)
+-- Dopo lo script post model_catalog non c'è più: una nuova esecuzione di questo script non dà errore (undefined_table)
 DO $$ BEGIN ALTER TABLE "model_catalog" ADD CONSTRAINT "model_catalog_provider_providers_slug_fk" FOREIGN KEY ("provider") REFERENCES "public"."providers"("slug") ON DELETE no action ON UPDATE cascade; EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL; END $$;
 
 -- =================================================================================================
 -- Sezione 2: modelli e offerte
 -- Il catalogo universale: models (indipendenti dal provider) e model_offers (un modello presso un provider).
 -- Si riempiono al primo aggiornamento del catalogo dopo il deploy, che ricollega anche ai_models.offer_id.
--- model_catalog e ai_models.catalog_id si eliminano nella sezione 3.
+-- model_catalog e ai_models.catalog_id si eliminano in 2026-10-catalogo-universale-post.sql, dopo il deploy.
 -- =================================================================================================
 
 DO $$ BEGIN CREATE TYPE "public"."model_mode" AS ENUM('chat', 'embedding', 'image_generation', 'image_edit', 'audio_transcription', 'audio_speech', 'video_generation', 'rerank', 'moderation', 'ocr', 'search', 'realtime', 'responses', 'completion', 'other'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -103,21 +105,14 @@ ALTER TABLE "ai_models" ADD COLUMN IF NOT EXISTS "offer_id" integer;
 DO $$ BEGIN ALTER TABLE "ai_models" ADD CONSTRAINT "ai_models_offer_id_model_offers_id_fk" FOREIGN KEY ("offer_id") REFERENCES "public"."model_offers"("id") ON DELETE set null ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- =================================================================================================
--- Sezione 3: eliminazione del vecchio catalogo
--- La console e l'API leggono ormai solo models e model_offers. Si svuota catalog_runs: i riepiloghi salvati
--- parlano di model_catalog e, senza esecuzioni, lo scheduler ricostruisce il catalogo 5 minuti dopo il deploy
--- (e ricollega gli account con ai_models.offer_id); si perde solo lo storico delle esecuzioni. Lo svuotamento
--- avviene solo se model_catalog esiste ancora, così una seconda esecuzione non cancella le esecuzioni nuove.
+-- Sezione 3: storico delle esecuzioni del catalogo
+-- Si svuota catalog_runs: senza esecuzioni lo scheduler ricostruisce il catalogo (models, model_offers) 5 minuti
+-- dopo il deploy e ricollega gli account con ai_models.offer_id; si perde solo lo storico delle esecuzioni.
+-- Solo finché model_offers è vuota: dopo il primo aggiornamento del nuovo codice una nuova esecuzione dello
+-- script non cancella lo storico. Il vecchio codice continua a funzionare (model_catalog e catalog_id restano
+-- fino a 2026-10-catalogo-universale-post.sql, da applicare dopo il deploy).
 -- =================================================================================================
 
-DO $$ BEGIN
-	IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'model_catalog') THEN
-		DELETE FROM "catalog_runs";
-	END IF;
-END $$;
-
-ALTER TABLE "ai_models" DROP CONSTRAINT IF EXISTS "ai_models_catalog_id_model_catalog_id_fk";
-ALTER TABLE "ai_models" DROP COLUMN IF EXISTS "catalog_id";
-DROP TABLE IF EXISTS "model_catalog";
+DELETE FROM "catalog_runs" WHERE NOT EXISTS (SELECT 1 FROM "model_offers");
 
 COMMIT;

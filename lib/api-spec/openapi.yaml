@@ -619,7 +619,7 @@ paths:
             type: integer
             minimum: 50000
             maximum: 2000000
-          description: Tetto di token per l'analisi (default 400000)
+          description: Tetto di token per l'analisi (default 1000000)
       requestBody:
         required: true
         content:
@@ -1701,7 +1701,7 @@ components:
           type: integer
           minimum: 50000
           maximum: 2000000
-          description: Tetto di token per l'analisi (default 400000)
+          description: Tetto di token per l'analisi (default 1000000)
 
     AnalysisItemUpdate:
       type: object

@@ -35,13 +35,21 @@ export function providerModelId(entry: SourceEntry): string {
 const REGION_PREFIXES = ["us.", "eu.", "apac.", "global.", "us-gov.", "au.", "jp."];
 const AUTHOR_PREFIXES = ["anthropic.", "meta.", "amazon.", "mistral.", "cohere.", "ai21.", "deepseek.", "qwen."];
 
+/** Code generiche (`v1.1`, `dev`, `pro`...): da sole non identificano un modello, serve anche il segmento prima. */
+const GENERIC_TAIL = /^(v?\d+([.-]\d+)*|dev|schnell|pro|max|ultra|base|latest|preview|turbo|mini|free)$/;
+
 /** Chiave comune a tutti i provider che offrono lo stesso modello (Bedrock, Vertex, diretto...). */
 export function canonicalModelKey(providerModelId: string): string {
-  let k = (providerModelId.split("/").pop() ?? providerModelId).toLowerCase();
+  const segs = providerModelId.toLowerCase().split("/");
+  let k = segs.pop() ?? providerModelId.toLowerCase();
   for (const p of REGION_PREFIXES) if (k.startsWith(p)) { k = k.slice(p.length); break; }
   for (const p of AUTHOR_PREFIXES) if (k.startsWith(p)) { k = k.slice(p.length); break; }
-  k = k.replace(/-v\d+:\d+$/, "").replace(/@\d{8}$/, "").replace(/:\d+$/, "");
-  return k.replace(/_/g, "-");
+  k = k.replace(/-v\d+:\d+$/, "").replace(/@\d{8}$/, "").replace(/:\d+$/, "").replace(/_/g, "-");
+  // Coda generica: si tiene anche il segmento precedente, per non unire modelli diversi (`flux/dev`, `flux-pro/v1.1`)
+  while (GENERIC_TAIL.test(k.split("/")[0] ?? k) && segs.length > 0) {
+    k = `${(segs.pop() ?? "").replace(/_/g, "-")}/${k}`;
+  }
+  return k;
 }
 
 const OPENROUTER_AUTHORS: Record<string, string> = {

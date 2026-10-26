@@ -24,6 +24,24 @@ describe("canonicalModelKey", () => {
     expect(canonicalModelKey("eu.amazon.nova-pro-v1:0")).toBe("nova-pro");
     expect(canonicalModelKey("jp.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe("claude-sonnet-4-5-20250929");
   });
+  it("code generiche: si tiene anche il segmento precedente", () => {
+    const a = canonicalModelKey("flux-pro/v1.1");
+    expect(a).toBe("flux-pro/v1.1");
+    expect(canonicalModelKey("fal-ai/flux-pro/v1.1")).toBe(a);
+    expect(canonicalModelKey("flux/dev")).toBe("flux/dev");
+    expect(canonicalModelKey("fal-ai/flux/dev")).toBe("flux/dev");
+    expect(canonicalModelKey("flux/dev")).not.toBe(canonicalModelKey("flux-pro/v1.1"));
+    expect(canonicalModelKey("a/b/pro/latest")).toBe("b/pro/latest");
+    expect(canonicalModelKey("mistralai/mistral-small")).toBe("mistral-small");
+  });
+  it("prefissi regione e autore aggiuntivi", () => {
+    expect(canonicalModelKey("au.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe("claude-sonnet-4-5-20250929");
+    expect(canonicalModelKey("us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe("claude-sonnet-4-5-20250929");
+    expect(canonicalModelKey("cohere.command-r-v1:0")).toBe("command-r");
+    expect(canonicalModelKey("ai21.jamba-1-5-large-v1:0")).toBe("jamba-1-5-large");
+    expect(canonicalModelKey("deepseek.r1-v1:0")).toBe("r1");
+    expect(canonicalModelKey("qwen.qwen3-32b-v1:0")).toBe("qwen3-32b");
+  });
   it("usa l'ultimo segmento, minuscolo, _ → -, punto invariato", () => {
     expect(canonicalModelKey("meta-llama/Llama_3.3-70B")).toBe("llama-3.3-70b");
     expect(canonicalModelKey("gemini-2.5-flash")).toBe("gemini-2.5-flash");

@@ -1419,3 +1419,130 @@ export const EstimateAnalysisCostResponse = zod.object({
 })
 
 
+/**
+ * Senza `provider` tutti i provider. Ordinati per provider, famiglia e data di uscita decrescente. `inMyAccounts` è vero se un modello di un account dell'utente è collegato alla voce.
+ * @summary Catalogo dei modelli
+ */
+export const ListCatalogModelsQueryParams = zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']).optional()
+})
+
+export const ListCatalogModelsResponseItem = zod.object({
+  "id": zod.number(),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "family": zod.string(),
+  "version": zod.string(),
+  "releasedAt": zod.coerce.date().nullable(),
+  "priceInput": zod.number().nullable().describe('USD per milione di token'),
+  "priceOutput": zod.number().nullable().describe('USD per milione di token'),
+  "contextTokens": zod.number().nullable(),
+  "supportsTools": zod.boolean().nullable(),
+  "status": zod.enum(['available', 'deprecated', 'retired']),
+  "deprecationDate": zod.coerce.date().nullable(),
+  "inMyAccounts": zod.boolean()
+})
+export const ListCatalogModelsResponse = zod.array(ListCatalogModelsResponseItem)
+
+
+/**
+ * `running` dice se un aggiornamento è in corso. Il riepilogo contiene solo gli account dell'utente corrente.
+ * @summary Ultimo aggiornamento del catalogo
+ */
+export const GetCatalogStatusResponse = zod.object({
+  "running": zod.boolean(),
+  "latest": zod.union([zod.object({
+  "id": zod.number(),
+  "trigger": zod.enum(['scheduled', 'manual']),
+  "status": zod.enum(['running', 'completed', 'partial', 'failed']),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "error": zod.string().nullable(),
+  "summary": zod.union([zod.object({
+  "firstRun": zod.boolean(),
+  "added": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+})),
+  "retired": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+})),
+  "deprecating": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+}).and(zod.object({
+  "deprecationDate": zod.string()
+}))),
+  "priceChanged": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+}).and(zod.object({
+  "oldInput": zod.number().nullable(),
+  "oldOutput": zod.number().nullable(),
+  "newInput": zod.number().nullable(),
+  "newOutput": zod.number().nullable()
+}))),
+  "accounts": zod.array(zod.object({
+  "accountId": zod.number(),
+  "accountName": zod.string(),
+  "missing": zod.array(zod.string())
+})).describe('Solo gli account dell\'utente corrente')
+}),zod.null()])
+}),zod.null()])
+})
+
+
+/**
+ * Risponde subito con l'esecuzione `running`; prosegue in background. Massimo 2 al minuto per IP.
+ * @summary Avvia l'aggiornamento del catalogo
+ */
+export const RefreshCatalogResponse = zod.object({
+  "id": zod.number(),
+  "trigger": zod.enum(['scheduled', 'manual']),
+  "status": zod.enum(['running', 'completed', 'partial', 'failed']),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "error": zod.string().nullable(),
+  "summary": zod.union([zod.object({
+  "firstRun": zod.boolean(),
+  "added": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+})),
+  "retired": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+})),
+  "deprecating": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+}).and(zod.object({
+  "deprecationDate": zod.string()
+}))),
+  "priceChanged": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+}).and(zod.object({
+  "oldInput": zod.number().nullable(),
+  "oldOutput": zod.number().nullable(),
+  "newInput": zod.number().nullable(),
+  "newOutput": zod.number().nullable()
+}))),
+  "accounts": zod.array(zod.object({
+  "accountId": zod.number(),
+  "accountName": zod.string(),
+  "missing": zod.array(zod.string())
+})).describe('Solo gli account dell\'utente corrente')
+}),zod.null()])
+})
+
+

@@ -985,6 +985,115 @@ export interface CostEstimate {
   typicalUsd: number | null;
 }
 
+export type CatalogModelStatus = typeof CatalogModelStatus[keyof typeof CatalogModelStatus];
+
+
+export const CatalogModelStatus = {
+  available: 'available',
+  deprecated: 'deprecated',
+  retired: 'retired',
+} as const;
+
+export interface CatalogModel {
+  id: number;
+  provider: AiProvider;
+  modelId: string;
+  family: string;
+  version: string;
+  /** @nullable */
+  releasedAt: string | null;
+  /**
+     * USD per milione di token
+     * @nullable
+     */
+  priceInput: number | null;
+  /**
+     * USD per milione di token
+     * @nullable
+     */
+  priceOutput: number | null;
+  /** @nullable */
+  contextTokens: number | null;
+  /** @nullable */
+  supportsTools: boolean | null;
+  status: CatalogModelStatus;
+  /** @nullable */
+  deprecationDate: string | null;
+  inMyAccounts: boolean;
+}
+
+export interface CatalogChange {
+  provider: AiProvider;
+  modelId: string;
+  version: string;
+}
+
+export type CatalogSummaryViewDeprecatingItem = CatalogChange & {
+  deprecationDate: string;
+};
+
+export type CatalogSummaryViewPriceChangedItem = CatalogChange & ({
+  /** @nullable */
+  oldInput: number | null;
+  /** @nullable */
+  oldOutput: number | null;
+  /** @nullable */
+  newInput: number | null;
+  /** @nullable */
+  newOutput: number | null;
+});
+
+export type CatalogSummaryViewAccountsItem = {
+  accountId: number;
+  accountName: string;
+  missing: string[];
+};
+
+export interface CatalogSummaryView {
+  firstRun: boolean;
+  added: CatalogChange[];
+  retired: CatalogChange[];
+  deprecating: CatalogSummaryViewDeprecatingItem[];
+  priceChanged: CatalogSummaryViewPriceChangedItem[];
+  /** Solo gli account dell'utente corrente */
+  accounts: CatalogSummaryViewAccountsItem[];
+}
+
+export type CatalogRunViewTrigger = typeof CatalogRunViewTrigger[keyof typeof CatalogRunViewTrigger];
+
+
+export const CatalogRunViewTrigger = {
+  scheduled: 'scheduled',
+  manual: 'manual',
+} as const;
+
+export type CatalogRunViewStatus = typeof CatalogRunViewStatus[keyof typeof CatalogRunViewStatus];
+
+
+export const CatalogRunViewStatus = {
+  running: 'running',
+  completed: 'completed',
+  partial: 'partial',
+  failed: 'failed',
+} as const;
+
+export interface CatalogRunView {
+  id: number;
+  trigger: CatalogRunViewTrigger;
+  status: CatalogRunViewStatus;
+  startedAt: string;
+  /** @nullable */
+  finishedAt: string | null;
+  /** @nullable */
+  error: string | null;
+  summary: CatalogSummaryView | null;
+}
+
+export interface CatalogStatus {
+  running: boolean;
+  latest: CatalogRunView | null;
+}
+
 /**
  * Troppe richieste
  */
@@ -1086,5 +1195,9 @@ aiModelId: number;
  * @maximum 2000000
  */
 maxTokens?: number;
+};
+
+export type ListCatalogModelsParams = {
+provider?: AiProvider;
 };
 

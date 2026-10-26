@@ -28,6 +28,8 @@ tags:
     description: Installazioni e repository dell'App GitHub di Casello
   - name: ai
     description: Account AI dell'utente (provider, chiave, modelli e prezzi) e stima dei costi
+  - name: catalog
+    description: Catalogo dei modelli per provider e suo aggiornamento
   - name: architect
     description: Analisi dell'architetto (proposte su tool, agenti, skill, endpoint ed evoluzione) e skill degli agenti
 
@@ -1129,6 +1131,65 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
+  /catalog/models:
+    get:
+      operationId: listCatalogModels
+      tags: [catalog]
+      summary: Catalogo dei modelli
+      description: >-
+        Senza `provider` tutti i provider. Ordinati per provider, famiglia e data di uscita
+        decrescente. `inMyAccounts` è vero se un modello di un account dell'utente è collegato alla voce.
+      parameters:
+        - name: provider
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/AiProvider"
+      responses:
+        "200":
+          description: Voci del catalogo
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CatalogModel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /catalog/status:
+    get:
+      operationId: getCatalogStatus
+      tags: [catalog]
+      summary: Ultimo aggiornamento del catalogo
+      description: >-
+        `running` dice se un aggiornamento è in corso. Il riepilogo contiene solo gli account
+        dell'utente corrente.
+      responses:
+        "200":
+          description: Stato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogStatus"
+
+  /catalog/refresh:
+    post:
+      operationId: refreshCatalog
+      tags: [catalog]
+      summary: Avvia l'aggiornamento del catalogo
+      description: Risponde subito con l'esecuzione `running`; prosegue in background. Massimo 2 al minuto per IP.
+      responses:
+        "202":
+          description: Aggiornamento avviato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogRunView"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
 components:
   parameters:
@@ -2315,3 +2376,144 @@ components:
         typicalUsd:
           type: ["number", "null"]
           description: Costo tipico in USD (60% del massimo)
+
+    # ── Catalogo dei modelli ───────────────────────────────────────────────────
+
+    CatalogModel:
+      type: object
+      required: [id, provider, modelId, family, version, releasedAt, priceInput, priceOutput, contextTokens, supportsTools, status, deprecationDate, inMyAccounts]
+      properties:
+        id:
+          type: integer
+        provider:
+          $ref: "#/components/schemas/AiProvider"
+        modelId:
+          type: string
+        family:
+          type: string
+        version:
+          type: string
+        releasedAt:
+          type: ["string", "null"]
+          format: date-time
+        priceInput:
+          type: ["number", "null"]
+          description: USD per milione di token
+        priceOutput:
+          type: ["number", "null"]
+          description: USD per milione di token
+        contextTokens:
+          type: ["integer", "null"]
+        supportsTools:
+          type: ["boolean", "null"]
+        status:
+          type: string
+          enum: [available, deprecated, retired]
+        deprecationDate:
+          type: ["string", "null"]
+          format: date-time
+        inMyAccounts:
+          type: boolean
+
+    CatalogChange:
+      type: object
+      required: [provider, modelId, version]
+      properties:
+        provider:
+          $ref: "#/components/schemas/AiProvider"
+        modelId:
+          type: string
+        version:
+          type: string
+
+    CatalogSummaryView:
+      type: object
+      required: [firstRun, added, retired, deprecating, priceChanged, accounts]
+      properties:
+        firstRun:
+          type: boolean
+        added:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogChange"
+        retired:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogChange"
+        deprecating:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/CatalogChange"
+              - type: object
+                required: [deprecationDate]
+                properties:
+                  deprecationDate:
+                    type: string
+        priceChanged:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/CatalogChange"
+              - type: object
+                required: [oldInput, oldOutput, newInput, newOutput]
+                properties:
+                  oldInput:
+                    type: ["number", "null"]
+                  oldOutput:
+                    type: ["number", "null"]
+                  newInput:
+                    type: ["number", "null"]
+                  newOutput:
+                    type: ["number", "null"]
+        accounts:
+          type: array
+          description: Solo gli account dell'utente corrente
+          items:
+            type: object
+            required: [accountId, accountName, missing]
+            properties:
+              accountId:
+                type: integer
+              accountName:
+                type: string
+              missing:
+                type: array
+                items:
+                  type: string
+
+    CatalogRunView:
+      type: object
+      required: [id, trigger, status, startedAt, finishedAt, error, summary]
+      properties:
+        id:
+          type: integer
+        trigger:
+          type: string
+          enum: [scheduled, manual]
+        status:
+          type: string
+          enum: [running, completed, partial, failed]
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: ["string", "null"]
+          format: date-time
+        error:
+          type: ["string", "null"]
+        summary:
+          oneOf:
+            - $ref: "#/components/schemas/CatalogSummaryView"
+            - type: "null"
+
+    CatalogStatus:
+      type: object
+      required: [running, latest]
+      properties:
+        running:
+          type: boolean
+        latest:
+          oneOf:
+            - $ref: "#/components/schemas/CatalogRunView"
+            - type: "null"

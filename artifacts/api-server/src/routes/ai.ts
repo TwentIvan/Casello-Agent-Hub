@@ -96,8 +96,11 @@ function toPrice(v: number | null | undefined): string | null {
   return v === null || v === undefined ? null : String(v);
 }
 
-/** Forma pubblica di un account: mai `apiKeyEnc` né `userId`. */
-function toPublicAccount(a: AiAccount, modelCount: number) {
+/**
+ * Forma pubblica di un account: mai `apiKeyEnc` né `userId`. `allowPrivateNetwork` è il consenso effettivo:
+ * quello salvato, solo se lo stato attuale del provider (`providerStatus`) ammette ancora la rete privata.
+ */
+function toPublicAccount(a: AiAccount, modelCount: number, providerStatus: string | undefined) {
   const system = isSystemAccount(a);
   return {
     id: a.id,
@@ -105,7 +108,7 @@ function toPublicAccount(a: AiAccount, modelCount: number) {
     provider: a.provider,
     // L'indirizzo del gateway di sistema (spesso interno) non si espone
     baseUrl: system ? "" : a.baseUrl,
-    allowPrivateNetwork: a.allowPrivateNetwork,
+    allowPrivateNetwork: a.allowPrivateNetwork && privateNetworkAllowed({ slug: a.provider, status: providerStatus ?? "" }),
     isDefault: a.isDefault,
     status: a.status,
     lastError: a.lastError,
@@ -222,12 +225,23 @@ async function modelCounts(accountIds: number[]): Promise<Map<number, number>> {
   return new Map(rows.map((r) => [r.accountId, Number(r.n)]));
 }
 
+/** Stato attuale dei provider degli account, per slug. */
+async function providerStatuses(accounts: AiAccount[]): Promise<Map<string, string>> {
+  const slugs = [...new Set(accounts.map((a) => a.provider))];
+  if (!slugs.length) return new Map();
+  const rows = await db
+    .select({ slug: providersTable.slug, status: providersTable.status })
+    .from(providersTable)
+    .where(inArray(providersTable.slug, slugs));
+  return new Map(rows.map((r) => [r.slug, r.status]));
+}
+
 /** Forma pubblica riletta dal DB; undefined se l'account è sparito nel frattempo. */
 async function publicAccount(id: number) {
   const [account] = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.id, id));
   if (!account) return undefined;
-  const counts = await modelCounts([id]);
-  return toPublicAccount(account, counts.get(id) ?? 0);
+  const [counts, statuses] = await Promise.all([modelCounts([id]), providerStatuses([account])]);
+  return toPublicAccount(account, counts.get(id) ?? 0, statuses.get(account.provider));
 }
 
 /** Risponde con l'account riletto, o 404 se è stato eliminato durante la richiesta. */
@@ -240,7 +254,6 @@ async function sendAccount(res: Response, id: number, schema: { parse(v: unknown
   res.status(status).json(schema.parse(account));
 }
 
-/** Nome dell'account ripulito; null se vuoto o con caratteri di controllo. */
 /** Provider della tabella `providers` (registro o scoperto); undefined se lo slug non esiste. */
 async function findProvider(slug: string): Promise<ProviderRow | undefined> {
   const [row] = await db.select().from(providersTable).where(eq(providersTable.slug, slug)).limit(1);
@@ -261,6 +274,7 @@ function providerRules(p: ProviderRow): { editableBaseUrl: boolean; privateNetwo
 
 const STATUS_ORDER: Record<ProviderRow["status"], number> = { managed: 0, coming: 1, unmanaged: 2 };
 
+/** Nome dell'account ripulito; null se vuoto o con caratteri di controllo. */
 function cleanName(raw: string): string | null {
   const name = raw.trim();
   return name && !CONTROL_RE.test(name) ? name : null;
@@ -341,8 +355,8 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
 
   router.get("/ai/accounts", async (req, res) => {
     const accounts = await visibleAccountsSorted(currentUserId(req));
-    const counts = await modelCounts(accounts.map((a) => a.id));
-    res.json(ListAiAccountsResponse.parse(accounts.map((a) => toPublicAccount(a, counts.get(a.id) ?? 0))));
+    const [counts, statuses] = await Promise.all([modelCounts(accounts.map((a) => a.id)), providerStatuses(accounts)]);
+    res.json(ListAiAccountsResponse.parse(accounts.map((a) => toPublicAccount(a, counts.get(a.id) ?? 0, statuses.get(a.provider)))));
   });
 
   // Registro per la creazione degli account: gestiti per nome, poi in arrivo, poi non gestiti
@@ -781,7 +795,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
           .where(and(inArray(aiModelsTable.accountId, ids), eq(aiModelsTable.hidden, false)))
           .orderBy(sql`lower(${aiModelsTable.displayName})`, asc(aiModelsTable.id))
       : [];
-    const counts = await modelCounts(ids);
+    const [counts, statuses] = await Promise.all([modelCounts(ids), providerStatuses(accounts)]);
     const now = new Date();
     const models = rows.map((r) => toPublicModel(r.model, linkedOffer(r), now));
     // I non selezionabili restano (con selectable: false): li filtra la console. Un consigliato per gruppo
@@ -789,7 +803,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       const own = models.filter((m) => m.accountId === a.id);
       const recommended = pickRecommended(own);
       return {
-        account: toPublicAccount(a, counts.get(a.id) ?? 0),
+        account: toPublicAccount(a, counts.get(a.id) ?? 0, statuses.get(a.provider)),
         models: own.map((m) => ({ ...m, recommended: m.id === recommended })),
       };
     });

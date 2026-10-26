@@ -403,8 +403,15 @@ describe("provider del registro", () => {
       expect(upd.status).toBe(400);
       expect(upd.json).toEqual({ error: "indirizzo non consentito" });
       // Il solo nome resta modificabile senza chiamare il provider
-      expect((await api("PATCH", `/ai/accounts/${created.json.id}`, { name: "Rinominato" })).status).toBe(200);
+      const renamed = await api("PATCH", `/ai/accounts/${created.json.id}`, { name: "Rinominato" });
+      expect(renamed.status).toBe(200);
       expect(fake.requests).toHaveLength(requests);
+      // Il consenso esposto è quello effettivo: il provider gestito non ammette la rete privata
+      expect(renamed.json).toMatchObject({ allowPrivateNetwork: false });
+      const listed = (await api("GET", "/ai/accounts")).json.find((a: { id: number }) => a.id === created.json.id);
+      expect(listed).toMatchObject({ allowPrivateNetwork: false });
+      const group = (await api("GET", "/ai/models")).json.find((g: { account: { id: number } }) => g.account.id === created.json.id);
+      expect(group.account).toMatchObject({ allowPrivateNetwork: false });
     } finally {
       await db.update(providersTable).set({ status: "unmanaged" }).where(eq(providersTable.slug, UNMANAGED));
     }

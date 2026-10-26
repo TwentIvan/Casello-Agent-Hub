@@ -124,7 +124,8 @@ Console:
 
 "chiave non valida o senza permessi" (401/403), "credito del provider esaurito: ricarica il conto o
 scegli un altro modello" (402), "limite di richieste del provider: riprova più tardi" (429), "provider non
-raggiungibile" (rete/timeout), "il provider non fornisce l'elenco dei modelli: aggiungili a mano", "indirizzo
+raggiungibile" (rete/timeout/3xx/5xx), "richiesta rifiutata dal provider (HTTP <codice>)" (altri 4xx: es.
+400 contesto troppo lungo, 404 modello inesistente), "il provider non fornisce l'elenco dei modelli: aggiungili a mano", "indirizzo
 non consentito" (base URL non https o privato senza consenso), "account usato da: …" (eliminazione).
 
 ## 8. Sicurezza

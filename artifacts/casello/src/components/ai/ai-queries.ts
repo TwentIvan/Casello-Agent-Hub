@@ -1,14 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
-import {
-  getListAiModelsQueryKey,
-  useListAiModels,
-} from "@workspace/api-client-react";
+import { getListAiModelsQueryKey, useListAiModels } from "@workspace/api-client-react";
 
 /** Modelli selezionabili dall'utente (propri account + sistema), raggruppati per account. */
 export function useAiModelGroups() {
-  return useListAiModels({
-    query: { queryKey: getListAiModelsQueryKey(), staleTime: 60_000 },
-  });
+  return useListAiModels({ query: { queryKey: getListAiModelsQueryKey(), staleTime: 60_000 } });
 }
 
 /**
@@ -19,21 +14,13 @@ export function useAiModelGroups() {
 export function useDefaultAiModelId(): number | null {
   const groups = useAiModelGroups();
   const data = groups.data ?? [];
-  const hasSelectable = (g: (typeof data)[number]) =>
-    g.models.some((m) => m.selectable);
+  const hasSelectable = (g: (typeof data)[number]) => g.models.some((m) => m.selectable);
   const preferred = data.find((g) => g.account.isDefault && hasSelectable(g));
   // In mancanza del predefinito si preferisce un account non in errore
-  const fallback =
-    data.find((g) => g.account.status !== "error" && hasSelectable(g)) ??
-    data.find(hasSelectable);
+  const fallback = data.find((g) => g.account.status !== "error" && hasSelectable(g)) ?? data.find(hasSelectable);
   const group = preferred ?? fallback;
   if (!group) return null;
-  return (
-    (
-      group.models.find((m) => m.recommended) ??
-      group.models.find((m) => m.selectable)
-    )?.id ?? null
-  );
+  return (group.models.find((m) => m.recommended) ?? group.models.find((m) => m.selectable))?.id ?? null;
 }
 
 /**
@@ -42,8 +29,6 @@ export function useDefaultAiModelId(): number | null {
  */
 export function invalidateAiQueries(queryClient: QueryClient) {
   return queryClient.invalidateQueries({
-    predicate: (query) =>
-      typeof query.queryKey[0] === "string" &&
-      query.queryKey[0].startsWith("/api/ai/"),
+    predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/ai/"),
   });
 }

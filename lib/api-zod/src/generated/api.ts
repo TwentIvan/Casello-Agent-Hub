@@ -1493,7 +1493,50 @@ export const GetCatalogStatusResponse = zod.object({
   "missing": zod.array(zod.string())
 })).describe('Solo gli account dell\'utente corrente')
 }),zod.null()])
+}),zod.null()]),
+  "lastCompleted": zod.union([zod.object({
+  "id": zod.number(),
+  "trigger": zod.enum(['scheduled', 'manual']),
+  "status": zod.enum(['running', 'completed', 'partial', 'failed']),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "error": zod.string().nullable(),
+  "summary": zod.union([zod.object({
+  "firstRun": zod.boolean(),
+  "added": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+})),
+  "retired": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+})),
+  "deprecating": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+}).and(zod.object({
+  "deprecationDate": zod.string()
+}))),
+  "priceChanged": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+}).and(zod.object({
+  "oldInput": zod.number().nullable(),
+  "oldOutput": zod.number().nullable(),
+  "newInput": zod.number().nullable(),
+  "newOutput": zod.number().nullable()
+}))),
+  "accounts": zod.array(zod.object({
+  "accountId": zod.number(),
+  "accountName": zod.string(),
+  "missing": zod.array(zod.string())
+})).describe('Solo gli account dell\'utente corrente')
 }),zod.null()])
+}),zod.null()]).describe('Ultima esecuzione completed o partial, da cui leggere le novità')
 })
 
 

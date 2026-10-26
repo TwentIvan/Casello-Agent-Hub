@@ -2509,11 +2509,16 @@ components:
 
     CatalogStatus:
       type: object
-      required: [running, latest]
+      required: [running, latest, lastCompleted]
       properties:
         running:
           type: boolean
         latest:
+          oneOf:
+            - $ref: "#/components/schemas/CatalogRunView"
+            - type: "null"
+        lastCompleted:
+          description: Ultima esecuzione completed o partial, da cui leggere le novità
           oneOf:
             - $ref: "#/components/schemas/CatalogRunView"
             - type: "null"

@@ -1,5 +1,5 @@
 import { Router, type IRouter, type RequestHandler } from "express";
-import { and, asc, desc, eq, exists, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, inArray, sql } from "drizzle-orm";
 import { db, aiAccountsTable, aiModelsTable, catalogRunsTable, modelCatalogTable, type CatalogRun } from "@workspace/db";
 import { GetCatalogStatusResponse, ListCatalogModelsQueryParams, ListCatalogModelsResponse, RefreshCatalogResponse } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
@@ -88,7 +88,20 @@ export function createCatalogRouter(opts: { refreshRateLimit?: RequestHandler; f
     const userId = currentUserId(req);
     const [latest] = await db.select().from(catalogRunsTable).orderBy(desc(catalogRunsTable.startedAt), desc(catalogRunsTable.id)).limit(1);
     const [running] = await db.select({ id: catalogRunsTable.id }).from(catalogRunsTable).where(eq(catalogRunsTable.status, "running")).limit(1);
-    res.json(GetCatalogStatusResponse.parse({ running: Boolean(running), latest: latest ? toRunView(latest, userId) : null }));
+    // Le novità vengono dall'ultima esecuzione riuscita, anche mentre ne gira o ne è fallita un'altra
+    const [lastCompleted] = await db
+      .select()
+      .from(catalogRunsTable)
+      .where(inArray(catalogRunsTable.status, ["completed", "partial"]))
+      .orderBy(desc(catalogRunsTable.startedAt), desc(catalogRunsTable.id))
+      .limit(1);
+    res.json(
+      GetCatalogStatusResponse.parse({
+        running: Boolean(running),
+        latest: latest ? toRunView(latest, userId) : null,
+        lastCompleted: lastCompleted ? toRunView(lastCompleted, userId) : null,
+      }),
+    );
   });
 
   router.post("/catalog/refresh", refreshLimit, async (req, res) => {

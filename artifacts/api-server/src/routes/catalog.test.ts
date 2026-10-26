@@ -140,7 +140,23 @@ describe("aggiornamento", () => {
   });
 
   it("lo stato senza esecuzioni è vuoto", async () => {
-    expect((await api("GET", "/catalog/status")).json).toEqual({ running: false, latest: null });
+    expect((await api("GET", "/catalog/status")).json).toEqual({ running: false, latest: null, lastCompleted: null });
+  });
+
+  it("dopo un'esecuzione fallita le novità restano quelle dell'ultima riuscita", async () => {
+    const summary = { firstRun: false, added: [{ provider: "deepseek", modelId: "nuovo", version: "1" }], retired: [], deprecating: [], priceChanged: [], accounts: [] };
+    const [ok] = await db
+      .insert(catalogRunsTable)
+      .values({ trigger: "scheduled", status: "completed", startedAt: new Date(Date.now() - 60_000), finishedAt: new Date(), summary })
+      .returning();
+    const [ko] = await db
+      .insert(catalogRunsTable)
+      .values({ trigger: "manual", status: "failed", error: "fonte non raggiungibile", finishedAt: new Date() })
+      .returning();
+
+    const res = await api("GET", "/catalog/status");
+    expect(res.json.latest).toMatchObject({ id: ko!.id, status: "failed", summary: null });
+    expect(res.json.lastCompleted).toMatchObject({ id: ok!.id, status: "completed", summary: { added: [expect.objectContaining({ modelId: "nuovo" })] } });
   });
 
   it("ha un rate limit di 2 al minuto sull'app completa", async () => {

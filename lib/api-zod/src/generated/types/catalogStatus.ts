@@ -10,4 +10,6 @@ import type { CatalogRunView } from './catalogRunView';
 export interface CatalogStatus {
   running: boolean;
   latest: CatalogRunView | null;
+  /** Ultima esecuzione completed o partial, da cui leggere le novità */
+  lastCompleted: CatalogRunView | null;
 }

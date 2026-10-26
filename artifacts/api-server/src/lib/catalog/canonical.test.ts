@@ -53,6 +53,11 @@ describe("canonicalModelKey", () => {
 });
 
 describe("canonicalModelKey: date in coda", () => {
+  it("toglie i suffissi Vertex @default e @latest", () => {
+    expect(canonicalModelKey("claude-haiku-5-5@default")).toBe("claude-haiku-5-5");
+    expect(canonicalModelKey("claude-haiku-5-5@latest")).toBe("claude-haiku-5-5");
+    expect(canonicalModelKey("claude-haiku-5-5@20250514")).toBe("claude-haiku-5-5");
+  });
   it("toglie la data in coda se resta qualcosa prima", () => {
     expect(canonicalModelKey("gpt-4o-2024-08-06")).toBe("gpt-4o");
     expect(canonicalModelKey("openai/gpt-4o")).toBe("gpt-4o");

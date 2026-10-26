@@ -56,7 +56,7 @@ export function canonicalModelKey(providerModelId: string): string {
   let k = segs.pop() ?? providerModelId.toLowerCase();
   for (const p of REGION_PREFIXES) if (k.startsWith(p)) { k = k.slice(p.length); break; }
   for (const p of AUTHOR_PREFIXES) if (k.startsWith(p)) { k = k.slice(p.length); break; }
-  k = k.replace(/-v\d+:\d+$/, "").replace(/@\d{8}$/, "").replace(/:\d+$/, "").replace(/[_.]/g, "-");
+  k = k.replace(/-v\d+:\d+$/, "").replace(/@(\d{8}|default|latest)$/, "").replace(/:\d+$/, "").replace(/[_.]/g, "-");
   // Data in coda (`-20250929`, `-2024-08-06`): stesso modello, se resta qualcosa prima
   k = k.replace(/(.)-(\d{8}|\d{4}-\d{2}-\d{2})(?=$|:)/, "$1");
   // Coda generica: si tiene anche il segmento precedente, per non unire modelli diversi (`flux/dev`, `flux-pro/v1.1`)

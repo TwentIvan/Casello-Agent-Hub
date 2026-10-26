@@ -261,10 +261,10 @@ describe("creazione", () => {
 
   it("regole sul provider, base URL, consenso e chiave", async () => {
     const cases: [Record<string, unknown>, string | RegExp][] = [
-      [{ provider: "deepseek" }, /allowPrivateNetwork/],
+      [{ provider: "deepseek" }, "rete privata consentita solo per gli account personalizzati o di provider non gestiti"],
       [{ provider: "system_gateway", allowPrivateNetwork: false, baseUrl: null }, /sistema/],
-      [{ baseUrl: null }, /base URL/],
-      [{ baseUrl: "   " }, /base URL/],
+      [{ baseUrl: null }, "indirizzo obbligatorio per questo provider"],
+      [{ baseUrl: "   " }, "indirizzo obbligatorio per questo provider"],
       [{ allowPrivateNetwork: false }, "indirizzo non consentito"],
       [{ baseUrl: "ftp://x.example.com" }, "indirizzo non consentito"],
       [{ provider: "deepseek", allowPrivateNetwork: false, baseUrl: "https://altro.example.com/v1" }, /base URL/],
@@ -394,10 +394,10 @@ describe("provider del registro", () => {
     const input = { name: "Perplexity", provider: "perplexity", apiKey: KEY };
     let res = await api("POST", "/ai/accounts", input);
     expect(res.status).toBe(400);
-    expect(res.json.error).toMatch(/base URL/);
+    expect(res.json.error).toBe("indirizzo obbligatorio per questo provider");
     res = await api("POST", "/ai/accounts", { ...input, baseUrl: fake.baseUrl, allowPrivateNetwork: true });
     expect(res.status).toBe(400);
-    expect(res.json.error).toMatch(/allowPrivateNetwork/);
+    expect(res.json.error).toBe("rete privata consentita solo per gli account personalizzati o di provider non gestiti");
     res = await api("POST", "/ai/accounts", { ...input, baseUrl: fake.baseUrl });
     expect(res.json).toEqual({ error: "indirizzo non consentito" });
     expect(fake.requests).toHaveLength(0);

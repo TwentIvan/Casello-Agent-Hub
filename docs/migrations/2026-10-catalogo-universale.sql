@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS "providers" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 
--- Gli stessi valori del registro (lib/catalog/provider-registry.ts); una riga già presente non si tocca
+-- Gli stessi valori del registro (lib/catalog/provider-registry-data.ts); una riga già presente non si tocca
 INSERT INTO "providers" ("slug", "name", "protocol", "default_base_url", "source_keys", "status", "origin") VALUES
 	('deepseek', 'DeepSeek', 'openai_compatible', 'https://api.deepseek.com/v1', '{"litellm": ["deepseek"], "openrouterAuthor": "deepseek"}', 'managed', 'registry'),
 	('openrouter', 'OpenRouter', 'openai_compatible', 'https://openrouter.ai/api/v1', '{"litellm": ["openrouter"], "openrouterAuthor": null}', 'managed', 'registry'),

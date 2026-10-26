@@ -1,9 +1,9 @@
 import { isIP } from "node:net";
-import { PROVIDER_REGISTRY } from "../catalog/provider-registry";
+import { PROVIDER_REGISTRY } from "../catalog/provider-registry-data";
 
 /**
- * Provider AI (dal registro in `lib/catalog/provider-registry.ts`) e validazione del loro base URL.
- * Le funzioni qui sono pure: niente DB né rete.
+ * Provider AI (dal registro in `lib/catalog/provider-registry-data.ts`) e validazione del loro base URL.
+ * Modulo puro: niente DB né rete.
  */
 
 /** Slug di un provider della tabella `providers` (non più un enum: i provider sono dati). */

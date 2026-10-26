@@ -1,7 +1,8 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { inArray, notInArray } from "drizzle-orm";
 import { db, providersTable } from "@workspace/db";
-import { ensureProviderRegistry, PROVIDER_REGISTRY, statusForProtocol, type RegistryProvider } from "./provider-registry";
+import { ensureProviderRegistry } from "./provider-registry";
+import { PROVIDER_REGISTRY, statusForProtocol, type RegistryProvider } from "./provider-registry-data";
 import { PROVIDERS } from "../ai/providers";
 
 const bySlug = (slug: string) => PROVIDER_REGISTRY.find((p) => p.slug === slug);

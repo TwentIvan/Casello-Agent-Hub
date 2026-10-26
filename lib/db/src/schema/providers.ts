@@ -19,7 +19,7 @@ export const providerOriginEnum = pgEnum("provider_origin", ["registry", "discov
 /** Nomi del provider nelle fonti: `litellm_provider` di LiteLLM e autore OpenRouter dei suoi modelli. */
 export type ProviderSourceKeys = { litellm: string[]; openrouterAuthor: string | null };
 
-// Provider AI: allineati all'avvio dal registro nel codice (lib/catalog/provider-registry.ts) o scoperti
+// Provider AI: allineati all'avvio dal registro nel codice (api-server, lib/catalog/provider-registry-data.ts) o scoperti
 // dall'aggiornamento del catalogo
 export const providersTable = pgTable("providers", {
   slug: text("slug").primaryKey(),

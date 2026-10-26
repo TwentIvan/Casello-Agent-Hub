@@ -8,12 +8,14 @@ import { normalizeBaseUrl, validateBaseUrl, type AiProvider } from "./providers"
  * fissi (spec §7): mai la chiave, l'URL o il corpo della risposta del provider nei messaggi.
  */
 
-export type ProviderErrorKind = "auth" | "credit" | "rate" | "unreachable" | "no_models" | "bad_url";
+export type ProviderErrorKind = "auth" | "credit" | "rate" | "rejected" | "unreachable" | "no_models" | "bad_url";
 
 export const PROVIDER_MESSAGES: Record<ProviderErrorKind, string> = {
   auth: "chiave non valida o senza permessi",
   credit: "credito del provider esaurito: ricarica il conto o scegli un altro modello",
   rate: "limite di richieste del provider: riprova più tardi",
+  // Con lo stato HTTP: "richiesta rifiutata dal provider (HTTP 400)" (vedi providerErrorMessage)
+  rejected: "richiesta rifiutata dal provider",
   unreachable: "provider non raggiungibile",
   no_models: "il provider non fornisce l'elenco dei modelli: aggiungili a mano",
   bad_url: "indirizzo non consentito",
@@ -24,18 +26,28 @@ export class ProviderError extends Error {
   /** Stato HTTP della risposta del provider; null per errori di rete, timeout o indirizzo. */
   readonly status: number | null;
   constructor(kind: ProviderErrorKind, status: number | null = null) {
-    super(PROVIDER_MESSAGES[kind]);
+    super(providerErrorMessage(kind, status));
     this.name = "ProviderError";
     this.kind = kind;
     this.status = status;
   }
 }
 
-/** Tipo d'errore per uno stato HTTP non riuscito del provider. */
+/** Messaggio fisso di un errore; per "rejected" include solo il numero dello stato HTTP. */
+export function providerErrorMessage(kind: ProviderErrorKind, status: number | null): string {
+  if (kind === "rejected" && status !== null) return `${PROVIDER_MESSAGES.rejected} (HTTP ${status})`;
+  return PROVIDER_MESSAGES[kind];
+}
+
+/**
+ * Tipo d'errore per uno stato HTTP non riuscito del provider: 401/403 auth, 402 credit, 429 rate,
+ * altri 4xx rejected; 3xx (redirect non seguiti) e 5xx unreachable.
+ */
 export function providerErrorKindForStatus(status: number): ProviderErrorKind {
   if (status === 401 || status === 403) return "auth";
   if (status === 402) return "credit";
   if (status === 429) return "rate";
+  if (status >= 400 && status < 500) return "rejected";
   return "unreachable";
 }
 

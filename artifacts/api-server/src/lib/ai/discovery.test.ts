@@ -220,6 +220,15 @@ describe("discoverModels", () => {
     expect(e.message).toBe("provider non raggiungibile");
   });
 
+  it("altri 4xx → richiesta rifiutata con il solo stato HTTP", async () => {
+    for (const status of [400, 405, 413, 422]) {
+      fake.status = status;
+      const e = await discoverError(account());
+      expect(e).toMatchObject({ kind: "rejected", status });
+      expect(e.message).toBe(`richiesta rifiutata dal provider (HTTP ${status})`);
+    }
+  });
+
   it("redirect non seguito", async () => {
     fake.status = 302;
     const e = await discoverError(account());

@@ -40,8 +40,11 @@ export interface ResolvedModel {
   provider: AiProvider;
   kind: ExecutorKind;
   baseUrl: string;
-  /** Chiave in chiaro: solo in memoria, mai in log, risposte o errori. */
-  apiKey: string | null;
+  /**
+   * Chiave in chiaro: solo in memoria, mai in log, risposte o errori. Proprietà non enumerabile:
+   * `JSON.stringify`, `util.inspect` e lo spread (`{ ...resolved }`) non la copiano.
+   */
+  readonly apiKey: string | null;
   modelId: string;
   /** USD per milione di token; null se non noto. */
   priceInput: number | null;
@@ -116,6 +119,10 @@ export async function resolveModel(aiModelId: number, opts: { userId: number | n
     .limit(1);
   if (!row) throw new ModelAccessError(MODEL_UNAVAILABLE);
   const { model, account } = row;
+  // Difesa in profondità: l'account di sistema non ha proprietario, tutti gli altri sì
+  if ((account.provider === "system_gateway") !== (account.userId === null)) {
+    throw new ModelAccessError(MODEL_UNAVAILABLE);
+  }
   if (opts.mustOwn && account.userId !== null && account.userId !== opts.userId) {
     throw new ModelAccessError(MODEL_UNAVAILABLE);
   }
@@ -144,18 +151,19 @@ export async function resolveModel(aiModelId: number, opts: { userId: number | n
     }
   }
 
-  return {
+  const resolved = {
     aiModelId: model.id,
     accountId: account.id,
     provider: account.provider,
     kind: executorKindFor(account.provider),
     baseUrl,
-    apiKey,
     modelId: model.modelId,
     priceInput: toPrice(model.priceInputPerMtok),
     priceOutput: toPrice(model.priceOutputPerMtok),
     ownerUserId: account.userId,
-  };
+  } as ResolvedModel;
+  Object.defineProperty(resolved, "apiKey", { value: apiKey, enumerable: false, writable: false, configurable: false });
+  return resolved;
 }
 
 // Un client per account, ricreato quando cambiano chiave o base URL. La chiave non è mai una
@@ -176,6 +184,8 @@ function clientFor(resolved: ResolvedModel): OpenAI {
     ...(resolved.apiKey === null ? { defaultHeaders: { Authorization: null } } : {}),
     // Nessun redirect seguito: un 3xx diventa un errore del provider
     fetchOptions: { redirect: "manual" },
+    // L'SDK non scrive mai in console (i suoi log includono il base URL)
+    logLevel: "off",
   });
   clients.set(resolved.accountId, { fingerprint, client });
   return client;
@@ -197,16 +207,22 @@ function buildParams(resolved: ResolvedModel, opts: ChatOptions): ChatCompletion
   return params;
 }
 
-/** Errori dell'SDK → ProviderError con testo fisso; timeout e abort restano invariati. */
+function isTimeoutOrAbort(err: unknown): boolean {
+  return err instanceof APIConnectionTimeoutError || err instanceof APIUserAbortError;
+}
+
+/**
+ * Errori della chiamata → ProviderError con testo fisso; timeout e abort dell'SDK restano invariati.
+ * Ogni altro errore (rete, risposta non JSON o troncata, errori interni dell'SDK) diventa
+ * "unreachable": il suo messaggio potrebbe contenere URL o il corpo della risposta.
+ */
 function mapError(err: unknown): unknown {
-  if (err instanceof APIConnectionTimeoutError || err instanceof APIUserAbortError) return err;
-  if (err instanceof APIConnectionError) return new ProviderError("unreachable");
-  if (err instanceof APIError) {
-    return typeof err.status === "number"
-      ? new ProviderError(providerErrorKindForStatus(err.status), err.status)
-      : new ProviderError("unreachable");
+  if (isTimeoutOrAbort(err)) return err;
+  if (err instanceof ProviderError) return err;
+  if (err instanceof APIError && !(err instanceof APIConnectionError) && typeof err.status === "number") {
+    return new ProviderError(providerErrorKindForStatus(err.status), err.status);
   }
-  return err;
+  return new ProviderError("unreachable");
 }
 
 /**
@@ -219,30 +235,52 @@ export async function modelChat(resolved: ResolvedModel, opts: ChatOptions): Pro
   const client = clientFor(resolved);
   const params = buildParams(resolved, opts);
   const startMs = Date.now();
-  let response;
+  let result: ModelChatResult;
+  let cachedTokens: number;
   try {
-    response = await client.chat.completions.create(params, {
+    const response = await client.chat.completions.create(params, {
       signal: opts.signal,
       maxRetries: opts.maxRetries ?? CHAT_MAX_RETRIES,
       timeout: opts.timeoutMs ?? CHAT_REQUEST_TIMEOUT_MS,
     });
+    // Risposta 2xx malformata (senza `choices`): errore del provider, mai un TypeError grezzo
+    if (!Array.isArray(response?.choices) || response.choices.length === 0) throw new ProviderError("unreachable");
+    const usage = readUsage(response);
+    cachedTokens = usage.cachedTokens;
+    const content = response.choices[0]?.message?.content;
+    result = {
+      content: typeof content === "string" ? content : null,
+      toolCalls: extractToolCalls(response),
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      costUsd: response.usage
+        ? computeCost(usage.promptTokens, usage.completionTokens, resolved.priceInput, resolved.priceOutput)
+        : null,
+    };
   } catch (err) {
-    if (opts.signal?.aborted) throw err;
-    throw mapError(err);
+    // Con il signal scaduto solo abort e timeout dell'SDK passano invariati
+    const mapped = mapError(err);
+    if (mapped !== err) {
+      logger.warn(
+        { caller: opts.caller, accountId: resolved.accountId, modelId: resolved.modelId, errName: err instanceof Error ? err.name : "unknown" },
+        "Chiamata al modello non riuscita",
+      );
+    }
+    throw mapped;
   }
   const durationMs = Date.now() - startMs;
-  const { promptTokens, completionTokens, cachedTokens } = readUsage(response);
-  const costUsd = response.usage ? computeCost(promptTokens, completionTokens, resolved.priceInput, resolved.priceOutput) : null;
   // Mai chiave, base URL o contenuti dei messaggi nei log
   logger.info(
-    { caller: opts.caller, accountId: resolved.accountId, modelId: resolved.modelId, promptTokens, completionTokens, cachedTokens, durationMs },
+    {
+      caller: opts.caller,
+      accountId: resolved.accountId,
+      modelId: resolved.modelId,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      cachedTokens,
+      durationMs,
+    },
     "Chiamata al modello",
   );
-  return {
-    content: response.choices[0]?.message?.content ?? null,
-    toolCalls: extractToolCalls(response),
-    promptTokens,
-    completionTokens,
-    costUsd,
-  };
+  return result;
 }

@@ -52,6 +52,8 @@ export interface FakeProvider {
   apiKey: string | null;
   /** Risposta di `/chat/completions`: oggetto fisso o funzione del corpo della richiesta. */
   chatReply: FakeChatReply | ((body: unknown) => FakeChatReply);
+  /** Se non null, `/chat/completions` risponde 200 con questo corpo grezzo (per le risposte malformate). */
+  chatRawBody: string | null;
   /** Ritardo prima di ogni risposta (per i timeout). */
   delayMs: number;
   requests: FakeProviderRequest[];
@@ -91,6 +93,7 @@ export async function startFakeProvider(opts: Partial<Omit<FakeProvider, "baseUr
     statusFor: opts.statusFor ?? {},
     apiKey: opts.apiKey ?? null,
     chatReply: opts.chatReply ?? { content: "ok", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } },
+    chatRawBody: opts.chatRawBody ?? null,
     delayMs: opts.delayMs ?? 0,
     requests: [],
     close: async () => {
@@ -125,6 +128,11 @@ export async function startFakeProvider(opts: Partial<Omit<FakeProvider, "baseUr
     }
 
     if (method === "POST" && url.pathname === "/v1/chat/completions") {
+      if (fake.chatRawBody !== null) {
+        res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+        res.end(fake.chatRawBody);
+        return;
+      }
       const reply = typeof fake.chatReply === "function" ? fake.chatReply(body) : fake.chatReply;
       const b = (typeof body === "object" && body !== null ? body : {}) as { model?: unknown };
       const message: Record<string, unknown> = { role: "assistant", content: reply.content };

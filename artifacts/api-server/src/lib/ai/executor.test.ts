@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { APIConnectionTimeoutError } from "openai";
+import { APIConnectionTimeoutError, APIUserAbortError } from "openai";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
+import { eq } from "drizzle-orm";
 import { db, pool, aiAccountsTable, aiModelsTable, usersTable } from "@workspace/db";
 import { FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
 import { encryptSecret } from "../secrets";
@@ -137,12 +138,40 @@ describe("resolveModel", () => {
       provider: "custom",
       kind: "openai_compatible",
       baseUrl: fake.baseUrl,
-      apiKey: KEY,
       modelId: "fake-model",
       priceInput: 0.27,
       priceOutput: 1.1,
       ownerUserId: alice,
     });
+    expect(r.apiKey).toBe(KEY);
+  });
+
+  it("la chiave non è serializzabile né copiata dallo spread", async () => {
+    const { aiModelId } = await seed();
+    const r = await resolveModel(aiModelId, { userId: alice, mustOwn: true });
+    expect(JSON.stringify(r)).not.toContain(KEY);
+    expect(Object.keys(r)).not.toContain("apiKey");
+    expect({ ...r }).not.toHaveProperty("apiKey");
+  });
+
+  it("mustOwn con userId null rifiuta un account utente", async () => {
+    const { aiModelId } = await seed();
+    const err = await caught(resolveModel(aiModelId, { userId: null, mustOwn: true }));
+    expect(err).toBeInstanceOf(ModelAccessError);
+    expect((err as Error).message).toBe("modello non disponibile");
+  });
+
+  it("invarianti: system_gateway con proprietario o account utente senza proprietario → non disponibile", async () => {
+    const sys = await seed({ userId: alice, provider: "system_gateway" });
+    const err = await caught(resolveModel(sys.aiModelId, { userId: alice, mustOwn: false }));
+    expect(err).toBeInstanceOf(ModelAccessError);
+    expect((err as Error).message).toBe("modello non disponibile");
+
+    await pool.query("TRUNCATE ai_accounts RESTART IDENTITY CASCADE");
+    const orphan = await seed({ userId: null, provider: "custom" });
+    const err2 = await caught(resolveModel(orphan.aiModelId, { userId: alice, mustOwn: true }));
+    expect(err2).toBeInstanceOf(ModelAccessError);
+    expect((err2 as Error).message).toBe("modello non disponibile");
   });
 
   it("rifiuta il modello di un account altrui con mustOwn, lo accetta senza", async () => {
@@ -168,11 +197,11 @@ describe("resolveModel", () => {
       provider: "system_gateway",
       kind: "openai_compatible",
       baseUrl: fake.baseUrl,
-      apiKey: GATEWAY_KEY,
       priceInput: null,
       priceOutput: null,
       ownerUserId: null,
     });
+    expect(r.apiKey).toBe(GATEWAY_KEY);
   });
 
   it("account di sistema senza env → non più disponibile", async () => {
@@ -200,6 +229,7 @@ describe("resolveModel", () => {
     const err = await caught(resolveModel(aiModelId, { userId: alice, mustOwn: true }));
     expect(err).toBeInstanceOf(ProviderError);
     expect((err as ProviderError).kind).toBe("auth");
+    expectClean(err);
   });
 });
 
@@ -290,6 +320,45 @@ describe("modelChat", () => {
     expectClean(e500);
   });
 
+  it("altri 4xx → rejected con il solo stato HTTP", async () => {
+    const r = await resolved();
+    for (const status of [400, 404, 422]) {
+      fake.statusFor = { chat: status };
+      const err = await caught(modelChat(r, { messages: MESSAGES, caller: "test", maxRetries: 0 }));
+      expect(err).toBeInstanceOf(ProviderError);
+      expect(err).toMatchObject({ kind: "rejected", status });
+      expect((err as Error).message).toBe(`richiesta rifiutata dal provider (HTTP ${status})`);
+      expectClean(err);
+    }
+  });
+
+  it("redirect 3xx non seguito → ProviderError con lo stato", async () => {
+    fake.statusFor = { chat: 302 };
+    const err = await caught(modelChat(await resolved(), { messages: MESSAGES, caller: "test", maxRetries: 0 }));
+    expect(err).toBeInstanceOf(ProviderError);
+    expect(err).toMatchObject({ kind: "unreachable", status: 302 });
+    expectClean(err);
+    // La destinazione del redirect non viene mai chiesta
+    expect(fake.requests.map((q) => q.path)).toEqual(["/v1/chat/completions"]);
+  });
+
+  it("risposta 2xx malformata → unreachable con messaggio fisso", async () => {
+    const r = await resolved();
+    const bodies = [
+      JSON.stringify({ id: "x", object: "chat.completion", usage: { prompt_tokens: 1, completion_tokens: 1 } }),
+      `<html>${FAKE_PROVIDER_ERROR_TEXT}</html>`,
+      `{"choices":[{"message":{"content":"${FAKE_PROVIDER_ERROR_TEXT}`,
+      JSON.stringify({ choices: [{ message: { content: null, tool_calls: [{ type: "function" }] } }] }),
+    ];
+    for (const body of bodies) {
+      fake.chatRawBody = body;
+      const err = await caught(modelChat(r, { messages: MESSAGES, caller: "test", maxRetries: 0 }));
+      expect(err, body).toBeInstanceOf(ProviderError);
+      expect(err).toMatchObject({ kind: "unreachable", message: "provider non raggiungibile" });
+      expectClean(err);
+    }
+  });
+
   it("lo stato per rotta del finto provider lascia funzionare /models", async () => {
     fake.statusFor = { chat: 402 };
     const res = await fetch(`${fake.baseUrl}/models`, { headers: { authorization: `Bearer ${KEY}` } });
@@ -307,7 +376,7 @@ describe("modelChat", () => {
     fake = await startFakeProvider();
   });
 
-  it("timeout → errore originale dell'SDK; abort → rilanciato", async () => {
+  it("timeout → errore originale dell'SDK; abort → APIUserAbortError", async () => {
     const r = await resolved();
     fake.delayMs = 500;
     const err = await caught(modelChat(r, { messages: MESSAGES, caller: "test", timeoutMs: 50, maxRetries: 0 }));
@@ -316,7 +385,7 @@ describe("modelChat", () => {
     const p = modelChat(r, { messages: MESSAGES, caller: "test", signal: ctrl.signal, maxRetries: 0 });
     setTimeout(() => ctrl.abort(), 20);
     const aborted = await caught(p);
-    expect(aborted).not.toBeInstanceOf(ProviderError);
+    expect(aborted).toBeInstanceOf(APIUserAbortError);
     expect(ctrl.signal.aborted).toBe(true);
   });
 
@@ -326,7 +395,7 @@ describe("modelChat", () => {
     expect(fake.requests.at(-1)!.authorization).toBe(`Bearer ${KEY}`);
 
     fake.apiKey = KEY_2;
-    await db.update(aiAccountsTable).set({ apiKeyEnc: encryptSecret(KEY_2) });
+    await db.update(aiAccountsTable).set({ apiKeyEnc: encryptSecret(KEY_2) }).where(eq(aiAccountsTable.id, accountId));
     const r2 = await resolveModel(aiModelId, { userId: alice, mustOwn: true });
     expect(r2.accountId).toBe(accountId);
     await modelChat(r2, { messages: MESSAGES, caller: "test" });

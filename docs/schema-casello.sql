@@ -10,6 +10,7 @@ CREATE TYPE "public"."analysis_status" AS ENUM('queued', 'running', 'completed',
 CREATE TYPE "public"."analysis_chapter" AS ENUM('tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution');
 CREATE TYPE "public"."item_diff" AS ENUM('new', 'changed', 'removed', 'unchanged');
 CREATE TYPE "public"."item_status" AS ENUM('pending', 'approved', 'discarded', 'postponed');
+CREATE TYPE "public"."identity_provider" AS ENUM('google', 'github');
 CREATE TABLE "apps" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
@@ -24,6 +25,7 @@ CREATE TABLE "apps" (
 	"source_repo" text,
 	"source_branch" text,
 	"source_token_enc" text,
+	"source_installation_id" bigint,
 	"openapi_url" text,
 	"functional_description" text,
 	"status" "app_status" DEFAULT 'active' NOT NULL,
@@ -170,3 +172,39 @@ CREATE TABLE "sessions" (
 );
 
 CREATE INDEX "IDX_session_expire" ON "sessions" USING btree ("expire");
+
+CREATE TABLE "users" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"email" text NOT NULL,
+	"name" text,
+	"picture" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"last_login_at" timestamp,
+	CONSTRAINT "users_email_unique" UNIQUE("email")
+);
+
+CREATE TABLE "user_identities" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"provider" "identity_provider" NOT NULL,
+	"provider_user_id" text NOT NULL,
+	"email" text,
+	"username" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "user_identities_provider_user_unique" UNIQUE("provider","provider_user_id"),
+	CONSTRAINT "user_identities_user_provider_unique" UNIQUE("user_id","provider"),
+	CONSTRAINT "user_identities_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action
+);
+
+CREATE TABLE "github_installations" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"installation_id" bigint NOT NULL,
+	"account_login" text NOT NULL,
+	"account_type" text NOT NULL,
+	"repository_selection" text NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "github_installations_user_installation_unique" UNIQUE("user_id","installation_id"),
+	CONSTRAINT "github_installations_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action
+);

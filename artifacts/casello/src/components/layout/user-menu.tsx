@@ -1,4 +1,5 @@
-import { LogOut } from "lucide-react";
+import { Link } from "wouter";
+import { LogOut, UserRound } from "lucide-react";
 import { getGetCurrentUserQueryKey, useGetCurrentUser, useLogout } from "@workspace/api-client-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,12 @@ export function UserMenu() {
           {user.name && <div className="truncate text-xs text-muted-foreground">{user.email}</div>}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href="/account">
+            <UserRound />
+            Account
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem disabled={logout.isPending} onSelect={() => logout.mutate()}>
           <LogOut />
           Esci

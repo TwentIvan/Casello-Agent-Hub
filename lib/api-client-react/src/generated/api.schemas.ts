@@ -13,12 +13,66 @@ export interface ErrorResponse {
   error: string;
 }
 
+export interface GithubInstallation {
+  installationId: number;
+  accountLogin: string;
+  /** User o Organization */
+  accountType: string;
+  /** all o selected */
+  repositorySelection: string;
+  /** Pagina di GitHub in cui gestire l'installazione */
+  manageUrl: string;
+}
+
+export interface GithubInstallations {
+  /** Pagina di GitHub in cui installare l'App */
+  installUrl: string;
+  installations: GithubInstallation[];
+}
+
+export interface GithubRepo {
+  installationId: number;
+  /** proprietario/nome */
+  fullName: string;
+  defaultBranch: string;
+  private: boolean;
+}
+
+export type LinkedIdentityProvider = typeof LinkedIdentityProvider[keyof typeof LinkedIdentityProvider];
+
+
+export const LinkedIdentityProvider = {
+  google: 'google',
+  github: 'github',
+} as const;
+
+export interface LinkedIdentity {
+  provider: LinkedIdentityProvider;
+  /**
+     * Login GitHub (null per Google)
+     * @nullable
+     */
+  username: string | null;
+  /** @nullable */
+  email: string | null;
+}
+
 export interface CurrentUser {
   email: string;
   /** @nullable */
   name: string | null;
   /** @nullable */
   picture: string | null;
+  /** Account esterni collegati (Google, GitHub) */
+  identities: LinkedIdentity[];
+  /** Se il login e il collegamento con GitHub sono configurati sul server */
+  githubEnabled: boolean;
+}
+
+export interface AuthProviders {
+  google: boolean;
+  /** Se il login con GitHub è configurato sul server */
+  github: boolean;
 }
 
 export type AppStatus = typeof AppStatus[keyof typeof AppStatus];
@@ -78,6 +132,11 @@ export interface App {
   /** Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto) */
   sourceTokenSet: boolean;
   /**
+     * Installazione della GitHub App da cui l'architetto scarica il repo (con un token ristretto a quel repo); null = token manuale della fase 3
+     * @nullable
+     */
+  sourceInstallationId: number | null;
+  /**
      * URL dell'OpenAPI dell'app, letto (GET) dall'architetto
      * @nullable
      */
@@ -111,6 +170,11 @@ export interface AppInput {
   sourceBranch?: string | null;
   /** Token GitHub di sola lettura (solo scrittura, salvato cifrato) */
   sourceToken?: string;
+  /**
+     * Installazione della GitHub App dell'utente che vede sourceRepo (solo con sourceType github); altrimenti 400 "installazione non trovata o non tua"
+     * @nullable
+     */
+  sourceInstallationId?: number | null;
   /** @nullable */
   openapiUrl?: string | null;
   /** @nullable */
@@ -144,6 +208,11 @@ export interface AppUpdate {
      * @nullable
      */
   sourceToken?: string | null;
+  /**
+     * Installazione della GitHub App dell'utente che vede sourceRepo; null torna al token manuale. Passando a un sourceType diverso da github diventa null da sola
+     * @nullable
+     */
+  sourceInstallationId?: number | null;
   /** @nullable */
   openapiUrl?: string | null;
   /** @nullable */
@@ -632,9 +701,19 @@ export type ConflictResponse = ErrorResponse;
 export type UnauthorizedResponse = ErrorResponse;
 
 /**
+ * Risorsa non accessibile all'utente corrente
+ */
+export type ForbiddenResponse = ErrorResponse;
+
+/**
  * Risorsa non trovata
  */
 export type NotFoundResponse = ErrorResponse;
+
+/**
+ * Servizio esterno non raggiungibile
+ */
+export type BadGatewayResponse = ErrorResponse;
 
 /**
  * Corpo della richiesta troppo grande

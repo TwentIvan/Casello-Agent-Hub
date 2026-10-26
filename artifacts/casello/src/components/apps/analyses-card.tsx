@@ -82,7 +82,14 @@ export function AnalysesCard({ app }: { app: App }) {
       title: status === 409 ? "c'è già un'analisi in corso" : "Avvio non riuscito",
       // Il 413 può arrivare anche da nginx con una pagina HTML: messaggio fisso
       description:
-        status === 409 ? undefined : status === 413 ? "L'archivio supera il limite di 50 MB." : apiErrorMessage(error),
+        status === 409
+          ? undefined
+          : status === 413
+            ? "L'archivio supera il limite di 50 MB."
+            : status === 403
+              ? // Installazione GitHub dell'app non collegata dall'utente che avvia
+                `${apiErrorMessage(error)}: collega GitHub dalla pagina Account o usa un token manuale.`
+              : apiErrorMessage(error),
     });
   };
   const startAnalysis = useStartAnalysis({ mutation: { onSuccess: onStarted, onError } });

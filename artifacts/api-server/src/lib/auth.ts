@@ -1,12 +1,18 @@
 // Autenticazione: login Google (OIDC, authorization code + PKCE), sessione su Postgres con cookie
-// httpOnly e middleware che protegge /api. Accedono solo gli indirizzi in ALLOWED_EMAILS.
+// httpOnly e middleware che protegge /api. Chi entra lo decide isAllowed (users.ts); la sessione porta
+// l'id dell'utente (userId) più i dati da mostrare.
 
-import { Router, type IRouter, type RequestHandler } from "express";
-import session from "express-session";
+import { Router, type IRouter, type Request, type RequestHandler } from "express";
+import session, { type SessionData } from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import * as oidc from "openid-client";
-import { pool } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import { db, pool, usersTable } from "@workspace/db";
+import { GetAuthProvidersResponse, GetCurrentUserResponse } from "@workspace/api-zod";
+import { githubConfig } from "./github/config";
+import { githubAuthRouter } from "./github/oauth-routes";
 import { logger } from "./logger";
+import { IdentityConflictError, ensureUserByEmail, isAllowed, listIdentities, resolveLogin } from "./users";
 
 export interface SessionUser {
   email: string;
@@ -16,8 +22,24 @@ export interface SessionUser {
 
 declare module "express-session" {
   interface SessionData {
+    /** Utente di Casello. Manca nelle sessioni della fase 1: si ricava da user.email alla prima richiesta. */
+    userId?: number;
+    /** Dati da mostrare (email, nome, foto). */
     user?: SessionUser;
     oidc?: { state: string; nonce: string; codeVerifier: string; returnTo: string };
+    /** Login o collegamento GitHub in corso (state e PKCE). */
+    github?: { state: string; codeVerifier: string; mode: "login" | "link"; returnTo: string };
+  }
+}
+
+// Il Request di express-serve-static-core estende Express.Request: si aumenta questo, perché il
+// pacchetto dei tipi non è una dipendenza diretta dell'API (pnpm non lo rende risolvibile)
+declare global {
+  namespace Express {
+    interface Request {
+      /** Impostato da requireAuth. */
+      userId?: number;
+    }
   }
 }
 
@@ -45,7 +67,6 @@ interface AuthConfig {
   clientSecret: string;
   redirectUri: string;
   publicAppUrl: string;
-  allowedEmails: Set<string>;
   sessionSecret: string;
 }
 
@@ -55,13 +76,8 @@ function loadConfig(): AuthConfig | null {
     return null;
   }
   const publicAppUrl = requireEnv("PUBLIC_APP_URL").replace(/\/$/, "");
-  const allowedEmails = new Set(
-    (process.env.ALLOWED_EMAILS ?? "")
-      .split(",")
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean),
-  );
-  if (allowedEmails.size === 0) {
+  // isAllowed rilegge ALLOWED_EMAILS a ogni login: qui solo l'avviso all'avvio
+  if (!(process.env.ALLOWED_EMAILS ?? "").split(",").some((email) => email.trim())) {
     logger.warn("ALLOWED_EMAILS è vuota: nessuno potrà accedere.");
   }
   return {
@@ -70,7 +86,6 @@ function loadConfig(): AuthConfig | null {
     clientSecret: requireEnv("GOOGLE_CLIENT_SECRET"),
     redirectUri: `${publicAppUrl}/api/auth/callback`,
     publicAppUrl,
-    allowedEmails,
     sessionSecret: requireEnv("SESSION_SECRET"),
   };
 }
@@ -98,9 +113,25 @@ function getOidcConfiguration(cfg: AuthConfig): Promise<oidc.Configuration> {
   return discovered;
 }
 
-/** Accetta solo percorsi interni ("/runs/3"), mai URL esterni o "//host". */
-function safeReturnTo(value: unknown): string {
-  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//") ? value : "/";
+const RETURN_TO_BASE = "http://casello.invalid";
+
+/**
+ * Accetta solo percorsi interni ("/runs/3"), mai URL esterni. Rifiutati "//host" e "/\\host" (i
+ * browser trattano la barra rovesciata come "/"), qualsiasi barra rovesciata e i caratteri di
+ * controllo (che i browser scartano, es. "/\t/host"). Per sicurezza il percorso, risolto su
+ * un'origine fittizia, deve restare su quell'origine.
+ */
+export function safeReturnTo(value: unknown): string {
+  // eslint-disable-next-line no-control-regex
+  if (typeof value !== "string" || !/^\/(?![/\\])/.test(value) || /[\\\x00-\x1f\x7f]/.test(value)) return "/";
+  try {
+    const url = new URL(value, RETURN_TO_BASE);
+    // Dopo la normalizzazione (`/..//evil.com`, `/.%2e//evil.com`) il percorso non deve iniziare con `//`
+    if (url.origin !== RETURN_TO_BASE || url.pathname.startsWith("//")) return "/";
+  } catch {
+    return "/";
+  }
+  return value;
 }
 
 export function sessionMiddleware(): RequestHandler {
@@ -115,24 +146,81 @@ export function sessionMiddleware(): RequestHandler {
   });
 }
 
-export const requireAuth: RequestHandler = (req, res, next) => {
-  if (authDisabled || req.session.user) {
+/**
+ * Id dell'utente della sessione. Una sessione della fase 1 (solo user.email) viene convertita: si
+ * trova o crea l'utente da quell'email e si scrive userId nella sessione. Null senza utente.
+ */
+export async function resolveSessionUserId(session: Partial<Pick<SessionData, "userId" | "user">>): Promise<number | null> {
+  if (session.userId !== undefined) return session.userId;
+  const legacy = session.user;
+  if (!legacy?.email) return null;
+  const user = await ensureUserByEmail(legacy.email, legacy.name, legacy.picture);
+  session.userId = user.id;
+  return user.id;
+}
+
+/**
+ * Utente di sviluppo (AUTH_DISABLED), creato al bisogno. Nessuna cache: i test svuotano le tabelle e
+ * un id in memoria potrebbe puntare a una riga sparita; in sviluppo una query in più non pesa.
+ */
+async function devUserId(): Promise<number> {
+  return (await ensureUserByEmail(DEV_USER.email, DEV_USER.name, DEV_USER.picture)).id;
+}
+
+/**
+ * Id dell'utente della richiesta senza rispondere 401 (route pubbliche come la callback GitHub):
+ * utente di sviluppo con AUTH_DISABLED, altrimenti quello della sessione; null senza utente.
+ */
+export async function sessionUserId(req: Request): Promise<number | null> {
+  return authDisabled ? devUserId() : resolveSessionUserId(req.session);
+}
+
+/** Protegge /api (o una singola route): imposta req.userId oppure risponde 401. */
+export const requireAuth: RequestHandler = async (req, res, next) => {
+  try {
+    const userId = await sessionUserId(req);
+    if (userId === null) {
+      res.status(401).json({ error: "Login richiesto" });
+      return;
+    }
+    req.userId = userId;
     next();
-    return;
+  } catch (err) {
+    next(err);
   }
-  res.status(401).json({ error: "Login richiesto" });
 };
+
+/** Id dell'utente impostato da requireAuth; lancia se la route non è protetta. */
+export function currentUserId(req: Request): number {
+  if (req.userId === undefined) throw new Error("req.userId assente: la route non passa da requireAuth");
+  return req.userId;
+}
 
 export function authRouter(): IRouter {
   const router: IRouter = Router();
 
-  router.get("/auth/me", (req, res) => {
-    const user = authDisabled ? DEV_USER : req.session.user;
+  router.get("/auth/me", async (req, res) => {
+    // Anche qui una sessione della fase 1 viene convertita (è la prima richiesta della UI)
+    const userId = await sessionUserId(req);
+    const [user] = userId === null ? [] : await db.select().from(usersTable).where(eq(usersTable.id, userId));
     if (!user) {
       res.status(401).json({ error: "Login richiesto" });
       return;
     }
-    res.json(user);
+    res.json(
+      GetCurrentUserResponse.parse({
+        email: user.email,
+        name: user.name,
+        picture: user.picture,
+        identities: await listIdentities(user.id),
+        githubEnabled: githubConfig() !== null,
+      }),
+    );
+  });
+
+  // Pubblica: la pagina di login la chiama prima che esista una sessione
+  router.get("/auth/providers", (_req, res) => {
+    res.json(GetAuthProvidersResponse.parse({ google: true, github: githubConfig() !== null }));
   });
 
   router.post("/auth/logout", (req, res, next) => {
@@ -145,6 +233,14 @@ export function authRouter(): IRouter {
       res.status(204).end();
     });
   });
+
+  // Login e collegamento GitHub solo se l'App è configurata. Con AUTH_DISABLED non c'è la config
+  // del login: l'origine della UI si prende da PUBLIC_APP_URL o dal Vite locale.
+  const github = githubConfig();
+  if (github) {
+    const publicAppUrl = config?.publicAppUrl ?? (process.env.PUBLIC_APP_URL ?? "http://localhost:5173").replace(/\/$/, "");
+    router.use(githubAuthRouter(github, { publicAppUrl }));
+  }
 
   if (!config) return router;
   const cfg = config;
@@ -191,17 +287,25 @@ export function authRouter(): IRouter {
       const claims = tokens.claims();
       const email = typeof claims?.email === "string" ? claims.email.toLowerCase() : null;
 
-      if (!email || claims?.email_verified !== true || !cfg.allowedEmails.has(email)) {
+      if (!email || claims?.email_verified !== true || !isAllowed([email])) {
         logger.warn({ email }, "Login rifiutato: account non autorizzato");
         res.redirect("/?auth=denied");
         return;
       }
 
-      const user: SessionUser = {
-        email,
-        name: typeof claims?.name === "string" ? claims.name : null,
-        picture: typeof claims?.picture === "string" ? claims.picture : null,
-      };
+      const name = typeof claims?.name === "string" ? claims.name : null;
+      const picture = typeof claims?.picture === "string" ? claims.picture : null;
+      // Identità Google → utente (esistente, trovato per email o nuovo)
+      const dbUser = await resolveLogin({
+        provider: "google",
+        providerUserId: claims!.sub,
+        emails: [email],
+        primaryEmail: email,
+        username: null,
+        name,
+        picture,
+      });
+      const user: SessionUser = { email: dbUser.email, name: dbUser.name, picture: dbUser.picture };
       // Nuovo id di sessione al login (contro la session fixation).
       req.session.regenerate((err) => {
         if (err) {
@@ -209,11 +313,16 @@ export function authRouter(): IRouter {
           res.redirect("/?auth=error");
           return;
         }
+        req.session.userId = dbUser.id;
         req.session.user = user;
         req.session.save(() => res.redirect(pending.returnTo));
       });
     } catch (err) {
-      logger.error({ err }, "Callback OIDC fallita");
+      if (err instanceof IdentityConflictError) {
+        logger.warn({ reason: err.message }, "Login Google rifiutato: conflitto di identità");
+      } else {
+        logger.error({ err }, "Callback OIDC fallita");
+      }
       res.redirect("/?auth=error");
     }
   });

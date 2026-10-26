@@ -159,6 +159,20 @@ beforeEach(async () => {
   await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
 });
 
+describe("sessione senza login (AUTH_DISABLED)", () => {
+  it("GET /auth/me: utente di sviluppo creato al bisogno, senza identità", async () => {
+    const res = await api("GET", "/auth/me");
+    expect(res.status).toBe(200);
+    expect(res.json).toEqual({
+      email: "dev@localhost",
+      name: "Sviluppo locale",
+      picture: null,
+      identities: [],
+      githubEnabled: false,
+    });
+  });
+});
+
 describe("app", () => {
   it("creazione: slug, agente generale in bozza, segreto cifrato e mai restituito", async () => {
     const res = await api("POST", "/apps", { name: "Mister App", baseUrl: "http://mister.example", serviceSecret: SECRET });

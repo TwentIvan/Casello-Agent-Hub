@@ -36,6 +36,11 @@ export interface App {
   /** Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto) */
   sourceTokenSet: boolean;
   /**
+     * Installazione della GitHub App da cui l'architetto scarica il repo (con un token ristretto a quel repo); null = token manuale della fase 3
+     * @nullable
+     */
+  sourceInstallationId: number | null;
+  /**
      * URL dell'OpenAPI dell'app, letto (GET) dall'architetto
      * @nullable
      */

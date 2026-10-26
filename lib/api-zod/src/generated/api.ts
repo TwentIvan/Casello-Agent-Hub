@@ -23,7 +23,23 @@ export const HealthCheckResponse = zod.object({
 export const GetCurrentUserResponse = zod.object({
   "email": zod.string(),
   "name": zod.string().nullable(),
-  "picture": zod.string().nullable()
+  "picture": zod.string().nullable(),
+  "identities": zod.array(zod.object({
+  "provider": zod.enum(['google', 'github']),
+  "username": zod.string().nullable().describe('Login GitHub (null per Google)'),
+  "email": zod.string().nullable()
+})).describe('Account esterni collegati (Google, GitHub)'),
+  "githubEnabled": zod.boolean().describe('Se il login e il collegamento con GitHub sono configurati sul server')
+})
+
+
+/**
+ * Pubblica (senza sessione), serve alla pagina di login per mostrare i pulsanti.
+ * @summary Metodi di accesso disponibili
+ */
+export const GetAuthProvidersResponse = zod.object({
+  "google": zod.boolean(),
+  "github": zod.boolean().describe('Se il login con GitHub è configurato sul server')
 })
 
 
@@ -31,6 +47,13 @@ export const GetCurrentUserResponse = zod.object({
  * @summary Chiude la sessione
  */
 export const LogoutResponse = zod.void()
+
+
+/**
+ * Rimuove l'identità GitHub dell'utente corrente e le installazioni dell'App a lui collegate. Risponde 409 se l'utente resterebbe senza modo di entrare (nessun'altra identità ed email non ammessa).
+ * @summary Scollega l'account GitHub e le sue installazioni
+ */
+export const UnlinkGithubResponse = zod.void()
 
 
 /**
@@ -60,6 +83,7 @@ export const ListAppsResponseItem = zod.object({
   "sourceRepo": zod.string().nullable().describe('Repository GitHub nel formato owner\/nome'),
   "sourceBranch": zod.string().nullable(),
   "sourceTokenSet": zod.boolean().describe('Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto)'),
+  "sourceInstallationId": zod.number().nullable().describe('Installazione della GitHub App da cui l\'architetto scarica il repo (con un token ristretto a quel repo); null = token manuale della fase 3'),
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "status": zod.enum(['active', 'inactive']),
@@ -96,6 +120,7 @@ export const CreateAppBody = zod.object({
   "sourceRepo": zod.string().nullish(),
   "sourceBranch": zod.string().nullish(),
   "sourceToken": zod.string().optional().describe('Token GitHub di sola lettura (solo scrittura, salvato cifrato)'),
+  "sourceInstallationId": zod.number().nullish().describe('Installazione della GitHub App dell\'utente che vede sourceRepo (solo con sourceType github); altrimenti 400 \"installazione non trovata o non tua\"'),
   "openapiUrl": zod.string().nullish(),
   "functionalDescription": zod.string().nullish(),
   "status": zod.enum(['active', 'inactive']).optional()
@@ -125,6 +150,7 @@ export const CreateAppResponse = zod.object({
   "sourceRepo": zod.string().nullable().describe('Repository GitHub nel formato owner\/nome'),
   "sourceBranch": zod.string().nullable(),
   "sourceTokenSet": zod.boolean().describe('Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto)'),
+  "sourceInstallationId": zod.number().nullable().describe('Installazione della GitHub App da cui l\'architetto scarica il repo (con un token ristretto a quel repo); null = token manuale della fase 3'),
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "status": zod.enum(['active', 'inactive']),
@@ -164,6 +190,7 @@ export const GetAppResponse = zod.object({
   "sourceRepo": zod.string().nullable().describe('Repository GitHub nel formato owner\/nome'),
   "sourceBranch": zod.string().nullable(),
   "sourceTokenSet": zod.boolean().describe('Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto)'),
+  "sourceInstallationId": zod.number().nullable().describe('Installazione della GitHub App da cui l\'architetto scarica il repo (con un token ristretto a quel repo); null = token manuale della fase 3'),
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "status": zod.enum(['active', 'inactive']),
@@ -203,6 +230,7 @@ export const UpdateAppBody = zod.object({
   "sourceRepo": zod.string().nullish(),
   "sourceBranch": zod.string().nullish(),
   "sourceToken": zod.string().nullish().describe('Token GitHub di sola lettura (solo scrittura); null lo cancella'),
+  "sourceInstallationId": zod.number().nullish().describe('Installazione della GitHub App dell\'utente che vede sourceRepo; null torna al token manuale. Passando a un sourceType diverso da github diventa null da sola'),
   "openapiUrl": zod.string().nullish(),
   "functionalDescription": zod.string().nullish(),
   "status": zod.enum(['active', 'inactive']).optional()
@@ -232,6 +260,7 @@ export const UpdateAppResponse = zod.object({
   "sourceRepo": zod.string().nullable().describe('Repository GitHub nel formato owner\/nome'),
   "sourceBranch": zod.string().nullable(),
   "sourceTokenSet": zod.boolean().describe('Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto)'),
+  "sourceInstallationId": zod.number().nullable().describe('Installazione della GitHub App da cui l\'architetto scarica il repo (con un token ristretto a quel repo); null = token manuale della fase 3'),
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "status": zod.enum(['active', 'inactive']),
@@ -728,7 +757,7 @@ export const ListAnalysesResponse = zod.array(ListAnalysesResponseItem)
 
 
 /**
- * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso.
+ * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso. Con sourceInstallationId non serve il token manuale, ma l'utente corrente deve avere quell'installazione (altrimenti 403 "installazione non trovata o non tua").
  * @summary Avvia un'analisi leggendo le sorgenti configurate sull'app
  */
 export const StartAnalysisParams = zod.object({
@@ -933,6 +962,35 @@ export const DeleteAgentSkillParams = zod.object({
 })
 
 export const DeleteAgentSkillResponse = zod.void()
+
+
+/**
+ * Installazioni salvate per l'utente corrente, con il link per gestirle e quello per installare l'App su un altro account. 404 se GitHub non è configurato.
+ * @summary Installazioni dell'App GitHub collegate all'utente
+ */
+export const ListGithubInstallationsResponse = zod.object({
+  "installUrl": zod.string().describe('Pagina di GitHub in cui installare l\'App'),
+  "installations": zod.array(zod.object({
+  "installationId": zod.number(),
+  "accountLogin": zod.string(),
+  "accountType": zod.string().describe('User o Organization'),
+  "repositorySelection": zod.string().describe('all o selected'),
+  "manageUrl": zod.string().describe('Pagina di GitHub in cui gestire l\'installazione')
+}))
+})
+
+
+/**
+ * Repository di tutte le installazioni dell'utente, ordinati per nome completo, senza doppioni. Un'installazione revocata (401/404 da GitHub) viene eliminata per l'utente e saltata. 404 se GitHub non è configurato; 502 se GitHub non risponde.
+ * @summary Repository visibili all'App nelle installazioni dell'utente
+ */
+export const ListGithubReposResponseItem = zod.object({
+  "installationId": zod.number(),
+  "fullName": zod.string().describe('proprietario\/nome'),
+  "defaultBranch": zod.string(),
+  "private": zod.boolean()
+})
+export const ListGithubReposResponse = zod.array(ListGithubReposResponseItem)
 
 
 /**

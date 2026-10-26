@@ -3,9 +3,10 @@
 // della proposta, log e token. Ogni uscita chiude l'analisi come completed, failed o
 // interrupted: nessuna resta `running`.
 //
-// Il token GitHub viene decifrato solo in memoria subito prima del download e non compare mai
-// in log, `error`, `sources` o eccezioni. Degli errori sconosciuti non si salva il messaggio
-// (potrebbe contenere URL o dati): solo un testo generico in italiano.
+// Il token GitHub (manuale, decifrato, o di installazione dell'App, ristretto al repo) esiste solo
+// in memoria subito prima del download e non compare mai in log, `error`, `sources` o eccezioni.
+// Degli errori sconosciuti non si salva il messaggio (potrebbe contenere URL o dati): solo un
+// testo generico in italiano.
 
 import { and, eq, inArray } from "drizzle-orm";
 import { APIError } from "openai";
@@ -27,6 +28,8 @@ import {
 import { aiGateway, type ChatResult } from "../ai-gateway";
 import { logger } from "../logger";
 import { decryptSecret } from "../secrets";
+import { GITHUB_MESSAGES, GithubError, forgetInstallationTokens, installationToken } from "../github/app";
+import { githubConfig, type GithubConfig } from "../github/config";
 import { loadAppConnection } from "../tools/catalog";
 import { diffAgents, diffAlwaysNew, diffSkills, diffTools, type DiffEntry } from "./diff";
 import { runPhase, type PhaseBudget } from "./phase-loop";
@@ -62,8 +65,10 @@ const INTERRUPTED_ERROR = "Analisi interrotta dal riavvio del server.";
 export interface StartAnalysisOptions {
   /** Archivio caricato dall'utente: resta solo in memoria. */
   zip?: Uint8Array;
-  /** Solo per i test: host delle API GitHub. */
+  /** Solo per i test: host delle API GitHub (token manuale). */
   githubApiBase?: string;
+  /** Solo per i test: configurazione della GitHub App (null = non configurata); default githubConfig(). */
+  githubConfig?: GithubConfig | null;
   /** Solo per i test: durata massima dell'analisi (default ANALYSIS_MAX_MS). */
   maxMs?: number;
   /** Solo per i test: orologio. */
@@ -81,6 +86,38 @@ class AnalysisError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "AnalysisError";
+  }
+}
+
+const BRANCH_NOT_FOUND = "repository o branch non trovato: controlla il branch nelle sorgenti dell'app";
+
+/**
+ * Codice dal repo tramite l'installazione della GitHub App: token ristretto al repo e a
+ * `contents: read`, generato subito prima del download. 401 sul download con quel token vuol dire
+ * accesso revocato: si scarta il token in cache e si usa il messaggio della spec; 404 vuol dire
+ * repo o branch inesistente.
+ */
+async function fetchViaInstallation(app: App & { sourceRepo: string }, installationId: number, opts: StartAnalysisOptions): Promise<SourceTree> {
+  const cfg = opts.githubConfig !== undefined ? opts.githubConfig : githubConfig();
+  if (!cfg) throw new AnalysisError(GITHUB_MESSAGES.notConfigured);
+  let token: string;
+  try {
+    token = await installationToken(cfg, installationId, { repo: app.sourceRepo });
+  } catch (err) {
+    if (err instanceof GithubError) throw new AnalysisError(err.message);
+    throw err;
+  }
+  try {
+    return await fetchGithubTree({ repo: app.sourceRepo, branch: app.sourceBranch, token, apiBase: cfg.apiBase });
+  } catch (err) {
+    if (err instanceof SourceError && err.status === 401) {
+      forgetInstallationTokens(installationId);
+      throw new AnalysisError(GITHUB_MESSAGES.noAccess);
+    }
+    // Il token appena emesso è ristretto proprio a questo repo: l'installazione lo vede, quindi un
+    // 404 vuol dire repo o branch inesistente, non accesso perso (il token resta valido)
+    if (err instanceof SourceError && err.status === 404) throw new AnalysisError(BRANCH_NOT_FOUND);
+    throw err;
   }
 }
 
@@ -160,6 +197,12 @@ async function loadSources(app: App, opts: StartAnalysisOptions, log: (m: string
       tree = SourceTree.fromZip(opts.zip, { stripTopFolder: true });
       code = "zip";
       log(`codice: archivio zip (${tree.fileCount} file)`);
+    } else if (app.sourceType === "github" && app.sourceInstallationId != null) {
+      // Tramite l'installazione della GitHub App: nessun token manuale
+      if (!app.sourceRepo) throw new AnalysisError("sorgente GitHub senza repo: imposta owner/nome nelle sorgenti dell'app");
+      tree = await fetchViaInstallation({ ...app, sourceRepo: app.sourceRepo }, app.sourceInstallationId, opts);
+      code = "github";
+      log(`codice: GitHub ${app.sourceRepo} tramite l'App (${tree.fileCount} file)`);
     } else if (app.sourceType === "github") {
       if (!app.sourceRepo) throw new AnalysisError("sorgente GitHub senza repo: imposta owner/nome nelle sorgenti dell'app");
       if (!app.sourceTokenEnc) throw new AnalysisError("sorgente GitHub senza token: imposta il token nelle sorgenti dell'app");

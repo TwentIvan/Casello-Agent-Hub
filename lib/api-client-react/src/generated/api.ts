@@ -36,12 +36,17 @@ import type {
   AppToolInput,
   AppToolUpdate,
   AppUpdate,
+  AuthProviders,
+  BadGatewayResponse,
   BadRequestResponse,
   ConflictResponse,
   CurrentUser,
   DashboardStats,
   ErrorResponse,
   ExportAnalysisIssuesParams,
+  ForbiddenResponse,
+  GithubInstallations,
+  GithubRepo,
   HealthStatus,
   IssueExport,
   ListAgentsParams,
@@ -239,6 +244,84 @@ export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUs
 
 
 
+export const getGetAuthProvidersUrl = () => {
+
+
+
+
+  return `/api/auth/providers`
+}
+
+/**
+ * Pubblica (senza sessione), serve alla pagina di login per mostrare i pulsanti.
+ * @summary Metodi di accesso disponibili
+ */
+export const getAuthProviders = async ( options?: RequestInit): Promise<AuthProviders> => {
+
+  return customFetch<AuthProviders>(getGetAuthProvidersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAuthProvidersQueryKey = () => {
+    return [
+    `/api/auth/providers`
+    ] as const;
+    }
+
+
+export const getGetAuthProvidersQueryOptions = <TData = Awaited<ReturnType<typeof getAuthProviders>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAuthProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAuthProvidersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAuthProviders>>> = ({ signal }) => getAuthProviders({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAuthProviders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAuthProvidersQueryResult = NonNullable<Awaited<ReturnType<typeof getAuthProviders>>>
+export type GetAuthProvidersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Metodi di accesso disponibili
+ */
+
+export function useGetAuthProviders<TData = Awaited<ReturnType<typeof getAuthProviders>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAuthProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAuthProvidersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getLogoutUrl = () => {
 
 
@@ -307,6 +390,77 @@ export const useLogout = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getLogoutMutationOptions(options));
+    }
+
+export const getUnlinkGithubUrl = () => {
+
+
+
+
+  return `/api/auth/github`
+}
+
+/**
+ * Rimuove l'identità GitHub dell'utente corrente e le installazioni dell'App a lui collegate. Risponde 409 se l'utente resterebbe senza modo di entrare (nessun'altra identità ed email non ammessa).
+ * @summary Scollega l'account GitHub e le sue installazioni
+ */
+export const unlinkGithub = async ( options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getUnlinkGithubUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getUnlinkGithubMutationOptions = <TError = ErrorType<UnauthorizedResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unlinkGithub>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unlinkGithub>>, TError,void, TContext> => {
+
+const mutationKey = ['unlinkGithub'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unlinkGithub>>, void> = () => {
+
+
+          return  unlinkGithub(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnlinkGithubMutationResult = NonNullable<Awaited<ReturnType<typeof unlinkGithub>>>
+
+    export type UnlinkGithubMutationError = ErrorType<UnauthorizedResponse | ConflictResponse>
+
+    /**
+ * @summary Scollega l'account GitHub e le sue installazioni
+ */
+export const useUnlinkGithub = <TError = ErrorType<UnauthorizedResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unlinkGithub>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unlinkGithub>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getUnlinkGithubMutationOptions(options));
     }
 
 export const getListAppsUrl = () => {
@@ -411,7 +565,7 @@ export const createApp = async (appInput: AppInput, options?: RequestInit): Prom
 
 
 
-export const getCreateAppMutationOptions = <TError = ErrorType<unknown>,
+export const getCreateAppMutationOptions = <TError = ErrorType<BadRequestResponse | BadGatewayResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createApp>>, TError,{data: BodyType<AppInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createApp>>, TError,{data: BodyType<AppInput>}, TContext> => {
 
@@ -440,12 +594,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateAppMutationResult = NonNullable<Awaited<ReturnType<typeof createApp>>>
     export type CreateAppMutationBody = BodyType<AppInput>
-    export type CreateAppMutationError = ErrorType<unknown>
+    export type CreateAppMutationError = ErrorType<BadRequestResponse | BadGatewayResponse>
 
     /**
  * @summary Registra una nuova app
  */
-export const useCreateApp = <TError = ErrorType<unknown>,
+export const useCreateApp = <TError = ErrorType<BadRequestResponse | BadGatewayResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createApp>>, TError,{data: BodyType<AppInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createApp>>,
@@ -559,7 +713,7 @@ export const updateApp = async (id: number,
 
 
 
-export const getUpdateAppMutationOptions = <TError = ErrorType<NotFoundResponse>,
+export const getUpdateAppMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | BadGatewayResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateApp>>, TError,{id: number;data: BodyType<AppUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateApp>>, TError,{id: number;data: BodyType<AppUpdate>}, TContext> => {
 
@@ -588,12 +742,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateAppMutationResult = NonNullable<Awaited<ReturnType<typeof updateApp>>>
     export type UpdateAppMutationBody = BodyType<AppUpdate>
-    export type UpdateAppMutationError = ErrorType<NotFoundResponse>
+    export type UpdateAppMutationError = ErrorType<BadRequestResponse | NotFoundResponse | BadGatewayResponse>
 
     /**
  * @summary Aggiorna una app
  */
-export const useUpdateApp = <TError = ErrorType<NotFoundResponse>,
+export const useUpdateApp = <TError = ErrorType<BadRequestResponse | NotFoundResponse | BadGatewayResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateApp>>, TError,{id: number;data: BodyType<AppUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updateApp>>,
@@ -1879,7 +2033,7 @@ export const getStartAnalysisUrl = (id: number,) => {
 }
 
 /**
- * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso.
+ * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso. Con sourceInstallationId non serve il token manuale, ma l'utente corrente deve avere quell'installazione (altrimenti 403 "installazione non trovata o non tua").
  * @summary Avvia un'analisi leggendo le sorgenti configurate sull'app
  */
 export const startAnalysis = async (id: number,
@@ -1897,7 +2051,7 @@ export const startAnalysis = async (id: number,
 
 
 
-export const getStartAnalysisMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+export const getStartAnalysisMutationOptions = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startAnalysis>>, TError,{id: number;data: BodyType<AnalysisStart>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof startAnalysis>>, TError,{id: number;data: BodyType<AnalysisStart>}, TContext> => {
 
@@ -1926,12 +2080,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type StartAnalysisMutationResult = NonNullable<Awaited<ReturnType<typeof startAnalysis>>>
     export type StartAnalysisMutationBody = BodyType<AnalysisStart>
-    export type StartAnalysisMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+    export type StartAnalysisMutationError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse>
 
     /**
  * @summary Avvia un'analisi leggendo le sorgenti configurate sull'app
  */
-export const useStartAnalysis = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+export const useStartAnalysis = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startAnalysis>>, TError,{id: number;data: BodyType<AnalysisStart>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof startAnalysis>>,
@@ -2409,6 +2563,162 @@ export const useDeleteAgentSkill = <TError = ErrorType<NotFoundResponse>,
       > => {
       return useMutation(getDeleteAgentSkillMutationOptions(options));
     }
+
+export const getListGithubInstallationsUrl = () => {
+
+
+
+
+  return `/api/github/installations`
+}
+
+/**
+ * Installazioni salvate per l'utente corrente, con il link per gestirle e quello per installare l'App su un altro account. 404 se GitHub non è configurato.
+ * @summary Installazioni dell'App GitHub collegate all'utente
+ */
+export const listGithubInstallations = async ( options?: RequestInit): Promise<GithubInstallations> => {
+
+  return customFetch<GithubInstallations>(getListGithubInstallationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListGithubInstallationsQueryKey = () => {
+    return [
+    `/api/github/installations`
+    ] as const;
+    }
+
+
+export const getListGithubInstallationsQueryOptions = <TData = Awaited<ReturnType<typeof listGithubInstallations>>, TError = ErrorType<NotFoundResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGithubInstallations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListGithubInstallationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listGithubInstallations>>> = ({ signal }) => listGithubInstallations({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGithubInstallations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListGithubInstallationsQueryResult = NonNullable<Awaited<ReturnType<typeof listGithubInstallations>>>
+export type ListGithubInstallationsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Installazioni dell'App GitHub collegate all'utente
+ */
+
+export function useListGithubInstallations<TData = Awaited<ReturnType<typeof listGithubInstallations>>, TError = ErrorType<NotFoundResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGithubInstallations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListGithubInstallationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListGithubReposUrl = () => {
+
+
+
+
+  return `/api/github/repos`
+}
+
+/**
+ * Repository di tutte le installazioni dell'utente, ordinati per nome completo, senza doppioni. Un'installazione revocata (401/404 da GitHub) viene eliminata per l'utente e saltata. 404 se GitHub non è configurato; 502 se GitHub non risponde.
+ * @summary Repository visibili all'App nelle installazioni dell'utente
+ */
+export const listGithubRepos = async ( options?: RequestInit): Promise<GithubRepo[]> => {
+
+  return customFetch<GithubRepo[]>(getListGithubReposUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListGithubReposQueryKey = () => {
+    return [
+    `/api/github/repos`
+    ] as const;
+    }
+
+
+export const getListGithubReposQueryOptions = <TData = Awaited<ReturnType<typeof listGithubRepos>>, TError = ErrorType<NotFoundResponse | BadGatewayResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGithubRepos>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListGithubReposQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listGithubRepos>>> = ({ signal }) => listGithubRepos({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGithubRepos>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListGithubReposQueryResult = NonNullable<Awaited<ReturnType<typeof listGithubRepos>>>
+export type ListGithubReposQueryError = ErrorType<NotFoundResponse | BadGatewayResponse>
+
+
+/**
+ * @summary Repository visibili all'App nelle installazioni dell'utente
+ */
+
+export function useListGithubRepos<TData = Awaited<ReturnType<typeof listGithubRepos>>, TError = ErrorType<NotFoundResponse | BadGatewayResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGithubRepos>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListGithubReposQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetDashboardStatsUrl = () => {
 

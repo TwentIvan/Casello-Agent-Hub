@@ -11,7 +11,7 @@ tags:
   - name: health
     description: Health operations
   - name: auth
-    description: Login Google e sessione (tutte le altre route richiedono la sessione, tranne /healthz)
+    description: Login (Google, GitHub) e sessione (tutte le altre route richiedono la sessione, tranne /healthz e /auth/providers)
   - name: apps
     description: Applicazioni registrate
   - name: agents
@@ -24,6 +24,8 @@ tags:
     description: Statistiche aggregate
   - name: models
     description: Modelli AI selezionabili
+  - name: github
+    description: Installazioni e repository dell'App GitHub di Casello
   - name: architect
     description: Analisi dell'architetto (proposte su tool, agenti, skill, endpoint ed evoluzione) e skill degli agenti
 
@@ -44,6 +46,7 @@ paths:
 
   # ─── Auth ───────────────────────────────────────────────────────────────────
   # /auth/login e /auth/callback sono redirect del flusso OIDC (Google), non chiamate JSON.
+  # Lo stesso vale per /auth/github/login, /auth/github/link e /auth/github/callback (GitHub).
 
   /auth/me:
     get:
@@ -60,6 +63,20 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /auth/providers:
+    get:
+      operationId: getAuthProviders
+      tags: [auth]
+      summary: Metodi di accesso disponibili
+      description: Pubblica (senza sessione), serve alla pagina di login per mostrare i pulsanti.
+      responses:
+        "200":
+          description: Metodi di accesso configurati sul server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthProviders"
+
   /auth/logout:
     post:
       operationId: logout
@@ -68,6 +85,23 @@ paths:
       responses:
         "204":
           description: Sessione chiusa
+
+  /auth/github:
+    delete:
+      operationId: unlinkGithub
+      tags: [auth]
+      summary: Scollega l'account GitHub e le sue installazioni
+      description: >
+        Rimuove l'identità GitHub dell'utente corrente e le installazioni dell'App a lui collegate.
+        Risponde 409 se l'utente resterebbe senza modo di entrare (nessun'altra identità ed email
+        non ammessa).
+      responses:
+        "204":
+          description: Account GitHub scollegato
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   # ─── Apps ───────────────────────────────────────────────────────────────────
 
@@ -102,6 +136,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/App"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          $ref: "#/components/responses/BadGateway"
 
   /apps/{id}:
     get:
@@ -138,8 +176,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/App"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/BadGateway"
     delete:
       operationId: deleteApp
       tags: [apps]
@@ -526,7 +568,9 @@ paths:
       summary: Avvia un'analisi leggendo le sorgenti configurate sull'app
       description: >-
         Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI,
-        descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso.
+        descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso. Con
+        sourceInstallationId non serve il token manuale, ma l'utente corrente deve avere quell'installazione
+        (altrimenti 403 "installazione non trovata o non tua").
       parameters:
         - $ref: "#/components/parameters/IdParam"
       requestBody:
@@ -544,6 +588,8 @@ paths:
                 $ref: "#/components/schemas/Analysis"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -708,6 +754,49 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  # ─── GitHub ─────────────────────────────────────────────────────────────────
+
+  /github/installations:
+    get:
+      operationId: listGithubInstallations
+      tags: [github]
+      summary: Installazioni dell'App GitHub collegate all'utente
+      description: >-
+        Installazioni salvate per l'utente corrente, con il link per gestirle e quello per
+        installare l'App su un altro account. 404 se GitHub non è configurato.
+      responses:
+        "200":
+          description: Installazioni e link di installazione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GithubInstallations"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /github/repos:
+    get:
+      operationId: listGithubRepos
+      tags: [github]
+      summary: Repository visibili all'App nelle installazioni dell'utente
+      description: >-
+        Repository di tutte le installazioni dell'utente, ordinati per nome completo, senza doppioni.
+        Un'installazione revocata (401/404 da GitHub) viene eliminata per l'utente e saltata.
+        404 se GitHub non è configurato; 502 se GitHub non risponde.
+      responses:
+        "200":
+          description: Repository
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GithubRepo"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
   # ─── Dashboard ──────────────────────────────────────────────────────────────
 
   /dashboard/stats:
@@ -785,8 +874,22 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
 
+    Forbidden:
+      description: Risorsa non accessibile all'utente corrente
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
     NotFound:
       description: Risorsa non trovata
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    BadGateway:
+      description: Servizio esterno non raggiungibile
       content:
         application/json:
           schema:
@@ -816,17 +919,93 @@ components:
       required:
         - error
 
+    # ── GitHub ─────────────────────────────────────────────────────────────────
+    GithubInstallation:
+      type: object
+      required: [installationId, accountLogin, accountType, repositorySelection, manageUrl]
+      properties:
+        installationId:
+          type: integer
+        accountLogin:
+          type: string
+        accountType:
+          type: string
+          description: User o Organization
+        repositorySelection:
+          type: string
+          description: all o selected
+        manageUrl:
+          type: string
+          description: Pagina di GitHub in cui gestire l'installazione
+
+    GithubInstallations:
+      type: object
+      required: [installUrl, installations]
+      properties:
+        installUrl:
+          type: string
+          description: Pagina di GitHub in cui installare l'App
+        installations:
+          type: array
+          items:
+            $ref: "#/components/schemas/GithubInstallation"
+
+    GithubRepo:
+      type: object
+      required: [installationId, fullName, defaultBranch, private]
+      properties:
+        installationId:
+          type: integer
+        fullName:
+          type: string
+          description: proprietario/nome
+        defaultBranch:
+          type: string
+        private:
+          type: boolean
+
     # ── Auth ───────────────────────────────────────────────────────────────────
 
     CurrentUser:
       type: object
-      required: [email, name, picture]
+      required: [email, name, picture, identities, githubEnabled]
       properties:
         email:
           type: string
         name:
           type: ["string", "null"]
         picture:
+          type: ["string", "null"]
+        identities:
+          type: array
+          description: Account esterni collegati (Google, GitHub)
+          items:
+            $ref: "#/components/schemas/LinkedIdentity"
+        githubEnabled:
+          type: boolean
+          description: Se il login e il collegamento con GitHub sono configurati sul server
+
+    AuthProviders:
+      type: object
+      required: [google, github]
+      properties:
+        google:
+          type: boolean
+        github:
+          type: boolean
+          description: Se il login con GitHub è configurato sul server
+
+    LinkedIdentity:
+      type: object
+      required: [provider, username, email]
+      properties:
+        provider:
+          type: string
+          enum: [google, github]
+        username:
+          type: ["string", "null"]
+          description: Login GitHub (null per Google)
+        email:
           type: ["string", "null"]
 
     # ── App ────────────────────────────────────────────────────────────────────
@@ -853,7 +1032,7 @@ components:
 
     App:
       type: object
-      required: [id, name, slug, baseUrl, status, serviceSecretSet, sourceType, sourceRepo, sourceBranch, sourceTokenSet, openapiUrl, functionalDescription, createdAt, updatedAt]
+      required: [id, name, slug, baseUrl, status, serviceSecretSet, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -889,6 +1068,11 @@ components:
         sourceTokenSet:
           type: boolean
           description: Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto)
+        sourceInstallationId:
+          type: ["integer", "null"]
+          description: >-
+            Installazione della GitHub App da cui l'architetto scarica il repo (con un token ristretto
+            a quel repo); null = token manuale della fase 3
         openapiUrl:
           type: ["string", "null"]
           description: URL dell'OpenAPI dell'app, letto (GET) dall'architetto
@@ -938,6 +1122,11 @@ components:
         sourceToken:
           type: string
           description: Token GitHub di sola lettura (solo scrittura, salvato cifrato)
+        sourceInstallationId:
+          type: ["integer", "null"]
+          description: >-
+            Installazione della GitHub App dell'utente che vede sourceRepo (solo con sourceType github);
+            altrimenti 400 "installazione non trovata o non tua"
         openapiUrl:
           type: ["string", "null"]
         functionalDescription:
@@ -978,6 +1167,11 @@ components:
         sourceToken:
           type: ["string", "null"]
           description: Token GitHub di sola lettura (solo scrittura); null lo cancella
+        sourceInstallationId:
+          type: ["integer", "null"]
+          description: >-
+            Installazione della GitHub App dell'utente che vede sourceRepo; null torna al token manuale.
+            Passando a un sourceType diverso da github diventa null da sola
         openapiUrl:
           type: ["string", "null"]
         functionalDescription:

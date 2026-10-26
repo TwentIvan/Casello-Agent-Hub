@@ -42,14 +42,15 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `lib/api-spec/openapi.yaml` — contratto API, fonte di verità (contract-first)
 - `lib/api-client-react/src/generated/` — client generato da Orval: NON modificare a mano
 - `lib/db/src/schema/` — schema Drizzle, una tabella per file (apps, agents, app_tools, agent_tools, runs,
-  run_steps, sessions, analyses, analysis_items, agent_skills)
+  run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
   `POST /api/runs/:id/resume` (conferma o annulla l'azione in sospeso), `/api/dashboard/stats`,
   `/api/models`, `/api/healthz`; architetto: `GET|POST /api/apps/:id/analyses`,
   `POST /api/apps/:id/analyses/zip` (corpo zip grezzo), `GET /api/analyses/:id`,
-  `GET /api/analyses/:id/issues`, `PATCH /api/analysis-items/:id`, `GET|DELETE /api/agents/:id/skills`. Body, parametri e query si leggono con `parseRequest` (errore → 400);
+  `GET /api/analyses/:id/issues`, `PATCH /api/analysis-items/:id`, `GET|DELETE /api/agents/:id/skills`; GitHub: `GET /api/github/installations`, `GET /api/github/repos`
+  (login e collegamento in `/api/auth/github/*`, vedi "Autenticazione"). Body, parametri e query si leggono con `parseRequest` (errore → 400);
   le risposte con `*Response.parse` (errore → 500, è un bug del server)
 - `artifacts/api-server/src/lib/auth.ts` — login Google (OIDC), sessione e middleware che protegge `/api`
 - `artifacts/api-server/src/lib/models.ts` — modelli selezionabili e default (`openrouter/auto`)
@@ -64,6 +65,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `artifacts/api-server/src/lib/tools/` — catalogo (`catalog.ts`), validazione delle definizioni
   (`definition.ts`), esecutore HTTP (`executor.ts`), oscuramento degli argomenti sensibili (`sensitive.ts`)
 - `artifacts/api-server/src/lib/secrets.ts` — cifratura AES-256-GCM dei segreti di servizio (anche il token GitHub)
+- `artifacts/api-server/src/lib/users.ts` — utenti e identità (`isAllowed`, `resolveLogin`, `linkIdentity`, `unlinkIdentity`)
+- `artifacts/api-server/src/lib/github/` — GitHub App: configurazione (`config.ts`), client con JWT e token di
+  installazione (`app.ts`), login/collegamento/callback (`oauth-routes.ts`), sincronizzazione delle installazioni
+  (`installations.ts`); finto GitHub per i test in `artifacts/api-server/test/fake-github.ts`
 - `artifacts/api-server/src/lib/architect/` — architetto: sorgenti in memoria (`source-tree.ts`, `zip-reader.ts`,
   `search-worker.ts`, `sources.ts`), schemi ed esempi delle fasi (`schemas.ts`, `prompts.ts`), ciclo di fase
   (`phase-loop.ts`), orchestrazione (`run-analysis.ts`), differenze/applicazione/issue (`diff.ts`, `apply.ts`, `issues.ts`)
@@ -134,6 +139,24 @@ arriva da `GET /api/models` (costante in `lib/models.ts`: va tenuta allineata a 
 - In produzione, se manca una variabile di login, l'API non parte (meglio giù che aperta).
   `AUTH_DISABLED=true` salta il login solo in sviluppo ed è rifiutata con `NODE_ENV=production`.
 - Client OAuth su Google Cloud: redirect URI autorizzato `${PUBLIC_APP_URL}/api/auth/callback`.
+- Utenti in `users`, identità (`google`, `github`) in `user_identities`; la sessione contiene `userId` (le
+  sessioni vecchie con solo l'email vengono convertite alla prima richiesta). Chi entra lo decide solo
+  `isAllowed` in `lib/users.ts` (oggi: un'email verificata in `ALLOWED_EMAILS`).
+- Login con GitHub (facoltativo) tramite la GitHub App "Casello": `/api/auth/github/login`,
+  `/api/auth/github/link` (da loggati), un'unica callback `/api/auth/github/callback` (anche per il ritorno
+  dall'installazione: un `code` senza il nostro `state` non viene mai scambiato), `DELETE /api/auth/github`.
+  `GET /api/auth/providers` (pubblica) dice alla pagina di login se GitHub è attivo. Pagina Account nella
+  console per accessi e installazioni.
+- Repository: le installazioni dell'App (`github_installations`, per utente) si sincronizzano a ogni
+  callback; `GET /api/github/installations`, `GET /api/github/repos`. Un'app con `source_installation_id`
+  fa scaricare all'architetto il codice con un token di installazione limitato a quel repo e a
+  `contents: read` (un'ora, solo in memoria). Nessun token GitHub viene salvato. Il token manuale della
+  fase 3 resta come alternativa.
+- Limite noto: l'ambito di un'installazione può superare i repo a cui l'utente ha accesso su GitHub; prima
+  di aprire Casello a chiunque va verificato l'accesso con il token dell'utente (spec GitHub, §5).
+- GitHub App su github.com: permessi Contents read, Metadata read, Email addresses read (account); "Request
+  user authorization (OAuth) during installation" attivo, nessun Setup URL, nessun webhook; Callback URL
+  `${PUBLIC_APP_URL}/api/auth/github/callback`.
 
 ## Deploy (non toccare senza motivo)
 
@@ -152,6 +175,9 @@ arriva da `GET /api/models` (costante in `lib/models.ts`: va tenuta allineata a 
   (origine della UI, `https://casello.fantamister.cloud`: usata dal login e dal CORS, che in produzione
   accetta solo quella e in dev qualsiasi `localhost`); per il login `GOOGLE_CLIENT_ID`,
   `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, `ALLOWED_EMAILS` (separati da virgola); `OIDC_ISSUER` solo per i test.
+  GitHub (tutte facoltative: se ne manca una GitHub è disattivato e nei log compaiono i nomi mancanti):
+  `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`,
+  `GITHUB_APP_PRIVATE_KEY` (PEM, a capo veri o `\n`); `GITHUB_API_BASE`/`GITHUB_WEB_BASE` solo per i test.
 - nginx inoltra all'API l'`X-Forwarded-Proto` ricevuto da Traefik: serve al cookie `secure`.
 - Healthcheck di `casello-api`: `GET /api/healthz` sulla porta 3000. È nel `HEALTHCHECK` di
   `docker/api.Dockerfile` (con `node`, l'immagine slim non ha curl/wget); su Coolify impostarlo anche
@@ -160,7 +186,7 @@ arriva da `GET /api/models` (costante in `lib/models.ts`: va tenuta allineata a 
   l'IP reale arriva da `trust proxy` = 2 (Traefik di Coolify + nginx di `casello-web`).
 - Schema DB: le modifiche arrivano in produzione SOLO con gli script SQL in `docs/migrations/`, applicati
   al DB Neon con `psql -v ON_ERROR_STOP=1 -f docs/migrations/<file>.sql` (prima del deploy dell'API
-  che li usa). MAI `drizzle-kit push` in produzione: cancellerebbe dati (es. la vecchia tabella `tools`
+  che li usa: cioè PRIMA del merge, perché il merge deploya da solo). MAI `drizzle-kit push` in produzione: cancellerebbe dati (es. la vecchia tabella `tools`
   convertita dalla migrazione). Ogni modifica a `lib/db/src/schema/` va riportata in
   `docs/schema-casello.sql` (usato anche dai test) e in uno script di `docs/migrations/`, e va segnalata nella PR.
 

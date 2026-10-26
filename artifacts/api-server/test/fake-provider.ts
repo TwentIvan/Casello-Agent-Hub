@@ -32,6 +32,8 @@ export interface FakeToolCall {
   name: string;
   /** Argomenti già serializzati in JSON, come li manda il provider. */
   arguments: string;
+  /** Campi in più della tool call, come la firma del ragionamento di Gemini (`extra_content`). */
+  extra?: Record<string, unknown>;
 }
 
 export interface FakeChatReply {
@@ -158,6 +160,7 @@ export async function startFakeProvider(opts: Partial<Omit<FakeProvider, "baseUr
           id: t.id,
           type: "function",
           function: { name: t.name, arguments: t.arguments },
+          ...t.extra,
         }));
       }
       const response: Record<string, unknown> = {

@@ -162,6 +162,21 @@ describe("runAgentLoop", () => {
     expectValidHistory(out.state.messages);
   });
 
+  it("rimanda la firma del ragionamento della tool call (Gemini 3)", async () => {
+    const extra = { extra_content: { google: { thought_signature: "firma-123" } } };
+    const first = callTools([{ id: "c1", name: "leggi_rosa", args: "{}" }]);
+    first.toolCalls[0]!.extra = extra;
+    const { deps, seen } = makeDeps([first, reply("fatto")]);
+    await runAgentLoop(initialState(), deps);
+    const assistant = seen[1]![1] as unknown as { tool_calls: Record<string, unknown>[] };
+    expect(assistant.tool_calls[0]).toEqual({
+      id: "c1",
+      type: "function",
+      function: { name: "leggi_rosa", arguments: "{}" },
+      ...extra,
+    });
+  });
+
   it("errore del tool registrato come passo non riuscito e restituito al modello", async () => {
     const { deps, steps, seen } = makeDeps(
       [callTools([{ id: "c1", name: "leggi_rosa", args: "{}" }]), reply("ok")],

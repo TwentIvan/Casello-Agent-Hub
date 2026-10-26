@@ -100,6 +100,21 @@ function base(chat: ReturnType<typeof scripted>["chat"], over: Partial<Parameter
 }
 
 describe("runPhase", () => {
+  it("rimanda la firma del ragionamento della tool call (Gemini 3)", async () => {
+    const extra = { extra_content: { google: { thought_signature: "firma-123" } } };
+    const read = { ...call("read_file", { path: "src/a.ts" }), extra };
+    const s = scripted([reply([read]), reply([call("submit_result", { result: validMap })]), reply([])]);
+    const { input } = base(s.chat);
+    await runPhase(input);
+    const assistant = s.calls[1]!.messages.find((m) => m.role === "assistant") as unknown as { tool_calls: Record<string, unknown>[] };
+    expect(assistant.tool_calls[0]).toEqual({
+      id: read.id,
+      type: "function",
+      function: { name: "read_file", arguments: read.arguments },
+      ...extra,
+    });
+  });
+
   it("legge un file e consegna un esito valido", async () => {
     const s = scripted([
       reply([call("read_file", { path: "src/a.ts" })]),

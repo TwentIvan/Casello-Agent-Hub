@@ -298,6 +298,17 @@ describe("modelChat", () => {
     return resolveModel(aiModelId, { userId: alice, mustOwn: false });
   }
 
+  it("conserva i campi in più delle tool call (firma del ragionamento di Gemini)", async () => {
+    const extra = { extra_content: { google: { thought_signature: "firma-123" } } };
+    fake.chatReply = {
+      content: null,
+      toolCalls: [{ id: "call_1", name: "get_user", arguments: "{}", extra }],
+      usage: { prompt_tokens: 10, completion_tokens: 5 },
+    };
+    const out = await modelChat(await resolved(), { messages: MESSAGES, tools: TOOLS, caller: "test" });
+    expect(out.toolCalls).toEqual([{ id: "call_1", name: "get_user", arguments: "{}", extra }]);
+  });
+
   it("manda la chiave dell'account, restituisce tool calls, token e costo", async () => {
     fake.chatReply = {
       content: null,

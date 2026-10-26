@@ -3,6 +3,8 @@ import { logger } from "./lib/logger";
 import { failInterruptedAnalyses } from "./lib/architect/run-analysis";
 import { expireStalePausedRuns, failInterruptedRuns } from "./lib/run-executor";
 import { ensureSystemAccount } from "./lib/ai/system-account";
+import { failInterruptedCatalogRuns } from "./lib/catalog/refresh";
+import { startCatalogScheduler } from "./lib/catalog/scheduler";
 import { assertSecretKey } from "./lib/secrets";
 
 // In produzione la chiave dei segreti è obbligatoria: meglio fallire all'avvio che alla prima cifratura.
@@ -35,6 +37,16 @@ failInterruptedAnalyses()
     if (count > 0) logger.warn({ count }, "Analisi rimaste aperte al riavvio segnate come interrotte");
   })
   .catch((err: unknown) => logger.error({ err }, "Chiusura delle analisi interrotte non riuscita"));
+
+// Aggiornamenti del catalogo rimasti in corso: chiusi come falliti, poi parte il controllo settimanale.
+failInterruptedCatalogRuns()
+  .then((count) => {
+    if (count > 0) logger.warn({ count }, "Aggiornamenti del catalogo interrotti dal riavvio chiusi come falliti");
+  })
+  .catch((err: unknown) =>
+    logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Chiusura degli aggiornamenti del catalogo interrotti non riuscita"),
+  )
+  .finally(() => startCatalogScheduler());
 
 // Account AI di sistema dalle variabili del gateway attuale; collega agenti e analisi esistenti.
 // Un errore non blocca l'avvio: si logga solo il nome, mai il messaggio.

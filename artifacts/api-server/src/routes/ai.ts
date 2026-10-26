@@ -37,6 +37,7 @@ import {
 import { currentUserId } from "../lib/auth";
 import { ANALYSIS_DEFAULT_MAX_TOKENS } from "../lib/architect/run-analysis";
 import { discoverModels, ProviderError, type DiscoveredModel } from "../lib/ai/discovery";
+import { upsertDiscovered, verifyAccount, type Tx } from "../lib/ai/accounts";
 import { normalizeBaseUrl, PROVIDERS, validateBaseUrl, type AiProvider } from "../lib/ai/providers";
 import { systemAccountConfigured } from "../lib/ai/system-account";
 import { isUniqueViolation } from "../lib/pg-errors";
@@ -47,8 +48,6 @@ import { parseRequest } from "../middlewares/error-handler";
 // Account AI dell'utente (provider, chiave cifrata, modelli e prezzi) e stima dei costi.
 // Ogni route vede solo gli account dell'utente corrente più l'account di sistema (gateway di
 // Casello), che si può leggere ma non modificare. La chiave non esce mai: solo `keySet`.
-
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const ACCOUNT_NOT_FOUND = "account non trovato";
 const MODEL_NOT_FOUND = "modello non trovato";
@@ -205,89 +204,6 @@ async function visibleAccountsSorted(userId: number): Promise<AiAccount[]> {
 /** Blocca la riga dell'utente: serializza le operazioni sul predefinito (indice unico parziale). */
 async function lockUser(tx: Tx, userId: number): Promise<void> {
   await tx.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, userId)).for("update");
-}
-
-/**
- * Salva i modelli scoperti: inserisce i nuovi; sugli esistenti aggiorna il contesto e i prezzi (solo
- * se non sono stati inseriti a mano), mai il nome (le rinomine dell'utente restano). I modelli non più elencati restano (agenti e analisi
- * possono usarli) e il flag `discovered` degli esistenti non cambia.
- */
-async function upsertDiscovered(tx: Tx, accountId: number, models: DiscoveredModel[]): Promise<void> {
-  const manual = sql`${aiModelsTable.priceSource} = 'manual'`;
-  for (let i = 0; i < models.length; i += 500) {
-    const chunk = models.slice(i, i + 500);
-    await tx
-      .insert(aiModelsTable)
-      .values(
-        chunk.map((m) => ({
-          accountId,
-          modelId: m.modelId,
-          displayName: m.displayName,
-          contextTokens: m.contextTokens,
-          priceInputPerMtok: toPrice(m.priceInput),
-          priceOutputPerMtok: toPrice(m.priceOutput),
-          priceSource: m.priceSource,
-          discovered: true,
-        })),
-      )
-      .onConflictDoUpdate({
-        target: [aiModelsTable.accountId, aiModelsTable.modelId],
-        set: {
-          contextTokens: sql`excluded.context_tokens`,
-          priceInputPerMtok: sql`CASE WHEN ${manual} THEN ${aiModelsTable.priceInputPerMtok} ELSE excluded.price_input_per_mtok END`,
-          priceOutputPerMtok: sql`CASE WHEN ${manual} THEN ${aiModelsTable.priceOutputPerMtok} ELSE excluded.price_output_per_mtok END`,
-          priceSource: sql`CASE WHEN ${manual} THEN ${aiModelsTable.priceSource} ELSE excluded.price_source END`,
-          updatedAt: new Date(),
-        },
-      });
-  }
-}
-
-/**
- * Rilegge i modelli di un account già salvato e ne registra lo stato. Un errore del provider non
- * lancia: l'account passa a `error` con il messaggio fisso. "Nessun elenco dei modelli" non è un
- * errore (i modelli si aggiungono a mano).
- */
-async function verifyAccount(account: AiAccount): Promise<void> {
-  const now = new Date();
-  let models: DiscoveredModel[];
-  try {
-    let apiKey: string | null = null;
-    if (account.apiKeyEnc !== null) {
-      try {
-        apiKey = decryptSecret(account.apiKeyEnc);
-      } catch {
-        // Chiave non decifrabile (es. CASELLO_SECRET_KEY cambiata): va reinserita
-        throw new ProviderError("auth");
-      }
-    }
-    models = await discoverModels({
-      provider: account.provider,
-      baseUrl: account.baseUrl,
-      apiKey,
-      allowPrivateNetwork: account.provider === "custom" && account.allowPrivateNetwork,
-    });
-  } catch (err) {
-    if (!(err instanceof ProviderError)) throw err;
-    if (err.kind === "no_models") {
-      models = [];
-    } else {
-      await db
-        .update(aiAccountsTable)
-        .set({ status: "error", lastError: err.message, lastCheckedAt: now, updatedAt: now })
-        .where(eq(aiAccountsTable.id, account.id));
-      return;
-    }
-  }
-  await db.transaction(async (tx) => {
-    const updated = await tx
-      .update(aiAccountsTable)
-      .set({ status: "ok", lastError: null, lastCheckedAt: now, updatedAt: now })
-      .where(eq(aiAccountsTable.id, account.id))
-      .returning({ id: aiAccountsTable.id });
-    // Account eliminato durante la verifica: niente modelli orfani (la route risponde 404)
-    if (updated.length) await upsertDiscovered(tx, account.id, models);
-  });
 }
 
 /**

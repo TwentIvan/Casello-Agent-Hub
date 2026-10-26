@@ -3,6 +3,7 @@ import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
+import { serializeExtendedProtocol } from "./pglite-protocol";
 
 // Avvia un Postgres in memoria (PGlite) esposto su socket, con lo schema di produzione,
 // e imposta DATABASE_URL prima che i worker importino @workspace/db.
@@ -22,6 +23,9 @@ export default async function setup() {
   const db = await PGlite.create();
   const schemaPath = fileURLToPath(new URL("../../../docs/schema-casello.sql", import.meta.url));
   await db.exec(readFileSync(schemaPath, "utf8"));
+
+  // Senza questo, query concorrenti fuori da una transazione si mescolano (vedi pglite-protocol.ts)
+  serializeExtendedProtocol(db);
 
   const port = await freePort();
   // maxConnections > 1: il Pool dell'API esegue query concorrenti

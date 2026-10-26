@@ -238,8 +238,8 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
                 <Label htmlFor="ai-account-private">Consenti rete privata</Label>
               </div>
               <p className="text-xs text-muted-foreground">
-                Attenzione: permette http e indirizzi della rete interna (es. un modello in locale). Attivalo solo per
-                server che controlli tu.
+                Attenzione: permette http e indirizzi della rete interna (es. un modello su un server della LAN);
+                localhost e gli indirizzi dei metadati restano vietati. Attivalo solo per server che controlli tu.
               </p>
             </div>
           )}

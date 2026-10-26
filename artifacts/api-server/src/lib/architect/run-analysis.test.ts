@@ -17,6 +17,7 @@ import {
   type AnalysisLogEntry,
 } from "@workspace/db";
 import { encryptSecret } from "../secrets";
+import { allowTestLoopback } from "../../../test/fake-provider";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { clearInstallationTokenCache } from "../github/app";
 import type { GithubConfig } from "../github/config";
@@ -358,6 +359,13 @@ afterEach(async () => {
 afterAll(async () => {
   await pool.query("TRUNCATE apps, ai_accounts, users RESTART IDENTITY CASCADE");
 });
+
+// Il finto provider ascolta su 127.0.0.1: deroga dei test al divieto del loopback (vedi allowTestLoopback)
+let restoreLoopback: () => void;
+beforeAll(() => {
+  restoreLoopback = allowTestLoopback();
+});
+afterAll(() => restoreLoopback());
 
 describe("startAnalysis", () => {
   it("esegue le sei fasi, salva mappa ed elementi con le differenze rispetto al DB", async () => {

@@ -13,7 +13,7 @@ import {
   appsTable,
   usersTable,
 } from "@workspace/db";
-import { FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
+import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 import { encryptSecret } from "../lib/secrets";
 
 // API degli account AI su un'app Express vera (porta 0), senza login (AUTH_DISABLED=true: utente di
@@ -170,6 +170,13 @@ afterEach(async () => {
     expect(text).not.toContain(FAKE_PROVIDER_ERROR_TEXT);
   }
 });
+
+// Il finto provider ascolta su 127.0.0.1: deroga dei test al divieto del loopback (vedi allowTestLoopback)
+let restoreLoopback: () => void;
+beforeAll(() => {
+  restoreLoopback = allowTestLoopback();
+});
+afterAll(() => restoreLoopback());
 
 describe("creazione", () => {
   it("crea e verifica: modelli salvati, chiave cifrata e mai esposta, primo account predefinito", async () => {
@@ -436,6 +443,27 @@ describe("modifica", () => {
     // Disattivare il consenso (già falso) è innocuo
     res = await api("PATCH", `/ai/accounts/${ds!.id}`, { allowPrivateNetwork: false, name: "DeepSeek" });
     expect(res.status).toBe(200);
+  });
+
+  it("senza la deroga dei test il loopback è rifiutato anche con il consenso, senza contattarlo (R6)", async () => {
+    const acc = await createAccount();
+    restoreLoopback();
+    try {
+      const before = fake.requests.length;
+      let res = await api("POST", "/ai/accounts", customInput({ name: "Loopback" }));
+      expect(res.status).toBe(400);
+      expect(res.json).toEqual({ error: "indirizzo non consentito" });
+      res = await api("PATCH", `/ai/accounts/${acc.id}`, { baseUrl: "http://localhost:1/v1" });
+      expect(res.status).toBe(400);
+      // L'account già salvato su 127.0.0.1 non viene più contattato: la verifica lo segna in errore
+      res = await api("POST", `/ai/accounts/${acc.id}/verify`);
+      expect(res.json).toMatchObject({ status: "error", lastError: "indirizzo non consentito" });
+      expect(fake.requests.length).toBe(before);
+      const rows = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.name, "Loopback"));
+      expect(rows).toHaveLength(0);
+    } finally {
+      restoreLoopback = allowTestLoopback();
+    }
   });
 });
 

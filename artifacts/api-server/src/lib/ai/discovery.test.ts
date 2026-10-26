@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
+import { afterEach, beforeEach, describe, expect, it, beforeAll, afterAll } from "vitest";
+import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
 import { discoverModels, PROVIDER_MESSAGES, ProviderError } from "./discovery";
 import { PRICE_SEED } from "./price-seed";
 import { normalizeBaseUrl, PROVIDERS, validateBaseUrl } from "./providers";
@@ -35,6 +35,13 @@ async function discoverError(acc: Parameters<typeof discoverModels>[0]): Promise
   throw new Error("atteso un ProviderError");
 }
 
+// Il finto provider ascolta su 127.0.0.1: deroga dei test al divieto del loopback (vedi allowTestLoopback)
+let restoreLoopback: () => void;
+beforeAll(() => {
+  restoreLoopback = allowTestLoopback();
+});
+afterAll(() => restoreLoopback());
+
 describe("PROVIDERS", () => {
   it("ha i base URL della spec", () => {
     expect(PROVIDERS.deepseek.defaultBaseUrl).toBe("https://api.deepseek.com/v1");
@@ -49,6 +56,17 @@ describe("PROVIDERS", () => {
 });
 
 describe("validateBaseUrl", () => {
+  // Qui vale il comportamento di produzione: niente deroga dei test per il loopback
+  let savedOverride: string | undefined;
+  beforeEach(() => {
+    savedOverride = process.env["CASELLO_TEST_ALLOW_LOOPBACK"];
+    delete process.env["CASELLO_TEST_ALLOW_LOOPBACK"];
+  });
+  afterEach(() => {
+    if (savedOverride === undefined) delete process.env["CASELLO_TEST_ALLOW_LOOPBACK"];
+    else process.env["CASELLO_TEST_ALLOW_LOOPBACK"] = savedOverride;
+  });
+
   it("richiede https senza consenso", () => {
     expect(validateBaseUrl("http://x", false)).toBe("indirizzo non consentito");
     expect(validateBaseUrl("https://api.deepseek.com/v1", false)).toBeNull();
@@ -56,33 +74,90 @@ describe("validateBaseUrl", () => {
     expect(validateBaseUrl("non è un url", true)).toBe("indirizzo non consentito");
   });
 
-  it("rifiuta host privati, loopback e localhost senza consenso e li accetta con consenso", () => {
+  it("rifiuta gli host privati senza consenso e li accetta con consenso", () => {
     const privati = [
       "https://10.0.0.1",
       "https://172.16.5.4/v1",
       "https://172.31.255.255",
       "https://192.168.1.1",
-      "https://127.0.0.1:8080/v1",
-      "https://169.254.169.254",
-      "https://0.0.0.0",
-      "https://localhost/v1",
-      "https://api.localhost",
-      "https://LOCALHOST.",
-      "https://[::1]/v1",
+      "https://100.64.0.1",
       "https://[fd12::1]",
-      "https://[fe80::1]",
-      "https://[::ffff:127.0.0.1]",
-      "https://0x7f000001",
+      "https://[fc00::1]",
+      "https://[fd00:ec2::253]",
+      "https://[::ffff:192.168.1.1]",
+      "https://ollama:11434/v1",
+      "https://printer.local",
+      "https://db.internal",
     ];
     for (const u of privati) {
       expect(validateBaseUrl(u, false), u).toBe("indirizzo non consentito");
       expect(validateBaseUrl(u, true), u).toBeNull();
     }
     expect(validateBaseUrl("http://10.0.0.1:11434/v1", true)).toBeNull();
+    expect(validateBaseUrl("http://192.168.1.10/v1", true)).toBeNull();
     // Indirizzi pubblici vicini ai blocchi privati
     expect(validateBaseUrl("https://172.32.0.1", false)).toBeNull();
     expect(validateBaseUrl("https://11.0.0.1", false)).toBeNull();
     expect(validateBaseUrl("https://[2001:db8::1]", false)).toBeNull();
+  });
+
+  it("loopback, link-local, metadati e 0.0.0.0 restano vietati anche con consenso (R6)", () => {
+    const sempreVietati = [
+      "http://127.0.0.1:8080/v1",
+      "https://127.0.0.1",
+      "http://127.1.2.3",
+      "http://0x7f000001",
+      "http://2130706433",
+      "http://localhost:11434/v1",
+      "http://LOCALHOST.",
+      "http://api.localhost",
+      "http://api.LOCALHOST",
+      "http://[::1]/v1",
+      "http://[0:0:0:0:0:0:0:1]",
+      "http://169.254.169.254/latest/meta-data",
+      "http://169.254.1.1",
+      "http://[fe80::1]",
+      "http://[febf::1]",
+      "http://[fd00:ec2::254]",
+      "http://metadata.google.internal",
+      "http://0.0.0.0",
+      "http://0.1.2.3",
+      "http://[::]",
+      // IPv4 incorporati in IPv6
+      "http://[::ffff:127.0.0.1]",
+      "http://[::127.0.0.1]",
+      "http://[::ffff:0:7f00:1]",
+      "http://[64:ff9b::7f00:1]",
+      "http://[::ffff:169.254.169.254]",
+      "http://[64:ff9b::a9fe:a9fe]",
+      "http://[::ffff:0.0.0.0]",
+    ];
+    for (const u of sempreVietati) {
+      expect(validateBaseUrl(u, true), u).toBe("indirizzo non consentito");
+      expect(validateBaseUrl(u, false), u).toBe("indirizzo non consentito");
+    }
+  });
+
+  it("deroga dei test: CASELLO_TEST_ALLOW_LOOPBACK ammette il loopback con consenso, mai in produzione", () => {
+    const savedNodeEnv = process.env["NODE_ENV"];
+    try {
+      process.env["CASELLO_TEST_ALLOW_LOOPBACK"] = "1";
+      process.env["NODE_ENV"] = "test";
+      expect(validateBaseUrl("http://127.0.0.1:8080/v1", true)).toBeNull();
+      expect(validateBaseUrl("http://localhost:8080/v1", true)).toBeNull();
+      expect(validateBaseUrl("http://[::1]:8080/v1", true)).toBeNull();
+      // Solo il loopback e solo con consenso: i metadati restano vietati
+      expect(validateBaseUrl("http://127.0.0.1:8080/v1", false)).toBe("indirizzo non consentito");
+      expect(validateBaseUrl("http://169.254.169.254", true)).toBe("indirizzo non consentito");
+
+      process.env["NODE_ENV"] = "production";
+      expect(validateBaseUrl("http://127.0.0.1:8080/v1", true)).toBe("indirizzo non consentito");
+      expect(validateBaseUrl("http://localhost:8080/v1", true)).toBe("indirizzo non consentito");
+      expect(validateBaseUrl("http://[::1]:8080/v1", true)).toBe("indirizzo non consentito");
+    } finally {
+      if (savedNodeEnv === undefined) delete process.env["NODE_ENV"];
+      else process.env["NODE_ENV"] = savedNodeEnv;
+    }
   });
 
   it("rifiuta CGNAT, IPv4 dentro IPv6, multicast/broadcast, site-local e host interni senza consenso", () => {
@@ -94,8 +169,7 @@ describe("validateBaseUrl", () => {
       "https://[::10.0.0.1]",
       "https://[::ffff:192.168.1.1]",
       "https://[::ffff:100.64.0.1]",
-      "https://[64:ff9b::7f00:1]",
-      "https://[64:ff9b::a9fe:a9fe]",
+      "https://[64:ff9b::a00:1]",
       // multicast e broadcast
       "https://224.0.0.1",
       "https://239.255.255.250",
@@ -107,12 +181,8 @@ describe("validateBaseUrl", () => {
       "https://198.19.255.254",
       "https://240.0.0.1",
       "https://250.1.2.3",
-      // SIIT, 6to4, Teredo
+      // SIIT
       "https://[::ffff:0:a00:1]",
-      "https://[::ffff:0:7f00:1]",
-      "https://[2002:808:808::1]",
-      "https://[2002:c0a8:101::1]",
-      "https://[2001:0:4136:e378::1]",
       // site-local deprecato
       "https://[fec0::1]",
       // host a etichetta singola e suffissi interni
@@ -120,11 +190,15 @@ describe("validateBaseUrl", () => {
       "https://ollama:11434/v1",
       "https://db.internal",
       "https://printer.local",
-      "https://api.LOCALHOST",
     ];
     for (const u of vietati) {
       expect(validateBaseUrl(u, false), u).toBe("indirizzo non consentito");
       expect(validateBaseUrl(u, true), u).toBeNull();
+    }
+    // 6to4 e Teredo: rifiutati sempre (incorporano un IPv4 che non si decodifica)
+    for (const u of ["https://[2002:808:808::1]", "https://[2002:c0a8:101::1]", "https://[2001:0:4136:e378::1]"]) {
+      expect(validateBaseUrl(u, false), u).toBe("indirizzo non consentito");
+      expect(validateBaseUrl(u, true), u).toBe("indirizzo non consentito");
     }
     // Vicini pubblici
     expect(validateBaseUrl("https://100.63.255.255", false)).toBeNull();

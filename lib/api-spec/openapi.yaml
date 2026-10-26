@@ -2087,7 +2087,7 @@ components:
           type: string
         allowPrivateNetwork:
           type: boolean
-          description: Consente http e indirizzi privati (solo provider custom)
+          description: Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati
         isDefault:
           type: boolean
         status:

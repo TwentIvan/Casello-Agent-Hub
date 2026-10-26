@@ -13,7 +13,7 @@ export interface AiAccount {
   name: string;
   provider: AiProvider;
   baseUrl: string;
-  /** Consente http e indirizzi privati (solo provider custom) */
+  /** Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati */
   allowPrivateNetwork: boolean;
   isDefault: boolean;
   status: AiAccountStatus;

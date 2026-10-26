@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db, pool, agentsTable, aiAccountsTable, aiModelsTable, analysesTable, usersTable } from "@workspace/db";
-import { FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
+import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 import { encryptSecret } from "../lib/secrets";
 
 // Scelta del modello negli agenti e nell'avvio delle analisi (account AI), sull'app completa senza
@@ -143,6 +143,13 @@ afterEach(async () => {
     for (const secret of [KEY, OTHER_KEY, GATEWAY_KEY, FAKE_PROVIDER_ERROR_TEXT]) expect(text).not.toContain(secret);
   }
 });
+
+// Il finto provider ascolta su 127.0.0.1: deroga dei test al divieto del loopback (vedi allowTestLoopback)
+let restoreLoopback: () => void;
+beforeAll(() => {
+  restoreLoopback = allowTestLoopback();
+});
+afterAll(() => restoreLoopback());
 
 describe("agenti con aiModelId", () => {
   it("creazione con un modello proprio: salvato con il modelId come testo", async () => {

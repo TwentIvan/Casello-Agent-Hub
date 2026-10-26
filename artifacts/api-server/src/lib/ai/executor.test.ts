@@ -3,7 +3,7 @@ import { APIConnectionTimeoutError, APIUserAbortError } from "openai";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { eq } from "drizzle-orm";
 import { db, pool, aiAccountsTable, aiModelsTable, usersTable } from "@workspace/db";
-import { FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
+import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
 import { encryptSecret } from "../secrets";
 import { logger } from "../logger";
 import { ProviderError } from "./discovery";
@@ -112,6 +112,13 @@ function expectClean(err: unknown): void {
 }
 
 const MESSAGES = [{ role: "user" as const, content: "ciao" }];
+
+// Il finto provider ascolta su 127.0.0.1: deroga dei test al divieto del loopback (vedi allowTestLoopback)
+let restoreLoopback: () => void;
+beforeAll(() => {
+  restoreLoopback = allowTestLoopback();
+});
+afterAll(() => restoreLoopback());
 
 describe("computeCost", () => {
   it("calcola il costo in USD per milione di token", () => {

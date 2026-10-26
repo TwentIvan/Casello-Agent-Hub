@@ -90,18 +90,77 @@ function isPrivateIpv6(ip: string): boolean {
   if ((g[0]! & 0xffc0) === 0xfe80) return true;
   if ((g[0]! & 0xffc0) === 0xfec0) return true;
   if ((g[0]! & 0xff00) === 0xff00) return true;
-  const embeddedV4 = () => `${g[6]! >> 8}.${g[6]! & 0xff}.${g[7]! >> 8}.${g[7]! & 0xff}`;
-  // ::a.b.c.d (IPv4-compatibile) e ::ffff:a.b.c.d (IPv4 mappato)
-  if (g.slice(0, 5).every((x) => x === 0) && (g[5] === 0 || g[5] === 0xffff)) return isPrivateIpv4(embeddedV4());
-  // ::ffff:0:a.b.c.d (SIIT)
-  if (g.slice(0, 4).every((x) => x === 0) && g[4] === 0xffff && g[5] === 0) return isPrivateIpv4(embeddedV4());
-  // 64:ff9b::a.b.c.d (NAT64)
-  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return isPrivateIpv4(embeddedV4());
+  // ::a.b.c.d (IPv4-compatibile), ::ffff:a.b.c.d (mappato), ::ffff:0:a.b.c.d (SIIT), 64:ff9b::a.b.c.d (NAT64)
+  const v4 = embeddedIpv4(g);
+  if (v4 !== null) return isPrivateIpv4(v4);
   // 6to4 (2002::/16) e Teredo (2001:0::/32) incorporano un IPv4 (Teredo anche offuscato): scelta
   // semplice, si rifiutano per intero invece di decodificarlo. Nessun provider reale li usa.
   if (g[0] === 0x2002) return true;
   if (g[0] === 0x2001 && g[1] === 0) return true;
   return false;
+}
+
+/**
+ * IPv4 vietati anche con il consenso alla rete privata (Ruling R6): 0.0.0.0/8, loopback (127/8) e
+ * link-local/metadati (169.254/16). Un IPv4 non valido è vietato.
+ */
+function isAlwaysBlockedIpv4(ip: string): boolean {
+  const p = ip.split(".").map(Number);
+  if (p.length !== 4 || p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
+  const [a, b] = p as [number, number, number, number];
+  return a === 0 || a === 127 || (a === 169 && b === 254);
+}
+
+/** IPv4 incorporato negli ultimi 32 bit di un IPv6 (forme ::/96, ::ffff:0:0/96, SIIT, NAT64); null se assente. */
+function embeddedIpv4(g: number[]): string | null {
+  const v4 = `${g[6]! >> 8}.${g[6]! & 0xff}.${g[7]! >> 8}.${g[7]! & 0xff}`;
+  if (g.slice(0, 5).every((x) => x === 0) && (g[5] === 0 || g[5] === 0xffff)) return v4;
+  if (g.slice(0, 4).every((x) => x === 0) && g[4] === 0xffff && g[5] === 0) return v4;
+  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return v4;
+  return null;
+}
+
+/**
+ * IPv6 vietati anche con il consenso: non specificato (::), loopback (::1), link-local (fe80::/10),
+ * metadati AWS (fd00:ec2::254), gli IPv4 incorporati che ricadono in isAlwaysBlockedIpv4 e i tunnel
+ * 6to4/Teredo (incorporano un IPv4 che non si decodifica). Un IPv6 non valido è vietato.
+ */
+function isAlwaysBlockedIpv6(ip: string): boolean {
+  const g = ipv6Groups(ip);
+  if (!g) return true;
+  if (g.slice(0, 7).every((x) => x === 0) && (g[7] === 0 || g[7] === 1)) return true;
+  if ((g[0]! & 0xffc0) === 0xfe80) return true;
+  if (g[0] === 0xfd00 && g[1] === 0xec2 && g.slice(2, 7).every((x) => x === 0) && g[7] === 0x254) return true;
+  const v4 = embeddedIpv4(g);
+  if (v4 !== null) return isAlwaysBlockedIpv4(v4);
+  if (g[0] === 0x2002) return true;
+  if (g[0] === 0x2001 && g[1] === 0) return true;
+  return false;
+}
+
+/** Nomi vietati anche con il consenso: `localhost`, `*.localhost` e il nome dei metadati di Google Cloud. */
+function isAlwaysBlockedHostname(host: string): boolean {
+  return host === "localhost" || host.endsWith(".localhost") || host === "metadata.google.internal";
+}
+
+/** Loopback (127/8, ::1, localhost): ammesso con il consenso solo dalla deroga dei test. */
+function isLoopback(host: string): boolean {
+  const kind = isIP(host);
+  if (kind === 4) return host.startsWith("127.");
+  if (kind === 6) {
+    const g = ipv6Groups(host);
+    return g !== null && g.slice(0, 7).every((x) => x === 0) && g[7] === 1;
+  }
+  return host === "localhost";
+}
+
+/**
+ * Deroga SOLO per i test: con `CASELLO_TEST_ALLOW_LOOPBACK=1` e `NODE_ENV` diverso da `production` il
+ * consenso alla rete privata ammette anche il loopback, dove ascolta il finto provider dei test. In
+ * produzione la variabile è ignorata.
+ */
+function testLoopbackAllowed(): boolean {
+  return process.env["CASELLO_TEST_ALLOW_LOOPBACK"] === "1" && process.env["NODE_ENV"] !== "production";
 }
 
 /** Nomi che risolvono solo in rete interna: etichetta singola o suffissi riservati. */
@@ -115,8 +174,11 @@ function isInternalHostname(host: string): boolean {
  * consentito". Senza `allowPrivate` servono `https` e un host pubblico (niente nomi a etichetta
  * singola come `localhost`, suffissi `.localhost`/`.local`/`.internal`, né IP letterali non pubblici:
  * privati, CGNAT, loopback, link-local, multicast, IPv4 incorporati in IPv6); con `allowPrivate` (solo provider
- * custom con `allow_private_network`) sono ammessi anche `http` e gli indirizzi privati.
- * Credenziali, query e frammento non sono mai ammessi.
+ * custom con `allow_private_network`) sono ammessi anche `http`, gli IPv4 privati (RFC1918), CGNAT, gli
+ * IPv6 ULA e i nomi interni, ma restano vietati loopback (127/8, ::1, `localhost`, `*.localhost`),
+ * link-local e metadati (169.254/16, fe80::/10, fd00:ec2::254, metadata.google.internal), 0.0.0.0/8 e
+ * `::`, anche nelle forme IPv4 incorporate in IPv6 (Ruling R6: il consenso non diventa uno strumento di
+ * SSRF verso l'host di Casello o i metadati del cloud). Credenziali, query e frammento non sono mai ammessi.
  *
  * Nessuna risoluzione DNS: un nome pubblico che risolve verso un IP privato non viene bloccato qui
  * (fuori dallo scopo di questa validazione).
@@ -131,11 +193,17 @@ export function validateBaseUrl(url: string, allowPrivate: boolean): string | nu
   if (u.protocol !== "https:" && !(allowPrivate && u.protocol === "http:")) return BAD_URL_MESSAGE;
   if (u.username || u.password || u.search || u.hash) return BAD_URL_MESSAGE;
   if (!u.hostname) return BAD_URL_MESSAGE;
-  if (allowPrivate) return null;
 
   // Il parser WHATWG normalizza già gli IPv4 (es. 0x7f000001 → 127.0.0.1) e mette gli IPv6 tra []
   const host = u.hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
   const kind = isIP(host);
+  if (allowPrivate) {
+    if (testLoopbackAllowed() && isLoopback(host)) return null;
+    if (kind === 4) return isAlwaysBlockedIpv4(host) ? BAD_URL_MESSAGE : null;
+    if (kind === 6) return isAlwaysBlockedIpv6(host) ? BAD_URL_MESSAGE : null;
+    return isAlwaysBlockedHostname(host) ? BAD_URL_MESSAGE : null;
+  }
+
   if (kind === 4) return isPrivateIpv4(host) ? BAD_URL_MESSAGE : null;
   if (kind === 6) return isPrivateIpv6(host) ? BAD_URL_MESSAGE : null;
   if (isInternalHostname(host)) return BAD_URL_MESSAGE;

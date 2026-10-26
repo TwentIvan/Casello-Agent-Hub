@@ -1,6 +1,6 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi, beforeAll } from "vitest";
 import { eq } from "drizzle-orm";
 import {
   db,
@@ -24,7 +24,7 @@ import {
 } from "./run-executor";
 import { clearUserToken } from "./user-tokens";
 import { encryptSecret } from "./secrets";
-import { FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
+import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 
 // Finto LiteLLM: risposte in coda, una per chiamata
 let llmReplies: unknown[];
@@ -216,6 +216,13 @@ async function getRun(id: number) {
 async function getSteps(id: number) {
   return db.select().from(runStepsTable).where(eq(runStepsTable.runId, id)).orderBy(runStepsTable.position);
 }
+
+// Il finto provider ascolta su 127.0.0.1: deroga dei test al divieto del loopback (vedi allowTestLoopback)
+let restoreLoopback: () => void;
+beforeAll(() => {
+  restoreLoopback = allowTestLoopback();
+});
+afterAll(() => restoreLoopback());
 
 describe("orchestrazione delle run", () => {
   it("run con tool: succeeded, l'app riceve la richiesta, 3 passi", async () => {

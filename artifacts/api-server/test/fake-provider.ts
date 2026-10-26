@@ -7,6 +7,20 @@ import type { AddressInfo } from "node:net";
  * direttamente dai test; ogni richiesta finisce nel registro `requests`.
  */
 
+/**
+ * Il finto provider ascolta su 127.0.0.1, che `validateBaseUrl` rifiuta anche con il consenso alla rete
+ * privata: i test che lo usano attivano la deroga `CASELLO_TEST_ALLOW_LOOPBACK` (ignorata con
+ * `NODE_ENV=production`). Restituisce la funzione che ripristina il valore precedente.
+ */
+export function allowTestLoopback(): () => void {
+  const previous = process.env["CASELLO_TEST_ALLOW_LOOPBACK"];
+  process.env["CASELLO_TEST_ALLOW_LOOPBACK"] = "1";
+  return () => {
+    if (previous === undefined) delete process.env["CASELLO_TEST_ALLOW_LOOPBACK"];
+    else process.env["CASELLO_TEST_ALLOW_LOOPBACK"] = previous;
+  };
+}
+
 /** Voce grezza di `/models`: i campi extra (name, context_length, pricing…) passano così come sono. */
 export interface FakeProviderModel {
   id: string;

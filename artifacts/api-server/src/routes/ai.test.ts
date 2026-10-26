@@ -440,15 +440,21 @@ describe("modifica", () => {
 });
 
 describe("eliminazione", () => {
-  it("in uso da agenti o analisi → 409 con i nomi; altrimenti 204 e modelli eliminati", async () => {
+  const SOURCES = { code: "none", openapi: false, description: true } as const;
+
+  it("in uso da agenti o analisi in corso → 409 con i nomi; altrimenti 204 e modelli eliminati", async () => {
     const acc = await createAccount();
     const [m] = await modelsOf(acc.id);
     const app = await newApp();
     await db.insert(agentsTable).values({ appId: app.id, name: "Agente Mister", aiModelId: m!.id });
     const [analysis] = await db
       .insert(analysesTable)
-      .values({ appId: app.id, model: "x", aiModelId: m!.id, status: "completed", sources: { code: "none", openapi: false, description: true }, maxTokens: 1000 })
+      .values({ appId: app.id, model: "x", aiModelId: m!.id, status: "running", sources: SOURCES, maxTokens: 1000 })
       .returning();
+    // Le analisi concluse non compaiono nell'elenco
+    await db
+      .insert(analysesTable)
+      .values({ appId: app.id, model: "x", aiModelId: m!.id, status: "completed", sources: SOURCES, maxTokens: 1000 });
     let res = await api("DELETE", `/ai/accounts/${acc.id}`);
     expect(res.status).toBe(409);
     expect(res.json).toEqual({ error: `account usato da: Agente Mister, analisi #${analysis!.id}` });
@@ -458,6 +464,42 @@ describe("eliminazione", () => {
     expect(res.status).toBe(204);
     expect(await modelsOf(acc.id)).toHaveLength(0);
     expect((await api("DELETE", `/ai/accounts/${acc.id}`)).status).toBe(404);
+  });
+
+  it("usato solo da analisi concluse → 204: le analisi perdono il collegamento e tengono modello e costo", async () => {
+    const acc = await createAccount();
+    const [m] = await modelsOf(acc.id);
+    const app = await newApp();
+    const ids: number[] = [];
+    for (const status of ["completed", "failed", "interrupted"] as const) {
+      const [row] = await db
+        .insert(analysesTable)
+        .values({ appId: app.id, model: "deepseek-chat", aiModelId: m!.id, status, sources: SOURCES, maxTokens: 1000, costUsd: "0.012345" })
+        .returning();
+      ids.push(row!.id);
+    }
+    const res = await api("DELETE", `/ai/accounts/${acc.id}`);
+    expect(res.status, res.text).toBe(204);
+    const [analysis] = await db.select().from(analysesTable).where(eq(analysesTable.id, ids[0]!));
+    expect(analysis).toMatchObject({ model: "deepseek-chat", costUsd: "0.012345", aiModelId: null });
+    const rest = await db.select().from(analysesTable);
+    expect(rest.map((r) => r.aiModelId)).toEqual([null, null, null]);
+  });
+
+  it("usato da un'analisi in coda o in esecuzione → 409", async () => {
+    for (const status of ["queued", "running"] as const) {
+      const acc = await createAccount();
+      const [m] = await modelsOf(acc.id);
+      const app = await newApp();
+      const [analysis] = await db
+        .insert(analysesTable)
+        .values({ appId: app.id, model: "x", aiModelId: m!.id, status, sources: SOURCES, maxTokens: 1000 })
+        .returning();
+      const res = await api("DELETE", `/ai/accounts/${acc.id}`);
+      expect(res.status, status).toBe(409);
+      expect(res.json).toEqual({ error: `account usato da: analisi #${analysis!.id}` });
+      expect(await modelsOf(acc.id)).not.toHaveLength(0);
+    }
   });
 
   it("al massimo 10 nomi, poi …", async () => {

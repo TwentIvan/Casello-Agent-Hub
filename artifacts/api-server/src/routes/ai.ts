@@ -291,19 +291,26 @@ async function verifyAccount(account: AiAccount): Promise<void> {
   });
 }
 
-/** "account usato da: <agenti>, analisi #<id>": al massimo 10 nomi, poi "…"; null se libero. */
-async function usedByMessage(accountId: number): Promise<string | null> {
-  const modelIds = db.select({ id: aiModelsTable.id }).from(aiModelsTable).where(eq(aiModelsTable.accountId, accountId));
-  const agents = await db
+/**
+ * "account usato da: <agenti>, analisi #<id>": al massimo 10 nomi, poi "…"; null se libero.
+ * Bloccano l'eliminazione gli agenti e le analisi in coda o in corso; le analisi concluse (completate,
+ * fallite, interrotte) perdono solo il collegamento (ON DELETE SET NULL) e tengono `model` e `cost_usd`.
+ */
+async function usedByMessage(accountId: number, executor: Tx | typeof db = db): Promise<string | null> {
+  const modelIds = executor
+    .select({ id: aiModelsTable.id })
+    .from(aiModelsTable)
+    .where(eq(aiModelsTable.accountId, accountId));
+  const agents = await executor
     .select({ name: agentsTable.name })
     .from(agentsTable)
     .where(inArray(agentsTable.aiModelId, modelIds))
     .orderBy(asc(agentsTable.name), asc(agentsTable.id))
     .limit(USED_BY_MAX_NAMES + 1);
-  const analyses = await db
+  const analyses = await executor
     .select({ id: analysesTable.id })
     .from(analysesTable)
-    .where(inArray(analysesTable.aiModelId, modelIds))
+    .where(and(inArray(analysesTable.aiModelId, modelIds), inArray(analysesTable.status, ["queued", "running"])))
     .orderBy(asc(analysesTable.id))
     .limit(USED_BY_MAX_NAMES + 1);
   const names = [...agents.map((a) => a.name), ...analyses.map((a) => `analisi #${a.id}`)];
@@ -549,16 +556,17 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler } = {}
     const { id } = parseRequest(DeleteAiAccountParams, req.params);
     const account = await findWritableAccount(id, userId, res);
     if (!account) return;
-    const usedBy = await usedByMessage(account.id);
-    if (usedBy) {
-      res.status(409).json({ error: usedBy });
-      return;
-    }
+    let usedBy: string | null;
     try {
-      await db.transaction(async (tx) => {
+      usedBy = await db.transaction(async (tx): Promise<string | null> => {
         await lockUser(tx, userId);
+        // FOR UPDATE sui modelli: chi li sta collegando (agente, nuova analisi) aspetta questa transazione,
+        // quindi il controllo qui sotto vede tutti i riferimenti che contano
+        await tx.select({ id: aiModelsTable.id }).from(aiModelsTable).where(eq(aiModelsTable.accountId, account.id)).for("update");
+        const inUse = await usedByMessage(account.id, tx);
+        if (inUse) return inUse;
         const [deleted] = await tx.delete(aiAccountsTable).where(eq(aiAccountsTable.id, account.id)).returning();
-        if (!deleted?.isDefault) return;
+        if (!deleted?.isDefault) return null;
         // Era il predefinito: lo diventa l'account più vecchio rimasto
         const [oldest] = await tx
           .select({ id: aiAccountsTable.id })
@@ -567,11 +575,16 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler } = {}
           .orderBy(asc(aiAccountsTable.createdAt), asc(aiAccountsTable.id))
           .limit(1);
         if (oldest) await tx.update(aiAccountsTable).set({ isDefault: true }).where(eq(aiAccountsTable.id, oldest.id));
+        return null;
       });
     } catch (err) {
       if (!isForeignKeyViolation(err)) throw err;
-      // Un agente o un'analisi l'ha scelto nel frattempo
+      // Un agente l'ha scelto nel frattempo (rete di sicurezza: il FOR UPDATE lo rende improbabile)
       res.status(409).json({ error: (await usedByMessage(account.id)) ?? "account in uso" });
+      return;
+    }
+    if (usedBy) {
+      res.status(409).json({ error: usedBy });
       return;
     }
     res.status(204).end();

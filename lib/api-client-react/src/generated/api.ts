@@ -3114,7 +3114,7 @@ export const getDeleteAiAccountUrl = (id: number,) => {
 }
 
 /**
- * 409 "account usato da: <nomi>" se un agente o un'analisi usa uno dei suoi modelli. Se era il predefinito, diventa predefinito l'account più vecchio rimasto all'utente.
+ * 409 "account usato da: <nomi>" se un agente o un'analisi in coda o in corso usa uno dei suoi modelli; le analisi concluse perdono solo il collegamento (aiModelId null) e tengono modello e costo. Se era il predefinito, diventa predefinito l'account più vecchio rimasto all'utente.
  * @summary Elimina un account AI e i suoi modelli
  */
 export const deleteAiAccount = async (id: number, options?: RequestInit): Promise<void> => {

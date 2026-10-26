@@ -257,4 +257,4 @@ ALTER TABLE "analyses" ADD COLUMN "cost_usd" numeric(12, 6);
 ALTER TABLE "runs" ADD COLUMN "cost_usd" numeric(12, 6);
 
 ALTER TABLE "agents" ADD CONSTRAINT "agents_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE restrict ON UPDATE no action;
-ALTER TABLE "analyses" ADD CONSTRAINT "analyses_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "analyses" ADD CONSTRAINT "analyses_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action;

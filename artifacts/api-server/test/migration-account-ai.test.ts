@@ -91,7 +91,7 @@ describe("migrazione 2026-10-account-ai", () => {
     expect(m.price_output_per_mtok).toBeNull();
   });
 
-  it("un modello referenziato da un agente o da un'analisi non si elimina (restrict)", async () => {
+  it("un modello referenziato da un agente non si elimina (restrict); da un'analisi sì (set null)", async () => {
     const a = await addAccount(await userId("altro@example.com"), "Con riferimenti");
     const m = await addModel(a, "m-agente");
     await db.query("UPDATE agents SET ai_model_id = $1", [m]);
@@ -104,7 +104,10 @@ describe("migrazione 2026-10-account-ai", () => {
       `INSERT INTO analyses (app_id, model, sources, max_tokens, ai_model_id) VALUES ($1, 'x', '{}', 1000, $2)`,
       [appId, m2],
     );
-    await expect(db.query("DELETE FROM ai_models WHERE id = $1", [m2])).rejects.toThrow(/analyses_ai_model_id_ai_models_id_fk/);
+    await db.query("UPDATE analyses SET status = 'completed', cost_usd = 0.5 WHERE ai_model_id = $1", [m2]);
+    await db.query("DELETE FROM ai_models WHERE id = $1", [m2]);
+    const row = (await db.query<any>("SELECT model, ai_model_id, cost_usd FROM analyses")).rows[0];
+    expect(row).toEqual({ model: "x", ai_model_id: null, cost_usd: "0.500000" });
   });
 
   it("eliminando un account si eliminano i suoi modelli; eliminando l'utente i suoi account", async () => {

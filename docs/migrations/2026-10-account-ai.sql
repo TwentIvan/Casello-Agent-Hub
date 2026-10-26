@@ -55,6 +55,9 @@ ALTER TABLE "analyses" ADD COLUMN IF NOT EXISTS "cost_usd" numeric(12, 6);
 ALTER TABLE "runs" ADD COLUMN IF NOT EXISTS "cost_usd" numeric(12, 6);
 
 DO $$ BEGIN ALTER TABLE "agents" ADD CONSTRAINT "agents_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE restrict ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE "analyses" ADD CONSTRAINT "analyses_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE restrict ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+-- Le analisi concluse perdono solo il collegamento al modello eliminato (model e cost_usd restano).
+-- DROP prima dell'ADD: un DB di sviluppo con la versione precedente (restrict) viene allineato.
+ALTER TABLE "analyses" DROP CONSTRAINT IF EXISTS "analyses_ai_model_id_ai_models_id_fk";
+ALTER TABLE "analyses" ADD CONSTRAINT "analyses_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action;
 
 COMMIT;

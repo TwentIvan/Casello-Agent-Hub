@@ -23,7 +23,8 @@ export const analysesTable = pgTable(
       .notNull()
       .references(() => appsTable.id, { onDelete: "cascade" }),
     model: text("model").notNull(),
-    aiModelId: integer("ai_model_id").references(() => aiModelsTable.id, { onDelete: "restrict" }),
+    // Eliminando il modello l'analisi conclusa perde solo il collegamento: `model` e `cost_usd` restano
+    aiModelId: integer("ai_model_id").references(() => aiModelsTable.id, { onDelete: "set null" }),
     status: analysisStatusEnum("status").notNull().default("queued"),
     sources: jsonb("sources").$type<AnalysisSources>().notNull(),
     maxTokens: integer("max_tokens").notNull(),

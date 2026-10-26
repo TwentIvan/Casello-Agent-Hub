@@ -46,6 +46,8 @@ export interface FakeProvider {
   models: FakeProviderModel[] | null;
   /** Se non null, ogni richiesta riceve questo stato (con corpo d'errore in stile OpenAI; 3xx con `location`). */
   status: number | null;
+  /** Stato forzato per singola rotta (`/models`, `/chat/completions`); prevale su `status`. */
+  statusFor: { models?: number; chat?: number };
   /** Se non null, le richieste con un Bearer diverso ricevono 401. */
   apiKey: string | null;
   /** Risposta di `/chat/completions`: oggetto fisso o funzione del corpo della richiesta. */
@@ -86,6 +88,7 @@ export async function startFakeProvider(opts: Partial<Omit<FakeProvider, "baseUr
     baseUrl: "",
     models: opts.models === undefined ? [{ id: "fake-model" }] : opts.models,
     status: opts.status ?? null,
+    statusFor: opts.statusFor ?? {},
     apiKey: opts.apiKey ?? null,
     chatReply: opts.chatReply ?? { content: "ok", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } },
     delayMs: opts.delayMs ?? 0,
@@ -103,9 +106,11 @@ export async function startFakeProvider(opts: Partial<Omit<FakeProvider, "baseUr
     fake.requests.push({ method, path: url.pathname + url.search, authorization: req.headers.authorization, body });
     if (fake.delayMs > 0) await new Promise((r) => setTimeout(r, fake.delayMs));
 
-    if (fake.status !== null) {
-      const headers: Record<string, string> = fake.status >= 300 && fake.status < 400 ? { location: "/v1/elsewhere" } : {};
-      return send(res, fake.status, errorBody(fake.status), headers);
+    const route = url.pathname === "/v1/models" ? "models" : url.pathname === "/v1/chat/completions" ? "chat" : null;
+    const forced = (route !== null ? fake.statusFor[route] : undefined) ?? fake.status;
+    if (forced !== null) {
+      const headers: Record<string, string> = forced >= 300 && forced < 400 ? { location: "/v1/elsewhere" } : {};
+      return send(res, forced, errorBody(forced), headers);
     }
     if (fake.apiKey !== null && req.headers.authorization !== `Bearer ${fake.apiKey}`) {
       return send(res, 401, errorBody(401));

@@ -81,6 +81,8 @@ export interface StartAnalysisOptions {
   maxMs?: number;
   /** Solo per i test: tetto della singola chiamata al modello (default ARCHITECT_MODEL_TIMEOUT_MS). */
   modelTimeoutMs?: number;
+  /** Solo per i test: pausa prima del nuovo tentativo di una chiamata al modello (default 1 s). */
+  modelRetryDelayMs?: number;
   /** Solo per i test: orologio. */
   now?: () => number;
 }
@@ -329,7 +331,17 @@ const STATUS_HINTS: Record<number, string> = {
   429: " (limite di richieste: riprova più tardi)",
 };
 
-function modelChat(model: string, analysisId: number, deadline: number, maxMs: number, timeoutMs: number, now: () => number) {
+interface ModelChatOptions {
+  model: string;
+  analysisId: number;
+  deadline: number;
+  maxMs: number;
+  timeoutMs: number;
+  retryDelayMs: number;
+  now: () => number;
+}
+
+function modelChat({ model, analysisId, deadline, maxMs, timeoutMs, retryDelayMs, now }: ModelChatOptions) {
   return async (messages: ChatCompletionMessageParam[], tools: ChatCompletionTool[]): Promise<ChatResult> => {
     // La chiamata non può superare la scadenza complessiva (minimo 1 s)
     const signal = AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, deadline - now()));
@@ -351,7 +363,7 @@ function modelChat(model: string, analysisId: number, deadline: number, maxMs: n
       } catch (err) {
         if (signal.aborted || !isRetryable(err)) throw err;
         logger.warn({ analysisId, errName: err instanceof Error ? err.name : "unknown" }, "Chiamata al modello dell'architetto non riuscita: nuovo tentativo");
-        await sleep(MODEL_RETRY_DELAY_MS, undefined, { signal });
+        await sleep(retryDelayMs, undefined, { signal });
         return await call();
       }
     } catch (err) {
@@ -421,7 +433,15 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
 
     // Senza codice né OpenAPI i tool derivano solo dalla descrizione: vanno sempre verificati
     const forceVerification = sources.code === "none" && !sources.openapi;
-    const chat = modelChat(analysis.model, analysisId, budget.deadline, maxMs, opts.modelTimeoutMs ?? ARCHITECT_MODEL_TIMEOUT_MS, now);
+    const chat = modelChat({
+      model: analysis.model,
+      analysisId,
+      deadline: budget.deadline,
+      maxMs,
+      timeoutMs: opts.modelTimeoutMs ?? ARCHITECT_MODEL_TIMEOUT_MS,
+      retryDelayMs: opts.modelRetryDelayMs ?? MODEL_RETRY_DELAY_MS,
+      now,
+    });
     const previous: Partial<Record<PhaseName, unknown>> = {};
     let position = 0;
 

@@ -178,6 +178,8 @@ let llmHangs: boolean;
 let llmStatus: number | null;
 /** Risposte 500 da dare prima di quelle normali. */
 let llm500Remaining: number;
+/** Richieste a cui il finto LiteLLM chiude la connessione senza rispondere. */
+let llmDropRemaining: number;
 let llmPromptTokens: number;
 /** Fasi in cui il modello legge finché non riceve il sollecito del budget della fase. */
 let readUntilNudge: Set<PhaseName>;
@@ -278,6 +280,7 @@ beforeEach(async () => {
   llmHangs = false;
   llmStatus = null;
   llm500Remaining = 0;
+  llmDropRemaining = 0;
   llmPromptTokens = 100;
   readUntilNudge = new Set();
   invalidPhases = new Set();
@@ -292,6 +295,11 @@ beforeEach(async () => {
       const body = JSON.parse(raw);
       llmRequests.push(body);
       if (llmHangs) return;
+      if (llmDropRemaining > 0) {
+        llmDropRemaining -= 1;
+        req.socket.destroy();
+        return;
+      }
       res.setHeader("content-type", "application/json");
       if (llmStatus !== null || llm500Remaining > 0) {
         res.statusCode = llmStatus ?? 500;
@@ -514,7 +522,7 @@ describe("startAnalysis", () => {
     expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["submit_result"]);
   });
 
-  it("la scadenza complessiva interrompe una chiamata al modello che non risponde", async () => {
+  it("la scadenza complessiva interrompe una chiamata al modello che non risponde, senza nuovi tentativi", async () => {
     llmHangs = true;
     const id = await createAnalysis();
     const started = Date.now();
@@ -567,9 +575,43 @@ describe("startAnalysis", () => {
     expect(llmRequests).toHaveLength(13);
   });
 
+  it("errore di connessione (non timeout): un nuovo tentativo e l'analisi prosegue", async () => {
+    llmDropRemaining = 1;
+    const id = await createAnalysis();
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.error).toBeNull();
+    expect(a.status).toBe("completed");
+    expect(llmRequests).toHaveLength(13);
+  });
+
+  it("errore di connessione ripetuto: un solo nuovo tentativo, poi il messaggio generico", async () => {
+    llmDropRemaining = 5;
+    const id = await createAnalysis();
+    await startAnalysis(id, { zip: testZip(), modelRetryDelayMs: 10 });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe("fase map: errore nella chiamata al modello: errore di comunicazione con il gateway dei modelli");
+    expect(llmRequests).toHaveLength(2);
+  });
+
+  it("la scadenza durante la pausa prima del nuovo tentativo: nessun nuovo tentativo", async () => {
+    llmDropRemaining = 5;
+    const id = await createAnalysis();
+    const started = Date.now();
+    // la chiamata dura al minimo 1 s: la scadenza arriva durante la pausa di 5 s
+    await startAnalysis(id, { zip: testZip(), maxMs: 400, modelRetryDelayMs: 5_000 });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toMatch(/tempo massimo dell'analisi \(0\.4 s\) scaduto durante la chiamata al modello/);
+    expect(llmRequests).toHaveLength(1);
+    expect(Date.now() - started).toBeLessThan(4_000);
+  }, 20_000);
+
   it("ogni fase riceve la sua quota (share × maxTokens): il sollecito arriva all'80% della quota", async () => {
-    // 5 000 token per chiamata, tetto 100 000: map ha 25 000 (sollecito a 20 000, dopo 4 chiamate),
-    // capabilities ne ha 15 000 (sollecito a 12 000, dopo 3 chiamate)
+    // 5 000 token per chiamata, tetto 100 000: map ha 22 000 (sollecito a 17 600, dopo 4 chiamate),
+    // capabilities ne ha 13 000 (sollecito a 10 400, dopo 3 chiamate); con quote uguali (1/6 → 13 333,
+    // sollecito a 10 667) map ne farebbe 3
     llmPromptTokens = 4_980;
     readUntilNudge = new Set(["map", "capabilities"]);
     const id = await createAnalysis(appId, { maxTokens: 100_000 });

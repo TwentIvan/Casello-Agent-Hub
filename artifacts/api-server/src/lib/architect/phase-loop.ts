@@ -20,17 +20,19 @@ export const PHASE_MAX_ROUNDS = 25;
 export const MAX_CORRECTIONS = 2;
 
 /**
- * Quota del tetto di token dell'analisi assegnata a ogni fase (somma 1). È una quota morbida: serve
- * solo a sollecitare la consegna; i token non usati da una fase restano alle successive e l'unico
- * limite rigido è il tetto complessivo dell'analisi.
+ * Quota del tetto di token dell'analisi assegnata a ogni fase. È una quota morbida: serve solo a
+ * sollecitare la consegna; i token non usati da una fase restano alle successive e l'unico limite
+ * rigido è il tetto complessivo dell'analisi. La somma (0,88) resta volutamente sotto 1: i giri di
+ * margine dopo il sollecito e le correzioni consumano altri token, e così l'ultima fase non trova il
+ * tetto complessivo già esaurito.
  */
 export const PHASE_TOKEN_SHARES: Record<PhaseName, number> = {
-  map: 0.25,
-  capabilities: 0.15,
-  catalog: 0.2,
-  agents: 0.15,
-  completion: 0.15,
-  evolution: 0.1,
+  map: 0.22,
+  capabilities: 0.13,
+  catalog: 0.18,
+  agents: 0.13,
+  completion: 0.13,
+  evolution: 0.09,
 };
 
 /** Frazione della quota di token (o dei giri) oltre la quale si sollecita la consegna. */
@@ -44,7 +46,8 @@ export const PHASE_NUDGE =
 export const MAX_TOOL_OUTPUT_CHARS = 12_000;
 const MAX_LIST_ENTRIES = 500;
 const MAX_SEARCH_MATCHES = 200;
-const MAX_OPERATIONS = 500;
+// Spazio lasciato, sotto il tetto dell'output, al suggerimento finale (es. come continuare)
+const HINT_RESERVE_CHARS = 300;
 const MAX_SUMMARY_CHARS = 150;
 const MAX_ARG_CHARS = 1_000;
 const MAX_ISSUES = 30;
@@ -127,10 +130,17 @@ export const READ_TOOLS: Record<ReadToolName, ChatCompletionFunctionTool> = {
       required: ["pattern"],
     },
   ),
-  list_operations: fn("list_operations", "Elenca le operazioni del contratto OpenAPI: METODO percorso — operationId — summary.", {
-    type: "object",
-    properties: {},
-  }),
+  list_operations: fn(
+    "list_operations",
+    "Elenca le operazioni del contratto OpenAPI, ordinate per percorso e metodo: METODO percorso — operationId — summary. L'elenco è a pagine: se ci sono altre operazioni, l'ultima riga indica l'offset da usare.",
+    {
+      type: "object",
+      properties: {
+        prefix: { type: "string", description: "Solo le operazioni il cui percorso inizia così, es. /api/squadre" },
+        offset: { type: "integer", description: "Operazioni da saltare (dopo il filtro), per la pagina successiva (default 0)" },
+      },
+    },
+  ),
   read_operation: fn(
     "read_operation",
     "Descrive un'operazione del contratto OpenAPI: parametri, corpo della richiesta e risposte.",
@@ -244,19 +254,32 @@ const READ_SPECS: Record<ReadToolName, ArgSpec> = {
   list_dir: { path: { type: "string", required: true }, depth: { type: "integer" } },
   read_file: { path: { type: "string", required: true }, fromLine: { type: "integer" }, toLine: { type: "integer" } },
   search: { pattern: { type: "string", required: true }, glob: { type: "string" }, regex: { type: "boolean" } },
-  list_operations: {},
+  list_operations: { prefix: { type: "string" }, offset: { type: "integer" } },
   read_operation: { method: { type: "string", required: true }, path: { type: "string", required: true } },
 };
 
+/**
+ * Quante righe, dall'inizio, entrano nel tetto dell'output lasciando spazio a un suggerimento finale:
+ * si taglia prima di aggiungere il suggerimento, così il suggerimento non viene mai troncato.
+ */
+function fittingLines(lines: string[], limit = MAX_TOOL_OUTPUT_CHARS - HINT_RESERVE_CHARS): number {
+  let chars = 0;
+  for (let i = 0; i < lines.length; i++) {
+    chars += lines[i]!.length + 1;
+    if (chars > limit) return i;
+  }
+  return lines.length;
+}
+
 function listDir(tree: SourceTree, path: string, depth: number | undefined): ToolOutput {
   const entries = tree.list(path, depth ?? 1);
-  const shown = entries.slice(0, MAX_LIST_ENTRIES);
+  const shown = entries.slice(0, Math.min(MAX_LIST_ENTRIES, fittingLines(entries)));
   const lines = shown.length ? shown : ["(cartella vuota)"];
   if (entries.length > shown.length) {
     lines.push(`[...altre ${entries.length - shown.length} voci non mostrate: elenca una sottocartella o riduci depth]`);
   }
   return {
-    content: lines.join("\n"),
+    content: capOutput(lines.join("\n")),
     log: `list_dir ${logArg(path || "/")} (${plural(entries.length, "voce", "voci")})`,
   };
 }
@@ -287,11 +310,11 @@ async function search(
   regex: boolean | undefined,
 ): Promise<ToolOutput> {
   const results = await tree.search(pattern, { glob, regex });
-  const shown = results.slice(0, MAX_SEARCH_MATCHES);
-  const lines = shown.map((r) => `${r.path}:${r.line}: ${r.text}`);
-  if (lines.length === 0) lines.push("Nessun risultato.");
-  if (results.length >= Math.min(SOURCE_LIMITS.maxSearchResults, MAX_SEARCH_MATCHES)) {
-    lines.push(`[risultati limitati a ${shown.length}: restringi la ricerca con glob o un pattern più specifico]`);
+  const all = results.slice(0, MAX_SEARCH_MATCHES).map((r) => `${r.path}:${r.line}: ${r.text}`);
+  const lines = all.slice(0, fittingLines(all));
+  if (all.length === 0) lines.push("Nessun risultato.");
+  if (lines.length < all.length || results.length >= Math.min(SOURCE_LIMITS.maxSearchResults, MAX_SEARCH_MATCHES)) {
+    lines.push(`[risultati limitati a ${lines.length}: restringi la ricerca con glob o un pattern più specifico]`);
   }
   return {
     content: capOutput(lines.join("\n")),
@@ -299,9 +322,15 @@ async function search(
   };
 }
 
-function listOperations(doc: OpenApiDoc): ToolOutput {
-  const ops = doc.operations.slice(0, MAX_OPERATIONS);
-  const lines = ops.map((op) =>
+/**
+ * Operazioni del contratto a pagine (già ordinate per percorso e metodo da `fetchOpenApi`): filtro
+ * per prefisso del percorso, poi `offset` operazioni saltate, poi quante ne entrano nel tetto
+ * dell'output; se ne restano, l'ultima riga dice come continuare.
+ */
+function listOperations(doc: OpenApiDoc, prefix: string | undefined, offset: number | undefined): ToolOutput {
+  const filtered = prefix ? doc.operations.filter((op) => op.path.startsWith(prefix)) : doc.operations;
+  const from = Math.max(Math.trunc(offset ?? 0), 0);
+  const all = filtered.slice(from).map((op) =>
     [
       `${op.method.toUpperCase()} ${op.path}`,
       op.operationId,
@@ -310,13 +339,17 @@ function listOperations(doc: OpenApiDoc): ToolOutput {
       .filter(Boolean)
       .join(" — "),
   );
-  if (lines.length === 0) lines.push("Nessuna operazione nel documento OpenAPI.");
-  if (doc.operations.length > ops.length) {
-    lines.push(`[...altre ${doc.operations.length - ops.length} operazioni non mostrate]`);
-  }
+  const lines = all.slice(0, fittingLines(all));
+  const shown = lines.length;
+  const rest = all.length - shown;
+  const where = prefix ? ` con prefisso ${logArg(prefix)}` : "";
+  if (filtered.length === 0) lines.push(`Nessuna operazione${where} nel documento OpenAPI.`);
+  else if (shown === 0) lines.push(`Nessuna operazione${where} oltre offset=${from} (sono ${filtered.length}).`);
+  else if (from > 0 || rest > 0) lines.unshift(`Operazioni${where} ${from + 1}-${from + shown} di ${filtered.length}:`);
+  if (rest > 0) lines.push(`[altre ${rest} operazioni: usa offset=${from + shown} o un prefix]`);
   return {
     content: capOutput(lines.join("\n")),
-    log: `list_operations (${plural(doc.operations.length, "operazione", "operazioni")})`,
+    log: `list_operations${prefix ? ` ${logArg(prefix)}` : ""}${from ? ` offset=${from}` : ""} (${plural(filtered.length, "operazione", "operazioni")})`,
   };
 }
 
@@ -335,7 +368,7 @@ async function runReadTool(
     case "search":
       return search(tree!, a.pattern, a.glob, a.regex);
     case "list_operations":
-      return listOperations(openapi!);
+      return listOperations(openapi!, a.prefix, a.offset);
     case "read_operation": {
       const method = String(a.method).toUpperCase();
       return {
@@ -362,7 +395,7 @@ function omittedStub(name: ReadToolName, args: Record<string, unknown>): string 
       : name === "search"
         ? `"${str("pattern")}"`
         : name === "list_operations"
-          ? ""
+          ? [str("prefix"), Number.isInteger(args["offset"]) ? `offset=${String(args["offset"])}` : ""].filter(Boolean).join(" ")
           : str("path") || "/";
   return `[output di ${name}${target ? ` ${target}` : ""} omesso per spazio: rileggilo se serve]`;
 }
@@ -425,6 +458,9 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
 
   let rounds = 0;
   let invalidSubmits = 0;
+  // Problemi dell'ultima consegna non valida e se è avvenuta nell'ultimo giro
+  let lastProblems: string[] | null = null;
+  let lastRoundInvalidSubmit = false;
   // Token usati da questa fase (il budget dell'analisi è cumulativo tra le fasi)
   let phaseTokens = 0;
   // Giro dopo il quale è stato inviato il sollecito a consegnare (null = non ancora)
@@ -433,16 +469,16 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
   const nudgeRounds = Math.ceil(PHASE_MAX_ROUNDS * PHASE_NUDGE_RATIO);
 
   /**
-   * A fine giro, una sola volta: oltre l'80% della quota o dei giri chiede la consegna. È un messaggio
-   * utente aggiunto dopo tutte le risposte agli strumenti del giro, così ogni tool_call resta seguita
-   * dalle sue risposte.
+   * A fine giro, una sola volta: oltre l'80% della quota o dei giri chiede la consegna. Il sollecito è
+   * un messaggio utente aggiunto dopo tutte le risposte agli strumenti del giro, così ogni tool_call
+   * resta seguita dalle sue risposte. Restituisce il testo da inviare, o null se non serve.
    */
-  const maybeNudge = (): void => {
-    if (nudgedAt !== null) return;
-    if (phaseTokens < quota * PHASE_NUDGE_RATIO && rounds < nudgeRounds) return;
+  const nudgeNow = (): string | null => {
+    if (nudgedAt !== null) return null;
+    if (phaseTokens < quota * PHASE_NUDGE_RATIO && rounds < nudgeRounds) return null;
     nudgedAt = rounds;
-    messages.push({ role: "user", content: PHASE_NUDGE });
     log("budget della fase quasi esaurito: sollecito a consegnare");
+    return PHASE_NUDGE;
   };
 
   for (;;) {
@@ -456,8 +492,12 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
     if (now() >= budget.deadline) {
       return fail(`fase ${phase}: tempo massimo dell'analisi scaduto`);
     }
-    if (nudgedAt !== null && rounds - nudgedAt >= PHASE_NUDGE_GRACE_ROUNDS) {
-      return fail(`fase ${phase}: esito non consegnato entro il budget della fase`);
+    // Margine dopo il sollecito: se l'ultimo giro è finito con una consegna non valida e restano
+    // correzioni, il modello può ancora correggerla (lo limitano il tetto di token e i giri)
+    const correcting = lastRoundInvalidSubmit && invalidSubmits <= MAX_CORRECTIONS;
+    if (nudgedAt !== null && rounds - nudgedAt >= PHASE_NUDGE_GRACE_ROUNDS && !correcting) {
+      const detail = lastProblems ? `; ultimo esito non valido: ${lastProblems.join("; ")}` : "";
+      return fail(`fase ${phase}: esito non consegnato entro il budget della fase${detail}`);
     }
 
     rounds += 1;
@@ -468,15 +508,18 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
     } catch (err) {
       return fail(`fase ${phase}: errore nella chiamata al modello: ${err instanceof Error ? err.message : String(err)}`);
     }
+    // Si contano solo le chiamate riuscite: di quelle fallite o scadute il provider non riporta
+    // l'uso, quindi i loro token (se ce ne sono) restano fuori dal budget
     const used = reply.promptTokens + reply.completionTokens;
     budget.tokensUsed += used;
     phaseTokens += used;
+    lastRoundInvalidSubmit = false;
 
     if (reply.toolCalls.length === 0) {
       messages.push({ role: "assistant", content: reply.content ?? "" });
-      messages.push({ role: "user", content: REMINDER });
+      // Un solo messaggio utente: il sollecito, se dovuto, prende il posto del promemoria
+      messages.push({ role: "user", content: nudgeNow() ?? REMINDER });
       log("nessuno strumento chiamato: promemoria per submit_result");
-      maybeNudge();
       continue;
     }
 
@@ -541,6 +584,8 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
       }
 
       invalidSubmits += 1;
+      lastProblems = problems;
+      lastRoundInvalidSubmit = true;
       if (invalidSubmits > MAX_CORRECTIONS) {
         log("submit_result non valido (correzioni esaurite)");
         return fail(`esito della fase ${phase} non valido dopo ${MAX_CORRECTIONS} correzioni: ${problems.join("; ")}`);
@@ -552,6 +597,7 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
       log(`submit_result non valido (correzione ${invalidSubmits}/${MAX_CORRECTIONS})`);
     }
 
-    maybeNudge();
+    const nudge = nudgeNow();
+    if (nudge) messages.push({ role: "user", content: nudge });
   }
 }

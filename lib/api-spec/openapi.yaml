@@ -1054,6 +1054,29 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /ai/models/{id}/probe:
+    post:
+      operationId: probeAiModel
+      tags: [ai]
+      summary: Prova un modello con una chiamata da 1 token
+      description: >-
+        Solo per i modelli degli account dell'utente (non di sistema). Una chiamata con un messaggio
+        minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la
+        disponibilità. Massimo 5 prove al minuto per IP.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Esito della prova (anche quando il provider rifiuta la chiamata)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiModelProbeResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   /ai/models:
     get:
       operationId: listAiModels
@@ -1061,7 +1084,8 @@ paths:
       summary: Modelli selezionabili dall'utente, raggruppati per account
       description: >-
         Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo) e
-        account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi.
+        account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi; quelli non
+        selezionabili restano con `selectable: false`. Al massimo un modello consigliato per gruppo.
       responses:
         "200":
           description: Gruppi di modelli
@@ -2152,7 +2176,10 @@ components:
 
     AiModel:
       type: object
-      required: [id, accountId, modelId, displayName, contextTokens, priceInput, priceOutput, priceSource, hidden]
+      required:
+        [id, accountId, modelId, displayName, contextTokens, priceInput, priceOutput, priceSource, hidden,
+         availability, supportsTools, status, deprecationDate, releasedAt, selectable, recommended, lastProbeAt,
+         lastProbeOk]
       properties:
         id:
           type: integer
@@ -2176,6 +2203,53 @@ components:
           enum: [provider, manual, seed, catalog, null]
         hidden:
           type: boolean
+        availability:
+          type: string
+          enum: [available, unavailable, unknown]
+          description: Disponibilità vista da Casello (verifica dell'account, chiamate reali, prove)
+        supportsTools:
+          type: ["boolean", "null"]
+          description: Supporto degli strumenti (null = non noto)
+        status:
+          type: string
+          enum: [available, unavailable, retired]
+          description: >-
+            Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non
+            disponibile, altrimenti disponibile
+        deprecationDate:
+          type: ["string", "null"]
+          format: date-time
+          description: Data di dismissione dal catalogo
+        releasedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Data di rilascio dal catalogo
+        selectable:
+          type: boolean
+          description: Disponibile e con strumenti non esclusi
+        recommended:
+          type: boolean
+          description: Preselezione del gruppo (solo in GET /ai/models)
+        lastProbeAt:
+          type: ["string", "null"]
+          format: date-time
+        lastProbeOk:
+          type: ["boolean", "null"]
+
+    AiModelProbeResult:
+      type: object
+      required: [ok, error, costUsd, model]
+      properties:
+        ok:
+          type: boolean
+        error:
+          type: ["string", "null"]
+          description: Messaggio fisso dell'errore del provider
+        costUsd:
+          type: ["number", "null"]
+          description: Costo della prova in USD (null se un prezzo manca o la prova non è riuscita)
+        model:
+          $ref: "#/components/schemas/AiModel"
 
     AiModelInput:
       type: object

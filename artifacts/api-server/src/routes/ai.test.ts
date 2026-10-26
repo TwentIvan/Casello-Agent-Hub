@@ -11,6 +11,7 @@ import {
   aiModelsTable,
   analysesTable,
   appsTable,
+  modelCatalogTable,
   usersTable,
 } from "@workspace/db";
 import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
@@ -127,7 +128,7 @@ beforeAll(async () => {
   const noLimit: RequestHandler = (_req, _res, next) => next();
   const mini = express();
   mini.use(express.json());
-  mini.use("/api", requireAuth, createAiRouter({ providerRateLimit: noLimit }));
+  mini.use("/api", requireAuth, createAiRouter({ providerRateLimit: noLimit, probeRateLimit: noLimit }));
   mini.use("/api", errorHandler);
   server = http.createServer(mini);
   base = `http://127.0.0.1:${await listen(server)}`;
@@ -150,7 +151,7 @@ afterAll(async () => {
 beforeEach(async () => {
   bodies = [];
   vi.spyOn(console, "log").mockImplementation(() => {});
-  await pool.query("TRUNCATE users, apps, ai_accounts RESTART IDENTITY CASCADE");
+  await pool.query("TRUNCATE users, apps, ai_accounts, model_catalog RESTART IDENTITY CASCADE");
   fake = await startFakeProvider({
     apiKey: KEY,
     models: [
@@ -223,6 +224,15 @@ describe("creazione", () => {
       priceOutput: 2,
       priceSource: "provider",
       hidden: false,
+      availability: "unknown",
+      supportsTools: null,
+      status: "available",
+      deprecationDate: null,
+      releasedAt: null,
+      selectable: true,
+      recommended: false,
+      lastProbeAt: null,
+      lastProbeOk: null,
     });
   });
 
@@ -637,6 +647,104 @@ describe("modelli selezionabili", () => {
   });
 });
 
+describe("stato, selezionabilità e preselezione", () => {
+  it("GET /ai/models riporta stato, selezionabile e un solo consigliato per gruppo", async () => {
+    await ensureSystemAccount();
+    const acc = await createAccount();
+    const [a, b] = await modelsOf(acc.id);
+    // modello-a (il più economico) è ritirato dal catalogo: il consigliato diventa modello-b
+    const [cat] = await db
+      .insert(modelCatalogTable)
+      .values({ provider: "custom", modelId: "modello-a", family: "Modello", version: "A", status: "retired", deprecationDate: new Date("2026-01-01T00:00:00Z") })
+      .returning();
+    await db.update(aiModelsTable).set({ catalogId: cat!.id }).where(eq(aiModelsTable.id, a!.id));
+
+    const res = await api("GET", "/ai/models");
+    expect(res.status, res.text).toBe(200);
+    const groups = res.json as { account: { isSystem: boolean }; models: Record<string, unknown>[] }[];
+    const mine = groups.find((g) => !g.account.isSystem)!;
+    expect(mine.models.find((m) => m.id === a!.id)).toMatchObject({
+      status: "retired",
+      selectable: false,
+      recommended: false,
+      availability: "unknown",
+      supportsTools: null,
+      deprecationDate: "2026-01-01T00:00:00.000Z",
+      releasedAt: null,
+      lastProbeAt: null,
+      lastProbeOk: null,
+    });
+    expect(mine.models.find((m) => m.id === b!.id)).toMatchObject({ status: "available", selectable: true, recommended: true });
+    for (const g of groups) expect(g.models.filter((m) => m.recommended).length).toBeLessThanOrEqual(1);
+    const sys = groups.find((g) => g.account.isSystem)!;
+    expect(sys.models.filter((m) => m.recommended)).toHaveLength(1);
+
+    // Un modello non disponibile resta in elenco ma non è selezionabile
+    await db.update(aiModelsTable).set({ availability: "unavailable" }).where(eq(aiModelsTable.id, b!.id));
+    const again = (await api("GET", "/ai/models")).json as typeof groups;
+    const mine2 = again.find((g) => !g.account.isSystem)!;
+    expect(mine2.models.find((m) => m.id === b!.id)).toMatchObject({ status: "unavailable", selectable: false, recommended: false });
+    expect(mine2.models.some((m) => m.recommended)).toBe(false);
+  });
+
+  it("anche l'elenco dei modelli dell'account e la modifica portano stato e catalogo", async () => {
+    const acc = await createAccount();
+    const [a] = await modelsOf(acc.id);
+    const list = await api("GET", `/ai/accounts/${acc.id}/models`);
+    expect(list.json[0]).toMatchObject({ status: "available", selectable: true, recommended: false });
+    const patched = await api("PATCH", `/ai/models/${a!.id}`, { hidden: true });
+    expect(patched.json).toMatchObject({ status: "available", hidden: true });
+  });
+});
+
+describe("prova del modello", () => {
+  it("modello proprio: una chiamata con max_tokens 1, esito e costo; disponibilità aggiornata", async () => {
+    const acc = await createAccount();
+    const [a] = await modelsOf(acc.id);
+    fake.requests = [];
+    const res = await api("POST", `/ai/models/${a!.id}/probe`);
+    expect(res.status, res.text).toBe(200);
+    // Prezzi di modello-a: 1 $ e 2 $ per milione; 10 token in ingresso, 5 in uscita
+    expect(res.json).toMatchObject({ ok: true, error: null, costUsd: 0.00002 });
+    expect(res.json.model).toMatchObject({ id: a!.id, availability: "available", lastProbeOk: true, status: "available" });
+    expect(typeof res.json.model.lastProbeAt).toBe("string");
+    const chat = fake.requests.filter((r) => r.path === "/v1/chat/completions");
+    expect(chat).toHaveLength(1);
+    expect(chat[0]!.body).toMatchObject({ model: "modello-a", max_tokens: 1, messages: [{ role: "user", content: "ping" }] });
+    const [row] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.id, a!.id));
+    expect(row).toMatchObject({ availability: "available", lastProbeOk: true });
+    expect(row!.lastProbeAt).toBeInstanceOf(Date);
+  });
+
+  it("chat 404 → ok false con messaggio fisso e modello non disponibile", async () => {
+    const acc = await createAccount();
+    const [a] = await modelsOf(acc.id);
+    fake.statusFor = { chat: 404 };
+    const res = await api("POST", `/ai/models/${a!.id}/probe`);
+    expect(res.status, res.text).toBe(200);
+    expect(res.json).toMatchObject({ ok: false, error: "richiesta rifiutata dal provider (HTTP 404)", costUsd: null });
+    expect(res.json.model).toMatchObject({ availability: "unavailable", status: "unavailable", selectable: false, lastProbeOk: false });
+    // Un solo tentativo
+    expect(fake.requests.filter((r) => r.path === "/v1/chat/completions")).toHaveLength(1);
+    const [row] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.id, a!.id));
+    expect(row).toMatchObject({ availability: "unavailable", lastProbeOk: false });
+  });
+
+  it("modello di un altro utente, di sistema o inesistente → 404, nessuna chiamata", async () => {
+    const other = await otherUserAccount();
+    const sys = await ensureSystemAccount();
+    const [sysModel] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.accountId, sys!.accountId)).limit(1);
+    for (const id of [other.model.id, sysModel!.id, 999999]) {
+      const res = await api("POST", `/ai/models/${id}/probe`);
+      expect(res.status, String(id)).toBe(404);
+      expect(res.json).toEqual({ error: "modello non trovato" });
+    }
+    const [row] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.id, other.model.id));
+    expect(row).toMatchObject({ lastProbeAt: null, availability: "unknown" });
+    expect(fake.requests.filter((r) => r.path === "/v1/chat/completions")).toHaveLength(0);
+  });
+});
+
 describe("isolamento e account di sistema", () => {
   it("l'account di un altro utente è invisibile e ogni route risponde 404", async () => {
     const other = await otherUserAccount();
@@ -752,5 +860,12 @@ describe("app completa", () => {
     // Le letture non sono limitate
     expect((await api("GET", "/ai/models", undefined, fullBase)).status).toBe(200);
     expect(await db.select().from(aiAccountsTable).where(and(eq(aiAccountsTable.provider, "custom")))).toHaveLength(0);
+  });
+
+  it("la prova del modello ha un suo limite di 5 al minuto", async () => {
+    for (let i = 0; i < 5; i++) {
+      expect((await api("POST", "/ai/models/999999/probe", undefined, fullBase)).status).toBe(404);
+    }
+    expect((await api("POST", "/ai/models/999999/probe", undefined, fullBase)).status).toBe(429);
   });
 });

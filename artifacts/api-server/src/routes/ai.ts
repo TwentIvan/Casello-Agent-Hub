@@ -6,9 +6,11 @@ import {
   aiAccountsTable,
   aiModelsTable,
   analysesTable,
+  modelCatalogTable,
   usersTable,
   type AiAccount,
   type AiModel,
+  type CatalogModelRow,
 } from "@workspace/db";
 import {
   AddAiAccountModelBody,
@@ -23,6 +25,8 @@ import {
   ListAiAccountModelsResponse,
   ListAiAccountsResponse,
   ListAiModelsResponse,
+  ProbeAiModelParams,
+  ProbeAiModelResponse,
   SetDefaultAiAccountParams,
   SetDefaultAiAccountResponse,
   UpdateAiAccountBody,
@@ -38,6 +42,9 @@ import { currentUserId } from "../lib/auth";
 import { ANALYSIS_DEFAULT_MAX_TOKENS } from "../lib/architect/run-analysis";
 import { discoverModels, ProviderError, type DiscoveredModel } from "../lib/ai/discovery";
 import { upsertDiscovered, verifyAccount, type Tx } from "../lib/ai/accounts";
+import { ModelAccessError } from "../lib/ai/executor";
+import { effectiveStatus, isSelectable, pickRecommended } from "../lib/ai/model-status";
+import { probeModel } from "../lib/ai/probe";
 import { normalizeBaseUrl, PROVIDERS, validateBaseUrl, type AiProvider } from "../lib/ai/providers";
 import { systemAccountConfigured } from "../lib/ai/system-account";
 import { isUniqueViolation } from "../lib/pg-errors";
@@ -103,7 +110,16 @@ function toPublicAccount(a: AiAccount, modelCount: number) {
   };
 }
 
-function toPublicModel(m: AiModel) {
+/**
+ * Forma pubblica di un modello, con lo stato effettivo calcolato dalla riga del catalogo collegata
+ * (null se non c'è). `recommended` lo imposta solo GET /ai/models.
+ */
+function toPublicModel(m: AiModel, catalog: CatalogModelRow | null, now: Date) {
+  const deprecationDate = catalog?.deprecationDate ?? null;
+  const status = effectiveStatus(
+    { availability: m.availability, catalogStatus: catalog?.status ?? null, deprecationDate },
+    now,
+  );
   return {
     id: m.id,
     accountId: m.accountId,
@@ -112,9 +128,32 @@ function toPublicModel(m: AiModel) {
     contextTokens: m.contextTokens,
     priceInput: toNumber(m.priceInputPerMtok),
     priceOutput: toNumber(m.priceOutputPerMtok),
-    priceSource: m.priceSource as "provider" | "manual" | "seed" | null,
+    priceSource: m.priceSource as "provider" | "manual" | "seed" | "catalog" | null,
     hidden: m.hidden,
+    availability: m.availability,
+    supportsTools: m.supportsTools,
+    status,
+    deprecationDate,
+    releasedAt: catalog?.releasedAt ?? null,
+    selectable: isSelectable(status, m.supportsTools),
+    recommended: false,
+    lastProbeAt: m.lastProbeAt,
+    lastProbeOk: m.lastProbeOk,
   };
+}
+
+/** Modelli con la riga del catalogo collegata (left join). */
+function selectModelsWithCatalog() {
+  return db
+    .select({ model: aiModelsTable, catalog: modelCatalogTable })
+    .from(aiModelsTable)
+    .leftJoin(modelCatalogTable, eq(aiModelsTable.catalogId, modelCatalogTable.id));
+}
+
+/** Forma pubblica di un modello riletto dal DB; undefined se è sparito. */
+async function publicModel(id: number) {
+  const [row] = await selectModelsWithCatalog().where(eq(aiModelsTable.id, id)).limit(1);
+  return row ? toPublicModel(row.model, row.catalog, new Date()) : undefined;
 }
 
 /**
@@ -254,11 +293,13 @@ function roundUsd(n: number): number {
   return n > 0 && rounded === 0 ? 1e-6 : rounded;
 }
 
-export function createAiRouter(opts: { providerRateLimit?: RequestHandler } = {}): IRouter {
+export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probeRateLimit?: RequestHandler } = {}): IRouter {
   const router: IRouter = Router();
   // Le route che chiamano un provider esterno (creazione, verifica, modifica) hanno un limite per IP,
   // separato da quello delle run: 20 al minuto.
   const providerLimit = opts.providerRateLimit ?? rateLimit({ limit: 20, windowMs: 60_000 });
+  // La prova di un modello costa (poco) all'account: 5 al minuto per IP, contatore a parte
+  const probeLimit = opts.probeRateLimit ?? rateLimit({ limit: 5, windowMs: 60_000 });
 
   router.get("/ai/accounts", async (req, res) => {
     const accounts = await visibleAccountsSorted(currentUserId(req));
@@ -540,12 +581,11 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler } = {}
       res.status(404).json({ error: ACCOUNT_NOT_FOUND });
       return;
     }
-    const models = await db
-      .select()
-      .from(aiModelsTable)
+    const rows = await selectModelsWithCatalog()
       .where(eq(aiModelsTable.accountId, account.id))
       .orderBy(sql`lower(${aiModelsTable.displayName})`, asc(aiModelsTable.id));
-    res.json(ListAiAccountModelsResponse.parse(models.map(toPublicModel)));
+    const now = new Date();
+    res.json(ListAiAccountModelsResponse.parse(rows.map((r) => toPublicModel(r.model, r.catalog, now))));
   });
 
   router.post("/ai/accounts/:id/models", async (req, res) => {
@@ -580,7 +620,8 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler } = {}
       res.status(409).json({ error: MODEL_EXISTS });
       return;
     }
-    res.status(201).json(AddAiAccountModelResponse.parse(toPublicModel(created!)));
+    // Un modello aggiunto a mano non ha ancora un catalogo collegato
+    res.status(201).json(AddAiAccountModelResponse.parse(toPublicModel(created!, null, new Date())));
   });
 
   router.patch("/ai/models/:id", async (req, res) => {
@@ -616,32 +657,67 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler } = {}
     if (body.priceOutput !== undefined) set.priceOutputPerMtok = toPrice(body.priceOutput);
     if (body.priceInput !== undefined || body.priceOutput !== undefined) set.priceSource = "manual";
 
-    let model = row.model;
     if (Object.keys(set).length) {
-      [model] = (await db
-        .update(aiModelsTable)
-        .set({ ...set, updatedAt: new Date() })
-        .where(eq(aiModelsTable.id, id))
-        .returning()) as [AiModel];
+      await db.update(aiModelsTable).set({ ...set, updatedAt: new Date() }).where(eq(aiModelsTable.id, id));
     }
-    res.json(UpdateAiModelResponse.parse(toPublicModel(model)));
+    const model = await publicModel(id);
+    if (!model) {
+      res.status(404).json({ error: MODEL_NOT_FOUND });
+      return;
+    }
+    res.json(UpdateAiModelResponse.parse(model));
+  });
+
+  router.post("/ai/models/:id/probe", probeLimit, async (req, res) => {
+    const userId = currentUserId(req);
+    const { id } = parseRequest(ProbeAiModelParams, req.params);
+    // Solo i modelli dei propri account: altrui, di sistema o inesistente → 404
+    const [owned] = await db
+      .select({ id: aiModelsTable.id })
+      .from(aiModelsTable)
+      .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
+      .where(and(eq(aiModelsTable.id, id), eq(aiAccountsTable.userId, userId)))
+      .limit(1);
+    if (!owned) {
+      res.status(404).json({ error: MODEL_NOT_FOUND });
+      return;
+    }
+    let result: Awaited<ReturnType<typeof probeModel>>;
+    try {
+      result = await probeModel(id, userId);
+    } catch (err) {
+      if (!(err instanceof ModelAccessError)) throw err;
+      res.status(404).json({ error: MODEL_NOT_FOUND });
+      return;
+    }
+    const model = await publicModel(id);
+    if (!model) {
+      res.status(404).json({ error: MODEL_NOT_FOUND });
+      return;
+    }
+    res.json(ProbeAiModelResponse.parse({ ...result, model }));
   });
 
   router.get("/ai/models", async (req, res) => {
     const accounts = await visibleAccountsSorted(currentUserId(req));
     const ids = accounts.map((a) => a.id);
-    const models = ids.length
-      ? await db
-          .select()
-          .from(aiModelsTable)
+    const rows = ids.length
+      ? await selectModelsWithCatalog()
           .where(and(inArray(aiModelsTable.accountId, ids), eq(aiModelsTable.hidden, false)))
           .orderBy(sql`lower(${aiModelsTable.displayName})`, asc(aiModelsTable.id))
       : [];
     const counts = await modelCounts(ids);
-    const groups = accounts.map((a) => ({
-      account: toPublicAccount(a, counts.get(a.id) ?? 0),
-      models: models.filter((m) => m.accountId === a.id).map(toPublicModel),
-    }));
+    const now = new Date();
+    const models = rows.map((r) => toPublicModel(r.model, r.catalog, now));
+    // I non selezionabili restano (con selectable: false): li filtra la console. Un consigliato per gruppo
+    const groups = accounts.map((a) => {
+      const own = models.filter((m) => m.accountId === a.id);
+      const recommended = pickRecommended(own);
+      return {
+        account: toPublicAccount(a, counts.get(a.id) ?? 0),
+        models: own.map((m) => ({ ...m, recommended: m.id === recommended })),
+      };
+    });
     res.json(ListAiModelsResponse.parse(groups));
   });
 

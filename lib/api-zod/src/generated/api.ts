@@ -1209,7 +1209,16 @@ export const ListAiAccountModelsResponseItem = zod.object({
   "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
   "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
   "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal('catalog'),zod.literal(null)]).nullable(),
-  "hidden": zod.boolean()
+  "hidden": zod.boolean(),
+  "availability": zod.enum(['available', 'unavailable', 'unknown']).describe('Disponibilità vista da Casello (verifica dell\'account, chiamate reali, prove)'),
+  "supportsTools": zod.boolean().nullable().describe('Supporto degli strumenti (null = non noto)'),
+  "status": zod.enum(['available', 'unavailable', 'retired']).describe('Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non disponibile, altrimenti disponibile'),
+  "deprecationDate": zod.coerce.date().nullable().describe('Data di dismissione dal catalogo'),
+  "releasedAt": zod.coerce.date().nullable().describe('Data di rilascio dal catalogo'),
+  "selectable": zod.boolean().describe('Disponibile e con strumenti non esclusi'),
+  "recommended": zod.boolean().describe('Preselezione del gruppo (solo in GET \/ai\/models)'),
+  "lastProbeAt": zod.coerce.date().nullable(),
+  "lastProbeOk": zod.boolean().nullable()
 })
 export const ListAiAccountModelsResponse = zod.array(ListAiAccountModelsResponseItem)
 
@@ -1252,7 +1261,16 @@ export const AddAiAccountModelResponse = zod.object({
   "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
   "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
   "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal('catalog'),zod.literal(null)]).nullable(),
-  "hidden": zod.boolean()
+  "hidden": zod.boolean(),
+  "availability": zod.enum(['available', 'unavailable', 'unknown']).describe('Disponibilità vista da Casello (verifica dell\'account, chiamate reali, prove)'),
+  "supportsTools": zod.boolean().nullable().describe('Supporto degli strumenti (null = non noto)'),
+  "status": zod.enum(['available', 'unavailable', 'retired']).describe('Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non disponibile, altrimenti disponibile'),
+  "deprecationDate": zod.coerce.date().nullable().describe('Data di dismissione dal catalogo'),
+  "releasedAt": zod.coerce.date().nullable().describe('Data di rilascio dal catalogo'),
+  "selectable": zod.boolean().describe('Disponibile e con strumenti non esclusi'),
+  "recommended": zod.boolean().describe('Preselezione del gruppo (solo in GET \/ai\/models)'),
+  "lastProbeAt": zod.coerce.date().nullable(),
+  "lastProbeOk": zod.boolean().nullable()
 })
 
 
@@ -1290,12 +1308,56 @@ export const UpdateAiModelResponse = zod.object({
   "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
   "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
   "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal('catalog'),zod.literal(null)]).nullable(),
-  "hidden": zod.boolean()
+  "hidden": zod.boolean(),
+  "availability": zod.enum(['available', 'unavailable', 'unknown']).describe('Disponibilità vista da Casello (verifica dell\'account, chiamate reali, prove)'),
+  "supportsTools": zod.boolean().nullable().describe('Supporto degli strumenti (null = non noto)'),
+  "status": zod.enum(['available', 'unavailable', 'retired']).describe('Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non disponibile, altrimenti disponibile'),
+  "deprecationDate": zod.coerce.date().nullable().describe('Data di dismissione dal catalogo'),
+  "releasedAt": zod.coerce.date().nullable().describe('Data di rilascio dal catalogo'),
+  "selectable": zod.boolean().describe('Disponibile e con strumenti non esclusi'),
+  "recommended": zod.boolean().describe('Preselezione del gruppo (solo in GET \/ai\/models)'),
+  "lastProbeAt": zod.coerce.date().nullable(),
+  "lastProbeOk": zod.boolean().nullable()
 })
 
 
 /**
- * Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo) e account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi.
+ * Solo per i modelli degli account dell'utente (non di sistema). Una chiamata con un messaggio minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la disponibilità. Massimo 5 prove al minuto per IP.
+ * @summary Prova un modello con una chiamata da 1 token
+ */
+export const ProbeAiModelParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ProbeAiModelResponse = zod.object({
+  "ok": zod.boolean(),
+  "error": zod.string().nullable().describe('Messaggio fisso dell\'errore del provider'),
+  "costUsd": zod.number().nullable().describe('Costo della prova in USD (null se un prezzo manca o la prova non è riuscita)'),
+  "model": zod.object({
+  "id": zod.number(),
+  "accountId": zod.number(),
+  "modelId": zod.string().describe('Id del modello presso il provider (es. deepseek-chat)'),
+  "displayName": zod.string(),
+  "contextTokens": zod.number().nullable(),
+  "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
+  "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
+  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal('catalog'),zod.literal(null)]).nullable(),
+  "hidden": zod.boolean(),
+  "availability": zod.enum(['available', 'unavailable', 'unknown']).describe('Disponibilità vista da Casello (verifica dell\'account, chiamate reali, prove)'),
+  "supportsTools": zod.boolean().nullable().describe('Supporto degli strumenti (null = non noto)'),
+  "status": zod.enum(['available', 'unavailable', 'retired']).describe('Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non disponibile, altrimenti disponibile'),
+  "deprecationDate": zod.coerce.date().nullable().describe('Data di dismissione dal catalogo'),
+  "releasedAt": zod.coerce.date().nullable().describe('Data di rilascio dal catalogo'),
+  "selectable": zod.boolean().describe('Disponibile e con strumenti non esclusi'),
+  "recommended": zod.boolean().describe('Preselezione del gruppo (solo in GET \/ai\/models)'),
+  "lastProbeAt": zod.coerce.date().nullable(),
+  "lastProbeOk": zod.boolean().nullable()
+})
+})
+
+
+/**
+ * Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo) e account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi; quelli non selezionabili restano con `selectable: false`. Al massimo un modello consigliato per gruppo.
  * @summary Modelli selezionabili dall'utente, raggruppati per account
  */
 export const ListAiModelsResponseItem = zod.object({
@@ -1322,7 +1384,16 @@ export const ListAiModelsResponseItem = zod.object({
   "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
   "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
   "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal('catalog'),zod.literal(null)]).nullable(),
-  "hidden": zod.boolean()
+  "hidden": zod.boolean(),
+  "availability": zod.enum(['available', 'unavailable', 'unknown']).describe('Disponibilità vista da Casello (verifica dell\'account, chiamate reali, prove)'),
+  "supportsTools": zod.boolean().nullable().describe('Supporto degli strumenti (null = non noto)'),
+  "status": zod.enum(['available', 'unavailable', 'retired']).describe('Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non disponibile, altrimenti disponibile'),
+  "deprecationDate": zod.coerce.date().nullable().describe('Data di dismissione dal catalogo'),
+  "releasedAt": zod.coerce.date().nullable().describe('Data di rilascio dal catalogo'),
+  "selectable": zod.boolean().describe('Disponibile e con strumenti non esclusi'),
+  "recommended": zod.boolean().describe('Preselezione del gruppo (solo in GET \/ai\/models)'),
+  "lastProbeAt": zod.coerce.date().nullable(),
+  "lastProbeOk": zod.boolean().nullable()
 }))
 })
 export const ListAiModelsResponse = zod.array(ListAiModelsResponseItem)

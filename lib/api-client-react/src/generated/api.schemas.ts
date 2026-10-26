@@ -826,6 +826,30 @@ export const AiModelPriceSource = {
   catalog: 'catalog',
 } as const;
 
+/**
+ * Disponibilità vista da Casello (verifica dell'account, chiamate reali, prove)
+ */
+export type AiModelAvailability = typeof AiModelAvailability[keyof typeof AiModelAvailability];
+
+
+export const AiModelAvailability = {
+  available: 'available',
+  unavailable: 'unavailable',
+  unknown: 'unknown',
+} as const;
+
+/**
+ * Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non disponibile, altrimenti disponibile
+ */
+export type AiModelStatus = typeof AiModelStatus[keyof typeof AiModelStatus];
+
+
+export const AiModelStatus = {
+  available: 'available',
+  unavailable: 'unavailable',
+  retired: 'retired',
+} as const;
+
 export interface AiModel {
   id: number;
   accountId: number;
@@ -847,6 +871,48 @@ export interface AiModel {
   /** @nullable */
   priceSource: AiModelPriceSource;
   hidden: boolean;
+  /** Disponibilità vista da Casello (verifica dell'account, chiamate reali, prove) */
+  availability: AiModelAvailability;
+  /**
+     * Supporto degli strumenti (null = non noto)
+     * @nullable
+     */
+  supportsTools: boolean | null;
+  /** Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non disponibile, altrimenti disponibile */
+  status: AiModelStatus;
+  /**
+     * Data di dismissione dal catalogo
+     * @nullable
+     */
+  deprecationDate: string | null;
+  /**
+     * Data di rilascio dal catalogo
+     * @nullable
+     */
+  releasedAt: string | null;
+  /** Disponibile e con strumenti non esclusi */
+  selectable: boolean;
+  /** Preselezione del gruppo (solo in GET /ai/models) */
+  recommended: boolean;
+  /** @nullable */
+  lastProbeAt: string | null;
+  /** @nullable */
+  lastProbeOk: boolean | null;
+}
+
+export interface AiModelProbeResult {
+  ok: boolean;
+  /**
+     * Messaggio fisso dell'errore del provider
+     * @nullable
+     */
+  error: string | null;
+  /**
+     * Costo della prova in USD (null se un prezzo manca o la prova non è riuscita)
+     * @nullable
+     */
+  costUsd: number | null;
+  model: AiModel;
 }
 
 export interface AiModelInput {

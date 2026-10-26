@@ -31,6 +31,7 @@ import type {
   AiModel,
   AiModelGroup,
   AiModelInput,
+  AiModelProbeResult,
   AiModelUpdate,
   Analysis,
   AnalysisDetail,
@@ -3537,6 +3538,77 @@ export const useUpdateAiModel = <TError = ErrorType<BadRequestResponse | Forbidd
       return useMutation(getUpdateAiModelMutationOptions(options));
     }
 
+export const getProbeAiModelUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/models/${id}/probe`
+}
+
+/**
+ * Solo per i modelli degli account dell'utente (non di sistema). Una chiamata con un messaggio minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la disponibilità. Massimo 5 prove al minuto per IP.
+ * @summary Prova un modello con una chiamata da 1 token
+ */
+export const probeAiModel = async (id: number, options?: RequestInit): Promise<AiModelProbeResult> => {
+
+  return customFetch<AiModelProbeResult>(getProbeAiModelUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getProbeAiModelMutationOptions = <TError = ErrorType<NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof probeAiModel>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof probeAiModel>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['probeAiModel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof probeAiModel>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  probeAiModel(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ProbeAiModelMutationResult = NonNullable<Awaited<ReturnType<typeof probeAiModel>>>
+
+    export type ProbeAiModelMutationError = ErrorType<NotFoundResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Prova un modello con una chiamata da 1 token
+ */
+export const useProbeAiModel = <TError = ErrorType<NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof probeAiModel>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof probeAiModel>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getProbeAiModelMutationOptions(options));
+    }
+
 export const getListAiModelsUrl = () => {
 
 
@@ -3546,7 +3618,7 @@ export const getListAiModelsUrl = () => {
 }
 
 /**
- * Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo) e account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi.
+ * Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo) e account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi; quelli non selezionabili restano con `selectable: false`. Al massimo un modello consigliato per gruppo.
  * @summary Modelli selezionabili dall'utente, raggruppati per account
  */
 export const listAiModels = async ( options?: RequestInit): Promise<AiModelGroup[]> => {

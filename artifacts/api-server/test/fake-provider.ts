@@ -62,6 +62,8 @@ export interface FakeProvider {
   status: number | null;
   /** Stato forzato per singola rotta (`/models`, `/chat/completions`); prevale su `status`. */
   statusFor: { models?: number; chat?: number };
+  /** Se non null, `code` del corpo d'errore (es. "model_not_found"); default lo stato HTTP. */
+  errorCode: string | null;
   /** Se non null, le richieste con un Bearer diverso ricevono 401. */
   apiKey: string | null;
   /** Risposta di `/chat/completions`: oggetto fisso o funzione del corpo della richiesta. */
@@ -82,8 +84,8 @@ function send(res: ServerResponse, status: number, body: unknown, headers: Recor
   res.end(JSON.stringify(body));
 }
 
-function errorBody(status: number): unknown {
-  return { error: { message: `${FAKE_PROVIDER_ERROR_TEXT} (${status})`, type: "fake_error", code: status } };
+function errorBody(status: number, code: string | null = null): unknown {
+  return { error: { message: `${FAKE_PROVIDER_ERROR_TEXT} (${status})`, type: "fake_error", code: code ?? status } };
 }
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
@@ -105,6 +107,7 @@ export async function startFakeProvider(opts: Partial<Omit<FakeProvider, "baseUr
     models: opts.models === undefined ? [{ id: "fake-model" }] : opts.models,
     status: opts.status ?? null,
     statusFor: opts.statusFor ?? {},
+    errorCode: opts.errorCode ?? null,
     apiKey: opts.apiKey ?? null,
     chatReply: opts.chatReply ?? { content: "ok", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } },
     chatRawBody: opts.chatRawBody ?? null,
@@ -127,7 +130,7 @@ export async function startFakeProvider(opts: Partial<Omit<FakeProvider, "baseUr
     const forced = (route !== null ? fake.statusFor[route] : undefined) ?? fake.status;
     if (forced !== null) {
       const headers: Record<string, string> = forced >= 300 && forced < 400 ? { location: "/v1/elsewhere" } : {};
-      return send(res, forced, errorBody(forced), headers);
+      return send(res, forced, errorBody(forced, fake.errorCode), headers);
     }
     if (fake.apiKey !== null && req.headers.authorization !== `Bearer ${fake.apiKey}`) {
       return send(res, 401, errorBody(401));

@@ -1,6 +1,7 @@
-// Modelli selezionabili per gli agenti: devono coincidere con i model_name
-// configurati in LiteLLM (repo TwentIvan/AIGateway). Per ora costanti; in
-// futuro da GET /v1/models del gateway.
+// Modelli dell'account di sistema "Gateway Casello": all'avvio `ensureSystemAccount`
+// (lib/ai/system-account.ts) li usa solo per popolare `ai_models`. Devono coincidere con i
+// model_name configurati in LiteLLM (repo TwentIvan/AIGateway). Le route /api/models e
+// /api/analyses li leggono ancora finché non passano agli Account AI.
 
 export const DEFAULT_MODEL = "openrouter/auto";
 

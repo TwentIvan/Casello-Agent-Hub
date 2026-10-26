@@ -26,11 +26,14 @@ export class ProviderError extends Error {
   readonly kind: ProviderErrorKind;
   /** Stato HTTP della risposta del provider; null per errori di rete, timeout o indirizzo. */
   readonly status: number | null;
-  constructor(kind: ProviderErrorKind, status: number | null = null) {
+  /** Attesa suggerita dal provider prima di riprovare (429), in ms; null se non la indica. */
+  readonly retryAfterMs: number | null;
+  constructor(kind: ProviderErrorKind, status: number | null = null, retryAfterMs: number | null = null) {
     super(providerErrorMessage(kind, status));
     this.name = "ProviderError";
     this.kind = kind;
     this.status = status;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 

@@ -63,6 +63,10 @@ export const ARCHITECT_MODEL_TIMEOUT_MS = 300_000;
 // modello lento costerebbe 2-3 volte l'attesa. Qui si ritenta una sola volta, dopo una breve pausa,
 // solo per errori di rete diversi dal timeout e per le risposte 5xx del gateway.
 const MODEL_RETRY_DELAY_MS = 1_000;
+// Limite di richieste del provider (429, es. piano gratuito di Gemini): si aspetta e si riprova fino a
+// queste volte, con l'attesa indicata dal provider o con queste pause, sempre entro la scadenza
+// dell'analisi. Le richieste rifiutate non costano.
+const RATE_LIMIT_DELAYS_MS = [15_000, 30_000, 60_000, 60_000, 60_000];
 // Tetto dei token generati per singola risposta (gli esiti delle fasi possono essere lunghi)
 const MAX_COMPLETION_TOKENS = 16_000;
 const MODEL_TEMPERATURE = 0.2;
@@ -85,6 +89,8 @@ export interface StartAnalysisOptions {
   modelTimeoutMs?: number;
   /** Solo per i test: pausa prima del nuovo tentativo di una chiamata al modello (default 1 s). */
   modelRetryDelayMs?: number;
+  /** Solo per i test: pause tra i nuovi tentativi dopo un 429 (default RATE_LIMIT_DELAYS_MS). */
+  rateLimitDelaysMs?: number[];
   /** Solo per i test: orologio. */
   now?: () => number;
 }
@@ -377,10 +383,24 @@ interface ModelChatOptions {
   maxMs: number;
   timeoutMs: number;
   retryDelayMs: number;
+  rateLimitDelaysMs: number[];
+  log: (message: string) => void;
   now: () => number;
 }
 
-function architectChat({ model, resolved, cost, analysisId, deadline, maxMs, timeoutMs, retryDelayMs, now }: ModelChatOptions) {
+function architectChat({
+  model,
+  resolved,
+  cost,
+  analysisId,
+  deadline,
+  maxMs,
+  timeoutMs,
+  retryDelayMs,
+  rateLimitDelaysMs,
+  log,
+  now,
+}: ModelChatOptions) {
   return async (messages: ChatCompletionMessageParam[], tools: ChatCompletionTool[]): Promise<ChatResult> => {
     // La chiamata non può superare la scadenza complessiva (minimo 1 s)
     const signal = AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, deadline - now()));
@@ -394,10 +414,25 @@ function architectChat({ model, resolved, cost, analysisId, deadline, maxMs, tim
       timeoutMs,
       maxRetries: 0,
     };
-    const call = async (): Promise<ChatResult> => {
+    const send = async (): Promise<ChatResult> => {
       const reply = resolved ? await executorChat(resolved, options) : await aiGateway.chat({ modelKey: model, ...options });
       cost.add(reply);
       return reply;
+    };
+    // Limite di richieste: attesa (quella del provider o la pausa successiva) e nuovo tentativo, finché
+    // ci sono tentativi e l'attesa finisce prima della scadenza; altrimenti l'errore passa così com'è
+    const call = async (): Promise<ChatResult> => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await send();
+        } catch (err) {
+          if (!(err instanceof ProviderError) || err.kind !== "rate" || attempt >= rateLimitDelaysMs.length) throw err;
+          const wait = err.retryAfterMs ?? rateLimitDelaysMs[attempt]!;
+          if (now() + wait >= deadline) throw err;
+          log(`limite di richieste del provider: nuovo tentativo tra ${Math.max(1, Math.ceil(wait / 1000))} s (${attempt + 1} di ${rateLimitDelaysMs.length})`);
+          await sleep(wait, undefined, { signal });
+        }
+      }
     };
     try {
       try {
@@ -499,6 +534,8 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       maxMs,
       timeoutMs: opts.modelTimeoutMs ?? ARCHITECT_MODEL_TIMEOUT_MS,
       retryDelayMs: opts.modelRetryDelayMs ?? MODEL_RETRY_DELAY_MS,
+      rateLimitDelaysMs: opts.rateLimitDelaysMs ?? RATE_LIMIT_DELAYS_MS,
+      log,
       now,
     });
     const previous: Partial<Record<PhaseName, unknown>> = {};

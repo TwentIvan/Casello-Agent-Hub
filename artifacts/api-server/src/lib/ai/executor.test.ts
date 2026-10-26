@@ -415,6 +415,45 @@ describe("modelChat", () => {
     expect(fake.requests.at(-1)!.authorization).toBeUndefined();
   });
 
+  it("404 dal provider → modello segnato unavailable; 400 → availability invariata", async () => {
+    const { aiModelId } = await seed();
+    const r = await resolveModel(aiModelId, { userId: alice, mustOwn: false });
+    const availability = async () =>
+      (await db.select({ a: aiModelsTable.availability }).from(aiModelsTable).where(eq(aiModelsTable.id, aiModelId)))[0]!.a;
+    fake.statusFor = { chat: 400 };
+    await caught(modelChat(r, { messages: MESSAGES, caller: "test", maxRetries: 0 }));
+    expect(await availability()).toBe("unknown");
+    fake.statusFor = { chat: 404 };
+    const err = await caught(modelChat(r, { messages: MESSAGES, caller: "test", maxRetries: 0 }));
+    // L'errore resta quello di sempre
+    expect(err).toMatchObject({ kind: "rejected", status: 404 });
+    expect(await availability()).toBe("unavailable");
+  });
+
+  it("codice model_not_found (anche con un 400) → unavailable", async () => {
+    const { aiModelId } = await seed();
+    const r = await resolveModel(aiModelId, { userId: alice, mustOwn: false });
+    fake.statusFor = { chat: 400 };
+    fake.errorCode = "model_not_found";
+    await caught(modelChat(r, { messages: MESSAGES, caller: "test", maxRetries: 0 }));
+    const [row] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.id, aiModelId));
+    expect(row!.availability).toBe("unavailable");
+  });
+
+  it("errore del DB nel segnare unavailable: solo nel log, il chiamante riceve l'errore del provider", async () => {
+    const { aiModelId } = await seed();
+    const r = await resolveModel(aiModelId, { userId: alice, mustOwn: false });
+    fake.statusFor = { chat: 404 };
+    const error = vi.spyOn(logger, "error").mockImplementation(() => logger);
+    vi.spyOn(db, "update").mockImplementation(() => {
+      throw new Error("db giù");
+    });
+    const err = await caught(modelChat(r, { messages: MESSAGES, caller: "test", maxRetries: 0 }));
+    expect(err).toMatchObject({ kind: "rejected", status: 404 });
+    expect(JSON.stringify(error.mock.calls)).not.toContain("db giù");
+    expect(error).toHaveBeenCalled();
+  });
+
   it("esecutore local_agent → non ancora disponibile", async () => {
     const r = await resolved();
     await expect(modelChat({ ...r, kind: "local_agent" }, { messages: MESSAGES, caller: "test" })).rejects.toThrow(

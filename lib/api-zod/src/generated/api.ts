@@ -1046,7 +1046,7 @@ export const ListModelsResponse = zod.array(ListModelsResponseItem)
 export const ListAiAccountsResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1074,7 +1074,7 @@ export const createAiAccountBodyBaseUrlMax = 2048;
 
 export const CreateAiAccountBody = zod.object({
   "name": zod.string().min(1).max(createAiAccountBodyNameMax),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
   "apiKey": zod.string().max(createAiAccountBodyApiKeyMax).nullish().describe('Chiave del provider (solo scrittura, salvata cifrata); vuota solo per custom'),
   "baseUrl": zod.string().max(createAiAccountBodyBaseUrlMax).nullish().describe('Solo custom (obbligatorio); gli altri provider usano il base URL predefinito'),
   "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom')
@@ -1083,7 +1083,7 @@ export const CreateAiAccountBody = zod.object({
 export const CreateAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1122,7 +1122,7 @@ export const UpdateAiAccountBody = zod.object({
 export const UpdateAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1157,7 +1157,7 @@ export const VerifyAiAccountParams = zod.object({
 export const VerifyAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1180,7 +1180,7 @@ export const SetDefaultAiAccountParams = zod.object({
 export const SetDefaultAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1208,8 +1208,17 @@ export const ListAiAccountModelsResponseItem = zod.object({
   "contextTokens": zod.number().nullable(),
   "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
   "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
-  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal(null)]).nullable(),
-  "hidden": zod.boolean()
+  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal('catalog'),zod.literal(null)]).nullable(),
+  "hidden": zod.boolean(),
+  "availability": zod.enum(['available', 'unavailable', 'unknown']).describe('Disponibilità vista da Casello (verifica dell\'account, chiamate reali, prove)'),
+  "supportsTools": zod.boolean().nullable().describe('Supporto degli strumenti (null = non noto)'),
+  "status": zod.enum(['available', 'unavailable', 'retired']).describe('Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non disponibile, altrimenti disponibile'),
+  "deprecationDate": zod.coerce.date().nullable().describe('Data di dismissione dal catalogo'),
+  "releasedAt": zod.coerce.date().nullable().describe('Data di rilascio dal catalogo'),
+  "selectable": zod.boolean().describe('Disponibile e con strumenti non esclusi'),
+  "recommended": zod.boolean().describe('Preselezione del gruppo (solo in GET \/ai\/models)'),
+  "lastProbeAt": zod.coerce.date().nullable(),
+  "lastProbeOk": zod.boolean().nullable()
 })
 export const ListAiAccountModelsResponse = zod.array(ListAiAccountModelsResponseItem)
 
@@ -1251,8 +1260,17 @@ export const AddAiAccountModelResponse = zod.object({
   "contextTokens": zod.number().nullable(),
   "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
   "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
-  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal(null)]).nullable(),
-  "hidden": zod.boolean()
+  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal('catalog'),zod.literal(null)]).nullable(),
+  "hidden": zod.boolean(),
+  "availability": zod.enum(['available', 'unavailable', 'unknown']).describe('Disponibilità vista da Casello (verifica dell\'account, chiamate reali, prove)'),
+  "supportsTools": zod.boolean().nullable().describe('Supporto degli strumenti (null = non noto)'),
+  "status": zod.enum(['available', 'unavailable', 'retired']).describe('Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non disponibile, altrimenti disponibile'),
+  "deprecationDate": zod.coerce.date().nullable().describe('Data di dismissione dal catalogo'),
+  "releasedAt": zod.coerce.date().nullable().describe('Data di rilascio dal catalogo'),
+  "selectable": zod.boolean().describe('Disponibile e con strumenti non esclusi'),
+  "recommended": zod.boolean().describe('Preselezione del gruppo (solo in GET \/ai\/models)'),
+  "lastProbeAt": zod.coerce.date().nullable(),
+  "lastProbeOk": zod.boolean().nullable()
 })
 
 
@@ -1289,20 +1307,64 @@ export const UpdateAiModelResponse = zod.object({
   "contextTokens": zod.number().nullable(),
   "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
   "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
-  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal(null)]).nullable(),
-  "hidden": zod.boolean()
+  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal('catalog'),zod.literal(null)]).nullable(),
+  "hidden": zod.boolean(),
+  "availability": zod.enum(['available', 'unavailable', 'unknown']).describe('Disponibilità vista da Casello (verifica dell\'account, chiamate reali, prove)'),
+  "supportsTools": zod.boolean().nullable().describe('Supporto degli strumenti (null = non noto)'),
+  "status": zod.enum(['available', 'unavailable', 'retired']).describe('Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non disponibile, altrimenti disponibile'),
+  "deprecationDate": zod.coerce.date().nullable().describe('Data di dismissione dal catalogo'),
+  "releasedAt": zod.coerce.date().nullable().describe('Data di rilascio dal catalogo'),
+  "selectable": zod.boolean().describe('Disponibile e con strumenti non esclusi'),
+  "recommended": zod.boolean().describe('Preselezione del gruppo (solo in GET \/ai\/models)'),
+  "lastProbeAt": zod.coerce.date().nullable(),
+  "lastProbeOk": zod.boolean().nullable()
 })
 
 
 /**
- * Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo) e account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi.
+ * Solo per i modelli degli account dell'utente (non di sistema). Una chiamata con un messaggio minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la disponibilità. Massimo 5 prove al minuto per IP.
+ * @summary Prova un modello con una chiamata da 1 token
+ */
+export const ProbeAiModelParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ProbeAiModelResponse = zod.object({
+  "ok": zod.boolean(),
+  "error": zod.string().nullable().describe('Messaggio fisso dell\'errore del provider'),
+  "costUsd": zod.number().nullable().describe('Costo della prova in USD (null se un prezzo manca o la prova non è riuscita)'),
+  "model": zod.object({
+  "id": zod.number(),
+  "accountId": zod.number(),
+  "modelId": zod.string().describe('Id del modello presso il provider (es. deepseek-chat)'),
+  "displayName": zod.string(),
+  "contextTokens": zod.number().nullable(),
+  "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
+  "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
+  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal('catalog'),zod.literal(null)]).nullable(),
+  "hidden": zod.boolean(),
+  "availability": zod.enum(['available', 'unavailable', 'unknown']).describe('Disponibilità vista da Casello (verifica dell\'account, chiamate reali, prove)'),
+  "supportsTools": zod.boolean().nullable().describe('Supporto degli strumenti (null = non noto)'),
+  "status": zod.enum(['available', 'unavailable', 'retired']).describe('Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non disponibile, altrimenti disponibile'),
+  "deprecationDate": zod.coerce.date().nullable().describe('Data di dismissione dal catalogo'),
+  "releasedAt": zod.coerce.date().nullable().describe('Data di rilascio dal catalogo'),
+  "selectable": zod.boolean().describe('Disponibile e con strumenti non esclusi'),
+  "recommended": zod.boolean().describe('Preselezione del gruppo (solo in GET \/ai\/models)'),
+  "lastProbeAt": zod.coerce.date().nullable(),
+  "lastProbeOk": zod.boolean().nullable()
+})
+})
+
+
+/**
+ * Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo) e account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi; quelli non selezionabili restano con `selectable: false`. Al massimo un modello consigliato per gruppo.
  * @summary Modelli selezionabili dall'utente, raggruppati per account
  */
 export const ListAiModelsResponseItem = zod.object({
   "account": zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'custom', 'system_gateway']),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo provider custom); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1321,8 +1383,17 @@ export const ListAiModelsResponseItem = zod.object({
   "contextTokens": zod.number().nullable(),
   "priceInput": zod.number().nullable().describe('USD per milione di token di input'),
   "priceOutput": zod.number().nullable().describe('USD per milione di token di output'),
-  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal(null)]).nullable(),
-  "hidden": zod.boolean()
+  "priceSource": zod.union([zod.literal('provider'),zod.literal('manual'),zod.literal('seed'),zod.literal('catalog'),zod.literal(null)]).nullable(),
+  "hidden": zod.boolean(),
+  "availability": zod.enum(['available', 'unavailable', 'unknown']).describe('Disponibilità vista da Casello (verifica dell\'account, chiamate reali, prove)'),
+  "supportsTools": zod.boolean().nullable().describe('Supporto degli strumenti (null = non noto)'),
+  "status": zod.enum(['available', 'unavailable', 'retired']).describe('Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non disponibile, altrimenti disponibile'),
+  "deprecationDate": zod.coerce.date().nullable().describe('Data di dismissione dal catalogo'),
+  "releasedAt": zod.coerce.date().nullable().describe('Data di rilascio dal catalogo'),
+  "selectable": zod.boolean().describe('Disponibile e con strumenti non esclusi'),
+  "recommended": zod.boolean().describe('Preselezione del gruppo (solo in GET \/ai\/models)'),
+  "lastProbeAt": zod.coerce.date().nullable(),
+  "lastProbeOk": zod.boolean().nullable()
 }))
 })
 export const ListAiModelsResponse = zod.array(ListAiModelsResponseItem)
@@ -1345,6 +1416,176 @@ export const EstimateAnalysisCostQueryParams = zod.object({
 export const EstimateAnalysisCostResponse = zod.object({
   "maxUsd": zod.number().nullable().describe('Costo massimo in USD (null se un prezzo manca)'),
   "typicalUsd": zod.number().nullable().describe('Costo tipico in USD (60% del massimo)')
+})
+
+
+/**
+ * Senza `provider` tutti i provider. Ordinati per provider, famiglia e data di uscita decrescente. `inMyAccounts` è vero se un modello di un account dell'utente è collegato alla voce.
+ * @summary Catalogo dei modelli
+ */
+export const ListCatalogModelsQueryParams = zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']).optional()
+})
+
+export const ListCatalogModelsResponseItem = zod.object({
+  "id": zod.number(),
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "family": zod.string(),
+  "version": zod.string(),
+  "releasedAt": zod.coerce.date().nullable(),
+  "priceInput": zod.number().nullable().describe('USD per milione di token'),
+  "priceOutput": zod.number().nullable().describe('USD per milione di token'),
+  "contextTokens": zod.number().nullable(),
+  "supportsTools": zod.boolean().nullable(),
+  "status": zod.enum(['available', 'deprecated', 'retired']),
+  "deprecationDate": zod.coerce.date().nullable(),
+  "inMyAccounts": zod.boolean()
+})
+export const ListCatalogModelsResponse = zod.array(ListCatalogModelsResponseItem)
+
+
+/**
+ * `running` dice se un aggiornamento è in corso. Il riepilogo contiene solo gli account dell'utente corrente.
+ * @summary Ultimo aggiornamento del catalogo
+ */
+export const GetCatalogStatusResponse = zod.object({
+  "running": zod.boolean(),
+  "latest": zod.union([zod.object({
+  "id": zod.number(),
+  "trigger": zod.enum(['scheduled', 'manual']),
+  "status": zod.enum(['running', 'completed', 'partial', 'failed']),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "error": zod.string().nullable(),
+  "summary": zod.union([zod.object({
+  "firstRun": zod.boolean(),
+  "added": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+})),
+  "retired": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+})),
+  "deprecating": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+}).and(zod.object({
+  "deprecationDate": zod.string()
+}))),
+  "priceChanged": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+}).and(zod.object({
+  "oldInput": zod.number().nullable(),
+  "oldOutput": zod.number().nullable(),
+  "newInput": zod.number().nullable(),
+  "newOutput": zod.number().nullable()
+}))),
+  "accounts": zod.array(zod.object({
+  "accountId": zod.number(),
+  "accountName": zod.string(),
+  "missing": zod.array(zod.string())
+})).describe('Solo gli account dell\'utente corrente')
+}),zod.null()])
+}),zod.null()]),
+  "lastCompleted": zod.union([zod.object({
+  "id": zod.number(),
+  "trigger": zod.enum(['scheduled', 'manual']),
+  "status": zod.enum(['running', 'completed', 'partial', 'failed']),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "error": zod.string().nullable(),
+  "summary": zod.union([zod.object({
+  "firstRun": zod.boolean(),
+  "added": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+})),
+  "retired": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+})),
+  "deprecating": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+}).and(zod.object({
+  "deprecationDate": zod.string()
+}))),
+  "priceChanged": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+}).and(zod.object({
+  "oldInput": zod.number().nullable(),
+  "oldOutput": zod.number().nullable(),
+  "newInput": zod.number().nullable(),
+  "newOutput": zod.number().nullable()
+}))),
+  "accounts": zod.array(zod.object({
+  "accountId": zod.number(),
+  "accountName": zod.string(),
+  "missing": zod.array(zod.string())
+})).describe('Solo gli account dell\'utente corrente')
+}),zod.null()])
+}),zod.null()]).describe('Ultima esecuzione completed o partial, da cui leggere le novità')
+})
+
+
+/**
+ * Risponde subito con l'esecuzione `running`; prosegue in background. Massimo 2 al minuto per IP.
+ * @summary Avvia l'aggiornamento del catalogo
+ */
+export const RefreshCatalogResponse = zod.object({
+  "id": zod.number(),
+  "trigger": zod.enum(['scheduled', 'manual']),
+  "status": zod.enum(['running', 'completed', 'partial', 'failed']),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "error": zod.string().nullable(),
+  "summary": zod.union([zod.object({
+  "firstRun": zod.boolean(),
+  "added": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+})),
+  "retired": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+})),
+  "deprecating": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+}).and(zod.object({
+  "deprecationDate": zod.string()
+}))),
+  "priceChanged": zod.array(zod.object({
+  "provider": zod.enum(['deepseek', 'openrouter', 'huggingface', 'mistral', 'groq', 'together', 'gemini', 'custom', 'system_gateway']),
+  "modelId": zod.string(),
+  "version": zod.string()
+}).and(zod.object({
+  "oldInput": zod.number().nullable(),
+  "oldOutput": zod.number().nullable(),
+  "newInput": zod.number().nullable(),
+  "newOutput": zod.number().nullable()
+}))),
+  "accounts": zod.array(zod.object({
+  "accountId": zod.number(),
+  "accountName": zod.string(),
+  "missing": zod.array(zod.string())
+})).describe('Solo gli account dell\'utente corrente')
+}),zod.null()])
 })
 
 

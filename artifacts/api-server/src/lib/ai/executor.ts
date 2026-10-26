@@ -19,6 +19,7 @@ import {
 import { logger } from "../logger";
 import { decryptSecret } from "../secrets";
 import { ProviderError, providerErrorKindForStatus } from "./discovery";
+import { markModelUnavailable } from "./model-status";
 import { normalizeBaseUrl, validateBaseUrl, type AiProvider } from "./providers";
 
 /**
@@ -207,6 +208,11 @@ function buildParams(resolved: ResolvedModel, opts: ChatOptions): ChatCompletion
   return params;
 }
 
+/** Il provider dice che il modello non esiste (più): 404 o codice `model_not_found`. */
+function isModelNotFound(err: unknown): boolean {
+  return err instanceof APIError && !(err instanceof APIConnectionError) && (err.status === 404 || err.code === "model_not_found");
+}
+
 function isTimeoutOrAbort(err: unknown): boolean {
   return err instanceof APIConnectionTimeoutError || err instanceof APIUserAbortError;
 }
@@ -227,8 +233,9 @@ function mapError(err: unknown): unknown {
 
 /**
  * Chiamata al modello risolto. Errori: `ProviderError` (kind e status HTTP) per le risposte
- * d'errore e i problemi di rete; `APIConnectionTimeoutError` e `APIUserAbortError` dell'SDK
- * invariati, così chi distingue il timeout (l'architetto) continua a farlo.
+ * d'errore e i problemi di rete (con 404 o `model_not_found` il modello diventa `unavailable`);
+ * `APIConnectionTimeoutError` e `APIUserAbortError` dell'SDK invariati, così chi distingue il
+ * timeout (l'architetto) continua a farlo.
  */
 export async function modelChat(resolved: ResolvedModel, opts: ChatOptions): Promise<ModelChatResult> {
   if (resolved.kind !== "openai_compatible") throw new Error(EXECUTOR_UNAVAILABLE);
@@ -266,6 +273,8 @@ export async function modelChat(resolved: ResolvedModel, opts: ChatOptions): Pro
         "Chiamata al modello non riuscita",
       );
     }
+    // Ritiro senza costi: la chiamata reale che trova il modello sparito lo segna non disponibile
+    if (isModelNotFound(err)) await markModelUnavailable(resolved.aiModelId);
     throw mapped;
   }
   const durationMs = Date.now() - startMs;

@@ -36,6 +36,7 @@ export const PROVIDER_INFO: Record<UserProvider, { label: string; defaultBaseUrl
   mistral: { label: "Mistral", defaultBaseUrl: "https://api.mistral.ai/v1" },
   groq: { label: "Groq", defaultBaseUrl: "https://api.groq.com/openai/v1" },
   together: { label: "Together", defaultBaseUrl: "https://api.together.xyz/v1" },
+  gemini: { label: "Google Gemini", defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai" },
   custom: { label: "Personalizzato", defaultBaseUrl: null },
 };
 

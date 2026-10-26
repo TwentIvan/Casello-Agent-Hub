@@ -13,3 +13,5 @@ export * from "./user-identities";
 export * from "./github-installations";
 export * from "./ai-accounts";
 export * from "./ai-models";
+export * from "./model-catalog";
+export * from "./catalog-runs";

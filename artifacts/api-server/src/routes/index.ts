@@ -9,6 +9,7 @@ import modelsRouter from "./models";
 import githubRouter from "./github";
 import { createAnalysesRouter } from "./analyses";
 import { createAiRouter } from "./ai";
+import { createCatalogRouter } from "./catalog";
 import { authRouter, requireAuth } from "../lib/auth";
 
 const router: IRouter = Router();
@@ -26,5 +27,6 @@ router.use(modelsRouter);
 router.use(githubRouter);
 router.use(createAnalysesRouter());
 router.use(createAiRouter());
+router.use(createCatalogRouter());
 
 export default router;

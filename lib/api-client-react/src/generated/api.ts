@@ -31,6 +31,7 @@ import type {
   AiModel,
   AiModelGroup,
   AiModelInput,
+  AiModelProbeResult,
   AiModelUpdate,
   Analysis,
   AnalysisDetail,
@@ -46,6 +47,9 @@ import type {
   AuthProviders,
   BadGatewayResponse,
   BadRequestResponse,
+  CatalogModel,
+  CatalogRunView,
+  CatalogStatus,
   ConflictResponse,
   CostEstimate,
   CurrentUser,
@@ -59,6 +63,7 @@ import type {
   HealthStatus,
   IssueExport,
   ListAgentsParams,
+  ListCatalogModelsParams,
   ListRunsParams,
   Model,
   NotFoundResponse,
@@ -3537,6 +3542,77 @@ export const useUpdateAiModel = <TError = ErrorType<BadRequestResponse | Forbidd
       return useMutation(getUpdateAiModelMutationOptions(options));
     }
 
+export const getProbeAiModelUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/models/${id}/probe`
+}
+
+/**
+ * Solo per i modelli degli account dell'utente (non di sistema). Una chiamata con un messaggio minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la disponibilità. Massimo 5 prove al minuto per IP.
+ * @summary Prova un modello con una chiamata da 1 token
+ */
+export const probeAiModel = async (id: number, options?: RequestInit): Promise<AiModelProbeResult> => {
+
+  return customFetch<AiModelProbeResult>(getProbeAiModelUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getProbeAiModelMutationOptions = <TError = ErrorType<NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof probeAiModel>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof probeAiModel>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['probeAiModel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof probeAiModel>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  probeAiModel(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ProbeAiModelMutationResult = NonNullable<Awaited<ReturnType<typeof probeAiModel>>>
+
+    export type ProbeAiModelMutationError = ErrorType<NotFoundResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Prova un modello con una chiamata da 1 token
+ */
+export const useProbeAiModel = <TError = ErrorType<NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof probeAiModel>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof probeAiModel>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getProbeAiModelMutationOptions(options));
+    }
+
 export const getListAiModelsUrl = () => {
 
 
@@ -3546,7 +3622,7 @@ export const getListAiModelsUrl = () => {
 }
 
 /**
- * Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo) e account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi.
+ * Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo) e account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi; quelli non selezionabili restano con `selectable: false`. Al massimo un modello consigliato per gruppo.
  * @summary Modelli selezionabili dall'utente, raggruppati per account
  */
 export const listAiModels = async ( options?: RequestInit): Promise<AiModelGroup[]> => {
@@ -3699,4 +3775,238 @@ export function useEstimateAnalysisCost<TData = Awaited<ReturnType<typeof estima
 
 
 
+
+export const getListCatalogModelsUrl = (params?: ListCatalogModelsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/catalog/models?${stringifiedParams}` : `/api/catalog/models`
+}
+
+/**
+ * Senza `provider` tutti i provider. Ordinati per provider, famiglia e data di uscita decrescente. `inMyAccounts` è vero se un modello di un account dell'utente è collegato alla voce.
+ * @summary Catalogo dei modelli
+ */
+export const listCatalogModels = async (params?: ListCatalogModelsParams, options?: RequestInit): Promise<CatalogModel[]> => {
+
+  return customFetch<CatalogModel[]>(getListCatalogModelsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCatalogModelsQueryKey = (params?: ListCatalogModelsParams,) => {
+    return [
+    `/api/catalog/models`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCatalogModelsQueryOptions = <TData = Awaited<ReturnType<typeof listCatalogModels>>, TError = ErrorType<BadRequestResponse>>(params?: ListCatalogModelsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCatalogModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCatalogModelsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCatalogModels>>> = ({ signal }) => listCatalogModels(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCatalogModels>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCatalogModelsQueryResult = NonNullable<Awaited<ReturnType<typeof listCatalogModels>>>
+export type ListCatalogModelsQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Catalogo dei modelli
+ */
+
+export function useListCatalogModels<TData = Awaited<ReturnType<typeof listCatalogModels>>, TError = ErrorType<BadRequestResponse>>(
+ params?: ListCatalogModelsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCatalogModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCatalogModelsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetCatalogStatusUrl = () => {
+
+
+
+
+  return `/api/catalog/status`
+}
+
+/**
+ * `running` dice se un aggiornamento è in corso. Il riepilogo contiene solo gli account dell'utente corrente.
+ * @summary Ultimo aggiornamento del catalogo
+ */
+export const getCatalogStatus = async ( options?: RequestInit): Promise<CatalogStatus> => {
+
+  return customFetch<CatalogStatus>(getGetCatalogStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCatalogStatusQueryKey = () => {
+    return [
+    `/api/catalog/status`
+    ] as const;
+    }
+
+
+export const getGetCatalogStatusQueryOptions = <TData = Awaited<ReturnType<typeof getCatalogStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCatalogStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCatalogStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCatalogStatus>>> = ({ signal }) => getCatalogStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCatalogStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCatalogStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getCatalogStatus>>>
+export type GetCatalogStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Ultimo aggiornamento del catalogo
+ */
+
+export function useGetCatalogStatus<TData = Awaited<ReturnType<typeof getCatalogStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCatalogStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCatalogStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRefreshCatalogUrl = () => {
+
+
+
+
+  return `/api/catalog/refresh`
+}
+
+/**
+ * Risponde subito con l'esecuzione `running`; prosegue in background. Massimo 2 al minuto per IP.
+ * @summary Avvia l'aggiornamento del catalogo
+ */
+export const refreshCatalog = async ( options?: RequestInit): Promise<CatalogRunView> => {
+
+  return customFetch<CatalogRunView>(getRefreshCatalogUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRefreshCatalogMutationOptions = <TError = ErrorType<ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshCatalog>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof refreshCatalog>>, TError,void, TContext> => {
+
+const mutationKey = ['refreshCatalog'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshCatalog>>, void> = () => {
+
+
+          return  refreshCatalog(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RefreshCatalogMutationResult = NonNullable<Awaited<ReturnType<typeof refreshCatalog>>>
+
+    export type RefreshCatalogMutationError = ErrorType<ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Avvia l'aggiornamento del catalogo
+ */
+export const useRefreshCatalog = <TError = ErrorType<ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshCatalog>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof refreshCatalog>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRefreshCatalogMutationOptions(options));
+    }
 

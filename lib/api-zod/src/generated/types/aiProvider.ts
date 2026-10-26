@@ -16,6 +16,7 @@ export const AiProvider = {
   mistral: 'mistral',
   groq: 'groq',
   together: 'together',
+  gemini: 'gemini',
   custom: 'custom',
   system_gateway: 'system_gateway',
 } as const;

@@ -730,6 +730,7 @@ export const AiProvider = {
   mistral: 'mistral',
   groq: 'groq',
   together: 'together',
+  gemini: 'gemini',
   custom: 'custom',
   system_gateway: 'system_gateway',
 } as const;
@@ -822,6 +823,31 @@ export const AiModelPriceSource = {
   provider: 'provider',
   manual: 'manual',
   seed: 'seed',
+  catalog: 'catalog',
+} as const;
+
+/**
+ * Disponibilità vista da Casello (verifica dell'account, chiamate reali, prove)
+ */
+export type AiModelAvailability = typeof AiModelAvailability[keyof typeof AiModelAvailability];
+
+
+export const AiModelAvailability = {
+  available: 'available',
+  unavailable: 'unavailable',
+  unknown: 'unknown',
+} as const;
+
+/**
+ * Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non disponibile, altrimenti disponibile
+ */
+export type AiModelStatus = typeof AiModelStatus[keyof typeof AiModelStatus];
+
+
+export const AiModelStatus = {
+  available: 'available',
+  unavailable: 'unavailable',
+  retired: 'retired',
 } as const;
 
 export interface AiModel {
@@ -845,6 +871,48 @@ export interface AiModel {
   /** @nullable */
   priceSource: AiModelPriceSource;
   hidden: boolean;
+  /** Disponibilità vista da Casello (verifica dell'account, chiamate reali, prove) */
+  availability: AiModelAvailability;
+  /**
+     * Supporto degli strumenti (null = non noto)
+     * @nullable
+     */
+  supportsTools: boolean | null;
+  /** Stato effettivo: ritirato se il catalogo lo dà ritirato o la dismissione è passata, poi non disponibile, altrimenti disponibile */
+  status: AiModelStatus;
+  /**
+     * Data di dismissione dal catalogo
+     * @nullable
+     */
+  deprecationDate: string | null;
+  /**
+     * Data di rilascio dal catalogo
+     * @nullable
+     */
+  releasedAt: string | null;
+  /** Disponibile e con strumenti non esclusi */
+  selectable: boolean;
+  /** Preselezione del gruppo (solo in GET /ai/models) */
+  recommended: boolean;
+  /** @nullable */
+  lastProbeAt: string | null;
+  /** @nullable */
+  lastProbeOk: boolean | null;
+}
+
+export interface AiModelProbeResult {
+  ok: boolean;
+  /**
+     * Messaggio fisso dell'errore del provider
+     * @nullable
+     */
+  error: string | null;
+  /**
+     * Costo della prova in USD (null se un prezzo manca o la prova non è riuscita)
+     * @nullable
+     */
+  costUsd: number | null;
+  model: AiModel;
 }
 
 export interface AiModelInput {
@@ -915,6 +983,117 @@ export interface CostEstimate {
      * @nullable
      */
   typicalUsd: number | null;
+}
+
+export type CatalogModelStatus = typeof CatalogModelStatus[keyof typeof CatalogModelStatus];
+
+
+export const CatalogModelStatus = {
+  available: 'available',
+  deprecated: 'deprecated',
+  retired: 'retired',
+} as const;
+
+export interface CatalogModel {
+  id: number;
+  provider: AiProvider;
+  modelId: string;
+  family: string;
+  version: string;
+  /** @nullable */
+  releasedAt: string | null;
+  /**
+     * USD per milione di token
+     * @nullable
+     */
+  priceInput: number | null;
+  /**
+     * USD per milione di token
+     * @nullable
+     */
+  priceOutput: number | null;
+  /** @nullable */
+  contextTokens: number | null;
+  /** @nullable */
+  supportsTools: boolean | null;
+  status: CatalogModelStatus;
+  /** @nullable */
+  deprecationDate: string | null;
+  inMyAccounts: boolean;
+}
+
+export interface CatalogChange {
+  provider: AiProvider;
+  modelId: string;
+  version: string;
+}
+
+export type CatalogSummaryViewDeprecatingItem = CatalogChange & {
+  deprecationDate: string;
+};
+
+export type CatalogSummaryViewPriceChangedItem = CatalogChange & ({
+  /** @nullable */
+  oldInput: number | null;
+  /** @nullable */
+  oldOutput: number | null;
+  /** @nullable */
+  newInput: number | null;
+  /** @nullable */
+  newOutput: number | null;
+});
+
+export type CatalogSummaryViewAccountsItem = {
+  accountId: number;
+  accountName: string;
+  missing: string[];
+};
+
+export interface CatalogSummaryView {
+  firstRun: boolean;
+  added: CatalogChange[];
+  retired: CatalogChange[];
+  deprecating: CatalogSummaryViewDeprecatingItem[];
+  priceChanged: CatalogSummaryViewPriceChangedItem[];
+  /** Solo gli account dell'utente corrente */
+  accounts: CatalogSummaryViewAccountsItem[];
+}
+
+export type CatalogRunViewTrigger = typeof CatalogRunViewTrigger[keyof typeof CatalogRunViewTrigger];
+
+
+export const CatalogRunViewTrigger = {
+  scheduled: 'scheduled',
+  manual: 'manual',
+} as const;
+
+export type CatalogRunViewStatus = typeof CatalogRunViewStatus[keyof typeof CatalogRunViewStatus];
+
+
+export const CatalogRunViewStatus = {
+  running: 'running',
+  completed: 'completed',
+  partial: 'partial',
+  failed: 'failed',
+} as const;
+
+export interface CatalogRunView {
+  id: number;
+  trigger: CatalogRunViewTrigger;
+  status: CatalogRunViewStatus;
+  startedAt: string;
+  /** @nullable */
+  finishedAt: string | null;
+  /** @nullable */
+  error: string | null;
+  summary: CatalogSummaryView | null;
+}
+
+export interface CatalogStatus {
+  running: boolean;
+  latest: CatalogRunView | null;
+  /** Ultima esecuzione completed o partial, da cui leggere le novità */
+  lastCompleted: CatalogRunView | null;
 }
 
 /**
@@ -1018,5 +1197,9 @@ aiModelId: number;
  * @maximum 2000000
  */
 maxTokens?: number;
+};
+
+export type ListCatalogModelsParams = {
+provider?: AiProvider;
 };
 

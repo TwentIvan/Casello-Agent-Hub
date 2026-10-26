@@ -16,6 +16,7 @@ import RunsPage from "@/pages/runs";
 import RunDetailPage from "@/pages/run-detail";
 import AnalysisDetailPage from "@/pages/analysis-detail";
 import AccountPage from "@/pages/account";
+import ModelsPage from "@/pages/models";
 import NotFound from "@/pages/not-found";
 
 const currentUserKey = getGetCurrentUserQueryKey();
@@ -49,6 +50,7 @@ function Router() {
         <Route path="/agents/:id" component={AgentDetailPage} />
         <Route path="/runs" component={RunsPage} />
         <Route path="/runs/:id" component={RunDetailPage} />
+        <Route path="/models" component={ModelsPage} />
         <Route path="/analyses/:id" component={AnalysisDetailPage} />
         <Route path="/account" component={AccountPage} />
         <Route component={NotFound} />

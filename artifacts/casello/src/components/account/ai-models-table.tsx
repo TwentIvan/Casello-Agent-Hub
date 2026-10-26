@@ -40,7 +40,10 @@ function parsePrice(text: string): number | null | undefined {
   return Number.isFinite(value) && value >= 0 && value <= MAX_PRICE ? value : undefined;
 }
 
-/** Prezzo modificabile in linea, salvato all'uscita dal campo. */
+/**
+ * Prezzo modificabile in linea, salvato all'uscita dal campo. Se il salvataggio fallisce il campo torna al
+ * valore salvato (onSave riceve la funzione che lo ripristina).
+ */
 function PriceInput({
   value,
   label,
@@ -48,10 +51,15 @@ function PriceInput({
 }: {
   value: number | null;
   label: string;
-  onSave: (value: number | null) => void;
+  onSave: (value: number | null, restore: () => void) => void;
 }) {
-  const [text, setText] = useState(value == null ? "" : String(value));
+  const saved = value == null ? "" : String(value);
+  const [text, setText] = useState(saved);
   const { toast } = useToast();
+  const invalid = () => {
+    toast({ variant: "destructive", title: "Prezzo non valido", description: "Inserisci un numero tra 0 e 999999." });
+    setText(saved);
+  };
   return (
     <Input
       type="number"
@@ -63,14 +71,12 @@ function PriceInput({
       placeholder="—"
       value={text}
       onChange={(e) => setText(e.target.value)}
-      onBlur={() => {
+      onBlur={(e) => {
+        // Testo non numerico ("-", "1e"): il browser riporta "" e non va scambiato per "prezzo vuoto"
+        if (e.currentTarget.validity.badInput) return invalid();
         const parsed = parsePrice(text);
-        if (parsed === undefined) {
-          toast({ variant: "destructive", title: "Prezzo non valido", description: "Inserisci un numero tra 0 e 999999." });
-          setText(value == null ? "" : String(value));
-          return;
-        }
-        if (parsed !== value) onSave(parsed);
+        if (parsed === undefined) return invalid();
+        if (parsed !== value) onSave(parsed, () => setText(saved));
       }}
     />
   );
@@ -198,7 +204,8 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
       },
     },
   });
-  const save = (model: AiModel, data: AiModelUpdate) => updateModel.mutate({ id: model.id, data });
+  const save = (model: AiModel, data: AiModelUpdate, onError?: () => void) =>
+    updateModel.mutate({ id: model.id, data }, { onError });
 
   return (
     <div className="space-y-3">
@@ -241,7 +248,7 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
                         key={`in-${model.priceInput}`}
                         value={model.priceInput}
                         label={`Prezzo di input di ${model.modelId}`}
-                        onSave={(priceInput) => save(model, { priceInput })}
+                        onSave={(priceInput, restore) => save(model, { priceInput }, restore)}
                       />
                     )}
                   </TableCell>
@@ -253,7 +260,7 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
                         key={`out-${model.priceOutput}`}
                         value={model.priceOutput}
                         label={`Prezzo di output di ${model.modelId}`}
-                        onSave={(priceOutput) => save(model, { priceOutput })}
+                        onSave={(priceOutput, restore) => save(model, { priceOutput }, restore)}
                       />
                     )}
                   </TableCell>

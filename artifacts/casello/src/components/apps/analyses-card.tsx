@@ -108,8 +108,12 @@ export function AnalysesCard({ app }: { app: App }) {
     query: {
       queryKey: getEstimateAnalysisCostQueryKey(estimateParams),
       enabled: aiModelId !== null && tokensValid,
-      // Mentre si digita il tetto resta la stima precedente invece di sparire
-      placeholderData: keepPreviousData,
+      // Mentre si digita il tetto resta la stima precedente invece di sparire, ma solo per lo stesso modello:
+      // cambiando modello la stima del precedente non si mostra
+      placeholderData: (previous, previousQuery) => {
+        const previousParams = previousQuery?.queryKey[1] as { aiModelId?: number } | undefined;
+        return previousParams?.aiModelId === aiModelId ? keepPreviousData(previous) : undefined;
+      },
       staleTime: 60_000,
     },
   });

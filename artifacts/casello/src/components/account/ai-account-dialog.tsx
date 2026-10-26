@@ -65,7 +65,11 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
 
   // A ogni apertura si riparte dai dati dell'account (o da un modulo vuoto); la chiave non è mai precompilata.
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      // La chiave non resta in memoria a dialog chiuso
+      setApiKey("");
+      return;
+    }
     setProvider(account && account.provider !== "system_gateway" ? account.provider : "deepseek");
     setName(account?.name ?? "");
     setBaseUrl(account?.provider === "custom" ? account.baseUrl : "");
@@ -79,6 +83,7 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
   const createAccount = useCreateAiAccount({
     mutation: {
       onSuccess: (created) => {
+        setApiKey("");
         void invalidateAiQueries(queryClient);
         onOpenChange(false);
         toast({ title: `Account aggiunto: ${created.modelCount} modelli trovati` });
@@ -89,6 +94,7 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
   const updateAccount = useUpdateAiAccount({
     mutation: {
       onSuccess: () => {
+        setApiKey("");
         void invalidateAiQueries(queryClient);
         onOpenChange(false);
         toast({ title: "Account aggiornato" });

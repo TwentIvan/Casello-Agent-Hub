@@ -186,6 +186,10 @@ let llmStatus: number | null;
 let llm500Remaining: number;
 /** Richieste a cui il finto LiteLLM chiude la connessione senza rispondere. */
 let llmDropRemaining: number;
+/** Risposte 429 da dare prima di rispondere normalmente, con l'eventuale attesa suggerita. */
+let llm429Remaining: number;
+let llm429RetryAfter: string | null;
+let llm429RetryDelay: string | null;
 let llmPromptTokens: number;
 /** Fasi in cui il modello legge finché non riceve il sollecito del budget della fase. */
 let readUntilNudge: Set<PhaseName>;
@@ -288,6 +292,9 @@ beforeEach(async () => {
   llmStatus = null;
   llm500Remaining = 0;
   llmDropRemaining = 0;
+  llm429Remaining = 0;
+  llm429RetryAfter = null;
+  llm429RetryDelay = null;
   llmPromptTokens = 100;
   readUntilNudge = new Set();
   invalidPhases = new Set();
@@ -309,6 +316,15 @@ beforeEach(async () => {
         return;
       }
       res.setHeader("content-type", "application/json");
+      if (llm429Remaining > 0) {
+        llm429Remaining -= 1;
+        res.statusCode = 429;
+        if (llm429RetryAfter !== null) res.setHeader("retry-after", llm429RetryAfter);
+        // Come Gemini: l'attesa suggerita nei dettagli dell'errore (RetryInfo.retryDelay)
+        const details = llm429RetryDelay === null ? [] : [{ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: llm429RetryDelay }];
+        res.end(JSON.stringify({ error: { code: 429, message: "quota exceeded", status: "RESOURCE_EXHAUSTED", details } }));
+        return;
+      }
       if (llmStatus !== null || llm500Remaining > 0) {
         res.statusCode = llmStatus ?? 500;
         if (llmStatus === null) llm500Remaining -= 1;
@@ -716,7 +732,6 @@ describe("startAnalysis sugli account AI", () => {
     [402, "credito del provider esaurito: ricarica il conto o scegli un altro modello"],
     [400, "richiesta rifiutata dal provider (HTTP 400)"],
     [401, "chiave non valida o senza permessi"],
-    [429, "limite di richieste del provider: riprova più tardi"],
   ])("provider con errore %i: failed col messaggio fisso, senza nuovi tentativi né chiave", async (status, message) => {
     llmStatus = status;
     const model = await ownModel();
@@ -740,6 +755,71 @@ describe("startAnalysis sugli account AI", () => {
     expect(a.status).toBe("completed");
     expect(llmRequests).toHaveLength(13);
   });
+
+  it("limite di richieste transitorio (429): attesa, nuovi tentativi e l'analisi prosegue", async () => {
+    llm429Remaining = 2;
+    const model = await ownModel();
+    const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
+    await startAnalysis(id, { zip: testZip(), rateLimitDelaysMs: [10, 10, 10, 10, 10] });
+    const a = await loadAnalysis(id);
+    expect(a.error).toBeNull();
+    expect(a.status).toBe("completed");
+    expect(llmRequests).toHaveLength(14);
+    const messages = (a.log ?? []).map((e) => e.message);
+    expect(messages).toContain("limite di richieste del provider: nuovo tentativo tra 1 s (1 di 5)");
+    expect(messages).toContain("limite di richieste del provider: nuovo tentativo tra 1 s (2 di 5)");
+  });
+
+  it("429 con l'attesa suggerita da Gemini (retryDelay): si aspetta quella, non la pausa predefinita", async () => {
+    llm429Remaining = 1;
+    llm429RetryDelay = "0.2s";
+    const model = await ownModel();
+    const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
+    const started = Date.now();
+    await startAnalysis(id, { zip: testZip(), rateLimitDelaysMs: [60_000] });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("completed");
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect((a.log ?? []).map((e) => e.message)).toContain("limite di richieste del provider: nuovo tentativo tra 1 s (1 di 1)");
+  }, 20_000);
+
+  it("429 con Retry-After: si aspetta quanto indica il provider", async () => {
+    llm429Remaining = 1;
+    llm429RetryAfter = "1";
+    const model = await ownModel();
+    const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
+    const started = Date.now();
+    await startAnalysis(id, { zip: testZip(), rateLimitDelaysMs: [60_000] });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("completed");
+    expect(Date.now() - started).toBeGreaterThanOrEqual(900);
+    expect(Date.now() - started).toBeLessThan(10_000);
+  }, 20_000);
+
+  it("limite di richieste persistente: dopo i nuovi tentativi failed col messaggio fisso", async () => {
+    llmStatus = 429;
+    const model = await ownModel();
+    const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
+    await startAnalysis(id, { zip: testZip(), rateLimitDelaysMs: [10, 10, 10] });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe("fase map: errore nella chiamata al modello: limite di richieste del provider: riprova più tardi");
+    expect(a.error).not.toContain(ACCOUNT_KEY);
+    expect(llmRequests).toHaveLength(4);
+  });
+
+  it("attesa per il 429 oltre la scadenza dell'analisi: nessun nuovo tentativo", async () => {
+    llm429Remaining = 5;
+    const model = await ownModel();
+    const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
+    const started = Date.now();
+    await startAnalysis(id, { zip: testZip(), maxMs: 2_000, rateLimitDelaysMs: [60_000] });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe("fase map: errore nella chiamata al modello: limite di richieste del provider: riprova più tardi");
+    expect(llmRequests).toHaveLength(1);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  }, 20_000);
 
   it("timeout della singola chiamata: messaggio sul timeout, senza nuovi tentativi", async () => {
     llmHangs = true;

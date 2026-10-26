@@ -236,9 +236,33 @@ function mapError(err: unknown): unknown {
   if (isTimeoutOrAbort(err)) return err;
   if (err instanceof ProviderError) return err;
   if (err instanceof APIError && !(err instanceof APIConnectionError) && typeof err.status === "number") {
-    return new ProviderError(providerErrorKindForStatus(err.status), err.status);
+    const kind = providerErrorKindForStatus(err.status);
+    return new ProviderError(kind, err.status, kind === "rate" ? retryAfterMs(err) : null);
   }
   return new ProviderError("unreachable");
+}
+
+/** Attesa massima suggerita da un provider che si accetta (oltre si usa questa). */
+const MAX_RETRY_AFTER_MS = 120_000;
+
+/**
+ * Attesa suggerita da un 429: intestazioni `retry-after-ms` / `retry-after` (secondi o data) o, come fa
+ * Gemini, `retryDelay` ("30s") nei dettagli dell'errore. Null se il provider non la indica.
+ */
+export function retryAfterMs(err: APIError): number | null {
+  const header = (name: string) => err.headers?.get?.(name) ?? null;
+  let ms: number | null = null;
+  const msHeader = Number(header("retry-after-ms"));
+  const after = header("retry-after");
+  if (header("retry-after-ms") !== null && Number.isFinite(msHeader)) ms = msHeader;
+  else if (after !== null && after.trim() !== "" && Number.isFinite(Number(after))) ms = Number(after) * 1000;
+  else if (after !== null && !Number.isNaN(Date.parse(after))) ms = Date.parse(after) - Date.now();
+  else {
+    const delay = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(JSON.stringify(err.error ?? null));
+    if (delay) ms = Number(delay[1]) * 1000;
+  }
+  if (ms === null || !Number.isFinite(ms)) return null;
+  return Math.min(Math.max(0, Math.round(ms)), MAX_RETRY_AFTER_MS);
 }
 
 /**

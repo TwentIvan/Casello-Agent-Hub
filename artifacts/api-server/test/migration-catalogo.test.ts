@@ -48,6 +48,11 @@ describe("migrazione 2026-10-catalogo-modelli", () => {
     expect((await db.query("SELECT 1 FROM ai_accounts WHERE provider = 'gemini'")).rows).toHaveLength(1);
   });
 
+  it("l'enum ai_provider ha gemini prima di custom, come in schema-casello.sql", async () => {
+    const rows = (await db.query<{ v: string }>("SELECT unnest(enum_range(NULL::ai_provider))::text AS v")).rows.map((r) => r.v);
+    expect(rows.indexOf("gemini")).toBe(rows.indexOf("custom") - 1);
+  });
+
   it("model_catalog: (provider, model_id) unico, stato predefinito available", async () => {
     await addCatalog("gemini", "gemini-2.5-flash");
     await expect(addCatalog("gemini", "gemini-2.5-flash")).rejects.toThrow(/model_catalog_provider_model_unique/);

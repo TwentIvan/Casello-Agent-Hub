@@ -4,7 +4,7 @@
 -- (senza ON_ERROR_STOP psql proseguirebbe dopo un errore). Idempotente: una seconda esecuzione non cambia nulla.
 
 -- ADD VALUE sta fuori dalla transazione: un valore nuovo di un enum non si può usare nella stessa transazione
-ALTER TYPE "public"."ai_provider" ADD VALUE IF NOT EXISTS 'gemini';
+ALTER TYPE "public"."ai_provider" ADD VALUE IF NOT EXISTS 'gemini' BEFORE 'custom';
 
 BEGIN;
 

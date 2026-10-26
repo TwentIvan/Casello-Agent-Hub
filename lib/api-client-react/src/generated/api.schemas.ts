@@ -974,8 +974,8 @@ export const ExportAnalysisIssuesChapter = {
 export type EstimateAnalysisCostParams = {
 aiModelId: number;
 /**
- * Tetto di token dell'analisi (default 1000000)
- * @minimum 1
+ * Tetto di token dell'analisi, come in AnalysisStart (default 1000000)
+ * @minimum 50000
  * @maximum 2000000
  */
 maxTokens?: number;

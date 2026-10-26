@@ -36,7 +36,8 @@ export function normalizeBaseUrl(url: string): string {
 
 /**
  * IPv4 non pubblici: 0.0.0.0/8, privati (10/8, 172.16/12, 192.168/16), CGNAT (100.64/10), loopback,
- * link-local, multicast (224/4) e broadcast.
+ * link-local, IETF (192.0.0.0/24), benchmark (198.18.0.0/15), multicast (224/4), riservati (240/4,
+ * broadcast compreso).
  */
 function isPrivateIpv4(ip: string): boolean {
   const p = ip.split(".").map(Number);
@@ -50,8 +51,9 @@ function isPrivateIpv4(ip: string): boolean {
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 168) ||
     (a === 169 && b === 254) ||
-    (a >= 224 && a <= 239) ||
-    ip === "255.255.255.255"
+    (a === 192 && b === 0 && p[2] === 0) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    a >= 224
   );
 }
 
@@ -77,8 +79,8 @@ function ipv6Groups(ip: string): number[] | null {
 
 /**
  * IPv6 non pubblici: non specificato, loopback, ULA (fc00::/7), link-local (fe80::/10), site-local
- * (fec0::/10), multicast (ff00::/8) e IPv4 incorporati (::/96, ::ffff:0:0/96, 64:ff9b::/96) che
- * ricadono nelle regole IPv4.
+ * (fec0::/10), multicast (ff00::/8), IPv4 incorporati (::/96, ::ffff:0:0/96, SIIT ::ffff:0:0:0/96,
+ * 64:ff9b::/96) che ricadono nelle regole IPv4, e i tunnel 6to4 (2002::/16) e Teredo (2001::/32).
  */
 function isPrivateIpv6(ip: string): boolean {
   const g = ipv6Groups(ip);
@@ -91,8 +93,14 @@ function isPrivateIpv6(ip: string): boolean {
   const embeddedV4 = () => `${g[6]! >> 8}.${g[6]! & 0xff}.${g[7]! >> 8}.${g[7]! & 0xff}`;
   // ::a.b.c.d (IPv4-compatibile) e ::ffff:a.b.c.d (IPv4 mappato)
   if (g.slice(0, 5).every((x) => x === 0) && (g[5] === 0 || g[5] === 0xffff)) return isPrivateIpv4(embeddedV4());
+  // ::ffff:0:a.b.c.d (SIIT)
+  if (g.slice(0, 4).every((x) => x === 0) && g[4] === 0xffff && g[5] === 0) return isPrivateIpv4(embeddedV4());
   // 64:ff9b::a.b.c.d (NAT64)
   if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return isPrivateIpv4(embeddedV4());
+  // 6to4 (2002::/16) e Teredo (2001:0::/32) incorporano un IPv4 (Teredo anche offuscato): scelta
+  // semplice, si rifiutano per intero invece di decodificarlo. Nessun provider reale li usa.
+  if (g[0] === 0x2002) return true;
+  if (g[0] === 0x2001 && g[1] === 0) return true;
   return false;
 }
 

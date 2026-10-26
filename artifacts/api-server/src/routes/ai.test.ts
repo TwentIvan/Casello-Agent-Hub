@@ -300,26 +300,37 @@ describe("predefinito", () => {
     // Idempotente
     expect((await api("POST", `/ai/accounts/${b.id}/default`)).status).toBe(200);
   });
+
+  it("scegliere il proprio predefinito non tocca quello di un altro utente", async () => {
+    const other = await otherUserAccount();
+    const a = await createAccount({ name: "A" });
+    const b = await createAccount({ name: "B" });
+    expect((await api("POST", `/ai/accounts/${b.id}/default`)).status).toBe(200);
+    const defaults = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.isDefault, true)).orderBy(aiAccountsTable.id);
+    expect(defaults.map((d) => d.id)).toEqual([other.account.id, b.id]);
+    expect(a.isDefault).toBe(true);
+  });
 });
 
 describe("verifica", () => {
-  it("aggiunge i nuovi, aggiorna gli esistenti, rispetta i prezzi manuali e non toglie i mancanti", async () => {
+  it("aggiunge i nuovi, aggiorna gli esistenti (non il nome), rispetta i prezzi manuali e non toglie i mancanti", async () => {
     const acc = await createAccount();
     const before = await modelsOf(acc.id);
-    // Prezzo manuale su modello-a
-    await api("PATCH", `/ai/models/${before[0]!.id}`, { priceInput: 5 });
+    // Prezzo manuale e rinomina su modello-a
+    await api("PATCH", `/ai/models/${before[0]!.id}`, { priceInput: 5, displayName: "Il mio modello" });
     fake.models = [
       { id: "modello-a", name: "Modello A2", context_length: 65_536, pricing: { prompt: "0.000003", completion: "0.000004" } },
-      { id: "modello-c", pricing: { prompt: "0.0000001", completion: "0.0000002" } },
+      { id: "modello-b", name: "Modello B dal provider" },
+      { id: "modello-c", name: "Modello C", pricing: { prompt: "0.0000001", completion: "0.0000002" } },
     ];
     const res = await api("POST", `/ai/accounts/${acc.id}/verify`);
     expect(res.status).toBe(200);
     expect(res.json).toMatchObject({ status: "ok", lastError: null, modelCount: 3 });
     const after = await modelsOf(acc.id);
     expect(after.map((m) => [m.modelId, m.displayName, m.contextTokens, m.priceInputPerMtok, m.priceSource, m.discovered])).toEqual([
-      ["modello-a", "Modello A2", 65_536, "5.000000", "manual", true],
+      ["modello-a", "Il mio modello", 65_536, "5.000000", "manual", true],
       ["modello-b", "modello-b", null, null, null, true],
-      ["modello-c", "modello-c", null, "0.100000", "provider", true],
+      ["modello-c", "Modello C", null, "0.100000", "provider", true],
     ]);
     expect(after[0]!.id).toBe(before[0]!.id);
   });
@@ -349,10 +360,13 @@ describe("modifica", () => {
     expect(res.json).toMatchObject({ status: "ok", keySet: true });
     expect(fake.requests.at(-1)!.authorization).toBe(`Bearer ${KEY2}`);
 
-    // Chiave sbagliata: salvata, ma l'account va in errore
-    res = await api("PATCH", `/ai/accounts/${acc.id}`, { apiKey: "sk-sbagliata" });
-    expect(res.status).toBe(200);
-    expect(res.json).toMatchObject({ status: "error", lastError: "chiave non valida o senza permessi" });
+    // Chiave sbagliata: 400 e nulla cambia; la verifica successiva usa ancora la chiave buona
+    res = await api("PATCH", `/ai/accounts/${acc.id}`, { apiKey: "sk-sbagliata", name: "Non salvato" });
+    expect(res.status).toBe(400);
+    expect(res.json).toEqual({ error: "chiave non valida o senza permessi" });
+    res = await api("POST", `/ai/accounts/${acc.id}/verify`);
+    expect(res.json).toMatchObject({ name: "Rinominato", status: "ok", keySet: true, lastError: null });
+    expect(fake.requests.at(-1)!.authorization).toBe(`Bearer ${KEY2}`);
 
     fake.apiKey = null;
     res = await api("PATCH", `/ai/accounts/${acc.id}`, { apiKey: null });
@@ -366,6 +380,40 @@ describe("modifica", () => {
     } finally {
       await other.close();
     }
+  });
+
+  it("base URL che non risponde → 400 e account invariato (URL, stato, modelli)", async () => {
+    const acc = await createAccount();
+    const before = await modelsOf(acc.id);
+    const broken = await startFakeProvider({ status: 500, models: [{ id: "mai-salvato" }] });
+    try {
+      const res = await api("PATCH", `/ai/accounts/${acc.id}`, { baseUrl: broken.baseUrl });
+      expect(res.status).toBe(400);
+      expect(res.json).toEqual({ error: "provider non raggiungibile" });
+      expect(broken.requests).toHaveLength(1);
+    } finally {
+      await broken.close();
+    }
+    const [row] = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.id, acc.id));
+    expect(row).toMatchObject({ baseUrl: fake.baseUrl, status: "ok", lastError: null });
+    expect(await modelsOf(acc.id)).toEqual(before);
+    // La verifica va ancora al vecchio indirizzo con la vecchia chiave
+    const res = await api("POST", `/ai/accounts/${acc.id}/verify`);
+    expect(res.json).toMatchObject({ status: "ok", baseUrl: fake.baseUrl });
+    expect(fake.requests.at(-1)).toMatchObject({ path: "/v1/models", authorization: `Bearer ${KEY}` });
+  });
+
+  it("nome: caratteri di controllo e oltre 100 caratteri → 400, in creazione e in modifica", async () => {
+    for (const name of ["a\nb", "tab\tqui", "x".repeat(101)]) {
+      expect((await api("POST", "/ai/accounts", customInput({ name }))).status, name).toBe(400);
+    }
+    expect(fake.requests).toHaveLength(0);
+    const acc = await createAccount();
+    for (const name of ["a\u0007b", "   ", "x".repeat(101)]) {
+      expect((await api("PATCH", `/ai/accounts/${acc.id}`, { name })).status, name).toBe(400);
+    }
+    const [row] = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.id, acc.id));
+    expect(row!.name).toBe("Locale");
   });
 
   it("indirizzo privato senza consenso → 400 senza salvare; consenso e base URL solo per custom", async () => {
@@ -503,13 +551,16 @@ describe("modelli selezionabili", () => {
     expect(list.json.map((x: { name: string }) => x.name)).toEqual(["Zeta", "Alfa", "Beta", "Aaa rotto", "Gateway Casello"]);
   });
 
-  it("senza variabili del gateway l'account di sistema non compare", async () => {
-    await ensureSystemAccount();
+  it("senza variabili del gateway l'account di sistema non compare e le sue route rispondono 404", async () => {
+    const sys = await ensureSystemAccount();
+    const [sysModel] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.accountId, sys!.accountId)).limit(1);
     const url = process.env["AI_GATEWAY_BASE_URL"];
     delete process.env["AI_GATEWAY_BASE_URL"];
     try {
       expect((await api("GET", "/ai/models")).json).toEqual([]);
       expect((await api("GET", "/ai/accounts")).json).toEqual([]);
+      expect((await api("GET", `/ai/accounts/${sys!.accountId}/models`)).status).toBe(404);
+      expect((await api("GET", `/ai/estimate?aiModelId=${sysModel!.id}`)).status).toBe(404);
     } finally {
       process.env["AI_GATEWAY_BASE_URL"] = url;
     }
@@ -547,7 +598,10 @@ describe("isolamento e account di sistema", () => {
     const sys = await ensureSystemAccount();
     const id = sys!.accountId;
     const list = await api("GET", "/ai/accounts");
-    expect(list.json).toEqual([expect.objectContaining({ id, isSystem: true, isDefault: false, provider: "system_gateway" })]);
+    // L'indirizzo del gateway non si espone
+    expect(list.json).toEqual([expect.objectContaining({ id, isSystem: true, isDefault: false, provider: "system_gateway", baseUrl: "" })]);
+    expect(list.text).not.toContain("gateway.interno");
+    expect((await api("GET", "/ai/models")).text).not.toContain("gateway.interno");
     const models = await api("GET", `/ai/accounts/${id}/models`);
     expect(models.status).toBe(200);
     const modelId = models.json[0].id as number;
@@ -580,8 +634,13 @@ describe("stima del costo", () => {
     expect(res.json).toEqual({ maxUsd: 0.287, typicalUsd: 0.1722 });
     // Default 1 000 000 token
     expect((await api("GET", `/ai/estimate?aiModelId=${withPrice!.id}`)).json).toEqual({ maxUsd: 0.287, typicalUsd: 0.1722 });
-    res = await api("GET", `/ai/estimate?aiModelId=${withPrice!.id}&maxTokens=12345`);
-    expect(res.json).toEqual({ maxUsd: 0.0035, typicalUsd: 0.0021 });
+    res = await api("GET", `/ai/estimate?aiModelId=${withPrice!.id}&maxTokens=123450`);
+    expect(res.json).toEqual({ maxUsd: 0.0354, typicalUsd: 0.0213 });
+    // Stessi limiti dell'analisi: 50 000 – 2 000 000
+    expect((await api("GET", `/ai/estimate?aiModelId=${withPrice!.id}&maxTokens=50000`)).status).toBe(200);
+    expect((await api("GET", `/ai/estimate?aiModelId=${withPrice!.id}&maxTokens=2000000`)).status).toBe(200);
+    expect((await api("GET", `/ai/estimate?aiModelId=${withPrice!.id}&maxTokens=49999`)).status).toBe(400);
+    expect((await api("GET", `/ai/estimate?aiModelId=${withPrice!.id}&maxTokens=2000001`)).status).toBe(400);
 
     res = await api("GET", `/ai/estimate?aiModelId=${noPrice!.id}&maxTokens=1000000`);
     expect(res.json).toEqual({ maxUsd: null, typicalUsd: null });

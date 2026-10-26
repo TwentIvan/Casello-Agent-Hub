@@ -101,6 +101,18 @@ describe("validateBaseUrl", () => {
       "https://239.255.255.250",
       "https://255.255.255.255",
       "https://[ff02::1]",
+      // IETF, benchmark e riservati
+      "https://192.0.0.8",
+      "https://198.18.0.1",
+      "https://198.19.255.254",
+      "https://240.0.0.1",
+      "https://250.1.2.3",
+      // SIIT, 6to4, Teredo
+      "https://[::ffff:0:a00:1]",
+      "https://[::ffff:0:7f00:1]",
+      "https://[2002:808:808::1]",
+      "https://[2002:c0a8:101::1]",
+      "https://[2001:0:4136:e378::1]",
       // site-local deprecato
       "https://[fec0::1]",
       // host a etichetta singola e suffissi interni
@@ -119,6 +131,11 @@ describe("validateBaseUrl", () => {
     expect(validateBaseUrl("https://100.128.0.1", false)).toBeNull();
     expect(validateBaseUrl("https://[64:ff9b::808:808]", false)).toBeNull();
     expect(validateBaseUrl("https://223.255.255.255", false)).toBeNull();
+    expect(validateBaseUrl("https://192.0.1.1", false)).toBeNull();
+    expect(validateBaseUrl("https://198.20.0.1", false)).toBeNull();
+    expect(validateBaseUrl("https://198.17.255.255", false)).toBeNull();
+    expect(validateBaseUrl("https://[::ffff:0:808:808]", false)).toBeNull();
+    expect(validateBaseUrl("https://[2001:4860::8888]", false)).toBeNull();
     expect(validateBaseUrl("https://api.internal-tools.com/v1", false)).toBeNull();
   });
 

@@ -56,7 +56,7 @@ const PRIVATE_ONLY_CUSTOM = "allowPrivateNetwork è ammesso solo per gli account
 const BASE_URL_ONLY_CUSTOM = "base URL modificabile solo per gli account personalizzati (custom)";
 const BASE_URL_REQUIRED = "base URL obbligatorio per gli account personalizzati (custom)";
 const KEY_REQUIRED = "chiave obbligatoria per questo provider";
-const NAME_REQUIRED = "nome obbligatorio";
+const NAME_REQUIRED = "nome obbligatorio, senza caratteri di controllo";
 const BAD_MODEL_ID = "id del modello non valido";
 const MODEL_EXISTS = "modello già presente nell'account";
 const USED_BY_MAX_NAMES = 10;
@@ -91,7 +91,8 @@ function toPublicAccount(a: AiAccount, modelCount: number) {
     id: a.id,
     name: a.name,
     provider: a.provider,
-    baseUrl: a.baseUrl,
+    // L'indirizzo del gateway di sistema (spesso interno) non si espone
+    baseUrl: system ? "" : a.baseUrl,
     allowPrivateNetwork: a.allowPrivateNetwork,
     isDefault: a.isDefault,
     status: a.status,
@@ -118,8 +119,12 @@ function toPublicModel(m: AiModel) {
   };
 }
 
-/** Condizione "visibile all'utente": suoi account o account di sistema. */
+/**
+ * Condizione "visibile all'utente": suoi account o account di sistema, quest'ultimo solo finché le
+ * variabili del gateway sono impostate (dopo la dismissione sparisce da ogni route).
+ */
 function visibleTo(userId: number) {
+  if (!systemConfigured()) return eq(aiAccountsTable.userId, userId);
   return or(
     eq(aiAccountsTable.userId, userId),
     and(isNull(aiAccountsTable.userId), eq(aiAccountsTable.provider, "system_gateway")),
@@ -162,10 +167,28 @@ async function modelCounts(accountIds: number[]): Promise<Map<number, number>> {
   return new Map(rows.map((r) => [r.accountId, Number(r.n)]));
 }
 
+/** Forma pubblica riletta dal DB; undefined se l'account è sparito nel frattempo. */
 async function publicAccount(id: number) {
   const [account] = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.id, id));
+  if (!account) return undefined;
   const counts = await modelCounts([id]);
-  return toPublicAccount(account!, counts.get(id) ?? 0);
+  return toPublicAccount(account, counts.get(id) ?? 0);
+}
+
+/** Risponde con l'account riletto, o 404 se è stato eliminato durante la richiesta. */
+async function sendAccount(res: Response, id: number, schema: { parse(v: unknown): unknown }, status = 200) {
+  const account = await publicAccount(id);
+  if (!account) {
+    res.status(404).json({ error: ACCOUNT_NOT_FOUND });
+    return;
+  }
+  res.status(status).json(schema.parse(account));
+}
+
+/** Nome dell'account ripulito; null se vuoto o con caratteri di controllo. */
+function cleanName(raw: string): string | null {
+  const name = raw.trim();
+  return name && !CONTROL_RE.test(name) ? name : null;
 }
 
 /**
@@ -186,8 +209,8 @@ async function lockUser(tx: Tx, userId: number): Promise<void> {
 }
 
 /**
- * Salva i modelli scoperti: inserisce i nuovi; sugli esistenti aggiorna nome e contesto, e i prezzi
- * solo se non sono stati inseriti a mano. I modelli non più elencati restano (agenti e analisi
+ * Salva i modelli scoperti: inserisce i nuovi; sugli esistenti aggiorna il contesto e i prezzi (solo
+ * se non sono stati inseriti a mano), mai il nome (le rinomine dell'utente restano). I modelli non più elencati restano (agenti e analisi
  * possono usarli) e il flag `discovered` degli esistenti non cambia.
  */
 async function upsertDiscovered(tx: Tx, accountId: number, models: DiscoveredModel[]): Promise<void> {
@@ -211,7 +234,6 @@ async function upsertDiscovered(tx: Tx, accountId: number, models: DiscoveredMod
       .onConflictDoUpdate({
         target: [aiModelsTable.accountId, aiModelsTable.modelId],
         set: {
-          displayName: sql`excluded.display_name`,
           contextTokens: sql`excluded.context_tokens`,
           priceInputPerMtok: sql`CASE WHEN ${manual} THEN ${aiModelsTable.priceInputPerMtok} ELSE excluded.price_input_per_mtok END`,
           priceOutputPerMtok: sql`CASE WHEN ${manual} THEN ${aiModelsTable.priceOutputPerMtok} ELSE excluded.price_output_per_mtok END`,
@@ -259,11 +281,13 @@ async function verifyAccount(account: AiAccount): Promise<void> {
     }
   }
   await db.transaction(async (tx) => {
-    await upsertDiscovered(tx, account.id, models);
-    await tx
+    const updated = await tx
       .update(aiAccountsTable)
       .set({ status: "ok", lastError: null, lastCheckedAt: now, updatedAt: now })
-      .where(eq(aiAccountsTable.id, account.id));
+      .where(eq(aiAccountsTable.id, account.id))
+      .returning({ id: aiAccountsTable.id });
+    // Account eliminato durante la verifica: niente modelli orfani (la route risponde 404)
+    if (updated.length) await upsertDiscovered(tx, account.id, models);
   });
 }
 
@@ -330,7 +354,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler } = {}
       res.status(400).json({ error: PRIVATE_ONLY_CUSTOM });
       return;
     }
-    const name = body.name.trim();
+    const name = cleanName(body.name);
     if (!name) {
       res.status(400).json({ error: NAME_REQUIRED });
       return;
@@ -404,7 +428,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler } = {}
       await upsertDiscovered(tx, created!.id, models);
       return created!.id;
     });
-    res.status(201).json(CreateAiAccountResponse.parse(await publicAccount(id)));
+    await sendAccount(res, id, CreateAiAccountResponse, 201);
   });
 
   router.patch("/ai/accounts/:id", providerLimit, async (req, res) => {
@@ -417,7 +441,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler } = {}
 
     const set: Partial<typeof aiAccountsTable.$inferInsert> = {};
     if (body.name !== undefined) {
-      const name = body.name.trim();
+      const name = cleanName(body.name);
       if (!name) {
         res.status(400).json({ error: NAME_REQUIRED });
         return;
@@ -446,41 +470,78 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler } = {}
       }
       baseUrl = requested;
     }
-    const baseUrlChanged = baseUrl !== account.baseUrl;
-    if (baseUrlChanged || allowPrivateNetwork !== account.allowPrivateNetwork) {
+    const connectionChanged = baseUrl !== account.baseUrl || allowPrivateNetwork !== account.allowPrivateNetwork;
+    if (connectionChanged) {
       const urlError = validateBaseUrl(baseUrl, allowPrivateNetwork);
       if (urlError) {
         res.status(400).json({ error: urlError });
         return;
       }
-      set.baseUrl = baseUrl;
-      set.allowPrivateNetwork = allowPrivateNetwork;
     }
 
     // Chiave: assente o "" = invariata; null = rimossa (solo custom); un valore la sostituisce
-    let keyChanged = false;
+    let newKey: { plain: string | null } | null = null;
     if (body.apiKey === null) {
       if (!isCustom) {
         res.status(400).json({ error: KEY_REQUIRED });
         return;
       }
-      set.apiKeyEnc = null;
-      keyChanged = account.apiKeyEnc !== null;
+      if (account.apiKeyEnc !== null) newKey = { plain: null };
     } else if (body.apiKey !== undefined && body.apiKey.trim() !== "") {
-      set.apiKeyEnc = encryptSecret(body.apiKey.trim());
-      keyChanged = true;
+      newKey = { plain: body.apiKey.trim() };
     }
 
-    if (Object.keys(set).length) {
-      const [updated] = await db
-        .update(aiAccountsTable)
-        .set({ ...set, updatedAt: new Date() })
-        .where(eq(aiAccountsTable.id, account.id))
-        .returning();
-      // Chiave o indirizzo nuovi: si rileggono i modelli (l'esito finisce nello stato dell'account)
-      if (keyChanged || baseUrlChanged) await verifyAccount(updated!);
+    const now = new Date();
+    if (newKey === null && !connectionChanged) {
+      // Solo il nome: nessuna chiamata al provider
+      if (Object.keys(set).length) {
+        await db.update(aiAccountsTable).set({ ...set, updatedAt: now }).where(eq(aiAccountsTable.id, account.id));
+      }
+      await sendAccount(res, account.id, UpdateAiAccountResponse);
+      return;
     }
-    res.json(UpdateAiAccountResponse.parse(await publicAccount(account.id)));
+
+    // Chiave, indirizzo o consenso nuovi: si verificano in memoria con i valori candidati PRIMA di
+    // salvarli. Se il provider li rifiuta → 400 e l'account resta com'era (chiave, URL, stato, modelli).
+    let models: DiscoveredModel[];
+    try {
+      let apiKey: string | null;
+      if (newKey !== null) {
+        apiKey = newKey.plain;
+      } else if (account.apiKeyEnc === null) {
+        apiKey = null;
+      } else {
+        try {
+          apiKey = decryptSecret(account.apiKeyEnc);
+        } catch {
+          throw new ProviderError("auth");
+        }
+      }
+      models = await discoverModels({ provider: account.provider, baseUrl, apiKey, allowPrivateNetwork });
+    } catch (err) {
+      if (!(err instanceof ProviderError)) throw err;
+      if (err.kind !== "no_models") {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      models = [];
+    }
+
+    if (connectionChanged) {
+      set.baseUrl = baseUrl;
+      set.allowPrivateNetwork = allowPrivateNetwork;
+    }
+    if (newKey !== null) set.apiKeyEnc = newKey.plain === null ? null : encryptSecret(newKey.plain);
+    await db.transaction(async (tx) => {
+      const updated = await tx
+        .update(aiAccountsTable)
+        .set({ ...set, status: "ok", lastError: null, lastCheckedAt: now, updatedAt: now })
+        .where(eq(aiAccountsTable.id, account.id))
+        .returning({ id: aiAccountsTable.id });
+      // Account eliminato nel frattempo: sendAccount risponde 404
+      if (updated.length) await upsertDiscovered(tx, account.id, models);
+    });
+    await sendAccount(res, account.id, UpdateAiAccountResponse);
   });
 
   router.delete("/ai/accounts/:id", async (req, res) => {
@@ -521,7 +582,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler } = {}
     const account = await findWritableAccount(id, currentUserId(req), res);
     if (!account) return;
     await verifyAccount(account);
-    res.json(VerifyAiAccountResponse.parse(await publicAccount(account.id)));
+    await sendAccount(res, account.id, VerifyAiAccountResponse);
   });
 
   router.post("/ai/accounts/:id/default", async (req, res) => {
@@ -537,7 +598,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler } = {}
         .where(and(eq(aiAccountsTable.userId, userId), eq(aiAccountsTable.isDefault, true), ne(aiAccountsTable.id, account.id)));
       await tx.update(aiAccountsTable).set({ isDefault: true }).where(eq(aiAccountsTable.id, account.id));
     });
-    res.json(SetDefaultAiAccountResponse.parse(await publicAccount(account.id)));
+    await sendAccount(res, account.id, SetDefaultAiAccountResponse);
   });
 
   router.get("/ai/accounts/:id/models", async (req, res) => {

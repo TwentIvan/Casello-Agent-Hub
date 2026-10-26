@@ -1311,13 +1311,14 @@ export const ListAiModelsResponse = zod.array(ListAiModelsResponseItem)
  * Massimo = maxTokens × (0.95 × prezzo input + 0.05 × prezzo output) / 1e6; tipico = 60% del massimo; USD arrotondati a 4 decimali, null se un prezzo manca.
  * @summary Stima del costo di un'analisi
  */
+export const estimateAnalysisCostQueryMaxTokensMin = 50000;
 export const estimateAnalysisCostQueryMaxTokensMax = 2000000;
 
 
 
 export const EstimateAnalysisCostQueryParams = zod.object({
   "aiModelId": zod.coerce.number(),
-  "maxTokens": zod.coerce.number().min(1).max(estimateAnalysisCostQueryMaxTokensMax).optional().describe('Tetto di token dell\'analisi (default 1000000)')
+  "maxTokens": zod.coerce.number().min(estimateAnalysisCostQueryMaxTokensMin).max(estimateAnalysisCostQueryMaxTokensMax).optional().describe('Tetto di token dell\'analisi, come in AnalysisStart (default 1000000)')
 })
 
 export const EstimateAnalysisCostResponse = zod.object({

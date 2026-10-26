@@ -1082,10 +1082,10 @@ paths:
         - name: maxTokens
           in: query
           required: false
-          description: Tetto di token dell'analisi (default 1000000)
+          description: Tetto di token dell'analisi, come in AnalysisStart (default 1000000)
           schema:
             type: integer
-            minimum: 1
+            minimum: 50000
             maximum: 2000000
       responses:
         "200":

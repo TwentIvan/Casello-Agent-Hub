@@ -32,6 +32,17 @@ const STATUS_BADGE: Record<
   failed: { label: "Fallito", variant: "destructive" },
 };
 
+/** Data e ora assolute, es. "26/10/2026, 19:10". */
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function modelName(item: { provider: AiProvider; modelId: string; version: string }): string {
   return `${providerLabel(item.provider)} · ${item.modelId} (${item.version})`;
 }
@@ -88,8 +99,11 @@ export function CatalogNews() {
     });
   };
 
+  // Esito ed errore dall'ultima esecuzione; le novità dall'ultima riuscita (anche durante un aggiornamento)
   const latest = status.data?.latest ?? null;
-  const summary = latest?.summary ?? null;
+  const lastCompleted = status.data?.lastCompleted ?? null;
+  const summary = lastCompleted?.summary ?? null;
+  const olderNews = lastCompleted !== null && lastCompleted.id !== latest?.id;
   const badge = latest ? STATUS_BADGE[latest.status] : null;
 
   return (
@@ -100,7 +114,9 @@ export function CatalogNews() {
           {latest && badge && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Badge variant={badge.variant}>{badge.label}</Badge>
-              <span>Ultimo aggiornamento {formatRelative(latest.startedAt)}</span>
+              <span>
+                Ultimo aggiornamento {formatRelative(latest.startedAt)} ({formatDateTime(latest.startedAt)})
+              </span>
             </div>
           )}
         </div>
@@ -124,6 +140,11 @@ export function CatalogNews() {
               <Alert variant="destructive">
                 <AlertDescription>{latest.error}</AlertDescription>
               </Alert>
+            )}
+            {summary && olderNews && lastCompleted && (
+              <p className="text-sm text-muted-foreground">
+                Novità dell'aggiornamento del {formatDateTime(lastCompleted.startedAt)}
+              </p>
             )}
             {summary?.firstRun && (
               <p className="text-sm text-muted-foreground">Primo aggiornamento: catalogo creato</p>

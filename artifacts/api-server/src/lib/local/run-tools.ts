@@ -36,8 +36,11 @@ export type RunToolsContext = {
   rounds: number;
   /** Tempo attivo dei compiti già finiti (le pause non contano). */
   activeMs: number;
-  /** Compito in corso: impostato dal turno delegato, null quando il turno è chiuso. */
-  turn: { startedAt: number } | null;
+  /**
+   * Compito in corso: impostato dal turno delegato, null quando il turno è chiuso. `startedAt` è la consegna al runner
+   * (o la pubblicazione, nella chat): l'attesa della consegna non è tempo attivo.
+   */
+  turn: { startedAt: number | null } | null;
   execute: (tool: CatalogTool, args: Record<string, unknown>) => Promise<ToolResult>;
   writeStep: (step: StepRecord) => Promise<void>;
   now: () => number;
@@ -54,7 +57,7 @@ export function openRunContext(
   runId: number,
   input: Omit<RunToolsContext, "turn" | "now"> & { now?: () => number },
 ): RunToolsContext {
-  const ctx: RunToolsContext = { ...input, turn: null, now: input.now ?? Date.now };
+  const ctx: RunToolsContext = { ...input, turn: null, now: input.now ?? (() => Date.now()) };
   contexts.set(runId, ctx);
   return ctx;
 }
@@ -108,7 +111,7 @@ async function endTurn(ctx: RunToolsContext, jobId: number, itemId: string, outc
 /** Limite del turno raggiunto prima di una chiamata (stessi testi del ciclo dell'agente). */
 function limitReached(ctx: RunToolsContext): string | null {
   if (ctx.rounds >= ctx.limits.maxRounds) return `limite di ${ctx.limits.maxRounds} giri di strumenti raggiunto`;
-  const active = ctx.activeMs + (ctx.turn ? ctx.now() - ctx.turn.startedAt : 0);
+  const active = ctx.activeMs + (ctx.turn?.startedAt != null ? ctx.now() - ctx.turn.startedAt : 0);
   if (active >= ctx.limits.maxActiveMs) return "tempo massimo del turno superato";
   return null;
 }
@@ -210,6 +213,11 @@ registerJobToolProvider("run", runTools);
 // --- Turno delegato -----------------------------------------------------------------------------------------------
 
 export const RUN_NOT_FINISHED = "l'agente locale non ha concluso la run";
+/**
+ * Tempo attivo per turno delle run locali: più largo dei 120 s del percorso API, perché l'avvio di Claude Code e il
+ * suo ragionamento sono più lenti di una chiamata al modello. I giri restano 8.
+ */
+export const LOCAL_MAX_ACTIVE_MS = 300_000;
 const TURN_TIMEOUT = "tempo massimo del turno superato";
 
 export const LOCAL_RUN_INSTRUCTIONS = `ISTRUZIONI PER L'AGENTE LOCALE. Usa solo gli strumenti del server MCP "casello": i tool dell'app li esegue Casello, con le sue conferme e i suoi limiti (non leggere file locali, non eseguire comandi, non usare la rete). Quando hai la risposta finale per l'utente chiamala con ${FINISH_RUN_TOOL} nel campo content, poi termina. Se uno strumento risponde che è in attesa di conferma dell'utente, termina subito il turno senza chiamare altri strumenti.`;
@@ -232,7 +240,8 @@ function outcomeOf(result: ItemResult): RunTurnOutcome | null {
 /**
  * Esegue un turno della run con l'agente locale: un compito (sessione nuova o ripresa) che finisce con
  * `finish_run`, con una conferma chiesta o con un limite raggiunto. Se Claude termina senza nessuno di questi, un
- * compito di correzione sulla stessa sessione; poi la run fallisce. Il compito è limitato dal tempo attivo rimasto.
+ * compito di correzione sulla stessa sessione; poi la run fallisce. Dalla consegna il compito è limitato dal tempo
+ * attivo rimasto (prima della consegna valgono le attese della coda: segnale di vita, scadenza del lavoro).
  */
 export async function runTurnDelegated(input: { jobId: number; runId: number; prompt: string; resume: boolean }): Promise<RunTurnOutcome> {
   const ctx = contexts.get(input.runId);
@@ -241,20 +250,30 @@ export async function runTurnDelegated(input: { jobId: number; runId: number; pr
   for (let corrections = 0; ; corrections++) {
     const left = ctx.limits.maxActiveMs - ctx.activeMs;
     if (left <= 0) return { kind: "failed", error: TURN_TIMEOUT };
-    const signal = AbortSignal.timeout(left);
-    const startedAt = ctx.now();
-    ctx.turn = { startedAt };
+    const ac = new AbortController();
+    const signal = ac.signal;
+    let timer: NodeJS.Timeout | undefined;
+    const turn: { startedAt: number | null } = { startedAt: null };
+    ctx.turn = turn;
+    const onDelivered = () => {
+      // Una consegna ripetuta (richiesta del runner persa) non fa ripartire il tempo
+      if (turn.startedAt !== null) return;
+      turn.startedAt = ctx.now();
+      timer = setTimeout(() => ac.abort(), left);
+      timer.unref();
+    };
     let result: ItemResult;
     try {
-      result = await runItem(input.jobId, item, signal);
+      result = await runItem(input.jobId, item, signal, { onDelivered });
     } catch (err) {
       if (signal.aborted) return { kind: "failed", error: TURN_TIMEOUT };
       // Solo i messaggi fissi della coda dei lavori; ogni altro errore lo chiude l'orchestratore
       if (isQueueError(err)) return { kind: "failed", error: err.message };
       throw err;
     } finally {
+      clearTimeout(timer);
       ctx.turn = null;
-      ctx.activeMs += ctx.now() - startedAt;
+      if (turn.startedAt !== null) ctx.activeMs += ctx.now() - turn.startedAt;
     }
     const outcome = outcomeOf(result);
     if (outcome) return outcome;

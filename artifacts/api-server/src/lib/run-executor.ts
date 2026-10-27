@@ -31,7 +31,7 @@ import {
 import { logger } from "./logger";
 import { awaitDispatch, createLocalJob, finishLocalJob, JOB_EXPIRED, LocalJobError, pauseLocalJob } from "./local/jobs";
 import { isLocalModel } from "./local/machines";
-import { closeRunContext, LOCAL_RUN_INSTRUCTIONS, openRunContext, resumePrompt, runTurnDelegated, type RunTurnOutcome } from "./local/run-tools";
+import { closeRunContext, LOCAL_MAX_ACTIVE_MS, LOCAL_RUN_INSTRUCTIONS, openRunContext, resumePrompt, runTurnDelegated, type RunTurnOutcome } from "./local/run-tools";
 import {
   loadAgentTools,
   loadAppConnection,
@@ -490,7 +490,7 @@ async function driveLocal(
   const runId = ctx.run.id;
   const rc = openRunContext(runId, {
     tools: ctx.tools,
-    limits: { ...DEFAULT_LIMITS, ...limits },
+    limits: { ...DEFAULT_LIMITS, maxActiveMs: LOCAL_MAX_ACTIVE_MS, ...limits },
     rounds: base.rounds,
     activeMs: base.activeMs,
     execute: (tool, args) => runTool(ctx, tool, args),

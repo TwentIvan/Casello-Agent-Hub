@@ -1120,6 +1120,35 @@ describe("run con l'agente locale", () => {
     expect(replies[1]).toEqual({ text: "non eseguito: limite di 1 giri di strumenti raggiunto. Termina ora.", isError: true });
   });
 
+  it("tempo attivo del turno locale: 300 s dalla consegna (non i 120 s del percorso API)", async () => {
+    const id = await seedLocalRun([GET_ITEM]);
+    const replies: { text: string; isError: boolean }[] = [];
+    await startLocalRunner(async (_d, client) => {
+      const real = Date.now.bind(Date);
+      const t0 = real();
+      const clock = vi.spyOn(Date, "now");
+      try {
+        clock.mockImplementation(() => t0 + 299_000);
+        replies.push(await callTool(client, "get_item", { id: "1" }));
+        clock.mockImplementation(() => t0 + 301_000);
+        replies.push(await callTool(client, "get_item", { id: "2" }));
+      } finally {
+        clock.mockRestore();
+      }
+      return {};
+    });
+
+    await startRun(id, { userToken: "t", startedBy: ownerId });
+    await waitFor(() => replies.length === 2);
+
+    expect(replies[0]!.isError).toBe(false);
+    expect(replies[1]).toEqual({ text: "non eseguito: tempo massimo del turno superato. Termina ora.", isError: true });
+    const run = await getRun(id);
+    expect(run.status).toBe("failed");
+    expect(run.errorMessage).toBe("tempo massimo del turno superato");
+    expect(appRequests).toHaveLength(1);
+  });
+
   it("disconnessione: failed 'agente locale disconnesso', poi retry-fallback crea una nuova run sulla riserva", async () => {
     const restore = setLocalJobTimings({ heartbeatTimeoutMs: 150 });
     let release!: () => void;

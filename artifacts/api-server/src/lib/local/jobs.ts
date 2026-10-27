@@ -171,7 +171,8 @@ export type ItemResult = {
 };
 
 // Compiti in attesa di `runItem`, per id del compito
-const activeItems = new Map<string, { jobId: number; result: ItemResult | null }>();
+// `onDelivered`: avviso al consumatore quando il compito arriva a chi lo esegue (runner o chat)
+const activeItems = new Map<string, { jobId: number; result: ItemResult | null; onDelivered?: () => void }>();
 // Compiti del runner chiusi dal consumatore prima del done: il done arriva dopo e porta la sessione da riprendere
 const lingeringItems = new Map<string, number>();
 
@@ -414,6 +415,7 @@ async function deliverPending(machineId: number): Promise<RunnerDelivery | null>
     currentItemIs(item.id),
   );
   if (!job) return null;
+  activeItems.get(item.id)?.onDelivered?.();
   const resumeSessionId = item.resume ? job.claudeSessionId : null;
   return { jobId: job.id, itemId: item.id, jobToken: token, prompt: item.prompt, resumeSessionId };
 }
@@ -573,17 +575,19 @@ async function lastSignOfLife(job: LocalJob): Promise<number> {
  * il primo che arriva. Con `resume` il runner riceve la sessione di Claude Code salvata nel lavoro al momento della
  * consegna (scritta dal done del compito precedente, anche se arrivato dopo il completamento). Per i lavori del runner, senza segnale di vita per `heartbeatTimeoutMs` il lavoro fallisce
  * con "agente locale disconnesso"; nella chat (nessun runner) vale solo la durata massima del lavoro.
+ * `onDelivered` avvisa quando il compito arriva al runner (o subito, nella chat).
  */
 export async function runItem(
   jobId: number,
   item: { prompt: string; resume: boolean },
   signal: AbortSignal,
+  opts: { onDelivered?: () => void } = {},
 ): Promise<ItemResult> {
   const before = await loadJob(jobId);
   if (!before || !CLAIMED.includes(before.status)) throw new Error(before?.error ?? JOB_EXPIRED);
   const current: LocalJobCurrentItem = { id: randomUUID(), ...item };
   const now = new Date();
-  activeItems.set(current.id, { jobId, result: null });
+  activeItems.set(current.id, { jobId, result: null, onDelivered: opts.onDelivered });
   try {
     const published = await updateIf(jobId, CLAIMED, {
       currentItem: current,
@@ -593,6 +597,8 @@ export async function runItem(
       jobTokenExpiresAt: new Date(now.getTime() + timings.jobTokenTtlMs),
     });
     if (!published) throw new Error(JOB_EXPIRED);
+    // La chat legge il compito appena pubblicato: per lei la consegna è adesso
+    if (published.claimedBy === "chat") opts.onDelivered?.();
     notify(machineKey(published.machineId));
 
     for (;;) {

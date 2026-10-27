@@ -204,6 +204,27 @@ describe("strumenti MCP delle run", () => {
     expect(await done).toEqual({ kind: "failed", error: "tempo massimo del turno superato" });
   });
 
+  it("tempo attivo dalla consegna: l'attesa del runner non conta né per i limiti né per il timeout del compito", async () => {
+    const ctx = open({ limits: { ...DEFAULT_LIMITS, maxActiveMs: 200 } });
+    const { done } = await startTurn(false);
+    // Compito pubblicato e non consegnato oltre il tempo attivo del turno
+    await new Promise((r) => setTimeout(r, 300));
+    const d = await nextForMachine(machineId, signal());
+    jobToken = d!.jobToken;
+    const c = await client();
+
+    expect(await callTool(c, "get_item", { id: "1" })).toEqual({ text: "risultato di get_item", isError: false });
+    await callTool(c, "finish_run", { content: "in tempo" });
+    expect(await done).toEqual({ kind: "finished", content: "in tempo" });
+    expect(ctx.activeMs).toBeLessThan(200);
+  });
+
+  it("dopo la consegna il compito scade allo scadere del tempo attivo", async () => {
+    open({ limits: { ...DEFAULT_LIMITS, maxActiveMs: 100 } });
+    const { done } = await startTurn();
+    expect(await done).toEqual({ kind: "failed", error: "tempo massimo del turno superato" });
+  });
+
   it("senza contesto (run finita o riavvio): solo finish_run, che risponde 'lavoro scaduto'", async () => {
     const c = await client();
     expect((await c.listTools()).tools.map((t) => t.name)).toEqual(["get_job", "finish_run"]);

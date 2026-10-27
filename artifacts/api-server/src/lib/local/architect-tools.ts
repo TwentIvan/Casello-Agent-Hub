@@ -30,6 +30,8 @@ export type AnalysisContext = {
   log: (message: string) => void;
   /** Fase in corso, impostata dall'analisi prima di ogni compito. */
   phase: PhaseName | null;
+  /** Consegne non valide del compito in corso (si azzerano con un compito nuovo). */
+  invalidSubmits: { itemId: string; count: number } | null;
 };
 
 const contexts = new Map<number, AnalysisContext>();
@@ -39,7 +41,7 @@ export function openAnalysisContext(
   analysisId: number,
   input: { tree: SourceTree | null; openapi: OpenApiDoc | null; log: (message: string) => void },
 ): AnalysisContext {
-  const ctx: AnalysisContext = { ...input, phase: null };
+  const ctx: AnalysisContext = { ...input, phase: null, invalidSubmits: null };
   contexts.set(analysisId, ctx);
   return ctx;
 }
@@ -54,6 +56,11 @@ export const SUBMIT_PHASE_TOOL = "submit_phase_result";
 const SUBMIT_OK = "consegna ricevuta: fase completata, termina ora";
 const NO_PHASE = "nessuna fase in corso";
 const ITEM_GONE = "compito non più in corso";
+/** Consegne non valide ammesse in un compito: oltre, la fase si interrompe. */
+export const MAX_INVALID_SUBMITS_PER_ITEM = 5;
+const TOO_MANY_INVALID = "troppe consegne non valide: fase interrotta";
+// Esito del compito chiuso per troppe consegne non valide (solo in memoria, confrontato per identità)
+const PHASE_ABORTED = { aborted: true } as const;
 
 const expired = () => new LocalJobError(410, JOB_EXPIRED);
 
@@ -90,6 +97,14 @@ const submitTool: JobToolDef = {
       ? validatePhaseSubmit(ctx.phase, (args as { result: unknown }).result)
       : { ok: false as const, issues: "- result: campo obbligatorio (l'esito va passato come { \"result\": { ... } })" };
     if (!check.ok) {
+      const tally = ctx.invalidSubmits?.itemId === item.id ? ctx.invalidSubmits : { itemId: item.id, count: 0 };
+      tally.count += 1;
+      ctx.invalidSubmits = tally;
+      if (tally.count > MAX_INVALID_SUBMITS_PER_ITEM) {
+        ctx.log(`${SUBMIT_PHASE_TOOL} non valido (troppe consegne: fase interrotta)`);
+        if (!(await completeItem(job.id, item.id, PHASE_ABORTED))) throw new LocalJobError(409, ITEM_GONE);
+        return { text: TOO_MANY_INVALID, isError: true };
+      }
       ctx.log(`${SUBMIT_PHASE_TOOL} non valido`);
       return {
         text: `Esito non valido: correggi questi problemi e richiama ${SUBMIT_PHASE_TOOL} con l'esito completo, rispettando esattamente la forma dell'esempio della fase.\n${check.issues}`,
@@ -155,6 +170,8 @@ export async function runPhaseDelegated(input: {
       return { ok: false, error: err instanceof Error ? err.message : JOB_EXPIRED };
     }
     if (result.usage) budget.tokensUsed += result.usage.inputTokens + result.usage.outputTokens;
+    // Compito interrotto per troppe consegne non valide: nessuna correzione
+    if (result.completion === PHASE_ABORTED) return { ok: false, error: PHASE_NOT_DELIVERED };
     if ("completion" in result) return { ok: true, result: result.completion };
     if (corrections >= MAX_CORRECTIONS) {
       log(`agente locale terminato senza consegna valida (correzioni esaurite)`);

@@ -1021,6 +1021,8 @@ describe("startAnalysis con l'agente locale", () => {
   let submitOnResume: Set<PhaseName>;
   /** Esiti di submit_phase_result visti dal finto Claude. */
   let submitReplies: string[];
+  /** Fasi in cui il finto Claude consegna sempre un esito non valido, finché il tool lo accetta. */
+  let invalidForever: Set<PhaseName>;
 
   // Il provider `local_agent` dell'account "Agente locale" sta nel registro dei provider
   beforeAll(async () => {
@@ -1056,6 +1058,7 @@ describe("startAnalysis con l'agente locale", () => {
     silentPhases = new Set();
     submitOnResume = new Set();
     submitReplies = [];
+    invalidForever = new Set();
   });
 
   afterEach(() => {
@@ -1069,7 +1072,13 @@ describe("startAnalysis con l'agente locale", () => {
       // Un compito di correzione riprende la sessione: la fase è quella del compito precedente
       if (!d.resumeSessionId) phase = PHASE_BY_NUMBER[Number(/FASE (\d)/.exec(d.prompt)?.[1] ?? 1) - 1]!;
       const silent = silentPhases.has(phase) || (submitOnResume.has(phase) && !d.resumeSessionId);
-      if (!silent) {
+      if (invalidForever.has(phase)) {
+        for (let i = 0; i < 20; i++) {
+          const reply = toolText(await client.callTool({ name: "submit_phase_result", arguments: { result: { items: "non valido" } } }));
+          submitReplies.push(reply.text);
+          if (!reply.text.startsWith("Esito non valido")) break;
+        }
+      } else if (!silent) {
         await client.callTool({ name: "read_file", arguments: { path: "src/a.ts" } });
         const reply = toolText(await client.callTool({ name: "submit_phase_result", arguments: { result: RESULTS[phase] } }));
         submitReplies.push(reply.text);
@@ -1164,6 +1173,22 @@ describe("startAnalysis con l'agente locale", () => {
     expect(await loadItems(id)).toHaveLength(0);
   });
 
+  it("consegne non valide oltre il limite del compito: fase interrotta senza correzioni", async () => {
+    invalidForever.add("capabilities");
+    const r = startRunner();
+    const id = await localAnalysis();
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.phase).toBe("capabilities");
+    expect(a.error).toBe("fase non consegnata dall'agente locale");
+    // map + un solo compito di capabilities: nessun compito di correzione
+    expect(r.deliveries).toHaveLength(2);
+    expect(submitReplies.slice(-1)).toEqual(["troppe consegne non valide: fase interrotta"]);
+    expect(submitReplies.filter((t) => t.startsWith("Esito non valido"))).toHaveLength(5);
+    expect((await jobOf(id))!.status).toBe("failed");
+  });
+
   it("consegna dopo una correzione: la fase prosegue", async () => {
     submitOnResume.add("catalog");
     const r = startRunner();
@@ -1197,6 +1222,10 @@ describe("startAnalysis con l'agente locale", () => {
     expect(llmAuth.every((h) => h === "Bearer sk-riserva")).toBe(true);
     expect(Number(a.costUsd)).toBeGreaterThan(0);
     expect((await jobOf(id))!.status).toBe("cancelled");
+    // La riga dell'analisi indica il modello usato davvero
+    expect(a.aiModelId).toBe(fallbackModelId);
+    expect(a.model).toBe("modello-riserva");
+    expect((a.log as AnalysisLogEntry[]).some((e) => e.message === "agente locale non disponibile: analisi con il modello di riserva modello-riserva")).toBe(true);
   });
 
   it("runner non collegato e attesa scaduta: failed con l'errore del lavoro, nessuna chiamata al modello", async () => {

@@ -503,10 +503,7 @@ async function dispatchLocal(analysis: Analysis, machineId: number, log: (m: str
   // Nessun annullamento dall'esterno: le attese ("attendi", "posticipa") le limita la coda dei lavori
   const outcome = await awaitDispatch(jobId, new AbortController().signal);
   if (outcome.kind === "cancelled") throw new AnalysisError(outcome.error);
-  if (outcome.kind === "fallback") {
-    log("agente locale non disponibile: analisi con il modello di riserva");
-    return { kind: "fallback", aiModelId: outcome.aiModelId };
-  }
+  if (outcome.kind === "fallback") return { kind: "fallback", aiModelId: outcome.aiModelId };
   log("agente locale: lavoro preso dalla macchina");
   return { kind: "local", jobId };
 }
@@ -572,11 +569,15 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
     // in memoria durante l'attesa); con la scelta del modello di riserva si prosegue come per un modello API.
     // Il tempo massimo dell'analisi parte dall'esito dell'assegnazione.
     let aiModelId = analysis.aiModelId;
+    let usesFallback = false;
     const machine = aiModelId === null ? null : await isLocalModel(aiModelId);
     if (machine) {
       const dispatch = await dispatchLocal(analysis, machine.machineId, log);
       if (dispatch.kind === "local") localJobId = dispatch.jobId;
-      else aiModelId = dispatch.aiModelId;
+      else {
+        aiModelId = dispatch.aiModelId;
+        usesFallback = true;
+      }
       budget.deadline = now() + maxMs;
     }
 
@@ -590,6 +591,11 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
         if (err instanceof ModelAccessError || err instanceof ProviderError) throw new AnalysisError(err.message);
         throw err;
       }
+    }
+    if (usesFallback && resolved) {
+      // L'analisi mostra il modello usato davvero: quello di riserva
+      log(`agente locale non disponibile: analisi con il modello di riserva ${resolved.modelId}`);
+      await db.update(analysesTable).set({ aiModelId, model: resolved.modelId }).where(eq(analysesTable.id, analysisId));
     }
 
     const loaded = await loadSources(app, opts, log);

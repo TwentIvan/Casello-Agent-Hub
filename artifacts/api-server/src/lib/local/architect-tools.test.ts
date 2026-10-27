@@ -7,7 +7,7 @@ import { MAX_TOOL_OUTPUT_CHARS, READ_TOOLS, runPhase } from "../architect/phase-
 import { SourceTree } from "../architect/source-tree";
 import { ensureProviderRegistry } from "../catalog/provider-registry";
 import type { OpenApiDoc } from "../architect/sources";
-import { closeAnalysisContext, openAnalysisContext } from "./architect-tools";
+import { closeAnalysisContext, MAX_INVALID_SUBMITS_PER_ITEM, openAnalysisContext } from "./architect-tools";
 import { claimJob, createLocalJob, jobByToken, runItem, type ItemResult } from "./jobs";
 import { registerMachine } from "./machines";
 
@@ -193,6 +193,23 @@ describe("strumenti MCP dell'architetto", () => {
     const result = await item.done;
     expect(result.completion).toEqual(validMap);
     expect(logs).toEqual(["submit_phase_result non valido", "submit_phase_result non valido", "submit_phase_result valido"]);
+  });
+
+  it("oltre 5 consegne non valide nello stesso compito: fase interrotta e compito chiuso", async () => {
+    const ctx = openAnalysisContext(analysisId, { tree, openapi: null, log: (m) => logs.push(m) });
+    ctx.phase = "map";
+    const item = await publishItem();
+    const c = await client();
+    for (let i = 0; i < MAX_INVALID_SUBMITS_PER_ITEM; i++) {
+      const bad = toolText(await c.callTool({ name: "submit_phase_result", arguments: { result: { stack: "x" } } }));
+      expect(bad.text).toMatch(/Esito non valido/);
+    }
+    const last = toolText(await c.callTool({ name: "submit_phase_result", arguments: { result: { stack: "x" } } }));
+    expect(last).toEqual({ text: "troppe consegne non valide: fase interrotta", isError: true });
+    const result = await item.done;
+    expect(result.completion).toBeDefined();
+    expect(result.completion).not.toEqual(validMap);
+    expect(logs.at(-1)).toBe("submit_phase_result non valido (troppe consegne: fase interrotta)");
   });
 
   it("senza compito in corso la consegna è rifiutata", async () => {

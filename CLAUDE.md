@@ -17,6 +17,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
+- Agente locale: analisi e run eseguite da Claude Code sul computer dell'utente (runner `artifacts/casello-runner`
+  o chat via MCP), con modello di riserva (vedi "Agente locale").
 - In produzione su https://casello.fantamister.cloud (vedi "Deploy").
 
 ## Comandi
@@ -43,7 +45,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `lib/api-client-react/src/generated/` — client generato da Orval: NON modificare a mano
 - `lib/db/src/schema/` — schema Drizzle, una tabella per file (apps, agents, app_tools, agent_tools, runs,
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
-  ai_accounts, ai_models, providers, models, model_offers, catalog_runs)
+  ai_accounts, ai_models, providers, models, model_offers, catalog_runs, local_machines, local_jobs, mcp_tokens)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -82,6 +84,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `search-worker.ts`, `sources.ts`), schemi ed esempi delle fasi (`schemas.ts`, `prompts.ts`), ciclo di fase
   (`phase-loop.ts`), orchestrazione (`run-analysis.ts`), differenze/applicazione/issue (`diff.ts`, `apply.ts`, `issues.ts`)
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
+- `artifacts/casello-runner/` — programma ponte dell'agente locale (Node 24, avvio e flag di `claude` nel README)
 - `artifacts/mockup-sandbox/` — sandbox di mockup: NON va in produzione, non toccare
 - `gateway/` — config LiteLLM storica; la copia viva è nel repo `TwentIvan/AIGateway`
 - `docker/`, `.github/workflows/deploy.yml` — build e deploy (vedi sotto)
@@ -111,7 +114,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `lib/ai/price-seed.ts` o inseriti a mano). Una modifica di chiave o indirizzo si verifica PRIMA di salvare.
 - Esecutore unico `lib/ai/executor.ts`: `resolveModel(aiModelId)` → account, indirizzo, chiave (solo in
   memoria) e prezzi; `modelChat` chiama il provider e calcola il costo. Errori con messaggi fissi in italiano
-  (`lib/ai/discovery.ts`). Predisposto per un secondo esecutore (agente locale via MCP, prossimo sottoprogetto).
+  (`lib/ai/discovery.ts`). Secondo esecutore: l'agente locale (vedi "Agente locale").
 - "Chi configura paga": un utente sceglie solo modelli dei propri account o dell'account di sistema; le run
   usano il modello salvato nell'agente (`agents.ai_model_id`), le analisi quello scelto da chi le avvia.
   Costi in `runs.cost_usd` e `analyses.cost_usd` (null = costo parziale, prezzo mancante); stima prima
@@ -166,6 +169,48 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Limiti noti: un modello dell'account di sistema segnato non disponibile non si può riprovare dalla console;
   l'enum Postgres `ai_provider` resta nel DB inutilizzato (da eliminare in un passo successivo); lo slug storico
   `system_gateway` contiene `_`.
+
+## Agente locale
+
+- Spec: `docs/superpowers/specs/2026-10-27-casello-agente-locale-design.md`; piano
+  `docs/superpowers/plans/2026-10-27-agente-locale.md`.
+- Analisi e run eseguite da Claude Code sul computer dell'utente, con il suo abbonamento: costo zero per Casello.
+  Account AI "Agente locale" (provider `local_agent`, creato all'avvio da `ensureProviderRegistry`, nascosto da
+  `GET /ai/accounts`): i suoi modelli sono le macchine dell'utente (`local_machines`). Con una macchina il
+  **modello di riserva** (un modello API dell'utente o di sistema) è obbligatorio.
+- Due modalità sullo stesso server MCP (`POST /api/mcp`, SDK `@modelcontextprotocol/sdk`, senza stato, corpo max
+  2 MB, 300 richieste/min per token, 30 autenticazioni fallite/min per IP):
+  - **A, automatica**: `artifacts/casello-runner` (README lì) fa attesa lunga su `GET /api/runner/next` (25 s,
+    vale come segnale di vita), avvia `claude -p` con solo gli strumenti MCP di Casello, `POST
+    /api/runner/jobs/:id/heartbeat` ogni 15 s, `POST /api/runner/items/:id/done`.
+  - **C, interattiva**: token personale e `claude mcp add --transport http casello <origine>/api/mcp --header
+    "Authorization: Bearer <token>"` (Claude Desktop tramite `mcp-remote` con `npx`); strumenti `list_jobs` e
+    `claim_job`, poi gli strumenti del lavoro (argomento `casello_job_id`).
+- Token: `csl_m_` (macchina), `csl_p_` (personale, `mcp_tokens`), `csl_j_` (lavoro, rigenerato a ogni
+  consegna, scade a fine lavoro); salvati solo come SHA-256, mostrati una volta. Strumenti del lavoro: `get_job`;
+  per le analisi gli strumenti di lettura dell'architetto e `submit_phase_result` (una sessione Claude per fase,
+  max 5 consegne non valide); per le run i tool http dell'agente (conferme e oscuramento di Casello) e `finish_run`.
+- Ciclo di vita (`lib/local/jobs.ts`, tabella `local_jobs`): macchina collegata = segnale di vita negli ultimi
+  30 s, presa entro 10 s; altrimenti, se avviato dal proprietario dalla console, `waiting_choice` con la finestra
+  "riserva / attendi (30 min analisi, 2 min run) / posticipa (24 h)"; run di altri utenti: regola dell'agente
+  (`local_offline_policy`, `local_offline_wait_s`) solo se `local_for_third_parties`, altrimenti subito la riserva.
+  Senza segnale di vita per 60 s → "agente locale disconnesso" (per le run: `POST /api/runs/:id/retry-fallback`).
+  Le conferme mettono la run in `awaiting_client` e il lavoro in `paused`; la ripresa usa `--resume`. All'avvio i
+  lavori aperti falliscono. Revocare una macchina chiude i suoi lavori aperti (e le run in pausa) come falliti.
+- Limiti delle run locali: 300 s di tempo attivo dalla consegna al runner (o dalla presa in chat), 20 chiamate di
+  strumento per turno, niente tetto di token; un errore di Claude Code fallisce subito (nessuna correzione).
+- Le impostazioni locali di un agente (regola, attesa, utenti terzi, riserva di un agente locale) le cambia solo
+  il proprietario della macchina (403). `local_for_third_parties` è spento di default: attivarlo solo dopo aver
+  verificato che i termini dell'abbonamento lo consentono.
+- Route della console: `GET|POST /api/local/machines`, `DELETE /api/local/machines/:id`, `GET|POST
+  /api/local/tokens`, `DELETE /api/local/tokens/:id`, `GET /api/local/jobs`, `POST /api/local/jobs/:id/choice`.
+  Codice in `artifacts/api-server/src/lib/local/` e `src/routes/{local,runner,mcp}.ts`; finto agente per i test in
+  `artifacts/api-server/test/fake-local-agent.ts`.
+- Limiti noti: il token dell'utente dell'app vive 10 minuti (una run posticipata a lungo parte senza); una run in
+  pausa che riprende sul percorso API usa il modello di riserva; "Riprova con il modello di riserva" dalla console
+  non ha il token dell'utente dell'app; un runner occupato (concorrenza 1) appare "non collegato"; le trascrizioni
+  di Claude Code restano in `~/.claude/projects` sul computer dell'utente; in sviluppo `PUBLIC_APP_URL` deve avere
+  la stessa origine di `CASELLO_URL` del runner (o non essere impostata).
 
 ## Agenti operativi (fase 1)
 

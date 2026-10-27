@@ -36,6 +36,8 @@ temporanei con il token del lavoro. Con il token revocato (401) il runner si fer
 
 In sviluppo, con l'API in locale (`AUTH_DISABLED=true pnpm run dev`):
 `CASELLO_URL=http://localhost:3000 CASELLO_RUNNER_TOKEN=csl_m_… pnpm --filter @workspace/casello-runner start`.
+L'API deve avere `PUBLIC_APP_URL` non impostata o con la stessa origine di `CASELLO_URL`: il server MCP che
+Casello indica nei compiti nasce da lì e, con un'origine diversa, il runner rifiuta i compiti.
 
 ## Come funziona
 

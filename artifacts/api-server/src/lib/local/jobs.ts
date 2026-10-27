@@ -20,6 +20,7 @@ export const LOCAL_DISCONNECTED = "agente locale disconnesso";
 export const JOB_EXPIRED = "lavoro scaduto";
 export const JOB_NOT_FOUND = "lavoro non trovato";
 export const JOB_CANCELLED = "lavoro annullato";
+export const MACHINE_UNAVAILABLE = "macchina non disponibile";
 const NOT_WAITING = "il lavoro non è in attesa di una scelta";
 export const ITEM_REPLACED = "compito non più in corso";
 export const RESTARTED = "interrotto dal riavvio";
@@ -234,7 +235,7 @@ export async function createLocalJob(input: {
   if (own == null || other != null) {
     throw new Error(`lavoro ${input.kind}: serve solo ${input.kind === "analysis" ? "analysisId" : "runId"}`);
   }
-  if (!(await isMachineActive(input.machineId, input.userId))) throw new LocalJobError(400, "macchina non disponibile");
+  if (!(await isMachineActive(input.machineId, input.userId))) throw new LocalJobError(400, MACHINE_UNAVAILABLE);
   const [job] = await db
     .insert(localJobsTable)
     .values({

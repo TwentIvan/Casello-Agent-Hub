@@ -36,7 +36,7 @@ import { decryptSecret } from "../secrets";
 import { GITHUB_MESSAGES, GithubError, forgetInstallationTokens, installationToken } from "../github/app";
 import { githubConfig, type GithubConfig } from "../github/config";
 import { closeAnalysisContext, openAnalysisContext, runPhaseDelegated } from "../local/architect-tools";
-import { awaitDispatch, createLocalJob, finishLocalJob, LocalJobError } from "../local/jobs";
+import { awaitDispatch, createLocalJob, finishLocalJob, LocalJobError, MACHINE_UNAVAILABLE } from "../local/jobs";
 import { isLocalModel } from "../local/machines";
 import { loadAppConnection } from "../tools/catalog";
 import { diffAgents, diffAlwaysNew, diffSkills, diffTools, type DiffEntry } from "./diff";
@@ -483,7 +483,7 @@ async function dispatchLocal(analysis: Analysis, machineId: number, log: (m: str
     .from(localMachinesTable)
     .where(eq(localMachinesTable.id, machineId))
     .limit(1);
-  if (!machine) throw new AnalysisError("macchina non disponibile");
+  if (!machine) throw new AnalysisError(MACHINE_UNAVAILABLE);
   let jobId: number;
   try {
     const job = await createLocalJob({

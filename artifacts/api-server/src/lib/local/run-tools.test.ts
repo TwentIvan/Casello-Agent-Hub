@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { eq } from "drizzle-orm";
 import { db, pool, agentsTable, aiAccountsTable, aiModelsTable, appsTable, runsTable, usersTable, type LocalJob } from "@workspace/db";
 import { callTool, mcpClientFor } from "../../../test/fake-local-agent";
 import { DEFAULT_LIMITS, type StepRecord } from "../agent-loop";
@@ -223,6 +224,68 @@ describe("strumenti MCP delle run", () => {
     open({ limits: { ...DEFAULT_LIMITS, maxActiveMs: 100 } });
     const { done } = await startTurn();
     expect(await done).toEqual({ kind: "failed", error: "tempo massimo del turno superato" });
+  });
+
+  it("run non più in esecuzione: la chiamata non esegue nulla", async () => {
+    open();
+    const { done } = await startTurn();
+    const c = await client();
+    await db.update(runsTable).set({ status: "failed" }).where(eq(runsTable.id, runId));
+
+    expect(await callTool(c, "get_item", { id: "1" })).toEqual({ text: "compito non più in corso", isError: true });
+    expect(executed).toHaveLength(0);
+    await db.update(runsTable).set({ status: "running" }).where(eq(runsTable.id, runId));
+    await callTool(c, "finish_run", { content: "fine" });
+    await done;
+  });
+
+  for (const closer of ["finish_run", "conferma"] as const) {
+    it(`turno chiuso da una chiamata parallela (${closer}) durante l'esecuzione: passo registrato, a Claude solo il rifiuto`, async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      const ctx = open({ tools: [GET_ITEM, tool({ id: 2, name: "delete_item", readOnly: false, requiresConfirmation: true })] });
+      ctx.execute = async (t, args) => {
+        executed.push({ name: t.name, args });
+        await gate;
+        return { ok: true, status: 200, content: "letto" };
+      };
+      const { done } = await startTurn();
+      const c = await client();
+
+      const slow = callTool(c, "get_item", { id: "1" });
+      for (let i = 0; i < 200 && executed.length === 0; i++) await new Promise((r) => setTimeout(r, 5));
+      const closing =
+        closer === "finish_run" ? await callTool(c, "finish_run", { content: "fine" }) : await callTool(c, "delete_item", { id: "1" });
+      expect(closing.isError).toBe(false);
+      release();
+
+      expect(await slow).toEqual({ text: "compito non più in corso", isError: true });
+      expect(steps).toEqual([expect.objectContaining({ toolName: "get_item", ok: true })]);
+      expect((await done).kind).toBe(closer === "finish_run" ? "finished" : "paused");
+    });
+  }
+
+  it("chiamate parallele dopo la chiusura del turno: nessun tool eseguito a turno chiuso", async () => {
+    const ctx = open();
+    let executedWhileClosed = 0;
+    ctx.execute = async (t, args) => {
+      if (ctx.turn === null) executedWhileClosed++;
+      executed.push({ name: t.name, args });
+      return { ok: true, status: 200, content: "letto" };
+    };
+    const { done } = await startTurn();
+    const c = await client();
+    const replies = await Promise.all([
+      callTool(c, "finish_run", { content: "fine" }),
+      ...Array.from({ length: 5 }, (_, i) => callTool(c, "get_item", { id: String(i) })),
+    ]);
+
+    expect(replies[0]!.isError).toBe(false);
+    expect(executedWhileClosed).toBe(0);
+    // Ogni chiamata o è stata eseguita (passo registrato) o è stata rifiutata
+    expect(replies.slice(1).filter((r) => r.isError).length + executed.length).toBe(5);
+    expect(steps).toHaveLength(executed.length);
+    await done;
   });
 
   it("senza contesto (run finita o riavvio): solo finish_run, che risponde 'lavoro scaduto'", async () => {

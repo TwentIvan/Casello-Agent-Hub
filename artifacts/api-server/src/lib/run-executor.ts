@@ -29,9 +29,26 @@ import {
   type StepRecord,
 } from "./agent-loop";
 import { logger } from "./logger";
-import { awaitDispatch, createLocalJob, finishLocalJob, JOB_EXPIRED, LocalJobError, pauseLocalJob } from "./local/jobs";
+import {
+  awaitDispatch,
+  createLocalJob,
+  finishLocalJob,
+  JOB_EXPIRED,
+  LocalJobError,
+  MACHINE_UNAVAILABLE,
+  pauseLocalJob,
+} from "./local/jobs";
 import { isLocalModel } from "./local/machines";
-import { closeRunContext, LOCAL_MAX_ACTIVE_MS, LOCAL_RUN_INSTRUCTIONS, openRunContext, resumePrompt, runTurnDelegated, type RunTurnOutcome } from "./local/run-tools";
+import {
+  closeRunContext,
+  LOCAL_MAX_ACTIVE_MS,
+  LOCAL_MAX_TOOL_CALLS,
+  LOCAL_RUN_INSTRUCTIONS,
+  openRunContext,
+  resumePrompt,
+  runTurnDelegated,
+  type RunTurnOutcome,
+} from "./local/run-tools";
 import {
   loadAgentTools,
   loadAppConnection,
@@ -430,7 +447,7 @@ async function routeRun(agent: Agent, runId: number, opts: RunOptions): Promise<
     .from(localMachinesTable)
     .where(eq(localMachinesTable.id, machine.machineId))
     .limit(1);
-  if (!owner) return { kind: "failed", error: "macchina non disponibile" };
+  if (!owner) return { kind: "failed", error: MACHINE_UNAVAILABLE };
   const byOwner = opts.startedBy === owner.userId;
   if (!byOwner && !agent.localForThirdParties) return { kind: "api", ctxModel: fallback };
   let jobId: number;
@@ -490,7 +507,7 @@ async function driveLocal(
   const runId = ctx.run.id;
   const rc = openRunContext(runId, {
     tools: ctx.tools,
-    limits: { ...DEFAULT_LIMITS, maxActiveMs: LOCAL_MAX_ACTIVE_MS, ...limits },
+    limits: { ...DEFAULT_LIMITS, maxRounds: LOCAL_MAX_TOOL_CALLS, maxActiveMs: LOCAL_MAX_ACTIVE_MS, ...limits },
     rounds: base.rounds,
     activeMs: base.activeMs,
     execute: (tool, args) => runTool(ctx, tool, args),
@@ -717,7 +734,10 @@ export async function claimResume(
         await driveLocal(
           ctx,
           localJobId,
-          { prompt: resumePrompt(pending, decision, result), resume: true },
+          {
+            prompt: resumePrompt(pending, decision, result, ctx.tools.find((t) => t.name === pending.toolName)?.paramsSchema ?? null),
+            resume: true,
+          },
           { rounds: state.rounds, activeMs: state.activeMs + durationMs },
           segmentStart,
           writeStep,

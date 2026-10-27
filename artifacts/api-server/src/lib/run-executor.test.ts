@@ -976,11 +976,17 @@ describe("run con l'agente locale", () => {
     expect(step).toMatchObject({ toolName: "delete_item", ok: false, error: REJECTED_ACTION_MESSAGE });
   });
 
-  it("argomento x-sensitive: oscurato nei passi, nel risultato MCP e nell'azione in sospeso", async () => {
-    const id = await seedLocalRun([LOGIN, SET_PASSWORD]);
+  it("argomento x-sensitive: oscurato nei passi, nel risultato MCP, nell'azione in sospeso e nell'esito della ripresa", async () => {
+    // set_password su /echo: l'app rimanda anche la password confermata
+    const setPasswordEcho = { ...SET_PASSWORD, definition: { method: "PATCH", path: "/echo/{id}", paramLocations: { id: "path", password: "body" } } };
+    const id = await seedLocalRun([LOGIN, setPasswordEcho]);
     const replies: { text: string; isError: boolean }[] = [];
     let schema: unknown;
-    await startLocalRunner(async (_d, client) => {
+    const r = await startLocalRunner(async (d, client) => {
+      if (d.resumeSessionId) {
+        await callTool(client, "finish_run", { content: "password cambiata" });
+        return {};
+      }
       schema = (await client.listTools()).tools.find((t) => t.name === "login")?.inputSchema;
       replies.push(await callTool(client, "login", { user: "ivan", password: "parola-segreta-99" }));
       replies.push(await callTool(client, "set_password", { id: "42", password: "nuova-segreta-77" }));
@@ -1006,6 +1012,15 @@ describe("run con l'agente locale", () => {
     expect((run.pendingAction as { summary: string }).summary).not.toContain("nuova-segreta-77");
     const steps = await pool.query("select row_to_json(s)::text as j from run_steps s");
     for (const row of steps.rows) expect(row.j).not.toContain("parola-segreta-99");
+
+    // Conferma: l'app riceve (e rimanda) la password nuova; il prompt della ripresa la oscura
+    await resumeRun(id, "approved");
+    expect(appRequests[1]!.body).toContain("nuova-segreta-77");
+    const resume = r.deliveries[1]!.prompt;
+    expect(resume).toContain(`L'utente ha confermato l'azione "set_password"`);
+    expect(resume).toContain("***");
+    expect(resume).not.toContain("nuova-segreta-77");
+    expect((await getRun(id)).output).toBe("password cambiata");
   });
 
   it("run di un utente terzo con localForThirdParties spento: subito il modello di riserva, nessun lavoro", async () => {
@@ -1101,7 +1116,7 @@ describe("run con l'agente locale", () => {
     expect((await jobsOf(id))[0]).toMatchObject({ status: "failed", error: "l'agente locale non ha concluso la run" });
   });
 
-  it("limite dei giri: ogni chiamata MCP conta, oltre il limite la run fallisce senza eseguire il tool", async () => {
+  it("limite delle chiamate (sostituito nei test): oltre il limite la run fallisce senza eseguire il tool", async () => {
     const id = await seedLocalRun([GET_ITEM]);
     const replies: { text: string; isError: boolean }[] = [];
     await startLocalRunner(async (_d, client) => {
@@ -1115,9 +1130,9 @@ describe("run con l'agente locale", () => {
 
     const run = await getRun(id);
     expect(run.status).toBe("failed");
-    expect(run.errorMessage).toBe("limite di 1 giri di strumenti raggiunto");
+    expect(run.errorMessage).toBe("limite di 1 chiamate agli strumenti raggiunto");
     expect(appRequests).toHaveLength(1);
-    expect(replies[1]).toEqual({ text: "non eseguito: limite di 1 giri di strumenti raggiunto. Termina ora.", isError: true });
+    expect(replies[1]).toEqual({ text: "non eseguito: limite di 1 chiamate agli strumenti raggiunto. Termina ora.", isError: true });
   });
 
   it("tempo attivo del turno locale: 300 s dalla consegna (non i 120 s del percorso API)", async () => {
@@ -1147,6 +1162,23 @@ describe("run con l'agente locale", () => {
     expect(run.status).toBe("failed");
     expect(run.errorMessage).toBe("tempo massimo del turno superato");
     expect(appRequests).toHaveLength(1);
+  });
+
+  it("limite delle chiamate del percorso locale: 20 per turno (non gli 8 giri del modello API)", async () => {
+    const id = await seedLocalRun([GET_ITEM]);
+    const replies: { text: string; isError: boolean }[] = [];
+    await startLocalRunner(async (_d, client) => {
+      for (let i = 1; i <= 21; i++) replies.push(await callTool(client, "get_item", { id: String(i) }));
+      return {};
+    });
+
+    await startRun(id, { userToken: "t", startedBy: ownerId });
+    await waitFor(() => replies.length === 21);
+
+    expect(replies.slice(0, 20).every((r) => !r.isError)).toBe(true);
+    expect(replies[20]).toEqual({ text: "non eseguito: limite di 20 chiamate agli strumenti raggiunto. Termina ora.", isError: true });
+    expect(appRequests).toHaveLength(20);
+    expect((await getRun(id)).errorMessage).toBe("limite di 20 chiamate agli strumenti raggiunto");
   });
 
   it("disconnessione: failed 'agente locale disconnesso', poi retry-fallback crea una nuova run sulla riserva", async () => {

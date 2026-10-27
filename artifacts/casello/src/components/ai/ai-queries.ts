@@ -9,11 +9,12 @@ export function useAiModelGroups() {
 /**
  * Modello da preselezionare: quello consigliato (`recommended`) dell'account predefinito; se nessun account
  * è predefinito (es. solo l'account di sistema) del primo gruppo con account non in errore, poi di qualsiasi
- * gruppo. null finché i modelli non sono arrivati o se non ce ne sono.
+ * gruppo; mai un modello dell'agente locale. null finché i modelli non sono arrivati o se non ce ne sono.
  */
 export function useDefaultAiModelId(): number | null {
   const groups = useAiModelGroups();
-  const data = groups.data ?? [];
+  // Mai una macchina dell'agente locale: si sceglie solo esplicitamente (richiede anche la riserva)
+  const data = (groups.data ?? []).filter((g) => !g.account.isLocal);
   const hasSelectable = (g: (typeof data)[number]) => g.models.some((m) => m.selectable);
   const preferred = data.find((g) => g.account.isDefault && hasSelectable(g));
   // In mancanza del predefinito si preferisce un account non in errore

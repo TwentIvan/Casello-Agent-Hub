@@ -29,6 +29,23 @@ import { formatCost, formatDuration, formatRelative } from "@/lib/format";
 
 const POLL_MS = 1500;
 
+/**
+ * Errori della run per cui ha senso "Riprova con il modello di riserva": l'agente locale non era collegato o si è
+ * disconnesso (messaggi fissi della coda dei lavori, vedi `lib/local/jobs.ts` nell'API).
+ */
+const LOCAL_OFFLINE_ERRORS: ReadonlySet<string> = new Set(["agente locale non collegato", "agente locale disconnesso", "lavoro scaduto"]);
+
+/** Messaggio del tentativo con la riserva: 404 e 409 hanno un testo chiaro. */
+function retryErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.status === 404) {
+    return "Solo chi possiede la macchina dell'agente locale può riprovare questa run con il modello di riserva.";
+  }
+  if (error instanceof ApiError && error.status === 409) {
+    return "Questa run non si può riprovare con il modello di riserva: non è fallita sull'agente locale.";
+  }
+  return apiErrorMessage(error);
+}
+
 function formatDateTime(value: string): string {
   return new Date(value).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "medium" });
 }
@@ -51,7 +68,7 @@ export default function RunDetailPage() {
   const agentId = run.data?.agentId ?? 0;
   const agent = useGetAgent(agentId, { query: { queryKey: getGetAgentQueryKey(agentId), enabled: agentId > 0 } });
 
-  // Run fallita sull'agente locale: si può riprovare con il modello di riserva dell'agente
+  // Run fallita perché l'agente locale non era collegato: si può riprovare con il modello di riserva dell'agente
   const agentIsLocal = useIsLocalModel(agent.data?.aiModelId);
   const retryFallback = useRetryRunFallback({
     mutation: {
@@ -61,7 +78,7 @@ export default function RunDetailPage() {
         navigate(`/runs/${newRun.id}`);
       },
       onError: (error) =>
-        toast({ variant: "destructive", title: "Impossibile riprovare", description: apiErrorMessage(error) }),
+        toast({ variant: "destructive", title: "Impossibile riprovare", description: retryErrorMessage(error) }),
     },
   });
 
@@ -202,7 +219,7 @@ export default function RunDetailPage() {
           <AlertTitle>Run fallita</AlertTitle>
           <AlertDescription className="whitespace-pre-wrap break-words">
             {r.errorMessage || "Errore sconosciuto."}
-            {agentIsLocal && agent.data?.fallbackAiModelId != null && (
+            {agentIsLocal && agent.data?.fallbackAiModelId != null && LOCAL_OFFLINE_ERRORS.has(r.errorMessage ?? "") && (
               <span className="mt-3 block">
                 <Button
                   variant="outline"

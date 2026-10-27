@@ -97,7 +97,8 @@ function NameForm({
   placeholder: string;
   submitLabel: string;
   pending: boolean;
-  onSubmit: (name: string) => void;
+  /** `onCreated` va chiamata solo a creazione riuscita: allora il campo si svuota. */
+  onSubmit: (name: string, onCreated: () => void) => void;
 }) {
   const [name, setName] = useState("");
   const trimmed = name.trim();
@@ -106,8 +107,7 @@ function NameForm({
       className="flex flex-wrap items-end gap-2"
       onSubmit={(event) => {
         event.preventDefault();
-        if (trimmed) onSubmit(trimmed);
-        setName("");
+        if (trimmed) onSubmit(trimmed, () => setName(""));
       }}
     >
       <div className="min-w-48 flex-1 space-y-1">
@@ -321,7 +321,7 @@ export function LocalAgentsSection() {
             placeholder="es. MacBook di Ivan"
             submitLabel="Registra macchina"
             pending={createMachine.isPending}
-            onSubmit={(name) => createMachine.mutate({ data: { name } })}
+            onSubmit={(name, onCreated) => createMachine.mutate({ data: { name } }, { onSuccess: onCreated })}
           />
         </section>
 
@@ -354,7 +354,7 @@ export function LocalAgentsSection() {
             placeholder="es. Claude Desktop"
             submitLabel="Crea token"
             pending={createToken.isPending}
-            onSubmit={(name) => createToken.mutate({ data: { name } })}
+            onSubmit={(name, onCreated) => createToken.mutate({ data: { name } }, { onSuccess: onCreated })}
           />
         </section>
       </CardContent>
@@ -362,7 +362,7 @@ export function LocalAgentsSection() {
         open={revokingMachine !== null}
         onOpenChange={(open) => !open && setRevokingMachine(null)}
         title={`Revocare «${revokingMachine?.name ?? ""}»?`}
-        description="Il token della macchina smette di valere e il suo modello viene nascosto. Gli agenti che lo usano vanno riconfigurati."
+        description="Il token della macchina smette di valere e il suo modello viene nascosto. I lavori in corso o in attesa su questa macchina falliscono. Gli agenti che lo usano vanno riconfigurati."
         confirmLabel="Revoca"
         pendingLabel="Revoca…"
         pending={revokeMachine.isPending}

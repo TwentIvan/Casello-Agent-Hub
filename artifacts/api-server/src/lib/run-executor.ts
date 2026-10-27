@@ -11,7 +11,7 @@ import {
   type App,
   type Run,
 } from "@workspace/db";
-import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import { APIConnectionTimeoutError, APIUserAbortError } from "openai";
 import { aiGateway, type ChatResult } from "./ai-gateway";
 import { FALLBACK_REQUIRED } from "./ai/choice";
@@ -386,9 +386,16 @@ async function failRun(
   err: unknown,
   segmentStart: number,
   usage: SegmentUsage,
+  localJobId: number | null = null,
 ): Promise<void> {
   const runId = run.id;
   clearUserToken(runId);
+  // Il lavoro dell'agente locale (se c'è) si chiude con la run: non resta preso o in pausa fino alla scadenza
+  if (localJobId !== null) {
+    await finishLocalJob(localJobId, "failed", "errore interno").catch((jobErr: unknown) =>
+      logger.error({ runId, error: errorMessage(jobErr) }, "Impossibile chiudere il lavoro dell'agente locale"),
+    );
+  }
   const message = errorMessage(err);
   logger.error({ runId, error: message }, "Run fallita per un errore inatteso");
   try {
@@ -595,6 +602,7 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
   if (opts.userToken) setUserToken(runId, opts.userToken);
   let segmentStart = Date.now();
   const usage = newUsage();
+  let localJobId: number | null = null;
   try {
     let ctx = await loadContext(run);
     const route = await routeRun(ctx.agent, runId, opts);
@@ -605,6 +613,7 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
       return;
     }
     if (route.kind === "local") {
+      localJobId = route.jobId;
       const writeStep = stepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools);
       const prompt = `${buildSystemPrompt(ctx.agent, ctx.app)}\n\nRichiesta dell'utente:\n${run.input ?? ""}\n\n${LOCAL_RUN_INSTRUCTIONS}`;
       await driveLocal(ctx, route.jobId, { prompt, resume: false }, { rounds: 0, activeMs: 0 }, segmentStart, writeStep, opts.limits);
@@ -624,7 +633,7 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
     const writeStep = stepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools);
     await driveLoop(ctx, initial, segmentStart, writeStep, usage, opts.limits);
   } catch (err) {
-    await failRun(run, err, segmentStart, usage);
+    await failRun(run, err, segmentStart, usage, localJobId);
   }
 }
 
@@ -674,13 +683,14 @@ export async function claimResume(
   if (!isLoopState(state) || !isPendingAction(pending)) {
     // Stato della pausa mancante: la run si chiude come fallita, la ripresa in sé non è in conflitto
     const err = new Error("stato della pausa mancante o non valido");
-    return { run, proceed: () => failRun(run, err, segmentStart, usage) };
+    const jobId = state && typeof state === "object" ? localJobOf(state as LoopState) : null;
+    return { run, proceed: () => failRun(run, err, segmentStart, usage, jobId) };
   }
   try {
     // Verifica che l'azione sia davvero quella in attesa PRIMA di eseguire il tool
     resolvePending(state, pending, { ok: false, content: "" });
   } catch (err) {
-    await failRun(run, err, segmentStart, usage);
+    await failRun(run, err, segmentStart, usage, localJobOf(state));
     if (err instanceof PendingMismatchError) {
       throw new ResumeConflictError(`La run non può essere ripresa: ${err.message}`);
     }
@@ -751,7 +761,7 @@ export async function claimResume(
       next.activeMs += durationMs;
       await driveLoop(ctx, next, segmentStart, writeStep, usage, opts.limits);
     } catch (err) {
-      await failRun(run, err, segmentStart, usage);
+      await failRun(run, err, segmentStart, usage, localJobId);
     }
   };
   return { run, proceed };
@@ -871,7 +881,13 @@ export async function failInterruptedRuns(): Promise<number> {
       pausedAt: null,
       finishedAt: new Date(),
     })
-    .where(inArray(runsTable.status, ["pending", "running"]))
+    .where(
+      or(
+        inArray(runsTable.status, ["pending", "running"]),
+        // Run dell'agente locale in attesa di conferma: il loro lavoro l'ha chiuso il riavvio (failOpenLocalJobs)
+        and(eq(runsTable.status, "awaiting_client"), sql`${runsTable.loopState} ->> 'localJobId' is not null`),
+      ),
+    )
     .returning({ id: runsTable.id });
   return interrupted.length;
 }

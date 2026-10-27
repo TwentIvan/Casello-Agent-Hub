@@ -1145,6 +1145,58 @@ describe("run con l'agente locale", () => {
     expect(m!.revokedAt).toBeNull();
   });
 
+  it("ripresa con azione incoerente su una run locale in pausa: run failed e lavoro chiuso (non resta paused)", async () => {
+    const id = await seedLocalRun([DELETE_ITEM]);
+    await startLocalRunner(async (_d, client) => {
+      await callTool(client, "delete_item", { id: "42" });
+      return {};
+    });
+    await startRun(id, { startedBy: ownerId });
+    const paused = await getRun(id);
+    expect(paused.status).toBe("awaiting_client");
+    await db
+      .update(runsTable)
+      .set({ pendingAction: { ...(paused.pendingAction as object), toolCallId: "altro" } })
+      .where(eq(runsTable.id, id));
+
+    await expect(resumeRun(id, "approved")).rejects.toBeInstanceOf(ResumeConflictError);
+
+    expect((await getRun(id)).status).toBe("failed");
+    expect((await jobsOf(id))[0]).toMatchObject({ status: "failed", error: "errore interno" });
+    expect(appRequests).toHaveLength(0);
+  });
+
+  it("ripresa con lo stato della pausa non valido su una run locale: run failed e lavoro chiuso", async () => {
+    const id = await seedLocalRun([DELETE_ITEM]);
+    await startLocalRunner(async (_d, client) => {
+      await callTool(client, "delete_item", { id: "42" });
+      return {};
+    });
+    await startRun(id, { startedBy: ownerId });
+    const jobId = (await jobsOf(id))[0]!.id;
+    await db.update(runsTable).set({ loopState: { localJobId: jobId } }).where(eq(runsTable.id, id));
+
+    await resumeRun(id, "approved");
+
+    expect((await getRun(id)).status).toBe("failed");
+    expect((await jobsOf(id))[0]).toMatchObject({ status: "failed", error: "errore interno" });
+  });
+
+  it("failInterruptedRuns: una run locale in attesa di conferma (lavoro chiuso dal riavvio) diventa failed", async () => {
+    const id = await seedLocalRun([DELETE_ITEM]);
+    await startLocalRunner(async (_d, client) => {
+      await callTool(client, "delete_item", { id: "42" });
+      return {};
+    });
+    await startRun(id, { userToken: "t", startedBy: ownerId });
+    expect((await getRun(id)).status).toBe("awaiting_client");
+
+    expect(await failInterruptedRuns()).toBe(1);
+
+    const run = await getRun(id);
+    expect(run).toMatchObject({ status: "failed", errorMessage: "Esecuzione interrotta dal riavvio del server.", pendingAction: null, loopState: null });
+  });
+
   it("proprietario con runner non collegato: la console sceglie la riserva", async () => {
     const id = await seedLocalRun([GET_ITEM]);
     llmReplies = [textReply("con la riserva")];

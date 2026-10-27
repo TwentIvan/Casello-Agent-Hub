@@ -7,6 +7,7 @@
  */
 import type { AgentRole } from './agentRole';
 import type { AgentStatus } from './agentStatus';
+import type { LocalOfflinePolicy } from './localOfflinePolicy';
 import type { ToolIdentity } from './toolIdentity';
 
 export interface Agent {
@@ -22,6 +23,16 @@ export interface Agent {
      * @nullable
      */
   aiModelId: number | null;
+  /**
+     * Modello di riserva (API) se l'agente locale non è disponibile
+     * @nullable
+     */
+  fallbackAiModelId: number | null;
+  localOfflinePolicy: LocalOfflinePolicy;
+  /** Secondi di attesa con wait_then_fallback */
+  localOfflineWaitS: number;
+  /** Le run di utenti diversi dal proprietario usano l'agente locale solo se attivo */
+  localForThirdParties: boolean;
   status: AgentStatus;
   role: AgentRole;
   /** @nullable */

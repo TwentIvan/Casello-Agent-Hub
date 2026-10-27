@@ -1,11 +1,12 @@
 import { Router, type IRouter, type RequestHandler, type Response } from "express";
-import { and, asc, count, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, ne, notInArray, or, sql } from "drizzle-orm";
 import {
   db,
   agentsTable,
   aiAccountsTable,
   aiModelsTable,
   analysesTable,
+  localMachinesTable,
   modelOffersTable,
   modelsTable,
   providersTable,
@@ -51,6 +52,7 @@ import { effectiveStatus, isSelectable, pickRecommended } from "../lib/ai/model-
 import { probeModel } from "../lib/ai/probe";
 import { normalizeBaseUrl, privateNetworkAllowed, validateBaseUrl, type AiProvider } from "../lib/ai/providers";
 import { systemAccountConfigured } from "../lib/ai/system-account";
+import { LOCAL_PROVIDER, machineModelId } from "../lib/local/machines";
 import { isUniqueViolation } from "../lib/pg-errors";
 import { decryptSecret, encryptSecret } from "../lib/secrets";
 import { rateLimit } from "../middlewares/rate-limit";
@@ -74,6 +76,8 @@ const NAME_REQUIRED = "nome obbligatorio, senza caratteri di controllo";
 const BAD_MODEL_ID = "id del modello non valido";
 const MODEL_EXISTS = "modello già presente nell'account";
 const USED_BY_MAX_NAMES = 10;
+const LOCAL_NOT_ALLOWED = "provider non ammesso: l'agente locale si collega dalla sezione Agenti locali";
+const LOCAL_MANAGED = "account dell'agente locale: si gestisce dalla sezione Agenti locali";
 
 // Caratteri di controllo C0, DEL e C1
 // eslint-disable-next-line no-control-regex
@@ -81,6 +85,11 @@ const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
 
 function isSystemAccount(a: AiAccount): boolean {
   return a.provider === "system_gateway" && a.userId === null;
+}
+
+/** Account "Agente locale": lo crea e lo gestisce solo la registrazione delle macchine (route /local). */
+function isLocalAccount(a: AiAccount): boolean {
+  return a.provider === LOCAL_PROVIDER;
 }
 
 /** L'account di sistema compare negli elenchi solo finché le variabili del gateway sono impostate. */
@@ -199,8 +208,8 @@ async function findVisibleAccount(id: number, userId: number): Promise<AiAccount
 }
 
 /**
- * Account modificabile dall'utente: altrui o inesistente → 404, di sistema → 403 (risposta già
- * inviata, restituisce undefined).
+ * Account modificabile dall'utente: altrui o inesistente → 404, di sistema → 403, dell'agente locale → 400
+ * (risposta già inviata, restituisce undefined).
  */
 async function findWritableAccount(id: number, userId: number, res: Response): Promise<AiAccount | undefined> {
   const account = await findVisibleAccount(id, userId);
@@ -210,6 +219,10 @@ async function findWritableAccount(id: number, userId: number, res: Response): P
   }
   if (isSystemAccount(account)) {
     res.status(403).json({ error: SYSTEM_READONLY });
+    return undefined;
+  }
+  if (isLocalAccount(account)) {
+    res.status(400).json({ error: LOCAL_MANAGED });
     return undefined;
   }
   return account;
@@ -345,6 +358,15 @@ function roundUsd(n: number): number {
   return n > 0 && rounded === 0 ? 1e-6 : rounded;
 }
 
+/** `model_id` dei modelli delle macchine revocate dell'utente. */
+async function revokedMachineModelIds(userId: number): Promise<Set<string>> {
+  const rows = await db
+    .select({ id: localMachinesTable.id, revokedAt: localMachinesTable.revokedAt })
+    .from(localMachinesTable)
+    .where(eq(localMachinesTable.userId, userId));
+  return new Set(rows.filter((r) => r.revokedAt !== null).map((r) => machineModelId(r.id)));
+}
+
 export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probeRateLimit?: RequestHandler } = {}): IRouter {
   const router: IRouter = Router();
   // Le route che chiamano un provider esterno (creazione, verifica, modifica) hanno un limite per IP,
@@ -359,9 +381,10 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     res.json(ListAiAccountsResponse.parse(accounts.map((a) => toPublicAccount(a, counts.get(a.id) ?? 0, statuses.get(a.provider)))));
   });
 
-  // Registro per la creazione degli account: gestiti per nome, poi in arrivo, poi non gestiti
+  // Registro per la creazione degli account: gestiti per nome, poi in arrivo, poi non gestiti. Senza il
+  // gateway di sistema e l'agente locale, che non si creano da qui
   router.get("/ai/providers", async (_req, res) => {
-    const rows = await db.select().from(providersTable).where(ne(providersTable.slug, "system_gateway"));
+    const rows = await db.select().from(providersTable).where(notInArray(providersTable.slug, ["system_gateway", LOCAL_PROVIDER]));
     rows.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.name.localeCompare(b.name, "it"));
     res.json(
       ListAiProvidersResponse.parse(
@@ -383,6 +406,10 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     const provider: AiProvider = body.provider;
     if (provider === "system_gateway") {
       res.status(400).json({ error: "provider non ammesso: l'account di sistema lo gestisce Casello" });
+      return;
+    }
+    if (provider === LOCAL_PROVIDER) {
+      res.status(400).json({ error: LOCAL_NOT_ALLOWED });
       return;
     }
     // Dalla tabella: i provider scoperti dall'aggiornamento del catalogo esistono solo lì
@@ -616,11 +643,11 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
         if (inUse) return inUse;
         const [deleted] = await tx.delete(aiAccountsTable).where(eq(aiAccountsTable.id, account.id)).returning();
         if (!deleted?.isDefault) return null;
-        // Era il predefinito: lo diventa l'account più vecchio rimasto
+        // Era il predefinito: lo diventa l'account più vecchio rimasto (mai quello dell'agente locale)
         const [oldest] = await tx
           .select({ id: aiAccountsTable.id })
           .from(aiAccountsTable)
-          .where(eq(aiAccountsTable.userId, userId))
+          .where(and(eq(aiAccountsTable.userId, userId), ne(aiAccountsTable.provider, LOCAL_PROVIDER)))
           .orderBy(asc(aiAccountsTable.createdAt), asc(aiAccountsTable.id))
           .limit(1);
         if (oldest) await tx.update(aiAccountsTable).set({ isDefault: true }).where(eq(aiAccountsTable.id, oldest.id));
@@ -731,6 +758,11 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       res.status(403).json({ error: SYSTEM_READONLY });
       return;
     }
+    // Nome e visibilità dei modelli locali seguono la macchina (registrazione e revoca)
+    if (isLocalAccount(row.account)) {
+      res.status(400).json({ error: LOCAL_MANAGED });
+      return;
+    }
     const set: Partial<typeof aiModelsTable.$inferInsert> = {};
     if (body.displayName !== undefined) {
       const displayName = body.displayName.trim();
@@ -762,13 +794,18 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     const { id } = parseRequest(ProbeAiModelParams, req.params);
     // Solo i modelli dei propri account: altrui, di sistema o inesistente → 404
     const [owned] = await db
-      .select({ id: aiModelsTable.id })
+      .select({ id: aiModelsTable.id, provider: aiAccountsTable.provider })
       .from(aiModelsTable)
       .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
       .where(and(eq(aiModelsTable.id, id), eq(aiAccountsTable.userId, userId)))
       .limit(1);
     if (!owned) {
       res.status(404).json({ error: MODEL_NOT_FOUND });
+      return;
+    }
+    // Una macchina non si prova con una chiamata al modello: il suo stato è il segnale di vita del runner
+    if (owned.provider === LOCAL_PROVIDER) {
+      res.status(400).json({ error: LOCAL_MANAGED });
       return;
     }
     let result: Awaited<ReturnType<typeof probeModel>>;
@@ -795,13 +832,23 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
           .where(and(inArray(aiModelsTable.accountId, ids), eq(aiModelsTable.hidden, false)))
           .orderBy(sql`lower(${aiModelsTable.displayName})`, asc(aiModelsTable.id))
       : [];
-    const [counts, statuses] = await Promise.all([modelCounts(ids), providerStatuses(accounts)]);
+    const [counts, statuses, revoked] = await Promise.all([
+      modelCounts(ids),
+      providerStatuses(accounts),
+      revokedMachineModelIds(currentUserId(req)),
+    ]);
     const now = new Date();
-    const models = rows.map((r) => toPublicModel(r.model, linkedOffer(r), now));
-    // I non selezionabili restano (con selectable: false): li filtra la console. Un consigliato per gruppo
+    const localAccounts = new Set(accounts.filter(isLocalAccount).map((a) => a.id));
+    const models = rows.map((r) => {
+      const m = toPublicModel(r.model, linkedOffer(r), now);
+      // Una macchina revocata non si sceglie più, anche se il suo modello non fosse nascosto
+      return localAccounts.has(m.accountId) && revoked.has(m.modelId) ? { ...m, selectable: false } : m;
+    });
+    // I non selezionabili restano (con selectable: false): li filtra la console. Un consigliato per gruppo,
+    // mai tra le macchine dell'agente locale (la preselezione resta sui modelli API)
     const groups = accounts.map((a) => {
       const own = models.filter((m) => m.accountId === a.id);
-      const recommended = pickRecommended(own);
+      const recommended = isLocalAccount(a) ? null : pickRecommended(own);
       return {
         account: toPublicAccount(a, counts.get(a.id) ?? 0, statuses.get(a.provider)),
         models: own.map((m) => ({ ...m, recommended: m.id === recommended })),

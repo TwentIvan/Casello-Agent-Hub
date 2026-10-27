@@ -70,9 +70,14 @@ import type {
   ListCatalogModelsParams,
   ListCatalogProvidersParams,
   ListRunsParams,
+  LocalMachine,
+  LocalMachineCreated,
+  LocalNameInput,
   Model,
   NotFoundResponse,
   PayloadTooLargeResponse,
+  PersonalToken,
+  PersonalTokenCreated,
   ProviderIssueText,
   Run,
   RunResume,
@@ -4341,5 +4346,444 @@ export const useRefreshCatalog = <TError = ErrorType<ConflictResponse | TooManyR
         TContext
       > => {
       return useMutation(getRefreshCatalogMutationOptions(options));
+    }
+
+export const getListLocalMachinesUrl = () => {
+
+
+
+
+  return `/api/local/machines`
+}
+
+/**
+ * Anche le revocate (revokedAt impostato). connected è vero se la macchina ha dato un segnale di vita negli ultimi 30 secondi. Il token non è mai restituito.
+ * @summary Macchine dell'agente locale dell'utente
+ */
+export const listLocalMachines = async ( options?: RequestInit): Promise<LocalMachine[]> => {
+
+  return customFetch<LocalMachine[]>(getListLocalMachinesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLocalMachinesQueryKey = () => {
+    return [
+    `/api/local/machines`
+    ] as const;
+    }
+
+
+export const getListLocalMachinesQueryOptions = <TData = Awaited<ReturnType<typeof listLocalMachines>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLocalMachines>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLocalMachinesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLocalMachines>>> = ({ signal }) => listLocalMachines({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLocalMachines>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLocalMachinesQueryResult = NonNullable<Awaited<ReturnType<typeof listLocalMachines>>>
+export type ListLocalMachinesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Macchine dell'agente locale dell'utente
+ */
+
+export function useListLocalMachines<TData = Awaited<ReturnType<typeof listLocalMachines>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLocalMachines>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLocalMachinesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateLocalMachineUrl = () => {
+
+
+
+
+  return `/api/local/machines`
+}
+
+/**
+ * Crea la macchina e, se manca, l'account AI "Agente locale" dell'utente; la macchina diventa il modello "Agente locale · <nome>" di quell'account. Il token (csl_m_…) è salvato solo come hash e non si può rileggere.
+ * @summary Registra una macchina e ne restituisce il token (una sola volta)
+ */
+export const createLocalMachine = async (localNameInput: LocalNameInput, options?: RequestInit): Promise<LocalMachineCreated> => {
+
+  return customFetch<LocalMachineCreated>(getCreateLocalMachineUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(localNameInput)
+  }
+);}
+
+
+
+
+export const getCreateLocalMachineMutationOptions = <TError = ErrorType<BadRequestResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLocalMachine>>, TError,{data: BodyType<LocalNameInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createLocalMachine>>, TError,{data: BodyType<LocalNameInput>}, TContext> => {
+
+const mutationKey = ['createLocalMachine'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createLocalMachine>>, {data: BodyType<LocalNameInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createLocalMachine(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateLocalMachineMutationResult = NonNullable<Awaited<ReturnType<typeof createLocalMachine>>>
+    export type CreateLocalMachineMutationBody = BodyType<LocalNameInput>
+    export type CreateLocalMachineMutationError = ErrorType<BadRequestResponse>
+
+    /**
+ * @summary Registra una macchina e ne restituisce il token (una sola volta)
+ */
+export const useCreateLocalMachine = <TError = ErrorType<BadRequestResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLocalMachine>>, TError,{data: BodyType<LocalNameInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createLocalMachine>>,
+        TError,
+        {data: BodyType<LocalNameInput>},
+        TContext
+      > => {
+      return useMutation(getCreateLocalMachineMutationOptions(options));
+    }
+
+export const getRevokeLocalMachineUrl = (id: number,) => {
+
+
+
+
+  return `/api/local/machines/${id}`
+}
+
+/**
+ * Il token smette di valere e il suo modello viene nascosto. Macchina di un altro utente → 404.
+ * @summary Revoca una macchina
+ */
+export const revokeLocalMachine = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getRevokeLocalMachineUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getRevokeLocalMachineMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeLocalMachine>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeLocalMachine>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['revokeLocalMachine'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeLocalMachine>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  revokeLocalMachine(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeLocalMachineMutationResult = NonNullable<Awaited<ReturnType<typeof revokeLocalMachine>>>
+
+    export type RevokeLocalMachineMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Revoca una macchina
+ */
+export const useRevokeLocalMachine = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeLocalMachine>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof revokeLocalMachine>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRevokeLocalMachineMutationOptions(options));
+    }
+
+export const getListPersonalTokensUrl = () => {
+
+
+
+
+  return `/api/local/tokens`
+}
+
+/**
+ * Anche i revocati. Il valore del token non è mai restituito.
+ * @summary Token personali dell'utente per la chat (server MCP)
+ */
+export const listPersonalTokens = async ( options?: RequestInit): Promise<PersonalToken[]> => {
+
+  return customFetch<PersonalToken[]>(getListPersonalTokensUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPersonalTokensQueryKey = () => {
+    return [
+    `/api/local/tokens`
+    ] as const;
+    }
+
+
+export const getListPersonalTokensQueryOptions = <TData = Awaited<ReturnType<typeof listPersonalTokens>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPersonalTokens>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPersonalTokensQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPersonalTokens>>> = ({ signal }) => listPersonalTokens({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPersonalTokens>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPersonalTokensQueryResult = NonNullable<Awaited<ReturnType<typeof listPersonalTokens>>>
+export type ListPersonalTokensQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Token personali dell'utente per la chat (server MCP)
+ */
+
+export function useListPersonalTokens<TData = Awaited<ReturnType<typeof listPersonalTokens>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPersonalTokens>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPersonalTokensQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreatePersonalTokenUrl = () => {
+
+
+
+
+  return `/api/local/tokens`
+}
+
+/**
+ * @summary Crea un token personale e ne restituisce il valore (una sola volta)
+ */
+export const createPersonalToken = async (localNameInput: LocalNameInput, options?: RequestInit): Promise<PersonalTokenCreated> => {
+
+  return customFetch<PersonalTokenCreated>(getCreatePersonalTokenUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(localNameInput)
+  }
+);}
+
+
+
+
+export const getCreatePersonalTokenMutationOptions = <TError = ErrorType<BadRequestResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPersonalToken>>, TError,{data: BodyType<LocalNameInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createPersonalToken>>, TError,{data: BodyType<LocalNameInput>}, TContext> => {
+
+const mutationKey = ['createPersonalToken'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPersonalToken>>, {data: BodyType<LocalNameInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createPersonalToken(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePersonalTokenMutationResult = NonNullable<Awaited<ReturnType<typeof createPersonalToken>>>
+    export type CreatePersonalTokenMutationBody = BodyType<LocalNameInput>
+    export type CreatePersonalTokenMutationError = ErrorType<BadRequestResponse>
+
+    /**
+ * @summary Crea un token personale e ne restituisce il valore (una sola volta)
+ */
+export const useCreatePersonalToken = <TError = ErrorType<BadRequestResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPersonalToken>>, TError,{data: BodyType<LocalNameInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createPersonalToken>>,
+        TError,
+        {data: BodyType<LocalNameInput>},
+        TContext
+      > => {
+      return useMutation(getCreatePersonalTokenMutationOptions(options));
+    }
+
+export const getRevokePersonalTokenUrl = (id: number,) => {
+
+
+
+
+  return `/api/local/tokens/${id}`
+}
+
+/**
+ * Token di un altro utente → 404.
+ * @summary Revoca un token personale
+ */
+export const revokePersonalToken = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getRevokePersonalTokenUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getRevokePersonalTokenMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePersonalToken>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokePersonalToken>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['revokePersonalToken'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokePersonalToken>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  revokePersonalToken(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokePersonalTokenMutationResult = NonNullable<Awaited<ReturnType<typeof revokePersonalToken>>>
+
+    export type RevokePersonalTokenMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Revoca un token personale
+ */
+export const useRevokePersonalToken = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePersonalToken>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof revokePersonalToken>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRevokePersonalTokenMutationOptions(options));
     }
 

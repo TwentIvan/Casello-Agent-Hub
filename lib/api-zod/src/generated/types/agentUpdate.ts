@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AgentStatus } from './agentStatus';
+import type { LocalOfflinePolicy } from './localOfflinePolicy';
 import type { ToolIdentity } from './toolIdentity';
 
 export interface AgentUpdate {
@@ -20,6 +21,18 @@ export interface AgentUpdate {
      * @nullable
      */
   aiModelId?: number | null;
+  /**
+     * Modello di riserva: obbligatorio con un modello dell'agente locale (400 "modello di riserva obbligatorio con l'agente locale"); deve essere un modello API dell'utente o dell'account di sistema
+     * @nullable
+     */
+  fallbackAiModelId?: number | null;
+  localOfflinePolicy?: LocalOfflinePolicy;
+  /**
+     * @minimum 1
+     * @maximum 600
+     */
+  localOfflineWaitS?: number;
+  localForThirdParties?: boolean;
   status?: AgentStatus;
   /** @nullable */
   area?: string | null;

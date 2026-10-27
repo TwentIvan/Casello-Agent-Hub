@@ -17,7 +17,7 @@ function toPrice(v: number | null | undefined): string | null {
  * Collega i modelli degli account alle offerte del catalogo per (provider dell'account, id normalizzato come
  * `normalizeModelId`, cioè come `provider_model_id`): `offer_id` (null senza abbinamento), `supports_tools` e,
  * se il prezzo non è manuale e l'offerta li ha entrambi, i prezzi con `price_source = 'catalog'`. Esclusi gli
- * account `custom` e di sistema; quelli di un provider non gestito si abbinano alle offerte di quel provider.
+ * account `custom`, di sistema e dell'agente locale (le sue macchine non hanno prezzi); quelli di un provider non gestito si abbinano alle offerte di quel provider.
  * L'id del modello non cambia mai (i provider possono distinguere le maiuscole).
  */
 export async function enrichFromCatalog(executor: Tx | typeof db, opts: { accountId?: number }): Promise<void> {
@@ -38,7 +38,7 @@ export async function enrichFromCatalog(executor: Tx | typeof db, opts: { accoun
       LEFT JOIN model_offers o
         ON o.provider = a.provider
        AND o.provider_model_id = lower(regexp_replace(m.model_id, '^models/', '', 'i'))
-      WHERE a.provider NOT IN ('custom', 'system_gateway') ${onlyAccount}
+      WHERE a.provider NOT IN ('custom', 'system_gateway', 'local_agent') ${onlyAccount}
     )
     UPDATE ai_models AS m SET
       offer_id = x.offer_id,

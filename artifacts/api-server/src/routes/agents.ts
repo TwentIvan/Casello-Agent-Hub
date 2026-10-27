@@ -33,7 +33,16 @@ import {
 } from "@workspace/api-zod";
 import { startRun } from "../lib/run-executor";
 import { currentUserId } from "../lib/auth";
-import { ModelChoiceError, chooseByName, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
+import {
+  FALLBACK_REQUIRED,
+  ModelChoiceError,
+  chooseByName,
+  chooseFallbackModel,
+  chooseOwnModel,
+  fallbackFor,
+  type ModelChoice,
+} from "../lib/ai/choice";
+import { isLocalModel } from "../lib/local/machines";
 import { DEFAULT_MODEL } from "../lib/models";
 import { logger } from "../lib/logger";
 import { toPublicRun, userTokenFrom, withToolIds, withToolIdsOne } from "./serializers";
@@ -54,19 +63,22 @@ router.get("/agents", async (req, res) => {
 // Gli agenti creati dalla UI sono sempre di area: il generale nasce con l'app.
 // Modello (chi configura paga): `aiModelId` deve essere un modello dell'utente o dell'account di
 // sistema; senza, il nome in `model` (console precedente) si collega al modello di sistema equivalente.
+// Con una macchina dell'agente locale serve anche il modello di riserva (un modello API).
 router.post("/agents", async (req, res) => {
-  const { aiModelId, model, ...body } = parseRequest(CreateAgentBody, req.body);
+  const { aiModelId, model, fallbackAiModelId, ...body } = parseRequest(CreateAgentBody, req.body);
   const [app] = await db.select({ id: appsTable.id }).from(appsTable).where(eq(appsTable.id, body.appId)).limit(1);
   if (!app) {
     res.status(404).json({ error: "App non trovata" });
     return;
   }
   let choice: ModelChoice;
+  let fallback: number | null;
   try {
     choice =
       aiModelId != null
         ? await chooseOwnModel(aiModelId, currentUserId(req))
         : await chooseByName(model ?? DEFAULT_MODEL);
+    fallback = await fallbackFor(choice, fallbackAiModelId, currentUserId(req));
   } catch (err) {
     if (!(err instanceof ModelChoiceError)) throw err;
     res.status(400).json({ error: err.message });
@@ -74,7 +86,7 @@ router.post("/agents", async (req, res) => {
   }
   const [agent] = await db
     .insert(agentsTable)
-    .values({ ...body, ...choice, role: "area" })
+    .values({ ...body, ...choice, fallbackAiModelId: fallback, role: "area" })
     .returning();
   res.status(201).json(CreateAgentResponse.parse(await withToolIdsOne(agent!)));
 });
@@ -109,11 +121,36 @@ async function modelUpdate(
   return {};
 }
 
+/**
+ * Riserva da salvare, controllata solo quando cambiano il modello o la riserva (come il modello). Con un
+ * agente locale la riserva effettiva è obbligatoria; se cambia il modello quella esistente si ricontrolla
+ * per chi modifica (chi configura paga). Undefined = invariata.
+ */
+async function fallbackUpdate(
+  current: { aiModelId: number | null; fallbackAiModelId: number | null },
+  modelFields: Partial<ModelChoice>,
+  fallbackAiModelId: number | null | undefined,
+  userId: number,
+): Promise<number | null | undefined> {
+  const modelChanged = modelFields.aiModelId !== undefined;
+  if (!modelChanged && fallbackAiModelId === undefined) return undefined;
+  const effectiveModel = modelChanged ? modelFields.aiModelId! : current.aiModelId;
+  const local = effectiveModel !== null && (await isLocalModel(effectiveModel)) !== null;
+  const effective = fallbackAiModelId !== undefined ? fallbackAiModelId : current.fallbackAiModelId;
+  if (effective === null) {
+    if (local) throw new ModelChoiceError(FALLBACK_REQUIRED);
+    return fallbackAiModelId;
+  }
+  const fallbackChanged = fallbackAiModelId !== undefined && fallbackAiModelId !== current.fallbackAiModelId;
+  if (fallbackChanged || (modelChanged && local)) return chooseFallbackModel(effective, userId);
+  return fallbackAiModelId;
+}
+
 router.patch("/agents/:id", async (req, res) => {
   const { id } = parseRequest(UpdateAgentParams, req.params);
-  const { aiModelId, model, ...body } = parseRequest(UpdateAgentBody, req.body);
+  const { aiModelId, model, fallbackAiModelId, ...body } = parseRequest(UpdateAgentBody, req.body);
   const [current] = await db
-    .select({ aiModelId: agentsTable.aiModelId, model: agentsTable.model })
+    .select({ aiModelId: agentsTable.aiModelId, model: agentsTable.model, fallbackAiModelId: agentsTable.fallbackAiModelId })
     .from(agentsTable)
     .where(eq(agentsTable.id, id))
     .limit(1);
@@ -122,8 +159,11 @@ router.patch("/agents/:id", async (req, res) => {
     return;
   }
   let modelFields: Partial<ModelChoice>;
+  let fallback: number | null | undefined;
   try {
-    modelFields = await modelUpdate(current, { aiModelId, model }, currentUserId(req));
+    const userId = currentUserId(req);
+    modelFields = await modelUpdate(current, { aiModelId, model }, userId);
+    fallback = await fallbackUpdate(current, modelFields, fallbackAiModelId, userId);
   } catch (err) {
     if (!(err instanceof ModelChoiceError)) throw err;
     res.status(400).json({ error: err.message });
@@ -131,7 +171,7 @@ router.patch("/agents/:id", async (req, res) => {
   }
   const [agent] = await db
     .update(agentsTable)
-    .set({ ...body, ...modelFields, updatedAt: new Date() })
+    .set({ ...body, ...modelFields, ...(fallback !== undefined ? { fallbackAiModelId: fallback } : {}), updatedAt: new Date() })
     .where(eq(agentsTable.id, id))
     .returning();
   if (!agent) {

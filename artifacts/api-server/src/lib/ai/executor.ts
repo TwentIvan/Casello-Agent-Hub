@@ -31,8 +31,8 @@ import { normalizeBaseUrl, privateNetworkAllowed, validateBaseUrl, type AiProvid
  */
 
 /**
- * Tipo di esecutore, dal protocollo del provider: oggi solo `openai_compatible`; `local_agent` è il
- * prossimo sottoprogetto (agente locale via MCP) ed è solo dichiarato.
+ * Tipo di esecutore, dal protocollo del provider: `openai_compatible` passa da `modelChat`; `local_agent`
+ * (agente locale) diventa un lavoro della coda e non passa mai da `modelChat`.
  */
 export type ExecutorKind = "openai_compatible" | "local_agent";
 
@@ -89,10 +89,12 @@ const PROTOCOL_UNSUPPORTED = "esecutore non ancora disponibile per questo provid
 
 /**
  * Esecutore dal protocollo del provider: i compatibili OpenAI e i provider non gestiti (`unknown`, configurati
- * come compatibili OpenAI) usano l'esecutore esistente; gli altri protocolli non hanno ancora un esecutore.
+ * come compatibili OpenAI) usano l'esecutore esistente, l'agente locale il suo; gli altri protocolli non hanno
+ * ancora un esecutore.
  */
 export function executorKindFor(protocol: ProviderProtocol): ExecutorKind {
   if (protocol === "openai_compatible" || protocol === "unknown") return "openai_compatible";
+  if (protocol === "local_agent") return "local_agent";
   throw new ModelAccessError(PROTOCOL_UNSUPPORTED);
 }
 
@@ -146,6 +148,10 @@ export async function resolveModel(aiModelId: number, opts: { userId: number | n
     if (!envUrl || !envKey) throw new ModelAccessError(SYSTEM_UNAVAILABLE);
     baseUrl = normalizeBaseUrl(envUrl);
     apiKey = envKey;
+  } else if (kind === "local_agent") {
+    // Agente locale: nessun indirizzo da chiamare né chiave (il runner si collega a Casello con il suo token)
+    baseUrl = account.baseUrl;
+    apiKey = null;
   } else {
     // Rivalidato a ogni chiamata: le regole (e lo stato del provider) possono essere cambiate dopo il salvataggio
     const allowPrivate = account.allowPrivateNetwork && privateNetworkAllowed({ slug: account.provider, status: providerStatus });

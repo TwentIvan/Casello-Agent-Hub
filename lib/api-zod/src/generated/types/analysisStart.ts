@@ -12,6 +12,8 @@
 export interface AnalysisStart {
   /** Modello di un account AI dell'utente o dell'account di sistema */
   aiModelId?: number;
+  /** Modello di riserva: obbligatorio con un modello dell'agente locale, deve essere un modello API dell'utente o dell'account di sistema; ignorato con un modello API */
+  fallbackAiModelId?: number;
   /**
      * Compatibilità, modello AI come model_name di LiteLLM
      * @minLength 1

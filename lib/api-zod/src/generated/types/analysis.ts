@@ -14,6 +14,11 @@ export interface Analysis {
   model: string;
   /** @nullable */
   aiModelId: number | null;
+  /**
+     * Modello di riserva (API) se l'agente locale non è disponibile
+     * @nullable
+     */
+  fallbackAiModelId: number | null;
   status: AnalysisStatus;
   sources: AnalysisSources;
   maxTokens: number;

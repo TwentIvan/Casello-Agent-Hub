@@ -1,3 +1,4 @@
+import { isLocalModel, isMachineActive } from "../local/machines";
 import { ProviderError } from "./discovery";
 import { ModelAccessError, resolveModel } from "./executor";
 import { findUsableSystemModelId } from "./system-account";
@@ -23,20 +24,48 @@ export class ModelChoiceError extends Error {
 }
 
 const MODEL_UNAVAILABLE = "modello non disponibile";
+export const FALLBACK_REQUIRED = "modello di riserva obbligatorio con l'agente locale";
+const FALLBACK_NOT_API = "il modello di riserva deve essere un modello API";
 
 /**
- * Modello scelto dall'utente: deve essere suo o dell'account di sistema (configurato). La chiave
- * eventualmente decifrata da `resolveModel` resta in questa funzione e non viene restituita.
+ * Modello scelto dall'utente: deve essere suo o dell'account di sistema (configurato); una macchina
+ * dell'agente locale solo se non è revocata. La chiave eventualmente decifrata da `resolveModel` resta
+ * in questa funzione e non viene restituita.
  */
 export async function chooseOwnModel(aiModelId: number, userId: number): Promise<ModelChoice> {
   if (!Number.isSafeInteger(aiModelId) || aiModelId <= 0) throw new ModelChoiceError(MODEL_UNAVAILABLE);
+  let choice: ModelChoice;
+  let local: boolean;
   try {
     const resolved = await resolveModel(aiModelId, { userId, mustOwn: true });
-    return { aiModelId: resolved.aiModelId, model: resolved.modelId };
+    choice = { aiModelId: resolved.aiModelId, model: resolved.modelId };
+    local = resolved.kind === "local_agent";
   } catch (err) {
     if (err instanceof ModelAccessError || err instanceof ProviderError) throw new ModelChoiceError(err.message);
     throw err;
   }
+  if (local) {
+    const machine = await isLocalModel(aiModelId);
+    if (!machine || !(await isMachineActive(machine.machineId, userId))) throw new ModelChoiceError(MODEL_UNAVAILABLE);
+  }
+  return choice;
+}
+
+/** Modello di riserva: un modello API dell'utente o dell'account di sistema, mai un agente locale. */
+export async function chooseFallbackModel(aiModelId: number, userId: number): Promise<number> {
+  const choice = await chooseOwnModel(aiModelId, userId);
+  if (await isLocalModel(aiModelId)) throw new ModelChoiceError(FALLBACK_NOT_API);
+  return choice.aiModelId!;
+}
+
+/**
+ * Riserva di un modello appena scelto (avvio di un'analisi, creazione di un agente): con un agente locale è
+ * obbligatoria e validata; con un modello API è ignorata (null).
+ */
+export async function fallbackFor(choice: ModelChoice, fallbackAiModelId: number | null | undefined, userId: number): Promise<number | null> {
+  if (choice.aiModelId === null || !(await isLocalModel(choice.aiModelId))) return null;
+  if (fallbackAiModelId == null) throw new ModelChoiceError(FALLBACK_REQUIRED);
+  return chooseFallbackModel(fallbackAiModelId, userId);
 }
 
 /**

@@ -28,7 +28,7 @@ import {
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
 import { AVAILABLE_MODELS } from "../lib/models";
-import { ModelChoiceError, chooseByName, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
+import { ModelChoiceError, chooseByName, chooseOwnModel, fallbackFor, type ModelChoice } from "../lib/ai/choice";
 import { isUniqueViolation } from "../lib/pg-errors";
 import { ANALYSIS_DEFAULT_MAX_TOKENS, startAnalysis } from "../lib/architect/run-analysis";
 import { ApplyError, applyItem } from "../lib/architect/apply";
@@ -73,18 +73,30 @@ function modelError(model: string): string | null {
 
 const CHOOSE_MODEL = "scegli un modello";
 
+/** Modello dell'analisi e, con l'agente locale, il suo modello di riserva. */
+type AnalysisChoice = ModelChoice & { fallbackAiModelId: number | null };
+
 /**
  * Modello dell'analisi, indicato con esattamente uno tra `aiModelId` (modello dell'utente che avvia
  * o dell'account di sistema) e `model` (nome, console precedente: elenco di GET /models, collegato
- * al modello di sistema equivalente se esiste). Lancia ModelChoiceError con il messaggio per il 400.
+ * al modello di sistema equivalente se esiste). Con una macchina dell'agente locale serve anche
+ * `fallbackAiModelId` (un modello API). Lancia ModelChoiceError con il messaggio per il 400.
  */
-async function analysisModel(input: { aiModelId?: number; model?: string }, userId: number): Promise<ModelChoice> {
+async function analysisModel(
+  input: { aiModelId?: number; model?: string; fallbackAiModelId?: number },
+  userId: number,
+): Promise<AnalysisChoice> {
   const { aiModelId, model } = input;
   if ((aiModelId === undefined) === (model === undefined)) throw new ModelChoiceError(CHOOSE_MODEL);
-  if (aiModelId !== undefined) return chooseOwnModel(aiModelId, userId);
-  const invalid = modelError(model!);
-  if (invalid) throw new ModelChoiceError(invalid);
-  return chooseByName(model!);
+  let choice: ModelChoice;
+  if (aiModelId !== undefined) {
+    choice = await chooseOwnModel(aiModelId, userId);
+  } else {
+    const invalid = modelError(model!);
+    if (invalid) throw new ModelChoiceError(invalid);
+    choice = await chooseByName(model!);
+  }
+  return { ...choice, fallbackAiModelId: await fallbackFor(choice, input.fallbackAiModelId, userId) };
 }
 
 /** L'app ha già un'analisi `queued`/`running` (indice unico parziale `analyses_one_active_per_app`). */
@@ -94,7 +106,7 @@ class AnalysisBusyError extends Error {}
  * Crea l'analisi `queued` e la avvia in background. `startAnalysis` non lancia mai: registra da sé
  * ogni errore sulla riga dell'analisi. Lo zip resta solo in memoria (mai su disco né nei log).
  */
-async function createAndStart(app: App, choice: ModelChoice, maxTokens: number | undefined, zip?: Uint8Array) {
+async function createAndStart(app: App, choice: AnalysisChoice, maxTokens: number | undefined, zip?: Uint8Array) {
   let row;
   try {
     [row] = await db
@@ -103,6 +115,7 @@ async function createAndStart(app: App, choice: ModelChoice, maxTokens: number |
         appId: app.id,
         model: choice.model,
         aiModelId: choice.aiModelId,
+        fallbackAiModelId: choice.fallbackAiModelId,
         maxTokens: maxTokens ?? ANALYSIS_DEFAULT_MAX_TOKENS,
         // Valore iniziale: l'orchestratore lo sovrascrive con le sorgenti usate davvero
         sources: { code: zip ? "zip" : app.sourceType, openapi: false, description: !!app.functionalDescription?.trim() },
@@ -157,15 +170,15 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
   // Avvio con le sorgenti configurate sull'app (GitHub, OpenAPI, descrizione funzionale)
   router.post("/apps/:id/analyses", runRateLimit, async (req, res) => {
     const { id } = parseRequest(StartAnalysisParams, req.params);
-    const { model, aiModelId, maxTokens } = parseRequest(StartAnalysisBody, req.body);
+    const { model, aiModelId, fallbackAiModelId, maxTokens } = parseRequest(StartAnalysisBody, req.body);
     const app = await findApp(id);
     if (!app) {
       res.status(404).json({ error: "App non trovata" });
       return;
     }
-    let choice: ModelChoice;
+    let choice: AnalysisChoice;
     try {
-      choice = await analysisModel({ aiModelId, model }, currentUserId(req));
+      choice = await analysisModel({ aiModelId, model, fallbackAiModelId }, currentUserId(req));
     } catch (err) {
       if (!(err instanceof ModelChoiceError)) throw err;
       res.status(400).json({ error: err.message });
@@ -205,7 +218,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
     zipUpload(opts.zipLimitBytes),
     async (req, res) => {
       const { id } = parseRequest(StartZipAnalysisParams, req.params);
-      const { model, aiModelId, maxTokens } = parseRequest(StartZipAnalysisQueryParams, req.query);
+      const { model, aiModelId, fallbackAiModelId, maxTokens } = parseRequest(StartZipAnalysisQueryParams, req.query);
       const body: unknown = req.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
         res.status(400).json({ error: "Archivio zip mancante: invia il file come application/zip" });
@@ -216,9 +229,9 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
         res.status(404).json({ error: "App non trovata" });
         return;
       }
-      let choice: ModelChoice;
+      let choice: AnalysisChoice;
       try {
-        choice = await analysisModel({ aiModelId, model }, currentUserId(req));
+        choice = await analysisModel({ aiModelId, model, fallbackAiModelId }, currentUserId(req));
       } catch (err) {
         if (!(err instanceof ModelChoiceError)) throw err;
         res.status(400).json({ error: err.message });

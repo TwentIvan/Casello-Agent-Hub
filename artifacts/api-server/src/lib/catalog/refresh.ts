@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNotNull, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, ne, notInArray, sql } from "drizzle-orm";
 import {
   db,
   aiAccountsTable,
@@ -188,12 +188,17 @@ async function writeCatalog(
 }
 
 /**
- * Rilegge `/models` di ogni account degli utenti (non quello di sistema), uno alla volta: un errore non
+ * Rilegge `/models` di ogni account degli utenti (non quello di sistema né quello dell'agente locale, che
+ * non ha un provider da interrogare), uno alla volta: un errore non
  * ferma gli altri. Riporta i modelli scoperti prima e non più elencati, solo per le verifiche riuscite
  * con un elenco non vuoto.
  */
 async function reverifyAccounts(): Promise<OfferSummary["accounts"]> {
-  const accounts = await db.select().from(aiAccountsTable).where(isNotNull(aiAccountsTable.userId)).orderBy(asc(aiAccountsTable.id));
+  const accounts = await db
+    .select()
+    .from(aiAccountsTable)
+    .where(and(isNotNull(aiAccountsTable.userId), ne(aiAccountsTable.provider, "local_agent")))
+    .orderBy(asc(aiAccountsTable.id));
   const out: OfferSummary["accounts"] = [];
   for (const account of accounts) {
     try {

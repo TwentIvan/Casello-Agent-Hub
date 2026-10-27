@@ -136,9 +136,10 @@ describe("computeCost", () => {
 });
 
 describe("executorKindFor", () => {
-  it("openai_compatible e unknown → esecutore compatibile OpenAI; gli altri protocolli → errore fisso", () => {
+  it("openai_compatible e unknown → esecutore compatibile OpenAI; local_agent → il suo; gli altri → errore fisso", () => {
     expect(executorKindFor("openai_compatible")).toBe("openai_compatible");
     expect(executorKindFor("unknown")).toBe("openai_compatible");
+    expect(executorKindFor("local_agent")).toBe("local_agent");
     for (const p of ["anthropic", "bedrock", "vertex", "azure"] as const) {
       expect(() => executorKindFor(p)).toThrow(new ModelAccessError("esecutore non ancora disponibile per questo provider"));
     }

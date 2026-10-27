@@ -12,6 +12,10 @@ export type StartZipAnalysisParams = {
  */
 aiModelId?: number;
 /**
+ * Modello di riserva, obbligatorio con un modello dell'agente locale
+ */
+fallbackAiModelId?: number;
+/**
  * Compatibilità, modello AI come model_name di LiteLLM
  * @minLength 1
  */

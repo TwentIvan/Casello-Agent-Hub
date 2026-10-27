@@ -220,6 +220,59 @@ export interface AppUpdate {
   status?: AppStatus;
 }
 
+export interface LocalNameInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+}
+
+export interface LocalMachine {
+  id: number;
+  name: string;
+  /** Segnale di vita del runner negli ultimi 30 secondi */
+  connected: boolean;
+  /** @nullable */
+  lastSeenAt: string | null;
+  /** @nullable */
+  revokedAt: string | null;
+}
+
+export interface LocalMachineCreated {
+  machine: LocalMachine;
+  /** Token della macchina (csl_m_…), mostrato solo ora */
+  token: string;
+}
+
+export interface PersonalToken {
+  id: number;
+  name: string;
+  /** @nullable */
+  lastUsedAt: string | null;
+  /** @nullable */
+  revokedAt: string | null;
+  createdAt: string;
+}
+
+export interface PersonalTokenCreated {
+  personalToken: PersonalToken;
+  /** Token personale (csl_p_…), mostrato solo ora */
+  token: string;
+}
+
+/**
+ * Cosa fare quando l'agente locale non è collegato a una run avviata da un'app: usare subito la riserva, attendere localOfflineWaitS secondi e poi usarla, o posticipare la run
+ */
+export type LocalOfflinePolicy = typeof LocalOfflinePolicy[keyof typeof LocalOfflinePolicy];
+
+
+export const LocalOfflinePolicy = {
+  fallback: 'fallback',
+  wait_then_fallback: 'wait_then_fallback',
+  postpone: 'postpone',
+} as const;
+
 export type AgentStatus = typeof AgentStatus[keyof typeof AgentStatus];
 
 
@@ -258,6 +311,16 @@ export interface Agent {
      * @nullable
      */
   aiModelId: number | null;
+  /**
+     * Modello di riserva (API) se l'agente locale non è disponibile
+     * @nullable
+     */
+  fallbackAiModelId: number | null;
+  localOfflinePolicy: LocalOfflinePolicy;
+  /** Secondi di attesa con wait_then_fallback */
+  localOfflineWaitS: number;
+  /** Le run di utenti diversi dal proprietario usano l'agente locale solo se attivo */
+  localForThirdParties: boolean;
   status: AgentStatus;
   role: AgentRole;
   /** @nullable */
@@ -281,6 +344,18 @@ export interface AgentInput {
      * @nullable
      */
   aiModelId?: number | null;
+  /**
+     * Modello di riserva: obbligatorio con un modello dell'agente locale (400 "modello di riserva obbligatorio con l'agente locale"); deve essere un modello API dell'utente o dell'account di sistema
+     * @nullable
+     */
+  fallbackAiModelId?: number | null;
+  localOfflinePolicy?: LocalOfflinePolicy;
+  /**
+     * @minimum 1
+     * @maximum 600
+     */
+  localOfflineWaitS?: number;
+  localForThirdParties?: boolean;
   status?: AgentStatus;
 }
 
@@ -296,6 +371,18 @@ export interface AgentUpdate {
      * @nullable
      */
   aiModelId?: number | null;
+  /**
+     * Modello di riserva: obbligatorio con un modello dell'agente locale (400 "modello di riserva obbligatorio con l'agente locale"); deve essere un modello API dell'utente o dell'account di sistema
+     * @nullable
+     */
+  fallbackAiModelId?: number | null;
+  localOfflinePolicy?: LocalOfflinePolicy;
+  /**
+     * @minimum 1
+     * @maximum 600
+     */
+  localOfflineWaitS?: number;
+  localForThirdParties?: boolean;
   status?: AgentStatus;
   /** @nullable */
   area?: string | null;
@@ -593,6 +680,11 @@ export interface Analysis {
   model: string;
   /** @nullable */
   aiModelId: number | null;
+  /**
+     * Modello di riserva (API) se l'agente locale non è disponibile
+     * @nullable
+     */
+  fallbackAiModelId: number | null;
   status: AnalysisStatus;
   sources: AnalysisSources;
   maxTokens: number;
@@ -667,6 +759,8 @@ export type AnalysisDetail = Analysis & {
 export interface AnalysisStart {
   /** Modello di un account AI dell'utente o dell'account di sistema */
   aiModelId?: number;
+  /** Modello di riserva: obbligatorio con un modello dell'agente locale, deve essere un modello API dell'utente o dell'account di sistema; ignorato con un modello API */
+  fallbackAiModelId?: number;
   /**
      * Compatibilità, modello AI come model_name di LiteLLM
      * @minLength 1
@@ -1279,6 +1373,10 @@ export type StartZipAnalysisParams = {
  * Modello di un account AI (esattamente uno tra aiModelId e model)
  */
 aiModelId?: number;
+/**
+ * Modello di riserva, obbligatorio con un modello dell'agente locale
+ */
+fallbackAiModelId?: number;
 /**
  * Compatibilità, modello AI come model_name di LiteLLM
  * @minLength 1

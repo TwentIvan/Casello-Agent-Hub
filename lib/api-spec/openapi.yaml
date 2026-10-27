@@ -30,6 +30,8 @@ tags:
     description: Account AI dell'utente (provider, chiave, modelli e prezzi) e stima dei costi
   - name: catalog
     description: Catalogo dei modelli per provider e suo aggiornamento
+  - name: local
+    description: Agente locale (macchine col runner e token personali per la chat), dalla console
   - name: architect
     description: Analisi dell'architetto (proposte su tool, agenti, skill, endpoint ed evoluzione) e skill degli agenti
 
@@ -615,6 +617,12 @@ paths:
           schema:
             type: integer
           description: Modello di un account AI (esattamente uno tra aiModelId e model)
+        - name: fallbackAiModelId
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Modello di riserva, obbligatorio con un modello dell'agente locale
         - name: model
           in: query
           required: false
@@ -1385,6 +1393,110 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  /local/machines:
+    get:
+      operationId: listLocalMachines
+      tags: [local]
+      summary: Macchine dell'agente locale dell'utente
+      description: >-
+        Anche le revocate (revokedAt impostato). connected è vero se la macchina ha dato un segnale di vita
+        negli ultimi 30 secondi. Il token non è mai restituito.
+      responses:
+        "200":
+          description: Macchine, dalla più vecchia
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LocalMachine"
+    post:
+      operationId: createLocalMachine
+      tags: [local]
+      summary: Registra una macchina e ne restituisce il token (una sola volta)
+      description: >-
+        Crea la macchina e, se manca, l'account AI "Agente locale" dell'utente; la macchina diventa il modello
+        "Agente locale · <nome>" di quell'account. Il token (csl_m_…) è salvato solo come hash e non si può
+        rileggere.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalNameInput"
+      responses:
+        "201":
+          description: Macchina registrata con il suo token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalMachineCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /local/machines/{id}:
+    delete:
+      operationId: revokeLocalMachine
+      tags: [local]
+      summary: Revoca una macchina
+      description: Il token smette di valere e il suo modello viene nascosto. Macchina di un altro utente → 404.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Macchina revocata
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /local/tokens:
+    get:
+      operationId: listPersonalTokens
+      tags: [local]
+      summary: Token personali dell'utente per la chat (server MCP)
+      description: Anche i revocati. Il valore del token non è mai restituito.
+      responses:
+        "200":
+          description: Token personali, dal più vecchio
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PersonalToken"
+    post:
+      operationId: createPersonalToken
+      tags: [local]
+      summary: Crea un token personale e ne restituisce il valore (una sola volta)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalNameInput"
+      responses:
+        "201":
+          description: Token creato con il suo valore (csl_p_…)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonalTokenCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /local/tokens/{id}:
+    delete:
+      operationId: revokePersonalToken
+      tags: [local]
+      summary: Revoca un token personale
+      description: Token di un altro utente → 404.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Token revocato
+        "404":
+          $ref: "#/components/responses/NotFound"
+
 components:
   parameters:
     IdParam:
@@ -1744,6 +1856,78 @@ components:
 
     # ── Agent ──────────────────────────────────────────────────────────────────
 
+    LocalNameInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+
+    LocalMachine:
+      type: object
+      required: [id, name, connected, lastSeenAt, revokedAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        connected:
+          type: boolean
+          description: Segnale di vita del runner negli ultimi 30 secondi
+        lastSeenAt:
+          type: ["string", "null"]
+          format: date-time
+        revokedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    LocalMachineCreated:
+      type: object
+      required: [machine, token]
+      properties:
+        machine:
+          $ref: "#/components/schemas/LocalMachine"
+        token:
+          type: string
+          description: Token della macchina (csl_m_…), mostrato solo ora
+
+    PersonalToken:
+      type: object
+      required: [id, name, lastUsedAt, revokedAt, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        lastUsedAt:
+          type: ["string", "null"]
+          format: date-time
+        revokedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    PersonalTokenCreated:
+      type: object
+      required: [personalToken, token]
+      properties:
+        personalToken:
+          $ref: "#/components/schemas/PersonalToken"
+        token:
+          type: string
+          description: Token personale (csl_p_…), mostrato solo ora
+
+    LocalOfflinePolicy:
+      type: string
+      enum: [fallback, wait_then_fallback, postpone]
+      description: >-
+        Cosa fare quando l'agente locale non è collegato a una run avviata da un'app: usare subito la riserva,
+        attendere localOfflineWaitS secondi e poi usarla, o posticipare la run
+
     AgentStatus:
       type: string
       enum: [active, inactive, draft]
@@ -1754,7 +1938,23 @@ components:
 
     Agent:
       type: object
-      required: [id, appId, name, aiModelId, status, role, defaultIdentity, toolIds, createdAt, updatedAt]
+      required:
+        [
+          id,
+          appId,
+          name,
+          aiModelId,
+          fallbackAiModelId,
+          localOfflinePolicy,
+          localOfflineWaitS,
+          localForThirdParties,
+          status,
+          role,
+          defaultIdentity,
+          toolIds,
+          createdAt,
+          updatedAt,
+        ]
       properties:
         id:
           type: integer
@@ -1774,6 +1974,17 @@ components:
           description: >-
             Modello scelto tra quelli degli account AI; le run usano l'account di questo modello
             (chi configura paga). Null = vecchio percorso del gateway
+        fallbackAiModelId:
+          type: ["integer", "null"]
+          description: Modello di riserva (API) se l'agente locale non è disponibile
+        localOfflinePolicy:
+          $ref: "#/components/schemas/LocalOfflinePolicy"
+        localOfflineWaitS:
+          type: integer
+          description: Secondi di attesa con wait_then_fallback
+        localForThirdParties:
+          type: boolean
+          description: Le run di utenti diversi dal proprietario usano l'agente locale solo se attivo
         status:
           $ref: "#/components/schemas/AgentStatus"
         role:
@@ -1813,6 +2024,19 @@ components:
           description: >-
             Modello di un account AI dell'utente o dell'account di sistema (400 "modello non
             disponibile" altrimenti)
+        fallbackAiModelId:
+          type: ["integer", "null"]
+          description: >-
+            Modello di riserva: obbligatorio con un modello dell'agente locale (400 "modello di riserva
+            obbligatorio con l'agente locale"); deve essere un modello API dell'utente o dell'account di sistema
+        localOfflinePolicy:
+          $ref: "#/components/schemas/LocalOfflinePolicy"
+        localOfflineWaitS:
+          type: integer
+          minimum: 1
+          maximum: 600
+        localForThirdParties:
+          type: boolean
         status:
           $ref: "#/components/schemas/AgentStatus"
 
@@ -1832,6 +2056,19 @@ components:
           description: >-
             Se diverso da quello salvato deve essere un modello dell'utente o dell'account di
             sistema (400 altrimenti); uguale a quello salvato non viene ricontrollato
+        fallbackAiModelId:
+          type: ["integer", "null"]
+          description: >-
+            Modello di riserva: obbligatorio con un modello dell'agente locale (400 "modello di riserva
+            obbligatorio con l'agente locale"); deve essere un modello API dell'utente o dell'account di sistema
+        localOfflinePolicy:
+          $ref: "#/components/schemas/LocalOfflinePolicy"
+        localOfflineWaitS:
+          type: integer
+          minimum: 1
+          maximum: 600
+        localForThirdParties:
+          type: boolean
         status:
           $ref: "#/components/schemas/AgentStatus"
         area:
@@ -2173,7 +2410,7 @@ components:
 
     Analysis:
       type: object
-      required: [id, appId, model, aiModelId, status, sources, maxTokens, tokensUsed, costUsd, phase, error, createdAt, finishedAt]
+      required: [id, appId, model, aiModelId, fallbackAiModelId, status, sources, maxTokens, tokensUsed, costUsd, phase, error, createdAt, finishedAt]
       properties:
         id:
           type: integer
@@ -2183,6 +2420,9 @@ components:
           type: string
         aiModelId:
           type: ["integer", "null"]
+        fallbackAiModelId:
+          type: ["integer", "null"]
+          description: Modello di riserva (API) se l'agente locale non è disponibile
         status:
           $ref: "#/components/schemas/AnalysisStatus"
         sources:
@@ -2287,6 +2527,11 @@ components:
         aiModelId:
           type: integer
           description: Modello di un account AI dell'utente o dell'account di sistema
+        fallbackAiModelId:
+          type: integer
+          description: >-
+            Modello di riserva: obbligatorio con un modello dell'agente locale, deve essere un modello API
+            dell'utente o dell'account di sistema; ignorato con un modello API
         model:
           type: string
           minLength: 1

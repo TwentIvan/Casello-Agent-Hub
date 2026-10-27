@@ -293,6 +293,10 @@ export const ListAgentsResponseItem = zod.object({
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
   "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di riserva (API) se l\'agente locale non è disponibile'),
+  "localOfflinePolicy": zod.enum(['fallback', 'wait_then_fallback', 'postpone']).describe('Cosa fare quando l\'agente locale non è collegato a una run avviata da un\'app: usare subito la riserva, attendere localOfflineWaitS secondi e poi usarla, o posticipare la run'),
+  "localOfflineWaitS": zod.number().describe('Secondi di attesa con wait_then_fallback'),
+  "localForThirdParties": zod.boolean().describe('Le run di utenti diversi dal proprietario usano l\'agente locale solo se attivo'),
   "status": zod.enum(['active', 'inactive', 'draft']),
   "role": zod.enum(['general', 'area']),
   "area": zod.string().nullish(),
@@ -308,6 +312,8 @@ export const ListAgentsResponse = zod.array(ListAgentsResponseItem)
  * @summary Crea un nuovo agente
  */
 
+export const createAgentBodyLocalOfflineWaitSMax = 600;
+
 
 
 export const CreateAgentBody = zod.object({
@@ -316,6 +322,10 @@ export const CreateAgentBody = zod.object({
   "systemPrompt": zod.string().optional(),
   "model": zod.string().optional().describe('Solo compatibilità; con aiModelId è ignorato'),
   "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente o dell\'account di sistema (400 \"modello non disponibile\" altrimenti)'),
+  "fallbackAiModelId": zod.number().nullish().describe('Modello di riserva: obbligatorio con un modello dell\'agente locale (400 \"modello di riserva obbligatorio con l\'agente locale\"); deve essere un modello API dell\'utente o dell\'account di sistema'),
+  "localOfflinePolicy": zod.enum(['fallback', 'wait_then_fallback', 'postpone']).optional().describe('Cosa fare quando l\'agente locale non è collegato a una run avviata da un\'app: usare subito la riserva, attendere localOfflineWaitS secondi e poi usarla, o posticipare la run'),
+  "localOfflineWaitS": zod.number().min(1).max(createAgentBodyLocalOfflineWaitSMax).optional(),
+  "localForThirdParties": zod.boolean().optional(),
   "status": zod.enum(['active', 'inactive', 'draft']).optional()
 })
 
@@ -326,6 +336,10 @@ export const CreateAgentResponse = zod.object({
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
   "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di riserva (API) se l\'agente locale non è disponibile'),
+  "localOfflinePolicy": zod.enum(['fallback', 'wait_then_fallback', 'postpone']).describe('Cosa fare quando l\'agente locale non è collegato a una run avviata da un\'app: usare subito la riserva, attendere localOfflineWaitS secondi e poi usarla, o posticipare la run'),
+  "localOfflineWaitS": zod.number().describe('Secondi di attesa con wait_then_fallback'),
+  "localForThirdParties": zod.boolean().describe('Le run di utenti diversi dal proprietario usano l\'agente locale solo se attivo'),
   "status": zod.enum(['active', 'inactive', 'draft']),
   "role": zod.enum(['general', 'area']),
   "area": zod.string().nullish(),
@@ -350,6 +364,10 @@ export const GetAgentResponse = zod.object({
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
   "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di riserva (API) se l\'agente locale non è disponibile'),
+  "localOfflinePolicy": zod.enum(['fallback', 'wait_then_fallback', 'postpone']).describe('Cosa fare quando l\'agente locale non è collegato a una run avviata da un\'app: usare subito la riserva, attendere localOfflineWaitS secondi e poi usarla, o posticipare la run'),
+  "localOfflineWaitS": zod.number().describe('Secondi di attesa con wait_then_fallback'),
+  "localForThirdParties": zod.boolean().describe('Le run di utenti diversi dal proprietario usano l\'agente locale solo se attivo'),
   "status": zod.enum(['active', 'inactive', 'draft']),
   "role": zod.enum(['general', 'area']),
   "area": zod.string().nullish(),
@@ -368,6 +386,8 @@ export const UpdateAgentParams = zod.object({
 })
 
 
+export const updateAgentBodyLocalOfflineWaitSMax = 600;
+
 
 
 export const UpdateAgentBody = zod.object({
@@ -375,6 +395,10 @@ export const UpdateAgentBody = zod.object({
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional().describe('Solo compatibilità; con aiModelId è ignorato'),
   "aiModelId": zod.number().nullish().describe('Se diverso da quello salvato deve essere un modello dell\'utente o dell\'account di sistema (400 altrimenti); uguale a quello salvato non viene ricontrollato'),
+  "fallbackAiModelId": zod.number().nullish().describe('Modello di riserva: obbligatorio con un modello dell\'agente locale (400 \"modello di riserva obbligatorio con l\'agente locale\"); deve essere un modello API dell\'utente o dell\'account di sistema'),
+  "localOfflinePolicy": zod.enum(['fallback', 'wait_then_fallback', 'postpone']).optional().describe('Cosa fare quando l\'agente locale non è collegato a una run avviata da un\'app: usare subito la riserva, attendere localOfflineWaitS secondi e poi usarla, o posticipare la run'),
+  "localOfflineWaitS": zod.number().min(1).max(updateAgentBodyLocalOfflineWaitSMax).optional(),
+  "localForThirdParties": zod.boolean().optional(),
   "status": zod.enum(['active', 'inactive', 'draft']).optional(),
   "area": zod.string().nullish(),
   "defaultIdentity": zod.enum(['user', 'service']).optional()
@@ -387,6 +411,10 @@ export const UpdateAgentResponse = zod.object({
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
   "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di riserva (API) se l\'agente locale non è disponibile'),
+  "localOfflinePolicy": zod.enum(['fallback', 'wait_then_fallback', 'postpone']).describe('Cosa fare quando l\'agente locale non è collegato a una run avviata da un\'app: usare subito la riserva, attendere localOfflineWaitS secondi e poi usarla, o posticipare la run'),
+  "localOfflineWaitS": zod.number().describe('Secondi di attesa con wait_then_fallback'),
+  "localForThirdParties": zod.boolean().describe('Le run di utenti diversi dal proprietario usano l\'agente locale solo se attivo'),
   "status": zod.enum(['active', 'inactive', 'draft']),
   "role": zod.enum(['general', 'area']),
   "area": zod.string().nullish(),
@@ -571,6 +599,10 @@ export const SetAgentToolsResponse = zod.object({
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
   "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di riserva (API) se l\'agente locale non è disponibile'),
+  "localOfflinePolicy": zod.enum(['fallback', 'wait_then_fallback', 'postpone']).describe('Cosa fare quando l\'agente locale non è collegato a una run avviata da un\'app: usare subito la riserva, attendere localOfflineWaitS secondi e poi usarla, o posticipare la run'),
+  "localOfflineWaitS": zod.number().describe('Secondi di attesa con wait_then_fallback'),
+  "localForThirdParties": zod.boolean().describe('Le run di utenti diversi dal proprietario usano l\'agente locale solo se attivo'),
   "status": zod.enum(['active', 'inactive', 'draft']),
   "role": zod.enum(['general', 'area']),
   "area": zod.string().nullish(),
@@ -752,6 +784,7 @@ export const ListAnalysesResponseItem = zod.object({
   "appId": zod.number(),
   "model": zod.string(),
   "aiModelId": zod.number().nullable(),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di riserva (API) se l\'agente locale non è disponibile'),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
@@ -785,6 +818,7 @@ export const startAnalysisBodyMaxTokensMax = 2000000;
 
 export const StartAnalysisBody = zod.object({
   "aiModelId": zod.number().optional().describe('Modello di un account AI dell\'utente o dell\'account di sistema'),
+  "fallbackAiModelId": zod.number().optional().describe('Modello di riserva: obbligatorio con un modello dell\'agente locale, deve essere un modello API dell\'utente o dell\'account di sistema; ignorato con un modello API'),
   "model": zod.string().min(1).optional().describe('Compatibilità, modello AI come model_name di LiteLLM'),
   "maxTokens": zod.number().min(startAnalysisBodyMaxTokensMin).max(startAnalysisBodyMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)')
 }).describe('Indicare esattamente uno tra aiModelId e model (altrimenti 400 \"scegli un modello\")')
@@ -794,6 +828,7 @@ export const StartAnalysisResponse = zod.object({
   "appId": zod.number(),
   "model": zod.string(),
   "aiModelId": zod.number().nullable(),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di riserva (API) se l\'agente locale non è disponibile'),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
@@ -826,6 +861,7 @@ export const startZipAnalysisQueryMaxTokensMax = 2000000;
 
 export const StartZipAnalysisQueryParams = zod.object({
   "aiModelId": zod.coerce.number().optional().describe('Modello di un account AI (esattamente uno tra aiModelId e model)'),
+  "fallbackAiModelId": zod.coerce.number().optional().describe('Modello di riserva, obbligatorio con un modello dell\'agente locale'),
   "model": zod.coerce.string().min(1).optional().describe('Compatibilità, modello AI come model_name di LiteLLM'),
   "maxTokens": zod.coerce.number().min(startZipAnalysisQueryMaxTokensMin).max(startZipAnalysisQueryMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)')
 })
@@ -835,6 +871,7 @@ export const StartZipAnalysisResponse = zod.object({
   "appId": zod.number(),
   "model": zod.string(),
   "aiModelId": zod.number().nullable(),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di riserva (API) se l\'agente locale non è disponibile'),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
@@ -863,6 +900,7 @@ export const GetAnalysisResponse = zod.object({
   "appId": zod.number(),
   "model": zod.string(),
   "aiModelId": zod.number().nullable(),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di riserva (API) se l\'agente locale non è disponibile'),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
@@ -1780,5 +1818,102 @@ export const RefreshCatalogResponse = zod.object({
 })).describe('Solo gli account dell\'utente corrente')
 }),zod.null()])
 })
+
+
+/**
+ * Anche le revocate (revokedAt impostato). connected è vero se la macchina ha dato un segnale di vita negli ultimi 30 secondi. Il token non è mai restituito.
+ * @summary Macchine dell'agente locale dell'utente
+ */
+export const ListLocalMachinesResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "connected": zod.boolean().describe('Segnale di vita del runner negli ultimi 30 secondi'),
+  "lastSeenAt": zod.coerce.date().nullable(),
+  "revokedAt": zod.coerce.date().nullable()
+})
+export const ListLocalMachinesResponse = zod.array(ListLocalMachinesResponseItem)
+
+
+/**
+ * Crea la macchina e, se manca, l'account AI "Agente locale" dell'utente; la macchina diventa il modello "Agente locale · <nome>" di quell'account. Il token (csl_m_…) è salvato solo come hash e non si può rileggere.
+ * @summary Registra una macchina e ne restituisce il token (una sola volta)
+ */
+export const createLocalMachineBodyNameMax = 100;
+
+
+
+export const CreateLocalMachineBody = zod.object({
+  "name": zod.string().min(1).max(createLocalMachineBodyNameMax)
+})
+
+export const CreateLocalMachineResponse = zod.object({
+  "machine": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "connected": zod.boolean().describe('Segnale di vita del runner negli ultimi 30 secondi'),
+  "lastSeenAt": zod.coerce.date().nullable(),
+  "revokedAt": zod.coerce.date().nullable()
+}),
+  "token": zod.string().describe('Token della macchina (csl_m_…), mostrato solo ora')
+})
+
+
+/**
+ * Il token smette di valere e il suo modello viene nascosto. Macchina di un altro utente → 404.
+ * @summary Revoca una macchina
+ */
+export const RevokeLocalMachineParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RevokeLocalMachineResponse = zod.void()
+
+
+/**
+ * Anche i revocati. Il valore del token non è mai restituito.
+ * @summary Token personali dell'utente per la chat (server MCP)
+ */
+export const ListPersonalTokensResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "lastUsedAt": zod.coerce.date().nullable(),
+  "revokedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
+export const ListPersonalTokensResponse = zod.array(ListPersonalTokensResponseItem)
+
+
+/**
+ * @summary Crea un token personale e ne restituisce il valore (una sola volta)
+ */
+export const createPersonalTokenBodyNameMax = 100;
+
+
+
+export const CreatePersonalTokenBody = zod.object({
+  "name": zod.string().min(1).max(createPersonalTokenBodyNameMax)
+})
+
+export const CreatePersonalTokenResponse = zod.object({
+  "personalToken": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "lastUsedAt": zod.coerce.date().nullable(),
+  "revokedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}),
+  "token": zod.string().describe('Token personale (csl_p_…), mostrato solo ora')
+})
+
+
+/**
+ * Token di un altro utente → 404.
+ * @summary Revoca un token personale
+ */
+export const RevokePersonalTokenParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RevokePersonalTokenResponse = zod.void()
 
 

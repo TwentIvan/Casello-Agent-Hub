@@ -263,6 +263,8 @@ export async function runRunner(opts: RunnerOptions): Promise<void> {
     if (signal.aborted) item.abort();
     else signal.addEventListener("abort", onStop, { once: true });
     let beating = false;
+    // Token di macchina rifiutato durante il compito (macchina revocata): Claude si ferma e poi il runner
+    let rejected: FatalError | null = null;
     const timer = setInterval(() => {
       if (beating || item.signal.aborted) return;
       beating = true;
@@ -273,7 +275,16 @@ export async function runRunner(opts: RunnerOptions): Promise<void> {
             item.abort();
           }
         })
-        .catch((err: unknown) => log("segnale di vita non riuscito", { jobId: d.jobId, errore: describe(err) }))
+        .catch((err: unknown) => {
+          if (err instanceof FatalError) {
+            log("token di macchina rifiutato: interrompo Claude e fermo il runner", { jobId: d.jobId, itemId: d.itemId });
+            rejected = err;
+            stopAll.abort();
+            item.abort();
+            return;
+          }
+          log("segnale di vita non riuscito", { jobId: d.jobId, errore: describe(err) });
+        })
         .finally(() => (beating = false));
     }, heartbeatMs);
     let result: ItemResult = { sessionId: null, exit: "error", usage: null };
@@ -294,6 +305,7 @@ export async function runRunner(opts: RunnerOptions): Promise<void> {
     if (item.signal.aborted) result = { ...result, exit: "error" };
     log("compito terminato", { jobId: d.jobId, itemId: d.itemId, esito: result.exit, durataMs: Date.now() - started });
     await done(d, result);
+    if (rejected) throw rejected;
   }
 
   async function slot(): Promise<void> {

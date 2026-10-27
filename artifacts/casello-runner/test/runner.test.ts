@@ -225,6 +225,22 @@ describe("runRunner", () => {
     expect(events.slice(doneAt + 1).every((e) => !e.startsWith("heartbeat"))).toBe(true);
   });
 
+  it("segnale di vita rifiutato (401, macchina revocata): Claude terminato, il runner si ferma con un errore", async () => {
+    process.env["FAKE_CLAUDE_MODE"] = "hang";
+    queue = [delivery(8)];
+    const stopped = start({ heartbeatMs: 50, killGraceMs: 200 });
+    stopped.catch(() => {});
+    await waitFor(() => records().length === 1 && events.includes("heartbeat:8"));
+    heartbeatStatus = 401;
+    await expect(stopped).rejects.toThrow("token di macchina non valido o revocato");
+    const [r] = records();
+    expect(() => process.kill(r.pid, 0)).toThrow();
+    expect(existsSync(dirname(r.configPath))).toBe(false);
+    // Nessuna nuova attesa dei lavori dopo il rifiuto
+    expect(events.filter((e) => e === "next")).toHaveLength(1);
+    expect(logs.some((l) => l.includes("token di macchina rifiutato"))).toBe(true);
+  });
+
   it("arresto (SIGINT/SIGTERM): termina il compito in corso, done con exit error, poi esce", async () => {
     process.env["FAKE_CLAUDE_MODE"] = "hang";
     queue = [delivery(3)];

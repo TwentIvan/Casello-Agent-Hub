@@ -1,8 +1,9 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, utimesSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readConfig, runRunner, type RunnerOptions } from "../src/runner";
@@ -21,7 +22,7 @@ let base: string;
 let events: string[];
 let auths: string[];
 let doneBodies: Record<string, unknown>[];
-let queue: Delivery[];
+let queue: unknown[];
 let heartbeatStatus: number;
 /** Richieste a /next da far cadere (errore di rete) prima di rispondere. */
 let dropNext: number;
@@ -29,6 +30,7 @@ let nextStatus: number | null;
 let logs: string[];
 let scratch: string;
 let record: string;
+let jobsRoot: string;
 const savedEnv = { ...process.env };
 
 const delivery = (n: number, over: Partial<Delivery> = {}): Delivery => ({
@@ -37,7 +39,7 @@ const delivery = (n: number, over: Partial<Delivery> = {}): Delivery => ({
   jobToken: `csl_j_TOKEN_LAVORO_${n}`,
   prompt: PROMPT,
   resumeSessionId: null,
-  mcpUrl: "https://casello.example/api/mcp",
+  mcpUrl: `${base}/api/mcp`,
   ...over,
 });
 
@@ -61,6 +63,7 @@ function start(over: Partial<RunnerOptions> = {}): Promise<void> {
     token: MACHINE_TOKEN,
     bin: FAKE_CLAUDE,
     signal: ac.signal,
+    jobsRoot,
     log: (message, fields) => logs.push(`${message} ${JSON.stringify(fields ?? {})}`),
     ...over,
   });
@@ -80,6 +83,7 @@ beforeEach(async () => {
   ac = new AbortController();
   scratch = mkdtempSync(join(tmpdir(), "runner-test-"));
   record = join(scratch, "record.jsonl");
+  jobsRoot = join(scratch, "jobs");
   process.env["FAKE_CLAUDE_RECORD"] = record;
   process.env["FAKE_CLAUDE_MODE"] = "record";
   server = http.createServer((req, res) => {
@@ -163,8 +167,17 @@ describe("runRunner", () => {
       "Bearer csl_j_TOKEN_LAVORO_2",
     ]);
     expect(r[1].args.slice(-2)).toEqual(["--resume", "sess-1"]);
-    // mcp.json e cartella rimossi a fine compito
-    for (const x of r) expect(existsSync(x.cwd)).toBe(false);
+    // Una cartella di lavoro per lavoro (0700, vuota), la stessa per la ripresa: Claude lega la sessione alla cartella
+    expect(r[0].cwd).toBe(realpathSync(join(jobsRoot, "1")));
+    expect(r[1].cwd).toBe(r[0].cwd);
+    expect(r[2].cwd).toBe(realpathSync(join(jobsRoot, "2")));
+    expect(statSync(join(jobsRoot, "1")).mode & 0o777).toBe(0o700);
+    expect(readdirSync(join(jobsRoot, "1"))).toEqual([]);
+    // mcp.json (e la sua cartella temporanea) rimossi a fine compito
+    for (const x of r) {
+      expect(dirname(x.configPath)).not.toBe(x.cwd);
+      expect(existsSync(dirname(x.configPath))).toBe(false);
+    }
     // Nei log id e durate, mai token né prompt
     const text = logs.join("\n");
     expect(text).toContain("item-1");
@@ -207,7 +220,7 @@ describe("runRunner", () => {
     const [r] = records();
     expect(doneBodies[0]).toMatchObject({ exit: "error" });
     expect(() => process.kill(r.pid, 0)).toThrow();
-    expect(existsSync(r.cwd)).toBe(false);
+    expect(existsSync(dirname(r.configPath))).toBe(false);
     const doneAt = events.indexOf("done:item-7");
     expect(events.slice(doneAt + 1).every((e) => !e.startsWith("heartbeat"))).toBe(true);
   });
@@ -222,6 +235,61 @@ describe("runRunner", () => {
     expect(events).toEqual(["next", "done:item-3"]);
     expect(doneBodies[0]).toMatchObject({ exit: "error" });
   });
+
+  it("consegna malformata: done con exit error se l'itemId è utilizzabile, poi si continua", async () => {
+    queue = [{ ...delivery(1), jobToken: "" }, { itemId: 42 }, delivery(2)];
+    start();
+    await waitFor(() => doneBodies.length === 2);
+    expect(events.filter((e) => e.startsWith("done:"))).toEqual(["done:item-1", "done:item-2"]);
+    expect(doneBodies[0]).toEqual({ sessionId: null, exit: "error", usage: null });
+    expect(doneBodies[1]).toMatchObject({ exit: "done" });
+    // Claude avviato solo per la consegna valida
+    expect(records()).toHaveLength(1);
+  });
+
+  it("indirizzo MCP di un'altra origine: il token del lavoro non viene scritto, done con exit error", async () => {
+    queue = [delivery(1, { mcpUrl: "https://altro.example/api/mcp" })];
+    start();
+    await waitFor(() => doneBodies.length === 1);
+    expect(doneBodies[0]).toEqual({ sessionId: null, exit: "error", usage: null });
+    expect(records()).toEqual([]);
+  });
+
+  it("all'avvio cancella le cartelle dei lavori ferme da più di 24 h", async () => {
+    const old = join(jobsRoot, "5");
+    const recent = join(jobsRoot, "6");
+    mkdirSync(old, { recursive: true });
+    mkdirSync(recent, { recursive: true });
+    const past = new Date(Date.now() - 25 * 60 * 60_000);
+    utimesSync(old, past, past);
+    start();
+    await waitFor(() => events.includes("next"));
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(recent)).toBe(true);
+  });
+
+  it("secondo segnale al programma: esce subito (130), Claude ucciso e mcp.json cancellato", async () => {
+    process.env["FAKE_CLAUDE_MODE"] = "hang";
+    queue = [delivery(4)];
+    const tsx = fileURLToPath(new URL("../node_modules/.bin/tsx", import.meta.url));
+    const child = spawn(tsx, [fileURLToPath(new URL("../src/index.ts", import.meta.url))], {
+      env: { ...process.env, CASELLO_URL: base, CASELLO_RUNNER_TOKEN: MACHINE_TOKEN, CASELLO_CLAUDE_BIN: FAKE_CLAUDE, HOME: scratch },
+      stdio: "ignore",
+    });
+    const exited = new Promise<number | null>((resolve) => child.on("exit", (code) => resolve(code)));
+    await waitFor(() => records().length === 1, 15_000);
+    const [r] = records();
+    expect(r.cwd).toBe(realpathSync(join(scratch, ".casello-runner", "jobs", "4")));
+    child.kill("SIGINT");
+    // Il primo segnale manda SIGTERM, che il finto Claude ignora: il secondo non aspetta i 5 s
+    await new Promise((res) => setTimeout(res, 300));
+    const started = Date.now();
+    child.kill("SIGINT");
+    expect(await exited).toBe(130);
+    expect(Date.now() - started).toBeLessThan(3000);
+    expect(() => process.kill(r.pid, 0)).toThrow();
+    expect(existsSync(dirname(r.configPath))).toBe(false);
+  }, 20_000);
 
   it("token di macchina rifiutato (401): il runner si ferma con un errore", async () => {
     nextStatus = 401;

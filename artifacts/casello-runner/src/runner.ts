@@ -1,3 +1,6 @@
+import { chmod, mkdir, readdir, rm, stat, utimes } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { isSecureUrl, runClaude, type ItemResult } from "./claude";
 
 // Ciclo del runner: attesa lunga su Casello (`GET /api/runner/next`), esecuzione del compito con Claude Code,
@@ -21,6 +24,8 @@ export interface RunnerOptions {
   log?: Logger;
   heartbeatMs?: number;
   killGraceMs?: number;
+  /** Cartelle di lavoro dei lavori (default `~/.casello-runner/jobs`). */
+  jobsRoot?: string;
 }
 
 /** Consegna di un compito (`GET /api/runner/next`). */
@@ -31,6 +36,67 @@ interface Delivery {
   prompt: string;
   resumeSessionId: string | null;
   mcpUrl: string;
+}
+
+const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.length > 0;
+
+/** Consegna ben formata; altrimenti l'`itemId` se utilizzabile (per riportare il compito come fallito). */
+function parseDelivery(body: unknown): { ok: true; delivery: Delivery } | { ok: false; itemId: string | null } {
+  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const itemId = nonEmpty(b["itemId"]) && b["itemId"].length <= 100 ? b["itemId"] : null;
+  const valid =
+    Number.isInteger(b["jobId"]) &&
+    (b["jobId"] as number) > 0 &&
+    itemId !== null &&
+    nonEmpty(b["jobToken"]) &&
+    nonEmpty(b["prompt"]) &&
+    nonEmpty(b["mcpUrl"]) &&
+    (b["resumeSessionId"] === null || nonEmpty(b["resumeSessionId"]));
+  return valid ? { ok: true, delivery: b as unknown as Delivery } : { ok: false, itemId };
+}
+
+/** Stessa origine (schema, host, porta); false se non è un indirizzo. */
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
+
+/** Cartelle di lavoro più vecchie di così si cancellano all'avvio. */
+const JOB_DIR_MAX_AGE_MS = 24 * 60 * 60_000;
+
+/** Cancella le cartelle dei lavori non usate da più di 24 h (ultimo compito: data di modifica). */
+async function cleanupJobDirs(root: string, now = Date.now()): Promise<void> {
+  let names: string[];
+  try {
+    names = await readdir(root);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const dir = join(root, name);
+    try {
+      if (now - (await stat(dir)).mtimeMs > JOB_DIR_MAX_AGE_MS) await rm(dir, { recursive: true, force: true });
+    } catch {
+      // cartella sparita nel frattempo: nulla da fare
+    }
+  }
+}
+
+/**
+ * Cartella di lavoro del lavoro, 0700, la stessa per tutti i suoi compiti: Claude Code lega la sessione alla
+ * cartella e `--resume` da un'altra cartella non la trova. Data di modifica aggiornata a ogni compito.
+ */
+async function jobDir(root: string, jobId: number): Promise<string> {
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  const dir = join(root, String(jobId));
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await chmod(dir, 0o700);
+  const now = new Date();
+  await utimes(dir, now, now);
+  return dir;
 }
 
 const HEARTBEAT_MS = 15_000;
@@ -111,6 +177,7 @@ export async function runRunner(opts: RunnerOptions): Promise<void> {
   const log = opts.log ?? defaultLog;
   const base = opts.url.replace(/\/+$/, "");
   const heartbeatMs = opts.heartbeatMs ?? HEARTBEAT_MS;
+  const jobsRoot = opts.jobsRoot ?? join(homedir(), ".casello-runner", "jobs");
   // Arresto chiesto da fuori o errore fatale di un posto (ferma anche gli altri)
   const stopAll = new AbortController();
   const signal = AbortSignal.any([opts.signal, stopAll.signal]);
@@ -150,14 +217,14 @@ export async function runRunner(opts: RunnerOptions): Promise<void> {
     }
   }
 
-  async function next(): Promise<Delivery | null> {
+  async function next(): Promise<unknown> {
     const res = await request("GET", "/next", NEXT_TIMEOUT_MS, signal);
     if (res.status === 204) return null;
     if (res.status !== 200) {
       await res.body?.cancel();
       throw new HttpError(res.status);
     }
-    return (await res.json()) as Delivery;
+    return (await res.json()) as unknown;
   }
 
   /** Segnale di vita: false se il lavoro non c'è più (410/404). */
@@ -169,7 +236,7 @@ export async function runRunner(opts: RunnerOptions): Promise<void> {
     return true;
   }
 
-  async function done(d: Delivery, result: ItemResult): Promise<void> {
+  async function done(d: { jobId: number | null; itemId: string }, result: ItemResult): Promise<void> {
     const send = async (timeoutMs: number): Promise<true> => {
       const res = await request("POST", `/items/${encodeURIComponent(d.itemId)}/done`, timeoutMs, undefined, result);
       await res.body?.cancel();
@@ -193,7 +260,8 @@ export async function runRunner(opts: RunnerOptions): Promise<void> {
     log("compito ricevuto", { jobId: d.jobId, itemId: d.itemId, ripresa: d.resumeSessionId !== null });
     const item = new AbortController();
     const onStop = () => item.abort();
-    signal.addEventListener("abort", onStop, { once: true });
+    if (signal.aborted) item.abort();
+    else signal.addEventListener("abort", onStop, { once: true });
     let beating = false;
     const timer = setInterval(() => {
       if (beating || item.signal.aborted) return;
@@ -208,9 +276,17 @@ export async function runRunner(opts: RunnerOptions): Promise<void> {
         .catch((err: unknown) => log("segnale di vita non riuscito", { jobId: d.jobId, errore: describe(err) }))
         .finally(() => (beating = false));
     }, heartbeatMs);
-    let result: ItemResult;
+    let result: ItemResult = { sessionId: null, exit: "error", usage: null };
     try {
-      result = await runClaude(d, { bin: opts.bin, signal: item.signal, killGraceMs: opts.killGraceMs });
+      // Il token del lavoro va solo al server MCP di Casello: stessa origine di CASELLO_URL
+      if (!sameOrigin(d.mcpUrl, base)) {
+        log("indirizzo MCP di un'altra origine: compito rifiutato", { jobId: d.jobId, itemId: d.itemId });
+      } else {
+        const workDir = await jobDir(jobsRoot, d.jobId);
+        result = await runClaude(d, { bin: opts.bin, signal: item.signal, killGraceMs: opts.killGraceMs, workDir });
+      }
+    } catch (err) {
+      log("cartella del lavoro non disponibile", { jobId: d.jobId, itemId: d.itemId, errore: describe(err) });
     } finally {
       clearInterval(timer);
       signal.removeEventListener("abort", onStop);
@@ -222,14 +298,21 @@ export async function runRunner(opts: RunnerOptions): Promise<void> {
 
   async function slot(): Promise<void> {
     while (!signal.aborted) {
-      const d = await withRetry("attesa dei lavori", notFatal, next);
-      if (!d) continue;
-      await runItem(d);
+      const body = await withRetry("attesa dei lavori", notFatal, next);
+      if (!body) continue;
+      const parsed = parseDelivery(body);
+      if (parsed.ok) {
+        await runItem(parsed.delivery);
+        continue;
+      }
+      log("consegna non valida", { itemId: parsed.itemId });
+      if (parsed.itemId) await done({ jobId: null, itemId: parsed.itemId }, { sessionId: null, exit: "error", usage: null });
     }
   }
 
   const concurrency = Math.max(1, opts.concurrency ?? 1);
   log("runner avviato", { casello: base, concorrenza: concurrency });
+  await cleanupJobDirs(jobsRoot);
   const results = await Promise.allSettled(
     Array.from({ length: concurrency }, () =>
       slot().catch((err: unknown) => {

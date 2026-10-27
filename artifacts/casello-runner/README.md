@@ -25,13 +25,14 @@ Variabili:
 
 | Variabile | Obbligatoria | Significato |
 | --- | --- | --- |
-| `CASELLO_URL` | sì | Indirizzo di Casello. Solo `https`; `http` è ammesso solo verso `localhost`/`127.0.0.1` (sviluppo). |
+| `CASELLO_URL` | sì | Indirizzo pubblico di Casello. Solo `https`; `http` è ammesso solo verso `localhost`/`127.0.0.1` (sviluppo). Il server MCP indicato da Casello deve avere la stessa origine, altrimenti il compito è rifiutato. |
 | `CASELLO_RUNNER_TOKEN` | sì | Token della macchina (`csl_m_…`). Solo da variabile d'ambiente, mai da argomenti. |
 | `CASELLO_CLAUDE_BIN` | no | Programma Claude Code (default `claude`). |
 | `CASELLO_RUNNER_CONCURRENCY` | no | Compiti eseguiti insieme, da 1 a 8 (default 1). |
 
 `Ctrl+C` (o SIGTERM) ferma il runner: il compito in corso viene terminato e riportato a Casello come fallito;
-un secondo `Ctrl+C` esce subito. Con il token revocato (401) il runner si ferma da solo.
+un secondo `Ctrl+C` esce subito (codice 130), dopo aver ucciso Claude Code (SIGKILL) e cancellato i file
+temporanei con il token del lavoro. Con il token revocato (401) il runner si ferma da solo.
 
 In sviluppo, con l'API in locale (`AUTH_DISABLED=true pnpm run dev`):
 `CASELLO_URL=http://localhost:3000 CASELLO_RUNNER_TOKEN=csl_m_… pnpm --filter @workspace/casello-runner start`.
@@ -41,9 +42,13 @@ In sviluppo, con l'API in locale (`AUTH_DISABLED=true pnpm run dev`):
 1. Attesa lunga su `GET /api/runner/next` (circa 25 s): Casello risponde 204 se non c'è nulla, altrimenti con il
    compito (`jobId`, `itemId`, `jobToken`, `prompt`, `resumeSessionId`, `mcpUrl`). L'attesa vale anche come
    segnale di vita della macchina.
-2. Per il compito il runner crea una cartella temporanea vuota (cartella di lavoro di Claude Code) con un
-   `mcp.json` (permessi 0600) che punta al server MCP di Casello con il token del lavoro **di questa consegna**
-   (Casello lo rigenera a ogni consegna). Cartella e file si cancellano sempre a fine compito.
+2. La consegna si controlla (forma dei campi; `mcpUrl` con la stessa origine di `CASELLO_URL`): se non va, il
+   compito si riporta come fallito senza avviare Claude. Cartella di lavoro di Claude Code:
+   `~/.casello-runner/jobs/<jobId>` (0700, vuota), **la stessa per tutti i compiti del lavoro**, perché Claude Code
+   lega la sessione alla cartella e `--resume` da un'altra cartella non la trova. All'avvio il runner cancella le
+   cartelle dei lavori ferme da più di 24 h. Il `mcp.json` (permessi 0600) sta invece in una cartella temporanea
+   a parte, una per compito, cancellata sempre a fine compito: punta al server MCP di Casello con il token del
+   lavoro **di questa consegna** (Casello lo rigenera a ogni consegna).
 3. Avvia Claude Code; ogni 15 s manda `POST /api/runner/jobs/:id/heartbeat`. Se Casello risponde 410 (lavoro
    chiuso o scaduto) il runner termina Claude (SIGTERM, poi SIGKILL dopo 5 s).
 4. Riporta la fine con `POST /api/runner/items/:itemId/done` (`sessionId`, `exit`, `usage`) e solo dopo torna in
@@ -54,7 +59,7 @@ In sviluppo, con l'API in locale (`AUTH_DISABLED=true pnpm run dev`):
 
 ```
 claude -p --output-format json --mcp-config <cartella>/mcp.json --strict-mcp-config \
-  --tools "" --allowedTools mcp__casello --permission-mode dontAsk [--resume <sessione>]
+  --tools "" --allowedTools mcp__casello --permission-mode dontAsk --setting-sources user [--resume <sessione>]
 ```
 
 - `-p --output-format json`: esecuzione non interattiva con un solo esito JSON (`session_id`, `is_error`,
@@ -65,7 +70,11 @@ claude -p --output-format json --mcp-config <cartella>/mcp.json --strict-mcp-con
 - `--tools ""`: disattiva tutti gli strumenti predefiniti (Bash, file, web, sotto-agenti).
 - `--allowedTools mcp__casello`: gli strumenti del server `casello` si usano senza richiesta di permesso.
 - `--permission-mode dontAsk`: tutto ciò che non è preautorizzato viene negato, mai chiesto (nessuna attesa).
-- `--resume`: riprende la sessione sospesa (dopo una conferma o una correzione dell'architetto).
+- `--setting-sources user`: carica solo le impostazioni dell'utente (`~/.claude/settings.json`, dove può stare
+  anche un `apiKeyHelper`), mai quelle di progetto o locali. L'accesso a Claude (OAuth nel portachiavi) non sta
+  nelle impostazioni e resta valido.
+- `--resume`: riprende la sessione sospesa (dopo una conferma o una correzione dell'architetto), dalla stessa
+  cartella del lavoro.
 
 Il prompt arriva a Claude dallo stdin, non dagli argomenti: non compare in `ps` e le opzioni a più valori
 (`--mcp-config`, `--tools`, `--allowedTools`) non possono inglobarlo. Il token di macchina non viene passato a

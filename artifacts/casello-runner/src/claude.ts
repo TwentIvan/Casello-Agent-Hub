@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
+import { rmSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,7 +12,11 @@ import { join } from "node:path";
 // - `--tools ""`: nessuno strumento predefinito (shell, file, web, sotto-agenti): restano solo quelli MCP;
 // - `--allowedTools mcp__casello`: tutti gli strumenti del server "casello" senza richiesta di permesso;
 // - `--permission-mode dontAsk`: ciò che non è preautorizzato viene negato, mai chiesto (niente attese appese);
-// - `--resume <id>`: ripresa della sessione sospesa (conferme, correzioni dell'architetto).
+// - `--setting-sources user`: solo le impostazioni dell'utente (dove Claude Code tiene anche l'eventuale
+//   `apiKeyHelper`), mai quelle di progetto o locali di una cartella; l'accesso (OAuth/portachiavi) non è nelle
+//   impostazioni e resta valido;
+// - `--resume <id>`: ripresa della sessione sospesa (conferme, correzioni dell'architetto). Claude Code lega la
+//   sessione alla cartella di lavoro: tutti i compiti di un lavoro usano la stessa cartella (`workDir`).
 // Il prompt arriva dallo stdin e non dagli argomenti: non è visibile con `ps` e le opzioni a valori multipli
 // (`--mcp-config`, `--tools`, `--allowedTools`) non possono inglobarlo.
 
@@ -36,6 +41,8 @@ export interface RunClaudeOptions {
   /** Annullamento (lavoro scaduto, arresto del runner): SIGTERM, poi SIGKILL dopo `killGraceMs`. */
   signal: AbortSignal;
   killGraceMs?: number;
+  /** Cartella di lavoro di Claude: la stessa per tutti i compiti di un lavoro (vuota, 0700). */
+  workDir: string;
 }
 
 const DEFAULT_KILL_GRACE_MS = 5_000;
@@ -57,6 +64,19 @@ export function isSecureUrl(value: string): boolean {
   return url.protocol === "https:" || (url.protocol === "http:" && LOCAL_HOSTS.has(url.hostname));
 }
 
+// Processi `claude` vivi e cartelle temporanee dei compiti in corso: al secondo segnale di arresto il runner esce
+// subito e li chiude in modo sincrono (`killAllSync`)
+const liveChildren = new Set<ChildProcess>();
+const liveTempDirs = new Set<string>();
+
+/** Uscita immediata: SIGKILL ai processi `claude` vivi e cancellazione sincrona delle cartelle temporanee. */
+export function killAllSync(): void {
+  for (const child of liveChildren) child.kill("SIGKILL");
+  liveChildren.clear();
+  for (const dir of liveTempDirs) rmSync(dir, { recursive: true, force: true });
+  liveTempDirs.clear();
+}
+
 /** Argomenti di `claude` per un compito (vedi in testa al file). */
 export function claudeArgs(mcpConfigPath: string, resumeSessionId: string | null): string[] {
   const args = [
@@ -72,6 +92,8 @@ export function claudeArgs(mcpConfigPath: string, resumeSessionId: string | null
     `mcp__${MCP_SERVER_NAME}`,
     "--permission-mode",
     "dontAsk",
+    "--setting-sources",
+    "user",
   ];
   if (resumeSessionId) args.push("--resume", resumeSessionId);
   return args;
@@ -98,8 +120,8 @@ function parseOutput(stdout: string): { sessionId: string | null; isError: boole
 }
 
 /**
- * Esegue un compito con Claude Code: cartella temporanea vuota come cartella di lavoro, `mcp.json` (0600) con il
- * token del lavoro, prompt dallo stdin. La cartella e il file si cancellano sempre alla fine. Mai un'eccezione:
+ * Esegue un compito con Claude Code nella cartella del lavoro (`workDir`), con `mcp.json` (0600) e il token del
+ * lavoro in una cartella temporanea a parte, cancellata sempre alla fine; prompt dallo stdin. Mai un'eccezione:
  * ogni guasto diventa `exit: "error"`.
  */
 export async function runClaude(item: ClaudeItem, opts: RunClaudeOptions): Promise<ItemResult> {
@@ -111,6 +133,7 @@ export async function runClaude(item: ClaudeItem, opts: RunClaudeOptions): Promi
   } catch {
     return failed;
   }
+  liveTempDirs.add(dir);
   try {
     const configPath = join(dir, "mcp.json");
     const config = {
@@ -123,7 +146,7 @@ export async function runClaude(item: ClaudeItem, opts: RunClaudeOptions): Promi
     // Claude Code non vede il token di macchina
     const env = { ...process.env };
     delete env["CASELLO_RUNNER_TOKEN"];
-    const { code, stdout } = await spawnClaude(opts, claudeArgs(configPath, item.resumeSessionId), dir, env, item.prompt);
+    const { code, stdout } = await spawnClaude(opts, claudeArgs(configPath, item.resumeSessionId), opts.workDir, env, item.prompt);
     const parsed = parseOutput(stdout);
     if (!parsed) return failed;
     const ok = code === 0 && !parsed.isError && !opts.signal.aborted;
@@ -132,6 +155,7 @@ export async function runClaude(item: ClaudeItem, opts: RunClaudeOptions): Promi
     return failed;
   } finally {
     await rm(dir, { recursive: true, force: true });
+    liveTempDirs.delete(dir);
   }
 }
 
@@ -145,6 +169,7 @@ function spawnClaude(
 ): Promise<{ code: number | null; stdout: string }> {
   return new Promise((resolve) => {
     const child = spawn(opts.bin, args, { cwd, env, stdio: ["pipe", "pipe", "ignore"] });
+    liveChildren.add(child);
     const chunks: Buffer[] = [];
     let size = 0;
     let killTimer: NodeJS.Timeout | undefined;
@@ -152,6 +177,7 @@ function spawnClaude(
     const finish = (code: number | null) => {
       if (settled) return;
       settled = true;
+      liveChildren.delete(child);
       clearTimeout(killTimer);
       opts.signal.removeEventListener("abort", onAbort);
       resolve({ code, stdout: size <= MAX_STDOUT_BYTES ? Buffer.concat(chunks).toString("utf8") : "" });

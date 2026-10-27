@@ -1,8 +1,9 @@
+import { killAllSync } from "./claude";
 import { readConfig, runRunner } from "./runner";
 
 // Avvio del runner: `CASELLO_URL=https://… CASELLO_RUNNER_TOKEN=csl_m_… pnpm --filter @workspace/casello-runner start`.
 // SIGINT/SIGTERM: il compito in corso viene terminato e riportato a Casello con exit error, poi il runner esce;
-// un secondo segnale esce subito.
+// un secondo segnale esce subito, dopo aver ucciso i processi `claude` e cancellato i file temporanei (con il token).
 
 let config: ReturnType<typeof readConfig>;
 try {
@@ -14,7 +15,10 @@ try {
 
 const stop = new AbortController();
 const onSignal = (sig: NodeJS.Signals) => {
-  if (stop.signal.aborted) process.exit(130);
+  if (stop.signal.aborted) {
+    killAllSync();
+    process.exit(130);
+  }
   console.error(`[casello-runner] ${sig}: arresto in corso`);
   stop.abort();
 };

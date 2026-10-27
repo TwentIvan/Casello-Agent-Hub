@@ -109,6 +109,7 @@ async function startRunner(): Promise<void> {
     token: machineToken,
     bin: FAKE_CLAUDE,
     signal: ac.signal,
+    jobsRoot: join(scratch, "jobs"),
     log: (message, fields) => logs.push(`${message} ${JSON.stringify(fields ?? {})}`),
   });
   // Collegato: primo segnale di vita della macchina

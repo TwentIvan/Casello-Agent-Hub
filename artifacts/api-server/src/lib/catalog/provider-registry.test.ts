@@ -12,10 +12,10 @@ const sorted = (xs: string[] | undefined) => [...(xs ?? [])].sort();
 const TODAY = ["deepseek", "openrouter", "huggingface", "mistral", "groq", "together", "gemini", "custom", "system_gateway"];
 
 describe("PROVIDER_REGISTRY", () => {
-  it("slug unici in [a-z0-9-] (system_gateway, valore storico, è l'unica eccezione)", () => {
+  it("slug unici in [a-z0-9-] (system_gateway e local_agent, con il trattino basso, sono le eccezioni)", () => {
     const slugs = PROVIDER_REGISTRY.map((p) => p.slug);
     expect(new Set(slugs).size).toBe(slugs.length);
-    for (const s of slugs) if (s !== "system_gateway") expect(s).toMatch(/^[a-z0-9-]+$/);
+    for (const s of slugs) if (s !== "system_gateway" && s !== "local_agent") expect(s).toMatch(/^[a-z0-9-]+$/);
   });
 
   it("contiene i provider di oggi", () => {
@@ -67,7 +67,9 @@ describe("PROVIDER_REGISTRY", () => {
   it("stato dal protocollo: openai_compatible gestito, anthropic/bedrock/vertex/azure in arrivo, unknown non gestito", () => {
     expect(statusForProtocol("openai_compatible")).toBe("managed");
     for (const p of ["anthropic", "bedrock", "vertex", "azure"] as const) expect(statusForProtocol(p)).toBe("coming");
+    expect(statusForProtocol("local_agent")).toBe("managed");
     expect(statusForProtocol("unknown")).toBe("unmanaged");
+    expect(bySlug("local_agent")).toMatchObject({ name: "Agente locale", protocol: "local_agent", defaultBaseUrl: null, litellm: [], openrouterAuthor: null });
     expect(bySlug("bedrock")?.protocol).toBe("bedrock");
     expect(bySlug("custom")?.protocol).toBe("openai_compatible");
   });

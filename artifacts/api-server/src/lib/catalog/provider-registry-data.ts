@@ -120,11 +120,22 @@ export const PROVIDER_REGISTRY: RegistryProvider[] = [
     litellm: ["azure", "azure_ai", "azure_text"],
     openrouterAuthor: null,
   },
+
+  // Agente locale (Claude Code sulla macchina dell'utente): nessun indirizzo né fonti di catalogo; i "modelli"
+  // sono le macchine dell'utente
+  {
+    slug: "local_agent",
+    name: "Agente locale",
+    protocol: "local_agent",
+    defaultBaseUrl: null,
+    litellm: [],
+    openrouterAuthor: null,
+  },
 ];
 
 /** Stato di un provider dal suo protocollo: gestito solo se Casello ha un esecutore per quel protocollo. */
 export function statusForProtocol(protocol: ProviderProtocol): "managed" | "coming" | "unmanaged" {
-  if (protocol === "openai_compatible") return "managed";
+  if (protocol === "openai_compatible" || protocol === "local_agent") return "managed";
   if (protocol === "unknown") return "unmanaged";
   return "coming";
 }

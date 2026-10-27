@@ -1,12 +1,13 @@
 import { pgTable, text, timestamp, pgEnum, jsonb } from "drizzle-orm/pg-core";
 
-// Come si parla con il provider: solo openai_compatible ha oggi un esecutore
+// Come si parla con il provider: openai_compatible e local_agent (agente locale) hanno un esecutore
 export const providerProtocolEnum = pgEnum("provider_protocol", [
   "openai_compatible",
   "anthropic",
   "bedrock",
   "vertex",
   "azure",
+  "local_agent",
   "unknown",
 ]);
 

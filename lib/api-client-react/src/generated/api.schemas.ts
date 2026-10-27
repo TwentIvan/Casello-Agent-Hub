@@ -735,6 +735,7 @@ export const AiProviderProtocol = {
   bedrock: 'bedrock',
   vertex: 'vertex',
   azure: 'azure',
+  local_agent: 'local_agent',
   unknown: 'unknown',
 } as const;
 

@@ -25,6 +25,8 @@ export const analysesTable = pgTable(
     model: text("model").notNull(),
     // Eliminando il modello l'analisi conclusa perde solo il collegamento: `model` e `cost_usd` restano
     aiModelId: integer("ai_model_id").references(() => aiModelsTable.id, { onDelete: "set null" }),
+    // Modello di riserva se l'agente locale non è disponibile
+    fallbackAiModelId: integer("fallback_ai_model_id").references(() => aiModelsTable.id, { onDelete: "set null" }),
     status: analysisStatusEnum("status").notNull().default("queued"),
     sources: jsonb("sources").$type<AnalysisSources>().notNull(),
     maxTokens: integer("max_tokens").notNull(),

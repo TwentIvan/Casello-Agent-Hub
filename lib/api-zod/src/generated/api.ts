@@ -1049,7 +1049,7 @@ export const listAiProvidersResponseSlugRegExp = new RegExp('^[a-z0-9_-]{1,64}$'
 export const ListAiProvidersResponseItem = zod.object({
   "slug": zod.string().regex(listAiProvidersResponseSlugRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "name": zod.string(),
-  "protocol": zod.enum(['openai_compatible', 'anthropic', 'bedrock', 'vertex', 'azure', 'unknown']),
+  "protocol": zod.enum(['openai_compatible', 'anthropic', 'bedrock', 'vertex', 'azure', 'local_agent', 'unknown']),
   "status": zod.enum(['managed', 'coming', 'unmanaged']).describe('managed: esecutore disponibile; coming: protocollo noto ancora senza esecutore (non selezionabile); unmanaged: sconosciuto al registro, configurabile come compatibile OpenAI con indirizzo dell\'utente'),
   "defaultBaseUrl": zod.string().nullable().describe('Indirizzo predefinito; null se lo inserisce l\'utente'),
   "editableBaseUrl": zod.boolean().describe('L\'utente inserisce l\'indirizzo (custom, provider non gestiti e gestiti senza indirizzo predefinito)')
@@ -1577,7 +1577,7 @@ export const listCatalogProvidersResponseSlugRegExp = new RegExp('^[a-z0-9_-]{1,
 export const ListCatalogProvidersResponseItem = zod.object({
   "slug": zod.string().regex(listCatalogProvidersResponseSlugRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
   "name": zod.string(),
-  "protocol": zod.enum(['openai_compatible', 'anthropic', 'bedrock', 'vertex', 'azure', 'unknown']),
+  "protocol": zod.enum(['openai_compatible', 'anthropic', 'bedrock', 'vertex', 'azure', 'local_agent', 'unknown']),
   "status": zod.enum(['managed', 'coming', 'unmanaged']).describe('managed: esecutore disponibile; coming: protocollo noto ancora senza esecutore (non selezionabile); unmanaged: sconosciuto al registro, configurabile come compatibile OpenAI con indirizzo dell\'utente'),
   "origin": zod.enum(['registry', 'discovered']),
   "firstSeenAt": zod.coerce.date(),

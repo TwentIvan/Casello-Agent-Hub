@@ -210,7 +210,7 @@ CREATE TABLE "github_installations" (
 );
 
 -- Provider AI: dati allineati all'avvio dal registro nel codice; qui i provider usati dagli account esistenti
-CREATE TYPE "public"."provider_protocol" AS ENUM('openai_compatible', 'anthropic', 'bedrock', 'vertex', 'azure', 'unknown');
+CREATE TYPE "public"."provider_protocol" AS ENUM('openai_compatible', 'anthropic', 'bedrock', 'vertex', 'azure', 'local_agent', 'unknown');
 CREATE TYPE "public"."provider_status" AS ENUM('managed', 'coming', 'unmanaged');
 CREATE TYPE "public"."provider_origin" AS ENUM('registry', 'discovered');
 
@@ -235,7 +235,8 @@ INSERT INTO "providers" ("slug", "name", "protocol", "default_base_url", "source
 	('together', 'Together AI', 'openai_compatible', 'https://api.together.xyz/v1', '{"litellm": ["together_ai"], "openrouterAuthor": null}', 'managed', 'registry'),
 	('gemini', 'Google Gemini', 'openai_compatible', 'https://generativelanguage.googleapis.com/v1beta/openai', '{"litellm": ["gemini"], "openrouterAuthor": "google"}', 'managed', 'registry'),
 	('custom', 'Personalizzato (compatibile OpenAI)', 'openai_compatible', NULL, '{"litellm": [], "openrouterAuthor": null}', 'managed', 'registry'),
-	('system_gateway', 'Gateway di Casello', 'openai_compatible', NULL, '{"litellm": [], "openrouterAuthor": null}', 'managed', 'registry');
+	('system_gateway', 'Gateway di Casello', 'openai_compatible', NULL, '{"litellm": [], "openrouterAuthor": null}', 'managed', 'registry'),
+	('local_agent', 'Agente locale', 'local_agent', NULL, '{"litellm": [], "openrouterAuthor": null}', 'managed', 'registry');
 
 -- Account AI
 CREATE TYPE "public"."ai_account_status" AS ENUM('unverified', 'ok', 'error');
@@ -351,3 +352,71 @@ CREATE TABLE "catalog_runs" (
 CREATE UNIQUE INDEX "catalog_runs_one_running" ON "catalog_runs" USING btree ("status") WHERE "catalog_runs"."status" = 'running';
 
 ALTER TABLE "ai_models" ADD CONSTRAINT "ai_models_offer_id_model_offers_id_fk" FOREIGN KEY ("offer_id") REFERENCES "public"."model_offers"("id") ON DELETE set null ON UPDATE no action;
+
+-- Agente locale: macchine, lavori, token personali e riserva
+CREATE TYPE "public"."local_job_kind" AS ENUM('analysis', 'run');
+CREATE TYPE "public"."local_job_status" AS ENUM('queued', 'waiting_choice', 'postponed', 'claimed', 'running', 'paused', 'completed', 'failed', 'cancelled');
+CREATE TYPE "public"."local_claimed_by" AS ENUM('runner', 'chat');
+CREATE TYPE "public"."local_job_origin" AS ENUM('console', 'app');
+CREATE TYPE "public"."local_offline_policy" AS ENUM('fallback', 'wait_then_fallback', 'postpone');
+
+CREATE TABLE "local_machines" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"name" text NOT NULL,
+	"token_hash" text NOT NULL,
+	"last_seen_at" timestamp,
+	"revoked_at" timestamp,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "local_machines_token_hash_unique" UNIQUE("token_hash"),
+	CONSTRAINT "local_machines_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action
+);
+
+CREATE TABLE "mcp_tokens" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"name" text NOT NULL,
+	"token_hash" text NOT NULL,
+	"last_used_at" timestamp,
+	"revoked_at" timestamp,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "mcp_tokens_token_hash_unique" UNIQUE("token_hash"),
+	CONSTRAINT "mcp_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action
+);
+
+CREATE TABLE "local_jobs" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"machine_id" integer NOT NULL,
+	"kind" "local_job_kind" NOT NULL,
+	"analysis_id" integer,
+	"run_id" integer,
+	"status" "local_job_status" DEFAULT 'queued' NOT NULL,
+	"origin" "local_job_origin" NOT NULL,
+	"fallback_ai_model_id" integer,
+	"claude_session_id" text,
+	"claimed_by" "local_claimed_by",
+	"current_item" jsonb,
+	"job_token_hash" text,
+	"job_token_expires_at" timestamp,
+	"heartbeat_at" timestamp,
+	"error" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "local_jobs_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "local_jobs_machine_id_local_machines_id_fk" FOREIGN KEY ("machine_id") REFERENCES "public"."local_machines"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "local_jobs_analysis_id_analyses_id_fk" FOREIGN KEY ("analysis_id") REFERENCES "public"."analyses"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "local_jobs_run_id_runs_id_fk" FOREIGN KEY ("run_id") REFERENCES "public"."runs"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "local_jobs_fallback_ai_model_id_ai_models_id_fk" FOREIGN KEY ("fallback_ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action
+);
+
+CREATE INDEX "local_jobs_machine_status_idx" ON "local_jobs" USING btree ("machine_id","status");
+CREATE UNIQUE INDEX "local_jobs_job_token_hash_unique" ON "local_jobs" USING btree ("job_token_hash") WHERE "local_jobs"."job_token_hash" is not null;
+
+ALTER TABLE "agents" ADD COLUMN "fallback_ai_model_id" integer;
+ALTER TABLE "agents" ADD COLUMN "local_offline_policy" "local_offline_policy" DEFAULT 'fallback' NOT NULL;
+ALTER TABLE "agents" ADD COLUMN "local_offline_wait_s" integer DEFAULT 30 NOT NULL;
+ALTER TABLE "agents" ADD COLUMN "local_for_third_parties" boolean DEFAULT false NOT NULL;
+ALTER TABLE "analyses" ADD COLUMN "fallback_ai_model_id" integer;
+ALTER TABLE "agents" ADD CONSTRAINT "agents_fallback_ai_model_id_ai_models_id_fk" FOREIGN KEY ("fallback_ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action;
+ALTER TABLE "analyses" ADD CONSTRAINT "analyses_fallback_ai_model_id_ai_models_id_fk" FOREIGN KEY ("fallback_ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action;

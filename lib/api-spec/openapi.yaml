@@ -2351,7 +2351,7 @@ components:
 
     AiProviderProtocol:
       type: string
-      enum: [openai_compatible, anthropic, bedrock, vertex, azure, unknown]
+      enum: [openai_compatible, anthropic, bedrock, vertex, azure, local_agent, unknown]
 
     AiProviderStatus:
       type: string

@@ -56,7 +56,9 @@ app.use(
   }),
 );
 app.use(cors(corsOptions));
-app.use(express.json());
+// /api/mcp legge il proprio corpo dopo l'autenticazione, con un limite più alto (routes/mcp.ts)
+const jsonBody = express.json();
+app.use((req, res, next) => (req.path === "/api/mcp" || req.path.startsWith("/api/mcp/") ? next() : jsonBody(req, res, next)));
 app.use(express.urlencoded({ extended: true }));
 app.use(sessionMiddleware());
 

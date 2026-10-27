@@ -1,4 +1,4 @@
-import { Router, type IRouter, type RequestHandler, type Response } from "express";
+import express, { Router, type IRouter, type RequestHandler, type Response } from "express";
 import { and, eq, isNull } from "drizzle-orm";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { db, localJobsTable, mcpTokensTable } from "@workspace/db";
@@ -17,6 +17,7 @@ const INVALID_TOKEN = "token non valido o revocato";
 // scadere della finestra, prima di qualsiasi lettura del DB
 const AUTH_FAILURE_LIMIT = 30;
 const AUTH_FAILURE_WINDOW_MS = 60_000;
+const LAST_USED_THROTTLE_MS = 60_000;
 const authFailures = new Map<string, { count: number; resetAt: number }>();
 
 /** Azzera i contatori delle autenticazioni fallite (per i test). */
@@ -63,11 +64,16 @@ const tokenAuth: RequestHandler = async (req, res, next) => {
   const hash = hashToken(token);
   if (kind === "personal") {
     const [row] = await db
-      .update(mcpTokensTable)
-      .set({ lastUsedAt: new Date() })
+      .select({ id: mcpTokensTable.id, userId: mcpTokensTable.userId, lastUsedAt: mcpTokensTable.lastUsedAt })
+      .from(mcpTokensTable)
       .where(and(eq(mcpTokensTable.tokenHash, hash), isNull(mcpTokensTable.revokedAt)))
-      .returning({ userId: mcpTokensTable.userId });
+      .limit(1);
     if (row) {
+      // Ultimo uso aggiornato al più una volta al minuto: non una scrittura per ogni chiamata
+      const now = Date.now();
+      if (!row.lastUsedAt || now - row.lastUsedAt.getTime() > LAST_USED_THROTTLE_MS) {
+        await db.update(mcpTokensTable).set({ lastUsedAt: new Date(now) }).where(eq(mcpTokensTable.id, row.id));
+      }
       res.locals["mcpCaller"] = { kind: "personal", userId: row.userId } satisfies McpCaller;
       res.locals["tokenHash"] = hash;
       next();
@@ -84,8 +90,8 @@ const tokenAuth: RequestHandler = async (req, res, next) => {
       return;
     }
     const [known] = await db.select({ id: localJobsTable.id }).from(localJobsTable).where(eq(localJobsTable.jobTokenHash, hash)).limit(1);
+    // Un token vero di un lavoro finito non è un tentativo a vuoto: non conta per il limite dei fallimenti
     if (known) {
-      recordAuthFailure(ip, Date.now());
       res.status(401).json({ error: JOB_EXPIRED });
       return;
     }
@@ -106,9 +112,10 @@ export function createMcpRouter(): IRouter {
   // 300 richieste al minuto per token
   router.use(rateLimit({ limit: 300, windowMs: 60_000, key: (_req, res) => `mcp:${res.locals["tokenHash"] as string}` }));
 
-  // Senza stato: un server e un trasporto per richiesta, chiusi alla fine della risposta. Il corpo è già letto da
-  // express.json e passa così al trasporto.
-  router.post("/", async (req, res) => {
+  // Senza stato: un server e un trasporto per richiesta, chiusi alla fine della risposta. Il corpo si legge qui,
+  // dopo l'autenticazione, con un limite più alto di quello globale (le consegne delle fasi dell'architetto
+  // possono essere grandi; il parser globale salta /api/mcp) e passa già letto al trasporto.
+  router.post("/", express.json({ limit: "2mb" }), async (req, res) => {
     const server = createMcpServer(callerOf(res));
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => {
@@ -119,7 +126,8 @@ export function createMcpRouter(): IRouter {
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
     } catch (err) {
-      logger.error({ err }, "richiesta MCP fallita");
+      // Solo il nome dell'errore: il messaggio può contenere dati della richiesta
+      logger.error({ errName: err instanceof Error ? err.name : typeof err }, "richiesta MCP fallita");
       if (!res.headersSent) rpcError(res, 500, "errore interno");
     }
   });

@@ -1,8 +1,16 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray } from "drizzle-orm";
 // `Server` (API di basso livello) e non `McpServer`: gli strumenti delle run hanno schemi JSON dinamici, presi
 // dai tool dell'app, che `McpServer` accetterebbe solo come schemi Zod.
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, type Tool } from "@modelcontextprotocol/sdk/types.js";
+import {
+  CallToolRequestSchema,
+  ErrorCode,
+  ListToolsRequestSchema,
+  McpError,
+  type CallToolResult,
+  type ServerNotification,
+  type Tool,
+} from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { db, localJobsTable, type LocalJob } from "@workspace/db";
 import { logger } from "../logger";
@@ -131,7 +139,10 @@ const JobId = z.number().int().positive();
 const ClaimArgs = z.object({ job_id: JobId });
 const JobArgs = z.object({ [JOB_ARG]: JobId });
 
-/** Lavoro aperto preso dalla chat dall'utente indicato; null altrimenti (lavori altrui invisibili). */
+/**
+ * Lavoro aperto preso dalla chat dall'utente indicato, con il token non scaduto (un lavoro scaduto ma non ancora
+ * chiuso da `expireLocalJobs` non torna in vita con `touchJob`); null altrimenti (lavori altrui invisibili).
+ */
 async function chatJob(userId: number, jobId: number): Promise<LocalJob | null> {
   const [job] = await db
     .select()
@@ -142,6 +153,7 @@ async function chatJob(userId: number, jobId: number): Promise<LocalJob | null> 
         eq(localJobsTable.userId, userId),
         eq(localJobsTable.claimedBy, "chat"),
         inArray(localJobsTable.status, CLAIMED),
+        gt(localJobsTable.jobTokenExpiresAt, new Date()),
       ),
     )
     .limit(1);
@@ -152,83 +164,105 @@ async function chatJobs(userId: number): Promise<LocalJob[]> {
   return db
     .select()
     .from(localJobsTable)
-    .where(and(eq(localJobsTable.userId, userId), eq(localJobsTable.claimedBy, "chat"), inArray(localJobsTable.status, CLAIMED)));
+    .where(
+      and(
+        eq(localJobsTable.userId, userId),
+        eq(localJobsTable.claimedBy, "chat"),
+        inArray(localJobsTable.status, CLAIMED),
+        gt(localJobsTable.jobTokenExpiresAt, new Date()),
+      ),
+    );
 }
 
 // --- Server --------------------------------------------------------------------------------------------------------
 
 const result = (text: string, isError = false): CallToolResult => (isError ? { content: [{ type: "text", text }], isError } : { content: [{ type: "text", text }] });
 
-/** Esegue l'handler di uno strumento: gli errori diventano un testo fisso, mai lo stack o un indirizzo. */
-async function runTool(def: JobToolDef, job: LocalJob, args: unknown): Promise<CallToolResult> {
-  try {
-    const out = await def.handler({ job, userId: job.userId }, args);
-    return result(out.text, out.isError ?? false);
-  } catch (err) {
-    if (err instanceof LocalJobError) return result(err.message, true);
-    logger.error({ err, tool: def.name, jobId: job.id }, "strumento MCP fallito");
-    return result(TOOL_FAILED, true);
-  }
+/** Nel log solo il nome dell'errore: il messaggio può contenere indirizzi, SQL o dati dell'app. */
+function logFailure(err: unknown, what: string, extra: Record<string, unknown> = {}): void {
+  logger.error({ ...extra, errName: err instanceof Error ? err.name : typeof err }, what);
 }
 
+type SendNotification = (notification: ServerNotification) => Promise<void>;
+
+/** Strumenti elencati per chi chiama: con il token personale anche quelli dei lavori presi dalla chat. */
+async function listTools(caller: McpCaller): Promise<Tool[]> {
+  if (caller.kind === "job") return [toTool(GET_JOB), ...(await toolsFor(caller.job)).map(toTool)];
+  const tools: Tool[] = [toTool(withJobIdTool(GET_JOB)), toTool(LIST_JOBS), toTool(CLAIM_JOB)];
+  const names = new Set(tools.map((t) => t.name));
+  for (const job of await chatJobs(caller.userId)) {
+    for (const def of await toolsFor(job)) {
+      if (names.has(def.name)) continue;
+      names.add(def.name);
+      tools.push(toTool({ ...def, inputSchema: withJobId(def.inputSchema) }));
+    }
+  }
+  return tools;
+}
+
+async function callTool(caller: McpCaller, name: string, args: Record<string, unknown>, sendNotification: SendNotification): Promise<CallToolResult> {
+  if (caller.kind === "job") {
+    // Il lavoro è implicito nel token: un eventuale casello_job_id non conta
+    if (name === GET_JOB.name) return result(describeJob(caller.job));
+    const def = (await toolsFor(caller.job)).find((t) => t.name === name);
+    return def ? runTool(def, caller.job, args) : result(TOOL_UNAVAILABLE, true);
+  }
+
+  const userId = caller.userId;
+  if (name === LIST_JOBS.name) {
+    const open = (await listOpenJobs(userId)).filter((j) => UNCLAIMED.includes(j.status));
+    return result(JSON.stringify(open.map((j) => ({ id: j.id, kind: j.kind, status: j.status, origin: j.origin, createdAt: j.createdAt }))));
+  }
+  if (name === CLAIM_JOB.name) {
+    const parsed = ClaimArgs.safeParse(args);
+    if (!parsed.success) return result(INVALID_ARGS, true);
+    // Il token del lavoro non serve alla chat: si lavora con il token personale e casello_job_id
+    const { job } = await claimJob(parsed.data.job_id, { by: "chat", userId });
+    await sendNotification({ method: "notifications/tools/list_changed" });
+    return result(`Lavoro ${job.id} (${job.kind}) preso. Chiama get_job con casello_job_id ${job.id} per le istruzioni.`);
+  }
+
+  const parsed = JobArgs.safeParse(args);
+  const job = parsed.success ? await chatJob(userId, parsed.data[JOB_ARG]) : null;
+  if (!job) return result(JOB_NOT_FOUND, true);
+  await touchJob(job.id);
+  if (name === GET_JOB.name) return result(describeJob(job));
+  const def = (await toolsFor(job)).find((t) => t.name === name);
+  if (!def) return result(TOOL_UNAVAILABLE, true);
+  const { [JOB_ARG]: _jobId, ...rest } = args;
+  return runTool(def, job, rest);
+}
+
+async function runTool(def: JobToolDef, job: LocalJob, args: unknown): Promise<CallToolResult> {
+  const out = await def.handler({ job, userId: job.userId }, args);
+  return result(out.text, out.isError ?? false);
+}
+
+/**
+ * Ogni errore (strumenti, provider, DB) diventa un testo fisso, mai lo stack, un indirizzo o SQL: `LocalJobError`
+ * porta il suo messaggio (fisso, in italiano), il resto "errore interno dello strumento".
+ */
 export function createMcpServer(caller: McpCaller): Server {
   const server = new Server({ name: "casello", version: "1.0.0" }, { capabilities: { tools: { listChanged: true } } });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    if (caller.kind === "job") {
-      return { tools: [toTool(GET_JOB), ...(await toolsFor(caller.job)).map(toTool)] };
+    try {
+      return { tools: await listTools(caller) };
+    } catch (err) {
+      logFailure(err, "elenco degli strumenti MCP fallito");
+      throw new McpError(ErrorCode.InternalError, err instanceof LocalJobError ? err.message : TOOL_FAILED);
     }
-    const tools: Tool[] = [toTool(withJobIdTool(GET_JOB)), toTool(LIST_JOBS), toTool(CLAIM_JOB)];
-    const names = new Set(tools.map((t) => t.name));
-    for (const job of await chatJobs(caller.userId)) {
-      for (const def of await toolsFor(job)) {
-        if (names.has(def.name)) continue;
-        names.add(def.name);
-        tools.push(toTool({ ...def, inputSchema: withJobId(def.inputSchema) }));
-      }
-    }
-    return { tools };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const { name } = request.params;
-    const args: Record<string, unknown> = request.params.arguments ?? {};
-
-    if (caller.kind === "job") {
-      // Il lavoro è implicito nel token: un eventuale casello_job_id non conta
-      if (name === GET_JOB.name) return result(describeJob(caller.job));
-      const def = (await toolsFor(caller.job)).find((t) => t.name === name);
-      return def ? runTool(def, caller.job, args) : result(TOOL_UNAVAILABLE, true);
+    try {
+      return await callTool(caller, name, request.params.arguments ?? {}, extra.sendNotification);
+    } catch (err) {
+      if (err instanceof LocalJobError) return result(err.message, true);
+      logFailure(err, "strumento MCP fallito", { tool: name });
+      return result(TOOL_FAILED, true);
     }
-
-    const userId = caller.userId;
-    if (name === LIST_JOBS.name) {
-      const open = (await listOpenJobs(userId)).filter((j) => UNCLAIMED.includes(j.status));
-      return result(JSON.stringify(open.map((j) => ({ id: j.id, kind: j.kind, status: j.status, origin: j.origin, createdAt: j.createdAt }))));
-    }
-    if (name === CLAIM_JOB.name) {
-      const parsed = ClaimArgs.safeParse(args);
-      if (!parsed.success) return result(INVALID_ARGS, true);
-      try {
-        // Il token del lavoro non serve alla chat: si lavora con il token personale e casello_job_id
-        const { job } = await claimJob(parsed.data.job_id, { by: "chat", userId });
-        await extra.sendNotification({ method: "notifications/tools/list_changed" });
-        return result(`Lavoro ${job.id} (${job.kind}) preso. Chiama get_job con casello_job_id ${job.id} per le istruzioni.`);
-      } catch (err) {
-        if (err instanceof LocalJobError) return result(err.message, true);
-        throw err;
-      }
-    }
-
-    const parsed = JobArgs.safeParse(args);
-    const job = parsed.success ? await chatJob(userId, parsed.data[JOB_ARG]) : null;
-    if (!job) return result(JOB_NOT_FOUND, true);
-    await touchJob(job.id);
-    if (name === GET_JOB.name) return result(describeJob(job));
-    const def = (await toolsFor(job)).find((t) => t.name === name);
-    if (!def) return result(TOOL_UNAVAILABLE, true);
-    const { [JOB_ARG]: _jobId, ...rest } = args;
-    return runTool(def, job, rest);
   });
 
   return server;

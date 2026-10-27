@@ -19,6 +19,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { ensureProviderRegistry } from "../lib/catalog/provider-registry";
+import { logger } from "../lib/logger";
 import { hashToken } from "../lib/local/tokens";
 import type * as Jobs from "../lib/local/jobs";
 import type * as McpServer from "../lib/local/mcp-server";
@@ -219,6 +220,47 @@ describe("autenticazione di /api/mcp", () => {
     expect(res.json).toEqual({ error: "lavoro scaduto" });
   });
 
+  it("il token di un lavoro chiuso non conta per il limite delle autenticazioni fallite", async () => {
+    const userId = await devUserId();
+    const { machineId } = await registerMachine();
+    const { job, jobToken } = await runnerJob(userId, machineId);
+    await jobs.finishLocalJob(job.id, "completed");
+    for (let i = 0; i < 35; i++) {
+      const res = await call("POST", "/mcp", { token: jobToken, body: INITIALIZE });
+      expect(res.status).toBe(401);
+      expect(res.json).toEqual({ error: "lavoro scaduto" });
+    }
+  });
+
+  it("ultimo uso del token personale aggiornato al più una volta al minuto", async () => {
+    await devUserId();
+    const { tokenId, token } = await personalToken();
+    const recent = new Date(Date.now() - 30_000);
+    await db.update(mcpTokensTable).set({ lastUsedAt: recent }).where(eq(mcpTokensTable.id, tokenId));
+    expect((await call("POST", "/mcp", { token, body: INITIALIZE })).status).toBe(200);
+    const [kept] = await db.select().from(mcpTokensTable).where(eq(mcpTokensTable.id, tokenId));
+    expect(kept!.lastUsedAt!.getTime()).toBe(recent.getTime());
+    await db.update(mcpTokensTable).set({ lastUsedAt: new Date(Date.now() - 120_000) }).where(eq(mcpTokensTable.id, tokenId));
+    expect((await call("POST", "/mcp", { token, body: INITIALIZE })).status).toBe(200);
+    const [updated] = await db.select().from(mcpTokensTable).where(eq(mcpTokensTable.id, tokenId));
+    expect(updated!.lastUsedAt!.getTime()).toBeGreaterThan(Date.now() - 10_000);
+  });
+
+  it("corpo fino a 2 MB accettato; oltre → 413", async () => {
+    const userId = await devUserId();
+    const { machineId } = await registerMachine();
+    const { job, jobToken } = await runnerJob(userId, machineId);
+    const client = await connect(jobToken);
+    const big = "x".repeat(1024 * 1024);
+    const ok = await client.callTool({ name: "dummy_run", arguments: { value: big } });
+    expect(textOf(ok)).toBe(`ok run ${job.id}`);
+    expect((calls[0]!.args as { value: string }).value).toHaveLength(big.length);
+    const tooBig = { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "dummy_run", arguments: { value: "x".repeat(2 * 1024 * 1024 + 10) } } };
+    const res = await call("POST", "/mcp", { token: jobToken, body: tooBig });
+    expect(res.status).toBe(413);
+    expect(res.json).toEqual({ error: "corpo della richiesta troppo grande" });
+  });
+
   it("GET e DELETE → 405 (server senza stato)", async () => {
     const userId = await devUserId();
     const { machineId } = await registerMachine();
@@ -313,6 +355,35 @@ describe("token di lavoro", () => {
   });
 });
 
+describe("errori degli strumenti", () => {
+  it("un provider o uno strumento che fallisce non espone messaggio, URL o SQL (né al client né nel log)", async () => {
+    const userId = await devUserId();
+    const { machineId } = await registerMachine();
+    const { jobToken } = await runnerJob(userId, machineId);
+    const logged = vi.spyOn(logger, "error").mockImplementation(() => {});
+    const secret = 'SELECT * FROM users WHERE token = \'x\' -- https://interno.example.com/db';
+    const remove = mcp.registerJobToolProvider("run", async () => {
+      throw new Error(secret);
+    });
+    try {
+      const client = await connect(jobToken);
+      const listed = await client.listTools().then(
+        () => null,
+        (err: Error) => err.message,
+      );
+      expect(listed).toContain("errore interno dello strumento");
+      expect(listed).not.toMatch(/SELECT|interno\.example/);
+      const r = await client.callTool({ name: "dummy_run", arguments: {} });
+      expect(r.isError).toBe(true);
+      expect(textOf(r)).toBe("errore interno dello strumento");
+      expect(logged).toHaveBeenCalled();
+      expect(JSON.stringify(logged.mock.calls)).not.toMatch(/SELECT|interno\.example/);
+    } finally {
+      remove();
+    }
+  });
+});
+
 describe("token personale (modalità chat)", () => {
   it("list_jobs vede solo i propri lavori in attesa; claim_job di un lavoro altrui → lavoro non trovato", async () => {
     const userId = await devUserId();
@@ -379,6 +450,16 @@ describe("token personale (modalità chat)", () => {
     expect(wrongKind.isError).toBe(true);
     expect(textOf(wrongKind)).toBe("strumento non disponibile");
     expect(calls).toHaveLength(1);
+
+    // Token del lavoro scaduto ma lavoro non ancora chiuso: invisibile, e touchJob non lo rianima
+    const expiredAt = new Date(Date.now() - 1000);
+    await db.update(localJobsTable).set({ jobTokenExpiresAt: expiredAt }).where(eq(localJobsTable.id, own.id));
+    const expired = await client.callTool({ name: "get_job", arguments: { casello_job_id: own.id } });
+    expect(textOf(expired)).toBe("lavoro non trovato");
+    expect((await client.listTools()).tools.map((t) => t.name).sort()).toEqual(["claim_job", "get_job", "list_jobs"]);
+    const [stale] = await db.select().from(localJobsTable).where(eq(localJobsTable.id, own.id));
+    expect(stale!.jobTokenExpiresAt!.getTime()).toBe(expiredAt.getTime());
+    await db.update(localJobsTable).set({ jobTokenExpiresAt: new Date(Date.now() + 60_000) }).where(eq(localJobsTable.id, own.id));
 
     // Dopo la chiusura il lavoro non c'è più
     await jobs.finishLocalJob(own.id, "completed");

@@ -10,17 +10,22 @@ import {
   appsTable,
   agentsTable,
   appToolsTable,
+  localJobsTable,
+  localMachinesTable,
   runsTable,
   runStepsTable,
   usersTable,
   type InsertAppTool,
 } from "@workspace/db";
 import {
+  REJECTED_ACTION_MESSAGE,
   ResumeConflictError,
+  RetryFallbackError,
   expireStalePausedRuns,
   failInterruptedRuns,
   modelCallError,
   resumeRun,
+  retryRunOnFallback,
   startRun,
 } from "./run-executor";
 import { clearUserToken } from "./user-tokens";
@@ -28,6 +33,10 @@ import { logger } from "./logger";
 import { ProviderError } from "./ai/discovery";
 import { encryptSecret } from "./secrets";
 import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
+import { callTool, startFakeRunner, waitConnected, type FakeRunner } from "../../test/fake-local-agent";
+import { ensureProviderRegistry } from "./catalog/provider-registry";
+import { chooseForJob, failOpenLocalJobs, setLocalJobTimings } from "./local/jobs";
+import { machineModelId, registerMachine } from "./local/machines";
 
 // Finto LiteLLM: risposte in coda, una per chiamata
 let llmReplies: unknown[];
@@ -114,7 +123,8 @@ beforeEach(async () => {
       appRequests.push({ method: req.method ?? "", url: req.url ?? "", auth: req.headers.authorization, body: raw });
       setTimeout(() => {
         res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ id: 42, name: "Rosa" }));
+        // `/api/echo` rimanda il corpo ricevuto (un'app che ripete gli argomenti nella risposta)
+        res.end(req.url?.startsWith("/api/echo") ? raw : JSON.stringify({ id: 42, name: "Rosa" }));
       }, appDelayMs);
     });
   });
@@ -756,6 +766,401 @@ describe("run sugli account AI (chi configura paga)", () => {
     expect(run.costUsd).toBeNull();
     expect(llmRequests).toHaveLength(1);
     expect(fake.requests).toHaveLength(0);
+  });
+});
+
+describe("run con l'agente locale", () => {
+  let ownerId: number;
+  let otherId: number;
+  let machineId: number;
+  let localModelId: number;
+  let fallbackModelId: number;
+  let runner: FakeRunner | null;
+
+  const LOGIN: Partial<InsertAppTool> = {
+    name: "login",
+    description: "Accede all'app",
+    kind: "http",
+    identity: "user",
+    status: "active",
+    paramsSchema: {
+      type: "object",
+      properties: { user: { type: "string" }, password: { type: "string", "x-sensitive": true } },
+      required: ["user", "password"],
+    },
+    definition: { method: "POST", path: "/echo", paramLocations: { user: "body", password: "body" } },
+  };
+
+  // Il provider `local_agent` dell'account "Agente locale" sta nel registro dei provider
+  beforeAll(async () => {
+    await ensureProviderRegistry();
+  });
+
+  beforeEach(async () => {
+    const [owner] = await db.insert(usersTable).values({ email: "ivan@example.com", name: "Ivan" }).returning();
+    const [other] = await db.insert(usersTable).values({ email: "altro@example.com", name: "Altro" }).returning();
+    ownerId = owner!.id;
+    otherId = other!.id;
+    const { machine } = await registerMachine(ownerId, "MacBook");
+    machineId = machine.id;
+    const [local] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.modelId, machineModelId(machineId)));
+    localModelId = local!.id;
+    // Modello di riserva: account del proprietario verso il finto LiteLLM
+    const [account] = await db
+      .insert(aiAccountsTable)
+      .values({
+        userId: ownerId,
+        name: "Riserva",
+        provider: "custom",
+        baseUrl: process.env["AI_GATEWAY_BASE_URL"]!,
+        allowPrivateNetwork: true,
+        apiKeyEnc: encryptSecret("sk-riserva"),
+        status: "ok",
+      })
+      .returning();
+    const [fallback] = await db
+      .insert(aiModelsTable)
+      .values({ accountId: account!.id, modelId: "modello-riserva", displayName: "R", priceInputPerMtok: "1", priceOutputPerMtok: "2" })
+      .returning();
+    fallbackModelId = fallback!.id;
+    runner = null;
+  });
+
+  afterEach(async () => {
+    runner?.stop();
+    await failOpenLocalJobs();
+  });
+
+  /** Run su un agente con il modello della macchina e il modello di riserva. */
+  async function seedLocalRun(tools: Partial<InsertAppTool>[], agent: Partial<typeof agentsTable.$inferInsert> = {}): Promise<number> {
+    const id = await seedRun(tools[0]!);
+    const run = await getRun(id);
+    const [a] = await db
+      .update(agentsTable)
+      .set({ aiModelId: localModelId, model: machineModelId(machineId), fallbackAiModelId: fallbackModelId, ...agent })
+      .where(eq(agentsTable.id, run.agentId))
+      .returning();
+    for (const tool of tools.slice(1)) await db.insert(appToolsTable).values({ appId: a!.appId, ...tool } as InsertAppTool);
+    return id;
+  }
+
+  async function startLocalRunner(claude: Parameters<typeof startFakeRunner>[1]): Promise<FakeRunner> {
+    runner = startFakeRunner(machineId, claude);
+    await waitConnected(machineId);
+    return runner;
+  }
+
+  /** Il finto Claude finisce dopo che lo strumento ha chiuso il turno: si attendono le sue ultime risposte. */
+  async function waitFor(check: () => boolean): Promise<void> {
+    for (let i = 0; i < 200 && !check(); i++) await new Promise((r) => setTimeout(r, 5));
+    expect(check()).toBe(true);
+  }
+
+  const jobsOf = (runId: number) => db.select().from(localJobsTable).where(eq(localJobsTable.runId, runId));
+
+  it("run completa via MCP: tool dell'app eseguito da Casello, finish_run → succeeded, nessun modello API", async () => {
+    const id = await seedLocalRun([GET_ITEM]);
+    const seen: { tools: string[]; schema: unknown; read: { text: string; isError: boolean }; finish: string }[] = [];
+    const r = await startLocalRunner(async (_d, client) => {
+      const list = await client.listTools();
+      const read = await callTool(client, "get_item", { id: "42" });
+      const finish = await callTool(client, "finish_run", { content: "Elemento 42: Rosa" });
+      seen.push({
+        tools: list.tools.map((t) => t.name),
+        schema: list.tools.find((t) => t.name === "get_item")?.inputSchema,
+        read,
+        finish: finish.text,
+      });
+      return { sessionId: "sess-1" };
+    });
+
+    await startRun(id, { userToken: "tok-1", startedBy: ownerId });
+
+    const run = await getRun(id);
+    expect(run.errorMessage).toBeNull();
+    expect(run.status).toBe("succeeded");
+    expect(run.output).toBe("Elemento 42: Rosa");
+    expect(run.costUsd).toBeNull();
+    expect(run.promptTokens).toBeNull();
+    expect(llmRequests).toHaveLength(0);
+    // Il token dell'utente resta in Casello: l'app lo riceve, Claude no
+    expect(appRequests).toEqual([expect.objectContaining({ method: "GET", url: "/api/items/42", auth: "Bearer tok-1" })]);
+    expect(r.deliveries).toHaveLength(1);
+    const prompt = r.deliveries[0]!.prompt;
+    expect(prompt).toContain("Aiuta l'allenatore.");
+    expect(prompt).toContain("Fai il lavoro");
+    expect(prompt).toContain("finish_run");
+    expect(prompt).not.toContain("tok-1");
+    expect(r.deliveries[0]!.resumeSessionId).toBeNull();
+    expect(seen[0]!.tools).toEqual(["get_job", "finish_run", "get_item"]);
+    expect(seen[0]!.schema).toEqual(GET_ITEM.paramsSchema);
+    expect(seen[0]!.read).toEqual({ text: JSON.stringify({ id: 42, name: "Rosa" }), isError: false });
+    expect(seen[0]!.finish).toBe("risposta ricevuta: run completata, termina ora");
+
+    const steps = await getSteps(id);
+    expect(steps.map((s) => [s.position, s.type, s.toolName, s.ok, s.httpStatus])).toEqual([[0, "tool", "get_item", true, 200]]);
+    expect(steps[0]!.args).toEqual({ id: "42" });
+    const [job] = await jobsOf(id);
+    expect(job).toMatchObject({ status: "completed", origin: "console", userId: ownerId, claimedBy: "runner" });
+  });
+
+  it("tool con conferma: awaiting_client, poi la conferma riprende la stessa sessione con l'esito", async () => {
+    const id = await seedLocalRun([DELETE_ITEM, GET_ITEM]);
+    const replies: { text: string; isError: boolean }[] = [];
+    const r = await startLocalRunner(async (d, client) => {
+      if (!d.resumeSessionId) {
+        replies.push(await callTool(client, "delete_item", { id: "42" }));
+        // Claude che non si ferma: a turno chiuso nessuno strumento viene eseguito
+        replies.push(await callTool(client, "get_item", { id: "42" }));
+        return { sessionId: "sess-A" };
+      }
+      replies.push(await callTool(client, "finish_run", { content: "Eliminato." }));
+      return { sessionId: "sess-A" };
+    });
+
+    await startRun(id, { userToken: "segreto-utente", startedBy: ownerId });
+
+    let run = await getRun(id);
+    expect(run.status).toBe("awaiting_client");
+    expect(run.pendingAction).toMatchObject({ kind: "confirmation", toolName: "delete_item", args: { id: "42" }, publicArgs: { id: "42" } });
+    expect(run.pausedAt).not.toBeNull();
+    expect(appRequests).toHaveLength(0);
+    expect(replies[0]).toEqual({ text: "in attesa di conferma dell'utente: termina ora il turno", isError: false });
+    await waitFor(() => replies.length === 2);
+    // Turno chiuso: il compito non è più in corso (o, a contesto già chiuso, lo strumento non c'è più)
+    expect(replies[1]!.isError).toBe(true);
+    expect(["compito non più in corso", "strumento non disponibile"]).toContain(replies[1]!.text);
+    expect(appRequests).toHaveLength(0);
+    expect((await jobsOf(id))[0]!.status).toBe("paused");
+    const paused = await pool.query("select row_to_json(r)::text as j from runs r");
+    expect(paused.rows[0].j).not.toContain("segreto-utente");
+
+    await resumeRun(id, "approved");
+
+    run = await getRun(id);
+    expect(run.errorMessage).toBeNull();
+    expect(run.status).toBe("succeeded");
+    expect(run.output).toBe("Eliminato.");
+    expect(run.pendingAction).toBeNull();
+    expect(run.loopState).toBeNull();
+    expect(appRequests).toEqual([expect.objectContaining({ method: "DELETE", url: "/api/items/42", auth: "Bearer segreto-utente" })]);
+    expect(r.deliveries).toHaveLength(2);
+    expect(r.deliveries[1]!.resumeSessionId).toBe("sess-A");
+    expect(r.deliveries[1]!.prompt).toContain(`L'utente ha confermato l'azione "delete_item"`);
+    expect(r.deliveries[1]!.prompt).toContain(JSON.stringify({ id: 42, name: "Rosa" }));
+    const steps = await getSteps(id);
+    expect(steps.map((s) => [s.position, s.type, s.toolName, s.ok])).toEqual([[0, "tool", "delete_item", true]]);
+    expect((await jobsOf(id))[0]!.status).toBe("completed");
+    await expect(resumeRun(id, "approved")).rejects.toBeInstanceOf(ResumeConflictError);
+  });
+
+  it("annullamento: l'app non riceve nulla e Claude riceve il messaggio di azione annullata", async () => {
+    const id = await seedLocalRun([DELETE_ITEM]);
+    const r = await startLocalRunner(async (d, client) => {
+      if (!d.resumeSessionId) await callTool(client, "delete_item", { id: "42" });
+      else await callTool(client, "finish_run", { content: "Non eliminato." });
+      return { sessionId: "sess-B" };
+    });
+
+    await startRun(id, { startedBy: ownerId });
+    expect((await getRun(id)).status).toBe("awaiting_client");
+    await resumeRun(id, "rejected");
+
+    const run = await getRun(id);
+    expect(run.status).toBe("succeeded");
+    expect(run.output).toBe("Non eliminato.");
+    expect(appRequests).toHaveLength(0);
+    expect(r.deliveries[1]!.resumeSessionId).toBe("sess-B");
+    expect(r.deliveries[1]!.prompt).toContain(REJECTED_ACTION_MESSAGE);
+    const [step] = await getSteps(id);
+    expect(step).toMatchObject({ toolName: "delete_item", ok: false, error: REJECTED_ACTION_MESSAGE });
+  });
+
+  it("argomento x-sensitive: oscurato nei passi, nel risultato MCP e nell'azione in sospeso", async () => {
+    const id = await seedLocalRun([LOGIN, SET_PASSWORD]);
+    const replies: { text: string; isError: boolean }[] = [];
+    let schema: unknown;
+    await startLocalRunner(async (_d, client) => {
+      schema = (await client.listTools()).tools.find((t) => t.name === "login")?.inputSchema;
+      replies.push(await callTool(client, "login", { user: "ivan", password: "parola-segreta-99" }));
+      replies.push(await callTool(client, "set_password", { id: "42", password: "nuova-segreta-77" }));
+      return {};
+    });
+
+    await startRun(id, { userToken: "t", startedBy: ownerId });
+    await waitFor(() => replies.length === 2);
+
+    // L'app riceve la password vera; Claude non la rivede nel risultato
+    expect(appRequests[0]!.body).toContain("parola-segreta-99");
+    expect(replies[0]!.isError).toBe(false);
+    expect(replies[0]!.text).toContain("***");
+    expect(replies[0]!.text).not.toContain("parola-segreta-99");
+    expect(replies[0]!.text).toContain("ivan");
+    // Lo schema per Claude è quello del function calling (senza estensioni x-)
+    expect(JSON.stringify(schema)).not.toContain("x-sensitive");
+    const [step] = await getSteps(id);
+    expect(step!.args).toEqual({ user: "ivan", password: "***" });
+    const run = await getRun(id);
+    expect(run.status).toBe("awaiting_client");
+    expect(run.pendingAction).toMatchObject({ publicArgs: { id: "42", password: "***" } });
+    expect((run.pendingAction as { summary: string }).summary).not.toContain("nuova-segreta-77");
+    const steps = await pool.query("select row_to_json(s)::text as j from run_steps s");
+    for (const row of steps.rows) expect(row.j).not.toContain("parola-segreta-99");
+  });
+
+  it("run di un utente terzo con localForThirdParties spento: subito il modello di riserva, nessun lavoro", async () => {
+    const id = await seedLocalRun([GET_ITEM]);
+    llmReplies = [textReply("Risposta della riserva")];
+
+    await startRun(id, { startedBy: otherId });
+
+    const run = await getRun(id);
+    expect(run.status).toBe("succeeded");
+    expect(run.output).toBe("Risposta della riserva");
+    expect(llmRequests.map((b) => b.model)).toEqual(["modello-riserva"]);
+    expect(await jobsOf(id)).toHaveLength(0);
+  });
+
+  it("run di un utente terzo con localForThirdParties attivo: lavoro locale con origine 'app'", async () => {
+    const id = await seedLocalRun([GET_ITEM], { localForThirdParties: true });
+    await startLocalRunner(async (_d, client) => {
+      await callTool(client, "finish_run", { content: "fatto in locale" });
+      return {};
+    });
+
+    await startRun(id, { startedBy: otherId });
+
+    expect((await getRun(id)).output).toBe("fatto in locale");
+    const [job] = await jobsOf(id);
+    expect(job).toMatchObject({ origin: "app", userId: ownerId, status: "completed" });
+    expect(llmRequests).toHaveLength(0);
+  });
+
+  it("run sulla riserva in pausa: la ripresa resta sul modello di riserva", async () => {
+    const id = await seedLocalRun([DELETE_ITEM]);
+    llmReplies = [toolCallReply("delete_item", { id: "42" }), textReply("Eliminato con la riserva")];
+
+    await startRun(id, { userToken: "t", startedBy: otherId });
+    expect((await getRun(id)).status).toBe("awaiting_client");
+    await resumeRun(id, "approved");
+
+    const run = await getRun(id);
+    expect(run.status).toBe("succeeded");
+    expect(run.output).toBe("Eliminato con la riserva");
+    expect(llmRequests.map((b) => b.model)).toEqual(["modello-riserva", "modello-riserva"]);
+    expect(appRequests).toHaveLength(1);
+  });
+
+  it("pausa scaduta: run cancelled e lavoro dell'agente locale chiuso", async () => {
+    const id = await seedLocalRun([DELETE_ITEM]);
+    await startLocalRunner(async (_d, client) => {
+      await callTool(client, "delete_item", { id: "42" });
+      return {};
+    });
+    await startRun(id, { startedBy: ownerId });
+    expect((await getRun(id)).status).toBe("awaiting_client");
+    await db.update(runsTable).set({ pausedAt: new Date(Date.now() - 11 * 60_000) }).where(eq(runsTable.id, id));
+
+    expect(await expireStalePausedRuns()).toBe(1);
+
+    expect((await getRun(id)).status).toBe("cancelled");
+    expect((await jobsOf(id))[0]).toMatchObject({ status: "cancelled", error: "Conferma non arrivata entro 10 minuti." });
+  });
+
+  it("proprietario con runner non collegato: la console sceglie la riserva", async () => {
+    const id = await seedLocalRun([GET_ITEM]);
+    llmReplies = [textReply("con la riserva")];
+    const running = startRun(id, { startedBy: ownerId });
+    let job = (await jobsOf(id))[0];
+    for (let i = 0; i < 200 && job?.status !== "waiting_choice"; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+      job = (await jobsOf(id))[0];
+    }
+    expect(job).toMatchObject({ status: "waiting_choice", origin: "console" });
+    await chooseForJob(job!.id, ownerId, "fallback");
+    await running;
+
+    const run = await getRun(id);
+    expect(run.status).toBe("succeeded");
+    expect(run.output).toBe("con la riserva");
+    expect(llmRequests.map((b) => b.model)).toEqual(["modello-riserva"]);
+  });
+
+  it("Claude termina senza finish_run: una correzione sulla stessa sessione, poi failed", async () => {
+    const id = await seedLocalRun([GET_ITEM]);
+    const r = await startLocalRunner(async () => ({ sessionId: "sess-C" }));
+
+    await startRun(id, { startedBy: ownerId });
+
+    const run = await getRun(id);
+    expect(run.status).toBe("failed");
+    expect(run.errorMessage).toBe("l'agente locale non ha concluso la run");
+    expect(r.deliveries).toHaveLength(2);
+    expect(r.deliveries[1]!.resumeSessionId).toBe("sess-C");
+    expect(r.deliveries[1]!.prompt).toContain("finish_run");
+    expect((await jobsOf(id))[0]).toMatchObject({ status: "failed", error: "l'agente locale non ha concluso la run" });
+  });
+
+  it("limite dei giri: ogni chiamata MCP conta, oltre il limite la run fallisce senza eseguire il tool", async () => {
+    const id = await seedLocalRun([GET_ITEM]);
+    const replies: { text: string; isError: boolean }[] = [];
+    await startLocalRunner(async (_d, client) => {
+      replies.push(await callTool(client, "get_item", { id: "1" }));
+      replies.push(await callTool(client, "get_item", { id: "2" }));
+      return {};
+    });
+
+    await startRun(id, { userToken: "t", startedBy: ownerId, limits: { maxRounds: 1 } });
+    await waitFor(() => replies.length === 2);
+
+    const run = await getRun(id);
+    expect(run.status).toBe("failed");
+    expect(run.errorMessage).toBe("limite di 1 giri di strumenti raggiunto");
+    expect(appRequests).toHaveLength(1);
+    expect(replies[1]).toEqual({ text: "non eseguito: limite di 1 giri di strumenti raggiunto. Termina ora.", isError: true });
+  });
+
+  it("disconnessione: failed 'agente locale disconnesso', poi retry-fallback crea una nuova run sulla riserva", async () => {
+    const restore = setLocalJobTimings({ heartbeatTimeoutMs: 150 });
+    let release!: () => void;
+    const hang = new Promise<void>((r) => (release = r));
+    try {
+      const id = await seedLocalRun([GET_ITEM]);
+      await startLocalRunner(async () => {
+        await hang;
+        return {};
+      });
+
+      await startRun(id, { startedBy: ownerId });
+
+      const run = await getRun(id);
+      expect(run.status).toBe("failed");
+      expect(run.errorMessage).toBe("agente locale disconnesso");
+      expect((await jobsOf(id))[0]).toMatchObject({ status: "failed", error: "agente locale disconnesso" });
+
+      // Solo il proprietario del lavoro può riprovare; la run nuova ha lo stesso input
+      await expect(retryRunOnFallback(id, otherId)).rejects.toMatchObject({ status: 404 });
+      const retry = await retryRunOnFallback(id, ownerId);
+      expect(retry).toMatchObject({ agentId: run.agentId, status: "pending", input: "Fai il lavoro" });
+      expect(retry.id).not.toBe(id);
+
+      llmReplies = [toolCallReply("get_item", { id: "42" }), textReply("Fatto con la riserva")];
+      await startRun(retry.id, { userToken: "t", useFallback: true });
+      const again = await getRun(retry.id);
+      expect(again.status).toBe("succeeded");
+      expect(again.output).toBe("Fatto con la riserva");
+      expect(llmRequests.map((b) => b.model)).toEqual(["modello-riserva", "modello-riserva"]);
+      expect(await jobsOf(retry.id)).toHaveLength(0);
+
+      // Una run non fallita non si riprova
+      await db.insert(localJobsTable).values({ userId: ownerId, machineId, kind: "run", runId: retry.id, origin: "console", status: "completed" });
+      const err = await retryRunOnFallback(retry.id, ownerId).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(RetryFallbackError);
+      expect((err as RetryFallbackError).status).toBe(409);
+    } finally {
+      release();
+      restore();
+    }
   });
 });
 

@@ -289,7 +289,8 @@ router.post("/agents/:id/runs", runRateLimit, async (req, res) => {
   // La run prosegue in background (da secondi a decine di secondi): si risponde subito con la run
   // in attesa e la UI ne segue lo stato con GET /runs/:id. startRun registra da sé gli errori del
   // modello sulla run; qui si intercetta solo l'imprevisto, che altrimenti farebbe cadere il processo.
-  startRun(run!.id, { userToken }).catch((err: unknown) =>
+  // Chi avvia la run decide, con un agente locale, se la esegue la macchina (vedi RunOptions.startedBy).
+  startRun(run!.id, { userToken, startedBy: currentUserId(req) }).catch((err: unknown) =>
     logger.error({ err, runId: run!.id }, "Esecuzione della run fallita"),
   );
 

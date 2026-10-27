@@ -11,9 +11,12 @@ import {
   ResumeRunParams,
   ResumeRunBody,
   ResumeRunResponse,
+  RetryRunFallbackParams,
+  RetryRunFallbackResponse,
 } from "@workspace/api-zod";
 import { runRateLimit } from "../middlewares/rate-limit";
-import { ResumeConflictError, claimResume } from "../lib/run-executor";
+import { ResumeConflictError, RetryFallbackError, claimResume, retryRunOnFallback, startRun } from "../lib/run-executor";
+import { currentUserId } from "../lib/auth";
 import { logger } from "../lib/logger";
 import { toPublicRun, userTokenFrom } from "./serializers";
 import { parseRequest } from "../middlewares/error-handler";
@@ -84,6 +87,24 @@ router.post("/runs/:id/resume", runRateLimit, async (req, res) => {
   claimed.proceed().catch((err: unknown) => logger.error({ err, runId: id }, "Ripresa della run fallita"));
 
   res.status(202).json(ResumeRunResponse.parse(toPublicRun(claimed.run)));
+});
+
+// "Riprova con il modello di riserva": nuova run con lo stesso input, eseguita in background sul modello di riserva
+// dell'agente (solo per una run fallita dell'agente locale dell'utente)
+router.post("/runs/:id/retry-fallback", runRateLimit, async (req, res) => {
+  const { id } = parseRequest(RetryRunFallbackParams, req.params);
+  let run: Awaited<ReturnType<typeof retryRunOnFallback>>;
+  try {
+    run = await retryRunOnFallback(id, currentUserId(req));
+  } catch (err) {
+    if (!(err instanceof RetryFallbackError)) throw err;
+    res.status(err.status).json({ error: err.message });
+    return;
+  }
+  startRun(run.id, { userToken: userTokenFrom(req), useFallback: true }).catch((err: unknown) =>
+    logger.error({ err, runId: run.id }, "Esecuzione della run fallita"),
+  );
+  res.status(202).json(RetryRunFallbackResponse.parse(toPublicRun(run)));
 });
 
 export default router;

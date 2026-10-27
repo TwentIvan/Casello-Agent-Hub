@@ -548,6 +548,40 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /runs/{id}/retry-fallback:
+    post:
+      operationId: retryRunFallback
+      tags: [runs]
+      summary: Riprova una run dell'agente locale con il modello di riserva
+      description: >-
+        Per una run fallita eseguita dall'agente locale dell'utente crea una nuova run con lo
+        stesso input sul modello di riserva dell'agente e la avvia in background. Risponde 404
+        se la run non esiste o non è una run dell'agente locale dell'utente, 409 se non è fallita,
+        400 se l'agente non ha un modello di riserva.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: X-App-User-Token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: >-
+            Token dell'utente finale nell'app per la nuova run. Non viene mai salvato né scritto
+            nei log.
+      responses:
+        "202":
+          description: Nuova run avviata sul modello di riserva
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   # ─── Architetto ─────────────────────────────────────────────────────────────
 
   /apps/{id}/analyses:

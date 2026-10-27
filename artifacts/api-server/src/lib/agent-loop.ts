@@ -74,7 +74,7 @@ export type LoopOutcome =
   | { type: "failed"; error: string; state: LoopState };
 
 // Esito della preparazione di una chiamata: errore da restituire al modello o tool pronto
-type PreparedCall =
+export type PreparedCall =
   | { kind: "error"; call: ToolCall; args: unknown; message: string }
   | { kind: "ready"; call: ToolCall; tool: CatalogTool; args: Record<string, unknown> };
 
@@ -86,7 +86,8 @@ function cloneState(state: LoopState): LoopState {
   return JSON.parse(JSON.stringify(state)) as LoopState;
 }
 
-function prepareCall(call: ToolCall, tools: CatalogTool[]): PreparedCall {
+/** Cerca il tool e legge gli argomenti della chiamata (usato anche dalle run dell'agente locale). */
+export function prepareCall(call: ToolCall, tools: CatalogTool[]): PreparedCall {
   const tool = tools.find((t) => t.name === call.name);
   if (!tool) {
     return { kind: "error", call, args: call.arguments, message: `Errore: lo strumento "${call.name}" non esiste` };
@@ -115,7 +116,7 @@ function prepareCall(call: ToolCall, tools: CatalogTool[]): PreparedCall {
   return { kind: "ready", call, tool, args: parsed as Record<string, unknown> };
 }
 
-function needsPause(tool: CatalogTool): boolean {
+export function needsPause(tool: CatalogTool): boolean {
   return tool.requiresConfirmation || tool.kind === "ui";
 }
 
@@ -133,6 +134,19 @@ function buildSummary(tool: CatalogTool, args: Record<string, unknown>): string 
   const label = tool.description?.trim() || tool.name;
   const parts = Object.entries(args).map(([k, v]) => `${k}: ${formatValue(v)}`);
   return `${label}: ${parts.join(", ")}`;
+}
+
+/** Azione in sospeso di una chiamata pronta che richiede la pausa: argomenti pubblici e riassunto oscurati. */
+export function pendingActionFor(prepared: Extract<PreparedCall, { kind: "ready" }>): PendingAction {
+  const publicArgs = maskSensitiveArgs(prepared.tool, prepared.args) as Record<string, unknown>;
+  return {
+    kind: prepared.tool.kind === "ui" ? "ui" : "confirmation",
+    toolCallId: prepared.call.id,
+    toolName: prepared.tool.name,
+    args: prepared.args,
+    publicArgs,
+    summary: buildSummary(prepared.tool, publicArgs),
+  };
 }
 
 function toolMessage(toolCallId: string, content: string): ChatCompletionMessageParam {
@@ -227,19 +241,7 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
 
       if (needsPause(prepared.tool)) {
         // La chiamata resta in testa alla coda: la toglie resolvePending
-        const publicArgs = maskSensitiveArgs(prepared.tool, prepared.args) as Record<string, unknown>;
-        return finish({
-          type: "paused",
-          pending: {
-            kind: prepared.tool.kind === "ui" ? "ui" : "confirmation",
-            toolCallId: prepared.call.id,
-            toolName: prepared.tool.name,
-            args: prepared.args,
-            publicArgs,
-            summary: buildSummary(prepared.tool, publicArgs),
-          },
-          state,
-        });
+        return finish({ type: "paused", pending: pendingActionFor(prepared), state });
       }
 
       if (isParallelSafe(prepared)) {

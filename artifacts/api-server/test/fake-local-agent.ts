@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import type { LocalJob } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import { db, localMachinesTable, type LocalJob } from "@workspace/db";
 import { jobByToken, nextForMachine, reportItemDone, type RunnerDelivery } from "../src/lib/local/jobs";
 import { createMcpServer } from "../src/lib/local/mcp-server";
 
@@ -27,6 +28,21 @@ export async function mcpClientFor(job: LocalJob): Promise<{ client: Client; clo
 export function toolText(result: Awaited<ReturnType<Client["callTool"]>>): { text: string; isError: boolean } {
   const content = result.content as Array<{ type: string; text?: string }>;
   return { text: content[0]?.text ?? "", isError: result.isError === true };
+}
+
+/** Chiamata a uno strumento MCP, come testo e flag d'errore. */
+export async function callTool(client: Client, name: string, args: Record<string, unknown> = {}): Promise<{ text: string; isError: boolean }> {
+  return toolText(await client.callTool({ name, arguments: args }));
+}
+
+/** Attende il primo segnale di vita del runner della macchina (da lì la macchina risulta collegata). */
+export async function waitConnected(machineId: number): Promise<void> {
+  for (let i = 0; i < 200; i++) {
+    const [m] = await db.select({ lastSeenAt: localMachinesTable.lastSeenAt }).from(localMachinesTable).where(eq(localMachinesTable.id, machineId));
+    if (m?.lastSeenAt) return;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  throw new Error("runner non collegato");
 }
 
 /** Comportamento del finto Claude su un compito: cosa riporta il runner al done. */

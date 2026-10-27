@@ -773,6 +773,40 @@ export const ResumeRunResponse = zod.object({
 
 
 /**
+ * Per una run fallita eseguita dall'agente locale dell'utente crea una nuova run con lo stesso input sul modello di riserva dell'agente e la avvia in background. Risponde 404 se la run non esiste o non è una run dell'agente locale dell'utente, 409 se non è fallita, 400 se l'agente non ha un modello di riserva.
+ * @summary Riprova una run dell'agente locale con il modello di riserva
+ */
+export const RetryRunFallbackParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RetryRunFallbackHeader = zod.object({
+  "X-App-User-Token": zod.string().optional().describe('Token dell\'utente finale nell\'app per la nuova run. Non viene mai salvato né scritto nei log.')
+})
+
+export const RetryRunFallbackResponse = zod.object({
+  "id": zod.number(),
+  "agentId": zod.number(),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
+  "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
+  "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
+  "errorMessage": zod.string().nullish(),
+  "durationMs": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullish(),
+  "pendingAction": zod.union([zod.object({
+  "kind": zod.enum(['confirmation', 'ui']),
+  "toolName": zod.string(),
+  "args": zod.record(zod.string(), zod.unknown()),
+  "summary": zod.string()
+}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
+  "promptTokens": zod.number().nullish(),
+  "completionTokens": zod.number().nullish(),
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
+})
+
+
+/**
  * @summary Elenca le analisi dell'architetto di una app
  */
 export const ListAnalysesParams = zod.object({

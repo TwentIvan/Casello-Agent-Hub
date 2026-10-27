@@ -26,6 +26,22 @@ export const RESTARTED = "interrotto dal riavvio";
 // Il lavoro non serve più: la run o l'analisi prosegue col modello di riserva
 const FALLBACK_CHOSEN = "eseguito con il modello di riserva";
 
+// Errori della coda dei lavori che `runItem` può lanciare (anche come `error` del lavoro): testi fissi, salvabili
+const QUEUE_MESSAGES: ReadonlySet<string> = new Set([
+  JOB_EXPIRED,
+  JOB_NOT_FOUND,
+  JOB_CANCELLED,
+  ITEM_REPLACED,
+  RESTARTED,
+  LOCAL_DISCONNECTED,
+  LOCAL_NOT_CONNECTED,
+]);
+
+/** Errore della coda con un messaggio fisso (da riportare così com'è nella run o nell'analisi). */
+export function isQueueError(err: unknown): err is Error {
+  return err instanceof LocalJobError || (err instanceof Error && QUEUE_MESSAGES.has(err.message));
+}
+
 export class LocalJobError extends Error {
   constructor(
     readonly status: number,
@@ -654,6 +670,14 @@ export async function jobByToken(token: string): Promise<LocalJob | null> {
     )
     .limit(1);
   return job ?? null;
+}
+
+/**
+ * Run in attesa di conferma: il lavoro resta preso (con la sessione di Claude Code da riprendere) ma senza compito
+ * in corso; la ripresa pubblica il compito successivo con `runItem`.
+ */
+export async function pauseLocalJob(jobId: number): Promise<void> {
+  await updateIf(jobId, CLAIMED, { status: "paused" });
 }
 
 /** Chiude un lavoro aperto (il token smette di valere). */

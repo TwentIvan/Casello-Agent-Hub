@@ -9,8 +9,10 @@ import {
   aiAccountsTable,
   aiModelsTable,
   analysesTable,
+  localJobsTable,
   localMachinesTable,
   mcpTokensTable,
+  runsTable,
   usersTable,
 } from "@workspace/db";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
@@ -507,5 +509,66 @@ describe("token personali", () => {
     const [row] = await db.insert(mcpTokensTable).values({ userId: other.id, name: "Suo", tokenHash: hashToken("y") }).returning();
     expect((await api("GET", "/local/tokens")).json).toEqual([]);
     expect((await api("DELETE", `/local/tokens/${row!.id}`)).status).toBe(404);
+  });
+});
+
+describe("run degli agenti locali", () => {
+  async function localAgent() {
+    const dev = await devUserId();
+    const { machine, aiModelId } = await registerMachine();
+    const fallback = await apiModelFor(dev);
+    const app = await createApp();
+    const res = await api("POST", "/agents", { appId: app.id, name: "Area", aiModelId, fallbackAiModelId: fallback.id });
+    expect(res.status, res.text).toBe(201);
+    return { dev, machineId: machine.id as number, agentId: res.json.id as number };
+  }
+
+  /** Attende che la run sia chiusa (il finto provider risponde 400: la run sulla riserva fallisce). */
+  async function settledRun(id: number) {
+    for (let i = 0; i < 300; i++) {
+      const [run] = await db.select().from(runsTable).where(eq(runsTable.id, id));
+      if (run && run.status !== "pending" && run.status !== "running") return run;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    throw new Error("run ancora in corso");
+  }
+
+  it("POST /agents/:id/runs dal proprietario: lavoro della macchina avviato dalla console", async () => {
+    const { agentId } = await localAgent();
+    const res = await api("POST", `/agents/${agentId}/runs`, { input: "ciao" });
+    expect(res.status, res.text).toBe(202);
+    let job;
+    for (let i = 0; i < 200 && job?.status !== "waiting_choice"; i++) {
+      [job] = await db.select().from(localJobsTable).where(eq(localJobsTable.runId, res.json.id));
+      if (job?.status !== "waiting_choice") await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(job).toMatchObject({ status: "waiting_choice", origin: "console", kind: "run" });
+    expect((await api("POST", `/local/jobs/${job!.id}/choice`, { choice: "fallback" })).status).toBe(204);
+    expect((await settledRun(res.json.id)).status).toBe("failed");
+  });
+
+  it("POST /runs/:id/retry-fallback: nuova run con lo stesso input; 409 se non fallita; 404 se il lavoro è altrui", async () => {
+    const { dev, machineId, agentId } = await localAgent();
+    const [failed] = await db.insert(runsTable).values({ agentId, status: "failed", input: "rifai", errorMessage: "agente locale disconnesso" }).returning();
+    await db.insert(localJobsTable).values({ userId: dev, machineId, kind: "run", runId: failed!.id, origin: "console", status: "failed" });
+
+    const res = await api("POST", `/runs/${failed!.id}/retry-fallback`);
+    expect(res.status, res.text).toBe(202);
+    expect(res.json).toMatchObject({ agentId, status: "pending", input: "rifai" });
+    expect(res.json.id).not.toBe(failed!.id);
+    await settledRun(res.json.id);
+    // Nessun lavoro locale: la run nuova va direttamente sul modello di riserva
+    expect(await db.select().from(localJobsTable).where(eq(localJobsTable.runId, res.json.id))).toHaveLength(0);
+    expect(fake.requests.some((r) => r.path === "/v1/chat/completions" && (r.body as { model: string }).model === "fake-model")).toBe(true);
+
+    const [ok] = await db.insert(runsTable).values({ agentId, status: "succeeded", input: "x" }).returning();
+    await db.insert(localJobsTable).values({ userId: dev, machineId, kind: "run", runId: ok!.id, origin: "console", status: "completed" });
+    expect((await api("POST", `/runs/${ok!.id}/retry-fallback`)).status).toBe(409);
+
+    const other = await otherUser();
+    const [theirs] = await db.insert(runsTable).values({ agentId, status: "failed", input: "x" }).returning();
+    await db.insert(localJobsTable).values({ userId: other.id, machineId, kind: "run", runId: theirs!.id, origin: "app", status: "failed" });
+    expect((await api("POST", `/runs/${theirs!.id}/retry-fallback`)).status).toBe(404);
+    expect((await api("POST", `/runs/999999/retry-fallback`)).status).toBe(404);
   });
 });

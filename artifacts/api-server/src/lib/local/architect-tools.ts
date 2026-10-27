@@ -12,18 +12,7 @@ import {
 import type { PhaseName } from "../architect/schemas";
 import type { SourceTree } from "../architect/source-tree";
 import type { OpenApiDoc } from "../architect/sources";
-import {
-  completeItem,
-  ITEM_REPLACED,
-  JOB_CANCELLED,
-  JOB_EXPIRED,
-  JOB_NOT_FOUND,
-  LOCAL_DISCONNECTED,
-  LOCAL_NOT_CONNECTED,
-  LocalJobError,
-  RESTARTED,
-  runItem,
-} from "./jobs";
+import { completeItem, isQueueError, ITEM_REPLACED, JOB_EXPIRED, LocalJobError, runItem } from "./jobs";
 import { registerJobToolProvider, type JobToolDef, type JobToolInputSchema } from "./mcp-server";
 
 /**
@@ -152,17 +141,6 @@ registerJobToolProvider("analysis", analysisTools);
 
 export const PHASE_NOT_DELIVERED = "fase non consegnata dall'agente locale";
 
-// Errori della coda dei lavori che `runItem` può lanciare (anche come `error` del lavoro): testi fissi, salvabili
-const QUEUE_MESSAGES: ReadonlySet<string> = new Set([
-  JOB_EXPIRED,
-  JOB_NOT_FOUND,
-  JOB_CANCELLED,
-  ITEM_REPLACED,
-  RESTARTED,
-  LOCAL_DISCONNECTED,
-  LOCAL_NOT_CONNECTED,
-]);
-
 const LOCAL_INSTRUCTIONS = `ISTRUZIONI PER L'AGENTE LOCALE. Usa solo gli strumenti del server MCP "casello": il codice e il contratto OpenAPI dell'app si leggono solo da lì (non leggere file locali, non eseguire comandi, non usare la rete). Quando hai finito consegna l'esito con ${SUBMIT_PHASE_TOOL} (è lo strumento chiamato submit_result nel testo sopra), nel campo result; se viene rifiutato correggi e consegna di nuovo. Dopo una consegna accettata termina.`;
 
 const CORRECTION = `Non hai consegnato un esito valido della fase. Consegna ora l'esito completo con ${SUBMIT_PHASE_TOOL} usando quello che hai già letto con gli strumenti di Casello, rispettando esattamente la forma dell'esempio della fase; poi termina.`;
@@ -196,7 +174,7 @@ export async function runPhaseDelegated(input: {
     } catch (err) {
       if (signal.aborted) return { ok: false, error: `fase ${phase}: tempo massimo dell'analisi scaduto` };
       // Solo i messaggi fissi della coda dei lavori; ogni altro errore lo chiude l'analisi con il testo generico
-      if (err instanceof LocalJobError || (err instanceof Error && QUEUE_MESSAGES.has(err.message))) {
+      if (isQueueError(err)) {
         return { ok: false, error: err.message };
       }
       throw err;

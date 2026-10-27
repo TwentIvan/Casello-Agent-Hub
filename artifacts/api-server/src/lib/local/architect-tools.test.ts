@@ -67,6 +67,8 @@ async function deliver(): Promise<void> {
  */
 async function publishItem(delivered = true): Promise<{ done: Promise<ItemResult> }> {
   const done = runItem(jobId, { prompt: "fase", resume: false }, signal());
+  // Un test che non attende la fine del compito lo annulla in afterEach: il rifiuto non resta senza gestore
+  done.catch(() => {});
   for (let i = 0; i < 100; i++) {
     if ((await jobByToken(jobToken))?.currentItem) {
       if (delivered) await deliver();

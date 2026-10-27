@@ -1975,6 +1975,77 @@ export const useResumeRun = <TError = ErrorType<BadRequestResponse | NotFoundRes
       return useMutation(getResumeRunMutationOptions(options));
     }
 
+export const getRetryRunFallbackUrl = (id: number,) => {
+
+
+
+
+  return `/api/runs/${id}/retry-fallback`
+}
+
+/**
+ * Per una run fallita eseguita dall'agente locale dell'utente crea una nuova run con lo stesso input sul modello di riserva dell'agente e la avvia in background. Risponde 404 se la run non esiste o non è una run dell'agente locale dell'utente, 409 se non è fallita, 400 se l'agente non ha un modello di riserva.
+ * @summary Riprova una run dell'agente locale con il modello di riserva
+ */
+export const retryRunFallback = async (id: number, options?: RequestInit): Promise<Run> => {
+
+  return customFetch<Run>(getRetryRunFallbackUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRetryRunFallbackMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryRunFallback>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof retryRunFallback>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['retryRunFallback'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retryRunFallback>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  retryRunFallback(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetryRunFallbackMutationResult = NonNullable<Awaited<ReturnType<typeof retryRunFallback>>>
+
+    export type RetryRunFallbackMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Riprova una run dell'agente locale con il modello di riserva
+ */
+export const useRetryRunFallback = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryRunFallback>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof retryRunFallback>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRetryRunFallbackMutationOptions(options));
+    }
+
 export const getListAnalysesUrl = (id: number,) => {
 
 

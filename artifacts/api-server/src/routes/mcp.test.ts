@@ -307,7 +307,8 @@ describe("token di lavoro", () => {
 
     const client = await connect(jobToken);
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["dummy_run", "dynamic_run", "get_job"]);
+    // finish_run: strumento delle run dell'agente locale (run-tools), registrato con l'app
+    expect(tools.map((t) => t.name).sort()).toEqual(["dummy_run", "dynamic_run", "finish_run", "get_job"]);
     expect(tools.find((t) => t.name === "dynamic_run")!.description).toBe(`Strumento dinamico del lavoro ${job.id}`);
 
     const [row] = await db.select().from(localJobsTable).where(eq(localJobsTable.id, job.id));
@@ -430,7 +431,7 @@ describe("token personale (modalità chat)", () => {
 
     // Dopo la presa: gli strumenti del tipo del lavoro, con casello_job_id obbligatorio
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["claim_job", "dummy_run", "dynamic_run", "get_job", "list_jobs"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["claim_job", "dummy_run", "dynamic_run", "finish_run", "get_job", "list_jobs"]);
     expect(tools.find((t) => t.name === "dummy_run")!.inputSchema.required).toContain("casello_job_id");
 
     const info = JSON.parse(textOf(await client.callTool({ name: "get_job", arguments: { casello_job_id: own.id } })));

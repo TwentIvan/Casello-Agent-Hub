@@ -75,9 +75,8 @@ ALTER TABLE "analyses" ADD COLUMN IF NOT EXISTS "fallback_ai_model_id" integer;
 DO $$ BEGIN ALTER TABLE "agents" ADD CONSTRAINT "agents_fallback_ai_model_id_ai_models_id_fk" FOREIGN KEY ("fallback_ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE "analyses" ADD CONSTRAINT "analyses_fallback_ai_model_id_ai_models_id_fk" FOREIGN KEY ("fallback_ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- Il provider dell'agente locale: lo stesso valore del registro (lib/catalog/provider-registry-data.ts)
-INSERT INTO "providers" ("slug", "name", "protocol", "default_base_url", "source_keys", "status", "origin") VALUES
-	('local_agent', 'Agente locale', 'local_agent', NULL, '{"litellm": [], "openrouterAuthor": null}', 'managed', 'registry')
-ON CONFLICT ("slug") DO NOTHING;
+-- Nessuna riga in providers: il valore 'local_agent' dell'enum si aggiunge qui e non si usa nello stesso script
+-- (l'editor SQL può eseguirlo in un'unica transazione). La riga del provider la crea all'avvio
+-- ensureProviderRegistry, dal registro nel codice (lib/catalog/provider-registry-data.ts).
 
 COMMIT;

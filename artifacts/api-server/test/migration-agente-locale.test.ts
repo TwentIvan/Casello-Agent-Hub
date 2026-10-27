@@ -6,14 +6,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 const SQL = "../../../docs/migrations/2026-10-agente-locale.sql";
 
-// psql esegue ogni istruzione in autocommit; PGlite.exec le raggruppa. Il valore dell'enum si aggiunge prima di
-// BEGIN, quindi si esegue in due tempi (prima di BEGIN e dopo) per non usare un valore non ancora confermato.
-const runMigration = async (db: PGlite) => {
-  const [before, after] = read(SQL).split(/^BEGIN;$/m);
-  await db.exec(before);
-  await db.exec("BEGIN;" + after);
-};
-
 describe("migrazione 2026-10-agente-locale", () => {
   let db: PGlite;
 
@@ -23,7 +15,7 @@ describe("migrazione 2026-10-agente-locale", () => {
     await db.exec(`INSERT INTO users (email) VALUES ('ivan@example.com');`);
     await db.exec(`INSERT INTO apps (name, slug, base_url) VALUES ('A', 'a', 'https://a.example.com');`);
     await db.exec(`INSERT INTO agents (app_id, name) VALUES (1, 'Esistente');`);
-    await runMigration(db);
+    await db.exec(read(SQL));
   });
 
   afterAll(async () => {
@@ -62,21 +54,15 @@ describe("migrazione 2026-10-agente-locale", () => {
     });
   });
 
-  it("il provider local_agent è presente, gestito e dal registro", async () => {
-    const row = (await db.query<any>("SELECT * FROM providers WHERE slug = 'local_agent'")).rows[0];
-    expect(row).toMatchObject({
-      name: "Agente locale",
-      protocol: "local_agent",
-      default_base_url: null,
-      source_keys: { litellm: [], openrouterAuthor: null },
-      status: "managed",
-      origin: "registry",
-    });
+  it("aggiunge il valore local_agent all'enum e non inserisce il provider (lo crea ensureProviderRegistry)", async () => {
+    const values = (await db.query<any>("SELECT unnest(enum_range(NULL::provider_protocol))::text AS v")).rows.map((r: any) => r.v);
+    expect(values).toContain("local_agent");
+    expect((await db.query<any>("SELECT count(*)::int AS n FROM providers WHERE slug = 'local_agent'")).rows[0].n).toBe(0);
   });
 
   it("è idempotente", async () => {
-    await runMigration(db);
-    expect((await db.query<any>("SELECT count(*)::int AS n FROM providers WHERE slug = 'local_agent'")).rows[0].n).toBe(1);
+    await db.exec(read(SQL));
+    expect((await db.query<any>("SELECT count(*)::int AS n FROM providers")).rows[0].n).toBe(9);
   });
 
   it("un lavoro con una macchina inesistente è rifiutato (FK)", async () => {

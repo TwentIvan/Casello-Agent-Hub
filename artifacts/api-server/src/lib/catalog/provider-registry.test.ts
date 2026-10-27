@@ -96,6 +96,14 @@ describe("ensureProviderRegistry", () => {
     const second = await db.select().from(providersTable).orderBy(providersTable.slug);
     expect(second).toEqual(first);
     expect(first.map((r) => r.slug)).toEqual(PROVIDER_REGISTRY.map((p) => p.slug).sort());
+    expect(first.find((r) => r.slug === "local_agent")).toMatchObject({
+      name: "Agente locale",
+      protocol: "local_agent",
+      status: "managed",
+      origin: "registry",
+      defaultBaseUrl: null,
+      sourceKeys: { litellm: [], openrouterAuthor: null },
+    });
     const bedrock = first.find((r) => r.slug === "bedrock")!;
     expect(bedrock).toMatchObject({
       protocol: "bedrock",

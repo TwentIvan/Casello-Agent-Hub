@@ -235,8 +235,7 @@ INSERT INTO "providers" ("slug", "name", "protocol", "default_base_url", "source
 	('together', 'Together AI', 'openai_compatible', 'https://api.together.xyz/v1', '{"litellm": ["together_ai"], "openrouterAuthor": null}', 'managed', 'registry'),
 	('gemini', 'Google Gemini', 'openai_compatible', 'https://generativelanguage.googleapis.com/v1beta/openai', '{"litellm": ["gemini"], "openrouterAuthor": "google"}', 'managed', 'registry'),
 	('custom', 'Personalizzato (compatibile OpenAI)', 'openai_compatible', NULL, '{"litellm": [], "openrouterAuthor": null}', 'managed', 'registry'),
-	('system_gateway', 'Gateway di Casello', 'openai_compatible', NULL, '{"litellm": [], "openrouterAuthor": null}', 'managed', 'registry'),
-	('local_agent', 'Agente locale', 'local_agent', NULL, '{"litellm": [], "openrouterAuthor": null}', 'managed', 'registry');
+	('system_gateway', 'Gateway di Casello', 'openai_compatible', NULL, '{"litellm": [], "openrouterAuthor": null}', 'managed', 'registry');
 
 -- Account AI
 CREATE TYPE "public"."ai_account_status" AS ENUM('unverified', 'ok', 'error');

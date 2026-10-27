@@ -7,6 +7,7 @@ import { failInterruptedCatalogRuns } from "./lib/catalog/refresh";
 import { startCatalogScheduler } from "./lib/catalog/scheduler";
 import { ensureProviderRegistry } from "./lib/catalog/provider-registry";
 import { assertSecretKey } from "./lib/secrets";
+import { expireLocalJobs, failOpenLocalJobs } from "./lib/local/jobs";
 
 // In produzione la chiave dei segreti è obbligatoria: meglio fallire all'avvio che alla prima cifratura.
 if (process.env["NODE_ENV"] === "production") assertSecretKey();
@@ -38,6 +39,16 @@ failInterruptedAnalyses()
     if (count > 0) logger.warn({ count }, "Analisi rimaste aperte al riavvio segnate come interrotte");
   })
   .catch((err: unknown) => logger.error({ err }, "Chiusura delle analisi interrotte non riuscita"));
+
+// I lavori dell'agente locale aperti all'avvio sono orfani: chiusi come falliti (run e analisi collegate le
+// chiudono i controlli sopra). Errori: solo il nome.
+failOpenLocalJobs()
+  .then((count) => {
+    if (count > 0) logger.warn({ count }, "Lavori dell'agente locale interrotti dal riavvio chiusi come falliti");
+  })
+  .catch((err: unknown) =>
+    logger.error({ errorName: err instanceof Error ? err.name : "Error" }, "Chiusura dei lavori dell'agente locale non riuscita"),
+  );
 
 // Aggiornamenti del catalogo rimasti in corso: chiusi come falliti, poi parte il controllo settimanale.
 failInterruptedCatalogRuns()
@@ -71,6 +82,17 @@ setInterval(() => {
       if (count > 0) logger.info({ count }, "Run in pausa scadute annullate");
     })
     .catch((err: unknown) => logger.error({ err }, "Scadenza delle run in pausa non riuscita"));
+}, 60_000).unref();
+
+// Lavori dell'agente locale col token scaduto (es. chat abbandonata): chiusi come falliti, ogni minuto.
+setInterval(() => {
+  expireLocalJobs()
+    .then((count) => {
+      if (count > 0) logger.info({ count }, "Lavori dell'agente locale scaduti chiusi");
+    })
+    .catch((err: unknown) =>
+      logger.error({ errorName: err instanceof Error ? err.name : "Error" }, "Scadenza dei lavori dell'agente locale non riuscita"),
+    );
 }, 60_000).unref();
 
 app.listen(port, (err) => {

@@ -261,6 +261,88 @@ export interface PersonalTokenCreated {
   token: string;
 }
 
+export type LocalJobStatus = typeof LocalJobStatus[keyof typeof LocalJobStatus];
+
+
+export const LocalJobStatus = {
+  queued: 'queued',
+  waiting_choice: 'waiting_choice',
+  postponed: 'postponed',
+  claimed: 'claimed',
+  running: 'running',
+  paused: 'paused',
+  completed: 'completed',
+  failed: 'failed',
+  cancelled: 'cancelled',
+} as const;
+
+export type LocalJobKind = typeof LocalJobKind[keyof typeof LocalJobKind];
+
+
+export const LocalJobKind = {
+  analysis: 'analysis',
+  run: 'run',
+} as const;
+
+export type LocalJobOrigin = typeof LocalJobOrigin[keyof typeof LocalJobOrigin];
+
+
+export const LocalJobOrigin = {
+  console: 'console',
+  app: 'app',
+} as const;
+
+/**
+ * Chi ha preso il lavoro (il runner della macchina o una sessione di chat)
+ * @nullable
+ */
+export type LocalJobClaimedBy = typeof LocalJobClaimedBy[keyof typeof LocalJobClaimedBy] | null;
+
+
+export const LocalJobClaimedBy = {
+  runner: 'runner',
+  chat: 'chat',
+} as const;
+
+export interface LocalJob {
+  id: number;
+  kind: LocalJobKind;
+  /** @nullable */
+  analysisId: number | null;
+  /** @nullable */
+  runId: number | null;
+  machineId: number;
+  status: LocalJobStatus;
+  origin: LocalJobOrigin;
+  /**
+     * Chi ha preso il lavoro (il runner della macchina o una sessione di chat)
+     * @nullable
+     */
+  claimedBy: LocalJobClaimedBy;
+  /**
+     * Modello di riserva (API) usato se si sceglie fallback
+     * @nullable
+     */
+  fallbackAiModelId: number | null;
+  /** @nullable */
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type LocalJobChoiceInputChoice = typeof LocalJobChoiceInputChoice[keyof typeof LocalJobChoiceInputChoice];
+
+
+export const LocalJobChoiceInputChoice = {
+  fallback: 'fallback',
+  wait: 'wait',
+  postpone: 'postpone',
+} as const;
+
+export interface LocalJobChoiceInput {
+  choice: LocalJobChoiceInputChoice;
+}
+
 /**
  * Cosa fare quando l'agente locale non è collegato a una run avviata da un'app: usare subito la riserva, attendere localOfflineWaitS secondi e poi usarla, o posticipare la run
  */

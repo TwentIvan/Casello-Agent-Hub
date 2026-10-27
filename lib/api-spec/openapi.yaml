@@ -1498,6 +1498,51 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /local/jobs:
+    get:
+      operationId: listLocalJobs
+      tags: [local]
+      summary: Lavori aperti dell'agente locale dell'utente
+      description: >-
+        Solo i propri e solo quelli aperti (queued, waiting_choice, postponed, claimed, running, paused), dal più
+        vecchio. waiting_choice: il runner non è collegato e la console deve scegliere cosa fare.
+      responses:
+        "200":
+          description: Lavori aperti
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LocalJob"
+
+  /local/jobs/{id}/choice:
+    post:
+      operationId: chooseLocalJob
+      tags: [local]
+      summary: Scelta per un lavoro con l'agente locale non collegato
+      description: >-
+        Solo per un lavoro proprio in waiting_choice o postponed (altrimenti 409). fallback: usa il modello di
+        riserva; wait: resta in coda (30 minuti per un'analisi, 2 per una run, poi fallisce); postpone: parte
+        appena un runner si collega, entro 24 ore, poi viene annullato. Lavoro di un altro utente → 404.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalJobChoiceInput"
+      responses:
+        "204":
+          description: Scelta applicata
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
 components:
   parameters:
     IdParam:
@@ -1921,6 +1966,54 @@ components:
         token:
           type: string
           description: Token personale (csl_p_…), mostrato solo ora
+
+    LocalJobStatus:
+      type: string
+      enum: [queued, waiting_choice, postponed, claimed, running, paused, completed, failed, cancelled]
+
+    LocalJob:
+      type: object
+      required: [id, kind, analysisId, runId, machineId, status, origin, claimedBy, fallbackAiModelId, error, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        kind:
+          type: string
+          enum: [analysis, run]
+        analysisId:
+          type: ["integer", "null"]
+        runId:
+          type: ["integer", "null"]
+        machineId:
+          type: integer
+        status:
+          $ref: "#/components/schemas/LocalJobStatus"
+        origin:
+          type: string
+          enum: [console, app]
+        claimedBy:
+          type: ["string", "null"]
+          enum: [runner, chat, null]
+          description: Chi ha preso il lavoro (il runner della macchina o una sessione di chat)
+        fallbackAiModelId:
+          type: ["integer", "null"]
+          description: Modello di riserva (API) usato se si sceglie fallback
+        error:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    LocalJobChoiceInput:
+      type: object
+      required: [choice]
+      properties:
+        choice:
+          type: string
+          enum: [fallback, wait, postpone]
 
     LocalOfflinePolicy:
       type: string

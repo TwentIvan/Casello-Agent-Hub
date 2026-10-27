@@ -2,16 +2,20 @@ import { Router, type IRouter } from "express";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { db, mcpTokensTable, type McpToken } from "@workspace/db";
 import {
+  ChooseLocalJobBody,
+  ChooseLocalJobParams,
   CreateLocalMachineBody,
   CreateLocalMachineResponse,
   CreatePersonalTokenBody,
   CreatePersonalTokenResponse,
+  ListLocalJobsResponse,
   ListLocalMachinesResponse,
   ListPersonalTokensResponse,
   RevokeLocalMachineParams,
   RevokePersonalTokenParams,
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
+import { chooseForJob, listOpenJobs, LocalJobError, toPublicJob } from "../lib/local/jobs";
 import { listMachines, registerMachine, revokeMachine, toPublicMachine } from "../lib/local/machines";
 import { newToken } from "../lib/local/tokens";
 import { parseRequest } from "../middlewares/error-handler";
@@ -97,6 +101,25 @@ export function createLocalRouter(): IRouter {
       return;
     }
     await db.update(mcpTokensTable).set({ revokedAt: new Date() }).where(and(where, isNull(mcpTokensTable.revokedAt)));
+    res.status(204).end();
+  });
+
+  // Lavori aperti dell'utente (es. in attesa della scelta con l'agente locale non collegato)
+  router.get("/local/jobs", async (req, res) => {
+    const rows = await listOpenJobs(currentUserId(req));
+    res.json(ListLocalJobsResponse.parse(rows.map(toPublicJob)));
+  });
+
+  router.post("/local/jobs/:id/choice", async (req, res) => {
+    const { id } = parseRequest(ChooseLocalJobParams, req.params);
+    const { choice } = parseRequest(ChooseLocalJobBody, req.body);
+    try {
+      await chooseForJob(id, currentUserId(req), choice);
+    } catch (err) {
+      if (!(err instanceof LocalJobError)) throw err;
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
     res.status(204).end();
   });
 

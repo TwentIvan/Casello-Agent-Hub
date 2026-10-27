@@ -70,6 +70,8 @@ import type {
   ListCatalogModelsParams,
   ListCatalogProvidersParams,
   ListRunsParams,
+  LocalJob,
+  LocalJobChoiceInput,
   LocalMachine,
   LocalMachineCreated,
   LocalNameInput,
@@ -4785,5 +4787,155 @@ export const useRevokePersonalToken = <TError = ErrorType<NotFoundResponse>,
         TContext
       > => {
       return useMutation(getRevokePersonalTokenMutationOptions(options));
+    }
+
+export const getListLocalJobsUrl = () => {
+
+
+
+
+  return `/api/local/jobs`
+}
+
+/**
+ * Solo i propri e solo quelli aperti (queued, waiting_choice, postponed, claimed, running, paused), dal più vecchio. waiting_choice: il runner non è collegato e la console deve scegliere cosa fare.
+ * @summary Lavori aperti dell'agente locale dell'utente
+ */
+export const listLocalJobs = async ( options?: RequestInit): Promise<LocalJob[]> => {
+
+  return customFetch<LocalJob[]>(getListLocalJobsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLocalJobsQueryKey = () => {
+    return [
+    `/api/local/jobs`
+    ] as const;
+    }
+
+
+export const getListLocalJobsQueryOptions = <TData = Awaited<ReturnType<typeof listLocalJobs>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLocalJobs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLocalJobsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLocalJobs>>> = ({ signal }) => listLocalJobs({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLocalJobs>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLocalJobsQueryResult = NonNullable<Awaited<ReturnType<typeof listLocalJobs>>>
+export type ListLocalJobsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Lavori aperti dell'agente locale dell'utente
+ */
+
+export function useListLocalJobs<TData = Awaited<ReturnType<typeof listLocalJobs>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLocalJobs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLocalJobsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getChooseLocalJobUrl = (id: number,) => {
+
+
+
+
+  return `/api/local/jobs/${id}/choice`
+}
+
+/**
+ * Solo per un lavoro proprio in waiting_choice o postponed (altrimenti 409). fallback: usa il modello di riserva; wait: resta in coda (30 minuti per un'analisi, 2 per una run, poi fallisce); postpone: parte appena un runner si collega, entro 24 ore, poi viene annullato. Lavoro di un altro utente → 404.
+ * @summary Scelta per un lavoro con l'agente locale non collegato
+ */
+export const chooseLocalJob = async (id: number,
+    localJobChoiceInput: LocalJobChoiceInput, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getChooseLocalJobUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(localJobChoiceInput)
+  }
+);}
+
+
+
+
+export const getChooseLocalJobMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof chooseLocalJob>>, TError,{id: number;data: BodyType<LocalJobChoiceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof chooseLocalJob>>, TError,{id: number;data: BodyType<LocalJobChoiceInput>}, TContext> => {
+
+const mutationKey = ['chooseLocalJob'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof chooseLocalJob>>, {id: number;data: BodyType<LocalJobChoiceInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  chooseLocalJob(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ChooseLocalJobMutationResult = NonNullable<Awaited<ReturnType<typeof chooseLocalJob>>>
+    export type ChooseLocalJobMutationBody = BodyType<LocalJobChoiceInput>
+    export type ChooseLocalJobMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Scelta per un lavoro con l'agente locale non collegato
+ */
+export const useChooseLocalJob = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof chooseLocalJob>>, TError,{id: number;data: BodyType<LocalJobChoiceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof chooseLocalJob>>,
+        TError,
+        {id: number;data: BodyType<LocalJobChoiceInput>},
+        TContext
+      > => {
+      return useMutation(getChooseLocalJobMutationOptions(options));
     }
 

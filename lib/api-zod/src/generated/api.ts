@@ -1923,3 +1923,39 @@ export const RevokePersonalTokenParams = zod.object({
 export const RevokePersonalTokenResponse = zod.void()
 
 
+/**
+ * Solo i propri e solo quelli aperti (queued, waiting_choice, postponed, claimed, running, paused), dal più vecchio. waiting_choice: il runner non è collegato e la console deve scegliere cosa fare.
+ * @summary Lavori aperti dell'agente locale dell'utente
+ */
+export const ListLocalJobsResponseItem = zod.object({
+  "id": zod.number(),
+  "kind": zod.enum(['analysis', 'run']),
+  "analysisId": zod.number().nullable(),
+  "runId": zod.number().nullable(),
+  "machineId": zod.number(),
+  "status": zod.enum(['queued', 'waiting_choice', 'postponed', 'claimed', 'running', 'paused', 'completed', 'failed', 'cancelled']),
+  "origin": zod.enum(['console', 'app']),
+  "claimedBy": zod.union([zod.literal('runner'),zod.literal('chat'),zod.literal(null)]).nullable().describe('Chi ha preso il lavoro (il runner della macchina o una sessione di chat)'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di riserva (API) usato se si sceglie fallback'),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListLocalJobsResponse = zod.array(ListLocalJobsResponseItem)
+
+
+/**
+ * Solo per un lavoro proprio in waiting_choice o postponed (altrimenti 409). fallback: usa il modello di riserva; wait: resta in coda (30 minuti per un'analisi, 2 per una run, poi fallisce); postpone: parte appena un runner si collega, entro 24 ore, poi viene annullato. Lavoro di un altro utente → 404.
+ * @summary Scelta per un lavoro con l'agente locale non collegato
+ */
+export const ChooseLocalJobParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ChooseLocalJobBody = zod.object({
+  "choice": zod.enum(['fallback', 'wait', 'postpone'])
+})
+
+export const ChooseLocalJobResponse = zod.void()
+
+

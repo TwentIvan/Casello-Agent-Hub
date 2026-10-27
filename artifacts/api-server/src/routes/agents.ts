@@ -7,6 +7,7 @@ import {
   agentToolsTable,
   appsTable,
   appToolsTable,
+  localMachinesTable,
   runsTable,
 } from "@workspace/db";
 import { runRateLimit } from "../middlewares/rate-limit";
@@ -124,33 +125,52 @@ async function modelUpdate(
 /**
  * Riserva da salvare, controllata solo quando cambiano il modello o la riserva (come il modello). Con un
  * agente locale la riserva effettiva è obbligatoria; se cambia il modello quella esistente si ricontrolla
- * per chi modifica (chi configura paga). Undefined = invariata.
+ * per chi modifica (chi configura paga). Con un modello API la riserva non serve e si azzera (come nel POST).
+ * Undefined = invariata.
  */
 async function fallbackUpdate(
   current: { aiModelId: number | null; fallbackAiModelId: number | null },
   modelFields: Partial<ModelChoice>,
   fallbackAiModelId: number | null | undefined,
   userId: number,
+  local: boolean,
 ): Promise<number | null | undefined> {
   const modelChanged = modelFields.aiModelId !== undefined;
   if (!modelChanged && fallbackAiModelId === undefined) return undefined;
-  const effectiveModel = modelChanged ? modelFields.aiModelId! : current.aiModelId;
-  const local = effectiveModel !== null && (await isLocalModel(effectiveModel)) !== null;
+  if (!local) return current.fallbackAiModelId !== null || fallbackAiModelId != null ? null : undefined;
   const effective = fallbackAiModelId !== undefined ? fallbackAiModelId : current.fallbackAiModelId;
-  if (effective === null) {
-    if (local) throw new ModelChoiceError(FALLBACK_REQUIRED);
-    return fallbackAiModelId;
-  }
+  if (effective === null) throw new ModelChoiceError(FALLBACK_REQUIRED);
   const fallbackChanged = fallbackAiModelId !== undefined && fallbackAiModelId !== current.fallbackAiModelId;
-  if (fallbackChanged || (modelChanged && local)) return chooseFallbackModel(effective, userId);
+  if (fallbackChanged || modelChanged) return chooseFallbackModel(effective, userId);
   return fallbackAiModelId;
+}
+
+const LOCAL_OWNER_ONLY = "solo il proprietario della macchina può cambiare le impostazioni dell'agente locale";
+
+/** Proprietario della macchina di un modello dell'agente locale; null per un modello API (o senza modello). */
+async function localMachineOwner(aiModelId: number | null): Promise<{ local: boolean; ownerId: number | null }> {
+  const machine = aiModelId === null ? null : await isLocalModel(aiModelId);
+  if (!machine) return { local: false, ownerId: null };
+  const [row] = await db
+    .select({ userId: localMachinesTable.userId })
+    .from(localMachinesTable)
+    .where(eq(localMachinesTable.id, machine.machineId))
+    .limit(1);
+  return { local: true, ownerId: row?.userId ?? null };
 }
 
 router.patch("/agents/:id", async (req, res) => {
   const { id } = parseRequest(UpdateAgentParams, req.params);
   const { aiModelId, model, fallbackAiModelId, ...body } = parseRequest(UpdateAgentBody, req.body);
   const [current] = await db
-    .select({ aiModelId: agentsTable.aiModelId, model: agentsTable.model, fallbackAiModelId: agentsTable.fallbackAiModelId })
+    .select({
+      aiModelId: agentsTable.aiModelId,
+      model: agentsTable.model,
+      fallbackAiModelId: agentsTable.fallbackAiModelId,
+      localForThirdParties: agentsTable.localForThirdParties,
+      localOfflinePolicy: agentsTable.localOfflinePolicy,
+      localOfflineWaitS: agentsTable.localOfflineWaitS,
+    })
     .from(agentsTable)
     .where(eq(agentsTable.id, id))
     .limit(1);
@@ -163,7 +183,19 @@ router.patch("/agents/:id", async (req, res) => {
   try {
     const userId = currentUserId(req);
     modelFields = await modelUpdate(current, { aiModelId, model }, userId);
-    fallback = await fallbackUpdate(current, modelFields, fallbackAiModelId, userId);
+    const effectiveModel = modelFields.aiModelId !== undefined ? modelFields.aiModelId : current.aiModelId;
+    const machine = await localMachineOwner(effectiveModel);
+    // Chi usa la macchina (e l'abbonamento Claude) per gli utenti terzi, con quale regola e quale riserva lo decide
+    // solo il proprietario della macchina; i valori invariati (la console li rimanda sempre) non contano
+    const localFieldsChanged = (["localForThirdParties", "localOfflinePolicy", "localOfflineWaitS"] as const).some(
+      (k) => body[k] !== undefined && body[k] !== current[k],
+    );
+    const fallbackChanged = fallbackAiModelId !== undefined && fallbackAiModelId !== current.fallbackAiModelId;
+    if ((localFieldsChanged || (machine.local && fallbackChanged)) && machine.ownerId !== userId) {
+      res.status(403).json({ error: LOCAL_OWNER_ONLY });
+      return;
+    }
+    fallback = await fallbackUpdate(current, modelFields, fallbackAiModelId, userId, machine.local);
   } catch (err) {
     if (!(err instanceof ModelChoiceError)) throw err;
     res.status(400).json({ error: err.message });

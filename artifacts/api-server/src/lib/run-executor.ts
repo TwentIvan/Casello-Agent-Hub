@@ -780,6 +780,8 @@ export async function resumeRun(
   await proceed();
 }
 
+const NOT_RUN_LOCALLY = "La run non è stata eseguita dall'agente locale: non si può riprovare con il modello di riserva.";
+
 /** Errore di `retryRunOnFallback`, con lo stato HTTP da restituire. */
 export class RetryFallbackError extends Error {
   constructor(
@@ -797,14 +799,12 @@ export class RetryFallbackError extends Error {
  */
 export async function retryRunOnFallback(runId: number, userId: number): Promise<Run> {
   const [run] = await db.select().from(runsTable).where(eq(runsTable.id, runId)).limit(1);
-  const [job] = run
-    ? await db
-        .select({ id: localJobsTable.id })
-        .from(localJobsTable)
-        .where(and(eq(localJobsTable.runId, runId), eq(localJobsTable.userId, userId)))
-        .limit(1)
-    : [];
-  if (!run || !job) throw new RetryFallbackError(404, "Esecuzione non trovata");
+  if (!run) throw new RetryFallbackError(404, "Esecuzione non trovata");
+  const jobs = await db.select({ userId: localJobsTable.userId }).from(localJobsTable).where(eq(localJobsTable.runId, runId));
+  // Run fallita prima di arrivare all'agente locale (macchina non disponibile, riserva mancante…): nessun lavoro
+  if (jobs.length === 0) throw new RetryFallbackError(409, NOT_RUN_LOCALLY);
+  // Il lavoro è di un altro utente: come se la run non ci fosse
+  if (!jobs.some((j) => j.userId === userId)) throw new RetryFallbackError(404, "Esecuzione non trovata");
   if (run.status !== "failed") {
     throw new RetryFallbackError(409, "Si può riprovare con il modello di riserva solo una run fallita dell'agente locale.");
   }

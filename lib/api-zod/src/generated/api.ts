@@ -379,6 +379,7 @@ export const GetAgentResponse = zod.object({
 
 
 /**
+ * Con un modello API la riserva si azzera. Utenti terzi, regola offline, attesa e riserva di un agente locale li cambia solo il proprietario della macchina (403 per gli altri; i valori invariati sono ammessi).
  * @summary Aggiorna un agente
  */
 export const UpdateAgentParams = zod.object({
@@ -773,7 +774,7 @@ export const ResumeRunResponse = zod.object({
 
 
 /**
- * Per una run fallita eseguita dall'agente locale dell'utente crea una nuova run con lo stesso input sul modello di riserva dell'agente e la avvia in background. Risponde 404 se la run non esiste o non è una run dell'agente locale dell'utente, 409 se non è fallita, 400 se l'agente non ha un modello di riserva.
+ * Per una run fallita eseguita dall'agente locale dell'utente crea una nuova run con lo stesso input sul modello di riserva dell'agente e la avvia in background. Risponde 404 se la run non esiste o il suo lavoro locale è di un altro utente, 409 se non è fallita o non è arrivata all'agente locale (nessun lavoro), 400 se l'agente non ha un modello di riserva.
  * @summary Riprova una run dell'agente locale con il modello di riserva
  */
 export const RetryRunFallbackParams = zod.object({

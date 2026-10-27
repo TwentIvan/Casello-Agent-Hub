@@ -261,6 +261,10 @@ paths:
       operationId: updateAgent
       tags: [agents]
       summary: Aggiorna un agente
+      description: >-
+        Con un modello API la riserva si azzera. Utenti terzi, regola offline, attesa e riserva di un
+        agente locale li cambia solo il proprietario della macchina (403 per gli altri; i valori
+        invariati sono ammessi).
       parameters:
         - $ref: "#/components/parameters/IdParam"
       requestBody:
@@ -276,6 +280,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
     delete:
@@ -556,8 +564,8 @@ paths:
       description: >-
         Per una run fallita eseguita dall'agente locale dell'utente crea una nuova run con lo
         stesso input sul modello di riserva dell'agente e la avvia in background. Risponde 404
-        se la run non esiste o non è una run dell'agente locale dell'utente, 409 se non è fallita,
-        400 se l'agente non ha un modello di riserva.
+        se la run non esiste o il suo lavoro locale è di un altro utente, 409 se non è fallita o
+        non è arrivata all'agente locale (nessun lavoro), 400 se l'agente non ha un modello di riserva.
       parameters:
         - $ref: "#/components/parameters/IdParam"
         - name: X-App-User-Token

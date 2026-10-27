@@ -436,6 +436,68 @@ describe("modello di riserva negli agenti", () => {
   });
 });
 
+describe("riserva e impostazioni dell'agente locale nei PATCH", () => {
+  it("passando a un modello API la riserva si azzera; con un modello API una riserva inviata non si salva", async () => {
+    const dev = await devUserId();
+    const { aiModelId } = await registerMachine();
+    const fallback = await apiModelFor(dev);
+    const other = await apiModelFor(dev, "altro-modello");
+    const app = await createApp();
+    const created = await api("POST", "/agents", { appId: app.id, name: "Area", aiModelId, fallbackAiModelId: fallback.id });
+    expect(created.status, created.text).toBe(201);
+    const id = created.json.id;
+
+    const toApi = await api("PATCH", `/agents/${id}`, { aiModelId: other.id });
+    expect(toApi.status, toApi.text).toBe(200);
+    expect(toApi.json).toMatchObject({ aiModelId: other.id, fallbackAiModelId: null });
+
+    const withFallback = await api("PATCH", `/agents/${id}`, { fallbackAiModelId: fallback.id });
+    expect(withFallback.status, withFallback.text).toBe(200);
+    expect(withFallback.json.fallbackAiModelId).toBeNull();
+
+    // L'account della vecchia riserva ora si può eliminare: nessun agente la usa
+    const del = await api("DELETE", `/ai/accounts/${fallback.accountId}`);
+    expect(del.status, del.text).toBe(204);
+  });
+
+  it("utenti terzi, regola offline e riserva di un agente locale: solo il proprietario della macchina li cambia (403)", async () => {
+    const dev = await devUserId();
+    const { aiModelId: othersLocal, other } = await otherUsersMachine();
+    const othersFallback = await apiModelFor(other.id, "riserva-altrui");
+    const myModel = await apiModelFor(dev, "mio-modello");
+    const app = await createApp();
+    const [agent] = await db
+      .insert(agentsTable)
+      .values({ appId: app.id, name: "Di Altro", aiModelId: othersLocal, model: "machine-x", fallbackAiModelId: othersFallback.id })
+      .returning();
+    const id = agent!.id;
+
+    for (const body of [
+      { localForThirdParties: true },
+      { localOfflinePolicy: "postpone" },
+      { localOfflineWaitS: 90 },
+      { fallbackAiModelId: myModel.id },
+    ]) {
+      const res = await api("PATCH", `/agents/${id}`, body);
+      expect(res.status, JSON.stringify(body)).toBe(403);
+      expect(res.json).toEqual({ error: "solo il proprietario della macchina può cambiare le impostazioni dell'agente locale" });
+    }
+    const [unchanged] = await db.select().from(agentsTable).where(eq(agentsTable.id, id));
+    expect(unchanged).toMatchObject({ localForThirdParties: false, localOfflinePolicy: "fallback", localOfflineWaitS: 30, fallbackAiModelId: othersFallback.id });
+
+    // La console manda i valori invariati: il resto dell'agente si modifica
+    const renamed = await api("PATCH", `/agents/${id}`, {
+      name: "Rinominato",
+      localForThirdParties: false,
+      localOfflinePolicy: "fallback",
+      localOfflineWaitS: 30,
+      fallbackAiModelId: othersFallback.id,
+    });
+    expect(renamed.status, renamed.text).toBe(200);
+    expect(renamed.json).toMatchObject({ name: "Rinominato", aiModelId: othersLocal, fallbackAiModelId: othersFallback.id });
+  });
+});
+
 describe("modello di riserva nelle analisi", () => {
   it("modello locale senza riserva → 400; riserva locale → 400; con riserva propria → 202 e salvata", async () => {
     const dev = await devUserId();
@@ -570,5 +632,11 @@ describe("run degli agenti locali", () => {
     await db.insert(localJobsTable).values({ userId: other.id, machineId, kind: "run", runId: theirs!.id, origin: "app", status: "failed" });
     expect((await api("POST", `/runs/${theirs!.id}/retry-fallback`)).status).toBe(404);
     expect((await api("POST", `/runs/999999/retry-fallback`)).status).toBe(404);
+
+    // Run fallita prima di arrivare all'agente locale (nessun lavoro): 409 con un messaggio chiaro
+    const [early] = await db.insert(runsTable).values({ agentId, status: "failed", input: "x", errorMessage: "macchina non disponibile" }).returning();
+    const noJob = await api("POST", `/runs/${early!.id}/retry-fallback`);
+    expect(noJob.status).toBe(409);
+    expect(noJob.json).toEqual({ error: "La run non è stata eseguita dall'agente locale: non si può riprovare con il modello di riserva." });
   });
 });

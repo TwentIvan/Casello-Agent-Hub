@@ -20,6 +20,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { ChapterTabs } from "@/components/analysis/chapter-tabs";
 import { isRecord, list, phaseLabel, rec, str, strList } from "@/components/analysis/payload";
 import { ANALYSIS_STATUS_LABELS, ANALYSIS_STATUS_STYLES } from "@/components/apps/analyses-card";
+import { LocalChoiceDialog } from "@/components/local/local-choice-dialog";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatCost, formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -390,6 +391,9 @@ export default function AnalysisDetailPage() {
         </div>
         <ChapterTabs analysisId={a.id} appId={a.appId} items={a.items} />
       </section>
+
+      {/* Agente locale non collegato: la scelta si fa anche da qui, finché l'analisi è in corso */}
+      {active && <LocalChoiceDialog analysisId={a.id} maxTokens={a.maxTokens} />}
     </div>
   );
 }

@@ -108,7 +108,7 @@ export function AnalysesCard({ app }: { app: App }) {
   const tokensValid = Number.isInteger(maxTokens) && maxTokens >= MIN_TOKENS && maxTokens <= MAX_TOKENS;
   const hasActive = analyses.data?.some(isActive) ?? false;
   // Analisi in corso: se il suo lavoro locale aspetta una scelta, compare la finestra
-  const activeAnalysisId = analyses.data?.find(isActive)?.id;
+  const activeAnalysis = analyses.data?.find(isActive);
 
   const estimateParams = { aiModelId: aiModelId ?? 0, maxTokens };
   const estimate = useEstimateAnalysisCost(estimateParams, {
@@ -261,7 +261,7 @@ export function AnalysesCard({ app }: { app: App }) {
           )}
         </div>
       </CardContent>
-      {activeAnalysisId !== undefined && <LocalChoiceDialog analysisId={activeAnalysisId} />}
+      {activeAnalysis && <LocalChoiceDialog analysisId={activeAnalysis.id} maxTokens={activeAnalysis.maxTokens} />}
     </Card>
   );
 }

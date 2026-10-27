@@ -55,8 +55,9 @@ export function useChooseJob(onChosen?: (choice: LocalJobChoiceInputChoice) => v
   });
 }
 
-function FallbackEstimate({ job }: { job: LocalJob }) {
-  const params = { aiModelId: job.fallbackAiModelId ?? 0 };
+/** Stima del costo con la riserva, sul tetto di token dell'analisi se noto (altrimenti su quello predefinito). */
+function FallbackEstimate({ job, maxTokens }: { job: LocalJob; maxTokens?: number }) {
+  const params = { aiModelId: job.fallbackAiModelId ?? 0, ...(maxTokens !== undefined ? { maxTokens } : {}) };
   const estimate = useEstimateAnalysisCost(params, {
     query: {
       queryKey: getEstimateAnalysisCostQueryKey(params),
@@ -68,7 +69,11 @@ function FallbackEstimate({ job }: { job: LocalJob }) {
   return (
     <span className="block text-xs text-muted-foreground">
       {estimate.data.typicalUsd != null && estimate.data.maxUsd != null
-        ? `stima: circa ${formatUsd(estimate.data.typicalUsd)} (massimo ${formatUsd(estimate.data.maxUsd)})`
+        ? `stima: circa ${formatUsd(estimate.data.typicalUsd)} (massimo ${formatUsd(estimate.data.maxUsd)}) ${
+            maxTokens !== undefined
+              ? `con il tetto dell'analisi di ${maxTokens.toLocaleString("it-IT")} token`
+              : "con il tetto di token predefinito"
+          }`
         : "costo non stimabile: prezzi del modello sconosciuti"}
     </span>
   );
@@ -77,9 +82,9 @@ function FallbackEstimate({ job }: { job: LocalJob }) {
 /**
  * Finestra "L'agente locale non è collegato": compare quando il lavoro di un'analisi o di una run appena
  * avviata va in `waiting_choice` (polling di GET /local/jobs filtrato per id). Se si chiude senza scegliere,
- * il lavoro resta nell'elenco dei lavori in attesa.
+ * il lavoro resta nell'elenco dei lavori in attesa. `maxTokens`: tetto dell'analisi, per la stima della riserva.
  */
-export function LocalChoiceDialog({ analysisId, runId }: { analysisId?: number; runId?: number }) {
+export function LocalChoiceDialog({ analysisId, runId, maxTokens }: { analysisId?: number; runId?: number; maxTokens?: number }) {
   const [dismissed, setDismissed] = useState<number | null>(null);
   const jobs = useLocalJobs(analysisId !== undefined || runId !== undefined);
   const job = jobs.data?.find(
@@ -109,7 +114,7 @@ export function LocalChoiceDialog({ analysisId, runId }: { analysisId?: number; 
               Usa il modello di riserva
             </Button>
             {hasFallback ? (
-              <FallbackEstimate job={job} />
+              <FallbackEstimate job={job} maxTokens={maxTokens} />
             ) : (
               <span className="block text-xs text-muted-foreground">Nessun modello di riserva impostato.</span>
             )}

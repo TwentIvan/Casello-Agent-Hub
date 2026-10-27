@@ -16,7 +16,8 @@ import {
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
 import { chooseForJob, listOpenJobs, LocalJobError, toPublicJob } from "../lib/local/jobs";
-import { listMachines, registerMachine, revokeMachine, toPublicMachine } from "../lib/local/machines";
+import { listMachines, registerMachine, toPublicMachine } from "../lib/local/machines";
+import { revokeLocalMachine } from "../lib/local/revoke";
 import { newToken } from "../lib/local/tokens";
 import { parseRequest } from "../middlewares/error-handler";
 
@@ -63,7 +64,7 @@ export function createLocalRouter(): IRouter {
 
   router.delete("/local/machines/:id", async (req, res) => {
     const { id } = parseRequest(RevokeLocalMachineParams, req.params);
-    if (!(await revokeMachine(currentUserId(req), id))) {
+    if (!(await revokeLocalMachine(currentUserId(req), id))) {
       res.status(404).json({ error: MACHINE_NOT_FOUND });
       return;
     }

@@ -220,6 +220,21 @@ describe("autenticazione di /api/mcp", () => {
     expect(res.json).toEqual({ error: "lavoro scaduto" });
   });
 
+  it("revoca della macchina dalla console: il token del lavoro in corso → 401 e il lavoro è chiuso", async () => {
+    const userId = await devUserId();
+    const { machineId, token: machineToken } = await registerMachine();
+    const { job, jobToken } = await runnerJob(userId, machineId);
+    expect((await call("POST", "/mcp", { token: jobToken, body: INITIALIZE })).status).toBe(200);
+
+    expect((await call("DELETE", `/local/machines/${machineId}`)).status).toBe(204);
+
+    const res = await call("POST", "/mcp", { token: jobToken, body: INITIALIZE });
+    expect(res.status).toBe(401);
+    const [row] = await db.select().from(localJobsTable).where(eq(localJobsTable.id, job.id));
+    expect(row).toMatchObject({ status: "failed", error: "macchina non disponibile" });
+    expect((await call("POST", `/runner/jobs/${job.id}/heartbeat`, { token: machineToken })).status).toBe(401);
+  });
+
   it("il token di un lavoro chiuso non conta per il limite delle autenticazioni fallite", async () => {
     const userId = await devUserId();
     const { machineId } = await registerMachine();

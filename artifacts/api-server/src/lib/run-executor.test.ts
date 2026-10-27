@@ -37,6 +37,7 @@ import { callTool, startFakeRunner, waitConnected, type FakeRunner } from "../..
 import { ensureProviderRegistry } from "./catalog/provider-registry";
 import { chooseForJob, failOpenLocalJobs, setLocalJobTimings } from "./local/jobs";
 import { machineModelId, registerMachine } from "./local/machines";
+import { revokeLocalMachine } from "./local/revoke";
 
 // Finto LiteLLM: risposte in coda, una per chiamata
 let llmReplies: unknown[];
@@ -1080,6 +1081,68 @@ describe("run con l'agente locale", () => {
 
     expect((await getRun(id)).status).toBe("cancelled");
     expect((await jobsOf(id))[0]).toMatchObject({ status: "cancelled", error: "Conferma non arrivata entro 10 minuti." });
+  });
+
+  it("revoca della macchina durante la run: lavoro chiuso, run failed 'macchina non disponibile', nessun tool eseguito dopo", async () => {
+    const id = await seedLocalRun([GET_ITEM]);
+    const replies: { text: string; isError: boolean }[] = [];
+    await startLocalRunner(async (_d, client) => {
+      await revokeLocalMachine(ownerId, machineId);
+      replies.push(await callTool(client, "get_item", { id: "1" }).catch(() => ({ text: "errore", isError: true })));
+      return {};
+    });
+
+    await startRun(id, { userToken: "t", startedBy: ownerId });
+    await waitFor(() => replies.length === 1);
+
+    const run = await getRun(id);
+    expect(run.status).toBe("failed");
+    expect(run.errorMessage).toBe("macchina non disponibile");
+    expect((await jobsOf(id))[0]).toMatchObject({ status: "failed", error: "macchina non disponibile" });
+    expect(replies[0]!.isError).toBe(true);
+    expect(appRequests).toHaveLength(0);
+  });
+
+  it("revoca della macchina con la run in pausa: run failed e lavoro chiuso, la conferma non esegue nulla", async () => {
+    const id = await seedLocalRun([DELETE_ITEM]);
+    await startLocalRunner(async (_d, client) => {
+      await callTool(client, "delete_item", { id: "42" });
+      return {};
+    });
+    await startRun(id, { userToken: "t", startedBy: ownerId });
+    expect((await getRun(id)).status).toBe("awaiting_client");
+
+    expect(await revokeLocalMachine(ownerId, machineId)).toBe(true);
+
+    const run = await getRun(id);
+    expect(run).toMatchObject({ status: "failed", errorMessage: "macchina non disponibile", pendingAction: null, loopState: null });
+    expect((await jobsOf(id))[0]).toMatchObject({ status: "failed", error: "macchina non disponibile" });
+    await expect(resumeRun(id, "approved")).rejects.toBeInstanceOf(ResumeConflictError);
+    expect(appRequests).toHaveLength(0);
+  });
+
+  it("revoca della macchina con la run in attesa della scelta: run failed 'macchina non disponibile'", async () => {
+    const id = await seedLocalRun([GET_ITEM]);
+    const running = startRun(id, { startedBy: ownerId });
+    let job = (await jobsOf(id))[0];
+    for (let i = 0; i < 200 && job?.status !== "waiting_choice"; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+      job = (await jobsOf(id))[0];
+    }
+    expect(job?.status).toBe("waiting_choice");
+
+    await revokeLocalMachine(ownerId, machineId);
+    await running;
+
+    expect(await getRun(id)).toMatchObject({ status: "failed", errorMessage: "macchina non disponibile" });
+    expect((await jobsOf(id))[0]).toMatchObject({ status: "failed", error: "macchina non disponibile" });
+    expect(llmRequests).toHaveLength(0);
+  });
+
+  it("revoca di una macchina altrui: nulla cambia", async () => {
+    expect(await revokeLocalMachine(otherId, machineId)).toBe(false);
+    const [m] = await db.select().from(localMachinesTable).where(eq(localMachinesTable.id, machineId));
+    expect(m!.revokedAt).toBeNull();
   });
 
   it("proprietario con runner non collegato: la console sceglie la riserva", async () => {

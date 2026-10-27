@@ -18,6 +18,7 @@ import {
   awaitDispatch,
   chooseForJob,
   claimJob,
+  closeMachineJobs,
   completeItem,
   createLocalJob,
   failOpenLocalJobs,
@@ -465,6 +466,43 @@ describe("chiusura dei lavori", () => {
     expect(await jobByToken(jobToken.replace("csl_j_", "csl_m_"))).toBeNull();
     await finishLocalJob(job.id, "completed");
     expect(await jobByToken(jobToken)).toBeNull();
+  });
+
+  it("jobByToken: macchina revocata → null anche con il lavoro ancora aperto", async () => {
+    const job = await runJob();
+    const { jobToken } = await claimJob(job.id, { by: "runner", machineId });
+    expect((await jobByToken(jobToken))?.id).toBe(job.id);
+    await db.update(localMachinesTable).set({ revokedAt: new Date() }).where(eq(localMachinesTable.id, machineId));
+    expect(await jobByToken(jobToken)).toBeNull();
+  });
+
+  it("closeMachineJobs: tutti gli aperti della macchina → failed 'macchina non disponibile'; runItem e awaitDispatch si svegliano", async () => {
+    await connect();
+    const job = await runJob();
+    const runner = nextForMachine(machineId, signal());
+    expect(await awaitDispatch(job.id, signal())).toEqual({ kind: "local" });
+    const item = runItem(job.id, { prompt: "p", resume: false }, signal());
+    const delivery = (await runner)!;
+    // Un lavoro non ancora preso, in attesa della scelta della console
+    await db.update(localMachinesTable).set({ lastSeenAt: null }).where(eq(localMachinesTable.id, machineId));
+    const waiting = await analysisJob();
+    const dispatch = awaitDispatch(waiting.id, signal());
+    await waitStatus(waiting.id, "waiting_choice");
+    const done = await runJob();
+    await finishLocalJob(done.id, "completed");
+    const otherMachine = await newMachine(userId, "PC");
+    const other = await runJob({ machineId: otherMachine });
+
+    const closed = await closeMachineJobs(machineId);
+
+    expect(closed.map((j) => j.id).sort()).toEqual([job.id, waiting.id].sort());
+    await expect(item).rejects.toThrow("macchina non disponibile");
+    expect(await dispatch).toEqual({ kind: "cancelled", error: "macchina non disponibile" });
+    expect(await jobRow(job.id)).toMatchObject({ status: "failed", error: "macchina non disponibile" });
+    expect(await jobRow(waiting.id)).toMatchObject({ status: "failed", error: "macchina non disponibile" });
+    expect((await jobRow(done.id)).status).toBe("completed");
+    expect((await jobRow(other.id)).status).toBe("queued");
+    expect(await jobByToken(delivery.jobToken)).toBeNull();
   });
 
   it("jobByToken: token scaduto → null", async () => {

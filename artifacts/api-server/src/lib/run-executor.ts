@@ -841,6 +841,21 @@ export async function expireStalePausedRuns(now: Date = new Date()): Promise<num
 }
 
 /**
+ * Run in pausa dei lavori dell'agente locale chiusi da fuori (macchina revocata): falliscono con il messaggio fisso
+ * del lavoro, senza stato né azione in sospeso, così la conferma non esegue più nulla. Restituisce quante ne ha chiuse.
+ */
+export async function failPausedLocalRuns(runIds: number[], message: string): Promise<number> {
+  if (runIds.length === 0) return 0;
+  const closed = await db
+    .update(runsTable)
+    .set({ status: "failed", errorMessage: message, loopState: null, pendingAction: null, pausedAt: null, finishedAt: new Date() })
+    .where(and(inArray(runsTable.id, runIds), eq(runsTable.status, "awaiting_client")))
+    .returning({ id: runsTable.id });
+  for (const { id } of closed) clearUserToken(id);
+  return closed.length;
+}
+
+/**
  * Le run girano nel processo dell'API: se il processo si riavvia (deploy, crash) quelle in corso non
  * finiranno mai. All'avvio si chiudono come fallite, così la UI non le mostra "in corso" per sempre.
  */

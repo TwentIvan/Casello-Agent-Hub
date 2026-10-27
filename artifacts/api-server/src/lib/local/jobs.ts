@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, gt, inArray, isNotNull, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db, localJobsTable, localMachinesTable, type LocalJob, type LocalJobCurrentItem } from "@workspace/db";
 import { FALLBACK_REQUIRED } from "../ai/choice";
 import { CONNECTED_WINDOW_MS, isMachineActive } from "./machines";
@@ -36,6 +36,7 @@ const QUEUE_MESSAGES: ReadonlySet<string> = new Set([
   RESTARTED,
   LOCAL_DISCONNECTED,
   LOCAL_NOT_CONNECTED,
+  MACHINE_UNAVAILABLE,
 ]);
 
 /** Errore della coda con un messaggio fisso (da riportare così com'è nella run o nell'analisi). */
@@ -665,18 +666,21 @@ export async function touchJob(jobId: number): Promise<void> {
  */
 export async function jobByToken(token: string): Promise<LocalJob | null> {
   if (tokenKind(token) !== "job") return null;
-  const [job] = await db
-    .select()
+  // Con la macchina revocata il token non vale più, anche se il lavoro non è (ancora) chiuso
+  const [row] = await db
+    .select({ job: localJobsTable })
     .from(localJobsTable)
+    .innerJoin(localMachinesTable, eq(localJobsTable.machineId, localMachinesTable.id))
     .where(
       and(
         eq(localJobsTable.jobTokenHash, hashToken(token)),
         inArray(localJobsTable.status, CLAIMED),
         gt(localJobsTable.jobTokenExpiresAt, new Date()),
+        isNull(localMachinesTable.revokedAt),
       ),
     )
     .limit(1);
-  return job ?? null;
+  return row?.job ?? null;
 }
 
 /**
@@ -704,6 +708,25 @@ export async function expireLocalJobs(): Promise<number> {
     forgetJob(id);
   }
   return rows.length;
+}
+
+/**
+ * Macchina revocata: tutti i suoi lavori aperti falliscono con "macchina non disponibile" (i token di lavoro smettono
+ * subito di valere). Chi attende (`awaitDispatch`, `runItem`) si risveglia e chiude run e analisi con lo stesso
+ * messaggio; le run in pausa le chiude chi revoca. Restituisce i lavori chiusi.
+ */
+export async function closeMachineJobs(machineId: number): Promise<Array<{ id: number; runId: number | null; analysisId: number | null }>> {
+  const rows = await db
+    .update(localJobsTable)
+    .set({ status: "failed", error: MACHINE_UNAVAILABLE, updatedAt: new Date() })
+    .where(and(eq(localJobsTable.machineId, machineId), inArray(localJobsTable.status, OPEN)))
+    .returning({ id: localJobsTable.id, runId: localJobsTable.runId, analysisId: localJobsTable.analysisId });
+  for (const { id } of rows) {
+    notify(jobKey(id));
+    forgetJob(id);
+  }
+  if (rows.length > 0) notify(machineKey(machineId));
+  return rows;
 }
 
 /** Avvio: i lavori aperti sono stati interrotti dal riavvio (run e analisi le chiudono i loro controlli). */

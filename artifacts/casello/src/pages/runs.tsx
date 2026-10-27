@@ -12,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { LocalJobsList } from "@/components/local/local-jobs-list";
 import { RUN_STATUS_LABELS, RunStatusBadge } from "@/components/run-status-badge";
 import { listRefetchInterval } from "@/components/runs/run-queries";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -61,6 +62,8 @@ export default function RunsPage() {
         <h2 className="text-2xl font-semibold tracking-tight">Run</h2>
         <p className="text-sm text-muted-foreground">Le esecuzioni degli agenti, dalla più recente.</p>
       </div>
+
+      <LocalJobsList />
 
       <div className="flex flex-wrap gap-3">
         <Select value={agentFilter} onValueChange={(value) => setFilter("agentId", value)}>

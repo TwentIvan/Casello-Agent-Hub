@@ -32,3 +32,10 @@ export function invalidateAiQueries(queryClient: QueryClient) {
     predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/ai/"),
   });
 }
+
+/** Vero se il modello scelto è una macchina dell'agente locale (obbliga a scegliere anche la riserva). */
+export function useIsLocalModel(aiModelId: number | null | undefined): boolean {
+  const groups = useAiModelGroups();
+  if (aiModelId == null) return false;
+  return groups.data?.some((g) => g.account.isLocal && g.models.some((m) => m.id === aiModelId)) ?? false;
+}

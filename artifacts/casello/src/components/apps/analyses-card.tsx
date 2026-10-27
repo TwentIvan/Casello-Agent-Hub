@@ -17,9 +17,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useDefaultAiModelId } from "@/components/ai/ai-queries";
+import { useDefaultAiModelId, useIsLocalModel } from "@/components/ai/ai-queries";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { phaseLabel } from "@/components/analysis/payload";
+import { LocalChoiceDialog } from "@/components/local/local-choice-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatCost, formatUsd } from "@/lib/format";
@@ -59,11 +60,15 @@ export function AnalysesCard({ app }: { app: App }) {
   const { toast } = useToast();
   const defaultModelId = useDefaultAiModelId();
   const [chosenModelId, setChosenModelId] = useState<number | null>(null);
+  const [fallbackModelId, setFallbackModelId] = useState<number | null>(null);
   const [maxTokensText, setMaxTokensText] = useState(String(DEFAULT_MAX_TOKENS));
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const isZip = app.sourceType === "zip";
   const aiModelId = chosenModelId ?? defaultModelId;
+  // Con un modello dell'agente locale serve la riserva (solo modelli API)
+  const isLocal = useIsLocalModel(aiModelId);
+  const fallbackRequired = isLocal && fallbackModelId === null;
 
   const analyses = useListAnalyses(app.id, {
     query: {
@@ -102,6 +107,8 @@ export function AnalysesCard({ app }: { app: App }) {
   const maxTokens = Number(maxTokensText);
   const tokensValid = Number.isInteger(maxTokens) && maxTokens >= MIN_TOKENS && maxTokens <= MAX_TOKENS;
   const hasActive = analyses.data?.some(isActive) ?? false;
+  // Analisi in corso: se il suo lavoro locale aspetta una scelta, compare la finestra
+  const activeAnalysisId = analyses.data?.find(isActive)?.id;
 
   const estimateParams = { aiModelId: aiModelId ?? 0, maxTokens };
   const estimate = useEstimateAnalysisCost(estimateParams, {
@@ -135,16 +142,17 @@ export function AnalysesCard({ app }: { app: App }) {
   };
 
   const start = () => {
-    if (aiModelId === null || !tokensValid) return;
+    if (aiModelId === null || !tokensValid || fallbackRequired) return;
+    const fallback = isLocal && fallbackModelId !== null ? { fallbackAiModelId: fallbackModelId } : {};
     if (isZip) {
       if (!file) return;
-      startZip.mutate({ id: app.id, data: file, params: { aiModelId, maxTokens } });
+      startZip.mutate({ id: app.id, data: file, params: { aiModelId, maxTokens, ...fallback } });
     } else {
-      startAnalysis.mutate({ id: app.id, data: { aiModelId, maxTokens } });
+      startAnalysis.mutate({ id: app.id, data: { aiModelId, maxTokens, ...fallback } });
     }
   };
 
-  const canStart = aiModelId !== null && tokensValid && (!isZip || file !== null) && !starting;
+  const canStart = aiModelId !== null && tokensValid && !fallbackRequired && (!isZip || file !== null) && !starting;
 
   return (
     <Card>
@@ -179,6 +187,15 @@ export function AnalysesCard({ app }: { app: App }) {
             )}
           </div>
         </div>
+        {isLocal && (
+          <div className="space-y-2">
+            <Label htmlFor="analysis-fallback-model">Modello di riserva</Label>
+            <ModelPicker id="analysis-fallback-model" apiOnly value={fallbackModelId} onChange={setFallbackModelId} />
+            <p className="text-xs text-muted-foreground">
+              Obbligatorio con l'agente locale: si usa se la macchina non è collegata o l'analisi non può continuare lì.
+            </p>
+          </div>
+        )}
         {isZip && (
           <div className="space-y-2">
             <Label htmlFor="analysis-zip">Archivio zip del codice</Label>
@@ -244,6 +261,7 @@ export function AnalysesCard({ app }: { app: App }) {
           )}
         </div>
       </CardContent>
+      {activeAnalysisId !== undefined && <LocalChoiceDialog analysisId={activeAnalysisId} />}
     </Card>
   );
 }

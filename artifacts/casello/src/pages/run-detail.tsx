@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Link, useParams } from "wouter";
+import { Link, useLocation, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, ArrowLeft } from "lucide-react";
 import {
@@ -10,15 +10,20 @@ import {
   getListRunsQueryKey,
   useGetAgent,
   useGetRun,
+  useRetryRunFallback,
 } from "@workspace/api-client-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { useIsLocalModel } from "@/components/ai/ai-queries";
+import { LocalChoiceDialog } from "@/components/local/local-choice-dialog";
 import { RunStatusBadge } from "@/components/run-status-badge";
 import { ConfirmationCard } from "@/components/runs/confirmation-card";
 import { RunSteps } from "@/components/runs/run-steps";
 import { isRunActive } from "@/components/runs/run-queries";
+import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatCost, formatDuration, formatRelative } from "@/lib/format";
 
@@ -32,6 +37,8 @@ export default function RunDetailPage() {
   const params = useParams<{ id: string }>();
   const runId = Number(params.id);
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
 
   const run = useGetRun(runId, {
     query: {
@@ -43,6 +50,20 @@ export default function RunDetailPage() {
   });
   const agentId = run.data?.agentId ?? 0;
   const agent = useGetAgent(agentId, { query: { queryKey: getGetAgentQueryKey(agentId), enabled: agentId > 0 } });
+
+  // Run fallita sull'agente locale: si può riprovare con il modello di riserva dell'agente
+  const agentIsLocal = useIsLocalModel(agent.data?.aiModelId);
+  const retryFallback = useRetryRunFallback({
+    mutation: {
+      onSuccess: (newRun) => {
+        void queryClient.invalidateQueries({ queryKey: getListRunsQueryKey() });
+        void queryClient.invalidateQueries({ queryKey: getGetDashboardStatsQueryKey() });
+        navigate(`/runs/${newRun.id}`);
+      },
+      onError: (error) =>
+        toast({ variant: "destructive", title: "Impossibile riprovare", description: apiErrorMessage(error) }),
+    },
+  });
 
   // Quando la run finisce, liste e statistiche altrove sono da aggiornare.
   const wasActive = useRef(false);
@@ -147,6 +168,7 @@ export default function RunDetailPage() {
       </Card>
 
       <RunSteps run={r} />
+      {active && <LocalChoiceDialog runId={r.id} />}
 
       {r.status === "awaiting_client" ? (
         r.pendingAction ? (
@@ -180,6 +202,18 @@ export default function RunDetailPage() {
           <AlertTitle>Run fallita</AlertTitle>
           <AlertDescription className="whitespace-pre-wrap break-words">
             {r.errorMessage || "Errore sconosciuto."}
+            {agentIsLocal && agent.data?.fallbackAiModelId != null && (
+              <span className="mt-3 block">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={retryFallback.isPending}
+                  onClick={() => retryFallback.mutate({ id: r.id })}
+                >
+                  {retryFallback.isPending ? "Avvio…" : "Riprova con il modello di riserva"}
+                </Button>
+              </span>
+            )}
           </AlertDescription>
         </Alert>
       ) : (

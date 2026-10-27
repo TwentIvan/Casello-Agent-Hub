@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import {
   type Agent,
+  LocalOfflinePolicy,
   ToolIdentity,
   ApiError,
   getGetAgentQueryKey,
@@ -25,7 +26,9 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useIsLocalModel } from "@/components/ai/ai-queries";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { AgentRoleBadge } from "@/components/agents/agent-role-badge";
 import { AgentToolsSection } from "@/components/agents/agent-tools-section";
@@ -37,10 +40,20 @@ import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { TOOL_IDENTITY_LABELS } from "@/lib/tool-labels";
 
+const LOCAL_POLICY_LABELS: Record<LocalOfflinePolicy, string> = {
+  fallback: "Usa subito il modello di riserva",
+  wait_then_fallback: "Attendi qualche secondo, poi il modello di riserva",
+  postpone: "Posticipa la run finché l'agente locale si collega",
+};
+
 const agentSchema = z.object({
   name: z.string().trim().min(1, "Il nome è obbligatorio."),
   systemPrompt: z.string(),
   aiModelId: z.number().nullable(),
+  fallbackAiModelId: z.number().nullable(),
+  localOfflinePolicy: z.enum(["fallback", "wait_then_fallback", "postpone"]),
+  localOfflineWaitS: z.string().refine((v) => Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 600, "Da 1 a 600 secondi."),
+  localForThirdParties: z.boolean(),
   status: z.enum(["active", "inactive", "draft"]),
   area: z.string(),
   defaultIdentity: z.enum(["user", "service"]),
@@ -53,6 +66,10 @@ function toValues(agent: Agent): AgentValues {
     name: agent.name,
     systemPrompt: agent.systemPrompt ?? "",
     aiModelId: agent.aiModelId,
+    fallbackAiModelId: agent.fallbackAiModelId,
+    localOfflinePolicy: agent.localOfflinePolicy,
+    localOfflineWaitS: String(agent.localOfflineWaitS),
+    localForThirdParties: agent.localForThirdParties,
     status: agent.status,
     area: agent.area ?? "",
     defaultIdentity: agent.defaultIdentity,
@@ -79,7 +96,14 @@ function AgentConfigForm({ agent }: { agent: Agent }) {
   });
 
   const isGeneral = agent.role === "general";
-  const onSubmit = ({ area, aiModelId, ...values }: AgentValues) =>
+  const watchedModelId = form.watch("aiModelId");
+  const isLocal = useIsLocalModel(watchedModelId);
+  const policy = form.watch("localOfflinePolicy");
+  const onSubmit = ({ area, aiModelId, fallbackAiModelId, localOfflineWaitS, ...values }: AgentValues) => {
+    if (isLocal && fallbackAiModelId === null) {
+      form.setError("fallbackAiModelId", { message: "Il modello di riserva è obbligatorio con l'agente locale." });
+      return;
+    }
     updateAgent.mutate({
       id: agent.id,
       data: {
@@ -87,10 +111,13 @@ function AgentConfigForm({ agent }: { agent: Agent }) {
         // Il modello si manda solo se è cambiato: un agente configurato da altri resta sul suo.
         ...(aiModelId !== null && aiModelId !== agent.aiModelId ? { aiModelId } : {}),
         systemPrompt: values.systemPrompt.trim() ? values.systemPrompt : null,
+        // La riserva e il tempo di attesa servono solo con l'agente locale
+        ...(isLocal ? { fallbackAiModelId, localOfflineWaitS: Number(localOfflineWaitS) } : {}),
         // L'area è solo degli agenti di area: il generale non la manda.
         ...(isGeneral ? {} : { area: area.trim() ? area.trim() : null }),
       },
     });
+  };
 
   return (
     <Card>
@@ -181,6 +208,86 @@ function AgentConfigForm({ agent }: { agent: Agent }) {
                 )}
               />
             </div>
+            {isLocal && (
+              <div className="space-y-4 rounded-md border p-4">
+                <FormField
+                  control={form.control}
+                  name="fallbackAiModelId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Modello di riserva</FormLabel>
+                      <FormControl>
+                        <ModelPicker apiOnly value={field.value} onChange={field.onChange} />
+                      </FormControl>
+                      <FormDescription>
+                        Obbligatorio con l'agente locale: solo modelli API dei tuoi account o del sistema.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="localOfflinePolicy"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Se l'agente locale non è collegato</FormLabel>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {Object.values(LocalOfflinePolicy).map((value) => (
+                              <SelectItem key={value} value={value}>
+                                {LOCAL_POLICY_LABELS[value]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>Vale per le run avviate dalle app; dalla console chiedo ogni volta.</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  {policy === "wait_then_fallback" && (
+                    <FormField
+                      control={form.control}
+                      name="localOfflineWaitS"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Attesa (secondi)</FormLabel>
+                          <FormControl>
+                            <Input type="number" min={1} max={600} {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                </div>
+                <FormField
+                  control={form.control}
+                  name="localForThirdParties"
+                  render={({ field }) => (
+                    <FormItem className="flex items-start justify-between gap-4 space-y-0">
+                      <div className="space-y-1">
+                        <FormLabel>Consenti per le run di altri utenti</FormLabel>
+                        <FormDescription>
+                          Spento: le run di altri utenti vanno sul modello di riserva. Attivandolo il tuo abbonamento
+                          Claude lavora per terzi: verifica che i termini dell'abbonamento lo consentano.
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               {!isGeneral && (
                 <FormField

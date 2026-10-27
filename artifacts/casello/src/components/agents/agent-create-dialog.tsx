@@ -25,7 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { ModelPicker } from "@/components/ai/model-picker";
-import { useDefaultAiModelId } from "@/components/ai/ai-queries";
+import { useDefaultAiModelId, useIsLocalModel } from "@/components/ai/ai-queries";
 
 const agentCreateSchema = z.object({
   name: z.string().trim().min(1, "Il nome è obbligatorio."),
@@ -36,6 +36,7 @@ const agentCreateSchema = z.object({
     .superRefine((value, ctx) => {
       if (value === null) ctx.addIssue({ code: "custom", message: "Scegli un modello." });
     }),
+  fallbackAiModelId: z.number().nullable(),
 });
 
 type AgentCreateValues = z.infer<typeof agentCreateSchema>;
@@ -56,7 +57,12 @@ export function AgentCreateDialog({ open, onOpenChange, apps, defaultAppId }: Ag
   const defaultModelId = useDefaultAiModelId();
   const form = useForm<AgentCreateValues>({
     resolver: zodResolver(agentCreateSchema),
-    defaultValues: { name: "", appId: defaultAppId ? String(defaultAppId) : "", aiModelId: defaultModelId },
+    defaultValues: {
+      name: "",
+      appId: defaultAppId ? String(defaultAppId) : "",
+      aiModelId: defaultModelId,
+      fallbackAiModelId: null,
+    },
   });
 
   // I modelli possono arrivare dopo l'apertura: si preimposta il primo dell'account predefinito appena noto.
@@ -78,10 +84,22 @@ export function AgentCreateDialog({ open, onOpenChange, apps, defaultAppId }: Ag
     },
   });
 
-  const onSubmit = (values: AgentCreateValues) =>
+  const isLocal = useIsLocalModel(form.watch("aiModelId"));
+  const onSubmit = (values: AgentCreateValues) => {
+    if (isLocal && values.fallbackAiModelId === null) {
+      form.setError("fallbackAiModelId", { message: "Il modello di riserva è obbligatorio con l'agente locale." });
+      return;
+    }
     createAgent.mutate({
-      data: { name: values.name, appId: Number(values.appId), aiModelId: values.aiModelId, status: "draft" },
+      data: {
+        name: values.name,
+        appId: Number(values.appId),
+        aiModelId: values.aiModelId,
+        ...(isLocal ? { fallbackAiModelId: values.fallbackAiModelId } : {}),
+        status: "draft",
+      },
     });
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -145,6 +163,22 @@ export function AgentCreateDialog({ open, onOpenChange, apps, defaultAppId }: Ag
                 </FormItem>
               )}
             />
+            {isLocal && (
+              <FormField
+                control={form.control}
+                name="fallbackAiModelId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Modello di riserva</FormLabel>
+                    <FormControl>
+                      <ModelPicker apiOnly value={field.value} onChange={field.onChange} />
+                    </FormControl>
+                    <FormDescription>Obbligatorio con l'agente locale; solo modelli API.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Annulla

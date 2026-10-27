@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import type { AiModel } from "@workspace/api-client-react";
+import { type AiModel, getListLocalMachinesQueryKey, useListLocalMachines } from "@workspace/api-client-react";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,8 @@ interface ModelPickerProps {
   value: number | null;
   onChange: (id: number | null) => void;
   disabled?: boolean;
+  /** Solo i modelli API: esclude le macchine dell'agente locale (es. per il modello di riserva). */
+  apiOnly?: boolean;
   /** Passati al trigger (es. da FormControl o per un Label con htmlFor). */
   id?: string;
   "aria-describedby"?: string;
@@ -32,7 +34,18 @@ interface ModelPickerProps {
 }
 
 /** Voce della lista: nome, id, prezzo e, se non noto, il "?" sul supporto agli strumenti. */
-function ModelItem({ model, selected, onPick }: { model: AiModel; selected: boolean; onPick: () => void }) {
+function ModelItem({
+  model,
+  selected,
+  onPick,
+  connection,
+}: {
+  model: AiModel;
+  selected: boolean;
+  onPick: () => void;
+  /** Stato della macchina, solo per i modelli dell'agente locale. */
+  connection?: boolean;
+}) {
   return (
     <CommandItem value={`${model.displayName} ${model.modelId} #${model.id}`} onSelect={onPick}>
       <Check className={cn("size-4", selected ? "opacity-100" : "opacity-0")} />
@@ -43,6 +56,12 @@ function ModelItem({ model, selected, onPick }: { model: AiModel; selected: bool
           {" · "}
           {formatModelPrice(model.priceInput, model.priceOutput)}
         </span>
+        {connection !== undefined && (
+          <span className={cn("ml-1 text-xs", connection ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground")}>
+            {" · "}
+            {connection ? "collegata" : "non collegata"}
+          </span>
+        )}
         {model.supportsTools === null && (
           <span className="ml-1 text-xs text-muted-foreground" title="supporto agli strumenti non noto">
             ?
@@ -58,8 +77,9 @@ function ModelItem({ model, selected, onPick }: { model: AiModel; selected: bool
  * tra quelli dell'utente (agente configurato da altri, modello nascosto o account di sistema dismesso) resta
  * come voce disabilitata, così il valore non si perde.
  */
-export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPickerProps) {
+export function ModelPicker({ value, onChange, disabled, apiOnly, id, ...aria }: ModelPickerProps) {
   const groups = useAiModelGroups();
+  const machines = useListLocalMachines({ query: { queryKey: getListLocalMachinesQueryKey(), refetchInterval: 10_000 } });
   // null: nessuna scelta dell'utente, il gruppo "Altri modelli" è aperto se contiene il valore corrente
   const [othersToggled, setOthersToggled] = useState<boolean | null>(null);
   const [open, setOpen] = useState(false);
@@ -69,7 +89,13 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
   }
   if (!groups.data) return <Skeleton className="h-9 w-full" />;
 
-  const data = groups.data;
+  const data = apiOnly ? groups.data.filter((g) => !g.account.isLocal) : groups.data;
+  // Stato "collegata" di una macchina: il suo modello ha id `machine-<id>`
+  const connectionOf = (model: AiModel, isLocal: boolean): boolean | undefined => {
+    if (!isLocal) return undefined;
+    const machine = machines.data?.find((m) => `machine-${m.id}` === model.modelId);
+    return machine?.connected ?? false;
+  };
   // Solo i modelli selezionabili; quelli disponibili ma senza strumenti vanno in "Altri modelli"
   const main = data.map((g) => ({ group: g, models: g.models.filter((m) => m.selectable && m.supportsTools !== false) }));
   const others = data.flatMap((g) => g.models.filter((m) => m.status === "available" && m.supportsTools === false));
@@ -155,12 +181,19 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
                       <span className="flex items-center gap-2">
                         <span className="truncate">{group.account.name}</span>
                         {group.account.isSystem && <Badge variant="secondary">sistema</Badge>}
+                        {group.account.isLocal && <Badge variant="secondary">agente locale</Badge>}
                         {group.account.status === "error" && <Badge variant="destructive">errore</Badge>}
                       </span>
                     }
                   >
                     {models.map((model) => (
-                      <ModelItem key={model.id} model={model} selected={model.id === value} onPick={() => pick(model.id)} />
+                      <ModelItem
+                        key={model.id}
+                        model={model}
+                        selected={model.id === value}
+                        onPick={() => pick(model.id)}
+                        connection={connectionOf(model, group.account.isLocal)}
+                      />
                     ))}
                   </CommandGroup>
                 ))}

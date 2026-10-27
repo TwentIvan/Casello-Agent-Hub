@@ -2,7 +2,7 @@ import { Router, type IRouter, type RequestHandler, type Response } from "expres
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db, localMachinesTable } from "@workspace/db";
-import { heartbeatJob, JOB_NOT_FOUND, LocalJobError, nextForMachine, reportItemDone } from "../lib/local/jobs";
+import { heartbeatJob, JOB_NOT_FOUND, LocalJobError, nextForMachine, reportItemDone, undeliverItem } from "../lib/local/jobs";
 import { hashToken, tokenKind } from "../lib/local/tokens";
 import { parseRequest } from "../middlewares/error-handler";
 import { rateLimit } from "../middlewares/rate-limit";
@@ -67,13 +67,22 @@ export function createRunnerRouter(): IRouter {
   // 60 richieste al minuto per macchina (attesa lunga, segnali di vita e fine dei compiti insieme)
   router.use(rateLimit({ limit: 60, windowMs: 60_000, key: (_req, res) => `machine:${machineIdOf(res)}` }));
 
-  // Attesa lunga: 204 se allo scadere non c'è nulla da fare. La richiesta chiusa dal runner interrompe l'attesa.
+  // Attesa lunga: 204 se allo scadere non c'è nulla da fare. La richiesta chiusa dal runner interrompe l'attesa;
+  // un compito consegnato a una richiesta chiusa prima della risposta torna in attesa di consegna.
   router.get("/next", async (req, res) => {
     const abort = new AbortController();
-    res.on("close", () => abort.abort());
-    const delivery = await nextForMachine(machineIdOf(res), abort.signal);
+    let delivery: Awaited<ReturnType<typeof nextForMachine>> = null;
+    res.on("close", () => {
+      abort.abort();
+      if (delivery && !res.writableFinished) void undeliverItem(delivery.jobId, delivery.itemId).catch(() => {});
+    });
+    delivery = await nextForMachine(machineIdOf(res), abort.signal);
     if (!delivery) {
       if (!res.headersSent && !abort.signal.aborted) res.status(204).end();
+      return;
+    }
+    if (abort.signal.aborted) {
+      await undeliverItem(delivery.jobId, delivery.itemId);
       return;
     }
     res.json({ ...delivery, mcpUrl: mcpUrl(req) });

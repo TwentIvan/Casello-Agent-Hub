@@ -21,6 +21,7 @@ export const JOB_EXPIRED = "lavoro scaduto";
 export const JOB_NOT_FOUND = "lavoro non trovato";
 const JOB_CANCELLED = "lavoro annullato";
 const NOT_WAITING = "il lavoro non è in attesa di una scelta";
+const ITEM_REPLACED = "compito non più in corso";
 const RESTARTED = "interrotto dal riavvio";
 // Il lavoro non serve più: la run o l'analisi prosegue col modello di riserva
 const FALLBACK_CHOSEN = "eseguito con il modello di riserva";
@@ -42,6 +43,7 @@ type JobStatus = LocalJob["status"];
 const UNCLAIMED: JobStatus[] = ["queued", "waiting_choice", "postponed"];
 const CLAIMED: JobStatus[] = ["claimed", "running", "paused"];
 const OPEN: JobStatus[] = [...UNCLAIMED, ...CLAIMED];
+const ENDED: JobStatus[] = ["completed", "failed", "cancelled"];
 
 export type LocalJobTimings = {
   /** Runner "collegato": segnale di vita della macchina entro questo tempo. */
@@ -135,8 +137,11 @@ function waitForChange(snap: Snapshot, ms: number, signal?: AbortSignal): Promis
 
 export type OfflinePolicy = { kind: "fallback" | "wait_then_fallback" | "postpone"; waitS: number };
 
-/** Scadenza di un lavoro non ancora preso e cosa fare allo scadere. */
-type Pending = { deadline: number; onExpire: "offline" | "fail" | "fallback" };
+/**
+ * Scadenza di un lavoro non ancora preso e cosa fare allo scadere: regole offline, `failed` ("attendi" e finestra
+ * della scelta), `cancelled` ("posticipa"), riserva.
+ */
+type Pending = { deadline: number; onExpire: "offline" | "fail" | "cancel" | "fallback" };
 
 const pending = new Map<number, Pending>();
 const policies = new Map<number, OfflinePolicy>();
@@ -154,9 +159,11 @@ const activeItems = new Map<string, { jobId: number; result: ItemResult | null }
 // Compiti del runner chiusi dal consumatore prima del done: il done arriva dopo e porta la sessione da riprendere
 const lingeringItems = new Map<string, number>();
 
+/** Lavoro finito: libera tutto lo stato in memoria (chi attendeva è già stato notificato). */
 function forgetJob(jobId: number): void {
   pending.delete(jobId);
   policies.delete(jobId);
+  versions.delete(jobKey(jobId));
   for (const [itemId, id] of lingeringItems) if (id === jobId) lingeringItems.delete(itemId);
 }
 
@@ -186,7 +193,10 @@ async function updateIf(jobId: number, statuses: JobStatus[], set: Partial<typeo
     .set({ ...set, updatedAt: new Date() })
     .where(where)
     .returning();
-  if (row) notify(jobKey(jobId));
+  if (row) {
+    notify(jobKey(jobId));
+    if (ENDED.includes(row.status)) forgetJob(jobId);
+  }
   return row ?? null;
 }
 
@@ -258,7 +268,7 @@ async function goOffline(job: LocalJob): Promise<void> {
   if (policy.kind === "wait_then_fallback") {
     pending.set(job.id, { deadline: now + policy.waitS * 1000, onExpire: "fallback" });
   } else if (policy.kind === "postpone") {
-    pending.set(job.id, { deadline: now + timings.postponeMs, onExpire: "fail" });
+    pending.set(job.id, { deadline: now + timings.postponeMs, onExpire: "cancel" });
     await updateIf(job.id, UNCLAIMED, { status: "postponed" });
   } else {
     pending.delete(job.id);
@@ -296,10 +306,12 @@ export async function awaitDispatch(jobId: number, signal: AbortSignal): Promise
       }
       if (p.onExpire === "offline") await goOffline(job!);
       else if (p.onExpire === "fallback") await useFallback(job!);
-      else await updateIf(jobId, UNCLAIMED, { status: "cancelled", error: LOCAL_NOT_CONNECTED });
+      else await updateIf(jobId, UNCLAIMED, { status: p.onExpire === "cancel" ? "cancelled" : "failed", error: LOCAL_NOT_CONNECTED });
     }
   } finally {
-    forgetJob(jobId);
+    // Scadenze e regola servono solo a questa attesa; il resto si libera alla fine del lavoro
+    pending.delete(jobId);
+    policies.delete(jobId);
   }
 }
 
@@ -321,7 +333,7 @@ export async function chooseForJob(jobId: number, userId: number, choice: "fallb
   } else {
     const deadline = Date.now() + (choice === "wait" ? timings.waitMs[job.kind] : timings.postponeMs);
     // La scadenza vale per l'attesa in corso di awaitDispatch (se non c'è, nessuno la userebbe)
-    if (pending.has(jobId)) pending.set(jobId, { deadline, onExpire: "fail" });
+    if (pending.has(jobId)) pending.set(jobId, { deadline, onExpire: choice === "wait" ? "fail" : "cancel" });
     updated = await updateIf(jobId, choosable, { status: choice === "wait" ? "queued" : "postponed" });
   }
   if (!updated) throw new LocalJobError(409, NOT_WAITING);
@@ -386,7 +398,17 @@ async function deliverPending(machineId: number): Promise<RunnerDelivery | null>
     currentItemIs(item.id),
   );
   if (!job) return null;
-  return { jobId: job.id, itemId: item.id, jobToken: token, prompt: item.prompt, resumeSessionId: item.resumeSessionId };
+  const resumeSessionId = item.resume ? job.claudeSessionId : null;
+  return { jobId: job.id, itemId: item.id, jobToken: token, prompt: item.prompt, resumeSessionId };
+}
+
+/**
+ * Consegna persa (il runner ha chiuso la richiesta prima della risposta): il compito torna in attesa di consegna
+ * e arriva alla prossima richiesta, con un token nuovo.
+ */
+export async function undeliverItem(jobId: number, itemId: string): Promise<void> {
+  const job = await updateIf(jobId, ["running"], { status: "claimed" }, currentItemIs(itemId));
+  if (job) notify(machineKey(job.machineId));
 }
 
 /** Prende il primo lavoro libero della macchina; false se non ce ne sono (o li ha presi qualcun altro). */
@@ -420,6 +442,10 @@ export async function nextForMachine(machineId: number, signal: AbortSignal): Pr
   while (!signal.aborted) {
     const snap = snapshot(machineKey(machineId));
     const delivery = await deliverPending(machineId);
+    if (delivery && signal.aborted) {
+      await undeliverItem(delivery.jobId, delivery.itemId);
+      return null;
+    }
     if (delivery) return delivery;
     if (!claimed && (await claimNextFor(machineId))) {
       claimed = true;
@@ -444,12 +470,26 @@ async function runnerJob(machineId: number, jobId: number): Promise<LocalJob> {
   return job;
 }
 
+/** Segnale di vita: rinnova anche la scadenza del token (vale finché il lavoro è vivo). */
+function aliveNow() {
+  const now = new Date();
+  return { heartbeatAt: now, jobTokenExpiresAt: new Date(now.getTime() + timings.jobTokenTtlMs) };
+}
+
 /** Segnale di vita del runner per un lavoro in corso (vale anche per la macchina). */
 export async function heartbeatJob(machineId: number, jobId: number): Promise<void> {
   await runnerJob(machineId, jobId);
-  const now = new Date();
-  await db.update(localMachinesTable).set({ lastSeenAt: now }).where(eq(localMachinesTable.id, machineId));
-  await updateIf(jobId, CLAIMED, { heartbeatAt: now });
+  await db.update(localMachinesTable).set({ lastSeenAt: new Date() }).where(eq(localMachinesTable.id, machineId));
+  await updateIf(jobId, CLAIMED, aliveNow());
+}
+
+/** Sessione di Claude Code di un compito già sostituito dal successivo: la si salva comunque (servirà a riprendere). */
+async function saveSession(jobId: number, machineId: number, sessionId: string | null): Promise<void> {
+  if (!sessionId) return;
+  await db
+    .update(localJobsTable)
+    .set({ claudeSessionId: sessionId, updatedAt: new Date() })
+    .where(and(eq(localJobsTable.id, jobId), eq(localJobsTable.machineId, machineId), inArray(localJobsTable.status, CLAIMED)));
 }
 
 /**
@@ -467,7 +507,7 @@ export async function reportItemDone(machineId: number, itemId: string, result: 
     if (!CLAIMED.includes(job.status)) throw new LocalJobError(410, JOB_EXPIRED);
     const now = new Date();
     await db.update(localMachinesTable).set({ lastSeenAt: now }).where(eq(localMachinesTable.id, machineId));
-    await updateIf(
+    const freed = await updateIf(
       job.id,
       CLAIMED,
       {
@@ -478,13 +518,15 @@ export async function reportItemDone(machineId: number, itemId: string, result: 
       },
       currentItemIs(itemId),
     );
+    // Il compito è stato sostituito tra la lettura e l'aggiornamento: la sessione si salva lo stesso
+    if (!freed) await saveSession(job.id, machineId, result.sessionId);
   } else {
-    // Compito già sostituito da quello successivo: resta da salvare la sessione
+    // Compito chiuso dal consumatore e già sostituito da quello successivo: resta da salvare la sessione
     const jobId = lingeringItems.get(itemId);
     const lingering = jobId === undefined ? null : await loadJob(jobId);
     if (!lingering || lingering.machineId !== machineId) throw new LocalJobError(404, JOB_NOT_FOUND);
     if (!CLAIMED.includes(lingering.status)) throw new LocalJobError(410, JOB_EXPIRED);
-    if (result.sessionId) await updateIf(lingering.id, CLAIMED, { claudeSessionId: result.sessionId });
+    await saveSession(lingering.id, machineId, result.sessionId);
   }
   lingeringItems.delete(itemId);
   const entry = activeItems.get(itemId);
@@ -512,12 +554,13 @@ async function lastSignOfLife(job: LocalJob): Promise<number> {
 
 /**
  * Pubblica un compito in `current_item` e attende che finisca: done del runner o `completeItem` del consumatore,
- * il primo che arriva. Per i lavori del runner, senza segnale di vita per `heartbeatTimeoutMs` il lavoro fallisce
+ * il primo che arriva. Con `resume` il runner riceve la sessione di Claude Code salvata nel lavoro al momento della
+ * consegna (scritta dal done del compito precedente, anche se arrivato dopo il completamento). Per i lavori del runner, senza segnale di vita per `heartbeatTimeoutMs` il lavoro fallisce
  * con "agente locale disconnesso"; nella chat (nessun runner) vale solo la durata massima del lavoro.
  */
 export async function runItem(
   jobId: number,
-  item: { prompt: string; resumeSessionId: string | null },
+  item: { prompt: string; resume: boolean },
   signal: AbortSignal,
 ): Promise<ItemResult> {
   const before = await loadJob(jobId);
@@ -544,16 +587,14 @@ export async function runItem(
       const job = await loadJob(jobId);
       if (entry.result) return entry.result;
       if (!job || !CLAIMED.includes(job.status)) throw new Error(job?.error ?? JOB_EXPIRED);
+      if (job.currentItem?.id !== current.id) throw new Error(ITEM_REPLACED);
       let wait = timings.longPollMs;
       if (job.claimedBy === "runner") {
         const left = (await lastSignOfLife(job)) + timings.heartbeatTimeoutMs - Date.now();
         if (left <= 0) {
           // Una sola transizione: solo se il compito è ancora questo e il lavoro è aperto
           const failed = await updateIf(jobId, CLAIMED, { status: "failed", error: LOCAL_DISCONNECTED }, currentItemIs(current.id));
-          if (failed) {
-            forgetJob(jobId);
-            throw new Error(LOCAL_DISCONNECTED);
-          }
+          if (failed) throw new Error(LOCAL_DISCONNECTED);
           continue;
         }
         wait = left + 1;
@@ -589,7 +630,7 @@ export async function completeItem(jobId: number, itemId: string, payload: unkno
 export async function touchJob(jobId: number): Promise<void> {
   await db
     .update(localJobsTable)
-    .set({ heartbeatAt: new Date() })
+    .set(aliveNow())
     .where(and(eq(localJobsTable.id, jobId), inArray(localJobsTable.status, CLAIMED)));
 }
 
@@ -618,7 +659,6 @@ export async function jobByToken(token: string): Promise<LocalJob | null> {
 /** Chiude un lavoro aperto (il token smette di valere). */
 export async function finishLocalJob(jobId: number, status: "completed" | "failed" | "cancelled", error: string | null = null): Promise<void> {
   await updateIf(jobId, OPEN, { status, error });
-  forgetJob(jobId);
 }
 
 /** Lavori presi con il token scaduto (es. chat abbandonata): falliti con "lavoro scaduto". */

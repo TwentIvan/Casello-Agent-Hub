@@ -29,6 +29,7 @@ import {
   runItem,
   setLocalJobTimings,
   touchJob,
+  undeliverItem,
 } from "./jobs";
 import { hashToken } from "./tokens";
 
@@ -69,8 +70,12 @@ async function connect(id = machineId) {
   await db.update(localMachinesTable).set({ lastSeenAt: new Date() }).where(eq(localMachinesTable.id, id));
 }
 
+// Attese rimaste aperte (es. runner simulati) si chiudono alla fine di ogni test
+let controllers: AbortController[] = [];
 function signal() {
-  return new AbortController().signal;
+  const ac = new AbortController();
+  controllers.push(ac);
+  return ac.signal;
 }
 
 async function newMachine(uid: number, name: string) {
@@ -101,7 +106,11 @@ beforeEach(async () => {
   analysisId = analysis!.id;
 });
 
-afterEach(() => restoreTimings());
+afterEach(() => {
+  for (const ac of controllers) ac.abort();
+  controllers = [];
+  restoreTimings();
+});
 
 function runJob(extra: Partial<Parameters<typeof createLocalJob>[0]> = {}) {
   return createLocalJob({ userId, machineId, kind: "run", runId, fallbackAiModelId, origin: "console", ...extra });
@@ -140,7 +149,7 @@ describe("awaitDispatch", () => {
     expect(outcome).toEqual({ kind: "local" });
     expect(await jobRow(job.id)).toMatchObject({ status: "claimed", claimedBy: "runner" });
 
-    const item = runItem(job.id, { prompt: "Analizza", resumeSessionId: null }, signal());
+    const item = runItem(job.id, { prompt: "Analizza", resume: false }, signal());
     const delivery = await runner;
     expect(delivery).toMatchObject({ jobId: job.id, prompt: "Analizza", resumeSessionId: null });
     expect(delivery!.jobToken).toMatch(/^csl_j_/);
@@ -179,7 +188,7 @@ describe("awaitDispatch", () => {
     expect((await jobRow(job.id)).status).toBe("postponed");
     const runner = nextForMachine(machineId, signal());
     expect(await outcome).toEqual({ kind: "local" });
-    const item = runItem(job.id, { prompt: "p", resumeSessionId: null }, signal());
+    const item = runItem(job.id, { prompt: "p", resume: false }, signal());
     const delivery = await runner;
     expect(delivery?.prompt).toBe("p");
     await reportItemDone(machineId, delivery!.itemId, { sessionId: null, exit: "error", usage: null });
@@ -206,8 +215,16 @@ describe("awaitDispatch", () => {
     await chooseForJob(analysis.id, userId, "wait");
     expect((await jobRow(run.id)).status).toBe("queued");
     expect(await runOutcome).toEqual({ kind: "cancelled", error: "agente locale non collegato" });
+    expect(await jobRow(run.id)).toMatchObject({ status: "failed", error: "agente locale non collegato" });
     expect((await jobRow(analysis.id)).status).toBe("queued");
     expect(await analysisOutcome).toEqual({ kind: "cancelled", error: "agente locale non collegato" });
+    expect((await jobRow(analysis.id)).status).toBe("failed");
+  });
+
+  it("nessuna scelta dalla console: allo scadere della finestra failed", async () => {
+    const job = await runJob();
+    expect(await awaitDispatch(job.id, signal())).toEqual({ kind: "cancelled", error: "agente locale non collegato" });
+    expect(await jobRow(job.id)).toMatchObject({ status: "failed", error: "agente locale non collegato" });
   });
 
   it("attendi e poi il runner si collega: local", async () => {
@@ -247,6 +264,7 @@ describe("awaitDispatch", () => {
     const outcome = awaitDispatch(job.id, signal());
     await waitStatus(job.id, "postponed");
     expect(await outcome).toEqual({ kind: "cancelled", error: "agente locale non collegato" });
+    expect((await jobRow(job.id)).status).toBe("cancelled");
   });
 
   it("senza modello di riserva la regola fallback annulla il lavoro", async () => {
@@ -284,7 +302,9 @@ describe("runItem e segnale di vita", () => {
     const job = await runJob();
     const runner = nextForMachine(machineId, signal());
     expect(await awaitDispatch(job.id, signal())).toEqual({ kind: "local" });
-    const item = runItem(job.id, { prompt: "p", resumeSessionId: null }, signal());
+    const item = runItem(job.id, { prompt: "p", resume: false }, signal());
+    // Gestito anche se il test non lo attende (l'afterEach annulla le attese rimaste)
+    item.catch(() => {});
     const delivery = (await runner)!;
     return { job, item, delivery };
   }
@@ -321,13 +341,66 @@ describe("runItem e segnale di vita", () => {
     expect(await jobRow(job.id)).toMatchObject({ claudeSessionId: "s3", currentItem: null, status: "claimed" });
   });
 
+  it("resume: il compito successivo riceve la sessione scritta dal done precedente", async () => {
+    const { job, item, delivery } = await runningJob();
+    await reportItemDone(machineId, delivery.itemId, { sessionId: "s1", exit: "done", usage: null });
+    await item;
+    const runner = nextForMachine(machineId, signal());
+    void runItem(job.id, { prompt: "correggi", resume: true }, signal()).catch(() => {});
+    expect(await runner).toMatchObject({ prompt: "correggi", resumeSessionId: "s1" });
+  });
+
+  it("resume dopo un completamento arrivato prima del done: la sessione arriva comunque", async () => {
+    const { job, item, delivery } = await runningJob();
+    expect(await completeItem(job.id, delivery.itemId, "ok")).toBe(true);
+    await item;
+    // Il consumatore pubblica subito il compito seguente; il done del primo arriva dopo
+    const second = runItem(job.id, { prompt: "fase 2", resume: true }, signal());
+    second.catch(() => {});
+    await reportItemDone(machineId, delivery.itemId, { sessionId: "s-tardiva", exit: "done", usage: null });
+    expect((await jobRow(job.id)).claudeSessionId).toBe("s-tardiva");
+    const next = await nextForMachine(machineId, signal());
+    expect(next).toMatchObject({ prompt: "fase 2", resumeSessionId: "s-tardiva" });
+    // Senza resume la sessione non si passa
+    await reportItemDone(machineId, next!.itemId, { sessionId: "s-2", exit: "done", usage: null });
+    await second;
+    const runner = nextForMachine(machineId, signal());
+    void runItem(job.id, { prompt: "nuova", resume: false }, signal()).catch(() => {});
+    expect(await runner).toMatchObject({ prompt: "nuova", resumeSessionId: null });
+  });
+
+  it("consegna persa: il compito torna in attesa e arriva alla richiesta seguente con un token nuovo", async () => {
+    const { job, delivery } = await runningJob();
+    await undeliverItem(job.id, delivery.itemId);
+    expect((await jobRow(job.id)).status).toBe("claimed");
+    const again = await nextForMachine(machineId, signal());
+    expect(again).toMatchObject({ jobId: job.id, itemId: delivery.itemId, prompt: "p" });
+    expect(again!.jobToken).not.toBe(delivery.jobToken);
+    expect(await jobByToken(delivery.jobToken)).toBeNull();
+    expect((await jobByToken(again!.jobToken))?.id).toBe(job.id);
+  });
+
+  it("il segnale di vita rinnova la scadenza del token (runner e chat)", async () => {
+    const { job } = await runningJob();
+    const soon = new Date(Date.now() + 1000);
+    await db.update(localJobsTable).set({ jobTokenExpiresAt: soon }).where(eq(localJobsTable.id, job.id));
+    await heartbeatJob(machineId, job.id);
+    expect((await jobRow(job.id)).jobTokenExpiresAt!.getTime()).toBeGreaterThan(Date.now() + 60_000);
+
+    const chat = await analysisJob();
+    await claimJob(chat.id, { by: "chat", userId });
+    await db.update(localJobsTable).set({ jobTokenExpiresAt: soon }).where(eq(localJobsTable.id, chat.id));
+    await touchJob(chat.id);
+    expect((await jobRow(chat.id)).jobTokenExpiresAt!.getTime()).toBeGreaterThan(Date.now() + 60_000);
+  });
+
   it("modalità chat: nessun controllo del segnale di vita, il compito finisce con completeItem", async () => {
     const job = await runJob();
     const outcome = awaitDispatch(job.id, signal());
     await waitStatus(job.id, "waiting_choice");
     const { jobToken } = await claimJob(job.id, { by: "chat", userId });
     expect(await outcome).toEqual({ kind: "local" });
-    const item = runItem(job.id, { prompt: "chat", resumeSessionId: null }, signal());
+    const item = runItem(job.id, { prompt: "chat", resume: false }, signal());
     await waitStatus(job.id, "running");
     const live = await jobByToken(jobToken);
     expect(live?.currentItem).toMatchObject({ prompt: "chat" });
@@ -366,7 +439,7 @@ describe("chiusura dei lavori", () => {
     const job = await runJob();
     const runner = nextForMachine(machineId, signal());
     expect(await awaitDispatch(job.id, signal())).toEqual({ kind: "local" });
-    const item = runItem(job.id, { prompt: "p", resumeSessionId: null }, signal());
+    const item = runItem(job.id, { prompt: "p", resume: false }, signal());
     const delivery = (await runner)!;
     const queued = await analysisJob();
     const done = await runJob();

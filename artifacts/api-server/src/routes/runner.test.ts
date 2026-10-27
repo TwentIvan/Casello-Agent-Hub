@@ -57,7 +57,12 @@ async function fixtures(userId: number) {
   return { fallbackAiModelId: model!.id, runId: run!.id };
 }
 
-const signal = () => new AbortController().signal;
+let controllers: AbortController[] = [];
+function signal() {
+  const ac = new AbortController();
+  controllers.push(ac);
+  return ac.signal;
+}
 
 beforeAll(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
@@ -91,6 +96,8 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  for (const ac of controllers) ac.abort();
+  controllers = [];
   restoreTimings();
   vi.restoreAllMocks();
 });
@@ -155,7 +162,8 @@ describe("flusso next → done", () => {
     await new Promise((r) => setTimeout(r, 30));
     const job = await jobs.createLocalJob({ userId, machineId, kind: "run", runId, fallbackAiModelId, origin: "console" });
     expect(await jobs.awaitDispatch(job.id, signal())).toEqual({ kind: "local" });
-    const item = jobs.runItem(job.id, { prompt: "Fai la run", resumeSessionId: "sess-0" }, signal());
+    await db.update(localJobsTable).set({ claudeSessionId: "sess-0" }).where(eq(localJobsTable.id, job.id));
+    const item = jobs.runItem(job.id, { prompt: "Fai la run", resume: true }, signal());
 
     const res = await next;
     expect(res.status, res.text).toBe(200);
@@ -202,7 +210,7 @@ describe("flusso next → done", () => {
       const job = await jobs.createLocalJob({ userId, machineId, kind: "run", runId, fallbackAiModelId, origin: "console" });
       const next = call("GET", "/runner/next", { token });
       expect(await jobs.awaitDispatch(job.id, signal())).toEqual({ kind: "local" });
-      void jobs.runItem(job.id, { prompt: "p", resumeSessionId: null }, signal()).catch(() => {});
+      void jobs.runItem(job.id, { prompt: "p", resume: false }, signal()).catch(() => {});
     const res = await next;
       expect(res.json.mcpUrl).toBe("https://casello.example.com/api/mcp");
       await jobs.finishLocalJob(job.id, "completed");

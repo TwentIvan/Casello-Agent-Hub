@@ -26,8 +26,11 @@ export const localClaimedByEnum = pgEnum("local_claimed_by", ["runner", "chat"])
 // console: avviato dall'utente dalla console; app: avviato da una app (run di un agente)
 export const localJobOriginEnum = pgEnum("local_job_origin", ["console", "app"]);
 
-/** Elemento in lavorazione: il prompt consegnato al runner e la sessione di Claude Code da riprendere. */
-export type LocalJobCurrentItem = { id: string; prompt: string; resumeSessionId: string | null };
+/**
+ * Elemento in lavorazione: il prompt consegnato al runner e se riprendere la sessione di Claude Code del lavoro
+ * (`claude_session_id`, letta alla consegna: il done del compito precedente la scrive prima).
+ */
+export type LocalJobCurrentItem = { id: string; prompt: string; resume: boolean };
 
 // Coda dei lavori da eseguire su una macchina locale; il token del lavoro è salvato solo come hash
 export const localJobsTable = pgTable(

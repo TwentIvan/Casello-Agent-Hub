@@ -874,7 +874,8 @@ paths:
       summary: Elenca gli account AI dell'utente e l'account di sistema
       description: >-
         Account dell'utente corrente (il predefinito per primo, poi per nome) seguiti dall'account di
-        sistema, se configurato. La chiave non è mai esposta: solo keySet.
+        sistema, se configurato; senza l'account dell'agente locale (route /local). La chiave non è mai
+        esposta: solo keySet.
       responses:
         "200":
           description: Account AI
@@ -952,7 +953,7 @@ paths:
       summary: Elimina un account AI e i suoi modelli
       description: >-
         409 "account usato da: <nomi>" se un agente o un'analisi in coda o in corso usa uno dei suoi
-        modelli; le analisi concluse perdono solo il collegamento (aiModelId null) e tengono modello e
+        modelli, anche come modello di riserva; le analisi concluse perdono solo il collegamento (aiModelId null) e tengono modello e
         costo. Se era il predefinito, diventa predefinito l'account più vecchio rimasto all'utente.
       parameters:
         - $ref: "#/components/parameters/IdParam"
@@ -2630,7 +2631,7 @@ components:
 
     AiAccount:
       type: object
-      required: [id, name, provider, baseUrl, allowPrivateNetwork, isDefault, status, lastError, lastCheckedAt, keySet, isSystem, modelCount]
+      required: [id, name, provider, baseUrl, allowPrivateNetwork, isDefault, status, lastError, lastCheckedAt, keySet, isSystem, isLocal, modelCount]
       properties:
         id:
           type: integer
@@ -2659,6 +2660,11 @@ components:
         isSystem:
           type: boolean
           description: Account di sistema (gateway di Casello), non modificabile
+        isLocal:
+          type: boolean
+          description: >-
+            Account "Agente locale" (le macchine dell'utente): compare solo nei gruppi di listAiModels e si
+            gestisce dalla sezione Agenti locali
         modelCount:
           type: integer
           description: Numero di modelli dell'account (nascosti compresi)

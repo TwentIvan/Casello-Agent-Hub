@@ -125,6 +125,7 @@ function toPublicAccount(a: AiAccount, modelCount: number, providerStatus: strin
     // La chiave del sistema arriva dall'ambiente, non dal DB
     keySet: system ? systemConfigured() : a.apiKeyEnc !== null,
     isSystem: system,
+    isLocal: isLocalAccount(a),
     modelCount,
   };
 }
@@ -312,7 +313,8 @@ async function lockUser(tx: Tx, userId: number): Promise<void> {
 
 /**
  * "account usato da: <agenti>, analisi #<id>": al massimo 10 nomi, poi "…"; null se libero.
- * Bloccano l'eliminazione gli agenti e le analisi in coda o in corso; le analisi concluse (completate,
+ * Bloccano l'eliminazione gli agenti e le analisi in coda o in corso che usano un suo modello, anche come
+ * modello di riserva dell'agente locale; le analisi concluse (completate,
  * fallite, interrotte) perdono solo il collegamento (ON DELETE SET NULL) e tengono `model` e `cost_usd`.
  */
 async function usedByMessage(accountId: number, executor: Tx | typeof db = db): Promise<string | null> {
@@ -323,13 +325,18 @@ async function usedByMessage(accountId: number, executor: Tx | typeof db = db): 
   const agents = await executor
     .select({ name: agentsTable.name })
     .from(agentsTable)
-    .where(inArray(agentsTable.aiModelId, modelIds))
+    .where(or(inArray(agentsTable.aiModelId, modelIds), inArray(agentsTable.fallbackAiModelId, modelIds)))
     .orderBy(asc(agentsTable.name), asc(agentsTable.id))
     .limit(USED_BY_MAX_NAMES + 1);
   const analyses = await executor
     .select({ id: analysesTable.id })
     .from(analysesTable)
-    .where(and(inArray(analysesTable.aiModelId, modelIds), inArray(analysesTable.status, ["queued", "running"])))
+    .where(
+      and(
+        or(inArray(analysesTable.aiModelId, modelIds), inArray(analysesTable.fallbackAiModelId, modelIds)),
+        inArray(analysesTable.status, ["queued", "running"]),
+      ),
+    )
     .orderBy(asc(analysesTable.id))
     .limit(USED_BY_MAX_NAMES + 1);
   const names = [...agents.map((a) => a.name), ...analyses.map((a) => `analisi #${a.id}`)];
@@ -375,8 +382,9 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
   // La prova di un modello costa (poco) all'account: 5 al minuto per IP, contatore a parte
   const probeLimit = opts.probeRateLimit ?? rateLimit({ limit: 5, windowMs: 60_000 });
 
+  // Senza l'account dell'agente locale: si gestisce dalla sezione Agenti locali (resta nei gruppi di /ai/models)
   router.get("/ai/accounts", async (req, res) => {
-    const accounts = await visibleAccountsSorted(currentUserId(req));
+    const accounts = (await visibleAccountsSorted(currentUserId(req))).filter((a) => !isLocalAccount(a));
     const [counts, statuses] = await Promise.all([modelCounts(accounts.map((a) => a.id)), providerStatuses(accounts)]);
     res.json(ListAiAccountsResponse.parse(accounts.map((a) => toPublicAccount(a, counts.get(a.id) ?? 0, statuses.get(a.provider)))));
   });

@@ -1096,7 +1096,7 @@ export const ListAiProvidersResponse = zod.array(ListAiProvidersResponseItem)
 
 
 /**
- * Account dell'utente corrente (il predefinito per primo, poi per nome) seguiti dall'account di sistema, se configurato. La chiave non è mai esposta: solo keySet.
+ * Account dell'utente corrente (il predefinito per primo, poi per nome) seguiti dall'account di sistema, se configurato; senza l'account dell'agente locale (route /local). La chiave non è mai esposta: solo keySet.
  * @summary Elenca gli account AI dell'utente e l'account di sistema
  */
 export const listAiAccountsResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
@@ -1114,6 +1114,7 @@ export const ListAiAccountsResponseItem = zod.object({
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
   "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
+  "isLocal": zod.boolean().describe('Account \"Agente locale\" (le macchine dell\'utente): compare solo nei gruppi di listAiModels e si gestisce dalla sezione Agenti locali'),
   "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
 })
 export const ListAiAccountsResponse = zod.array(ListAiAccountsResponseItem)
@@ -1155,6 +1156,7 @@ export const CreateAiAccountResponse = zod.object({
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
   "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
+  "isLocal": zod.boolean().describe('Account \"Agente locale\" (le macchine dell\'utente): compare solo nei gruppi di listAiModels e si gestisce dalla sezione Agenti locali'),
   "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
 })
 
@@ -1197,12 +1199,13 @@ export const UpdateAiAccountResponse = zod.object({
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
   "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
+  "isLocal": zod.boolean().describe('Account \"Agente locale\" (le macchine dell\'utente): compare solo nei gruppi di listAiModels e si gestisce dalla sezione Agenti locali'),
   "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
 })
 
 
 /**
- * 409 "account usato da: <nomi>" se un agente o un'analisi in coda o in corso usa uno dei suoi modelli; le analisi concluse perdono solo il collegamento (aiModelId null) e tengono modello e costo. Se era il predefinito, diventa predefinito l'account più vecchio rimasto all'utente.
+ * 409 "account usato da: <nomi>" se un agente o un'analisi in coda o in corso usa uno dei suoi modelli, anche come modello di riserva; le analisi concluse perdono solo il collegamento (aiModelId null) e tengono modello e costo. Se era il predefinito, diventa predefinito l'account più vecchio rimasto all'utente.
  * @summary Elimina un account AI e i suoi modelli
  */
 export const DeleteAiAccountParams = zod.object({
@@ -1235,6 +1238,7 @@ export const VerifyAiAccountResponse = zod.object({
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
   "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
+  "isLocal": zod.boolean().describe('Account \"Agente locale\" (le macchine dell\'utente): compare solo nei gruppi di listAiModels e si gestisce dalla sezione Agenti locali'),
   "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
 })
 
@@ -1261,6 +1265,7 @@ export const SetDefaultAiAccountResponse = zod.object({
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
   "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
+  "isLocal": zod.boolean().describe('Account \"Agente locale\" (le macchine dell\'utente): compare solo nei gruppi di listAiModels e si gestisce dalla sezione Agenti locali'),
   "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
 })
 
@@ -1448,6 +1453,7 @@ export const ListAiModelsResponseItem = zod.object({
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
   "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
+  "isLocal": zod.boolean().describe('Account \"Agente locale\" (le macchine dell\'utente): compare solo nei gruppi di listAiModels e si gestisce dalla sezione Agenti locali'),
   "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
 }),
   "models": zod.array(zod.object({

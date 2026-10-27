@@ -294,6 +294,56 @@ describe("account dell'agente locale nelle route generiche", () => {
   });
 });
 
+describe("account dell'agente locale negli elenchi", () => {
+  it("GET /ai/accounts non lo elenca; nei gruppi di /ai/models compare con isLocal", async () => {
+    const dev = await devUserId();
+    await apiModelFor(dev);
+    await registerMachine();
+    const accounts = await api("GET", "/ai/accounts");
+    expect(accounts.json.map((a: { provider: string }) => a.provider)).toEqual(["custom"]);
+    expect(accounts.json[0].isLocal).toBe(false);
+    const groups = await api("GET", "/ai/models");
+    const flags = Object.fromEntries(groups.json.map((g: { account: { provider: string; isLocal: boolean } }) => [g.account.provider, g.account.isLocal]));
+    expect(flags).toEqual({ custom: false, local_agent: true });
+  });
+});
+
+describe("eliminazione dell'account del modello di riserva", () => {
+  it("bloccata finché un agente locale o un'analisi in corso lo usa come riserva (409)", async () => {
+    const dev = await devUserId();
+    const { aiModelId } = await registerMachine();
+    const fallback = await apiModelFor(dev);
+    const app = await createApp();
+    const agent = await api("POST", "/agents", { appId: app.id, name: "Locale", aiModelId, fallbackAiModelId: fallback.id });
+    expect(agent.status, agent.text).toBe(201);
+
+    const blocked = await api("DELETE", `/ai/accounts/${fallback.accountId}`);
+    expect(blocked.status).toBe(409);
+    expect(blocked.json).toEqual({ error: "account usato da: Locale" });
+
+    // Senza l'agente resta l'analisi in corso con la stessa riserva
+    await db.delete(agentsTable).where(eq(agentsTable.id, agent.json.id));
+    const [analysis] = await db
+      .insert(analysesTable)
+      .values({
+        appId: app.id,
+        model: `machine-1`,
+        aiModelId,
+        fallbackAiModelId: fallback.id,
+        status: "running",
+        maxTokens: 100_000,
+        sources: { code: "none", openapi: false, description: false },
+      })
+      .returning();
+    const byAnalysis = await api("DELETE", `/ai/accounts/${fallback.accountId}`);
+    expect(byAnalysis.status).toBe(409);
+    expect(byAnalysis.json).toEqual({ error: `account usato da: analisi #${analysis!.id}` });
+
+    await db.update(analysesTable).set({ status: "failed" }).where(eq(analysesTable.id, analysis!.id));
+    expect((await api("DELETE", `/ai/accounts/${fallback.accountId}`)).status).toBe(204);
+  });
+});
+
 describe("modello di riserva negli agenti", () => {
   it("modello locale senza riserva → 400 col messaggio; riserva locale → 400; riserva altrui → 400", async () => {
     await devUserId();

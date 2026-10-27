@@ -2987,7 +2987,7 @@ export const getListAiAccountsUrl = () => {
 }
 
 /**
- * Account dell'utente corrente (il predefinito per primo, poi per nome) seguiti dall'account di sistema, se configurato. La chiave non è mai esposta: solo keySet.
+ * Account dell'utente corrente (il predefinito per primo, poi per nome) seguiti dall'account di sistema, se configurato; senza l'account dell'agente locale (route /local). La chiave non è mai esposta: solo keySet.
  * @summary Elenca gli account AI dell'utente e l'account di sistema
  */
 export const listAiAccounts = async ( options?: RequestInit): Promise<AiAccount[]> => {
@@ -3208,7 +3208,7 @@ export const getDeleteAiAccountUrl = (id: number,) => {
 }
 
 /**
- * 409 "account usato da: <nomi>" se un agente o un'analisi in coda o in corso usa uno dei suoi modelli; le analisi concluse perdono solo il collegamento (aiModelId null) e tengono modello e costo. Se era il predefinito, diventa predefinito l'account più vecchio rimasto all'utente.
+ * 409 "account usato da: <nomi>" se un agente o un'analisi in coda o in corso usa uno dei suoi modelli, anche come modello di riserva; le analisi concluse perdono solo il collegamento (aiModelId null) e tengono modello e costo. Se era il predefinito, diventa predefinito l'account più vecchio rimasto all'utente.
  * @summary Elimina un account AI e i suoi modelli
  */
 export const deleteAiAccount = async (id: number, options?: RequestInit): Promise<void> => {

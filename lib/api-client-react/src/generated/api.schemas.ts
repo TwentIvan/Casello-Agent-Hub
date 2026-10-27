@@ -888,6 +888,8 @@ export interface AiAccount {
   keySet: boolean;
   /** Account di sistema (gateway di Casello), non modificabile */
   isSystem: boolean;
+  /** Account "Agente locale" (le macchine dell'utente): compare solo nei gruppi di listAiModels e si gestisce dalla sezione Agenti locali */
+  isLocal: boolean;
   /** Numero di modelli dell'account (nascosti compresi) */
   modelCount: number;
 }

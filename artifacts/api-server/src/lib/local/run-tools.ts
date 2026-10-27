@@ -13,7 +13,7 @@ import {
 } from "../agent-loop";
 import { maskArgsWithSchema, toFunctionTools } from "../tools/catalog";
 import type { CatalogTool, ToolResult } from "../tools/types";
-import { completeItem, isQueueError, ITEM_REPLACED, JOB_EXPIRED, LocalJobError, runItem, type ItemResult } from "./jobs";
+import { CLAUDE_EXIT_ERROR, completeItem, isQueueError, ITEM_REPLACED, JOB_EXPIRED, LocalJobError, runItem, type ItemResult } from "./jobs";
 import { registerJobToolProvider, type JobToolDef, type JobToolInputSchema } from "./mcp-server";
 
 /**
@@ -272,7 +272,8 @@ function outcomeOf(result: ItemResult): RunTurnOutcome | null {
 /**
  * Esegue un turno della run con l'agente locale: un compito (sessione nuova o ripresa) che finisce con
  * `finish_run`, con una conferma chiesta o con un limite raggiunto. Se Claude termina senza nessuno di questi, un
- * compito di correzione sulla stessa sessione; poi la run fallisce. Dalla consegna il compito è limitato dal tempo
+ * compito di correzione sulla stessa sessione; poi la run fallisce. Se Claude Code esce con errore, la run fallisce
+ * subito con un messaggio distinto. Dalla consegna il compito è limitato dal tempo
  * attivo rimasto (prima della consegna valgono le attese della coda: segnale di vita, scadenza del lavoro).
  */
 export async function runTurnDelegated(input: { jobId: number; runId: number; prompt: string; resume: boolean }): Promise<RunTurnOutcome> {
@@ -309,6 +310,8 @@ export async function runTurnDelegated(input: { jobId: number; runId: number; pr
     }
     const outcome = outcomeOf(result);
     if (outcome) return outcome;
+    // Claude Code uscito con errore (abbonamento, accesso): una correzione fallirebbe allo stesso modo
+    if (result.exit === "error") return { kind: "failed", error: CLAUDE_EXIT_ERROR };
     if (corrections >= 1) return { kind: "failed", error: RUN_NOT_FINISHED };
     item = { prompt: CORRECTION, resume: true };
   }

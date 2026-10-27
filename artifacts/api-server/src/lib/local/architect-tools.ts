@@ -12,7 +12,7 @@ import {
 import type { PhaseName } from "../architect/schemas";
 import type { SourceTree } from "../architect/source-tree";
 import type { OpenApiDoc } from "../architect/sources";
-import { completeItem, isQueueError, ITEM_REPLACED, JOB_EXPIRED, LocalJobError, runItem } from "./jobs";
+import { CLAUDE_EXIT_ERROR, completeItem, isQueueError, ITEM_REPLACED, JOB_EXPIRED, LocalJobError, runItem } from "./jobs";
 import { registerJobToolProvider, type JobToolDef, type JobToolInputSchema } from "./mcp-server";
 
 /**
@@ -185,6 +185,11 @@ export async function runPhaseDelegated(input: {
     // Compito interrotto per troppe consegne non valide: nessuna correzione
     if (result.completion === PHASE_ABORTED) return { ok: false, error: PHASE_NOT_DELIVERED };
     if ("completion" in result) return { ok: true, result: result.completion };
+    // Claude Code uscito con errore (abbonamento, accesso): una correzione fallirebbe allo stesso modo
+    if (result.exit === "error") {
+      log("Claude Code terminato con errore senza consegna");
+      return { ok: false, error: CLAUDE_EXIT_ERROR };
+    }
     if (corrections >= MAX_CORRECTIONS) {
       log(`agente locale terminato senza consegna valida (correzioni esaurite)`);
       return { ok: false, error: PHASE_NOT_DELIVERED };

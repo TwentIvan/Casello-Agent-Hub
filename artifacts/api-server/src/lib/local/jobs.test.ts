@@ -370,6 +370,33 @@ describe("runItem e segnale di vita", () => {
     expect(await runner).toMatchObject({ prompt: "nuova", resumeSessionId: null });
   });
 
+  it("ripresa con il compito precedente ancora in corso sul runner: consegnata solo dopo il suo done, con la sessione", async () => {
+    const { job, item, delivery } = await runningJob();
+    expect(await completeItem(job.id, delivery.itemId, "pausa")).toBe(true);
+    await item;
+    const second = runItem(job.id, { prompt: "ripresa", resume: true }, signal());
+    second.catch(() => {});
+    // Un altro posto del runner chiede lavoro: la ripresa non parte senza la sessione del compito precedente
+    let delivered: Awaited<ReturnType<typeof nextForMachine>> | undefined;
+    const next = nextForMachine(machineId, signal()).then((d) => (delivered = d));
+    await sleep(80);
+    expect(delivered).toBeUndefined();
+    await reportItemDone(machineId, delivery.itemId, { sessionId: "s-prima", exit: "done", usage: null });
+    await next;
+    expect(delivered).toMatchObject({ prompt: "ripresa", resumeSessionId: "s-prima" });
+  });
+
+  it("ripresa senza una sessione da riprendere: il lavoro fallisce con il messaggio fisso (mai una sessione vuota)", async () => {
+    const { job, item, delivery } = await runningJob();
+    await reportItemDone(machineId, delivery.itemId, { sessionId: null, exit: "error", usage: null });
+    await item;
+    const second = runItem(job.id, { prompt: "correggi", resume: true }, signal());
+    second.catch(() => {});
+    expect(await nextForMachine(machineId, signal())).toBeNull();
+    await expect(second).rejects.toThrow("sessione di Claude Code da riprendere non disponibile");
+    expect(await jobRow(job.id)).toMatchObject({ status: "failed", error: "sessione di Claude Code da riprendere non disponibile" });
+  });
+
   it("consegna persa: il compito torna in attesa e arriva alla richiesta seguente con un token nuovo", async () => {
     const { job, delivery } = await runningJob();
     await undeliverItem(job.id, delivery.itemId);

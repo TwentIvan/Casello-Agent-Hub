@@ -1179,6 +1179,19 @@ describe("run con l'agente locale", () => {
     expect((await jobsOf(id))[0]).toMatchObject({ status: "failed", error: "l'agente locale non ha concluso la run" });
   });
 
+  it("Claude Code esce con errore senza finish_run: failed 'Claude Code terminato con errore', nessuna correzione", async () => {
+    const id = await seedLocalRun([GET_ITEM]);
+    const r = await startLocalRunner(async () => ({ sessionId: "sess-E", exit: "error" }));
+
+    await startRun(id, { startedBy: ownerId });
+
+    const run = await getRun(id);
+    expect(run.status).toBe("failed");
+    expect(run.errorMessage).toBe("Claude Code terminato con errore");
+    expect(r.deliveries).toHaveLength(1);
+    expect((await jobsOf(id))[0]).toMatchObject({ status: "failed", error: "Claude Code terminato con errore" });
+  });
+
   it("limite delle chiamate (sostituito nei test): oltre il limite la run fallisce senza eseguire il tool", async () => {
     const id = await seedLocalRun([GET_ITEM]);
     const replies: { text: string; isError: boolean }[] = [];

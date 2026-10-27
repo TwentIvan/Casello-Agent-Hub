@@ -1017,6 +1017,8 @@ describe("startAnalysis con l'agente locale", () => {
   let runner: FakeRunner | null;
   /** Fasi in cui il finto Claude termina senza consegnare (anche nei compiti di correzione). */
   let silentPhases: Set<PhaseName>;
+  /** Fasi in cui Claude Code esce con errore senza consegnare (limite dell'abbonamento, accesso scaduto). */
+  let errorPhases: Set<PhaseName>;
   /** Fasi in cui il finto Claude consegna solo quando la sessione viene ripresa (dopo una correzione). */
   let submitOnResume: Set<PhaseName>;
   /** Esiti di submit_phase_result visti dal finto Claude. */
@@ -1056,6 +1058,7 @@ describe("startAnalysis con l'agente locale", () => {
     fallbackModelId = fallback!.id;
     runner = null;
     silentPhases = new Set();
+    errorPhases = new Set();
     submitOnResume = new Set();
     submitReplies = [];
     invalidForever = new Set();
@@ -1072,6 +1075,7 @@ describe("startAnalysis con l'agente locale", () => {
       // Un compito di correzione riprende la sessione: la fase è quella del compito precedente
       if (!d.resumeSessionId) phase = PHASE_BY_NUMBER[Number(/FASE (\d)/.exec(d.prompt)?.[1] ?? 1) - 1]!;
       const silent = silentPhases.has(phase) || (submitOnResume.has(phase) && !d.resumeSessionId);
+      if (errorPhases.has(phase)) return { sessionId: `sess-${phase}-${runner!.deliveries.length}`, exit: "error" };
       if (invalidForever.has(phase)) {
         for (let i = 0; i < 20; i++) {
           const reply = toolText(await client.callTool({ name: "submit_phase_result", arguments: { result: { items: "non valido" } } }));
@@ -1171,6 +1175,21 @@ describe("startAnalysis con l'agente locale", () => {
     const log = a.log as AnalysisLogEntry[];
     expect(log.filter((e) => /correzione/.test(e.message))).toHaveLength(2);
     expect(await loadItems(id)).toHaveLength(0);
+  });
+
+  it("Claude Code esce con errore senza consegnare: failed 'Claude Code terminato con errore', nessuna correzione", async () => {
+    errorPhases.add("capabilities");
+    const r = startRunner();
+    const id = await localAnalysis();
+    await startAnalysis(id, { zip: testZip() });
+
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.phase).toBe("capabilities");
+    expect(a.error).toBe("Claude Code terminato con errore");
+    // map + un solo compito di capabilities
+    expect(r.deliveries).toHaveLength(2);
+    expect((await jobOf(id))!).toMatchObject({ status: "failed", error: "Claude Code terminato con errore" });
   });
 
   it("consegne non valide oltre il limite del compito: fase interrotta senza correzioni", async () => {

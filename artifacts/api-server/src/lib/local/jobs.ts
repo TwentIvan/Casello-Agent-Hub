@@ -24,6 +24,9 @@ export const MACHINE_UNAVAILABLE = "macchina non disponibile";
 const NOT_WAITING = "il lavoro non è in attesa di una scelta";
 export const ITEM_REPLACED = "compito non più in corso";
 export const RESTARTED = "interrotto dal riavvio";
+export const SESSION_MISSING = "sessione di Claude Code da riprendere non disponibile";
+/** Claude Code è uscito con errore senza consegnare (limite dell'abbonamento, accesso scaduto…): nessuna correzione. */
+export const CLAUDE_EXIT_ERROR = "Claude Code terminato con errore";
 // Il lavoro non serve più: la run o l'analisi prosegue col modello di riserva
 const FALLBACK_CHOSEN = "eseguito con il modello di riserva";
 
@@ -37,6 +40,7 @@ const QUEUE_MESSAGES: ReadonlySet<string> = new Set([
   LOCAL_DISCONNECTED,
   LOCAL_NOT_CONNECTED,
   MACHINE_UNAVAILABLE,
+  SESSION_MISSING,
 ]);
 
 /** Errore della coda con un messaggio fisso (da riportare così com'è nella run o nell'analisi). */
@@ -175,15 +179,22 @@ export type ItemResult = {
 // Compiti in attesa di `runItem`, per id del compito
 // `onDelivered`: avviso al consumatore quando il compito arriva a chi lo esegue (runner o chat)
 const activeItems = new Map<string, { jobId: number; result: ItemResult | null; onDelivered?: () => void }>();
-// Compiti del runner chiusi dal consumatore prima del done: il done arriva dopo e porta la sessione da riprendere
-const lingeringItems = new Map<string, number>();
+// Compiti del runner chiusi dal consumatore prima del done: il done arriva dopo e porta la sessione da riprendere.
+// `since`: momento della chiusura (una ripresa attende il done al più `heartbeatTimeoutMs`)
+const lingeringItems = new Map<string, { jobId: number; since: number }>();
+
+/** Il lavoro ha un compito chiuso dal consumatore il cui done (con la sessione) può ancora arrivare. */
+function awaitingDone(jobId: number, now = Date.now()): boolean {
+  for (const l of lingeringItems.values()) if (l.jobId === jobId && now - l.since < timings.heartbeatTimeoutMs) return true;
+  return false;
+}
 
 /** Lavoro finito: libera tutto lo stato in memoria (chi attendeva è già stato notificato). */
 function forgetJob(jobId: number): void {
   pending.delete(jobId);
   policies.delete(jobId);
   versions.delete(jobKey(jobId));
-  for (const [itemId, id] of lingeringItems) if (id === jobId) lingeringItems.delete(itemId);
+  for (const [itemId, l] of lingeringItems) if (l.jobId === jobId) lingeringItems.delete(itemId);
 }
 
 // --- Lettura ------------------------------------------------------------------------------------------------------
@@ -391,10 +402,15 @@ export async function claimJob(
 
 export type RunnerDelivery = { jobId: number; itemId: string; jobToken: string; prompt: string; resumeSessionId: string | null };
 
-/** Consegna al runner il compito in attesa di un suo lavoro, con un token di lavoro nuovo (il precedente decade). */
+/**
+ * Consegna al runner il compito in attesa di un suo lavoro, con un token di lavoro nuovo (il precedente decade).
+ * Una ripresa (`resume`) aspetta il done del compito precedente, che porta la sessione (con più posti il runner
+ * potrebbe chiedere lavoro prima che il Claude precedente sia uscito); senza sessione il lavoro fallisce con un
+ * messaggio fisso: mai una ripresa in una sessione nuova, senza contesto.
+ */
 async function deliverPending(machineId: number): Promise<RunnerDelivery | null> {
-  const [candidate] = await db
-    .select({ id: localJobsTable.id, item: localJobsTable.currentItem })
+  const candidates = await db
+    .select({ id: localJobsTable.id, item: localJobsTable.currentItem, sessionId: localJobsTable.claudeSessionId })
     .from(localJobsTable)
     .where(
       and(
@@ -405,21 +421,29 @@ async function deliverPending(machineId: number): Promise<RunnerDelivery | null>
       ),
     )
     .orderBy(asc(localJobsTable.id))
-    .limit(1);
-  const item = candidate?.item;
-  if (!candidate || !item) return null;
-  const { token, hash } = newToken("job");
-  const now = new Date();
-  const job = await updateIf(
-    candidate.id,
-    ["claimed"],
-    { status: "running", heartbeatAt: now, jobTokenHash: hash, jobTokenExpiresAt: new Date(now.getTime() + timings.jobTokenTtlMs) },
-    currentItemIs(item.id),
-  );
-  if (!job) return null;
-  activeItems.get(item.id)?.onDelivered?.();
-  const resumeSessionId = item.resume ? job.claudeSessionId : null;
-  return { jobId: job.id, itemId: item.id, jobToken: token, prompt: item.prompt, resumeSessionId };
+    .limit(10);
+  for (const candidate of candidates) {
+    const item = candidate.item;
+    if (!item) continue;
+    if (item.resume && awaitingDone(candidate.id)) continue;
+    if (item.resume && !candidate.sessionId) {
+      await updateIf(candidate.id, ["claimed"], { status: "failed", error: SESSION_MISSING }, currentItemIs(item.id));
+      continue;
+    }
+    const { token, hash } = newToken("job");
+    const now = new Date();
+    const job = await updateIf(
+      candidate.id,
+      ["claimed"],
+      { status: "running", heartbeatAt: now, jobTokenHash: hash, jobTokenExpiresAt: new Date(now.getTime() + timings.jobTokenTtlMs) },
+      currentItemIs(item.id),
+    );
+    if (!job) continue;
+    activeItems.get(item.id)?.onDelivered?.();
+    const resumeSessionId = item.resume ? job.claudeSessionId : null;
+    return { jobId: job.id, itemId: item.id, jobToken: token, prompt: item.prompt, resumeSessionId };
+  }
+  return null;
 }
 
 /**
@@ -542,13 +566,14 @@ export async function reportItemDone(machineId: number, itemId: string, result: 
     if (!freed) await saveSession(job.id, machineId, result.sessionId);
   } else {
     // Compito chiuso dal consumatore e già sostituito da quello successivo: resta da salvare la sessione
-    const jobId = lingeringItems.get(itemId);
+    const jobId = lingeringItems.get(itemId)?.jobId;
     const lingering = jobId === undefined ? null : await loadJob(jobId);
     if (!lingering || lingering.machineId !== machineId) throw new LocalJobError(404, JOB_NOT_FOUND);
     if (!CLAIMED.includes(lingering.status)) throw new LocalJobError(410, JOB_EXPIRED);
     await saveSession(lingering.id, machineId, result.sessionId);
   }
-  lingeringItems.delete(itemId);
+  // Una ripresa in attesa di questo done può partire
+  if (lingeringItems.delete(itemId)) notify(machineKey(machineId));
   const entry = activeItems.get(itemId);
   if (entry && !entry.result) {
     entry.result = { sessionId: result.sessionId, exit: result.exit, usage: result.usage };
@@ -644,7 +669,7 @@ export async function completeItem(jobId: number, itemId: string, payload: unkno
   if (job.claimedBy === "chat") {
     await updateIf(jobId, CLAIMED, { currentItem: null, status: "claimed" }, currentItemIs(itemId));
   } else {
-    lingeringItems.set(itemId, jobId);
+    lingeringItems.set(itemId, { jobId, since: Date.now() });
   }
   notify(jobKey(jobId));
   return true;

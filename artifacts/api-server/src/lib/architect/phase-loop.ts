@@ -88,7 +88,7 @@ export interface RunPhaseInput {
 
 export type PhaseOutcome = { ok: true; result: unknown } | { ok: false; error: string };
 
-type ReadToolName = "list_dir" | "read_file" | "search" | "list_operations" | "read_operation";
+export type ReadToolName = "list_dir" | "read_file" | "search" | "list_operations" | "read_operation";
 
 function fn(name: string, description: string, parameters: Record<string, unknown>): ChatCompletionFunctionTool {
   return { type: "function", function: { name, description, parameters } };
@@ -386,6 +386,70 @@ function errorLog(name: string, args: Record<string, unknown> | null): string {
   return `${name}${target}${pattern} (errore)`;
 }
 
+/** Esito di una lettura: testo per il modello, riga di log e se la lettura è riuscita (compattabile). */
+type ReadOutcome = { content: string; log: string; ok: boolean };
+
+/** Controlla gli argomenti ed esegue la lettura; gli errori tornano come testo, mai come eccezione. */
+async function performRead(
+  name: ReadToolName,
+  args: Record<string, unknown>,
+  tree: SourceTree | null,
+  openapi: OpenApiDoc | null,
+): Promise<ReadOutcome> {
+  const argError = checkArgs(name, args, READ_SPECS[name]);
+  if (argError) return { content: `Errore: ${argError}`, log: `${name} (argomenti non validi)`, ok: false };
+  try {
+    const out = await runReadTool(name, args, tree, openapi);
+    return { ...out, ok: true };
+  } catch (err) {
+    // Gli errori del sorgente (percorso inesistente, regex non valida...) tornano al modello
+    const message = err instanceof SourceTreeError ? err.message : "lettura non riuscita";
+    return { content: `Errore: ${message}`, log: errorLog(name, args), ok: false };
+  }
+}
+
+const CODE_TOOLS: ReadonlySet<string> = new Set(["list_dir", "read_file", "search"]);
+
+/**
+ * Strumento di lettura per chi non passa da `runPhase` (l'agente locale via MCP): stesso testo restituito al
+ * modello, stessa riga di log (se `ctx.log` c'è). Uno strumento senza la sua sorgente, o argomenti che non sono
+ * un oggetto, danno lo stesso errore che riceverebbe il modello.
+ */
+export async function executeReadTool(
+  name: ReadToolName,
+  args: unknown,
+  ctx: { tree: SourceTree | null; openapi: OpenApiDoc | null; log?: (message: string) => void },
+): Promise<string> {
+  const available = CODE_TOOLS.has(name) ? ctx.tree !== null : ctx.openapi !== null;
+  if (!(name in READ_SPECS) || !available) {
+    ctx.log?.(`${logArg(String(name))} (strumento non disponibile)`);
+    return `Errore: lo strumento "${name}" non esiste o non è disponibile in questa analisi.`;
+  }
+  if (args === null || typeof args !== "object" || Array.isArray(args)) {
+    ctx.log?.(`${name} (argomenti non validi)`);
+    return `Errore: gli argomenti di "${name}" devono essere un oggetto JSON`;
+  }
+  const out = await performRead(name, args as Record<string, unknown>, ctx.tree, ctx.openapi);
+  ctx.log?.(out.log);
+  return out.content;
+}
+
+type SubmitCheck = { ok: true; result: unknown } | { ok: false; problems: string[] };
+
+function checkSubmit(phase: PhaseName, raw: unknown): SubmitCheck {
+  const r = PHASE_SCHEMAS[phase].safeParse(raw);
+  return r.success ? { ok: true, result: r.data } : { ok: false, problems: formatIssues(r.error.issues) };
+}
+
+/** Valida l'esito di una fase con lo schema Zod della fase; i problemi sono righe "- campo: messaggio". */
+export function validatePhaseSubmit(
+  phase: PhaseName,
+  raw: unknown,
+): { ok: true; result: unknown } | { ok: false; issues: string } {
+  const r = checkSubmit(phase, raw);
+  return r.ok ? r : { ok: false, issues: r.problems.map((p) => `- ${p}`).join("\n") };
+}
+
 /** Segnaposto di un output di lettura omesso: nome dello strumento e argomento principale, mai il contenuto. */
 function omittedStub(name: ReadToolName, args: Record<string, unknown>): string {
   const str = (key: string): string => (typeof args[key] === "string" ? logArg(args[key] as string) : "");
@@ -447,7 +511,6 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
   const now = input.now ?? Date.now;
   const tools = phaseTools(tree !== null, openapi !== null);
   const available = new Set(tools.map((t) => t.function.name));
-  const schema = PHASE_SCHEMAS[phase];
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: input.system },
     { role: "user", content: input.user },
@@ -545,22 +608,14 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
       }
       const name = c.name as ReadToolName;
       const parsed = parseArgs(name, c.arguments);
-      const argError = parsed.ok ? checkArgs(name, parsed.args, READ_SPECS[name]) : parsed.error;
-      if (argError || !parsed.ok) {
-        answer(c.id, `Errore: ${argError}`);
+      if (!parsed.ok) {
+        answer(c.id, `Errore: ${parsed.error}`);
         log(`${name} (argomenti non validi)`);
         continue;
       }
-      try {
-        const out = await runReadTool(name, parsed.args, tree, openapi);
-        answer(c.id, out.content, omittedStub(name, parsed.args));
-        log(out.log);
-      } catch (err) {
-        // Gli errori del sorgente (percorso inesistente, regex non valida...) tornano al modello
-        const message = err instanceof SourceTreeError ? err.message : "lettura non riuscita";
-        answer(c.id, `Errore: ${message}`);
-        log(errorLog(name, parsed.args));
-      }
+      const out = await performRead(name, parsed.args, tree, openapi);
+      answer(c.id, out.content, out.ok ? omittedStub(name, parsed.args) : undefined);
+      log(out.log);
     }
 
     for (const c of submits) {
@@ -571,12 +626,12 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
       } else if (!("result" in parsed.args)) {
         problems = ["result: campo obbligatorio (l'esito va passato come { \"result\": { ... } })"];
       } else {
-        const r = schema.safeParse(parsed.args["result"]);
-        if (r.success) {
+        const r = checkSubmit(phase, parsed.args["result"]);
+        if (r.ok) {
           log("submit_result valido");
-          return { ok: true, result: r.data };
+          return { ok: true, result: r.result };
         }
-        problems = formatIssues(r.error.issues);
+        problems = r.problems;
       }
 
       invalidSubmits += 1;

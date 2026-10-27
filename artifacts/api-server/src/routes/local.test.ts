@@ -452,6 +452,16 @@ describe("modello di riserva nelle analisi", () => {
     expect(ok.json.fallbackAiModelId).toBe(fallback.id);
     const [row] = await db.select().from(analysesTable).where(eq(analysesTable.id, ok.json.id));
     expect(row!.fallbackAiModelId).toBe(fallback.id);
+
+    // Macchina non collegata: l'analisi attende la scelta della console; "modello di riserva" la fa proseguire
+    let jobs: Array<{ id: number; analysisId: number | null; status: string }> = [];
+    for (let i = 0; i < 200 && !jobs.some((j) => j.status === "waiting_choice"); i++) {
+      await new Promise((r) => setTimeout(r, 10));
+      jobs = (await api("GET", "/local/jobs")).json;
+    }
+    const job = jobs.find((j) => j.analysisId === ok.json.id && j.status === "waiting_choice");
+    expect(job).toBeDefined();
+    expect((await api("POST", `/local/jobs/${job!.id}/choice`, { choice: "fallback" })).status).toBe(204);
   });
 
   it("zip con modello locale senza riserva → 400", async () => {

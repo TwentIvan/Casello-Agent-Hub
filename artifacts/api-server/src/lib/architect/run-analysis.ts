@@ -21,18 +21,23 @@ import {
   analysisItemsTable,
   appToolsTable,
   appsTable,
+  localMachinesTable,
   type Analysis,
   type AnalysisLogEntry,
   type AnalysisSources,
   type App,
 } from "@workspace/db";
 import { aiGateway, type ChatResult } from "../ai-gateway";
+import { FALLBACK_REQUIRED } from "../ai/choice";
 import { ProviderError } from "../ai/discovery";
 import { ModelAccessError, modelChat as executorChat, resolveModel, type ResolvedModel } from "../ai/executor";
 import { logger } from "../logger";
 import { decryptSecret } from "../secrets";
 import { GITHUB_MESSAGES, GithubError, forgetInstallationTokens, installationToken } from "../github/app";
 import { githubConfig, type GithubConfig } from "../github/config";
+import { closeAnalysisContext, openAnalysisContext, runPhaseDelegated } from "../local/architect-tools";
+import { awaitDispatch, createLocalJob, finishLocalJob, LocalJobError } from "../local/jobs";
+import { isLocalModel } from "../local/machines";
 import { loadAppConnection } from "../tools/catalog";
 import { diffAgents, diffAlwaysNew, diffSkills, diffTools, type DiffEntry } from "./diff";
 import { PHASE_TOKEN_SHARES, runPhase, type PhaseBudget } from "./phase-loop";
@@ -462,6 +467,50 @@ function architectChat({
   };
 }
 
+// --- Agente locale -----------------------------------------------------------------------------
+
+type LocalDispatch = { kind: "local"; jobId: number } | { kind: "fallback"; aiModelId: number };
+
+/**
+ * Analisi con un modello dell'agente locale: crea il lavoro della macchina (avviato dalla console) e attende che il
+ * runner lo prenda, che la console scelga il modello di riserva o che il lavoro scada. Il lavoro è dell'utente
+ * proprietario della macchina.
+ */
+async function dispatchLocal(analysis: Analysis, machineId: number, log: (m: string) => void): Promise<LocalDispatch> {
+  if (analysis.fallbackAiModelId === null) throw new AnalysisError(FALLBACK_REQUIRED);
+  const [machine] = await db
+    .select({ userId: localMachinesTable.userId })
+    .from(localMachinesTable)
+    .where(eq(localMachinesTable.id, machineId))
+    .limit(1);
+  if (!machine) throw new AnalysisError("macchina non disponibile");
+  let jobId: number;
+  try {
+    const job = await createLocalJob({
+      userId: machine.userId,
+      machineId,
+      kind: "analysis",
+      analysisId: analysis.id,
+      fallbackAiModelId: analysis.fallbackAiModelId,
+      origin: "console",
+    });
+    jobId = job.id;
+  } catch (err) {
+    if (err instanceof LocalJobError) throw new AnalysisError(err.message);
+    throw err;
+  }
+  log("agente locale: in attesa della macchina");
+  // Nessun annullamento dall'esterno: le attese ("attendi", "posticipa") le limita la coda dei lavori
+  const outcome = await awaitDispatch(jobId, new AbortController().signal);
+  if (outcome.kind === "cancelled") throw new AnalysisError(outcome.error);
+  if (outcome.kind === "fallback") {
+    log("agente locale non disponibile: analisi con il modello di riserva");
+    return { kind: "fallback", aiModelId: outcome.aiModelId };
+  }
+  log("agente locale: lavoro preso dalla macchina");
+  return { kind: "local", jobId };
+}
+
 // --- Avvio -----------------------------------------------------------------------------------
 
 /**
@@ -491,10 +540,23 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
   const log = (message: string) => progress.add(message);
   let tree: SourceTree | null = null;
   let closed = false;
+  // Lavoro dell'agente locale che esegue le fasi (null = modello API)
+  let localJobId: number | null = null;
+
+  /** Chiude il lavoro dell'agente locale (se c'è) insieme all'analisi; un errore qui non blocca la chiusura. */
+  const finishJob = async (status: "completed" | "failed", error: string | null) => {
+    if (localJobId === null) return;
+    const jobId = localJobId;
+    localJobId = null;
+    await finishLocalJob(jobId, status, error).catch((err: unknown) =>
+      logger.error({ analysisId, errName: err instanceof Error ? err.name : "unknown" }, "Chiusura del lavoro locale non riuscita"),
+    );
+  };
 
   /** Chiusura condizionata: solo un'analisi ancora `running`. */
   const close = async (status: "completed" | "failed", error: string | null) => {
     await progress.settle();
+    await finishJob(status, error);
     await db
       .update(analysesTable)
       .set({ status, error, finishedAt: new Date() })
@@ -506,12 +568,24 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
     const [app] = await db.select().from(appsTable).where(eq(appsTable.id, analysis.appId)).limit(1);
     if (!app) throw new AnalysisError("app non trovata");
 
+    // Modello dell'agente locale: prima l'assegnazione del lavoro (le sorgenti si caricano dopo, così non restano
+    // in memoria durante l'attesa); con la scelta del modello di riserva si prosegue come per un modello API.
+    // Il tempo massimo dell'analisi parte dall'esito dell'assegnazione.
+    let aiModelId = analysis.aiModelId;
+    const machine = aiModelId === null ? null : await isLocalModel(aiModelId);
+    if (machine) {
+      const dispatch = await dispatchLocal(analysis, machine.machineId, log);
+      if (dispatch.kind === "local") localJobId = dispatch.jobId;
+      else aiModelId = dispatch.aiModelId;
+      budget.deadline = now() + maxMs;
+    }
+
     // Modello dell'analisi risolto una volta all'avvio (chi l'ha avviata l'ha già scelto tra i suoi
     // o quelli di sistema). La chiave resta in memoria nell'oggetto risolto, mai copiato.
     let resolved: ResolvedModel | null = null;
-    if (analysis.aiModelId !== null) {
+    if (aiModelId !== null && localJobId === null) {
       try {
-        resolved = await resolveModel(analysis.aiModelId, { userId: null, mustOwn: false });
+        resolved = await resolveModel(aiModelId, { userId: null, mustOwn: false });
       } catch (err) {
         if (err instanceof ModelAccessError || err instanceof ProviderError) throw new AnalysisError(err.message);
         throw err;
@@ -522,6 +596,8 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
     tree = loaded.tree;
     const { openapi, sources } = loaded;
     await progress.flush({ sources });
+    // Strumenti MCP del lavoro: leggono queste sorgenti, in memoria, finché l'analisi è in corso
+    const localContext = localJobId === null ? null : openAnalysisContext(analysisId, { tree, openapi, log });
 
     // Senza codice né OpenAPI i tool derivano solo dalla descrizione: vanno sempre verificati
     const forceVerification = sources.code === "none" && !sources.openapi;
@@ -556,7 +632,13 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       });
       // Quota morbida della fase: solo il sollecito a consegnare; il tetto rigido resta il totale
       const phaseQuota = Math.floor(PHASE_TOKEN_SHARES[phase] * budget.maxTokens);
-      const outcome = await runPhase({ phase, system: SYSTEM_BASE, user, tree, openapi, chat, budget, phaseQuota, log, now });
+      let outcome;
+      if (localContext && localJobId !== null) {
+        localContext.phase = phase;
+        outcome = await runPhaseDelegated({ jobId: localJobId, phase, system: SYSTEM_BASE, user, budget, log, now });
+      } else {
+        outcome = await runPhase({ phase, system: SYSTEM_BASE, user, tree, openapi, chat, budget, phaseQuota, log, now });
+      }
       if (!outcome.ok) {
         log(`fase ${phase} non riuscita`);
         await progress.flush();
@@ -603,7 +685,9 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       // gestito nel finally
     }
   } finally {
+    closeAnalysisContext(analysisId);
     await tree?.dispose().catch(() => {});
+    await finishJob("failed", GENERIC_ERROR);
     if (!closed) {
       // Ultimo tentativo: nessuna analisi resta `running`
       await db

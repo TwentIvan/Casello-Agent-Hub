@@ -14,11 +14,16 @@ import {
   analysisItemsTable,
   appToolsTable,
   appsTable,
+  localJobsTable,
   type AnalysisLogEntry,
 } from "@workspace/db";
 import { encryptSecret } from "../secrets";
 import { allowTestLoopback } from "../../../test/fake-provider";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
+import { startFakeRunner, toolText, type FakeRunner } from "../../../test/fake-local-agent";
+import { ensureProviderRegistry } from "../catalog/provider-registry";
+import { chooseForJob, setLocalJobTimings } from "../local/jobs";
+import { machineModelId, registerMachine } from "../local/machines";
 import { clearInstallationTokenCache } from "../github/app";
 import type { GithubConfig } from "../github/config";
 import {
@@ -1000,6 +1005,213 @@ describe("startAnalysis con l'installazione della GitHub App", () => {
     expect(a.error).toMatch(/token GitHub non valido/);
     expect(githubAuth).toEqual([`Bearer ${GITHUB_TOKEN}`]);
     expect(gh.requests).toHaveLength(0);
+  });
+});
+
+describe("startAnalysis con l'agente locale", () => {
+  const LOCAL_USAGE = { inputTokens: 100, outputTokens: 20 };
+  let userId: number;
+  let machineId: number;
+  let localModelId: number;
+  let fallbackModelId: number;
+  let runner: FakeRunner | null;
+  /** Fasi in cui il finto Claude termina senza consegnare (anche nei compiti di correzione). */
+  let silentPhases: Set<PhaseName>;
+  /** Fasi in cui il finto Claude consegna solo quando la sessione viene ripresa (dopo una correzione). */
+  let submitOnResume: Set<PhaseName>;
+  /** Esiti di submit_phase_result visti dal finto Claude. */
+  let submitReplies: string[];
+
+  // Il provider `local_agent` dell'account "Agente locale" sta nel registro dei provider
+  beforeAll(async () => {
+    await ensureProviderRegistry();
+  });
+
+  beforeEach(async () => {
+    const [user] = await db.insert(usersTable).values({ email: "ivan@example.com", name: "Ivan" }).returning();
+    userId = user!.id;
+    const { machine } = await registerMachine(userId, "MacBook");
+    machineId = machine.id;
+    const [local] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.modelId, machineModelId(machineId)));
+    localModelId = local!.id;
+    // Modello di riserva: account proprio verso il finto LiteLLM
+    const [account] = await db
+      .insert(aiAccountsTable)
+      .values({
+        userId,
+        name: "Account",
+        provider: "custom",
+        baseUrl: process.env["AI_GATEWAY_BASE_URL"]!,
+        allowPrivateNetwork: true,
+        apiKeyEnc: encryptSecret("sk-riserva"),
+        status: "ok",
+      })
+      .returning();
+    const [fallback] = await db
+      .insert(aiModelsTable)
+      .values({ accountId: account!.id, modelId: "modello-riserva", displayName: "R", priceInputPerMtok: "1", priceOutputPerMtok: "2" })
+      .returning();
+    fallbackModelId = fallback!.id;
+    runner = null;
+    silentPhases = new Set();
+    submitOnResume = new Set();
+    submitReplies = [];
+  });
+
+  afterEach(() => {
+    runner?.stop();
+  });
+
+  /** Il runner della macchina con un finto Claude che legge un file e consegna l'esito a copione. */
+  function startRunner() {
+    let phase: PhaseName = "map";
+    runner = startFakeRunner(machineId, async (d, client) => {
+      // Un compito di correzione riprende la sessione: la fase è quella del compito precedente
+      if (!d.resumeSessionId) phase = PHASE_BY_NUMBER[Number(/FASE (\d)/.exec(d.prompt)?.[1] ?? 1) - 1]!;
+      const silent = silentPhases.has(phase) || (submitOnResume.has(phase) && !d.resumeSessionId);
+      if (!silent) {
+        await client.callTool({ name: "read_file", arguments: { path: "src/a.ts" } });
+        const reply = toolText(await client.callTool({ name: "submit_phase_result", arguments: { result: RESULTS[phase] } }));
+        submitReplies.push(reply.text);
+      }
+      return { sessionId: `sess-${phase}-${runner!.deliveries.length}`, usage: LOCAL_USAGE };
+    });
+    return runner;
+  }
+
+  const localAnalysis = () =>
+    createAnalysis(appId, { aiModelId: localModelId, fallbackAiModelId: fallbackModelId, model: machineModelId(machineId) });
+
+  const jobOf = async (analysisId: number) =>
+    (await db.select().from(localJobsTable).where(eq(localJobsTable.analysisId, analysisId)))[0];
+
+  /** Elementi confrontabili tra due analisi. */
+  const comparable = async (id: number) =>
+    (await loadItems(id)).map((i) => ({ chapter: i.chapter, ref: i.ref, diff: i.diff, payload: i.payload, evidence: i.evidence, position: i.position }));
+
+  it("sei fasi eseguite dall'agente locale via MCP: stessi elementi del percorso API, nessun costo", async () => {
+    await db.insert(appToolsTable).values({
+      appId,
+      name: "old_tool",
+      description: "Vecchio",
+      kind: "http",
+      identity: "user",
+      requiresConfirmation: false,
+      readOnly: true,
+      paramsSchema: { type: "object", properties: {} },
+      definition: { method: "GET", path: "/old", paramLocations: {} },
+      status: "active",
+    });
+    // Percorso API con gli stessi esiti a copione
+    const viaApi = await createAnalysis(appId, { aiModelId: fallbackModelId, model: "modello-riserva" });
+    await startAnalysis(viaApi, { zip: testZip() });
+    expect((await loadAnalysis(viaApi)).status).toBe("completed");
+    const apiRequests = llmRequests.length;
+
+    const r = startRunner();
+    const id = await localAnalysis();
+    await startAnalysis(id, { zip: testZip() });
+
+    const a = await loadAnalysis(id);
+    expect(a.error).toBeNull();
+    expect(a.status).toBe("completed");
+    expect(a.architectureMap).toEqual(RESULTS.map);
+    expect(await comparable(id)).toEqual(await comparable(viaApi));
+    // Nessuna chiamata a un modello API, costo nullo. I token di un compito chiuso dalla consegna non sono noti
+    // (il done del runner, con l'uso, arriva dopo): si contano solo quelli dei compiti finiti senza consegna
+    expect(llmRequests).toHaveLength(apiRequests);
+    expect(a.tokensUsed).toBe(0);
+    expect(a.costUsd).toBeNull();
+    // Una sessione nuova per ogni fase, con il prompt della fase e l'istruzione sugli strumenti di Casello
+    expect(r.deliveries).toHaveLength(6);
+    expect(r.deliveries.every((d) => d.resumeSessionId === null)).toBe(true);
+    r.deliveries.forEach((d, i) => {
+      expect(d.prompt).toContain(`FASE ${i + 1}`);
+      expect(d.prompt).toContain("submit_phase_result");
+    });
+    expect(submitReplies).toEqual(Array(6).fill("consegna ricevuta: fase completata, termina ora"));
+    // Log come nel percorso API: righe brevi degli strumenti, mai il contenuto dei file
+    const log = a.log as AnalysisLogEntry[];
+    expect(log.some((e) => e.phase === "map" && e.message === "read_file src/a.ts (1 riga)")).toBe(true);
+    expect(log.some((e) => e.phase === "evolution" && e.message === "submit_phase_result valido")).toBe(true);
+    expect(JSON.stringify(log)).not.toContain(FILE_SECRET);
+    expect(await jobOf(id)).toMatchObject({ status: "completed", kind: "analysis", origin: "console", userId });
+  });
+
+  it("Claude termina senza consegnare: due correzioni sulla sessione ripresa, poi failed (mai un'attesa infinita)", async () => {
+    silentPhases.add("capabilities");
+    const r = startRunner();
+    const id = await localAnalysis();
+    await startAnalysis(id, { zip: testZip() });
+
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.phase).toBe("capabilities");
+    expect(a.error).toBe("fase non consegnata dall'agente locale");
+    // map, poi capabilities: il compito della fase e le due correzioni, che riprendono la sessione precedente
+    expect(r.deliveries).toHaveLength(4);
+    const [, first, second, third] = r.deliveries;
+    expect(first!.resumeSessionId).toBeNull();
+    expect(second!.resumeSessionId).toBe("sess-capabilities-2");
+    expect(third!.resumeSessionId).toBe("sess-capabilities-3");
+    expect(second!.prompt).toMatch(/submit_phase_result/);
+    expect(second!.prompt).not.toContain("FASE");
+    expect((await jobOf(id))!.status).toBe("failed");
+    // I tre compiti di capabilities sono finiti col done del runner: il loro uso è noto
+    expect(a.tokensUsed).toBe(3 * 120);
+    const log = a.log as AnalysisLogEntry[];
+    expect(log.filter((e) => /correzione/.test(e.message))).toHaveLength(2);
+    expect(await loadItems(id)).toHaveLength(0);
+  });
+
+  it("consegna dopo una correzione: la fase prosegue", async () => {
+    submitOnResume.add("catalog");
+    const r = startRunner();
+    const id = await localAnalysis();
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.error).toBeNull();
+    expect(a.status).toBe("completed");
+    expect(r.deliveries).toHaveLength(7);
+    expect(r.deliveries[3]!.resumeSessionId).toBe("sess-catalog-3");
+    expect((await loadItems(id)).some((i) => i.ref === "tool:create_team")).toBe(true);
+  });
+
+  it("runner non collegato, scelta 'modello di riserva': analisi completata col modello di riserva", async () => {
+    const id = await localAnalysis();
+    const running = startAnalysis(id, { zip: testZip() });
+    let job = await jobOf(id);
+    for (let i = 0; i < 200 && job?.status !== "waiting_choice"; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+      job = await jobOf(id);
+    }
+    expect(job!.status).toBe("waiting_choice");
+    await chooseForJob(job!.id, userId, "fallback");
+    await running;
+
+    const a = await loadAnalysis(id);
+    expect(a.error).toBeNull();
+    expect(a.status).toBe("completed");
+    expect(llmRequests).toHaveLength(12);
+    expect(llmRequests.every((b) => b.model === "modello-riserva")).toBe(true);
+    expect(llmAuth.every((h) => h === "Bearer sk-riserva")).toBe(true);
+    expect(Number(a.costUsd)).toBeGreaterThan(0);
+    expect((await jobOf(id))!.status).toBe("cancelled");
+  });
+
+  it("runner non collegato e attesa scaduta: failed con l'errore del lavoro, nessuna chiamata al modello", async () => {
+    const restore = setLocalJobTimings({ waitMs: { analysis: 100, run: 100 } });
+    try {
+      const id = await localAnalysis();
+      await startAnalysis(id, { zip: testZip() });
+      const a = await loadAnalysis(id);
+      expect(a.status).toBe("failed");
+      expect(a.error).toBe("agente locale non collegato");
+      expect(llmRequests).toHaveLength(0);
+      expect(await loadItems(id)).toHaveLength(0);
+    } finally {
+      restore();
+    }
   });
 });
 

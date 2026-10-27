@@ -15,6 +15,7 @@ import {
 } from "@workspace/db";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 import { ensureProviderRegistry } from "../lib/catalog/provider-registry";
+import { failOpenLocalJobs } from "../lib/local/jobs";
 import { hashToken } from "../lib/local/tokens";
 import { encryptSecret } from "../lib/secrets";
 
@@ -159,6 +160,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // Un'analisi rimasta in attesa della macchina (es. test fallito prima della scelta) si chiude subito
+  await failOpenLocalJobs();
   await settleAnalyses();
   vi.restoreAllMocks();
   await fake.close();

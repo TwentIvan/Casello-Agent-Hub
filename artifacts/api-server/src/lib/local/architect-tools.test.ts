@@ -8,7 +8,7 @@ import { SourceTree } from "../architect/source-tree";
 import { ensureProviderRegistry } from "../catalog/provider-registry";
 import type { OpenApiDoc } from "../architect/sources";
 import { closeAnalysisContext, MAX_INVALID_SUBMITS_PER_ITEM, openAnalysisContext } from "./architect-tools";
-import { claimJob, createLocalJob, jobByToken, runItem, type ItemResult } from "./jobs";
+import { claimJob, createLocalJob, jobByToken, nextForMachine, runItem, type ItemResult } from "./jobs";
 import { registerMachine } from "./machines";
 
 // Strumenti MCP dei lavori `analysis`: gli strumenti di lettura dell'architetto (stesso testo di runPhase) e la
@@ -36,6 +36,7 @@ let tree: SourceTree;
 let analysisId: number;
 let jobId: number;
 let jobToken: string;
+let machineId: number;
 let logs: string[];
 let controllers: AbortController[] = [];
 let closers: Array<() => Promise<void>> = [];
@@ -53,11 +54,24 @@ async function client(): Promise<Client> {
   return c.client;
 }
 
-/** Compito in corso del lavoro (come lo pubblica runPhaseDelegated); `done` risolve alla sua fine. */
-async function publishItem(): Promise<{ done: Promise<ItemResult> }> {
+/** Il runner riceve il compito in attesa (token del lavoro nuovo, lavoro `running`). */
+async function deliver(): Promise<void> {
+  const d = await nextForMachine(machineId, signal());
+  if (!d) throw new Error("nessun compito consegnato");
+  jobToken = d.jobToken;
+}
+
+/**
+ * Compito del lavoro (come lo pubblica runPhaseDelegated), consegnato al runner salvo `delivered: false`; `done`
+ * risolve alla sua fine.
+ */
+async function publishItem(delivered = true): Promise<{ done: Promise<ItemResult> }> {
   const done = runItem(jobId, { prompt: "fase", resume: false }, signal());
   for (let i = 0; i < 100; i++) {
-    if ((await jobByToken(jobToken))?.currentItem) return { done };
+    if ((await jobByToken(jobToken))?.currentItem) {
+      if (delivered) await deliver();
+      return { done };
+    }
     await new Promise((r) => setTimeout(r, 5));
   }
   throw new Error("compito non pubblicato");
@@ -72,6 +86,7 @@ beforeEach(async () => {
   await pool.query("TRUNCATE users, apps, ai_accounts RESTART IDENTITY CASCADE");
   const [user] = await db.insert(usersTable).values({ email: "ivan@example.com", name: "Ivan" }).returning();
   const { machine } = await registerMachine(user!.id, "MacBook");
+  machineId = machine.id;
   const [account] = await db
     .insert(aiAccountsTable)
     .values({ userId: user!.id, name: "API", provider: "custom", baseUrl: "https://api.example.com/v1", status: "ok" })
@@ -145,6 +160,7 @@ describe("strumenti MCP dell'architetto", () => {
 
     const ctx = openAnalysisContext(analysisId, { tree, openapi: null, log: (m) => logs.push(m) });
     ctx.phase = "map";
+    await publishItem();
     const out = toolText(await (await client()).callTool({ name: "read_file", arguments: { path: "src/a.ts" } }));
     expect(out).toEqual({ text: fromRunPhase, isError: false });
     expect(logs).toEqual(["read_file src/a.ts (2 righe)"]);
@@ -152,6 +168,7 @@ describe("strumenti MCP dell'architetto", () => {
 
   it("errori di lettura: testo d'errore come per il modello, mai un'eccezione", async () => {
     openAnalysisContext(analysisId, { tree, openapi: null, log: (m) => logs.push(m) });
+    await publishItem();
     const c = await client();
     expect(toolText(await c.callTool({ name: "read_file", arguments: { path: "nope.ts" } })).text).toMatch(/^Errore: /);
     expect(toolText(await c.callTool({ name: "read_file", arguments: { path: 3 } })).text).toMatch(/argomenti di "read_file" non validi/);
@@ -162,6 +179,7 @@ describe("strumenti MCP dell'architetto", () => {
     const big = SourceTree.fromZip(zipSync({ "big.ts": strToU8(Array.from({ length: 200 }, () => "x".repeat(200)).join("\n")) }));
     try {
       openAnalysisContext(analysisId, { tree: big, openapi: null, log: () => {} });
+      await publishItem();
       const { text } = toolText(await (await client()).callTool({ name: "read_file", arguments: { path: "big.ts" } }));
       expect(text.length).toBeLessThanOrEqual(MAX_TOOL_OUTPUT_CHARS + 100);
       expect(text).toContain("troncato");
@@ -212,12 +230,36 @@ describe("strumenti MCP dell'architetto", () => {
     expect(logs.at(-1)).toBe("submit_phase_result non valido (troppe consegne: fase interrotta)");
   });
 
-  it("senza compito in corso la consegna è rifiutata", async () => {
-    const ctx = openAnalysisContext(analysisId, { tree, openapi: null, log: () => {} });
+  it("compito pubblicato ma non ancora consegnato al runner (sessione della fase precedente): letture e consegna rifiutate", async () => {
+    const ctx = openAnalysisContext(analysisId, { tree, openapi: null, log: (m) => logs.push(m) });
     ctx.phase = "map";
-    const out = toolText(await (await client()).callTool({ name: "submit_phase_result", arguments: { result: validMap } }));
-    expect(out.isError).toBe(true);
-    expect(out.text).toBe("nessuna fase in corso");
+    // Nessun compito: il lavoro preso dal runner è `claimed`
+    const idle = await client();
+    expect(toolText(await idle.callTool({ name: "submit_phase_result", arguments: { result: validMap } }))).toEqual({
+      text: "compito non più in corso",
+      isError: true,
+    });
+
+    const item = await publishItem(false);
+    const stale = await client();
+    expect(toolText(await stale.callTool({ name: "read_file", arguments: { path: "src/a.ts" } }))).toEqual({
+      text: "compito non più in corso",
+      isError: true,
+    });
+    expect(toolText(await stale.callTool({ name: "submit_phase_result", arguments: { result: validMap } }))).toEqual({
+      text: "compito non più in corso",
+      isError: true,
+    });
+    expect(logs).toEqual([]);
+
+    // Consegnato al runner: la sessione nuova legge e consegna
+    await deliver();
+    const fresh = await client();
+    expect(toolText(await fresh.callTool({ name: "read_file", arguments: { path: "src/a.ts" } })).text).toContain(SECRET_LINE);
+    expect(toolText(await fresh.callTool({ name: "submit_phase_result", arguments: { result: validMap } })).text).toBe(
+      "consegna ricevuta: fase completata, termina ora",
+    );
+    expect((await item.done).completion).toEqual(validMap);
   });
 
   it("contesto dell'analisi assente (es. dopo un riavvio): lavoro scaduto", async () => {

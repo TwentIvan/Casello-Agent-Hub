@@ -1,3 +1,4 @@
+import type { LocalJob } from "@workspace/db";
 import {
   executeReadTool,
   MAX_CORRECTIONS,
@@ -11,7 +12,18 @@ import {
 import type { PhaseName } from "../architect/schemas";
 import type { SourceTree } from "../architect/source-tree";
 import type { OpenApiDoc } from "../architect/sources";
-import { completeItem, JOB_EXPIRED, LocalJobError, runItem } from "./jobs";
+import {
+  completeItem,
+  ITEM_REPLACED,
+  JOB_CANCELLED,
+  JOB_EXPIRED,
+  JOB_NOT_FOUND,
+  LOCAL_DISCONNECTED,
+  LOCAL_NOT_CONNECTED,
+  LocalJobError,
+  RESTARTED,
+  runItem,
+} from "./jobs";
 import { registerJobToolProvider, type JobToolDef, type JobToolInputSchema } from "./mcp-server";
 
 /**
@@ -55,7 +67,7 @@ export function closeAnalysisContext(analysisId: number): void {
 export const SUBMIT_PHASE_TOOL = "submit_phase_result";
 const SUBMIT_OK = "consegna ricevuta: fase completata, termina ora";
 const NO_PHASE = "nessuna fase in corso";
-const ITEM_GONE = "compito non più in corso";
+const ITEM_GONE = ITEM_REPLACED;
 /** Consegne non valide ammesse in un compito: oltre, la fase si interrompe. */
 export const MAX_INVALID_SUBMITS_PER_ITEM = 5;
 const TOO_MANY_INVALID = "troppe consegne non valide: fase interrotta";
@@ -64,9 +76,15 @@ const PHASE_ABORTED = { aborted: true } as const;
 
 const expired = () => new LocalJobError(410, JOB_EXPIRED);
 
-function contextOf(analysisId: number | null): AnalysisContext {
-  const ctx = analysisId === null ? undefined : contexts.get(analysisId);
+/**
+ * Contesto dell'analisi del lavoro, solo per il compito consegnato. Un lavoro del runner non `running` ha il compito
+ * successivo pubblicato ma non ancora consegnato: chi chiama è la sessione di Claude della fase precedente (il token
+ * è del lavoro, non del compito) e non deve leggere né consegnare per la fase nuova.
+ */
+function contextOf(job: Pick<LocalJob, "analysisId" | "claimedBy" | "status">): AnalysisContext {
+  const ctx = job.analysisId === null ? undefined : contexts.get(job.analysisId);
   if (!ctx) throw expired();
+  if (job.claimedBy === "runner" && job.status !== "running") throw new LocalJobError(409, ITEM_GONE);
   return ctx;
 }
 
@@ -77,7 +95,7 @@ function readTool(name: ReadToolName): JobToolDef {
     description,
     inputSchema: parameters as JobToolInputSchema,
     handler: async ({ job }, args) => {
-      const ctx = contextOf(job.analysisId);
+      const ctx = contextOf(job);
       return { text: await executeReadTool(name, args, ctx) };
     },
   };
@@ -89,7 +107,7 @@ const submitTool: JobToolDef = {
     "Consegna l'esito della fase in corso. `result` deve rispettare lo schema richiesto dalla fase; se viene rifiutato, correggi gli errori indicati e consegna di nuovo l'esito completo. Dopo una consegna accettata termina.",
   inputSchema: { type: "object", properties: { result: { type: "object" } }, required: ["result"] },
   handler: async ({ job }, args) => {
-    const ctx = contextOf(job.analysisId);
+    const ctx = contextOf(job);
     const item = job.currentItem;
     if (!ctx.phase || !item) return { text: NO_PHASE, isError: true };
     const hasResult = args !== null && typeof args === "object" && !Array.isArray(args) && "result" in args;
@@ -134,6 +152,17 @@ registerJobToolProvider("analysis", analysisTools);
 
 export const PHASE_NOT_DELIVERED = "fase non consegnata dall'agente locale";
 
+// Errori della coda dei lavori che `runItem` può lanciare (anche come `error` del lavoro): testi fissi, salvabili
+const QUEUE_MESSAGES: ReadonlySet<string> = new Set([
+  JOB_EXPIRED,
+  JOB_NOT_FOUND,
+  JOB_CANCELLED,
+  ITEM_REPLACED,
+  RESTARTED,
+  LOCAL_DISCONNECTED,
+  LOCAL_NOT_CONNECTED,
+]);
+
 const LOCAL_INSTRUCTIONS = `ISTRUZIONI PER L'AGENTE LOCALE. Usa solo gli strumenti del server MCP "casello": il codice e il contratto OpenAPI dell'app si leggono solo da lì (non leggere file locali, non eseguire comandi, non usare la rete). Quando hai finito consegna l'esito con ${SUBMIT_PHASE_TOOL} (è lo strumento chiamato submit_result nel testo sopra), nel campo result; se viene rifiutato correggi e consegna di nuovo. Dopo una consegna accettata termina.`;
 
 const CORRECTION = `Non hai consegnato un esito valido della fase. Consegna ora l'esito completo con ${SUBMIT_PHASE_TOOL} usando quello che hai già letto con gli strumenti di Casello, rispettando esattamente la forma dell'esempio della fase; poi termina.`;
@@ -166,9 +195,14 @@ export async function runPhaseDelegated(input: {
       result = await runItem(jobId, item, signal);
     } catch (err) {
       if (signal.aborted) return { ok: false, error: `fase ${phase}: tempo massimo dell'analisi scaduto` };
-      // Messaggi fissi della coda dei lavori (es. "agente locale disconnesso", "lavoro scaduto")
-      return { ok: false, error: err instanceof Error ? err.message : JOB_EXPIRED };
+      // Solo i messaggi fissi della coda dei lavori; ogni altro errore lo chiude l'analisi con il testo generico
+      if (err instanceof LocalJobError || (err instanceof Error && QUEUE_MESSAGES.has(err.message))) {
+        return { ok: false, error: err.message };
+      }
+      throw err;
     }
+    // Token informativi e incompleti: noti solo dal done del runner, che per un compito chiuso dalla consegna
+    // arriva dopo la fine di runItem (quindi non si contano)
     if (result.usage) budget.tokensUsed += result.usage.inputTokens + result.usage.outputTokens;
     // Compito interrotto per troppe consegne non valide: nessuna correzione
     if (result.completion === PHASE_ABORTED) return { ok: false, error: PHASE_NOT_DELIVERED };

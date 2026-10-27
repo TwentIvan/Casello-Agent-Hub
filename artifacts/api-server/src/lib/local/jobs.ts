@@ -19,10 +19,10 @@ export const LOCAL_NOT_CONNECTED = "agente locale non collegato";
 export const LOCAL_DISCONNECTED = "agente locale disconnesso";
 export const JOB_EXPIRED = "lavoro scaduto";
 export const JOB_NOT_FOUND = "lavoro non trovato";
-const JOB_CANCELLED = "lavoro annullato";
+export const JOB_CANCELLED = "lavoro annullato";
 const NOT_WAITING = "il lavoro non è in attesa di una scelta";
-const ITEM_REPLACED = "compito non più in corso";
-const RESTARTED = "interrotto dal riavvio";
+export const ITEM_REPLACED = "compito non più in corso";
+export const RESTARTED = "interrotto dal riavvio";
 // Il lavoro non serve più: la run o l'analisi prosegue col modello di riserva
 const FALLBACK_CHOSEN = "eseguito con il modello di riserva";
 

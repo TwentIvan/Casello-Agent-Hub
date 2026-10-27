@@ -13,6 +13,34 @@ import { rateLimit } from "../middlewares/rate-limit";
 
 const INVALID_TOKEN = "token non valido o revocato";
 
+// Autenticazioni fallite per IP (finestra fissa): oltre il limite ogni richiesta da quell'IP riceve 429 fino allo
+// scadere della finestra, prima di qualsiasi lettura del DB
+const AUTH_FAILURE_LIMIT = 30;
+const AUTH_FAILURE_WINDOW_MS = 60_000;
+const authFailures = new Map<string, { count: number; resetAt: number }>();
+
+/** Azzera i contatori delle autenticazioni fallite (per i test). */
+export function resetMcpAuthFailures(): void {
+  authFailures.clear();
+}
+
+/** Millisecondi di blocco rimasti per l'IP, 0 se non è bloccato. */
+function authBlockedFor(ip: string, now: number): number {
+  const entry = authFailures.get(ip);
+  if (!entry || entry.resetAt <= now) return 0;
+  return entry.count >= AUTH_FAILURE_LIMIT ? entry.resetAt - now : 0;
+}
+
+function recordAuthFailure(ip: string, now: number): void {
+  // Pulizia delle finestre scadute, così la mappa non cresce senza limite
+  if (authFailures.size > 1000) {
+    for (const [key, entry] of authFailures) if (entry.resetAt <= now) authFailures.delete(key);
+  }
+  let entry = authFailures.get(ip);
+  if (!entry || entry.resetAt <= now) authFailures.set(ip, (entry = { count: 0, resetAt: now + AUTH_FAILURE_WINDOW_MS }));
+  entry.count++;
+}
+
 function callerOf(res: Response): McpCaller {
   return res.locals["mcpCaller"] as McpCaller;
 }
@@ -22,6 +50,13 @@ function callerOf(res: Response): McpCaller {
  * in chiaro non si confronta mai con un valore salvato. Il token di un lavoro chiuso o scaduto dice "lavoro scaduto".
  */
 const tokenAuth: RequestHandler = async (req, res, next) => {
+  const ip = req.ip ?? "unknown";
+  const blocked = authBlockedFor(ip, Date.now());
+  if (blocked > 0) {
+    res.setHeader("Retry-After", Math.ceil(blocked / 1000));
+    res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
+    return;
+  }
   const header = req.get("authorization") ?? "";
   const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
   const kind = tokenKind(token);
@@ -50,10 +85,12 @@ const tokenAuth: RequestHandler = async (req, res, next) => {
     }
     const [known] = await db.select({ id: localJobsTable.id }).from(localJobsTable).where(eq(localJobsTable.jobTokenHash, hash)).limit(1);
     if (known) {
+      recordAuthFailure(ip, Date.now());
       res.status(401).json({ error: JOB_EXPIRED });
       return;
     }
   }
+  recordAuthFailure(ip, Date.now());
   res.status(401).json({ error: INVALID_TOKEN });
 };
 

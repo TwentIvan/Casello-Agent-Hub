@@ -22,6 +22,7 @@ import { ensureProviderRegistry } from "../lib/catalog/provider-registry";
 import { hashToken } from "../lib/local/tokens";
 import type * as Jobs from "../lib/local/jobs";
 import type * as McpServer from "../lib/local/mcp-server";
+import type * as McpRoutes from "./mcp";
 
 // Server MCP (/api/mcp) con il client MCP dell'SDK su un'app Express vera, senza login della console
 // (AUTH_DISABLED=true: l'utente della console è dev@localhost, che crea macchine e token personali).
@@ -30,6 +31,7 @@ let base: string;
 let server: http.Server;
 let jobs: typeof Jobs;
 let mcp: typeof McpServer;
+let mcpRoutes: typeof McpRoutes;
 const unregister: Array<() => void> = [];
 const calls: Array<{ jobId: number; userId: number; args: unknown }> = [];
 
@@ -131,6 +133,7 @@ beforeAll(async () => {
   await ensureProviderRegistry();
   jobs = await import("../lib/local/jobs");
   mcp = await import("../lib/local/mcp-server");
+  mcpRoutes = await import("./mcp");
   // Uno strumento fittizio per tipo di lavoro, più uno dinamico per le run
   for (const kind of ["analysis", "run"] as const) {
     unregister.push(
@@ -176,6 +179,7 @@ beforeEach(async () => {
   vi.spyOn(console, "log").mockImplementation(() => {});
   await pool.query("TRUNCATE users, apps, ai_accounts RESTART IDENTITY CASCADE");
   calls.length = 0;
+  mcpRoutes.resetMcpAuthFailures();
 });
 
 afterEach(async () => {
@@ -223,6 +227,21 @@ describe("autenticazione di /api/mcp", () => {
     expect((await call("DELETE", "/mcp", { token: jobToken })).status).toBe(405);
   });
 
+  it("oltre 30 autenticazioni fallite al minuto per IP → 429, anche con un token valido", async () => {
+    await devUserId();
+    const { token } = await personalToken();
+    mcpRoutes.resetMcpAuthFailures();
+    try {
+      for (let i = 0; i < 30; i++) expect((await call("POST", "/mcp", { token: "csl_p_" + "b".repeat(43), body: INITIALIZE })).status).toBe(401);
+      const blocked = await call("POST", "/mcp", { token: "abc", body: INITIALIZE });
+      expect(blocked.status).toBe(429);
+      expect((await call("POST", "/mcp", { token, body: INITIALIZE })).status).toBe(429);
+    } finally {
+      mcpRoutes.resetMcpAuthFailures();
+    }
+    expect((await call("POST", "/mcp", { token, body: INITIALIZE })).status).toBe(200);
+  });
+
   it("oltre 300 richieste al minuto per token → 429", async () => {
     await devUserId();
     const { token } = await personalToken();
@@ -264,7 +283,7 @@ describe("token di lavoro", () => {
       if (r!.currentItem) break;
       await new Promise((res) => setTimeout(res, 5));
     }
-    const current = JSON.parse(textOf(await client.callTool({ name: "get_job", arguments: { job_id: 999 } })));
+    const current = JSON.parse(textOf(await client.callTool({ name: "get_job", arguments: { casello_job_id: 999 } })));
     expect(current).toMatchObject({ jobId: job.id, kind: "run", prompt: "Esegui la run 1" });
 
     const result = await client.callTool({ name: "dummy_run", arguments: { value: "x" } });
@@ -321,7 +340,7 @@ describe("token personale (modalità chat)", () => {
     expect(stolen.isError).toBe(true);
     expect(textOf(stolen)).toBe("lavoro non trovato");
     // Un lavoro preso dal runner non si usa dalla chat
-    const runnerOnly = await client.callTool({ name: "get_job", arguments: { job_id: taken.id } });
+    const runnerOnly = await client.callTool({ name: "get_job", arguments: { casello_job_id: taken.id } });
     expect(runnerOnly.isError).toBe(true);
     expect(textOf(runnerOnly)).toBe("lavoro non trovato");
     expect((await client.callTool({ name: "claim_job", arguments: {} })).isError).toBe(true);
@@ -338,31 +357,32 @@ describe("token personale (modalità chat)", () => {
     const [row] = await db.select().from(localJobsTable).where(eq(localJobsTable.id, own.id));
     expect(row!.claimedBy).toBe("chat");
 
-    // Dopo la presa: gli strumenti del tipo del lavoro, con job_id obbligatorio
+    // Dopo la presa: gli strumenti del tipo del lavoro, con casello_job_id obbligatorio
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(["claim_job", "dummy_run", "dynamic_run", "get_job", "list_jobs"]);
-    expect(tools.find((t) => t.name === "dummy_run")!.inputSchema.required).toContain("job_id");
+    expect(tools.find((t) => t.name === "dummy_run")!.inputSchema.required).toContain("casello_job_id");
 
-    const info = JSON.parse(textOf(await client.callTool({ name: "get_job", arguments: { job_id: own.id } })));
+    const info = JSON.parse(textOf(await client.callTool({ name: "get_job", arguments: { casello_job_id: own.id } })));
     expect(info).toMatchObject({ jobId: own.id, kind: "run" });
 
-    const ok = await client.callTool({ name: "dummy_run", arguments: { job_id: own.id, value: "y" } });
+    // Un parametro job_id del tool resta del tool: si toglie solo casello_job_id
+    const ok = await client.callTool({ name: "dummy_run", arguments: { casello_job_id: own.id, job_id: 7, value: "y" } });
     expect(textOf(ok)).toBe(`ok run ${own.id}`);
-    expect(calls).toEqual([{ jobId: own.id, userId, args: { value: "y" } }]);
+    expect(calls).toEqual([{ jobId: own.id, userId, args: { job_id: 7, value: "y" } }]);
 
     for (const jobId of [foreign.id, taken.id, undefined]) {
-      const r = await client.callTool({ name: "dummy_run", arguments: { job_id: jobId, value: "y" } });
+      const r = await client.callTool({ name: "dummy_run", arguments: { casello_job_id: jobId, value: "y" } });
       expect(r.isError).toBe(true);
       expect(textOf(r)).toBe("lavoro non trovato");
     }
-    const wrongKind = await client.callTool({ name: "dummy_analysis", arguments: { job_id: own.id } });
+    const wrongKind = await client.callTool({ name: "dummy_analysis", arguments: { casello_job_id: own.id } });
     expect(wrongKind.isError).toBe(true);
     expect(textOf(wrongKind)).toBe("strumento non disponibile");
     expect(calls).toHaveLength(1);
 
     // Dopo la chiusura il lavoro non c'è più
     await jobs.finishLocalJob(own.id, "completed");
-    const closed = await client.callTool({ name: "get_job", arguments: { job_id: own.id } });
+    const closed = await client.callTool({ name: "get_job", arguments: { casello_job_id: own.id } });
     expect(textOf(closed)).toBe("lavoro non trovato");
   });
 });

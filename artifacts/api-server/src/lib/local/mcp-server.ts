@@ -11,7 +11,7 @@ import { claimJob, JOB_NOT_FOUND, LocalJobError, listOpenJobs, touchJob } from "
 /**
  * Server MCP di Casello per l'agente locale. Un server nuovo per ogni richiesta (trasporto senza stato), legato a
  * chi chiama: un token di lavoro (il runner, un solo lavoro) o un token personale (modalità chat: `list_jobs`,
- * `claim_job` e poi gli strumenti dei lavori presi dalla chat, con `job_id`). Gli strumenti dei lavori li
+ * `claim_job` e poi gli strumenti dei lavori presi dalla chat, con `casello_job_id`). Gli strumenti dei lavori li
  * registrano i Task delle analisi e delle run, per tipo di lavoro.
  */
 
@@ -78,13 +78,16 @@ async function toolsFor(job: LocalJob): Promise<JobToolDef[]> {
 // --- Strumenti predefiniti ------------------------------------------------------------------------------------------
 
 const JOB_ID_PROPERTY = { type: "integer", minimum: 1, description: "Id del lavoro preso con claim_job" };
+// Argomento che sceglie il lavoro con il token personale: un nome che non si scontra con i parametri dei tool
+// dell'app (che possono avere un loro `job_id`)
+const JOB_ARG = "casello_job_id";
 
-/** Con il token personale ogni strumento di lavoro richiede `job_id`. */
+/** Con il token personale ogni strumento di lavoro (anche `get_job`) richiede `casello_job_id`. */
 function withJobId(schema: JobToolInputSchema): JobToolInputSchema {
   return {
     ...schema,
-    properties: { ...schema.properties, job_id: JOB_ID_PROPERTY },
-    required: [...(schema.required ?? []).filter((r) => r !== "job_id"), "job_id"],
+    properties: { ...schema.properties, [JOB_ARG]: JOB_ID_PROPERTY },
+    required: [...(schema.required ?? []).filter((r) => r !== JOB_ARG), JOB_ARG],
   };
 }
 
@@ -108,7 +111,7 @@ const LIST_JOBS = {
 };
 const CLAIM_JOB = {
   name: "claim_job",
-  description: "Prende un lavoro in attesa per eseguirlo in questa chat; poi usa get_job con il suo job_id.",
+  description: "Prende un lavoro in attesa per eseguirlo in questa chat; poi usa get_job con casello_job_id uguale al suo id.",
   inputSchema: { type: "object", properties: { job_id: JOB_ID_PROPERTY }, required: ["job_id"] } as JobToolInputSchema,
 };
 
@@ -124,7 +127,9 @@ function describeJob(job: LocalJob): string {
   });
 }
 
-const JobIdArgs = z.object({ job_id: z.number().int().positive() });
+const JobId = z.number().int().positive();
+const ClaimArgs = z.object({ job_id: JobId });
+const JobArgs = z.object({ [JOB_ARG]: JobId });
 
 /** Lavoro aperto preso dalla chat dall'utente indicato; null altrimenti (lavori altrui invisibili). */
 async function chatJob(userId: number, jobId: number): Promise<LocalJob | null> {
@@ -190,7 +195,7 @@ export function createMcpServer(caller: McpCaller): Server {
     const args: Record<string, unknown> = request.params.arguments ?? {};
 
     if (caller.kind === "job") {
-      // Il lavoro è implicito nel token: un eventuale job_id non conta
+      // Il lavoro è implicito nel token: un eventuale casello_job_id non conta
       if (name === GET_JOB.name) return result(describeJob(caller.job));
       const def = (await toolsFor(caller.job)).find((t) => t.name === name);
       return def ? runTool(def, caller.job, args) : result(TOOL_UNAVAILABLE, true);
@@ -202,27 +207,27 @@ export function createMcpServer(caller: McpCaller): Server {
       return result(JSON.stringify(open.map((j) => ({ id: j.id, kind: j.kind, status: j.status, origin: j.origin, createdAt: j.createdAt }))));
     }
     if (name === CLAIM_JOB.name) {
-      const parsed = JobIdArgs.safeParse(args);
+      const parsed = ClaimArgs.safeParse(args);
       if (!parsed.success) return result(INVALID_ARGS, true);
       try {
-        // Il token del lavoro non serve alla chat: si lavora con il token personale e job_id
+        // Il token del lavoro non serve alla chat: si lavora con il token personale e casello_job_id
         const { job } = await claimJob(parsed.data.job_id, { by: "chat", userId });
         await extra.sendNotification({ method: "notifications/tools/list_changed" });
-        return result(`Lavoro ${job.id} (${job.kind}) preso. Chiama get_job con job_id ${job.id} per le istruzioni.`);
+        return result(`Lavoro ${job.id} (${job.kind}) preso. Chiama get_job con casello_job_id ${job.id} per le istruzioni.`);
       } catch (err) {
         if (err instanceof LocalJobError) return result(err.message, true);
         throw err;
       }
     }
 
-    const parsed = JobIdArgs.safeParse(args);
-    const job = parsed.success ? await chatJob(userId, parsed.data.job_id) : null;
+    const parsed = JobArgs.safeParse(args);
+    const job = parsed.success ? await chatJob(userId, parsed.data[JOB_ARG]) : null;
     if (!job) return result(JOB_NOT_FOUND, true);
     await touchJob(job.id);
     if (name === GET_JOB.name) return result(describeJob(job));
     const def = (await toolsFor(job)).find((t) => t.name === name);
     if (!def) return result(TOOL_UNAVAILABLE, true);
-    const { job_id: _jobId, ...rest } = args;
+    const { [JOB_ARG]: _jobId, ...rest } = args;
     return runTool(def, job, rest);
   });
 

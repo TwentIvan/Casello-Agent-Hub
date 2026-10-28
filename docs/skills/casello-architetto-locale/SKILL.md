@@ -53,9 +53,16 @@ senza l'approvazione dell'utente in console.
 
 ## Errori
 
-- `fase attesa: X`: consegna la fase X, non quella che hai mandato.
+- `fase attesa: X`: consegna la fase X, non quella che hai mandato. Se però X è la fase **successiva** a quella
+  appena inviata (tipico dopo un nuovo tentativo a seguito di un errore di rete), la consegna precedente era già
+  stata registrata: chiama `get_phase_instructions` e prosegui con X, senza rimandare il vecchio risultato come X.
 - `lease scaduta: chiedi di nuovo il compito`: rifai `claim_analysis`. Le fasi già consegnate restano; si riparte
   dalla prima fase senza esito (rileggi le istruzioni).
+- Errore di rete o HTTP 429 da Casello: attendi circa un minuto e ripeti la stessa chiamata (la lease dura 15
+  minuti; se l'attesa è lunga, fai `ping_analysis`).
+- Lease persa prima della scadenza naturale (es. `lease scaduta` subito dopo un submit o un ping recente: qualcuno
+  ha premuto «Rilascia» in console): dillo all'utente e chiedi prima di fare un nuovo claim. Se l'analisi è stata
+  annullata («Annulla»), un nuovo claim risponde `analisi non trovata o non tua`: fermati e dillo all'utente.
 - `analisi già presa da ...`: un altro agente tiene la lease; non insistere, riferisci all'utente.
 - Se non puoi completare l'analisi: `abandon_analysis` con un motivo breve (max 300 caratteri, visibile in console).
 

@@ -30,7 +30,6 @@ import { formatRelative } from "@/lib/format";
 const DEFAULT_DAYS = 30;
 const MAX_DAYS = 90;
 const MAX_NAME = 100;
-const MCP_URL = "https://casello.fantamister.cloud/mcp";
 
 const formatDate = (value: string) => new Date(value).toLocaleDateString("it-IT", { dateStyle: "short" });
 
@@ -141,13 +140,14 @@ function TokenRevealDialog({ token, onClose }: { token: string | null; onClose: 
         }
       }}
     >
-      <DialogContent>
+      {/* Il token si vede una sola volta: si chiude solo con «Fatto», non con Esc o un clic fuori */}
+      <DialogContent onEscapeKeyDown={(e) => e.preventDefault()} onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Token creato</DialogTitle>
           <DialogDescription>Copialo ora: non sarà più visibile.</DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2">
-          <Input readOnly value={token ?? ""} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
+          <Input readOnly aria-label="Token" value={token ?? ""} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
           <Button type="button" variant="outline" size="icon" aria-label="Copia il token" onClick={() => void copy()}>
             {copied ? <Check /> : <Copy />}
           </Button>
@@ -202,6 +202,7 @@ export function ApiTokensSection() {
   const [createOpen, setCreateOpen] = useState(false);
   const [created, setCreated] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<ApiTokenInfo | null>(null);
+  const mcpUrl = `${window.location.origin}/mcp`;
 
   const revoke = useRevokeApiToken({
     mutation: {
@@ -249,7 +250,7 @@ export function ApiTokensSection() {
         <div className="space-y-1 text-sm">
           <p className="text-muted-foreground">Per collegare Claude Code, esegui sul tuo computer:</p>
           <pre className="overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs">
-            {`claude mcp add --transport http casello ${MCP_URL} --header "Authorization: Bearer <token>"`}
+            {`claude mcp add --transport http casello ${mcpUrl} --header "Authorization: Bearer <token>"`}
           </pre>
         </div>
       </CardContent>

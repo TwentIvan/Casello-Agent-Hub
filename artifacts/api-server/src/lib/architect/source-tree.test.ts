@@ -109,25 +109,34 @@ describe("SourceTree", () => {
   });
 
   it("read paginato", () => {
-    const lines = Array.from({ length: 1000 }, (_, i) => `riga ${i + 1}`);
+    const total = SOURCE_LIMITS.maxReadLines * 5;
+    const lines = Array.from({ length: total }, (_, i) => `riga ${i + 1}`);
     const tree = SourceTree.fromZip(zip({ "big.txt": lines.join("\n") + "\n" }));
     const first = tree.read("big.txt");
-    expect(first.totalLines).toBe(1000);
+    expect(first.totalLines).toBe(total);
     expect(first.truncated).toBe(true);
-    expect(first.content.split("\n")).toHaveLength(200);
+    expect(first.content.split("\n")).toHaveLength(SOURCE_LIMITS.maxReadLines);
     expect(first.content.startsWith("riga 1\n")).toBe(true);
     const part = tree.read("big.txt", 10, 12);
     expect(part.content).toBe("riga 10\nriga 11\nriga 12");
-    const rest = tree.read("big.txt", 990);
+    const rest = tree.read("big.txt", total - 10);
     expect(rest.truncated).toBe(false);
-    expect(rest.content.endsWith("riga 1000")).toBe(true);
-    const wide = tree.read("big.txt", 1, 1000);
-    expect(wide.content.split("\n")).toHaveLength(200);
+    expect(rest.content.endsWith(`riga ${total}`)).toBe(true);
+    const wide = tree.read("big.txt", 1, total);
+    expect(wide.content.split("\n")).toHaveLength(SOURCE_LIMITS.maxReadLines);
+  });
+
+  it("read con limits espliciti usa quelli", () => {
+    const lines = Array.from({ length: 100 }, (_, i) => `riga ${i + 1}`);
+    const tree = SourceTree.fromZip(zip({ "b.txt": lines.join("\n") }));
+    const r = tree.read("b.txt", 1, undefined, { maxLines: 10, maxChars: 1000 });
+    expect(r.content.split("\n")).toHaveLength(10);
+    expect(r.truncated).toBe(true);
   });
 
   it("read limita i caratteri", () => {
     const tree = SourceTree.fromZip(
-      zip({ "w.txt": Array(300).fill("x".repeat(200)).join("\n") }),
+      zip({ "w.txt": Array(1000).fill("x".repeat(200)).join("\n") }),
     );
     const r = tree.read("w.txt");
     expect(r.content.length).toBeLessThanOrEqual(SOURCE_LIMITS.maxReadChars);

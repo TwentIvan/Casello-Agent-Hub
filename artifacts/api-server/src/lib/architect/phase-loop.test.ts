@@ -11,6 +11,8 @@ import {
   MAX_CORRECTIONS,
   MAX_TOOL_OUTPUT_CHARS,
   PHASE_MAX_ROUNDS,
+  PHASE_NUDGE_RATIO,
+  scaleLimitsForContext,
   PHASE_NUDGE,
   PHASE_TOKEN_SHARES,
   runPhase,
@@ -354,14 +356,14 @@ describe("runPhase", () => {
     });
 
     it(`all'80% dei ${PHASE_MAX_ROUNDS} giri: sollecito, poi fallisce dopo altri 2 giri`, async () => {
-      expect(PHASE_MAX_ROUNDS).toBe(25);
+      const nudgeRound = Math.ceil(PHASE_MAX_ROUNDS * PHASE_NUDGE_RATIO);
       const s = scripted([reply([call("list_dir", { path: "src" })])]);
       const { input } = base(s.chat);
       const out = await runPhase(input);
       expect(out).toEqual({ ok: false, error: "fase map: esito non consegnato entro il budget della fase" });
-      expect(nudges(s.calls[19]!.messages)).toBe(0);
-      expect(isNudge(s.calls[20]!.messages.at(-1)!)).toBe(true);
-      expect(s.calls).toHaveLength(22);
+      expect(nudges(s.calls[nudgeRound - 1]!.messages)).toBe(0);
+      expect(isNudge(s.calls[nudgeRound]!.messages.at(-1)!)).toBe(true);
+      expect(s.calls).toHaveLength(nudgeRound + 2);
     });
 
     it("sollecito dopo una risposta senza strumenti: resta l'ultimo messaggio", async () => {
@@ -464,7 +466,7 @@ describe("runPhase", () => {
   });
 
   it("read_file lungo: numera le righe e indica come continuare", async () => {
-    const big = Array.from({ length: 1_000 }, (_, i) => `riga ${i + 1}`).join("\n");
+    const big = Array.from({ length: 4_000 }, (_, i) => `riga ${i + 1}`).join("\n");
     const s = scripted([
       reply([call("read_file", { path: "big.ts", fromLine: 10 })]),
       reply([call("submit_result", { result: validMap })]),
@@ -472,17 +474,57 @@ describe("runPhase", () => {
     const { input, logs } = base(s.chat, { tree: makeTree({ "big.ts": big }) });
     await runPhase(input);
     const msg = toolMessages(s.calls[1]!.messages)[0]!;
-    expect(SOURCE_LIMITS.maxReadLines).toBe(200);
+    const end = 10 + SOURCE_LIMITS.maxReadLines - 1;
     expect(msg).toContain("10: riga 10");
-    expect(msg).toContain("209: riga 209");
-    expect(msg).not.toContain("210: riga 210");
-    expect(msg).toContain("fromLine=210");
-    expect(msg).toContain("1000");
-    expect(logs).toContain("read_file big.ts (200 righe)");
+    expect(msg).toContain(`${end}: riga ${end}`);
+    expect(msg).not.toContain(`${end + 1}: riga ${end + 1}`);
+    expect(msg).toContain(`fromLine=${end + 1}`);
+    expect(msg).toContain("4000");
+    expect(logs).toContain(`read_file big.ts (${SOURCE_LIMITS.maxReadLines} righe)`);
+  });
+
+  it("PHASE_MAX_ROUNDS è 18", () => {
+    expect(PHASE_MAX_ROUNDS).toBe(18);
+  });
+
+  it("scaleLimitsForContext: dimezza sotto 64k, pieno se ignoto", () => {
+    const full = { maxReadLines: 1500, maxReadChars: 48000, maxToolOutputChars: 64000 };
+    expect(scaleLimitsForContext(null)).toEqual(full);
+    expect(scaleLimitsForContext(64_000)).toEqual(full);
+    expect(scaleLimitsForContext(200_000)).toEqual(full);
+    expect(scaleLimitsForContext(32_000)).toEqual({ maxReadLines: 750, maxReadChars: 24000, maxToolOutputChars: 32000 });
+  });
+
+  it("read_file legge fino a 1500 righe in una chiamata", async () => {
+    const big = Array.from({ length: 4_000 }, (_, i) => `r${i + 1}`).join("\n");
+    const s = scripted([
+      reply([call("read_file", { path: "big.ts" })]),
+      reply([call("submit_result", { result: validMap })]),
+    ]);
+    const { input } = base(s.chat, { tree: makeTree({ "big.ts": big }) });
+    await runPhase(input);
+    const msg = toolMessages(s.calls[1]!.messages)[0]!;
+    expect(msg).toContain("1500: ");
+    expect(msg).not.toContain("1501: ");
+    expect(msg.endsWith("continua con fromLine=1501]")).toBe(true);
+  });
+
+  it("con contextTokens 32000 read_file si ferma a 750 righe", async () => {
+    const big = Array.from({ length: 4_000 }, (_, i) => `r${i + 1}`).join("\n");
+    const s = scripted([
+      reply([call("read_file", { path: "big.ts" })]),
+      reply([call("submit_result", { result: validMap })]),
+    ]);
+    const { input } = base(s.chat, { tree: makeTree({ "big.ts": big }), contextTokens: 32_000 });
+    await runPhase(input);
+    const msg = toolMessages(s.calls[1]!.messages)[0]!;
+    expect(msg).toContain("750: ");
+    expect(msg).not.toContain("751: ");
+    expect(s.calls[0]!.tools.find((t) => t.function.name === "read_file")!.function.description).toContain("750");
   });
 
   it("read_file con righe lunghe: resta sotto il tetto dell'output e indica come continuare", async () => {
-    expect(MAX_TOOL_OUTPUT_CHARS).toBe(12_000);
+    expect(MAX_TOOL_OUTPUT_CHARS).toBe(64_000);
     const wide = Array.from({ length: 1_000 }, (_, i) => `${"y".repeat(150)}${i + 1}`).join("\n");
     const s = scripted([
       reply([call("read_file", { path: "src/molto/annidato/wide.ts", fromLine: 1 })]),
@@ -497,7 +539,7 @@ describe("runPhase", () => {
   });
 
   it("list_operations a pagine: suggerimento in coda e offset per la pagina successiva", async () => {
-    const ops = Array.from({ length: 300 }, (_, i) => ({
+    const ops = Array.from({ length: 900 }, (_, i) => ({
       method: "GET",
       path: `/api/risorse/${String(i).padStart(3, "0")}/dettaglio`,
       operationId: `operazioneConUnNomeAbbastanzaLungo${i}`,
@@ -524,13 +566,13 @@ describe("runPhase", () => {
     expect(first!.startsWith("Operazioni 1-")).toBe(true);
     expect(first).toMatch(/\n\[altre \d+ operazioni: usa offset=\d+ o un prefix\]$/);
     expect(next).toBeGreaterThan(50);
-    expect(next).toBeLessThan(300);
+    expect(next).toBeLessThan(900);
     expect(first).toContain(`/api/risorse/${String(next - 1).padStart(3, "0")}/dettaglio`);
     expect(first).not.toContain(`/api/risorse/${String(next).padStart(3, "0")}/dettaglio`);
     expect(second!.startsWith(`Operazioni ${next + 1}-`)).toBe(true);
     expect(second).toContain(`/api/risorse/${String(next).padStart(3, "0")}/dettaglio`);
     expect(second).not.toContain(`/api/risorse/${String(next - 1).padStart(3, "0")}/dettaglio`);
-    expect(logs).toContain(`list_operations offset=${next} (300 operazioni)`);
+    expect(logs).toContain(`list_operations offset=${next} (900 operazioni)`);
   });
 
   it("list_operations: offset oltre la fine e filtro per prefisso", async () => {
@@ -555,7 +597,7 @@ describe("runPhase", () => {
 
   it("list_dir e search con output lunghi: il suggerimento resta dentro il tetto", async () => {
     const files: Record<string, string> = {};
-    for (let i = 0; i < 400; i++) files[`src/${"nome-di-file-molto-lungo-".repeat(3)}${i}.ts`] = `${"z".repeat(180)} trovami
+    for (let i = 0; i < 400; i++) files[`src/${"nome-di-file-molto-lungo-".repeat(6)}${i}.ts`] = `${"z".repeat(900)} trovami
 `;
     const s = scripted([
       reply([call("list_dir", { path: "src" }), call("search", { pattern: "trovami" })]),
@@ -603,7 +645,7 @@ describe("runPhase", () => {
     }
 
     it("dopo molte letture grandi i messaggi inviati restano sotto un tetto", async () => {
-      const rounds = 20;
+      const rounds = PHASE_MAX_ROUNDS - 3;
       const { s, out } = await manyReads(rounds);
       expect(out.ok).toBe(true);
       expect(s.calls).toHaveLength(rounds + 2);

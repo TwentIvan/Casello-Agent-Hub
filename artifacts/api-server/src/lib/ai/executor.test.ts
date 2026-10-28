@@ -64,6 +64,7 @@ interface AccountOpts {
   allowPrivateNetwork?: boolean;
   priceIn?: string | null;
   priceOut?: string | null;
+  contextTokens?: number | null;
 }
 
 /** Account + modello; restituisce gli id. */
@@ -86,6 +87,7 @@ async function seed(o: AccountOpts = {}): Promise<{ accountId: number; aiModelId
       accountId: acc!.id,
       modelId: "fake-model",
       displayName: "Fake",
+      contextTokens: o.contextTokens ?? null,
       priceInputPerMtok: o.priceIn === undefined ? "0.27" : o.priceIn,
       priceOutputPerMtok: o.priceOut === undefined ? "1.10" : o.priceOut,
     })
@@ -159,8 +161,16 @@ describe("resolveModel", () => {
       priceInput: 0.27,
       priceOutput: 1.1,
       ownerUserId: alice,
+      contextTokens: null,
     });
     expect(r.apiKey).toBe(KEY);
+  });
+
+  it("restituisce contextTokens della riga di ai_models, null se assente", async () => {
+    const withCtx = await seed({ contextTokens: 128_000 });
+    expect((await resolveModel(withCtx.aiModelId, { userId: alice, mustOwn: true })).contextTokens).toBe(128_000);
+    const without = await seed({ contextTokens: null });
+    expect((await resolveModel(without.aiModelId, { userId: alice, mustOwn: true })).contextTokens).toBeNull();
   });
 
   it("la chiave non è serializzabile né copiata dallo spread", async () => {

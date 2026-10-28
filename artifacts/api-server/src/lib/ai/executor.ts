@@ -51,6 +51,8 @@ export interface ResolvedModel {
   /** USD per milione di token; null se non noto. */
   priceInput: number | null;
   priceOutput: number | null;
+  /** Finestra di contesto in token (da `ai_models.context_tokens`); null se non nota. */
+  contextTokens: number | null;
   /** Proprietario dell'account; null per l'account di sistema. */
   ownerUserId: number | null;
 }
@@ -171,6 +173,7 @@ export async function resolveModel(aiModelId: number, opts: { userId: number | n
     modelId: model.modelId,
     priceInput: toPrice(model.priceInputPerMtok),
     priceOutput: toPrice(model.priceOutputPerMtok),
+    contextTokens: model.contextTokens,
     ownerUserId: account.userId,
   } as ResolvedModel;
   Object.defineProperty(resolved, "apiKey", { value: apiKey, enumerable: false, writable: false, configurable: false });

@@ -12,10 +12,10 @@ export const SOURCE_LIMITS = {
   maxFileBytes: 262_144,
   maxFiles: 5_000,
   maxTotalBytes: 62_914_560,
-  // Una lettura numerata (righe + prefissi "N: " + intestazione) resta sotto i 12 000 caratteri
+  // Una lettura numerata (righe + prefissi "N: " + intestazione) resta sotto i 64 000 caratteri
   // dell'output di uno strumento dell'architetto
-  maxReadLines: 200,
-  maxReadChars: 10_000,
+  maxReadLines: 1_500,
+  maxReadChars: 48_000,
   maxSearchResults: 100,
 } as const;
 
@@ -320,6 +320,10 @@ export class SourceTree {
     path: string,
     fromLine = 1,
     toLine?: number,
+    limits: { maxLines: number; maxChars: number } = {
+      maxLines: SOURCE_LIMITS.maxReadLines,
+      maxChars: SOURCE_LIMITS.maxReadChars,
+    },
   ): { content: string; totalLines: number; truncated: boolean } {
     const p = normalizeQueryPath(path);
     const text = p ? this.files.get(p) : undefined;
@@ -330,7 +334,7 @@ export class SourceTree {
 
     const start = Math.max(Math.trunc(fromLine) || 1, 1);
     let end = toLine === undefined ? totalLines : Math.min(Math.trunc(toLine), totalLines);
-    end = Math.min(end, start + SOURCE_LIMITS.maxReadLines - 1);
+    end = Math.min(end, start + limits.maxLines - 1);
     let slice = start <= end ? lines.slice(start - 1, end) : [];
 
     // Tetto sui caratteri: si taglia per righe intere (almeno una, eventualmente accorciata).
@@ -338,12 +342,12 @@ export class SourceTree {
     let keep = 0;
     for (const line of slice) {
       const next = chars + line.length + (keep > 0 ? 1 : 0);
-      if (next > SOURCE_LIMITS.maxReadChars) break;
+      if (next > limits.maxChars) break;
       chars = next;
       keep++;
     }
     if (keep === 0 && slice.length > 0) {
-      slice = [slice[0]!.slice(0, SOURCE_LIMITS.maxReadChars)];
+      slice = [slice[0]!.slice(0, limits.maxChars)];
       keep = 1;
     }
     slice = slice.slice(0, keep);

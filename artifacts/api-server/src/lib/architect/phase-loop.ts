@@ -16,7 +16,7 @@ import { SOURCE_LIMITS, SourceTreeError, type SourceTree } from "./source-tree";
 import { describeOperation, type OpenApiDoc } from "./sources";
 import { sliceChars } from "./text";
 
-export const PHASE_MAX_ROUNDS = 25;
+export const PHASE_MAX_ROUNDS = 18;
 export const MAX_CORRECTIONS = 2;
 
 /**
@@ -43,7 +43,34 @@ export const PHASE_NUDGE =
   "Budget della fase quasi esaurito: consegna ora l'esito con submit_result usando quello che hai già letto.";
 
 // Tetti sul testo restituito al modello per ogni chiamata
-export const MAX_TOOL_OUTPUT_CHARS = 12_000;
+export const MAX_TOOL_OUTPUT_CHARS = 64_000;
+
+/** Tetti di lettura di una fase: sul testo restituito al modello per ogni chiamata. */
+export interface ReadLimits {
+  maxReadLines: number;
+  maxReadChars: number;
+  maxToolOutputChars: number;
+}
+
+export const FULL_READ_LIMITS: ReadLimits = {
+  maxReadLines: SOURCE_LIMITS.maxReadLines,
+  maxReadChars: SOURCE_LIMITS.maxReadChars,
+  maxToolOutputChars: MAX_TOOL_OUTPUT_CHARS,
+};
+
+/** Sotto questa finestra di contesto i tetti di lettura si dimezzano. */
+export const SMALL_CONTEXT_TOKENS = 64_000;
+
+/** Tetti di lettura scalati sul contesto del modello: dimezzati se piccolo, pieni se ignoto. */
+export function scaleLimitsForContext(contextTokens: number | null): ReadLimits {
+  if (contextTokens === null || contextTokens >= SMALL_CONTEXT_TOKENS) return FULL_READ_LIMITS;
+  return {
+    maxReadLines: FULL_READ_LIMITS.maxReadLines / 2,
+    maxReadChars: FULL_READ_LIMITS.maxReadChars / 2,
+    maxToolOutputChars: FULL_READ_LIMITS.maxToolOutputChars / 2,
+  };
+}
+
 const MAX_LIST_ENTRIES = 500;
 const MAX_SEARCH_MATCHES = 200;
 // Spazio lasciato, sotto il tetto dell'output, al suggerimento finale (es. come continuare)
@@ -82,6 +109,8 @@ export interface RunPhaseInput {
    * il modello riceve il sollecito a consegnare. Senza quota il sollecito scatta solo per i giri.
    */
   phaseQuota?: number;
+  /** Finestra di contesto del modello (token): scala i tetti di lettura; null/assente = tetti pieni. */
+  contextTokens?: number | null;
   log: (message: string) => void;
   now?: () => number;
 }
@@ -95,65 +124,67 @@ function fn(name: string, description: string, parameters: Record<string, unknow
 }
 
 /** Definizioni degli strumenti di sola lettura (offerti solo se la sorgente è disponibile). */
-export const READ_TOOLS: Record<ReadToolName, ChatCompletionFunctionTool> = {
-  list_dir: fn("list_dir", "Elenca file e cartelle (le cartelle finiscono con '/') sotto un percorso del repository.", {
-    type: "object",
-    properties: {
-      path: { type: "string", description: "Cartella da elencare, relativa alla radice ('' per la radice)" },
-      depth: { type: "integer", description: "Profondità da 1 a 5 (default 1)" },
-    },
-    required: ["path"],
-  }),
-  read_file: fn(
-    "read_file",
-    `Legge un file di testo del repository con le righe numerate (massimo ${SOURCE_LIMITS.maxReadLines} righe per chiamata).`,
-    {
+export function readTools(limits: ReadLimits): Record<ReadToolName, ChatCompletionFunctionTool> {
+  return {
+    list_dir: fn("list_dir", "Elenca file e cartelle (le cartelle finiscono con '/') sotto un percorso del repository.", {
       type: "object",
       properties: {
-        path: { type: "string", description: "Percorso del file, relativo alla radice" },
-        fromLine: { type: "integer", description: "Prima riga da leggere (da 1)" },
-        toLine: { type: "integer", description: "Ultima riga da leggere (compresa)" },
+        path: { type: "string", description: "Cartella da elencare, relativa alla radice ('' per la radice)" },
+        depth: { type: "integer", description: "Profondità da 1 a 5 (default 1)" },
       },
       required: ["path"],
-    },
-  ),
-  search: fn(
-    "search",
-    `Cerca un testo (o un'espressione regolare) nei file del repository; restituisce percorso:riga: testo (massimo ${SOURCE_LIMITS.maxSearchResults} risultati).`,
-    {
-      type: "object",
-      properties: {
-        pattern: { type: "string", description: "Testo da cercare (senza distinzione tra maiuscole e minuscole) o espressione regolare" },
-        glob: { type: "string", description: "Filtro sui percorsi, es. 'src/**/*.ts'" },
-        regex: { type: "boolean", description: "true per interpretare pattern come espressione regolare" },
+    }),
+    read_file: fn(
+      "read_file",
+      `Legge un file di testo del repository con le righe numerate (massimo ${limits.maxReadLines} righe per chiamata).`,
+      {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Percorso del file, relativo alla radice" },
+          fromLine: { type: "integer", description: "Prima riga da leggere (da 1)" },
+          toLine: { type: "integer", description: "Ultima riga da leggere (compresa)" },
+        },
+        required: ["path"],
       },
-      required: ["pattern"],
-    },
-  ),
-  list_operations: fn(
-    "list_operations",
-    "Elenca le operazioni del contratto OpenAPI, ordinate per percorso e metodo: METODO percorso — operationId — summary. L'elenco è a pagine: se ci sono altre operazioni, l'ultima riga indica l'offset da usare.",
-    {
-      type: "object",
-      properties: {
-        prefix: { type: "string", description: "Solo le operazioni il cui percorso inizia così, es. /api/squadre" },
-        offset: { type: "integer", description: "Operazioni da saltare (dopo il filtro), per la pagina successiva (default 0)" },
+    ),
+    search: fn(
+      "search",
+      `Cerca un testo (o un'espressione regolare) nei file del repository; restituisce percorso:riga: testo (massimo ${SOURCE_LIMITS.maxSearchResults} risultati).`,
+      {
+        type: "object",
+        properties: {
+          pattern: { type: "string", description: "Testo da cercare (senza distinzione tra maiuscole e minuscole) o espressione regolare" },
+          glob: { type: "string", description: "Filtro sui percorsi, es. 'src/**/*.ts'" },
+          regex: { type: "boolean", description: "true per interpretare pattern come espressione regolare" },
+        },
+        required: ["pattern"],
       },
-    },
-  ),
-  read_operation: fn(
-    "read_operation",
-    "Descrive un'operazione del contratto OpenAPI: parametri, corpo della richiesta e risposte.",
-    {
-      type: "object",
-      properties: {
-        method: { type: "string", description: "Metodo HTTP, es. GET" },
-        path: { type: "string", description: "Percorso esattamente come nel contratto, es. /api/squadre/{id}" },
+    ),
+    list_operations: fn(
+      "list_operations",
+      "Elenca le operazioni del contratto OpenAPI, ordinate per percorso e metodo: METODO percorso — operationId — summary. L'elenco è a pagine: se ci sono altre operazioni, l'ultima riga indica l'offset da usare.",
+      {
+        type: "object",
+        properties: {
+          prefix: { type: "string", description: "Solo le operazioni il cui percorso inizia così, es. /api/squadre" },
+          offset: { type: "integer", description: "Operazioni da saltare (dopo il filtro), per la pagina successiva (default 0)" },
+        },
       },
-      required: ["method", "path"],
-    },
-  ),
-};
+    ),
+    read_operation: fn(
+      "read_operation",
+      "Descrive un'operazione del contratto OpenAPI: parametri, corpo della richiesta e risposte.",
+      {
+        type: "object",
+        properties: {
+          method: { type: "string", description: "Metodo HTTP, es. GET" },
+          path: { type: "string", description: "Percorso esattamente come nel contratto, es. /api/squadre/{id}" },
+        },
+        required: ["method", "path"],
+      },
+    ),
+  };
+}
 
 /** Strumento di consegna: lo schema vero è quello Zod della fase, applicato alla ricezione. */
 export const SUBMIT_TOOL: ChatCompletionFunctionTool = fn(
@@ -163,7 +194,12 @@ export const SUBMIT_TOOL: ChatCompletionFunctionTool = fn(
 );
 
 /** Strumenti offerti al modello in base alle sorgenti disponibili. */
-export function phaseTools(hasCode: boolean, hasOpenApi: boolean): ChatCompletionFunctionTool[] {
+export function phaseTools(
+  hasCode: boolean,
+  hasOpenApi: boolean,
+  limits: ReadLimits = FULL_READ_LIMITS,
+): ChatCompletionFunctionTool[] {
+  const READ_TOOLS = readTools(limits);
   return [
     ...(hasCode ? [READ_TOOLS.list_dir, READ_TOOLS.read_file, READ_TOOLS.search] : []),
     ...(hasOpenApi ? [READ_TOOLS.list_operations, READ_TOOLS.read_operation] : []),
@@ -228,9 +264,10 @@ function logArg(value: string): string {
   return flat.length > MAX_LOG_ARG_CHARS ? `${sliceChars(flat, MAX_LOG_ARG_CHARS)}…` : flat;
 }
 
-function capOutput(text: string): string {
-  return text.length > MAX_TOOL_OUTPUT_CHARS
-    ? `${sliceChars(text, MAX_TOOL_OUTPUT_CHARS)}\n[...troncato: output oltre ${MAX_TOOL_OUTPUT_CHARS} caratteri]`
+function capOutput(text: string, limits: ReadLimits): string {
+  const max = limits.maxToolOutputChars;
+  return text.length > max
+    ? `${sliceChars(text, max)}\n[...troncato: output oltre ${max} caratteri]`
     : text;
 }
 
@@ -262,7 +299,8 @@ const READ_SPECS: Record<ReadToolName, ArgSpec> = {
  * Quante righe, dall'inizio, entrano nel tetto dell'output lasciando spazio a un suggerimento finale:
  * si taglia prima di aggiungere il suggerimento, così il suggerimento non viene mai troncato.
  */
-function fittingLines(lines: string[], limit = MAX_TOOL_OUTPUT_CHARS - HINT_RESERVE_CHARS): number {
+function fittingLines(lines: string[], limits: ReadLimits): number {
+  const limit = limits.maxToolOutputChars - HINT_RESERVE_CHARS;
   let chars = 0;
   for (let i = 0; i < lines.length; i++) {
     chars += lines[i]!.length + 1;
@@ -271,21 +309,30 @@ function fittingLines(lines: string[], limit = MAX_TOOL_OUTPUT_CHARS - HINT_RESE
   return lines.length;
 }
 
-function listDir(tree: SourceTree, path: string, depth: number | undefined): ToolOutput {
+function listDir(tree: SourceTree, path: string, depth: number | undefined, limits: ReadLimits): ToolOutput {
   const entries = tree.list(path, depth ?? 1);
-  const shown = entries.slice(0, Math.min(MAX_LIST_ENTRIES, fittingLines(entries)));
+  const shown = entries.slice(0, Math.min(MAX_LIST_ENTRIES, fittingLines(entries, limits)));
   const lines = shown.length ? shown : ["(cartella vuota)"];
   if (entries.length > shown.length) {
     lines.push(`[...altre ${entries.length - shown.length} voci non mostrate: elenca una sottocartella o riduci depth]`);
   }
   return {
-    content: capOutput(lines.join("\n")),
+    content: capOutput(lines.join("\n"), limits),
     log: `list_dir ${logArg(path || "/")} (${plural(entries.length, "voce", "voci")})`,
   };
 }
 
-function readFile(tree: SourceTree, path: string, fromLine: number | undefined, toLine: number | undefined): ToolOutput {
-  const { content, totalLines } = tree.read(path, fromLine ?? 1, toLine);
+function readFile(
+  tree: SourceTree,
+  path: string,
+  fromLine: number | undefined,
+  toLine: number | undefined,
+  limits: ReadLimits,
+): ToolOutput {
+  const { content, totalLines } = tree.read(path, fromLine ?? 1, toLine, {
+    maxLines: limits.maxReadLines,
+    maxChars: limits.maxReadChars,
+  });
   const start = Math.max(Math.trunc(fromLine ?? 1) || 1, 1);
   const empty = start > totalLines || (toLine !== undefined && Math.trunc(toLine) < start);
   const lines = empty ? [] : content.split("\n");
@@ -300,7 +347,7 @@ function readFile(tree: SourceTree, path: string, fromLine: number | undefined, 
   if (last < requestedEnd) {
     out.push(`[...troncato al limite di lettura: continua con fromLine=${last + 1}]`);
   }
-  return { content: capOutput(out.join("\n")), log };
+  return { content: capOutput(out.join("\n"), limits), log };
 }
 
 async function search(
@@ -308,16 +355,17 @@ async function search(
   pattern: string,
   glob: string | undefined,
   regex: boolean | undefined,
+  limits: ReadLimits,
 ): Promise<ToolOutput> {
   const results = await tree.search(pattern, { glob, regex });
   const all = results.slice(0, MAX_SEARCH_MATCHES).map((r) => `${r.path}:${r.line}: ${r.text}`);
-  const lines = all.slice(0, fittingLines(all));
+  const lines = all.slice(0, fittingLines(all, limits));
   if (all.length === 0) lines.push("Nessun risultato.");
   if (lines.length < all.length || results.length >= Math.min(SOURCE_LIMITS.maxSearchResults, MAX_SEARCH_MATCHES)) {
     lines.push(`[risultati limitati a ${lines.length}: restringi la ricerca con glob o un pattern più specifico]`);
   }
   return {
-    content: capOutput(lines.join("\n")),
+    content: capOutput(lines.join("\n"), limits),
     log: `search "${logArg(pattern)}"${regex ? " (regex)" : ""} (${plural(results.length, "risultato", "risultati")})`,
   };
 }
@@ -327,7 +375,12 @@ async function search(
  * per prefisso del percorso, poi `offset` operazioni saltate, poi quante ne entrano nel tetto
  * dell'output; se ne restano, l'ultima riga dice come continuare.
  */
-function listOperations(doc: OpenApiDoc, prefix: string | undefined, offset: number | undefined): ToolOutput {
+function listOperations(
+  doc: OpenApiDoc,
+  prefix: string | undefined,
+  offset: number | undefined,
+  limits: ReadLimits,
+): ToolOutput {
   const filtered = prefix ? doc.operations.filter((op) => op.path.startsWith(prefix)) : doc.operations;
   const from = Math.max(Math.trunc(offset ?? 0), 0);
   const all = filtered.slice(from).map((op) =>
@@ -339,7 +392,7 @@ function listOperations(doc: OpenApiDoc, prefix: string | undefined, offset: num
       .filter(Boolean)
       .join(" — "),
   );
-  const lines = all.slice(0, fittingLines(all));
+  const lines = all.slice(0, fittingLines(all, limits));
   const shown = lines.length;
   const rest = all.length - shown;
   const where = prefix ? ` con prefisso ${logArg(prefix)}` : "";
@@ -348,7 +401,7 @@ function listOperations(doc: OpenApiDoc, prefix: string | undefined, offset: num
   else if (from > 0 || rest > 0) lines.unshift(`Operazioni${where} ${from + 1}-${from + shown} di ${filtered.length}:`);
   if (rest > 0) lines.push(`[altre ${rest} operazioni: usa offset=${from + shown} o un prefix]`);
   return {
-    content: capOutput(lines.join("\n")),
+    content: capOutput(lines.join("\n"), limits),
     log: `list_operations${prefix ? ` ${logArg(prefix)}` : ""}${from ? ` offset=${from}` : ""} (${plural(filtered.length, "operazione", "operazioni")})`,
   };
 }
@@ -358,21 +411,22 @@ async function runReadTool(
   args: Record<string, unknown>,
   tree: SourceTree | null,
   openapi: OpenApiDoc | null,
+  limits: ReadLimits,
 ): Promise<ToolOutput> {
   const a = args as Record<string, never>;
   switch (name) {
     case "list_dir":
-      return listDir(tree!, a.path, a.depth);
+      return listDir(tree!, a.path, a.depth, limits);
     case "read_file":
-      return readFile(tree!, a.path, a.fromLine, a.toLine);
+      return readFile(tree!, a.path, a.fromLine, a.toLine, limits);
     case "search":
-      return search(tree!, a.pattern, a.glob, a.regex);
+      return search(tree!, a.pattern, a.glob, a.regex, limits);
     case "list_operations":
-      return listOperations(openapi!, a.prefix, a.offset);
+      return listOperations(openapi!, a.prefix, a.offset, limits);
     case "read_operation": {
       const method = String(a.method).toUpperCase();
       return {
-        content: capOutput(describeOperation(openapi!, method, a.path)),
+        content: capOutput(describeOperation(openapi!, method, a.path), limits),
         log: `read_operation ${logArg(method)} ${logArg(a.path)}`,
       };
     }
@@ -445,7 +499,8 @@ const REMINDER =
 export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
   const { phase, tree, openapi, budget, log } = input;
   const now = input.now ?? Date.now;
-  const tools = phaseTools(tree !== null, openapi !== null);
+  const limits = scaleLimitsForContext(input.contextTokens ?? null);
+  const tools = phaseTools(tree !== null, openapi !== null, limits);
   const available = new Set(tools.map((t) => t.function.name));
   const schema = PHASE_SCHEMAS[phase];
   const messages: ChatCompletionMessageParam[] = [
@@ -552,7 +607,7 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
         continue;
       }
       try {
-        const out = await runReadTool(name, parsed.args, tree, openapi);
+        const out = await runReadTool(name, parsed.args, tree, openapi, limits);
         answer(c.id, out.content, omittedStub(name, parsed.args));
         log(out.log);
       } catch (err) {

@@ -1,3 +1,4 @@
+import { isGeneratedText, isNoisePath } from "./noise";
 import { RegexSearchTimeout, RegexSearchWorker } from "./search-worker";
 import { extractEntry, readZipEntries, ZipFormatError, type RawZipEntry } from "./zip-reader";
 
@@ -12,10 +13,10 @@ export const SOURCE_LIMITS = {
   maxFileBytes: 262_144,
   maxFiles: 5_000,
   maxTotalBytes: 62_914_560,
-  // Una lettura numerata (righe + prefissi "N: " + intestazione) resta sotto i 12 000 caratteri
+  // Una lettura numerata (righe + prefissi "N: " + intestazione) resta sotto i 64 000 caratteri
   // dell'output di uno strumento dell'architetto
-  maxReadLines: 200,
-  maxReadChars: 10_000,
+  maxReadLines: 1_500,
+  maxReadChars: 48_000,
   maxSearchResults: 100,
 } as const;
 
@@ -182,6 +183,7 @@ export class SourceTree {
   readonly skipped: SourceSkipped;
   private readonly files: Map<string, string>;
   private readonly sortedPaths: string[];
+  private readonly noise: Set<string>;
   private regexWorker: RegexSearchWorker | null = null;
 
   private constructor(files: Map<string, string>, totalBytes: number, skipped: SourceSkipped) {
@@ -190,6 +192,9 @@ export class SourceTree {
     this.totalBytes = totalBytes;
     this.skipped = skipped;
     this.sortedPaths = [...files.keys()].sort();
+    this.noise = new Set(
+      this.sortedPaths.filter((path) => isNoisePath(path) || isGeneratedText(files.get(path)!)),
+    );
   }
 
   static fromZip(
@@ -296,7 +301,45 @@ export class SourceTree {
     return p !== null && p !== "" && this.files.has(p);
   }
 
-  list(dir: string, depth = 1): string[] {
+  /** Lockfile, file generati, test, minificati: esclusi per default da elenchi e ricerche. */
+  isNoise(path: string): boolean {
+    return this.noise.has(path);
+  }
+
+  /** Tutti i file non rumorosi, in ordine di percorso, col numero di righe (per la mappa del repository). */
+  fileLines(): { path: string; lines: number }[] {
+    return this.sortedPaths
+      .filter((path) => !this.noise.has(path))
+      .map((path) => {
+        const text = this.files.get(path)!;
+        if (text === "") return { path, lines: 0 };
+        const parts = text.split("\n").length;
+        return { path, lines: text.endsWith("\n") ? parts - 1 : parts };
+      });
+  }
+
+  /** Quanti file rumorosi `list(dir, depth)` ha nascosto (stessa profondità). */
+  countHidden(dir: string, depth = 1): number {
+    const d = normalizeQueryPath(dir);
+    if (d === null) throw new SourceTreeError(`Percorso non valido: ${dir}`);
+    const maxDepth = Math.min(Math.max(Math.trunc(depth) || 1, 1), MAX_LIST_DEPTH);
+    const prefix = d === "" ? "" : `${d}/`;
+    let n = 0;
+    for (const path of this.noise) {
+      if (path.startsWith(prefix) && path.slice(prefix.length).split("/").length <= maxDepth) n++;
+    }
+    return n;
+  }
+
+  /** Quanti file rumorosi (filtrati dal glob, se dato) una ricerca per default non guarda. */
+  countHiddenMatching(glob?: string): number {
+    const globMatch = glob ? compileGlob(glob) : null;
+    let n = 0;
+    for (const path of this.noise) if (!globMatch || globMatch(path)) n++;
+    return n;
+  }
+
+  list(dir: string, depth = 1, opts: { includeIgnored?: boolean } = {}): string[] {
     const d = normalizeQueryPath(dir);
     if (d === null) throw new SourceTreeError(`Percorso non valido: ${dir}`);
     const maxDepth = Math.min(Math.max(Math.trunc(depth) || 1, 1), MAX_LIST_DEPTH);
@@ -306,6 +349,7 @@ export class SourceTree {
     for (const path of this.sortedPaths) {
       if (!path.startsWith(prefix)) continue;
       found = true;
+      if (!opts.includeIgnored && this.noise.has(path)) continue;
       const parts = path.slice(prefix.length).split("/");
       for (let i = 0; i < Math.min(parts.length, maxDepth); i++) {
         const isFile = i === parts.length - 1;
@@ -320,6 +364,10 @@ export class SourceTree {
     path: string,
     fromLine = 1,
     toLine?: number,
+    limits: { maxLines: number; maxChars: number } = {
+      maxLines: SOURCE_LIMITS.maxReadLines,
+      maxChars: SOURCE_LIMITS.maxReadChars,
+    },
   ): { content: string; totalLines: number; truncated: boolean } {
     const p = normalizeQueryPath(path);
     const text = p ? this.files.get(p) : undefined;
@@ -330,7 +378,7 @@ export class SourceTree {
 
     const start = Math.max(Math.trunc(fromLine) || 1, 1);
     let end = toLine === undefined ? totalLines : Math.min(Math.trunc(toLine), totalLines);
-    end = Math.min(end, start + SOURCE_LIMITS.maxReadLines - 1);
+    end = Math.min(end, start + limits.maxLines - 1);
     let slice = start <= end ? lines.slice(start - 1, end) : [];
 
     // Tetto sui caratteri: si taglia per righe intere (almeno una, eventualmente accorciata).
@@ -338,12 +386,12 @@ export class SourceTree {
     let keep = 0;
     for (const line of slice) {
       const next = chars + line.length + (keep > 0 ? 1 : 0);
-      if (next > SOURCE_LIMITS.maxReadChars) break;
+      if (next > limits.maxChars) break;
       chars = next;
       keep++;
     }
     if (keep === 0 && slice.length > 0) {
-      slice = [slice[0]!.slice(0, SOURCE_LIMITS.maxReadChars)];
+      slice = [slice[0]!.slice(0, limits.maxChars)];
       keep = 1;
     }
     slice = slice.slice(0, keep);
@@ -355,9 +403,21 @@ export class SourceTree {
     };
   }
 
+  /** Righe grezze (1-based, estremi compresi, fuori dal file ignorate), ciascuna accorciata. */
+  lines(path: string, from: number, to: number): string[] {
+    const p = normalizeQueryPath(path);
+    const text = p ? this.files.get(p) : undefined;
+    if (text === undefined) throw new SourceTreeError(`File inesistente: ${path}`);
+    const all = text === "" ? [] : text.split("\n");
+    if (text.endsWith("\n")) all.pop();
+    const start = Math.max(Math.trunc(from) || 1, 1);
+    const end = Math.min(Math.trunc(to), all.length);
+    return start <= end ? all.slice(start - 1, end).map((l) => l.slice(0, MAX_SEARCH_TEXT_CHARS)) : [];
+  }
+
   async search(
     pattern: string,
-    opts: { glob?: string; regex?: boolean } = {},
+    opts: { glob?: string; regex?: boolean; includeIgnored?: boolean } = {},
   ): Promise<{ path: string; line: number; text: string }[]> {
     const globMatch = opts.glob ? compileGlob(opts.glob) : null;
 
@@ -374,7 +434,8 @@ export class SourceTree {
       }
       this.regexWorker ??= new RegexSearchWorker(() => [...this.files.entries()]);
       try {
-        const paths = globMatch ? this.sortedPaths.filter(globMatch) : null;
+        const scoped = opts.includeIgnored ? this.sortedPaths : this.sortedPaths.filter((p) => !this.noise.has(p));
+        const paths = globMatch ? scoped.filter(globMatch) : opts.includeIgnored ? null : scoped;
         return await this.regexWorker.search(pattern, paths, {
           max: SOURCE_LIMITS.maxSearchResults,
           maxText: MAX_SEARCH_TEXT_CHARS,
@@ -396,6 +457,7 @@ export class SourceTree {
     const results: { path: string; line: number; text: string }[] = [];
     for (const path of this.sortedPaths) {
       if (globMatch && !globMatch(path)) continue;
+      if (!opts.includeIgnored && this.noise.has(path)) continue;
       const lines = this.files.get(path)!.split("\n");
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i]!;

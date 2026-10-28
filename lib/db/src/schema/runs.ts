@@ -27,6 +27,8 @@ export const runsTable = pgTable("runs", {
   pausedAt: timestamp("paused_at"),
   promptTokens: integer("prompt_tokens"),
   completionTokens: integer("completion_tokens"),
+  // Quanti dei token di prompt il provider ha letto dalla cache
+  cachedTokens: integer("cached_tokens").notNull().default(0),
   // Costo in USD, null se un prezzo del modello manca
   costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),

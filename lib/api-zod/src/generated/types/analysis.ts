@@ -17,7 +17,10 @@ export interface Analysis {
   status: AnalysisStatus;
   sources: AnalysisSources;
   maxTokens: number;
+  /** Token usati pesati per il budget (quelli letti dalla cache contano al 10%) */
   tokensUsed: number;
+  /** Token di prompt letti dalla cache del provider, per intero */
+  cachedTokens: number;
   /**
      * Costo in USD; null se un prezzo manca o l'analisi usa il vecchio gateway (costo parziale)
      * @nullable

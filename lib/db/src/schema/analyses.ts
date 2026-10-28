@@ -28,7 +28,10 @@ export const analysesTable = pgTable(
     status: analysisStatusEnum("status").notNull().default("queued"),
     sources: jsonb("sources").$type<AnalysisSources>().notNull(),
     maxTokens: integer("max_tokens").notNull(),
+    // Token pesati per il budget (quelli in cache contano al 10%)
     tokensUsed: integer("tokens_used").notNull().default(0),
+    // Token di prompt letti dalla cache del provider, per intero
+    cachedTokens: integer("cached_tokens").notNull().default(0),
     // Costo in USD, null se un prezzo del modello manca
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
     // Fase corrente

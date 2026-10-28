@@ -4,7 +4,7 @@ import { summarizeOffers } from "./summary";
 
 function offer(over: Partial<OfferRecord> = {}): OfferRecord {
   return {
-    provider: "deepseek", providerModelId: "m", canonicalKey: "m", priceInput: 0.28, priceOutput: 1, contextTokens: null,
+    provider: "deepseek", providerModelId: "m", canonicalKey: "m", priceInput: 0.28, priceOutput: 1, priceCachedInput: null, contextTokens: null,
     supportsTools: null, status: "available", deprecationDate: null, sources: {}, ...over,
   };
 }

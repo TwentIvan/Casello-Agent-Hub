@@ -36,6 +36,8 @@ export interface SourceEntry {
   /** USD per milione di token. */
   priceInput: number | null;
   priceOutput: number | null;
+  /** Prezzo dei token di prompt letti dalla cache. */
+  priceCachedInput: number | null;
   contextTokens: number | null;
   supportsTools: boolean | null;
   deprecationDate: Date | null;
@@ -110,6 +112,7 @@ export async function fetchOpenRouterSource(fetchImpl: typeof fetch = fetch): Pr
         typeof created === "number" && Number.isSafeInteger(created) && created > 0 ? dateFromSeconds(created) : null,
       priceInput: perMillion(pricing["prompt"]),
       priceOutput: perMillion(pricing["completion"]),
+      priceCachedInput: perMillion(pricing["input_cache_read"]),
       contextTokens: contextTokens(item["context_length"]),
       supportsTools: Array.isArray(params) ? params.includes("tools") : null,
       deprecationDate: null,
@@ -153,6 +156,7 @@ export async function fetchLiteLlmSource(fetchImpl: typeof fetch = fetch): Promi
       releasedAt: null,
       priceInput: perMillion(item["input_cost_per_token"]),
       priceOutput: perMillion(item["output_cost_per_token"]),
+      priceCachedInput: perMillion(item["cache_read_input_token_cost"]),
       contextTokens: contextTokens(item["max_input_tokens"]),
       supportsTools: typeof supportsTools === "boolean" ? supportsTools : null,
       deprecationDate: parseIsoDay(item["deprecation_date"]),

@@ -51,6 +51,10 @@ export interface ResolvedModel {
   /** USD per milione di token; null se non noto. */
   priceInput: number | null;
   priceOutput: number | null;
+  /** Prezzo dei token di prompt letti dalla cache; null se non noto (si paga il prezzo pieno). */
+  priceCachedInput: number | null;
+  /** Finestra di contesto in token (da `ai_models.context_tokens`); null se non nota. */
+  contextTokens: number | null;
   /** Proprietario dell'account; null per l'account di sistema. */
   ownerUserId: number | null;
 }
@@ -96,15 +100,23 @@ export function executorKindFor(protocol: ProviderProtocol): ExecutorKind {
   throw new ModelAccessError(PROTOCOL_UNSUPPORTED);
 }
 
-/** Costo in USD: null se manca un prezzo; arrotondato a 8 decimali. */
+/**
+ * Costo in USD: null se manca il prezzo di input o di output; arrotondato a 8 decimali. I token di prompt
+ * letti dalla cache (compresi in `promptTokens`) costano `priceCachedIn`, o il prezzo pieno se non è noto.
+ */
 export function computeCost(
   promptTokens: number,
   completionTokens: number,
   priceIn: number | null,
   priceOut: number | null,
+  cachedTokens = 0,
+  priceCachedIn: number | null = null,
 ): number | null {
   if (priceIn === null || priceOut === null) return null;
-  const cost = (promptTokens * priceIn) / 1e6 + (completionTokens * priceOut) / 1e6;
+  const cost =
+    (cachedTokens * (priceCachedIn ?? priceIn)) / 1e6 +
+    ((promptTokens - cachedTokens) * priceIn) / 1e6 +
+    (completionTokens * priceOut) / 1e6;
   return Math.round(cost * 1e8) / 1e8;
 }
 
@@ -171,6 +183,8 @@ export async function resolveModel(aiModelId: number, opts: { userId: number | n
     modelId: model.modelId,
     priceInput: toPrice(model.priceInputPerMtok),
     priceOutput: toPrice(model.priceOutputPerMtok),
+    priceCachedInput: toPrice(model.priceCachedInputPerMtok),
+    contextTokens: model.contextTokens,
     ownerUserId: account.userId,
   } as ResolvedModel;
   Object.defineProperty(resolved, "apiKey", { value: apiKey, enumerable: false, writable: false, configurable: false });
@@ -277,7 +291,6 @@ export async function modelChat(resolved: ResolvedModel, opts: ChatOptions): Pro
   const params = buildParams(resolved, opts);
   const startMs = Date.now();
   let result: ModelChatResult;
-  let cachedTokens: number;
   try {
     const response = await client.chat.completions.create(params, {
       signal: opts.signal,
@@ -287,15 +300,22 @@ export async function modelChat(resolved: ResolvedModel, opts: ChatOptions): Pro
     // Risposta 2xx malformata (senza `choices`): errore del provider, mai un TypeError grezzo
     if (!Array.isArray(response?.choices) || response.choices.length === 0) throw new ProviderError("unreachable");
     const usage = readUsage(response);
-    cachedTokens = usage.cachedTokens;
     const content = response.choices[0]?.message?.content;
     result = {
       content: typeof content === "string" ? content : null,
       toolCalls: extractToolCalls(response),
       promptTokens: usage.promptTokens,
       completionTokens: usage.completionTokens,
+      cachedPromptTokens: usage.cachedTokens,
       costUsd: response.usage
-        ? computeCost(usage.promptTokens, usage.completionTokens, resolved.priceInput, resolved.priceOutput)
+        ? computeCost(
+            usage.promptTokens,
+            usage.completionTokens,
+            resolved.priceInput,
+            resolved.priceOutput,
+            usage.cachedTokens,
+            resolved.priceCachedInput,
+          )
         : null,
     };
   } catch (err) {
@@ -320,7 +340,7 @@ export async function modelChat(resolved: ResolvedModel, opts: ChatOptions): Pro
       modelId: resolved.modelId,
       promptTokens: result.promptTokens,
       completionTokens: result.completionTokens,
-      cachedTokens,
+      cachedTokens: result.cachedPromptTokens,
       durationMs,
     },
     "Chiamata al modello",

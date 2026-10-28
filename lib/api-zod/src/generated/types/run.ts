@@ -35,6 +35,8 @@ export interface Run {
   promptTokens?: number | null;
   /** @nullable */
   completionTokens?: number | null;
+  /** Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta) */
+  cachedTokens: number;
   /**
      * Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)
      * @nullable

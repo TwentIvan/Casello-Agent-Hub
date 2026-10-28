@@ -121,7 +121,16 @@ describe("startCatalogRefresh", () => {
     expect(summary.newProviders).toEqual([{ slug: "nuovo-provider", name: "nuovo_provider", count: 1 }]);
 
     const v4 = await offerRow("deepseek", "deepseek-v4-pro");
-    expect(v4).toMatchObject({ priceInputPerMtok: "1.450000", priceOutputPerMtok: "2.900000", supportsTools: true, status: "available" });
+    expect(v4).toMatchObject({
+      priceInputPerMtok: "1.450000",
+      priceOutputPerMtok: "2.900000",
+      priceCachedInputPerMtok: "0.145000",
+      supportsTools: true,
+      status: "available",
+    });
+    // Il prezzo di cache viene dalla stessa voce dei prezzi: OpenRouter per l'offerta di OpenRouter
+    expect(await offerRow("openrouter", "deepseek/deepseek-chat")).toMatchObject({ priceCachedInputPerMtok: "0.070000" });
+    expect(await offerRow("gemini", "gemini-3.5-flash")).toMatchObject({ priceCachedInputPerMtok: "0.030000" });
     expect(await offerRow("gemini", "gemini-2.5-flash")).toMatchObject({ status: "retired" });
 
     // Lo stesso Claude su Bedrock e su Anthropic: un modello, due offerte
@@ -152,6 +161,7 @@ describe("startCatalogRefresh", () => {
       supportsTools: true,
       priceInputPerMtok: "1.450000",
       priceOutputPerMtok: "2.900000",
+      priceCachedInputPerMtok: "0.145000",
       priceSource: "catalog",
     });
     expect(byId.get("sconosciuto")).toMatchObject({ offerId: null, priceSource: null });
@@ -162,6 +172,8 @@ describe("startCatalogRefresh", () => {
       supportsTools: true,
       priceInputPerMtok: "5.000000",
       priceOutputPerMtok: "6.000000",
+      // Prezzo manuale: quello di cache del catalogo non arriva
+      priceCachedInputPerMtok: null,
       priceSource: "manual",
     });
 
@@ -173,18 +185,18 @@ describe("startCatalogRefresh", () => {
     // "Aggiorna modelli" riscrive i prezzi del provider, poi il catalogo li riporta; il manuale resta
     await db.transaction((tx) =>
       upsertDiscovered(tx, account.id, [
-        { modelId: "deepseek-v4-pro", displayName: "V4 Pro", contextTokens: null, priceInput: 9, priceOutput: 9, priceSource: "provider" },
+        { modelId: "deepseek-v4-pro", displayName: "V4 Pro", contextTokens: null, priceInput: 9, priceOutput: 9, priceCachedInput: 1, priceSource: "provider" },
       ]),
     );
     await db.transaction((tx) =>
       upsertDiscovered(tx, gemini!.id, [
-        { modelId: "models/Gemini-3.5-Flash", displayName: "Flash", contextTokens: null, priceInput: 7, priceOutput: 7, priceSource: "provider" },
+        { modelId: "models/Gemini-3.5-Flash", displayName: "Flash", contextTokens: null, priceInput: 7, priceOutput: 7, priceCachedInput: 1, priceSource: "provider" },
       ]),
     );
     const [v4Again] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.modelId, "deepseek-v4-pro"));
-    expect(v4Again).toMatchObject({ priceInputPerMtok: "1.450000", priceSource: "catalog", offerId: v4!.id });
+    expect(v4Again).toMatchObject({ priceInputPerMtok: "1.450000", priceCachedInputPerMtok: "0.145000", priceSource: "catalog", offerId: v4!.id });
     const [flashAgain] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.accountId, gemini!.id));
-    expect(flashAgain).toMatchObject({ priceInputPerMtok: "5.000000", priceSource: "manual", offerId: flash!.id });
+    expect(flashAgain).toMatchObject({ priceInputPerMtok: "5.000000", priceCachedInputPerMtok: null, priceSource: "manual", offerId: flash!.id });
   });
 
   it("al secondo aggiornamento il provider scoperto non si ripete né si modifica", async () => {

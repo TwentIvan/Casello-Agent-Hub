@@ -72,8 +72,11 @@ export interface ChatToolCall {
 export interface ChatResult {
   content: string | null;
   toolCalls: ChatToolCall[];
+  /** Token di prompt in totale, compresi quelli letti dalla cache */
   promptTokens: number;
   completionTokens: number;
+  /** Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta) */
+  cachedPromptTokens: number;
 }
 
 // Chiamate con function calling (run degli agenti): un nuovo tentativo al massimo e un tetto di
@@ -112,11 +115,19 @@ export function buildProxyParams(
   return params;
 }
 
+/**
+ * Uso della risposta. I token in cache arrivano in `prompt_tokens_details.cached_tokens` (OpenAI, OpenRouter,
+ * Gemini) o, da DeepSeek, in `prompt_cache_hit_tokens` (non nei tipi dell'SDK); con entrambi prevale il primo.
+ * Sono sempre tra 0 e i token di prompt, anche se il provider riporta altro.
+ */
 export function readUsage(response: ChatCompletion): { promptTokens: number; completionTokens: number; cachedTokens: number } {
+  const usage = response.usage as (ChatCompletion["usage"] & { prompt_cache_hit_tokens?: number }) | undefined;
+  const promptTokens = usage?.prompt_tokens || 0;
+  const cached = usage?.prompt_tokens_details?.cached_tokens ?? usage?.prompt_cache_hit_tokens ?? 0;
   return {
-    promptTokens: response.usage?.prompt_tokens || 0,
-    completionTokens: response.usage?.completion_tokens || 0,
-    cachedTokens: response.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+    promptTokens,
+    completionTokens: usage?.completion_tokens || 0,
+    cachedTokens: Number.isFinite(cached) ? Math.min(Math.max(0, cached), promptTokens) : 0,
   };
 }
 
@@ -212,6 +223,8 @@ class AiGateway {
         toolCalls: [],
         promptTokens: result.promptTokens,
         completionTokens: result.completionTokens,
+        // Senza gateway l'uso della cache non è noto
+        cachedPromptTokens: 0,
       };
     }
 
@@ -231,7 +244,13 @@ class AiGateway {
     logProxyUsage(caller, modelKey, { promptTokens, completionTokens, cachedTokens }, durationMs);
 
     const toolCalls = extractToolCalls(response);
-    return { content: response.choices[0]?.message?.content ?? null, toolCalls, promptTokens, completionTokens };
+    return {
+      content: response.choices[0]?.message?.content ?? null,
+      toolCalls,
+      promptTokens,
+      completionTokens,
+      cachedPromptTokens: cachedTokens,
+    };
   }
 
   async complete(opts: GatewayCompleteOptions): Promise<GatewayCompleteResult> {

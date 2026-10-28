@@ -37,6 +37,7 @@ import { loadAppConnection } from "../tools/catalog";
 import { diffAgents, diffAlwaysNew, diffSkills, diffTools, type DiffEntry } from "./diff";
 import { PHASE_TOKEN_SHARES, runPhase, type PhaseBudget } from "./phase-loop";
 import { phasePrompt, SYSTEM_BASE } from "./prompts";
+import { buildRepoMap } from "./repo-map";
 import {
   PHASES,
   type AgentsResult,
@@ -207,7 +208,8 @@ class ProgressWriter {
     const snapshot = {
       log: this.log,
       phase: this.phase,
-      tokensUsed: this.budget.tokensUsed,
+      tokensUsed: Math.round(this.budget.tokensUsed),
+      cachedTokens: this.budget.cachedTokens,
       costUsd: this.cost.value(),
       ...extra,
     };
@@ -485,7 +487,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
   }
   if (!analysis) return;
 
-  const budget: PhaseBudget = { tokensUsed: 0, maxTokens: analysis.maxTokens, deadline: now() + maxMs };
+  const budget: PhaseBudget = { tokensUsed: 0, cachedTokens: 0, maxTokens: analysis.maxTokens, deadline: now() + maxMs };
   const cost = new CostTracker();
   const progress = new ProgressWriter(analysisId, analysis.log ?? [], budget, cost);
   const log = (message: string) => progress.add(message);
@@ -521,7 +523,9 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
     const loaded = await loadSources(app, opts, log);
     tree = loaded.tree;
     const { openapi, sources } = loaded;
-    await progress.flush({ sources });
+    // Mappa calcolata una volta; salvata subito, così resta anche se una fase fallisce
+    const repoMap = buildRepoMap(tree, openapi);
+    await progress.flush({ sources, architectureMap: { repoMap } });
 
     // Senza codice né OpenAPI i tool derivano solo dalla descrizione: vanno sempre verificati
     const forceVerification = sources.code === "none" && !sources.openapi;
@@ -552,11 +556,25 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
         functionalDescription: app.functionalDescription,
         hasCode: tree !== null,
         hasOpenApi: openapi !== null,
+        repoMap,
         previous,
       });
       // Quota morbida della fase: solo il sollecito a consegnare; il tetto rigido resta il totale
       const phaseQuota = Math.floor(PHASE_TOKEN_SHARES[phase] * budget.maxTokens);
-      const outcome = await runPhase({ phase, system: SYSTEM_BASE, user, tree, openapi, chat, budget, phaseQuota, log, now });
+      const outcome = await runPhase({
+        phase,
+        system: SYSTEM_BASE,
+        user,
+        tree,
+        openapi,
+        chat,
+        budget,
+        phaseQuota,
+        contextTokens: resolved?.contextTokens ?? null,
+        completionReserve: MAX_COMPLETION_TOKENS,
+        log,
+        now,
+      });
       if (!outcome.ok) {
         log(`fase ${phase} non riuscita`);
         await progress.flush();
@@ -587,7 +605,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       if (rows.length > 0) await db.insert(analysisItemsTable).values(rows);
 
       log(`fase ${phase} conclusa${rows.length ? ` (${rows.length} elementi)` : ""}`);
-      await progress.flush(phase === "map" ? { architectureMap: result } : {});
+      await progress.flush(phase === "map" ? { architectureMap: { ...(result as object), repoMap } } : {});
     }
 
     await close("completed", null);

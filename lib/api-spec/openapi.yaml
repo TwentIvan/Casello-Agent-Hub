@@ -2016,7 +2016,7 @@ components:
 
     Run:
       type: object
-      required: [id, agentId, status, createdAt]
+      required: [id, agentId, status, createdAt, cachedTokens]
       properties:
         id:
           type: integer
@@ -2049,6 +2049,9 @@ components:
           type: ["integer", "null"]
         completionTokens:
           type: ["integer", "null"]
+        cachedTokens:
+          type: integer
+          description: Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)
         costUsd:
           type: ["number", "null"]
           description: Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)
@@ -2173,7 +2176,7 @@ components:
 
     Analysis:
       type: object
-      required: [id, appId, model, aiModelId, status, sources, maxTokens, tokensUsed, costUsd, phase, error, createdAt, finishedAt]
+      required: [id, appId, model, aiModelId, status, sources, maxTokens, tokensUsed, cachedTokens, costUsd, phase, error, createdAt, finishedAt]
       properties:
         id:
           type: integer
@@ -2191,6 +2194,10 @@ components:
           type: integer
         tokensUsed:
           type: integer
+          description: Token usati pesati per il budget (quelli letti dalla cache contano al 10%)
+        cachedTokens:
+          type: integer
+          description: Token di prompt letti dalla cache del provider, per intero
         costUsd:
           type: ["number", "null"]
           description: Costo in USD; null se un prezzo manca o l'analisi usa il vecchio gateway (costo parziale)

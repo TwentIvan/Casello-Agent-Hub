@@ -45,7 +45,7 @@ const apriPagina = makeTool({ name: "apri_pagina", kind: "ui", definition: { act
 const tools = [leggiRosa, leggiCalendario, scambia, apriPagina];
 
 function reply(content: string, tokens = 10): ChatResult {
-  return { content, toolCalls: [], promptTokens: tokens, completionTokens: 0 };
+  return { content, toolCalls: [], promptTokens: tokens, completionTokens: 0, cachedPromptTokens: 0 };
 }
 
 function callTools(calls: { id: string; name: string; args: string }[], promptTokens = 10): ChatResult {
@@ -54,6 +54,7 @@ function callTools(calls: { id: string; name: string; args: string }[], promptTo
     toolCalls: calls.map((c) => ({ id: c.id, name: c.name, arguments: c.args })),
     promptTokens,
     completionTokens: 5,
+    cachedPromptTokens: 0,
   };
 }
 
@@ -125,7 +126,7 @@ describe("runAgentLoop", () => {
   });
 
   it("contenuto finale nullo → stringa vuota", async () => {
-    const { deps } = makeDeps([{ content: null, toolCalls: [], promptTokens: 1, completionTokens: 1 }]);
+    const { deps } = makeDeps([{ content: null, toolCalls: [], promptTokens: 1, completionTokens: 1, cachedPromptTokens: 0 }]);
     const out = await runAgentLoop(initialState(), deps);
     expect(out).toMatchObject({ type: "finished", content: "" });
   });

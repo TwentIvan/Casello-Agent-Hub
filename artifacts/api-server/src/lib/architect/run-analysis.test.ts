@@ -191,6 +191,8 @@ let llm429Remaining: number;
 let llm429RetryAfter: string | null;
 let llm429RetryDelay: string | null;
 let llmPromptTokens: number;
+/** Token di prompt riportati come letti dalla cache (0 = campo assente). */
+let llmCachedTokens: number;
 /** Fasi in cui il modello legge finché non riceve il sollecito del budget della fase. */
 let readUntilNudge: Set<PhaseName>;
 let invalidPhases: Set<PhaseName>;
@@ -207,7 +209,11 @@ function toolCall(name: string, args: Record<string, unknown>, id: string) {
         },
       },
     ],
-    usage: { prompt_tokens: llmPromptTokens, completion_tokens: 20 },
+    usage: {
+      prompt_tokens: llmPromptTokens,
+      completion_tokens: 20,
+      ...(llmCachedTokens > 0 ? { prompt_tokens_details: { cached_tokens: llmCachedTokens } } : {}),
+    },
   };
 }
 
@@ -296,6 +302,7 @@ beforeEach(async () => {
   llm429RetryAfter = null;
   llm429RetryDelay = null;
   llmPromptTokens = 100;
+  llmCachedTokens = 0;
   readUntilNudge = new Set();
   invalidPhases = new Set();
   resultOverrides = {};
@@ -422,7 +429,10 @@ describe("startAnalysis", () => {
     expect(a.status).toBe("completed");
     expect(a.finishedAt).not.toBeNull();
     expect(a.sources).toEqual({ code: "zip", openapi: true, description: true });
-    expect(a.architectureMap).toEqual(RESULTS.map);
+    // La mappa calcolata da Casello si affianca all'esito della fase map
+    expect(a.architectureMap).toEqual({ ...(RESULTS.map as object), repoMap: expect.stringContaining("src/") });
+    // ...ed è nel messaggio utente di ogni fase
+    expect(llmRequests.every((r) => String(r.messages[1].content).includes("Mappa del repository calcolata da Casello"))).toBe(true);
     // 12 chiamate da 120 token
     expect(a.tokensUsed).toBe(12 * 120);
     expect(llmRequests).toHaveLength(12);
@@ -482,6 +492,21 @@ describe("startAnalysis", () => {
     expect((await loadItems(second)).find((i) => i.ref === "tool:list_teams")!.diff).toBe("unchanged");
   });
 
+  it("le notes di una fase arrivano come appunti alle fasi successive e non negli esiti", async () => {
+    resultOverrides.map = { ...(RESULTS.map as object), notes: "APPUNTO-MAP-XYZ" };
+    const id = await createAnalysis();
+    await startAnalysis(id, { zip: testZip() });
+
+    expect((await loadAnalysis(id)).error).toBeNull();
+    const caps = llmRequests.filter((r) => phaseOf(r) === "capabilities").map((r) => String(r.messages[1].content));
+    expect(caps.length).toBeGreaterThan(0);
+    for (const user of caps) {
+      expect(user).toContain("Appunti delle fasi precedenti");
+      expect(user).toContain("### map\nAPPUNTO-MAP-XYZ");
+      expect(user.match(/APPUNTO-MAP-XYZ/g)).toHaveLength(1);
+    }
+  });
+
   it("fase completion non valida tre volte: failed, restano gli elementi di catalog e agents", async () => {
     invalidPhases.add("completion");
     const id = await createAnalysis();
@@ -497,6 +522,18 @@ describe("startAnalysis", () => {
     expect(chapters).toEqual(new Set(["tool", "endpoint", "agent", "skill"]));
     // Nessuna chiamata dopo la fase fallita
     expect(llmRequests.some((r) => phaseOf(r) === "evolution")).toBe(false);
+  });
+
+  it("fase map non riuscita: architecture_map contiene comunque la mappa calcolata", async () => {
+    invalidPhases.add("map");
+    const id = await createAnalysis();
+    await startAnalysis(id, { zip: testZip() });
+
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.architectureMap).toEqual({ repoMap: expect.stringContaining("src/") });
+    // Il contenuto del repository non finisce nel log
+    expect(JSON.stringify(a.log)).not.toContain("Progetto");
   });
 
   it("GitHub 401: failed con un messaggio in italiano che non contiene il token", async () => {
@@ -641,9 +678,9 @@ describe("startAnalysis", () => {
   }, 20_000);
 
   it("ogni fase riceve la sua quota (share × maxTokens): il sollecito arriva all'80% della quota", async () => {
-    // 5 000 token per chiamata, tetto 100 000: map ha 22 000 (sollecito a 17 600, dopo 4 chiamate),
-    // capabilities ne ha 13 000 (sollecito a 10 400, dopo 3 chiamate); con quote uguali (1/6 → 13 333,
-    // sollecito a 10 667) map ne farebbe 3
+    // 5 000 token per chiamata, tetto 100 000: map ha 10 000 (sollecito a 8 000, dopo 2 chiamate),
+    // capabilities ne ha 13 000 (sollecito a 10 400, dopo 3 chiamate); con quote uguali (1/6 → 16 667,
+    // sollecito a 13 333) map ne farebbe 4
     llmPromptTokens = 4_980;
     readUntilNudge = new Set(["map", "capabilities"]);
     const id = await createAnalysis(appId, { maxTokens: 100_000 });
@@ -652,11 +689,11 @@ describe("startAnalysis", () => {
     expect(a.error).toBeNull();
     expect(a.status).toBe("completed");
     const perPhase = (p: PhaseName) => llmRequests.filter((r) => phaseOf(r) === p).length;
-    expect(perPhase("map")).toBe(5);
+    expect(perPhase("map")).toBe(3);
     expect(perPhase("capabilities")).toBe(4);
     expect(perPhase("catalog")).toBe(2);
     // le quote non usate passano alle fasi successive: il tetto vero resta il totale
-    expect(a.tokensUsed).toBe((5 + 4 + 4 * 2) * 5_000);
+    expect(a.tokensUsed).toBe((3 + 4 + 4 * 2) * 5_000);
   });
 
   it("analisi non in coda: nessun effetto", async () => {
@@ -708,6 +745,22 @@ describe("startAnalysis sugli account AI", () => {
     expect(Number(a.costUsd)).toBeCloseTo(0.00168, 8);
     expect(llmRequests[0].model).toBe("modello-architetto");
     expect(llmAuth.every((h) => h === `Bearer ${ACCOUNT_KEY}`)).toBe(true);
+  });
+
+  it("token in cache: pesati al 10% nel budget, salvati a parte e pagati al prezzo di cache", async () => {
+    const model = await ownModel();
+    await db.update(aiModelsTable).set({ priceCachedInputPerMtok: "0.1" }).where(eq(aiModelsTable.id, model.id));
+    llmCachedTokens = 53;
+    const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
+    await startAnalysis(id, { zip: testZip() });
+
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("completed");
+    // 12 × (47 + 20 + 5,3) = 867,6 → arrotondato
+    expect(a.tokensUsed).toBe(868);
+    expect(a.cachedTokens).toBe(12 * 53);
+    // 12 × (53 × 0,1 + 47 × 1 + 20 × 2) / 1e6 = 0,0011076 (la colonna tiene 6 decimali); a prezzo pieno 0,00168
+    expect(a.costUsd).toBe("0.001108");
   });
 
   it("prezzi non noti: completata con cost_usd null", async () => {

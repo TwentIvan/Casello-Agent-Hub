@@ -20,6 +20,8 @@ export const modelOffersTable = pgTable(
     providerModelId: text("provider_model_id").notNull(),
     priceInputPerMtok: numeric("price_input_per_mtok", { precision: 12, scale: 6 }),
     priceOutputPerMtok: numeric("price_output_per_mtok", { precision: 12, scale: 6 }),
+    // Prezzo dei token di prompt letti dalla cache; arriva ad ai_models con enrichFromCatalog
+    priceCachedInputPerMtok: numeric("price_cached_input_per_mtok", { precision: 12, scale: 6 }),
     contextTokens: integer("context_tokens"),
     supportsTools: boolean("supports_tools"),
     status: modelCatalogStatusEnum("status").notNull().default("available"),

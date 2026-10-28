@@ -471,6 +471,8 @@ export interface Run {
   promptTokens?: number | null;
   /** @nullable */
   completionTokens?: number | null;
+  /** Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta) */
+  cachedTokens: number;
   /**
      * Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)
      * @nullable
@@ -596,7 +598,10 @@ export interface Analysis {
   status: AnalysisStatus;
   sources: AnalysisSources;
   maxTokens: number;
+  /** Token usati pesati per il budget (quelli letti dalla cache contano al 10%) */
   tokensUsed: number;
+  /** Token di prompt letti dalla cache del provider, per intero */
+  cachedTokens: number;
   /**
      * Costo in USD; null se un prezzo manca o l'analisi usa il vecchio gateway (costo parziale)
      * @nullable

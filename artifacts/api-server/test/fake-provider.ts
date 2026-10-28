@@ -39,8 +39,11 @@ export interface FakeToolCall {
 export interface FakeChatReply {
   content: string | null;
   toolCalls: FakeToolCall[];
-  /** null = risposta senza `usage` (alcuni provider non la mandano). */
-  usage: { prompt_tokens: number; completion_tokens: number } | null;
+  /**
+   * null = risposta senza `usage` (alcuni provider non la mandano). `cached_tokens` finisce in
+   * `prompt_tokens_details.cached_tokens`, come lo riportano OpenAI e OpenRouter.
+   */
+  usage: { prompt_tokens: number; completion_tokens: number; cached_tokens?: number } | null;
   /** Default: "tool_calls" se ci sono tool call, altrimenti "stop". */
   finishReason?: string;
 }
@@ -181,6 +184,7 @@ export async function startFakeProvider(opts: Partial<Omit<FakeProvider, "baseUr
           prompt_tokens: reply.usage.prompt_tokens,
           completion_tokens: reply.usage.completion_tokens,
           total_tokens: reply.usage.prompt_tokens + reply.usage.completion_tokens,
+          ...(reply.usage.cached_tokens !== undefined ? { prompt_tokens_details: { cached_tokens: reply.usage.cached_tokens } } : {}),
         };
       }
       return send(res, 200, response);

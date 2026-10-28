@@ -62,6 +62,8 @@ export interface DiscoveredModel {
   /** USD per milione di token. */
   priceInput: number | null;
   priceOutput: number | null;
+  /** Prezzo dei token in cache (`pricing.input_cache_read` dei `/models` stile OpenRouter); null se non noto. */
+  priceCachedInput: number | null;
   priceSource: "provider" | "seed" | null;
 }
 
@@ -96,7 +98,17 @@ function toModel(provider: AiProvider, entry: Record<string, unknown>, id: strin
       priceSource = "seed";
     }
   }
-  return { modelId: id, displayName, contextTokens: contextTokens(entry["context_length"]), priceInput, priceOutput, priceSource };
+  // Il seed non ha il prezzo di cache: solo quello riportato dal provider
+  const priceCachedInput = priceSource === "provider" ? perMillion(pricing["input_cache_read"]) : null;
+  return {
+    modelId: id,
+    displayName,
+    contextTokens: contextTokens(entry["context_length"]),
+    priceInput,
+    priceOutput,
+    priceCachedInput,
+    priceSource,
+  };
 }
 
 export async function discoverModels(account: DiscoveryAccount, fetchImpl: typeof fetch = fetch): Promise<DiscoveredModel[]> {

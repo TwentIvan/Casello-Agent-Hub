@@ -12,7 +12,7 @@ async function fixtureEntries(): Promise<SourceEntry[]> {
   return [...(await fetchOpenRouterSource(f)), ...(await fetchLiteLlmSource(f))];
 }
 
-const BASE = { name: null, releasedAt: null, contextTokens: null, supportsTools: null, deprecationDate: null, mode: "chat" as const, supportsVision: null, supportsReasoning: null };
+const BASE = { name: null, releasedAt: null, priceCachedInput: null, contextTokens: null, supportsTools: null, deprecationDate: null, mode: "chat" as const, supportsVision: null, supportsReasoning: null };
 
 describe("mergeUniversal", () => {
   async function merged(now = NOW) {
@@ -205,7 +205,7 @@ describe("mergeUniversal: indipendente dall'ordine delle voci", () => {
 
 describe("keepFailedOfferFields", () => {
   const offer = (over: Partial<OfferRecord> = {}): OfferRecord => ({
-    provider: "bedrock", providerModelId: "us.m", canonicalKey: "m", priceInput: 1, priceOutput: 2, contextTokens: 100,
+    provider: "bedrock", providerModelId: "us.m", canonicalKey: "m", priceInput: 1, priceOutput: 2, priceCachedInput: null, contextTokens: 100,
     supportsTools: true, status: "available", deprecationDate: null, sources: { price: "litellm", contextTokens: "litellm", supportsTools: "litellm" }, ...over,
   });
 
@@ -215,7 +215,7 @@ describe("keepFailedOfferFields", () => {
   });
   it("tiene i campi della fonte caduta, per provider e id presso il provider", () => {
     const before = [
-      offer({ priceInput: 5, deprecationDate: new Date("2026-01-01"), sources: { price: "litellm", deprecationDate: "litellm" } }),
+      offer({ priceInput: 5, priceCachedInput: 0.5, deprecationDate: new Date("2026-01-01"), sources: { price: "litellm", deprecationDate: "litellm" } }),
       offer({ providerModelId: "eu.m", priceInput: 7 }),
     ];
     const after = [
@@ -223,7 +223,7 @@ describe("keepFailedOfferFields", () => {
       offer({ provider: "anthropic", providerModelId: "us.m", priceInput: 3 }),
     ];
     const out = keepFailedOfferFields(after, before, ["litellm"], NOW);
-    expect(out[0]).toMatchObject({ priceInput: 5, priceOutput: 2, status: "retired", sources: { price: "litellm", deprecationDate: "litellm" } });
+    expect(out[0]).toMatchObject({ priceInput: 5, priceOutput: 2, priceCachedInput: 0.5, status: "retired", sources: { price: "litellm", deprecationDate: "litellm" } });
     expect(out[1]!.priceInput).toBe(3);
   });
 });

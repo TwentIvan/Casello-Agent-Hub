@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { AnalysisExecutor } from './analysisExecutor';
 
 export type StartZipAnalysisParams = {
 /**
@@ -22,4 +23,8 @@ model?: string;
  * @maximum 2000000
  */
 maxTokens?: number;
+/**
+ * Con local risponde 400 "con l'agente locale lo zip non serve"
+ */
+executor?: AnalysisExecutor;
 };

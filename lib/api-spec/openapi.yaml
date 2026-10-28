@@ -634,7 +634,9 @@ paths:
         Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI,
         descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso. Con
         sourceInstallationId non serve il token manuale, ma l'utente corrente deve avere quell'installazione
-        (altrimenti 403 "installazione non trovata o non tua").
+        (altrimenti 403 "installazione non trovata o non tua"). Con executor local l'analisi resta in coda
+        finché un agente locale (via MCP) non la prende: niente modello (aiModelId e model vietati) e
+        nessun controllo sulle sorgenti, il codice lo legge l'agente sul proprio clone.
       parameters:
         - $ref: "#/components/parameters/IdParam"
       requestBody:
@@ -690,6 +692,12 @@ paths:
             minimum: 50000
             maximum: 2000000
           description: Tetto di token per l'analisi (default 1000000)
+        - name: executor
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/AnalysisExecutor"
+          description: Con local risponde 400 "con l'agente locale lo zip non serve"
       requestBody:
         required: true
         content:
@@ -729,6 +737,50 @@ paths:
                 $ref: "#/components/schemas/AnalysisDetail"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /analyses/{id}/release:
+    post:
+      operationId: releaseAnalysis
+      tags: [architect]
+      summary: Rilascia la lease di un'analisi locale, che torna in coda
+      description: >-
+        Solo per un'analisi locale in coda o in corso (altrimenti 409): la lease dell'agente viene
+        azzerata e un altro agente (o lo stesso) può riprenderla dalla prima fase senza esito.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Analisi di nuovo in coda
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analysis"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /analyses/{id}/cancel:
+    post:
+      operationId: cancelAnalysis
+      tags: [architect]
+      summary: Annulla un'analisi locale
+      description: >-
+        Solo per un'analisi locale in coda o in corso (altrimenti 409): si chiude come failed con
+        errore "annullata dalla console"; gli elementi già consegnati restano.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Analisi annullata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analysis"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /analyses/{id}/issues:
     get:
@@ -2209,6 +2261,11 @@ components:
       type: string
       enum: [queued, running, completed, failed, interrupted]
 
+    AnalysisExecutor:
+      type: string
+      enum: [cloud, local]
+      description: Chi esegue l'analisi, il cloud di Casello o un agente locale via MCP
+
     AnalysisChapter:
       type: string
       enum: [tool, agent, skill, endpoint, completion, evolution]
@@ -2236,7 +2293,7 @@ components:
 
     Analysis:
       type: object
-      required: [id, appId, model, aiModelId, status, sources, maxTokens, tokensUsed, cachedTokens, costUsd, phase, error, createdAt, finishedAt]
+      required: [id, appId, model, aiModelId, status, executor, sources, maxTokens, tokensUsed, cachedTokens, costUsd, phase, error, leaseLabel, leaseUntil, createdAt, finishedAt]
       properties:
         id:
           type: integer
@@ -2248,6 +2305,8 @@ components:
           type: ["integer", "null"]
         status:
           $ref: "#/components/schemas/AnalysisStatus"
+        executor:
+          $ref: "#/components/schemas/AnalysisExecutor"
         sources:
           $ref: "#/components/schemas/AnalysisSources"
         maxTokens:
@@ -2266,11 +2325,28 @@ components:
           description: Fase corrente
         error:
           type: ["string", "null"]
+        leaseLabel:
+          type: ["string", "null"]
+          description: Etichetta dell'agente locale che ha l'analisi in carico (solo con lease attiva)
+        leaseUntil:
+          type: ["string", "null"]
+          format: date-time
+          description: Scadenza della lease dell'agente locale
         createdAt:
           type: string
           format: date-time
         finishedAt:
           type: ["string", "null"]
+          format: date-time
+
+    AnalysisPhaseDelivery:
+      type: object
+      required: [phase, submittedAt]
+      properties:
+        phase:
+          type: string
+        submittedAt:
+          type: string
           format: date-time
 
     AnalysisLogEntry:
@@ -2333,8 +2409,13 @@ components:
       allOf:
         - $ref: "#/components/schemas/Analysis"
         - type: object
-          required: [architectureMap, log, items]
+          required: [architectureMap, log, items, deliveredPhases]
           properties:
+            deliveredPhases:
+              type: array
+              description: Fasi consegnate dall'agente locale, in ordine di fase (vuoto per le analisi cloud)
+              items:
+                $ref: "#/components/schemas/AnalysisPhaseDelivery"
             architectureMap:
               type: ["object", "null"]
               additionalProperties: true
@@ -2349,8 +2430,12 @@ components:
 
     AnalysisStart:
       type: object
-      description: Indicare esattamente uno tra aiModelId e model (altrimenti 400 "scegli un modello")
+      description: >-
+        Con executor cloud (default) indicare esattamente uno tra aiModelId e model (altrimenti 400
+        "scegli un modello"); con executor local nessuno dei due.
       properties:
+        executor:
+          $ref: "#/components/schemas/AnalysisExecutor"
         aiModelId:
           type: integer
           description: Modello di un account AI dell'utente o dell'account di sistema

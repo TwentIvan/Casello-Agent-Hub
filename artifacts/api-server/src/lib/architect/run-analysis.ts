@@ -565,14 +565,15 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
 }
 
 /**
- * Le analisi girano nel processo dell'API: dopo un riavvio quelle in coda o in corso non
+ * Le analisi cloud girano nel processo dell'API: dopo un riavvio quelle in coda o in corso non
  * finiranno mai. All'avvio si chiudono come `interrupted`; gli elementi già salvati restano.
+ * Le analisi locali no: le esegue l'agente, che riprende con la sua lease (o la perde allo scadere).
  */
 export async function failInterruptedAnalyses(): Promise<number> {
   const rows = await db
     .update(analysesTable)
     .set({ status: "interrupted", error: INTERRUPTED_ERROR, finishedAt: new Date() })
-    .where(inArray(analysesTable.status, ["queued", "running"]))
+    .where(and(eq(analysesTable.executor, "cloud"), inArray(analysesTable.status, ["queued", "running"])))
     .returning({ id: analysesTable.id });
   return rows.length;
 }

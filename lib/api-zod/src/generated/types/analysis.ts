@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { AnalysisExecutor } from './analysisExecutor';
 import type { AnalysisSources } from './analysisSources';
 import type { AnalysisStatus } from './analysisStatus';
 
@@ -15,6 +16,7 @@ export interface Analysis {
   /** @nullable */
   aiModelId: number | null;
   status: AnalysisStatus;
+  executor: AnalysisExecutor;
   sources: AnalysisSources;
   maxTokens: number;
   /** Token usati pesati per il budget (quelli letti dalla cache contano al 10%) */
@@ -33,6 +35,16 @@ export interface Analysis {
   phase: string | null;
   /** @nullable */
   error: string | null;
+  /**
+     * Etichetta dell'agente locale che ha l'analisi in carico (solo con lease attiva)
+     * @nullable
+     */
+  leaseLabel: string | null;
+  /**
+     * Scadenza della lease dell'agente locale
+     * @nullable
+     */
+  leaseUntil: Date | null;
   createdAt: Date;
   /** @nullable */
   finishedAt: Date | null;

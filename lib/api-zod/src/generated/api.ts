@@ -811,6 +811,7 @@ export const ListAnalysesResponseItem = zod.object({
   "model": zod.string(),
   "aiModelId": zod.number().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
+  "executor": zod.enum(['cloud', 'local']).describe('Chi esegue l\'analisi, il cloud di Casello o un agente locale via MCP'),
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
@@ -822,6 +823,8 @@ export const ListAnalysesResponseItem = zod.object({
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
+  "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
+  "leaseUntil": zod.coerce.date().nullable().describe('Scadenza della lease dell\'agente locale'),
   "createdAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullable()
 })
@@ -829,7 +832,7 @@ export const ListAnalysesResponse = zod.array(ListAnalysesResponseItem)
 
 
 /**
- * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso. Con sourceInstallationId non serve il token manuale, ma l'utente corrente deve avere quell'installazione (altrimenti 403 "installazione non trovata o non tua").
+ * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso. Con sourceInstallationId non serve il token manuale, ma l'utente corrente deve avere quell'installazione (altrimenti 403 "installazione non trovata o non tua"). Con executor local l'analisi resta in coda finché un agente locale (via MCP) non la prende: niente modello (aiModelId e model vietati) e nessun controllo sulle sorgenti, il codice lo legge l'agente sul proprio clone.
  * @summary Avvia un'analisi leggendo le sorgenti configurate sull'app
  */
 export const StartAnalysisParams = zod.object({
@@ -843,10 +846,11 @@ export const startAnalysisBodyMaxTokensMax = 2000000;
 
 
 export const StartAnalysisBody = zod.object({
+  "executor": zod.enum(['cloud', 'local']).optional().describe('Chi esegue l\'analisi, il cloud di Casello o un agente locale via MCP'),
   "aiModelId": zod.number().optional().describe('Modello di un account AI dell\'utente o dell\'account di sistema'),
   "model": zod.string().min(1).optional().describe('Compatibilità, modello AI come model_name di LiteLLM'),
   "maxTokens": zod.number().min(startAnalysisBodyMaxTokensMin).max(startAnalysisBodyMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)')
-}).describe('Indicare esattamente uno tra aiModelId e model (altrimenti 400 \"scegli un modello\")')
+}).describe('Con executor cloud (default) indicare esattamente uno tra aiModelId e model (altrimenti 400 \"scegli un modello\"); con executor local nessuno dei due.')
 
 export const StartAnalysisResponse = zod.object({
   "id": zod.number(),
@@ -854,6 +858,7 @@ export const StartAnalysisResponse = zod.object({
   "model": zod.string(),
   "aiModelId": zod.number().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
+  "executor": zod.enum(['cloud', 'local']).describe('Chi esegue l\'analisi, il cloud di Casello o un agente locale via MCP'),
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
@@ -865,6 +870,8 @@ export const StartAnalysisResponse = zod.object({
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
+  "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
+  "leaseUntil": zod.coerce.date().nullable().describe('Scadenza della lease dell\'agente locale'),
   "createdAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullable()
 })
@@ -887,7 +894,8 @@ export const startZipAnalysisQueryMaxTokensMax = 2000000;
 export const StartZipAnalysisQueryParams = zod.object({
   "aiModelId": zod.coerce.number().optional().describe('Modello di un account AI (esattamente uno tra aiModelId e model)'),
   "model": zod.coerce.string().min(1).optional().describe('Compatibilità, modello AI come model_name di LiteLLM'),
-  "maxTokens": zod.coerce.number().min(startZipAnalysisQueryMaxTokensMin).max(startZipAnalysisQueryMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)')
+  "maxTokens": zod.coerce.number().min(startZipAnalysisQueryMaxTokensMin).max(startZipAnalysisQueryMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)'),
+  "executor": zod.enum(['cloud', 'local']).optional().describe('Con local risponde 400 \"con l\'agente locale lo zip non serve\"')
 })
 
 export const StartZipAnalysisResponse = zod.object({
@@ -896,6 +904,7 @@ export const StartZipAnalysisResponse = zod.object({
   "model": zod.string(),
   "aiModelId": zod.number().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
+  "executor": zod.enum(['cloud', 'local']).describe('Chi esegue l\'analisi, il cloud di Casello o un agente locale via MCP'),
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
@@ -907,6 +916,8 @@ export const StartZipAnalysisResponse = zod.object({
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
+  "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
+  "leaseUntil": zod.coerce.date().nullable().describe('Scadenza della lease dell\'agente locale'),
   "createdAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullable()
 })
@@ -925,6 +936,7 @@ export const GetAnalysisResponse = zod.object({
   "model": zod.string(),
   "aiModelId": zod.number().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
+  "executor": zod.enum(['cloud', 'local']).describe('Chi esegue l\'analisi, il cloud di Casello o un agente locale via MCP'),
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
@@ -936,9 +948,15 @@ export const GetAnalysisResponse = zod.object({
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
+  "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
+  "leaseUntil": zod.coerce.date().nullable().describe('Scadenza della lease dell\'agente locale'),
   "createdAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullable()
 }).and(zod.object({
+  "deliveredPhases": zod.array(zod.object({
+  "phase": zod.string(),
+  "submittedAt": zod.coerce.date()
+})).describe('Fasi consegnate dall\'agente locale, in ordine di fase (vuoto per le analisi cloud)'),
   "architectureMap": zod.record(zod.string(), zod.unknown()).nullable(),
   "log": zod.array(zod.object({
   "at": zod.coerce.date(),
@@ -963,6 +981,72 @@ export const GetAnalysisResponse = zod.object({
   "appliedAt": zod.coerce.date().nullable()
 }))
 }))
+
+
+/**
+ * Solo per un'analisi locale in coda o in corso (altrimenti 409): la lease dell'agente viene azzerata e un altro agente (o lo stesso) può riprenderla dalla prima fase senza esito.
+ * @summary Rilascia la lease di un'analisi locale, che torna in coda
+ */
+export const ReleaseAnalysisParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ReleaseAnalysisResponse = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "model": zod.string(),
+  "aiModelId": zod.number().nullable(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
+  "executor": zod.enum(['cloud', 'local']).describe('Chi esegue l\'analisi, il cloud di Casello o un agente locale via MCP'),
+  "sources": zod.object({
+  "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
+  "openapi": zod.boolean(),
+  "description": zod.boolean()
+}),
+  "maxTokens": zod.number(),
+  "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
+  "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
+  "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
+  "phase": zod.string().nullable().describe('Fase corrente'),
+  "error": zod.string().nullable(),
+  "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
+  "leaseUntil": zod.coerce.date().nullable().describe('Scadenza della lease dell\'agente locale'),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Solo per un'analisi locale in coda o in corso (altrimenti 409): si chiude come failed con errore "annullata dalla console"; gli elementi già consegnati restano.
+ * @summary Annulla un'analisi locale
+ */
+export const CancelAnalysisParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CancelAnalysisResponse = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "model": zod.string(),
+  "aiModelId": zod.number().nullable(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
+  "executor": zod.enum(['cloud', 'local']).describe('Chi esegue l\'analisi, il cloud di Casello o un agente locale via MCP'),
+  "sources": zod.object({
+  "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
+  "openapi": zod.boolean(),
+  "description": zod.boolean()
+}),
+  "maxTokens": zod.number(),
+  "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
+  "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
+  "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
+  "phase": zod.string().nullable().describe('Fase corrente'),
+  "error": zod.string().nullable(),
+  "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
+  "leaseUntil": zod.coerce.date().nullable().describe('Scadenza della lease dell\'agente locale'),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+})
 
 
 /**

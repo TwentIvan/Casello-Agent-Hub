@@ -2277,7 +2277,7 @@ export const getStartAnalysisUrl = (id: number,) => {
 }
 
 /**
- * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso. Con sourceInstallationId non serve il token manuale, ma l'utente corrente deve avere quell'installazione (altrimenti 403 "installazione non trovata o non tua").
+ * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso. Con sourceInstallationId non serve il token manuale, ma l'utente corrente deve avere quell'installazione (altrimenti 403 "installazione non trovata o non tua"). Con executor local l'analisi resta in coda finché un agente locale (via MCP) non la prende: niente modello (aiModelId e model vietati) e nessun controllo sulle sorgenti, il codice lo legge l'agente sul proprio clone.
  * @summary Avvia un'analisi leggendo le sorgenti configurate sull'app
  */
 export const startAnalysis = async (id: number,
@@ -2497,6 +2497,148 @@ export function useGetAnalysis<TData = Awaited<ReturnType<typeof getAnalysis>>, 
 
 
 
+
+export const getReleaseAnalysisUrl = (id: number,) => {
+
+
+
+
+  return `/api/analyses/${id}/release`
+}
+
+/**
+ * Solo per un'analisi locale in coda o in corso (altrimenti 409): la lease dell'agente viene azzerata e un altro agente (o lo stesso) può riprenderla dalla prima fase senza esito.
+ * @summary Rilascia la lease di un'analisi locale, che torna in coda
+ */
+export const releaseAnalysis = async (id: number, options?: RequestInit): Promise<Analysis> => {
+
+  return customFetch<Analysis>(getReleaseAnalysisUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getReleaseAnalysisMutationOptions = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof releaseAnalysis>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof releaseAnalysis>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['releaseAnalysis'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof releaseAnalysis>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  releaseAnalysis(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReleaseAnalysisMutationResult = NonNullable<Awaited<ReturnType<typeof releaseAnalysis>>>
+
+    export type ReleaseAnalysisMutationError = ErrorType<NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Rilascia la lease di un'analisi locale, che torna in coda
+ */
+export const useReleaseAnalysis = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof releaseAnalysis>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof releaseAnalysis>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getReleaseAnalysisMutationOptions(options));
+    }
+
+export const getCancelAnalysisUrl = (id: number,) => {
+
+
+
+
+  return `/api/analyses/${id}/cancel`
+}
+
+/**
+ * Solo per un'analisi locale in coda o in corso (altrimenti 409): si chiude come failed con errore "annullata dalla console"; gli elementi già consegnati restano.
+ * @summary Annulla un'analisi locale
+ */
+export const cancelAnalysis = async (id: number, options?: RequestInit): Promise<Analysis> => {
+
+  return customFetch<Analysis>(getCancelAnalysisUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCancelAnalysisMutationOptions = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelAnalysis>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelAnalysis>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['cancelAnalysis'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelAnalysis>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  cancelAnalysis(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelAnalysisMutationResult = NonNullable<Awaited<ReturnType<typeof cancelAnalysis>>>
+
+    export type CancelAnalysisMutationError = ErrorType<NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Annulla un'analisi locale
+ */
+export const useCancelAnalysis = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelAnalysis>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelAnalysis>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getCancelAnalysisMutationOptions(options));
+    }
 
 export const getExportAnalysisIssuesUrl = (id: number,
     params: ExportAnalysisIssuesParams,) => {

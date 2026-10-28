@@ -1,9 +1,10 @@
-import express, { Router, type IRouter, type RequestHandler } from "express";
+import express, { Router, type IRouter, type RequestHandler, type Response } from "express";
 import { and, asc, desc, eq } from "drizzle-orm";
 import {
   db,
   analysesTable,
   analysisItemsTable,
+  analysisPhaseResultsTable,
   appsTable,
   type AnalysisItem,
   type App,
@@ -25,6 +26,10 @@ import {
   UpdateAnalysisItemParams,
   UpdateAnalysisItemBody,
   UpdateAnalysisItemResponse,
+  ReleaseAnalysisParams,
+  ReleaseAnalysisResponse,
+  CancelAnalysisParams,
+  CancelAnalysisResponse,
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
 import { AVAILABLE_MODELS } from "../lib/models";
@@ -33,6 +38,7 @@ import { isUniqueViolation } from "../lib/pg-errors";
 import { ANALYSIS_DEFAULT_MAX_TOKENS, startAnalysis } from "../lib/architect/run-analysis";
 import { ApplyError, applyItem } from "../lib/architect/apply";
 import { exportIssues } from "../lib/architect/issues";
+import { LOCAL_MODEL, cancelLocalAnalysis, releaseLocalAnalysis } from "../lib/architect/local-executor";
 import { ITEM_SCHEMAS, PHASES, type AnalysisChapter } from "../lib/architect/schemas";
 import { SOURCE_LIMITS } from "../lib/architect/source-tree";
 import { runRateLimit } from "../middlewares/rate-limit";
@@ -40,8 +46,9 @@ import { parseRequest } from "../middlewares/error-handler";
 import { INSTALLATION_NOT_YOURS, userHasInstallation } from "./apps";
 import { toPublicAnalysis, toPublicAnalysisDetail, toPublicItem } from "./serializers";
 
-// Route dell'architetto: avvio delle analisi (sorgenti dell'app o zip caricato), dettaglio,
-// revisione degli elementi della proposta ed esportazione delle issue.
+// Route dell'architetto: avvio delle analisi (sorgenti dell'app o zip caricato, oppure in coda per
+// un agente locale), dettaglio, rilascio e annullamento delle analisi locali, revisione degli
+// elementi della proposta ed esportazione delle issue.
 
 /**
  * Lettura dell'archivio zip come Buffer, solo in memoria. Si monta soltanto sulla route dello zip:
@@ -90,31 +97,52 @@ async function analysisModel(input: { aiModelId?: number; model?: string }, user
 /** L'app ha già un'analisi `queued`/`running` (indice unico parziale `analyses_one_active_per_app`). */
 class AnalysisBusyError extends Error {}
 
+/** Inserisce l'analisi `queued`; un'altra analisi aperta per l'app → AnalysisBusyError. */
+async function insertAnalysis(values: typeof analysesTable.$inferInsert) {
+  try {
+    const [row] = await db.insert(analysesTable).values(values).returning();
+    return row!;
+  } catch (err) {
+    if (isUniqueViolation(err, "analyses_one_active_per_app")) throw new AnalysisBusyError();
+    throw err;
+  }
+}
+
 /**
  * Crea l'analisi `queued` e la avvia in background. `startAnalysis` non lancia mai: registra da sé
  * ogni errore sulla riga dell'analisi. Lo zip resta solo in memoria (mai su disco né nei log).
  */
 async function createAndStart(app: App, choice: ModelChoice, maxTokens: number | undefined, zip?: Uint8Array) {
-  let row;
-  try {
-    [row] = await db
-      .insert(analysesTable)
-      .values({
-        appId: app.id,
-        model: choice.model,
-        aiModelId: choice.aiModelId,
-        maxTokens: maxTokens ?? ANALYSIS_DEFAULT_MAX_TOKENS,
-        // Valore iniziale: l'orchestratore lo sovrascrive con le sorgenti usate davvero
-        sources: { code: zip ? "zip" : app.sourceType, openapi: false, description: !!app.functionalDescription?.trim() },
-      })
-      .returning();
-  } catch (err) {
-    if (isUniqueViolation(err, "analyses_one_active_per_app")) throw new AnalysisBusyError();
-    throw err;
-  }
-  void startAnalysis(row!.id, zip ? { zip } : undefined);
-  return row!;
+  const row = await insertAnalysis({
+    appId: app.id,
+    model: choice.model,
+    aiModelId: choice.aiModelId,
+    maxTokens: maxTokens ?? ANALYSIS_DEFAULT_MAX_TOKENS,
+    // Valore iniziale: l'orchestratore lo sovrascrive con le sorgenti usate davvero
+    sources: { code: zip ? "zip" : app.sourceType, openapi: false, description: !!app.functionalDescription?.trim() },
+  });
+  void startAnalysis(row.id, zip ? { zip } : undefined);
+  return row;
 }
+
+/**
+ * Analisi `queued` per un agente locale: nessun modello di Casello (`ai_model_id` nullo, nessun costo)
+ * e niente `startAnalysis`, la prende l'agente via MCP.
+ */
+function createLocal(app: App, maxTokens: number | undefined) {
+  return insertAnalysis({
+    appId: app.id,
+    model: LOCAL_MODEL,
+    aiModelId: null,
+    executor: "local",
+    maxTokens: maxTokens ?? ANALYSIS_DEFAULT_MAX_TOKENS,
+    sources: { code: app.sourceType, openapi: false, description: !!app.functionalDescription?.trim() },
+  });
+}
+
+const LOCAL_NO_MODEL = "con l'agente locale non si sceglie il modello: togli aiModelId e model";
+const LOCAL_NO_ZIP = "con l'agente locale lo zip non serve";
+const NOT_OPEN_LOCAL = "Solo un'analisi locale in coda o in corso si può rilasciare o annullare";
 
 const BUSY_MESSAGE = "C'è già un'analisi in corso per questa app: attendi che finisca";
 
@@ -132,6 +160,13 @@ async function findItem(id: number): Promise<{ item: AnalysisItem; appId: number
     .where(eq(analysisItemsTable.id, id))
     .limit(1);
   return row;
+}
+
+/** Rilascio o annullamento non riusciti: 404 se l'analisi non esiste, 409 se non è locale e aperta. */
+async function respondNotOpenLocal(id: number, res: Response): Promise<void> {
+  const [row] = await db.select({ id: analysesTable.id }).from(analysesTable).where(eq(analysesTable.id, id)).limit(1);
+  if (!row) res.status(404).json({ error: "Analisi non trovata" });
+  else res.status(409).json({ error: NOT_OPEN_LOCAL });
 }
 
 /** Conflitto con lo stato corrente dell'elemento (già approvato, non più in attesa…): 409. */
@@ -157,10 +192,25 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
   // Avvio con le sorgenti configurate sull'app (GitHub, OpenAPI, descrizione funzionale)
   router.post("/apps/:id/analyses", runRateLimit, async (req, res) => {
     const { id } = parseRequest(StartAnalysisParams, req.params);
-    const { model, aiModelId, maxTokens } = parseRequest(StartAnalysisBody, req.body);
+    const { model, aiModelId, maxTokens, executor = "cloud" } = parseRequest(StartAnalysisBody, req.body);
     const app = await findApp(id);
     if (!app) {
       res.status(404).json({ error: "App non trovata" });
+      return;
+    }
+    if (executor === "local") {
+      // Il codice lo legge l'agente sul proprio clone: nessun controllo sulle sorgenti né sul modello
+      if (aiModelId !== undefined || model !== undefined) {
+        res.status(400).json({ error: LOCAL_NO_MODEL });
+        return;
+      }
+      try {
+        const analysis = await createLocal(app, maxTokens);
+        res.status(202).json(StartAnalysisResponse.parse(toPublicAnalysis(analysis)));
+      } catch (err) {
+        if (!(err instanceof AnalysisBusyError)) throw err;
+        res.status(409).json({ error: BUSY_MESSAGE });
+      }
       return;
     }
     let choice: ModelChoice;
@@ -205,7 +255,11 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
     zipUpload(opts.zipLimitBytes),
     async (req, res) => {
       const { id } = parseRequest(StartZipAnalysisParams, req.params);
-      const { model, aiModelId, maxTokens } = parseRequest(StartZipAnalysisQueryParams, req.query);
+      const { model, aiModelId, maxTokens, executor } = parseRequest(StartZipAnalysisQueryParams, req.query);
+      if (executor === "local") {
+        res.status(400).json({ error: LOCAL_NO_ZIP });
+        return;
+      }
       const body: unknown = req.body;
       if (!Buffer.isBuffer(body) || body.length === 0) {
         res.status(400).json({ error: "Archivio zip mancante: invia il file come application/zip" });
@@ -249,7 +303,37 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
       .orderBy(asc(analysisItemsTable.position), asc(analysisItemsTable.id));
     // Capitoli nell'ordine delle fasi; dentro il capitolo per posizione (ordinamento stabile)
     items.sort((a, b) => CHAPTER_ORDER.indexOf(a.chapter) - CHAPTER_ORDER.indexOf(b.chapter));
-    res.json(GetAnalysisResponse.parse({ ...toPublicAnalysisDetail(analysis), items: items.map(toPublicItem) }));
+    // Fasi consegnate dall'agente locale, nell'ordine delle fasi (vuoto per le analisi cloud)
+    const delivered = await db
+      .select({ phase: analysisPhaseResultsTable.phase, submittedAt: analysisPhaseResultsTable.submittedAt })
+      .from(analysisPhaseResultsTable)
+      .where(eq(analysisPhaseResultsTable.analysisId, id));
+    const phaseOrder = (p: string) => PHASES.indexOf(p as (typeof PHASES)[number]);
+    delivered.sort((a, b) => phaseOrder(a.phase) - phaseOrder(b.phase));
+    res.json(
+      GetAnalysisResponse.parse({ ...toPublicAnalysisDetail(analysis), items: items.map(toPublicItem), deliveredPhases: delivered }),
+    );
+  });
+
+  // Console: rilascio della lease di un'analisi locale (torna in coda) e annullamento
+  router.post("/analyses/:id/release", async (req, res) => {
+    const { id } = parseRequest(ReleaseAnalysisParams, req.params);
+    const row = await releaseLocalAnalysis(id);
+    if (!row) {
+      await respondNotOpenLocal(id, res);
+      return;
+    }
+    res.json(ReleaseAnalysisResponse.parse(toPublicAnalysis(row)));
+  });
+
+  router.post("/analyses/:id/cancel", async (req, res) => {
+    const { id } = parseRequest(CancelAnalysisParams, req.params);
+    const row = await cancelLocalAnalysis(id);
+    if (!row) {
+      await respondNotOpenLocal(id, res);
+      return;
+    }
+    res.json(CancelAnalysisResponse.parse(toPublicAnalysis(row)));
   });
 
   router.get("/analyses/:id/issues", async (req, res) => {

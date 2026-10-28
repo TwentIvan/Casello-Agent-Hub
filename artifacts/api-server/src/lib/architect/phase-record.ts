@@ -22,17 +22,19 @@ import type {
 } from "./schemas";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type Executor = Tx | typeof db;
 
 // --- Stato attuale dell'app, per le differenze -------------------------------------------------
+// Letto con lo stesso esecutore della scrittura: dentro una transazione si legge dalla transazione
 
-async function currentTools(appId: number) {
-  return db.select().from(appToolsTable).where(eq(appToolsTable.appId, appId));
+async function currentTools(appId: number, executor: Executor) {
+  return executor.select().from(appToolsTable).where(eq(appToolsTable.appId, appId));
 }
 
-async function currentAgents(appId: number) {
-  const agents = await db.select().from(agentsTable).where(eq(agentsTable.appId, appId));
+async function currentAgents(appId: number, executor: Executor) {
+  const agents = await executor.select().from(agentsTable).where(eq(agentsTable.appId, appId));
   if (agents.length === 0) return [];
-  const links = await db
+  const links = await executor
     .select({ agentId: agentToolsTable.agentId, name: appToolsTable.name })
     .from(agentToolsTable)
     .innerJoin(appToolsTable, eq(agentToolsTable.toolId, appToolsTable.id))
@@ -40,8 +42,8 @@ async function currentAgents(appId: number) {
   return agents.map((a) => ({ ...a, toolNames: links.filter((l) => l.agentId === a.id).map((l) => l.name) }));
 }
 
-async function currentSkills(appId: number) {
-  const rows = await db
+async function currentSkills(appId: number, executor: Executor) {
+  const rows = await executor
     .select({ skill: agentSkillsTable, agentRole: agentsTable.role, agentArea: agentsTable.area })
     .from(agentSkillsTable)
     .innerJoin(agentsTable, eq(agentSkillsTable.agentId, agentsTable.id))
@@ -52,20 +54,20 @@ async function currentSkills(appId: number) {
 type ChapterEntries = { chapter: AnalysisChapter; entries: DiffEntry<unknown>[] };
 
 /** Elementi di una fase, calcolati rispetto allo stato attuale del DB. */
-async function phaseItems(phase: PhaseName, result: unknown, appId: number): Promise<ChapterEntries[]> {
+async function phaseItems(phase: PhaseName, result: unknown, appId: number, executor: Executor): Promise<ChapterEntries[]> {
   switch (phase) {
     case "catalog": {
       const r = result as CatalogResult;
       return [
-        { chapter: "tool", entries: diffTools(r.tools, await currentTools(appId)) },
+        { chapter: "tool", entries: diffTools(r.tools, await currentTools(appId, executor)) },
         { chapter: "endpoint", entries: diffAlwaysNew({ chapter: "endpoint", items: r.endpoints }) },
       ];
     }
     case "agents": {
       const r = result as AgentsResult;
       return [
-        { chapter: "agent", entries: diffAgents(r.agents, await currentAgents(appId)) },
-        { chapter: "skill", entries: diffSkills(r.skills, await currentSkills(appId)) },
+        { chapter: "agent", entries: diffAgents(r.agents, await currentAgents(appId, executor)) },
+        { chapter: "skill", entries: diffSkills(r.skills, await currentSkills(appId, executor)) },
       ];
     }
     case "completion":
@@ -89,10 +91,10 @@ function evidenceOf(payload: unknown): unknown[] {
  */
 export async function recordPhaseResult(
   input: { analysisId: number; appId: number; phase: PhaseName; result: unknown },
-  executor: Tx | typeof db = db,
+  executor: Executor = db,
 ): Promise<number> {
   const { analysisId, appId, phase, result } = input;
-  const groups = await phaseItems(phase, result, appId);
+  const groups = await phaseItems(phase, result, appId, executor);
   const entries = groups.flatMap(({ chapter, entries }) => entries.map((e) => ({ chapter, e })));
   if (entries.length === 0) return 0;
   const [last] = await executor

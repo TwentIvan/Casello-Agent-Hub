@@ -83,11 +83,22 @@ const MAX_ISSUE_CHARS = 300;
 const MAX_ERROR_CHARS = 1_000;
 const MAX_LOG_ARG_CHARS = 120;
 
-/**
- * Caratteri di output degli strumenti di lettura che restano interi nella cronologia: si tengono
- * i più recenti, i più vecchi diventano un segnaposto breve (vedi `compactHistory`).
- */
-export const HISTORY_TOOL_OUTPUT_BUDGET = 24_000;
+/** Frazione del contesto del modello oltre la quale la cronologia viene riassunta. */
+export const CONTEXT_GUARD_RATIO = 0.75;
+/** Soglia (token stimati) della guardia quando il contesto del modello è ignoto. */
+export const UNKNOWN_CONTEXT_TOKENS = 120_000;
+/** Lunghezza massima, in caratteri, della sintesi del modello. */
+export const SYNTHESIS_MAX_CHARS = 6_000;
+/** Sintesi concesse a una fase: alla successiva necessità la fase fallisce. */
+export const MAX_SYNTHESES = 2;
+const SYNTHESIS_REQUEST =
+  "Il contesto sta per esaurirsi. Riassumi in al massimo 6000 caratteri ciò che hai letto finora e che serve a consegnare l'esito di questa fase: file, righe e fatti utili. Non chiamare strumenti.";
+const SYNTHESIS_RESTART = "Continua la fase partendo dalla tua sintesi.";
+
+/** Stima grossolana dei token della cronologia: un token ogni 4 caratteri del JSON. */
+export function estimateTokens(messages: ChatCompletionMessageParam[]): number {
+  return Math.ceil(JSON.stringify(messages).length / 4);
+}
 
 /**
  * Peso dei token di prompt letti dalla cache del provider nel budget: costano circa un decimo e non
@@ -593,60 +604,6 @@ function errorLog(name: string, args: Record<string, unknown> | null): string {
   return `${name}${target}${pattern} (errore)`;
 }
 
-/** Segnaposto di un output di lettura omesso: nome dello strumento e argomento principale, mai il contenuto. */
-function omittedStub(name: ReadToolName, args: Record<string, unknown>): string {
-  const str = (key: string): string => (typeof args[key] === "string" ? logArg(args[key] as string) : "");
-  const paths = Array.isArray(args["paths"]) ? (args["paths"] as unknown[]).filter((p) => typeof p === "string").join(", ") : "";
-  const target =
-    name === "read_files"
-      ? logArg(paths)
-      : name === "read_operation"
-      ? `${str("method").toUpperCase()} ${str("path")}`
-      : name === "search"
-        ? `"${str("pattern")}"`
-        : name === "list_operations"
-          ? [str("prefix"), Number.isInteger(args["offset"]) ? `offset=${String(args["offset"])}` : ""].filter(Boolean).join(" ")
-          : str("path") || "/";
-  return `[output di ${name}${target ? ` ${target}` : ""} omesso per spazio: rileggilo se serve]`;
-}
-
-/**
- * Compatta la cronologia prima di una chiamata al modello: senza, ogni giro rimanda tutti gli output
- * letti e i token crescono col quadrato dei giri. Restano intatti i messaggi di sistema, utente e
- * assistente (ogni tool_call conserva la sua unica risposta) e le risposte a submit_result; degli
- * output di lettura (indice del messaggio → segnaposto in `stubs`) restano interi i più recenti,
- * fino a `budget` caratteri in tutto, gli altri diventano il segnaposto. Gli output del giro corrente
- * (dopo l'ultimo messaggio dell'assistente) restano sempre interi: il modello non li ha ancora visti.
- * Modifica `messages` sul posto: un output compattato resta tale.
- */
-export function compactHistory(
-  messages: ChatCompletionMessageParam[],
-  stubs: Map<number, string>,
-  budget = HISTORY_TOOL_OUTPUT_BUDGET,
-): void {
-  let lastAssistant = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]!.role === "assistant") {
-      lastAssistant = i;
-      break;
-    }
-  }
-  let kept = 0;
-  let full = false;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]!;
-    const stub = stubs.get(i);
-    if (m.role !== "tool" || stub === undefined || typeof m.content !== "string" || m.content === stub) continue;
-    const size = m.content.length;
-    if (i > lastAssistant || (!full && (kept === 0 || kept + size <= budget))) {
-      kept += size;
-      continue;
-    }
-    full = true;
-    if (size > stub.length) messages[i] = { role: "tool", tool_call_id: m.tool_call_id, content: stub };
-  }
-}
-
 // --- Ciclo -----------------------------------------------------------------------------------
 
 const REMINDER =
@@ -663,11 +620,11 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
     { role: "system", content: input.system },
     { role: "user", content: input.user },
   ];
-  // Indici dei messaggi con un output di lettura compattabile → segnaposto
-  const stubs = new Map<number, string>();
   const fail = (error: string): PhaseOutcome => ({ ok: false, error: sliceChars(error, MAX_ERROR_CHARS) });
 
   let rounds = 0;
+  let syntheses = 0;
+  const guardThreshold = input.contextTokens ? CONTEXT_GUARD_RATIO * input.contextTokens : UNKNOWN_CONTEXT_TOKENS;
   let invalidSubmits = 0;
   // Problemi dell'ultima consegna non valida e se è avvenuta nell'ultimo giro
   let lastProblems: string[] | null = null;
@@ -678,6 +635,15 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
   let nudgedAt: number | null = null;
   const quota = input.phaseQuota ?? Number.POSITIVE_INFINITY;
   const nudgeRounds = Math.ceil(PHASE_MAX_ROUNDS * PHASE_NUDGE_RATIO);
+
+  // Si contano solo le chiamate riuscite: di quelle fallite o scadute il provider non riporta
+  // l'uso, quindi i loro token (se ce ne sono) restano fuori dal budget. Quelli in cache pesano al 10%
+  const account = (r: ChatResult): void => {
+    const used = effectiveTokens(r);
+    budget.tokensUsed += used;
+    budget.cachedTokens += r.cachedPromptTokens;
+    phaseTokens += used;
+  };
 
   /**
    * A fine giro, una sola volta: oltre l'80% della quota o dei giri chiede la consegna. Il sollecito è
@@ -711,20 +677,39 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
       return fail(`fase ${phase}: esito non consegnato entro il budget della fase${detail}`);
     }
 
+    // Guardia sul contesto: la cronologia cresce solo in coda (il prefisso resta identico e la cache
+    // del provider lo riusa); vicino al limite del modello si riparte da una sintesi. Si fa solo
+    // all'inizio di un giro, così ogni tool_call ha già le sue risposte. La sintesi non è un giro.
+    if (estimateTokens(messages) > guardThreshold) {
+      if (syntheses >= MAX_SYNTHESES) return fail(`fase ${phase}: contesto del modello esaurito`);
+      syntheses += 1;
+      log(`contesto vicino al limite del modello: sintesi ${syntheses} di ${MAX_SYNTHESES}`);
+      let summary: ChatResult;
+      try {
+        summary = await input.chat([...messages, { role: "user", content: SYNTHESIS_REQUEST }], []);
+      } catch (err) {
+        return fail(`fase ${phase}: errore nella chiamata al modello: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      account(summary);
+      // Eventuali tool_call della risposta si ignorano: vale solo il testo
+      messages.splice(
+        2,
+        messages.length,
+        { role: "assistant", content: sliceChars(summary.content ?? "", SYNTHESIS_MAX_CHARS) },
+        { role: "user", content: SYNTHESIS_RESTART },
+      );
+      continue;
+    }
+
     rounds += 1;
     let reply: ChatResult;
     try {
-      compactHistory(messages, stubs);
       reply = await input.chat(messages, tools);
     } catch (err) {
       return fail(`fase ${phase}: errore nella chiamata al modello: ${err instanceof Error ? err.message : String(err)}`);
     }
-    // Si contano solo le chiamate riuscite: di quelle fallite o scadute il provider non riporta
-    // l'uso, quindi i loro token (se ce ne sono) restano fuori dal budget. Quelli in cache pesano al 10%
-    const used = effectiveTokens(reply);
-    budget.tokensUsed += used;
-    budget.cachedTokens += reply.cachedPromptTokens;
-    phaseTokens += used;
+    account(reply);
+    lastRoundInvalidSubmit = false;
     lastRoundInvalidSubmit = false;
 
     if (reply.toolCalls.length === 0) {
@@ -740,8 +725,7 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
       content: reply.content,
       tool_calls: assistantToolCalls(reply.toolCalls),
     });
-    const answer = (id: string, content: string, stub?: string): void => {
-      if (stub !== undefined) stubs.set(messages.length, stub);
+    const answer = (id: string, content: string): void => {
       messages.push({ role: "tool", tool_call_id: id, content });
     };
 
@@ -765,7 +749,7 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
       }
       try {
         const out = await runReadTool(name, parsed.args, tree, openapi, limits);
-        answer(c.id, out.content, omittedStub(name, parsed.args));
+        answer(c.id, out.content);
         log(out.log);
       } catch (err) {
         // Gli errori del sorgente (percorso inesistente, regex non valida...) tornano al modello

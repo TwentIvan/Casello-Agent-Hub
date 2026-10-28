@@ -256,6 +256,22 @@ function mapError(err: unknown): unknown {
   return new ProviderError("unreachable");
 }
 
+/** Stato HTTP di un errore del provider o dell'SDK; null per gli errori di rete e gli altri errori. */
+export function errorStatus(err: unknown): number | null {
+  if (err instanceof ProviderError) return err.status;
+  if (err instanceof APIError && typeof err.status === "number") return err.status;
+  return null;
+}
+
+/**
+ * Campi per i log del server: classe vera dell'errore (le classi dell'SDK `openai` non impostano
+ * `name`, che resterebbe "Error") e stato HTTP. Mai il messaggio: può contenere URL o la risposta.
+ */
+export function errorLogFields(err: unknown): { errName: string; status: number | null } {
+  const errName = err instanceof Error ? (err.name !== "Error" ? err.name : err.constructor.name) : "unknown";
+  return { errName, status: errorStatus(err) };
+}
+
 /** Attesa massima suggerita da un provider che si accetta (oltre si usa questa). */
 const MAX_RETRY_AFTER_MS = 120_000;
 
@@ -323,7 +339,7 @@ export async function modelChat(resolved: ResolvedModel, opts: ChatOptions): Pro
     const mapped = mapError(err);
     if (mapped !== err) {
       logger.warn(
-        { caller: opts.caller, accountId: resolved.accountId, modelId: resolved.modelId, errName: err instanceof Error ? err.name : "unknown" },
+        { caller: opts.caller, accountId: resolved.accountId, modelId: resolved.modelId, ...errorLogFields(err) },
         "Chiamata al modello non riuscita",
       );
     }

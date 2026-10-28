@@ -637,44 +637,45 @@ describe("startAnalysis", () => {
   it("errore 500 transitorio: un nuovo tentativo e l'analisi prosegue", async () => {
     llm500Remaining = 1;
     const id = await createAnalysis();
-    await startAnalysis(id, { zip: testZip() });
+    await startAnalysis(id, { zip: testZip(), transientRetryDelaysMs: [10, 10] });
     const a = await loadAnalysis(id);
     expect(a.error).toBeNull();
     expect(a.status).toBe("completed");
     expect(llmRequests).toHaveLength(13);
+    expect((a.log ?? []).map((e) => e.message)).toContain("provider non raggiungibile (HTTP 500): nuovo tentativo tra 1 s (1 di 2)");
   });
 
   it("errore di connessione (non timeout): un nuovo tentativo e l'analisi prosegue", async () => {
     llmDropRemaining = 1;
     const id = await createAnalysis();
-    await startAnalysis(id, { zip: testZip() });
+    await startAnalysis(id, { zip: testZip(), transientRetryDelaysMs: [10, 10] });
     const a = await loadAnalysis(id);
     expect(a.error).toBeNull();
     expect(a.status).toBe("completed");
     expect(llmRequests).toHaveLength(13);
+    expect((a.log ?? []).map((e) => e.message)).toContain("provider non raggiungibile (errore di rete): nuovo tentativo tra 1 s (1 di 2)");
   });
 
-  it("errore di connessione ripetuto: un solo nuovo tentativo, poi il messaggio generico", async () => {
+  it("errore di connessione ripetuto: tutti i nuovi tentativi, poi il messaggio generico", async () => {
     llmDropRemaining = 5;
     const id = await createAnalysis();
-    await startAnalysis(id, { zip: testZip(), modelRetryDelayMs: 10 });
+    await startAnalysis(id, { zip: testZip(), transientRetryDelaysMs: [10, 10] });
     const a = await loadAnalysis(id);
     expect(a.status).toBe("failed");
     expect(a.error).toBe("fase map: errore nella chiamata al modello: errore di comunicazione con il gateway dei modelli");
-    expect(llmRequests).toHaveLength(2);
+    expect(llmRequests).toHaveLength(3);
   });
 
-  it("la scadenza durante la pausa prima del nuovo tentativo: nessun nuovo tentativo", async () => {
+  it("attesa del nuovo tentativo oltre la scadenza dell'analisi: nessun nuovo tentativo", async () => {
     llmDropRemaining = 5;
     const id = await createAnalysis();
     const started = Date.now();
-    // la chiamata dura al minimo 1 s: la scadenza arriva durante la pausa di 5 s
-    await startAnalysis(id, { zip: testZip(), maxMs: 400, modelRetryDelayMs: 5_000 });
+    await startAnalysis(id, { zip: testZip(), maxMs: 2_000, transientRetryDelaysMs: [60_000] });
     const a = await loadAnalysis(id);
     expect(a.status).toBe("failed");
-    expect(a.error).toMatch(/tempo massimo dell'analisi \(0\.4 s\) scaduto durante la chiamata al modello/);
+    expect(a.error).toBe("fase map: errore nella chiamata al modello: errore di comunicazione con il gateway dei modelli");
     expect(llmRequests).toHaveLength(1);
-    expect(Date.now() - started).toBeLessThan(4_000);
+    expect(Date.now() - started).toBeLessThan(5_000);
   }, 20_000);
 
   it("ogni fase riceve la sua quota (share × maxTokens): il sollecito arriva all'80% della quota", async () => {
@@ -798,15 +799,40 @@ describe("startAnalysis sugli account AI", () => {
     expect(llmRequests).toHaveLength(1);
   });
 
-  it("errore 500 transitorio: un nuovo tentativo e l'analisi prosegue", async () => {
-    llm500Remaining = 1;
+  it("errori 5xx ripetuti ma transitori (Gemini sovraccarico): attese crescenti e l'analisi prosegue", async () => {
+    llm500Remaining = 3;
     const model = await ownModel();
     const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
-    await startAnalysis(id, { zip: testZip() });
+    await startAnalysis(id, { zip: testZip(), transientRetryDelaysMs: [10, 10, 10, 10] });
     const a = await loadAnalysis(id);
     expect(a.error).toBeNull();
     expect(a.status).toBe("completed");
-    expect(llmRequests).toHaveLength(13);
+    expect(llmRequests).toHaveLength(15);
+    const messages = (a.log ?? []).map((e) => e.message);
+    expect(messages).toContain("provider non raggiungibile (HTTP 500): nuovo tentativo tra 1 s (1 di 4)");
+    expect(messages).toContain("provider non raggiungibile (HTTP 500): nuovo tentativo tra 1 s (3 di 4)");
+  });
+
+  it("errore 5xx persistente: dopo i nuovi tentativi failed col messaggio fisso", async () => {
+    llmStatus = 503;
+    const model = await ownModel();
+    const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
+    await startAnalysis(id, { zip: testZip(), transientRetryDelaysMs: [10, 10, 10] });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe("fase map: errore nella chiamata al modello: provider non raggiungibile");
+    expect(llmRequests).toHaveLength(4);
+  });
+
+  it("i tentativi sui 5xx sono indipendenti da quelli sul 429", async () => {
+    llm500Remaining = 1;
+    llm429Remaining = 1;
+    const model = await ownModel();
+    const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
+    await startAnalysis(id, { zip: testZip(), transientRetryDelaysMs: [10], rateLimitDelaysMs: [10] });
+    const a = await loadAnalysis(id);
+    expect(a.error).toBeNull();
+    expect(a.status).toBe("completed");
   });
 
   it("limite di richieste transitorio (429): attesa, nuovi tentativi e l'analisi prosegue", async () => {

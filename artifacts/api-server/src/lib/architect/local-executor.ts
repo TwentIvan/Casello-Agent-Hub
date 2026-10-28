@@ -6,6 +6,10 @@
 // Tutto ciò che arriva dall'agente (etichetta, motivo, esito, commit) è dato non attendibile: si
 // valida e nei log del server finiscono solo id, nomi di fase e conteggi. Il token della lease esiste
 // in chiaro solo nella risposta al claim; a riposo c'è il suo SHA-256.
+//
+// Al claim Casello legge, per conto dell'agente, il contratto OpenAPI dell'app (l'agente lo consulta
+// con read_openapi, perché può non stare nel clone) e lo sha del branch dall'installazione della
+// GitHub App (il commit atteso). Il token di installazione resta qui: mai nelle risposte né nei log.
 
 import { createHash, randomBytes } from "node:crypto";
 import { and, count, eq, inArray, lt, or, sql } from "drizzle-orm";
@@ -18,12 +22,16 @@ import {
   type Analysis,
   type App,
 } from "@workspace/db";
+import { installationToken } from "../github/app";
+import { githubConfig, type GithubConfig } from "../github/config";
+import { readBytesLimited } from "../http-read";
 import { logger } from "../logger";
 import { formatIssues } from "./phase-loop";
 import { recordPhaseResult } from "./phase-record";
 import { phasePrompt, SYSTEM_BASE } from "./prompts";
 import { appendLog } from "./run-analysis";
 import { PHASES, PHASE_SCHEMAS, type AnalysisChapter, type PhaseName } from "./schemas";
+import { fetchOpenApi, type OpenApiDoc } from "./sources";
 
 /** Durata della lease: rinnovata da ogni consegna e da ogni ping. */
 export const LOCAL_LEASE_MS = 900_000;
@@ -37,7 +45,13 @@ export const REASON_MAX_CHARS = 300;
 
 /** Premessa del prompt di sistema per l'agente locale (testo fisso). */
 export const LOCAL_PREFACE =
-  "Esegui questa fase con i tuoi strumenti sul clone locale del repository: gli strumenti di lettura citati sotto (list_dir, read_file, read_files, search) corrispondono ai tuoi. Consegna l'esito con lo strumento submit_phase di Casello, non con submit_result.";
+  "Esegui questa fase con i tuoi strumenti sul clone locale del repository: gli strumenti di lettura citati sotto (list_dir, read_file, read_files, search) corrispondono ai tuoi; list_operations e read_operation corrispondono allo strumento read_openapi di Casello. Consegna l'esito con lo strumento submit_phase di Casello, non con submit_result.";
+
+/** Tetto all'attesa delle sorgenti (OpenAPI e commit) durante il claim: oltre, il claim risponde comunque. */
+const CLAIM_SOURCES_DEADLINE_MS = 15_000;
+/** Timeout della lettura dello sha del branch da GitHub. */
+const GITHUB_COMMIT_TIMEOUT_MS = 10_000;
+const FULL_SHA_RE = /^[0-9a-f]{40}$/i;
 
 // Messaggi fissi per l'agente (spec §8)
 export const LOCAL_MESSAGES = {
@@ -66,8 +80,16 @@ export interface LocalAppCard {
   /** Solo per le sorgenti GitHub, altrimenti null. */
   sourceRepo: string | null;
   sourceBranch: string | null;
-  /** L'app espone un contratto OpenAPI raggiungibile (calcolato dal server MCP; qui sempre false). */
+  /** L'app espone un contratto OpenAPI raggiungibile (letto al claim, consultabile con read_openapi). */
   hasOpenApi: boolean;
+}
+
+/** Solo per i test: dipendenze esterne delle sorgenti dell'analisi locale. */
+export interface LocalSourceOptions {
+  /** Configurazione della GitHub App (null = non configurata); default githubConfig(). */
+  githubConfig?: GithubConfig | null;
+  /** fetch per il documento OpenAPI; default fetch globale. */
+  fetchImpl?: typeof fetch;
 }
 
 export interface LocalAnalysisSummary {
@@ -98,6 +120,76 @@ export function setExpectedCommit(analysisId: number, commit: string | null): vo
   else expectedCommits.delete(analysisId);
 }
 
+/**
+ * Sha del branch dell'app letto con il token dell'installazione della GitHub App (ristretto al repo).
+ * Null se l'app non usa l'App GitHub, GitHub non è configurato o la chiamata fallisce per qualsiasi
+ * motivo: il commit atteso è un controllo in più, non deve mai far fallire il claim.
+ */
+async function branchCommit(app: App, opts: LocalSourceOptions): Promise<string | null> {
+  if (app.sourceType !== "github" || !app.sourceRepo || !app.sourceInstallationId) return null;
+  const cfg = opts.githubConfig !== undefined ? opts.githubConfig : githubConfig();
+  if (!cfg) return null;
+  try {
+    // Il repo è validato da installationToken (proprietario/nome, senza `.` o `..`)
+    const token = await installationToken(cfg, app.sourceInstallationId, { repo: app.sourceRepo });
+    const ref = (app.sourceBranch?.trim() || "HEAD").split("/").map(encodeURIComponent).join("/");
+    const res = await fetch(`${cfg.apiBase}/repos/${app.sourceRepo}/commits/${ref}`, {
+      headers: {
+        accept: "application/vnd.github.sha",
+        authorization: `Bearer ${token}`,
+        "x-github-api-version": "2022-11-28",
+        "user-agent": "casello",
+      },
+      redirect: "manual",
+      signal: AbortSignal.timeout(GITHUB_COMMIT_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => {});
+      return null;
+    }
+    const body = new TextDecoder("utf-8").decode(await readBytesLimited(res, 4096)).trim();
+    // Con `application/vnd.github.sha` il corpo è lo sha; se GitHub risponde in JSON, il campo `sha`
+    const sha = body.startsWith("{") ? (JSON.parse(body) as { sha?: unknown }).sha : body;
+    return typeof sha === "string" && FULL_SHA_RE.test(sha) ? sha.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+// --- OpenAPI dell'app ---------------------------------------------------------------------------
+
+// Contratto OpenAPI per analisi, letto al claim (in corso o concluso: due letture contemporanee
+// condividono la stessa). Solo in memoria: dopo un riavvio si rilegge alla prima richiesta.
+const openApiDocs = new Map<number, Promise<OpenApiDoc | null>>();
+
+/** OpenAPI dell'app dell'analisi: dalla cache, altrimenti letto ora (GET senza credenziali). Mai un errore. */
+function analysisOpenApi(analysisId: number, app: App, opts: LocalSourceOptions): Promise<OpenApiDoc | null> {
+  const cached = openApiDocs.get(analysisId);
+  if (cached) return cached;
+  const baseUrls = [app.internalBaseUrl, app.baseUrl].filter((u): u is string => !!u);
+  const loading = fetchOpenApi({ openapiUrl: app.openapiUrl, baseUrls, ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}) }).catch(
+    () => null,
+  );
+  openApiDocs.set(analysisId, loading);
+  return loading;
+}
+
+/** Dimentica OpenAPI e commit atteso di un'analisi chiusa. */
+function forgetLocalSources(analysisId: number): void {
+  expectedCommits.delete(analysisId);
+  openApiDocs.delete(analysisId);
+}
+
+/** Valore della promessa entro `ms`, altrimenti `fallback` (la promessa prosegue per conto suo). */
+function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+    timer.unref();
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
 /** Commit uguali se uno è il prefisso dell'altro (abbreviato o completo), senza badare alle maiuscole. */
 function sameCommit(a: string, b: string): boolean {
   const x = a.toLowerCase();
@@ -119,7 +211,7 @@ function logEntry(now: Date, phase: string, message: string) {
 
 const leaseCleared = { leaseTokenHash: null, leaseUntil: null, leaseLabel: null } as const;
 
-function appCard(app: App): LocalAppCard {
+function appCard(app: App, hasOpenApi: boolean): LocalAppCard {
   const github = app.sourceType === "github";
   return {
     name: app.name,
@@ -127,7 +219,7 @@ function appCard(app: App): LocalAppCard {
     baseUrl: app.baseUrl,
     sourceRepo: github ? app.sourceRepo : null,
     sourceBranch: github ? app.sourceBranch : null,
-    hasOpenApi: false,
+    hasOpenApi,
   };
 }
 
@@ -205,13 +297,15 @@ export async function listOpenLocalAnalyses(): Promise<LocalAnalysisSummary[]> {
 
 /**
  * Prende in carico un'analisi locale: atomica (riga bloccata nella transazione), riesce solo se
- * l'analisi è in coda o la lease precedente è scaduta. Riparte dalla prima fase senza esito.
+ * l'analisi è in coda o la lease precedente è scaduta. Riparte dalla prima fase senza esito. Dopo la
+ * transazione legge (al meglio, entro 15 s) l'OpenAPI dell'app e il commit atteso.
  */
 export async function claimLocalAnalysis(
   analysisId: number,
   label: string,
   now: Date = new Date(),
-): Promise<{ leaseToken: string; phase: PhaseName; app: LocalAppCard }> {
+  opts: LocalSourceOptions = {},
+): Promise<{ leaseToken: string; phase: PhaseName; app: LocalAppCard; expectedCommit: string | null }> {
   const cleanLabel = label.trim();
   if (cleanLabel.length === 0 || cleanLabel.length > LABEL_MAX_CHARS) throw new LocalAnalysisError(LOCAL_MESSAGES.invalidLabel);
 
@@ -251,10 +345,20 @@ export async function claimLocalAnalysis(
       )
       .returning({ id: analysesTable.id });
     if (!updated) throw new LocalAnalysisError(LOCAL_MESSAGES.notFound);
-    return { phase, app: appCard(app) };
+    return { phase, app };
   });
   logger.info({ analysisId, phase: result.phase }, "Analisi locale presa in carico");
-  return { leaseToken, ...result };
+
+  // Un nuovo claim rilegge le sorgenti: l'app o il branch possono essere cambiati
+  openApiDocs.delete(analysisId);
+  const [openapi, expectedCommit] = await within(
+    Promise.all([analysisOpenApi(analysisId, result.app, opts), branchCommit(result.app, opts)]),
+    CLAIM_SOURCES_DEADLINE_MS,
+    [null, null],
+  );
+  setExpectedCommit(analysisId, expectedCommit);
+  logger.info({ analysisId, openapi: openapi !== null, expectedCommit: expectedCommit !== null }, "Sorgenti dell'analisi locale");
+  return { leaseToken, phase: result.phase, app: appCard(result.app, openapi !== null), expectedCommit };
 }
 
 // --- Istruzioni e consegna ----------------------------------------------------------------------
@@ -264,6 +368,7 @@ export async function localPhaseInstructions(
   analysisId: number,
   leaseToken: string,
   now: Date = new Date(),
+  opts: LocalSourceOptions = {},
 ): Promise<{ phase: PhaseName; system: string; user: string }> {
   const [row] = await db
     .select()
@@ -274,7 +379,7 @@ export async function localPhaseInstructions(
   const phase = currentPhase(analysis);
   const [app] = await db.select().from(appsTable).where(eq(appsTable.id, analysis.appId)).limit(1);
   if (!app) throw new LocalAnalysisError(LOCAL_MESSAGES.notFound);
-  const card = appCard(app);
+  const card = appCard(app, (await analysisOpenApi(analysisId, app, opts)) !== null);
   const previous: Partial<Record<PhaseName, unknown>> = {};
   for (const d of await deliveredResults(analysisId)) previous[d.phase] = d.result;
   const user = phasePrompt(phase, {
@@ -288,6 +393,27 @@ export async function localPhaseInstructions(
     previous,
   });
   return { phase, system: `${LOCAL_PREFACE}\n\n${SYSTEM_BASE}`, user };
+}
+
+/**
+ * Contratto OpenAPI dell'app per l'agente che ha la lease (null se l'app non ne espone uno
+ * raggiungibile). Dalla cache del claim; dopo un riavvio si rilegge.
+ */
+export async function localOpenApi(
+  analysisId: number,
+  leaseToken: string,
+  now: Date = new Date(),
+  opts: LocalSourceOptions = {},
+): Promise<OpenApiDoc | null> {
+  const [row] = await db
+    .select()
+    .from(analysesTable)
+    .where(and(eq(analysesTable.id, analysisId), eq(analysesTable.executor, "local")))
+    .limit(1);
+  const analysis = requireLease(row, leaseToken, now);
+  const [app] = await db.select().from(appsTable).where(eq(appsTable.id, analysis.appId)).limit(1);
+  if (!app) throw new LocalAnalysisError(LOCAL_MESSAGES.notFound);
+  return analysisOpenApi(analysisId, app, opts);
 }
 
 /** Elementi della proposta per capitolo, tutti i capitoli presenti (anche a zero). */
@@ -357,7 +483,7 @@ export async function submitLocalPhase(
   }
   const { inserted, ...rest } = outcome;
   logger.info({ analysisId, phase, inserted, completed: rest.nextPhase === null }, "Fase dell'analisi locale consegnata");
-  if (rest.nextPhase === null) expectedCommits.delete(analysisId);
+  if (rest.nextPhase === null) forgetLocalSources(analysisId);
   return rest;
 }
 
@@ -390,7 +516,7 @@ export async function abandonLocalAnalysis(analysisId: number, leaseToken: strin
       })
       .where(eq(analysesTable.id, analysisId));
   });
-  expectedCommits.delete(analysisId);
+  forgetLocalSources(analysisId);
   logger.info({ analysisId }, "Analisi locale abbandonata dall'agente");
 }
 
@@ -414,7 +540,7 @@ export async function cancelLocalAnalysis(analysisId: number): Promise<Analysis 
     .set({ status: "failed", error: "annullata dalla console", finishedAt: new Date(), ...leaseCleared })
     .where(openLocal(analysisId))
     .returning();
-  if (row) expectedCommits.delete(analysisId);
+  if (row) forgetLocalSources(analysisId);
   return row ?? null;
 }
 

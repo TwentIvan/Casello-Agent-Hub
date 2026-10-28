@@ -324,7 +324,7 @@ function logArg(value: string): string {
   return flat.length > MAX_LOG_ARG_CHARS ? `${sliceChars(flat, MAX_LOG_ARG_CHARS)}…` : flat;
 }
 
-function capOutput(text: string, limits: ReadLimits): string {
+export function capOutput(text: string, limits: ReadLimits): string {
   const max = limits.maxToolOutputChars;
   return text.length > max
     ? `${sliceChars(text, max)}\n[...troncato: output oltre ${max} caratteri]`
@@ -342,7 +342,7 @@ export function formatIssues(issues: ZodIssue[]): string[] {
 
 // --- Esecuzione degli strumenti di lettura ----------------------------------------------------
 
-interface ToolOutput {
+export interface ToolOutput {
   content: string;
   log: string;
 }
@@ -542,7 +542,7 @@ async function search(
  * per prefisso del percorso, poi `offset` operazioni saltate, poi quante ne entrano nel tetto
  * dell'output; se ne restano, l'ultima riga dice come continuare.
  */
-function listOperations(
+export function listOperations(
   doc: OpenApiDoc,
   prefix: string | undefined,
   offset: number | undefined,

@@ -1,8 +1,17 @@
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler } from "express";
 
-// Rate limit minimo in memoria, a finestra fissa per IP. Basta un solo container API:
-// con più repliche ognuna avrebbe il suo contatore.
-export function rateLimit({ limit, windowMs }: { limit: number; windowMs: number }): RequestHandler {
+// Rate limit minimo in memoria, a finestra fissa per chiave (di default l'IP). Basta un solo
+// container API: con più repliche ognuna avrebbe il suo contatore.
+export function rateLimit({
+  limit,
+  windowMs,
+  key = (req) => req.ip ?? "unknown",
+}: {
+  limit: number;
+  windowMs: number;
+  /** Chiave del contatore (default: IP del client). */
+  key?: (req: Request) => string;
+}): RequestHandler {
   const hits = new Map<string, { count: number; resetAt: number }>();
 
   return (req, res, next) => {
@@ -15,11 +24,11 @@ export function rateLimit({ limit, windowMs }: { limit: number; windowMs: number
       }
     }
 
-    const key = req.ip ?? "unknown";
-    let entry = hits.get(key);
+    const k = key(req);
+    let entry = hits.get(k);
     if (!entry || entry.resetAt <= now) {
       entry = { count: 0, resetAt: now + windowMs };
-      hits.set(key, entry);
+      hits.set(k, entry);
     }
     entry.count++;
 

@@ -10,6 +10,7 @@ import githubRouter from "./github";
 import { createAnalysesRouter } from "./analyses";
 import { createAiRouter } from "./ai";
 import { createCatalogRouter } from "./catalog";
+import { createApiTokensRouter } from "./api-tokens";
 import { authRouter, requireAuth } from "../lib/auth";
 
 const router: IRouter = Router();
@@ -28,5 +29,6 @@ router.use(githubRouter);
 router.use(createAnalysesRouter());
 router.use(createAiRouter());
 router.use(createCatalogRouter());
+router.use(createApiTokensRouter());
 
 export default router;

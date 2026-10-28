@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { failInterruptedAnalyses } from "./lib/architect/run-analysis";
+import { startLocalLeaseJob } from "./lib/architect/local-executor";
 import { expireStalePausedRuns, failInterruptedRuns } from "./lib/run-executor";
 import { ensureSystemAccount } from "./lib/ai/system-account";
 import { failInterruptedCatalogRuns } from "./lib/catalog/refresh";
@@ -32,7 +33,8 @@ failInterruptedRuns()
   })
   .catch((err: unknown) => logger.error({ err }, "Chiusura delle run interrotte non riuscita"));
 
-// Lo stesso vale per le analisi dell'architetto in coda o in corso: diventano `interrupted`.
+// Lo stesso vale per le analisi cloud dell'architetto in coda o in corso: diventano `interrupted`.
+// Quelle locali restano: le esegue l'agente, e il job delle lease rimette in coda quelle abbandonate.
 failInterruptedAnalyses()
   .then((count) => {
     if (count > 0) logger.warn({ count }, "Analisi rimaste aperte al riavvio segnate come interrotte");
@@ -63,6 +65,8 @@ ensureProviderRegistry()
   .catch((err: unknown) =>
     logger.error({ errorName: err instanceof Error ? err.name : "Error" }, "Allineamento dell'account di sistema non riuscito"),
   );
+
+startLocalLeaseJob();
 
 // Le run in pausa senza conferma entro 10 minuti vengono annullate; il timer non tiene in vita il processo.
 setInterval(() => {

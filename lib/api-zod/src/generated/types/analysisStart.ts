@@ -5,11 +5,13 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { AnalysisExecutor } from './analysisExecutor';
 
 /**
- * Indicare esattamente uno tra aiModelId e model (altrimenti 400 "scegli un modello")
+ * Con executor cloud (default) indicare esattamente uno tra aiModelId e model (altrimenti 400 "scegli un modello"); con executor local nessuno dei due.
  */
 export interface AnalysisStart {
+  executor?: AnalysisExecutor;
   /** Modello di un account AI dell'utente o dell'account di sistema */
   aiModelId?: number;
   /**

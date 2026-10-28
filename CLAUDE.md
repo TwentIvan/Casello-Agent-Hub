@@ -82,6 +82,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `search-worker.ts`, `sources.ts`), schemi ed esempi delle fasi (`schemas.ts`, `prompts.ts`), ciclo di fase
   (`phase-loop.ts`), orchestrazione (`run-analysis.ts`), differenze/applicazione/issue (`diff.ts`, `apply.ts`, `issues.ts`)
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
+- `artifacts/api-server/src/lib/mcp/` e `lib/architect/local-executor.ts` — server MCP `/mcp` e coda/lease delle analisi locali
+- `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
 - `artifacts/mockup-sandbox/` — sandbox di mockup: NON va in produzione, non toccare
 - `gateway/` — config LiteLLM storica; la copia viva è nel repo `TwentIvan/AIGateway`
 - `docker/`, `.github/workflows/deploy.yml` — build e deploy (vedi sotto)
@@ -228,6 +230,16 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - GitHub App su github.com: permessi Contents read, Metadata read, Email addresses read (account); "Request
   user authorization (OAuth) during installation" attivo, nessun Setup URL, nessun webhook; Callback URL
   `${PUBLIC_APP_URL}/api/auth/github/callback`.
+
+## Esecutore locale
+
+Le analisi dell'architetto possono essere eseguite da Claude Code sul Mac dell'utente invece che dal cloud
+(`analyses.executor`). L'agente si collega al server MCP su `/mcp` (Streamable HTTP stateless, solo POST,
+60 chiamate/min per utente; nginx ha `location /mcp`) con un token personale `cas_…` creato in console
+(Account → "Agenti locali"; tabella `api_tokens`, salvato come hash). Gli esiti di fase stanno in
+`analysis_phase_results`; la lease dura 15 minuti (rinnovo con consegna o `ping_analysis`). Migrazione:
+`docs/migrations/2026-10-esecutore-locale.sql` (da applicare in produzione e segnalare nella PR). Procedura
+dell'agente: skill `docs/skills/casello-architetto-locale/SKILL.md`.
 
 ## Deploy (non toccare senza motivo)
 

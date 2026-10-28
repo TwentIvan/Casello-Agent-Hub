@@ -545,6 +545,17 @@ export const AnalysisStatus = {
   interrupted: 'interrupted',
 } as const;
 
+/**
+ * Chi esegue l'analisi, il cloud di Casello o un agente locale via MCP
+ */
+export type AnalysisExecutor = typeof AnalysisExecutor[keyof typeof AnalysisExecutor];
+
+
+export const AnalysisExecutor = {
+  cloud: 'cloud',
+  local: 'local',
+} as const;
+
 export type AnalysisChapter = typeof AnalysisChapter[keyof typeof AnalysisChapter];
 
 
@@ -596,6 +607,7 @@ export interface Analysis {
   /** @nullable */
   aiModelId: number | null;
   status: AnalysisStatus;
+  executor: AnalysisExecutor;
   sources: AnalysisSources;
   maxTokens: number;
   /** Token usati pesati per il budget (quelli letti dalla cache contano al 10%) */
@@ -614,9 +626,24 @@ export interface Analysis {
   phase: string | null;
   /** @nullable */
   error: string | null;
+  /**
+     * Etichetta dell'agente locale che ha l'analisi in carico (solo con lease attiva)
+     * @nullable
+     */
+  leaseLabel: string | null;
+  /**
+     * Scadenza della lease dell'agente locale
+     * @nullable
+     */
+  leaseUntil: string | null;
   createdAt: string;
   /** @nullable */
   finishedAt: string | null;
+}
+
+export interface AnalysisPhaseDelivery {
+  phase: string;
+  submittedAt: string;
 }
 
 export interface AnalysisLogEntry {
@@ -660,6 +687,8 @@ export interface AnalysisItem {
 export type AnalysisDetailArchitectureMap = { [key: string]: unknown } | null;
 
 export type AnalysisDetail = Analysis & {
+  /** Fasi consegnate dall'agente locale, in ordine di fase (vuoto per le analisi cloud) */
+  deliveredPhases: AnalysisPhaseDelivery[];
   /** @nullable */
   architectureMap: AnalysisDetailArchitectureMap;
   log: AnalysisLogEntry[];
@@ -667,9 +696,10 @@ export type AnalysisDetail = Analysis & {
 };
 
 /**
- * Indicare esattamente uno tra aiModelId e model (altrimenti 400 "scegli un modello")
+ * Con executor cloud (default) indicare esattamente uno tra aiModelId e model (altrimenti 400 "scegli un modello"); con executor local nessuno dei due.
  */
 export interface AnalysisStart {
+  executor?: AnalysisExecutor;
   /** Modello di un account AI dell'utente o dell'account di sistema */
   aiModelId?: number;
   /**
@@ -823,6 +853,36 @@ export interface AiAccountInput {
   baseUrl?: string | null;
   /** Solo custom e provider non gestiti */
   allowPrivateNetwork?: boolean;
+}
+
+export interface ApiTokenInfo {
+  id: number;
+  name: string;
+  createdAt: string;
+  expiresAt: string;
+  /** @nullable */
+  lastUsedAt: string | null;
+  /** @nullable */
+  revokedAt: string | null;
+}
+
+export interface ApiTokenCreate {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 90
+     */
+  expiresInDays: number;
+}
+
+export interface ApiTokenCreated {
+  /** Valore del token, mostrato una sola volta */
+  token: string;
+  info: ApiTokenInfo;
 }
 
 export interface AiAccountUpdate {
@@ -1294,6 +1354,10 @@ model?: string;
  * @maximum 2000000
  */
 maxTokens?: number;
+/**
+ * Con local risponde 400 "con l'agente locale lo zip non serve"
+ */
+executor?: AnalysisExecutor;
 };
 
 export type ExportAnalysisIssuesParams = {

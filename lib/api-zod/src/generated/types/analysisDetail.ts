@@ -9,8 +9,11 @@ import type { Analysis } from './analysis';
 import type { AnalysisDetailArchitectureMap } from './analysisDetailArchitectureMap';
 import type { AnalysisItem } from './analysisItem';
 import type { AnalysisLogEntry } from './analysisLogEntry';
+import type { AnalysisPhaseDelivery } from './analysisPhaseDelivery';
 
 export type AnalysisDetail = Analysis & {
+  /** Fasi consegnate dall'agente locale, in ordine di fase (vuoto per le analisi cloud) */
+  deliveredPhases: AnalysisPhaseDelivery[];
   /** @nullable */
   architectureMap: AnalysisDetailArchitectureMap;
   log: AnalysisLogEntry[];

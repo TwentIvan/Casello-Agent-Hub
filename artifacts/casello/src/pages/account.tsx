@@ -12,6 +12,7 @@ import {
   useUnlinkGithub,
 } from "@workspace/api-client-react";
 import { AiAccountsSection } from "@/components/account/ai-accounts-section";
+import { ApiTokensSection } from "@/components/account/api-tokens-section";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -213,6 +214,7 @@ export default function AccountPage() {
         <>
           <AccessCard user={me.data} />
           <AiAccountsSection />
+          <ApiTokensSection />
           {githubLinked && <InstallationsCard githubEnabled={me.data.githubEnabled} />}
         </>
       )}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, ArrowLeft } from "lucide-react";
@@ -9,14 +9,19 @@ import {
   getGetAnalysisQueryKey,
   getGetAppQueryKey,
   getListAnalysesQueryKey,
+  useCancelAnalysis,
   useGetAnalysis,
   useGetApp,
+  useReleaseAnalysis,
 } from "@workspace/api-client-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { useToast } from "@/hooks/use-toast";
 import { ChapterTabs } from "@/components/analysis/chapter-tabs";
 import { isRecord, list, phaseLabel, rec, str, strList } from "@/components/analysis/payload";
 import { ANALYSIS_STATUS_LABELS, ANALYSIS_STATUS_STYLES } from "@/components/apps/analyses-card";
@@ -221,6 +226,106 @@ function ArchitectureMap({ map }: { map: Record<string, unknown> }) {
   );
 }
 
+// --- Esecuzione locale ---
+
+function formatClock(value: string): string {
+  return new Date(value).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" });
+}
+
+function formatRomeDateTime(value: string): string {
+  return new Date(value).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short", timeZone: "Europe/Rome" });
+}
+
+/** Stato di un'analisi eseguita da un agente locale: coda, lease, fasi consegnate, rilascio e annullamento. */
+function LocalExecutionCard({ analysis }: { analysis: AnalysisDetail }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [confirmCancel, setConfirmCancel] = useState(false);
+
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: getGetAnalysisQueryKey(analysis.id) });
+    void queryClient.invalidateQueries({ queryKey: getListAnalysesQueryKey(analysis.appId) });
+  };
+  const release = useReleaseAnalysis({
+    mutation: {
+      onSuccess: () => {
+        refresh();
+        toast({ title: "Analisi rilasciata" });
+      },
+      onError: (error) =>
+        toast({ variant: "destructive", title: "Impossibile rilasciare l'analisi", description: apiErrorMessage(error) }),
+    },
+  });
+  const cancel = useCancelAnalysis({
+    mutation: {
+      onSuccess: () => {
+        setConfirmCancel(false);
+        refresh();
+        toast({ title: "Analisi annullata" });
+      },
+      onError: (error) => {
+        setConfirmCancel(false);
+        toast({ variant: "destructive", title: "Impossibile annullare l'analisi", description: apiErrorMessage(error) });
+      },
+    },
+  });
+
+  const open = analysis.status === "queued" || analysis.status === "running";
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Agente locale</CardTitle>
+        <CardDescription>Costo: abbonamento locale. L'analisi la esegue un agente Claude Code sul tuo computer.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {analysis.status === "queued" && <p className="text-sm">In attesa di un agente locale</p>}
+        {analysis.status === "running" && (
+          <p className="text-sm">
+            In corso: {analysis.leaseLabel ?? "agente locale"}
+            {analysis.leaseUntil ? `, lease fino alle ${formatClock(analysis.leaseUntil)}` : ""}
+          </p>
+        )}
+        <div className="space-y-1">
+          <h4 className="text-sm font-semibold">Fasi consegnate</h4>
+          {analysis.deliveredPhases.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nessuna fase consegnata ancora.</p>
+          ) : (
+            <ul className="text-sm">
+              {analysis.deliveredPhases.map((d) => (
+                <li key={d.phase}>
+                  {phaseLabel(d.phase)} <span className="text-muted-foreground">· {formatRomeDateTime(d.submittedAt)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {open && (
+          <div className="flex flex-wrap gap-2">
+            {analysis.status === "running" && (
+              <Button variant="outline" size="sm" disabled={release.isPending} onClick={() => release.mutate({ id: analysis.id })}>
+                {release.isPending ? "Rilascio…" : "Rilascia"}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" className="text-destructive" onClick={() => setConfirmCancel(true)}>
+              Annulla
+            </Button>
+          </div>
+        )}
+      </CardContent>
+      <ConfirmDialog
+        open={confirmCancel}
+        onOpenChange={setConfirmCancel}
+        title="Annullare l'analisi?"
+        description="L'analisi viene interrotta: le fasi già consegnate restano, ma l'agente locale non potrà più proseguire."
+        confirmLabel="Annulla analisi"
+        pendingLabel="Annullamento…"
+        pending={cancel.isPending}
+        onConfirm={() => cancel.mutate({ id: analysis.id })}
+      />
+    </Card>
+  );
+}
+
 // --- Pagina ---
 
 export default function AnalysisDetailPage() {
@@ -321,7 +426,7 @@ export default function AnalysisDetailPage() {
           </div>
           <div>
             <dt className="text-muted-foreground">Modello</dt>
-            <dd className="font-mono text-xs break-all">{a.model}</dd>
+            <dd className="font-mono text-xs break-all">{a.executor === "local" ? "agente locale" : a.model}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">Fase</dt>
@@ -330,8 +435,8 @@ export default function AnalysisDetailPage() {
           <div>
             <dt className="text-muted-foreground">Token</dt>
             <dd className="tabular-nums">
-              {a.tokensUsed.toLocaleString("it-IT")} / {a.maxTokens.toLocaleString("it-IT")}
-              {a.cachedTokens > 0 && (
+              {a.executor === "local" ? "—" : `${a.tokensUsed.toLocaleString("it-IT")} / ${a.maxTokens.toLocaleString("it-IT")}`}
+              {a.executor !== "local" && a.cachedTokens > 0 && (
                 <span className="text-muted-foreground">
                   {" "}
                   · {a.cachedTokens.toLocaleString("it-IT")} letti dalla cache (contano al 10%)
@@ -341,7 +446,9 @@ export default function AnalysisDetailPage() {
           </div>
           <div>
             <dt className="text-muted-foreground">Costo</dt>
-            <dd className="tabular-nums">{formatCost(a.costUsd, a.tokensUsed) ?? "—"}</dd>
+            <dd className="tabular-nums">
+              {a.executor === "local" ? "abbonamento locale" : (formatCost(a.costUsd, a.tokensUsed) ?? "—")}
+            </dd>
           </div>
           <div>
             <dt className="text-muted-foreground">Avviata</dt>
@@ -378,11 +485,13 @@ export default function AnalysisDetailPage() {
         </Alert>
       )}
 
+      {a.executor === "local" && <LocalExecutionCard analysis={a} />}
+
       <AnalysisLog log={a.log} />
 
       {map ? (
         <ArchitectureMap map={map} />
-      ) : active ? (
+      ) : active && a.executor !== "local" ? (
         <Card>
           <CardContent className="flex items-center gap-3 py-6 text-sm text-muted-foreground">
             <Spinner className="size-5" />

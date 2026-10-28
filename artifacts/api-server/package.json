@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "ajv": "^8.18.0",

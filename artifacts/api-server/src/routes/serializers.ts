@@ -110,15 +110,16 @@ export function userTokenFrom(req: Request): string | undefined {
   return value ? value : undefined;
 }
 
-/** Analisi senza log né mappa (elenco e risposta all'avvio): quelli arrivano solo col dettaglio. */
+/** Analisi senza log né mappa (elenco e risposta all'avvio): quelli arrivano solo col dettaglio. Mai l'hash della lease. */
 export function toPublicAnalysis(analysis: Analysis) {
-  const { log: _log, architectureMap: _map, ...rest } = analysis;
+  const { log: _log, architectureMap: _map, leaseTokenHash: _lease, ...rest } = analysis;
   return { ...rest, costUsd: toNumberOrNull(analysis.costUsd) };
 }
 
-/** Dettaglio dell'analisi: con log e mappa, costo come numero. */
+/** Dettaglio dell'analisi: con log e mappa, costo come numero, senza l'hash della lease. */
 export function toPublicAnalysisDetail(analysis: Analysis) {
-  return { ...analysis, costUsd: toNumberOrNull(analysis.costUsd) };
+  const { leaseTokenHash: _lease, ...rest } = analysis;
+  return { ...rest, costUsd: toNumberOrNull(analysis.costUsd) };
 }
 
 /**

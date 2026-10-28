@@ -421,6 +421,86 @@ describe("avvio dell'analisi", () => {
   });
 });
 
+describe("analisi con l'agente locale", () => {
+  // Il limite degli avvii (10 al minuto per IP) è condiviso da tutto il file: qui l'orologio del
+  // rate limit va avanti di oltre un minuto a ogni test
+  let clockOffset = 0;
+  beforeEach(() => {
+    clockOffset += 61_000;
+    const realNow = Date.now.bind(Date);
+    vi.spyOn(Date, "now").mockImplementation(() => realNow() + clockOffset);
+  });
+  afterEach(() => {
+    vi.mocked(Date.now).mockRestore();
+  });
+
+  it("avvio con executor local → 202 senza modello né chiamate; con aiModelId o model → 400; zip → 400", async () => {
+    // Nessun controllo sulle sorgenti GitHub: il codice lo legge l'agente sul suo clone
+    const app = await createApp({ sourceType: "github", sourceRepo: "ivan/mister" });
+    for (const body of [{ executor: "local", aiModelId: 1 }, { executor: "local", model: "openrouter/auto" }]) {
+      const res = await api("POST", `/apps/${app.id}/analyses`, body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    const zip = zipSync({ "src/a.ts": strToU8("export const a = 1;\n") });
+    const zipRes = await postZip(`/apps/${app.id}/analyses/zip?executor=local`, zip);
+    expect(zipRes.status).toBe(400);
+    expect(zipRes.json?.error).toBe("con l'agente locale lo zip non serve");
+
+    const res = await api("POST", `/apps/${app.id}/analyses`, { executor: "local" });
+    expect(res.status, res.text).toBe(202);
+    expect(res.json).toMatchObject({
+      status: "queued",
+      executor: "local",
+      aiModelId: null,
+      model: "agente-locale",
+      leaseLabel: null,
+      leaseUntil: null,
+      tokensUsed: 0,
+      costUsd: null,
+    });
+    expect(res.json).not.toHaveProperty("leaseTokenHash");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(llmRequests).toBe(0);
+    const [row] = await db.select().from(analysesTable).where(eq(analysesTable.id, res.json.id));
+    expect(row!.status).toBe("queued");
+
+    const detail = await api("GET", `/analyses/${res.json.id}`);
+    expect(detail.json).toMatchObject({ executor: "local", deliveredPhases: [] });
+
+    // Un'analisi alla volta anche per le locali
+    expect((await api("POST", `/apps/${app.id}/analyses`, { executor: "local" })).status).toBe(409);
+
+    // Rilascio: torna in coda; annullamento: fallita
+    await db
+      .update(analysesTable)
+      .set({ status: "running", leaseTokenHash: "a".repeat(64), leaseUntil: new Date(Date.now() + 60_000), leaseLabel: "Mac" })
+      .where(eq(analysesTable.id, res.json.id));
+    const released = await api("POST", `/analyses/${res.json.id}/release`);
+    expect(released.status, released.text).toBe(200);
+    expect(released.json).toMatchObject({ status: "queued", leaseLabel: null, leaseUntil: null });
+    const cancelled = await api("POST", `/analyses/${res.json.id}/cancel`);
+    expect(cancelled.status, cancelled.text).toBe(200);
+    expect(cancelled.json).toMatchObject({ status: "failed", error: "annullata dalla console" });
+    expect((await api("POST", `/analyses/${res.json.id}/cancel`)).status).toBe(409);
+    expect((await api("POST", `/analyses/${res.json.id}/release`)).status).toBe(409);
+    expect((await api("POST", "/analyses/9999/release")).status).toBe(404);
+  });
+
+  it("release e cancel su un'analisi cloud → 409; executor non valido → 400", async () => {
+    const app = await createApp();
+    const cloud = await newAnalysis(app.id, "running");
+    expect((await api("POST", `/analyses/${cloud}/release`)).status).toBe(409);
+    expect((await api("POST", `/analyses/${cloud}/cancel`)).status).toBe(409);
+    await db.update(analysesTable).set({ status: "failed" }).where(eq(analysesTable.id, cloud));
+    expect((await api("POST", `/apps/${app.id}/analyses`, { executor: "altro" })).status).toBe(400);
+    const res = await api("POST", `/apps/${app.id}/analyses`, { model: "openrouter/auto" });
+    expect(res.status, res.text).toBe(202);
+    expect(res.json.executor).toBe("cloud");
+    const detail = await api("GET", `/analyses/${res.json.id}`);
+    expect(detail.json.deliveredPhases).toEqual([]);
+  });
+});
+
 describe("dettaglio ed esportazione", () => {
   it("GET /analyses/:id: elementi per capitolo (ordine delle fasi) e posizione; 404", async () => {
     const app = await createApp();

@@ -98,6 +98,8 @@ export interface FakeGithub {
   issuedTokens: Map<string, FakeGithubIssuedToken>;
   /** proprietario/nome → contenuto dello zipball (default: uno zip vuoto). */
   zipballs: Map<string, Uint8Array>;
+  /** proprietario/nome → sha dell'ultimo commit di ogni branch (`GET /repos/{repo}/commits/{ref}`; senza voce: 404). */
+  commits: Map<string, string>;
   /** Durata dei token di installazione emessi (default 1 h). */
   tokenTtlMs: number;
   /** Token utente con cui `/login/oauth/authorize` approva subito (null = 404). */
@@ -198,6 +200,7 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
     revoked: new Set(),
     issuedTokens: new Map(),
     zipballs: new Map(),
+    commits: new Map(),
     tokenTtlMs: 3_600_000,
     authorizeAs: null,
     failWith: null,
@@ -329,6 +332,23 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
       res.writeHead(200, { "content-type": "application/zip" });
       res.end(Buffer.from(fake.zipballs.get(fullName) ?? EMPTY_ZIP));
       return;
+    }
+
+    if (method === "GET" && (m = /^\/repos\/([^/]+)\/([^/]+)\/commits\/(.+)$/.exec(path))) {
+      // Come lo zipball: token valido e repo nel token; ref = branch noto o HEAD
+      const issued = liveToken(req);
+      if (!issued) return send(res, 401, BAD_CREDENTIALS);
+      const fullName = `${decodeURIComponent(m[1]!)}/${decodeURIComponent(m[2]!)}`;
+      const repo = reposOf(issued).find((r) => r.fullName === fullName);
+      const ref = decodeURIComponent(m[3]!);
+      const sha = fake.commits.get(fullName);
+      if (!repo || !sha || (ref !== "HEAD" && ref !== repo.defaultBranch && !(repo.branches ?? []).includes(ref))) return send(res, 404, NOT_FOUND);
+      if (req.headers.accept === "application/vnd.github.sha") {
+        res.writeHead(200, { "content-type": "application/vnd.github.sha" });
+        res.end(sha);
+        return;
+      }
+      return send(res, 200, { sha });
     }
 
     if (method === "GET" && path === "/installation/repositories") {

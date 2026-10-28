@@ -11,6 +11,9 @@ export const analysisStatusEnum = pgEnum("analysis_status", [
   "interrupted",
 ]);
 
+// Chi esegue l'analisi: il cloud di Casello o un agente locale (via MCP)
+export const analysisExecutorEnum = pgEnum("analysis_executor", ["cloud", "local"]);
+
 export type AnalysisSources = { code: "github" | "zip" | "none"; openapi: boolean; description: boolean };
 export type AnalysisLogEntry = { at: string; phase: string; message: string };
 
@@ -40,6 +43,13 @@ export const analysesTable = pgTable(
     log: jsonb("log").$type<AnalysisLogEntry[]>().notNull().default([]),
     architectureMap: jsonb("architecture_map"),
     error: text("error"),
+    executor: analysisExecutorEnum("executor").notNull().default("cloud"),
+    // Lease dell'agente locale: a riposo solo l'hash del token, valorizzati solo dalle analisi locali
+    leaseTokenHash: text("lease_token_hash"),
+    leaseUntil: timestamp("lease_until"),
+    leaseLabel: text("lease_label"),
+    // Commit del clone locale su cui l'agente ha lavorato
+    sourceCommit: text("source_commit"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     finishedAt: timestamp("finished_at"),
   },

@@ -357,3 +357,34 @@ ALTER TABLE "analyses" ADD COLUMN "cached_tokens" integer DEFAULT 0 NOT NULL;
 ALTER TABLE "runs" ADD COLUMN "cached_tokens" integer DEFAULT 0 NOT NULL;
 ALTER TABLE "ai_models" ADD COLUMN "price_cached_input_per_mtok" numeric(12, 6);
 ALTER TABLE "model_offers" ADD COLUMN "price_cached_input_per_mtok" numeric(12, 6);
+
+-- Esecutore locale dell'architetto: esecutore e lease dell'analisi, esiti per fase, token personali
+CREATE TYPE "public"."analysis_executor" AS ENUM('cloud', 'local');
+ALTER TABLE "analyses" ADD COLUMN "executor" "analysis_executor" DEFAULT 'cloud' NOT NULL;
+ALTER TABLE "analyses" ADD COLUMN "lease_token_hash" text;
+ALTER TABLE "analyses" ADD COLUMN "lease_until" timestamp;
+ALTER TABLE "analyses" ADD COLUMN "lease_label" text;
+ALTER TABLE "analyses" ADD COLUMN "source_commit" text;
+
+CREATE TABLE "analysis_phase_results" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"analysis_id" integer NOT NULL,
+	"phase" text NOT NULL,
+	"result" jsonb NOT NULL,
+	"submitted_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "analysis_phase_results_analysis_id_analyses_id_fk" FOREIGN KEY ("analysis_id") REFERENCES "public"."analyses"("id") ON DELETE cascade ON UPDATE no action
+);
+CREATE UNIQUE INDEX "analysis_phase_results_unique" ON "analysis_phase_results" USING btree ("analysis_id", "phase");
+
+CREATE TABLE "api_tokens" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"token_hash" text NOT NULL,
+	"name" text NOT NULL,
+	"expires_at" timestamp NOT NULL,
+	"last_used_at" timestamp,
+	"revoked_at" timestamp,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "api_tokens_token_hash_unique" UNIQUE("token_hash"),
+	CONSTRAINT "api_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action
+);

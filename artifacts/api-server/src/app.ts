@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { sessionMiddleware } from "./lib/auth";
+import { mcpRouter } from "./lib/mcp/server";
 import { errorHandler } from "./middlewares/error-handler";
 
 const app: Express = express();
@@ -55,6 +56,10 @@ app.use(
     },
   }),
 );
+// Server MCP per gli agenti locali: fuori da /api, prima di CORS, del parser JSON globale (ha il
+// suo, fino a 2 MB per gli esiti di fase) e della sessione. Autenticazione solo con il token
+// personale (Bearer), niente cookie; nessuna origine CORS ammessa: non è chiamato dai browser.
+app.use("/mcp", mcpRouter());
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

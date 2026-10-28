@@ -10,6 +10,7 @@ import {
   CACHE_WEIGHT,
   effectiveTokens,
   CONTEXT_GUARD_RATIO,
+  DEFAULT_COMPLETION_RESERVE,
   estimateTokens,
   MAX_CORRECTIONS,
   MAX_SYNTHESES,
@@ -19,6 +20,7 @@ import {
   scaleLimitsForContext,
   PHASE_NUDGE,
   PHASE_TOKEN_SHARES,
+  phaseTools,
   runPhase,
   SYNTHESIS_MAX_CHARS,
   UNKNOWN_CONTEXT_TOKENS,
@@ -811,18 +813,44 @@ describe("runPhase", () => {
       return files;
     }
 
+    const RESTART = "Continua la fase partendo dalla tua sintesi.";
+
     /** Chat finta: senza strumenti risponde con la sintesi, altrimenti legge un file grande (o consegna). */
-    function adaptive(opts: { synthesis?: string; submitAfterSynthesis?: boolean } = {}) {
+    function adaptive(
+      opts: {
+        synthesis?: string;
+        synthesisReply?: ChatResult;
+        submitAfterSynthesis?: boolean;
+        read?: (n: number) => ChatResult["toolCalls"][number];
+      } = {},
+    ) {
       const calls: { messages: ChatCompletionMessageParam[]; tools: ChatCompletionTool[] }[] = [];
       let reads = 0;
       const chat = async (messages: ChatCompletionMessageParam[], tools: ChatCompletionTool[]): Promise<ChatResult> => {
         calls.push({ messages: structuredClone(messages), tools });
-        if (tools.length === 0) return reply([], opts.synthesis ?? "sintesi-del-modello");
-        const synthesised = messages.some((m) => m.role === "user" && m.content === "Continua la fase partendo dalla tua sintesi.");
+        if (tools.length === 0) return opts.synthesisReply ?? reply([], opts.synthesis ?? "sintesi-del-modello");
+        const synthesised = messages.some((m) => m.role === "user" && String(m.content).startsWith(RESTART));
         if (synthesised && opts.submitAfterSynthesis !== false) return done;
-        return reply([call("read_file", { path: `src/f${reads++ % 20}.ts` })]);
+        const n = reads++;
+        return reply([opts.read ? opts.read(n) : call("read_file", { path: `src/f${n % 20}.ts` })]);
       };
       return { chat, calls };
+    }
+
+    /** Indici delle chiamate di sintesi (quelle senza strumenti). */
+    function synthesisCalls(calls: { tools: ChatCompletionTool[] }[]): number[] {
+      return calls.flatMap((c, i) => (c.tools.length === 0 ? [i] : []));
+    }
+
+    /** Token stimati degli strumenti offerti con il solo codice e il contesto dato. */
+    function toolsTokens(contextTokens: number | null): number {
+      return estimateTokens(phaseTools(true, false, scaleLimitsForContext(contextTokens)));
+    }
+
+    /** Messaggio utente lungo `chars` caratteri, come mappa + appunti delle fasi precedenti. */
+    function realisticUser(chars: number): string {
+      const line = "src/routes/squadre.ts — GET /api/squadre, POST /api/squadre: gestione delle squadre\n";
+      return line.repeat(Math.ceil(chars / line.length)).slice(0, chars);
     }
 
     it("nessuna modifica in loco della cronologia", async () => {
@@ -842,7 +870,7 @@ describe("runPhase", () => {
       expect(toolMessages(s.calls[3]!.messages).every((m) => m.startsWith("File src/f"))).toBe(true);
     });
 
-    it("oltre il 75% del contesto: una sintesi e la fase continua", async () => {
+    it("vicino al limite del contesto: una sintesi e la fase continua", async () => {
       const a = adaptive();
       const { input, logs } = base(a.chat, { tree: makeTree(bigFiles(20)), contextTokens: 40_000 });
       const out = await runPhase(input);
@@ -894,11 +922,22 @@ describe("runPhase", () => {
       await runPhase(base(under.chat, { contextTokens: null, user: "x".repeat(400_000) }).input);
       expect(estimateTokens(under.calls[0]!.messages)).toBeLessThan(120_000);
       expect(under.calls[0]!.tools.length).toBeGreaterThan(0);
-      // oltre 120 000: sintesi prima della chiamata normale
-      const over = scripted([reply([], "sintesi"), done]);
-      await runPhase(base(over.chat, { contextTokens: null, user: "x".repeat(500_000) }).input);
-      expect(over.calls[0]!.tools).toEqual([]);
-      expect(over.calls[0]!.messages.at(-1)!.content).toBe(SYNTHESIS_REQUEST);
+      // ~116 000 token con gli strumenti; una lettura porta oltre 120 000: sintesi prima del giro successivo
+      const over = scripted([reply([call("read_file", { path: "src/f0.ts" })]), reply([], "sintesi"), done]);
+      const out = await runPhase(
+        base(over.chat, { contextTokens: null, user: "x".repeat(460_000), tree: makeTree(bigFiles(1)) }).input,
+      );
+      expect(out.ok).toBe(true);
+      expect(over.calls[1]!.tools).toEqual([]);
+      expect(over.calls[1]!.messages.at(-1)!.content).toBe(SYNTHESIS_REQUEST);
+      // il solo prompt oltre 120 000: la fase fallisce senza chiamare il modello
+      const huge = scripted([done]);
+      const fast = await runPhase(base(huge.chat, { contextTokens: null, user: "x".repeat(500_000) }).input);
+      expect(fast).toEqual({
+        ok: false,
+        error: "fase map: mappa e appunti non entrano nel contesto del modello: scegli un modello con contesto più ampio",
+      });
+      expect(huge.calls).toHaveLength(0);
     });
 
     it("estimateTokens: lunghezza del JSON diviso 4, per eccesso", () => {
@@ -910,25 +949,171 @@ describe("runPhase", () => {
     });
 
     it("sintesi più lunga di 6000 caratteri viene tagliata", async () => {
-      const over = scripted([reply([], "s".repeat(7_000)), done]);
-      await runPhase(base(over.chat, { contextTokens: null, user: "x".repeat(500_000) }).input);
-      const restart = over.calls[1]!.messages;
-      expect(restart[2]).toEqual({ role: "assistant", content: "s".repeat(SYNTHESIS_MAX_CHARS) });
+      const a = adaptive({ synthesis: "s".repeat(7_000) });
+      const { input } = base(a.chat, { tree: makeTree(bigFiles(20)), contextTokens: 40_000 });
+      expect((await runPhase(input)).ok).toBe(true);
+      const [idx] = synthesisCalls(a.calls);
+      // la cronologia è stata superata dalle letture, non dal messaggio utente
+      expect(a.calls[idx!]!.messages.filter((m) => m.role === "tool").length).toBeGreaterThan(0);
+      const restart = a.calls[idx! + 1]!;
+      expect(restart.tools.length).toBeGreaterThan(0);
+      expect(restart.messages).toEqual([
+        { role: "system", content: "sistema" },
+        { role: "user", content: "utente" },
+        { role: "assistant", content: "s".repeat(SYNTHESIS_MAX_CHARS) },
+        { role: "user", content: RESTART },
+      ]);
     });
 
     it("una sintesi con tool_call: le chiamate sono ignorate, vale il testo", async () => {
-      const over = scripted([reply([call("read_file", { path: "src/a.ts" })], "testo-sintesi"), done]);
-      await runPhase(base(over.chat, { contextTokens: null, user: "x".repeat(500_000) }).input);
-      expect(over.calls[1]!.messages[2]).toEqual({ role: "assistant", content: "testo-sintesi" });
+      const a = adaptive({ synthesisReply: reply([call("read_file", { path: "src/a.ts" })], "testo-sintesi") });
+      const { input } = base(a.chat, { tree: makeTree(bigFiles(20)), contextTokens: 40_000 });
+      expect((await runPhase(input)).ok).toBe(true);
+      const [idx] = synthesisCalls(a.calls);
+      expect(a.calls[idx!]!.messages.filter((m) => m.role === "tool").length).toBeGreaterThan(0);
+      const restart = a.calls[idx! + 1]!;
+      expect(restart.tools.length).toBeGreaterThan(0);
+      expect(restart.messages).toEqual([
+        { role: "system", content: "sistema" },
+        { role: "user", content: "utente" },
+        { role: "assistant", content: "testo-sintesi" },
+        { role: "user", content: RESTART },
+      ]);
+    });
+
+    it("sintesi vuota: al suo posto un testo fisso", async () => {
+      const a = adaptive({ synthesis: "" });
+      const { input } = base(a.chat, { tree: makeTree(bigFiles(20)), contextTokens: 40_000 });
+      expect((await runPhase(input)).ok).toBe(true);
+      const [idx] = synthesisCalls(a.calls);
+      expect(a.calls[idx! + 1]!.messages[2]).toEqual({ role: "assistant", content: "(nessuna sintesi)" });
     });
 
     it("errore nella chiamata di sintesi: la fase fallisce", async () => {
-      const chat = async (): Promise<ChatResult> => {
-        throw new Error("rete giù");
+      const chat = async (_m: ChatCompletionMessageParam[], tools: ChatCompletionTool[]): Promise<ChatResult> => {
+        if (tools.length === 0) throw new Error("rete giù");
+        return reply([call("read_file", { path: "src/f0.ts" })]);
       };
-      const out = await runPhase(base(chat, { contextTokens: null, user: "x".repeat(500_000) }).input);
+      const out = await runPhase(
+        base(chat, { contextTokens: null, user: "x".repeat(460_000), tree: makeTree(bigFiles(1)) }).input,
+      );
       expect(out.ok).toBe(false);
       expect(out.ok === false && out.error).toContain("errore nella chiamata al modello: rete giù");
+    });
+
+    it("contesto noto: la soglia lascia spazio alla risposta e agli strumenti", async () => {
+      expect(DEFAULT_COMPLETION_RESERVE).toBe(16_000);
+      // 40 000 token di contesto: 75% = 30 000, ma con 16 000 di risposta la soglia scende sotto 24 000
+      const user = "x".repeat(100_000);
+      const reserved = scripted([done]);
+      const out = await runPhase(base(reserved.chat, { contextTokens: 40_000, user }).input);
+      expect(out).toEqual({
+        ok: false,
+        error: "fase map: mappa e appunti non entrano nel contesto del modello: scegli un modello con contesto più ampio",
+      });
+      expect(reserved.calls).toHaveLength(0);
+      // senza riserva per la risposta resta il 75%: lo stesso prompt entra
+      const free = scripted([done]);
+      expect((await runPhase(base(free.chat, { contextTokens: 40_000, user, completionReserve: 0 }).input)).ok).toBe(true);
+      expect(free.calls[0]!.tools.length).toBeGreaterThan(0);
+    });
+
+    it("la stima confrontata con la soglia comprende le definizioni degli strumenti", async () => {
+      // senza riserva la soglia è il 75% di 40 000: il prompt da solo resta sotto, con gli strumenti no
+      const threshold = CONTEXT_GUARD_RATIO * 40_000;
+      const tools = toolsTokens(40_000);
+      expect(tools).toBeGreaterThan(200);
+      const empty = estimateTokens([
+        { role: "system", content: "sistema" },
+        { role: "user", content: "" },
+      ]);
+      const user = "x".repeat((threshold - empty - Math.floor(tools / 2)) * 4);
+      expect(estimateTokens([{ role: "system", content: "sistema" }, { role: "user", content: user }])).toBeLessThanOrEqual(threshold);
+      const s = scripted([done]);
+      const out = await runPhase(base(s.chat, { contextTokens: 40_000, user, completionReserve: 0 }).input);
+      expect(out.ok).toBe(false);
+      expect(s.calls).toHaveLength(0);
+    });
+
+    it("contesto da 32 000 token con mappa e appunti realistici: fallisce subito", async () => {
+      const s = scripted([done]);
+      const { input, logs } = base(s.chat, { contextTokens: 32_000, user: realisticUser(60_000), tree: makeTree(bigFiles(20)) });
+      expect(await runPhase(input)).toEqual({
+        ok: false,
+        error: "fase map: mappa e appunti non entrano nel contesto del modello: scegli un modello con contesto più ampio",
+      });
+      expect(s.calls).toHaveLength(0);
+      expect(logs.some((l) => l.startsWith("contesto vicino al limite"))).toBe(false);
+    });
+
+    it("contesto da 64 000 token con mappa e appunti realistici: sintesi dopo le letture e la fase continua", async () => {
+      const user = realisticUser(60_000);
+      const a = adaptive();
+      const { input } = base(a.chat, { contextTokens: 64_000, user, tree: makeTree(bigFiles(20)) });
+      expect((await runPhase(input)).ok).toBe(true);
+      const synth = synthesisCalls(a.calls);
+      expect(synth).toHaveLength(1);
+      // prima della sintesi il modello ha letto più file
+      expect(a.calls[synth[0]!]!.messages.filter((m) => m.role === "tool").length).toBeGreaterThan(1);
+      expect(a.calls[synth[0]! + 1]!.messages).toEqual([
+        { role: "system", content: "sistema" },
+        { role: "user", content: user },
+        { role: "assistant", content: "sintesi-del-modello" },
+        { role: "user", content: RESTART },
+      ]);
+    });
+
+    it("nessuna nuova sintesi senza un giro dopo la precedente: contesto esaurito", async () => {
+      // il prompt entra appena: dopo una lettura serve la sintesi, ma la sintesi lunga non entra
+      const threshold = Math.min(CONTEXT_GUARD_RATIO * 40_000, 40_000 - DEFAULT_COMPLETION_RESERVE - toolsTokens(40_000));
+      const empty = estimateTokens([
+        { role: "system", content: "sistema" },
+        { role: "user", content: "" },
+      ]);
+      const user = "x".repeat((Math.floor(threshold) - toolsTokens(40_000) - empty - 300) * 4);
+      const a = adaptive({ synthesis: "s".repeat(SYNTHESIS_MAX_CHARS) });
+      const { input } = base(a.chat, { contextTokens: 40_000, user, tree: makeTree(bigFiles(20)) });
+      expect(await runPhase(input)).toEqual({ ok: false, error: "fase map: contesto del modello esaurito" });
+      expect(synthesisCalls(a.calls)).toHaveLength(1);
+      // la sintesi è l'ultima chiamata: nessuna seconda sintesi a vuoto
+      expect(a.calls.at(-1)!.tools).toEqual([]);
+    });
+
+    it("dopo una sintesi una lettura dimezzata non fa scattare subito la sintesi successiva", async () => {
+      // contesto piccolo (tetti dimezzati), mappa e appunti realistici, letture dal tetto pieno dell'output
+      const files: Record<string, string> = {};
+      for (let i = 0; i < 12; i++) {
+        files[`src/g${i}.ts`] = Array.from({ length: 280 }, (_, r) => `${"y".repeat(45)}${i}-${r}`).join("\n");
+      }
+      const a = adaptive({
+        synthesis: "s".repeat(SYNTHESIS_MAX_CHARS),
+        submitAfterSynthesis: false,
+        read: (n) => call("read_files", { paths: [`src/g${(2 * n) % 12}.ts`, `src/g${(2 * n + 1) % 12}.ts`] }),
+      });
+      const { input } = base(a.chat, { contextTokens: 48_000, user: realisticUser(40_000), tree: makeTree(files) });
+      await runPhase(input);
+      const synth = synthesisCalls(a.calls);
+      expect(synth).toHaveLength(2);
+      // la lettura più grande ammessa con i tetti dimezzati
+      const readOut = toolMessages(a.calls[1]!.messages)[0]!;
+      expect(readOut.length).toBeGreaterThan(scaleLimitsForContext(48_000).maxToolOutputChars * 0.85);
+      for (const idx of synth) {
+        // ripartenza, una lettura, poi un altro giro normale prima di qualsiasi nuova sintesi
+        expect(a.calls[idx + 1]!.tools.length).toBeGreaterThan(0);
+        expect(a.calls[idx + 2]!.tools.length).toBeGreaterThan(0);
+      }
+    });
+
+    it("sintesi dopo il sollecito: la ripartenza ripete il sollecito", async () => {
+      // il prompt entra; una lettura porta oltre la soglia; il sollecito arriva a fine del primo giro
+      const threshold = Math.min(CONTEXT_GUARD_RATIO * 40_000, 40_000 - DEFAULT_COMPLETION_RESERVE - toolsTokens(40_000));
+      const user = "x".repeat((Math.floor(threshold) - toolsTokens(40_000) - 3_000) * 4);
+      const a = adaptive();
+      const { input } = base(a.chat, { contextTokens: 40_000, user, tree: makeTree(bigFiles(20)), phaseQuota: 10 });
+      expect((await runPhase(input)).ok).toBe(true);
+      const [idx] = synthesisCalls(a.calls);
+      expect(a.calls[idx!]!.messages.at(-2)).toEqual({ role: "user", content: PHASE_NUDGE });
+      expect(a.calls[idx! + 1]!.messages.at(-1)).toEqual({ role: "user", content: `${RESTART}\n\n${PHASE_NUDGE}` });
     });
   });
 });

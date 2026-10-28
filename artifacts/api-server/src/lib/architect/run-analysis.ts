@@ -561,7 +561,20 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       });
       // Quota morbida della fase: solo il sollecito a consegnare; il tetto rigido resta il totale
       const phaseQuota = Math.floor(PHASE_TOKEN_SHARES[phase] * budget.maxTokens);
-      const outcome = await runPhase({ phase, system: SYSTEM_BASE, user, tree, openapi, chat, budget, phaseQuota, contextTokens: resolved?.contextTokens ?? null, log, now });
+      const outcome = await runPhase({
+        phase,
+        system: SYSTEM_BASE,
+        user,
+        tree,
+        openapi,
+        chat,
+        budget,
+        phaseQuota,
+        contextTokens: resolved?.contextTokens ?? null,
+        completionReserve: MAX_COMPLETION_TOKENS,
+        log,
+        now,
+      });
       if (!outcome.ok) {
         log(`fase ${phase} non riuscita`);
         await progress.flush();

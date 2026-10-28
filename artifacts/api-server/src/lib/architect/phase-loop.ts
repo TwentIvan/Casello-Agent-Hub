@@ -85,6 +85,8 @@ const MAX_LOG_ARG_CHARS = 120;
 
 /** Frazione del contesto del modello oltre la quale la cronologia viene riassunta. */
 export const CONTEXT_GUARD_RATIO = 0.75;
+/** Token riservati di default alla risposta del modello quando il contesto è noto. */
+export const DEFAULT_COMPLETION_RESERVE = 16_000;
 /** Soglia (token stimati) della guardia quando il contesto del modello è ignoto. */
 export const UNKNOWN_CONTEXT_TOKENS = 120_000;
 /** Lunghezza massima, in caratteri, della sintesi del modello. */
@@ -94,10 +96,11 @@ export const MAX_SYNTHESES = 2;
 const SYNTHESIS_REQUEST =
   "Il contesto sta per esaurirsi. Riassumi in al massimo 6000 caratteri ciò che hai letto finora e che serve a consegnare l'esito di questa fase: file, righe e fatti utili. Non chiamare strumenti.";
 const SYNTHESIS_RESTART = "Continua la fase partendo dalla tua sintesi.";
+const EMPTY_SYNTHESIS = "(nessuna sintesi)";
 
-/** Stima grossolana dei token della cronologia: un token ogni 4 caratteri del JSON. */
-export function estimateTokens(messages: ChatCompletionMessageParam[]): number {
-  return Math.ceil(JSON.stringify(messages).length / 4);
+/** Stima grossolana dei token (cronologia o strumenti): un token ogni 4 caratteri del JSON. */
+export function estimateTokens(value: ChatCompletionMessageParam[] | ChatCompletionTool[]): number {
+  return Math.ceil(JSON.stringify(value).length / 4);
 }
 
 /**
@@ -137,6 +140,8 @@ export interface RunPhaseInput {
   phaseQuota?: number;
   /** Finestra di contesto del modello (token): scala i tetti di lettura; null/assente = tetti pieni. */
   contextTokens?: number | null;
+  /** Token massimi della risposta, riservati nel contesto noto (default `DEFAULT_COMPLETION_RESERVE`). */
+  completionReserve?: number;
   log: (message: string) => void;
   now?: () => number;
 }
@@ -624,7 +629,24 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
 
   let rounds = 0;
   let syntheses = 0;
-  const guardThreshold = input.contextTokens ? CONTEXT_GUARD_RATIO * input.contextTokens : UNKNOWN_CONTEXT_TOKENS;
+  // Giro al momento dell'ultima sintesi: senza un giro in mezzo un'altra sintesi non libera spazio
+  let roundsAtSynthesis: number | null = null;
+  // Con il contesto noto la soglia lascia spazio alla risposta e alle definizioni degli strumenti;
+  // la stima confrontata con la soglia comprende sempre gli strumenti inviati nei giri normali
+  const toolsTokens = estimateTokens(tools);
+  const contextTokens = input.contextTokens;
+  const guardThreshold = contextTokens
+    ? Math.min(
+        CONTEXT_GUARD_RATIO * contextTokens,
+        contextTokens - (input.completionReserve ?? DEFAULT_COMPLETION_RESERVE) - toolsTokens,
+      )
+    : UNKNOWN_CONTEXT_TOKENS;
+  // Se già mappa e appunti non entrano, nessuna sintesi può aiutare: si fallisce senza chiamare il modello
+  if (estimateTokens(messages) + toolsTokens > guardThreshold) {
+    return fail(
+      `fase ${phase}: mappa e appunti non entrano nel contesto del modello: scegli un modello con contesto più ampio`,
+    );
+  }
   let invalidSubmits = 0;
   // Problemi dell'ultima consegna non valida e se è avvenuta nell'ultimo giro
   let lastProblems: string[] | null = null;
@@ -680,9 +702,12 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
     // Guardia sul contesto: la cronologia cresce solo in coda (il prefisso resta identico e la cache
     // del provider lo riusa); vicino al limite del modello si riparte da una sintesi. Si fa solo
     // all'inizio di un giro, così ogni tool_call ha già le sue risposte. La sintesi non è un giro.
-    if (estimateTokens(messages) > guardThreshold) {
-      if (syntheses >= MAX_SYNTHESES) return fail(`fase ${phase}: contesto del modello esaurito`);
+    if (estimateTokens(messages) + toolsTokens > guardThreshold) {
+      if (syntheses >= MAX_SYNTHESES || roundsAtSynthesis === rounds) {
+        return fail(`fase ${phase}: contesto del modello esaurito`);
+      }
       syntheses += 1;
+      roundsAtSynthesis = rounds;
       log(`contesto vicino al limite del modello: sintesi ${syntheses} di ${MAX_SYNTHESES}`);
       let summary: ChatResult;
       try {
@@ -691,12 +716,14 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
         return fail(`fase ${phase}: errore nella chiamata al modello: ${err instanceof Error ? err.message : String(err)}`);
       }
       account(summary);
-      // Eventuali tool_call della risposta si ignorano: vale solo il testo
+      // Eventuali tool_call della risposta si ignorano: vale solo il testo. Se il sollecito è già
+      // stato inviato, la ripartenza lo ripete (la sintesi lo ha tolto dalla cronologia)
+      const text = summary.content?.trim() ? sliceChars(summary.content, SYNTHESIS_MAX_CHARS) : EMPTY_SYNTHESIS;
       messages.splice(
         2,
         messages.length,
-        { role: "assistant", content: sliceChars(summary.content ?? "", SYNTHESIS_MAX_CHARS) },
-        { role: "user", content: SYNTHESIS_RESTART },
+        { role: "assistant", content: text },
+        { role: "user", content: nudgedAt === null ? SYNTHESIS_RESTART : `${SYNTHESIS_RESTART}\n\n${PHASE_NUDGE}` },
       );
       continue;
     }
@@ -709,7 +736,6 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
       return fail(`fase ${phase}: errore nella chiamata al modello: ${err instanceof Error ? err.message : String(err)}`);
     }
     account(reply);
-    lastRoundInvalidSubmit = false;
     lastRoundInvalidSubmit = false;
 
     if (reply.toolCalls.length === 0) {

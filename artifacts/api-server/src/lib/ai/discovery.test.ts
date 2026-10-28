@@ -232,7 +232,7 @@ describe("discoverModels", () => {
         id: "deepseek/deepseek-chat",
         name: "DeepSeek: V3",
         context_length: 163_840,
-        pricing: { prompt: "0.00000027", completion: "0.0000011" },
+        pricing: { prompt: "0.00000027", completion: "0.0000011", input_cache_read: "0.00000007" },
       },
       { id: "openrouter/auto", name: "Auto Router", context_length: 2_000_000, pricing: { prompt: "-1", completion: "-1" } },
     ];
@@ -244,6 +244,7 @@ describe("discoverModels", () => {
         contextTokens: 163_840,
         priceInput: 0.27,
         priceOutput: 1.1,
+        priceCachedInput: 0.07,
         priceSource: "provider",
       },
       {
@@ -252,6 +253,7 @@ describe("discoverModels", () => {
         contextTokens: 2_000_000,
         priceInput: null,
         priceOutput: null,
+        priceCachedInput: null,
         priceSource: null,
       },
     ]);
@@ -269,6 +271,7 @@ describe("discoverModels", () => {
       contextTokens: null,
       priceInput: seed.input,
       priceOutput: seed.output,
+      priceCachedInput: null,
       priceSource: "seed",
     });
     expect(models[1]).toMatchObject({ modelId: "deepseek-reasoner", priceSource: "seed" });

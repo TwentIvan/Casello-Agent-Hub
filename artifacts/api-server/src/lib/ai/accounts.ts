@@ -16,7 +16,8 @@ function toPrice(v: number | null | undefined): string | null {
 /**
  * Collega i modelli degli account alle offerte del catalogo per (provider dell'account, id normalizzato come
  * `normalizeModelId`, cioè come `provider_model_id`): `offer_id` (null senza abbinamento), `supports_tools` e,
- * se il prezzo non è manuale e l'offerta li ha entrambi, i prezzi con `price_source = 'catalog'`. Esclusi gli
+ * se il prezzo non è manuale e l'offerta li ha entrambi, i prezzi (anche quello dei token in cache, null se
+ * l'offerta non lo ha) con `price_source = 'catalog'`. Esclusi gli
  * account `custom` e di sistema; quelli di un provider non gestito si abbinano alle offerte di quel provider.
  * L'id del modello non cambia mai (i provider possono distinguere le maiuscole).
  */
@@ -29,6 +30,7 @@ export async function enrichFromCatalog(executor: Tx | typeof db, opts: { accoun
              o.supports_tools,
              o.price_input_per_mtok,
              o.price_output_per_mtok,
+             o.price_cached_input_per_mtok,
              (o.id IS NOT NULL
                AND m.price_source IS DISTINCT FROM 'manual'
                AND o.price_input_per_mtok IS NOT NULL
@@ -45,6 +47,7 @@ export async function enrichFromCatalog(executor: Tx | typeof db, opts: { accoun
       supports_tools = CASE WHEN x.offer_id IS NULL THEN m.supports_tools ELSE x.supports_tools END,
       price_input_per_mtok = CASE WHEN x.take_price THEN x.price_input_per_mtok ELSE m.price_input_per_mtok END,
       price_output_per_mtok = CASE WHEN x.take_price THEN x.price_output_per_mtok ELSE m.price_output_per_mtok END,
+      price_cached_input_per_mtok = CASE WHEN x.take_price THEN x.price_cached_input_per_mtok ELSE m.price_cached_input_per_mtok END,
       price_source = CASE WHEN x.take_price THEN 'catalog' ELSE m.price_source END,
       updated_at = now()
     FROM matched x
@@ -72,6 +75,7 @@ export async function upsertDiscovered(tx: Tx, accountId: number, models: Discov
           contextTokens: m.contextTokens,
           priceInputPerMtok: toPrice(m.priceInput),
           priceOutputPerMtok: toPrice(m.priceOutput),
+          priceCachedInputPerMtok: toPrice(m.priceCachedInput),
           priceSource: m.priceSource,
           discovered: true,
         })),
@@ -82,6 +86,7 @@ export async function upsertDiscovered(tx: Tx, accountId: number, models: Discov
           contextTokens: sql`excluded.context_tokens`,
           priceInputPerMtok: sql`CASE WHEN ${manual} THEN ${aiModelsTable.priceInputPerMtok} ELSE excluded.price_input_per_mtok END`,
           priceOutputPerMtok: sql`CASE WHEN ${manual} THEN ${aiModelsTable.priceOutputPerMtok} ELSE excluded.price_output_per_mtok END`,
+          priceCachedInputPerMtok: sql`CASE WHEN ${manual} THEN ${aiModelsTable.priceCachedInputPerMtok} ELSE excluded.price_cached_input_per_mtok END`,
           priceSource: sql`CASE WHEN ${manual} THEN ${aiModelsTable.priceSource} ELSE excluded.price_source END`,
           updatedAt: new Date(),
         },

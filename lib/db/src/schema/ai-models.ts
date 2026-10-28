@@ -18,6 +18,8 @@ export const aiModelsTable = pgTable(
     contextTokens: integer("context_tokens"),
     priceInputPerMtok: numeric("price_input_per_mtok", { precision: 12, scale: 6 }),
     priceOutputPerMtok: numeric("price_output_per_mtok", { precision: 12, scale: 6 }),
+    // Prezzo dei token di prompt letti dalla cache; null = non noto (si usa quello pieno)
+    priceCachedInputPerMtok: numeric("price_cached_input_per_mtok", { precision: 12, scale: 6 }),
     // provider | manual | seed | catalog
     priceSource: text("price_source"),
     hidden: boolean("hidden").notNull().default(false),

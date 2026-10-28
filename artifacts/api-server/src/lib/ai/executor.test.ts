@@ -64,6 +64,7 @@ interface AccountOpts {
   allowPrivateNetwork?: boolean;
   priceIn?: string | null;
   priceOut?: string | null;
+  priceCachedIn?: string | null;
   contextTokens?: number | null;
 }
 
@@ -90,6 +91,7 @@ async function seed(o: AccountOpts = {}): Promise<{ accountId: number; aiModelId
       contextTokens: o.contextTokens ?? null,
       priceInputPerMtok: o.priceIn === undefined ? "0.27" : o.priceIn,
       priceOutputPerMtok: o.priceOut === undefined ? "1.10" : o.priceOut,
+      priceCachedInputPerMtok: o.priceCachedIn ?? null,
     })
     .returning();
   return { accountId: acc!.id, aiModelId: model!.id };
@@ -135,6 +137,11 @@ describe("computeCost", () => {
     expect(computeCost(1, 0, 0.123456789, 0)).toBe(0.00000012);
     expect(computeCost(3, 7, 0.1, 0.2)).toBe(0.0000017);
   });
+  it("i token in cache costano il prezzo di cache; senza prezzo di cache quello pieno", () => {
+    expect(computeCost(1_000_000, 0, 1, 2, 600_000, 0.1)).toBe(0.46);
+    expect(computeCost(1_000_000, 0, 1, 2, 600_000, null)).toBe(1);
+    expect(computeCost(10, 10, null, 2)).toBeNull();
+  });
 });
 
 describe("executorKindFor", () => {
@@ -160,10 +167,16 @@ describe("resolveModel", () => {
       modelId: "fake-model",
       priceInput: 0.27,
       priceOutput: 1.1,
+      priceCachedInput: null,
       ownerUserId: alice,
       contextTokens: null,
     });
     expect(r.apiKey).toBe(KEY);
+  });
+
+  it("restituisce il prezzo dei token in cache, numerico", async () => {
+    const { aiModelId } = await seed({ priceCachedIn: "0.028" });
+    expect((await resolveModel(aiModelId, { userId: alice, mustOwn: true })).priceCachedInput).toBe(0.028);
   });
 
   it("restituisce contextTokens della riga di ai_models, null se assente", async () => {
@@ -333,6 +346,7 @@ describe("modelChat", () => {
       toolCalls: [{ id: "call_1", name: "get_user", arguments: '{"id":"7"}' }],
       promptTokens: 1000,
       completionTokens: 500,
+      cachedPromptTokens: 0,
       costUsd: 0.00082,
     });
     const req = fake.requests.at(-1)!;
@@ -349,10 +363,16 @@ describe("modelChat", () => {
     expect(logged).not.toContain(fake.baseUrl);
   });
 
+  it("token in cache dal provider: riportati e pagati al prezzo di cache", async () => {
+    fake.chatReply = { content: "ok", toolCalls: [], usage: { prompt_tokens: 1_000_000, completion_tokens: 0, cached_tokens: 600_000 } };
+    const out = await modelChat(await resolved({ priceIn: "1", priceOut: "2", priceCachedIn: "0.1" }), { messages: MESSAGES, caller: "test" });
+    expect(out).toMatchObject({ promptTokens: 1_000_000, cachedPromptTokens: 600_000, costUsd: 0.46 });
+  });
+
   it("usage assente → token 0 e costo null", async () => {
     fake.chatReply = { content: "ok", toolCalls: [], usage: null };
     const out = await modelChat(await resolved(), { messages: MESSAGES, caller: "test" });
-    expect(out).toMatchObject({ content: "ok", promptTokens: 0, completionTokens: 0, costUsd: null });
+    expect(out).toMatchObject({ content: "ok", promptTokens: 0, completionTokens: 0, cachedPromptTokens: 0, costUsd: null });
   });
 
   it("prezzi mancanti → costo null", async () => {

@@ -327,6 +327,9 @@ export default function AnalysisDetailPage() {
             <dt className="text-muted-foreground">Token</dt>
             <dd className="tabular-nums">
               {a.tokensUsed.toLocaleString("it-IT")} / {a.maxTokens.toLocaleString("it-IT")}
+              {a.cachedTokens > 0 && (
+                <span className="text-muted-foreground"> (di cui {a.cachedTokens.toLocaleString("it-IT")} in cache)</span>
+              )}
             </dd>
           </div>
           <div>

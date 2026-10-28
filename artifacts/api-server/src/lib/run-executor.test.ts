@@ -683,6 +683,31 @@ describe("run sugli account AI (chi configura paga)", () => {
     expect(Number(run.costUsd)).toBeCloseTo(0.004, 8);
   });
 
+  it("salva i token in cache, sommati attraverso la pausa e la ripresa", async () => {
+    const id = await seedRun(DELETE_ITEM);
+    await linkAgentToAccount(id, { input: "1", output: "2" });
+    const replies = [
+      { ...fakeToolCall("delete_item", { id: "42" }), usage: { prompt_tokens: 1000, completion_tokens: 500, cached_tokens: 800 } },
+      { content: "Eliminato", toolCalls: [], usage: { prompt_tokens: 1000, completion_tokens: 500, cached_tokens: 900 } },
+    ];
+    fake.chatReply = () => replies.shift()!;
+
+    await startRun(id, { userToken: "t" });
+    expect((await getRun(id)).cachedTokens).toBe(800);
+    await resumeRun(id, "approved", { userToken: "t" });
+    const run = await getRun(id);
+    expect(run.status).toBe("succeeded");
+    expect(run.promptTokens).toBe(2000);
+    expect(run.cachedTokens).toBe(1700);
+  });
+
+  it("senza token in cache: cached_tokens 0", async () => {
+    const id = await seedRun(GET_ITEM);
+    await linkAgentToAccount(id, { input: "1", output: "2" });
+    await startRun(id);
+    expect((await getRun(id)).cachedTokens).toBe(0);
+  });
+
   it("prezzi non noti: cost_usd null", async () => {
     const id = await seedRun(GET_ITEM);
     await linkAgentToAccount(id, { input: null, output: null });

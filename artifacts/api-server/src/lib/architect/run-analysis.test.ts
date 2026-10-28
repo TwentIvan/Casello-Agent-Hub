@@ -191,6 +191,8 @@ let llm429Remaining: number;
 let llm429RetryAfter: string | null;
 let llm429RetryDelay: string | null;
 let llmPromptTokens: number;
+/** Token di prompt riportati come letti dalla cache (0 = campo assente). */
+let llmCachedTokens: number;
 /** Fasi in cui il modello legge finché non riceve il sollecito del budget della fase. */
 let readUntilNudge: Set<PhaseName>;
 let invalidPhases: Set<PhaseName>;
@@ -207,7 +209,11 @@ function toolCall(name: string, args: Record<string, unknown>, id: string) {
         },
       },
     ],
-    usage: { prompt_tokens: llmPromptTokens, completion_tokens: 20 },
+    usage: {
+      prompt_tokens: llmPromptTokens,
+      completion_tokens: 20,
+      ...(llmCachedTokens > 0 ? { prompt_tokens_details: { cached_tokens: llmCachedTokens } } : {}),
+    },
   };
 }
 
@@ -296,6 +302,7 @@ beforeEach(async () => {
   llm429RetryAfter = null;
   llm429RetryDelay = null;
   llmPromptTokens = 100;
+  llmCachedTokens = 0;
   readUntilNudge = new Set();
   invalidPhases = new Set();
   resultOverrides = {};
@@ -738,6 +745,22 @@ describe("startAnalysis sugli account AI", () => {
     expect(Number(a.costUsd)).toBeCloseTo(0.00168, 8);
     expect(llmRequests[0].model).toBe("modello-architetto");
     expect(llmAuth.every((h) => h === `Bearer ${ACCOUNT_KEY}`)).toBe(true);
+  });
+
+  it("token in cache: pesati al 10% nel budget, salvati a parte e pagati al prezzo di cache", async () => {
+    const model = await ownModel();
+    await db.update(aiModelsTable).set({ priceCachedInputPerMtok: "0.1" }).where(eq(aiModelsTable.id, model.id));
+    llmCachedTokens = 53;
+    const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
+    await startAnalysis(id, { zip: testZip() });
+
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("completed");
+    // 12 × (47 + 20 + 5,3) = 867,6 → arrotondato
+    expect(a.tokensUsed).toBe(868);
+    expect(a.cachedTokens).toBe(12 * 53);
+    // 12 × (53 × 0,1 + 47 × 1 + 20 × 2) / 1e6 = 0,0011076 (la colonna tiene 6 decimali); a prezzo pieno 0,00168
+    expect(a.costUsd).toBe("0.001108");
   });
 
   it("prezzi non noti: completata con cost_usd null", async () => {

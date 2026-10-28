@@ -3,7 +3,8 @@ import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { APIConnectionTimeoutError } from "openai";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
-import { aiGateway } from "./ai-gateway";
+import type { ChatCompletion } from "openai/resources/chat/completions";
+import { aiGateway, readUsage } from "./ai-gateway";
 
 const TOOLS: ChatCompletionTool[] = [
   {
@@ -193,7 +194,7 @@ describe("aiGateway.chat", () => {
       .mockResolvedValue({ content: "ok", modelKey: "m", promptTokens: 3, completionTokens: 2, durationMs: 1 });
     const res = await aiGateway.chat({ modelKey: "m", messages: [{ role: "user", content: "x" }] });
     expect(spy).toHaveBeenCalledOnce();
-    expect(res).toEqual({ content: "ok", toolCalls: [], promptTokens: 3, completionTokens: 2 });
+    expect(res).toEqual({ content: "ok", toolCalls: [], promptTokens: 3, completionTokens: 2, cachedPromptTokens: 0 });
   });
 
   it("senza proxy rifiuta messaggi non testuali", async () => {
@@ -204,5 +205,31 @@ describe("aiGateway.chat", () => {
         messages: [{ role: "tool", tool_call_id: "c", content: "r" }],
       }),
     ).rejects.toThrow(/messaggi/);
+  });
+});
+
+describe("readUsage", () => {
+  const response = (usage: Record<string, unknown> | undefined) => ({ choices: [], usage }) as unknown as ChatCompletion;
+
+  it("token in cache da prompt_tokens_details (OpenAI, OpenRouter, Gemini)", () => {
+    const u = readUsage(response({ prompt_tokens: 1_000, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 800 } }));
+    expect(u).toEqual({ promptTokens: 1_000, completionTokens: 10, cachedTokens: 800 });
+  });
+
+  it("token in cache nella forma DeepSeek (prompt_cache_hit_tokens)", () => {
+    const u = readUsage(response({ prompt_tokens: 1_000, completion_tokens: 10, prompt_cache_hit_tokens: 700, prompt_cache_miss_tokens: 300 }));
+    expect(u.cachedTokens).toBe(700);
+  });
+
+  it("senza nessuna delle due forme → 0", () => {
+    expect(readUsage(response({ prompt_tokens: 1_000, completion_tokens: 10 })).cachedTokens).toBe(0);
+    expect(readUsage(response(undefined)).cachedTokens).toBe(0);
+  });
+
+  it("con entrambe prevale prompt_tokens_details; mai oltre i token di prompt", () => {
+    const both = readUsage(response({ prompt_tokens: 1_000, prompt_tokens_details: { cached_tokens: 600 }, prompt_cache_hit_tokens: 700 }));
+    expect(both.cachedTokens).toBe(600);
+    expect(readUsage(response({ prompt_tokens: 100, prompt_cache_hit_tokens: 700 })).cachedTokens).toBe(100);
+    expect(readUsage(response({ prompt_tokens: 100, prompt_tokens_details: { cached_tokens: -5 } })).cachedTokens).toBe(0);
   });
 });

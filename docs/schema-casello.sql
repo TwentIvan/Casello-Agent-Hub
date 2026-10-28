@@ -351,3 +351,9 @@ CREATE TABLE "catalog_runs" (
 CREATE UNIQUE INDEX "catalog_runs_one_running" ON "catalog_runs" USING btree ("status") WHERE "catalog_runs"."status" = 'running';
 
 ALTER TABLE "ai_models" ADD CONSTRAINT "ai_models_offer_id_model_offers_id_fk" FOREIGN KEY ("offer_id") REFERENCES "public"."model_offers"("id") ON DELETE set null ON UPDATE no action;
+
+-- Token in cache: letti dall'uso del provider, pesati al 10% nel budget dell'architetto e pagati al prezzo di cache
+ALTER TABLE "analyses" ADD COLUMN "cached_tokens" integer DEFAULT 0 NOT NULL;
+ALTER TABLE "runs" ADD COLUMN "cached_tokens" integer DEFAULT 0 NOT NULL;
+ALTER TABLE "ai_models" ADD COLUMN "price_cached_input_per_mtok" numeric(12, 6);
+ALTER TABLE "model_offers" ADD COLUMN "price_cached_input_per_mtok" numeric(12, 6);

@@ -152,17 +152,20 @@ function runTool(ctx: RunContext, tool: CatalogTool, args: Record<string, unknow
 interface SegmentUsage {
   promptTokens: number;
   completionTokens: number;
+  /** Token di prompt letti dalla cache (già compresi in `promptTokens`) */
+  cachedTokens: number;
   costUsd: number;
   costPartial: boolean;
 }
 
 function newUsage(): SegmentUsage {
-  return { promptTokens: 0, completionTokens: 0, costUsd: 0, costPartial: false };
+  return { promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, costPartial: false };
 }
 
 function addUsage(usage: SegmentUsage, reply: ChatResult & { costUsd?: number | null }): void {
   usage.promptTokens += reply.promptTokens;
   usage.completionTokens += reply.completionTokens;
+  usage.cachedTokens += reply.cachedPromptTokens;
   const tokens = reply.promptTokens + reply.completionTokens;
   if (reply.costUsd == null) {
     if (tokens > 0) usage.costPartial = true;
@@ -281,6 +284,7 @@ async function driveLoop(
   const totals = {
     promptTokens: (ctx.run.promptTokens ?? 0) + usage.promptTokens,
     completionTokens: (ctx.run.completionTokens ?? 0) + usage.completionTokens,
+    cachedTokens: ctx.run.cachedTokens + usage.cachedTokens,
     costUsd: totalCost(ctx.run, usage),
     durationMs: (ctx.run.durationMs ?? 0) + (Date.now() - segmentStart),
   };
@@ -361,6 +365,7 @@ async function failRun(
         durationMs: (run.durationMs ?? 0) + (Date.now() - segmentStart),
         promptTokens: (run.promptTokens ?? 0) + usage.promptTokens,
         completionTokens: (run.completionTokens ?? 0) + usage.completionTokens,
+        cachedTokens: run.cachedTokens + usage.cachedTokens,
         costUsd: totalCost(run, usage),
         finishedAt: new Date(),
       })

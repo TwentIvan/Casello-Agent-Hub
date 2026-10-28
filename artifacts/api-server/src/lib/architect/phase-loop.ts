@@ -89,9 +89,23 @@ const MAX_LOG_ARG_CHARS = 120;
  */
 export const HISTORY_TOOL_OUTPUT_BUDGET = 24_000;
 
+/**
+ * Peso dei token di prompt letti dalla cache del provider nel budget: costano circa un decimo e non
+ * occupano lavoro nuovo del modello, quindi contano al 10%.
+ */
+export const CACHE_WEIGHT = 0.1;
+
+/** Token di una risposta pesati per il budget: quelli in cache contano `CACHE_WEIGHT`. */
+export function effectiveTokens(r: Pick<ChatResult, "promptTokens" | "completionTokens" | "cachedPromptTokens">): number {
+  return r.promptTokens - r.cachedPromptTokens + r.completionTokens + r.cachedPromptTokens * CACHE_WEIGHT;
+}
+
 /** Budget dell'analisi, condiviso tra le fasi e aggiornato dal ciclo. */
 export interface PhaseBudget {
+  /** Token pesati (vedi `effectiveTokens`); può avere decimali, nel DB si scrive arrotondato */
   tokensUsed: number;
+  /** Token di prompt letti dalla cache, per intero */
+  cachedTokens: number;
   maxTokens: number;
   /** Istante (ms, stesso orologio di `now`) oltre il quale non parte più nessuna chiamata al modello */
   deadline: number;
@@ -684,7 +698,7 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
       return fail(`fase ${phase}: superato il limite di ${PHASE_MAX_ROUNDS} giri senza una consegna valida`);
     }
     if (budget.tokensUsed >= budget.maxTokens) {
-      return fail(`fase ${phase}: budget di token dell'analisi esaurito (${budget.tokensUsed}/${budget.maxTokens})`);
+      return fail(`fase ${phase}: budget di token dell'analisi esaurito (${Math.round(budget.tokensUsed)}/${budget.maxTokens})`);
     }
     if (now() >= budget.deadline) {
       return fail(`fase ${phase}: tempo massimo dell'analisi scaduto`);
@@ -706,9 +720,10 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
       return fail(`fase ${phase}: errore nella chiamata al modello: ${err instanceof Error ? err.message : String(err)}`);
     }
     // Si contano solo le chiamate riuscite: di quelle fallite o scadute il provider non riporta
-    // l'uso, quindi i loro token (se ce ne sono) restano fuori dal budget
-    const used = reply.promptTokens + reply.completionTokens;
+    // l'uso, quindi i loro token (se ce ne sono) restano fuori dal budget. Quelli in cache pesano al 10%
+    const used = effectiveTokens(reply);
     budget.tokensUsed += used;
+    budget.cachedTokens += reply.cachedPromptTokens;
     phaseTokens += used;
     lastRoundInvalidSubmit = false;
 

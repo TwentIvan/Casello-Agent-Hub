@@ -7,6 +7,8 @@ import type {
 import { afterEach, describe, expect, it } from "vitest";
 import type { ChatResult } from "../ai-gateway";
 import {
+  CACHE_WEIGHT,
+  effectiveTokens,
   HISTORY_TOOL_OUTPUT_BUDGET,
   MAX_CORRECTIONS,
   MAX_TOOL_OUTPUT_CHARS,
@@ -63,7 +65,7 @@ function call(name: string, args: unknown): ChatResult["toolCalls"][number] {
   return { id: `c${callSeq}`, name, arguments: typeof args === "string" ? args : JSON.stringify(args) };
 }
 function reply(toolCalls: ChatResult["toolCalls"], content: string | null = null, tokens = 10): ChatResult {
-  return { content, toolCalls, promptTokens: tokens, completionTokens: 0 };
+  return { content, toolCalls, promptTokens: tokens, completionTokens: 0, cachedPromptTokens: 0 };
 }
 
 /** Chat finta a copione: ogni chiamata usa la risposta successiva (l'ultima si ripete). */
@@ -77,7 +79,7 @@ function scripted(replies: ChatResult[]) {
 }
 
 function budget(over: Partial<PhaseBudget> = {}): PhaseBudget {
-  return { tokensUsed: 0, maxTokens: 400_000, deadline: 1_000_000, ...over };
+  return { tokensUsed: 0, cachedTokens: 0, maxTokens: 400_000, deadline: 1_000_000, ...over };
 }
 
 function toolMessages(messages: ChatCompletionMessageParam[]): string[] {
@@ -376,6 +378,43 @@ describe("runPhase", () => {
       expect(isNudge(msgs.at(-1)!)).toBe(true);
       expect(nudges(msgs)).toBe(1);
     });
+  });
+
+  it("il budget pesa i token in cache al 10%", async () => {
+    const cached: ChatResult = {
+      content: null,
+      toolCalls: [call("submit_result", { result: validMap })],
+      promptTokens: 10_000,
+      completionTokens: 100,
+      cachedPromptTokens: 9_000,
+    };
+    const s = scripted([cached]);
+    const { input } = base(s.chat);
+    expect((await runPhase(input)).ok).toBe(true);
+    expect(CACHE_WEIGHT).toBe(0.1);
+    expect(input.budget.tokensUsed).toBe(1_000 + 100 + 900);
+    expect(input.budget.cachedTokens).toBe(9_000);
+  });
+
+  it("effectiveTokens: senza cache è la somma di prompt e completion", () => {
+    expect(effectiveTokens({ promptTokens: 300, completionTokens: 20, cachedPromptTokens: 0 })).toBe(320);
+    expect(effectiveTokens({ promptTokens: 10_000, completionTokens: 100, cachedPromptTokens: 9_000 })).toBe(2_000);
+  });
+
+  it("la quota della fase conta i token in cache al 10%: niente sollecito", async () => {
+    // 2 giri da 5 000 token di prompt, quasi tutti in cache: effettivi 2 × (500 + 450) = 1 900 < 80% di 3 000
+    const read: ChatResult = {
+      content: null,
+      toolCalls: [call("read_file", { path: "src/a.ts" })],
+      promptTokens: 5_000,
+      completionTokens: 0,
+      cachedPromptTokens: 4_500,
+    };
+    const s = scripted([read, read, reply([call("submit_result", { result: validMap })], null, 0)]);
+    const { input, logs } = base(s.chat, { phaseQuota: 3_000 });
+    expect((await runPhase(input)).ok).toBe(true);
+    expect(logs.filter((l) => l.includes("budget della fase"))).toHaveLength(0);
+    expect(input.budget.tokensUsed).toBe(1_900);
   });
 
   it("token oltre il budget: fallisce prima della chiamata successiva", async () => {

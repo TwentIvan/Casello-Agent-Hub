@@ -208,7 +208,8 @@ class ProgressWriter {
     const snapshot = {
       log: this.log,
       phase: this.phase,
-      tokensUsed: this.budget.tokensUsed,
+      tokensUsed: Math.round(this.budget.tokensUsed),
+      cachedTokens: this.budget.cachedTokens,
       costUsd: this.cost.value(),
       ...extra,
     };
@@ -486,7 +487,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
   }
   if (!analysis) return;
 
-  const budget: PhaseBudget = { tokensUsed: 0, maxTokens: analysis.maxTokens, deadline: now() + maxMs };
+  const budget: PhaseBudget = { tokensUsed: 0, cachedTokens: 0, maxTokens: analysis.maxTokens, deadline: now() + maxMs };
   const cost = new CostTracker();
   const progress = new ProgressWriter(analysisId, analysis.log ?? [], budget, cost);
   const log = (message: string) => progress.add(message);

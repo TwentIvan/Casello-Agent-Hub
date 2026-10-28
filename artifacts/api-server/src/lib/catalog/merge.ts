@@ -16,6 +16,8 @@ export interface OfferRecord {
   canonicalKey: string;
   priceInput: number | null;
   priceOutput: number | null;
+  /** Prezzo dei token in cache: dalla stessa voce di `priceInput`/`priceOutput` (fonte `sources.price`). */
+  priceCachedInput: number | null;
   contextTokens: number | null;
   supportsTools: boolean | null;
   status: "available" | "deprecated" | "retired";
@@ -155,6 +157,7 @@ export function mergeUniversal(
       canonicalKey: isGenericKey(key) ? `${g.provider}/${key}` : key,
       priceInput: priced?.priceInput ?? null,
       priceOutput: priced?.priceOutput ?? null,
+      priceCachedInput: priced?.priceCachedInput ?? null,
       contextTokens: ctx?.contextTokens ?? null,
       supportsTools: tools?.supportsTools ?? null,
       status: statusFor(deprecationDate, now),
@@ -226,6 +229,7 @@ export function keepFailedOfferFields(
     if (kept("price")) {
       out.priceInput = old.priceInput;
       out.priceOutput = old.priceOutput;
+      out.priceCachedInput = old.priceCachedInput;
     }
     if (kept("contextTokens")) out.contextTokens = old.contextTokens;
     if (kept("supportsTools")) out.supportsTools = old.supportsTools;

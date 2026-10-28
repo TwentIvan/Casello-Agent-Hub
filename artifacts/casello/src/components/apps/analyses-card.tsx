@@ -197,7 +197,7 @@ export function AnalysesCard({ app }: { app: App }) {
           {aiModelId !== null && tokensValid && estimate.data && (
             <span className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
               {estimate.data.typicalUsd != null && estimate.data.maxUsd != null
-                ? `stima: circa ${formatUsd(estimate.data.typicalUsd)} (massimo ${formatUsd(estimate.data.maxUsd)})`
+                ? `stima senza cache: circa ${formatUsd(estimate.data.typicalUsd)} (massimo ${formatUsd(estimate.data.maxUsd)}); con provider che la supportano il costo reale è inferiore`
                 : "costo non stimabile: prezzi del modello sconosciuti"}
             </span>
           )}

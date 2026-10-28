@@ -6,7 +6,7 @@ import type { SourceEntry } from "./sources";
 function entry(over: Partial<SourceEntry>): SourceEntry {
   return {
     source: "litellm", key: "x", litellmProvider: null, name: null, releasedAt: null, priceInput: null,
-    priceOutput: null, contextTokens: null, supportsTools: null, deprecationDate: null, mode: "chat",
+    priceOutput: null, priceCachedInput: null, contextTokens: null, supportsTools: null, deprecationDate: null, mode: "chat",
     supportsVision: null, supportsReasoning: null, ...over,
   };
 }

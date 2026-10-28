@@ -3,7 +3,8 @@ import { LITELLM_PRICES_URL, OPENROUTER_MODELS_URL } from "../src/lib/catalog/so
 /**
  * Fonti pubbliche finte per i test del catalogo: risposte di OpenRouter (`/api/v1/models`) e del
  * listino LiteLLM nelle forme reali. I prezzi di `deepseek-v4-pro` differiscono tra le due fonti, per
- * provare la precedenza.
+ * provare la precedenza. Alcune voci hanno il prezzo dei token in cache (`input_cache_read` di OpenRouter,
+ * `cache_read_input_token_cost` di LiteLLM).
  */
 
 export const OPENROUTER_FIXTURE = {
@@ -13,7 +14,7 @@ export const OPENROUTER_FIXTURE = {
       name: "DeepSeek: DeepSeek V3",
       created: 1735084800,
       context_length: 131072,
-      pricing: { prompt: "0.00000027", completion: "0.0000011" },
+      pricing: { prompt: "0.00000027", completion: "0.0000011", input_cache_read: "0.00000007" },
       architecture: { input_modalities: ["text"] },
       supported_parameters: ["tools", "temperature", "max_tokens"],
     },
@@ -76,6 +77,7 @@ export const LITELLM_FIXTURE: Record<string, unknown> = {
     mode: "chat",
     input_cost_per_token: 0.00000145,
     output_cost_per_token: 0.00000290,
+    cache_read_input_token_cost: 0.000000145,
     max_input_tokens: 1000000,
     max_output_tokens: 384000,
     supports_function_calling: true,
@@ -94,6 +96,7 @@ export const LITELLM_FIXTURE: Record<string, unknown> = {
     mode: "chat",
     input_cost_per_token: 0.0000003,
     output_cost_per_token: 0.0000025,
+    cache_read_input_token_cost: 0.00000003,
     max_input_tokens: 1048576,
     supports_function_calling: true,
   },

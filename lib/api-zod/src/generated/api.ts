@@ -607,6 +607,7 @@ export const ListRunsResponseItem = zod.object({
 }),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
+  "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
   "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
 })
 export const ListRunsResponse = zod.array(ListRunsResponseItem)
@@ -646,6 +647,7 @@ export const TriggerRunResponse = zod.object({
 }),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
+  "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
   "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
 })
 
@@ -675,6 +677,7 @@ export const GetRunResponse = zod.object({
 }),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
+  "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
   "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
 })
 
@@ -736,6 +739,7 @@ export const ResumeRunResponse = zod.object({
 }),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
+  "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
   "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
 })
 
@@ -759,7 +763,8 @@ export const ListAnalysesResponseItem = zod.object({
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
-  "tokensUsed": zod.number(),
+  "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
+  "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
@@ -801,7 +806,8 @@ export const StartAnalysisResponse = zod.object({
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
-  "tokensUsed": zod.number(),
+  "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
+  "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
@@ -842,7 +848,8 @@ export const StartZipAnalysisResponse = zod.object({
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
-  "tokensUsed": zod.number(),
+  "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
+  "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
@@ -870,7 +877,8 @@ export const GetAnalysisResponse = zod.object({
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
-  "tokensUsed": zod.number(),
+  "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
+  "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),

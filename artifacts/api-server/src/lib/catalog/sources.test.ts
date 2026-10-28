@@ -25,6 +25,7 @@ describe("fetchOpenRouterSource", () => {
       releasedAt: new Date(1735084800 * 1000),
       priceInput: 0.27,
       priceOutput: 1.1,
+      priceCachedInput: 0.07,
       contextTokens: 131072,
       supportsTools: true,
       deprecationDate: null,
@@ -33,6 +34,8 @@ describe("fetchOpenRouterSource", () => {
       supportsReasoning: false,
     });
     expect(entries.find((e) => e.key === "google/gemini-2.0-flash-exp:free")?.supportsTools).toBe(false);
+    // Senza input_cache_read il prezzo di cache non è noto
+    expect(entries.find((e) => e.key === "mistralai/mistral-small")?.priceCachedInput).toBeNull();
   });
 
   it("created in secondi Unix → releasedAt; non valido → null", async () => {
@@ -129,6 +132,7 @@ describe("fetchLiteLlmSource", () => {
       releasedAt: null,
       priceInput: 1.45,
       priceOutput: 2.9,
+      priceCachedInput: 0.145,
       contextTokens: 1000000,
       supportsTools: true,
       deprecationDate: null,
@@ -136,6 +140,7 @@ describe("fetchLiteLlmSource", () => {
       supportsVision: null,
       supportsReasoning: null,
     });
+    expect(entries.find((e) => e.key === "groq/llama-3.3-70b")?.priceCachedInput).toBeNull();
   });
 
   it("prezzo non numerico → null ma voce presente; voci non oggetto saltate", async () => {

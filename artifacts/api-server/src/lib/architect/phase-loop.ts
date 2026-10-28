@@ -22,15 +22,15 @@ export const MAX_CORRECTIONS = 2;
 /**
  * Quota del tetto di token dell'analisi assegnata a ogni fase. È una quota morbida: serve solo a
  * sollecitare la consegna; i token non usati da una fase restano alle successive e l'unico limite
- * rigido è il tetto complessivo dell'analisi. La somma (0,88) resta volutamente sotto 1: i giri di
+ * rigido è il tetto complessivo dell'analisi. La somma (0,84) resta volutamente sotto 1: i giri di
  * margine dopo il sollecito e le correzioni consumano altri token, e così l'ultima fase non trova il
  * tetto complessivo già esaurito.
  */
 export const PHASE_TOKEN_SHARES: Record<PhaseName, number> = {
-  map: 0.22,
+  map: 0.1,
   capabilities: 0.13,
-  catalog: 0.18,
-  agents: 0.13,
+  catalog: 0.22,
+  agents: 0.17,
   completion: 0.13,
   evolution: 0.09,
 };

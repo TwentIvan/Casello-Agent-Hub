@@ -250,12 +250,12 @@ describe("runPhase", () => {
       // somma ≤ 0,9: i giri di margine e le correzioni consumano token oltre la quota
       const sum = Object.values(PHASE_TOKEN_SHARES).reduce((a, b) => a + b, 0);
       expect(sum).toBeLessThanOrEqual(0.9);
-      expect(sum).toBeCloseTo(0.88, 10);
+      expect(sum).toBeCloseTo(0.84, 10);
       expect(PHASE_TOKEN_SHARES).toEqual({
-        map: 0.22,
+        map: 0.1,
         capabilities: 0.13,
-        catalog: 0.18,
-        agents: 0.13,
+        catalog: 0.22,
+        agents: 0.17,
         completion: 0.13,
         evolution: 0.09,
       });

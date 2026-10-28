@@ -306,6 +306,18 @@ export class SourceTree {
     return this.noise.has(path);
   }
 
+  /** Tutti i file non rumorosi, in ordine di percorso, col numero di righe (per la mappa del repository). */
+  fileLines(): { path: string; lines: number }[] {
+    return this.sortedPaths
+      .filter((path) => !this.noise.has(path))
+      .map((path) => {
+        const text = this.files.get(path)!;
+        if (text === "") return { path, lines: 0 };
+        const parts = text.split("\n").length;
+        return { path, lines: text.endsWith("\n") ? parts - 1 : parts };
+      });
+  }
+
   /** Quanti file rumorosi `list(dir, depth)` ha nascosto (stessa profondità). */
   countHidden(dir: string, depth = 1): number {
     const d = normalizeQueryPath(dir);

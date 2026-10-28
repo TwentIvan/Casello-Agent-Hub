@@ -422,7 +422,10 @@ describe("startAnalysis", () => {
     expect(a.status).toBe("completed");
     expect(a.finishedAt).not.toBeNull();
     expect(a.sources).toEqual({ code: "zip", openapi: true, description: true });
-    expect(a.architectureMap).toEqual(RESULTS.map);
+    // La mappa calcolata da Casello si affianca all'esito della fase map
+    expect(a.architectureMap).toEqual({ ...(RESULTS.map as object), repoMap: expect.stringContaining("src/") });
+    // ...ed è nel messaggio utente di ogni fase
+    expect(llmRequests.every((r) => String(r.messages[1].content).includes("Mappa del repository calcolata da Casello"))).toBe(true);
     // 12 chiamate da 120 token
     expect(a.tokensUsed).toBe(12 * 120);
     expect(llmRequests).toHaveLength(12);
@@ -497,6 +500,18 @@ describe("startAnalysis", () => {
     expect(chapters).toEqual(new Set(["tool", "endpoint", "agent", "skill"]));
     // Nessuna chiamata dopo la fase fallita
     expect(llmRequests.some((r) => phaseOf(r) === "evolution")).toBe(false);
+  });
+
+  it("fase map non riuscita: architecture_map contiene comunque la mappa calcolata", async () => {
+    invalidPhases.add("map");
+    const id = await createAnalysis();
+    await startAnalysis(id, { zip: testZip() });
+
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.architectureMap).toEqual({ repoMap: expect.stringContaining("src/") });
+    // Il contenuto del repository non finisce nel log
+    expect(JSON.stringify(a.log)).not.toContain("Progetto");
   });
 
   it("GitHub 401: failed con un messaggio in italiano che non contiene il token", async () => {
@@ -641,9 +656,9 @@ describe("startAnalysis", () => {
   }, 20_000);
 
   it("ogni fase riceve la sua quota (share × maxTokens): il sollecito arriva all'80% della quota", async () => {
-    // 5 000 token per chiamata, tetto 100 000: map ha 22 000 (sollecito a 17 600, dopo 4 chiamate),
-    // capabilities ne ha 13 000 (sollecito a 10 400, dopo 3 chiamate); con quote uguali (1/6 → 13 333,
-    // sollecito a 10 667) map ne farebbe 3
+    // 5 000 token per chiamata, tetto 100 000: map ha 10 000 (sollecito a 8 000, dopo 2 chiamate),
+    // capabilities ne ha 13 000 (sollecito a 10 400, dopo 3 chiamate); con quote uguali (1/6 → 16 667,
+    // sollecito a 13 333) map ne farebbe 4
     llmPromptTokens = 4_980;
     readUntilNudge = new Set(["map", "capabilities"]);
     const id = await createAnalysis(appId, { maxTokens: 100_000 });
@@ -652,11 +667,11 @@ describe("startAnalysis", () => {
     expect(a.error).toBeNull();
     expect(a.status).toBe("completed");
     const perPhase = (p: PhaseName) => llmRequests.filter((r) => phaseOf(r) === p).length;
-    expect(perPhase("map")).toBe(5);
+    expect(perPhase("map")).toBe(3);
     expect(perPhase("capabilities")).toBe(4);
     expect(perPhase("catalog")).toBe(2);
     // le quote non usate passano alle fasi successive: il tetto vero resta il totale
-    expect(a.tokensUsed).toBe((5 + 4 + 4 * 2) * 5_000);
+    expect(a.tokensUsed).toBe((3 + 4 + 4 * 2) * 5_000);
   });
 
   it("analisi non in coda: nessun effetto", async () => {

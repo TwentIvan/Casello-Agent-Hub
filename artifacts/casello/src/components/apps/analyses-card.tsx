@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useDefaultAiModelId } from "@/components/ai/ai-queries";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { phaseLabel } from "@/components/analysis/payload";
@@ -60,6 +61,7 @@ export function AnalysesCard({ app }: { app: App }) {
   const defaultModelId = useDefaultAiModelId();
   const [chosenModelId, setChosenModelId] = useState<number | null>(null);
   const [maxTokensText, setMaxTokensText] = useState(String(DEFAULT_MAX_TOKENS));
+  const [local, setLocal] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const isZip = app.sourceType === "zip";
@@ -107,7 +109,7 @@ export function AnalysesCard({ app }: { app: App }) {
   const estimate = useEstimateAnalysisCost(estimateParams, {
     query: {
       queryKey: getEstimateAnalysisCostQueryKey(estimateParams),
-      enabled: aiModelId !== null && tokensValid,
+      enabled: !local && aiModelId !== null && tokensValid,
       // Mentre si digita il tetto resta la stima precedente invece di sparire, ma solo per lo stesso modello:
       // cambiando modello la stima del precedente non si mostra
       placeholderData: (previous, previousQuery) => {
@@ -135,6 +137,11 @@ export function AnalysesCard({ app }: { app: App }) {
   };
 
   const start = () => {
+    // Agente locale: nessun modello né file (l'agente legge il proprio clone)
+    if (local) {
+      startAnalysis.mutate({ id: app.id, data: { executor: "local" } });
+      return;
+    }
     if (aiModelId === null || !tokensValid) return;
     if (isZip) {
       if (!file) return;
@@ -144,7 +151,7 @@ export function AnalysesCard({ app }: { app: App }) {
     }
   };
 
-  const canStart = aiModelId !== null && tokensValid && (!isZip || file !== null) && !starting;
+  const canStart = local ? !starting : aiModelId !== null && tokensValid && (!isZip || file !== null) && !starting;
 
   return (
     <Card>
@@ -155,6 +162,16 @@ export function AnalysesCard({ app }: { app: App }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+        <div className="flex items-center gap-3">
+          <Switch id="analysis-local" checked={local} onCheckedChange={setLocal} />
+          <Label htmlFor="analysis-local">Esegui con un agente locale (Claude Code)</Label>
+        </div>
+        {local && (
+          <p className="text-sm text-muted-foreground">
+            Nessun costo API: l'analisi la esegue un agente sul tuo computer.
+          </p>
+        )}
+        {!local && (
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="analysis-model">Modello</Label>
@@ -179,7 +196,8 @@ export function AnalysesCard({ app }: { app: App }) {
             )}
           </div>
         </div>
-        {isZip && (
+        )}
+        {isZip && !local && (
           <div className="space-y-2">
             <Label htmlFor="analysis-zip">Archivio zip del codice</Label>
             <Input
@@ -194,7 +212,7 @@ export function AnalysesCard({ app }: { app: App }) {
         )}
         <div className="flex flex-wrap items-center justify-end gap-3">
           {hasActive && <span className="text-xs text-muted-foreground">Un'analisi è già in corso.</span>}
-          {aiModelId !== null && tokensValid && estimate.data && (
+          {!local && aiModelId !== null && tokensValid && estimate.data && (
             <span className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
               {estimate.data.typicalUsd != null && estimate.data.maxUsd != null
                 ? `stima senza cache: circa ${formatUsd(estimate.data.typicalUsd)} (massimo ${formatUsd(estimate.data.maxUsd)}); con provider che la supportano il costo reale è inferiore`
@@ -226,9 +244,13 @@ export function AnalysesCard({ app }: { app: App }) {
                       {ANALYSIS_STATUS_LABELS[a.status]}
                     </Badge>
                     <span className="font-mono text-xs text-muted-foreground">{a.model}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {a.tokensUsed.toLocaleString("it-IT")} / {a.maxTokens.toLocaleString("it-IT")} token
-                    </span>
+                    {a.executor === "local" ? (
+                      <Badge variant="secondary">agente locale</Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        {a.tokensUsed.toLocaleString("it-IT")} / {a.maxTokens.toLocaleString("it-IT")} token
+                      </span>
+                    )}
                     {formatCost(a.costUsd, a.tokensUsed) && (
                       <span className="text-xs text-muted-foreground tabular-nums">
                         {formatCost(a.costUsd, a.tokensUsed)}

@@ -293,7 +293,11 @@ export default function AnalysisDetailPage() {
     ...(a.sources.openapi ? ["OpenAPI"] : []),
     ...(a.sources.description ? ["descrizione"] : []),
   ].join(", ");
-  const map = isRecord(a.architectureMap) ? a.architectureMap : null;
+  // Dalla partenza l'architectureMap contiene solo { repoMap }: la mappa c'è quando ha riassunto o stack
+  const map =
+    isRecord(a.architectureMap) && (str(a.architectureMap, "summary")?.trim() || strList(a.architectureMap, "stack").length > 0)
+      ? a.architectureMap
+      : null;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">

@@ -331,7 +331,7 @@ function capOutput(text: string, limits: ReadLimits): string {
     : text;
 }
 
-function formatIssues(issues: ZodIssue[]): string[] {
+export function formatIssues(issues: ZodIssue[]): string[] {
   const lines = issues.slice(0, MAX_ISSUES).map((i) => {
     const where = i.path.length ? i.path.join(".") : "(esito)";
     return sliceChars(`${where}: ${i.message}`, MAX_ISSUE_CHARS);

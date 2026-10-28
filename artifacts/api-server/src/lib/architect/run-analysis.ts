@@ -14,12 +14,7 @@ import { APIConnectionError, APIConnectionTimeoutError, APIError } from "openai"
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
 import {
   db,
-  agentSkillsTable,
-  agentToolsTable,
-  agentsTable,
   analysesTable,
-  analysisItemsTable,
-  appToolsTable,
   appsTable,
   type Analysis,
   type AnalysisLogEntry,
@@ -34,19 +29,11 @@ import { decryptSecret } from "../secrets";
 import { GITHUB_MESSAGES, GithubError, forgetInstallationTokens, installationToken } from "../github/app";
 import { githubConfig, type GithubConfig } from "../github/config";
 import { loadAppConnection } from "../tools/catalog";
-import { diffAgents, diffAlwaysNew, diffSkills, diffTools, type DiffEntry } from "./diff";
 import { PHASE_TOKEN_SHARES, runPhase, type PhaseBudget } from "./phase-loop";
+import { recordPhaseResult } from "./phase-record";
 import { phasePrompt, SYSTEM_BASE } from "./prompts";
 import { buildRepoMap } from "./repo-map";
-import {
-  PHASES,
-  type AgentsResult,
-  type AnalysisChapter,
-  type CatalogResult,
-  type CompletionResult,
-  type EvolutionResult,
-  type PhaseName,
-} from "./schemas";
+import { PHASES, type CatalogResult, type PhaseName } from "./schemas";
 import { SourceTree, SourceTreeError } from "./source-tree";
 import { fetchGithubTree, fetchOpenApi, SourceError, type OpenApiDoc } from "./sources";
 
@@ -291,65 +278,6 @@ async function loadSources(app: App, opts: StartAnalysisOptions, log: (m: string
   }
 }
 
-// --- Stato attuale dell'app, per le differenze -------------------------------------------------
-
-async function currentTools(appId: number) {
-  return db.select().from(appToolsTable).where(eq(appToolsTable.appId, appId));
-}
-
-async function currentAgents(appId: number) {
-  const agents = await db.select().from(agentsTable).where(eq(agentsTable.appId, appId));
-  if (agents.length === 0) return [];
-  const links = await db
-    .select({ agentId: agentToolsTable.agentId, name: appToolsTable.name })
-    .from(agentToolsTable)
-    .innerJoin(appToolsTable, eq(agentToolsTable.toolId, appToolsTable.id))
-    .where(inArray(agentToolsTable.agentId, agents.map((a) => a.id)));
-  return agents.map((a) => ({ ...a, toolNames: links.filter((l) => l.agentId === a.id).map((l) => l.name) }));
-}
-
-async function currentSkills(appId: number) {
-  const rows = await db
-    .select({ skill: agentSkillsTable, agentRole: agentsTable.role, agentArea: agentsTable.area })
-    .from(agentSkillsTable)
-    .innerJoin(agentsTable, eq(agentSkillsTable.agentId, agentsTable.id))
-    .where(eq(agentsTable.appId, appId));
-  return rows.map((r) => ({ ...r.skill, agentRole: r.agentRole as string, agentArea: r.agentArea }));
-}
-
-type ChapterEntries = { chapter: AnalysisChapter; entries: DiffEntry<unknown>[] };
-
-/** Elementi di una fase, calcolati rispetto allo stato attuale del DB. */
-async function phaseItems(phase: PhaseName, result: unknown, appId: number): Promise<ChapterEntries[]> {
-  switch (phase) {
-    case "catalog": {
-      const r = result as CatalogResult;
-      return [
-        { chapter: "tool", entries: diffTools(r.tools, await currentTools(appId)) },
-        { chapter: "endpoint", entries: diffAlwaysNew({ chapter: "endpoint", items: r.endpoints }) },
-      ];
-    }
-    case "agents": {
-      const r = result as AgentsResult;
-      return [
-        { chapter: "agent", entries: diffAgents(r.agents, await currentAgents(appId)) },
-        { chapter: "skill", entries: diffSkills(r.skills, await currentSkills(appId)) },
-      ];
-    }
-    case "completion":
-      return [{ chapter: "completion", entries: diffAlwaysNew({ chapter: "completion", items: (result as CompletionResult).items }) }];
-    case "evolution":
-      return [{ chapter: "evolution", entries: diffAlwaysNew({ chapter: "evolution", items: (result as EvolutionResult).items }) }];
-    default:
-      return [];
-  }
-}
-
-function evidenceOf(payload: unknown): unknown[] {
-  const ev = (payload as { evidence?: unknown } | null)?.evidence;
-  return Array.isArray(ev) ? ev : [];
-}
-
 // --- Chiamata al modello con la scadenza dell'analisi ----------------------------------------
 
 /** Durata breve in secondi per i messaggi: "300 s", oppure "0.3 s" sotto il secondo. */
@@ -557,7 +485,6 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       now,
     });
     const previous: Partial<Record<PhaseName, unknown>> = {};
-    let position = 0;
 
     for (const phase of PHASES) {
       progress.phase = phase;
@@ -604,21 +531,9 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       previous[phase] = result;
 
       // Elementi della fase in un'unica INSERT, con `position` che prosegue nell'analisi
-      const groups = await phaseItems(phase, result, app.id);
-      const rows = groups.flatMap(({ chapter, entries }) =>
-        entries.map((e) => ({
-          analysisId,
-          chapter,
-          ref: e.ref,
-          position: ++position,
-          payload: e.payload,
-          diff: e.diff,
-          evidence: evidenceOf(e.payload),
-        })),
-      );
-      if (rows.length > 0) await db.insert(analysisItemsTable).values(rows);
+      const inserted = await recordPhaseResult({ analysisId, appId: app.id, phase, result });
 
-      log(`fase ${phase} conclusa${rows.length ? ` (${rows.length} elementi)` : ""}`);
+      log(`fase ${phase} conclusa${inserted ? ` (${inserted} elementi)` : ""}`);
       await progress.flush(phase === "map" ? { architectureMap: { ...(result as object), repoMap } } : {});
     }
 

@@ -250,7 +250,7 @@ export function ApiTokensSection() {
         <div className="space-y-1 text-sm">
           <p className="text-muted-foreground">Per collegare Claude Code, esegui sul tuo computer:</p>
           <pre className="overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs">
-            {`claude mcp add --transport http casello ${mcpUrl} --header "Authorization: Bearer <token>"`}
+            {`claude mcp add --scope user --transport http casello ${mcpUrl} --header "Authorization: Bearer <token>"`}
           </pre>
         </div>
       </CardContent>

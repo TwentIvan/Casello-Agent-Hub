@@ -28,7 +28,7 @@ import {
 } from "@workspace/db";
 import { aiGateway, type ChatResult } from "../ai-gateway";
 import { ProviderError } from "../ai/discovery";
-import { ModelAccessError, modelChat as executorChat, resolveModel, type ResolvedModel } from "../ai/executor";
+import { errorLogFields, errorStatus, ModelAccessError, modelChat as executorChat, resolveModel, type ResolvedModel } from "../ai/executor";
 import { logger } from "../logger";
 import { decryptSecret } from "../secrets";
 import { GITHUB_MESSAGES, GithubError, forgetInstallationTokens, installationToken } from "../github/app";
@@ -61,9 +61,10 @@ const MIN_MODEL_CALL_MS = 1_000;
 // e i 120 s delle run degli agenti non bastano. Il limite effettivo è min(questo, tempo rimasto).
 export const ARCHITECT_MODEL_TIMEOUT_MS = 300_000;
 // Nuovi tentativi: l'SDK non ne fa (maxRetries 0), altrimenti ritenterebbe anche i timeout e un
-// modello lento costerebbe 2-3 volte l'attesa. Qui si ritenta una sola volta, dopo una breve pausa,
-// solo per errori di rete diversi dal timeout e per le risposte 5xx del gateway.
-const MODEL_RETRY_DELAY_MS = 1_000;
+// modello lento costerebbe 2-3 volte l'attesa. Qui si ritenta solo per errori di rete diversi dal
+// timeout e per le risposte 5xx, con pause crescenti (un provider sovraccarico, es. Gemini con 500/503,
+// spesso torna dopo qualche decina di secondi) e sempre entro la scadenza dell'analisi.
+const TRANSIENT_RETRY_DELAYS_MS = [5_000, 15_000, 30_000, 60_000];
 // Limite di richieste del provider (429, es. piano gratuito di Gemini): si aspetta e si riprova fino a
 // queste volte, con l'attesa indicata dal provider o con queste pause, sempre entro la scadenza
 // dell'analisi. Le richieste rifiutate non costano.
@@ -88,8 +89,8 @@ export interface StartAnalysisOptions {
   maxMs?: number;
   /** Solo per i test: tetto della singola chiamata al modello (default ARCHITECT_MODEL_TIMEOUT_MS). */
   modelTimeoutMs?: number;
-  /** Solo per i test: pausa prima del nuovo tentativo di una chiamata al modello (default 1 s). */
-  modelRetryDelayMs?: number;
+  /** Solo per i test: pause tra i nuovi tentativi dopo un 5xx o un errore di rete (default TRANSIENT_RETRY_DELAYS_MS). */
+  transientRetryDelaysMs?: number[];
   /** Solo per i test: pause tra i nuovi tentativi dopo un 429 (default RATE_LIMIT_DELAYS_MS). */
   rateLimitDelaysMs?: number[];
   /** Solo per i test: orologio. */
@@ -384,7 +385,7 @@ interface ModelChatOptions {
   deadline: number;
   maxMs: number;
   timeoutMs: number;
-  retryDelayMs: number;
+  transientRetryDelaysMs: number[];
   rateLimitDelaysMs: number[];
   log: (message: string) => void;
   now: () => number;
@@ -398,7 +399,7 @@ function architectChat({
   deadline,
   maxMs,
   timeoutMs,
-  retryDelayMs,
+  transientRetryDelaysMs,
   rateLimitDelaysMs,
   log,
   now,
@@ -421,36 +422,49 @@ function architectChat({
       cost.add(reply);
       return reply;
     };
-    // Limite di richieste: attesa (quella del provider o la pausa successiva) e nuovo tentativo, finché
-    // ci sono tentativi e l'attesa finisce prima della scadenza; altrimenti l'errore passa così com'è
+    // Limite di richieste (429) e errori transitori (5xx, rete): attesa (quella del provider o la pausa
+    // successiva della propria serie) e nuovo tentativo, finché la serie ha tentativi e l'attesa finisce
+    // prima della scadenza; altrimenti l'errore passa così com'è. Le due serie si contano a parte.
     const call = async (): Promise<ChatResult> => {
-      for (let attempt = 0; ; attempt++) {
+      let rateAttempts = 0;
+      let transientAttempts = 0;
+      for (;;) {
         try {
           return await send();
         } catch (err) {
-          if (!(err instanceof ProviderError) || err.kind !== "rate" || attempt >= rateLimitDelaysMs.length) throw err;
-          const wait = err.retryAfterMs ?? rateLimitDelaysMs[attempt]!;
-          if (now() + wait >= deadline) throw err;
-          log(`limite di richieste del provider: nuovo tentativo tra ${Math.max(1, Math.ceil(wait / 1000))} s (${attempt + 1} di ${rateLimitDelaysMs.length})`);
+          if (signal.aborted) throw err;
+          const seconds = (ms: number) => Math.max(1, Math.ceil(ms / 1000));
+          let wait: number;
+          if (err instanceof ProviderError && err.kind === "rate") {
+            if (rateAttempts >= rateLimitDelaysMs.length) throw err;
+            wait = err.retryAfterMs ?? rateLimitDelaysMs[rateAttempts]!;
+            if (now() + wait >= deadline) throw err;
+            rateAttempts += 1;
+            log(`limite di richieste del provider: nuovo tentativo tra ${seconds(wait)} s (${rateAttempts} di ${rateLimitDelaysMs.length})`);
+          } else if (isRetryable(err)) {
+            if (transientAttempts >= transientRetryDelaysMs.length) throw err;
+            wait = transientRetryDelaysMs[transientAttempts]!;
+            if (now() + wait >= deadline) throw err;
+            transientAttempts += 1;
+            const status = errorStatus(err);
+            const cause = status === null ? "errore di rete" : `HTTP ${status}`;
+            log(`provider non raggiungibile (${cause}): nuovo tentativo tra ${seconds(wait)} s (${transientAttempts} di ${transientRetryDelaysMs.length})`);
+            logger.warn({ analysisId, ...errorLogFields(err) }, "Chiamata al modello dell'architetto non riuscita: nuovo tentativo");
+          } else {
+            throw err;
+          }
           await sleep(wait, undefined, { signal });
         }
       }
     };
     try {
-      try {
-        return await call();
-      } catch (err) {
-        if (signal.aborted || !isRetryable(err)) throw err;
-        logger.warn({ analysisId, errName: err instanceof Error ? err.name : "unknown" }, "Chiamata al modello dell'architetto non riuscita: nuovo tentativo");
-        await sleep(retryDelayMs, undefined, { signal });
-        return await call();
-      }
+      return await call();
     } catch (err) {
       // Messaggi propri: quelli del gateway o dell'SDK potrebbero contenere URL
       if (signal.aborted) {
         throw new AnalysisError(`tempo massimo dell'analisi (${formatDuration(maxMs)}) scaduto durante la chiamata al modello`);
       }
-      logger.warn({ analysisId, errName: err instanceof Error ? err.name : "unknown" }, "Chiamata al modello dell'architetto non riuscita");
+      logger.warn({ analysisId, ...errorLogFields(err) }, "Chiamata al modello dell'architetto non riuscita");
       if (err instanceof APIConnectionTimeoutError) {
         throw new AnalysisError(`il modello non ha risposto entro ${formatSeconds(timeoutMs)} (riprova o scegli un modello più veloce)`);
       }
@@ -537,7 +551,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       deadline: budget.deadline,
       maxMs,
       timeoutMs: opts.modelTimeoutMs ?? ARCHITECT_MODEL_TIMEOUT_MS,
-      retryDelayMs: opts.modelRetryDelayMs ?? MODEL_RETRY_DELAY_MS,
+      transientRetryDelaysMs: opts.transientRetryDelaysMs ?? TRANSIENT_RETRY_DELAYS_MS,
       rateLimitDelaysMs: opts.rateLimitDelaysMs ?? RATE_LIMIT_DELAYS_MS,
       log,
       now,

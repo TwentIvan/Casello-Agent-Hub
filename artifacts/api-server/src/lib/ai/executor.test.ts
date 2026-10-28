@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { APIConnectionTimeoutError, APIUserAbortError } from "openai";
+import { APIConnectionError, APIConnectionTimeoutError, APIError, APIUserAbortError } from "openai";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { eq, inArray } from "drizzle-orm";
 import { db, pool, aiAccountsTable, aiModelsTable, providersTable, usersTable } from "@workspace/db";
@@ -7,7 +7,7 @@ import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type Fa
 import { encryptSecret } from "../secrets";
 import { logger } from "../logger";
 import { ProviderError } from "./discovery";
-import { computeCost, executorKindFor, modelChat, ModelAccessError, resolveModel, type ResolvedModel } from "./executor";
+import { computeCost, errorLogFields, executorKindFor, modelChat, ModelAccessError, resolveModel, type ResolvedModel } from "./executor";
 
 // Chiavi di prova: non devono mai comparire in errori o log
 const KEY = "sk-ACCOUNT-KEY-0001";
@@ -141,6 +141,17 @@ describe("computeCost", () => {
     expect(computeCost(1_000_000, 0, 1, 2, 600_000, 0.1)).toBe(0.46);
     expect(computeCost(1_000_000, 0, 1, 2, 600_000, null)).toBe(1);
     expect(computeCost(10, 10, null, 2)).toBeNull();
+  });
+});
+
+describe("errorLogFields", () => {
+  it("classe vera e stato HTTP anche per gli errori dell'SDK, che non impostano name", () => {
+    const upstream = APIError.generate(503, { error: { message: "overloaded" } }, "overloaded", new Headers());
+    expect(upstream.name).toBe("Error");
+    expect(errorLogFields(upstream)).toEqual({ errName: "InternalServerError", status: 503 });
+    expect(errorLogFields(new APIConnectionError({ message: "rete" }))).toEqual({ errName: "APIConnectionError", status: null });
+    expect(errorLogFields(new ProviderError("unreachable", 500))).toEqual({ errName: "ProviderError", status: 500 });
+    expect(errorLogFields("stringa")).toEqual({ errName: "unknown", status: null });
   });
 });
 

@@ -101,6 +101,11 @@ deterministico, **una volta per analisi**, inserito nel messaggio utente di **og
   chiamata senza strumenti che chiede al modello "riassumi in ≤ 6 000 caratteri ciò che hai letto e che
   serve a consegnare l'esito" e la cronologia riparte da `system + user (mappa + previous) + sintesi`.
   Al massimo due sintesi per fase; alla terza la fase fallisce con "contesto del modello esaurito".
+  Con il contesto noto la soglia lascia spazio alla risposta e agli strumenti: è il minimo tra il 75 % e
+  `context_tokens − max_tokens della risposta − definizioni degli strumenti`, e la stima confrontata
+  comprende sempre gli strumenti. Se già `system + user` non entrano, la fase fallisce prima del primo
+  giro ("mappa e appunti non entrano nel contesto del modello"); senza almeno un giro dopo l'ultima
+  sintesi non se ne fa un'altra: la fase fallisce con "contesto del modello esaurito".
 - **`ChatResult`** (`ai-gateway.ts`) acquista `cachedPromptTokens: number` (0 se il provider non lo
   riporta): letto da `usage.prompt_tokens_details.cached_tokens` (OpenAI/OpenRouter),
   `usage.prompt_cache_hit_tokens` (DeepSeek); `promptTokens` resta il totale.

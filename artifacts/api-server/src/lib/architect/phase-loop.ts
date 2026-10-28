@@ -132,6 +132,7 @@ export function readTools(limits: ReadLimits): Record<ReadToolName, ChatCompleti
       properties: {
         path: { type: "string", description: "Cartella da elencare, relativa alla radice ('' per la radice)" },
         depth: { type: "integer", description: "Profondità da 1 a 5 (default 1)" },
+        includeIgnored: { type: "boolean", description: "true per includere anche lockfile, file generati, test e minificati (esclusi per default)" },
       },
       required: ["path"],
     }),
@@ -174,6 +175,7 @@ export function readTools(limits: ReadLimits): Record<ReadToolName, ChatCompleti
           pattern: { type: "string", description: "Testo da cercare (senza distinzione tra maiuscole e minuscole) o espressione regolare" },
           glob: { type: "string", description: "Filtro sui percorsi, es. 'src/**/*.ts'" },
           regex: { type: "boolean", description: "true per interpretare pattern come espressione regolare" },
+          includeIgnored: { type: "boolean", description: "true per cercare anche in lockfile, file generati, test e minificati (esclusi per default)" },
         },
         required: ["pattern"],
       },
@@ -316,10 +318,10 @@ interface ToolOutput {
 }
 
 const READ_SPECS: Record<ReadToolName, ArgSpec> = {
-  list_dir: { path: { type: "string", required: true }, depth: { type: "integer" } },
+  list_dir: { path: { type: "string", required: true }, depth: { type: "integer" }, includeIgnored: { type: "boolean" } },
   read_file: { path: { type: "string", required: true }, fromLine: { type: "integer" }, toLine: { type: "integer" } },
   read_files: { paths: { type: "string[]", required: true, maxItems: MAX_READ_FILES } },
-  search: { pattern: { type: "string", required: true }, glob: { type: "string" }, regex: { type: "boolean" } },
+  search: { pattern: { type: "string", required: true }, glob: { type: "string" }, regex: { type: "boolean" }, includeIgnored: { type: "boolean" } },
   list_operations: { prefix: { type: "string" }, offset: { type: "integer" } },
   read_operation: { method: { type: "string", required: true }, path: { type: "string", required: true } },
 };
@@ -338,13 +340,25 @@ function fittingLines(lines: string[], limits: ReadLimits): number {
   return lines.length;
 }
 
-function listDir(tree: SourceTree, path: string, depth: number | undefined, limits: ReadLimits): ToolOutput {
-  const entries = tree.list(path, depth ?? 1);
+function excludedHint(n: number): string {
+  return `[${n} file esclusi per default (lockfile, generati, test, minificati): usa includeIgnored=true per includerli]`;
+}
+
+function listDir(
+  tree: SourceTree,
+  path: string,
+  depth: number | undefined,
+  includeIgnored: boolean | undefined,
+  limits: ReadLimits,
+): ToolOutput {
+  const entries = tree.list(path, depth ?? 1, { includeIgnored });
   const shown = entries.slice(0, Math.min(MAX_LIST_ENTRIES, fittingLines(entries, limits)));
   const lines = shown.length ? shown : ["(cartella vuota)"];
   if (entries.length > shown.length) {
     lines.push(`[...altre ${entries.length - shown.length} voci non mostrate: elenca una sottocartella o riduci depth]`);
   }
+  const hidden = includeIgnored ? 0 : tree.countHidden(path, depth ?? 1);
+  if (hidden > 0) lines.push(excludedHint(hidden));
   return {
     content: capOutput(lines.join("\n"), limits),
     log: `list_dir ${logArg(path || "/")} (${plural(entries.length, "voce", "voci")})`,
@@ -471,9 +485,10 @@ async function search(
   pattern: string,
   glob: string | undefined,
   regex: boolean | undefined,
+  includeIgnored: boolean | undefined,
   limits: ReadLimits,
 ): Promise<ToolOutput> {
-  const results = await tree.search(pattern, { glob, regex });
+  const results = await tree.search(pattern, { glob, regex, includeIgnored });
   const considered = results.slice(0, MAX_SEARCH_MATCHES);
   const all = withContext(tree, considered);
   const shown = all.slice(0, fittingLines(all.map((e) => e.text), limits));
@@ -483,6 +498,9 @@ async function search(
   if (shownMatches < considered.length || results.length >= Math.min(SOURCE_LIMITS.maxSearchResults, MAX_SEARCH_MATCHES)) {
     lines.push(`[risultati limitati a ${shownMatches}: restringi la ricerca con glob o un pattern più specifico]`);
   }
+  // Non si contano le corrispondenze nascoste (costerebbe una seconda ricerca): si dice quanti file non sono stati cercati
+  const hidden = includeIgnored ? 0 : tree.countHiddenMatching(glob);
+  if (hidden > 0) lines.push(excludedHint(hidden));
   return {
     content: capOutput(lines.join("\n"), limits),
     log: `search "${logArg(pattern)}"${regex ? " (regex)" : ""} (${plural(results.length, "risultato", "risultati")})`,
@@ -535,13 +553,13 @@ async function runReadTool(
   const a = args as Record<string, never>;
   switch (name) {
     case "list_dir":
-      return listDir(tree!, a.path, a.depth, limits);
+      return listDir(tree!, a.path, a.depth, a.includeIgnored, limits);
     case "read_file":
       return readFile(tree!, a.path, a.fromLine, a.toLine, limits);
     case "read_files":
       return readFiles(tree!, (a as Record<string, string[]>).paths!, limits);
     case "search":
-      return search(tree!, a.pattern, a.glob, a.regex, limits);
+      return search(tree!, a.pattern, a.glob, a.regex, a.includeIgnored, limits);
     case "list_operations":
       return listOperations(openapi!, a.prefix, a.offset, limits);
     case "read_operation": {

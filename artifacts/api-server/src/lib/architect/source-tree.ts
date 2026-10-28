@@ -1,3 +1,4 @@
+import { isGeneratedText, isNoisePath } from "./noise";
 import { RegexSearchTimeout, RegexSearchWorker } from "./search-worker";
 import { extractEntry, readZipEntries, ZipFormatError, type RawZipEntry } from "./zip-reader";
 
@@ -182,6 +183,7 @@ export class SourceTree {
   readonly skipped: SourceSkipped;
   private readonly files: Map<string, string>;
   private readonly sortedPaths: string[];
+  private readonly noise: Set<string>;
   private regexWorker: RegexSearchWorker | null = null;
 
   private constructor(files: Map<string, string>, totalBytes: number, skipped: SourceSkipped) {
@@ -190,6 +192,9 @@ export class SourceTree {
     this.totalBytes = totalBytes;
     this.skipped = skipped;
     this.sortedPaths = [...files.keys()].sort();
+    this.noise = new Set(
+      this.sortedPaths.filter((path) => isNoisePath(path) || isGeneratedText(files.get(path)!)),
+    );
   }
 
   static fromZip(
@@ -296,7 +301,33 @@ export class SourceTree {
     return p !== null && p !== "" && this.files.has(p);
   }
 
-  list(dir: string, depth = 1): string[] {
+  /** Lockfile, file generati, test, minificati: esclusi per default da elenchi e ricerche. */
+  isNoise(path: string): boolean {
+    return this.noise.has(path);
+  }
+
+  /** Quanti file rumorosi `list(dir, depth)` ha nascosto (stessa profondità). */
+  countHidden(dir: string, depth = 1): number {
+    const d = normalizeQueryPath(dir);
+    if (d === null) throw new SourceTreeError(`Percorso non valido: ${dir}`);
+    const maxDepth = Math.min(Math.max(Math.trunc(depth) || 1, 1), MAX_LIST_DEPTH);
+    const prefix = d === "" ? "" : `${d}/`;
+    let n = 0;
+    for (const path of this.noise) {
+      if (path.startsWith(prefix) && path.slice(prefix.length).split("/").length <= maxDepth) n++;
+    }
+    return n;
+  }
+
+  /** Quanti file rumorosi (filtrati dal glob, se dato) una ricerca per default non guarda. */
+  countHiddenMatching(glob?: string): number {
+    const globMatch = glob ? compileGlob(glob) : null;
+    let n = 0;
+    for (const path of this.noise) if (!globMatch || globMatch(path)) n++;
+    return n;
+  }
+
+  list(dir: string, depth = 1, opts: { includeIgnored?: boolean } = {}): string[] {
     const d = normalizeQueryPath(dir);
     if (d === null) throw new SourceTreeError(`Percorso non valido: ${dir}`);
     const maxDepth = Math.min(Math.max(Math.trunc(depth) || 1, 1), MAX_LIST_DEPTH);
@@ -306,6 +337,7 @@ export class SourceTree {
     for (const path of this.sortedPaths) {
       if (!path.startsWith(prefix)) continue;
       found = true;
+      if (!opts.includeIgnored && this.noise.has(path)) continue;
       const parts = path.slice(prefix.length).split("/");
       for (let i = 0; i < Math.min(parts.length, maxDepth); i++) {
         const isFile = i === parts.length - 1;
@@ -373,7 +405,7 @@ export class SourceTree {
 
   async search(
     pattern: string,
-    opts: { glob?: string; regex?: boolean } = {},
+    opts: { glob?: string; regex?: boolean; includeIgnored?: boolean } = {},
   ): Promise<{ path: string; line: number; text: string }[]> {
     const globMatch = opts.glob ? compileGlob(opts.glob) : null;
 
@@ -390,7 +422,8 @@ export class SourceTree {
       }
       this.regexWorker ??= new RegexSearchWorker(() => [...this.files.entries()]);
       try {
-        const paths = globMatch ? this.sortedPaths.filter(globMatch) : null;
+        const scoped = opts.includeIgnored ? this.sortedPaths : this.sortedPaths.filter((p) => !this.noise.has(p));
+        const paths = globMatch ? scoped.filter(globMatch) : opts.includeIgnored ? null : scoped;
         return await this.regexWorker.search(pattern, paths, {
           max: SOURCE_LIMITS.maxSearchResults,
           maxText: MAX_SEARCH_TEXT_CHARS,
@@ -412,6 +445,7 @@ export class SourceTree {
     const results: { path: string; line: number; text: string }[] = [];
     for (const path of this.sortedPaths) {
       if (globMatch && !globMatch(path)) continue;
+      if (!opts.includeIgnored && this.noise.has(path)) continue;
       const lines = this.files.get(path)!.split("\n");
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i]!;

@@ -717,6 +717,43 @@ describe("runPhase", () => {
     });
   });
 
+  describe("file esclusi per default", () => {
+    const done = reply([call("submit_result", { result: validMap })]);
+    const noisy = { "src/a.test.ts": "const solo_nei_test = 1;\n", "pnpm-lock.yaml": "solo_nei_test: 1\n" };
+
+    it("list_dir segnala i file esclusi", async () => {
+      const s = scripted([reply([call("list_dir", { path: "", depth: 3 })]), done]);
+      const { input } = base(s.chat, { tree: makeTree(noisy) });
+      await runPhase(input);
+      const msg = toolMessages(s.calls[1]!.messages)[0]!;
+      expect(msg).not.toContain("pnpm-lock.yaml");
+      expect(msg).toContain("[2 file esclusi per default (lockfile, generati, test, minificati): usa includeIgnored=true per includerli]");
+    });
+
+    it("list_dir con includeIgnored li mostra e non ha il suggerimento", async () => {
+      const s = scripted([reply([call("list_dir", { path: "", depth: 3, includeIgnored: true })]), done]);
+      const { input } = base(s.chat, { tree: makeTree(noisy) });
+      await runPhase(input);
+      const msg = toolMessages(s.calls[1]!.messages)[0]!;
+      expect(msg).toContain("pnpm-lock.yaml");
+      expect(msg).not.toContain("file esclusi per default");
+    });
+
+    it("search salta i rumorosi e lo segnala; includeIgnored li include", async () => {
+      const s = scripted([
+        reply([call("search", { pattern: "solo_nei_test" }), call("search", { pattern: "solo_nei_test", includeIgnored: true })]),
+        done,
+      ]);
+      const { input } = base(s.chat, { tree: makeTree(noisy) });
+      await runPhase(input);
+      const [def, inc] = toolMessages(s.calls[1]!.messages);
+      expect(def).toContain("Nessun risultato.");
+      expect(def).toContain("2 file esclusi per default");
+      expect(inc).toContain("src/a.test.ts:1:");
+      expect(inc).not.toContain("file esclusi per default");
+    });
+  });
+
   describe("compattazione della cronologia", () => {
     const size = (messages: ChatCompletionMessageParam[]) =>
       messages.reduce((n, m) => n + JSON.stringify(m).length, 0);

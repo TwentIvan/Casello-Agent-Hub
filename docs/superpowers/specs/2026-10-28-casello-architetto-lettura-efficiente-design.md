@@ -161,4 +161,8 @@ evolution 0,09), `MAX_COMPLETION_TOKENS` 16 000 in `run-analysis.ts`. Precisazio
   `ai-gateway.ts` non lo espongono. Manca la forma DeepSeek `prompt_cache_hit_tokens`.
 - `computeCost(prompt, completion, priceInput, priceOutput)` è in `ai/executor.ts`: la firma va estesa
   con i token in cache e `priceCachedInput`.
-- Le nuove quote di §2 (map 0,10; catalog 0,22; agents 0,17) sommano a 1,0 con le altre invariate.
+- Le nuove quote di §2 (map 0,10; catalog 0,22; agents 0,17) con le altre invariate sommano a 0,84 (oggi
+  0,88, volutamente sotto 1). Dalla mappa si tolgono 0,12 ma catalog e agents ne ricevono 0,08: i valori
+  della spec si applicano così come sono, il commento di `PHASE_TOKEN_SHARES` va aggiornato a 0,84.
+- `OpenApiOperation` non ha i tag: il "riepilogo per tag" di §2 si fa per risorsa (primo segmento del
+  percorso dopo un eventuale `/api`).

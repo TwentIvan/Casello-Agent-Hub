@@ -825,6 +825,36 @@ export interface AiAccountInput {
   allowPrivateNetwork?: boolean;
 }
 
+export interface ApiTokenInfo {
+  id: number;
+  name: string;
+  createdAt: string;
+  expiresAt: string;
+  /** @nullable */
+  lastUsedAt: string | null;
+  /** @nullable */
+  revokedAt: string | null;
+}
+
+export interface ApiTokenCreate {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 90
+     */
+  expiresInDays: number;
+}
+
+export interface ApiTokenCreated {
+  /** Valore del token, mostrato una sola volta */
+  token: string;
+  info: ApiTokenInfo;
+}
+
 export interface AiAccountUpdate {
   /**
      * @minLength 1

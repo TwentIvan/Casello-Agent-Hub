@@ -57,6 +57,60 @@ export const UnlinkGithubResponse = zod.void()
 
 
 /**
+ * Token per gli agenti locali (server MCP), i più recenti per primi, revocati compresi. Non contiene mai il valore del token né il suo hash.
+ * @summary Elenca i token personali dell'utente
+ */
+export const ListApiTokensResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date(),
+  "lastUsedAt": zod.coerce.date().nullable(),
+  "revokedAt": zod.coerce.date().nullable()
+})
+export const ListApiTokensResponse = zod.array(ListApiTokensResponseItem)
+
+
+/**
+ * Il valore del token (prefisso cas_) compare solo in questa risposta: a riposo resta solo l'hash.
+ * @summary Crea un token personale
+ */
+export const createApiTokenBodyNameMax = 100;
+
+export const createApiTokenBodyExpiresInDaysMax = 90;
+
+
+
+export const CreateApiTokenBody = zod.object({
+  "name": zod.string().min(1).max(createApiTokenBodyNameMax),
+  "expiresInDays": zod.number().min(1).max(createApiTokenBodyExpiresInDaysMax)
+})
+
+export const CreateApiTokenResponse = zod.object({
+  "token": zod.string().describe('Valore del token, mostrato una sola volta'),
+  "info": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date(),
+  "lastUsedAt": zod.coerce.date().nullable(),
+  "revokedAt": zod.coerce.date().nullable()
+})
+})
+
+
+/**
+ * 404 se il token non è dell'utente o è già revocato.
+ * @summary Revoca un token personale
+ */
+export const RevokeApiTokenParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RevokeApiTokenResponse = zod.void()
+
+
+/**
  * @summary Elenca tutte le app registrate
  */
 

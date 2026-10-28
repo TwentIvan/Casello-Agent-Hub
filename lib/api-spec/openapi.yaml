@@ -107,6 +107,66 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /account/tokens:
+    get:
+      operationId: listApiTokens
+      tags: [auth]
+      summary: Elenca i token personali dell'utente
+      description: >-
+        Token per gli agenti locali (server MCP), i più recenti per primi, revocati compresi. Non
+        contiene mai il valore del token né il suo hash.
+      responses:
+        "200":
+          description: Token dell'utente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiTokenInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createApiToken
+      tags: [auth]
+      summary: Crea un token personale
+      description: >-
+        Il valore del token (prefisso cas_) compare solo in questa risposta: a riposo resta solo
+        l'hash.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApiTokenCreate"
+      responses:
+        "201":
+          description: Token creato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiTokenCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /account/tokens/{id}:
+    delete:
+      operationId: revokeApiToken
+      tags: [auth]
+      summary: Revoca un token personale
+      description: 404 se il token non è dell'utente o è già revocato.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Token revocato
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   # ─── Apps ───────────────────────────────────────────────────────────────────
 
   /apps:
@@ -2446,6 +2506,50 @@ components:
         allowPrivateNetwork:
           type: boolean
           description: Solo custom e provider non gestiti
+
+    ApiTokenInfo:
+      type: object
+      required: [id, name, createdAt, expiresAt, lastUsedAt, revokedAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: ["string", "null"]
+          format: date-time
+        revokedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    ApiTokenCreate:
+      type: object
+      required: [name, expiresInDays]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        expiresInDays:
+          type: integer
+          minimum: 1
+          maximum: 90
+
+    ApiTokenCreated:
+      type: object
+      required: [token, info]
+      properties:
+        token:
+          type: string
+          description: Valore del token, mostrato una sola volta
+        info:
+          $ref: "#/components/schemas/ApiTokenInfo"
 
     AiAccountUpdate:
       type: object

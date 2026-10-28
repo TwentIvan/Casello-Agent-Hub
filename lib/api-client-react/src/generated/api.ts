@@ -40,6 +40,9 @@ import type {
   AnalysisItem,
   AnalysisItemUpdate,
   AnalysisStart,
+  ApiTokenCreate,
+  ApiTokenCreated,
+  ApiTokenInfo,
   App,
   AppInput,
   AppTool,
@@ -482,6 +485,226 @@ export const useUnlinkGithub = <TError = ErrorType<UnauthorizedResponse | Confli
         TContext
       > => {
       return useMutation(getUnlinkGithubMutationOptions(options));
+    }
+
+export const getListApiTokensUrl = () => {
+
+
+
+
+  return `/api/account/tokens`
+}
+
+/**
+ * Token per gli agenti locali (server MCP), i più recenti per primi, revocati compresi. Non contiene mai il valore del token né il suo hash.
+ * @summary Elenca i token personali dell'utente
+ */
+export const listApiTokens = async ( options?: RequestInit): Promise<ApiTokenInfo[]> => {
+
+  return customFetch<ApiTokenInfo[]>(getListApiTokensUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListApiTokensQueryKey = () => {
+    return [
+    `/api/account/tokens`
+    ] as const;
+    }
+
+
+export const getListApiTokensQueryOptions = <TData = Awaited<ReturnType<typeof listApiTokens>>, TError = ErrorType<UnauthorizedResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listApiTokens>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListApiTokensQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listApiTokens>>> = ({ signal }) => listApiTokens({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listApiTokens>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListApiTokensQueryResult = NonNullable<Awaited<ReturnType<typeof listApiTokens>>>
+export type ListApiTokensQueryError = ErrorType<UnauthorizedResponse>
+
+
+/**
+ * @summary Elenca i token personali dell'utente
+ */
+
+export function useListApiTokens<TData = Awaited<ReturnType<typeof listApiTokens>>, TError = ErrorType<UnauthorizedResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listApiTokens>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListApiTokensQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateApiTokenUrl = () => {
+
+
+
+
+  return `/api/account/tokens`
+}
+
+/**
+ * Il valore del token (prefisso cas_) compare solo in questa risposta: a riposo resta solo l'hash.
+ * @summary Crea un token personale
+ */
+export const createApiToken = async (apiTokenCreate: ApiTokenCreate, options?: RequestInit): Promise<ApiTokenCreated> => {
+
+  return customFetch<ApiTokenCreated>(getCreateApiTokenUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(apiTokenCreate)
+  }
+);}
+
+
+
+
+export const getCreateApiTokenMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createApiToken>>, TError,{data: BodyType<ApiTokenCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createApiToken>>, TError,{data: BodyType<ApiTokenCreate>}, TContext> => {
+
+const mutationKey = ['createApiToken'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createApiToken>>, {data: BodyType<ApiTokenCreate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createApiToken(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateApiTokenMutationResult = NonNullable<Awaited<ReturnType<typeof createApiToken>>>
+    export type CreateApiTokenMutationBody = BodyType<ApiTokenCreate>
+    export type CreateApiTokenMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse>
+
+    /**
+ * @summary Crea un token personale
+ */
+export const useCreateApiToken = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createApiToken>>, TError,{data: BodyType<ApiTokenCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createApiToken>>,
+        TError,
+        {data: BodyType<ApiTokenCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateApiTokenMutationOptions(options));
+    }
+
+export const getRevokeApiTokenUrl = (id: number,) => {
+
+
+
+
+  return `/api/account/tokens/${id}`
+}
+
+/**
+ * 404 se il token non è dell'utente o è già revocato.
+ * @summary Revoca un token personale
+ */
+export const revokeApiToken = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getRevokeApiTokenUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getRevokeApiTokenMutationOptions = <TError = ErrorType<UnauthorizedResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeApiToken>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeApiToken>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['revokeApiToken'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeApiToken>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  revokeApiToken(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeApiTokenMutationResult = NonNullable<Awaited<ReturnType<typeof revokeApiToken>>>
+
+    export type RevokeApiTokenMutationError = ErrorType<UnauthorizedResponse | NotFoundResponse>
+
+    /**
+ * @summary Revoca un token personale
+ */
+export const useRevokeApiToken = <TError = ErrorType<UnauthorizedResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeApiToken>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof revokeApiToken>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRevokeApiTokenMutationOptions(options));
     }
 
 export const getListAppsUrl = () => {

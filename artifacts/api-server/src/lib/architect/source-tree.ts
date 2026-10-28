@@ -359,6 +359,18 @@ export class SourceTree {
     };
   }
 
+  /** Righe grezze (1-based, estremi compresi, fuori dal file ignorate), ciascuna accorciata. */
+  lines(path: string, from: number, to: number): string[] {
+    const p = normalizeQueryPath(path);
+    const text = p ? this.files.get(p) : undefined;
+    if (text === undefined) throw new SourceTreeError(`File inesistente: ${path}`);
+    const all = text === "" ? [] : text.split("\n");
+    if (text.endsWith("\n")) all.pop();
+    const start = Math.max(Math.trunc(from) || 1, 1);
+    const end = Math.min(Math.trunc(to), all.length);
+    return start <= end ? all.slice(start - 1, end).map((l) => l.slice(0, MAX_SEARCH_TEXT_CHARS)) : [];
+  }
+
   async search(
     pattern: string,
     opts: { glob?: string; regex?: boolean } = {},

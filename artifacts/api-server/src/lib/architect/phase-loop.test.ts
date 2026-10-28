@@ -437,7 +437,7 @@ describe("runPhase", () => {
     const { input } = base(s.chat);
     await runPhase(input);
     const tools = s.calls[0]!.tools;
-    expect(tools.map((t) => t.function.name)).toEqual(["list_dir", "read_file", "search", "submit_result"]);
+    expect(tools.map((t) => t.function.name)).toEqual(["list_dir", "read_file", "read_files", "search", "submit_result"]);
     const submit = tools.find((t) => t.function.name === "submit_result")!;
     expect(submit.function.parameters).toEqual({
       type: "object",
@@ -452,16 +452,18 @@ describe("runPhase", () => {
         call("read_file", { path: "src/a.ts" }),
         call("search", { pattern: "segreto" }),
         call("search", { pattern: "segr.to", regex: true, glob: "src/**" }),
+        call("read_files", { paths: ["src/a.ts", "src/b.ts"] }),
       ]),
       reply([call("submit_result", { result: { ...validMap, stack: 1 } })]),
       reply([call("submit_result", { result: validMap })]),
     ]);
-    const { input, logs } = base(s.chat);
+    const { input, logs } = base(s.chat, { tree: makeTree({ "src/b.ts": "uno\ndue\n" }) });
     expect((await runPhase(input)).ok).toBe(true);
     const all = logs.join("\n");
     expect(all).not.toContain("contenuto-riservato-42");
     expect(all).not.toContain("riassunto-dell-esito");
     expect(logs).toContain('search "segreto" (1 risultato)');
+    expect(logs).toContain("read_files (2 file, 4 righe)");
     expect(toolMessages(s.calls[1]!.messages)[1]).toContain(`src/a.ts:1: ${SECRET_LINE}`);
   });
 
@@ -621,6 +623,98 @@ describe("runPhase", () => {
     const msg = toolMessages(s.calls[1]!.messages)[0]!;
     expect(msg).toContain("m.ts:100: match");
     expect(msg).toContain("risultati limitati");
+  });
+
+  describe("read_files e contesto di search", () => {
+    const done = reply([call("submit_result", { result: validMap })]);
+
+    it("read_files legge più file in una chiamata", async () => {
+      const s = scripted([reply([call("read_files", { paths: ["src/a.ts", "src/b.ts"] })]), done]);
+      const { input } = base(s.chat, { tree: makeTree({ "src/b.ts": "uno\ndue\ntre\n", "src/a.ts": "a1\na2\na3\n" }) });
+      await runPhase(input);
+      const msgs = toolMessages(s.calls[1]!.messages);
+      expect(msgs).toHaveLength(1);
+      expect(msgs[0]).toContain("File src/a.ts, righe 1-3 di 3:");
+      expect(msgs[0]).toContain("File src/b.ts, righe 1-3 di 3:");
+      expect(msgs[0]).toContain("2: due");
+    });
+
+    it("read_files: file che non entrano restano non letti", async () => {
+      const big = (c: string) => Array.from({ length: 400 }, () => c.repeat(100)).join("\n");
+      const files = { "g1.ts": big("a"), "g2.ts": big("b"), "g3.ts": big("c") };
+      const s = scripted([reply([call("read_files", { paths: ["g1.ts", "g2.ts", "g3.ts"] })]), done]);
+      const { input } = base(s.chat, { tree: makeTree(files) });
+      await runPhase(input);
+      const msg = toolMessages(s.calls[1]!.messages)[0]!;
+      expect(msg).toContain("File g1.ts, righe 1-");
+      expect(msg).toContain("File g2.ts: non letto, supera lo spazio: leggilo da solo con read_file");
+      expect(msg).toContain("File g3.ts: non letto, supera lo spazio: leggilo da solo con read_file");
+      expect(msg.length).toBeLessThanOrEqual(MAX_TOOL_OUTPUT_CHARS);
+    });
+
+    it("read_files: errori per singolo file e argomenti non validi", async () => {
+      const s = scripted([
+        reply([call("read_files", { paths: ["src/a.ts", "manca.ts", "../x"] })]),
+        reply([
+          call("read_files", { paths: ["1", "2", "3", "4", "5", "6", "7"] }),
+          call("read_files", { paths: "src/a.ts" }),
+          call("read_files", { paths: [] }),
+        ]),
+        done,
+      ]);
+      const { input } = base(s.chat);
+      expect((await runPhase(input)).ok).toBe(true);
+      const first = toolMessages(s.calls[1]!.messages)[0]!;
+      expect(first).toContain("File src/a.ts, righe 1-2 di 2:");
+      expect(first).toContain("File manca.ts: Errore: File inesistente: manca.ts");
+      expect(first).toMatch(/File \.\.\/x: Errore: /);
+      const [many, str, empty] = toolMessages(s.calls[2]!.messages).slice(1);
+      expect(many).toContain("al massimo 6 percorsi");
+      expect(str).toContain("deve essere un elenco di stringhe");
+      expect(empty).toContain("almeno un percorso");
+    });
+
+    it("read_files: percorsi ripetuti letti una volta", async () => {
+      const s = scripted([reply([call("read_files", { paths: ["src/a.ts", "src/a.ts", "src/a.ts"] })]), done]);
+      const { input, logs } = base(s.chat);
+      await runPhase(input);
+      const msg = toolMessages(s.calls[1]!.messages)[0]!;
+      expect(msg.match(/File src\/a\.ts, righe/g)).toHaveLength(1);
+      expect(logs).toContain("read_files (1 file, 2 righe)");
+    });
+
+    it("search riporta una riga di contesto prima e dopo", async () => {
+      const s = scripted([reply([call("search", { pattern: "match" })]), done]);
+      const { input } = base(s.chat, { tree: makeTree({ "src/c.ts": "uno\ndue match\ntre" }) });
+      await runPhase(input);
+      const msg = toolMessages(s.calls[1]!.messages)[0]!;
+      expect(msg).toContain("src/c.ts-1- uno\nsrc/c.ts:2: due match\nsrc/c.ts-3- tre");
+    });
+
+    it("search: corrispondenze vicine non ripetono righe", async () => {
+      const s = scripted([reply([call("search", { pattern: "match" })]), done]);
+      const { input } = base(s.chat, { tree: makeTree({ "src/c.ts": "uno\ndue match\ntre match\nquattro\ncinque\nsei\nsette match\notto" }) });
+      await runPhase(input);
+      const msg = toolMessages(s.calls[1]!.messages)[0]!;
+      expect(msg.match(/src\/c\.ts[-:]3[-:]/g)).toHaveLength(1);
+      expect(msg).toContain("src/c.ts:3: tre match");
+      expect(msg).toContain("src/c.ts-4- quattro\n--\nsrc/c.ts-6- sei\nsrc/c.ts:7: sette match\nsrc/c.ts-8- otto");
+    });
+
+    it("search regex: il contesto arriva da tree.lines", async () => {
+      const s = scripted([reply([call("search", { pattern: "d.e match", regex: true })]), done]);
+      const { input } = base(s.chat, { tree: makeTree({ "src/c.ts": "uno\ndue match\ntre" }) });
+      await runPhase(input);
+      const msg = toolMessages(s.calls[1]!.messages)[0]!;
+      expect(msg).toContain("src/c.ts-1- uno\nsrc/c.ts:2: due match\nsrc/c.ts-3- tre");
+    });
+
+    it("SourceTree.lines: righe grezze con estremi compresi, fuori dal file ignorati", () => {
+      const tree = makeTree({ "l.ts": `a\nb\n${"x".repeat(300)}\n` });
+      expect(tree.lines("l.ts", 2, 3)).toEqual(["b", "x".repeat(200)]);
+      expect(tree.lines("l.ts", 0, 99)).toHaveLength(3);
+      expect(() => tree.lines("manca.ts", 1, 2)).toThrow("File inesistente");
+    });
   });
 
   describe("compattazione della cronologia", () => {

@@ -73,6 +73,7 @@ export function scaleLimitsForContext(contextTokens: number | null): ReadLimits 
 
 const MAX_LIST_ENTRIES = 500;
 const MAX_SEARCH_MATCHES = 200;
+const MAX_READ_FILES = 6;
 // Spazio lasciato, sotto il tetto dell'output, al suggerimento finale (es. come continuare)
 const HINT_RESERVE_CHARS = 300;
 const MAX_SUMMARY_CHARS = 150;
@@ -117,7 +118,7 @@ export interface RunPhaseInput {
 
 export type PhaseOutcome = { ok: true; result: unknown } | { ok: false; error: string };
 
-type ReadToolName = "list_dir" | "read_file" | "search" | "list_operations" | "read_operation";
+type ReadToolName = "list_dir" | "read_file" | "read_files" | "search" | "list_operations" | "read_operation";
 
 function fn(name: string, description: string, parameters: Record<string, unknown>): ChatCompletionFunctionTool {
   return { type: "function", function: { name, description, parameters } };
@@ -147,9 +148,26 @@ export function readTools(limits: ReadLimits): Record<ReadToolName, ChatCompleti
         required: ["path"],
       },
     ),
+    read_files: fn(
+      "read_files",
+      "Legge per intero fino a 6 file di testo in una chiamata, con le righe numerate; i file che non entrano nello spazio vanno letti da soli con read_file.",
+      {
+        type: "object",
+        properties: {
+          paths: {
+            type: "array",
+            items: { type: "string" },
+            minItems: 1,
+            maxItems: MAX_READ_FILES,
+            description: "Percorsi dei file, relativi alla radice",
+          },
+        },
+        required: ["paths"],
+      },
+    ),
     search: fn(
       "search",
-      `Cerca un testo (o un'espressione regolare) nei file del repository; restituisce percorso:riga: testo (massimo ${SOURCE_LIMITS.maxSearchResults} risultati).`,
+      `Cerca un testo (o un'espressione regolare) nei file del repository; restituisce percorso:riga: testo, con una riga di contesto prima e dopo (percorso-riga- testo; massimo ${SOURCE_LIMITS.maxSearchResults} risultati).`,
       {
         type: "object",
         properties: {
@@ -201,7 +219,7 @@ export function phaseTools(
 ): ChatCompletionFunctionTool[] {
   const READ_TOOLS = readTools(limits);
   return [
-    ...(hasCode ? [READ_TOOLS.list_dir, READ_TOOLS.read_file, READ_TOOLS.search] : []),
+    ...(hasCode ? [READ_TOOLS.list_dir, READ_TOOLS.read_file, READ_TOOLS.read_files, READ_TOOLS.search] : []),
     ...(hasOpenApi ? [READ_TOOLS.list_operations, READ_TOOLS.read_operation] : []),
     SUBMIT_TOOL,
   ];
@@ -209,13 +227,14 @@ export function phaseTools(
 
 // --- Argomenti ------------------------------------------------------------------------------
 
-type ArgType = "string" | "integer" | "boolean";
-type ArgSpec = Record<string, { type: ArgType; required?: boolean }>;
+type ArgType = "string" | "integer" | "boolean" | "string[]";
+type ArgSpec = Record<string, { type: ArgType; required?: boolean; maxItems?: number }>;
 
 const ARG_TYPE_IT: Record<ArgType, string> = {
   string: "una stringa",
   integer: "un numero intero",
   boolean: "un booleano",
+  "string[]": "un elenco di stringhe",
 };
 
 type Parsed = { ok: true; args: Record<string, unknown> } | { ok: false; error: string };
@@ -236,10 +255,19 @@ function parseArgs(name: string, raw: string): Parsed {
 
 function checkArgs(name: string, args: Record<string, unknown>, spec: ArgSpec): string | null {
   const problems: string[] = [];
-  for (const [key, { type, required }] of Object.entries(spec)) {
+  for (const [key, { type, required, maxItems }] of Object.entries(spec)) {
     const v = args[key];
     if (v === undefined || v === null) {
       if (required) problems.push(`${key}: campo obbligatorio (${ARG_TYPE_IT[type]})`);
+      continue;
+    }
+    if (type === "string[]") {
+      if (!Array.isArray(v) || !v.every((x) => typeof x === "string")) problems.push(`${key}: deve essere ${ARG_TYPE_IT[type]}`);
+      else if (v.length === 0) problems.push(`${key}: almeno un percorso`);
+      else if (maxItems !== undefined && v.length > maxItems) problems.push(`${key}: al massimo ${maxItems} percorsi`);
+      else if (v.some((x: string) => x.length > MAX_ARG_CHARS)) {
+        problems.push(`${key}: elemento troppo lungo (massimo ${MAX_ARG_CHARS} caratteri)`);
+      }
       continue;
     }
     const okType =
@@ -290,6 +318,7 @@ interface ToolOutput {
 const READ_SPECS: Record<ReadToolName, ArgSpec> = {
   list_dir: { path: { type: "string", required: true }, depth: { type: "integer" } },
   read_file: { path: { type: "string", required: true }, fromLine: { type: "integer" }, toLine: { type: "integer" } },
+  read_files: { paths: { type: "string[]", required: true, maxItems: MAX_READ_FILES } },
   search: { pattern: { type: "string", required: true }, glob: { type: "string" }, regex: { type: "boolean" } },
   list_operations: { prefix: { type: "string" }, offset: { type: "integer" } },
   read_operation: { method: { type: "string", required: true }, path: { type: "string", required: true } },
@@ -322,13 +351,14 @@ function listDir(tree: SourceTree, path: string, depth: number | undefined, limi
   };
 }
 
-function readFile(
+/** Testo di una lettura numerata (senza tetto sull'output) e righe lette. */
+function readBlock(
   tree: SourceTree,
   path: string,
   fromLine: number | undefined,
   toLine: number | undefined,
   limits: ReadLimits,
-): ToolOutput {
+): { text: string; count: number } {
   const { content, totalLines } = tree.read(path, fromLine ?? 1, toLine, {
     maxLines: limits.maxReadLines,
     maxChars: limits.maxReadChars,
@@ -336,9 +366,8 @@ function readFile(
   const start = Math.max(Math.trunc(fromLine ?? 1) || 1, 1);
   const empty = start > totalLines || (toLine !== undefined && Math.trunc(toLine) < start);
   const lines = empty ? [] : content.split("\n");
-  const log = `read_file ${logArg(path)} (${plural(lines.length, "riga", "righe")})`;
   if (lines.length === 0) {
-    return { content: `Nessuna riga da mostrare: il file ${path} ha ${totalLines} righe.`, log };
+    return { text: `Nessuna riga da mostrare: il file ${path} ha ${totalLines} righe.`, count: 0 };
   }
   const last = start + lines.length - 1;
   const requestedEnd = Math.min(toLine === undefined ? totalLines : Math.trunc(toLine), totalLines);
@@ -347,7 +376,94 @@ function readFile(
   if (last < requestedEnd) {
     out.push(`[...troncato al limite di lettura: continua con fromLine=${last + 1}]`);
   }
-  return { content: capOutput(out.join("\n"), limits), log };
+  return { text: out.join("\n"), count: lines.length };
+}
+
+function readFile(
+  tree: SourceTree,
+  path: string,
+  fromLine: number | undefined,
+  toLine: number | undefined,
+  limits: ReadLimits,
+): ToolOutput {
+  const { text, count } = readBlock(tree, path, fromLine, toLine, limits);
+  return {
+    content: capOutput(text, limits),
+    log: `read_file ${logArg(path)} (${plural(count, "riga", "righe")})`,
+  };
+}
+
+/**
+ * Più file per intero in una chiamata: si aggiungono in ordine finché il totale resta nel tetto
+ * dell'output (meno la riserva del suggerimento); quelli che non entrano, o non si leggono, diventano
+ * una riga a sé e non fermano gli altri.
+ */
+function readFiles(tree: SourceTree, paths: string[], limits: ReadLimits): ToolOutput {
+  const budget = limits.maxToolOutputChars - HINT_RESERVE_CHARS;
+  const unique = [...new Set(paths)];
+  const parts: string[] = [];
+  let chars = 0;
+  let linesRead = 0;
+  for (const path of unique) {
+    let part: string;
+    try {
+      const block = readBlock(tree, path, 1, undefined, limits);
+      const size = block.text.length + (parts.length ? 2 : 0);
+      if (chars + size <= budget) {
+        chars += size;
+        linesRead += block.count;
+        parts.push(block.text);
+        continue;
+      }
+      part = `File ${path}: non letto, supera lo spazio: leggilo da solo con read_file`;
+    } catch (err) {
+      if (!(err instanceof SourceTreeError)) throw err;
+      part = `File ${path}: Errore: ${err.message}`;
+    }
+    chars += part.length + (parts.length ? 2 : 0);
+    parts.push(part);
+  }
+  return {
+    content: capOutput(parts.join("\n\n"), limits),
+    log: `read_files (${unique.length} file, ${plural(linesRead, "riga", "righe")})`,
+  };
+}
+
+/**
+ * Risultati con una riga di contesto prima e dopo, come `grep -C1`: righe trovate `percorso:N: testo`,
+ * di contesto `percorso-N- testo`. Le finestre sovrapposte o contigue dello stesso file si fondono
+ * (nessuna riga ripetuta); i gruppi separati sono divisi da `--`. Il contesto si legge dal sorgente.
+ */
+function withContext(
+  tree: SourceTree,
+  results: { path: string; line: number; text: string }[],
+): { text: string; match: boolean }[] {
+  const byPath = new Map<string, Map<number, string>>();
+  for (const r of results) {
+    const found = byPath.get(r.path) ?? new Map<number, string>();
+    found.set(r.line, r.text);
+    byPath.set(r.path, found);
+  }
+  const out: { text: string; match: boolean }[] = [];
+  for (const [path, found] of byPath) {
+    const hits = [...found.keys()].sort((x, y) => x - y);
+    const groups: [number, number][] = [];
+    for (const n of hits) {
+      const from = Math.max(n - 1, 1);
+      const last = groups[groups.length - 1];
+      if (last && from <= last[1] + 1) last[1] = n + 1;
+      else groups.push([from, n + 1]);
+    }
+    for (const [from, to] of groups) {
+      if (out.length) out.push({ text: "--", match: false });
+      tree.lines(path, from, to).forEach((text, i) => {
+        const n = from + i;
+        const hit = found.get(n);
+        out.push(hit === undefined ? { text: `${path}-${n}- ${text}`, match: false } : { text: `${path}:${n}: ${hit}`, match: true });
+      });
+    }
+  }
+  return out;
 }
 
 async function search(
@@ -358,11 +474,14 @@ async function search(
   limits: ReadLimits,
 ): Promise<ToolOutput> {
   const results = await tree.search(pattern, { glob, regex });
-  const all = results.slice(0, MAX_SEARCH_MATCHES).map((r) => `${r.path}:${r.line}: ${r.text}`);
-  const lines = all.slice(0, fittingLines(all, limits));
+  const considered = results.slice(0, MAX_SEARCH_MATCHES);
+  const all = withContext(tree, considered);
+  const shown = all.slice(0, fittingLines(all.map((e) => e.text), limits));
+  const lines = shown.map((e) => e.text);
   if (all.length === 0) lines.push("Nessun risultato.");
-  if (lines.length < all.length || results.length >= Math.min(SOURCE_LIMITS.maxSearchResults, MAX_SEARCH_MATCHES)) {
-    lines.push(`[risultati limitati a ${lines.length}: restringi la ricerca con glob o un pattern più specifico]`);
+  const shownMatches = shown.filter((e) => e.match).length;
+  if (shownMatches < considered.length || results.length >= Math.min(SOURCE_LIMITS.maxSearchResults, MAX_SEARCH_MATCHES)) {
+    lines.push(`[risultati limitati a ${shownMatches}: restringi la ricerca con glob o un pattern più specifico]`);
   }
   return {
     content: capOutput(lines.join("\n"), limits),
@@ -419,6 +538,8 @@ async function runReadTool(
       return listDir(tree!, a.path, a.depth, limits);
     case "read_file":
       return readFile(tree!, a.path, a.fromLine, a.toLine, limits);
+    case "read_files":
+      return readFiles(tree!, (a as Record<string, string[]>).paths!, limits);
     case "search":
       return search(tree!, a.pattern, a.glob, a.regex, limits);
     case "list_operations":
@@ -443,8 +564,11 @@ function errorLog(name: string, args: Record<string, unknown> | null): string {
 /** Segnaposto di un output di lettura omesso: nome dello strumento e argomento principale, mai il contenuto. */
 function omittedStub(name: ReadToolName, args: Record<string, unknown>): string {
   const str = (key: string): string => (typeof args[key] === "string" ? logArg(args[key] as string) : "");
+  const paths = Array.isArray(args["paths"]) ? (args["paths"] as unknown[]).filter((p) => typeof p === "string").join(", ") : "";
   const target =
-    name === "read_operation"
+    name === "read_files"
+      ? logArg(paths)
+      : name === "read_operation"
       ? `${str("method").toUpperCase()} ${str("path")}`
       : name === "search"
         ? `"${str("pattern")}"`

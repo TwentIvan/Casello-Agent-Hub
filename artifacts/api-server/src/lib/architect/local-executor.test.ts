@@ -314,6 +314,7 @@ describe("lease: ping, scadenza, abbandono, rilascio, annullamento", () => {
     expect(row.status).toBe("queued");
     expect(row.leaseTokenHash).toBeNull();
     expect(row.leaseUntil).toBeNull();
+    expect(row.log.map((e) => e.message)).toContain("lease scaduta: torna in coda");
 
     const again = await claimLocalAnalysis(analysisId, "Mac 2", at(1000 + LOCAL_LEASE_MS + 2));
     expect(again.phase).toBe("capabilities");
@@ -334,8 +335,10 @@ describe("lease: ping, scadenza, abbandono, rilascio, annullamento", () => {
     await claimLocalAnalysis(analysisId, "Mac", T0);
     const released = await releaseLocalAnalysis(analysisId);
     expect(released).toMatchObject({ status: "queued", leaseTokenHash: null, leaseUntil: null, leaseLabel: null });
+    expect(released!.log.map((e) => e.message)).toContain("rilasciata dalla console: torna in coda");
     const cancelled = await cancelLocalAnalysis(analysisId);
     expect(cancelled).toMatchObject({ status: "failed", error: "annullata dalla console" });
+    expect(cancelled!.log.map((e) => e.message)).toContain("annullata dalla console");
     // Già chiusa: niente da rilasciare né da annullare
     expect(await releaseLocalAnalysis(analysisId)).toBeNull();
     expect(await cancelLocalAnalysis(analysisId)).toBeNull();

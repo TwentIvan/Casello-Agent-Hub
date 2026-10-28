@@ -524,34 +524,67 @@ const openLocal = (analysisId: number) =>
   and(eq(analysesTable.id, analysisId), eq(analysesTable.executor, "local"), inArray(analysesTable.status, ["queued", "running"]));
 
 /** Console "Rilascia": lease azzerata, analisi di nuovo in coda. Null se non è un'analisi locale aperta. */
-export async function releaseLocalAnalysis(analysisId: number): Promise<Analysis | null> {
-  const [row] = await db
-    .update(analysesTable)
-    .set({ status: "queued", ...leaseCleared })
-    .where(openLocal(analysisId))
-    .returning();
-  return row ?? null;
+export async function releaseLocalAnalysis(analysisId: number, now: Date = new Date()): Promise<Analysis | null> {
+  // Riga bloccata e UPDATE condizionato nella stessa transazione: stato e voce di log restano atomici
+  return db.transaction(async (tx) => {
+    const [current] = await tx.select().from(analysesTable).where(openLocal(analysisId)).for("update");
+    if (!current) return null;
+    const [row] = await tx
+      .update(analysesTable)
+      .set({
+        status: "queued",
+        log: appendLog(current.log ?? [], [logEntry(now, current.phase ?? "agente locale", "rilasciata dalla console: torna in coda")]),
+        ...leaseCleared,
+      })
+      .where(openLocal(analysisId))
+      .returning();
+    return row ?? null;
+  });
 }
 
 /** Console "Annulla": analisi chiusa come fallita. Null se non è un'analisi locale aperta. */
-export async function cancelLocalAnalysis(analysisId: number): Promise<Analysis | null> {
-  const [row] = await db
-    .update(analysesTable)
-    .set({ status: "failed", error: "annullata dalla console", finishedAt: new Date(), ...leaseCleared })
-    .where(openLocal(analysisId))
-    .returning();
+export async function cancelLocalAnalysis(analysisId: number, now: Date = new Date()): Promise<Analysis | null> {
+  const row = await db.transaction(async (tx) => {
+    const [current] = await tx.select().from(analysesTable).where(openLocal(analysisId)).for("update");
+    if (!current) return null;
+    const [updated] = await tx
+      .update(analysesTable)
+      .set({
+        status: "failed",
+        error: "annullata dalla console",
+        finishedAt: now,
+        log: appendLog(current.log ?? [], [logEntry(now, current.phase ?? "agente locale", "annullata dalla console")]),
+        ...leaseCleared,
+      })
+      .where(openLocal(analysisId))
+      .returning();
+    return updated ?? null;
+  });
   if (row) forgetLocalSources(analysisId);
-  return row ?? null;
+  return row;
 }
 
 /** Le analisi locali in corso con la lease scaduta tornano in coda. Restituisce quante. */
 export async function releaseExpiredLeases(now: Date = new Date()): Promise<number> {
-  const rows = await db
-    .update(analysesTable)
-    .set({ status: "queued", ...leaseCleared })
-    .where(and(eq(analysesTable.executor, "local"), eq(analysesTable.status, "running"), lt(analysesTable.leaseUntil, now)))
-    .returning({ id: analysesTable.id });
-  return rows.length;
+  const expired = and(eq(analysesTable.executor, "local"), eq(analysesTable.status, "running"), lt(analysesTable.leaseUntil, now));
+  return db.transaction(async (tx) => {
+    // Righe bloccate con le stesse condizioni dell'UPDATE: ognuna si aggiorna con la sua voce di log
+    const candidates = await tx.select().from(analysesTable).where(expired).for("update");
+    let released = 0;
+    for (const current of candidates) {
+      const rows = await tx
+        .update(analysesTable)
+        .set({
+          status: "queued",
+          log: appendLog(current.log ?? [], [logEntry(now, current.phase ?? "agente locale", "lease scaduta: torna in coda")]),
+          ...leaseCleared,
+        })
+        .where(and(eq(analysesTable.id, current.id), expired))
+        .returning({ id: analysesTable.id });
+      released += rows.length;
+    }
+    return released;
+  });
 }
 
 /** Job delle lease scadute: ogni minuto; il timer non tiene in vita il processo. */

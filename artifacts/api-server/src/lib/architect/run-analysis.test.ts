@@ -485,6 +485,21 @@ describe("startAnalysis", () => {
     expect((await loadItems(second)).find((i) => i.ref === "tool:list_teams")!.diff).toBe("unchanged");
   });
 
+  it("le notes di una fase arrivano come appunti alle fasi successive e non negli esiti", async () => {
+    resultOverrides.map = { ...(RESULTS.map as object), notes: "APPUNTO-MAP-XYZ" };
+    const id = await createAnalysis();
+    await startAnalysis(id, { zip: testZip() });
+
+    expect((await loadAnalysis(id)).error).toBeNull();
+    const caps = llmRequests.filter((r) => phaseOf(r) === "capabilities").map((r) => String(r.messages[1].content));
+    expect(caps.length).toBeGreaterThan(0);
+    for (const user of caps) {
+      expect(user).toContain("Appunti delle fasi precedenti");
+      expect(user).toContain("### map\nAPPUNTO-MAP-XYZ");
+      expect(user.match(/APPUNTO-MAP-XYZ/g)).toHaveLength(1);
+    }
+  });
+
   it("fase completion non valida tre volte: failed, restano gli elementi di catalog e agents", async () => {
     invalidPhases.add("completion");
     const id = await createAnalysis();

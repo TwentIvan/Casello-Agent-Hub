@@ -61,7 +61,11 @@ const itMap: z.ZodErrorMap = (issue, ctx) => {
 };
 const P = { errorMap: itMap };
 
+/** Appunti scritti dal modello per le fasi successive: finiscono nel dossier di previousBlock. */
+export const NOTES_MAX_CHARS = 6_000;
+
 const str = (max = SHORT) => z.string(P).max(max, `testo troppo lungo (massimo ${max} caratteri)`);
+const notes = () => str(NOTES_MAX_CHARS).optional();
 const nonEmpty = (max = SHORT) => str(max).min(1, "non può essere vuoto");
 const bool = () => z.boolean(P);
 const list = <T extends ZodType>(item: T, max = MAX_LIST) => z.array(item, P).max(max, `troppi elementi (massimo ${max})`);
@@ -90,6 +94,7 @@ export const MapResultSchema = obj({
   auth: obj({ mechanism: str(LONG), userToken: str(LONG), notes: str(LONG).optional() }),
   uiAreas: list(obj({ name: nonEmpty(), description: str(), pages: list(nonEmpty(), 50) }), MAX_ITEMS),
   summary: str(LONG),
+  notes: notes(),
 });
 
 // --- Fase 2: capacità ---
@@ -105,6 +110,7 @@ export const CapabilitiesResultSchema = obj({
     }),
     MAX_ITEMS,
   ),
+  notes: notes(),
 });
 
 // --- Fase 3: catalogo ---
@@ -165,6 +171,7 @@ function addDuplicates(ctx: z.RefinementCtx, keys: string[], path: (string | num
 export const CatalogResultSchema = obj({
   tools: list(ToolProposalSchema, MAX_TOOLS),
   endpoints: list(EndpointProposalSchema, MAX_ITEMS),
+  notes: notes(),
 }).superRefine((res, ctx) => {
   addDuplicates(ctx, res.tools.map((t) => t.name), ["tools"], (k) => `il tool "${k}" è proposto più volte: i nomi devono essere unici`);
   addDuplicates(
@@ -221,6 +228,7 @@ export function skillKey(role: string, area: string | null, name: string): strin
 export const AgentsResultSchema = obj({
   agents: list(AgentProposalSchema, MAX_ITEMS),
   skills: list(SkillProposalSchema, MAX_ITEMS),
+  notes: notes(),
 }).superRefine((res, ctx) => {
   const generals = res.agents.filter((a) => a.role === "general").length;
   if (generals !== 1) {
@@ -268,7 +276,7 @@ export const CompletionItemSchema = obj({
   implementation: str(LONG),
 });
 
-export const CompletionResultSchema = obj({ items: list(CompletionItemSchema, MAX_ITEMS) }).superRefine((res, ctx) => {
+export const CompletionResultSchema = obj({ items: list(CompletionItemSchema, MAX_ITEMS), notes: notes() }).superRefine((res, ctx) => {
   const keys = new Set(res.items.map((i) => i.key));
   if (keys.size !== res.items.length) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["items"], message: "le chiavi delle voci devono essere uniche" });
@@ -331,7 +339,7 @@ export const EvolutionItemSchema = obj({
   implementation: str(LONG),
 });
 
-export const EvolutionResultSchema = obj({ items: list(EvolutionItemSchema, MAX_ITEMS) });
+export const EvolutionResultSchema = obj({ items: list(EvolutionItemSchema, MAX_ITEMS), notes: notes() });
 
 export const PHASE_SCHEMAS: Record<PhaseName, ZodType> = {
   map: MapResultSchema,

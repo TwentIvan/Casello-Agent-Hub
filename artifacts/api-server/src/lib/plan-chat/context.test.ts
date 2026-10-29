@@ -74,7 +74,7 @@ describe("buildPlanMessages", () => {
   });
 
   it("oltre il tetto di token si tolgono prima la cronologia, poi le altre app", () => {
-    const otherApps = Array.from({ length: 200 }, (_, i) => ({
+    const otherApps = Array.from({ length: 600 }, (_, i) => ({
       name: `App ${i}`,
       slug: `app-${i}`,
       description: "d".repeat(400),

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { ProviderError } from "../ai/discovery";
 import type { ModelChatResult } from "../ai/executor";
@@ -58,12 +58,42 @@ describe("runPlanTurn", () => {
     expect(sent).toHaveLength(7);
     expect(sent[5].tools).toBeDefined();
     expect(sent[6].tools).toBeUndefined();
-    expect(sent[6].messages.at(-1)).toEqual({ role: "system", content: "Hai esaurito gli strumenti: rispondi ora all'utente." });
+    expect(sent[6].messages.at(-1)).toEqual({ role: "user", content: "Hai esaurito gli strumenti: rispondi ora all'utente." });
   });
 
-  it("oltre 40 000 token il turno fallisce", async () => {
-    const { deps } = makeDeps([toolReply({ promptTokens: 41_000 })]);
-    expect(await runPlanTurn(start, deps)).toMatchObject({ ok: false, error: "Limite di token del turno raggiunto." });
+  it("risposta finale oltre il budget, senza strumenti: ok con il contenuto", async () => {
+    const { deps } = makeDeps([reply({ content: "Risposta", promptTokens: 41_000 })]);
+    expect(await runPlanTurn(start, deps)).toMatchObject({ ok: true, content: "Risposta", tokens: 41_005 });
+  });
+
+  it("risposta oltre il budget con tool call: strumento non eseguito, chiamata finale senza strumenti", async () => {
+    const runTool = vi.fn(async () => "esito");
+    const { deps, sent } = makeDeps([toolReply({ promptTokens: 41_000 }), reply({ content: "Sintesi" })], { runTool });
+    const out = await runPlanTurn(start, deps);
+    expect(out).toMatchObject({ ok: true, content: "Sintesi" });
+    expect(runTool).not.toHaveBeenCalled();
+    expect(sent).toHaveLength(2);
+    expect(sent[1].tools).toBeUndefined();
+    expect(sent[1].messages.at(-1)).toEqual({ role: "user", content: "Hai esaurito gli strumenti: rispondi ora all'utente." });
+    expect(sent[1].messages.some((m) => m.role === "assistant")).toBe(false);
+  });
+
+  it("i token in cache pesano il 10% nel budget", async () => {
+    // 45 000 di prompt, di cui 40 000 in cache: 5 000 + 4 000 + 5 = 9 005 pesati, sotto il tetto
+    const cached = toolReply({ promptTokens: 45_000, cachedPromptTokens: 40_000 });
+    const runTool = vi.fn(async () => "esito");
+    const { deps, sent } = makeDeps([cached, reply({ content: "ok" })], { runTool });
+    const out = await runPlanTurn(start, deps);
+    expect(out).toMatchObject({ ok: true, content: "ok", tokens: 45_005 + 15 });
+    expect(runTool).toHaveBeenCalledTimes(1);
+    expect(sent[1].tools).toBeDefined();
+  });
+
+  it("budget già esaurito prima della prima chiamata: limite di token", async () => {
+    const { deps, sent } = makeDeps([]);
+    const out = await runPlanTurn(start, deps, { maxRounds: 6, maxTokens: 0, maxActiveMs: 120_000 });
+    expect(out).toMatchObject({ ok: false, error: "Limite di token del turno raggiunto." });
+    expect(sent).toHaveLength(0);
   });
 
   it("tempo scaduto", async () => {

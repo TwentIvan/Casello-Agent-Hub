@@ -5,6 +5,7 @@ import type { ChatCompletionFunctionTool, ChatCompletionMessageParam } from "ope
 import { assistantToolCalls, type ChatToolCall } from "../ai-gateway";
 import { ProviderError } from "../ai/discovery";
 import type { ModelChatResult } from "../ai/executor";
+import { effectiveTokens } from "../architect/phase-loop";
 import { CostTracker } from "../architect/run-analysis";
 import { PLAN_TOOLS } from "./tools";
 
@@ -40,7 +41,10 @@ export async function runPlanTurn(
   const history = [...messages];
   const cost = new CostTracker();
   const startedAt = deps.now();
+  // Registrati su messaggio e conversazione: prompt + completion
   let tokens = 0;
+  // Budget del turno: come l'architetto, i token in cache pesano il 10%
+  let budgetUsed = 0;
 
   const fail = (error: string): PlanTurnOutcome => ({ ok: false, error, tokens, costUsd: cost.value() });
 
@@ -56,15 +60,19 @@ export async function runPlanTurn(
     }
     cost.add(reply);
     tokens += reply.promptTokens + reply.completionTokens;
-    if (tokens > limits.maxTokens) return fail("Limite di token del turno raggiunto.");
+    budgetUsed += effectiveTokens(reply);
     return reply;
   };
   const isOutcome = (r: ModelChatResult | PlanTurnOutcome): r is PlanTurnOutcome => "ok" in r;
+
+  if (limits.maxTokens <= 0) return fail("Limite di token del turno raggiunto.");
 
   for (let round = 0; round < limits.maxRounds; round++) {
     const r = await call(PLAN_TOOLS);
     if (isOutcome(r)) return r;
     if (r.toolCalls.length === 0) return { ok: true, content: r.content ?? "", tokens, costUsd: cost.value() };
+    // Budget superato: niente altri strumenti, si va alla risposta finale (non si eseguono le tool call)
+    if (budgetUsed > limits.maxTokens) break;
     history.push({ role: "assistant", content: r.content, tool_calls: assistantToolCalls(r.toolCalls) });
     for (const c of r.toolCalls) {
       const content = await deps.runTool(c);
@@ -72,7 +80,7 @@ export async function runPlanTurn(
     }
   }
 
-  history.push({ role: "system", content: OUT_OF_TOOLS });
+  history.push({ role: "user", content: OUT_OF_TOOLS });
   const last = await call(undefined);
   if (isOutcome(last)) return last;
   return { ok: true, content: last.content ?? "", tokens, costUsd: cost.value() };

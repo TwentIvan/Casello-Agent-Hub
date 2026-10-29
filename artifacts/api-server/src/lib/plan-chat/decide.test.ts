@@ -123,6 +123,7 @@ describe("decideProposal", () => {
     expect(item!.id).toBe(it.id);
     expect((item!.payload as { title: string }).title).toBe("Aggiornato");
     expect(item!.evidence).toEqual([{ file: "b.ts" }]);
+    expect(item!.conversationId).toBe(conversationId);
   });
 
   it("accettare discard scarta la voce", async () => {

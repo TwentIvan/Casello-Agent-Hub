@@ -132,7 +132,7 @@ export async function decideProposal(
           .update(analysisItemsTable)
           .set(
             proposal.kind === "update"
-              ? { payload: proposal.payload, evidence: evidenceOf(proposal.payload) }
+              ? { payload: proposal.payload, evidence: evidenceOf(proposal.payload), conversationId: proposal.conversationId }
               : { status: "discarded" },
           )
           .where(eq(analysisItemsTable.id, target.id))

@@ -288,7 +288,13 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
 
   router.post("/plan-conversations/:id/messages", messageRateLimit, async (req, res) => {
     const { id } = parseRequest(SendPlanMessageParams, req.params);
-    const { content } = parseRequest(SendPlanMessageBody, req.body);
+    const body = parseRequest(SendPlanMessageBody, req.body);
+    // Un messaggio di soli spazi non è un messaggio; titolo e cronologia usano il testo senza spazi ai bordi
+    const content = body.content.trim();
+    if (content === "") {
+      res.status(400).json({ error: "Il messaggio è vuoto" });
+      return;
+    }
     const conv = await findConversation(id, currentUserId(req));
     if (!conv) {
       res.status(404).json({ error: CONVERSATION_NOT_FOUND });

@@ -239,9 +239,19 @@ describe("route della chat del piano", () => {
     await waitIdleApi(id);
   });
 
+  it("il messaggio e il titolo usano il testo senza spazi ai bordi", async () => {
+    const { id } = await createConv();
+    fake.chatReply = () => ({ content: "ok", toolCalls: [], usage: { prompt_tokens: 1, completion_tokens: 1 } });
+    const sent = await api("POST", `/plan-conversations/${id}/messages`, { content: "  ciao bot \n" });
+    expect(sent.status, sent.text).toBe(202);
+    expect(sent.json.content).toBe("ciao bot");
+    expect((await waitIdleApi(id)).title).toBe("ciao bot");
+  });
+
   it("messaggio vuoto o oltre 8 000 caratteri → 400", async () => {
     const { id } = await createConv();
     expect((await api("POST", `/plan-conversations/${id}/messages`, { content: "" })).status).toBe(400);
+    expect((await api("POST", `/plan-conversations/${id}/messages`, { content: "  \n\t " })).status).toBe(400);
     expect((await api("POST", `/plan-conversations/${id}/messages`, { content: "x".repeat(8001) })).status).toBe(400);
     expect((await api("GET", `/plan-conversations/${id}`)).json.messages).toEqual([]);
   });

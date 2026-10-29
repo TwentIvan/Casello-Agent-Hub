@@ -285,6 +285,29 @@ describe("turni della chat del piano", () => {
     expect(Number(conv.costUsd)).toBeCloseTo(first * 2, 6);
   });
 
+  it("un turno ok con risposta vuota salva il segnaposto testuale", async () => {
+    fake.chatReply = () => ({ content: "", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 0 } });
+    await startPlanTurn(conversationId, "ciao");
+    await waitIdle(conversationId);
+    const messages = await getMessages();
+    expect(messages[1]).toMatchObject({ role: "assistant", content: "(nessuna risposta testuale)", error: false });
+  });
+
+  it("failInterruptedPlanTurns riscrive solo l'ultimo messaggio assistant vuoto", async () => {
+    await db.update(planConversationsTable).set({ turnStatus: "running" }).where(eq(planConversationsTable.id, conversationId));
+    await db.insert(planMessagesTable).values([
+      { conversationId, role: "user", content: "uno" },
+      { conversationId, role: "assistant", content: "" },
+      { conversationId, role: "user", content: "due" },
+      { conversationId, role: "assistant", content: "" },
+    ]);
+    await failInterruptedPlanTurns();
+    const messages = await getMessages();
+    expect(messages.map((m) => m.content)).toEqual(["uno", "", "due", INTERRUPTED_TURN_MESSAGE]);
+    expect(messages[1]!.error).toBe(false);
+    expect(messages[3]!.error).toBe(true);
+  });
+
   it("failInterruptedPlanTurns rimette idle e aggiunge il messaggio di interruzione", async () => {
     await db.update(planConversationsTable).set({ turnStatus: "running" }).where(eq(planConversationsTable.id, conversationId));
     await db.insert(planMessagesTable).values([

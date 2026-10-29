@@ -36,6 +36,7 @@ import { runPlanTurn } from "./turn";
 export const PLAN_MESSAGE_MAX_CHARS = 8_000;
 export const INTERRUPTED_TURN_MESSAGE = "Turno interrotto dal riavvio di Casello: riscrivi il messaggio.";
 const NO_MODEL_MESSAGE = "Scegli un modello per la conversazione.";
+export const EMPTY_REPLY_MESSAGE = "(nessuna risposta testuale)";
 const GENERIC_ERROR_MESSAGE = "Errore nel turno della conversazione.";
 const APP_CARD_MAP_MAX_CHARS = 4_000;
 const TITLE_MAX_CHARS = 80;
@@ -272,7 +273,7 @@ export async function executePlanTurn(conversationId: number, assistantMessageId
       tokens = outcome.tokens;
       costUsd = outcome.costUsd;
       if (outcome.ok) {
-        content = outcome.content;
+        content = outcome.content.trim() === "" ? EMPTY_REPLY_MESSAGE : outcome.content;
         isError = false;
       } else {
         content = outcome.error;
@@ -324,12 +325,21 @@ export async function failInterruptedPlanTurns(): Promise<number> {
       .returning({ id: planConversationsTable.id });
     if (interrupted.length === 0) return 0;
     const ids = interrupted.map((c) => c.id);
-    // Il messaggio vuoto del turno interrotto diventa il messaggio d'errore; se manca se ne crea uno
-    const empties = await tx
-      .update(planMessagesTable)
-      .set({ content: INTERRUPTED_TURN_MESSAGE, error: true })
+    // Il messaggio vuoto del turno interrotto (l'ultimo per conversazione) diventa il messaggio d'errore;
+    // se manca se ne crea uno
+    const lastEmpties = await tx
+      .select({ id: sql<number>`max(${planMessagesTable.id})::int` })
+      .from(planMessagesTable)
       .where(and(inArray(planMessagesTable.conversationId, ids), eq(planMessagesTable.role, "assistant"), eq(planMessagesTable.content, "")))
-      .returning({ conversationId: planMessagesTable.conversationId });
+      .groupBy(planMessagesTable.conversationId);
+    const empties =
+      lastEmpties.length === 0
+        ? []
+        : await tx
+            .update(planMessagesTable)
+            .set({ content: INTERRUPTED_TURN_MESSAGE, error: true })
+            .where(inArray(planMessagesTable.id, lastEmpties.map((m) => m.id)))
+            .returning({ conversationId: planMessagesTable.conversationId });
     const covered = new Set(empties.map((m) => m.conversationId));
     const missing = ids.filter((id) => !covered.has(id));
     if (missing.length > 0) {

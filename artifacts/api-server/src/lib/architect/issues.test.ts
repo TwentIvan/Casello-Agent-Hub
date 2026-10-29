@@ -34,6 +34,8 @@ const row = (payload: unknown, chapter: AnalysisItem["chapter"] = "completion"):
     status: "approved",
     reviewNote: null,
     appliedAt: null,
+    origin: "architect",
+    conversationId: null,
     createdAt: new Date(),
   };
 };

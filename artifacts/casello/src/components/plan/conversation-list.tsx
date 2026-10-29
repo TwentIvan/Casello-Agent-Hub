@@ -92,7 +92,7 @@ export function ConversationList({ appId, selectedId, onSelect }: ConversationLi
                   c.id === selectedId && "bg-muted",
                 )}
               >
-                <span className="block truncate font-medium">{c.title}</span>
+                <span className="block truncate font-medium">{c.title || "Nuova conversazione"}</span>
                 <span className="block text-xs text-muted-foreground tabular-nums">
                   {formatDateTime(c.updatedAt)}
                   {formatCost(c.costUsd, c.tokensUsed) ? ` · ${formatCost(c.costUsd, c.tokensUsed)}` : ""}

@@ -125,7 +125,7 @@ export function ChatPanel({ conversationId, appId, onDeleted }: ChatPanelProps) 
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="truncate text-sm font-medium">{data.title}</h3>
+          <h3 className="truncate text-sm font-medium">{data.title || "Nuova conversazione"}</h3>
           <p className="text-xs text-muted-foreground tabular-nums">
             {data.tokensUsed.toLocaleString("it-IT")} token{cost ? ` · ${cost}` : ""}
           </p>
@@ -163,8 +163,12 @@ export function ChatPanel({ conversationId, appId, onDeleted }: ChatPanelProps) 
         )}
         {data.messages.map((m) => {
           const proposals = data.proposals.filter((p) => p.messageId === m.id);
+          // Il segnaposto vuoto del turno in corso non è un messaggio da mostrare
+          const empty = m.role === "assistant" && m.content === "";
+          if (empty && proposals.length === 0) return null;
           return (
             <div key={m.id} className={cn("space-y-2", m.role === "user" && "flex flex-col items-end")}>
+              {!empty && (
               <div
                 className={cn(
                   "max-w-[90%] rounded-lg px-3 py-2",
@@ -178,6 +182,7 @@ export function ChatPanel({ conversationId, appId, onDeleted }: ChatPanelProps) 
                   <Markdown>{m.content}</Markdown>
                 )}
               </div>
+              )}
               {proposals.length > 0 && (
                 <div className="w-full space-y-2">
                   {proposals.map((p) => (

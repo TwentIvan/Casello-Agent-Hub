@@ -154,6 +154,40 @@ describe("decideProposal", () => {
     expect(row!.status).toBe("stale");
   });
 
+  it("update su una voce chat approvata di un'analisi precedente della stessa app è accettato", async () => {
+    const [conv] = await db.select().from(planConversationsTable);
+    const [old] = await db
+      .insert(analysesTable)
+      .values({ appId: conv!.appId, model: "m", sources: { code: "none", openapi: false, description: true }, maxTokens: 1000, status: "completed" })
+      .returning();
+    const [it] = await db
+      .insert(analysisItemsTable)
+      .values({ analysisId: old!.id, chapter: "completion", ref: "chat-old", position: 1, payload: completion("Vecchio"), diff: "new", status: "approved", origin: "chat" })
+      .returning();
+    const p = await propose({ kind: "update", payload: completion("Nuovo"), targetItemId: it!.id, targetHash: itemHash(it!) });
+    const { proposal, item } = await decideProposal(p.id, userId, "accept");
+    expect(proposal.status).toBe("accepted");
+    expect((item!.payload as { title: string }).title).toBe("Nuovo");
+  });
+
+  it("target nell'analisi di un'altra app → stale e conflitto", async () => {
+    const [other] = await db.insert(appsTable).values({ name: "Altra", slug: "altra", baseUrl: "http://a.test" }).returning();
+    const [an] = await db
+      .insert(analysesTable)
+      .values({ appId: other!.id, model: "m", sources: { code: "none", openapi: false, description: true }, maxTokens: 1000, status: "completed" })
+      .returning();
+    const [it] = await db
+      .insert(analysisItemsTable)
+      .values({ analysisId: an!.id, chapter: "completion", ref: "chat-x", position: 1, payload: completion("X"), diff: "new", status: "approved", origin: "chat" })
+      .returning();
+    const p = await propose({ kind: "discard", targetItemId: it!.id, targetHash: itemHash(it!) });
+    await expect(decideProposal(p.id, userId, "accept")).rejects.toBeInstanceOf(ProposalConflictError);
+    const [row] = await db.select().from(planProposalsTable).where(eq(planProposalsTable.id, p.id));
+    expect(row!.status).toBe("stale");
+    const [cur] = await db.select().from(analysisItemsTable).where(eq(analysisItemsTable.id, it!.id));
+    expect(cur!.status).toBe("approved");
+  });
+
   it("rifiutare segna la proposta rifiutata senza toccare le voci", async () => {
     const p = await propose({ kind: "add", payload: completion("Nuova") });
     const { proposal, item } = await decideProposal(p.id, userId, "reject");

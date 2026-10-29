@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { and, eq, max, sql } from "drizzle-orm";
 import {
   db,
+  analysesTable,
   analysisItemsTable,
   planConversationsTable,
   planProposalsTable,
@@ -67,7 +68,7 @@ export async function decideProposal(
   try {
     return await db.transaction(async (tx) => {
       const [owned] = await tx
-        .select({ analysisId: planConversationsTable.analysisId })
+        .select({ analysisId: planConversationsTable.analysisId, appId: planConversationsTable.appId })
         .from(planProposalsTable)
         .innerJoin(planConversationsTable, eq(planConversationsTable.id, planProposalsTable.conversationId))
         .where(and(eq(planProposalsTable.id, proposalId), eq(planConversationsTable.userId, userId)));
@@ -114,9 +115,19 @@ export async function decideProposal(
               .where(eq(analysisItemsTable.id, proposal.targetItemId))
               .for("update")
           : [];
-        if (!target || target.analysisId !== owned.analysisId || itemHash(target) !== proposal.targetHash) {
-          throw new StaleTarget();
+        // Il piano è l'analisi della conversazione più le voci approvate dalla chat di analisi precedenti della stessa app
+        let inPlan = false;
+        if (target) {
+          if (target.analysisId === owned.analysisId) inPlan = true;
+          else if (target.origin === "chat") {
+            const [targetAnalysis] = await tx
+              .select({ appId: analysesTable.appId })
+              .from(analysesTable)
+              .where(eq(analysesTable.id, target.analysisId));
+            inPlan = targetAnalysis?.appId === owned.appId;
+          }
         }
+        if (!target || !inPlan || itemHash(target) !== proposal.targetHash) throw new StaleTarget();
         [item] = await tx
           .update(analysisItemsTable)
           .set(

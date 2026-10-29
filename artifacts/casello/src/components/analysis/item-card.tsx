@@ -5,6 +5,7 @@ import {
   type AnalysisItem,
   type AnalysisItemUpdate,
   getGetAnalysisQueryKey,
+  getGetAppPlanQueryKey,
   getGetDashboardStatsQueryKey,
   getListAppToolsQueryKey,
   useUpdateAnalysisItem,
@@ -385,6 +386,7 @@ export function ItemCard({ item, appId, dependsOnTitles = [] }: ItemCardProps) {
     mutation: {
       onSuccess: (saved, { data }) => {
         void queryClient.invalidateQueries({ queryKey: getGetAnalysisQueryKey(item.analysisId) });
+        void queryClient.invalidateQueries({ queryKey: getGetAppPlanQueryKey(appId) });
         if (saved.status === "approved") {
           // L'approvazione applica la proposta: catalogo, agenti e skill cambiano.
           void queryClient.invalidateQueries({ queryKey: getListAppToolsQueryKey(appId) });
@@ -431,6 +433,11 @@ export function ItemCard({ item, appId, dependsOnTitles = [] }: ItemCardProps) {
             <Badge variant="outline" className={cn("border-transparent", ITEM_STATUS_STYLES[item.status])}>
               {ITEM_STATUS_LABELS[item.status]}
             </Badge>
+            {item.origin === "chat" && (
+              <Badge variant="secondary" className="font-normal">
+                da chat
+              </Badge>
+            )}
             {needsVerification && (
               <Badge variant="outline" className="border-transparent bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
                 Da verificare

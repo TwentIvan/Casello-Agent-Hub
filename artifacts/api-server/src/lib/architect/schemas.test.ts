@@ -198,6 +198,7 @@ describe("prompt", () => {
     hasOpenApi: false,
     repoMap: "",
     previous: { map: { summary: "x" } },
+    alreadyPlanned: [],
   };
   it("la mappa calcolata sta prima delle istruzioni di fase e degli esiti precedenti, solo se non vuota", () => {
     const p = phasePrompt("map", { ...ctx, repoMap: "## Albero\nsrc/" });
@@ -332,6 +333,7 @@ describe("esempi delle fasi nel prompt", () => {
       hasOpenApi: false,
       repoMap: "",
       previous: {},
+      alreadyPlanned: [],
     });
     expect(prompt).toContain(JSON.stringify(PHASE_EXAMPLES[phase]));
   });

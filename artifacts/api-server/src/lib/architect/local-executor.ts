@@ -28,6 +28,7 @@ import { readBytesLimited } from "../http-read";
 import { logger } from "../logger";
 import { formatIssues } from "./phase-loop";
 import { recordPhaseResult } from "./phase-record";
+import { chatPlannedItems } from "./planned";
 import { phasePrompt, SYSTEM_BASE } from "./prompts";
 import { appendLog } from "./run-analysis";
 import { PHASES, PHASE_SCHEMAS, type AnalysisChapter, type PhaseName } from "./schemas";
@@ -391,6 +392,7 @@ export async function localPhaseInstructions(
     // Casello non scarica il codice: la mappa del repository la costruisce l'agente sul suo clone
     repoMap: "",
     previous,
+    alreadyPlanned: await chatPlannedItems(app.id, analysisId),
   });
   return { phase, system: `${LOCAL_PREFACE}\n\n${SYSTEM_BASE}`, user };
 }

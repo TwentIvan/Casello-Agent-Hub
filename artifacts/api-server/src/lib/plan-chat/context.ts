@@ -58,6 +58,8 @@ export const PLAN_CONTEXT_MAX_TOKENS = 30_000;
 export const PLAN_HISTORY_MAX_CHARS = 24_000;
 const MAP_MAX_CHARS = 6_000;
 const TRUNCATED_TITLE_CHARS = 60;
+export const OTHER_APP_DESCRIPTION_MAX_CHARS = 300;
+export const OTHER_APP_MAX_TOOLS = 20;
 
 export const PLAN_SYSTEM_PROMPT = [
   "Sei il pianificatore di Casello: aiuti l'utente a discutere il piano di un'app (endpoint mancanti, completamento, evoluzione) e le integrazioni con le altre sue app.",
@@ -143,7 +145,7 @@ function dataBlock(input: PlanContextInput, opts: { includeOthers: boolean; titl
   } else {
     for (const o of input.otherApps) {
       lines.push(
-        `- ${o.name} (${o.slug}): ${o.description ?? "nessuna descrizione"} | strumenti: ${o.toolNames.join(", ") || "nessuno"}`,
+        `- ${o.name} (${o.slug}): ${o.description ? sliceChars(o.description, OTHER_APP_DESCRIPTION_MAX_CHARS) : "nessuna descrizione"} | strumenti: ${o.toolNames.slice(0, OTHER_APP_MAX_TOOLS).join(", ") || "nessuno"}`,
       );
     }
   }

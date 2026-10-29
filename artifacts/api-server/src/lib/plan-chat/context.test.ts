@@ -102,6 +102,24 @@ describe("buildPlanMessages", () => {
   });
 });
 
+describe("altre app", () => {
+  it("descrizione al massimo 300 caratteri e al massimo 20 strumenti per app", () => {
+    const otherApps = [
+      {
+        name: "Altra",
+        slug: "altra",
+        description: "d".repeat(400),
+        toolNames: Array.from({ length: 25 }, (_, i) => `tool_${String(i).padStart(2, "0")}`),
+      },
+    ];
+    const data = text(buildPlanMessages(baseInput({ otherApps }))[1]!);
+    expect(data).toContain("d".repeat(300));
+    expect(data).not.toContain("d".repeat(301));
+    expect(data).toContain("tool_19");
+    expect(data).not.toContain("tool_20");
+  });
+});
+
 describe("itemTitle", () => {
   it("per endpoint usa metodo e path", () => {
     expect(itemTitle("endpoint", { method: "post", path: "/api/x" })).toBe("POST /api/x");

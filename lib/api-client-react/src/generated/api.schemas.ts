@@ -659,6 +659,17 @@ export interface AnalysisEvidence {
 }
 
 /**
+ * Chi ha creato la voce (l'architetto o una proposta accettata in chat)
+ */
+export type AnalysisItemOrigin = typeof AnalysisItemOrigin[keyof typeof AnalysisItemOrigin];
+
+
+export const AnalysisItemOrigin = {
+  architect: 'architect',
+  chat: 'chat',
+} as const;
+
+/**
  * Contenuto della proposta, la cui forma dipende dal capitolo
  */
 export type AnalysisItemPayload = { [key: string]: unknown };
@@ -666,6 +677,8 @@ export type AnalysisItemPayload = { [key: string]: unknown };
 export interface AnalysisItem {
   id: number;
   analysisId: number;
+  /** Chi ha creato la voce (l'architetto o una proposta accettata in chat) */
+  origin: AnalysisItemOrigin;
   chapter: AnalysisChapter;
   /** Chiave stabile nell'analisi, es. tool:rosa_squadra */
   ref: string;
@@ -679,6 +692,157 @@ export interface AnalysisItem {
   reviewNote: string | null;
   /** @nullable */
   appliedAt: string | null;
+}
+
+export type PlanTurnStatus = typeof PlanTurnStatus[keyof typeof PlanTurnStatus];
+
+
+export const PlanTurnStatus = {
+  idle: 'idle',
+  running: 'running',
+} as const;
+
+export interface PlanConversation {
+  id: number;
+  appId: number;
+  analysisId: number;
+  /** @nullable */
+  aiModelId: number | null;
+  title: string;
+  tokensUsed: number;
+  /**
+     * null = costo parziale (prezzo mancante)
+     * @nullable
+     */
+  costUsd: number | null;
+  turnStatus: PlanTurnStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PlanMessageRole = typeof PlanMessageRole[keyof typeof PlanMessageRole];
+
+
+export const PlanMessageRole = {
+  user: 'user',
+  assistant: 'assistant',
+} as const;
+
+export interface PlanMessage {
+  id: number;
+  role: PlanMessageRole;
+  /** Markdown */
+  content: string;
+  /** Messaggio del bot che riporta un errore */
+  error: boolean;
+  createdAt: string;
+}
+
+export type PlanProposalKind = typeof PlanProposalKind[keyof typeof PlanProposalKind];
+
+
+export const PlanProposalKind = {
+  add: 'add',
+  update: 'update',
+  discard: 'discard',
+} as const;
+
+/**
+ * Contenuto proposto (add e update), null per discard
+ * @nullable
+ */
+export type PlanProposalPayload = { [key: string]: unknown } | null;
+
+export type PlanProposalStatus = typeof PlanProposalStatus[keyof typeof PlanProposalStatus];
+
+
+export const PlanProposalStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  rejected: 'rejected',
+  stale: 'stale',
+} as const;
+
+export interface PlanProposal {
+  id: number;
+  messageId: number;
+  kind: PlanProposalKind;
+  chapter: AnalysisChapter;
+  /** Titolo della voce proposta (per discard, quello della voce di destinazione) */
+  title: string;
+  /**
+     * Contenuto proposto (add e update), null per discard
+     * @nullable
+     */
+  payload: PlanProposalPayload;
+  rationale: string;
+  /** @nullable */
+  targetItemId: number | null;
+  status: PlanProposalStatus;
+  /**
+     * Voce creata o modificata all'accettazione
+     * @nullable
+     */
+  itemId: number | null;
+  /** @nullable */
+  decidedAt: string | null;
+  createdAt: string;
+}
+
+export type PlanConversationDetail = PlanConversation & ({
+  messages: PlanMessage[];
+  proposals: PlanProposal[];
+  /**
+     * Id di un'analisi completata più recente di quella della conversazione, se esiste
+     * @nullable
+     */
+  newerAnalysisId: number | null;
+});
+
+export interface AppPlan {
+  /**
+     * Ultima analisi completata dell'app (null se non ce n'è)
+     * @nullable
+     */
+  analysisId: number | null;
+  items: AnalysisItem[];
+}
+
+export interface PlanConversationCreate {
+  /** Modello di un account AI dell'utente o dell'account di sistema */
+  aiModelId: number;
+  /** Analisi di riferimento (default l'ultima completata dell'app) */
+  analysisId?: number;
+}
+
+export interface PlanConversationUpdate {
+  aiModelId: number;
+}
+
+export interface PlanMessageCreate {
+  /**
+     * @minLength 1
+     * @maxLength 8000
+     */
+  content: string;
+}
+
+export type PlanProposalDecisionAction = typeof PlanProposalDecisionAction[keyof typeof PlanProposalDecisionAction];
+
+
+export const PlanProposalDecisionAction = {
+  accept: 'accept',
+  reject: 'reject',
+} as const;
+
+export interface PlanProposalDecision {
+  action: PlanProposalDecisionAction;
+}
+
+export interface PlanProposalDecisionResult {
+  proposal: PlanProposal;
+  /** Voce creata o modificata (null se rifiutata) */
+  item: AnalysisItem | null;
 }
 
 /**

@@ -8,6 +8,9 @@ import {
   type Analysis,
   type AnalysisItem,
   type App,
+  type PlanConversation,
+  type PlanMessage,
+  type PlanProposal,
   type Run,
 } from "@workspace/db";
 
@@ -143,4 +146,25 @@ export function toPublicItem(item: AnalysisItem) {
     payload: isPlainObject(item.payload) ? item.payload : {},
     evidence: publicEvidence(item.evidence),
   };
+}
+
+/** Conversazione del piano: senza l'utente proprietario, costo come numero (null = parziale). */
+export function toPublicPlanConversation(conv: PlanConversation) {
+  const { userId: _userId, costUsd, ...rest } = conv;
+  return { ...rest, costUsd: toNumberOrNull(costUsd) };
+}
+
+/** Messaggio della conversazione, senza il conteggio dei token. */
+export function toPublicPlanMessage(message: PlanMessage) {
+  const { conversationId: _conversationId, tokens: _tokens, ...rest } = message;
+  return rest;
+}
+
+/**
+ * Proposta del bot con il titolo già calcolato (`title`: della voce proposta o, per discard, di quella di
+ * destinazione, passato dal chiamante). Mai l'impronta della voce di destinazione.
+ */
+export function toPublicPlanProposal(proposal: PlanProposal, title: string) {
+  const { conversationId: _conversationId, targetHash: _targetHash, ...rest } = proposal;
+  return { ...rest, title, payload: isPlainObject(proposal.payload) ? proposal.payload : null };
 }

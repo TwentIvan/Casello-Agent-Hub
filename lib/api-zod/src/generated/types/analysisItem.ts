@@ -7,6 +7,7 @@
  */
 import type { AnalysisChapter } from './analysisChapter';
 import type { AnalysisEvidence } from './analysisEvidence';
+import type { AnalysisItemOrigin } from './analysisItemOrigin';
 import type { AnalysisItemPayload } from './analysisItemPayload';
 import type { ItemDiff } from './itemDiff';
 import type { ItemStatus } from './itemStatus';
@@ -14,6 +15,8 @@ import type { ItemStatus } from './itemStatus';
 export interface AnalysisItem {
   id: number;
   analysisId: number;
+  /** Chi ha creato la voce (l'architetto o una proposta accettata in chat) */
+  origin: AnalysisItemOrigin;
   chapter: AnalysisChapter;
   /** Chiave stabile nell'analisi, es. tool:rosa_squadra */
   ref: string;

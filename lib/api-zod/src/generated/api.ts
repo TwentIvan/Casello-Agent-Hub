@@ -966,6 +966,7 @@ export const GetAnalysisResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.number(),
   "analysisId": zod.number(),
+  "origin": zod.enum(['architect', 'chat']).describe('Chi ha creato la voce (l\'architetto o una proposta accettata in chat)'),
   "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
   "ref": zod.string().describe('Chiave stabile nell\'analisi, es. tool:rosa_squadra'),
   "position": zod.number(),
@@ -1084,6 +1085,7 @@ export const UpdateAnalysisItemBody = zod.object({
 export const UpdateAnalysisItemResponse = zod.object({
   "id": zod.number(),
   "analysisId": zod.number(),
+  "origin": zod.enum(['architect', 'chat']).describe('Chi ha creato la voce (l\'architetto o una proposta accettata in chat)'),
   "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
   "ref": zod.string().describe('Chiave stabile nell\'analisi, es. tool:rosa_squadra'),
   "position": zod.number(),
@@ -1925,6 +1927,239 @@ export const RefreshCatalogResponse = zod.object({
   "missing": zod.array(zod.string())
 })).describe('Solo gli account dell\'utente corrente')
 }),zod.null()])
+})
+
+
+/**
+ * Voci dei capitoli endpoint, completion ed evolution dell'ultima analisi completata, più le voci nate in chat e approvate delle analisi precedenti. Senza analisi completata analysisId è null.
+ * @summary Piano dell'app (endpoint, completamento, evoluzione)
+ */
+export const GetAppPlanParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetAppPlanResponse = zod.object({
+  "analysisId": zod.number().nullable().describe('Ultima analisi completata dell\'app (null se non ce n\'è)'),
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "analysisId": zod.number(),
+  "origin": zod.enum(['architect', 'chat']).describe('Chi ha creato la voce (l\'architetto o una proposta accettata in chat)'),
+  "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
+  "ref": zod.string().describe('Chiave stabile nell\'analisi, es. tool:rosa_squadra'),
+  "position": zod.number(),
+  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo'),
+  "diff": zod.enum(['new', 'changed', 'removed', 'unchanged']).describe('Differenza rispetto allo stato approvato'),
+  "evidence": zod.array(zod.object({
+  "source": zod.string(),
+  "location": zod.string(),
+  "note": zod.string()
+})),
+  "status": zod.enum(['pending', 'approved', 'discarded', 'postponed']).describe('postponed solo per i capitoli endpoint, completion ed evolution'),
+  "reviewNote": zod.string().nullable(),
+  "appliedAt": zod.coerce.date().nullable()
+}))
+})
+
+
+/**
+ * @summary Conversazioni dell'utente sul piano di una app
+ */
+export const ListPlanConversationsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListPlanConversationsResponseItem = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "analysisId": zod.number(),
+  "aiModelId": zod.number().nullable(),
+  "title": zod.string(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)'),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListPlanConversationsResponse = zod.array(ListPlanConversationsResponseItem)
+
+
+/**
+ * Senza analysisId usa l'ultima analisi completata dell'app (nessuna: 409). Il modello deve essere di un account dell'utente o dell'account di sistema.
+ * @summary Apre una conversazione sul piano
+ */
+export const CreatePlanConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CreatePlanConversationBody = zod.object({
+  "aiModelId": zod.number().describe('Modello di un account AI dell\'utente o dell\'account di sistema'),
+  "analysisId": zod.number().optional().describe('Analisi di riferimento (default l\'ultima completata dell\'app)')
+})
+
+export const CreatePlanConversationResponse = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "analysisId": zod.number(),
+  "aiModelId": zod.number().nullable(),
+  "title": zod.string(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)'),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Conversazione con messaggi e proposte
+ */
+export const GetPlanConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetPlanConversationResponse = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "analysisId": zod.number(),
+  "aiModelId": zod.number().nullable(),
+  "title": zod.string(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)'),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "messages": zod.array(zod.object({
+  "id": zod.number(),
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string().describe('Markdown'),
+  "error": zod.boolean().describe('Messaggio del bot che riporta un errore'),
+  "createdAt": zod.coerce.date()
+})),
+  "proposals": zod.array(zod.object({
+  "id": zod.number(),
+  "messageId": zod.number(),
+  "kind": zod.enum(['add', 'update', 'discard']),
+  "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
+  "title": zod.string().describe('Titolo della voce proposta (per discard, quello della voce di destinazione)'),
+  "payload": zod.record(zod.string(), zod.unknown()).nullable().describe('Contenuto proposto (add e update), null per discard'),
+  "rationale": zod.string(),
+  "targetItemId": zod.number().nullable(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
+  "itemId": zod.number().nullable().describe('Voce creata o modificata all\'accettazione'),
+  "decidedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})),
+  "newerAnalysisId": zod.number().nullable().describe('Id di un\'analisi completata più recente di quella della conversazione, se esiste')
+}))
+
+
+/**
+ * Solo con nessun turno in corso (altrimenti 409).
+ * @summary Cambia il modello della conversazione
+ */
+export const UpdatePlanConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdatePlanConversationBody = zod.object({
+  "aiModelId": zod.number()
+})
+
+export const UpdatePlanConversationResponse = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "analysisId": zod.number(),
+  "aiModelId": zod.number().nullable(),
+  "title": zod.string(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)'),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Elimina la conversazione (le voci accettate restano)
+ */
+export const DeletePlanConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeletePlanConversationResponse = zod.void()
+
+
+/**
+ * Risponde subito col messaggio dell'utente; il bot risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso o se il modello non è più disponibile. Massimo 10 messaggi al minuto per utente.
+ * @summary Invia un messaggio e avvia il turno del bot
+ */
+export const SendPlanMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const sendPlanMessageBodyContentMax = 8000;
+
+
+
+export const SendPlanMessageBody = zod.object({
+  "content": zod.string().min(1).max(sendPlanMessageBodyContentMax)
+})
+
+export const SendPlanMessageResponse = zod.object({
+  "id": zod.number(),
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string().describe('Markdown'),
+  "error": zod.boolean().describe('Messaggio del bot che riporta un errore'),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * 409 se la proposta è già decisa o la voce di destinazione è cambiata (proposta stale).
+ * @summary Accetta o rifiuta una proposta del bot
+ */
+export const DecidePlanProposalParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DecidePlanProposalBody = zod.object({
+  "action": zod.enum(['accept', 'reject'])
+})
+
+export const DecidePlanProposalResponse = zod.object({
+  "proposal": zod.object({
+  "id": zod.number(),
+  "messageId": zod.number(),
+  "kind": zod.enum(['add', 'update', 'discard']),
+  "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
+  "title": zod.string().describe('Titolo della voce proposta (per discard, quello della voce di destinazione)'),
+  "payload": zod.record(zod.string(), zod.unknown()).nullable().describe('Contenuto proposto (add e update), null per discard'),
+  "rationale": zod.string(),
+  "targetItemId": zod.number().nullable(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
+  "itemId": zod.number().nullable().describe('Voce creata o modificata all\'accettazione'),
+  "decidedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}),
+  "item": zod.union([zod.object({
+  "id": zod.number(),
+  "analysisId": zod.number(),
+  "origin": zod.enum(['architect', 'chat']).describe('Chi ha creato la voce (l\'architetto o una proposta accettata in chat)'),
+  "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
+  "ref": zod.string().describe('Chiave stabile nell\'analisi, es. tool:rosa_squadra'),
+  "position": zod.number(),
+  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo'),
+  "diff": zod.enum(['new', 'changed', 'removed', 'unchanged']).describe('Differenza rispetto allo stato approvato'),
+  "evidence": zod.array(zod.object({
+  "source": zod.string(),
+  "location": zod.string(),
+  "note": zod.string()
+})),
+  "status": zod.enum(['pending', 'approved', 'discarded', 'postponed']).describe('postponed solo per i capitoli endpoint, completion ed evolution'),
+  "reviewNote": zod.string().nullable(),
+  "appliedAt": zod.coerce.date().nullable()
+}),zod.null()]).describe('Voce creata o modificata (null se rifiutata)')
 })
 
 

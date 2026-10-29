@@ -293,6 +293,32 @@ describe("localPhaseInstructions", () => {
   });
 });
 
+describe("localPhaseInstructions: voci pianificate in chat", () => {
+  it("la fase completion contiene la voce approvata in chat di un'analisi precedente", async () => {
+    // L'analisi di beforeEach è la precedente: ha una voce nata in chat e approvata
+    await db.insert(analysisItemsTable).values({
+      analysisId,
+      chapter: "completion",
+      ref: "chat-1",
+      position: 1,
+      payload: { title: "Notifiche push già decise" },
+      diff: "new",
+      status: "approved",
+      origin: "chat",
+    });
+    await db.update(analysesTable).set({ status: "completed" }).where(eq(analysesTable.id, analysisId));
+    const newId = await newLocalAnalysis();
+    const { leaseToken } = await claimLocalAnalysis(newId, "Mac", T0);
+    for (const phase of ["map", "capabilities", "catalog", "agents"] as const) {
+      await submitLocalPhase(newId, leaseToken, phase, PHASE_EXAMPLES[phase], undefined, at(1000));
+    }
+    const ins = await localPhaseInstructions(newId, leaseToken, at(2000));
+    expect(ins.phase).toBe("completion");
+    expect(ins.user).toContain("Voci già pianificate dall'utente in chat");
+    expect(ins.user).toContain("[completion] Notifiche push già decise");
+  });
+});
+
 describe("lease: ping, scadenza, abbandono, rilascio, annullamento", () => {
   it("ping rinnova la lease; con la lease scaduta no", async () => {
     const { leaseToken } = await claimLocalAnalysis(analysisId, "Mac", T0);

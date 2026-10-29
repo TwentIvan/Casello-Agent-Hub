@@ -14,6 +14,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Fase 3 "Architetto": analizza un'app (codice da GitHub o zip, OpenAPI, descrizione) e propone tool,
   agenti, skill, endpoint mancanti, piano di completamento ed evoluzione; nulla si attiva senza
   approvazione nella console (vedi "Architetto").
+- Chat del piano: l'utente discute con un modello il piano di un'app e ne accetta le modifiche come schede
+  (vedi "Chat del piano").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -43,7 +45,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `lib/api-client-react/src/generated/` — client generato da Orval: NON modificare a mano
 - `lib/db/src/schema/` — schema Drizzle, una tabella per file (apps, agents, app_tools, agent_tools, runs,
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
-  ai_accounts, ai_models, providers, models, model_offers, catalog_runs)
+  ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -81,6 +83,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `artifacts/api-server/src/lib/architect/` — architetto: sorgenti in memoria (`source-tree.ts`, `zip-reader.ts`,
   `search-worker.ts`, `sources.ts`), schemi ed esempi delle fasi (`schemas.ts`, `prompts.ts`), ciclo di fase
   (`phase-loop.ts`), orchestrazione (`run-analysis.ts`), differenze/applicazione/issue (`diff.ts`, `apply.ts`, `issues.ts`)
+- `artifacts/api-server/src/lib/plan-chat/` — chat del piano: contesto (`context.ts`), strumenti (`tools.ts`), turno
+  (`turn.ts`), decisione sulle schede (`decide.ts`), esecuzione in background (`run-turn.ts`); route in
+  `src/routes/plan-chat.ts`; pagina `/apps/:id/plan` in `artifacts/casello/src/pages/app-plan.tsx` e `components/plan/`
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
 - `artifacts/api-server/src/lib/mcp/` e `lib/architect/local-executor.ts` — server MCP `/mcp` e coda/lease delle analisi locali
 - `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
@@ -202,6 +207,25 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Revisione: approvare un tool/agente/skill lo applica in una transazione e lo rende `active` (un tool
   `removed` diventa `disabled`, mai cancellato); endpoint/completamento/evoluzione si esportano come issue.
   Un'analisi alla volta per app; all'avvio le analisi rimaste aperte diventano `interrupted`.
+
+## Chat del piano
+
+- Spec: `docs/superpowers/specs/2026-10-29-casello-chat-del-piano-design.md`.
+- Pagina `/apps/:id/plan` (`src/pages/app-plan.tsx`, `src/components/plan/`): piano dell'app e conversazioni con
+  un modello. Il modello propone schede `add` / `update` / `discard`; solo quelle accettate dall'utente diventano
+  voci `analysis_items` con `origin = chat` (e `conversation_id`). Niente lettura del codice.
+- Route (`routes/plan-chat.ts`): `GET /api/apps/:id/plan`, `GET|POST /api/apps/:id/plan-conversations`,
+  `GET|PATCH|DELETE /api/plan-conversations/:id`, `POST /api/plan-conversations/:id/messages`,
+  `POST /api/plan-proposals/:id/decision`. Codice in `lib/plan-chat/` (`context.ts`, `tools.ts`, `turn.ts`,
+  `decide.ts`, `run-turn.ts`).
+- Limiti per turno: 6 giri, 40 000 token, 120 s di tempo attivo; messaggio max 8 000 caratteri; contesto
+  ~30 000 token (la cronologia si riduce); 10 messaggi/min per utente.
+- Nel contesto del modello non entrano segreti né indirizzi delle app. Il turno gira in background: la UI fa
+  polling sulla conversazione; all'avvio i turni rimasti aperti (`failInterruptedPlanTurns`) vengono chiusi come falliti.
+- La rianalisi dell'architetto riceve le voci da chat approvate come "già pianificate" (solo fasi completion ed
+  evolution) e non le ripropone.
+- Migrazione: `docs/migrations/2026-10-chat-del-piano.sql` (da applicare in produzione PRIMA del merge e da
+  segnalare nella PR). Dipendenze frontend: `react-markdown`, `remark-gfm`.
 
 ## Autenticazione
 

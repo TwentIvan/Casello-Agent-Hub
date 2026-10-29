@@ -45,6 +45,7 @@ import type {
   ApiTokenInfo,
   App,
   AppInput,
+  AppPlan,
   AppTool,
   AppToolInput,
   AppToolUpdate,
@@ -76,6 +77,14 @@ import type {
   Model,
   NotFoundResponse,
   PayloadTooLargeResponse,
+  PlanConversation,
+  PlanConversationCreate,
+  PlanConversationDetail,
+  PlanConversationUpdate,
+  PlanMessage,
+  PlanMessageCreate,
+  PlanProposalDecision,
+  PlanProposalDecisionResult,
   ProviderIssueText,
   Run,
   RunResume,
@@ -4706,5 +4715,595 @@ export const useRefreshCatalog = <TError = ErrorType<ConflictResponse | TooManyR
         TContext
       > => {
       return useMutation(getRefreshCatalogMutationOptions(options));
+    }
+
+export const getGetAppPlanUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/plan`
+}
+
+/**
+ * Voci dei capitoli endpoint, completion ed evolution dell'ultima analisi completata, più le voci nate in chat e approvate delle analisi precedenti. Senza analisi completata analysisId è null.
+ * @summary Piano dell'app (endpoint, completamento, evoluzione)
+ */
+export const getAppPlan = async (id: number, options?: RequestInit): Promise<AppPlan> => {
+
+  return customFetch<AppPlan>(getGetAppPlanUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppPlanQueryKey = (id: number,) => {
+    return [
+    `/api/apps/${id}/plan`
+    ] as const;
+    }
+
+
+export const getGetAppPlanQueryOptions = <TData = Awaited<ReturnType<typeof getAppPlan>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppPlan>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppPlanQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppPlan>>> = ({ signal }) => getAppPlan(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppPlan>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppPlanQueryResult = NonNullable<Awaited<ReturnType<typeof getAppPlan>>>
+export type GetAppPlanQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Piano dell'app (endpoint, completamento, evoluzione)
+ */
+
+export function useGetAppPlan<TData = Awaited<ReturnType<typeof getAppPlan>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppPlan>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppPlanQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListPlanConversationsUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/plan-conversations`
+}
+
+/**
+ * @summary Conversazioni dell'utente sul piano di una app
+ */
+export const listPlanConversations = async (id: number, options?: RequestInit): Promise<PlanConversation[]> => {
+
+  return customFetch<PlanConversation[]>(getListPlanConversationsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPlanConversationsQueryKey = (id: number,) => {
+    return [
+    `/api/apps/${id}/plan-conversations`
+    ] as const;
+    }
+
+
+export const getListPlanConversationsQueryOptions = <TData = Awaited<ReturnType<typeof listPlanConversations>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPlanConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPlanConversationsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPlanConversations>>> = ({ signal }) => listPlanConversations(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPlanConversations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPlanConversationsQueryResult = NonNullable<Awaited<ReturnType<typeof listPlanConversations>>>
+export type ListPlanConversationsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Conversazioni dell'utente sul piano di una app
+ */
+
+export function useListPlanConversations<TData = Awaited<ReturnType<typeof listPlanConversations>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPlanConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPlanConversationsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreatePlanConversationUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/plan-conversations`
+}
+
+/**
+ * Senza analysisId usa l'ultima analisi completata dell'app (nessuna: 409). Il modello deve essere di un account dell'utente o dell'account di sistema.
+ * @summary Apre una conversazione sul piano
+ */
+export const createPlanConversation = async (id: number,
+    planConversationCreate: PlanConversationCreate, options?: RequestInit): Promise<PlanConversation> => {
+
+  return customFetch<PlanConversation>(getCreatePlanConversationUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(planConversationCreate)
+  }
+);}
+
+
+
+
+export const getCreatePlanConversationMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPlanConversation>>, TError,{id: number;data: BodyType<PlanConversationCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createPlanConversation>>, TError,{id: number;data: BodyType<PlanConversationCreate>}, TContext> => {
+
+const mutationKey = ['createPlanConversation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPlanConversation>>, {id: number;data: BodyType<PlanConversationCreate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createPlanConversation(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePlanConversationMutationResult = NonNullable<Awaited<ReturnType<typeof createPlanConversation>>>
+    export type CreatePlanConversationMutationBody = BodyType<PlanConversationCreate>
+    export type CreatePlanConversationMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Apre una conversazione sul piano
+ */
+export const useCreatePlanConversation = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPlanConversation>>, TError,{id: number;data: BodyType<PlanConversationCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createPlanConversation>>,
+        TError,
+        {id: number;data: BodyType<PlanConversationCreate>},
+        TContext
+      > => {
+      return useMutation(getCreatePlanConversationMutationOptions(options));
+    }
+
+export const getGetPlanConversationUrl = (id: number,) => {
+
+
+
+
+  return `/api/plan-conversations/${id}`
+}
+
+/**
+ * @summary Conversazione con messaggi e proposte
+ */
+export const getPlanConversation = async (id: number, options?: RequestInit): Promise<PlanConversationDetail> => {
+
+  return customFetch<PlanConversationDetail>(getGetPlanConversationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPlanConversationQueryKey = (id: number,) => {
+    return [
+    `/api/plan-conversations/${id}`
+    ] as const;
+    }
+
+
+export const getGetPlanConversationQueryOptions = <TData = Awaited<ReturnType<typeof getPlanConversation>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlanConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlanConversationQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlanConversation>>> = ({ signal }) => getPlanConversation(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlanConversation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlanConversationQueryResult = NonNullable<Awaited<ReturnType<typeof getPlanConversation>>>
+export type GetPlanConversationQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Conversazione con messaggi e proposte
+ */
+
+export function useGetPlanConversation<TData = Awaited<ReturnType<typeof getPlanConversation>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlanConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlanConversationQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdatePlanConversationUrl = (id: number,) => {
+
+
+
+
+  return `/api/plan-conversations/${id}`
+}
+
+/**
+ * Solo con nessun turno in corso (altrimenti 409).
+ * @summary Cambia il modello della conversazione
+ */
+export const updatePlanConversation = async (id: number,
+    planConversationUpdate: PlanConversationUpdate, options?: RequestInit): Promise<PlanConversation> => {
+
+  return customFetch<PlanConversation>(getUpdatePlanConversationUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(planConversationUpdate)
+  }
+);}
+
+
+
+
+export const getUpdatePlanConversationMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePlanConversation>>, TError,{id: number;data: BodyType<PlanConversationUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePlanConversation>>, TError,{id: number;data: BodyType<PlanConversationUpdate>}, TContext> => {
+
+const mutationKey = ['updatePlanConversation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePlanConversation>>, {id: number;data: BodyType<PlanConversationUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updatePlanConversation(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePlanConversationMutationResult = NonNullable<Awaited<ReturnType<typeof updatePlanConversation>>>
+    export type UpdatePlanConversationMutationBody = BodyType<PlanConversationUpdate>
+    export type UpdatePlanConversationMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Cambia il modello della conversazione
+ */
+export const useUpdatePlanConversation = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePlanConversation>>, TError,{id: number;data: BodyType<PlanConversationUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePlanConversation>>,
+        TError,
+        {id: number;data: BodyType<PlanConversationUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdatePlanConversationMutationOptions(options));
+    }
+
+export const getDeletePlanConversationUrl = (id: number,) => {
+
+
+
+
+  return `/api/plan-conversations/${id}`
+}
+
+/**
+ * @summary Elimina la conversazione (le voci accettate restano)
+ */
+export const deletePlanConversation = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeletePlanConversationUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeletePlanConversationMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePlanConversation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deletePlanConversation>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deletePlanConversation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePlanConversation>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deletePlanConversation(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeletePlanConversationMutationResult = NonNullable<Awaited<ReturnType<typeof deletePlanConversation>>>
+
+    export type DeletePlanConversationMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Elimina la conversazione (le voci accettate restano)
+ */
+export const useDeletePlanConversation = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePlanConversation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deletePlanConversation>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeletePlanConversationMutationOptions(options));
+    }
+
+export const getSendPlanMessageUrl = (id: number,) => {
+
+
+
+
+  return `/api/plan-conversations/${id}/messages`
+}
+
+/**
+ * Risponde subito col messaggio dell'utente; il bot risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso o se il modello non è più disponibile. Massimo 10 messaggi al minuto per utente.
+ * @summary Invia un messaggio e avvia il turno del bot
+ */
+export const sendPlanMessage = async (id: number,
+    planMessageCreate: PlanMessageCreate, options?: RequestInit): Promise<PlanMessage> => {
+
+  return customFetch<PlanMessage>(getSendPlanMessageUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(planMessageCreate)
+  }
+);}
+
+
+
+
+export const getSendPlanMessageMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendPlanMessage>>, TError,{id: number;data: BodyType<PlanMessageCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendPlanMessage>>, TError,{id: number;data: BodyType<PlanMessageCreate>}, TContext> => {
+
+const mutationKey = ['sendPlanMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendPlanMessage>>, {id: number;data: BodyType<PlanMessageCreate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  sendPlanMessage(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendPlanMessageMutationResult = NonNullable<Awaited<ReturnType<typeof sendPlanMessage>>>
+    export type SendPlanMessageMutationBody = BodyType<PlanMessageCreate>
+    export type SendPlanMessageMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Invia un messaggio e avvia il turno del bot
+ */
+export const useSendPlanMessage = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendPlanMessage>>, TError,{id: number;data: BodyType<PlanMessageCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof sendPlanMessage>>,
+        TError,
+        {id: number;data: BodyType<PlanMessageCreate>},
+        TContext
+      > => {
+      return useMutation(getSendPlanMessageMutationOptions(options));
+    }
+
+export const getDecidePlanProposalUrl = (id: number,) => {
+
+
+
+
+  return `/api/plan-proposals/${id}/decision`
+}
+
+/**
+ * 409 se la proposta è già decisa o la voce di destinazione è cambiata (proposta stale).
+ * @summary Accetta o rifiuta una proposta del bot
+ */
+export const decidePlanProposal = async (id: number,
+    planProposalDecision: PlanProposalDecision, options?: RequestInit): Promise<PlanProposalDecisionResult> => {
+
+  return customFetch<PlanProposalDecisionResult>(getDecidePlanProposalUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(planProposalDecision)
+  }
+);}
+
+
+
+
+export const getDecidePlanProposalMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decidePlanProposal>>, TError,{id: number;data: BodyType<PlanProposalDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof decidePlanProposal>>, TError,{id: number;data: BodyType<PlanProposalDecision>}, TContext> => {
+
+const mutationKey = ['decidePlanProposal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof decidePlanProposal>>, {id: number;data: BodyType<PlanProposalDecision>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  decidePlanProposal(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DecidePlanProposalMutationResult = NonNullable<Awaited<ReturnType<typeof decidePlanProposal>>>
+    export type DecidePlanProposalMutationBody = BodyType<PlanProposalDecision>
+    export type DecidePlanProposalMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Accetta o rifiuta una proposta del bot
+ */
+export const useDecidePlanProposal = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decidePlanProposal>>, TError,{id: number;data: BodyType<PlanProposalDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof decidePlanProposal>>,
+        TError,
+        {id: number;data: BodyType<PlanProposalDecision>},
+        TContext
+      > => {
+      return useMutation(getDecidePlanProposalMutationOptions(options));
     }
 

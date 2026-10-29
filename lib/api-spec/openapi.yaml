@@ -32,6 +32,8 @@ tags:
     description: Catalogo dei modelli per provider e suo aggiornamento
   - name: architect
     description: Analisi dell'architetto (proposte su tool, agenti, skill, endpoint ed evoluzione) e skill degli agenti
+  - name: plan-chat
+    description: Chat con il bot sul piano di un'app (conversazioni, messaggi e proposte)
 
 paths:
   /healthz:
@@ -1497,6 +1499,190 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  # ─── Chat del piano ─────────────────────────────────────────────────────────
+
+  /apps/{id}/plan:
+    get:
+      operationId: getAppPlan
+      tags: [plan-chat]
+      summary: Piano dell'app (endpoint, completamento, evoluzione)
+      description: >-
+        Voci dei capitoli endpoint, completion ed evolution dell'ultima analisi completata, più le voci
+        nate in chat e approvate delle analisi precedenti. Senza analisi completata analysisId è null.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Piano dell'app
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppPlan"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/plan-conversations:
+    get:
+      operationId: listPlanConversations
+      tags: [plan-chat]
+      summary: Conversazioni dell'utente sul piano di una app
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Conversazioni, dalla più recente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlanConversation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createPlanConversation
+      tags: [plan-chat]
+      summary: Apre una conversazione sul piano
+      description: >-
+        Senza analysisId usa l'ultima analisi completata dell'app (nessuna: 409). Il modello deve essere
+        di un account dell'utente o dell'account di sistema.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanConversationCreate"
+      responses:
+        "201":
+          description: Conversazione creata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanConversation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /plan-conversations/{id}:
+    get:
+      operationId: getPlanConversation
+      tags: [plan-chat]
+      summary: Conversazione con messaggi e proposte
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Conversazione trovata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanConversationDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updatePlanConversation
+      tags: [plan-chat]
+      summary: Cambia il modello della conversazione
+      description: Solo con nessun turno in corso (altrimenti 409).
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanConversationUpdate"
+      responses:
+        "200":
+          description: Conversazione aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanConversation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      operationId: deletePlanConversation
+      tags: [plan-chat]
+      summary: Elimina la conversazione (le voci accettate restano)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Conversazione eliminata
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /plan-conversations/{id}/messages:
+    post:
+      operationId: sendPlanMessage
+      tags: [plan-chat]
+      summary: Invia un messaggio e avvia il turno del bot
+      description: >-
+        Risponde subito col messaggio dell'utente; il bot risponde in background (turnStatus running,
+        poi idle). 409 se un turno è già in corso o se il modello non è più disponibile.
+        Massimo 10 messaggi al minuto per utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanMessageCreate"
+      responses:
+        "202":
+          description: Messaggio accettato, turno avviato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanMessage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /plan-proposals/{id}/decision:
+    post:
+      operationId: decidePlanProposal
+      tags: [plan-chat]
+      summary: Accetta o rifiuta una proposta del bot
+      description: 409 se la proposta è già decisa o la voce di destinazione è cambiata (proposta stale).
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanProposalDecision"
+      responses:
+        "200":
+          description: Proposta aggiornata ed eventuale voce creata o modificata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanProposalDecisionResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
 components:
   parameters:
     IdParam:
@@ -2374,12 +2560,16 @@ components:
 
     AnalysisItem:
       type: object
-      required: [id, analysisId, chapter, ref, position, payload, diff, evidence, status, reviewNote, appliedAt]
+      required: [id, analysisId, chapter, ref, position, payload, diff, evidence, status, reviewNote, appliedAt, origin]
       properties:
         id:
           type: integer
         analysisId:
           type: integer
+        origin:
+          type: string
+          enum: [architect, chat]
+          description: Chi ha creato la voce (l'architetto o una proposta accettata in chat)
         chapter:
           $ref: "#/components/schemas/AnalysisChapter"
         ref:
@@ -2404,6 +2594,172 @@ components:
         appliedAt:
           type: ["string", "null"]
           format: date-time
+
+    # ── Chat del piano ────────────────────────────────────────────────────────
+    PlanTurnStatus:
+      type: string
+      enum: [idle, running]
+
+    PlanConversation:
+      type: object
+      required: [id, appId, analysisId, aiModelId, title, tokensUsed, costUsd, turnStatus, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        appId:
+          type: integer
+        analysisId:
+          type: integer
+        aiModelId:
+          type: ["integer", "null"]
+        title:
+          type: string
+        tokensUsed:
+          type: integer
+        costUsd:
+          type: ["number", "null"]
+          description: null = costo parziale (prezzo mancante)
+        turnStatus:
+          $ref: "#/components/schemas/PlanTurnStatus"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PlanMessage:
+      type: object
+      required: [id, role, content, error, createdAt]
+      properties:
+        id:
+          type: integer
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+          description: Markdown
+        error:
+          type: boolean
+          description: Messaggio del bot che riporta un errore
+        createdAt:
+          type: string
+          format: date-time
+
+    PlanProposal:
+      type: object
+      required: [id, messageId, kind, chapter, title, payload, rationale, targetItemId, status, itemId, decidedAt, createdAt]
+      properties:
+        id:
+          type: integer
+        messageId:
+          type: integer
+        kind:
+          type: string
+          enum: [add, update, discard]
+        chapter:
+          $ref: "#/components/schemas/AnalysisChapter"
+        title:
+          type: string
+          description: Titolo della voce proposta (per discard, quello della voce di destinazione)
+        payload:
+          type: ["object", "null"]
+          additionalProperties: true
+          description: Contenuto proposto (add e update), null per discard
+        rationale:
+          type: string
+        targetItemId:
+          type: ["integer", "null"]
+        status:
+          type: string
+          enum: [pending, accepted, rejected, stale]
+        itemId:
+          type: ["integer", "null"]
+          description: Voce creata o modificata all'accettazione
+        decidedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    PlanConversationDetail:
+      allOf:
+        - $ref: "#/components/schemas/PlanConversation"
+        - type: object
+          required: [messages, proposals, newerAnalysisId]
+          properties:
+            messages:
+              type: array
+              items:
+                $ref: "#/components/schemas/PlanMessage"
+            proposals:
+              type: array
+              items:
+                $ref: "#/components/schemas/PlanProposal"
+            newerAnalysisId:
+              type: ["integer", "null"]
+              description: Id di un'analisi completata più recente di quella della conversazione, se esiste
+
+    AppPlan:
+      type: object
+      required: [analysisId, items]
+      properties:
+        analysisId:
+          type: ["integer", "null"]
+          description: Ultima analisi completata dell'app (null se non ce n'è)
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalysisItem"
+
+    PlanConversationCreate:
+      type: object
+      required: [aiModelId]
+      properties:
+        aiModelId:
+          type: integer
+          description: Modello di un account AI dell'utente o dell'account di sistema
+        analysisId:
+          type: integer
+          description: Analisi di riferimento (default l'ultima completata dell'app)
+
+    PlanConversationUpdate:
+      type: object
+      required: [aiModelId]
+      properties:
+        aiModelId:
+          type: integer
+
+    PlanMessageCreate:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 8000
+
+    PlanProposalDecision:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [accept, reject]
+
+    PlanProposalDecisionResult:
+      type: object
+      required: [proposal, item]
+      properties:
+        proposal:
+          $ref: "#/components/schemas/PlanProposal"
+        item:
+          oneOf:
+            - $ref: "#/components/schemas/AnalysisItem"
+            - type: "null"
+          description: Voce creata o modificata (null se rifiutata)
 
     AnalysisDetail:
       allOf:

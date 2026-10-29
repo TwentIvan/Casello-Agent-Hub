@@ -1,5 +1,5 @@
 import { Link, useParams } from "wouter";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, MessagesSquare } from "lucide-react";
 import { ApiError, getGetAppQueryKey, useGetApp } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -46,6 +46,12 @@ export default function AppDetailPage() {
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="text-2xl font-semibold tracking-tight">{app.data.name}</h2>
               <StatusBadge kind="app" status={app.data.status} />
+              <Button variant="outline" size="sm" asChild className="ml-auto">
+                <Link href={`/apps/${appId}/plan`}>
+                  <MessagesSquare />
+                  Piano e chat
+                </Link>
+              </Button>
             </div>
             {app.data.description && <p className="text-sm text-muted-foreground">{app.data.description}</p>}
             <dl className="grid gap-3 sm:grid-cols-3">

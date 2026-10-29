@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { failInterruptedAnalyses } from "./lib/architect/run-analysis";
 import { startLocalLeaseJob } from "./lib/architect/local-executor";
 import { expireStalePausedRuns, failInterruptedRuns } from "./lib/run-executor";
+import { failInterruptedPlanTurns } from "./lib/plan-chat/run-turn";
 import { ensureSystemAccount } from "./lib/ai/system-account";
 import { failInterruptedCatalogRuns } from "./lib/catalog/refresh";
 import { startCatalogScheduler } from "./lib/catalog/scheduler";
@@ -32,6 +33,13 @@ failInterruptedRuns()
     if (count > 0) logger.warn({ count }, "Run interrotte dal riavvio chiuse come fallite");
   })
   .catch((err: unknown) => logger.error({ err }, "Chiusura delle run interrotte non riuscita"));
+
+// I turni della chat del piano rimasti in corso: la conversazione torna libera, con un messaggio d'errore.
+failInterruptedPlanTurns()
+  .then((count) => {
+    if (count > 0) logger.warn({ count }, "Turni della chat del piano interrotti dal riavvio chiusi");
+  })
+  .catch((err: unknown) => logger.error({ err }, "Chiusura dei turni della chat del piano interrotti non riuscita"));
 
 // Lo stesso vale per le analisi cloud dell'architetto in coda o in corso: diventano `interrupted`.
 // Quelle locali restano: le esegue l'agente, e il job delle lease rimette in coda quelle abbandonate.

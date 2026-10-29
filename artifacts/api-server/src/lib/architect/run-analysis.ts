@@ -31,6 +31,7 @@ import { githubConfig, type GithubConfig } from "../github/config";
 import { loadAppConnection } from "../tools/catalog";
 import { PHASE_TOKEN_SHARES, runPhase, type PhaseBudget } from "./phase-loop";
 import { recordPhaseResult } from "./phase-record";
+import { chatPlannedItems } from "./planned";
 import { phasePrompt, SYSTEM_BASE } from "./prompts";
 import { buildRepoMap } from "./repo-map";
 import { PHASES, type CatalogResult, type PhaseName } from "./schemas";
@@ -485,6 +486,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       now,
     });
     const previous: Partial<Record<PhaseName, unknown>> = {};
+    const alreadyPlanned = await chatPlannedItems(app.id, analysisId);
 
     for (const phase of PHASES) {
       progress.phase = phase;
@@ -499,6 +501,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
         hasOpenApi: openapi !== null,
         repoMap,
         previous,
+        alreadyPlanned,
       });
       // Quota morbida della fase: solo il sollecito a consegnare; il tetto rigido resta il totale
       const phaseQuota = Math.floor(PHASE_TOKEN_SHARES[phase] * budget.maxTokens);

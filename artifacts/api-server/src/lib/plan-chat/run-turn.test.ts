@@ -205,6 +205,86 @@ describe("turni della chat del piano", () => {
     expect(items.map((i) => i.ref).sort()).toEqual(["chat:1", "completion:1"]);
   });
 
+  it("cronologia: finisce con l'utente, senza assistant vuoti, e la scelta di scartare porta il titolo della voce", async () => {
+    const [item] = await db
+      .insert(analysisItemsTable)
+      .values({ analysisId, chapter: "completion", ref: "completion:1", position: 0, diff: "new", payload: completion("k", "Titolo bersaglio") })
+      .returning();
+    const [, old] = await db
+      .insert(planMessagesTable)
+      .values([
+        { conversationId, role: "user", content: "vecchia domanda" },
+        { conversationId, role: "assistant", content: "vecchia risposta" },
+      ])
+      .returning();
+    await db.insert(planProposalsTable).values({
+      conversationId,
+      messageId: old!.id,
+      kind: "discard",
+      chapter: "completion",
+      payload: null,
+      rationale: "r",
+      targetItemId: item!.id,
+      targetHash: "h",
+    });
+    fake.chatReply = { content: "ok", toolCalls: [], usage: { prompt_tokens: 5, completion_tokens: 5 } };
+
+    await startPlanTurn(conversationId, "nuova domanda");
+    await waitIdle(conversationId);
+
+    const req = fake.requests.find((r) => r.path.includes("chat/completions"))!;
+    const sent = (req.body as { messages: { role: string; content: string }[] }).messages;
+    expect(sent[sent.length - 1]).toMatchObject({ role: "user", content: "nuova domanda" });
+    expect(sent.some((m) => m.role === "assistant" && m.content === "")).toBe(false);
+    expect(sent.some((m) => m.role === "assistant" && m.content.includes("vecchia risposta") && m.content.includes("Titolo bersaglio"))).toBe(true);
+  });
+
+  it("errore del DB in uno strumento → messaggio di errore e conversazione idle", async () => {
+    await pool.query(`CREATE FUNCTION fail_proposal() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'boom'; END $$ LANGUAGE plpgsql`);
+    await pool.query(`CREATE TRIGGER fail_proposal BEFORE INSERT ON plan_proposals FOR EACH ROW EXECUTE FUNCTION fail_proposal()`);
+    try {
+      fake.chatReply = {
+        content: null,
+        toolCalls: [{ id: "c1", name: "propose", arguments: JSON.stringify({ kind: "add", chapter: "completion", payload: completion("k1"), rationale: "serve" }) }],
+        usage: { prompt_tokens: 5, completion_tokens: 5 },
+      };
+      await startPlanTurn(conversationId, "ciao");
+      await waitIdle(conversationId);
+    } finally {
+      await pool.query("DROP TRIGGER fail_proposal ON plan_proposals");
+      await pool.query("DROP FUNCTION fail_proposal()");
+    }
+    const messages = await getMessages();
+    expect(messages[1]!.error).toBe(true);
+    expect(messages[1]!.content.length).toBeGreaterThan(0);
+    expect((await getConv()).turnStatus).toBe("idle");
+  });
+
+  it("modello senza prezzi: il costo della conversazione resta null", async () => {
+    await db.update(aiModelsTable).set({ priceInputPerMtok: null, priceOutputPerMtok: null }).where(eq(aiModelsTable.id, modelId));
+    fake.chatReply = { content: "ok", toolCalls: [], usage: { prompt_tokens: 100, completion_tokens: 20 } };
+    await startPlanTurn(conversationId, "ciao");
+    await waitIdle(conversationId);
+
+    const conv = await getConv();
+    expect(conv.tokensUsed).toBe(120);
+    expect(conv.costUsd).toBeNull();
+  });
+
+  it("il costo si somma tra due turni con un modello con prezzi", async () => {
+    fake.chatReply = { content: "ok", toolCalls: [], usage: { prompt_tokens: 20_000, completion_tokens: 5_000 } };
+    await startPlanTurn(conversationId, "uno");
+    await waitIdle(conversationId);
+    const first = Number((await getConv()).costUsd);
+    expect(first).toBeCloseTo(0.03, 6);
+
+    await startPlanTurn(conversationId, "due");
+    await waitIdle(conversationId);
+    const conv = await getConv();
+    expect(conv.tokensUsed).toBe(50_000);
+    expect(Number(conv.costUsd)).toBeCloseTo(first * 2, 6);
+  });
+
   it("failInterruptedPlanTurns rimette idle e aggiunge il messaggio di interruzione", async () => {
     await db.update(planConversationsTable).set({ turnStatus: "running" }).where(eq(planConversationsTable.id, conversationId));
     await db.insert(planMessagesTable).values([

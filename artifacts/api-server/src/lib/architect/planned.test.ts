@@ -20,7 +20,7 @@ async function addItem(
   analysisId: number,
   chapter: "endpoint" | "completion" | "evolution" | "tool",
   payload: unknown,
-  over: { origin?: "architect" | "chat"; status?: "pending" | "approved" } = {},
+  over: { origin?: "architect" | "chat"; status?: "pending" | "approved"; issueNumber?: number } = {},
 ) {
   seq += 1;
   await db.insert(analysisItemsTable).values({
@@ -32,6 +32,7 @@ async function addItem(
     diff: "new",
     origin: over.origin ?? "chat",
     status: over.status ?? "approved",
+    issueNumber: over.issueNumber ?? null,
   });
 }
 
@@ -59,5 +60,22 @@ describe("chatPlannedItems", () => {
       ]),
     );
     expect(items).toHaveLength(2);
+  });
+
+  it("voce dell'architetto con issue → già pianificata; senza issue → no", async () => {
+    const app = await newApp("planned-issue");
+    const prev = await newAnalysis(app.id);
+    const current = await newAnalysis(app.id);
+
+    await addItem(prev.id, "completion", { title: "Con issue" }, { origin: "architect", issueNumber: 12 });
+    await addItem(prev.id, "completion", { title: "Senza issue" }, { origin: "architect" });
+    await addItem(prev.id, "completion", { title: "Chat con issue" }, { issueNumber: 13 });
+    await addItem(prev.id, "evolution", { title: "Con issue ma in attesa" }, { origin: "architect", issueNumber: 14, status: "pending" });
+
+    const items = await chatPlannedItems(app.id, current.id);
+    expect(items).toEqual([
+      { chapter: "completion", title: "Con issue" },
+      { chapter: "completion", title: "Chat con issue" },
+    ]);
   });
 });

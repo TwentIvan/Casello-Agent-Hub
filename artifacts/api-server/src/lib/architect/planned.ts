@@ -1,4 +1,4 @@
-import { and, eq, inArray, lt } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, lt, or } from "drizzle-orm";
 import { db, analysesTable, analysisItemsTable } from "@workspace/db";
 import { itemTitle, type PlanChapter } from "../plan-chat/context";
 import type { PlannedItem } from "./prompts";
@@ -6,8 +6,8 @@ import type { PlannedItem } from "./prompts";
 const CHAPTERS: PlanChapter[] = ["endpoint", "completion", "evolution"];
 
 /**
- * Voci create in chat e approvate nelle analisi precedenti dell'app: la rianalisi le riceve come
- * "già pianificate" per non riproporle.
+ * Voci approvate nelle analisi precedenti dell'app create in chat oppure già collegate a una issue
+ * GitHub (qualsiasi origine): la rianalisi le riceve come "già pianificate" per non riproporle.
  */
 export async function chatPlannedItems(appId: number, beforeAnalysisId: number): Promise<PlannedItem[]> {
   const rows = await db
@@ -18,7 +18,7 @@ export async function chatPlannedItems(appId: number, beforeAnalysisId: number):
       and(
         eq(analysesTable.appId, appId),
         lt(analysesTable.id, beforeAnalysisId),
-        eq(analysisItemsTable.origin, "chat"),
+        or(eq(analysisItemsTable.origin, "chat"), isNotNull(analysisItemsTable.issueNumber)),
         eq(analysisItemsTable.status, "approved"),
         inArray(analysisItemsTable.chapter, CHAPTERS),
       ),

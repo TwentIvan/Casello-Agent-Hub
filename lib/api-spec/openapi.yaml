@@ -2572,6 +2572,42 @@ components:
         unpricedCount:
           type: integer
 
+    AccountBudget:
+      type: object
+      required: [accountId, accountName, capUsd, spentUsd, unpricedCount]
+      properties:
+        accountId:
+          type: integer
+        accountName:
+          type: string
+        capUsd:
+          type: number
+        spentUsd:
+          type: number
+          description: Spesa nota del mese su tutti i modelli dell'account (run, analisi cloud, chat del piano)
+        unpricedCount:
+          type: integer
+
+    ModelBudget:
+      type: object
+      required: [aiModelId, modelName, accountId, accountName, capUsd, spentUsd, unpricedCount]
+      properties:
+        aiModelId:
+          type: integer
+        modelName:
+          type: string
+        accountId:
+          type: integer
+        accountName:
+          type: string
+        capUsd:
+          type: number
+        spentUsd:
+          type: number
+          description: Spesa nota del mese sul modello (run, analisi cloud, chat del piano)
+        unpricedCount:
+          type: integer
+
     BudgetActiveRun:
       type: object
       required: [id, agentId, agentName, status]
@@ -2587,7 +2623,7 @@ components:
 
     Budget:
       type: object
-      required: [month, user, agents, activeRuns]
+      required: [month, user, agents, accounts, models, activeRuns]
       properties:
         month:
           type: string
@@ -2599,11 +2635,21 @@ components:
           description: Agenti con un tetto impostato
           items:
             $ref: "#/components/schemas/AgentBudget"
+        accounts:
+          type: array
+          description: Account AI dell'utente con un tetto impostato
+          items:
+            $ref: "#/components/schemas/AccountBudget"
+        models:
+          type: array
+          description: Modelli degli account dell'utente con un tetto impostato
+          items:
+            $ref: "#/components/schemas/ModelBudget"
         activeRuns:
           type: array
           description: >-
-            Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell'utente o
-            del loro agente)
+            Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell'utente, del
+            loro agente, del loro modello o del suo account)
           items:
             $ref: "#/components/schemas/BudgetActiveRun"
 
@@ -3069,7 +3115,7 @@ components:
 
     AiAccount:
       type: object
-      required: [id, name, provider, baseUrl, allowPrivateNetwork, isDefault, status, lastError, lastCheckedAt, keySet, isSystem, modelCount]
+      required: [id, name, provider, baseUrl, allowPrivateNetwork, isDefault, status, lastError, lastCheckedAt, keySet, isSystem, modelCount, monthlyBudgetUsd]
       properties:
         id:
           type: integer
@@ -3101,6 +3147,9 @@ components:
         modelCount:
           type: integer
           description: Numero di modelli dell'account (nascosti compresi)
+        monthlyBudgetUsd:
+          type: ["number", "null"]
+          description: Tetto di spesa mensile in USD su tutti i modelli dell'account; null = nessun limite
 
     AiAccountInput:
       type: object
@@ -3187,13 +3236,18 @@ components:
         allowPrivateNetwork:
           type: boolean
           description: Solo custom e provider non gestiti
+        monthlyBudgetUsd:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 1000000
+          description: Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite
 
     AiModel:
       type: object
       required:
         [id, accountId, modelId, displayName, contextTokens, priceInput, priceOutput, priceSource, hidden,
          availability, supportsTools, status, deprecationDate, releasedAt, selectable, recommended, lastProbeAt,
-         lastProbeOk]
+         lastProbeOk, monthlyBudgetUsd]
       properties:
         id:
           type: integer
@@ -3249,6 +3303,9 @@ components:
           format: date-time
         lastProbeOk:
           type: ["boolean", "null"]
+        monthlyBudgetUsd:
+          type: ["number", "null"]
+          description: Tetto di spesa mensile in USD sul modello; null = nessun limite
 
     AiModelProbeResult:
       type: object
@@ -3307,6 +3364,11 @@ components:
           maximum: 999999.999999
         hidden:
           type: boolean
+        monthlyBudgetUsd:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 1000000
+          description: Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite
 
     AiModelGroup:
       type: object

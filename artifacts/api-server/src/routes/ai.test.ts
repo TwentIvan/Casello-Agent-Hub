@@ -236,6 +236,7 @@ describe("creazione", () => {
       recommended: false,
       lastProbeAt: null,
       lastProbeOk: null,
+      monthlyBudgetUsd: null,
     });
   });
 

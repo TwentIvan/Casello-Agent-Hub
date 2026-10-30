@@ -4,6 +4,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import {
   type Agent,
+  type AiAccount,
+  type AiModel,
   type Budget,
   cancelRun,
   getGetAgentQueryKey,
@@ -13,8 +15,11 @@ import {
   getListRunsQueryKey,
   useGetBudget,
   useUpdateAgent,
+  useUpdateAiAccount,
+  useUpdateAiModel,
   useUpdateBudget,
 } from "@workspace/api-client-react";
+import { invalidateAiQueries } from "@/components/ai/ai-queries";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -78,8 +83,20 @@ function SpendLine({ spent, cap, unpriced }: { spent: number; cap: number | null
   );
 }
 
-/** Campo del tetto: vuoto = nessun limite. */
-function CapForm({ value, pending, onSave }: { value: number | null; pending: boolean; onSave: (v: number | null) => void }) {
+/** Campo del tetto: vuoto = nessun limite. `compact` per le celle di tabella. */
+function CapForm({
+  value,
+  pending,
+  onSave,
+  compact = false,
+  label = "Tetto mensile in USD",
+}: {
+  value: number | null;
+  pending: boolean;
+  onSave: (v: number | null) => void;
+  compact?: boolean;
+  label?: string;
+}) {
   const [text, setText] = useState(value === null ? "" : String(value));
   const trimmed = text.trim().replace(",", ".");
   // Al centesimo, come lo salva l'API: altrimenti 5,001 su un tetto di 5 resterebbe "da salvare" per sempre
@@ -97,17 +114,19 @@ function CapForm({ value, pending, onSave }: { value: number | null; pending: bo
     >
       <Input
         inputMode="decimal"
-        className="w-40"
-        placeholder="Nessun limite"
+        className={compact ? "h-8 w-24 tabular-nums" : "w-40"}
+        placeholder={compact ? "—" : "Nessun limite"}
         value={text}
         onChange={(event) => setText(event.target.value)}
-        aria-label="Tetto mensile in USD"
+        aria-label={label}
         aria-invalid={!valid}
       />
-      <span className="text-sm text-muted-foreground">USD al mese</span>
-      <Button type="submit" size="sm" disabled={!valid || !changed || pending}>
-        {pending ? "Salvataggio…" : "Salva"}
-      </Button>
+      {!compact && <span className="text-sm text-muted-foreground">USD al mese</span>}
+      {(!compact || changed) && (
+        <Button type="submit" size="sm" className={compact ? "h-8" : undefined} disabled={!valid || !changed || pending}>
+          {pending ? "Salvataggio…" : "Salva"}
+        </Button>
+      )}
       {!valid && <span className="text-sm text-destructive">Un importo tra 0 e 1 000 000.</span>}
     </form>
   );
@@ -200,6 +219,80 @@ export function AgentBudgetCard({ agent }: { agent: Agent }) {
   );
 }
 
+/** Pagina Account, sotto un account AI: tetto mensile su tutti i suoi modelli (il credito si carica per chiave). */
+export function AiAccountBudget({ account }: { account: AiAccount }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const budget = useBudget();
+  const update = useUpdateAiAccount({
+    mutation: {
+      onSuccess: (data) => {
+        void invalidateAiQueries(queryClient);
+        void queryClient.invalidateQueries({ queryKey: getGetBudgetQueryKey() });
+        toast({ title: data.monthlyBudgetUsd === null ? "Tetto dell'account tolto" : "Tetto dell'account salvato" });
+      },
+      onError: (error) =>
+        toast({ variant: "destructive", title: "Tetto non salvato", description: apiErrorMessage(error) }),
+    },
+  });
+  const spend = budget.data?.accounts.find((a) => a.accountId === account.id);
+
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      <p className="text-sm font-medium">Tetto di spesa dell'account</p>
+      <p className="text-xs text-muted-foreground">
+        Spesa del mese su tutti i modelli di questa chiave. Raggiunto il tetto, nulla di nuovo parte su questo account
+        fino al mese prossimo.
+      </p>
+      {spend && <SpendLine spent={spend.spentUsd} cap={spend.capUsd} unpriced={spend.unpricedCount} />}
+      <CapForm
+        key={String(account.monthlyBudgetUsd)}
+        value={account.monthlyBudgetUsd}
+        pending={update.isPending}
+        label={`Tetto mensile in USD dell'account ${account.name}`}
+        onSave={(monthlyBudgetUsd) => update.mutate({ id: account.id, data: { monthlyBudgetUsd } })}
+      />
+    </div>
+  );
+}
+
+/** Cella della tabella dei modelli: tetto mensile del modello e spesa del mese se ha un tetto. */
+export function AiModelBudgetCell({ model }: { model: AiModel }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const budget = useBudget();
+  const update = useUpdateAiModel({
+    mutation: {
+      onSuccess: () => {
+        void invalidateAiQueries(queryClient);
+        void queryClient.invalidateQueries({ queryKey: getGetBudgetQueryKey() });
+      },
+      onError: (error) =>
+        toast({ variant: "destructive", title: "Tetto non salvato", description: apiErrorMessage(error) }),
+    },
+  });
+  const spend = budget.data?.models.find((m) => m.aiModelId === model.id);
+  const r = spend ? ratio(spend.spentUsd, spend.capUsd) : null;
+
+  return (
+    <div className="space-y-1">
+      <CapForm
+        compact
+        key={String(model.monthlyBudgetUsd)}
+        value={model.monthlyBudgetUsd}
+        pending={update.isPending}
+        label={`Tetto mensile in USD di ${model.modelId}`}
+        onSave={(monthlyBudgetUsd) => update.mutate({ id: model.id, data: { monthlyBudgetUsd } })}
+      />
+      {spend && r !== null && (
+        <p className={`text-xs tabular-nums ${r >= 1 ? "text-destructive" : "text-muted-foreground"}`}>
+          spesi {formatUsd(spend.spentUsd)} ({Math.round(r * 100)}%)
+        </p>
+      )}
+    </div>
+  );
+}
+
 interface Warning {
   key: string;
   title: string;
@@ -232,10 +325,32 @@ function warnings(budget: Budget): Warning[] {
       exhausted: ar >= 1,
     });
   }
+  for (const a of budget.accounts) {
+    const ar = ratio(a.spentUsd, a.capUsd)!;
+    if (ar < WARN_RATIO) continue;
+    result.push({
+      key: `account-${a.accountId}`,
+      title: `Account AI ${a.accountName}: ${ar >= 1 ? "tetto raggiunto" : "tetto quasi raggiunto"}`,
+      text: `Questo mese l'account ha speso ${formatUsd(a.spentUsd)} su ${formatUsd(a.capUsd)} (${Math.round(ar * 100)}%).${unpricedNote(a.unpricedCount)}`,
+      href: "/account",
+      exhausted: ar >= 1,
+    });
+  }
+  for (const m of budget.models) {
+    const mr = ratio(m.spentUsd, m.capUsd)!;
+    if (mr < WARN_RATIO) continue;
+    result.push({
+      key: `model-${m.aiModelId}`,
+      title: `Modello ${m.modelName} (${m.accountName}): ${mr >= 1 ? "tetto raggiunto" : "tetto quasi raggiunto"}`,
+      text: `Questo mese il modello ha speso ${formatUsd(m.spentUsd)} su ${formatUsd(m.capUsd)} (${Math.round(mr * 100)}%).${unpricedNote(m.unpricedCount)}`,
+      href: "/account",
+      exhausted: mr >= 1,
+    });
+  }
   return result;
 }
 
-/** Dashboard: avvisi dall'80% del tetto (dell'utente e degli agenti). */
+/** Dashboard: avvisi dall'80% del tetto (dell'utente, degli agenti, degli account AI e dei modelli). */
 export function BudgetAlerts() {
   const budget = useBudget();
   if (!budget.data) return null;
@@ -250,7 +365,7 @@ export function BudgetAlerts() {
             <Link href={w.href} className="font-medium underline underline-offset-4">
               {w.exhausted ? "Alza il tetto" : "Rivedi il tetto"}
             </Link>
-            {w.exhausted && " o attendi il mese prossimo: nel frattempo non parte nulla di nuovo."}
+            {w.exhausted && " o attendi il mese prossimo: nel frattempo non parte nulla di nuovo su questo tetto."}
           </AlertDescription>
         </Alert>
       ))}
@@ -320,7 +435,7 @@ export function BudgetGuard() {
         <AlertDialogHeader>
           <AlertDialogTitle>Tetto di spesa raggiunto</AlertDialogTitle>
           <AlertDialogDescription>
-            Nessuna nuova esecuzione partirà fino al mese prossimo, ma{" "}
+            Nessuna nuova esecuzione partirà su quel tetto fino al mese prossimo, ma{" "}
             {runs.length === 1
               ? "questa run è ancora in corso e può continuare a spendere. Vuoi annullarla?"
               : `queste ${runs.length} run sono ancora in corso e possono continuare a spendere. Vuoi annullarle?`}

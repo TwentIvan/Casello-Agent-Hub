@@ -57,4 +57,9 @@ export interface AiModel {
   lastProbeAt: Date | null;
   /** @nullable */
   lastProbeOk: boolean | null;
+  /**
+     * Tetto di spesa mensile in USD sul modello; null = nessun limite
+     * @nullable
+     */
+  monthlyBudgetUsd: number | null;
 }

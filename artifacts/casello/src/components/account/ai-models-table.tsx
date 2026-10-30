@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { invalidateAiQueries } from "@/components/ai/ai-queries";
+import { AiModelBudgetCell } from "@/components/budget/budget";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatUsd } from "@/lib/format";
@@ -195,7 +196,7 @@ function AddModelForm({ accountId }: { accountId: number }) {
   );
 }
 
-/** Modelli di un account: prezzi modificabili e "nascosto"; per l'account di sistema solo lettura. */
+/** Modelli di un account: prezzi, "nascosto" e tetto di spesa modificabili; per l'account di sistema solo lettura. */
 export function AiModelsTable({ account }: { account: AiAccount }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -261,6 +262,7 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
                 <TableHead>Stato</TableHead>
                 <TableHead>Strumenti</TableHead>
                 <TableHead>Nascosto</TableHead>
+                {!readOnly && <TableHead>Tetto USD / mese</TableHead>}
                 {!readOnly && <TableHead />}
               </TableRow>
             </TableHeader>
@@ -312,6 +314,11 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
                       onCheckedChange={(hidden) => save(model, { hidden })}
                     />
                   </TableCell>
+                  {!readOnly && (
+                    <TableCell>
+                      <AiModelBudgetCell model={model} />
+                    </TableCell>
+                  )}
                   {!readOnly && (
                     <TableCell>
                       <Button

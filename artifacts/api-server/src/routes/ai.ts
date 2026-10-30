@@ -52,6 +52,7 @@ import { probeModel } from "../lib/ai/probe";
 import { normalizeBaseUrl, privateNetworkAllowed, validateBaseUrl, type AiProvider } from "../lib/ai/providers";
 import { systemAccountConfigured } from "../lib/ai/system-account";
 import { isUniqueViolation } from "../lib/pg-errors";
+import { budgetColumn } from "../lib/budget";
 import { decryptSecret, encryptSecret } from "../lib/secrets";
 import { rateLimit } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
@@ -117,6 +118,7 @@ function toPublicAccount(a: AiAccount, modelCount: number, providerStatus: strin
     keySet: system ? systemConfigured() : a.apiKeyEnc !== null,
     isSystem: system,
     modelCount,
+    monthlyBudgetUsd: toNumber(a.monthlyBudgetUsd),
   };
 }
 
@@ -154,6 +156,7 @@ function toPublicModel(m: AiModel, offer: LinkedOffer | null, now: Date) {
     recommended: false,
     lastProbeAt: m.lastProbeAt,
     lastProbeOk: m.lastProbeOk,
+    monthlyBudgetUsd: toNumber(m.monthlyBudgetUsd),
   };
 }
 
@@ -502,6 +505,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       }
       set.name = name;
     }
+    if (body.monthlyBudgetUsd !== undefined) set.monthlyBudgetUsd = budgetColumn(body.monthlyBudgetUsd);
 
     // Il consenso salvato non vale più se il provider è diventato gestito: si usa quello effettivo
     const storedPrivate = account.allowPrivateNetwork && rules.privateNetwork;
@@ -549,7 +553,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
 
     const now = new Date();
     if (newKey === null && !connectionChanged) {
-      // Solo il nome: nessuna chiamata al provider
+      // Solo nome e tetto: nessuna chiamata al provider
       if (Object.keys(set).length) {
         await db.update(aiAccountsTable).set({ ...set, updatedAt: now }).where(eq(aiAccountsTable.id, account.id));
       }
@@ -741,6 +745,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       set.displayName = displayName;
     }
     if (body.hidden !== undefined) set.hidden = body.hidden;
+    if (body.monthlyBudgetUsd !== undefined) set.monthlyBudgetUsd = budgetColumn(body.monthlyBudgetUsd);
     // Un prezzo indicato (anche null) è una scelta dell'utente: la verifica non lo sovrascrive più
     if (body.priceInput !== undefined) set.priceInputPerMtok = toPrice(body.priceInput);
     if (body.priceOutput !== undefined) set.priceOutputPerMtok = toPrice(body.priceOutput);

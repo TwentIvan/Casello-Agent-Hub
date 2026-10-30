@@ -26,4 +26,11 @@ export interface AiAccountUpdate {
   baseUrl?: string;
   /** Solo custom e provider non gestiti */
   allowPrivateNetwork?: boolean;
+  /**
+     * Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite
+     * @minimum 0
+     * @maximum 1000000
+     * @nullable
+     */
+  monthlyBudgetUsd?: number | null;
 }

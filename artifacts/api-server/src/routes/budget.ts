@@ -3,9 +3,8 @@ import { eq } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
 import { GetBudgetResponse, UpdateBudgetBody, UpdateBudgetResponse } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
-import { budgetSummary } from "../lib/budget";
+import { budgetColumn, budgetSummary } from "../lib/budget";
 import { parseRequest } from "../middlewares/error-handler";
-import { budgetColumn } from "./agents";
 
 const router: IRouter = Router();
 

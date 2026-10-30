@@ -5,8 +5,10 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { AccountBudget } from './accountBudget';
 import type { AgentBudget } from './agentBudget';
 import type { BudgetActiveRun } from './budgetActiveRun';
+import type { ModelBudget } from './modelBudget';
 import type { UserBudget } from './userBudget';
 
 export interface Budget {
@@ -15,6 +17,10 @@ export interface Budget {
   user: UserBudget;
   /** Agenti con un tetto impostato */
   agents: AgentBudget[];
-  /** Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell'utente o del loro agente) */
+  /** Account AI dell'utente con un tetto impostato */
+  accounts: AccountBudget[];
+  /** Modelli degli account dell'utente con un tetto impostato */
+  models: ModelBudget[];
+  /** Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell'utente, del loro agente, del loro modello o del suo account) */
   activeRuns: BudgetActiveRun[];
 }

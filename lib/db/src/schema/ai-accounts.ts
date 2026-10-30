@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, boolean, timestamp, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, boolean, timestamp, numeric, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { usersTable } from "./users";
 import { providersTable } from "./providers";
@@ -26,6 +26,8 @@ export const aiAccountsTable = pgTable(
     // Testo fisso, mai il messaggio grezzo del provider
     lastError: text("last_error"),
     lastCheckedAt: timestamp("last_checked_at"),
+    // Tetto di spesa mensile in USD; null = nessun limite
+    monthlyBudgetUsd: numeric("monthly_budget_usd", { precision: 12, scale: 2 }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

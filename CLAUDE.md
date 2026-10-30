@@ -135,16 +135,20 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 
 ## Tetti di spesa
 
-- Tetto mensile in USD (null = nessun limite) per utente (`users.monthly_budget_usd`, pagina Account) e per agente
-  (`agents.monthly_budget_usd`, scheda agente). Mese di calendario, ora italiana (`lib/budget.ts`).
+- Tetto mensile in USD (null = nessun limite) per utente (`users.monthly_budget_usd`, pagina Account), per agente
+  (`agents.monthly_budget_usd`, scheda agente), per account AI (`ai_accounts.monthly_budget_usd`: una chiave, il credito
+  si carica per chiave) e per modello (`ai_models.monthly_budget_usd`); questi ultimi due nella pagina Account, solo sui
+  propri account (l'account di sistema non ha tetti). Mese di calendario, ora italiana (`lib/budget.ts`).
 - Spesa dell'utente (chi configura paga): run, analisi cloud e conversazioni del piano con un modello dei suoi account
   AI (una conversazione, a costo cumulativo, conta nel mese del suo ultimo turno); l'account di sistema non conta. Spesa dell'agente: le sue
-  run con qualsiasi modello. Ogni run ricorda il modello con cui è partita (`runs.ai_model_id`). I costi null (prezzo
+  run con qualsiasi modello. Spesa di un modello o di un account: run, analisi cloud e chat con quel modello o con i
+  modelli dell'account. Ogni run ricorda il modello con cui è partita (`runs.ai_model_id`). I costi null (prezzo
   mancante) non si sommano: si contano come esecuzioni senza prezzo.
+- Ordine dei controlli: agente, modello, account AI, utente (il primo raggiunto dà il messaggio).
 - Raggiunto un tetto (spesa ≥ tetto) le nuove run, analisi cloud e messaggi della chat rispondono 409 con il motivo;
   le analisi locali e le riprese delle run in pausa no. `GET|PUT /api/budget`: riepilogo e tetto dell'utente; la
   console avvisa dall'80% e propone di annullare le run ancora attive su un tetto raggiunto (mai da sola).
-- Migrazione: `docs/migrations/2026-10-tetti-di-spesa.sql`.
+- Migrazioni: `docs/migrations/2026-10-tetti-di-spesa.sql`, `docs/migrations/2026-10-tetti-modello-provider.sql`.
 
 ## Catalogo dei modelli
 

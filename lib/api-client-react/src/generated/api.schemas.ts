@@ -569,6 +569,26 @@ export interface AgentBudget {
   unpricedCount: number;
 }
 
+export interface AccountBudget {
+  accountId: number;
+  accountName: string;
+  capUsd: number;
+  /** Spesa nota del mese su tutti i modelli dell'account (run, analisi cloud, chat del piano) */
+  spentUsd: number;
+  unpricedCount: number;
+}
+
+export interface ModelBudget {
+  aiModelId: number;
+  modelName: string;
+  accountId: number;
+  accountName: string;
+  capUsd: number;
+  /** Spesa nota del mese sul modello (run, analisi cloud, chat del piano) */
+  spentUsd: number;
+  unpricedCount: number;
+}
+
 export interface BudgetActiveRun {
   id: number;
   agentId: number;
@@ -582,7 +602,11 @@ export interface Budget {
   user: UserBudget;
   /** Agenti con un tetto impostato */
   agents: AgentBudget[];
-  /** Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell'utente o del loro agente) */
+  /** Account AI dell'utente con un tetto impostato */
+  accounts: AccountBudget[];
+  /** Modelli degli account dell'utente con un tetto impostato */
+  models: ModelBudget[];
+  /** Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell'utente, del loro agente, del loro modello o del suo account) */
   activeRuns: BudgetActiveRun[];
 }
 
@@ -1056,6 +1080,11 @@ export interface AiAccount {
   isSystem: boolean;
   /** Numero di modelli dell'account (nascosti compresi) */
   modelCount: number;
+  /**
+     * Tetto di spesa mensile in USD su tutti i modelli dell'account; null = nessun limite
+     * @nullable
+     */
+  monthlyBudgetUsd: number | null;
 }
 
 export interface AiAccountInput {
@@ -1131,6 +1160,13 @@ export interface AiAccountUpdate {
   baseUrl?: string;
   /** Solo custom e provider non gestiti */
   allowPrivateNetwork?: boolean;
+  /**
+     * Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite
+     * @minimum 0
+     * @maximum 1000000
+     * @nullable
+     */
+  monthlyBudgetUsd?: number | null;
 }
 
 /**
@@ -1218,6 +1254,11 @@ export interface AiModel {
   lastProbeAt: string | null;
   /** @nullable */
   lastProbeOk: boolean | null;
+  /**
+     * Tetto di spesa mensile in USD sul modello; null = nessun limite
+     * @nullable
+     */
+  monthlyBudgetUsd: number | null;
 }
 
 export interface AiModelProbeResult {
@@ -1285,6 +1326,13 @@ export interface AiModelUpdate {
      */
   priceOutput?: number | null;
   hidden?: boolean;
+  /**
+     * Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite
+     * @minimum 0
+     * @maximum 1000000
+     * @nullable
+     */
+  monthlyBudgetUsd?: number | null;
 }
 
 export interface AiModelGroup {

@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { ModelDeprecationBadge } from "@/components/ai/model-deprecation-badge";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { AgentRoleBadge } from "@/components/agents/agent-role-badge";
 import { AgentToolsSection } from "@/components/agents/agent-tools-section";
@@ -146,6 +147,7 @@ function AgentConfigForm({ agent }: { agent: Agent }) {
                     <FormControl>
                       <ModelPicker value={field.value} onChange={field.onChange} />
                     </FormControl>
+                    <ModelDeprecationBadge aiModelId={agent.aiModelId} />
                     {agent.aiModelId === null && (
                       <FormDescription>
                         Ora usa <span className="font-mono">{agent.model}</span> dal vecchio gateway: scegli un modello

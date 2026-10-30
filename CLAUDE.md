@@ -171,7 +171,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Console (pagina Piano): selezione delle voci approvate senza issue, anteprima e creazione, riepilogo con «Aggiorna
   stato» (parte da solo se l'ultima lettura ha più di 10 minuti), badge sulla voce (anche nella pagina dell'analisi).
 - La rianalisi tratta le voci con issue come già pianificate (`chatPlannedItems`: origine chat o `issue_number` non
-  null, solo fasi completion ed evolution) e non le ripropone.
+  null, capitoli endpoint, completion ed evolution) e non le ripropone.
 - Migrazione: `docs/migrations/2026-10-piano-issue.sql` (additiva, da applicare in produzione PRIMA del merge e da
   segnalare nella PR, insieme al permesso Issues della GitHub App, vedi "Autenticazione").
 

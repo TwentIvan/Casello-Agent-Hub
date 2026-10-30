@@ -260,17 +260,21 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
         }
         state.queue.splice(0, group.length);
         const results = await Promise.all(group.map((p) => execute(p)));
-        if (deps.signal?.aborted) return finish({ type: "cancelled", state });
+        // Con l'annullamento attivo i risultati d'errore vengono dall'interruzione e non si registrano;
+        // i tool conclusi con successo hanno agito davvero e il loro passo va scritto
         for (let i = 0; i < group.length; i++) {
+          if (deps.signal?.aborted && !results[i].result.ok) continue;
           await record(group[i], results[i].result, results[i].durationMs);
         }
+        if (deps.signal?.aborted) return finish({ type: "cancelled", state });
         continue;
       }
 
       state.queue.shift();
       const { result, durationMs } = await execute(prepared);
-      if (deps.signal?.aborted) return finish({ type: "cancelled", state });
+      if (deps.signal?.aborted && !result.ok) return finish({ type: "cancelled", state });
       await record(prepared, result, durationMs);
+      if (deps.signal?.aborted) return finish({ type: "cancelled", state });
     }
 
     // 2. Limiti, controllati prima di ogni chiamata al modello

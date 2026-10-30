@@ -15,14 +15,17 @@ import {
   CancelRunParams,
   CancelRunResponse,
 } from "@workspace/api-zod";
-import { runRateLimit } from "../middlewares/rate-limit";
+import { cancelRateLimit, runRateLimit } from "../middlewares/rate-limit";
 import { ResumeConflictError, cancelRun, claimResume } from "../lib/run-executor";
 import { logger } from "../lib/logger";
 import { toPublicRun, userTokenFrom } from "./serializers";
 import { parseRequest } from "../middlewares/error-handler";
 
-// Il codegen non emette .int() per i parametri integer: il cursore si restringe qui.
-const ListRunsQuery = ListRunsQueryParams.extend({ before: z.coerce.number().int().min(1).optional() });
+// Il codegen non emette .int() per i parametri integer: cursore e limite si restringono qui.
+const ListRunsQuery = ListRunsQueryParams.extend({
+  before: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
 
 const router: IRouter = Router();
 
@@ -96,7 +99,7 @@ router.post("/runs/:id/resume", runRateLimit, async (req, res) => {
 
 // Annullamento: UPDATE condizionato (pending/running/awaiting_client → cancelled) e poi interruzione
 // delle chiamate in volo. Una run già conclusa risponde 409.
-router.post("/runs/:id/cancel", runRateLimit, async (req, res) => {
+router.post("/runs/:id/cancel", cancelRateLimit, async (req, res) => {
   const { id } = parseRequest(CancelRunParams, req.params);
   const result = await cancelRun(id);
   if (result.kind === "not_found") {

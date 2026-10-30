@@ -243,6 +243,27 @@ function totalCost(run: Run, usage: SegmentUsage): string | null {
   return String(Math.round(total * 1e8) / 1e8);
 }
 
+/**
+ * Uso di un segmento interrotto da un annullamento: lo stato lo ha già scritto cancelRun, qui si
+ * registrano solo durata, token e costo (UPDATE condizionato a `cancelled`, non cambia altro).
+ */
+async function writeCancelledUsage(run: Run, segmentStart: number, usage: SegmentUsage): Promise<void> {
+  try {
+    await db
+      .update(runsTable)
+      .set({
+        promptTokens: (run.promptTokens ?? 0) + usage.promptTokens,
+        completionTokens: (run.completionTokens ?? 0) + usage.completionTokens,
+        cachedTokens: run.cachedTokens + usage.cachedTokens,
+        costUsd: totalCost(run, usage),
+        durationMs: (run.durationMs ?? 0) + (Date.now() - segmentStart),
+      })
+      .where(and(eq(runsTable.id, run.id), eq(runsTable.status, "cancelled")));
+  } catch (dbErr) {
+    logger.error({ runId: run.id, error: errorMessage(dbErr) }, "Impossibile registrare l'uso della run annullata");
+  }
+}
+
 const MODEL_TIMEOUT_MESSAGE = "il modello non ha risposto in tempo";
 const MODEL_UNEXPECTED_MESSAGE = "errore inatteso nella chiamata al modello";
 
@@ -291,40 +312,50 @@ async function driveLoop(
   // Il risultato (con la chiave in memoria) non si copia mai: si passa l'oggetto originale.
   let resolved: Promise<ResolvedModel> | null = null;
 
+  const callModel = async (messages: Parameters<LoopDeps["chat"]>[0], remainingMs: number): Promise<ChatResult> => {
+    // La chiamata non può durare oltre il tempo attivo rimasto al turno
+    const signal = AbortSignal.any([abort, AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, remainingMs))]);
+    if (aiModelId === null) {
+      // Transizione: agenti non ancora collegati a un modello degli account AI
+      const reply = await aiGateway.chat({
+        modelKey: ctx.agent.model,
+        messages,
+        tools: functionTools,
+        agentId: ctx.agent.id,
+        caller: "run-executor",
+        maxTokens: 2000,
+        temperature: 0.3,
+        signal,
+      });
+      addUsage(usage, reply);
+      return reply;
+    }
+    try {
+      resolved ??= resolveModel(aiModelId, { userId: null, mustOwn: false });
+      const reply = await modelChat(await resolved, {
+        messages,
+        tools: functionTools,
+        agentId: ctx.agent.id,
+        caller: "run-executor",
+        maxTokens: 2000,
+        temperature: 0.3,
+        signal,
+      });
+      addUsage(usage, reply);
+      return reply;
+    } catch (err) {
+      throw modelCallError(runId, err);
+    }
+  };
+
   const deps: LoopDeps = {
     chat: async (messages, { remainingMs }) => {
-      // La chiamata non può durare oltre il tempo attivo rimasto al turno
-      const signal = AbortSignal.any([abort, AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, remainingMs))]);
-      if (aiModelId === null) {
-        // Transizione: agenti non ancora collegati a un modello degli account AI
-        const reply = await aiGateway.chat({
-          modelKey: ctx.agent.model,
-          messages,
-          tools: functionTools,
-          agentId: ctx.agent.id,
-          caller: "run-executor",
-          maxTokens: 2000,
-          temperature: 0.3,
-          signal,
-        });
-        addUsage(usage, reply);
-        return reply;
-      }
       try {
-        resolved ??= resolveModel(aiModelId, { userId: null, mustOwn: false });
-        const reply = await modelChat(await resolved, {
-          messages,
-          tools: functionTools,
-          agentId: ctx.agent.id,
-          caller: "run-executor",
-          maxTokens: 2000,
-          temperature: 0.3,
-          signal,
-        });
-        addUsage(usage, reply);
-        return reply;
+        return await callModel(messages, remainingMs);
       } catch (err) {
-        throw modelCallError(runId, err);
+        // Chiamata interrotta dall'annullamento: l'uso è ignoto, il costo della run diventa parziale
+        if (abort.aborted) usage.costPartial = true;
+        throw err;
       }
     },
     tools: ctx.tools,
@@ -392,7 +423,8 @@ async function driveLoop(
       clearUserToken(runId);
       return;
     case "cancelled":
-      // Lo stato lo ha già scritto cancelRun: qui non si tocca nulla
+      // Lo stato lo ha già scritto cancelRun: qui si registra solo l'uso del segmento
+      await writeCancelledUsage(ctx.run, segmentStart, usage);
       clearUserToken(runId);
       return;
   }
@@ -411,8 +443,11 @@ async function failRun(
 ): Promise<void> {
   const runId = run.id;
   clearUserToken(runId);
-  // Un errore causato dall'annullamento non è un fallimento: la run è già `cancelled`
-  if (cancelled) return;
+  // Un errore causato dall'annullamento non è un fallimento: la run è già `cancelled`, si registra l'uso
+  if (cancelled) {
+    await writeCancelledUsage(run, segmentStart, usage);
+    return;
+  }
   const message = errorMessage(err);
   logger.error({ runId, error: message }, "Run fallita per un errore inatteso");
   try {
@@ -443,17 +478,33 @@ async function failRun(
  * come `failed`; lancia solo se la run non esiste o non è `pending`.
  */
 export async function startRun(runId: number, opts: RunOptions = {}): Promise<void> {
-  const [run] = await db
-    .update(runsTable)
-    .set({ status: "running" })
-    .where(and(eq(runsTable.id, runId), eq(runsTable.status, "pending")))
-    .returning();
-  if (!run) throw new Error(`La run ${runId} non esiste o non è in attesa di avvio`);
+  // Il controller si registra prima della presa in carico: un annullamento subito dopo l'UPDATE lo trova
+  const abort = trackRun(runId);
+  let run: Run | undefined;
+  try {
+    [run] = await db
+      .update(runsTable)
+      .set({ status: "running" })
+      .where(and(eq(runsTable.id, runId), eq(runsTable.status, "pending")))
+      .returning();
+  } catch (err) {
+    untrackRun(runId, abort);
+    throw err;
+  }
+  if (!run) {
+    untrackRun(runId, abort);
+    const [existing] = await db.select({ status: runsTable.status }).from(runsTable).where(eq(runsTable.id, runId)).limit(1);
+    if (existing?.status === "cancelled") {
+      // Annullata prima dell'avvio: niente da eseguire, non è un errore
+      logger.info({ runId }, "Run annullata prima dell'avvio: non eseguita");
+      return;
+    }
+    throw new Error(`La run ${runId} non esiste o non è in attesa di avvio`);
+  }
 
   if (opts.userToken) setUserToken(runId, opts.userToken);
   const segmentStart = Date.now();
   const usage = newUsage();
-  const abort = trackRun(runId);
   try {
     const ctx = await loadContext(run);
     const initial: LoopState = {
@@ -498,14 +549,25 @@ export async function claimResume(
   opts: RunOptions = {},
 ): Promise<{ run: Run; proceed: () => Promise<void> }> {
   const cutoff = new Date(Date.now() - PAUSE_TTL_MS);
-  const [run] = await db
-    .update(runsTable)
-    .set({ status: "running" })
-    .where(
-      and(eq(runsTable.id, runId), eq(runsTable.status, "awaiting_client"), gte(runsTable.pausedAt, cutoff)),
-    )
-    .returning();
-  if (!run) throw new ResumeConflictError();
+  // Il controller si registra prima della presa in carico: un annullamento subito dopo l'UPDATE lo trova
+  const abort = trackRun(runId);
+  let run: Run | undefined;
+  try {
+    [run] = await db
+      .update(runsTable)
+      .set({ status: "running" })
+      .where(
+        and(eq(runsTable.id, runId), eq(runsTable.status, "awaiting_client"), gte(runsTable.pausedAt, cutoff)),
+      )
+      .returning();
+  } catch (err) {
+    untrackRun(runId, abort);
+    throw err;
+  }
+  if (!run) {
+    untrackRun(runId, abort);
+    throw new ResumeConflictError();
+  }
 
   if (opts.userToken) {
     setUserToken(runId, opts.userToken);
@@ -516,8 +578,6 @@ export async function claimResume(
 
   const segmentStart = Date.now();
   const usage = newUsage();
-  // Registrata subito: un annullamento tra la presa in carico e `proceed` interrompe comunque il lavoro
-  const abort = trackRun(runId);
   const state = run.loopState;
   const pending = run.pendingAction;
   if (!isLoopState(state) || !isPendingAction(pending)) {
@@ -548,7 +608,11 @@ export async function claimResume(
 
   const proceed = async (): Promise<void> => {
     try {
-      if (abort.signal.aborted) return;
+      if (abort.signal.aborted) {
+        // Annullata tra la presa in carico e l'avvio: nulla da eseguire, resta da pulire
+        clearUserToken(runId);
+        return;
+      }
       const ctx = await loadContext(run);
       const writeStep = stepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools);
 
@@ -568,7 +632,14 @@ export async function claimResume(
         result = { ok: false, content: REJECTED_ACTION_MESSAGE };
       }
 
-      if (abort.signal.aborted) return;
+      // Un risultato d'errore ottenuto con l'annullamento attivo viene dall'interruzione: non è un passo.
+      // Un tool concluso con successo ha invece agito davvero e il suo passo si registra.
+      const interrupted = abort.signal.aborted && !result.ok;
+      if (interrupted) {
+        await writeCancelledUsage(run, segmentStart, usage);
+        clearUserToken(runId);
+        return;
+      }
 
       // resolvePending non registra passi: il passo `tool` della chiamata confermata/rifiutata va scritto qui
       await writeStep({

@@ -655,7 +655,7 @@ describe("annullamento delle run", () => {
 
     expect(result.kind).toBe("cancelled");
     expect((await getRun(id)).status).toBe("cancelled");
-    await expect(startRun(id)).rejects.toThrow();
+    await expect(startRun(id)).resolves.toBeUndefined();
     expect(llmRequests).toHaveLength(0);
     expect((await getRun(id)).status).toBe("cancelled");
   });
@@ -876,6 +876,106 @@ describe("run sugli account AI (chi configura paga)", () => {
     expect(run.costUsd).toBeNull();
     expect(llmRequests).toHaveLength(1);
     expect(fake.requests).toHaveLength(0);
+  });
+});
+
+describe("annullamento: uso registrato", () => {
+  const ACCOUNT_KEY = "sk-CHIAVE-ANNULLAMENTO";
+  let fake: FakeProvider;
+
+  beforeEach(async () => {
+    fake = await startFakeProvider({ apiKey: ACCOUNT_KEY });
+  });
+
+  afterEach(async () => {
+    await fake.close();
+  });
+
+  async function waitFor(cond: () => boolean, ms = 3_000) {
+    const t0 = Date.now();
+    while (!cond()) {
+      if (Date.now() - t0 > ms) throw new Error("timeout nell'attesa");
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
+  async function linkAgent(runId: number) {
+    const [owner] = await db.insert(usersTable).values({ email: `c${runId}@example.com`, name: "C" }).returning();
+    const [account] = await db
+      .insert(aiAccountsTable)
+      .values({
+        userId: owner!.id,
+        name: "Account",
+        provider: "custom",
+        baseUrl: fake.baseUrl,
+        allowPrivateNetwork: true,
+        apiKeyEnc: encryptSecret(ACCOUNT_KEY),
+        status: "ok",
+      })
+      .returning();
+    const [model] = await db
+      .insert(aiModelsTable)
+      .values({ accountId: account!.id, modelId: "m", displayName: "M", priceInputPerMtok: "1", priceOutputPerMtok: "2" })
+      .returning();
+    const run = await getRun(runId);
+    await db.update(agentsTable).set({ aiModelId: model!.id, model: "m" }).where(eq(agentsTable.id, run.agentId));
+  }
+
+  const toolCall = {
+    content: null,
+    toolCalls: [{ id: "call_1", name: "get_item", arguments: JSON.stringify({ id: "1" }) }],
+    usage: { prompt_tokens: 1000, completion_tokens: 500 },
+  };
+
+  it("annullata durante un tool: token, costo e durata della chiamata già conclusa restano", async () => {
+    const id = await seedRun(GET_ITEM);
+    await linkAgent(id);
+    fake.chatReply = toolCall;
+    appDelayMs = 5_000;
+    const running = startRun(id, { userToken: "t" });
+    await waitFor(() => appRequests.length === 1);
+
+    await cancelRun(id);
+    await running;
+
+    const run = await getRun(id);
+    expect(run.status).toBe("cancelled");
+    expect(run.promptTokens).toBe(1000);
+    expect(run.completionTokens).toBe(500);
+    expect(Number(run.costUsd)).toBeCloseTo(0.002, 8);
+    expect(run.durationMs).toBeGreaterThan(0);
+  });
+
+  it("annullata con una chiamata al modello interrotta in volo: token noti, costo null (parziale)", async () => {
+    const id = await seedRun(GET_ITEM);
+    await linkAgent(id);
+    const replies = [toolCall];
+    fake.chatReply = () => {
+      // dalla seconda richiesta il provider tiene la risposta
+      fake.delayMs = 5_000;
+      return replies.shift() ?? toolCall;
+    };
+    const running = startRun(id, { userToken: "t" });
+    await waitFor(() => fake.requests.filter((r) => r.path === "/v1/chat/completions").length === 2);
+
+    await cancelRun(id);
+    await running;
+
+    const run = await getRun(id);
+    expect(run.status).toBe("cancelled");
+    expect(run.promptTokens).toBe(1000);
+    expect(run.completionTokens).toBe(500);
+    expect(run.costUsd).toBeNull();
+    expect(run.durationMs).toBeGreaterThan(0);
+  });
+
+  it("run pending annullata prima dell'avvio: startRun esce senza lanciare", async () => {
+    const id = await seedRun(GET_ITEM);
+    await cancelRun(id);
+
+    await expect(startRun(id)).resolves.toBeUndefined();
+    expect(llmRequests).toHaveLength(0);
+    expect((await getRun(id)).status).toBe("cancelled");
   });
 });
 

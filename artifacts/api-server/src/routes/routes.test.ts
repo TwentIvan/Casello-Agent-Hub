@@ -455,6 +455,7 @@ describe("paginazione delle run", () => {
 
   it("limit fuori intervallo o before non valido → 400", async () => {
     expect((await api("GET", "/runs?limit=0")).status).toBe(400);
+    expect((await api("GET", "/runs?limit=1.5")).status).toBe(400);
     expect((await api("GET", "/runs?limit=201")).status).toBe(400);
     expect((await api("GET", "/runs?before=abc")).status).toBe(400);
     expect((await api("GET", "/runs?before=1.5")).status).toBe(400);

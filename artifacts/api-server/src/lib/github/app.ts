@@ -63,7 +63,7 @@ export function appJwt(cfg: GithubConfig, now: () => number = Date.now): string 
 
 // --- HTTP --------------------------------------------------------------------------------
 
-interface CallResult {
+export interface CallResult {
   status: number;
   /** Corpo JSON delle risposte 2xx; null per gli altri stati (il corpo non viene letto). */
   json: unknown;
@@ -73,7 +73,7 @@ interface CallResult {
  * Chiamata a GitHub con timeout, senza redirect e con corpo limitato. Errori di rete, 5xx, 429,
  * corpi troppo grandi o non JSON → "GitHub non risponde"; gli altri stati li interpreta il chiamante.
  */
-async function call(
+export async function githubCall(
   cfg: GithubConfig,
   input: { base: "api" | "web"; method: "GET" | "POST"; path: string; token?: string; body?: unknown },
 ): Promise<CallResult> {
@@ -153,18 +153,24 @@ function noAccess(installationId: number, status: number | null): GithubError {
 }
 
 /**
- * Token di installazione; con `scope` ristretto a quel repo ("proprietario/nome") e a
- * `contents: read`. Resta in memoria per (installazione, repo) fino a 5 minuti prima della scadenza.
+ * Token di installazione; con `scope` ristretto a quel repo ("proprietario/nome") e ai permessi
+ * indicati (default `contents: read`). Resta in memoria per (installazione, repo, permessi) fino a
+ * 5 minuti prima della scadenza.
  */
-export async function installationToken(cfg: GithubConfig, installationId: number, scope?: { repo: string }): Promise<string> {
+export async function installationToken(
+  cfg: GithubConfig,
+  installationId: number,
+  scope?: { repo: string; permissions?: Record<string, string> },
+): Promise<string> {
   if (!Number.isSafeInteger(installationId) || installationId <= 0) throw noAccess(installationId, null);
   if (scope && !isValidGithubRepo(scope.repo)) throw noAccess(installationId, null);
-  const key = `${installationId}:${scope?.repo ?? "*"}`;
+  const permissions = scope?.permissions ?? { contents: "read" };
+  const key = scope ? `${installationId}:${scope.repo}:${JSON.stringify(permissions)}` : `${installationId}:*`;
   const hit = tokenCache.get(key);
   if (hit && hit.expiresAt - Date.now() > TOKEN_MIN_REMAINING_MS) return hit.token;
 
-  const body = scope ? { repositories: [scope.repo.split("/")[1]!], permissions: { contents: "read" } } : undefined;
-  const { status, json } = await call(cfg, {
+  const body = scope ? { repositories: [scope.repo.split("/")[1]!], permissions } : undefined;
+  const { status, json } = await githubCall(cfg, {
     base: "api",
     method: "POST",
     path: `/app/installations/${installationId}/access_tokens`,
@@ -186,7 +192,7 @@ export async function installationToken(cfg: GithubConfig, installationId: numbe
 export async function repoInstallationId(cfg: GithubConfig, repo: string): Promise<number | null> {
   if (!isValidGithubRepo(repo)) return null;
   const [owner, name] = repo.split("/") as [string, string];
-  const { status, json } = await call(cfg, {
+  const { status, json } = await githubCall(cfg, {
     base: "api",
     method: "GET",
     path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/installation`,
@@ -207,7 +213,7 @@ export async function listInstallationRepos(
   const token = await installationToken(cfg, installationId);
   const out: { fullName: string; defaultBranch: string; private: boolean }[] = [];
   for (let page = 1; page <= MAX_PAGES && out.length < MAX_REPOS; page++) {
-    const { status, json } = await call(cfg, {
+    const { status, json } = await githubCall(cfg, {
       base: "api",
       method: "GET",
       path: `/installation/repositories?per_page=${PER_PAGE}&page=${page}`,
@@ -235,7 +241,7 @@ export async function listInstallationRepos(
 export async function exchangeCode(cfg: GithubConfig, code: string, codeVerifier: string | null): Promise<string> {
   const body: Record<string, string> = { client_id: cfg.clientId, client_secret: cfg.clientSecret, code };
   if (codeVerifier !== null) body["code_verifier"] = codeVerifier;
-  const { status, json } = await call(cfg, { base: "web", method: "POST", path: "/login/oauth/access_token", body });
+  const { status, json } = await githubCall(cfg, { base: "web", method: "POST", path: "/login/oauth/access_token", body });
   if (status >= 400) throw new GithubError(GITHUB_MESSAGES.loginFailed, status);
   // GitHub risponde 200 con `error` per un codice non valido o scaduto
   if (!isObj(json) || typeof json["access_token"] !== "string" || !json["access_token"]) {
@@ -245,7 +251,7 @@ export async function exchangeCode(cfg: GithubConfig, code: string, codeVerifier
 }
 
 async function userGet(cfg: GithubConfig, userToken: string, path: string): Promise<{ status: number; json: unknown }> {
-  const res = await call(cfg, { base: "api", method: "GET", path, token: userToken });
+  const res = await githubCall(cfg, { base: "api", method: "GET", path, token: userToken });
   if (res.status >= 400) throw new GithubError(GITHUB_MESSAGES.loginFailed, res.status);
   return res;
 }

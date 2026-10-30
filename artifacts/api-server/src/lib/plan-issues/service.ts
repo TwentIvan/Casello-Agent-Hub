@@ -6,12 +6,14 @@ import { completionData } from "../architect/issues";
 import { INSTALLATION_NOT_YOURS, userHasInstallation } from "../../routes/apps";
 import { latestCompletedAnalysisId, loadPlanItems } from "../plan-chat/run-turn";
 import { creationOrder, isEligible, issueContent, issueLabels } from "./content";
+import { logger } from "../logger";
 
 /**
  * Creazione delle issue GitHub dalle voci approvate del piano (spec «dal piano alle issue», §4).
  * Ogni voce si prenota (`issue_state = 'creating'`) prima della chiamata a GitHub: due richieste
- * concorrenti sulle stesse voci non creano doppioni. Su errore la prenotazione si toglie; quelle
- * rimaste da un riavvio si azzerano all'avvio (`resetStaleIssueReservations`).
+ * concorrenti sulle stesse voci non creano doppioni. Se la creazione su GitHub fallisce la prenotazione
+ * si toglie; se fallisce solo il collegamento alla voce resta (l'issue esiste: si ricollega a mano dal
+ * log). Quelle rimaste da un riavvio si azzerano all'avvio (`resetStaleIssueReservations`).
  */
 
 export class PlanIssuesError extends Error {
@@ -27,7 +29,7 @@ export const NO_REPO = "Collega il repository tramite l'App GitHub per creare le
 const APP_NOT_FOUND = "App non trovata";
 const ITEM_NOT_IN_APP = "Una o più voci non appartengono al piano di questa app";
 
-/** Pausa tra due creazioni: GitHub limita la creazione rapida di contenuti. */
+/** Pausa tra due tentativi di creazione: GitHub limita la creazione rapida di contenuti. */
 const DEFAULT_PAUSE_MS = 1000;
 
 export interface PlanIssuePreview {
@@ -147,6 +149,42 @@ async function release(itemId: number): Promise<void> {
     .where(and(eq(analysisItemsTable.id, itemId), isNull(analysisItemsTable.issueNumber), eq(analysisItemsTable.issueState, "creating")));
 }
 
+/** Toglie la prenotazione senza coprire l'errore originale: se fallisce, la azzera il prossimo avvio. */
+async function releaseQuietly(itemId: number): Promise<void> {
+  try {
+    await release(itemId);
+  } catch (e) {
+    logger.error({ itemId, err: e }, "prenotazione dell'issue non tolta");
+  }
+}
+
+const notLinkedMessage = (n: number) => `Issue creata su GitHub ma non collegata alla voce: ricollegala a mano (#${n})`;
+
+/** Collega l'issue creata alla voce; un secondo tentativo se la scrittura fallisce. */
+async function linkIssue(itemId: number, repo: string, issue: { number: number; url: string }): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const now = new Date();
+      await db
+        .update(analysisItemsTable)
+        .set({
+          issueRepo: repo,
+          issueNumber: issue.number,
+          issueUrl: issue.url,
+          issueState: "open",
+          issueStateReason: null,
+          issueCreatedAt: now,
+          issueCheckedAt: now,
+        })
+        .where(eq(analysisItemsTable.id, itemId));
+      return true;
+    } catch {
+      // riprova una volta
+    }
+  }
+  return false;
+}
+
 export async function createPlanIssues(
   appId: number,
   userId: number,
@@ -173,7 +211,7 @@ export async function createPlanIssues(
   const { issueByKey, titleByKey } = await completionKeys(appId, repo);
   const results: PlanIssueResult[] = [];
   let stopped: string | null = null;
-  let created = 0;
+  let attempts = 0;
   for (const item of items) {
     if (stopped !== null) {
       results.push({ itemId: item.id, outcome: "failed", error: stopped });
@@ -183,33 +221,29 @@ export async function createPlanIssues(
       results.push({ itemId: item.id, outcome: "skipped" });
       continue;
     }
-    if (created > 0 && pauseMs > 0) await new Promise((r) => setTimeout(r, pauseMs));
+    if (attempts > 0 && pauseMs > 0) await new Promise((r) => setTimeout(r, pauseMs));
+    attempts++;
     const content = issueContent(item, { appName, issueByKey, titleByKey });
+    let issue: { number: number; url: string };
     try {
-      const issue = await createIssue(cfg, token, repo, content);
-      const now = new Date();
-      await db
-        .update(analysisItemsTable)
-        .set({
-          issueRepo: repo,
-          issueNumber: issue.number,
-          issueUrl: issue.url,
-          issueState: "open",
-          issueStateReason: null,
-          issueCreatedAt: now,
-          issueCheckedAt: now,
-        })
-        .where(eq(analysisItemsTable.id, item.id));
-      created++;
-      if (item.chapter === "completion") issueByKey.set(completionData(item).key, issue.number);
-      results.push({ itemId: item.id, outcome: "created", number: issue.number, url: issue.url });
+      issue = await createIssue(cfg, token, repo, content);
     } catch (e) {
-      await release(item.id);
+      // Solo una creazione fallita libera la voce: l'issue non esiste su GitHub
+      await releaseQuietly(item.id);
       if (!(e instanceof IssueError)) throw e;
       // Un errore di repository o permesso ferma il lotto: questa voce e le restanti falliscono
       if (e.scope === "batch") stopped = e.message;
       results.push({ itemId: item.id, outcome: "failed", error: e.message });
+      continue;
     }
+    if (!(await linkIssue(item.id, repo, issue))) {
+      // L'issue esiste ma la voce non lo sa: la prenotazione resta, così nessun lotto crea un doppione
+      logger.error({ itemId: item.id, repo, number: issue.number, url: issue.url }, "issue creata ma non collegata alla voce del piano");
+      results.push({ itemId: item.id, outcome: "failed", error: notLinkedMessage(issue.number) });
+      continue;
+    }
+    if (item.chapter === "completion") issueByKey.set(completionData(item).key, issue.number);
+    results.push({ itemId: item.id, outcome: "created", number: issue.number, url: issue.url });
   }
   return { repo, results };
 }

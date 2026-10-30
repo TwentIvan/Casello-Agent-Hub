@@ -351,6 +351,56 @@ describe("POST /apps/:id/plan/issues", () => {
     expect(repoIssues().map((i) => i.title)).toEqual(["Uno", "Tre"]);
   });
 
+  /** Fa fallire le prime `times` scritture del numero dell'issue sulla voce (la creazione su GitHub riesce). */
+  function failLinkWrites(times: number) {
+    const original = db.update.bind(db);
+    let left = times;
+    return vi.spyOn(db, "update").mockImplementation(((table: any) => {
+      const builder: any = original(table);
+      const set = builder.set.bind(builder);
+      builder.set = (values: Record<string, unknown>) => {
+        if (values["issueNumber"] !== undefined && left > 0) {
+          left -= 1;
+          return { where: () => Promise.reject(new Error("scrittura fallita")) };
+        }
+        return set(values);
+      };
+      return builder;
+    }) as typeof db.update);
+  }
+
+  it("scrittura del collegamento fallita due volte → failed, prenotazione tenuta, nessun doppione", async () => {
+    const { logger } = await import("../lib/logger");
+    const logged = vi.spyOn(logger, "error").mockImplementation(() => logger);
+    const a = await addItem("evolution", evolution("Uno"));
+    const spy = failLinkWrites(2);
+    const res = await issuesPost([a]);
+    spy.mockRestore();
+    expect(res.status, res.text).toBe(200);
+    expect(res.json.results).toEqual([
+      { itemId: a, outcome: "failed", error: "Issue creata su GitHub ma non collegata alla voce: ricollegala a mano (#1)" },
+    ]);
+    expect(logged).toHaveBeenCalledWith(
+      { itemId: a, repo: REPO, number: 1, url: `https://github.com/${REPO}/issues/1` },
+      expect.any(String),
+    );
+    logged.mockRestore();
+    // La prenotazione resta: un nuovo lotto non crea un'altra issue
+    expect((await itemRow(a)).issueState).toBe("creating");
+    const again = await issuesPost([a]);
+    expect(again.json.results).toEqual([{ itemId: a, outcome: "skipped" }]);
+    expect(repoIssues()).toHaveLength(1);
+  });
+
+  it("scrittura del collegamento fallita una volta → riprovata, created", async () => {
+    const a = await addItem("evolution", evolution("Uno"));
+    const spy = failLinkWrites(1);
+    const res = await issuesPost([a]);
+    spy.mockRestore();
+    expect(res.json.results).toEqual([{ itemId: a, outcome: "created", number: 1, url: `https://github.com/${REPO}/issues/1` }]);
+    expect((await itemRow(a))).toMatchObject({ issueNumber: 1, issueState: "open" });
+  });
+
   it("issue disattivate a metà lotto → restanti failed", async () => {
     const ids = [
       await addItem("evolution", evolution("Uno")),

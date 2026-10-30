@@ -21,6 +21,10 @@ router.get("/dashboard/stats", async (_req, res) => {
     .select({ count: sql<number>`count(*)::int` })
     .from(runsTable)
     .where(eq(runsTable.status, "failed"));
+  const [{ count: cancelledRuns }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(runsTable)
+    .where(eq(runsTable.status, "cancelled"));
   const [{ avg: avgDurationMs }] = await db
     .select({ avg: sql<number | null>`avg(${runsTable.durationMs})::float` })
     .from(runsTable);
@@ -33,6 +37,7 @@ router.get("/dashboard/stats", async (_req, res) => {
       totalRuns,
       successfulRuns,
       failedRuns,
+      cancelledRuns,
       avgDurationMs,
     })
   );

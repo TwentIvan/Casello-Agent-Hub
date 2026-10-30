@@ -16,6 +16,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
+import { BudgetGuard } from "@/components/budget/budget";
 import { UserMenu } from "./user-menu";
 
 interface NavItem {
@@ -89,6 +90,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
         <main className="flex-1 p-4 md:p-6">{children}</main>
+        <BudgetGuard />
       </SidebarInset>
     </SidebarProvider>
   );

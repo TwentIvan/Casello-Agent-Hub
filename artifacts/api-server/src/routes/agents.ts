@@ -32,6 +32,7 @@ import {
   DeleteAgentSkillParams,
 } from "@workspace/api-zod";
 import { startRun } from "../lib/run-executor";
+import { runBudgetBlock } from "../lib/budget";
 import { currentUserId } from "../lib/auth";
 import { ModelChoiceError, chooseByName, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
 import { DEFAULT_MODEL } from "../lib/models";
@@ -109,9 +110,14 @@ async function modelUpdate(
   return {};
 }
 
+/** Tetto in USD → colonna numeric, arrotondato al centesimo; null = nessun limite. */
+export function budgetColumn(value: number | null): string | null {
+  return value === null ? null : value.toFixed(2);
+}
+
 router.patch("/agents/:id", async (req, res) => {
   const { id } = parseRequest(UpdateAgentParams, req.params);
-  const { aiModelId, model, ...body } = parseRequest(UpdateAgentBody, req.body);
+  const { aiModelId, model, monthlyBudgetUsd, ...body } = parseRequest(UpdateAgentBody, req.body);
   const [current] = await db
     .select({ aiModelId: agentsTable.aiModelId, model: agentsTable.model })
     .from(agentsTable)
@@ -131,7 +137,12 @@ router.patch("/agents/:id", async (req, res) => {
   }
   const [agent] = await db
     .update(agentsTable)
-    .set({ ...body, ...modelFields, updatedAt: new Date() })
+    .set({
+      ...body,
+      ...modelFields,
+      ...(monthlyBudgetUsd !== undefined && { monthlyBudgetUsd: budgetColumn(monthlyBudgetUsd) }),
+      updatedAt: new Date(),
+    })
     .where(eq(agentsTable.id, id))
     .returning();
   if (!agent) {
@@ -241,9 +252,16 @@ router.post("/agents/:id/runs", runRateLimit, async (req, res) => {
     return;
   }
 
+  const blocked = await runBudgetBlock(agent);
+  if (blocked) {
+    res.status(409).json({ error: blocked });
+    return;
+  }
+
+  // Il modello si fissa sulla run: la spesa resta di chi pagava alla partenza anche se l'agente cambia modello
   const [run] = await db
     .insert(runsTable)
-    .values({ agentId: id, status: "pending", input: body.input ?? null })
+    .values({ agentId: id, aiModelId: agent.aiModelId, status: "pending", input: body.input ?? null })
     .returning();
 
   // La run prosegue in background (da secondi a decine di secondi): si risponde subito con la run

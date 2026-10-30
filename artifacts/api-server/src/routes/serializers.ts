@@ -96,7 +96,11 @@ export async function toolIdsByAgent(agents: Agent[]): Promise<Map<number, numbe
 
 export async function withToolIds(agents: Agent[]) {
   const ids = await toolIdsByAgent(agents);
-  return agents.map((a) => ({ ...a, toolIds: ids.get(a.id) ?? [] }));
+  return agents.map((a) => ({
+    ...a,
+    monthlyBudgetUsd: toNumberOrNull(a.monthlyBudgetUsd),
+    toolIds: ids.get(a.id) ?? [],
+  }));
 }
 
 export async function withToolIdsOne(agent: Agent) {

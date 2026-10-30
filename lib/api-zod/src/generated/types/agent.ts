@@ -29,6 +29,11 @@ export interface Agent {
   defaultIdentity: ToolIdentity;
   /** ID dei tool del catalogo assegnati all'agente */
   toolIds: number[];
+  /**
+     * Tetto di spesa mensile in USD delle run dell'agente; null = nessun limite
+     * @nullable
+     */
+  monthlyBudgetUsd: number | null;
   createdAt: Date;
   updatedAt: Date;
 }

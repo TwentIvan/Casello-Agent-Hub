@@ -13,6 +13,7 @@ export interface DashboardStats {
   totalRuns: number;
   successfulRuns: number;
   failedRuns: number;
+  cancelledRuns: number;
   /** @nullable */
   avgDurationMs?: number | null;
 }

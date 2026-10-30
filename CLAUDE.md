@@ -50,7 +50,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
   `POST /api/runs/:id/resume` (conferma o annulla l'azione in sospeso), `/api/dashboard/stats`,
-  `/api/models`, `/api/healthz`; architetto: `GET|POST /api/apps/:id/analyses`,
+  `/api/models`, `GET|PUT /api/budget` (tetti di spesa), `/api/healthz`; architetto: `GET|POST /api/apps/:id/analyses`,
   `POST /api/apps/:id/analyses/zip` (corpo zip grezzo), `GET /api/analyses/:id`,
   `GET /api/analyses/:id/issues`, `PATCH /api/analysis-items/:id`, `GET|DELETE /api/agents/:id/skills`; GitHub: `GET /api/github/installations`, `GET /api/github/repos`
   (login e collegamento in `/api/auth/github/*`, vedi "Autenticazione"). Body, parametri e query si leggono con `parseRequest` (errore → 400);
@@ -132,6 +132,19 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Route: `/api/ai/accounts` (+ `/:id/verify`, `/:id/default`, `/:id/models`), `/api/ai/models`,
   `POST /api/ai/models/:id/probe`, `/api/ai/estimate`; `GET /api/models` resta come alias del vecchio elenco.
 - Costi sempre sotto controllo: a parità di risultato si preferisce il modello o il percorso più economico.
+
+## Tetti di spesa
+
+- Tetto mensile in USD (null = nessun limite) per utente (`users.monthly_budget_usd`, pagina Account) e per agente
+  (`agents.monthly_budget_usd`, scheda agente). Mese di calendario, ora italiana (`lib/budget.ts`).
+- Spesa dell'utente (chi configura paga): run, analisi cloud e conversazioni del piano con un modello dei suoi account
+  AI (una conversazione, a costo cumulativo, conta nel mese del suo ultimo turno); l'account di sistema non conta. Spesa dell'agente: le sue
+  run con qualsiasi modello. Ogni run ricorda il modello con cui è partita (`runs.ai_model_id`). I costi null (prezzo
+  mancante) non si sommano: si contano come esecuzioni senza prezzo.
+- Raggiunto un tetto (spesa ≥ tetto) le nuove run, analisi cloud e messaggi della chat rispondono 409 con il motivo;
+  le analisi locali e le riprese delle run in pausa no. `GET|PUT /api/budget`: riepilogo e tetto dell'utente; la
+  console avvisa dall'80% e propone di annullare le run ancora attive su un tetto raggiunto (mai da sola).
+- Migrazione: `docs/migrations/2026-10-tetti-di-spesa.sql`.
 
 ## Catalogo dei modelli
 

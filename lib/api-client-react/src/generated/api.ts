@@ -53,6 +53,8 @@ import type {
   AuthProviders,
   BadGatewayResponse,
   BadRequestResponse,
+  Budget,
+  BudgetUpdate,
   CatalogModelPage,
   CatalogOffer,
   CatalogProvider,
@@ -1929,7 +1931,7 @@ export const triggerRun = async (id: number,
 
 
 
-export const getTriggerRunMutationOptions = <TError = ErrorType<NotFoundResponse>,
+export const getTriggerRunMutationOptions = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof triggerRun>>, TError,{id: number;data: BodyType<RunTrigger>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof triggerRun>>, TError,{id: number;data: BodyType<RunTrigger>}, TContext> => {
 
@@ -1958,12 +1960,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type TriggerRunMutationResult = NonNullable<Awaited<ReturnType<typeof triggerRun>>>
     export type TriggerRunMutationBody = BodyType<RunTrigger>
-    export type TriggerRunMutationError = ErrorType<NotFoundResponse>
+    export type TriggerRunMutationError = ErrorType<NotFoundResponse | ErrorResponse>
 
     /**
  * @summary Avvia un'esecuzione dell'agente
  */
-export const useTriggerRun = <TError = ErrorType<NotFoundResponse>,
+export const useTriggerRun = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof triggerRun>>, TError,{id: number;data: BodyType<RunTrigger>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof triggerRun>>,
@@ -2357,7 +2359,7 @@ export const getStartAnalysisUrl = (id: number,) => {
 }
 
 /**
- * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso. Con sourceInstallationId non serve il token manuale, ma l'utente corrente deve avere quell'installazione (altrimenti 403 "installazione non trovata o non tua"). Con executor local l'analisi resta in coda finché un agente locale (via MCP) non la prende: niente modello (aiModelId e model vietati) e nessun controllo sulle sorgenti, il codice lo legge l'agente sul proprio clone.
+ * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso o se chi paga il modello ha raggiunto il tetto di spesa mensile (solo executor cloud). Con sourceInstallationId non serve il token manuale, ma l'utente corrente deve avere quell'installazione (altrimenti 403 "installazione non trovata o non tua"). Con executor local l'analisi resta in coda finché un agente locale (via MCP) non la prende: niente modello (aiModelId e model vietati) e nessun controllo sulle sorgenti, il codice lo legge l'agente sul proprio clone.
  * @summary Avvia un'analisi leggendo le sorgenti configurate sull'app
  */
 export const startAnalysis = async (id: number,
@@ -3263,6 +3265,154 @@ export function useGetDashboardStats<TData = Awaited<ReturnType<typeof getDashbo
 
 
 
+
+export const getGetBudgetUrl = () => {
+
+
+
+
+  return `/api/budget`
+}
+
+/**
+ * Spesa del mese (calendario, ora italiana) sugli account AI dell'utente corrente e sugli agenti con un tetto, più le run in corso o in attesa che spendono su un tetto già raggiunto (da poter annullare).
+ * @summary Tetti e spesa del mese corrente
+ */
+export const getBudget = async ( options?: RequestInit): Promise<Budget> => {
+
+  return customFetch<Budget>(getGetBudgetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBudgetQueryKey = () => {
+    return [
+    `/api/budget`
+    ] as const;
+    }
+
+
+export const getGetBudgetQueryOptions = <TData = Awaited<ReturnType<typeof getBudget>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBudget>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBudgetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBudget>>> = ({ signal }) => getBudget({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBudget>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBudgetQueryResult = NonNullable<Awaited<ReturnType<typeof getBudget>>>
+export type GetBudgetQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Tetti e spesa del mese corrente
+ */
+
+export function useGetBudget<TData = Awaited<ReturnType<typeof getBudget>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBudget>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBudgetQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateBudgetUrl = () => {
+
+
+
+
+  return `/api/budget`
+}
+
+/**
+ * @summary Imposta il tetto di spesa mensile dell'utente corrente
+ */
+export const updateBudget = async (budgetUpdate: BudgetUpdate, options?: RequestInit): Promise<Budget> => {
+
+  return customFetch<Budget>(getUpdateBudgetUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(budgetUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateBudgetMutationOptions = <TError = ErrorType<BadRequestResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateBudget>>, TError,{data: BodyType<BudgetUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateBudget>>, TError,{data: BodyType<BudgetUpdate>}, TContext> => {
+
+const mutationKey = ['updateBudget'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateBudget>>, {data: BodyType<BudgetUpdate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateBudget(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateBudgetMutationResult = NonNullable<Awaited<ReturnType<typeof updateBudget>>>
+    export type UpdateBudgetMutationBody = BodyType<BudgetUpdate>
+    export type UpdateBudgetMutationError = ErrorType<BadRequestResponse>
+
+    /**
+ * @summary Imposta il tetto di spesa mensile dell'utente corrente
+ */
+export const useUpdateBudget = <TError = ErrorType<BadRequestResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateBudget>>, TError,{data: BodyType<BudgetUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateBudget>>,
+        TError,
+        {data: BodyType<BudgetUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateBudgetMutationOptions(options));
+    }
 
 export const getListModelsUrl = () => {
 
@@ -5244,7 +5394,7 @@ export const getSendPlanMessageUrl = (id: number,) => {
 }
 
 /**
- * Risponde subito col messaggio dell'utente; il bot risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso o se il modello non è più disponibile. Massimo 10 messaggi al minuto per utente.
+ * Risponde subito col messaggio dell'utente; il bot risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se il modello non è più disponibile o se chi paga il modello ha raggiunto il tetto di spesa mensile. Massimo 10 messaggi al minuto per utente.
  * @summary Invia un messaggio e avvia il turno del bot
  */
 export const sendPlanMessage = async (id: number,

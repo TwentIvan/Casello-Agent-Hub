@@ -35,6 +35,7 @@ import {
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
 import { ModelChoiceError, chooseOwnModel } from "../lib/ai/choice";
+import { userBudgetBlock } from "../lib/budget";
 import { effectiveStatus } from "../lib/ai/model-status";
 import { itemTitle, type PlanChapter } from "../lib/plan-chat/context";
 import { ProposalConflictError, ProposalNotFoundError, decideProposal } from "../lib/plan-chat/decide";
@@ -302,6 +303,11 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
     }
     if (await isModelUnavailable(conv.aiModelId)) {
       res.status(409).json({ error: MODEL_UNAVAILABLE });
+      return;
+    }
+    const blocked = await userBudgetBlock(conv.aiModelId);
+    if (blocked) {
+      res.status(409).json({ error: blocked });
       return;
     }
     try {

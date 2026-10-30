@@ -316,7 +316,9 @@ async function driveLoop(
 ): Promise<void> {
   const runId = ctx.run.id;
   const functionTools = toFunctionTools(ctx.tools);
-  const aiModelId = ctx.agent.aiModelId;
+  // Modello fissato alla partenza della run (anche dopo una ripresa: chi pagava resta chi paga); l'agente
+  // solo per una run senza modello registrato
+  const aiModelId = ctx.run.aiModelId ?? ctx.agent.aiModelId;
   // Modello dell'agente (chi configura paga): risolto una volta per segmento, alla prima chiamata,
   // così un errore di risoluzione diventa un passo `model` fallito come gli altri errori del modello.
   // Il risultato (con la chiave in memoria) non si copia mai: si passa l'oggetto originale.

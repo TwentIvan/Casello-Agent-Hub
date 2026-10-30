@@ -90,6 +90,7 @@ const existingAgent = (over: Partial<Agent & { toolNames: string[] }> = {}) => (
   role: "area" as const,
   area: "Squadre",
   defaultIdentity: "user" as const,
+  monthlyBudgetUsd: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   toolNames: ["b", "a"],

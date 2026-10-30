@@ -1027,7 +1027,15 @@ export const GetAnalysisResponse = zod.object({
 })),
   "status": zod.enum(['pending', 'approved', 'discarded', 'postponed']).describe('postponed solo per i capitoli endpoint, completion ed evolution'),
   "reviewNote": zod.string().nullable(),
-  "appliedAt": zod.coerce.date().nullable()
+  "appliedAt": zod.coerce.date().nullable(),
+  "issue": zod.union([zod.object({
+  "repo": zod.string().describe('Repository della issue, nella forma proprietario\/nome'),
+  "number": zod.number(),
+  "url": zod.string(),
+  "state": zod.enum(['open', 'closed']),
+  "stateReason": zod.string().nullable().describe('Motivo di chiusura riportato da GitHub (es. completed, not_planned)'),
+  "checkedAt": zod.coerce.date().nullable().describe('Ultimo controllo dello stato su GitHub')
+}),zod.null()]).describe('Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)')
 }))
 }))
 
@@ -1147,7 +1155,15 @@ export const UpdateAnalysisItemResponse = zod.object({
 })),
   "status": zod.enum(['pending', 'approved', 'discarded', 'postponed']).describe('postponed solo per i capitoli endpoint, completion ed evolution'),
   "reviewNote": zod.string().nullable(),
-  "appliedAt": zod.coerce.date().nullable()
+  "appliedAt": zod.coerce.date().nullable(),
+  "issue": zod.union([zod.object({
+  "repo": zod.string().describe('Repository della issue, nella forma proprietario\/nome'),
+  "number": zod.number(),
+  "url": zod.string(),
+  "state": zod.enum(['open', 'closed']),
+  "stateReason": zod.string().nullable().describe('Motivo di chiusura riportato da GitHub (es. completed, not_planned)'),
+  "checkedAt": zod.coerce.date().nullable().describe('Ultimo controllo dello stato su GitHub')
+}),zod.null()]).describe('Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)')
 })
 
 
@@ -2121,7 +2137,15 @@ export const GetAppPlanResponse = zod.object({
 })),
   "status": zod.enum(['pending', 'approved', 'discarded', 'postponed']).describe('postponed solo per i capitoli endpoint, completion ed evolution'),
   "reviewNote": zod.string().nullable(),
-  "appliedAt": zod.coerce.date().nullable()
+  "appliedAt": zod.coerce.date().nullable(),
+  "issue": zod.union([zod.object({
+  "repo": zod.string().describe('Repository della issue, nella forma proprietario\/nome'),
+  "number": zod.number(),
+  "url": zod.string(),
+  "state": zod.enum(['open', 'closed']),
+  "stateReason": zod.string().nullable().describe('Motivo di chiusura riportato da GitHub (es. completed, not_planned)'),
+  "checkedAt": zod.coerce.date().nullable().describe('Ultimo controllo dello stato su GitHub')
+}),zod.null()]).describe('Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)')
 }))
 })
 
@@ -2323,7 +2347,15 @@ export const DecidePlanProposalResponse = zod.object({
 })),
   "status": zod.enum(['pending', 'approved', 'discarded', 'postponed']).describe('postponed solo per i capitoli endpoint, completion ed evolution'),
   "reviewNote": zod.string().nullable(),
-  "appliedAt": zod.coerce.date().nullable()
+  "appliedAt": zod.coerce.date().nullable(),
+  "issue": zod.union([zod.object({
+  "repo": zod.string().describe('Repository della issue, nella forma proprietario\/nome'),
+  "number": zod.number(),
+  "url": zod.string(),
+  "state": zod.enum(['open', 'closed']),
+  "stateReason": zod.string().nullable().describe('Motivo di chiusura riportato da GitHub (es. completed, not_planned)'),
+  "checkedAt": zod.coerce.date().nullable().describe('Ultimo controllo dello stato su GitHub')
+}),zod.null()]).describe('Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)')
 }),zod.null()]).describe('Voce creata o modificata (null se rifiutata)')
 })
 

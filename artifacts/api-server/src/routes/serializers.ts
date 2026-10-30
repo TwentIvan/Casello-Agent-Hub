@@ -144,11 +144,27 @@ function publicEvidence(evidence: unknown): { source: string; location: string; 
 
 /** Elemento della proposta: prove normalizzate, payload sempre un oggetto. */
 export function toPublicItem(item: AnalysisItem) {
-  const { createdAt: _createdAt, ...rest } = item;
+  const {
+    createdAt: _createdAt,
+    issueRepo,
+    issueNumber,
+    issueUrl,
+    issueState,
+    issueStateReason,
+    issueCreatedAt: _issueCreatedAt,
+    issueCheckedAt,
+    ...rest
+  } = item;
+  // Durante la prenotazione (`creating`) il numero non c'è ancora: la voce risulta senza issue
+  const issue =
+    issueNumber != null && issueRepo != null && issueUrl != null && (issueState === "open" || issueState === "closed")
+      ? { repo: issueRepo, number: issueNumber, url: issueUrl, state: issueState, stateReason: issueStateReason, checkedAt: issueCheckedAt }
+      : null;
   return {
     ...rest,
     payload: isPlainObject(item.payload) ? item.payload : {},
     evidence: publicEvidence(item.evidence),
+    issue,
   };
 }
 

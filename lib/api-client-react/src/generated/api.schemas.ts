@@ -744,6 +744,32 @@ export interface AnalysisEvidence {
   note: string;
 }
 
+export type ItemIssueState = typeof ItemIssueState[keyof typeof ItemIssueState];
+
+
+export const ItemIssueState = {
+  open: 'open',
+  closed: 'closed',
+} as const;
+
+export interface ItemIssue {
+  /** Repository della issue, nella forma proprietario/nome */
+  repo: string;
+  number: number;
+  url: string;
+  state: ItemIssueState;
+  /**
+     * Motivo di chiusura riportato da GitHub (es. completed, not_planned)
+     * @nullable
+     */
+  stateReason: string | null;
+  /**
+     * Ultimo controllo dello stato su GitHub
+     * @nullable
+     */
+  checkedAt: string | null;
+}
+
 /**
  * Chi ha creato la voce (l'architetto o una proposta accettata in chat)
  */
@@ -778,6 +804,8 @@ export interface AnalysisItem {
   reviewNote: string | null;
   /** @nullable */
   appliedAt: string | null;
+  /** Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione) */
+  issue: ItemIssue | null;
 }
 
 export type PlanTurnStatus = typeof PlanTurnStatus[keyof typeof PlanTurnStatus];

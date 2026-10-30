@@ -2780,9 +2780,31 @@ components:
         note:
           type: string
 
+    ItemIssue:
+      type: object
+      required: [repo, number, url, state, stateReason, checkedAt]
+      properties:
+        repo:
+          type: string
+          description: Repository della issue, nella forma proprietario/nome
+        number:
+          type: integer
+        url:
+          type: string
+        state:
+          type: string
+          enum: [open, closed]
+        stateReason:
+          type: ["string", "null"]
+          description: Motivo di chiusura riportato da GitHub (es. completed, not_planned)
+        checkedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Ultimo controllo dello stato su GitHub
+
     AnalysisItem:
       type: object
-      required: [id, analysisId, chapter, ref, position, payload, diff, evidence, status, reviewNote, appliedAt, origin]
+      required: [id, analysisId, chapter, ref, position, payload, diff, evidence, status, reviewNote, appliedAt, origin, issue]
       properties:
         id:
           type: integer
@@ -2816,6 +2838,11 @@ components:
         appliedAt:
           type: ["string", "null"]
           format: date-time
+        issue:
+          oneOf:
+            - $ref: "#/components/schemas/ItemIssue"
+            - type: "null"
+          description: Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)
 
     # ── Chat del piano ────────────────────────────────────────────────────────
     PlanTurnStatus:

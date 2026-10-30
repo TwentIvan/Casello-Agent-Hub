@@ -105,6 +105,8 @@ export * from './githubRepo';
 export * from './healthStatus';
 export * from './issueExport';
 export * from './itemDiff';
+export * from './itemIssue';
+export * from './itemIssueState';
 export * from './itemStatus';
 export * from './linkedIdentity';
 export * from './linkedIdentityProvider';

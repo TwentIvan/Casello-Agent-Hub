@@ -10,6 +10,7 @@ import type { AnalysisEvidence } from './analysisEvidence';
 import type { AnalysisItemOrigin } from './analysisItemOrigin';
 import type { AnalysisItemPayload } from './analysisItemPayload';
 import type { ItemDiff } from './itemDiff';
+import type { ItemIssue } from './itemIssue';
 import type { ItemStatus } from './itemStatus';
 
 export interface AnalysisItem {
@@ -30,4 +31,6 @@ export interface AnalysisItem {
   reviewNote: string | null;
   /** @nullable */
   appliedAt: Date | null;
+  /** Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione) */
+  issue: ItemIssue | null;
 }

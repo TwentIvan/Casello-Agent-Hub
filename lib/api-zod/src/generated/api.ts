@@ -352,6 +352,7 @@ export const ListAgentsResponseItem = zod.object({
   "area": zod.string().nullish(),
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -385,6 +386,7 @@ export const CreateAgentResponse = zod.object({
   "area": zod.string().nullish(),
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -409,6 +411,7 @@ export const GetAgentResponse = zod.object({
   "area": zod.string().nullish(),
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -422,6 +425,9 @@ export const UpdateAgentParams = zod.object({
 })
 
 
+export const updateAgentBodyMonthlyBudgetUsdMin = 0;
+export const updateAgentBodyMonthlyBudgetUsdMax = 1000000;
+
 
 
 export const UpdateAgentBody = zod.object({
@@ -431,7 +437,8 @@ export const UpdateAgentBody = zod.object({
   "aiModelId": zod.number().nullish().describe('Se diverso da quello salvato deve essere un modello dell\'utente o dell\'account di sistema (400 altrimenti); uguale a quello salvato non viene ricontrollato'),
   "status": zod.enum(['active', 'inactive', 'draft']).optional(),
   "area": zod.string().nullish(),
-  "defaultIdentity": zod.enum(['user', 'service']).optional()
+  "defaultIdentity": zod.enum(['user', 'service']).optional(),
+  "monthlyBudgetUsd": zod.number().min(updateAgentBodyMonthlyBudgetUsdMin).max(updateAgentBodyMonthlyBudgetUsdMax).nullish().describe('Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite')
 })
 
 export const UpdateAgentResponse = zod.object({
@@ -446,6 +453,7 @@ export const UpdateAgentResponse = zod.object({
   "area": zod.string().nullish(),
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -630,6 +638,7 @@ export const SetAgentToolsResponse = zod.object({
   "area": zod.string().nullish(),
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -871,7 +880,7 @@ export const ListAnalysesResponse = zod.array(ListAnalysesResponseItem)
 
 
 /**
- * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso. Con sourceInstallationId non serve il token manuale, ma l'utente corrente deve avere quell'installazione (altrimenti 403 "installazione non trovata o non tua"). Con executor local l'analisi resta in coda finché un agente locale (via MCP) non la prende: niente modello (aiModelId e model vietati) e nessun controllo sulle sorgenti, il codice lo legge l'agente sul proprio clone.
+ * Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI, descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso o se chi paga il modello ha raggiunto il tetto di spesa mensile (solo executor cloud). Con sourceInstallationId non serve il token manuale, ma l'utente corrente deve avere quell'installazione (altrimenti 403 "installazione non trovata o non tua"). Con executor local l'analisi resta in coda finché un agente locale (via MCP) non la prende: niente modello (aiModelId e model vietati) e nessun controllo sulle sorgenti, il codice lo legge l'agente sul proprio clone.
  * @summary Avvia un'analisi leggendo le sorgenti configurate sull'app
  */
 export const StartAnalysisParams = zod.object({
@@ -1212,7 +1221,72 @@ export const GetDashboardStatsResponse = zod.object({
   "totalRuns": zod.number(),
   "successfulRuns": zod.number(),
   "failedRuns": zod.number(),
+  "cancelledRuns": zod.number(),
   "avgDurationMs": zod.number().nullish()
+})
+
+
+/**
+ * Spesa del mese (calendario, ora italiana) sugli account AI dell'utente corrente e sugli agenti con un tetto, più le run in corso o in attesa che spendono su un tetto già raggiunto (da poter annullare).
+ * @summary Tetti e spesa del mese corrente
+ */
+export const GetBudgetResponse = zod.object({
+  "month": zod.string().describe('Mese corrente, AAAA-MM (ora italiana)'),
+  "user": zod.object({
+  "capUsd": zod.number().nullable().describe('Tetto mensile in USD; null = nessun limite'),
+  "spentUsd": zod.number().describe('Spesa nota del mese sugli account AI dell\'utente (run, analisi cloud, chat del piano)'),
+  "unpricedCount": zod.number().describe('Esecuzioni del mese con token consumati ma senza prezzo (la spesa reale è più alta)')
+}),
+  "agents": zod.array(zod.object({
+  "agentId": zod.number(),
+  "agentName": zod.string(),
+  "appId": zod.number(),
+  "capUsd": zod.number(),
+  "spentUsd": zod.number().describe('Spesa nota del mese delle run dell\'agente, con qualsiasi modello'),
+  "unpricedCount": zod.number()
+})).describe('Agenti con un tetto impostato'),
+  "activeRuns": zod.array(zod.object({
+  "id": zod.number(),
+  "agentId": zod.number(),
+  "agentName": zod.string(),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled'])
+})).describe('Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell\'utente o del loro agente)')
+})
+
+
+/**
+ * @summary Imposta il tetto di spesa mensile dell'utente corrente
+ */
+export const updateBudgetBodyMonthlyBudgetUsdMin = 0;
+export const updateBudgetBodyMonthlyBudgetUsdMax = 1000000;
+
+
+
+export const UpdateBudgetBody = zod.object({
+  "monthlyBudgetUsd": zod.number().min(updateBudgetBodyMonthlyBudgetUsdMin).max(updateBudgetBodyMonthlyBudgetUsdMax).nullable().describe('Tetto mensile in USD (arrotondato al centesimo); null = nessun limite')
+})
+
+export const UpdateBudgetResponse = zod.object({
+  "month": zod.string().describe('Mese corrente, AAAA-MM (ora italiana)'),
+  "user": zod.object({
+  "capUsd": zod.number().nullable().describe('Tetto mensile in USD; null = nessun limite'),
+  "spentUsd": zod.number().describe('Spesa nota del mese sugli account AI dell\'utente (run, analisi cloud, chat del piano)'),
+  "unpricedCount": zod.number().describe('Esecuzioni del mese con token consumati ma senza prezzo (la spesa reale è più alta)')
+}),
+  "agents": zod.array(zod.object({
+  "agentId": zod.number(),
+  "agentName": zod.string(),
+  "appId": zod.number(),
+  "capUsd": zod.number(),
+  "spentUsd": zod.number().describe('Spesa nota del mese delle run dell\'agente, con qualsiasi modello'),
+  "unpricedCount": zod.number()
+})).describe('Agenti con un tetto impostato'),
+  "activeRuns": zod.array(zod.object({
+  "id": zod.number(),
+  "agentId": zod.number(),
+  "agentName": zod.string(),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled'])
+})).describe('Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell\'utente o del loro agente)')
 })
 
 
@@ -2131,7 +2205,7 @@ export const DeletePlanConversationResponse = zod.void()
 
 
 /**
- * Risponde subito col messaggio dell'utente; il bot risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso o se il modello non è più disponibile. Massimo 10 messaggi al minuto per utente.
+ * Risponde subito col messaggio dell'utente; il bot risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se il modello non è più disponibile o se chi paga il modello ha raggiunto il tetto di spesa mensile. Massimo 10 messaggi al minuto per utente.
  * @summary Invia un messaggio e avvia il turno del bot
  */
 export const SendPlanMessageParams = zod.object({

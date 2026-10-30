@@ -35,6 +35,7 @@ import { currentUserId } from "../lib/auth";
 import { AVAILABLE_MODELS } from "../lib/models";
 import { ModelChoiceError, chooseByName, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
 import { isUniqueViolation } from "../lib/pg-errors";
+import { userBudgetBlock } from "../lib/budget";
 import { ANALYSIS_DEFAULT_MAX_TOKENS, startAnalysis } from "../lib/architect/run-analysis";
 import { ApplyError, applyItem } from "../lib/architect/apply";
 import { exportAll, exportChapter } from "../lib/architect/issues";
@@ -106,6 +107,13 @@ async function insertAnalysis(values: typeof analysesTable.$inferInsert) {
     if (isUniqueViolation(err, "analyses_one_active_per_app")) throw new AnalysisBusyError();
     throw err;
   }
+}
+
+/** 409 se chi paga il modello scelto ha raggiunto il tetto di spesa mensile; true se la risposta è partita. */
+async function rejectOverBudget(res: Response, choice: ModelChoice): Promise<boolean> {
+  const blocked = await userBudgetBlock(choice.aiModelId);
+  if (blocked) res.status(409).json({ error: blocked });
+  return blocked !== null;
 }
 
 /**
@@ -239,6 +247,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
       res.status(400).json({ error: "token GitHub mancante: impostalo nelle sorgenti dell'app" });
       return;
     }
+    if (await rejectOverBudget(res, choice)) return;
     try {
       const analysis = await createAndStart(app, choice, maxTokens);
       res.status(202).json(StartAnalysisResponse.parse(toPublicAnalysis(analysis)));
@@ -278,6 +287,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
         res.status(400).json({ error: err.message });
         return;
       }
+      if (await rejectOverBudget(res, choice)) return;
       try {
         const zip = new Uint8Array(body.buffer, body.byteOffset, body.length);
         const analysis = await createAndStart(app, choice, maxTokens, zip);

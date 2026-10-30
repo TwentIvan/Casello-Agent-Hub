@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Play } from "lucide-react";
 import {
   type Agent,
+  getGetBudgetQueryKey,
   getGetDashboardStatsQueryKey,
   getListRunsQueryKey,
   useListRuns,
@@ -48,8 +49,11 @@ export function RunPanel({ agent }: { agent: Agent }) {
         void queryClient.invalidateQueries({ queryKey: getGetDashboardStatsQueryKey() });
         navigate(`/runs/${run.id}`);
       },
-      onError: (error) =>
-        toast({ variant: "destructive", title: "Run non avviata", description: apiErrorMessage(error) }),
+      onError: (error) => {
+        toast({ variant: "destructive", title: "Run non avviata", description: apiErrorMessage(error) });
+        // Un 409 può essere il tetto di spesa: il riepilogo aggiornato apre la finestra sulle run in corso
+        void queryClient.invalidateQueries({ queryKey: getGetBudgetQueryKey() });
+      },
     },
   });
 

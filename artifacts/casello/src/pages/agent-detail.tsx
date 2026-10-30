@@ -32,6 +32,7 @@ import { AgentRoleBadge } from "@/components/agents/agent-role-badge";
 import { AgentToolsSection } from "@/components/agents/agent-tools-section";
 import { AgentSkillsSection } from "@/components/agents/agent-skills-section";
 import { RunPanel } from "@/components/runs/run-panel";
+import { AgentBudgetCard } from "@/components/budget/budget";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { AGENT_STATUS_LABELS, StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/hooks/use-toast";
@@ -338,6 +339,7 @@ export default function AgentDetailPage() {
 
       <RunPanel key={`run-${agent.data.id}`} agent={agent.data} />
       <AgentConfigForm key={`config-${agent.data.id}`} agent={agent.data} />
+      <AgentBudgetCard key={`budget-${agent.data.id}`} agent={agent.data} />
       <AgentToolsSection key={`tools-${agent.data.id}`} agent={agent.data} />
       <AgentSkillsSection key={`skills-${agent.data.id}`} agent={agent.data} />
 

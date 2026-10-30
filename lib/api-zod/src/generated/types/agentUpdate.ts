@@ -24,4 +24,11 @@ export interface AgentUpdate {
   /** @nullable */
   area?: string | null;
   defaultIdentity?: ToolIdentity;
+  /**
+     * Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite
+     * @minimum 0
+     * @maximum 1000000
+     * @nullable
+     */
+  monthlyBudgetUsd?: number | null;
 }

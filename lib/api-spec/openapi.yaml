@@ -549,6 +549,14 @@ paths:
                 $ref: "#/components/schemas/Run"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: >-
+            Tetto di spesa mensile raggiunto (dell'agente o dell'utente che paga il modello): la run non
+            viene creata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /runs/{id}:
     get:
@@ -673,7 +681,8 @@ paths:
       summary: Avvia un'analisi leggendo le sorgenti configurate sull'app
       description: >-
         Avvia in background l'analisi con le sorgenti dell'app (repository GitHub, OpenAPI,
-        descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso. Con
+        descrizione funzionale). Risponde 409 se per l'app c'è già un'analisi in corso o se chi paga il
+        modello ha raggiunto il tetto di spesa mensile (solo executor cloud). Con
         sourceInstallationId non serve il token manuale, ma l'utente corrente deve avere quell'installazione
         (altrimenti 403 "installazione non trovata o non tua"). Con executor local l'analisi resta in coda
         finché un agente locale (via MCP) non la prende: niente modello (aiModelId e model vietati) e
@@ -977,6 +986,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DashboardStats"
+
+  /budget:
+    get:
+      operationId: getBudget
+      tags: [dashboard]
+      summary: Tetti e spesa del mese corrente
+      description: >-
+        Spesa del mese (calendario, ora italiana) sugli account AI dell'utente corrente e sugli agenti con
+        un tetto, più le run in corso o in attesa che spendono su un tetto già raggiunto (da poter annullare).
+      responses:
+        "200":
+          description: Riepilogo del mese
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Budget"
+    put:
+      operationId: updateBudget
+      tags: [dashboard]
+      summary: Imposta il tetto di spesa mensile dell'utente corrente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetUpdate"
+      responses:
+        "200":
+          description: Riepilogo aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Budget"
+        "400":
+          $ref: "#/components/responses/BadRequest"
 
   # ─── Models ─────────────────────────────────────────────────────────────────
 
@@ -1671,7 +1715,8 @@ paths:
       summary: Invia un messaggio e avvia il turno del bot
       description: >-
         Risponde subito col messaggio dell'utente; il bot risponde in background (turnStatus running,
-        poi idle). 409 se un turno è già in corso o se il modello non è più disponibile.
+        poi idle). 409 se un turno è già in corso, se il modello non è più disponibile o se chi paga il
+        modello ha raggiunto il tetto di spesa mensile.
         Massimo 10 messaggi al minuto per utente.
       parameters:
         - $ref: "#/components/parameters/IdParam"
@@ -2094,7 +2139,7 @@ components:
 
     Agent:
       type: object
-      required: [id, appId, name, aiModelId, status, role, defaultIdentity, toolIds, createdAt, updatedAt]
+      required: [id, appId, name, aiModelId, status, role, defaultIdentity, toolIds, monthlyBudgetUsd, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -2127,6 +2172,9 @@ components:
           items:
             type: integer
           description: ID dei tool del catalogo assegnati all'agente
+        monthlyBudgetUsd:
+          type: ["number", "null"]
+          description: Tetto di spesa mensile in USD delle run dell'agente; null = nessun limite
         createdAt:
           type: string
           format: date-time
@@ -2178,6 +2226,11 @@ components:
           type: ["string", "null"]
         defaultIdentity:
           $ref: "#/components/schemas/ToolIdentity"
+        monthlyBudgetUsd:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 1000000
+          description: Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite
 
     AgentToolsInput:
       type: object
@@ -2466,7 +2519,7 @@ components:
 
     DashboardStats:
       type: object
-      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, activeAgents]
+      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, cancelledRuns, activeAgents]
       properties:
         totalApps:
           type: integer
@@ -2480,8 +2533,89 @@ components:
           type: integer
         failedRuns:
           type: integer
+        cancelledRuns:
+          type: integer
         avgDurationMs:
           type: ["number", "null"]
+
+    # ── Tetti di spesa ─────────────────────────────────────────────────────────
+
+    UserBudget:
+      type: object
+      required: [capUsd, spentUsd, unpricedCount]
+      properties:
+        capUsd:
+          type: ["number", "null"]
+          description: Tetto mensile in USD; null = nessun limite
+        spentUsd:
+          type: number
+          description: Spesa nota del mese sugli account AI dell'utente (run, analisi cloud, chat del piano)
+        unpricedCount:
+          type: integer
+          description: Esecuzioni del mese con token consumati ma senza prezzo (la spesa reale è più alta)
+
+    AgentBudget:
+      type: object
+      required: [agentId, agentName, appId, capUsd, spentUsd, unpricedCount]
+      properties:
+        agentId:
+          type: integer
+        agentName:
+          type: string
+        appId:
+          type: integer
+        capUsd:
+          type: number
+        spentUsd:
+          type: number
+          description: Spesa nota del mese delle run dell'agente, con qualsiasi modello
+        unpricedCount:
+          type: integer
+
+    BudgetActiveRun:
+      type: object
+      required: [id, agentId, agentName, status]
+      properties:
+        id:
+          type: integer
+        agentId:
+          type: integer
+        agentName:
+          type: string
+        status:
+          $ref: "#/components/schemas/RunStatus"
+
+    Budget:
+      type: object
+      required: [month, user, agents, activeRuns]
+      properties:
+        month:
+          type: string
+          description: Mese corrente, AAAA-MM (ora italiana)
+        user:
+          $ref: "#/components/schemas/UserBudget"
+        agents:
+          type: array
+          description: Agenti con un tetto impostato
+          items:
+            $ref: "#/components/schemas/AgentBudget"
+        activeRuns:
+          type: array
+          description: >-
+            Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell'utente o
+            del loro agente)
+          items:
+            $ref: "#/components/schemas/BudgetActiveRun"
+
+    BudgetUpdate:
+      type: object
+      required: [monthlyBudgetUsd]
+      properties:
+        monthlyBudgetUsd:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 1000000
+          description: Tetto mensile in USD (arrotondato al centesimo); null = nessun limite
 
     # ── Architetto ─────────────────────────────────────────────────────────────
 

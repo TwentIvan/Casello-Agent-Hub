@@ -265,6 +265,11 @@ export interface Agent {
   defaultIdentity: ToolIdentity;
   /** ID dei tool del catalogo assegnati all'agente */
   toolIds: number[];
+  /**
+     * Tetto di spesa mensile in USD delle run dell'agente; null = nessun limite
+     * @nullable
+     */
+  monthlyBudgetUsd: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -300,6 +305,13 @@ export interface AgentUpdate {
   /** @nullable */
   area?: string | null;
   defaultIdentity?: ToolIdentity;
+  /**
+     * Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite
+     * @minimum 0
+     * @maximum 1000000
+     * @nullable
+     */
+  monthlyBudgetUsd?: number | null;
 }
 
 export interface AgentToolsInput {
@@ -530,8 +542,58 @@ export interface DashboardStats {
   totalRuns: number;
   successfulRuns: number;
   failedRuns: number;
+  cancelledRuns: number;
   /** @nullable */
   avgDurationMs?: number | null;
+}
+
+export interface UserBudget {
+  /**
+     * Tetto mensile in USD; null = nessun limite
+     * @nullable
+     */
+  capUsd: number | null;
+  /** Spesa nota del mese sugli account AI dell'utente (run, analisi cloud, chat del piano) */
+  spentUsd: number;
+  /** Esecuzioni del mese con token consumati ma senza prezzo (la spesa reale è più alta) */
+  unpricedCount: number;
+}
+
+export interface AgentBudget {
+  agentId: number;
+  agentName: string;
+  appId: number;
+  capUsd: number;
+  /** Spesa nota del mese delle run dell'agente, con qualsiasi modello */
+  spentUsd: number;
+  unpricedCount: number;
+}
+
+export interface BudgetActiveRun {
+  id: number;
+  agentId: number;
+  agentName: string;
+  status: RunStatus;
+}
+
+export interface Budget {
+  /** Mese corrente, AAAA-MM (ora italiana) */
+  month: string;
+  user: UserBudget;
+  /** Agenti con un tetto impostato */
+  agents: AgentBudget[];
+  /** Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell'utente o del loro agente) */
+  activeRuns: BudgetActiveRun[];
+}
+
+export interface BudgetUpdate {
+  /**
+     * Tetto mensile in USD (arrotondato al centesimo); null = nessun limite
+     * @minimum 0
+     * @maximum 1000000
+     * @nullable
+     */
+  monthlyBudgetUsd: number | null;
 }
 
 export type AnalysisStatus = typeof AnalysisStatus[keyof typeof AnalysisStatus];

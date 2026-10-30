@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RunStatusBadge } from "@/components/run-status-badge";
+import { BudgetAlerts } from "@/components/budget/budget";
 import { formatDuration, formatRelative } from "@/lib/format";
 
 // Le run durano da secondi a decine di secondi: aggiornamento periodico leggero.
@@ -124,7 +125,7 @@ export default function Dashboard() {
   });
   const s = stats.data;
   const loading = stats.isLoading;
-  const inProgress = s ? s.totalRuns - s.successfulRuns - s.failedRuns : undefined;
+  const inProgress = s ? s.totalRuns - s.successfulRuns - s.failedRuns - s.cancelledRuns : undefined;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -132,6 +133,8 @@ export default function Dashboard() {
         <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
         <p className="text-sm text-muted-foreground">Panoramica delle app, degli agenti e delle esecuzioni.</p>
       </div>
+
+      <BudgetAlerts />
 
       {stats.isError && (
         <Alert variant="destructive">

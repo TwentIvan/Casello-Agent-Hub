@@ -452,3 +452,11 @@ CREATE TABLE "plan_proposals" (
 	CONSTRAINT "plan_proposals_item_id_analysis_items_id_fk" FOREIGN KEY ("item_id") REFERENCES "public"."analysis_items"("id") ON DELETE set null ON UPDATE no action
 );
 CREATE INDEX "plan_proposals_conversation_idx" ON "plan_proposals" USING btree ("conversation_id");
+
+-- Tetti di spesa mensili (USD, null = nessun limite) e modello con cui è partita ogni run
+ALTER TABLE "users" ADD COLUMN "monthly_budget_usd" numeric(12, 2);
+ALTER TABLE "agents" ADD COLUMN "monthly_budget_usd" numeric(12, 2);
+ALTER TABLE "runs" ADD COLUMN "ai_model_id" integer;
+ALTER TABLE "runs" ADD CONSTRAINT "runs_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action;
+CREATE INDEX "runs_ai_model_created_idx" ON "runs" USING btree ("ai_model_id", "created_at");
+CREATE INDEX "runs_agent_created_idx" ON "runs" USING btree ("agent_id", "created_at");

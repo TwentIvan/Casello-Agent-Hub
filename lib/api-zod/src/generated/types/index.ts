@@ -133,6 +133,7 @@ export * from './planIssuesRequest';
 export * from './planIssuesResult';
 export * from './planIssuesResultResultsItem';
 export * from './planIssuesResultResultsItemOutcome';
+export * from './planIssuesSummary';
 export * from './planMessage';
 export * from './planMessageCreate';
 export * from './planMessageRole';

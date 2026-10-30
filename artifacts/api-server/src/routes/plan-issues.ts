@@ -1,16 +1,23 @@
 import { Router, type IRouter, type RequestHandler } from "express";
-import { CreatePlanIssuesBody, CreatePlanIssuesParams, CreatePlanIssuesResponse } from "@workspace/api-zod";
+import {
+  CreatePlanIssuesBody,
+  CreatePlanIssuesParams,
+  CreatePlanIssuesResponse,
+  RefreshPlanIssuesParams,
+  RefreshPlanIssuesResponse,
+} from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
-import { PlanIssuesError, createPlanIssues, previewPlanIssues } from "../lib/plan-issues/service";
-import { issueCreateRateLimit } from "../middlewares/rate-limit";
+import { PlanIssuesError, createPlanIssues, previewPlanIssues, refreshPlanIssues } from "../lib/plan-issues/service";
+import { issueCreateRateLimit, issueRefreshRateLimit } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
 
-// Issue GitHub dalle voci approvate del piano: anteprima (dryRun) e creazione sul repo dell'app.
+// Issue GitHub dalle voci approvate del piano: anteprima (dryRun), creazione sul repo dell'app e
+// aggiornamento del loro stato.
 
 const DUPLICATE_IDS = "Voci ripetute nella richiesta";
 
 export function createPlanIssuesRouter(
-  opts: { pauseMs?: number; createRateLimit?: RequestHandler } = {},
+  opts: { pauseMs?: number; createRateLimit?: RequestHandler; refreshRateLimit?: RequestHandler } = {},
 ): IRouter {
   const router: IRouter = Router();
   const limit = opts.createRateLimit ?? issueCreateRateLimit;
@@ -31,6 +38,19 @@ export function createPlanIssuesRouter(
         ? await previewPlanIssues(id, userId, itemIds)
         : await createPlanIssues(id, userId, itemIds, { pauseMs: opts.pauseMs });
       res.json(CreatePlanIssuesResponse.parse(out));
+    } catch (e) {
+      if (e instanceof PlanIssuesError) {
+        res.status(e.status).json({ error: e.message });
+        return;
+      }
+      throw e;
+    }
+  });
+
+  router.post("/apps/:id/plan/issues/refresh", opts.refreshRateLimit ?? issueRefreshRateLimit, async (req, res) => {
+    const { id } = parseRequest(RefreshPlanIssuesParams, req.params);
+    try {
+      res.json(RefreshPlanIssuesResponse.parse(await refreshPlanIssues(id, currentUserId(req))));
     } catch (e) {
       if (e instanceof PlanIssuesError) {
         res.status(e.status).json({ error: e.message });

@@ -1646,6 +1646,35 @@ paths:
         "502":
           $ref: "#/components/responses/BadGateway"
 
+  /apps/{id}/plan/issues/refresh:
+    post:
+      operationId: refreshPlanIssues
+      tags: [plan-chat]
+      summary: Rilegge da GitHub lo stato delle issue collegate alle voci del piano
+      description: >-
+        Legge le issue con l'etichetta casello del repository collegato (aggiornate dall'ultima lettura) e
+        aggiorna stato e motivo della chiusura delle voci; un'issue non più nell'elenco resta com'era.
+        Massimo 6 al minuto per utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Riepilogo aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanIssuesSummary"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
   /apps/{id}/plan-conversations:
     get:
       operationId: listPlanConversations
@@ -2992,7 +3021,7 @@ components:
 
     AppPlan:
       type: object
-      required: [analysisId, items]
+      required: [analysisId, items, issues]
       properties:
         analysisId:
           type: ["integer", "null"]
@@ -3001,6 +3030,34 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AnalysisItem"
+        issues:
+          $ref: "#/components/schemas/PlanIssuesSummary"
+
+    PlanIssuesSummary:
+      type: object
+      required: [available, unavailableReason, repo, open, closed, approvedWithoutIssue, checkedAt]
+      properties:
+        available:
+          type: boolean
+          description: L'utente può creare issue (repository collegato tramite un'installazione sua)
+        unavailableReason:
+          type: ["string", "null"]
+        repo:
+          type: ["string", "null"]
+          description: Repository delle issue (null se non disponibile)
+        open:
+          type: integer
+          description: Voci del piano con issue aperta
+        closed:
+          type: integer
+          description: Voci del piano con issue chiusa
+        approvedWithoutIssue:
+          type: integer
+          description: Voci approvate di endpoint, completamento ed evoluzione senza issue
+        checkedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Lettura dello stato più vecchia tra le voci collegate
 
     PlanConversationCreate:
       type: object

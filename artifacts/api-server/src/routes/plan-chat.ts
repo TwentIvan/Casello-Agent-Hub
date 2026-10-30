@@ -39,7 +39,8 @@ import { userBudgetBlock } from "../lib/budget";
 import { effectiveStatus } from "../lib/ai/model-status";
 import { itemTitle, type PlanChapter } from "../lib/plan-chat/context";
 import { ProposalConflictError, ProposalNotFoundError, decideProposal } from "../lib/plan-chat/decide";
-import { TurnBusyError, loadPlanItems, startPlanTurn } from "../lib/plan-chat/run-turn";
+import { TurnBusyError, latestCompletedAnalysisId, loadPlanItems, startPlanTurn } from "../lib/plan-chat/run-turn";
+import { planIssuesSummary } from "../lib/plan-issues/service";
 import { rateLimit } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
 import {
@@ -72,17 +73,6 @@ async function findConversation(id: number, userId: number): Promise<PlanConvers
 async function appExists(id: number): Promise<boolean> {
   const [row] = await db.select({ id: appsTable.id }).from(appsTable).where(eq(appsTable.id, id)).limit(1);
   return row !== undefined;
-}
-
-/** Id dell'ultima analisi completata dell'app. */
-async function latestCompletedAnalysisId(appId: number): Promise<number | null> {
-  const [row] = await db
-    .select({ id: analysesTable.id })
-    .from(analysesTable)
-    .where(and(eq(analysesTable.appId, appId), eq(analysesTable.status, "completed")))
-    .orderBy(desc(analysesTable.id))
-    .limit(1);
-  return row?.id ?? null;
 }
 
 /** Lo stato effettivo del modello (come la tendina) non è "disponibile". Un modello assente non blocca: ci pensa il turno. */
@@ -138,7 +128,8 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
     }
     const analysisId = await latestCompletedAnalysisId(id);
     const items = analysisId === null ? [] : await loadPlanItems(analysisId, id);
-    res.json(GetAppPlanResponse.parse({ analysisId, items: items.map(toPublicItem) }));
+    const issues = await planIssuesSummary(id, currentUserId(req), items);
+    res.json(GetAppPlanResponse.parse({ analysisId, items: items.map(toPublicItem), issues }));
   });
 
   router.get("/apps/:id/plan-conversations", async (req, res) => {

@@ -161,7 +161,7 @@ beforeAll(async () => {
   base = `http://127.0.0.1:${await listen(server)}`;
   const mini = express();
   mini.use(express.json());
-  mini.use("/api", requireAuth, createPlanIssuesRouter({ pauseMs: 0, createRateLimit: (_req, _res, next) => next() }));
+  mini.use("/api", requireAuth, createPlanIssuesRouter({ pauseMs: 0, createRateLimit: (_req, _res, next) => next(), refreshRateLimit: (_req, _res, next) => next() }));
   mini.use("/api", errorHandler);
   small = http.createServer(mini);
   smallBase = `http://127.0.0.1:${await listen(small)}`;
@@ -413,5 +413,140 @@ describe("POST /apps/:id/plan/issues", () => {
     const preview = await issuesPost([a], { dryRun: true }, base);
     expect(preview.status, preview.text).toBe(200);
     expect(repoIssues()).toHaveLength(1);
+  });
+});
+
+describe("stato delle issue nel piano", () => {
+  const refresh = (root = smallBase) => api("POST", `/apps/${appId}/plan/issues/refresh`, undefined, root);
+  const plan = () => api("GET", `/apps/${appId}/plan`, undefined, base);
+
+  async function link(id: number, number: number, state: "open" | "closed", checkedAt: Date, stateReason: string | null = null) {
+    await db
+      .update(analysisItemsTable)
+      .set({
+        issueRepo: REPO,
+        issueNumber: number,
+        issueUrl: `https://github.com/${REPO}/issues/${number}`,
+        issueState: state,
+        issueStateReason: stateReason,
+        issueCreatedAt: checkedAt,
+        issueCheckedAt: checkedAt,
+      })
+      .where(eq(analysisItemsTable.id, id));
+  }
+
+  it("GET plan: riepilogo con aperte, chiuse, approvate senza issue", async () => {
+    const older = new Date("2026-10-01T10:00:00.000Z");
+    const newer = new Date("2026-10-20T10:00:00.000Z");
+    const open = await addItem("evolution", evolution("Aperta"));
+    const closed = await addItem("completion", completion("a"));
+    await addItem("evolution", evolution("Senza issue"));
+    await addItem("completion", completion("b"));
+    await addItem("evolution", evolution("In attesa"), { status: "pending" });
+    await link(open, 1, "open", newer);
+    await link(closed, 2, "closed", older, "completed");
+
+    const res = await plan();
+    expect(res.status, res.text).toBe(200);
+    expect(res.json.issues).toEqual({
+      available: true,
+      unavailableReason: null,
+      repo: REPO,
+      open: 1,
+      closed: 1,
+      approvedWithoutIssue: 2,
+      checkedAt: older.toISOString(),
+    });
+  });
+
+  it("refresh: chiusa completed e not_planned aggiornate, checkedAt avanzato", async () => {
+    const ids = [
+      await addItem("evolution", evolution("Uno")),
+      await addItem("evolution", evolution("Due")),
+      await addItem("evolution", evolution("Tre")),
+    ];
+    expect((await issuesPost(ids)).json.results.map((r: any) => r.outcome)).toEqual(["created", "created", "created"]);
+    const old = new Date(Date.now() - 3_600_000);
+    await db.update(analysisItemsTable).set({ issueCheckedAt: old }).where(eq(analysisItemsTable.analysisId, analysisId));
+    const [i1, i2] = repoIssues();
+    Object.assign(i1!, { state: "closed", stateReason: "completed", updatedAt: new Date().toISOString() });
+    Object.assign(i2!, { state: "closed", stateReason: "not_planned", updatedAt: new Date().toISOString() });
+    gh.requests.length = 0;
+
+    const res = await refresh();
+    expect(res.status, res.text).toBe(200);
+    expect(res.json).toMatchObject({ available: true, repo: REPO, open: 1, closed: 2, approvedWithoutIssue: 0 });
+    expect(Date.parse(res.json.checkedAt)).toBeGreaterThan(old.getTime());
+    const list = gh.requests.find((r) => r.method === "GET" && r.path.includes("/issues?"));
+    expect(list?.path).toContain(`since=${encodeURIComponent(old.toISOString())}`);
+
+    const rows = await Promise.all(ids.map(itemRow));
+    expect(rows.map((r) => [r.issueState, r.issueStateReason])).toEqual([
+      ["closed", "completed"],
+      ["closed", "not_planned"],
+      ["open", null],
+    ]);
+    for (const r of rows) expect(r.issueCheckedAt!.getTime()).toBeGreaterThan(old.getTime());
+
+    const after = await plan();
+    const byId = new Map<number, any>(after.json.items.map((i: any) => [i.id, i]));
+    expect(byId.get(ids[1]!).issue).toMatchObject({ state: "closed", stateReason: "not_planned" });
+    expect(after.json.issues).toMatchObject({ open: 1, closed: 2 });
+  });
+
+  it("refresh: issue non più in lista resta com'era", async () => {
+    const ids = [await addItem("evolution", evolution("Uno")), await addItem("evolution", evolution("Due"))];
+    await issuesPost(ids);
+    const old = new Date(Date.now() - 3_600_000);
+    await db.update(analysisItemsTable).set({ issueCheckedAt: old }).where(eq(analysisItemsTable.analysisId, analysisId));
+    // Etichetta tolta a mano e issue chiusa: non compare più nell'elenco di Casello
+    const [i1, i2] = repoIssues();
+    Object.assign(i1!, { labels: ["evoluzione"], state: "closed", stateReason: "completed", updatedAt: new Date().toISOString() });
+    Object.assign(i2!, { state: "closed", stateReason: "completed", updatedAt: new Date().toISOString() });
+
+    const res = await refresh();
+    expect(res.status, res.text).toBe(200);
+    expect(res.json).toMatchObject({ open: 1, closed: 1 });
+    const [r1, r2] = await Promise.all(ids.map(itemRow));
+    expect([r1!.issueState, r1!.issueStateReason]).toEqual(["open", null]);
+    expect(r1!.issueCheckedAt!.getTime()).toBeGreaterThan(old.getTime());
+    expect(r2!.issueState).toBe("closed");
+  });
+
+  it("refresh: permesso Issues mancante → 502 con il messaggio, stato invariato", async () => {
+    const a = await addItem("evolution", evolution("Uno"));
+    const checked = new Date("2026-10-01T10:00:00.000Z");
+    await link(a, 1, "open", checked);
+    gh.installationPermissions.set(11, { contents: "read", metadata: "read" });
+    const res = await refresh();
+    expect(res.status, res.text).toBe(502);
+    expect(res.json.error).toBe(PERMISSION);
+    expect((await itemRow(a)).issueCheckedAt!.toISOString()).toBe(checked.toISOString());
+  });
+
+  it("GET plan di un'app senza installazione: available false con NO_REPO", async () => {
+    await addItem("evolution", evolution("Uno"));
+    await db.update(appsTable).set({ sourceInstallationId: null }).where(eq(appsTable.id, appId));
+    const res = await plan();
+    expect(res.status, res.text).toBe(200);
+    expect(res.json.issues).toEqual({
+      available: false,
+      unavailableReason: NO_REPO,
+      repo: null,
+      open: 0,
+      closed: 0,
+      approvedWithoutIssue: 1,
+      checkedAt: null,
+    });
+    const noRepo = await refresh();
+    expect(noRepo.status, noRepo.text).toBe(409);
+    expect(noRepo.json.error).toBe(NO_REPO);
+
+    // Installazione di un altro utente
+    await db.update(githubInstallationsTable).set({ userId: otherUserId }).where(eq(githubInstallationsTable.installationId, 11));
+    await db.update(appsTable).set({ sourceInstallationId: 11 }).where(eq(appsTable.id, appId));
+    expect((await plan()).json.issues).toMatchObject({ available: false, unavailableReason: "installazione non trovata o non tua" });
+    expect((await refresh()).status).toBe(403);
+    expect(gh.requests).toHaveLength(0);
   });
 });

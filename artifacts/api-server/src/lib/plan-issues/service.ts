@@ -1,9 +1,10 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, count, isNotNull, isNull, min } from "drizzle-orm";
 import { db, analysesTable, analysisItemsTable, appsTable, type AnalysisItem } from "@workspace/db";
 import { githubConfig } from "../github/config";
-import { IssueError, createIssue, ensureLabels, issuesToken } from "../github/issues";
+import { IssueError, createIssue, ensureLabels, issuesToken, listCaselloIssues } from "../github/issues";
 import { completionData } from "../architect/issues";
 import { INSTALLATION_NOT_YOURS, userHasInstallation } from "../../routes/apps";
+import { latestCompletedAnalysisId, loadPlanItems } from "../plan-chat/run-turn";
 import { creationOrder, isEligible, issueContent, issueLabels } from "./content";
 
 /**
@@ -35,6 +36,17 @@ export interface PlanIssuePreview {
   body: string;
   labels: string[];
   skipped: boolean;
+}
+
+/** Riepilogo delle issue sulle voci del piano (`AppPlan.issues`). */
+export interface PlanIssuesSummary {
+  available: boolean;
+  unavailableReason: string | null;
+  repo: string | null;
+  open: number;
+  closed: number;
+  approvedWithoutIssue: number;
+  checkedAt: Date | null;
 }
 
 export interface PlanIssueResult {
@@ -210,4 +222,94 @@ export async function resetStaleIssueReservations(): Promise<number> {
     .where(and(eq(analysisItemsTable.issueState, "creating"), isNull(analysisItemsTable.issueNumber)))
     .returning({ id: analysisItemsTable.id });
   return rows.length;
+}
+
+/**
+ * Riepilogo sulle voci del piano (quelle di `GET /apps/:id/plan`; si possono passare se già lette).
+ * Non lancia se manca il repo o l'installazione non è dell'utente: `available` false col motivo.
+ */
+export async function planIssuesSummary(appId: number, userId: number, planItems?: AnalysisItem[]): Promise<PlanIssuesSummary> {
+  let target: { repo: string } | null = null;
+  let unavailableReason: string | null = null;
+  try {
+    target = await issueTarget(appId, userId);
+  } catch (e) {
+    if (!(e instanceof PlanIssuesError) || e.status === 404) throw e;
+    unavailableReason = e.message;
+  }
+  let items = planItems;
+  if (items === undefined) {
+    const analysisId = await latestCompletedAnalysisId(appId);
+    items = analysisId === null ? [] : await loadPlanItems(analysisId, appId);
+  }
+  let open = 0;
+  let closed = 0;
+  let approvedWithoutIssue = 0;
+  let checkedAt: Date | null = null;
+  for (const item of items) {
+    if (item.issueNumber === null) {
+      if (isEligible(item)) approvedWithoutIssue++;
+      continue;
+    }
+    if (item.issueState === "open") open++;
+    else if (item.issueState === "closed") closed++;
+    if (item.issueCheckedAt && (checkedAt === null || item.issueCheckedAt < checkedAt)) checkedAt = item.issueCheckedAt;
+  }
+  return {
+    available: target !== null,
+    unavailableReason,
+    repo: target?.repo ?? null,
+    open,
+    closed,
+    approvedWithoutIssue,
+    checkedAt,
+  };
+}
+
+/** Condizione delle voci dell'app collegate a un'issue del repo. */
+function linkedTo(appId: number, repo: string) {
+  return and(
+    inArray(
+      analysisItemsTable.analysisId,
+      db.select({ id: analysesTable.id }).from(analysesTable).where(eq(analysesTable.appId, appId)),
+    ),
+    eq(analysisItemsTable.issueRepo, repo),
+    isNotNull(analysisItemsTable.issueNumber),
+  );
+}
+
+/**
+ * Rilegge da GitHub lo stato delle issue collegate alle voci dell'app (solo quelle aggiornate dalla
+ * lettura più vecchia). Un'issue non più nell'elenco (es. etichetta tolta) resta com'era; la data di
+ * lettura avanza per tutte le voci collegate al repo. Errori di GitHub → 502 col messaggio fisso.
+ */
+export async function refreshPlanIssues(appId: number, userId: number): Promise<PlanIssuesSummary> {
+  const { repo, installationId } = await issueTarget(appId, userId);
+  const [oldest] = await db
+    .select({ since: min(analysisItemsTable.issueCheckedAt), count: count() })
+    .from(analysisItemsTable)
+    .where(linkedTo(appId, repo));
+  if (oldest && oldest.count > 0) {
+    // issueTarget garantisce la configurazione
+    const cfg = githubConfig()!;
+    let states: Awaited<ReturnType<typeof listCaselloIssues>>;
+    try {
+      const token = await issuesToken(cfg, installationId, repo);
+      states = await listCaselloIssues(cfg, token, repo, oldest.since ?? null);
+    } catch (e) {
+      if (e instanceof IssueError) throw new PlanIssuesError(502, e.message);
+      throw e;
+    }
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      for (const [number, { state, stateReason }] of states) {
+        await tx
+          .update(analysisItemsTable)
+          .set({ issueState: state, issueStateReason: stateReason })
+          .where(and(linkedTo(appId, repo), eq(analysisItemsTable.issueNumber, number)));
+      }
+      await tx.update(analysisItemsTable).set({ issueCheckedAt: now }).where(linkedTo(appId, repo));
+    });
+  }
+  return planIssuesSummary(appId, userId);
 }

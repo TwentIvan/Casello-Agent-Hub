@@ -48,6 +48,17 @@ export class TurnBusyError extends Error {
   }
 }
 
+/** Id dell'ultima analisi completata dell'app. */
+export async function latestCompletedAnalysisId(appId: number): Promise<number | null> {
+  const [row] = await db
+    .select({ id: analysesTable.id })
+    .from(analysesTable)
+    .where(and(eq(analysesTable.appId, appId), eq(analysesTable.status, "completed")))
+    .orderBy(desc(analysesTable.id))
+    .limit(1);
+  return row?.id ?? null;
+}
+
 /**
  * Voci del piano: i capitoli endpoint/completion/evolution dell'analisi della conversazione, più le voci
  * nate in chat e approvate delle analisi precedenti della stessa app.

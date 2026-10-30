@@ -2146,7 +2146,16 @@ export const GetAppPlanResponse = zod.object({
   "stateReason": zod.string().nullable().describe('Motivo di chiusura riportato da GitHub (es. completed, not_planned)'),
   "checkedAt": zod.coerce.date().nullable().describe('Ultimo controllo dello stato su GitHub')
 }),zod.null()]).describe('Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)')
-}))
+})),
+  "issues": zod.object({
+  "available": zod.boolean().describe('L\'utente può creare issue (repository collegato tramite un\'installazione sua)'),
+  "unavailableReason": zod.string().nullable(),
+  "repo": zod.string().nullable().describe('Repository delle issue (null se non disponibile)'),
+  "open": zod.number().describe('Voci del piano con issue aperta'),
+  "closed": zod.number().describe('Voci del piano con issue chiusa'),
+  "approvedWithoutIssue": zod.number().describe('Voci approvate di endpoint, completamento ed evoluzione senza issue'),
+  "checkedAt": zod.coerce.date().nullable().describe('Lettura dello stato più vecchia tra le voci collegate')
+})
 })
 
 
@@ -2186,6 +2195,25 @@ export const CreatePlanIssuesResponse = zod.union([zod.object({
   "error": zod.string().optional()
 }))
 })])
+
+
+/**
+ * Legge le issue con l'etichetta casello del repository collegato (aggiornate dall'ultima lettura) e aggiorna stato e motivo della chiusura delle voci; un'issue non più nell'elenco resta com'era. Massimo 6 al minuto per utente.
+ * @summary Rilegge da GitHub lo stato delle issue collegate alle voci del piano
+ */
+export const RefreshPlanIssuesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RefreshPlanIssuesResponse = zod.object({
+  "available": zod.boolean().describe('L\'utente può creare issue (repository collegato tramite un\'installazione sua)'),
+  "unavailableReason": zod.string().nullable(),
+  "repo": zod.string().nullable().describe('Repository delle issue (null se non disponibile)'),
+  "open": zod.number().describe('Voci del piano con issue aperta'),
+  "closed": zod.number().describe('Voci del piano con issue chiusa'),
+  "approvedWithoutIssue": zod.number().describe('Voci approvate di endpoint, completamento ed evoluzione senza issue'),
+  "checkedAt": zod.coerce.date().nullable().describe('Lettura dello stato più vecchia tra le voci collegate')
+})
 
 
 /**

@@ -86,6 +86,7 @@ import type {
   PlanIssuesPreview,
   PlanIssuesRequest,
   PlanIssuesResult,
+  PlanIssuesSummary,
   PlanMessage,
   PlanMessageCreate,
   PlanProposalDecision,
@@ -5090,6 +5091,77 @@ export const useCreatePlanIssues = <TError = ErrorType<BadRequestResponse | Forb
         TContext
       > => {
       return useMutation(getCreatePlanIssuesMutationOptions(options));
+    }
+
+export const getRefreshPlanIssuesUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/plan/issues/refresh`
+}
+
+/**
+ * Legge le issue con l'etichetta casello del repository collegato (aggiornate dall'ultima lettura) e aggiorna stato e motivo della chiusura delle voci; un'issue non più nell'elenco resta com'era. Massimo 6 al minuto per utente.
+ * @summary Rilegge da GitHub lo stato delle issue collegate alle voci del piano
+ */
+export const refreshPlanIssues = async (id: number, options?: RequestInit): Promise<PlanIssuesSummary> => {
+
+  return customFetch<PlanIssuesSummary>(getRefreshPlanIssuesUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRefreshPlanIssuesMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshPlanIssues>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof refreshPlanIssues>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['refreshPlanIssues'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshPlanIssues>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  refreshPlanIssues(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RefreshPlanIssuesMutationResult = NonNullable<Awaited<ReturnType<typeof refreshPlanIssues>>>
+
+    export type RefreshPlanIssuesMutationError = ErrorType<ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>
+
+    /**
+ * @summary Rilegge da GitHub lo stato delle issue collegate alle voci del piano
+ */
+export const useRefreshPlanIssues = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshPlanIssues>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof refreshPlanIssues>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRefreshPlanIssuesMutationOptions(options));
     }
 
 export const getListPlanConversationsUrl = (id: number,) => {

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AnalysisItem } from './analysisItem';
+import type { PlanIssuesSummary } from './planIssuesSummary';
 
 export interface AppPlan {
   /**
@@ -14,4 +15,5 @@ export interface AppPlan {
      */
   analysisId: number | null;
   items: AnalysisItem[];
+  issues: PlanIssuesSummary;
 }

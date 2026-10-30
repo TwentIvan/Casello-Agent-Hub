@@ -913,6 +913,29 @@ export type PlanConversationDetail = PlanConversation & ({
   newerAnalysisId: number | null;
 });
 
+export interface PlanIssuesSummary {
+  /** L'utente può creare issue (repository collegato tramite un'installazione sua) */
+  available: boolean;
+  /** @nullable */
+  unavailableReason: string | null;
+  /**
+     * Repository delle issue (null se non disponibile)
+     * @nullable
+     */
+  repo: string | null;
+  /** Voci del piano con issue aperta */
+  open: number;
+  /** Voci del piano con issue chiusa */
+  closed: number;
+  /** Voci approvate di endpoint, completamento ed evoluzione senza issue */
+  approvedWithoutIssue: number;
+  /**
+     * Lettura dello stato più vecchia tra le voci collegate
+     * @nullable
+     */
+  checkedAt: string | null;
+}
+
 export interface AppPlan {
   /**
      * Ultima analisi completata dell'app (null se non ce n'è)
@@ -920,6 +943,7 @@ export interface AppPlan {
      */
   analysisId: number | null;
   items: AnalysisItem[];
+  issues: PlanIssuesSummary;
 }
 
 export interface PlanConversationCreate {

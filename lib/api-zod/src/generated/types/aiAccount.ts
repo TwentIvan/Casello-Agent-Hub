@@ -30,4 +30,9 @@ export interface AiAccount {
   isSystem: boolean;
   /** Numero di modelli dell'account (nascosti compresi) */
   modelCount: number;
+  /**
+     * Tetto di spesa mensile in USD su tutti i modelli dell'account; null = nessun limite
+     * @nullable
+     */
+  monthlyBudgetUsd: number | null;
 }

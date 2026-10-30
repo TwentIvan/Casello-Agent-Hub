@@ -25,4 +25,11 @@ export interface AiModelUpdate {
      */
   priceOutput?: number | null;
   hidden?: boolean;
+  /**
+     * Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite
+     * @minimum 0
+     * @maximum 1000000
+     * @nullable
+     */
+  monthlyBudgetUsd?: number | null;
 }

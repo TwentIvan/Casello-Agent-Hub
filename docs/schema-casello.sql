@@ -460,3 +460,7 @@ ALTER TABLE "runs" ADD COLUMN "ai_model_id" integer;
 ALTER TABLE "runs" ADD CONSTRAINT "runs_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action;
 CREATE INDEX "runs_ai_model_created_idx" ON "runs" USING btree ("ai_model_id", "created_at");
 CREATE INDEX "runs_agent_created_idx" ON "runs" USING btree ("agent_id", "created_at");
+
+-- Tetti di spesa mensili per modello AI e per account AI (USD, null = nessun limite)
+ALTER TABLE "ai_models" ADD COLUMN "monthly_budget_usd" numeric(12, 2);
+ALTER TABLE "ai_accounts" ADD COLUMN "monthly_budget_usd" numeric(12, 2);

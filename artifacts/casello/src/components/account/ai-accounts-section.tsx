@@ -17,7 +17,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { invalidateAiQueries } from "@/components/ai/ai-queries";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { formatRelative } from "@/lib/format";
+import { formatRelative, formatUsd } from "@/lib/format";
+import { AiAccountBudget } from "@/components/budget/budget";
 import { AiAccountDialog, useProviderLabel } from "./ai-account-dialog";
 import { AiModelsTable } from "./ai-models-table";
 
@@ -99,6 +100,7 @@ function AccountRow({ account, onEdit, onDelete }: { account: AiAccount; onEdit:
             <span>
               {account.lastCheckedAt ? `verificato ${formatRelative(account.lastCheckedAt)}` : "mai verificato"}
             </span>
+            {account.monthlyBudgetUsd !== null && <span>tetto {formatUsd(account.monthlyBudgetUsd)} al mese</span>}
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -138,7 +140,8 @@ function AccountRow({ account, onEdit, onDelete }: { account: AiAccount; onEdit:
         </div>
       </div>
       {expanded && (
-        <div id={modelsId}>
+        <div id={modelsId} className="space-y-3">
+          {!account.isSystem && <AiAccountBudget account={account} />}
           <AiModelsTable account={account} />
         </div>
       )}

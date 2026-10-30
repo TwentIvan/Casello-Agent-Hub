@@ -31,6 +31,8 @@ export const aiModelsTable = pgTable(
     offerId: integer("offer_id").references(() => modelOffersTable.id, { onDelete: "set null" }),
     lastProbeAt: timestamp("last_probe_at"),
     lastProbeOk: boolean("last_probe_ok"),
+    // Tetto di spesa mensile in USD; null = nessun limite
+    monthlyBudgetUsd: numeric("monthly_budget_usd", { precision: 12, scale: 2 }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

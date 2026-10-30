@@ -1245,12 +1245,28 @@ export const GetBudgetResponse = zod.object({
   "spentUsd": zod.number().describe('Spesa nota del mese delle run dell\'agente, con qualsiasi modello'),
   "unpricedCount": zod.number()
 })).describe('Agenti con un tetto impostato'),
+  "accounts": zod.array(zod.object({
+  "accountId": zod.number(),
+  "accountName": zod.string(),
+  "capUsd": zod.number(),
+  "spentUsd": zod.number().describe('Spesa nota del mese su tutti i modelli dell\'account (run, analisi cloud, chat del piano)'),
+  "unpricedCount": zod.number()
+})).describe('Account AI dell\'utente con un tetto impostato'),
+  "models": zod.array(zod.object({
+  "aiModelId": zod.number(),
+  "modelName": zod.string(),
+  "accountId": zod.number(),
+  "accountName": zod.string(),
+  "capUsd": zod.number(),
+  "spentUsd": zod.number().describe('Spesa nota del mese sul modello (run, analisi cloud, chat del piano)'),
+  "unpricedCount": zod.number()
+})).describe('Modelli degli account dell\'utente con un tetto impostato'),
   "activeRuns": zod.array(zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
   "agentName": zod.string(),
   "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled'])
-})).describe('Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell\'utente o del loro agente)')
+})).describe('Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell\'utente, del loro agente, del loro modello o del suo account)')
 })
 
 
@@ -1281,12 +1297,28 @@ export const UpdateBudgetResponse = zod.object({
   "spentUsd": zod.number().describe('Spesa nota del mese delle run dell\'agente, con qualsiasi modello'),
   "unpricedCount": zod.number()
 })).describe('Agenti con un tetto impostato'),
+  "accounts": zod.array(zod.object({
+  "accountId": zod.number(),
+  "accountName": zod.string(),
+  "capUsd": zod.number(),
+  "spentUsd": zod.number().describe('Spesa nota del mese su tutti i modelli dell\'account (run, analisi cloud, chat del piano)'),
+  "unpricedCount": zod.number()
+})).describe('Account AI dell\'utente con un tetto impostato'),
+  "models": zod.array(zod.object({
+  "aiModelId": zod.number(),
+  "modelName": zod.string(),
+  "accountId": zod.number(),
+  "accountName": zod.string(),
+  "capUsd": zod.number(),
+  "spentUsd": zod.number().describe('Spesa nota del mese sul modello (run, analisi cloud, chat del piano)'),
+  "unpricedCount": zod.number()
+})).describe('Modelli degli account dell\'utente con un tetto impostato'),
   "activeRuns": zod.array(zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
   "agentName": zod.string(),
   "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled'])
-})).describe('Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell\'utente o del loro agente)')
+})).describe('Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell\'utente, del loro agente, del loro modello o del suo account)')
 })
 
 
@@ -1338,7 +1370,8 @@ export const ListAiAccountsResponseItem = zod.object({
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
   "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
-  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
+  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD su tutti i modelli dell\'account; null = nessun limite')
 })
 export const ListAiAccountsResponse = zod.array(ListAiAccountsResponseItem)
 
@@ -1379,7 +1412,8 @@ export const CreateAiAccountResponse = zod.object({
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
   "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
-  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
+  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD su tutti i modelli dell\'account; null = nessun limite')
 })
 
 
@@ -1397,13 +1431,17 @@ export const updateAiAccountBodyApiKeyMax = 4096;
 
 export const updateAiAccountBodyBaseUrlMax = 2048;
 
+export const updateAiAccountBodyMonthlyBudgetUsdMin = 0;
+export const updateAiAccountBodyMonthlyBudgetUsdMax = 1000000;
+
 
 
 export const UpdateAiAccountBody = zod.object({
   "name": zod.string().min(1).max(updateAiAccountBodyNameMax).optional(),
   "apiKey": zod.string().max(updateAiAccountBodyApiKeyMax).nullish().describe('Assente o \"\" = invariata; null la rimuove (solo custom); un valore la sostituisce'),
   "baseUrl": zod.string().min(1).max(updateAiAccountBodyBaseUrlMax).optional().describe('Solo se il provider ha l\'indirizzo modificabile (vedi AiProviderInfo.editableBaseUrl)'),
-  "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom e provider non gestiti')
+  "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom e provider non gestiti'),
+  "monthlyBudgetUsd": zod.number().min(updateAiAccountBodyMonthlyBudgetUsdMin).max(updateAiAccountBodyMonthlyBudgetUsdMax).nullish().describe('Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite')
 })
 
 export const updateAiAccountResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
@@ -1421,7 +1459,8 @@ export const UpdateAiAccountResponse = zod.object({
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
   "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
-  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
+  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD su tutti i modelli dell\'account; null = nessun limite')
 })
 
 
@@ -1459,7 +1498,8 @@ export const VerifyAiAccountResponse = zod.object({
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
   "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
-  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
+  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD su tutti i modelli dell\'account; null = nessun limite')
 })
 
 
@@ -1485,7 +1525,8 @@ export const SetDefaultAiAccountResponse = zod.object({
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
   "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
-  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
+  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD su tutti i modelli dell\'account; null = nessun limite')
 })
 
 
@@ -1514,7 +1555,8 @@ export const ListAiAccountModelsResponseItem = zod.object({
   "selectable": zod.boolean().describe('Disponibile e con strumenti non esclusi'),
   "recommended": zod.boolean().describe('Preselezione del gruppo (solo in GET \/ai\/models)'),
   "lastProbeAt": zod.coerce.date().nullable(),
-  "lastProbeOk": zod.boolean().nullable()
+  "lastProbeOk": zod.boolean().nullable(),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD sul modello; null = nessun limite')
 })
 export const ListAiAccountModelsResponse = zod.array(ListAiAccountModelsResponseItem)
 
@@ -1566,7 +1608,8 @@ export const AddAiAccountModelResponse = zod.object({
   "selectable": zod.boolean().describe('Disponibile e con strumenti non esclusi'),
   "recommended": zod.boolean().describe('Preselezione del gruppo (solo in GET \/ai\/models)'),
   "lastProbeAt": zod.coerce.date().nullable(),
-  "lastProbeOk": zod.boolean().nullable()
+  "lastProbeOk": zod.boolean().nullable(),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD sul modello; null = nessun limite')
 })
 
 
@@ -1586,13 +1629,17 @@ export const updateAiModelBodyPriceInputMax = 999999.999999;
 export const updateAiModelBodyPriceOutputMin = 0;
 export const updateAiModelBodyPriceOutputMax = 999999.999999;
 
+export const updateAiModelBodyMonthlyBudgetUsdMin = 0;
+export const updateAiModelBodyMonthlyBudgetUsdMax = 1000000;
+
 
 
 export const UpdateAiModelBody = zod.object({
   "displayName": zod.string().min(1).max(updateAiModelBodyDisplayNameMax).optional(),
   "priceInput": zod.number().min(updateAiModelBodyPriceInputMin).max(updateAiModelBodyPriceInputMax).nullish(),
   "priceOutput": zod.number().min(updateAiModelBodyPriceOutputMin).max(updateAiModelBodyPriceOutputMax).nullish(),
-  "hidden": zod.boolean().optional()
+  "hidden": zod.boolean().optional(),
+  "monthlyBudgetUsd": zod.number().min(updateAiModelBodyMonthlyBudgetUsdMin).max(updateAiModelBodyMonthlyBudgetUsdMax).nullish().describe('Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite')
 })
 
 export const UpdateAiModelResponse = zod.object({
@@ -1613,7 +1660,8 @@ export const UpdateAiModelResponse = zod.object({
   "selectable": zod.boolean().describe('Disponibile e con strumenti non esclusi'),
   "recommended": zod.boolean().describe('Preselezione del gruppo (solo in GET \/ai\/models)'),
   "lastProbeAt": zod.coerce.date().nullable(),
-  "lastProbeOk": zod.boolean().nullable()
+  "lastProbeOk": zod.boolean().nullable(),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD sul modello; null = nessun limite')
 })
 
 
@@ -1647,7 +1695,8 @@ export const ProbeAiModelResponse = zod.object({
   "selectable": zod.boolean().describe('Disponibile e con strumenti non esclusi'),
   "recommended": zod.boolean().describe('Preselezione del gruppo (solo in GET \/ai\/models)'),
   "lastProbeAt": zod.coerce.date().nullable(),
-  "lastProbeOk": zod.boolean().nullable()
+  "lastProbeOk": zod.boolean().nullable(),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD sul modello; null = nessun limite')
 })
 })
 
@@ -1672,7 +1721,8 @@ export const ListAiModelsResponseItem = zod.object({
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
   "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
-  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)')
+  "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD su tutti i modelli dell\'account; null = nessun limite')
 }),
   "models": zod.array(zod.object({
   "id": zod.number(),
@@ -1692,7 +1742,8 @@ export const ListAiModelsResponseItem = zod.object({
   "selectable": zod.boolean().describe('Disponibile e con strumenti non esclusi'),
   "recommended": zod.boolean().describe('Preselezione del gruppo (solo in GET \/ai\/models)'),
   "lastProbeAt": zod.coerce.date().nullable(),
-  "lastProbeOk": zod.boolean().nullable()
+  "lastProbeOk": zod.boolean().nullable(),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD sul modello; null = nessun limite')
 }))
 })
 export const ListAiModelsResponse = zod.array(ListAiModelsResponseItem)

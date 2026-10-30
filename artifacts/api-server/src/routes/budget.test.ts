@@ -15,7 +15,7 @@ import {
 } from "@workspace/db";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 import { encryptSecret } from "../lib/secrets";
-import { monthLabel, monthStart } from "../lib/budget";
+import { monthLabel, monthStart, runBudgetBlock } from "../lib/budget";
 
 // Tetti di spesa sull'app completa senza login (AUTH_DISABLED=true: l'utente corrente è dev@localhost).
 // Run, analisi e conversazioni con un costo si inseriscono a mano; le run avviate davvero falliscono subito
@@ -68,6 +68,21 @@ async function modelOf(userId: number | null, name: string) {
     .values({ accountId: account!.id, modelId: `m-${name}`, displayName: name, priceInputPerMtok: "1", priceOutputPerMtok: "2" })
     .returning();
   return model!.id;
+}
+
+/** Altro modello prezzato sullo stesso account del modello indicato. */
+async function siblingModel(aiModelId: number, name: string): Promise<number> {
+  const [m] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.id, aiModelId));
+  const [model] = await db
+    .insert(aiModelsTable)
+    .values({ accountId: m!.accountId, modelId: `m-${name}`, displayName: name, priceInputPerMtok: "1", priceOutputPerMtok: "2" })
+    .returning();
+  return model!.id;
+}
+
+async function accountOf(aiModelId: number): Promise<number> {
+  const [m] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.id, aiModelId));
+  return m!.accountId;
 }
 
 async function createApp(): Promise<number> {
@@ -172,6 +187,8 @@ describe("GET e PUT /budget", () => {
       month: monthLabel(),
       user: { capUsd: null, spentUsd: 0, unpricedCount: 0 },
       agents: [],
+      accounts: [],
+      models: [],
       activeRuns: [],
     });
   });
@@ -348,5 +365,170 @@ describe("run da poter annullare", () => {
       { id: ownActive, agentId: ownAgent, agentName: "Area", status: "awaiting_client" },
       { id: cappedActive, agentId: cappedAgent, agentName: "Area", status: "awaiting_client" },
     ]);
+  });
+});
+
+describe("tetti per modello e per account AI", () => {
+  it("PATCH imposta e toglie i tetti di modello e account senza chiamare il provider; senza utente → 404, negativo → 400", async () => {
+    const dev = await devUserId();
+    const own = await modelOf(dev, "mio");
+    const accountId = await accountOf(own);
+    const system = await modelOf(null, "sistema");
+
+    const model = await api("PATCH", `/ai/models/${own}`, { monthlyBudgetUsd: 2.345 });
+    expect(model.status, model.text).toBe(200);
+    expect(model.json.monthlyBudgetUsd).toBe(2.35);
+    const account = await api("PATCH", `/ai/accounts/${accountId}`, { monthlyBudgetUsd: 10 });
+    expect(account.status, account.text).toBe(200);
+    expect(account.json.monthlyBudgetUsd).toBe(10);
+    expect(fake.requests).toHaveLength(0);
+
+    expect((await api("PATCH", `/ai/models/${own}`, { monthlyBudgetUsd: -1 })).status).toBe(400);
+    expect((await api("PATCH", `/ai/accounts/${accountId}`, { monthlyBudgetUsd: -1 })).status).toBe(400);
+    expect((await api("PATCH", `/ai/models/${system}`, { monthlyBudgetUsd: 1 })).status).toBe(404);
+    expect((await api("PATCH", `/ai/accounts/${await accountOf(system)}`, { monthlyBudgetUsd: 1 })).status).toBe(404);
+
+    expect((await api("PATCH", `/ai/models/${own}`, { monthlyBudgetUsd: null })).json.monthlyBudgetUsd).toBeNull();
+    expect((await api("PATCH", `/ai/accounts/${accountId}`, { monthlyBudgetUsd: null })).json.monthlyBudgetUsd).toBeNull();
+  });
+
+  it("run: il tetto del modello blocca solo quel modello", async () => {
+    const dev = await devUserId();
+    const capped = await modelOf(dev, "costoso");
+    const free = await siblingModel(capped, "economico");
+    const appId = await createApp();
+    const cappedAgent = await createAgent(appId, capped);
+    const freeAgent = await createAgent(appId, free);
+    await addRun(cappedAgent, capped, "1");
+    await api("PATCH", `/ai/models/${capped}`, { monthlyBudgetUsd: 1 });
+
+    const res = await api("POST", `/agents/${cappedAgent}/runs`, { input: "ciao" });
+    expect(res.status, res.text).toBe(409);
+    expect(res.json.error).toBe(
+      'Tetto di spesa mensile del modello "costoso" raggiunto: spesi 1,00 su 1,00 USD. Alzalo nella pagina Account o attendi il mese prossimo.',
+    );
+    // Il rate limit degli avvii è per file: il caso che parte si controlla senza avviare
+    expect(await runBudgetBlock({ id: freeAgent, aiModelId: free, monthlyBudgetUsd: null })).toBeNull();
+  });
+
+  it("run: il tetto dell'account somma tutti i suoi modelli e non tocca gli altri account", async () => {
+    const dev = await devUserId();
+    const first = await modelOf(dev, "primo");
+    const second = await siblingModel(first, "secondo");
+    const other = await modelOf(dev, "altro");
+    const appId = await createApp();
+    const firstAgent = await createAgent(appId, first);
+    const secondAgent = await createAgent(appId, second);
+    const otherAgent = await createAgent(appId, other);
+    await addRun(firstAgent, first, "1.2");
+    await addRun(secondAgent, second, "0.8");
+    await addRun(otherAgent, other, "9");
+    await api("PATCH", `/ai/accounts/${await accountOf(first)}`, { monthlyBudgetUsd: 2 });
+
+    const res = await api("POST", `/agents/${secondAgent}/runs`, { input: "ciao" });
+    expect(res.status, res.text).toBe(409);
+    expect(res.json.error).toBe(
+      `Tetto di spesa mensile dell'account AI "primo" raggiunto: spesi 2,00 su 2,00 USD. Alzalo nella pagina Account o attendi il mese prossimo.`,
+    );
+    expect(await runBudgetBlock({ id: otherAgent, aiModelId: other, monthlyBudgetUsd: null })).toBeNull();
+  });
+
+  it("ordine dei controlli: agente, modello, account, utente", async () => {
+    const dev = await devUserId();
+    const own = await modelOf(dev, "mio");
+    const agentId = await createAgent(await createApp(), own);
+    await addRun(agentId, own, "5");
+    await api("PUT", "/budget", { monthlyBudgetUsd: 1 });
+    await api("PATCH", `/ai/accounts/${await accountOf(own)}`, { monthlyBudgetUsd: 1 });
+    await api("PATCH", `/ai/models/${own}`, { monthlyBudgetUsd: 1 });
+    await api("PATCH", `/agents/${agentId}`, { monthlyBudgetUsd: 1 });
+
+    const errorOf = async () => {
+      const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId));
+      return (await runBudgetBlock(agent!)) ?? "";
+    };
+    expect(await errorOf()).toContain("dell'agente");
+    await api("PATCH", `/agents/${agentId}`, { monthlyBudgetUsd: null });
+    expect(await errorOf()).toContain('del modello "mio"');
+    await api("PATCH", `/ai/models/${own}`, { monthlyBudgetUsd: null });
+    expect(await errorOf()).toContain(`dell'account AI "mio"`);
+    await api("PATCH", `/ai/accounts/${await accountOf(own)}`, { monthlyBudgetUsd: null });
+    expect(await errorOf()).toContain("Tetto di spesa mensile raggiunto");
+  });
+
+  it("analisi cloud e chat del piano bloccate dal tetto del modello e dell'account", async () => {
+    const dev = await devUserId();
+    const own = await modelOf(dev, "mio");
+    const appId = await createApp();
+    await addRun(await createAgent(appId, own), own, "3");
+
+    await api("PATCH", `/ai/models/${own}`, { monthlyBudgetUsd: 2 });
+    const cloud = await api("POST", `/apps/${appId}/analyses`, { aiModelId: own });
+    expect(cloud.status, cloud.text).toBe(409);
+    expect(cloud.json.error).toContain('del modello "mio"');
+    await api("PATCH", `/ai/models/${own}`, { monthlyBudgetUsd: null });
+
+    const [analysis] = await db
+      .insert(analysesTable)
+      .values({ appId, model: "m", sources: { code: "none", openapi: false, description: false }, maxTokens: 1000, status: "completed" })
+      .returning();
+    const [conv] = await db
+      .insert(planConversationsTable)
+      .values({ appId, analysisId: analysis!.id, userId: dev, aiModelId: own, title: "" })
+      .returning();
+    await api("PATCH", `/ai/accounts/${await accountOf(own)}`, { monthlyBudgetUsd: 2 });
+    const chat = await api("POST", `/plan-conversations/${conv!.id}/messages`, { content: "ciao" });
+    expect(chat.status, chat.text).toBe(409);
+    expect(chat.json.error).toContain(`dell'account AI "mio"`);
+  });
+
+  it("riepilogo: spesa del mese di modelli e account con un tetto, solo dell'utente", async () => {
+    const dev = await devUserId();
+    const [other] = await db.insert(usersTable).values({ email: "altro@example.com" }).returning();
+    const own = await modelOf(dev, "mio");
+    const sibling = await siblingModel(own, "fratello");
+    const theirs = await modelOf(other!.id, "altrui");
+    await db.update(aiModelsTable).set({ monthlyBudgetUsd: "5.00" }).where(eq(aiModelsTable.id, theirs));
+    const appId = await createApp();
+    const agentId = await createAgent(appId, own);
+    await addRun(agentId, own, "1.5");
+    await addRun(agentId, own, null);
+    await addRun(agentId, own, "100", { createdAt: LAST_MONTH });
+    await addRun(agentId, sibling, "0.5");
+    const [analysis] = await db
+      .insert(analysesTable)
+      .values({ appId, model: "m", aiModelId: own, sources: { code: "none", openapi: false, description: false }, maxTokens: 1000, tokensUsed: 10, costUsd: "0.25", status: "completed" })
+      .returning();
+    await db
+      .insert(planConversationsTable)
+      .values({ appId, analysisId: analysis!.id, userId: dev, aiModelId: own, title: "a", tokensUsed: 5, costUsd: "0.25" });
+    const accountId = await accountOf(own);
+    await api("PATCH", `/ai/models/${own}`, { monthlyBudgetUsd: 4 });
+    await api("PATCH", `/ai/accounts/${accountId}`, { monthlyBudgetUsd: 10 });
+
+    const { json } = await api("GET", "/budget");
+    expect(json.models).toEqual([
+      { aiModelId: own, modelName: "mio", accountId, accountName: "mio", capUsd: 4, spentUsd: 2, unpricedCount: 1 },
+    ]);
+    expect(json.accounts).toEqual([{ accountId, accountName: "mio", capUsd: 10, spentUsd: 2.5, unpricedCount: 1 }]);
+  });
+
+  it("run da poter annullare: anche quelle su un modello o un account al tetto", async () => {
+    const dev = await devUserId();
+    const capped = await modelOf(dev, "costoso");
+    const free = await siblingModel(capped, "economico");
+    const other = await modelOf(dev, "altro");
+    const appId = await createApp();
+    const agentId = await createAgent(appId, capped);
+    const onCapped = await addRun(agentId, capped, "2", { status: "awaiting_client" });
+    const onFree = await addRun(agentId, free, "0.5", { status: "awaiting_client" });
+    await addRun(agentId, other, "7", { status: "awaiting_client" });
+
+    await api("PATCH", `/ai/models/${capped}`, { monthlyBudgetUsd: 1 });
+    expect((await api("GET", "/budget")).json.activeRuns.map((r: { id: number }) => r.id)).toEqual([onCapped]);
+
+    await api("PATCH", `/ai/models/${capped}`, { monthlyBudgetUsd: null });
+    await api("PATCH", `/ai/accounts/${await accountOf(capped)}`, { monthlyBudgetUsd: 2.5 });
+    expect((await api("GET", "/budget")).json.activeRuns.map((r: { id: number }) => r.id)).toEqual([onCapped, onFree]);
   });
 });

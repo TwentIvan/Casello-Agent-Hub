@@ -32,7 +32,7 @@ import {
   DeleteAgentSkillParams,
 } from "@workspace/api-zod";
 import { startRun } from "../lib/run-executor";
-import { runBudgetBlock } from "../lib/budget";
+import { budgetColumn, runBudgetBlock } from "../lib/budget";
 import { currentUserId } from "../lib/auth";
 import { ModelChoiceError, chooseByName, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
 import { DEFAULT_MODEL } from "../lib/models";
@@ -108,11 +108,6 @@ async function modelUpdate(
   }
   if (aiModelId === undefined && model !== undefined && model !== current.model) return chooseByName(model);
   return {};
-}
-
-/** Tetto in USD → colonna numeric, arrotondato al centesimo; null = nessun limite. */
-export function budgetColumn(value: number | null): string | null {
-  return value === null ? null : value.toFixed(2);
 }
 
 router.patch("/agents/:id", async (req, res) => {

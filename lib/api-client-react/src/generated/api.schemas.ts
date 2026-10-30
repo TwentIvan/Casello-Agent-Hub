@@ -941,6 +941,52 @@ export interface PlanMessageCreate {
   content: string;
 }
 
+export interface PlanIssuesRequest {
+  /**
+     * @minItems 1
+     * @maxItems 30
+     */
+  itemIds: number[];
+  /** Solo anteprima, senza chiamare GitHub */
+  dryRun?: boolean;
+}
+
+export type PlanIssuesPreviewIssuesItem = {
+  itemId: number;
+  title: string;
+  body: string;
+  labels: string[];
+  /** Voce già collegata o non ammessa (non verrebbe creata) */
+  skipped: boolean;
+};
+
+export interface PlanIssuesPreview {
+  repo: string;
+  issues: PlanIssuesPreviewIssuesItem[];
+}
+
+export type PlanIssuesResultResultsItemOutcome = typeof PlanIssuesResultResultsItemOutcome[keyof typeof PlanIssuesResultResultsItemOutcome];
+
+
+export const PlanIssuesResultResultsItemOutcome = {
+  created: 'created',
+  skipped: 'skipped',
+  failed: 'failed',
+} as const;
+
+export type PlanIssuesResultResultsItem = {
+  itemId: number;
+  outcome: PlanIssuesResultResultsItemOutcome;
+  number?: number;
+  url?: string;
+  error?: string;
+};
+
+export interface PlanIssuesResult {
+  repo: string;
+  results: PlanIssuesResultResultsItem[];
+}
+
 export type PlanProposalDecisionAction = typeof PlanProposalDecisionAction[keyof typeof PlanProposalDecisionAction];
 
 

@@ -2151,6 +2151,44 @@ export const GetAppPlanResponse = zod.object({
 
 
 /**
+ * Le voci (endpoint, completamento, evoluzione approvate) diventano issue sul repository collegato tramite l'App GitHub. Con dryRun l'anteprima non chiama GitHub. Le voci già collegate o non ammesse risultano skipped. Massimo 5 creazioni al minuto per utente (le anteprime non contano).
+ * @summary Crea (o mostra in anteprima) le issue GitHub delle voci approvate del piano
+ */
+export const CreatePlanIssuesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const createPlanIssuesBodyItemIdsMax = 30;
+
+
+
+export const CreatePlanIssuesBody = zod.object({
+  "itemIds": zod.array(zod.number()).min(1).max(createPlanIssuesBodyItemIdsMax),
+  "dryRun": zod.boolean().optional().describe('Solo anteprima, senza chiamare GitHub')
+})
+
+export const CreatePlanIssuesResponse = zod.union([zod.object({
+  "repo": zod.string(),
+  "issues": zod.array(zod.object({
+  "itemId": zod.number(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "labels": zod.array(zod.string()),
+  "skipped": zod.boolean().describe('Voce già collegata o non ammessa (non verrebbe creata)')
+}))
+}),zod.object({
+  "repo": zod.string(),
+  "results": zod.array(zod.object({
+  "itemId": zod.number(),
+  "outcome": zod.enum(['created', 'skipped', 'failed']),
+  "number": zod.number().optional(),
+  "url": zod.string().optional(),
+  "error": zod.string().optional()
+}))
+})])
+
+
+/**
  * @summary Conversazioni dell'utente sul piano di una app
  */
 export const ListPlanConversationsParams = zod.object({

@@ -83,6 +83,9 @@ import type {
   PlanConversationCreate,
   PlanConversationDetail,
   PlanConversationUpdate,
+  PlanIssuesPreview,
+  PlanIssuesRequest,
+  PlanIssuesResult,
   PlanMessage,
   PlanMessageCreate,
   PlanProposalDecision,
@@ -5016,6 +5019,78 @@ export function useGetAppPlan<TData = Awaited<ReturnType<typeof getAppPlan>>, TE
 
 
 
+
+export const getCreatePlanIssuesUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/plan/issues`
+}
+
+/**
+ * Le voci (endpoint, completamento, evoluzione approvate) diventano issue sul repository collegato tramite l'App GitHub. Con dryRun l'anteprima non chiama GitHub. Le voci già collegate o non ammesse risultano skipped. Massimo 5 creazioni al minuto per utente (le anteprime non contano).
+ * @summary Crea (o mostra in anteprima) le issue GitHub delle voci approvate del piano
+ */
+export const createPlanIssues = async (id: number,
+    planIssuesRequest: PlanIssuesRequest, options?: RequestInit): Promise<PlanIssuesPreview | PlanIssuesResult> => {
+
+  return customFetch<PlanIssuesPreview | PlanIssuesResult>(getCreatePlanIssuesUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(planIssuesRequest)
+  }
+);}
+
+
+
+
+export const getCreatePlanIssuesMutationOptions = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPlanIssues>>, TError,{id: number;data: BodyType<PlanIssuesRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createPlanIssues>>, TError,{id: number;data: BodyType<PlanIssuesRequest>}, TContext> => {
+
+const mutationKey = ['createPlanIssues'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPlanIssues>>, {id: number;data: BodyType<PlanIssuesRequest>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createPlanIssues(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePlanIssuesMutationResult = NonNullable<Awaited<ReturnType<typeof createPlanIssues>>>
+    export type CreatePlanIssuesMutationBody = BodyType<PlanIssuesRequest>
+    export type CreatePlanIssuesMutationError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>
+
+    /**
+ * @summary Crea (o mostra in anteprima) le issue GitHub delle voci approvate del piano
+ */
+export const useCreatePlanIssues = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPlanIssues>>, TError,{id: number;data: BodyType<PlanIssuesRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createPlanIssues>>,
+        TError,
+        {id: number;data: BodyType<PlanIssuesRequest>},
+        TContext
+      > => {
+      return useMutation(getCreatePlanIssuesMutationOptions(options));
+    }
 
 export const getListPlanConversationsUrl = (id: number,) => {
 

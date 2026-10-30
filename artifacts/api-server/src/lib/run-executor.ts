@@ -48,10 +48,20 @@ export const RUN_CANCELLED_MESSAGE = "Annullata dall'utente.";
 // Registrata per tutta la durata di un segmento (avvio o ripresa), rimossa quando finisce.
 const activeRuns = new Map<number, AbortController>();
 
+/**
+ * Prenota il controller di una run prima della presa in carico. Se c'è già un segmento attivo il suo
+ * controller non si sostituisce: quello restituito resta fuori dalla mappa (una presa in carico che
+ * poi fallisce non può togliere di mezzo il vincitore). Dopo una presa riuscita si chiama `adoptRun`.
+ */
 function trackRun(runId: number): AbortController {
   const controller = new AbortController();
-  activeRuns.set(runId, controller);
+  if (!activeRuns.has(runId)) activeRuns.set(runId, controller);
   return controller;
+}
+
+/** Presa in carico riuscita: il controller diventa quello della run (anche se la prenotazione era occupata). */
+function adoptRun(runId: number, controller: AbortController): void {
+  activeRuns.set(runId, controller);
 }
 
 function untrackRun(runId: number, controller: AbortController): void {
@@ -502,6 +512,7 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
     throw new Error(`La run ${runId} non esiste o non è in attesa di avvio`);
   }
 
+  adoptRun(runId, abort);
   if (opts.userToken) setUserToken(runId, opts.userToken);
   const segmentStart = Date.now();
   const usage = newUsage();
@@ -568,6 +579,7 @@ export async function claimResume(
     untrackRun(runId, abort);
     throw new ResumeConflictError();
   }
+  adoptRun(runId, abort);
 
   if (opts.userToken) {
     setUserToken(runId, opts.userToken);

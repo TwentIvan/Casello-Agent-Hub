@@ -19,6 +19,7 @@ import {
   RUN_CANCELLED_MESSAGE,
   ResumeConflictError,
   cancelRun,
+  claimResume,
   expireStalePausedRuns,
   failInterruptedRuns,
   modelCallError,
@@ -968,6 +969,41 @@ describe("annullamento: uso registrato", () => {
     expect(run.costUsd).toBeNull();
     expect(run.durationMs).toBeGreaterThan(0);
   });
+
+  it("due riprese concorrenti: ne procede una sola e l'annullamento interrompe la sua chiamata al modello", async () => {
+    const id = await seedRun(DELETE_ITEM);
+    await linkAgent(id);
+    fake.chatReply = {
+      content: null,
+      toolCalls: [{ id: "call_1", name: "delete_item", arguments: JSON.stringify({ id: "42" }) }],
+      usage: { prompt_tokens: 1000, completion_tokens: 500 },
+    };
+    await startRun(id, { userToken: "t" });
+    expect((await getRun(id)).status).toBe("awaiting_client");
+    const chatCount = () => fake.requests.filter((r) => r.path === "/v1/chat/completions").length;
+    const before = chatCount();
+    // dopo la conferma il modello tiene la risposta
+    fake.delayMs = 5_000;
+
+    const claims = await Promise.allSettled([
+      claimResume(id, "approved", { userToken: "t" }),
+      claimResume(id, "approved", { userToken: "t" }),
+    ]);
+    expect(claims.filter((c) => c.status === "fulfilled")).toHaveLength(1);
+    const rejected = claims.find((c) => c.status === "rejected") as PromiseRejectedResult;
+    expect(rejected.reason).toBeInstanceOf(ResumeConflictError);
+    const winner = (claims.find((c) => c.status === "fulfilled") as PromiseFulfilledResult<Awaited<ReturnType<typeof claimResume>>>).value;
+    const proceeding = winner.proceed();
+    await waitFor(() => chatCount() === before + 1);
+
+    const t0 = Date.now();
+    await cancelRun(id);
+    await proceeding;
+
+    // la chiamata al modello del vincitore è stata interrotta, non attesa fino in fondo
+    expect(Date.now() - t0).toBeLessThan(2_000);
+    expect((await getRun(id)).status).toBe("cancelled");
+  }, 10_000);
 
   it("run pending annullata prima dell'avvio: startRun esce senza lanciare", async () => {
     const id = await seedRun(GET_ITEM);

@@ -608,6 +608,29 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /runs/{id}/cancel:
+    post:
+      operationId: cancelRun
+      tags: [runs]
+      summary: Annulla un'esecuzione non ancora conclusa
+      description: >-
+        Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate
+        in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati
+        restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Esecuzione annullata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   # ─── Architetto ─────────────────────────────────────────────────────────────
 
   /apps/{id}/analyses:

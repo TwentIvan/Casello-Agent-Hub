@@ -42,6 +42,54 @@ const MIN_MODEL_CALL_MS = 1_000;
 
 export const REJECTED_ACTION_MESSAGE = "L'utente ha annullato l'azione.";
 export const PAUSE_EXPIRED_MESSAGE = "Conferma non arrivata entro 10 minuti.";
+export const RUN_CANCELLED_MESSAGE = "Annullata dall'utente.";
+
+// Run in corso in questo processo: l'annullamento interrompe le chiamate in volo (modello e tool).
+// Registrata per tutta la durata di un segmento (avvio o ripresa), rimossa quando finisce.
+const activeRuns = new Map<number, AbortController>();
+
+function trackRun(runId: number): AbortController {
+  const controller = new AbortController();
+  activeRuns.set(runId, controller);
+  return controller;
+}
+
+function untrackRun(runId: number, controller: AbortController): void {
+  if (activeRuns.get(runId) === controller) activeRuns.delete(runId);
+}
+
+export type CancelRunResult =
+  | { kind: "cancelled"; run: Run }
+  | { kind: "not_found" }
+  | { kind: "concluded" };
+
+/**
+ * Annulla una run `pending`, `running` o `awaiting_client`: UPDATE condizionato (una run già conclusa
+ * non cambia), poi interrompe le chiamate in volo. Durata, token e costo già registrati restano.
+ * Il ciclo in corso non scrive più lo stato: tutte le sue scritture finali sono condizionate a `running`.
+ */
+export async function cancelRun(runId: number): Promise<CancelRunResult> {
+  const [run] = await db
+    .update(runsTable)
+    .set({
+      status: "cancelled",
+      errorMessage: RUN_CANCELLED_MESSAGE,
+      // R12: a run chiusa non restano argomenti dei tool (pending_action li ha in chiaro)
+      loopState: null,
+      pendingAction: null,
+      pausedAt: null,
+      finishedAt: new Date(),
+    })
+    .where(and(eq(runsTable.id, runId), inArray(runsTable.status, ["pending", "running", "awaiting_client"])))
+    .returning();
+  if (!run) {
+    const [existing] = await db.select({ id: runsTable.id }).from(runsTable).where(eq(runsTable.id, runId)).limit(1);
+    return existing ? { kind: "concluded" } : { kind: "not_found" };
+  }
+  activeRuns.get(runId)?.abort();
+  clearUserToken(runId);
+  return { kind: "cancelled", run };
+}
 
 /** La run non è (più) in attesa di conferma: già ripresa, scaduta, annullata o mai in pausa. */
 export class ResumeConflictError extends Error {
@@ -141,8 +189,13 @@ function stepWriter(runId: number, appId: number, startPosition: number, tools: 
   };
 }
 
-function runTool(ctx: RunContext, tool: CatalogTool, args: Record<string, unknown>): Promise<ToolResult> {
-  return executeTool({ conn: ctx.conn, tool, args, userToken: getUserToken(ctx.run.id) });
+function runTool(
+  ctx: RunContext,
+  tool: CatalogTool,
+  args: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolResult> {
+  return executeTool({ conn: ctx.conn, tool, args, userToken: getUserToken(ctx.run.id), signal });
 }
 
 /**
@@ -227,6 +280,7 @@ async function driveLoop(
   segmentStart: number,
   writeStep: (step: StepRecord) => Promise<void>,
   usage: SegmentUsage,
+  abort: AbortSignal,
   limits?: Partial<LoopLimits>,
 ): Promise<void> {
   const runId = ctx.run.id;
@@ -240,7 +294,7 @@ async function driveLoop(
   const deps: LoopDeps = {
     chat: async (messages, { remainingMs }) => {
       // La chiamata non può durare oltre il tempo attivo rimasto al turno
-      const signal = AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, remainingMs));
+      const signal = AbortSignal.any([abort, AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, remainingMs))]);
       if (aiModelId === null) {
         // Transizione: agenti non ancora collegati a un modello degli account AI
         const reply = await aiGateway.chat({
@@ -274,9 +328,10 @@ async function driveLoop(
       }
     },
     tools: ctx.tools,
-    executeTool: (tool, args) => runTool(ctx, tool, args),
+    executeTool: (tool, args) => runTool(ctx, tool, args, abort),
     onStep: writeStep,
     limits,
+    signal: abort,
   };
 
   const outcome = await runAgentLoop(state, deps);
@@ -300,7 +355,7 @@ async function driveLoop(
           pendingAction: outcome.pending,
           pausedAt: new Date(),
         })
-        .where(eq(runsTable.id, runId));
+        .where(and(eq(runsTable.id, runId), eq(runsTable.status, "running")));
       // La scadenza del token riparte dall'inizio della pausa
       const token = getUserToken(runId);
       if (token) setUserToken(runId, token);
@@ -318,7 +373,7 @@ async function driveLoop(
           pausedAt: null,
           finishedAt: new Date(),
         })
-        .where(eq(runsTable.id, runId));
+        .where(and(eq(runsTable.id, runId), eq(runsTable.status, "running")));
       clearUserToken(runId);
       return;
     case "failed":
@@ -333,7 +388,11 @@ async function driveLoop(
           pausedAt: null,
           finishedAt: new Date(),
         })
-        .where(eq(runsTable.id, runId));
+        .where(and(eq(runsTable.id, runId), eq(runsTable.status, "running")));
+      clearUserToken(runId);
+      return;
+    case "cancelled":
+      // Lo stato lo ha già scritto cancelRun: qui non si tocca nulla
       clearUserToken(runId);
       return;
   }
@@ -348,9 +407,12 @@ async function failRun(
   err: unknown,
   segmentStart: number,
   usage: SegmentUsage,
+  cancelled = false,
 ): Promise<void> {
   const runId = run.id;
   clearUserToken(runId);
+  // Un errore causato dall'annullamento non è un fallimento: la run è già `cancelled`
+  if (cancelled) return;
   const message = errorMessage(err);
   logger.error({ runId, error: message }, "Run fallita per un errore inatteso");
   try {
@@ -369,7 +431,7 @@ async function failRun(
         costUsd: totalCost(run, usage),
         finishedAt: new Date(),
       })
-      .where(eq(runsTable.id, runId));
+      .where(and(eq(runsTable.id, runId), eq(runsTable.status, "running")));
   } catch (dbErr) {
     logger.error({ runId, error: errorMessage(dbErr) }, "Impossibile chiudere la run fallita");
   }
@@ -391,6 +453,7 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
   if (opts.userToken) setUserToken(runId, opts.userToken);
   const segmentStart = Date.now();
   const usage = newUsage();
+  const abort = trackRun(runId);
   try {
     const ctx = await loadContext(run);
     const initial: LoopState = {
@@ -404,9 +467,11 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
       activeMs: 0,
     };
     const writeStep = stepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools);
-    await driveLoop(ctx, initial, segmentStart, writeStep, usage, opts.limits);
+    await driveLoop(ctx, initial, segmentStart, writeStep, usage, abort.signal, opts.limits);
   } catch (err) {
-    await failRun(run, err, segmentStart, usage);
+    await failRun(run, err, segmentStart, usage, abort.signal.aborted);
+  } finally {
+    untrackRun(runId, abort);
   }
 }
 
@@ -451,18 +516,30 @@ export async function claimResume(
 
   const segmentStart = Date.now();
   const usage = newUsage();
+  // Registrata subito: un annullamento tra la presa in carico e `proceed` interrompe comunque il lavoro
+  const abort = trackRun(runId);
   const state = run.loopState;
   const pending = run.pendingAction;
   if (!isLoopState(state) || !isPendingAction(pending)) {
     // Stato della pausa mancante: la run si chiude come fallita, la ripresa in sé non è in conflitto
     const err = new Error("stato della pausa mancante o non valido");
-    return { run, proceed: () => failRun(run, err, segmentStart, usage) };
+    return {
+      run,
+      proceed: async () => {
+        try {
+          await failRun(run, err, segmentStart, usage);
+        } finally {
+          untrackRun(runId, abort);
+        }
+      },
+    };
   }
   try {
     // Verifica che l'azione sia davvero quella in attesa PRIMA di eseguire il tool
     resolvePending(state, pending, { ok: false, content: "" });
   } catch (err) {
     await failRun(run, err, segmentStart, usage);
+    untrackRun(runId, abort);
     if (err instanceof PendingMismatchError) {
       throw new ResumeConflictError(`La run non può essere ripresa: ${err.message}`);
     }
@@ -471,6 +548,7 @@ export async function claimResume(
 
   const proceed = async (): Promise<void> => {
     try {
+      if (abort.signal.aborted) return;
       const ctx = await loadContext(run);
       const writeStep = stepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools);
 
@@ -483,12 +561,14 @@ export async function claimResume(
           result = { ok: false, content: `Errore: lo strumento "${pending.toolName}" non è più disponibile` };
         } else {
           const t0 = Date.now();
-          result = await runTool(ctx, tool, pending.args);
+          result = await runTool(ctx, tool, pending.args, abort.signal);
           durationMs = Date.now() - t0;
         }
       } else {
         result = { ok: false, content: REJECTED_ACTION_MESSAGE };
       }
+
+      if (abort.signal.aborted) return;
 
       // resolvePending non registra passi: il passo `tool` della chiamata confermata/rifiutata va scritto qui
       await writeStep({
@@ -504,9 +584,11 @@ export async function claimResume(
       const next = resolvePending(state, pending, result);
       // Il tempo del tool confermato è tempo attivo del turno (conta per il limite di 120 s)
       next.activeMs += durationMs;
-      await driveLoop(ctx, next, segmentStart, writeStep, usage, opts.limits);
+      await driveLoop(ctx, next, segmentStart, writeStep, usage, abort.signal, opts.limits);
     } catch (err) {
-      await failRun(run, err, segmentStart, usage);
+      await failRun(run, err, segmentStart, usage, abort.signal.aborted);
+    } finally {
+      untrackRun(runId, abort);
     }
   };
   return { run, proceed };

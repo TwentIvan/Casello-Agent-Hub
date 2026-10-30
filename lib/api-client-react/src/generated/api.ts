@@ -2200,6 +2200,77 @@ export const useResumeRun = <TError = ErrorType<BadRequestResponse | NotFoundRes
       return useMutation(getResumeRunMutationOptions(options));
     }
 
+export const getCancelRunUrl = (id: number,) => {
+
+
+
+
+  return `/api/runs/${id}/cancel`
+}
+
+/**
+ * Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
+ * @summary Annulla un'esecuzione non ancora conclusa
+ */
+export const cancelRun = async (id: number, options?: RequestInit): Promise<Run> => {
+
+  return customFetch<Run>(getCancelRunUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCancelRunMutationOptions = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelRun>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['cancelRun'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelRun>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  cancelRun(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelRunMutationResult = NonNullable<Awaited<ReturnType<typeof cancelRun>>>
+
+    export type CancelRunMutationError = ErrorType<NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Annulla un'esecuzione non ancora conclusa
+ */
+export const useCancelRun = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelRun>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getCancelRunMutationOptions(options));
+    }
+
 export const getListAnalysesUrl = (id: number,) => {
 
 

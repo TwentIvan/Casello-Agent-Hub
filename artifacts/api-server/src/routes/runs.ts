@@ -11,9 +11,11 @@ import {
   ResumeRunParams,
   ResumeRunBody,
   ResumeRunResponse,
+  CancelRunParams,
+  CancelRunResponse,
 } from "@workspace/api-zod";
 import { runRateLimit } from "../middlewares/rate-limit";
-import { ResumeConflictError, claimResume } from "../lib/run-executor";
+import { ResumeConflictError, cancelRun, claimResume } from "../lib/run-executor";
 import { logger } from "../lib/logger";
 import { toPublicRun, userTokenFrom } from "./serializers";
 import { parseRequest } from "../middlewares/error-handler";
@@ -84,6 +86,22 @@ router.post("/runs/:id/resume", runRateLimit, async (req, res) => {
   claimed.proceed().catch((err: unknown) => logger.error({ err, runId: id }, "Ripresa della run fallita"));
 
   res.status(202).json(ResumeRunResponse.parse(toPublicRun(claimed.run)));
+});
+
+// Annullamento: UPDATE condizionato (pending/running/awaiting_client → cancelled) e poi interruzione
+// delle chiamate in volo. Una run già conclusa risponde 409.
+router.post("/runs/:id/cancel", runRateLimit, async (req, res) => {
+  const { id } = parseRequest(CancelRunParams, req.params);
+  const result = await cancelRun(id);
+  if (result.kind === "not_found") {
+    res.status(404).json({ error: "Esecuzione non trovata" });
+    return;
+  }
+  if (result.kind === "concluded") {
+    res.status(409).json({ error: "L'esecuzione è già conclusa: non si può annullare." });
+    return;
+  }
+  res.json(CancelRunResponse.parse(toPublicRun(result.run)));
 });
 
 export default router;

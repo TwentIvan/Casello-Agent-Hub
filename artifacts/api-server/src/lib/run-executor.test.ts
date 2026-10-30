@@ -16,7 +16,9 @@ import {
   type InsertAppTool,
 } from "@workspace/db";
 import {
+  RUN_CANCELLED_MESSAGE,
   ResumeConflictError,
+  cancelRun,
   expireStalePausedRuns,
   failInterruptedRuns,
   modelCallError,
@@ -591,6 +593,99 @@ describe("orchestrazione delle run", () => {
     expect(run.errorMessage).toContain("errore nella chiamata al modello");
     // Tempo rimanente con un minimo di 1 s, più un margine
     expect(Date.now() - t0).toBeLessThan(3_000);
+    expect(llmRequests).toHaveLength(1);
+  });
+});
+
+describe("annullamento delle run", () => {
+  async function waitFor(cond: () => boolean, ms = 3_000) {
+    const t0 = Date.now();
+    while (!cond()) {
+      if (Date.now() - t0 > ms) throw new Error("timeout nell'attesa");
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
+  it("run in corso con chiamata al modello in attesa: cancelled, la chiamata viene interrotta e lo stato non cambia", async () => {
+    const id = await seedRun(GET_ITEM);
+    llmHangs = true;
+    const running = startRun(id, { userToken: "t" });
+    await waitFor(() => llmRequests.length === 1);
+    const t0 = Date.now();
+
+    const result = await cancelRun(id);
+
+    expect(result.kind).toBe("cancelled");
+    let run = await getRun(id);
+    expect(run.status).toBe("cancelled");
+    expect(run.errorMessage).toBe(RUN_CANCELLED_MESSAGE);
+    expect(run.finishedAt).not.toBeNull();
+    // La chiamata tenuta è abortita: startRun finisce subito, non dopo il timeout del turno
+    await running;
+    expect(Date.now() - t0).toBeLessThan(2_000);
+    run = await getRun(id);
+    expect(run.status).toBe("cancelled");
+    expect(run.errorMessage).toBe(RUN_CANCELLED_MESSAGE);
+    expect(run.output).toBeNull();
+    expect(llmRequests).toHaveLength(1);
+  });
+
+  it("run in pausa (awaiting_client): cancelled, una ripresa successiva è in conflitto e il tool non parte", async () => {
+    const id = await seedRun(DELETE_ITEM);
+    llmReplies = [toolCallReply("delete_item", { id: "42" })];
+    await startRun(id, { userToken: "t" });
+    expect((await getRun(id)).status).toBe("awaiting_client");
+
+    const result = await cancelRun(id);
+
+    expect(result.kind).toBe("cancelled");
+    const run = await getRun(id);
+    expect(run.status).toBe("cancelled");
+    expect(run.errorMessage).toBe(RUN_CANCELLED_MESSAGE);
+    expect(run.pendingAction).toBeNull();
+    expect(run.loopState).toBeNull();
+    await expect(resumeRun(id, "approved")).rejects.toBeInstanceOf(ResumeConflictError);
+    expect(appRequests).toHaveLength(0);
+  });
+
+  it("run pending: cancelled, startRun non la esegue", async () => {
+    const id = await seedRun(GET_ITEM);
+
+    const result = await cancelRun(id);
+
+    expect(result.kind).toBe("cancelled");
+    expect((await getRun(id)).status).toBe("cancelled");
+    await expect(startRun(id)).rejects.toThrow();
+    expect(llmRequests).toHaveLength(0);
+    expect((await getRun(id)).status).toBe("cancelled");
+  });
+
+  it("run già conclusa: concluded; run inesistente: not_found", async () => {
+    const id = await seedRun(GET_ITEM);
+    llmReplies = [textReply("Fatto.")];
+    await startRun(id, { userToken: "t" });
+    expect((await getRun(id)).status).toBe("succeeded");
+
+    expect((await cancelRun(id)).kind).toBe("concluded");
+    expect((await getRun(id)).status).toBe("succeeded");
+    expect((await cancelRun(9999)).kind).toBe("not_found");
+  });
+
+  it("tool in corso: la richiesta all'app viene interrotta e la run resta cancelled", async () => {
+    const id = await seedRun(GET_ITEM);
+    llmReplies = [toolCallReply("get_item", { id: "1" }), textReply("Mai usata.")];
+    appDelayMs = 5_000;
+    const running = startRun(id, { userToken: "t" });
+    await waitFor(() => appRequests.length === 1);
+
+    await cancelRun(id);
+    const t0 = Date.now();
+    await running;
+
+    expect(Date.now() - t0).toBeLessThan(2_000);
+    const run = await getRun(id);
+    expect(run.status).toBe("cancelled");
+    expect(run.errorMessage).toBe(RUN_CANCELLED_MESSAGE);
     expect(llmRequests).toHaveLength(1);
   });
 });

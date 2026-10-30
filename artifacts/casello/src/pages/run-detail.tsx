@@ -1,16 +1,21 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ArrowLeft } from "lucide-react";
+import { AlertCircle, ArrowLeft, Ban } from "lucide-react";
 import {
   ApiError,
   getGetAgentQueryKey,
   getGetDashboardStatsQueryKey,
   getGetRunQueryKey,
+  getListRunStepsQueryKey,
   getListRunsQueryKey,
+  useCancelRun,
   useGetAgent,
   useGetRun,
 } from "@workspace/api-client-react";
+import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -39,6 +44,33 @@ export default function RunDetailPage() {
       enabled: Number.isInteger(runId),
       // Polling solo finché la run è in attesa o in corso.
       refetchInterval: (query) => (query.state.data && isRunActive(query.state.data) ? POLL_MS : false),
+    },
+  });
+  const { toast } = useToast();
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const refresh = () => {
+    for (const queryKey of [
+      getGetRunQueryKey(runId),
+      getListRunStepsQueryKey(runId),
+      getListRunsQueryKey(),
+      getGetDashboardStatsQueryKey(),
+    ]) {
+      void queryClient.invalidateQueries({ queryKey });
+    }
+  };
+  const cancel = useCancelRun({
+    mutation: {
+      onSuccess: (updated) => {
+        queryClient.setQueryData(getGetRunQueryKey(runId), updated);
+        setConfirmCancel(false);
+        refresh();
+      },
+      onError: (error) => {
+        setConfirmCancel(false);
+        toast({ variant: "destructive", title: "Annullamento non riuscito", description: apiErrorMessage(error) });
+        // Con un 409 la run è già conclusa: si riallinea la pagina.
+        refresh();
+      },
     },
   });
   const agentId = run.data?.agentId ?? 0;
@@ -98,6 +130,12 @@ export default function RunDetailPage() {
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-2xl font-semibold tracking-tight">Run #{r.id}</h2>
           <RunStatusBadge status={r.status} />
+          {active && (
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => setConfirmCancel(true)}>
+              <Ban className="size-4" />
+              Annulla
+            </Button>
+          )}
         </div>
         <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <div>
@@ -145,6 +183,17 @@ export default function RunDetailPage() {
           <p className="whitespace-pre-wrap text-sm">{r.input || "—"}</p>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={confirmCancel}
+        onOpenChange={setConfirmCancel}
+        title="Annullare la run?"
+        description="L'agente smette di lavorare e le azioni non ancora eseguite non partono. Quelle già eseguite sull'app non si annullano."
+        confirmLabel="Annulla la run"
+        pendingLabel="Annullamento…"
+        pending={cancel.isPending}
+        onConfirm={() => cancel.mutate({ id: runId })}
+      />
 
       <RunSteps run={r} />
 

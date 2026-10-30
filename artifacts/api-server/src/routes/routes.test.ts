@@ -477,6 +477,20 @@ describe("run", () => {
     expect((await api("POST", "/runs/9999/resume", { decision: "approved" })).status).toBe(404);
   });
 
+  it("cancel: run pending → 200 cancelled; già conclusa → 409; inesistente → 404", async () => {
+    const app = await createApp();
+    const general = await generalAgentOf(app.id);
+    const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "x" }).returning();
+    const res = await api("POST", `/runs/${run!.id}/cancel`);
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ id: run!.id, status: "cancelled", errorMessage: "Annullata dall'utente." });
+    expect(res.json).not.toHaveProperty("loopState");
+    const again = await api("POST", `/runs/${run!.id}/cancel`);
+    expect(again.status).toBe(409);
+    expect(typeof again.json.error).toBe("string");
+    expect((await api("POST", "/runs/9999/cancel")).status).toBe(404);
+  });
+
   it("resume due volte di fila su una run in pausa → 202 poi 409, una sola esecuzione del tool", async () => {
     const id = await pausedRun();
     const first = await api("POST", `/runs/${id}/resume`, { decision: "approved" });

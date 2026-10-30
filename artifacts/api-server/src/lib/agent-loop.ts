@@ -66,12 +66,16 @@ export interface LoopDeps {
   onStep(step: StepRecord): Promise<void>;
   limits?: Partial<LoopLimits>;
   now?: () => number;
+  /** Annullamento: se scatta, il ciclo non inizia nuovi giri e si chiude come `cancelled` */
+  signal?: AbortSignal;
 }
 
 export type LoopOutcome =
   | { type: "finished"; content: string; state: LoopState }
   | { type: "paused"; pending: PendingAction; state: LoopState }
-  | { type: "failed"; error: string; state: LoopState };
+  | { type: "failed"; error: string; state: LoopState }
+  /** Annullato dall'esterno (`deps.signal`): niente altri passi, lo stato della run lo scrive chi ha annullato */
+  | { type: "cancelled"; state: LoopState };
 
 // Esito della preparazione di una chiamata: errore da restituire al modello o tool pronto
 type PreparedCall =
@@ -206,9 +210,13 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
     });
   };
 
+  const cancelled = (): LoopOutcome | null =>
+    deps.signal?.aborted ? finish({ type: "cancelled", state }) : null;
+
   for (;;) {
     // 1. Svuota la coda delle chiamate rimaste
     while (state.queue.length > 0) {
+      if (deps.signal?.aborted) return finish({ type: "cancelled", state });
       const prepared = prepareCall(state.queue[0], deps.tools);
 
       if (prepared.kind === "error") {
@@ -252,6 +260,7 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
         }
         state.queue.splice(0, group.length);
         const results = await Promise.all(group.map((p) => execute(p)));
+        if (deps.signal?.aborted) return finish({ type: "cancelled", state });
         for (let i = 0; i < group.length; i++) {
           await record(group[i], results[i].result, results[i].durationMs);
         }
@@ -260,10 +269,13 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
 
       state.queue.shift();
       const { result, durationMs } = await execute(prepared);
+      if (deps.signal?.aborted) return finish({ type: "cancelled", state });
       await record(prepared, result, durationMs);
     }
 
     // 2. Limiti, controllati prima di ogni chiamata al modello
+    const stopped = cancelled();
+    if (stopped) return stopped;
     syncActive();
     if (state.rounds >= limits.maxRounds) {
       return finish({ type: "failed", error: `limite di ${limits.maxRounds} giri di strumenti raggiunto`, state });
@@ -281,11 +293,14 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
     try {
       reply = await deps.chat(state.messages, { remainingMs: limits.maxActiveMs - state.activeMs });
     } catch (err) {
+      // Chiamata interrotta dall'annullamento: non è un errore del modello
+      if (deps.signal?.aborted) return finish({ type: "cancelled", state });
       const message = errorMessage(err);
       await deps.onStep({ type: "model", ok: false, durationMs: now() - t0, error: message });
       return finish({ type: "failed", error: `errore nella chiamata al modello: ${message}`, state });
     }
     state.tokens += reply.promptTokens + reply.completionTokens;
+    if (deps.signal?.aborted) return finish({ type: "cancelled", state });
     await deps.onStep({ type: "model", ok: true, durationMs: now() - t0 });
 
     if (reply.toolCalls.length === 0) {

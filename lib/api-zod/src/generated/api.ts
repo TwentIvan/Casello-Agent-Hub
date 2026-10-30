@@ -799,6 +799,37 @@ export const ResumeRunResponse = zod.object({
 
 
 /**
+ * Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
+ * @summary Annulla un'esecuzione non ancora conclusa
+ */
+export const CancelRunParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CancelRunResponse = zod.object({
+  "id": zod.number(),
+  "agentId": zod.number(),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
+  "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
+  "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
+  "errorMessage": zod.string().nullish(),
+  "durationMs": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullish(),
+  "pendingAction": zod.union([zod.object({
+  "kind": zod.enum(['confirmation', 'ui']),
+  "toolName": zod.string(),
+  "args": zod.record(zod.string(), zod.unknown()),
+  "summary": zod.string()
+}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
+  "promptTokens": zod.number().nullish(),
+  "completionTokens": zod.number().nullish(),
+  "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
+})
+
+
+/**
  * @summary Elenca le analisi dell'architetto di una app
  */
 export const ListAnalysesParams = zod.object({

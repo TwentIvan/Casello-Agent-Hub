@@ -476,7 +476,7 @@ paths:
     get:
       operationId: listRuns
       tags: [runs]
-      summary: Elenca tutte le esecuzioni (dalla più recente)
+      summary: Elenca le esecuzioni (dalla più recente, paginate)
       parameters:
         - name: agentId
           in: query
@@ -490,9 +490,24 @@ paths:
           schema:
             $ref: "#/components/schemas/RunStatus"
           description: Filtra per stato
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Numero massimo di esecuzioni restituite
+        - name: before
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Restituisce solo le esecuzioni con id minore di questo (paginazione a cursore)
       responses:
         "200":
-          description: Lista di esecuzioni
+          description: Lista di esecuzioni, dalla più recente (id decrescente)
           content:
             application/json:
               schema:

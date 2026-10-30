@@ -409,6 +409,58 @@ describe("errori di richiesta", () => {
   });
 });
 
+describe("paginazione delle run", () => {
+  async function seedRuns(count: number, agentId: number): Promise<number[]> {
+    const rows = await db
+      .insert(runsTable)
+      .values(Array.from({ length: count }, (_, i) => ({ agentId, input: `r${i}` })))
+      .returning({ id: runsTable.id });
+    return rows.map((r) => r.id).sort((a, b) => a - b);
+  }
+
+  async function seedAgent(name: string) {
+    const app = await createApp(name);
+    return (await generalAgentOf(app.id)).id;
+  }
+
+  it("senza parametri restituisce al massimo 50 run, dalla più recente (id decrescente)", async () => {
+    const ids = await seedRuns(55, await seedAgent("Mister"));
+    const res = await api("GET", "/runs");
+    expect(res.status).toBe(200);
+    expect(res.json.map((r: { id: number }) => r.id)).toEqual(ids.slice(-50).reverse());
+  });
+
+  it("limit=2 restituisce le 2 più recenti per id", async () => {
+    const ids = await seedRuns(5, await seedAgent("Mister"));
+    const res = await api("GET", "/runs?limit=2");
+    expect(res.json.map((r: { id: number }) => r.id)).toEqual([ids[4], ids[3]]);
+  });
+
+  it("before=<id> restituisce solo run più vecchie", async () => {
+    const ids = await seedRuns(5, await seedAgent("Mister"));
+    const res = await api("GET", `/runs?before=${ids[3]}&limit=10`);
+    expect(res.json.map((r: { id: number }) => r.id)).toEqual([ids[2], ids[1], ids[0]]);
+  });
+
+  it("si combina con il filtro agentId", async () => {
+    const a = await seedAgent("Mister");
+    const b = await seedAgent("Vimini");
+    const idsA = await seedRuns(3, a);
+    await seedRuns(2, b);
+    const res = await api("GET", `/runs?agentId=${a}&limit=2`);
+    expect(res.json.map((r: { id: number }) => r.id)).toEqual([idsA[2], idsA[1]]);
+    const older = await api("GET", `/runs?agentId=${a}&before=${idsA[1]}`);
+    expect(older.json.map((r: { id: number }) => r.id)).toEqual([idsA[0]]);
+  });
+
+  it("limit fuori intervallo o before non valido → 400", async () => {
+    expect((await api("GET", "/runs?limit=0")).status).toBe(400);
+    expect((await api("GET", "/runs?limit=201")).status).toBe(400);
+    expect((await api("GET", "/runs?before=abc")).status).toBe(400);
+    expect((await api("GET", "/runs?limit=200")).status).toBe(200);
+  });
+});
+
 describe("run", () => {
   async function pausedRun(): Promise<number> {
     const app = await createApp();

@@ -45,8 +45,9 @@ function StatCard({ label, value, hint, icon: Icon, loading }: StatCardProps) {
 }
 
 function RecentRuns() {
-  const runs = useListRuns(undefined, {
-    query: { queryKey: getListRunsQueryKey(), refetchInterval: REFRESH_MS },
+  const params = { limit: RECENT_RUNS };
+  const runs = useListRuns(params, {
+    query: { queryKey: getListRunsQueryKey(params), refetchInterval: REFRESH_MS },
   });
   const agents = useListAgents(undefined, { query: { queryKey: getListAgentsQueryKey() } });
 
@@ -54,14 +55,8 @@ function RecentRuns() {
     () => new Map((agents.data ?? []).map((agent) => [agent.id, agent.name])),
     [agents.data],
   );
-  // L'API non garantisce un ordinamento: le più recenti si scelgono qui.
-  const recent = useMemo(
-    () =>
-      [...(runs.data ?? [])]
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, RECENT_RUNS),
-    [runs.data],
-  );
+  // L'API restituisce già le più recenti per prime.
+  const recent = runs.data ?? [];
 
   return (
     <Card>

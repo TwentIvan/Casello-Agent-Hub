@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, asc, desc } from "drizzle-orm";
+import { eq, and, lt, asc, desc } from "drizzle-orm";
 import { db, runsTable, runStepsTable } from "@workspace/db";
 import {
   ListRunsQueryParams,
@@ -23,16 +23,18 @@ import { parseRequest } from "../middlewares/error-handler";
 const router: IRouter = Router();
 
 router.get("/runs", async (req, res) => {
-  const { agentId, status } = parseRequest(ListRunsQueryParams, req.query);
+  const { agentId, status, limit, before } = parseRequest(ListRunsQueryParams, req.query);
   const conditions = [
     ...(agentId !== undefined ? [eq(runsTable.agentId, agentId)] : []),
     ...(status !== undefined ? [eq(runsTable.status, status)] : []),
+    ...(before !== undefined ? [lt(runsTable.id, before)] : []),
   ];
   const runs = await db
     .select()
     .from(runsTable)
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(runsTable.createdAt), desc(runsTable.id));
+    .orderBy(desc(runsTable.id))
+    .limit(limit);
   res.json(ListRunsResponse.parse(runs.map(toPublicRun)));
 });
 

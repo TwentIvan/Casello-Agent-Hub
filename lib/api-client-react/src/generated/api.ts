@@ -1834,7 +1834,7 @@ export const getListRunsUrl = (params?: ListRunsParams,) => {
 }
 
 /**
- * @summary Elenca tutte le esecuzioni (dalla più recente)
+ * @summary Elenca le esecuzioni (dalla più recente, paginate)
  */
 export const listRuns = async (params?: ListRunsParams, options?: RequestInit): Promise<Run[]> => {
 
@@ -1881,7 +1881,7 @@ export type ListRunsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Elenca tutte le esecuzioni (dalla più recente)
+ * @summary Elenca le esecuzioni (dalla più recente, paginate)
  */
 
 export function useListRuns<TData = Awaited<ReturnType<typeof listRuns>>, TError = ErrorType<unknown>>(

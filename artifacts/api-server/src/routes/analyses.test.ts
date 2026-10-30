@@ -552,8 +552,53 @@ describe("dettaglio ed esportazione", () => {
     expect(pending.json.count).toBe(1);
     expect(pending.json.markdown).toContain("Non approvato");
 
-    expect((await api("GET", `/analyses/${analysisId}/issues?chapter=tool`)).status).toBe(400);
+    expect((await api("GET", `/analyses/${analysisId}/issues?chapter=bogus`)).status).toBe(400);
     expect((await api("GET", `/analyses/999/issues?chapter=completion`)).status).toBe(404);
+  });
+
+  it("export tool/agent/skill → documentazione compatta (200)", async () => {
+    const app = await createApp();
+    const analysisId = await newAnalysis(app.id);
+    const tool = await addItem(analysisId, "tool", toolPayload({ name: "list_teams" }));
+    const gone = await addItem(analysisId, "tool", toolPayload({ name: "old_tool" }), { diff: "removed" });
+    await db.update(analysisItemsTable).set({ status: "approved" }).where(inArray(analysisItemsTable.id, [tool.id, gone.id]));
+
+    const res = await api("GET", `/analyses/${analysisId}/issues?chapter=tool`);
+    expect(res.status, res.text).toBe(200);
+    expect(res.json.count).toBe(2);
+    expect(res.json.markdown).toContain("## list_teams");
+    expect(res.json.markdown).toContain("- Chiamata: GET /teams");
+    expect(res.json.markdown).toContain("- Sola lettura: sì");
+    expect(res.json.markdown).toContain("## old_tool (da rimuovere)");
+
+    expect((await api("GET", `/analyses/${analysisId}/issues?chapter=skill`)).status).toBe(200);
+    expect((await api("GET", `/analyses/${analysisId}/issues?chapter=agent`)).json).toEqual({ markdown: "", count: 0 });
+  });
+
+  it("export senza capitolo → tutti i capitoli in ordine, vuoti omessi, filtro di stato rispettato", async () => {
+    const app = await createApp();
+    const analysisId = await newAnalysis(app.id);
+    const all = [
+      await addItem(analysisId, "evolution", { title: "e" }),
+      await addItem(analysisId, "skill", skillPayload),
+      await addItem(analysisId, "tool", toolPayload()),
+      await addItem(analysisId, "completion", completionPayload("a", "Primo passo", 1)),
+    ];
+    await db.update(analysisItemsTable).set({ status: "approved" }).where(inArray(analysisItemsTable.id, all.slice(1).map((i) => i.id)));
+
+    const res = await api("GET", `/analyses/${analysisId}/issues`);
+    expect(res.status, res.text).toBe(200);
+    expect(res.json.count).toBe(3);
+    const md: string = res.json.markdown;
+    const heads = [...md.matchAll(/^# (.+)$/gm)].map((m) => m[1]);
+    expect(heads).toEqual(["Tool", "Skill", "Completamento"]);
+    expect(md).toContain("### Primo passo");
+    expect(md).not.toContain("# Agenti");
+    expect(md).not.toContain("# Endpoint");
+
+    const pending = await api("GET", `/analyses/${analysisId}/issues?status=pending`);
+    expect(pending.json.count).toBe(1);
+    expect(pending.json.markdown.startsWith("# Evoluzione")).toBe(true);
   });
 });
 

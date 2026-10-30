@@ -788,15 +788,18 @@ paths:
     get:
       operationId: exportAnalysisIssues
       tags: [architect]
-      summary: Esporta in Markdown gli elementi di un capitolo come issue
+      summary: Esporta in Markdown gli elementi di un capitolo o di tutta l'analisi
+      description: >-
+        Con `chapter`: issue per endpoint, completion ed evolution, documentazione compatta per
+        tool, agent e skill. Senza `chapter`: un unico Markdown con tutti i capitoli non vuoti
+        nell'ordine delle fasi, ciascuno sotto un titolo `#`.
       parameters:
         - $ref: "#/components/parameters/IdParam"
         - name: chapter
           in: query
-          required: true
+          required: false
           schema:
-            type: string
-            enum: [endpoint, completion, evolution]
+            $ref: "#/components/schemas/AnalysisChapter"
         - name: status
           in: query
           required: false

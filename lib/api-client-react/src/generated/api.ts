@@ -2650,7 +2650,7 @@ export const useCancelAnalysis = <TError = ErrorType<NotFoundResponse | Conflict
     }
 
 export const getExportAnalysisIssuesUrl = (id: number,
-    params: ExportAnalysisIssuesParams,) => {
+    params?: ExportAnalysisIssuesParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -2666,10 +2666,11 @@ export const getExportAnalysisIssuesUrl = (id: number,
 }
 
 /**
- * @summary Esporta in Markdown gli elementi di un capitolo come issue
+ * Con `chapter`: issue per endpoint, completion ed evolution, documentazione compatta per tool, agent e skill. Senza `chapter`: un unico Markdown con tutti i capitoli non vuoti nell'ordine delle fasi, ciascuno sotto un titolo `#`.
+ * @summary Esporta in Markdown gli elementi di un capitolo o di tutta l'analisi
  */
 export const exportAnalysisIssues = async (id: number,
-    params: ExportAnalysisIssuesParams, options?: RequestInit): Promise<IssueExport> => {
+    params?: ExportAnalysisIssuesParams, options?: RequestInit): Promise<IssueExport> => {
 
   return customFetch<IssueExport>(getExportAnalysisIssuesUrl(id,params),
   {
@@ -2693,7 +2694,7 @@ export const getExportAnalysisIssuesQueryKey = (id: number,
 
 
 export const getExportAnalysisIssuesQueryOptions = <TData = Awaited<ReturnType<typeof exportAnalysisIssues>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(id: number,
-    params: ExportAnalysisIssuesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAnalysisIssues>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+    params?: ExportAnalysisIssuesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAnalysisIssues>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -2716,12 +2717,12 @@ export type ExportAnalysisIssuesQueryError = ErrorType<BadRequestResponse | NotF
 
 
 /**
- * @summary Esporta in Markdown gli elementi di un capitolo come issue
+ * @summary Esporta in Markdown gli elementi di un capitolo o di tutta l'analisi
  */
 
 export function useExportAnalysisIssues<TData = Awaited<ReturnType<typeof exportAnalysisIssues>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(
  id: number,
-    params: ExportAnalysisIssuesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAnalysisIssues>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+    params?: ExportAnalysisIssuesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAnalysisIssues>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 

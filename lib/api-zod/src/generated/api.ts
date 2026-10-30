@@ -1051,14 +1051,15 @@ export const CancelAnalysisResponse = zod.object({
 
 
 /**
- * @summary Esporta in Markdown gli elementi di un capitolo come issue
+ * Con `chapter`: issue per endpoint, completion ed evolution, documentazione compatta per tool, agent e skill. Senza `chapter`: un unico Markdown con tutti i capitoli non vuoti nell'ordine delle fasi, ciascuno sotto un titolo `#`.
+ * @summary Esporta in Markdown gli elementi di un capitolo o di tutta l'analisi
  */
 export const ExportAnalysisIssuesParams = zod.object({
   "id": zod.coerce.number()
 })
 
 export const ExportAnalysisIssuesQueryParams = zod.object({
-  "chapter": zod.enum(['endpoint', 'completion', 'evolution']),
+  "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']).optional(),
   "status": zod.enum(['pending', 'approved', 'discarded', 'postponed']).optional().describe('Stato degli elementi da esportare (default approved)')
 })
 

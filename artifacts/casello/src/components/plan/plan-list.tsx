@@ -1,20 +1,23 @@
-import { useMemo } from "react";
-import { getGetAppPlanQueryKey, useGetAppPlan } from "@workspace/api-client-react";
+import { useMemo, useState } from "react";
+import { FileDown } from "lucide-react";
+import { getGetAppPlanQueryKey, useGetAppPlan, type AnalysisChapter } from "@workspace/api-client-react";
+import { Button } from "@/components/ui/button";
+import { ExportDialog } from "@/components/analysis/export-dialog";
 import { ItemCard } from "@/components/analysis/item-card";
 import {
   CHAPTER_LABELS,
   completionInfo,
   dependencyOrder,
-  type ExportableChapter,
 } from "@/components/analysis/payload";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/api-errors";
 
-const PLAN_CHAPTERS: ExportableChapter[] = ["endpoint", "completion", "evolution"];
+const PLAN_CHAPTERS: AnalysisChapter[] = ["endpoint", "completion", "evolution"];
 
 /** Il piano dell'app: endpoint mancanti, completamento ed evoluzione, con le voci nate in chat. */
 export function PlanList({ appId }: { appId: number }) {
   const plan = useGetAppPlan(appId, { query: { queryKey: getGetAppPlanQueryKey(appId) } });
+  const [exportOpen, setExportOpen] = useState(false);
 
   const sections = useMemo(() => {
     const items = plan.data?.items ?? [];
@@ -45,6 +48,13 @@ export function PlanList({ appId }: { appId: number }) {
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={() => setExportOpen(true)}>
+          <FileDown />
+          Esporta tutta l'analisi
+        </Button>
+      </div>
+      <ExportDialog analysisId={plan.data.analysisId} open={exportOpen} onOpenChange={setExportOpen} />
       {sections.groups.map(({ chapter, items }) => (
         <section key={chapter} className="space-y-3">
           <h3 className="text-sm font-medium text-muted-foreground">

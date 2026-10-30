@@ -67,10 +67,11 @@ export const CHAPTER_LABELS: Record<AnalysisChapter, string> = {
   evolution: "Evoluzione",
 };
 
-/** Capitoli che si possono rimandare ed esportare come issue. */
+/** Capitoli che si possono rimandare (e che si esportano come issue). */
 export const POSTPONABLE = new Set<AnalysisChapter>(["endpoint", "completion", "evolution"]);
-export type ExportableChapter = "endpoint" | "completion" | "evolution";
-export const isExportable = (chapter: AnalysisChapter): chapter is ExportableChapter => POSTPONABLE.has(chapter);
+/** Tutti i capitoli si esportano: issue per i tre rimandabili, documentazione per tool, agenti e skill. */
+export type ExportableChapter = AnalysisChapter;
+export const isExportable = (_chapter: AnalysisChapter): _chapter is ExportableChapter => true;
 
 export const DIFF_LABELS: Record<ItemDiff, string> = {
   new: "Nuovo",

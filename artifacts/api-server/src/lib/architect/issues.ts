@@ -6,6 +6,9 @@ import {
   type EndpointProposal,
   type Evidence,
   type EvolutionItem,
+  type AgentProposal,
+  type SkillProposal,
+  type ToolProposal,
 } from "./schemas";
 
 // Esportazione degli elementi approvati come testo di issue (markdown, in italiano).
@@ -195,4 +198,120 @@ export function exportIssues(items: AnalysisItem[], chapter: AnalysisChapter): {
     }
   }
   return { markdown: blocks.join("\n\n"), count: chosen.length };
+}
+
+// --- Documentazione compatta di tool, agenti e skill (non sono issue) ---
+
+const DOC_PROMPT_CHARS = 300;
+
+function bullets(lines: string[]): string {
+  return lines.map((l) => `- ${l}`).join("\n");
+}
+
+const yesNo = (v: boolean) => (v ? "sì" : "no");
+const names = (list: string[]) => (list.length ? list.map(oneLine).join(", ") : "nessuno");
+
+/** Una voce di documentazione: `## nome`, descrizione, punti chiave e prove. */
+function compactDoc(item: AnalysisItem): string {
+  const parsed = ITEM_SCHEMAS[item.chapter].safeParse(item.payload);
+  const data = (parsed.success ? parsed.data : item.payload) as Record<string, unknown>;
+  const removed = item.diff === "removed" ? " (da rimuovere)" : "";
+  const fallbackName = typeof data?.name === "string" ? data.name : item.ref;
+  const evidence = parsed.success
+    ? (data as { evidence?: Evidence[] }).evidence
+    : undefined;
+  const evidenceBlock = `Prove:\n\n${evidenceLines(
+    Array.isArray(evidence) ? evidence : Array.isArray(item.evidence) ? (item.evidence as Evidence[]) : [],
+  )}`;
+
+  if (!parsed.success) {
+    return `## ${cleanTitle(fallbackName)}${removed}\n\nElemento ${oneLine(item.ref)} (${item.chapter}).\n\n${evidenceBlock}`;
+  }
+  switch (item.chapter) {
+    case "tool": {
+      const t = data as unknown as ToolProposal;
+      const def = t.definition as { method?: unknown; path?: unknown };
+      const call = typeof def.method === "string" && typeof def.path === "string" ? `${def.method.toUpperCase()} ${oneLine(def.path)}` : "non definita";
+      return [
+        `## ${cleanTitle(t.name)}${removed}`,
+        text(t.description),
+        bullets([
+          `Tipo: ${t.kind}`,
+          `Chiamata: ${call}`,
+          `Identità: ${t.identity}`,
+          `Richiede conferma: ${yesNo(t.requiresConfirmation)}`,
+          `Sola lettura: ${yesNo(t.readOnly)}`,
+          `Da verificare: ${yesNo(t.needsVerification)}`,
+        ]),
+        evidenceBlock,
+      ].join("\n\n");
+    }
+    case "agent": {
+      const a = data as unknown as AgentProposal;
+      const prompt = oneLine(a.systemPrompt);
+      const excerpt = prompt.length > DOC_PROMPT_CHARS ? `${prompt.slice(0, DOC_PROMPT_CHARS)}…` : prompt;
+      return [
+        `## ${cleanTitle(a.name)}${removed}`,
+        bullets([
+          `Ruolo: ${a.role}${a.role === "area" && a.area ? `, area ${oneLine(a.area)}` : ""}`,
+          `Identità predefinita: ${a.defaultIdentity}`,
+          `Tool: ${names(a.toolNames)}`,
+          `Istruzioni (inizio): ${excerpt || "nessuna"}`,
+        ]),
+        evidenceBlock,
+      ].join("\n\n");
+    }
+    case "skill": {
+      const k = data as unknown as SkillProposal;
+      const instr = oneLine(k.instructions);
+      const excerpt = instr.length > DOC_PROMPT_CHARS ? `${instr.slice(0, DOC_PROMPT_CHARS)}…` : instr;
+      return [
+        `## ${cleanTitle(k.name)}${removed}`,
+        text(k.description),
+        bullets([
+          `Agente: ${k.agentRole === "general" ? "generale" : `area ${oneLine(k.agentArea ?? "")}`}`,
+          `Tool: ${names(k.toolNames)}`,
+          `Istruzioni: ${excerpt || "nessuna"}`,
+        ]),
+        evidenceBlock,
+      ].join("\n\n");
+    }
+    default:
+      return `## ${cleanTitle(fallbackName)}${removed}`;
+  }
+}
+
+/** Etichette italiane dei capitoli per l'esportazione completa. */
+export const CHAPTER_HEADINGS: Record<AnalysisChapter, string> = {
+  tool: "Tool",
+  agent: "Agenti",
+  skill: "Skill",
+  endpoint: "Endpoint",
+  completion: "Completamento",
+  evolution: "Evoluzione",
+};
+
+/** Markdown di un capitolo: issue per endpoint/completion/evolution, documentazione compatta per gli altri. */
+export function exportChapter(items: AnalysisItem[], chapter: AnalysisChapter): { markdown: string; count: number } {
+  if (chapter === "tool" || chapter === "agent" || chapter === "skill") {
+    const chosen = items.filter((i) => i.chapter === chapter);
+    return { markdown: chosen.map(compactDoc).join("\n\n"), count: chosen.length };
+  }
+  return exportIssues(items, chapter);
+}
+
+/**
+ * Esportazione di tutta l'analisi: un `# Capitolo` per capitolo non vuoto, nell'ordine dato.
+ * I titoli interni partono già da `##`, quindi stanno sotto il capitolo senza cambiare livello.
+ */
+export function exportAll(items: AnalysisItem[], order: AnalysisChapter[]): { markdown: string; count: number } {
+  const blocks: string[] = [];
+  let count = 0;
+  for (const chapter of order) {
+    const part = exportChapter(items, chapter);
+    if (!part.count) continue;
+    count += part.count;
+    blocks.push(`# ${CHAPTER_HEADINGS[chapter]}\n\n${part.markdown}`);
+  }
+  return { markdown: blocks.join("\n\n"), count };
 }

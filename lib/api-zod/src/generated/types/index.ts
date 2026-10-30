@@ -92,7 +92,6 @@ export * from './currentUser';
 export * from './dashboardStats';
 export * from './errorResponse';
 export * from './estimateAnalysisCostParams';
-export * from './exportAnalysisIssuesChapter';
 export * from './exportAnalysisIssuesParams';
 export * from './forbiddenResponse';
 export * from './githubInstallation';

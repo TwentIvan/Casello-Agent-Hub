@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AgentCreateDialog } from "@/components/agents/agent-create-dialog";
+import { ModelDeprecationBadge } from "@/components/ai/model-deprecation-badge";
 import { AgentRoleBadge } from "@/components/agents/agent-role-badge";
 import { AGENT_STATUS_LABELS, StatusBadge } from "@/components/status-badge";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -152,7 +153,10 @@ export default function AgentsPage() {
                       <AgentRoleBadge agent={agent} />
                     </TableCell>
                     <TableCell className="hidden font-mono text-xs text-muted-foreground md:table-cell">
-                      {agent.model ?? "—"}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>{agent.model ?? "—"}</span>
+                        <ModelDeprecationBadge aiModelId={agent.aiModelId} href={`/agents/${agent.id}`} />
+                      </div>
                     </TableCell>
                     <TableCell>
                       <StatusBadge kind="agent" status={agent.status} />

@@ -31,7 +31,7 @@ export function RunPanel({ agent }: { agent: Agent }) {
   // Token di prova dell'utente dell'app: vive solo nello stato della pagina, mai in storage.
   const [testToken, setTestToken] = useState("");
 
-  const params = { agentId: agent.id };
+  const params = { agentId: agent.id, limit: 20 };
   const runs = useListRuns(params, {
     query: {
       queryKey: getListRunsQueryKey(params),

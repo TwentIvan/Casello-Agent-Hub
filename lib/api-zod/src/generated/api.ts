@@ -636,11 +636,19 @@ export const SetAgentToolsResponse = zod.object({
 
 
 /**
- * @summary Elenca tutte le esecuzioni (dalla più recente)
+ * @summary Elenca le esecuzioni (dalla più recente, paginate)
  */
+export const listRunsQueryLimitDefault = 50;
+export const listRunsQueryLimitMax = 200;
+
+
+
+
 export const ListRunsQueryParams = zod.object({
   "agentId": zod.coerce.number().optional().describe('Filtra per agente'),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).optional().describe('Filtra per stato')
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).optional().describe('Filtra per stato'),
+  "limit": zod.coerce.number().min(1).max(listRunsQueryLimitMax).default(listRunsQueryLimitDefault).describe('Numero massimo di esecuzioni restituite'),
+  "before": zod.coerce.number().min(1).optional().describe('Restituisce solo le esecuzioni con id minore di questo (paginazione a cursore)')
 })
 
 export const ListRunsResponseItem = zod.object({
@@ -776,6 +784,37 @@ export const ResumeRunBody = zod.object({
 })
 
 export const ResumeRunResponse = zod.object({
+  "id": zod.number(),
+  "agentId": zod.number(),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
+  "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
+  "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
+  "errorMessage": zod.string().nullish(),
+  "durationMs": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullish(),
+  "pendingAction": zod.union([zod.object({
+  "kind": zod.enum(['confirmation', 'ui']),
+  "toolName": zod.string(),
+  "args": zod.record(zod.string(), zod.unknown()),
+  "summary": zod.string()
+}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
+  "promptTokens": zod.number().nullish(),
+  "completionTokens": zod.number().nullish(),
+  "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
+})
+
+
+/**
+ * Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
+ * @summary Annulla un'esecuzione non ancora conclusa
+ */
+export const CancelRunParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CancelRunResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
   "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
@@ -1051,14 +1090,15 @@ export const CancelAnalysisResponse = zod.object({
 
 
 /**
- * @summary Esporta in Markdown gli elementi di un capitolo come issue
+ * Con `chapter`: issue per endpoint, completion ed evolution, documentazione compatta per tool, agent e skill. Senza `chapter`: un unico Markdown con tutti i capitoli non vuoti nell'ordine delle fasi, ciascuno sotto un titolo `#`.
+ * @summary Esporta in Markdown gli elementi di un capitolo o di tutta l'analisi
  */
 export const ExportAnalysisIssuesParams = zod.object({
   "id": zod.coerce.number()
 })
 
 export const ExportAnalysisIssuesQueryParams = zod.object({
-  "chapter": zod.enum(['endpoint', 'completion', 'evolution']),
+  "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']).optional(),
   "status": zod.enum(['pending', 'approved', 'discarded', 'postponed']).optional().describe('Stato degli elementi da esportare (default approved)')
 })
 

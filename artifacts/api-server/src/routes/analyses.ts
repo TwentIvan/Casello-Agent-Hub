@@ -37,7 +37,7 @@ import { ModelChoiceError, chooseByName, chooseOwnModel, type ModelChoice } from
 import { isUniqueViolation } from "../lib/pg-errors";
 import { ANALYSIS_DEFAULT_MAX_TOKENS, startAnalysis } from "../lib/architect/run-analysis";
 import { ApplyError, applyItem } from "../lib/architect/apply";
-import { exportIssues } from "../lib/architect/issues";
+import { exportAll, exportChapter } from "../lib/architect/issues";
 import { LOCAL_MODEL, cancelLocalAnalysis, releaseLocalAnalysis } from "../lib/architect/local-executor";
 import { ITEM_SCHEMAS, PHASES, type AnalysisChapter } from "../lib/architect/schemas";
 import { SOURCE_LIMITS } from "../lib/architect/source-tree";
@@ -354,12 +354,14 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
       .where(
         and(
           eq(analysisItemsTable.analysisId, id),
-          eq(analysisItemsTable.chapter, chapter),
+          ...(chapter ? [eq(analysisItemsTable.chapter, chapter)] : []),
           eq(analysisItemsTable.status, status),
         ),
       )
       .orderBy(asc(analysisItemsTable.position), asc(analysisItemsTable.id));
-    res.json(ExportAnalysisIssuesResponse.parse(exportIssues(items, chapter)));
+    res.json(
+      ExportAnalysisIssuesResponse.parse(chapter ? exportChapter(items, chapter) : exportAll(items, CHAPTER_ORDER)),
+    );
   });
 
   // Revisione di un elemento. Regole:

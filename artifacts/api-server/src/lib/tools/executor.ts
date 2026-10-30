@@ -304,6 +304,8 @@ export async function executeTool(input: {
   userToken?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /** Annullamento dall'esterno (run annullata): si combina con il timeout */
+  signal?: AbortSignal;
 }): Promise<ToolResult> {
   const { conn, tool, userToken } = input;
   const fetchImpl = input.fetchImpl ?? fetch;
@@ -331,7 +333,7 @@ export async function executeTool(input: {
 
     let res: Response;
     try {
-      res = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+      res = await fetchImpl(url, { ...init, signal: input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
     } catch (err) {
       return fail(describeFetchError(err, timeoutMs));
     }

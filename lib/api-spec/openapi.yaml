@@ -476,7 +476,7 @@ paths:
     get:
       operationId: listRuns
       tags: [runs]
-      summary: Elenca tutte le esecuzioni (dalla più recente)
+      summary: Elenca le esecuzioni (dalla più recente, paginate)
       parameters:
         - name: agentId
           in: query
@@ -490,9 +490,25 @@ paths:
           schema:
             $ref: "#/components/schemas/RunStatus"
           description: Filtra per stato
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Numero massimo di esecuzioni restituite
+        - name: before
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: Restituisce solo le esecuzioni con id minore di questo (paginazione a cursore)
       responses:
         "200":
-          description: Lista di esecuzioni
+          description: Lista di esecuzioni, dalla più recente (id decrescente)
           content:
             application/json:
               schema:
@@ -603,6 +619,29 @@ paths:
                 $ref: "#/components/schemas/Run"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /runs/{id}/cancel:
+    post:
+      operationId: cancelRun
+      tags: [runs]
+      summary: Annulla un'esecuzione non ancora conclusa
+      description: >-
+        Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate
+        in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati
+        restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Esecuzione annullata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -788,15 +827,18 @@ paths:
     get:
       operationId: exportAnalysisIssues
       tags: [architect]
-      summary: Esporta in Markdown gli elementi di un capitolo come issue
+      summary: Esporta in Markdown gli elementi di un capitolo o di tutta l'analisi
+      description: >-
+        Con `chapter`: issue per endpoint, completion ed evolution, documentazione compatta per
+        tool, agent e skill. Senza `chapter`: un unico Markdown con tutti i capitoli non vuoti
+        nell'ordine delle fasi, ciascuno sotto un titolo `#`.
       parameters:
         - $ref: "#/components/parameters/IdParam"
         - name: chapter
           in: query
-          required: true
+          required: false
           schema:
-            type: string
-            enum: [endpoint, completion, evolution]
+            $ref: "#/components/schemas/AnalysisChapter"
         - name: status
           in: query
           required: false

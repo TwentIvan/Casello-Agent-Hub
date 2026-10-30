@@ -8,10 +8,9 @@ import { ItemCard } from "@/components/analysis/item-card";
 import {
   CHAPTERS,
   CHAPTER_LABELS,
-  type ExportableChapter,
+  POSTPONABLE,
   completionInfo,
   dependencyOrder,
-  isExportable,
   num,
   str,
 } from "@/components/analysis/payload";
@@ -127,7 +126,8 @@ export function ChapterTabs({ analysisId, appId, items }: ChapterTabsProps) {
   const [tab, setTab] = useState<AnalysisChapter>(
     () => CHAPTERS.find((c) => (byChapter.get(c)?.length ?? 0) > 0) ?? "tool",
   );
-  const [exporting, setExporting] = useState<ExportableChapter | null>(null);
+  // undefined = nessuna finestra; null = tutta l'analisi; altrimenti il capitolo
+  const [exporting, setExporting] = useState<AnalysisChapter | null | undefined>(undefined);
   const [exportOpen, setExportOpen] = useState(false);
 
   return (
@@ -140,32 +140,43 @@ export function ChapterTabs({ analysisId, appId, items }: ChapterTabsProps) {
           </TabsTrigger>
         ))}
       </TabsList>
+      <div className="flex justify-end">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setExporting(null);
+            setExportOpen(true);
+          }}
+        >
+          <FileDown />
+          Esporta tutta l'analisi
+        </Button>
+      </div>
       <p className="text-xs text-muted-foreground">Accanto a ogni capitolo: elementi in attesa / approvati.</p>
       {CHAPTERS.map((chapter) => (
         <TabsContent key={chapter} value={chapter} className="space-y-3">
-          {isExportable(chapter) && (
-            <div className="flex justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setExporting(chapter);
-                  setExportOpen(true);
-                }}
-              >
-                <FileDown />
-                Esporta issue
-              </Button>
-            </div>
-          )}
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setExporting(chapter);
+                setExportOpen(true);
+              }}
+            >
+              <FileDown />
+              {POSTPONABLE.has(chapter) ? "Esporta issue" : "Esporta"}
+            </Button>
+          </div>
           <ChapterList chapter={chapter} items={byChapter.get(chapter) ?? []} appId={appId} />
         </TabsContent>
       ))}
-      {exporting && (
+      {exporting !== undefined && (
         <ExportDialog
-          key={exporting}
+          key={exporting ?? "all"}
           analysisId={analysisId}
-          chapter={exporting}
+          chapter={exporting ?? undefined}
           open={exportOpen}
           onOpenChange={setExportOpen}
         />

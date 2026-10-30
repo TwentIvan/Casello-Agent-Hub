@@ -1834,7 +1834,7 @@ export const getListRunsUrl = (params?: ListRunsParams,) => {
 }
 
 /**
- * @summary Elenca tutte le esecuzioni (dalla più recente)
+ * @summary Elenca le esecuzioni (dalla più recente, paginate)
  */
 export const listRuns = async (params?: ListRunsParams, options?: RequestInit): Promise<Run[]> => {
 
@@ -1881,7 +1881,7 @@ export type ListRunsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Elenca tutte le esecuzioni (dalla più recente)
+ * @summary Elenca le esecuzioni (dalla più recente, paginate)
  */
 
 export function useListRuns<TData = Awaited<ReturnType<typeof listRuns>>, TError = ErrorType<unknown>>(
@@ -2198,6 +2198,77 @@ export const useResumeRun = <TError = ErrorType<BadRequestResponse | NotFoundRes
         TContext
       > => {
       return useMutation(getResumeRunMutationOptions(options));
+    }
+
+export const getCancelRunUrl = (id: number,) => {
+
+
+
+
+  return `/api/runs/${id}/cancel`
+}
+
+/**
+ * Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
+ * @summary Annulla un'esecuzione non ancora conclusa
+ */
+export const cancelRun = async (id: number, options?: RequestInit): Promise<Run> => {
+
+  return customFetch<Run>(getCancelRunUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCancelRunMutationOptions = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelRun>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['cancelRun'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelRun>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  cancelRun(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelRunMutationResult = NonNullable<Awaited<ReturnType<typeof cancelRun>>>
+
+    export type CancelRunMutationError = ErrorType<NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Annulla un'esecuzione non ancora conclusa
+ */
+export const useCancelRun = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelRun>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getCancelRunMutationOptions(options));
     }
 
 export const getListAnalysesUrl = (id: number,) => {
@@ -2650,7 +2721,7 @@ export const useCancelAnalysis = <TError = ErrorType<NotFoundResponse | Conflict
     }
 
 export const getExportAnalysisIssuesUrl = (id: number,
-    params: ExportAnalysisIssuesParams,) => {
+    params?: ExportAnalysisIssuesParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -2666,10 +2737,11 @@ export const getExportAnalysisIssuesUrl = (id: number,
 }
 
 /**
- * @summary Esporta in Markdown gli elementi di un capitolo come issue
+ * Con `chapter`: issue per endpoint, completion ed evolution, documentazione compatta per tool, agent e skill. Senza `chapter`: un unico Markdown con tutti i capitoli non vuoti nell'ordine delle fasi, ciascuno sotto un titolo `#`.
+ * @summary Esporta in Markdown gli elementi di un capitolo o di tutta l'analisi
  */
 export const exportAnalysisIssues = async (id: number,
-    params: ExportAnalysisIssuesParams, options?: RequestInit): Promise<IssueExport> => {
+    params?: ExportAnalysisIssuesParams, options?: RequestInit): Promise<IssueExport> => {
 
   return customFetch<IssueExport>(getExportAnalysisIssuesUrl(id,params),
   {
@@ -2693,7 +2765,7 @@ export const getExportAnalysisIssuesQueryKey = (id: number,
 
 
 export const getExportAnalysisIssuesQueryOptions = <TData = Awaited<ReturnType<typeof exportAnalysisIssues>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(id: number,
-    params: ExportAnalysisIssuesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAnalysisIssues>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+    params?: ExportAnalysisIssuesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAnalysisIssues>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -2716,12 +2788,12 @@ export type ExportAnalysisIssuesQueryError = ErrorType<BadRequestResponse | NotF
 
 
 /**
- * @summary Esporta in Markdown gli elementi di un capitolo come issue
+ * @summary Esporta in Markdown gli elementi di un capitolo o di tutta l'analisi
  */
 
 export function useExportAnalysisIssues<TData = Awaited<ReturnType<typeof exportAnalysisIssues>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(
  id: number,
-    params: ExportAnalysisIssuesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAnalysisIssues>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+    params?: ExportAnalysisIssuesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAnalysisIssues>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 

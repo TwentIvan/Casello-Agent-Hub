@@ -16,4 +16,15 @@ agentId?: number;
  * Filtra per stato
  */
 status?: RunStatus;
+/**
+ * Numero massimo di esecuzioni restituite
+ * @minimum 1
+ * @maximum 200
+ */
+limit?: number;
+/**
+ * Restituisce solo le esecuzioni con id minore di questo (paginazione a cursore)
+ * @minimum 1
+ */
+before?: number;
 };

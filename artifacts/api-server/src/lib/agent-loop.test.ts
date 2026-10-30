@@ -620,3 +620,37 @@ describe("runAgentLoop", () => {
     expect(out.pending.args).toEqual({ utente: "rosa", password: "segreta-123" });
   });
 });
+
+describe("annullamento durante un tool", () => {
+  it("un tool concluso con successo prima dell'annullamento ha il suo passo registrato", async () => {
+    const controller = new AbortController();
+    const { deps, steps } = makeDeps([callTools([{ id: "c1", name: "leggi_rosa", args: "{}" }])], {
+      signal: controller.signal,
+      executeTool: async () => {
+        controller.abort();
+        return { ok: true, status: 200, content: "rosa" };
+      },
+    });
+
+    const outcome = await runAgentLoop(initialState(), deps);
+
+    expect(outcome.type).toBe("cancelled");
+    expect(steps.filter((s) => s.type === "tool")).toMatchObject([{ toolName: "leggi_rosa", ok: true }]);
+  });
+
+  it("un tool interrotto dall'annullamento (risultato di errore) non registra il passo", async () => {
+    const controller = new AbortController();
+    const { deps, steps } = makeDeps([callTools([{ id: "c1", name: "leggi_rosa", args: "{}" }])], {
+      signal: controller.signal,
+      executeTool: async () => {
+        controller.abort();
+        return { ok: false, content: "interrotto" };
+      },
+    });
+
+    const outcome = await runAgentLoop(initialState(), deps);
+
+    expect(outcome.type).toBe("cancelled");
+    expect(steps.filter((s) => s.type === "tool")).toHaveLength(0);
+  });
+});

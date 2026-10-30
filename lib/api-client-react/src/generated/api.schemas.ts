@@ -1500,6 +1500,17 @@ agentId?: number;
  * Filtra per stato
  */
 status?: RunStatus;
+/**
+ * Numero massimo di esecuzioni restituite
+ * @minimum 1
+ * @maximum 200
+ */
+limit?: number;
+/**
+ * Restituisce solo le esecuzioni con id minore di questo (paginazione a cursore)
+ * @minimum 1
+ */
+before?: number;
 };
 
 export type StartZipAnalysisParams = {
@@ -1525,21 +1536,12 @@ executor?: AnalysisExecutor;
 };
 
 export type ExportAnalysisIssuesParams = {
-chapter: ExportAnalysisIssuesChapter;
+chapter?: AnalysisChapter;
 /**
  * Stato degli elementi da esportare (default approved)
  */
 status?: ItemStatus;
 };
-
-export type ExportAnalysisIssuesChapter = typeof ExportAnalysisIssuesChapter[keyof typeof ExportAnalysisIssuesChapter];
-
-
-export const ExportAnalysisIssuesChapter = {
-  endpoint: 'endpoint',
-  completion: 'completion',
-  evolution: 'evolution',
-} as const;
 
 export type EstimateAnalysisCostParams = {
 aiModelId: number;

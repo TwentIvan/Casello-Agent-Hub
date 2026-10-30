@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import {
   type ListRunsParams,
@@ -8,6 +8,7 @@ import {
   useListAgents,
   useListRuns,
 } from "@workspace/api-client-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,6 +19,7 @@ import { apiErrorMessage } from "@/lib/api-errors";
 import { formatDuration, formatRelative } from "@/lib/format";
 
 const ALL = "all";
+const PAGE_SIZE = 50;
 
 export default function RunsPage() {
   // I filtri stanno nell'URL (?agentId=&status=): la scheda agente linka qui già filtrata.
@@ -34,19 +36,34 @@ export default function RunsPage() {
     navigate(query ? `/runs?${query}` : "/runs", { replace: true });
   };
 
-  const params: ListRunsParams | undefined =
-    agentFilter === ALL && statusFilter === ALL
-      ? undefined
-      : {
-          ...(agentFilter !== ALL ? { agentId: Number(agentFilter) } : {}),
-          ...(statusFilter !== ALL ? { status: statusFilter as RunStatus } : {}),
-        };
+  const hasFilters = agentFilter !== ALL || statusFilter !== ALL;
+
+  // Paginazione a cursore: la pila contiene i `before` delle pagine già percorse (vuota = prima pagina).
+  // Si azzera al cambio dei filtri.
+  const filterKey = `${agentFilter}|${statusFilter}`;
+  const [cursorState, setCursorState] = useState<{ filterKey: string; stack: number[] }>({ filterKey, stack: [] });
+  const stack = cursorState.filterKey === filterKey ? cursorState.stack : [];
+  const before = stack.length ? stack[stack.length - 1] : undefined;
+
+  const params: ListRunsParams = {
+    ...(agentFilter !== ALL ? { agentId: Number(agentFilter) } : {}),
+    ...(statusFilter !== ALL ? { status: statusFilter as RunStatus } : {}),
+    limit: PAGE_SIZE,
+    ...(before !== undefined ? { before } : {}),
+  };
   const runs = useListRuns(params, {
     query: {
       queryKey: getListRunsQueryKey(params),
-      refetchInterval: (query) => listRefetchInterval(query.state.data),
+      // Aggiornamento automatico solo sulla prima pagina.
+      refetchInterval: (query) => (before === undefined ? listRefetchInterval(query.state.data) : false),
     },
   });
+  const lastId = runs.data?.length ? runs.data[runs.data.length - 1]!.id : undefined;
+  const hasOlder = (runs.data?.length ?? 0) >= PAGE_SIZE && lastId !== undefined;
+  const goOlder = () => {
+    if (lastId !== undefined) setCursorState({ filterKey, stack: [...stack, lastId] });
+  };
+  const goNewer = () => setCursorState({ filterKey, stack: stack.slice(0, -1) });
   const agents = useListAgents(undefined, { query: { queryKey: getListAgentsQueryKey() } });
 
   const sortedAgents = useMemo(
@@ -103,7 +120,7 @@ export default function RunsPage() {
             </div>
           ) : !runs.data?.length ? (
             <p className="px-4 py-12 text-center text-sm text-muted-foreground">
-              {params ? "Nessuna run corrisponde ai filtri." : "Nessuna run ancora: si lanciano dalla scheda di un agente."}
+              {hasFilters ? "Nessuna run corrisponde ai filtri." : "Nessuna run ancora: si lanciano dalla scheda di un agente."}
             </p>
           ) : (
             <Table>
@@ -146,6 +163,18 @@ export default function RunsPage() {
           )}
         </CardContent>
       </Card>
+
+      {(stack.length > 0 || hasOlder) && (
+        <div className="flex items-center justify-between">
+          <Button variant="outline" size="sm" onClick={goNewer} disabled={stack.length === 0}>
+            Più recenti
+          </Button>
+          <span className="text-xs text-muted-foreground">Pagina {stack.length + 1}</span>
+          <Button variant="outline" size="sm" onClick={goOlder} disabled={!hasOlder}>
+            Precedenti
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

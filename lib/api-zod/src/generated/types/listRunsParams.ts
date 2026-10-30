@@ -24,6 +24,7 @@ status?: RunStatus;
 limit?: number;
 /**
  * Restituisce solo le esecuzioni con id minore di questo (paginazione a cursore)
+ * @minimum 1
  */
 before?: number;
 };

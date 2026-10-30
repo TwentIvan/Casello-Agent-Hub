@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { Router, type IRouter } from "express";
 import { eq, and, lt, asc, desc } from "drizzle-orm";
 import { db, runsTable, runStepsTable } from "@workspace/db";
@@ -20,10 +21,13 @@ import { logger } from "../lib/logger";
 import { toPublicRun, userTokenFrom } from "./serializers";
 import { parseRequest } from "../middlewares/error-handler";
 
+// Il codegen non emette .int() per i parametri integer: il cursore si restringe qui.
+const ListRunsQuery = ListRunsQueryParams.extend({ before: z.coerce.number().int().min(1).optional() });
+
 const router: IRouter = Router();
 
 router.get("/runs", async (req, res) => {
-  const { agentId, status, limit, before } = parseRequest(ListRunsQueryParams, req.query);
+  const { agentId, status, limit, before } = parseRequest(ListRunsQuery, req.query);
   const conditions = [
     ...(agentId !== undefined ? [eq(runsTable.agentId, agentId)] : []),
     ...(status !== undefined ? [eq(runsTable.status, status)] : []),

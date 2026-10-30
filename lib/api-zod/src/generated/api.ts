@@ -643,11 +643,12 @@ export const listRunsQueryLimitMax = 200;
 
 
 
+
 export const ListRunsQueryParams = zod.object({
   "agentId": zod.coerce.number().optional().describe('Filtra per agente'),
   "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).optional().describe('Filtra per stato'),
   "limit": zod.coerce.number().min(1).max(listRunsQueryLimitMax).default(listRunsQueryLimitDefault).describe('Numero massimo di esecuzioni restituite'),
-  "before": zod.coerce.number().optional().describe('Restituisce solo le esecuzioni con id minore di questo (paginazione a cursore)')
+  "before": zod.coerce.number().min(1).optional().describe('Restituisce solo le esecuzioni con id minore di questo (paginazione a cursore)')
 })
 
 export const ListRunsResponseItem = zod.object({

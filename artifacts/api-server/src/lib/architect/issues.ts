@@ -51,7 +51,7 @@ interface Sections {
 function sectionsOf(item: AnalysisItem, depTitles: string[]): Sections {
   const parsed = ITEM_SCHEMAS[item.chapter].safeParse(item.payload);
   const data = (parsed.success ? parsed.data : item.payload) as Record<string, unknown>;
-  const deps = depTitles.length ? `\n\nDipende da: ${depTitles.map(cleanTitle).join(", ")}` : "";
+  const deps = depTitles.length ? `\n\nDipende da: ${depTitles.map((d) => (/^#\d+$/.test(d) ? d : cleanTitle(d))).join(", ")}` : "";
 
   if (parsed.success) {
     switch (item.chapter) {
@@ -119,7 +119,7 @@ export function issueMarkdown(item: AnalysisItem, depTitles: string[] = []): { t
 }
 
 /** Ordine topologico (le dipendenze prima), stabile; i cicli o i riferimenti ignoti non bloccano. */
-function topoSort(items: AnalysisItem[], keyOf: (i: AnalysisItem) => string, depsOf: (i: AnalysisItem) => string[]) {
+export function topoSort(items: AnalysisItem[], keyOf: (i: AnalysisItem) => string, depsOf: (i: AnalysisItem) => string[]) {
   const byKey = new Map(items.map((i) => [keyOf(i), i]));
   const done = new Set<AnalysisItem>();
   const out: AnalysisItem[] = [];
@@ -139,7 +139,7 @@ function topoSort(items: AnalysisItem[], keyOf: (i: AnalysisItem) => string, dep
   return out;
 }
 
-function completionData(item: AnalysisItem): { key: string; phase: number; dependsOn: string[]; title: string } {
+export function completionData(item: AnalysisItem): { key: string; phase: number; dependsOn: string[]; title: string } {
   const p = item.payload as Partial<CompletionItem> | null;
   return {
     key: typeof p?.key === "string" ? p.key : item.ref,

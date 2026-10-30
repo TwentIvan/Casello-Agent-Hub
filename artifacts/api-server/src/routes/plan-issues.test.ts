@@ -563,6 +563,26 @@ describe("stato delle issue nel piano", () => {
     expect(r2!.issueState).toBe("closed");
   });
 
+  it("refresh: la data di lettura è presa prima dell'elenco (un cambio durante la lettura non si perde)", async () => {
+    const a = await addItem("evolution", evolution("Uno"));
+    await link(a, 1, "open", new Date("2026-10-01T10:00:00.000Z"));
+    let listAt = 0;
+    gh.failWith = (req: FakeGithubRequest) => {
+      if (req.method === "GET" && req.path.includes("/issues?")) {
+        listAt = Date.now();
+        // GitHub risponde dopo qualche millisecondo: un'issue cambiata ora non è nell'elenco
+        while (Date.now() < listAt + 5) {
+          /* attesa attiva */
+        }
+      }
+      return null;
+    };
+    const res = await refresh();
+    expect(res.status, res.text).toBe(200);
+    expect(listAt).toBeGreaterThan(0);
+    expect((await itemRow(a)).issueCheckedAt!.getTime()).toBeLessThanOrEqual(listAt);
+  });
+
   it("refresh: permesso Issues mancante → 502 con il messaggio, stato invariato", async () => {
     const a = await addItem("evolution", evolution("Uno"));
     const checked = new Date("2026-10-01T10:00:00.000Z");

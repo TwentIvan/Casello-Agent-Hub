@@ -326,6 +326,8 @@ export async function refreshPlanIssues(appId: number, userId: number): Promise<
   if (oldest && oldest.count > 0) {
     // issueTarget garantisce la configurazione
     const cfg = githubConfig()!;
+    // Presa prima dell'elenco: un'issue cambiata durante la lettura rientra nella prossima
+    const now = new Date();
     let states: Awaited<ReturnType<typeof listCaselloIssues>>;
     try {
       const token = await issuesToken(cfg, installationId, repo);
@@ -334,7 +336,6 @@ export async function refreshPlanIssues(appId: number, userId: number): Promise<
       if (e instanceof IssueError) throw new PlanIssuesError(502, e.message);
       throw e;
     }
-    const now = new Date();
     await db.transaction(async (tx) => {
       for (const [number, { state, stateReason }] of states) {
         await tx

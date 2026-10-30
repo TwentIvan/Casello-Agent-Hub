@@ -86,6 +86,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `artifacts/api-server/src/lib/plan-chat/` — chat del piano: contesto (`context.ts`), strumenti (`tools.ts`), turno
   (`turn.ts`), decisione sulle schede (`decide.ts`), esecuzione in background (`run-turn.ts`); route in
   `src/routes/plan-chat.ts`; pagina `/apps/:id/plan` in `artifacts/casello/src/pages/app-plan.tsx` e `components/plan/`
+- `artifacts/api-server/src/lib/plan-issues/` e `lib/github/issues.ts` — issue GitHub dalle voci del piano: contenuto
+  ed etichette (`content.ts`), prenotazione/creazione/aggiornamento (`service.ts`), client GitHub e token `issues: write`
+  (`issues.ts`); route in `src/routes/plan-issues.ts` (`POST /api/apps/:id/plan/issues`, `POST /api/apps/:id/plan/issues/refresh`);
+  console in `artifacts/casello/src/components/plan/` (`create-issues-dialog.tsx`, `issues-summary.tsx`, `issue-badge.tsx`)
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
 - `artifacts/api-server/src/lib/mcp/` e `lib/architect/local-executor.ts` — server MCP `/mcp` e coda/lease delle analisi locali
 - `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
@@ -132,6 +136,44 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Route: `/api/ai/accounts` (+ `/:id/verify`, `/:id/default`, `/:id/models`), `/api/ai/models`,
   `POST /api/ai/models/:id/probe`, `/api/ai/estimate`; `GET /api/models` resta come alias del vecchio elenco.
 - Costi sempre sotto controllo: a parità di risultato si preferisce il modello o il percorso più economico.
+
+## Dal piano alle issue
+
+- Spec: `docs/superpowers/specs/2026-10-30-casello-piano-issue-design.md`. Le voci approvate del piano (capitoli
+  `endpoint`, `completion`, `evolution`; da architetto o da chat) si creano come issue nel repo dell'app
+  (`apps.source_repo`, installazione `source_installation_id`), una per voce. Niente PR/chiusura da Casello, niente webhook.
+- Route (`routes/plan-issues.ts`, codice in `lib/plan-issues/`): `POST /api/apps/:id/plan/issues` con
+  `{ itemIds (1..30, senza ripetizioni), dryRun? }`: `dryRun` dà l'anteprima (titolo, corpo, etichette, `skipped`) senza
+  chiamare GitHub; altrimenti crea in sequenza e risponde per voce `created` | `skipped` | `failed`.
+  `POST /api/apps/:id/plan/issues/refresh` rilegge lo stato e risponde col riepilogo. `GET /api/apps/:id/plan` espone
+  `AppPlan.issues` (`available`, `unavailableReason`, `repo`, `open`, `closed`, `approvedWithoutIssue`, `checkedAt`) e
+  `AnalysisItem.issue` (`repo`, `number`, `url`, `state`, `stateReason`, `checkedAt`; null anche durante la prenotazione).
+- Dati: colonne `analysis_items.issue_repo|number|url|state|state_reason|created_at|checked_at` (indice parziale su
+  repo + numero). Prenotazione: prima di chiamare GitHub la voce passa a `issue_state = 'creating'` con un UPDATE
+  condizionato (`issue_number` e `issue_state` null): due richieste concorrenti non fanno doppioni; su errore si toglie,
+  all'avvio quelle rimaste si azzerano (`resetStaleIssueReservations`). Poi `open`/`closed` (+ `completed`,
+  `not_planned`, `reopened`).
+- Voci ammesse: `approved` e capitolo endpoint/completion/evolution, senza issue né prenotazione; le altre `skipped`;
+  una voce non dell'app → 400. Ordine: completamento per fase e dipendenze, poi le altre; una dipendenza con issue
+  diventa `#numero` nel corpo, altrimenti resta il titolo. Piè di pagina «Creata da Casello · piano di <app> · voce #id».
+- Limiti: 30 voci per richiesta, 5 creazioni/min per utente (le anteprime no), refresh 6/min, pausa di 1 s tra due
+  creazioni, lista delle issue di GitHub ≤ 10 pagine da 100 (con `since` = lettura più vecchia; un'issue non trovata
+  resta com'era). Chiamate a `GITHUB_API_BASE`, niente redirect.
+- Etichette (create sul repo se mancano, grigie): `casello`, capitolo (`endpoint`, `completamento`, `evoluzione`),
+  `fase-N` (completamento), `P1`..`P5` (evoluzione).
+- Repository e installazione: serve un'app con codice da GitHub tramite App (zip, nessun sorgente o solo token manuale
+  → 409 «Collega il repository tramite l'App GitHub per creare le issue»); solo chi possiede l'installazione
+  (`userHasInstallation`, altrimenti 403). Token di installazione ristretto al repo e a `issues: write`, solo in memoria.
+- Errori: messaggi fissi in italiano (`ISSUE_MESSAGES`), mai il testo di GitHub. Fermano il lotto (le voci restanti
+  `failed`): permesso Issues mancante, repo non trovato, issue disattivate, limite di richieste di GitHub. Solo la voce:
+  GitHub non raggiungibile (rete, 5xx, 15 s), issue rifiutata (422). Errori sull'etichettatura o sul token e sul
+  refresh → 502 col messaggio fisso.
+- Console (pagina Piano): selezione delle voci approvate senza issue, anteprima e creazione, riepilogo con «Aggiorna
+  stato» (parte da solo se l'ultima lettura ha più di 10 minuti), badge sulla voce (anche nella pagina dell'analisi).
+- La rianalisi tratta le voci con issue come già pianificate (`chatPlannedItems`: origine chat o `issue_number` non
+  null, solo fasi completion ed evolution) e non le ripropone.
+- Migrazione: `docs/migrations/2026-10-piano-issue.sql` (additiva, da applicare in produzione PRIMA del merge e da
+  segnalare nella PR, insieme al permesso Issues della GitHub App, vedi "Autenticazione").
 
 ## Tetti di spesa
 
@@ -268,7 +310,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   fase 3 resta come alternativa.
 - Limite noto: l'ambito di un'installazione può superare i repo a cui l'utente ha accesso su GitHub; prima
   di aprire Casello a chiunque va verificato l'accesso con il token dell'utente (spec GitHub, §5).
-- GitHub App su github.com: permessi Contents read, Metadata read, Email addresses read (account); "Request
+- GitHub App su github.com: permessi Contents read, Issues read & write (per creare le issue del piano: ogni installazione deve accettare il
+  nuovo permesso; il token con cui l'architetto legge il codice resta `contents: read`), Metadata read, Email
+  addresses read (account); "Request
   user authorization (OAuth) during installation" attivo, nessun Setup URL, nessun webhook; Callback URL
   `${PUBLIC_APP_URL}/api/auth/github/callback`.
 

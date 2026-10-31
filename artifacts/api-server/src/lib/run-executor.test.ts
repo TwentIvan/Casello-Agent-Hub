@@ -16,6 +16,7 @@ import {
   type InsertAppTool,
 } from "@workspace/db";
 import {
+  AGENT_WITHOUT_MODEL,
   RUN_CANCELLED_MESSAGE,
   ResumeConflictError,
   cancelRun,
@@ -30,23 +31,28 @@ import { clearUserToken } from "./user-tokens";
 import { logger } from "./logger";
 import { ProviderError } from "./ai/discovery";
 import { encryptSecret } from "./secrets";
+import { LEGACY_GATEWAY_PROVIDER } from "./ai/providers";
+import { ensureLegacyGatewayProvider } from "../../test/legacy-gateway";
 import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 
-// Finto LiteLLM: risposte in coda, una per chiamata
+// Finto provider compatibile OpenAI (modello dell'agente): risposte in coda, una per chiamata
 let llmReplies: unknown[];
 let llmRequests: any[];
 // Finta app: registra le richieste ricevute
 let appRequests: { method: string; url: string; auth: string | undefined; body: string }[];
 // Ritardo della finta app (ms), per misurare il tempo attivo
 let appDelayMs = 0;
-// Finto LiteLLM che non risponde mai
+// Finto provider che non risponde mai
 let llmHangs = false;
+// Stato HTTP del finto provider (diverso da 200: errore del modello)
+let llmStatus = 200;
 
 let llm: http.Server;
 let app: http.Server;
 let appBase: string;
+let llmBase: string;
 const saved: Record<string, string | undefined> = {};
-const ENV_KEYS = ["AI_GATEWAY_BASE_URL", "AI_GATEWAY_API_KEY", "CASELLO_SECRET_KEY"] as const;
+const ENV_KEYS = ["CASELLO_SECRET_KEY"] as const;
 
 function listen(server: http.Server): Promise<number> {
   return new Promise((resolve) =>
@@ -99,6 +105,7 @@ beforeEach(async () => {
   appRequests = [];
   appDelayMs = 0;
   llmHangs = false;
+  llmStatus = 200;
   llm = http.createServer((req, res) => {
     let raw = "";
     req.on("data", (c) => (raw += c));
@@ -106,6 +113,7 @@ beforeEach(async () => {
       llmRequests.push(JSON.parse(raw));
       if (llmHangs) return;
       const reply = llmReplies.shift() ?? textReply("(nessuna risposta prevista)");
+      res.statusCode = llmStatus;
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify(reply));
     });
@@ -124,8 +132,7 @@ beforeEach(async () => {
   const llmPort = await listen(llm);
   const appPort = await listen(app);
   appBase = `http://127.0.0.1:${appPort}/api`;
-  process.env["AI_GATEWAY_BASE_URL"] = `http://127.0.0.1:${llmPort}/v1`;
-  process.env["AI_GATEWAY_API_KEY"] = "sk-test";
+  llmBase = `http://127.0.0.1:${llmPort}/v1`;
   process.env["CASELLO_SECRET_KEY"] = "a".repeat(64);
   vi.spyOn(console, "log").mockImplementation(() => {});
   await pool.query("TRUNCATE apps, ai_accounts, users RESTART IDENTITY CASCADE");
@@ -186,6 +193,28 @@ const SET_PASSWORD: Partial<InsertAppTool> = {
   definition: { method: "PATCH", path: "/items/{id}", paramLocations: { id: "path", password: "body" } },
 };
 
+/** Modello di un account `custom` verso il finto provider `llm` (prezzi non noti: costo null). */
+async function seedModel(): Promise<number> {
+  const [owner] = await db.insert(usersTable).values({ email: "seed@example.com", name: "Seed" }).returning();
+  const [account] = await db
+    .insert(aiAccountsTable)
+    .values({
+      userId: owner!.id,
+      name: "Account di prova",
+      provider: "custom",
+      baseUrl: llmBase,
+      allowPrivateNetwork: true,
+      apiKeyEnc: encryptSecret("sk-test"),
+      status: "ok",
+    })
+    .returning();
+  const [model] = await db
+    .insert(aiModelsTable)
+    .values({ accountId: account!.id, modelId: "modello-base", displayName: "Base" })
+    .returning();
+  return model!.id;
+}
+
 async function seedRun(tool: Partial<InsertAppTool>): Promise<number> {
   const [a] = await db
     .insert(appsTable)
@@ -205,7 +234,8 @@ async function seedRun(tool: Partial<InsertAppTool>): Promise<number> {
       name: "Generale",
       role: "general",
       status: "active",
-      model: "openrouter/auto",
+      model: "modello-base",
+      aiModelId: await seedModel(),
       systemPrompt: "Aiuta l'allenatore.",
     })
     .returning();
@@ -258,7 +288,7 @@ describe("orchestrazione delle run", () => {
 
     // Contesto di sistema con app e istruzioni, tool come function calling (non in elenco testuale)
     const first = llmRequests[0];
-    expect(first.model).toBe("openrouter/auto");
+    expect(first.model).toBe("modello-base");
     expect(first.tools.map((t: any) => t.function.name)).toEqual(["get_item"]);
     const system = first.messages[0];
     expect(system.role).toBe("system");
@@ -448,7 +478,7 @@ describe("orchestrazione delle run", () => {
 
   it("errore del modello: la run finisce failed con il messaggio", async () => {
     const id = await seedRun(GET_ITEM);
-    delete process.env["AI_GATEWAY_API_KEY"];
+    llmStatus = 401;
 
     await startRun(id);
 
@@ -844,11 +874,12 @@ describe("run sugli account AI (chi configura paga)", () => {
     expect(run.errorMessage).toContain("il modello non ha risposto in tempo");
   });
 
-  it("account di sistema senza variabili: failed con 'account di sistema non più disponibile'", async () => {
+  it("agente sul modello del vecchio account del gateway rimasto nel DB: failed con 'modello non disponibile'", async () => {
     const id = await seedRun(GET_ITEM);
+    await ensureLegacyGatewayProvider();
     const [account] = await db
       .insert(aiAccountsTable)
-      .values({ userId: null, name: "Gateway Casello", provider: "system_gateway", baseUrl: "http://gw/v1", status: "ok" })
+      .values({ userId: null, name: "Gateway Casello", provider: LEGACY_GATEWAY_PROVIDER, baseUrl: llmBase, status: "ok" })
       .returning();
     const [model] = await db
       .insert(aiModelsTable)
@@ -856,27 +887,62 @@ describe("run sugli account AI (chi configura paga)", () => {
       .returning();
     const run0 = await getRun(id);
     await db.update(agentsTable).set({ aiModelId: model!.id }).where(eq(agentsTable.id, run0.agentId));
-    delete process.env["AI_GATEWAY_API_KEY"];
 
     await startRun(id);
 
     const run = await getRun(id);
     expect(run.status).toBe("failed");
-    expect(run.errorMessage).toContain("account di sistema non più disponibile");
+    expect(run.errorMessage).toContain("modello non disponibile");
+    expect(llmRequests).toHaveLength(0);
   });
 
-  it("agente senza aiModelId: vecchio percorso del gateway, costo null", async () => {
+  it("agente e run senza modello: failed con 'scegli un modello per l'agente', nessuna chiamata", async () => {
     const id = await seedRun(GET_ITEM);
-    llmReplies = [textReply("Dal gateway")];
+    const run0 = await getRun(id);
+    await db.update(agentsTable).set({ aiModelId: null }).where(eq(agentsTable.id, run0.agentId));
+
+    await startRun(id);
+
+    const run = await getRun(id);
+    expect(run.status).toBe("failed");
+    expect(run.errorMessage).toBe(AGENT_WITHOUT_MODEL);
+    expect(llmRequests).toHaveLength(0);
+    expect(fake.requests).toHaveLength(0);
+    expect(await getSteps(id)).toHaveLength(0);
+  });
+
+  it("ripresa di una run senza modello: failed con il messaggio, il tool confermato non parte", async () => {
+    const id = await seedRun(DELETE_ITEM);
+    llmReplies = [toolCallReply("delete_item", { id: "42" })];
+    await startRun(id, { userToken: "t" });
+    expect((await getRun(id)).status).toBe("awaiting_client");
+    // Il modello dell'agente viene tolto durante la pausa (la run non ne ha uno registrato)
+    const run0 = await getRun(id);
+    expect(run0.aiModelId).toBeNull();
+    await db.update(agentsTable).set({ aiModelId: null }).where(eq(agentsTable.id, run0.agentId));
+
+    await resumeRun(id, "approved", { userToken: "t" });
+
+    const run = await getRun(id);
+    expect(run.status).toBe("failed");
+    expect(run.errorMessage).toBe(AGENT_WITHOUT_MODEL);
+    expect(appRequests).toHaveLength(0);
+    expect(llmRequests).toHaveLength(1);
+  });
+
+  it("run con modello registrato: usa quello anche se l'agente non ne ha più", async () => {
+    const id = await seedRun(GET_ITEM);
+    const run0 = await getRun(id);
+    const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, run0.agentId));
+    await db.update(runsTable).set({ aiModelId: agent!.aiModelId }).where(eq(runsTable.id, id));
+    await db.update(agentsTable).set({ aiModelId: null }).where(eq(agentsTable.id, run0.agentId));
+    llmReplies = [textReply("Fatto")];
 
     await startRun(id);
 
     const run = await getRun(id);
     expect(run.status).toBe("succeeded");
-    expect(run.output).toBe("Dal gateway");
-    expect(run.costUsd).toBeNull();
     expect(llmRequests).toHaveLength(1);
-    expect(fake.requests).toHaveLength(0);
   });
 });
 

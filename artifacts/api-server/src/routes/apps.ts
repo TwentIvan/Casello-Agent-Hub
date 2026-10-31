@@ -22,8 +22,8 @@ import { currentUserId } from "../lib/auth";
 import { GITHUB_MESSAGES, GithubError, repoInstallationId } from "../lib/github/app";
 import { githubConfig } from "../lib/github/config";
 import { toPublicApp } from "./serializers";
-import { findUsableSystemModelId } from "../lib/ai/system-account";
-import { DEFAULT_MODEL } from "../lib/models";
+import { ModelChoiceError, type ModelChoice } from "../lib/ai/choice";
+import { resolveAgentModel } from "../lib/ai/default-model";
 import { parseRequest } from "../middlewares/error-handler";
 
 const router: IRouter = Router();
@@ -181,11 +181,20 @@ router.get("/apps", async (_req, res) => {
 // univoco e lo si sostituisce appena noto l'id. Se una creazione concorrente prende lo stesso slug,
 // la transazione fallisce sulla unique e si riprova da capo (withSlugRetry).
 router.post("/apps", async (req, res) => {
-  const { serviceSecret, sourceToken, ...parsed } = parseRequest(CreateAppBody, req.body);
+  const { serviceSecret, sourceToken, generalAgentAiModelId, ...parsed } = parseRequest(CreateAppBody, req.body);
   const body = normalizeSources(parsed);
   const invalid = connectionError(body) ?? sourceError(body);
   if (invalid) {
     res.status(400).json({ error: invalid });
+    return;
+  }
+  // Modello dell'agente generale: scelto, poi il predefinito dell'utente, poi nessuno
+  let generalModel: ModelChoice;
+  try {
+    generalModel = await resolveAgentModel(currentUserId(req), generalAgentAiModelId);
+  } catch (err) {
+    if (!(err instanceof ModelChoiceError)) throw err;
+    res.status(400).json({ error: err.message });
     return;
   }
   if (body.sourceInstallationId != null) {
@@ -201,9 +210,6 @@ router.post("/apps", async (req, res) => {
   }
   const serviceSecretEnc = serviceSecret !== undefined ? encryptSecret(serviceSecret) : null;
   const sourceTokenEnc = sourceTokenChange(sourceToken).sourceTokenEnc ?? null;
-
-  // L'agente generale nasce collegato al modello predefinito dell'account di sistema (null se non c'è)
-  const aiModelId = await findUsableSystemModelId(DEFAULT_MODEL);
 
   const app = await withSlugRetry(() => db.transaction(async (tx) => {
     const [inserted] = await tx
@@ -224,7 +230,7 @@ router.post("/apps", async (req, res) => {
       name: `${created!.name} – generale`,
       role: "general",
       status: "draft",
-      aiModelId,
+      ...generalModel,
     });
     return created!;
   }));

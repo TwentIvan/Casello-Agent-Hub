@@ -22,8 +22,6 @@ tags:
     description: Esecuzioni degli agenti
   - name: dashboard
     description: Statistiche aggregate
-  - name: models
-    description: Modelli AI selezionabili
   - name: github
     description: Installazioni e repository dell'App GitHub di Casello
   - name: ai
@@ -173,6 +171,53 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /account/default-model:
+    get:
+      operationId: getDefaultModel
+      tags: [ai]
+      summary: Modello predefinito dell'utente
+      description: >-
+        Modello proposto per gli agenti che Casello crea (agente generale di un'app nuova, agenti
+        approvati dall'architetto, agenti creati senza modello). Null se non impostato o se il modello
+        è stato eliminato. Solo con il login: con un token risponde 403.
+      responses:
+        "200":
+          description: Modello predefinito
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DefaultModel"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      operationId: setDefaultModel
+      tags: [ai]
+      summary: Imposta o toglie il modello predefinito dell'utente
+      description: >-
+        Il modello deve essere di un account AI dell'utente (400 "modello non disponibile"
+        altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DefaultModel"
+      responses:
+        "200":
+          description: Modello predefinito aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DefaultModel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   # ─── Apps ───────────────────────────────────────────────────────────────────
 
@@ -447,6 +492,36 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /apps/{id}/agent-models:
+    put:
+      operationId: setAppAgentModels
+      tags: [agents]
+      summary: Imposta il modello di più agenti di un'app
+      description: >-
+        Assegna in una sola chiamata il modello di ciascun agente indicato (null = nessun modello).
+        Tutto o niente: se un agente non è dell'app o un modello non è dell'utente non cambia nulla.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentModelAssignments"
+      responses:
+        "200":
+          description: Gli agenti aggiornati
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /agents/{id}/tools:
     put:
       operationId: setAgentTools
@@ -556,8 +631,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           description: >-
-            Tetto di spesa mensile raggiunto (dell'agente o dell'utente che paga il modello): la run non
-            viene creata
+            Agente senza modello ("scegli un modello per l'agente") o tetto di spesa mensile raggiunto
+            (dell'agente o dell'utente che paga il modello): la run non viene creata
           content:
             application/json:
               schema:
@@ -731,14 +806,7 @@ paths:
           required: false
           schema:
             type: integer
-          description: Modello di un account AI (esattamente uno tra aiModelId e model)
-        - name: model
-          in: query
-          required: false
-          schema:
-            type: string
-            minLength: 1
-          description: Compatibilità, modello AI come model_name di LiteLLM
+          description: Modello di un account AI (obbligatorio, altrimenti 400 "scegli un modello")
         - name: maxTokens
           in: query
           required: false
@@ -1027,23 +1095,6 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
-  # ─── Models ─────────────────────────────────────────────────────────────────
-
-  /models:
-    get:
-      operationId: listModels
-      tags: [models]
-      summary: Elenca i modelli selezionabili per gli agenti (model_name di LiteLLM)
-      responses:
-        "200":
-          description: Lista di modelli
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Model"
-
   # ─── Account AI ─────────────────────────────────────────────────────────────
 
   /ai/providers:
@@ -1052,8 +1103,8 @@ paths:
       tags: [ai]
       summary: Provider del registro per la creazione degli account AI
       description: >-
-        Provider della tabella providers (registro e scoperti), senza system_gateway: prima i gestiti
-        per nome, poi quelli in arrivo, poi i non gestiti.
+        Provider della tabella providers (registro e scoperti), senza quello del vecchio gateway: prima
+        i gestiti per nome, poi quelli in arrivo, poi i non gestiti.
       responses:
         "200":
           description: Provider
@@ -1068,10 +1119,10 @@ paths:
     get:
       operationId: listAiAccounts
       tags: [ai]
-      summary: Elenca gli account AI dell'utente e l'account di sistema
+      summary: Elenca gli account AI dell'utente
       description: >-
-        Account dell'utente corrente (il predefinito per primo, poi per nome) seguiti dall'account di
-        sistema, se configurato. La chiave non è mai esposta: solo keySet.
+        Account dell'utente corrente (il predefinito per primo, poi per nome). La chiave non è mai
+        esposta: solo keySet.
       responses:
         "200":
           description: Account AI
@@ -1119,7 +1170,7 @@ paths:
       description: >-
         Nome, chiave (assente o "" = invariata, null = rimossa, solo custom), base URL e
         allowPrivateNetwork (solo custom). Una chiave o un base URL nuovi rileggono i modelli come
-        verifyAiAccount. Account di sistema → 403; account di un altro utente → 404.
+        verifyAiAccount. Account di un altro utente → 404.
       parameters:
         - $ref: "#/components/parameters/IdParam"
       requestBody:
@@ -1287,7 +1338,7 @@ paths:
       tags: [ai]
       summary: Prova un modello con una chiamata da 1 token
       description: >-
-        Solo per i modelli degli account dell'utente (non di sistema). Una chiamata con un messaggio
+        Solo per i modelli degli account dell'utente. Una chiamata con un messaggio
         minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la
         disponibilità. Massimo 5 prove al minuto per IP.
       parameters:
@@ -1310,8 +1361,7 @@ paths:
       tags: [ai]
       summary: Modelli selezionabili dall'utente, raggruppati per account
       description: >-
-        Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo) e
-        account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi; quelli non
+        Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo). I modelli nascosti sono esclusi; quelli non
         selezionabili restano con `selectable: false`. Al massimo un modello consigliato per gruppo.
       responses:
         "200":
@@ -1505,8 +1555,8 @@ paths:
       tags: [catalog]
       summary: Provider del catalogo
       description: >-
-        Provider della tabella providers senza system_gateway: prima i gestiti, poi in arrivo, poi i non
-        gestiti, per nome. `modelCount` conta i modelli con un'offerta non ritirata; `hasMyAccount` dice se
+        Provider della tabella providers senza quello del vecchio gateway: prima i gestiti, poi in arrivo,
+        poi i non gestiti, per nome. `modelCount` conta i modelli con un'offerta non ritirata; `hasMyAccount` dice se
         l'utente ha un account presso il provider. `q` cerca in slug e nome.
       parameters:
         - name: q
@@ -1704,7 +1754,7 @@ paths:
       summary: Apre una conversazione sul piano
       description: >-
         Senza analysisId usa l'ultima analisi completata dell'app (nessuna: 409). Il modello deve essere
-        di un account dell'utente o dell'account di sistema.
+        di un account dell'utente.
       parameters:
         - $ref: "#/components/parameters/IdParam"
       requestBody:
@@ -2134,6 +2184,13 @@ components:
           type: string
           format: date-time
 
+    DefaultModel:
+      type: object
+      required: [aiModelId]
+      properties:
+        aiModelId:
+          type: ["integer", "null"]
+
     AppInput:
       type: object
       required: [name, baseUrl]
@@ -2179,6 +2236,12 @@ components:
           type: ["string", "null"]
         status:
           $ref: "#/components/schemas/AppStatus"
+        generalAgentAiModelId:
+          type: ["integer", "null"]
+          description: >-
+            Modello dell'agente generale creato con l'app: deve essere di un account AI dell'utente
+            (400 "modello non disponibile" altrimenti). Se assente si usa il modello predefinito
+            dell'utente, se c'è; altrimenti l'agente nasce senza modello.
 
     AppUpdate:
       type: object
@@ -2256,7 +2319,7 @@ components:
           type: ["integer", "null"]
           description: >-
             Modello scelto tra quelli degli account AI; le run usano l'account di questo modello
-            (chi configura paga). Null = vecchio percorso del gateway
+            (chi configura paga). Null = nessun modello: l'agente non si può eseguire
         status:
           $ref: "#/components/schemas/AgentStatus"
         role:
@@ -2291,14 +2354,11 @@ components:
           minLength: 1
         systemPrompt:
           type: string
-        model:
-          type: string
-          description: Solo compatibilità; con aiModelId è ignorato
         aiModelId:
           type: ["integer", "null"]
           description: >-
-            Modello di un account AI dell'utente o dell'account di sistema (400 "modello non
-            disponibile" altrimenti)
+            Modello di un account AI dell'utente (400 "modello non disponibile" altrimenti). Se assente si usa il modello predefinito dell'utente, se c'è;
+            altrimenti l'agente nasce senza modello.
         status:
           $ref: "#/components/schemas/AgentStatus"
 
@@ -2310,14 +2370,10 @@ components:
           minLength: 1
         systemPrompt:
           type: ["string", "null"]
-        model:
-          type: string
-          description: Solo compatibilità; con aiModelId è ignorato
         aiModelId:
           type: ["integer", "null"]
           description: >-
-            Se diverso da quello salvato deve essere un modello dell'utente o dell'account di
-            sistema (400 altrimenti); uguale a quello salvato non viene ricontrollato
+            Se diverso da quello salvato deve essere un modello dell'utente (400 altrimenti); uguale a quello salvato non viene ricontrollato
         status:
           $ref: "#/components/schemas/AgentStatus"
         area:
@@ -2330,6 +2386,24 @@ components:
           maximum: 1000000
           description: Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite
 
+    AgentModelAssignments:
+      type: object
+      required: [assignments]
+      properties:
+        assignments:
+          type: array
+          minItems: 1
+          maxItems: 200
+          uniqueItems: true
+          items:
+            type: object
+            required: [agentId, aiModelId]
+            properties:
+              agentId:
+                type: integer
+              aiModelId:
+                type: ["integer", "null"]
+
     AgentToolsInput:
       type: object
       required: [toolIds]
@@ -2338,21 +2412,6 @@ components:
           type: array
           items:
             type: integer
-
-    # ── Model ──────────────────────────────────────────────────────────────────
-
-    Model:
-      type: object
-      required: [id, label, isDefault]
-      properties:
-        id:
-          type: string
-          description: model_name di LiteLLM, da usare in Agent.model
-        label:
-          type: string
-        isDefault:
-          type: boolean
-          description: Modello usato quando un agente viene creato senza model
 
     # ── Tool ───────────────────────────────────────────────────────────────────
 
@@ -3095,7 +3154,7 @@ components:
       properties:
         aiModelId:
           type: integer
-          description: Modello di un account AI dell'utente o dell'account di sistema
+          description: Modello di un account AI dell'utente
         analysisId:
           type: integer
           description: Analisi di riferimento (default l'ultima completata dell'app)
@@ -3227,18 +3286,14 @@ components:
     AnalysisStart:
       type: object
       description: >-
-        Con executor cloud (default) indicare esattamente uno tra aiModelId e model (altrimenti 400
-        "scegli un modello"); con executor local nessuno dei due.
+        Con executor cloud (default) aiModelId è obbligatorio (altrimenti 400 "scegli un modello");
+        con executor local non si indica.
       properties:
         executor:
           $ref: "#/components/schemas/AnalysisExecutor"
         aiModelId:
           type: integer
-          description: Modello di un account AI dell'utente o dell'account di sistema
-        model:
-          type: string
-          minLength: 1
-          description: Compatibilità, modello AI come model_name di LiteLLM
+          description: Modello di un account AI dell'utente
         maxTokens:
           type: integer
           minimum: 50000
@@ -3255,6 +3310,12 @@ components:
           additionalProperties: true
         reviewNote:
           type: ["string", "null"]
+        aiModelId:
+          type: ["integer", "null"]
+          description: >-
+            Solo con status approved su un agente nuovo: modello dell'agente creato, di un account AI
+            dell'utente (400 "modello non disponibile" altrimenti). Se assente si usa il modello
+            predefinito dell'utente, se c'è; un agente esistente mantiene il suo modello.
 
     IssueExport:
       type: object
@@ -3295,7 +3356,7 @@ components:
     AiProvider:
       type: string
       pattern: "^[a-z0-9_-]{1,64}$"
-      description: Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)
+      description: Slug di un provider della tabella providers
 
     AiProviderProtocol:
       type: string
@@ -3333,7 +3394,7 @@ components:
 
     AiAccount:
       type: object
-      required: [id, name, provider, baseUrl, allowPrivateNetwork, isDefault, status, lastError, lastCheckedAt, keySet, isSystem, modelCount, monthlyBudgetUsd]
+      required: [id, name, provider, baseUrl, allowPrivateNetwork, isDefault, status, lastError, lastCheckedAt, keySet, modelCount, monthlyBudgetUsd]
       properties:
         id:
           type: integer
@@ -3359,9 +3420,6 @@ components:
         keySet:
           type: boolean
           description: Indica se la chiave è impostata (il valore non è mai esposto)
-        isSystem:
-          type: boolean
-          description: Account di sistema (gateway di Casello), non modificabile
         modelCount:
           type: integer
           description: Numero di modelli dell'account (nascosti compresi)

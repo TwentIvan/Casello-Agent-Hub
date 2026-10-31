@@ -7,7 +7,7 @@
  */
 
 /**
- * Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)
+ * Slug di un provider della tabella providers
  * @pattern ^[a-z0-9_-]{1,64}$
  */
 export type AiProvider = string;

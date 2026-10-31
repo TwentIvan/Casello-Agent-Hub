@@ -17,6 +17,8 @@ import {
   type AnalysisLogEntry,
 } from "@workspace/db";
 import { encryptSecret } from "../secrets";
+import { LEGACY_GATEWAY_PROVIDER } from "../ai/providers";
+import { ensureLegacyGatewayProvider } from "../../../test/legacy-gateway";
 import { allowTestLoopback } from "../../../test/fake-provider";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { clearInstallationTokenCache } from "../github/app";
@@ -35,7 +37,7 @@ import type { PhaseName } from "./schemas";
 const FILE_SECRET = "CONTENUTO_RISERVATO_DEL_FILE_42";
 const GITHUB_TOKEN = "ghp_TOKENSEGRETISSIMO0123456789";
 
-const ENV_KEYS = ["AI_GATEWAY_BASE_URL", "AI_GATEWAY_API_KEY", "CASELLO_SECRET_KEY"] as const;
+const ENV_KEYS = ["CASELLO_SECRET_KEY"] as const;
 const saved: Record<string, string | undefined> = {};
 
 // --- Esiti validi delle fasi ---
@@ -173,18 +175,20 @@ const RESULTS: Record<PhaseName, unknown> = {
 
 const PHASE_BY_NUMBER: PhaseName[] = ["map", "capabilities", "catalog", "agents", "completion", "evolution"];
 
-// --- Finto LiteLLM a copione: per ogni fase legge un file e poi consegna ---
+// --- Finto provider a copione: per ogni fase legge un file e poi consegna ---
 
 let llm: http.Server;
+/** Indirizzo compatibile OpenAI del finto modello. */
+let llmBase: string;
 let llmRequests: any[];
-/** Header Authorization ricevuti dal finto LiteLLM, uno per richiesta. */
+/** Header Authorization ricevuti dal finto provider, uno per richiesta. */
 let llmAuth: (string | undefined)[];
 let llmHangs: boolean;
-/** Stato HTTP di errore con cui risponde il finto LiteLLM (null = risposta normale). */
+/** Stato HTTP di errore con cui risponde il finto provider (null = risposta normale). */
 let llmStatus: number | null;
 /** Risposte 500 da dare prima di quelle normali. */
 let llm500Remaining: number;
-/** Richieste a cui il finto LiteLLM chiude la connessione senza rispondere. */
+/** Richieste a cui il finto provider chiude la connessione senza rispondere. */
 let llmDropRemaining: number;
 /** Risposte 429 da dare prima di rispondere normalmente, con l'eventuale attesa suggerita. */
 let llm429Remaining: number;
@@ -262,6 +266,29 @@ function testZip(): Uint8Array {
 }
 
 let appId: number;
+// Modello di base delle analisi: account `custom` verso il finto provider `llm` (prezzi non noti)
+let baseModelId: number;
+
+async function seedBaseModel(baseUrl: string): Promise<number> {
+  const [user] = await db.insert(usersTable).values({ email: "base@example.com", name: "Base" }).returning();
+  const [account] = await db
+    .insert(aiAccountsTable)
+    .values({
+      userId: user!.id,
+      name: "Account di base",
+      provider: "custom",
+      baseUrl,
+      allowPrivateNetwork: true,
+      apiKeyEnc: encryptSecret("sk-test"),
+      status: "ok",
+    })
+    .returning();
+  const [model] = await db
+    .insert(aiModelsTable)
+    .values({ accountId: account!.id, modelId: "openrouter/auto", displayName: "Base" })
+    .returning();
+  return model!.id;
+}
 
 async function createApp(over: Partial<typeof appsTable.$inferInsert> = {}): Promise<number> {
   const [row] = await db
@@ -277,6 +304,7 @@ async function createAnalysis(forApp = appId, over: Partial<typeof analysesTable
     .values({
       appId: forApp,
       model: "openrouter/auto",
+      aiModelId: baseModelId,
       sources: { code: "none", openapi: false, description: false },
       maxTokens: ANALYSIS_DEFAULT_MAX_TOKENS,
       ...over,
@@ -359,11 +387,11 @@ beforeEach(async () => {
   const llmPort = await listen(llm);
   appBase = `http://127.0.0.1:${await listen(appServer)}`;
   githubBase = `http://127.0.0.1:${await listen(github)}`;
-  process.env["AI_GATEWAY_BASE_URL"] = `http://127.0.0.1:${llmPort}/v1`;
-  process.env["AI_GATEWAY_API_KEY"] = "sk-test";
+  llmBase = `http://127.0.0.1:${llmPort}/v1`;
   process.env["CASELLO_SECRET_KEY"] = "b".repeat(64);
   vi.spyOn(console, "log").mockImplementation(() => {});
   await pool.query("TRUNCATE apps, ai_accounts, users RESTART IDENTITY CASCADE");
+  baseModelId = await seedBaseModel(llmBase);
   appId = await createApp({ functionalDescription: "Gestione di squadre di fantacalcio" });
 });
 
@@ -601,7 +629,7 @@ describe("startAnalysis", () => {
     expect(a.status).toBe("failed");
     expect(a.error).toMatch(/tempo massimo dell'analisi \(0\.4 s\) scaduto durante la chiamata al modello/);
     expect(llmRequests).toHaveLength(1);
-    // Interrotta dopo circa 1 s (minimo per chiamata), non dopo il timeout del gateway
+    // Interrotta dopo circa 1 s (minimo per chiamata), non dopo il timeout della chiamata
     expect(elapsed).toBeLessThan(10_000);
   }, 20_000);
 
@@ -617,22 +645,6 @@ describe("startAnalysis", () => {
     expect(a.error).not.toMatch(/http|127\.0\.0\.1/);
     expect(llmRequests).toHaveLength(1);
   }, 20_000);
-
-  it.each([
-    [400, " (richiesta rifiutata: spesso contesto troppo lungo per il modello)"],
-    [402, " (credito del provider esaurito: ricarica il conto o scegli un altro modello)"],
-    [429, " (limite di richieste: riprova più tardi)"],
-    [404, ""],
-  ])("gateway con errore %i: failed con lo stato e il suggerimento, senza URL", async (status, hint) => {
-    llmStatus = status;
-    const id = await createAnalysis();
-    await startAnalysis(id, { zip: testZip() });
-    const a = await loadAnalysis(id);
-    expect(a.status).toBe("failed");
-    expect(a.error).toBe(`fase map: errore nella chiamata al modello: il gateway dei modelli ha risposto con errore ${status}${hint}`);
-    expect(a.error).not.toMatch(/http|openrouter\.example/);
-    expect(llmRequests).toHaveLength(1);
-  });
 
   it("errore 500 transitorio: un nuovo tentativo e l'analisi prosegue", async () => {
     llm500Remaining = 1;
@@ -656,13 +668,13 @@ describe("startAnalysis", () => {
     expect((a.log ?? []).map((e) => e.message)).toContain("provider non raggiungibile (errore di rete): nuovo tentativo tra 1 s (1 di 2)");
   });
 
-  it("errore di connessione ripetuto: tutti i nuovi tentativi, poi il messaggio generico", async () => {
+  it("errore di connessione ripetuto: tutti i nuovi tentativi, poi 'provider non raggiungibile'", async () => {
     llmDropRemaining = 5;
     const id = await createAnalysis();
     await startAnalysis(id, { zip: testZip(), transientRetryDelaysMs: [10, 10] });
     const a = await loadAnalysis(id);
     expect(a.status).toBe("failed");
-    expect(a.error).toBe("fase map: errore nella chiamata al modello: errore di comunicazione con il gateway dei modelli");
+    expect(a.error).toBe("fase map: errore nella chiamata al modello: provider non raggiungibile");
     expect(llmRequests).toHaveLength(3);
   });
 
@@ -673,7 +685,7 @@ describe("startAnalysis", () => {
     await startAnalysis(id, { zip: testZip(), maxMs: 2_000, transientRetryDelaysMs: [60_000] });
     const a = await loadAnalysis(id);
     expect(a.status).toBe("failed");
-    expect(a.error).toBe("fase map: errore nella chiamata al modello: errore di comunicazione con il gateway dei modelli");
+    expect(a.error).toBe("fase map: errore nella chiamata al modello: provider non raggiungibile");
     expect(llmRequests).toHaveLength(1);
     expect(Date.now() - started).toBeLessThan(5_000);
   }, 20_000);
@@ -711,7 +723,7 @@ describe("startAnalysis", () => {
 describe("startAnalysis sugli account AI", () => {
   const ACCOUNT_KEY = "sk-CHIAVE-ACCOUNT-ARCHITETTO-99";
 
-  /** Account `custom` verso il finto LiteLLM, con un modello ai prezzi dati (USD per Mtok). */
+  /** Account `custom` verso il finto provider, con un modello ai prezzi dati (USD per Mtok). */
   async function ownModel(prices: { input: string | null; output: string | null } = { input: "1", output: "2" }) {
     const [user] = await db.insert(usersTable).values({ email: "a@example.com", name: "A" }).returning();
     const [account] = await db
@@ -720,7 +732,7 @@ describe("startAnalysis sugli account AI", () => {
         userId: user!.id,
         name: "Account",
         provider: "custom",
-        baseUrl: process.env["AI_GATEWAY_BASE_URL"]!,
+        baseUrl: llmBase,
         allowPrivateNetwork: true,
         apiKeyEnc: encryptSecret(ACCOUNT_KEY),
         status: "ok",
@@ -773,13 +785,13 @@ describe("startAnalysis sugli account AI", () => {
     expect(a.costUsd).toBeNull();
   });
 
-  it("vecchio percorso (aiModelId null): completata con cost_usd null", async () => {
-    const id = await createAnalysis();
+  it("analisi cloud senza modello (aiModelId null): failed con 'scegli un modello', nessuna chiamata", async () => {
+    const id = await createAnalysis(appId, { aiModelId: null });
     await startAnalysis(id, { zip: testZip() });
     const a = await loadAnalysis(id);
-    expect(a.status).toBe("completed");
-    expect(a.costUsd).toBeNull();
-    expect(llmAuth.every((h) => h === "Bearer sk-test")).toBe(true);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe("scegli un modello");
+    expect(llmRequests).toHaveLength(0);
   });
 
   it.each([
@@ -913,18 +925,18 @@ describe("startAnalysis sugli account AI", () => {
     expect(llmRequests).toHaveLength(1);
   }, 20_000);
 
-  it("account di sistema senza variabili: failed con 'account di sistema non più disponibile'", async () => {
+  it("modello del vecchio account del gateway rimasto nel DB: failed con 'modello non disponibile'", async () => {
+    await ensureLegacyGatewayProvider();
     const [account] = await db
       .insert(aiAccountsTable)
-      .values({ userId: null, name: "Gateway Casello", provider: "system_gateway", baseUrl: "http://gw/v1", status: "ok" })
+      .values({ userId: null, name: "Gateway Casello", provider: LEGACY_GATEWAY_PROVIDER, baseUrl: llmBase, status: "ok" })
       .returning();
     const [model] = await db.insert(aiModelsTable).values({ accountId: account!.id, modelId: "openrouter/auto", displayName: "Auto" }).returning();
-    delete process.env["AI_GATEWAY_API_KEY"];
     const id = await createAnalysis(appId, { aiModelId: model!.id });
     await startAnalysis(id, { zip: testZip() });
     const a = await loadAnalysis(id);
     expect(a.status).toBe("failed");
-    expect(a.error).toBe("account di sistema non più disponibile");
+    expect(a.error).toBe("modello non disponibile");
     expect(llmRequests).toHaveLength(0);
   });
 });

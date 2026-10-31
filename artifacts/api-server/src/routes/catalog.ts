@@ -24,6 +24,7 @@ import {
   RefreshCatalogResponse,
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
+import { LEGACY_GATEWAY_PROVIDER } from "../lib/ai/providers";
 import { providerIssue } from "../lib/catalog/provider-issue";
 import { CatalogBusyError, startCatalogRefresh } from "../lib/catalog/refresh";
 import type { OfferSummary } from "../lib/catalog/summary";
@@ -127,7 +128,7 @@ function modelListQueries(f: ListQuery, userId: number): { page: SQL; total: SQL
   if (f.vision !== undefined) where.push(sql`m.supports_vision = ${f.vision}`);
   if (f.reasoning !== undefined) where.push(sql`m.supports_reasoning = ${f.reasoning}`);
   if (f.usable) {
-    // Provider di un account dell'utente (l'account di sistema non ha utente), gestito o no
+    // Provider di un account dell'utente, gestito o no
     where.push(sql`EXISTS (SELECT 1 FROM o JOIN ai_accounts a ON a.provider = o.provider WHERE o.model_id = m.id AND a.user_id = ${userId})`);
   }
   if (f.maxPrice !== undefined) where.push(sql`cheap.total <= ${f.maxPrice}`);
@@ -294,7 +295,7 @@ export function createCatalogRouter(opts: { refreshRateLimit?: RequestHandler; f
   router.get("/catalog/providers", async (req, res) => {
     const userId = currentUserId(req);
     const { q, status } = parseRequest(ListCatalogProvidersQueryParams, req.query);
-    const where: SQL[] = [ne(providersTable.slug, "system_gateway")];
+    const where: SQL[] = [ne(providersTable.slug, LEGACY_GATEWAY_PROVIDER)];
     if (status) where.push(eq(providersTable.status, status));
     if (q !== undefined && q.trim() !== "") {
       const p = likePattern(q.trim());

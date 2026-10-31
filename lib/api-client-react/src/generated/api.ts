@@ -22,6 +22,7 @@ import type {
 import type {
   Agent,
   AgentInput,
+  AgentModelAssignments,
   AgentSkill,
   AgentToolsInput,
   AgentUpdate,
@@ -64,6 +65,7 @@ import type {
   CostEstimate,
   CurrentUser,
   DashboardStats,
+  DefaultModel,
   ErrorResponse,
   EstimateAnalysisCostParams,
   ExportAnalysisIssuesParams,
@@ -76,7 +78,6 @@ import type {
   ListCatalogModelsParams,
   ListCatalogProvidersParams,
   ListRunsParams,
-  Model,
   NotFoundResponse,
   PayloadTooLargeResponse,
   PlanConversation,
@@ -721,6 +722,155 @@ export const useRevokeApiToken = <TError = ErrorType<UnauthorizedResponse | NotF
         TContext
       > => {
       return useMutation(getRevokeApiTokenMutationOptions(options));
+    }
+
+export const getGetDefaultModelUrl = () => {
+
+
+
+
+  return `/api/account/default-model`
+}
+
+/**
+ * Modello proposto per gli agenti che Casello crea (agente generale di un'app nuova, agenti approvati dall'architetto, agenti creati senza modello). Null se non impostato o se il modello è stato eliminato. Solo con il login: con un token risponde 403.
+ * @summary Modello predefinito dell'utente
+ */
+export const getDefaultModel = async ( options?: RequestInit): Promise<DefaultModel> => {
+
+  return customFetch<DefaultModel>(getGetDefaultModelUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDefaultModelQueryKey = () => {
+    return [
+    `/api/account/default-model`
+    ] as const;
+    }
+
+
+export const getGetDefaultModelQueryOptions = <TData = Awaited<ReturnType<typeof getDefaultModel>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDefaultModel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDefaultModelQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDefaultModel>>> = ({ signal }) => getDefaultModel({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDefaultModel>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDefaultModelQueryResult = NonNullable<Awaited<ReturnType<typeof getDefaultModel>>>
+export type GetDefaultModelQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+
+
+/**
+ * @summary Modello predefinito dell'utente
+ */
+
+export function useGetDefaultModel<TData = Awaited<ReturnType<typeof getDefaultModel>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDefaultModel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDefaultModelQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetDefaultModelUrl = () => {
+
+
+
+
+  return `/api/account/default-model`
+}
+
+/**
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+ * @summary Imposta o toglie il modello predefinito dell'utente
+ */
+export const setDefaultModel = async (defaultModel: DefaultModel, options?: RequestInit): Promise<DefaultModel> => {
+
+  return customFetch<DefaultModel>(getSetDefaultModelUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(defaultModel)
+  }
+);}
+
+
+
+
+export const getSetDefaultModelMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setDefaultModel>>, TError,{data: BodyType<DefaultModel>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setDefaultModel>>, TError,{data: BodyType<DefaultModel>}, TContext> => {
+
+const mutationKey = ['setDefaultModel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setDefaultModel>>, {data: BodyType<DefaultModel>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setDefaultModel(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetDefaultModelMutationResult = NonNullable<Awaited<ReturnType<typeof setDefaultModel>>>
+    export type SetDefaultModelMutationBody = BodyType<DefaultModel>
+    export type SetDefaultModelMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>
+
+    /**
+ * @summary Imposta o toglie il modello predefinito dell'utente
+ */
+export const useSetDefaultModel = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setDefaultModel>>, TError,{data: BodyType<DefaultModel>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setDefaultModel>>,
+        TError,
+        {data: BodyType<DefaultModel>},
+        TContext
+      > => {
+      return useMutation(getSetDefaultModelMutationOptions(options));
     }
 
 export const getListAppsUrl = () => {
@@ -1751,6 +1901,78 @@ export const useDeleteAppTool = <TError = ErrorType<NotFoundResponse>,
         TContext
       > => {
       return useMutation(getDeleteAppToolMutationOptions(options));
+    }
+
+export const getSetAppAgentModelsUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/agent-models`
+}
+
+/**
+ * Assegna in una sola chiamata il modello di ciascun agente indicato (null = nessun modello). Tutto o niente: se un agente non è dell'app o un modello non è dell'utente non cambia nulla.
+ * @summary Imposta il modello di più agenti di un'app
+ */
+export const setAppAgentModels = async (id: number,
+    agentModelAssignments: AgentModelAssignments, options?: RequestInit): Promise<Agent[]> => {
+
+  return customFetch<Agent[]>(getSetAppAgentModelsUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(agentModelAssignments)
+  }
+);}
+
+
+
+
+export const getSetAppAgentModelsMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAppAgentModels>>, TError,{id: number;data: BodyType<AgentModelAssignments>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setAppAgentModels>>, TError,{id: number;data: BodyType<AgentModelAssignments>}, TContext> => {
+
+const mutationKey = ['setAppAgentModels'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setAppAgentModels>>, {id: number;data: BodyType<AgentModelAssignments>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  setAppAgentModels(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetAppAgentModelsMutationResult = NonNullable<Awaited<ReturnType<typeof setAppAgentModels>>>
+    export type SetAppAgentModelsMutationBody = BodyType<AgentModelAssignments>
+    export type SetAppAgentModelsMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Imposta il modello di più agenti di un'app
+ */
+export const useSetAppAgentModels = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAppAgentModels>>, TError,{id: number;data: BodyType<AgentModelAssignments>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setAppAgentModels>>,
+        TError,
+        {id: number;data: BodyType<AgentModelAssignments>},
+        TContext
+      > => {
+      return useMutation(getSetAppAgentModelsMutationOptions(options));
     }
 
 export const getSetAgentToolsUrl = (id: number,) => {
@@ -3419,83 +3641,6 @@ export const useUpdateBudget = <TError = ErrorType<BadRequestResponse>,
       return useMutation(getUpdateBudgetMutationOptions(options));
     }
 
-export const getListModelsUrl = () => {
-
-
-
-
-  return `/api/models`
-}
-
-/**
- * @summary Elenca i modelli selezionabili per gli agenti (model_name di LiteLLM)
- */
-export const listModels = async ( options?: RequestInit): Promise<Model[]> => {
-
-  return customFetch<Model[]>(getListModelsUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-);}
-
-
-
-
-
-export const getListModelsQueryKey = () => {
-    return [
-    `/api/models`
-    ] as const;
-    }
-
-
-export const getListModelsQueryOptions = <TData = Awaited<ReturnType<typeof listModels>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getListModelsQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listModels>>> = ({ signal }) => listModels({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listModels>>, TError, TData> & { queryKey: QueryKey }
-}
-
-export type ListModelsQueryResult = NonNullable<Awaited<ReturnType<typeof listModels>>>
-export type ListModelsQueryError = ErrorType<unknown>
-
-
-/**
- * @summary Elenca i modelli selezionabili per gli agenti (model_name di LiteLLM)
- */
-
-export function useListModels<TData = Awaited<ReturnType<typeof listModels>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
- ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-
-  const queryOptions = getListModelsQueryOptions(options)
-
-  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
-
 export const getListAiProvidersUrl = () => {
 
 
@@ -3505,7 +3650,7 @@ export const getListAiProvidersUrl = () => {
 }
 
 /**
- * Provider della tabella providers (registro e scoperti), senza system_gateway: prima i gestiti per nome, poi quelli in arrivo, poi i non gestiti.
+ * Provider della tabella providers (registro e scoperti), senza quello del vecchio gateway: prima i gestiti per nome, poi quelli in arrivo, poi i non gestiti.
  * @summary Provider del registro per la creazione degli account AI
  */
 export const listAiProviders = async ( options?: RequestInit): Promise<AiProviderInfo[]> => {
@@ -3583,8 +3728,8 @@ export const getListAiAccountsUrl = () => {
 }
 
 /**
- * Account dell'utente corrente (il predefinito per primo, poi per nome) seguiti dall'account di sistema, se configurato. La chiave non è mai esposta: solo keySet.
- * @summary Elenca gli account AI dell'utente e l'account di sistema
+ * Account dell'utente corrente (il predefinito per primo, poi per nome). La chiave non è mai esposta: solo keySet.
+ * @summary Elenca gli account AI dell'utente
  */
 export const listAiAccounts = async ( options?: RequestInit): Promise<AiAccount[]> => {
 
@@ -3631,7 +3776,7 @@ export type ListAiAccountsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Elenca gli account AI dell'utente e l'account di sistema
+ * @summary Elenca gli account AI dell'utente
  */
 
 export function useListAiAccounts<TData = Awaited<ReturnType<typeof listAiAccounts>>, TError = ErrorType<unknown>>(
@@ -3732,7 +3877,7 @@ export const getUpdateAiAccountUrl = (id: number,) => {
 }
 
 /**
- * Nome, chiave (assente o "" = invariata, null = rimossa, solo custom), base URL e allowPrivateNetwork (solo custom). Una chiave o un base URL nuovi rileggono i modelli come verifyAiAccount. Account di sistema → 403; account di un altro utente → 404.
+ * Nome, chiave (assente o "" = invariata, null = rimossa, solo custom), base URL e allowPrivateNetwork (solo custom). Una chiave o un base URL nuovi rileggono i modelli come verifyAiAccount. Account di un altro utente → 404.
  * @summary Modifica un account AI
  */
 export const updateAiAccount = async (id: number,
@@ -4236,7 +4381,7 @@ export const getProbeAiModelUrl = (id: number,) => {
 }
 
 /**
- * Solo per i modelli degli account dell'utente (non di sistema). Una chiamata con un messaggio minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la disponibilità. Massimo 5 prove al minuto per IP.
+ * Solo per i modelli degli account dell'utente. Una chiamata con un messaggio minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la disponibilità. Massimo 5 prove al minuto per IP.
  * @summary Prova un modello con una chiamata da 1 token
  */
 export const probeAiModel = async (id: number, options?: RequestInit): Promise<AiModelProbeResult> => {
@@ -4307,7 +4452,7 @@ export const getListAiModelsUrl = () => {
 }
 
 /**
- * Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo) e account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi; quelli non selezionabili restano con `selectable: false`. Al massimo un modello consigliato per gruppo.
+ * Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo). I modelli nascosti sono esclusi; quelli non selezionabili restano con `selectable: false`. Al massimo un modello consigliato per gruppo.
  * @summary Modelli selezionabili dall'utente, raggruppati per account
  */
 export const listAiModels = async ( options?: RequestInit): Promise<AiModelGroup[]> => {
@@ -4648,7 +4793,7 @@ export const getListCatalogProvidersUrl = (params?: ListCatalogProvidersParams,)
 }
 
 /**
- * Provider della tabella providers senza system_gateway: prima i gestiti, poi in arrivo, poi i non gestiti, per nome. `modelCount` conta i modelli con un'offerta non ritirata; `hasMyAccount` dice se l'utente ha un account presso il provider. `q` cerca in slug e nome.
+ * Provider della tabella providers senza quello del vecchio gateway: prima i gestiti, poi in arrivo, poi i non gestiti, per nome. `modelCount` conta i modelli con un'offerta non ritirata; `hasMyAccount` dice se l'utente ha un account presso il provider. `q` cerca in slug e nome.
  * @summary Provider del catalogo
  */
 export const listCatalogProviders = async (params?: ListCatalogProvidersParams, options?: RequestInit): Promise<CatalogProvider[]> => {
@@ -5251,7 +5396,7 @@ export const getCreatePlanConversationUrl = (id: number,) => {
 }
 
 /**
- * Senza analysisId usa l'ultima analisi completata dell'app (nessuna: 409). Il modello deve essere di un account dell'utente o dell'account di sistema.
+ * Senza analysisId usa l'ultima analisi completata dell'app (nessuna: 409). Il modello deve essere di un account dell'utente.
  * @summary Apre una conversazione sul piano
  */
 export const createPlanConversation = async (id: number,

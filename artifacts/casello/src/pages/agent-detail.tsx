@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Trash2 } from "lucide-react";
 import {
   type Agent,
   ToolIdentity,
@@ -19,6 +19,7 @@ import {
   useGetApp,
   useUpdateAgent,
 } from "@workspace/api-client-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -151,8 +152,14 @@ function AgentConfigForm({ agent }: { agent: Agent }) {
                     <ModelDeprecationBadge aiModelId={agent.aiModelId} />
                     {agent.aiModelId === null && (
                       <FormDescription>
-                        Ora usa <span className="font-mono">{agent.model}</span> dal vecchio gateway: scegli un modello
-                        per passare agli account AI.
+                        Nessun modello: scegline uno per eseguire l'agente
+                        {agent.model ? (
+                          <>
+                            {" "}
+                            (prima usava <span className="font-mono">{agent.model}</span> dal vecchio gateway)
+                          </>
+                        ) : null}
+                        .
                       </FormDescription>
                     )}
                     <FormMessage />
@@ -337,6 +344,12 @@ export default function AgentDetailPage() {
         </div>
       </div>
 
+      {agent.data.aiModelId === null && (
+        <Alert>
+          <AlertTriangle className="size-4" />
+          <AlertDescription>Nessun modello: le run non partono. Sceglilo qui sotto.</AlertDescription>
+        </Alert>
+      )}
       <RunPanel key={`run-${agent.data.id}`} agent={agent.data} />
       <AgentConfigForm key={`config-${agent.data.id}`} agent={agent.data} />
       <AgentBudgetCard key={`budget-${agent.data.id}`} agent={agent.data} />

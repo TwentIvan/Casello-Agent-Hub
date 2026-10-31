@@ -1,10 +1,12 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db, pool, agentsTable, aiAccountsTable, aiModelsTable, analysesTable, usersTable } from "@workspace/db";
 import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 import { encryptSecret } from "../lib/secrets";
+import { LEGACY_GATEWAY_PROVIDER } from "../lib/ai/providers";
+import { ensureLegacyGatewayProvider } from "../../test/legacy-gateway";
 
 // Scelta del modello negli agenti e nell'avvio delle analisi (account AI), sull'app completa senza
 // login (AUTH_DISABLED=true: l'utente corrente è dev@localhost). Il secondo utente e gli account si
@@ -12,15 +14,13 @@ import { encryptSecret } from "../lib/secrets";
 
 const KEY = "sk-CHIAVE-DELL-UTENTE-DEV-11";
 const OTHER_KEY = "sk-CHIAVE-DELL-ALTRO-UTENTE-22";
-const GATEWAY_KEY = "sk-gateway-di-sistema-33";
 
 let base: string;
 let server: http.Server;
 let fake: FakeProvider;
-let ensureSystemAccount: () => Promise<{ accountId: number } | null>;
 let bodies: string[] = [];
 
-const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY", "AI_GATEWAY_BASE_URL", "AI_GATEWAY_API_KEY"] as const;
+const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY"] as const;
 const saved: Record<string, string | undefined> = {};
 
 function listen(s: http.Server): Promise<number> {
@@ -77,13 +77,18 @@ async function createApp() {
   return res.json as { id: number };
 }
 
-async function systemModelId(modelId: string): Promise<number> {
-  const [row] = await db
-    .select({ id: aiModelsTable.id })
-    .from(aiModelsTable)
-    .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
-    .where(and(isNull(aiAccountsTable.userId), eq(aiModelsTable.modelId, modelId)));
-  return row!.id;
+/** Modello del vecchio account del gateway, com'è ancora nel DB di produzione fino alla migrazione `-post`. */
+async function legacyGatewayModelId(): Promise<number> {
+  await ensureLegacyGatewayProvider();
+  const [account] = await db
+    .insert(aiAccountsTable)
+    .values({ userId: null, name: "Gateway Casello", provider: LEGACY_GATEWAY_PROVIDER, baseUrl: fake.baseUrl, status: "ok" })
+    .returning();
+  const [model] = await db
+    .insert(aiModelsTable)
+    .values({ accountId: account!.id, modelId: "openrouter/auto", displayName: "Auto" })
+    .returning();
+  return model!.id;
 }
 
 /** Attende che nessuna analisi resti queued/running (il finto provider risponde 400). */
@@ -108,7 +113,6 @@ beforeAll(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   process.env["AUTH_DISABLED"] = "true";
   process.env["CASELLO_SECRET_KEY"] = "c".repeat(64);
-  ({ ensureSystemAccount } = await import("../lib/ai/system-account"));
   const { default: app } = await import("../app");
   server = http.createServer(app);
   base = `http://127.0.0.1:${await listen(server)}`;
@@ -130,8 +134,6 @@ beforeEach(async () => {
   await pool.query("TRUNCATE users, apps, ai_accounts RESTART IDENTITY CASCADE");
   // Le chiamate di chat falliscono subito (400): le analisi avviate si chiudono da sole
   fake = await startFakeProvider({ statusFor: { chat: 400 } });
-  process.env["AI_GATEWAY_BASE_URL"] = fake.baseUrl;
-  process.env["AI_GATEWAY_API_KEY"] = GATEWAY_KEY;
 });
 
 afterEach(async () => {
@@ -140,7 +142,7 @@ afterEach(async () => {
   await fake.close();
   const rows = await db.select({ error: analysesTable.error }).from(analysesTable);
   for (const text of [...bodies, ...rows.map((r) => r.error ?? "")]) {
-    for (const secret of [KEY, OTHER_KEY, GATEWAY_KEY, FAKE_PROVIDER_ERROR_TEXT]) expect(text).not.toContain(secret);
+    for (const secret of [KEY, OTHER_KEY, FAKE_PROVIDER_ERROR_TEXT]) expect(text).not.toContain(secret);
   }
 });
 
@@ -182,19 +184,20 @@ describe("agenti con aiModelId", () => {
     expect(res.json).toEqual({ error: "modello non disponibile" });
   });
 
-  it("modello dell'account di sistema: ammesso; senza variabili del gateway → 400 col messaggio di sistema", async () => {
-    await ensureSystemAccount();
-    const sys = await systemModelId("openrouter/auto");
+  it("modello del vecchio account del gateway rimasto nel DB → 400 'modello non disponibile' (agenti e analisi)", async () => {
+    const legacy = await legacyGatewayModelId();
     const app = await createApp();
+    const before = await db.select().from(agentsTable);
 
-    const ok = await api("POST", "/agents", { appId: app.id, name: "Area", aiModelId: sys });
-    expect(ok.status, ok.text).toBe(201);
-    expect(ok.json.aiModelId).toBe(sys);
+    const created = await api("POST", "/agents", { appId: app.id, name: "Area", aiModelId: legacy });
+    expect(created.status).toBe(400);
+    expect(created.json).toEqual({ error: "modello non disponibile" });
+    expect(await db.select().from(agentsTable)).toHaveLength(before.length);
 
-    delete process.env["AI_GATEWAY_API_KEY"];
-    const ko = await api("POST", "/agents", { appId: app.id, name: "Area 2", aiModelId: sys });
-    expect(ko.status).toBe(400);
-    expect(ko.json).toEqual({ error: "account di sistema non più disponibile" });
+    const analysis = await api("POST", `/apps/${app.id}/analyses`, { aiModelId: legacy });
+    expect(analysis.status).toBe(400);
+    expect(analysis.json).toEqual({ error: "modello non disponibile" });
+    expect(await db.select().from(analysesTable)).toHaveLength(0);
   });
 
   it("PATCH verso il modello di un altro utente → 400 e agente invariato; verso un modello proprio → 200", async () => {
@@ -219,6 +222,24 @@ describe("agenti con aiModelId", () => {
     expect(ok.json.model).toBe("mio");
   });
 
+  it("PATCH con il solo model (testo): ignorato; aiModelId null toglie il modello", async () => {
+    const dev = await devUserId();
+    const mine = await accountFor(dev, KEY, "mio");
+    const app = await createApp();
+    const created = await api("POST", "/agents", { appId: app.id, name: "Area", aiModelId: mine.model.id });
+    expect(created.status, created.text).toBe(201);
+
+    const byName = await api("PATCH", `/agents/${created.json.id}`, { model: "openrouter/auto" });
+    expect(byName.status, byName.text).toBe(200);
+    expect(byName.json.aiModelId).toBe(mine.model.id);
+    expect(byName.json.model).toBe("mio");
+
+    const cleared = await api("PATCH", `/agents/${created.json.id}`, { aiModelId: null });
+    expect(cleared.status, cleared.text).toBe(200);
+    expect(cleared.json.aiModelId).toBeNull();
+    expect(cleared.json.model).toBe("");
+  });
+
   it("un altro utente modifica il nome di un agente con il modello di A → 200, aiModelId invariato (Review Focus 1)", async () => {
     // A = altro utente, proprietario del modello; l'utente corrente (dev) è B
     const a = await otherUser();
@@ -241,26 +262,17 @@ describe("agenti con aiModelId", () => {
     expect(same.json.model).toBe("di-a");
   });
 
-  it("l'agente generale di una nuova app nasce collegato al modello predefinito di sistema", async () => {
-    await ensureSystemAccount();
-    const sys = await systemModelId("openrouter/auto");
+  it("l'agente generale di una nuova app non usa il vecchio gateway: senza predefinito nasce senza modello", async () => {
+    await legacyGatewayModelId();
     const app = await createApp();
     const [general] = await db.select().from(agentsTable).where(and(eq(agentsTable.appId, app.id), eq(agentsTable.role, "general")));
-    expect(general!.aiModelId).toBe(sys);
-    expect(general!.model).toBe("openrouter/auto");
+    expect(general!.aiModelId).toBeNull();
+    expect(general!.model).toBe("");
   });
 
-  it("senza account di sistema (o senza le sue variabili) l'agente generale resta senza modello", async () => {
-    let app = await createApp();
-    let [general] = await db.select().from(agentsTable).where(and(eq(agentsTable.appId, app.id), eq(agentsTable.role, "general")));
-    expect(general!.aiModelId).toBeNull();
-
-    // L'account esiste ma non è configurato: niente collegamenti nuovi (neppure per nome)
-    await ensureSystemAccount();
-    delete process.env["AI_GATEWAY_API_KEY"];
-    app = await createApp();
-    [general] = await db.select().from(agentsTable).where(and(eq(agentsTable.appId, app.id), eq(agentsTable.role, "general")));
-    expect(general!.aiModelId).toBeNull();
+  it("il nome di un modello in `model` è ignorato: senza aiModelId né predefinito l'agente nasce senza modello", async () => {
+    await legacyGatewayModelId();
+    const app = await createApp();
     const byName = await api("POST", "/agents", { appId: app.id, name: "Area", model: "openrouter/auto" });
     expect(byName.status, byName.text).toBe(201);
     expect(byName.json.aiModelId).toBeNull();
@@ -316,39 +328,37 @@ describe("avvio delle analisi con aiModelId", () => {
     expect(await db.select().from(analysesTable)).toHaveLength(0);
   });
 
-  it("né aiModelId né model, oppure entrambi → 400 'scegli un modello'", async () => {
-    const dev = await devUserId();
-    const { model } = await accountFor(dev, KEY);
+  it("senza aiModelId → 400 'scegli un modello', anche via zip e con il solo model (non più accettato)", async () => {
     const app = await createApp();
 
     const none = await api("POST", `/apps/${app.id}/analyses`, {});
     expect(none.status).toBe(400);
     expect(none.json).toEqual({ error: "scegli un modello" });
-    const both = await api("POST", `/apps/${app.id}/analyses`, { aiModelId: model.id, model: "openrouter/auto" });
-    expect(both.status).toBe(400);
-    expect(both.json).toEqual({ error: "scegli un modello" });
+    const byName = await api("POST", `/apps/${app.id}/analyses`, { model: "openrouter/auto" });
+    expect(byName.status).toBe(400);
+    expect(byName.json).toEqual({ error: "scegli un modello" });
+
+    const zip = await fetch(`${base}/api/apps/${app.id}/analyses/zip?model=openrouter%2Fauto`, {
+      method: "POST",
+      headers: { "content-type": "application/zip" },
+      body: new Uint8Array([1, 2, 3]),
+    });
+    const text = await zip.text();
+    bodies.push(text);
+    expect(zip.status).toBe(400);
+    expect(JSON.parse(text)).toEqual({ error: "scegli un modello" });
+    expect(await db.select().from(analysesTable)).toHaveLength(0);
   });
 
-  it("solo model (console attuale): collegato al modello di sistema se esiste, altrimenti vecchio percorso", async () => {
+  it("aiModelId con model: il nome è ignorato, conta il modello scelto", async () => {
+    const dev = await devUserId();
+    const { model } = await accountFor(dev, KEY, "modello-dev");
     const app = await createApp();
-    const legacy = await api("POST", `/apps/${app.id}/analyses`, { model: "openrouter/auto" });
-    expect(legacy.status, legacy.text).toBe(202);
-    expect(legacy.json.aiModelId).toBeNull();
+
+    const res = await api("POST", `/apps/${app.id}/analyses`, { aiModelId: model.id, model: "openrouter/auto" });
+    expect(res.status, res.text).toBe(202);
+    expect(res.json.aiModelId).toBe(model.id);
+    expect(res.json.model).toBe("modello-dev");
     await settleAnalyses();
-    const legacyRow = await loadAnalysis(legacy.json.id);
-    expect(legacyRow.status).toBe("failed");
-    // Vecchio percorso: messaggio del gateway con il suggerimento per il 400
-    expect(legacyRow.error).toContain("il gateway dei modelli ha risposto con errore 400");
-
-    await ensureSystemAccount();
-    const sys = await systemModelId("openrouter/auto");
-    const mapped = await api("POST", `/apps/${app.id}/analyses`, { model: "openrouter/auto" });
-    expect(mapped.status, mapped.text).toBe(202);
-    expect(mapped.json.aiModelId).toBe(sys);
-    expect(mapped.json.model).toBe("openrouter/auto");
-
-    const unknown = await api("POST", `/apps/${app.id}/analyses`, { model: "non-esiste" });
-    expect(unknown.status).toBe(400);
-    expect(unknown.json.error).toContain("modello non disponibile");
   });
 });

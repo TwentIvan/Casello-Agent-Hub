@@ -32,11 +32,11 @@ import {
   CancelAnalysisResponse,
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
-import { AVAILABLE_MODELS } from "../lib/models";
-import { ModelChoiceError, chooseByName, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
+import { ModelChoiceError, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
+import { resolveAgentModel } from "../lib/ai/default-model";
 import { isUniqueViolation } from "../lib/pg-errors";
 import { userBudgetBlock } from "../lib/budget";
-import { ANALYSIS_DEFAULT_MAX_TOKENS, startAnalysis } from "../lib/architect/run-analysis";
+import { ANALYSIS_DEFAULT_MAX_TOKENS, CHOOSE_MODEL, startAnalysis } from "../lib/architect/run-analysis";
 import { ApplyError, applyItem } from "../lib/architect/apply";
 import { exportAll, exportChapter } from "../lib/architect/issues";
 import { LOCAL_MODEL, cancelLocalAnalysis, releaseLocalAnalysis } from "../lib/architect/local-executor";
@@ -73,26 +73,13 @@ const CHAPTER_ORDER: AnalysisChapter[] = PHASES.flatMap((phase) => PHASE_CHAPTER
 /** Solo questi capitoli si possono rimandare: gli altri si approvano o si scartano. */
 const POSTPONABLE = new Set<AnalysisChapter>(["endpoint", "completion", "evolution"]);
 
-/** Modello ammesso: uno di quelli offerti da GET /models. Errore in italiano o null. */
-function modelError(model: string): string | null {
-  if (AVAILABLE_MODELS.some((m) => m.id === model)) return null;
-  return `modello non disponibile: scegli tra ${AVAILABLE_MODELS.map((m) => m.id).join(", ")}`;
-}
-
-const CHOOSE_MODEL = "scegli un modello";
-
 /**
- * Modello dell'analisi, indicato con esattamente uno tra `aiModelId` (modello dell'utente che avvia
- * o dell'account di sistema) e `model` (nome, console precedente: elenco di GET /models, collegato
- * al modello di sistema equivalente se esiste). Lancia ModelChoiceError con il messaggio per il 400.
+ * Modello dell'analisi cloud: `aiModelId` obbligatorio (modello di un account dell'utente che
+ * avvia). Lancia ModelChoiceError con il messaggio per il 400.
  */
-async function analysisModel(input: { aiModelId?: number; model?: string }, userId: number): Promise<ModelChoice> {
-  const { aiModelId, model } = input;
-  if ((aiModelId === undefined) === (model === undefined)) throw new ModelChoiceError(CHOOSE_MODEL);
-  if (aiModelId !== undefined) return chooseOwnModel(aiModelId, userId);
-  const invalid = modelError(model!);
-  if (invalid) throw new ModelChoiceError(invalid);
-  return chooseByName(model!);
+async function analysisModel(aiModelId: number | undefined, userId: number): Promise<ModelChoice> {
+  if (aiModelId === undefined) throw new ModelChoiceError(CHOOSE_MODEL);
+  return chooseOwnModel(aiModelId, userId);
 }
 
 /** L'app ha già un'analisi `queued`/`running` (indice unico parziale `analyses_one_active_per_app`). */
@@ -148,7 +135,7 @@ function createLocal(app: App, maxTokens: number | undefined) {
   });
 }
 
-const LOCAL_NO_MODEL = "con l'agente locale non si sceglie il modello: togli aiModelId e model";
+const LOCAL_NO_MODEL = "con l'agente locale non si sceglie il modello: togli aiModelId";
 const LOCAL_NO_ZIP = "con l'agente locale lo zip non serve";
 const NOT_OPEN_LOCAL = "Solo un'analisi locale in coda o in corso si può rilasciare o annullare";
 
@@ -200,7 +187,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
   // Avvio con le sorgenti configurate sull'app (GitHub, OpenAPI, descrizione funzionale)
   router.post("/apps/:id/analyses", runRateLimit, async (req, res) => {
     const { id } = parseRequest(StartAnalysisParams, req.params);
-    const { model, aiModelId, maxTokens, executor = "cloud" } = parseRequest(StartAnalysisBody, req.body);
+    const { aiModelId, maxTokens, executor = "cloud" } = parseRequest(StartAnalysisBody, req.body);
     const app = await findApp(id);
     if (!app) {
       res.status(404).json({ error: "App non trovata" });
@@ -208,7 +195,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
     }
     if (executor === "local") {
       // Il codice lo legge l'agente sul proprio clone: nessun controllo sulle sorgenti né sul modello
-      if (aiModelId !== undefined || model !== undefined) {
+      if (aiModelId !== undefined) {
         res.status(400).json({ error: LOCAL_NO_MODEL });
         return;
       }
@@ -223,7 +210,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
     }
     let choice: ModelChoice;
     try {
-      choice = await analysisModel({ aiModelId, model }, currentUserId(req));
+      choice = await analysisModel(aiModelId, currentUserId(req));
     } catch (err) {
       if (!(err instanceof ModelChoiceError)) throw err;
       res.status(400).json({ error: err.message });
@@ -264,7 +251,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
     zipUpload(opts.zipLimitBytes),
     async (req, res) => {
       const { id } = parseRequest(StartZipAnalysisParams, req.params);
-      const { model, aiModelId, maxTokens, executor } = parseRequest(StartZipAnalysisQueryParams, req.query);
+      const { aiModelId, maxTokens, executor } = parseRequest(StartZipAnalysisQueryParams, req.query);
       if (executor === "local") {
         res.status(400).json({ error: LOCAL_NO_ZIP });
         return;
@@ -281,7 +268,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
       }
       let choice: ModelChoice;
       try {
-        choice = await analysisModel({ aiModelId, model }, currentUserId(req));
+        choice = await analysisModel(aiModelId, currentUserId(req));
       } catch (err) {
         if (!(err instanceof ModelChoiceError)) throw err;
         res.status(400).json({ error: err.message });
@@ -424,6 +411,19 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
       ...(body.reviewNote !== undefined ? { reviewNote: body.reviewNote } : {}),
     };
 
+    // Approvando un agente: modello per l'agente se è nuovo (scelto, poi il predefinito dell'utente, poi
+    // nessuno). Risolto prima della transazione; un agente esistente lo ignora e mantiene il suo.
+    let newAgentModel: ModelChoice | undefined;
+    if (body.status === "approved" && item.chapter === "agent") {
+      try {
+        newAgentModel = await resolveAgentModel(currentUserId(req), body.aiModelId);
+      } catch (err) {
+        if (!(err instanceof ModelChoiceError)) throw err;
+        res.status(400).json({ error: err.message });
+        return;
+      }
+    }
+
     let updated: AnalysisItem;
     try {
       if (body.status === "approved") {
@@ -436,7 +436,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
           if (!row) throw new ItemConflictError("Si può approvare solo un elemento in attesa");
           // Un errore qui (ApplyError o violazione di unicità che ha già interrotto la
           // transazione) esce dalla callback: rollback completo, l'elemento resta `pending`
-          await applyItem(row, appId, tx);
+          await applyItem(row, appId, tx, newAgentModel);
           return row;
         });
       } else {

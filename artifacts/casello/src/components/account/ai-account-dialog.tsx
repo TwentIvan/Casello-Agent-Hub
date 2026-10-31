@@ -32,14 +32,11 @@ import { cn } from "@/lib/utils";
 
 /**
  * Nome di un provider dal registro dell'API (`GET /ai/providers`); finché l'elenco non arriva, o per uno slug
- * che non vi compare, lo slug stesso. Il gateway di sistema non è nel registro degli account.
+ * che non vi compare, lo slug stesso.
  */
 export function useProviderLabel(): (provider: AiProvider) => string {
   const { data } = useListAiProviders();
-  return (provider) => {
-    if (provider === "system_gateway") return "Gateway di Casello";
-    return data?.find((p) => p.slug === provider)?.name ?? provider;
-  };
+  return (provider) => data?.find((p) => p.slug === provider)?.name ?? provider;
 }
 
 /**
@@ -184,7 +181,7 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
       updateAccount.reset();
       return;
     }
-    setProvider(account && account.provider !== "system_gateway" ? account.provider : "deepseek");
+    setProvider(account?.provider ?? "deepseek");
     setName(account?.name ?? "");
     // Usato solo se il provider ha l'indirizzo modificabile
     setBaseUrl(account?.baseUrl ?? "");

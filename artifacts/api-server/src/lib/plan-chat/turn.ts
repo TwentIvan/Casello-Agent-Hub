@@ -2,7 +2,7 @@
 // per qualche giro; poi una chiamata finale senza strumenti produce la risposta all'utente.
 
 import type { ChatCompletionFunctionTool, ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import { assistantToolCalls, type ChatToolCall } from "../ai-gateway";
+import { assistantToolCalls, type ChatToolCall } from "../ai/chat-types";
 import { ProviderError } from "../ai/discovery";
 import type { ModelChatResult } from "../ai/executor";
 import { effectiveTokens } from "../architect/phase-loop";

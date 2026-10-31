@@ -188,6 +188,11 @@ export interface App {
   updatedAt: string;
 }
 
+export interface DefaultModel {
+  /** @nullable */
+  aiModelId: number | null;
+}
+
 export interface AppInput {
   /** @minLength 1 */
   name: string;
@@ -217,6 +222,11 @@ export interface AppInput {
   /** @nullable */
   functionalDescription?: string | null;
   status?: AppStatus;
+  /**
+     * Modello dell'agente generale creato con l'app: deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti). Se assente si usa il modello predefinito dell'utente, se c'è; altrimenti l'agente nasce senza modello.
+     * @nullable
+     */
+  generalAgentAiModelId?: number | null;
 }
 
 export interface AppUpdate {
@@ -291,7 +301,7 @@ export interface Agent {
   /** Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto */
   model?: string;
   /**
-     * Modello scelto tra quelli degli account AI; le run usano l'account di questo modello (chi configura paga). Null = vecchio percorso del gateway
+     * Modello scelto tra quelli degli account AI; le run usano l'account di questo modello (chi configura paga). Null = nessun modello: l'agente non si può eseguire
      * @nullable
      */
   aiModelId: number | null;
@@ -316,10 +326,8 @@ export interface AgentInput {
   /** @minLength 1 */
   name: string;
   systemPrompt?: string;
-  /** Solo compatibilità; con aiModelId è ignorato */
-  model?: string;
   /**
-     * Modello di un account AI dell'utente o dell'account di sistema (400 "modello non disponibile" altrimenti)
+     * Modello di un account AI dell'utente (400 "modello non disponibile" altrimenti). Se assente si usa il modello predefinito dell'utente, se c'è; altrimenti l'agente nasce senza modello.
      * @nullable
      */
   aiModelId?: number | null;
@@ -331,10 +339,8 @@ export interface AgentUpdate {
   name?: string;
   /** @nullable */
   systemPrompt?: string | null;
-  /** Solo compatibilità; con aiModelId è ignorato */
-  model?: string;
   /**
-     * Se diverso da quello salvato deve essere un modello dell'utente o dell'account di sistema (400 altrimenti); uguale a quello salvato non viene ricontrollato
+     * Se diverso da quello salvato deve essere un modello dell'utente (400 altrimenti); uguale a quello salvato non viene ricontrollato
      * @nullable
      */
   aiModelId?: number | null;
@@ -351,16 +357,22 @@ export interface AgentUpdate {
   monthlyBudgetUsd?: number | null;
 }
 
-export interface AgentToolsInput {
-  toolIds: number[];
+export type AgentModelAssignmentsAssignmentsItem = {
+  agentId: number;
+  /** @nullable */
+  aiModelId: number | null;
+};
+
+export interface AgentModelAssignments {
+  /**
+     * @minItems 1
+     * @maxItems 200
+     */
+  assignments: AgentModelAssignmentsAssignmentsItem[];
 }
 
-export interface Model {
-  /** model_name di LiteLLM, da usare in Agent.model */
-  id: string;
-  label: string;
-  /** Modello usato quando un agente viene creato senza model */
-  isDefault: boolean;
+export interface AgentToolsInput {
+  toolIds: number[];
 }
 
 export type ToolKind = typeof ToolKind[keyof typeof ToolKind];
@@ -984,7 +996,7 @@ export interface AppPlan {
 }
 
 export interface PlanConversationCreate {
-  /** Modello di un account AI dell'utente o dell'account di sistema */
+  /** Modello di un account AI dell'utente */
   aiModelId: number;
   /** Analisi di riferimento (default l'ultima completata dell'app) */
   analysisId?: number;
@@ -1081,17 +1093,12 @@ export type AnalysisDetail = Analysis & {
 };
 
 /**
- * Con executor cloud (default) indicare esattamente uno tra aiModelId e model (altrimenti 400 "scegli un modello"); con executor local nessuno dei due.
+ * Con executor cloud (default) aiModelId è obbligatorio (altrimenti 400 "scegli un modello"); con executor local non si indica.
  */
 export interface AnalysisStart {
   executor?: AnalysisExecutor;
-  /** Modello di un account AI dell'utente o dell'account di sistema */
+  /** Modello di un account AI dell'utente */
   aiModelId?: number;
-  /**
-     * Compatibilità, modello AI come model_name di LiteLLM
-     * @minLength 1
-     */
-  model?: string;
   /**
      * Tetto di token per l'analisi (default 1000000)
      * @minimum 50000
@@ -1107,6 +1114,11 @@ export interface AnalysisItemUpdate {
   payload?: AnalysisItemUpdatePayload;
   /** @nullable */
   reviewNote?: string | null;
+  /**
+     * Solo con status approved su un agente nuovo: modello dell'agente creato, di un account AI dell'utente (400 "modello non disponibile" altrimenti). Se assente si usa il modello predefinito dell'utente, se c'è; un agente esistente mantiene il suo modello.
+     * @nullable
+     */
+  aiModelId?: number | null;
 }
 
 export interface IssueExport {
@@ -1141,7 +1153,7 @@ export interface AgentSkill {
 }
 
 /**
- * Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)
+ * Slug di un provider della tabella providers
  * @pattern ^[a-z0-9_-]{1,64}$
  */
 export type AiProvider = string;
@@ -1211,8 +1223,6 @@ export interface AiAccount {
   lastCheckedAt: string | null;
   /** Indica se la chiave è impostata (il valore non è mai esposto) */
   keySet: boolean;
-  /** Account di sistema (gateway di Casello), non modificabile */
-  isSystem: boolean;
   /** Numero di modelli dell'account (nascosti compresi) */
   modelCount: number;
   /**
@@ -1763,14 +1773,9 @@ before?: number;
 
 export type StartZipAnalysisParams = {
 /**
- * Modello di un account AI (esattamente uno tra aiModelId e model)
+ * Modello di un account AI (obbligatorio, altrimenti 400 "scegli un modello")
  */
 aiModelId?: number;
-/**
- * Compatibilità, modello AI come model_name di LiteLLM
- * @minLength 1
- */
-model?: string;
 /**
  * Tetto di token per l'analisi (default 1000000)
  * @minimum 50000

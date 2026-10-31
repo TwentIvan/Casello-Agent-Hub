@@ -3,13 +3,15 @@ import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { strToU8, zipSync } from "fflate";
-import { db, pool, analysesTable, appsTable, githubInstallationsTable } from "@workspace/db";
+import { db, pool, aiAccountsTable, aiModelsTable, analysesTable, appsTable, githubInstallationsTable } from "@workspace/db";
 import { startFakeGithub, type FakeGithub } from "../../test/fake-github";
+import { allowTestLoopback } from "../../test/fake-provider";
+import { encryptSecret } from "../lib/secrets";
 
 // Sorgenti GitHub tramite l'App: salvataggio dell'app con `sourceInstallationId` e avvio
 // dell'analisi senza token manuale. File separato da analyses.test.ts perché il rate limit degli
 // avvii (10 al minuto per IP) è per processo. Senza login (AUTH_DISABLED=true: utente di sviluppo);
-// il finto LiteLLM rifiuta ogni chiamata, così le analisi avviate finiscono subito.
+// il finto provider (modello dell'utente di sviluppo) rifiuta ogni chiamata, così le analisi avviate finiscono subito.
 
 const GITHUB_KEYS = [
   "GITHUB_APP_ID",
@@ -20,7 +22,7 @@ const GITHUB_KEYS = [
   "GITHUB_API_BASE",
   "GITHUB_WEB_BASE",
 ];
-const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY", "AI_GATEWAY_BASE_URL", "AI_GATEWAY_API_KEY", ...GITHUB_KEYS];
+const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY", ...GITHUB_KEYS];
 const saved: Record<string, string | undefined> = {};
 
 const NOT_YOURS = "installazione non trovata o non tua";
@@ -37,6 +39,9 @@ let userId: number;
 let otherUserId: number;
 let resetConfig: () => void;
 let clearTokenCache: () => void;
+// Modello di un account dell'utente di sviluppo verso il finto provider `llm`
+let modelId: number;
+let restoreLoopback: () => void;
 
 function listen(s: http.Server): Promise<number> {
   return new Promise((resolve) => s.listen(0, "127.0.0.1", () => resolve((s.address() as AddressInfo).port)));
@@ -91,7 +96,7 @@ async function addRow(installationId: number, forUser = userId) {
 
 const appBody = (extra: Record<string, unknown> = {}) => ({ name: "Mister", baseUrl: fakeAppBase, ...extra });
 
-/** Attende che nessuna analisi resti queued/running (il finto LiteLLM le fa fallire subito). */
+/** Attende che nessuna analisi resti queued/running (il finto provider le fa fallire subito). */
 async function settleAnalyses() {
   for (let i = 0; i < 500; i++) {
     const active = await db
@@ -108,7 +113,6 @@ beforeAll(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   process.env["AUTH_DISABLED"] = "true";
   process.env["CASELLO_SECRET_KEY"] = "d".repeat(64);
-  process.env["AI_GATEWAY_API_KEY"] = "sk-test";
   gh = await startFakeGithub();
 
   llm = http.createServer((req, res) => {
@@ -126,7 +130,7 @@ beforeAll(async () => {
       res.end();
     });
   });
-  process.env["AI_GATEWAY_BASE_URL"] = `http://127.0.0.1:${await listen(llm)}/v1`;
+  const llmBase = `http://127.0.0.1:${await listen(llm)}/v1`;
   fakeAppBase = `http://127.0.0.1:${await listen(fakeApp)}`;
 
   const { default: app } = await import("../app");
@@ -135,6 +139,21 @@ beforeAll(async () => {
   const { ensureUserByEmail } = await import("../lib/users");
   userId = (await ensureUserByEmail("dev@localhost")).id;
   otherUserId = (await ensureUserByEmail("altro@example.com")).id;
+  restoreLoopback = allowTestLoopback();
+  const [account] = await db
+    .insert(aiAccountsTable)
+    .values({
+      userId,
+      name: "Account di prova",
+      provider: "custom",
+      baseUrl: llmBase,
+      allowPrivateNetwork: true,
+      apiKeyEnc: encryptSecret("sk-test"),
+      status: "ok",
+    })
+    .returning();
+  const [model] = await db.insert(aiModelsTable).values({ accountId: account!.id, modelId: "modello", displayName: "M" }).returning();
+  modelId = model!.id;
 
   server = http.createServer(app);
   base = `http://127.0.0.1:${await listen(server)}`;
@@ -148,6 +167,7 @@ afterAll(async () => {
   await gh.close();
   await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
   await pool.query("TRUNCATE users RESTART IDENTITY CASCADE");
+  restoreLoopback();
   for (const k of ENV_KEYS) {
     if (saved[k] === undefined) delete process.env[k];
     else process.env[k] = saved[k];
@@ -290,7 +310,7 @@ describe("avvio dell'analisi con l'installazione", () => {
     await addRow(11);
     const created = await api("POST", "/apps", appBody({ sourceType: "github", sourceRepo: "ivan/mister", sourceInstallationId: 11 }));
     expect(created.json.sourceTokenSet).toBe(false);
-    const res = await api("POST", `/apps/${created.json.id}/analyses`, { model: "openrouter/auto" });
+    const res = await api("POST", `/apps/${created.json.id}/analyses`, { aiModelId: modelId });
     expect(res.status, res.text).toBe(202);
     expect(res.json).toMatchObject({ status: "queued", sources: { code: "github" } });
     await settleAnalyses();
@@ -306,7 +326,7 @@ describe("avvio dell'analisi con l'installazione", () => {
       .insert(appsTable)
       .values({ name: "Mister", slug: "mister", baseUrl: fakeAppBase, sourceType: "github", sourceRepo: "ivan/mister", sourceInstallationId: 11 })
       .returning();
-    const res = await api("POST", `/apps/${app!.id}/analyses`, { model: "openrouter/auto" });
+    const res = await api("POST", `/apps/${app!.id}/analyses`, { aiModelId: modelId });
     expect(res.status).toBe(403);
     expect(res.json).toEqual({ error: NOT_YOURS });
     expect(await db.select().from(analysesTable)).toHaveLength(0);

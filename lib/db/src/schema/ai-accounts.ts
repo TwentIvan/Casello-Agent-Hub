@@ -5,8 +5,9 @@ import { providersTable } from "./providers";
 
 export const aiAccountStatusEnum = pgEnum("ai_account_status", ["unverified", "ok", "error"]);
 
-// Account presso un provider AI. user_id è null solo per l'account di sistema (gateway di Casello).
-// La chiave è salvata cifrata (api_key_enc), null per system_gateway
+// Account presso un provider AI. user_id è null solo per il vecchio account del gateway (dismesso),
+// finché la migrazione 2026-10-pulizia-gateway-post.sql non lo elimina: il codice lo ignora.
+// La chiave è salvata cifrata (api_key_enc); null se il provider non la richiede
 export const aiAccountsTable = pgTable(
   "ai_accounts",
   {

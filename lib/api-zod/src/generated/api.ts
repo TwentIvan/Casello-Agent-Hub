@@ -121,6 +121,28 @@ export const RevokeApiTokenResponse = zod.void()
 
 
 /**
+ * Modello proposto per gli agenti che Casello crea (agente generale di un'app nuova, agenti approvati dall'architetto, agenti creati senza modello). Null se non impostato o se il modello è stato eliminato. Solo con il login: con un token risponde 403.
+ * @summary Modello predefinito dell'utente
+ */
+export const GetDefaultModelResponse = zod.object({
+  "aiModelId": zod.number().nullable()
+})
+
+
+/**
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+ * @summary Imposta o toglie il modello predefinito dell'utente
+ */
+export const SetDefaultModelBody = zod.object({
+  "aiModelId": zod.number().nullable()
+})
+
+export const SetDefaultModelResponse = zod.object({
+  "aiModelId": zod.number().nullable()
+})
+
+
+/**
  * @summary Elenca tutte le app registrate
  */
 
@@ -187,7 +209,8 @@ export const CreateAppBody = zod.object({
   "sourceInstallationId": zod.number().nullish().describe('Installazione della GitHub App dell\'utente che vede sourceRepo (solo con sourceType github); altrimenti 400 \"installazione non trovata o non tua\"'),
   "openapiUrl": zod.string().nullish(),
   "functionalDescription": zod.string().nullish(),
-  "status": zod.enum(['active', 'inactive']).optional()
+  "status": zod.enum(['active', 'inactive']).optional(),
+  "generalAgentAiModelId": zod.number().nullish().describe('Modello dell\'agente generale creato con l\'app: deve essere di un account AI dell\'utente (400 \"modello non disponibile\" altrimenti). Se assente si usa il modello predefinito dell\'utente, se c\'è; altrimenti l\'agente nasce senza modello.')
 })
 
 
@@ -356,7 +379,7 @@ export const ListAgentsResponseItem = zod.object({
   "name": zod.string(),
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
-  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
+  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = nessun modello: l\'agente non si può eseguire'),
   "status": zod.enum(['active', 'inactive', 'draft']),
   "role": zod.enum(['general', 'area']),
   "area": zod.string().nullish(),
@@ -379,8 +402,7 @@ export const CreateAgentBody = zod.object({
   "appId": zod.number(),
   "name": zod.string().min(1),
   "systemPrompt": zod.string().optional(),
-  "model": zod.string().optional().describe('Solo compatibilità; con aiModelId è ignorato'),
-  "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente o dell\'account di sistema (400 \"modello non disponibile\" altrimenti)'),
+  "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente (400 \"modello non disponibile\" altrimenti). Se assente si usa il modello predefinito dell\'utente, se c\'è; altrimenti l\'agente nasce senza modello.'),
   "status": zod.enum(['active', 'inactive', 'draft']).optional()
 })
 
@@ -390,7 +412,7 @@ export const CreateAgentResponse = zod.object({
   "name": zod.string(),
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
-  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
+  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = nessun modello: l\'agente non si può eseguire'),
   "status": zod.enum(['active', 'inactive', 'draft']),
   "role": zod.enum(['general', 'area']),
   "area": zod.string().nullish(),
@@ -415,7 +437,7 @@ export const GetAgentResponse = zod.object({
   "name": zod.string(),
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
-  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
+  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = nessun modello: l\'agente non si può eseguire'),
   "status": zod.enum(['active', 'inactive', 'draft']),
   "role": zod.enum(['general', 'area']),
   "area": zod.string().nullish(),
@@ -443,8 +465,7 @@ export const updateAgentBodyMonthlyBudgetUsdMax = 1000000;
 export const UpdateAgentBody = zod.object({
   "name": zod.string().min(1).optional(),
   "systemPrompt": zod.string().nullish(),
-  "model": zod.string().optional().describe('Solo compatibilità; con aiModelId è ignorato'),
-  "aiModelId": zod.number().nullish().describe('Se diverso da quello salvato deve essere un modello dell\'utente o dell\'account di sistema (400 altrimenti); uguale a quello salvato non viene ricontrollato'),
+  "aiModelId": zod.number().nullish().describe('Se diverso da quello salvato deve essere un modello dell\'utente (400 altrimenti); uguale a quello salvato non viene ricontrollato'),
   "status": zod.enum(['active', 'inactive', 'draft']).optional(),
   "area": zod.string().nullish(),
   "defaultIdentity": zod.enum(['user', 'service']).optional(),
@@ -457,7 +478,7 @@ export const UpdateAgentResponse = zod.object({
   "name": zod.string(),
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
-  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
+  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = nessun modello: l\'agente non si può eseguire'),
   "status": zod.enum(['active', 'inactive', 'draft']),
   "role": zod.enum(['general', 'area']),
   "area": zod.string().nullish(),
@@ -625,6 +646,44 @@ export const DeleteAppToolResponse = zod.void()
 
 
 /**
+ * Assegna in una sola chiamata il modello di ciascun agente indicato (null = nessun modello). Tutto o niente: se un agente non è dell'app o un modello non è dell'utente non cambia nulla.
+ * @summary Imposta il modello di più agenti di un'app
+ */
+export const SetAppAgentModelsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const setAppAgentModelsBodyAssignmentsMax = 200;
+
+
+
+export const SetAppAgentModelsBody = zod.object({
+  "assignments": zod.array(zod.object({
+  "agentId": zod.number(),
+  "aiModelId": zod.number().nullable()
+})).min(1).max(setAppAgentModelsBodyAssignmentsMax)
+})
+
+export const SetAppAgentModelsResponseItem = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "name": zod.string(),
+  "systemPrompt": zod.string().nullish(),
+  "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
+  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = nessun modello: l\'agente non si può eseguire'),
+  "status": zod.enum(['active', 'inactive', 'draft']),
+  "role": zod.enum(['general', 'area']),
+  "area": zod.string().nullish(),
+  "defaultIdentity": zod.enum(['user', 'service']),
+  "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const SetAppAgentModelsResponse = zod.array(SetAppAgentModelsResponseItem)
+
+
+/**
  * Sostituisce l'insieme dei tool assegnati all'agente. I tool devono appartenere alla stessa app dell'agente.
  * @summary Imposta i tool di un agente
  */
@@ -642,7 +701,7 @@ export const SetAgentToolsResponse = zod.object({
   "name": zod.string(),
   "systemPrompt": zod.string().nullish(),
   "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
-  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
+  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = nessun modello: l\'agente non si può eseguire'),
   "status": zod.enum(['active', 'inactive', 'draft']),
   "role": zod.enum(['general', 'area']),
   "area": zod.string().nullish(),
@@ -897,7 +956,6 @@ export const StartAnalysisParams = zod.object({
   "id": zod.coerce.number()
 })
 
-
 export const startAnalysisBodyMaxTokensMin = 50000;
 export const startAnalysisBodyMaxTokensMax = 2000000;
 
@@ -905,10 +963,9 @@ export const startAnalysisBodyMaxTokensMax = 2000000;
 
 export const StartAnalysisBody = zod.object({
   "executor": zod.enum(['cloud', 'local']).optional().describe('Chi esegue l\'analisi, il cloud di Casello o un agente locale via MCP'),
-  "aiModelId": zod.number().optional().describe('Modello di un account AI dell\'utente o dell\'account di sistema'),
-  "model": zod.string().min(1).optional().describe('Compatibilità, modello AI come model_name di LiteLLM'),
+  "aiModelId": zod.number().optional().describe('Modello di un account AI dell\'utente'),
   "maxTokens": zod.number().min(startAnalysisBodyMaxTokensMin).max(startAnalysisBodyMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)')
-}).describe('Con executor cloud (default) indicare esattamente uno tra aiModelId e model (altrimenti 400 \"scegli un modello\"); con executor local nessuno dei due.')
+}).describe('Con executor cloud (default) aiModelId è obbligatorio (altrimenti 400 \"scegli un modello\"); con executor local non si indica.')
 
 export const StartAnalysisResponse = zod.object({
   "id": zod.number(),
@@ -943,15 +1000,13 @@ export const StartZipAnalysisParams = zod.object({
   "id": zod.coerce.number()
 })
 
-
 export const startZipAnalysisQueryMaxTokensMin = 50000;
 export const startZipAnalysisQueryMaxTokensMax = 2000000;
 
 
 
 export const StartZipAnalysisQueryParams = zod.object({
-  "aiModelId": zod.coerce.number().optional().describe('Modello di un account AI (esattamente uno tra aiModelId e model)'),
-  "model": zod.coerce.string().min(1).optional().describe('Compatibilità, modello AI come model_name di LiteLLM'),
+  "aiModelId": zod.coerce.number().optional().describe('Modello di un account AI (obbligatorio, altrimenti 400 \"scegli un modello\")'),
   "maxTokens": zod.coerce.number().min(startZipAnalysisQueryMaxTokensMin).max(startZipAnalysisQueryMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)'),
   "executor": zod.enum(['cloud', 'local']).optional().describe('Con local risponde 400 \"con l\'agente locale lo zip non serve\"')
 })
@@ -1146,7 +1201,8 @@ export const UpdateAnalysisItemParams = zod.object({
 export const UpdateAnalysisItemBody = zod.object({
   "status": zod.enum(['pending', 'approved', 'discarded', 'postponed']).optional().describe('postponed solo per i capitoli endpoint, completion ed evolution'),
   "payload": zod.record(zod.string(), zod.unknown()).optional(),
-  "reviewNote": zod.string().nullish()
+  "reviewNote": zod.string().nullish(),
+  "aiModelId": zod.number().nullish().describe('Solo con status approved su un agente nuovo: modello dell\'agente creato, di un account AI dell\'utente (400 \"modello non disponibile\" altrimenti). Se assente si usa il modello predefinito dell\'utente, se c\'è; un agente esistente mantiene il suo modello.')
 })
 
 export const UpdateAnalysisItemResponse = zod.object({
@@ -1349,25 +1405,14 @@ export const UpdateBudgetResponse = zod.object({
 
 
 /**
- * @summary Elenca i modelli selezionabili per gli agenti (model_name di LiteLLM)
- */
-export const ListModelsResponseItem = zod.object({
-  "id": zod.string().describe('model_name di LiteLLM, da usare in Agent.model'),
-  "label": zod.string(),
-  "isDefault": zod.boolean().describe('Modello usato quando un agente viene creato senza model')
-})
-export const ListModelsResponse = zod.array(ListModelsResponseItem)
-
-
-/**
- * Provider della tabella providers (registro e scoperti), senza system_gateway: prima i gestiti per nome, poi quelli in arrivo, poi i non gestiti.
+ * Provider della tabella providers (registro e scoperti), senza quello del vecchio gateway: prima i gestiti per nome, poi quelli in arrivo, poi i non gestiti.
  * @summary Provider del registro per la creazione degli account AI
  */
 export const listAiProvidersResponseSlugRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
 
 
 export const ListAiProvidersResponseItem = zod.object({
-  "slug": zod.string().regex(listAiProvidersResponseSlugRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "slug": zod.string().regex(listAiProvidersResponseSlugRegExp).describe('Slug di un provider della tabella providers'),
   "name": zod.string(),
   "protocol": zod.enum(['openai_compatible', 'anthropic', 'bedrock', 'vertex', 'azure', 'unknown']),
   "status": zod.enum(['managed', 'coming', 'unmanaged']).describe('managed: esecutore disponibile; coming: protocollo noto ancora senza esecutore (non selezionabile); unmanaged: sconosciuto al registro, configurabile come compatibile OpenAI con indirizzo dell\'utente'),
@@ -1378,8 +1423,8 @@ export const ListAiProvidersResponse = zod.array(ListAiProvidersResponseItem)
 
 
 /**
- * Account dell'utente corrente (il predefinito per primo, poi per nome) seguiti dall'account di sistema, se configurato. La chiave non è mai esposta: solo keySet.
- * @summary Elenca gli account AI dell'utente e l'account di sistema
+ * Account dell'utente corrente (il predefinito per primo, poi per nome). La chiave non è mai esposta: solo keySet.
+ * @summary Elenca gli account AI dell'utente
  */
 export const listAiAccountsResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
 
@@ -1387,7 +1432,7 @@ export const listAiAccountsResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,64
 export const ListAiAccountsResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.string().regex(listAiAccountsResponseProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(listAiAccountsResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1395,7 +1440,6 @@ export const ListAiAccountsResponseItem = zod.object({
   "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
-  "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
   "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD su tutti i modelli dell\'account; null = nessun limite')
 })
@@ -1417,7 +1461,7 @@ export const createAiAccountBodyBaseUrlMax = 2048;
 
 export const CreateAiAccountBody = zod.object({
   "name": zod.string().min(1).max(createAiAccountBodyNameMax),
-  "provider": zod.string().regex(createAiAccountBodyProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(createAiAccountBodyProviderRegExp).describe('Slug di un provider della tabella providers'),
   "apiKey": zod.string().max(createAiAccountBodyApiKeyMax).nullish().describe('Chiave del provider (solo scrittura, salvata cifrata); vuota solo per custom'),
   "baseUrl": zod.string().max(createAiAccountBodyBaseUrlMax).nullish().describe('Obbligatorio per custom, provider non gestiti e gestiti senza indirizzo predefinito; gli altri usano il base URL predefinito'),
   "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom e provider non gestiti')
@@ -1429,7 +1473,7 @@ export const createAiAccountResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,6
 export const CreateAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.string().regex(createAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(createAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1437,14 +1481,13 @@ export const CreateAiAccountResponse = zod.object({
   "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
-  "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
   "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD su tutti i modelli dell\'account; null = nessun limite')
 })
 
 
 /**
- * Nome, chiave (assente o "" = invariata, null = rimossa, solo custom), base URL e allowPrivateNetwork (solo custom). Una chiave o un base URL nuovi rileggono i modelli come verifyAiAccount. Account di sistema → 403; account di un altro utente → 404.
+ * Nome, chiave (assente o "" = invariata, null = rimossa, solo custom), base URL e allowPrivateNetwork (solo custom). Una chiave o un base URL nuovi rileggono i modelli come verifyAiAccount. Account di un altro utente → 404.
  * @summary Modifica un account AI
  */
 export const UpdateAiAccountParams = zod.object({
@@ -1476,7 +1519,7 @@ export const updateAiAccountResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,6
 export const UpdateAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.string().regex(updateAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(updateAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1484,7 +1527,6 @@ export const UpdateAiAccountResponse = zod.object({
   "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
-  "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
   "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD su tutti i modelli dell\'account; null = nessun limite')
 })
@@ -1515,7 +1557,7 @@ export const verifyAiAccountResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,6
 export const VerifyAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.string().regex(verifyAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(verifyAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1523,7 +1565,6 @@ export const VerifyAiAccountResponse = zod.object({
   "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
-  "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
   "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD su tutti i modelli dell\'account; null = nessun limite')
 })
@@ -1542,7 +1583,7 @@ export const setDefaultAiAccountResponseProviderRegExp = new RegExp('^[a-z0-9_-]
 export const SetDefaultAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.string().regex(setDefaultAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(setDefaultAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1550,7 +1591,6 @@ export const SetDefaultAiAccountResponse = zod.object({
   "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
-  "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
   "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD su tutti i modelli dell\'account; null = nessun limite')
 })
@@ -1692,7 +1732,7 @@ export const UpdateAiModelResponse = zod.object({
 
 
 /**
- * Solo per i modelli degli account dell'utente (non di sistema). Una chiamata con un messaggio minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la disponibilità. Massimo 5 prove al minuto per IP.
+ * Solo per i modelli degli account dell'utente. Una chiamata con un messaggio minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la disponibilità. Massimo 5 prove al minuto per IP.
  * @summary Prova un modello con una chiamata da 1 token
  */
 export const ProbeAiModelParams = zod.object({
@@ -1728,7 +1768,7 @@ export const ProbeAiModelResponse = zod.object({
 
 
 /**
- * Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo) e account di sistema per ultimo, se configurato. I modelli nascosti sono esclusi; quelli non selezionabili restano con `selectable: false`. Al massimo un modello consigliato per gruppo.
+ * Account dell'utente (il predefinito per primo, poi per nome; quelli in errore in fondo). I modelli nascosti sono esclusi; quelli non selezionabili restano con `selectable: false`. Al massimo un modello consigliato per gruppo.
  * @summary Modelli selezionabili dall'utente, raggruppati per account
  */
 export const listAiModelsResponseAccountProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
@@ -1738,7 +1778,7 @@ export const ListAiModelsResponseItem = zod.object({
   "account": zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "provider": zod.string().regex(listAiModelsResponseAccountProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(listAiModelsResponseAccountProviderRegExp).describe('Slug di un provider della tabella providers'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -1746,7 +1786,6 @@ export const ListAiModelsResponseItem = zod.object({
   "lastError": zod.string().nullable().describe('Messaggio fisso dell\'ultimo errore del provider'),
   "lastCheckedAt": zod.coerce.date().nullable(),
   "keySet": zod.boolean().describe('Indica se la chiave è impostata (il valore non è mai esposto)'),
-  "isSystem": zod.boolean().describe('Account di sistema (gateway di Casello), non modificabile'),
   "modelCount": zod.number().describe('Numero di modelli dell\'account (nascosti compresi)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD su tutti i modelli dell\'account; null = nessun limite')
 }),
@@ -1826,7 +1865,7 @@ export const ListCatalogModelsQueryParams = zod.object({
   "q": zod.coerce.string().max(listCatalogModelsQueryQMax).optional(),
   "mode": zod.enum(['all', 'chat', 'embedding', 'image_generation', 'image_edit', 'audio_transcription', 'audio_speech', 'video_generation', 'rerank', 'moderation', 'ocr', 'search', 'realtime', 'responses', 'completion', 'other']).default(listCatalogModelsQueryModeDefault).describe('Tipo del modello; `all` per tutti'),
   "author": zod.array(zod.coerce.string().max(listCatalogModelsQueryAuthorItemMax)).max(listCatalogModelsQueryAuthorMax).optional(),
-  "provider": zod.array(zod.coerce.string().regex(listCatalogModelsQueryProviderItemRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)')).max(listCatalogModelsQueryProviderMax).optional(),
+  "provider": zod.array(zod.coerce.string().regex(listCatalogModelsQueryProviderItemRegExp).describe('Slug di un provider della tabella providers')).max(listCatalogModelsQueryProviderMax).optional(),
   "tools": zod.coerce.boolean().optional(),
   "vision": zod.coerce.boolean().optional(),
   "reasoning": zod.coerce.boolean().optional(),
@@ -1857,7 +1896,7 @@ export const ListCatalogModelsResponse = zod.object({
   "offerCount": zod.number().describe('Offerte visibili (senza le ritirate, salvo includeRetired)'),
   "providerCount": zod.number().describe('Provider distinti tra le offerte visibili'),
   "cheapestOffer": zod.union([zod.object({
-  "provider": zod.string().regex(listCatalogModelsResponseItemsItemCheapestOfferOneProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(listCatalogModelsResponseItemsItemCheapestOfferOneProviderRegExp).describe('Slug di un provider della tabella providers'),
   "priceInput": zod.number().describe('USD per milione di token'),
   "priceOutput": zod.number().describe('USD per milione di token')
 }),zod.null()]),
@@ -1882,7 +1921,7 @@ export const listCatalogModelOffersResponseProviderRegExp = new RegExp('^[a-z0-9
 
 export const ListCatalogModelOffersResponseItem = zod.object({
   "id": zod.number(),
-  "provider": zod.string().regex(listCatalogModelOffersResponseProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(listCatalogModelOffersResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
   "providerName": zod.string(),
   "providerStatus": zod.enum(['managed', 'coming', 'unmanaged']).describe('managed: esecutore disponibile; coming: protocollo noto ancora senza esecutore (non selezionabile); unmanaged: sconosciuto al registro, configurabile come compatibile OpenAI con indirizzo dell\'utente'),
   "providerModelId": zod.string(),
@@ -1898,7 +1937,7 @@ export const ListCatalogModelOffersResponse = zod.array(ListCatalogModelOffersRe
 
 
 /**
- * Provider della tabella providers senza system_gateway: prima i gestiti, poi in arrivo, poi i non gestiti, per nome. `modelCount` conta i modelli con un'offerta non ritirata; `hasMyAccount` dice se l'utente ha un account presso il provider. `q` cerca in slug e nome.
+ * Provider della tabella providers senza quello del vecchio gateway: prima i gestiti, poi in arrivo, poi i non gestiti, per nome. `modelCount` conta i modelli con un'offerta non ritirata; `hasMyAccount` dice se l'utente ha un account presso il provider. `q` cerca in slug e nome.
  * @summary Provider del catalogo
  */
 export const listCatalogProvidersQueryQMax = 200;
@@ -1914,7 +1953,7 @@ export const listCatalogProvidersResponseSlugRegExp = new RegExp('^[a-z0-9_-]{1,
 
 
 export const ListCatalogProvidersResponseItem = zod.object({
-  "slug": zod.string().regex(listCatalogProvidersResponseSlugRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "slug": zod.string().regex(listCatalogProvidersResponseSlugRegExp).describe('Slug di un provider della tabella providers'),
   "name": zod.string(),
   "protocol": zod.enum(['openai_compatible', 'anthropic', 'bedrock', 'vertex', 'azure', 'unknown']),
   "status": zod.enum(['managed', 'coming', 'unmanaged']).describe('managed: esecutore disponibile; coming: protocollo noto ancora senza esecutore (non selezionabile); unmanaged: sconosciuto al registro, configurabile come compatibile OpenAI con indirizzo dell\'utente'),
@@ -1971,24 +2010,24 @@ export const GetCatalogStatusResponse = zod.object({
   "summary": zod.union([zod.object({
   "firstRun": zod.boolean(),
   "added": zod.array(zod.object({
-  "provider": zod.string().regex(getCatalogStatusResponseLatestOneSummaryOneAddedItemProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(getCatalogStatusResponseLatestOneSummaryOneAddedItemProviderRegExp).describe('Slug di un provider della tabella providers'),
   "modelId": zod.string(),
   "version": zod.string()
 })),
   "retired": zod.array(zod.object({
-  "provider": zod.string().regex(getCatalogStatusResponseLatestOneSummaryOneRetiredItemProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(getCatalogStatusResponseLatestOneSummaryOneRetiredItemProviderRegExp).describe('Slug di un provider della tabella providers'),
   "modelId": zod.string(),
   "version": zod.string()
 })),
   "deprecating": zod.array(zod.object({
-  "provider": zod.string().regex(getCatalogStatusResponseLatestOneSummaryOneDeprecatingItemOneProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(getCatalogStatusResponseLatestOneSummaryOneDeprecatingItemOneProviderRegExp).describe('Slug di un provider della tabella providers'),
   "modelId": zod.string(),
   "version": zod.string()
 }).and(zod.object({
   "deprecationDate": zod.string()
 }))),
   "priceChanged": zod.array(zod.object({
-  "provider": zod.string().regex(getCatalogStatusResponseLatestOneSummaryOnePriceChangedItemOneProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(getCatalogStatusResponseLatestOneSummaryOnePriceChangedItemOneProviderRegExp).describe('Slug di un provider della tabella providers'),
   "modelId": zod.string(),
   "version": zod.string()
 }).and(zod.object({
@@ -1998,7 +2037,7 @@ export const GetCatalogStatusResponse = zod.object({
   "newOutput": zod.number().nullable()
 }))),
   "newProviders": zod.array(zod.object({
-  "slug": zod.string().regex(getCatalogStatusResponseLatestOneSummaryOneNewProvidersItemSlugRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "slug": zod.string().regex(getCatalogStatusResponseLatestOneSummaryOneNewProvidersItemSlugRegExp).describe('Slug di un provider della tabella providers'),
   "name": zod.string(),
   "count": zod.number()
 })).describe('Provider scoperti in questa esecuzione (non gestiti)'),
@@ -2019,24 +2058,24 @@ export const GetCatalogStatusResponse = zod.object({
   "summary": zod.union([zod.object({
   "firstRun": zod.boolean(),
   "added": zod.array(zod.object({
-  "provider": zod.string().regex(getCatalogStatusResponseLastCompletedOneSummaryOneAddedItemProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(getCatalogStatusResponseLastCompletedOneSummaryOneAddedItemProviderRegExp).describe('Slug di un provider della tabella providers'),
   "modelId": zod.string(),
   "version": zod.string()
 })),
   "retired": zod.array(zod.object({
-  "provider": zod.string().regex(getCatalogStatusResponseLastCompletedOneSummaryOneRetiredItemProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(getCatalogStatusResponseLastCompletedOneSummaryOneRetiredItemProviderRegExp).describe('Slug di un provider della tabella providers'),
   "modelId": zod.string(),
   "version": zod.string()
 })),
   "deprecating": zod.array(zod.object({
-  "provider": zod.string().regex(getCatalogStatusResponseLastCompletedOneSummaryOneDeprecatingItemOneProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(getCatalogStatusResponseLastCompletedOneSummaryOneDeprecatingItemOneProviderRegExp).describe('Slug di un provider della tabella providers'),
   "modelId": zod.string(),
   "version": zod.string()
 }).and(zod.object({
   "deprecationDate": zod.string()
 }))),
   "priceChanged": zod.array(zod.object({
-  "provider": zod.string().regex(getCatalogStatusResponseLastCompletedOneSummaryOnePriceChangedItemOneProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(getCatalogStatusResponseLastCompletedOneSummaryOnePriceChangedItemOneProviderRegExp).describe('Slug di un provider della tabella providers'),
   "modelId": zod.string(),
   "version": zod.string()
 }).and(zod.object({
@@ -2046,7 +2085,7 @@ export const GetCatalogStatusResponse = zod.object({
   "newOutput": zod.number().nullable()
 }))),
   "newProviders": zod.array(zod.object({
-  "slug": zod.string().regex(getCatalogStatusResponseLastCompletedOneSummaryOneNewProvidersItemSlugRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "slug": zod.string().regex(getCatalogStatusResponseLastCompletedOneSummaryOneNewProvidersItemSlugRegExp).describe('Slug di un provider della tabella providers'),
   "name": zod.string(),
   "count": zod.number()
 })).describe('Provider scoperti in questa esecuzione (non gestiti)'),
@@ -2081,24 +2120,24 @@ export const RefreshCatalogResponse = zod.object({
   "summary": zod.union([zod.object({
   "firstRun": zod.boolean(),
   "added": zod.array(zod.object({
-  "provider": zod.string().regex(refreshCatalogResponseSummaryOneAddedItemProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(refreshCatalogResponseSummaryOneAddedItemProviderRegExp).describe('Slug di un provider della tabella providers'),
   "modelId": zod.string(),
   "version": zod.string()
 })),
   "retired": zod.array(zod.object({
-  "provider": zod.string().regex(refreshCatalogResponseSummaryOneRetiredItemProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(refreshCatalogResponseSummaryOneRetiredItemProviderRegExp).describe('Slug di un provider della tabella providers'),
   "modelId": zod.string(),
   "version": zod.string()
 })),
   "deprecating": zod.array(zod.object({
-  "provider": zod.string().regex(refreshCatalogResponseSummaryOneDeprecatingItemOneProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(refreshCatalogResponseSummaryOneDeprecatingItemOneProviderRegExp).describe('Slug di un provider della tabella providers'),
   "modelId": zod.string(),
   "version": zod.string()
 }).and(zod.object({
   "deprecationDate": zod.string()
 }))),
   "priceChanged": zod.array(zod.object({
-  "provider": zod.string().regex(refreshCatalogResponseSummaryOnePriceChangedItemOneProviderRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "provider": zod.string().regex(refreshCatalogResponseSummaryOnePriceChangedItemOneProviderRegExp).describe('Slug di un provider della tabella providers'),
   "modelId": zod.string(),
   "version": zod.string()
 }).and(zod.object({
@@ -2108,7 +2147,7 @@ export const RefreshCatalogResponse = zod.object({
   "newOutput": zod.number().nullable()
 }))),
   "newProviders": zod.array(zod.object({
-  "slug": zod.string().regex(refreshCatalogResponseSummaryOneNewProvidersItemSlugRegExp).describe('Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)'),
+  "slug": zod.string().regex(refreshCatalogResponseSummaryOneNewProvidersItemSlugRegExp).describe('Slug di un provider della tabella providers'),
   "name": zod.string(),
   "count": zod.number()
 })).describe('Provider scoperti in questa esecuzione (non gestiti)'),
@@ -2249,7 +2288,7 @@ export const ListPlanConversationsResponse = zod.array(ListPlanConversationsResp
 
 
 /**
- * Senza analysisId usa l'ultima analisi completata dell'app (nessuna: 409). Il modello deve essere di un account dell'utente o dell'account di sistema.
+ * Senza analysisId usa l'ultima analisi completata dell'app (nessuna: 409). Il modello deve essere di un account dell'utente.
  * @summary Apre una conversazione sul piano
  */
 export const CreatePlanConversationParams = zod.object({
@@ -2257,7 +2296,7 @@ export const CreatePlanConversationParams = zod.object({
 })
 
 export const CreatePlanConversationBody = zod.object({
-  "aiModelId": zod.number().describe('Modello di un account AI dell\'utente o dell\'account di sistema'),
+  "aiModelId": zod.number().describe('Modello di un account AI dell\'utente'),
   "analysisId": zod.number().optional().describe('Analisi di riferimento (default l\'ultima completata dell\'app)')
 })
 

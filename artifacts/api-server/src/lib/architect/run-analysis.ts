@@ -10,7 +10,7 @@
 
 import { setTimeout as sleep } from "node:timers/promises";
 import { and, eq, inArray } from "drizzle-orm";
-import { APIConnectionError, APIConnectionTimeoutError, APIError } from "openai";
+import { APIConnectionTimeoutError } from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
 import {
   db,
@@ -21,7 +21,7 @@ import {
   type AnalysisSources,
   type App,
 } from "@workspace/db";
-import { aiGateway, type ChatResult } from "../ai-gateway";
+import type { ChatResult } from "../ai/chat-types";
 import { ProviderError } from "../ai/discovery";
 import { errorLogFields, errorStatus, ModelAccessError, modelChat as executorChat, resolveModel, type ResolvedModel } from "../ai/executor";
 import { logger } from "../logger";
@@ -40,6 +40,8 @@ import { fetchGithubTree, fetchOpenApi, SourceError, type OpenApiDoc } from "./s
 
 export const ANALYSIS_DEFAULT_MAX_TOKENS = 1_000_000;
 export const ANALYSIS_MAX_MS = 1_800_000;
+/** Analisi cloud senza modello (400 all'avvio; difesa anche qui). */
+export const CHOOSE_MODEL = "scegli un modello";
 /** Voci massime del log di un'analisi: si tengono le più recenti. */
 export const ANALYSIS_LOG_MAX = 500;
 
@@ -287,28 +289,17 @@ function formatSeconds(ms: number): string {
 }
 
 /**
- * Errori transitori per cui vale un nuovo tentativo: rete (non timeout) e 5xx. Per l'esecutore dei
- * modelli: `unreachable` senza stato (rete, risposta malformata) o con stato 5xx; mai i 3xx, i 4xx,
- * le chiavi non valide né i timeout (che l'esecutore non converte).
+ * Errori transitori per cui vale un nuovo tentativo: `unreachable` dell'esecutore dei modelli senza stato
+ * (rete, risposta malformata) o con stato 5xx; mai i 3xx, i 4xx, le chiavi non valide né i timeout (che
+ * l'esecutore non converte).
  */
 function isRetryable(err: unknown): boolean {
-  if (err instanceof ProviderError) return err.kind === "unreachable" && (err.status === null || err.status >= 500);
-  if (err instanceof APIConnectionTimeoutError) return false;
-  if (err instanceof APIConnectionError) return true;
-  return err instanceof APIError && typeof err.status === "number" && err.status >= 500;
+  return err instanceof ProviderError && err.kind === "unreachable" && (err.status === null || err.status >= 500);
 }
 
-// Suggerimenti del vecchio percorso (gateway): con l'esecutore i messaggi di ProviderError sono già specifici
-const STATUS_HINTS: Record<number, string> = {
-  400: " (richiesta rifiutata: spesso contesto troppo lungo per il modello)",
-  402: " (credito del provider esaurito: ricarica il conto o scegli un altro modello)",
-  429: " (limite di richieste: riprova più tardi)",
-};
-
 interface ModelChatOptions {
-  model: string;
-  /** Modello risolto dell'analisi (account AI); null = vecchio percorso del gateway. */
-  resolved: ResolvedModel | null;
+  /** Modello risolto dell'analisi (account AI). */
+  resolved: ResolvedModel;
   cost: CostTracker;
   analysisId: number;
   deadline: number;
@@ -321,7 +312,6 @@ interface ModelChatOptions {
 }
 
 function architectChat({
-  model,
   resolved,
   cost,
   analysisId,
@@ -347,7 +337,7 @@ function architectChat({
       maxRetries: 0,
     };
     const send = async (): Promise<ChatResult> => {
-      const reply = resolved ? await executorChat(resolved, options) : await aiGateway.chat({ modelKey: model, ...options });
+      const reply = await executorChat(resolved, options);
       cost.add(reply);
       return reply;
     };
@@ -389,7 +379,7 @@ function architectChat({
     try {
       return await call();
     } catch (err) {
-      // Messaggi propri: quelli del gateway o dell'SDK potrebbero contenere URL
+      // Messaggi propri: quelli dell'SDK potrebbero contenere URL
       if (signal.aborted) {
         throw new AnalysisError(`tempo massimo dell'analisi (${formatDuration(maxMs)}) scaduto durante la chiamata al modello`);
       }
@@ -399,10 +389,7 @@ function architectChat({
       }
       // Esecutore dei modelli: messaggio fisso già in italiano e specifico (credito, chiave, HTTP 400…)
       if (err instanceof ProviderError) throw new AnalysisError(err.message);
-      if (err instanceof APIError && typeof err.status === "number") {
-        throw new AnalysisError(`il gateway dei modelli ha risposto con errore ${err.status}${STATUS_HINTS[err.status] ?? ""}`);
-      }
-      throw new AnalysisError("errore di comunicazione con il gateway dei modelli");
+      throw new AnalysisError("chiamata al modello non riuscita");
     }
   };
 }
@@ -451,16 +438,16 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
     const [app] = await db.select().from(appsTable).where(eq(appsTable.id, analysis.appId)).limit(1);
     if (!app) throw new AnalysisError("app non trovata");
 
-    // Modello dell'analisi risolto una volta all'avvio (chi l'ha avviata l'ha già scelto tra i suoi
-    // o quelli di sistema). La chiave resta in memoria nell'oggetto risolto, mai copiato.
-    let resolved: ResolvedModel | null = null;
-    if (analysis.aiModelId !== null) {
-      try {
-        resolved = await resolveModel(analysis.aiModelId, { userId: null, mustOwn: false });
-      } catch (err) {
-        if (err instanceof ModelAccessError || err instanceof ProviderError) throw new AnalysisError(err.message);
-        throw err;
-      }
+    // Modello dell'analisi risolto una volta all'avvio (chi l'ha avviata l'ha già scelto tra i suoi).
+    // La chiave resta in memoria nell'oggetto risolto, mai copiato.
+    // Un'analisi cloud senza modello non parte.
+    if (analysis.aiModelId === null) throw new AnalysisError(CHOOSE_MODEL);
+    let resolved: ResolvedModel;
+    try {
+      resolved = await resolveModel(analysis.aiModelId, { userId: null, mustOwn: false });
+    } catch (err) {
+      if (err instanceof ModelAccessError || err instanceof ProviderError) throw new AnalysisError(err.message);
+      throw err;
     }
 
     const loaded = await loadSources(app, opts, log);
@@ -473,7 +460,6 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
     // Senza codice né OpenAPI i tool derivano solo dalla descrizione: vanno sempre verificati
     const forceVerification = sources.code === "none" && !sources.openapi;
     const chat = architectChat({
-      model: analysis.model,
       resolved,
       cost,
       analysisId,
@@ -514,7 +500,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
         chat,
         budget,
         phaseQuota,
-        contextTokens: resolved?.contextTokens ?? null,
+        contextTokens: resolved.contextTokens,
         completionReserve: MAX_COMPLETION_TOKENS,
         log,
         now,

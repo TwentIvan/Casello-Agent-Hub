@@ -1,7 +1,7 @@
 import { db, agentsTable, appsTable, appToolsTable, runsTable, runStepsTable, type Agent, type App, type Run } from "@workspace/db";
 import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { APIConnectionTimeoutError, APIUserAbortError } from "openai";
-import { aiGateway, type ChatResult } from "./ai-gateway";
+import type { ChatResult } from "./ai/chat-types";
 import { ProviderError } from "./ai/discovery";
 import { ModelAccessError, modelChat, resolveModel, type ResolvedModel } from "./ai/executor";
 import {
@@ -26,7 +26,7 @@ import type { AppConnection, CatalogTool, ToolResult } from "./tools/types";
 import { PAUSE_TTL_MS, clearUserToken, getUserToken, setUserToken } from "./user-tokens";
 
 // Orchestrazione delle run: collega il ciclo dell'agente (puro) al DB, all'esecutore HTTP dei
-// tool e al gateway dei modelli. Ogni passo diventa una riga di `run_steps`; a ogni pausa lo
+// tool e all'esecutore dei modelli (account AI). Ogni passo diventa una riga di `run_steps`; a ogni pausa lo
 // stato del ciclo viene salvato nella run e ripreso da `resumeRun`.
 // Il token dell'utente vive solo in memoria (user-tokens.ts): mai nel DB né nei log.
 
@@ -43,6 +43,25 @@ const MIN_MODEL_CALL_MS = 1_000;
 export const REJECTED_ACTION_MESSAGE = "L'utente ha annullato l'azione.";
 export const PAUSE_EXPIRED_MESSAGE = "Conferma non arrivata entro 10 minuti.";
 export const RUN_CANCELLED_MESSAGE = "Annullata dall'utente.";
+export const AGENT_WITHOUT_MODEL = "scegli un modello per l'agente";
+
+/** Run (e agente) senza modello: la run si chiude come fallita con AGENT_WITHOUT_MODEL, senza chiamate. */
+class RunWithoutModelError extends Error {
+  constructor() {
+    super(AGENT_WITHOUT_MODEL);
+    this.name = "RunWithoutModelError";
+  }
+}
+
+/**
+ * Modello della run: quello fissato alla partenza (anche dopo una ripresa: chi pagava resta chi paga),
+ * l'agente solo per una run senza modello registrato. Nessuno dei due → RunWithoutModelError.
+ */
+function runModelId(ctx: RunContext): number {
+  const aiModelId = ctx.run.aiModelId ?? ctx.agent.aiModelId;
+  if (aiModelId === null) throw new RunWithoutModelError();
+  return aiModelId;
+}
 
 // Run in corso in questo processo: l'annullamento interrompe le chiamate in volo (modello e tool).
 // Registrata per tutta la durata di un segmento (avvio o ripresa), rimossa quando finisce.
@@ -316,9 +335,7 @@ async function driveLoop(
 ): Promise<void> {
   const runId = ctx.run.id;
   const functionTools = toFunctionTools(ctx.tools);
-  // Modello fissato alla partenza della run (anche dopo una ripresa: chi pagava resta chi paga); l'agente
-  // solo per una run senza modello registrato
-  const aiModelId = ctx.run.aiModelId ?? ctx.agent.aiModelId;
+  const aiModelId = runModelId(ctx);
   // Modello dell'agente (chi configura paga): risolto una volta per segmento, alla prima chiamata,
   // così un errore di risoluzione diventa un passo `model` fallito come gli altri errori del modello.
   // Il risultato (con la chiave in memoria) non si copia mai: si passa l'oggetto originale.
@@ -327,27 +344,11 @@ async function driveLoop(
   const callModel = async (messages: Parameters<LoopDeps["chat"]>[0], remainingMs: number): Promise<ChatResult> => {
     // La chiamata non può durare oltre il tempo attivo rimasto al turno
     const signal = AbortSignal.any([abort, AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, remainingMs))]);
-    if (aiModelId === null) {
-      // Transizione: agenti non ancora collegati a un modello degli account AI
-      const reply = await aiGateway.chat({
-        modelKey: ctx.agent.model,
-        messages,
-        tools: functionTools,
-        agentId: ctx.agent.id,
-        caller: "run-executor",
-        maxTokens: 2000,
-        temperature: 0.3,
-        signal,
-      });
-      addUsage(usage, reply);
-      return reply;
-    }
     try {
       resolved ??= resolveModel(aiModelId, { userId: null, mustOwn: false });
       const reply = await modelChat(await resolved, {
         messages,
         tools: functionTools,
-        agentId: ctx.agent.id,
         caller: "run-executor",
         maxTokens: 2000,
         temperature: 0.3,
@@ -460,14 +461,16 @@ async function failRun(
     await writeCancelledUsage(run, segmentStart, usage);
     return;
   }
+  const withoutModel = err instanceof RunWithoutModelError;
   const message = errorMessage(err);
-  logger.error({ runId, error: message }, "Run fallita per un errore inatteso");
+  if (withoutModel) logger.info({ runId }, "Run senza modello: non eseguita");
+  else logger.error({ runId, error: message }, "Run fallita per un errore inatteso");
   try {
     await db
       .update(runsTable)
       .set({
         status: "failed",
-        errorMessage: `Errore durante l'esecuzione: ${message}`,
+        errorMessage: withoutModel ? message : `Errore durante l'esecuzione: ${message}`,
         loopState: null,
         pendingAction: null,
         pausedAt: null,
@@ -628,6 +631,8 @@ export async function claimResume(
         return;
       }
       const ctx = await loadContext(run);
+      // Senza modello il turno non può proseguire: niente tool confermato, la run fallisce subito
+      runModelId(ctx);
       const writeStep = stepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools);
 
       let result: ToolResult;

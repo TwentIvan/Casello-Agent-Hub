@@ -9,15 +9,19 @@ import {
   pool,
   agentSkillsTable,
   agentsTable,
+  aiAccountsTable,
+  aiModelsTable,
   analysesTable,
   analysisItemsTable,
   appToolsTable,
+  usersTable,
   type AnalysisItem,
 } from "@workspace/db";
-import { decryptSecret } from "../lib/secrets";
+import { decryptSecret, encryptSecret } from "../lib/secrets";
+import { allowTestLoopback } from "../../test/fake-provider";
 
 // Route dell'architetto su un'app Express vera (porta 0), senza login (AUTH_DISABLED=true).
-// Il finto LiteLLM trattiene le richieste: le analisi avviate restano in corso finché il test non
+// Il finto provider (modello dell'utente di sviluppo) trattiene le richieste: le analisi avviate restano in corso finché il test non
 // le chiude (afterEach risponde con un errore e attende che nessuna analisi resti attiva), così
 // nulla gira in background oltre il test.
 
@@ -31,8 +35,12 @@ let fakeAppBase: string;
 let llmMode: "hold" | "fail";
 let held: http.ServerResponse[] = [];
 let llmRequests: number;
+// Modello di un account dell'utente di sviluppo verso il finto provider `llm`
+let modelId: number;
+let accountId: number;
+let restoreLoopback: () => void;
 
-const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY", "AI_GATEWAY_BASE_URL", "AI_GATEWAY_API_KEY"] as const;
+const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY"] as const;
 const saved: Record<string, string | undefined> = {};
 
 function listen(s: http.Server): Promise<number> {
@@ -201,7 +209,6 @@ beforeAll(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   process.env["AUTH_DISABLED"] = "true";
   process.env["CASELLO_SECRET_KEY"] = "c".repeat(64);
-  process.env["AI_GATEWAY_API_KEY"] = "sk-test";
 
   llm = http.createServer((req, res) => {
     req.resume();
@@ -219,7 +226,7 @@ beforeAll(async () => {
       res.end();
     });
   });
-  process.env["AI_GATEWAY_BASE_URL"] = `http://127.0.0.1:${await listen(llm)}/v1`;
+  const llmBase = `http://127.0.0.1:${await listen(llm)}/v1`;
   fakeAppBase = `http://127.0.0.1:${await listen(fakeApp)}`;
 
   const { default: app } = await import("../app");
@@ -227,6 +234,28 @@ beforeAll(async () => {
   ({ errorHandler } = await import("../middlewares/error-handler"));
   server = http.createServer(app);
   base = `http://127.0.0.1:${await listen(server)}`;
+
+  restoreLoopback = allowTestLoopback();
+  await api("GET", "/auth/me");
+  const [dev] = await db.select().from(usersTable).where(eq(usersTable.email, "dev@localhost"));
+  const [account] = await db
+    .insert(aiAccountsTable)
+    .values({
+      userId: dev!.id,
+      name: "Account di prova",
+      provider: "custom",
+      baseUrl: llmBase,
+      allowPrivateNetwork: true,
+      apiKeyEnc: encryptSecret("sk-test"),
+      status: "ok",
+    })
+    .returning();
+  accountId = account!.id;
+  const [model] = await db
+    .insert(aiModelsTable)
+    .values({ accountId, modelId: "openrouter/deepseek-chat", displayName: "DeepSeek" })
+    .returning();
+  modelId = model!.id;
 });
 
 afterAll(async () => {
@@ -235,6 +264,8 @@ afterAll(async () => {
   await close(llm);
   await close(fakeApp);
   await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
+  await db.delete(aiAccountsTable).where(eq(aiAccountsTable.id, accountId));
+  restoreLoopback();
   for (const k of ENV_KEYS) {
     if (saved[k] === undefined) delete process.env[k];
     else process.env[k] = saved[k];
@@ -337,24 +368,24 @@ describe("sorgenti dell'app", () => {
 });
 
 describe("avvio dell'analisi", () => {
-  it("modello non in elenco → 400 e nessuna analisi", async () => {
+  it("senza aiModelId (anche con il solo model, non più accettato) → 400 'scegli un modello' e nessuna analisi", async () => {
     const app = await createApp();
-    const res = await api("POST", `/apps/${app.id}/analyses`, { model: "gpt-4o" });
+    const res = await api("POST", `/apps/${app.id}/analyses`, { model: "openrouter/auto" });
     expect(res.status).toBe(400);
-    expect(res.json.error).toMatch(/modello/i);
+    expect(res.json).toEqual({ error: "scegli un modello" });
     expect(await db.select().from(analysesTable)).toHaveLength(0);
   });
 
   it("app inesistente → 404; sorgente zip → 400; github senza token → 400", async () => {
-    expect((await api("POST", "/apps/999/analyses", { model: "openrouter/auto" })).status).toBe(404);
+    expect((await api("POST", "/apps/999/analyses", { aiModelId: modelId })).status).toBe(404);
 
     const zipApp = await createApp({ sourceType: "zip" });
-    const zip = await api("POST", `/apps/${zipApp.id}/analyses`, { model: "openrouter/auto" });
+    const zip = await api("POST", `/apps/${zipApp.id}/analyses`, { aiModelId: modelId });
     expect(zip.status).toBe(400);
     expect(zip.json.error).toMatch(/usa il caricamento dello zip/);
 
     const gh = await createApp({ sourceType: "github", sourceRepo: "ivan/mister" });
-    const res = await api("POST", `/apps/${gh.id}/analyses`, { model: "openrouter/auto" });
+    const res = await api("POST", `/apps/${gh.id}/analyses`, { aiModelId: modelId });
     expect(res.status).toBe(400);
     expect(res.json.error).toMatch(/token GitHub/);
     expect(await db.select().from(analysesTable)).toHaveLength(0);
@@ -362,7 +393,7 @@ describe("avvio dell'analisi", () => {
 
   it("avvio → 202 queued con il tetto di default; secondo avvio mentre è in corso → 409", async () => {
     const app = await createApp({ functionalDescription: "Gestione squadre" });
-    const first = await api("POST", `/apps/${app.id}/analyses`, { model: "openrouter/deepseek-chat" });
+    const first = await api("POST", `/apps/${app.id}/analyses`, { aiModelId: modelId });
     expect(first.status, first.text).toBe(202);
     expect(first.json).toMatchObject({
       appId: app.id,
@@ -374,7 +405,7 @@ describe("avvio dell'analisi", () => {
     });
     await waitForLlmRequest(); // l'analisi è partita davvero ed è ferma sulla chiamata al modello
 
-    const second = await api("POST", `/apps/${app.id}/analyses`, { model: "openrouter/auto", maxTokens: 50_000 });
+    const second = await api("POST", `/apps/${app.id}/analyses`, { aiModelId: modelId, maxTokens: 50_000 });
     expect(second.status).toBe(409);
     expect(second.json.error).toMatch(/in corso/);
 
@@ -392,12 +423,12 @@ describe("avvio dell'analisi", () => {
 
   it("zip vuoto → 400; zip valido → 202 con sorgente zip", async () => {
     const app = await createApp();
-    const empty = await postZip(`/apps/${app.id}/analyses/zip?model=openrouter/auto`, new Uint8Array());
+    const empty = await postZip(`/apps/${app.id}/analyses/zip?aiModelId=${modelId}`, new Uint8Array());
     expect(empty.status).toBe(400);
     expect(empty.json?.error).toMatch(/zip/);
 
     const zip = zipSync({ "src/a.ts": strToU8("export const a = 1;\n") });
-    const ok = await postZip(`/apps/${app.id}/analyses/zip?model=openrouter/auto&maxTokens=60000`, zip);
+    const ok = await postZip(`/apps/${app.id}/analyses/zip?aiModelId=${modelId}&maxTokens=60000`, zip);
     expect(ok.status, ok.text).toBe(202);
     expect(ok.json).toMatchObject({ status: "queued", maxTokens: 60_000, sources: { code: "zip" } });
   });
@@ -411,7 +442,7 @@ describe("avvio dell'analisi", () => {
     const miniBase = `http://127.0.0.1:${await listen(miniServer)}`;
     try {
       const app = await createApp();
-      const res = await postZip(`/apps/${app.id}/analyses/zip?model=openrouter/auto`, new Uint8Array(4096), miniBase);
+      const res = await postZip(`/apps/${app.id}/analyses/zip?aiModelId=${modelId}`, new Uint8Array(4096), miniBase);
       expect(res.status).toBe(413);
       expect(res.json).toEqual({ error: "archivio troppo grande" });
       expect(await db.select().from(analysesTable)).toHaveLength(0);
@@ -434,13 +465,12 @@ describe("analisi con l'agente locale", () => {
     vi.mocked(Date.now).mockRestore();
   });
 
-  it("avvio con executor local → 202 senza modello né chiamate; con aiModelId o model → 400; zip → 400", async () => {
+  it("avvio con executor local → 202 senza modello né chiamate; con aiModelId → 400; zip → 400", async () => {
     // Nessun controllo sulle sorgenti GitHub: il codice lo legge l'agente sul suo clone
     const app = await createApp({ sourceType: "github", sourceRepo: "ivan/mister" });
-    for (const body of [{ executor: "local", aiModelId: 1 }, { executor: "local", model: "openrouter/auto" }]) {
-      const res = await api("POST", `/apps/${app.id}/analyses`, body);
-      expect(res.status, JSON.stringify(body)).toBe(400);
-    }
+    const withModel = await api("POST", `/apps/${app.id}/analyses`, { executor: "local", aiModelId: 1 });
+    expect(withModel.status).toBe(400);
+    expect(withModel.json).toEqual({ error: "con l'agente locale non si sceglie il modello: togli aiModelId" });
     const zip = zipSync({ "src/a.ts": strToU8("export const a = 1;\n") });
     const zipRes = await postZip(`/apps/${app.id}/analyses/zip?executor=local`, zip);
     expect(zipRes.status).toBe(400);
@@ -493,7 +523,7 @@ describe("analisi con l'agente locale", () => {
     expect((await api("POST", `/analyses/${cloud}/cancel`)).status).toBe(409);
     await db.update(analysesTable).set({ status: "failed" }).where(eq(analysesTable.id, cloud));
     expect((await api("POST", `/apps/${app.id}/analyses`, { executor: "altro" })).status).toBe(400);
-    const res = await api("POST", `/apps/${app.id}/analyses`, { model: "openrouter/auto" });
+    const res = await api("POST", `/apps/${app.id}/analyses`, { aiModelId: modelId });
     expect(res.status, res.text).toBe(202);
     expect(res.json.executor).toBe("cloud");
     const detail = await api("GET", `/analyses/${res.json.id}`);

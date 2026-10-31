@@ -234,8 +234,7 @@ INSERT INTO "providers" ("slug", "name", "protocol", "default_base_url", "source
 	('groq', 'Groq', 'openai_compatible', 'https://api.groq.com/openai/v1', '{"litellm": ["groq"], "openrouterAuthor": null}', 'managed', 'registry'),
 	('together', 'Together AI', 'openai_compatible', 'https://api.together.xyz/v1', '{"litellm": ["together_ai"], "openrouterAuthor": null}', 'managed', 'registry'),
 	('gemini', 'Google Gemini', 'openai_compatible', 'https://generativelanguage.googleapis.com/v1beta/openai', '{"litellm": ["gemini"], "openrouterAuthor": "google"}', 'managed', 'registry'),
-	('custom', 'Personalizzato (compatibile OpenAI)', 'openai_compatible', NULL, '{"litellm": [], "openrouterAuthor": null}', 'managed', 'registry'),
-	('system_gateway', 'Gateway di Casello', 'openai_compatible', NULL, '{"litellm": [], "openrouterAuthor": null}', 'managed', 'registry');
+	('custom', 'Personalizzato (compatibile OpenAI)', 'openai_compatible', NULL, '{"litellm": [], "openrouterAuthor": null}', 'managed', 'registry');
 
 -- Account AI
 CREATE TYPE "public"."ai_account_status" AS ENUM('unverified', 'ok', 'error');
@@ -244,7 +243,6 @@ CREATE TYPE "public"."model_catalog_status" AS ENUM('available', 'deprecated', '
 CREATE TYPE "public"."catalog_trigger" AS ENUM('scheduled', 'manual');
 CREATE TYPE "public"."catalog_run_status" AS ENUM('running', 'completed', 'partial', 'failed');
 
--- user_id è null solo per l'account di sistema (gateway di Casello)
 CREATE TABLE "ai_accounts" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"user_id" integer,
@@ -475,3 +473,7 @@ ALTER TABLE "analysis_items" ADD COLUMN "issue_state_reason" text;
 ALTER TABLE "analysis_items" ADD COLUMN "issue_created_at" timestamp;
 ALTER TABLE "analysis_items" ADD COLUMN "issue_checked_at" timestamp;
 CREATE INDEX "analysis_items_issue_idx" ON "analysis_items" USING btree ("issue_repo", "issue_number") WHERE "issue_number" IS NOT NULL;
+
+-- Modello predefinito dell'utente per gli agenti che Casello crea (null = nessuno)
+ALTER TABLE "users" ADD COLUMN "default_ai_model_id" integer;
+ALTER TABLE "users" ADD CONSTRAINT "users_default_ai_model_id_ai_models_id_fk" FOREIGN KEY ("default_ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action;

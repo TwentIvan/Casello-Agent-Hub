@@ -7,6 +7,7 @@ import { db, pool, aiAccountsTable, aiModelsTable, catalogRunsTable, modelOffers
 import { fakeSourcesFetch } from "../../test/fake-sources";
 import { encryptSecret } from "../lib/secrets";
 import { ensureProviderRegistry } from "../lib/catalog/provider-registry";
+import { LEGACY_GATEWAY_PROVIDER } from "../lib/ai/providers";
 
 // API del catalogo su un'app Express vera (porta 0), senza login (AUTH_DISABLED=true). Il secondo
 // utente si inserisce a mano. Le fonti sono finte; ogni aggiornamento avviato si attende prima di
@@ -15,8 +16,8 @@ import { ensureProviderRegistry } from "../lib/catalog/provider-registry";
 const realFetch = globalThis.fetch;
 const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY"] as const;
 const saved: Record<string, string | undefined> = {};
-// I provider di oggi, già in docs/schema-casello.sql (DB di prova condiviso)
-const TODAY = ["deepseek", "openrouter", "huggingface", "mistral", "groq", "together", "gemini", "custom", "system_gateway"];
+// I provider di oggi, già in docs/schema-casello.sql con la riga rimasta del vecchio gateway (DB di prova condiviso)
+const TODAY = ["deepseek", "openrouter", "huggingface", "mistral", "groq", "together", "gemini", "custom", LEGACY_GATEWAY_PROVIDER];
 
 let base: string;
 let fullBase: string;
@@ -482,12 +483,12 @@ describe("offerte di un modello", () => {
 });
 
 describe("provider del catalogo", () => {
-  it("conteggio dei modelli (offerte non ritirate) e account dell'utente; senza system_gateway", async () => {
+  it("conteggio dei modelli (offerte non ritirate) e account dell'utente; senza il vecchio gateway", async () => {
     await seedCatalog();
     const res = await api("GET", "/catalog/providers");
     expect(res.status, res.text).toBe(200);
     const bySlug = new Map(res.json.map((p: { slug: string }) => [p.slug, p]));
-    expect(bySlug.has("system_gateway")).toBe(false);
+    expect(bySlug.has(LEGACY_GATEWAY_PROVIDER)).toBe(false);
     expect(bySlug.get("deepseek")).toEqual({
       slug: "deepseek",
       name: "DeepSeek",

@@ -11,11 +11,10 @@ import {
   CHAT_MAX_RETRIES,
   CHAT_REQUEST_TIMEOUT_MS,
   applyTools,
-  buildProxyParams,
   extractToolCalls,
   readUsage,
   type ChatResult,
-} from "../ai-gateway";
+} from "./chat-types";
 import { logger } from "../logger";
 import { decryptSecret } from "../secrets";
 import { ProviderError, providerErrorKindForStatus } from "./discovery";
@@ -55,8 +54,8 @@ export interface ResolvedModel {
   priceCachedInput: number | null;
   /** Finestra di contesto in token (da `ai_models.context_tokens`); null se non nota. */
   contextTokens: number | null;
-  /** Proprietario dell'account; null per l'account di sistema. */
-  ownerUserId: number | null;
+  /** Proprietario dell'account. */
+  ownerUserId: number;
 }
 
 export interface ChatOptions {
@@ -71,13 +70,11 @@ export interface ChatOptions {
   maxRetries?: number;
   /** Servizio chiamante, per i log (es. "run-executor"). */
   caller: string;
-  /** Solo per l'account di sistema: tag di telemetria verso LiteLLM. */
-  agentId?: number;
 }
 
 export type ModelChatResult = ChatResult & { costUsd: number | null };
 
-/** Modello inesistente, non accessibile all'utente o account di sistema non configurato. */
+/** Modello inesistente o non accessibile all'utente. */
 export class ModelAccessError extends Error {
   constructor(message: string) {
     super(message);
@@ -86,7 +83,6 @@ export class ModelAccessError extends Error {
 }
 
 const MODEL_UNAVAILABLE = "modello non disponibile";
-const SYSTEM_UNAVAILABLE = "account di sistema non più disponibile";
 const EXECUTOR_UNAVAILABLE = "esecutore non ancora disponibile";
 
 const PROTOCOL_UNSUPPORTED = "esecutore non ancora disponibile per questo provider";
@@ -127,8 +123,8 @@ function toPrice(v: string | null): number | null {
 }
 
 /**
- * Carica modello e account. Con `mustOwn` l'account deve essere dell'utente o di sistema; senza
- * (run di un agente: chi configura paga) basta che il modello esista.
+ * Carica modello e account. Con `mustOwn` l'account deve essere dell'utente; senza (run di un agente:
+ * chi configura paga) basta che il modello esista.
  */
 export async function resolveModel(aiModelId: number, opts: { userId: number | null; mustOwn: boolean }): Promise<ResolvedModel> {
   const [row] = await db
@@ -140,37 +136,24 @@ export async function resolveModel(aiModelId: number, opts: { userId: number | n
     .limit(1);
   if (!row) throw new ModelAccessError(MODEL_UNAVAILABLE);
   const { model, account, protocol, providerStatus } = row;
-  // Difesa in profondità: l'account di sistema non ha proprietario, tutti gli altri sì
-  if ((account.provider === "system_gateway") !== (account.userId === null)) {
-    throw new ModelAccessError(MODEL_UNAVAILABLE);
-  }
-  if (opts.mustOwn && account.userId !== null && account.userId !== opts.userId) {
+  // Ogni account ha un proprietario: quelli senza (il vecchio account di sistema del gateway, finché la
+  // migrazione `-post` non lo elimina) non sono più utilizzabili
+  if (account.userId === null) throw new ModelAccessError(MODEL_UNAVAILABLE);
+  if (opts.mustOwn && account.userId !== opts.userId) {
     throw new ModelAccessError(MODEL_UNAVAILABLE);
   }
   const kind = executorKindFor(protocol);
 
-  let baseUrl: string;
-  let apiKey: string | null;
-  if (account.provider === "system_gateway") {
-    // Configurato dall'operatore (può essere un indirizzo interno): niente validateBaseUrl
-    const envUrl = process.env["AI_GATEWAY_BASE_URL"];
-    const envKey = process.env["AI_GATEWAY_API_KEY"];
-    if (!envUrl || !envKey) throw new ModelAccessError(SYSTEM_UNAVAILABLE);
-    baseUrl = normalizeBaseUrl(envUrl);
-    apiKey = envKey;
-  } else {
-    // Rivalidato a ogni chiamata: le regole (e lo stato del provider) possono essere cambiate dopo il salvataggio
-    const allowPrivate = account.allowPrivateNetwork && privateNetworkAllowed({ slug: account.provider, status: providerStatus });
-    if (validateBaseUrl(account.baseUrl, allowPrivate) !== null) throw new ProviderError("bad_url");
-    baseUrl = normalizeBaseUrl(account.baseUrl);
-    if (account.apiKeyEnc === null) {
-      apiKey = null;
-    } else {
-      try {
-        apiKey = decryptSecret(account.apiKeyEnc);
-      } catch {
-        throw new ProviderError("auth");
-      }
+  // Rivalidato a ogni chiamata: le regole (e lo stato del provider) possono essere cambiate dopo il salvataggio
+  const allowPrivate = account.allowPrivateNetwork && privateNetworkAllowed({ slug: account.provider, status: providerStatus });
+  if (validateBaseUrl(account.baseUrl, allowPrivate) !== null) throw new ProviderError("bad_url");
+  const baseUrl = normalizeBaseUrl(account.baseUrl);
+  let apiKey: string | null = null;
+  if (account.apiKeyEnc !== null) {
+    try {
+      apiKey = decryptSecret(account.apiKeyEnc);
+    } catch {
+      throw new ProviderError("auth");
     }
   }
 
@@ -226,16 +209,10 @@ export function providerModelName(provider: string, modelId: string): string {
 
 function buildParams(resolved: ResolvedModel, opts: ChatOptions): ChatCompletionCreateParamsNonStreaming {
   const base = { model: providerModelName(resolved.provider, resolved.modelId), messages: opts.messages };
-  let params: ChatCompletionCreateParamsNonStreaming;
-  if (resolved.provider === "system_gateway") {
-    // LiteLLM: stessi parametri di aiGateway.chat (metadati di telemetria inclusi)
-    params = buildProxyParams(base, opts, opts.caller);
-  } else {
-    // Provider diretto: soli parametri OpenAI standard (max_tokens è il più supportato)
-    params = { ...base };
-    if (opts.maxTokens) params.max_tokens = opts.maxTokens;
-    if (opts.temperature !== undefined) params.temperature = opts.temperature;
-  }
+  // Soli parametri OpenAI standard (max_tokens è il più supportato)
+  const params: ChatCompletionCreateParamsNonStreaming = { ...base };
+  if (opts.maxTokens) params.max_tokens = opts.maxTokens;
+  if (opts.temperature !== undefined) params.temperature = opts.temperature;
   applyTools(params, opts.tools ?? []);
   return params;
 }

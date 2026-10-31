@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { ChatResult } from "./ai-gateway";
+import type { ChatResult } from "./ai/chat-types";
 import {
   DEFAULT_LIMITS,
   PendingMismatchError,

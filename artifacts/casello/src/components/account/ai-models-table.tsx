@@ -39,10 +39,6 @@ function modelStatusLabel(model: AiModel): string {
   return model.deprecationDate ? `${base}, dismesso il ${new Date(model.deprecationDate).toLocaleDateString("it-IT")}` : base;
 }
 
-function formatPrice(value: number | null): string {
-  return value == null ? "—" : value.toLocaleString("it-IT", { maximumFractionDigits: 6 });
-}
-
 /** Prezzo scritto dall'utente: "" → null; accetta la virgola; undefined se non valido. */
 function parsePrice(text: string): number | null | undefined {
   const trimmed = text.trim();
@@ -196,11 +192,10 @@ function AddModelForm({ accountId }: { accountId: number }) {
   );
 }
 
-/** Modelli di un account: prezzi, "nascosto" e tetto di spesa modificabili; per l'account di sistema solo lettura. */
+/** Modelli di un account: prezzi, "nascosto" e tetto di spesa modificabili. */
 export function AiModelsTable({ account }: { account: AiAccount }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const readOnly = account.isSystem;
   const models = useListAiAccountModels(account.id, {
     query: { queryKey: getListAiAccountModelsQueryKey(account.id) },
   });
@@ -246,7 +241,7 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
         <Skeleton className="h-20 w-full" />
       ) : models.data.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Nessun modello.{readOnly ? "" : " Il provider potrebbe non fornire l'elenco: aggiungili a mano qui sotto."}
+          Nessun modello. Il provider potrebbe non fornire l'elenco: aggiungili a mano qui sotto.
         </p>
       ) : (
         <div className="overflow-x-auto rounded-md border">
@@ -260,8 +255,8 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
                 <TableHead>Stato</TableHead>
                 <TableHead>Strumenti</TableHead>
                 <TableHead>Nascosto</TableHead>
-                {!readOnly && <TableHead>Tetto USD / mese</TableHead>}
-                {!readOnly && <TableHead />}
+                <TableHead>Tetto USD / mese</TableHead>
+                <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -275,27 +270,21 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
                   {/* Input e output nella stessa cella, con l'origine del prezzo: la tabella sta nella pagina senza scorrere */}
                   <TableCell>
                     <div className="flex flex-col gap-1">
-                      {readOnly ? (
-                        <span className="text-sm tabular-nums">
-                          {formatPrice(model.priceInput)} · {formatPrice(model.priceOutput)}
-                        </span>
-                      ) : (
-                        <div className="flex items-center gap-1">
-                          <PriceInput
-                            // Rimontato quando il valore salvato cambia, così il campo lo rispecchia
-                            key={`in-${model.priceInput}`}
-                            value={model.priceInput}
-                            label={`Prezzo di input di ${model.modelId}`}
-                            onSave={(priceInput, restore) => save(model, { priceInput }, restore)}
-                          />
-                          <PriceInput
-                            key={`out-${model.priceOutput}`}
-                            value={model.priceOutput}
-                            label={`Prezzo di output di ${model.modelId}`}
-                            onSave={(priceOutput, restore) => save(model, { priceOutput }, restore)}
-                          />
-                        </div>
-                      )}
+                      <div className="flex items-center gap-1">
+                        <PriceInput
+                          // Rimontato quando il valore salvato cambia, così il campo lo rispecchia
+                          key={`in-${model.priceInput}`}
+                          value={model.priceInput}
+                          label={`Prezzo di input di ${model.modelId}`}
+                          onSave={(priceInput, restore) => save(model, { priceInput }, restore)}
+                        />
+                        <PriceInput
+                          key={`out-${model.priceOutput}`}
+                          value={model.priceOutput}
+                          label={`Prezzo di output di ${model.modelId}`}
+                          onSave={(priceOutput, restore) => save(model, { priceOutput }, restore)}
+                        />
+                      </div>
                       <span className="text-xs text-muted-foreground">
                         {model.priceSource ? PRICE_SOURCE_LABELS[model.priceSource] : "—"}
                       </span>
@@ -308,36 +297,32 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
                   <TableCell>
                     <Switch
                       checked={model.hidden}
-                      disabled={readOnly || updateModel.isPending}
+                      disabled={updateModel.isPending}
                       aria-label={`Nascondi ${model.modelId}`}
                       onCheckedChange={(hidden) => save(model, { hidden })}
                     />
                   </TableCell>
-                  {!readOnly && (
-                    <TableCell>
-                      <AiModelBudgetCell model={model} />
-                    </TableCell>
-                  )}
-                  {!readOnly && (
-                    <TableCell>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={probe.isPending && probe.variables?.id === model.id}
-                        onClick={() => probe.mutate({ id: model.id })}
-                      >
-                        {probe.isPending && probe.variables?.id === model.id ? "Prova…" : "Prova"}
-                      </Button>
-                    </TableCell>
-                  )}
+                  <TableCell>
+                    <AiModelBudgetCell model={model} />
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={probe.isPending && probe.variables?.id === model.id}
+                      onClick={() => probe.mutate({ id: model.id })}
+                    >
+                      {probe.isPending && probe.variables?.id === model.id ? "Prova…" : "Prova"}
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </div>
       )}
-      {!readOnly && <AddModelForm accountId={account.id} />}
+      <AddModelForm accountId={account.id} />
     </div>
   );
 }

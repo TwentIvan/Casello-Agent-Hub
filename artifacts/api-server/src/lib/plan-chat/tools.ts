@@ -3,7 +3,7 @@
 
 import type { ChatCompletionFunctionTool } from "openai/resources/chat/completions";
 import { z } from "zod";
-import type { ChatToolCall } from "../ai-gateway";
+import type { ChatToolCall } from "../ai/chat-types";
 import { ITEM_SCHEMAS } from "../architect/schemas";
 import { formatIssues } from "../architect/phase-loop";
 import { PLAN_CHAPTERS, type PlanChapter } from "./context";

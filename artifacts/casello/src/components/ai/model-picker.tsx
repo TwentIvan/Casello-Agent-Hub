@@ -20,11 +20,15 @@ import { formatModelPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useAiModelGroups } from "./ai-queries";
 
+const NONE_LABEL = "Nessun modello";
+
 interface ModelPickerProps {
   /** Id del modello (AiModel.id) scelto, null se nessuno. */
   value: number | null;
   onChange: (id: number | null) => void;
   disabled?: boolean;
+  /** Mostra in cima la voce «Nessun modello» (onChange(null)), per i campi in cui l'assenza è una scelta valida. */
+  allowNone?: boolean;
   /** Passati al trigger (es. da FormControl o per un Label con htmlFor). */
   id?: string;
   "aria-describedby"?: string;
@@ -55,10 +59,10 @@ function ModelItem({ model, selected, onPick }: { model: AiModel; selected: bool
 
 /**
  * Tendina unica dei modelli: raggruppata per account, con prezzo per milione di token. Un modello che non è
- * tra quelli dell'utente (agente configurato da altri, modello nascosto o account di sistema dismesso) resta
+ * tra quelli dell'utente (agente configurato da altri, modello nascosto o del vecchio gateway dismesso) resta
  * come voce disabilitata, così il valore non si perde.
  */
-export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPickerProps) {
+export function ModelPicker({ value, onChange, disabled, allowNone, id, ...aria }: ModelPickerProps) {
   const groups = useAiModelGroups();
   // null: nessuna scelta dell'utente, il gruppo "Altri modelli" è aperto se contiene il valore corrente
   const [othersToggled, setOthersToggled] = useState<boolean | null>(null);
@@ -79,9 +83,6 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
   const showOthers = othersToggled ?? (current !== undefined && others.includes(current));
   const known = current !== undefined;
   const foreign = value != null && !known;
-  // L'account di sistema compare nei gruppi solo finché è configurato: se manca, un modello sconosciuto è
-  // con ogni probabilità un collegamento al vecchio gateway rimasto senza account
-  const systemAvailable = data.some((g) => g.account.isSystem);
   const hasModels = main.some((e) => e.models.length > 0) || others.length > 0;
 
   if (!hasModels && !foreign && !staleCurrent) {
@@ -95,14 +96,12 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
     );
   }
 
-  const pick = (id: number) => {
+  const pick = (id: number | null) => {
     onChange(id);
     setOpen(false);
   };
   const triggerLabel = foreign
-    ? systemAvailable
-      ? `modello di un altro utente o nascosto (#${value})`
-      : `account di sistema non più disponibile (#${value})`
+    ? `modello di un altro utente, nascosto o non più disponibile (#${value})`
     : current
       ? staleCurrent
         ? `${current.displayName} (${current.status === "retired" ? "ritirato" : "non disponibile"})`
@@ -126,7 +125,7 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
             className="w-full justify-between font-normal"
           >
             <span className={cn("truncate", triggerLabel === null && "text-muted-foreground")}>
-              {triggerLabel ?? "Scegli un modello"}
+              {triggerLabel ?? (allowNone ? NONE_LABEL : "Scegli un modello")}
             </span>
             <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
           </Button>
@@ -136,6 +135,17 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
             <CommandInput placeholder="Cerca un modello…" />
             <CommandList>
               <CommandEmpty>Nessun modello trovato</CommandEmpty>
+              {allowNone && (
+                <>
+                  <CommandGroup>
+                    <CommandItem value={NONE_LABEL} onSelect={() => pick(null)}>
+                      <Check className={cn("size-4", value === null ? "opacity-100" : "opacity-0")} />
+                      <span className="text-muted-foreground">{NONE_LABEL}</span>
+                    </CommandItem>
+                  </CommandGroup>
+                  <CommandSeparator />
+                </>
+              )}
               {(foreign || staleCurrent) && (
                 <>
                   <CommandGroup>
@@ -154,7 +164,6 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
                     heading={
                       <span className="flex items-center gap-2">
                         <span className="truncate">{group.account.name}</span>
-                        {group.account.isSystem && <Badge variant="secondary">sistema</Badge>}
                         {group.account.status === "error" && <Badge variant="destructive">errore</Badge>}
                       </span>
                     }

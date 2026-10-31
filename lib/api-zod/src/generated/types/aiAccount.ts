@@ -26,8 +26,6 @@ export interface AiAccount {
   lastCheckedAt: Date | null;
   /** Indica se la chiave è impostata (il valore non è mai esposto) */
   keySet: boolean;
-  /** Account di sistema (gateway di Casello), non modificabile */
-  isSystem: boolean;
   /** Numero di modelli dell'account (nascosti compresi) */
   modelCount: number;
   /**

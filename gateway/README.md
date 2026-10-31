@@ -1,5 +1,8 @@
 # Fase 1 — LiteLLM davanti a Casello
 
+> **Storico (ottobre 2026):** il gateway è dismesso e Casello non lo usa più (i modelli
+> passano dagli account AI degli utenti). La cartella resta solo come riferimento.
+
 > Vive dentro questo repo per comodità, ma è un servizio Python
 > completamente autonomo: nessun file qui sotto importa o dipende da
 > nient'altro nel monorepo pnpm. Quando servirà un deploy/versioning

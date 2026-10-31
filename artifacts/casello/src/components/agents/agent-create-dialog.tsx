@@ -7,8 +7,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   type App,
   getGetDashboardStatsQueryKey,
+  getGetDefaultModelQueryKey,
   getListAgentsQueryKey,
   useCreateAgent,
+  useGetDefaultModel,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,13 +55,16 @@ export function AgentCreateDialog({ open, onOpenChange, apps, defaultAppId }: Ag
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const defaultModelId = useDefaultAiModelId();
+  // Precompilazione: il modello predefinito dell'utente; se non c'è, il consigliato dell'account predefinito.
+  const userDefault = useGetDefaultModel({ query: { queryKey: getGetDefaultModelQueryKey() } });
+  const accountDefault = useDefaultAiModelId();
+  const defaultModelId = userDefault.isFetched ? (userDefault.data?.aiModelId ?? accountDefault) : null;
   const form = useForm<AgentCreateValues>({
     resolver: zodResolver(agentCreateSchema),
     defaultValues: { name: "", appId: defaultAppId ? String(defaultAppId) : "", aiModelId: defaultModelId },
   });
 
-  // I modelli possono arrivare dopo l'apertura: si preimposta il primo dell'account predefinito appena noto.
+  // Predefinito e modelli possono arrivare dopo l'apertura: si preimpostano appena noti.
   useEffect(() => {
     if (defaultModelId !== null && form.getValues("aiModelId") === null) form.setValue("aiModelId", defaultModelId);
   }, [defaultModelId, form]);

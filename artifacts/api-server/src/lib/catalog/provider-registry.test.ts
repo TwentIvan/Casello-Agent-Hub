@@ -1,21 +1,25 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { inArray, notInArray } from "drizzle-orm";
+import { eq, inArray, notInArray } from "drizzle-orm";
 import { db, modelOffersTable, providersTable } from "@workspace/db";
 import { ensureProviderRegistry } from "./provider-registry";
 import { PROVIDER_REGISTRY, statusForProtocol, type RegistryProvider } from "./provider-registry-data";
-import { PROVIDERS } from "../ai/providers";
+import { LEGACY_GATEWAY_PROVIDER, PROVIDERS } from "../ai/providers";
+import { ensureLegacyGatewayProvider } from "../../../test/legacy-gateway";
 
 const bySlug = (slug: string) => PROVIDER_REGISTRY.find((p) => p.slug === slug);
 const sorted = (xs: string[] | undefined) => [...(xs ?? [])].sort();
 
-// I provider di oggi, già presenti in docs/schema-casello.sql: i test non li cancellano
-const TODAY = ["deepseek", "openrouter", "huggingface", "mistral", "groq", "together", "gemini", "custom", "system_gateway"];
+// I provider di oggi, già presenti in docs/schema-casello.sql; la riga del vecchio gateway (come in produzione
+// fino alla migrazione `-post`) non è nello schema: la inserisce `ensureLegacyGatewayProvider` e i test non la cancellano
+const TODAY = ["deepseek", "openrouter", "huggingface", "mistral", "groq", "together", "gemini", "custom"];
+const KEEP = [...TODAY, LEGACY_GATEWAY_PROVIDER];
 
 describe("PROVIDER_REGISTRY", () => {
-  it("slug unici in [a-z0-9-] (system_gateway, valore storico, è l'unica eccezione)", () => {
+  it("slug unici in [a-z0-9-]; il vecchio gateway non c'è più", () => {
     const slugs = PROVIDER_REGISTRY.map((p) => p.slug);
     expect(new Set(slugs).size).toBe(slugs.length);
-    for (const s of slugs) if (s !== "system_gateway") expect(s).toMatch(/^[a-z0-9-]+$/);
+    for (const s of slugs) expect(s).toMatch(/^[a-z0-9-]+$/);
+    expect(bySlug(LEGACY_GATEWAY_PROVIDER)).toBeUndefined();
   });
 
   it("contiene i provider di oggi", () => {
@@ -61,7 +65,6 @@ describe("PROVIDER_REGISTRY", () => {
     expect(bySlug("deepseek")?.defaultBaseUrl).toBe("https://api.deepseek.com/v1");
     expect(bySlug("gemini")?.defaultBaseUrl).toBe("https://generativelanguage.googleapis.com/v1beta/openai");
     expect(bySlug("custom")?.defaultBaseUrl).toBeNull();
-    expect(bySlug("system_gateway")?.defaultBaseUrl).toBeNull();
   });
 
   it("stato dal protocollo: openai_compatible gestito, anthropic/bedrock/vertex/azure in arrivo, unknown non gestito", () => {
@@ -75,7 +78,7 @@ describe("PROVIDER_REGISTRY", () => {
   it("PROVIDERS è derivato dal registro", () => {
     expect(PROVIDERS.get("together")).toEqual({ label: "Together AI", defaultBaseUrl: "https://api.together.xyz/v1", editableBaseUrl: false });
     expect(PROVIDERS.get("custom")?.editableBaseUrl).toBe(true);
-    expect(PROVIDERS.get("system_gateway")?.editableBaseUrl).toBe(false);
+    expect(PROVIDERS.has(LEGACY_GATEWAY_PROVIDER)).toBe(false);
     expect(PROVIDERS.size).toBe(PROVIDER_REGISTRY.length);
   });
 });
@@ -83,17 +86,22 @@ describe("PROVIDER_REGISTRY", () => {
 describe("ensureProviderRegistry", () => {
   afterAll(async () => {
     // Il DB di prova è condiviso: restano solo le righe di oggi (prima le offerte, che fanno riferimento ai provider)
-    await db.delete(modelOffersTable).where(notInArray(modelOffersTable.provider, TODAY));
-    await db.delete(providersTable).where(notInArray(providersTable.slug, TODAY));
+    await db.delete(modelOffersTable).where(notInArray(modelOffersTable.provider, KEEP));
+    await db.delete(providersTable).where(notInArray(providersTable.slug, KEEP));
   });
 
-  it("allinea la tabella al registro ed è idempotente", async () => {
+  it("allinea la tabella al registro ed è idempotente; la riga rimasta del vecchio gateway resta com'è", async () => {
+    await ensureLegacyGatewayProvider();
+    const [legacy] = await db.select().from(providersTable).where(eq(providersTable.slug, LEGACY_GATEWAY_PROVIDER));
+    expect(legacy).toBeDefined();
     await ensureProviderRegistry();
     const first = await db.select().from(providersTable).orderBy(providersTable.slug);
     await ensureProviderRegistry();
     const second = await db.select().from(providersTable).orderBy(providersTable.slug);
     expect(second).toEqual(first);
-    expect(first.map((r) => r.slug)).toEqual(PROVIDER_REGISTRY.map((p) => p.slug).sort());
+    expect(first.map((r) => r.slug)).toEqual([...PROVIDER_REGISTRY.map((p) => p.slug), LEGACY_GATEWAY_PROVIDER].sort());
+    // Né aggiornata né eliminata: la toglie solo la migrazione `-post`
+    expect(first.find((r) => r.slug === LEGACY_GATEWAY_PROVIDER)).toEqual(legacy);
     const bedrock = first.find((r) => r.slug === "bedrock")!;
     expect(bedrock).toMatchObject({
       protocol: "bedrock",
@@ -102,6 +110,17 @@ describe("ensureProviderRegistry", () => {
       defaultBaseUrl: null,
       sourceKeys: { litellm: ["bedrock", "bedrock_converse", "bedrock_mantle"], openrouterAuthor: null },
     });
+  });
+
+  it("dopo la migrazione `-post` l'avvio non ricrea il provider del vecchio gateway", async () => {
+    try {
+      await db.delete(providersTable).where(eq(providersTable.slug, LEGACY_GATEWAY_PROVIDER));
+      await ensureProviderRegistry();
+      expect(await db.select().from(providersTable).where(eq(providersTable.slug, LEGACY_GATEWAY_PROVIDER))).toEqual([]);
+    } finally {
+      // DB di prova condiviso: la riga torna com'era per gli altri file
+      await ensureLegacyGatewayProvider();
+    }
   });
 
   it("un provider scoperto riconosciuto dal registro diventa registry e prende il protocollo", async () => {

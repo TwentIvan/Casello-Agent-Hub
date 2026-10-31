@@ -7,14 +7,15 @@ import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type Fa
 import { encryptSecret } from "../secrets";
 import { logger } from "../logger";
 import { ProviderError } from "./discovery";
+import { LEGACY_GATEWAY_PROVIDER } from "./providers";
+import { ensureLegacyGatewayProvider } from "../../../test/legacy-gateway";
 import { computeCost, errorLogFields, executorKindFor, modelChat, ModelAccessError, providerModelName, resolveModel, type ResolvedModel } from "./executor";
 
 // Chiavi di prova: non devono mai comparire in errori o log
 const KEY = "sk-ACCOUNT-KEY-0001";
 const KEY_2 = "sk-ACCOUNT-KEY-0002";
-const GATEWAY_KEY = "sk-GATEWAY-VIRTUAL-KEY";
 
-const ENV_KEYS = ["AI_GATEWAY_BASE_URL", "AI_GATEWAY_API_KEY", "CASELLO_SECRET_KEY"] as const;
+const ENV_KEYS = ["CASELLO_SECRET_KEY"] as const;
 const saved: Record<string, string | undefined> = {};
 
 const TOOLS: ChatCompletionTool[] = [
@@ -48,8 +49,6 @@ beforeEach(async () => {
   alice = users[0]!.id;
   bob = users[1]!.id;
   fake = await startFakeProvider({ apiKey: KEY });
-  process.env["AI_GATEWAY_BASE_URL"] = fake.baseUrl;
-  process.env["AI_GATEWAY_API_KEY"] = GATEWAY_KEY;
 });
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -71,14 +70,15 @@ interface AccountOpts {
 /** Account + modello; restituisce gli id. */
 async function seed(o: AccountOpts = {}): Promise<{ accountId: number; aiModelId: number }> {
   const provider = o.provider ?? "custom";
+  if (provider === LEGACY_GATEWAY_PROVIDER) await ensureLegacyGatewayProvider();
   const [acc] = await db
     .insert(aiAccountsTable)
     .values({
       userId: o.userId === undefined ? alice : o.userId,
       name: "acc",
       provider,
-      baseUrl: o.baseUrl ?? (provider === "system_gateway" ? "env" : fake.baseUrl),
-      apiKeyEnc: o.apiKeyEnc === undefined ? (provider === "system_gateway" ? null : encryptSecret(KEY)) : o.apiKeyEnc,
+      baseUrl: o.baseUrl ?? fake.baseUrl,
+      apiKeyEnc: o.apiKeyEnc === undefined ? encryptSecret(KEY) : o.apiKeyEnc,
       allowPrivateNetwork: o.allowPrivateNetwork ?? provider === "custom",
     })
     .returning();
@@ -109,7 +109,7 @@ async function caught(p: Promise<unknown>): Promise<unknown> {
 /** Il messaggio non contiene chiavi, URL né il corpo d'errore del provider. */
 function expectClean(err: unknown): void {
   const text = `${(err as Error).message} ${String((err as Error).stack ?? "")}`;
-  for (const secret of [KEY, KEY_2, GATEWAY_KEY, FAKE_PROVIDER_ERROR_TEXT, fake.baseUrl, "127.0.0.1"]) {
+  for (const secret of [KEY, KEY_2, FAKE_PROVIDER_ERROR_TEXT, fake.baseUrl, "127.0.0.1"]) {
     expect((err as Error).message).not.toContain(secret);
   }
   expect(text).not.toContain(FAKE_PROVIDER_ERROR_TEXT);
@@ -212,15 +212,20 @@ describe("resolveModel", () => {
     expect((err as Error).message).toBe("modello non disponibile");
   });
 
-  it("invarianti: system_gateway con proprietario o account utente senza proprietario → non disponibile", async () => {
-    const sys = await seed({ userId: alice, provider: "system_gateway" });
-    const err = await caught(resolveModel(sys.aiModelId, { userId: alice, mustOwn: false }));
-    expect(err).toBeInstanceOf(ModelAccessError);
+  it("account senza proprietario (anche il vecchio account del gateway rimasto nel DB) → non disponibile", async () => {
+    const legacy = await seed({ userId: null, provider: LEGACY_GATEWAY_PROVIDER, apiKeyEnc: null });
+    for (const mustOwn of [true, false]) {
+      const err = await caught(resolveModel(legacy.aiModelId, { userId: alice, mustOwn }));
+      expect(err).toBeInstanceOf(ModelAccessError);
+      expect((err as Error).message).toBe("modello non disponibile");
+    }
+    // Run di un agente (nessun utente che avvia): stesso esito
+    const err = await caught(resolveModel(legacy.aiModelId, { userId: null, mustOwn: false }));
     expect((err as Error).message).toBe("modello non disponibile");
 
     await pool.query("TRUNCATE ai_accounts RESTART IDENTITY CASCADE");
     const orphan = await seed({ userId: null, provider: "custom" });
-    const err2 = await caught(resolveModel(orphan.aiModelId, { userId: alice, mustOwn: true }));
+    const err2 = await caught(resolveModel(orphan.aiModelId, { userId: alice, mustOwn: false }));
     expect(err2).toBeInstanceOf(ModelAccessError);
     expect((err2 as Error).message).toBe("modello non disponibile");
   });
@@ -239,32 +244,6 @@ describe("resolveModel", () => {
     const err = await caught(resolveModel(9999, { userId: alice, mustOwn: false }));
     expect(err).toBeInstanceOf(ModelAccessError);
     expect((err as Error).message).toBe("modello non disponibile");
-  });
-
-  it("account di sistema: base URL e chiave dalle env, usabile da tutti", async () => {
-    const { aiModelId } = await seed({ userId: null, provider: "system_gateway", priceIn: null, priceOut: null });
-    const r = await resolveModel(aiModelId, { userId: alice, mustOwn: true });
-    expect(r).toMatchObject({
-      provider: "system_gateway",
-      kind: "openai_compatible",
-      baseUrl: fake.baseUrl,
-      priceInput: null,
-      priceOutput: null,
-      ownerUserId: null,
-    });
-    expect(r.apiKey).toBe(GATEWAY_KEY);
-  });
-
-  it("account di sistema senza env → non più disponibile", async () => {
-    const { aiModelId } = await seed({ userId: null, provider: "system_gateway" });
-    delete process.env["AI_GATEWAY_API_KEY"];
-    const err = await caught(resolveModel(aiModelId, { userId: alice, mustOwn: true }));
-    expect(err).toBeInstanceOf(ModelAccessError);
-    expect((err as Error).message).toBe("account di sistema non più disponibile");
-    process.env["AI_GATEWAY_API_KEY"] = GATEWAY_KEY;
-    delete process.env["AI_GATEWAY_BASE_URL"];
-    const err2 = await caught(resolveModel(aiModelId, { userId: alice, mustOwn: true }));
-    expect((err2 as Error).message).toBe("account di sistema non più disponibile");
   });
 
   it("rivalida il base URL al momento della chiamata", async () => {
@@ -409,16 +388,12 @@ describe("modelChat", () => {
     expect(out.promptTokens).toBe(10);
   });
 
-  it("account di sistema: chiave del gateway e metadati LiteLLM", async () => {
-    fake.apiKey = GATEWAY_KEY;
-    const r = await resolved({ userId: null, provider: "system_gateway" });
-    await modelChat(r, { messages: MESSAGES, maxTokens: 50, caller: "run-executor", agentId: 4 });
-    const req = fake.requests.at(-1)!;
-    expect(req.authorization).toBe(`Bearer ${GATEWAY_KEY}`);
-    expect(req.body).toMatchObject({
-      max_completion_tokens: 50,
-      metadata: { tags: ["caller:run-executor", "agent:4"] },
-    });
+  it("solo parametri OpenAI standard: max_tokens, niente metadati LiteLLM", async () => {
+    await modelChat(await resolved(), { messages: MESSAGES, maxTokens: 50, caller: "run-executor" });
+    const body = fake.requests.at(-1)!.body as Record<string, unknown>;
+    expect(body["max_tokens"]).toBe(50);
+    expect(body).not.toHaveProperty("max_completion_tokens");
+    expect(body).not.toHaveProperty("metadata");
   });
 
   it("402 → credito esaurito, senza testo del provider", async () => {

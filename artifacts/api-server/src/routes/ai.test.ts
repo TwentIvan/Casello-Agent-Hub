@@ -19,6 +19,8 @@ import {
 import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 import { encryptSecret } from "../lib/secrets";
 import { ensureProviderRegistry } from "../lib/catalog/provider-registry";
+import { LEGACY_GATEWAY_PROVIDER } from "../lib/ai/providers";
+import { ensureLegacyGatewayProvider } from "../../test/legacy-gateway";
 
 // API degli account AI su un'app Express vera (porta 0), senza login (AUTH_DISABLED=true: utente di
 // sviluppo). Il secondo utente e i suoi account si inseriscono a mano nel DB. La scoperta dei modelli
@@ -29,7 +31,6 @@ import { ensureProviderRegistry } from "../lib/catalog/provider-registry";
 const KEY = "sk-CHIAVE-SEGRETISSIMA-42";
 const KEY2 = "sk-ALTRA-CHIAVE-SEGRETA-77";
 const OTHER_KEY = "sk-CHIAVE-DELL-ALTRO-UTENTE";
-const SYSTEM_MESSAGE = "account di sistema non modificabile";
 
 const realFetch = globalThis.fetch;
 
@@ -38,9 +39,8 @@ let fullBase: string;
 let server: http.Server;
 let fullServer: http.Server;
 let fake: FakeProvider;
-let ensureSystemAccount: () => Promise<{ accountId: number } | null>;
 
-const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY", "AI_GATEWAY_BASE_URL", "AI_GATEWAY_API_KEY"] as const;
+const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY"] as const;
 const saved: Record<string, string | undefined> = {};
 
 /** Tutti i corpi delle risposte: nessuno deve contenere una chiave. */
@@ -110,6 +110,26 @@ async function otherUserAccount() {
   return { user: user!, account: account!, model: model! };
 }
 
+/**
+ * Il vecchio account del gateway com'è ancora in produzione fino alla migrazione `-post`: senza proprietario,
+ * con il provider storico e i suoi modelli.
+ */
+async function legacyGatewayAccount() {
+  await ensureLegacyGatewayProvider();
+  const [account] = await db
+    .insert(aiAccountsTable)
+    .values({ userId: null, name: "Gateway Casello", provider: LEGACY_GATEWAY_PROVIDER, baseUrl: "http://gateway.interno:4000/v1", status: "ok" })
+    .returning();
+  const models = await db
+    .insert(aiModelsTable)
+    .values([
+      { accountId: account!.id, modelId: "openrouter/auto", displayName: "Auto", priceInputPerMtok: "1", priceOutputPerMtok: "2" },
+      { accountId: account!.id, modelId: "deepseek-chat", displayName: "DeepSeek", priceInputPerMtok: "0.28", priceOutputPerMtok: "0.42" },
+    ])
+    .returning();
+  return { account: account!, model: models[0]! };
+}
+
 let appSeq = 0;
 async function newApp() {
   appSeq += 1;
@@ -121,13 +141,10 @@ beforeAll(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   process.env["AUTH_DISABLED"] = "true";
   process.env["CASELLO_SECRET_KEY"] = "a".repeat(64);
-  process.env["AI_GATEWAY_BASE_URL"] = "http://gateway.interno:4000/v1";
-  process.env["AI_GATEWAY_API_KEY"] = "sk-gateway-di-sistema";
 
   const { requireAuth } = await import("../lib/auth");
   const { createAiRouter } = await import("./ai");
   const { errorHandler } = await import("../middlewares/error-handler");
-  ({ ensureSystemAccount } = await import("../lib/ai/system-account"));
   const noLimit: RequestHandler = (_req, _res, next) => next();
   const mini = express();
   mini.use(express.json());
@@ -169,7 +186,7 @@ afterEach(async () => {
   await fake.close();
   // Nessuna chiave in nessuna risposta del test
   for (const text of bodies) {
-    for (const secret of [KEY, KEY2, OTHER_KEY, "sk-gateway-di-sistema"]) expect(text).not.toContain(secret);
+    for (const secret of [KEY, KEY2, OTHER_KEY]) expect(text).not.toContain(secret);
     expect(text).not.toContain("apiKeyEnc");
     expect(text).not.toContain(FAKE_PROVIDER_ERROR_TEXT);
   }
@@ -195,7 +212,6 @@ describe("creazione", () => {
       status: "ok",
       lastError: null,
       keySet: true,
-      isSystem: false,
       modelCount: 2,
     });
     expect(res.json.lastCheckedAt).toEqual(expect.any(String));
@@ -264,7 +280,8 @@ describe("creazione", () => {
   it("regole sul provider, base URL, consenso e chiave", async () => {
     const cases: [Record<string, unknown>, string | RegExp][] = [
       [{ provider: "deepseek" }, "rete privata consentita solo per gli account personalizzati o di provider non gestiti"],
-      [{ provider: "system_gateway", allowPrivateNetwork: false, baseUrl: null }, /sistema/],
+      // Il provider del vecchio gateway resta nella tabella fino alla migrazione `-post`, ma non si può usare
+      [{ provider: LEGACY_GATEWAY_PROVIDER, allowPrivateNetwork: false, baseUrl: null }, "provider sconosciuto"],
       [{ baseUrl: null }, "indirizzo obbligatorio per questo provider"],
       [{ baseUrl: "   " }, "indirizzo obbligatorio per questo provider"],
       [{ allowPrivateNetwork: false }, "indirizzo non consentito"],
@@ -309,7 +326,7 @@ describe("creazione", () => {
 
 describe("provider del registro", () => {
   // I provider di oggi, già in docs/schema-casello.sql: alla fine restano solo loro (DB di prova condiviso)
-  const TODAY = ["deepseek", "openrouter", "huggingface", "mistral", "groq", "together", "gemini", "custom", "system_gateway"];
+  const TODAY = ["deepseek", "openrouter", "huggingface", "mistral", "groq", "together", "gemini", "custom", LEGACY_GATEWAY_PROVIDER];
   const UNMANAGED = "test-non-gestito";
   beforeAll(async () => {
     await ensureProviderRegistry();
@@ -328,11 +345,11 @@ describe("provider del registro", () => {
     await db.delete(providersTable).where(notInArray(providersTable.slug, TODAY));
   });
 
-  it("elenco: gestiti per nome, poi in arrivo, poi non gestiti; senza system_gateway", async () => {
+  it("elenco: gestiti per nome, poi in arrivo, poi non gestiti; senza il provider del vecchio gateway", async () => {
     const res = await api("GET", "/ai/providers");
     expect(res.status, res.text).toBe(200);
     const list = res.json as { slug: string; name: string; status: string }[];
-    expect(list.map((p) => p.slug)).not.toContain("system_gateway");
+    expect(list.map((p) => p.slug)).not.toContain(LEGACY_GATEWAY_PROVIDER);
     const statuses = list.map((p) => p.status);
     const firstComing = statuses.indexOf("coming");
     const firstUnmanaged = statuses.indexOf("unmanaged");
@@ -737,8 +754,7 @@ describe("modelli", () => {
 });
 
 describe("modelli selezionabili", () => {
-  it("propri account (predefinito, poi per nome, in errore in fondo) e sistema per ultimo; nascosti esclusi", async () => {
-    await ensureSystemAccount();
+  it("propri account (predefinito, poi per nome, in errore in fondo); nascosti esclusi", async () => {
     const z = await createAccount({ name: "Zeta" });
     const b = await createAccount({ name: "Beta" });
     const a = await createAccount({ name: "Alfa" });
@@ -751,39 +767,53 @@ describe("modelli selezionabili", () => {
 
     const res = await api("GET", "/ai/models");
     expect(res.status).toBe(200);
-    const groups = res.json as { account: { id: number; name: string; isSystem: boolean; status: string }; models: { modelId: string }[] }[];
-    expect(groups.map((g) => g.account.name)).toEqual(["Zeta", "Alfa", "Beta", "Aaa rotto", "Gateway Casello"]);
+    const groups = res.json as { account: { id: number; name: string; status: string }; models: { modelId: string }[] }[];
+    expect(groups.map((g) => g.account.name)).toEqual(["Zeta", "Alfa", "Beta", "Aaa rotto"]);
     expect(groups[0]!.account.id).toBe(z.id);
     expect(groups[1]!.account.id).toBe(a.id);
     expect(groups[2]!.models.map((m) => m.modelId)).toEqual(["modello-b"]);
     expect(groups[3]!.account.status).toBe("error");
-    expect(groups[4]!.account.isSystem).toBe(true);
-    expect(groups[4]!.models.length).toBeGreaterThan(0);
 
     // Stesso ordine nell'elenco degli account
     const list = await api("GET", "/ai/accounts");
-    expect(list.json.map((x: { name: string }) => x.name)).toEqual(["Zeta", "Alfa", "Beta", "Aaa rotto", "Gateway Casello"]);
+    expect(list.json.map((x: { name: string }) => x.name)).toEqual(["Zeta", "Alfa", "Beta", "Aaa rotto"]);
   });
 
-  it("senza variabili del gateway l'account di sistema non compare e le sue route rispondono 404", async () => {
-    const sys = await ensureSystemAccount();
-    const [sysModel] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.accountId, sys!.accountId)).limit(1);
-    const url = process.env["AI_GATEWAY_BASE_URL"];
-    delete process.env["AI_GATEWAY_BASE_URL"];
-    try {
-      expect((await api("GET", "/ai/models")).json).toEqual([]);
-      expect((await api("GET", "/ai/accounts")).json).toEqual([]);
-      expect((await api("GET", `/ai/accounts/${sys!.accountId}/models`)).status).toBe(404);
-      expect((await api("GET", `/ai/estimate?aiModelId=${sysModel!.id}`)).status).toBe(404);
-    } finally {
-      process.env["AI_GATEWAY_BASE_URL"] = url;
+  it("il vecchio account del gateway rimasto nel DB non compare e ogni sua route risponde 404", async () => {
+    const legacy = await legacyGatewayAccount();
+    expect((await api("GET", "/ai/models")).json).toEqual([]);
+    expect((await api("GET", "/ai/accounts")).json).toEqual([]);
+    const mine = await createAccount();
+    const groups = (await api("GET", "/ai/models")).json as { account: { id: number } }[];
+    expect(groups.map((g) => g.account.id)).toEqual([mine.id]);
+    expect((await api("GET", "/ai/accounts")).json.map((a: { id: number }) => a.id)).toEqual([mine.id]);
+
+    const id = legacy.account.id;
+    const calls: [string, string, unknown?][] = [
+      ["GET", `/ai/accounts/${id}/models`],
+      ["PATCH", `/ai/accounts/${id}`, { name: "mio" }],
+      ["DELETE", `/ai/accounts/${id}`],
+      ["POST", `/ai/accounts/${id}/verify`],
+      ["POST", `/ai/accounts/${id}/default`],
+      ["POST", `/ai/accounts/${id}/models`, { modelId: "x" }],
+      ["PATCH", `/ai/models/${legacy.model.id}`, { hidden: true }],
+      ["POST", `/ai/models/${legacy.model.id}/probe`],
+      ["GET", `/ai/estimate?aiModelId=${legacy.model.id}`],
+    ];
+    for (const [method, path, body] of calls) {
+      const res = await api(method, path, body);
+      expect(res.status, `${method} ${path}`).toBe(404);
     }
+    // Restano com'erano: li elimina solo la migrazione `-post`
+    const [row] = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.id, id));
+    expect(row).toMatchObject({ name: "Gateway Casello", userId: null, isDefault: false });
+    expect(await modelsOf(id)).toHaveLength(2);
+    expect(fake.requests.filter((r) => r.path === "/v1/chat/completions")).toHaveLength(0);
   });
 });
 
 describe("stato, selezionabilità e preselezione", () => {
   it("GET /ai/models riporta stato, selezionabile e un solo consigliato per gruppo", async () => {
-    await ensureSystemAccount();
     const acc = await createAccount();
     const [a, b] = await modelsOf(acc.id);
     // modello-a (il più economico) è ritirato dal catalogo: il consigliato diventa modello-b. Stato, dismissione e
@@ -800,8 +830,8 @@ describe("stato, selezionabilità e preselezione", () => {
 
     const res = await api("GET", "/ai/models");
     expect(res.status, res.text).toBe(200);
-    const groups = res.json as { account: { isSystem: boolean }; models: Record<string, unknown>[] }[];
-    const mine = groups.find((g) => !g.account.isSystem)!;
+    const groups = res.json as { account: { id: number }; models: Record<string, unknown>[] }[];
+    const mine = groups.find((g) => g.account.id === acc.id)!;
     expect(mine.models.find((m) => m.id === a!.id)).toMatchObject({
       status: "retired",
       selectable: false,
@@ -815,13 +845,11 @@ describe("stato, selezionabilità e preselezione", () => {
     });
     expect(mine.models.find((m) => m.id === b!.id)).toMatchObject({ status: "available", selectable: true, recommended: true });
     for (const g of groups) expect(g.models.filter((m) => m.recommended).length).toBeLessThanOrEqual(1);
-    const sys = groups.find((g) => g.account.isSystem)!;
-    expect(sys.models.filter((m) => m.recommended)).toHaveLength(1);
 
     // Un modello non disponibile resta in elenco ma non è selezionabile
     await db.update(aiModelsTable).set({ availability: "unavailable" }).where(eq(aiModelsTable.id, b!.id));
     const again = (await api("GET", "/ai/models")).json as typeof groups;
-    const mine2 = again.find((g) => !g.account.isSystem)!;
+    const mine2 = again.find((g) => g.account.id === acc.id)!;
     expect(mine2.models.find((m) => m.id === b!.id)).toMatchObject({ status: "unavailable", selectable: false, recommended: false });
     expect(mine2.models.some((m) => m.recommended)).toBe(false);
   });
@@ -869,11 +897,10 @@ describe("prova del modello", () => {
     expect(row).toMatchObject({ availability: "unavailable", lastProbeOk: false });
   });
 
-  it("modello di un altro utente, di sistema o inesistente → 404, nessuna chiamata", async () => {
+  it("modello di un altro utente, del vecchio gateway o inesistente → 404, nessuna chiamata", async () => {
     const other = await otherUserAccount();
-    const sys = await ensureSystemAccount();
-    const [sysModel] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.accountId, sys!.accountId)).limit(1);
-    for (const id of [other.model.id, sysModel!.id, 999999]) {
+    const legacy = await legacyGatewayAccount();
+    for (const id of [other.model.id, legacy.model.id, 999999]) {
       const res = await api("POST", `/ai/models/${id}/probe`);
       expect(res.status, String(id)).toBe(404);
       expect(res.json).toEqual({ error: "modello non trovato" });
@@ -884,7 +911,7 @@ describe("prova del modello", () => {
   });
 });
 
-describe("isolamento e account di sistema", () => {
+describe("isolamento", () => {
   it("l'account di un altro utente è invisibile e ogni route risponde 404", async () => {
     const other = await otherUserAccount();
     await createAccount();
@@ -910,38 +937,10 @@ describe("isolamento e account di sistema", () => {
     const [model] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.id, other.model.id));
     expect(model!.hidden).toBe(false);
   });
-
-  it("account di sistema: visibile, ma modifiche, eliminazione, verifica e modelli → 403", async () => {
-    const sys = await ensureSystemAccount();
-    const id = sys!.accountId;
-    const list = await api("GET", "/ai/accounts");
-    // L'indirizzo del gateway non si espone
-    expect(list.json).toEqual([expect.objectContaining({ id, isSystem: true, isDefault: false, provider: "system_gateway", baseUrl: "" })]);
-    expect(list.text).not.toContain("gateway.interno");
-    expect((await api("GET", "/ai/models")).text).not.toContain("gateway.interno");
-    const models = await api("GET", `/ai/accounts/${id}/models`);
-    expect(models.status).toBe(200);
-    const modelId = models.json[0].id as number;
-    const calls: [string, string, unknown?][] = [
-      ["PATCH", `/ai/accounts/${id}`, { name: "mio" }],
-      ["DELETE", `/ai/accounts/${id}`],
-      ["POST", `/ai/accounts/${id}/verify`],
-      ["POST", `/ai/accounts/${id}/default`],
-      ["POST", `/ai/accounts/${id}/models`, { modelId: "x" }],
-      ["PATCH", `/ai/models/${modelId}`, { hidden: true }],
-    ];
-    for (const [method, path, body] of calls) {
-      const res = await api(method, path, body);
-      expect(res.status, `${method} ${path}`).toBe(403);
-      expect(res.json).toEqual({ error: SYSTEM_MESSAGE });
-    }
-    const [row] = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.id, id));
-    expect(row).toMatchObject({ name: "Gateway Casello", isDefault: false });
-  });
 });
 
 describe("stima del costo", () => {
-  it("massimo e tipico con prezzi noti; null senza prezzi; modello di sistema ammesso", async () => {
+  it("massimo e tipico con prezzi noti; null senza prezzi; modello del vecchio gateway → 404", async () => {
     const acc = await createAccount();
     const [withPrice, noPrice] = await modelsOf(acc.id);
     await api("PATCH", `/ai/models/${withPrice!.id}`, { priceInput: 0.28, priceOutput: 0.42 });
@@ -972,9 +971,8 @@ describe("stima del costo", () => {
     res = await api("GET", `/ai/estimate?aiModelId=${noPrice!.id}&maxTokens=50000`);
     expect(res.json).toEqual({ maxUsd: 0, typicalUsd: 0 });
 
-    const sys = await ensureSystemAccount();
-    const [sysModel] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.accountId, sys!.accountId)).limit(1);
-    expect((await api("GET", `/ai/estimate?aiModelId=${sysModel!.id}`)).status).toBe(200);
+    const legacy = await legacyGatewayAccount();
+    expect((await api("GET", `/ai/estimate?aiModelId=${legacy.model.id}`)).status).toBe(404);
 
     expect((await api("GET", "/ai/estimate?aiModelId=999999")).status).toBe(404);
     expect((await api("GET", `/ai/estimate?aiModelId=${withPrice!.id}&maxTokens=0`)).status).toBe(400);
@@ -983,12 +981,11 @@ describe("stima del costo", () => {
 });
 
 describe("app completa", () => {
-  it("le route sono montate dietro il login, GET /models resta e le chiamate ai provider hanno un rate limit", async () => {
+  it("le route sono montate dietro il login, GET /models non c'è più e le chiamate ai provider hanno un rate limit", async () => {
     const res = await api("GET", "/ai/accounts", undefined, fullBase);
     expect(res.status).toBe(200);
-    const legacy = await api("GET", "/models", undefined, fullBase);
-    expect(legacy.status).toBe(200);
-    expect(legacy.json[0]).toEqual({ id: expect.any(String), label: expect.any(String), isDefault: expect.any(Boolean) });
+    // Nessuna route: risponde il 404 predefinito di Express (HTML, non JSON)
+    expect((await realFetch(`${fullBase}/api/models`)).status).toBe(404);
 
     // 20 chiamate verso i provider al minuto per IP (qui su un account inesistente: 404)
     for (let i = 0; i < 20; i++) {

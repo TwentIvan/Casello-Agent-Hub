@@ -18,7 +18,7 @@ export interface Agent {
   /** Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto */
   model?: string;
   /**
-     * Modello scelto tra quelli degli account AI; le run usano l'account di questo modello (chi configura paga). Null = vecchio percorso del gateway
+     * Modello scelto tra quelli degli account AI; le run usano l'account di questo modello (chi configura paga). Null = nessun modello: l'agente non si può eseguire
      * @nullable
      */
   aiModelId: number | null;

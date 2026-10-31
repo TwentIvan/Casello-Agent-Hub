@@ -155,7 +155,7 @@ export function UserBudgetCard() {
         <CardTitle>Tetto di spesa</CardTitle>
         <CardDescription>
           Spesa del mese sui tuoi account AI (run, analisi nel cloud, chat del piano). Raggiunto il tetto, Casello non
-          avvia nulla di nuovo fino al mese prossimo. I modelli dell'account di sistema non contano.
+          avvia nulla di nuovo fino al mese prossimo.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

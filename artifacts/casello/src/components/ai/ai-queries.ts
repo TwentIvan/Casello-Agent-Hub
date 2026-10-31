@@ -1,14 +1,14 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { getListAiModelsQueryKey, useListAiModels } from "@workspace/api-client-react";
 
-/** Modelli selezionabili dall'utente (propri account + sistema), raggruppati per account. */
+/** Modelli selezionabili dall'utente (dei suoi account), raggruppati per account. */
 export function useAiModelGroups() {
   return useListAiModels({ query: { queryKey: getListAiModelsQueryKey(), staleTime: 60_000 } });
 }
 
 /**
  * Modello da preselezionare: quello consigliato (`recommended`) dell'account predefinito; se nessun account
- * è predefinito (es. solo l'account di sistema) del primo gruppo con account non in errore, poi di qualsiasi
+ * è predefinito del primo gruppo con account non in errore, poi di qualsiasi
  * gruppo. null finché i modelli non sono arrivati o se non ce ne sono.
  */
 export function useDefaultAiModelId(): number | null {

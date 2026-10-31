@@ -1,10 +1,9 @@
 import { ProviderError } from "./discovery";
 import { ModelAccessError, resolveModel } from "./executor";
-import { findUsableSystemModelId } from "./system-account";
 
 /**
  * Scelta del modello da parte di un utente (agenti, analisi). Regola "chi configura paga": si può
- * scegliere solo un modello dei propri account o dell'account di sistema; chi esegue (run, analisi)
+ * scegliere solo un modello dei propri account; chi esegue (run, analisi)
  * usa poi il modello salvato, chiunque la avvii.
  */
 
@@ -14,6 +13,9 @@ export interface ModelChoice {
   model: string;
 }
 
+/** Nessun modello: il testo storico `agents.model` (NOT NULL) resta vuoto. */
+export const NO_MODEL: ModelChoice = { aiModelId: null, model: "" };
+
 /** Scelta non ammessa: il messaggio è già in italiano e sicuro da restituire (400). */
 export class ModelChoiceError extends Error {
   constructor(message: string) {
@@ -22,10 +24,10 @@ export class ModelChoiceError extends Error {
   }
 }
 
-const MODEL_UNAVAILABLE = "modello non disponibile";
+export const MODEL_UNAVAILABLE = "modello non disponibile";
 
 /**
- * Modello scelto dall'utente: deve essere suo o dell'account di sistema (configurato). La chiave
+ * Modello scelto dall'utente: deve essere di un suo account. La chiave
  * eventualmente decifrata da `resolveModel` resta in questa funzione e non viene restituita.
  */
 export async function chooseOwnModel(aiModelId: number, userId: number): Promise<ModelChoice> {
@@ -37,12 +39,4 @@ export async function chooseOwnModel(aiModelId: number, userId: number): Promise
     if (err instanceof ModelAccessError || err instanceof ProviderError) throw new ModelChoiceError(err.message);
     throw err;
   }
-}
-
-/**
- * Transizione: modello indicato solo per nome (console precedente). Se l'account di sistema ha un
- * modello con quell'id (ed è configurato) lo si collega, altrimenti resta il vecchio percorso del gateway (null).
- */
-export async function chooseByName(model: string): Promise<ModelChoice> {
-  return { aiModelId: await findUsableSystemModelId(model), model };
 }

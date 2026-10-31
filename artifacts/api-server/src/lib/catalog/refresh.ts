@@ -191,7 +191,7 @@ async function writeCatalog(
 }
 
 /**
- * Rilegge `/models` di ogni account degli utenti (non quello di sistema), uno alla volta: un errore non
+ * Rilegge `/models` di ogni account degli utenti (non il vecchio account del gateway, senza utente), uno alla volta: un errore non
  * ferma gli altri. Riporta i modelli scoperti prima e non più elencati, solo per le verifiche riuscite
  * con un elenco non vuoto.
  */

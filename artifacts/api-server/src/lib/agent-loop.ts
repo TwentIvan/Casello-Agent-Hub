@@ -4,7 +4,7 @@
 // Lo stato (`LoopState`) è JSON puro: l'orchestratore lo salva nella run e lo riprende.
 
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import { assistantToolCalls, type ChatResult } from "./ai-gateway";
+import { assistantToolCalls, type ChatResult } from "./ai/chat-types";
 import { maskSensitiveArgs } from "./tools/sensitive";
 import type { CatalogTool, ToolResult } from "./tools/types";
 

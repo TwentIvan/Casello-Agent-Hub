@@ -37,7 +37,9 @@ export function IssuesSummary({ appId, summary }: { appId: number; summary: Plan
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
       <div className="space-y-0.5">
         <p>
-          Issue: {summary.open} aperte, {summary.closed} chiuse, {summary.approvedWithoutIssue} voci approvate senza issue
+          Issue: {summary.open} {summary.open === 1 ? "aperta" : "aperte"}, {summary.closed}{" "}
+          {summary.closed === 1 ? "chiusa" : "chiuse"}, {summary.approvedWithoutIssue}{" "}
+          {summary.approvedWithoutIssue === 1 ? "voce approvata" : "voci approvate"} senza issue
         </p>
         {summary.checkedAt && (
           <p className="text-xs text-muted-foreground">aggiornato {formatRelative(summary.checkedAt)}</p>

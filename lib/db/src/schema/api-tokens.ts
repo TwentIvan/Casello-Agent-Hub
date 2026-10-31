@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, serial, integer, text, timestamp } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 
-// Token personali personali (server MCP e /api): a riposo solo l'hash SHA-256 (esadecimale), il valore si mostra una volta
+// Token personali (server MCP e /api): a riposo solo l'hash SHA-256 (esadecimale), il valore si mostra una volta
 export const apiTokensTable = pgTable("api_tokens", {
   id: serial("id").primaryKey(),
   userId: integer("user_id")

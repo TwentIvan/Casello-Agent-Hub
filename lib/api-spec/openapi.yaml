@@ -59,6 +59,8 @@ paths:
       operationId: getCurrentUser
       tags: [auth]
       summary: Utente della sessione corrente
+      description: >-
+        Con la sessione del login o con un token personale (api:read o api:write); auth dice quale.
       responses:
         "200":
           description: Utente autenticato
@@ -68,6 +70,8 @@ paths:
                 $ref: "#/components/schemas/CurrentUser"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /auth/providers:
     get:
@@ -115,8 +119,9 @@ paths:
       tags: [auth]
       summary: Elenca i token personali dell'utente
       description: >-
-        Token per gli agenti locali (server MCP), i più recenti per primi, revocati compresi. Non
-        contiene mai il valore del token né il suo hash.
+        Token personali (server MCP e /api, secondo gli ambiti), i più recenti per primi, revocati
+        compresi. Non contiene mai il valore del token né il suo hash. Solo con il login: con un
+        token risponde 403.
       responses:
         "200":
           description: Token dell'utente
@@ -1984,7 +1989,7 @@ components:
 
     CurrentUser:
       type: object
-      required: [email, name, picture, identities, githubEnabled]
+      required: [email, name, picture, identities, githubEnabled, auth]
       properties:
         email:
           type: string
@@ -2000,6 +2005,31 @@ components:
         githubEnabled:
           type: boolean
           description: Se il login e il collegamento con GitHub sono configurati sul server
+        auth:
+          description: Come è autenticata la richiesta (sessione del login o token personale)
+          oneOf:
+            - $ref: "#/components/schemas/CurrentUserSessionAuth"
+            - $ref: "#/components/schemas/CurrentUserTokenAuth"
+
+    CurrentUserSessionAuth:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [session]
+
+    CurrentUserTokenAuth:
+      type: object
+      required: [kind, scopes]
+      properties:
+        kind:
+          type: string
+          enum: [token]
+        scopes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApiTokenScope"
 
     AuthProviders:
       type: object

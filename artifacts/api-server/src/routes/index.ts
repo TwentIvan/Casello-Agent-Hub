@@ -18,7 +18,8 @@ import { authRouter, requireAuth } from "../lib/auth";
 
 const router: IRouter = Router();
 
-// Pubbliche: healthcheck e login. Tutto il resto richiede una sessione.
+// Pubbliche: healthcheck e login (/auth/me ha il suo requireAuth). Tutto il resto richiede una
+// sessione o un token personale con l'ambito giusto (requireAuth).
 router.use(healthRouter);
 router.use(authRouter());
 router.use(requireAuth);

@@ -4,7 +4,7 @@
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
-import { currentUserId, requireAuth, safeReturnTo, sessionUserId, type SessionUser } from "../auth";
+import { currentUserId, requireAuth, safeReturnTo, sessionOnly, sessionUserId, type SessionUser } from "../auth";
 import { logger } from "../logger";
 import { IdentityConflictError, isAllowed, linkIdentity, resolveLogin, unlinkIdentity, type LoginIdentity } from "../users";
 import { exchangeCode, getGithubUser, getVerifiedEmails, GithubError } from "./app";
@@ -163,7 +163,7 @@ export function githubAuthRouter(cfg: GithubConfig, opts: { publicAppUrl: string
     }
   });
 
-  router.delete("/auth/github", requireAuth, async (req, res, next) => {
+  router.delete("/auth/github", requireAuth, sessionOnly, async (req, res, next) => {
     try {
       await unlinkIdentity(currentUserId(req), "github");
       res.status(204).end();

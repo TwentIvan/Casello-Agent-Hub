@@ -12,6 +12,8 @@ import { GetAuthProvidersResponse, GetCurrentUserResponse } from "@workspace/api
 import { githubConfig } from "./github/config";
 import { githubAuthRouter } from "./github/oauth-routes";
 import { logger } from "./logger";
+import { tokenRateLimit } from "../middlewares/rate-limit";
+import { authenticateApiToken, bearerToken, type TokenScope } from "./api-tokens";
 import { IdentityConflictError, ensureUserByEmail, isAllowed, listIdentities, resolveLogin } from "./users";
 
 export interface SessionUser {
@@ -39,6 +41,8 @@ declare global {
     interface Request {
       /** Impostato da requireAuth. */
       userId?: number;
+      /** Come è autenticata la richiesta: impostato da requireAuth. */
+      auth?: { kind: "session" } | { kind: "token"; tokenId: number; scopes: TokenScope[] };
     }
   }
 }
@@ -175,19 +179,66 @@ export async function sessionUserId(req: Request): Promise<number | null> {
   return authDisabled ? devUserId() : resolveSessionUserId(req.session);
 }
 
-/** Protegge /api (o una singola route): imposta req.userId oppure risponde 401. */
+/** Risposte fisse per le richieste con un token personale. */
+export const TOKEN_MESSAGES = {
+  invalid: "token non valido o scaduto",
+  scope: "il token non ha l'ambito per questa operazione",
+  sessionOnly: "operazione disponibile solo con il login",
+} as const;
+
+/** GET e HEAD leggono (api:read o api:write); gli altri metodi scrivono (solo api:write). */
+function hasScopeFor(method: string, scopes: TokenScope[]): boolean {
+  if (method === "GET" || method === "HEAD") return scopes.includes("api:read") || scopes.includes("api:write");
+  return scopes.includes("api:write");
+}
+
+/**
+ * Protegge /api (o una singola route): imposta req.userId e req.auth oppure risponde 401/403/429.
+ * Con l'header Authorization presente conta solo il token personale (mai il cookie, nemmeno con
+ * AUTH_DISABLED): header non `Bearer cas_…`, token sconosciuto, revocato o scaduto → 401; poi il
+ * limite per token e l'ambito richiesto dal metodo. Senza header vale la sessione.
+ */
 export const requireAuth: RequestHandler = async (req, res, next) => {
   try {
+    if (req.headers.authorization !== undefined) {
+      const raw = bearerToken(req);
+      const found = raw === null ? null : await authenticateApiToken(raw);
+      if (!found) {
+        res.status(401).json({ error: TOKEN_MESSAGES.invalid });
+        return;
+      }
+      req.userId = found.userId;
+      req.auth = { kind: "token", tokenId: found.tokenId, scopes: found.scopes };
+      // Il limite conta ogni richiesta autenticata con il token, anche quelle senza l'ambito
+      tokenRateLimit(req, res, () => {
+        if (!hasScopeFor(req.method, found.scopes)) {
+          res.status(403).json({ error: TOKEN_MESSAGES.scope });
+          return;
+        }
+        next();
+      });
+      return;
+    }
     const userId = await sessionUserId(req);
     if (userId === null) {
       res.status(401).json({ error: "Login richiesto" });
       return;
     }
     req.userId = userId;
+    req.auth = { kind: "session" };
     next();
   } catch (err) {
     next(err);
   }
+};
+
+/** Operazioni solo con il login (chiavi, tetti, token, account collegati): con un token → 403. */
+export const sessionOnly: RequestHandler = (req, res, next) => {
+  if (req.auth?.kind === "token") {
+    res.status(403).json({ error: TOKEN_MESSAGES.sessionOnly });
+    return;
+  }
+  next();
 };
 
 /** Id dell'utente impostato da requireAuth; lancia se la route non è protetta. */
@@ -199,10 +250,10 @@ export function currentUserId(req: Request): number {
 export function authRouter(): IRouter {
   const router: IRouter = Router();
 
-  router.get("/auth/me", async (req, res) => {
-    // Anche qui una sessione della fase 1 viene convertita (è la prima richiesta della UI)
-    const userId = await sessionUserId(req);
-    const [user] = userId === null ? [] : await db.select().from(usersTable).where(eq(usersTable.id, userId));
+  // Stesse regole di /api (token o sessione): requireAuth converte anche una sessione della fase 1,
+  // perché questa è la prima richiesta della UI
+  router.get("/auth/me", requireAuth, async (req, res) => {
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, currentUserId(req)));
     if (!user) {
       res.status(401).json({ error: "Login richiesto" });
       return;
@@ -214,6 +265,7 @@ export function authRouter(): IRouter {
         picture: user.picture,
         identities: await listIdentities(user.id),
         githubEnabled: githubConfig() !== null,
+        auth: req.auth?.kind === "token" ? { kind: "token", scopes: req.auth.scopes } : { kind: "session" },
       }),
     );
   });

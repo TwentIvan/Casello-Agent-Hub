@@ -18,6 +18,7 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * Con la sessione del login o con un token personale (api:read o api:write); auth dice quale.
  * @summary Utente della sessione corrente
  */
 export const GetCurrentUserResponse = zod.object({
@@ -29,7 +30,13 @@ export const GetCurrentUserResponse = zod.object({
   "username": zod.string().nullable().describe('Login GitHub (null per Google)'),
   "email": zod.string().nullable()
 })).describe('Account esterni collegati (Google, GitHub)'),
-  "githubEnabled": zod.boolean().describe('Se il login e il collegamento con GitHub sono configurati sul server')
+  "githubEnabled": zod.boolean().describe('Se il login e il collegamento con GitHub sono configurati sul server'),
+  "auth": zod.union([zod.object({
+  "kind": zod.enum(['session'])
+}),zod.object({
+  "kind": zod.enum(['token']),
+  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api'))
+})]).describe('Come è autenticata la richiesta (sessione del login o token personale)')
 })
 
 
@@ -57,7 +64,7 @@ export const UnlinkGithubResponse = zod.void()
 
 
 /**
- * Token per gli agenti locali (server MCP), i più recenti per primi, revocati compresi. Non contiene mai il valore del token né il suo hash.
+ * Token personali (server MCP e /api, secondo gli ambiti), i più recenti per primi, revocati compresi. Non contiene mai il valore del token né il suo hash. Solo con il login: con un token risponde 403.
  * @summary Elenca i token personali dell'utente
  */
 export const ListApiTokensResponseItem = zod.object({

@@ -169,6 +169,7 @@ describe("sessione senza login (AUTH_DISABLED)", () => {
       picture: null,
       identities: [],
       githubEnabled: false,
+      auth: { kind: "session" },
     });
   });
 });

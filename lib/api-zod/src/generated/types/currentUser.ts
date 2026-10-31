@@ -5,6 +5,8 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { CurrentUserSessionAuth } from './currentUserSessionAuth';
+import type { CurrentUserTokenAuth } from './currentUserTokenAuth';
 import type { LinkedIdentity } from './linkedIdentity';
 
 export interface CurrentUser {
@@ -17,4 +19,6 @@ export interface CurrentUser {
   identities: LinkedIdentity[];
   /** Se il login e il collegamento con GitHub sono configurati sul server */
   githubEnabled: boolean;
+  /** Come è autenticata la richiesta (sessione del login o token personale) */
+  auth: CurrentUserSessionAuth | CurrentUserTokenAuth;
 }

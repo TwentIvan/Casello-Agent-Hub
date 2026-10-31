@@ -6,12 +6,13 @@ import {
   ListApiTokensResponse,
   RevokeApiTokenParams,
 } from "@workspace/api-zod";
-import { currentUserId } from "../lib/auth";
+import { currentUserId, sessionOnly } from "../lib/auth";
 import { ApiTokenInputError, type TokenScope, createApiToken, listApiTokens, revokeApiToken } from "../lib/api-tokens";
 import { parseRequest } from "../middlewares/error-handler";
 
-// Token personali dell'utente per gli agenti locali. Il valore compare solo nella risposta di
-// creazione; mai l'hash. Un token di un altro utente è come se non esistesse (404).
+// Token personali dell'utente (server MCP e /api). Il valore compare solo nella risposta di
+// creazione; mai l'hash. Un token di un altro utente è come se non esistesse (404). Si gestiscono
+// solo con il login: un token non può crearne né revocarne altri.
 
 const TOKEN_NOT_FOUND = "token non trovato";
 
@@ -30,12 +31,12 @@ function toInfo(row: ApiToken) {
 export function createApiTokensRouter(): IRouter {
   const router: IRouter = Router();
 
-  router.get("/account/tokens", async (req, res) => {
+  router.get("/account/tokens", sessionOnly, async (req, res) => {
     const rows = await listApiTokens(currentUserId(req));
     res.json(ListApiTokensResponse.parse(rows.map(toInfo)));
   });
 
-  router.post("/account/tokens", async (req, res) => {
+  router.post("/account/tokens", sessionOnly, async (req, res) => {
     const body = parseRequest(CreateApiTokenBody, req.body);
     try {
       const { token, row } = await createApiToken(currentUserId(req), body.name, body.expiresInDays, body.scopes);
@@ -49,7 +50,7 @@ export function createApiTokensRouter(): IRouter {
     }
   });
 
-  router.delete("/account/tokens/:id", async (req, res) => {
+  router.delete("/account/tokens/:id", sessionOnly, async (req, res) => {
     const { id } = parseRequest(RevokeApiTokenParams, req.params);
     if (!(await revokeApiToken(currentUserId(req), id))) {
       res.status(404).json({ error: TOKEN_NOT_FOUND });

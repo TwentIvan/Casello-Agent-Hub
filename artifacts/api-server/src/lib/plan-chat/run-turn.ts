@@ -2,7 +2,7 @@
 // `startPlanTurn` risponde subito con il messaggio dell'utente e lancia il turno in background.
 // Nei log solo id e conteggi: mai il contenuto dei messaggi.
 
-import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import {
   db,
   analysesTable,
@@ -61,7 +61,7 @@ export async function latestCompletedAnalysisId(appId: number): Promise<number |
 
 /**
  * Voci del piano: i capitoli endpoint/completion/evolution dell'analisi della conversazione, più le voci
- * nate in chat e approvate delle analisi precedenti della stessa app.
+ * approvate delle altre analisi della stessa app nate in chat o già collegate a un'issue GitHub.
  */
 export async function loadPlanItems(analysisId: number, appId: number): Promise<AnalysisItem[]> {
   const chapters = PLAN_CHAPTERS as string[];
@@ -78,7 +78,7 @@ export async function loadPlanItems(analysisId: number, appId: number): Promise<
       and(
         eq(analysesTable.appId, appId),
         ne(analysisItemsTable.analysisId, analysisId),
-        eq(analysisItemsTable.origin, "chat"),
+        or(eq(analysisItemsTable.origin, "chat"), isNotNull(analysisItemsTable.issueNumber)),
         eq(analysisItemsTable.status, "approved"),
         inArray(analysisItemsTable.chapter, chapters as never[]),
       ),

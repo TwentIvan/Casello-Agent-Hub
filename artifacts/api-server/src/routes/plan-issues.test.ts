@@ -509,6 +509,17 @@ describe("stato delle issue nel piano", () => {
     });
   });
 
+  it("dopo una rianalisi la voce dell'architetto con l'issue resta nel piano e nel riepilogo", async () => {
+    const a = await addItem("completion", completion("a"));
+    expect((await issuesPost([a])).json.results[0].outcome).toBe("created");
+    await newAnalysis(appId);
+    const res = await plan();
+    expect(res.status, res.text).toBe(200);
+    const item = res.json.items.find((i: any) => i.id === a);
+    expect(item?.issue).toMatchObject({ number: 1, state: "open" });
+    expect(res.json.issues).toMatchObject({ open: 1, approvedWithoutIssue: 0 });
+  });
+
   it("refresh: chiusa completed e not_planned aggiornate, checkedAt avanzato", async () => {
     const ids = [
       await addItem("evolution", evolution("Uno")),

@@ -116,4 +116,9 @@ describe("issueContent", () => {
     expect(title).toBe("Titolo a");
     expect(labels).toContain("casello");
   });
+  it("piè di pagina: il nome dell'app su una riga sola", () => {
+    const item = comp("a");
+    const { body } = issueContent(item, { appName: "  Mister\n\n## Titolo\t finto ", issueByKey: new Map(), titleByKey: new Map() });
+    expect(body.endsWith(`\n\n---\nCreata da Casello · piano di Mister ## Titolo finto · voce #${item.id}`)).toBe(true);
+  });
 });

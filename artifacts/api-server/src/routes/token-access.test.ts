@@ -15,6 +15,17 @@ import type { TokenScope } from "../lib/api-tokens";
 // Le tabelle si svuotano SENZA ripartire con gli id: il limite per token è in memoria per id.
 
 const logLines = vi.hoisted(() => [] as string[]);
+// Se impostato, authenticateApiToken fallisce con questo errore (errore del DB simulato)
+const authFailure = vi.hoisted(() => ({ error: null as Error | null }));
+
+vi.mock("../lib/api-tokens", async () => {
+  const actual = await vi.importActual<typeof import("../lib/api-tokens")>("../lib/api-tokens");
+  return {
+    ...actual,
+    authenticateApiToken: (...args: Parameters<typeof actual.authenticateApiToken>) =>
+      authFailure.error ? Promise.reject(authFailure.error) : actual.authenticateApiToken(...args),
+  };
+});
 
 vi.mock("../lib/logger", async () => {
   const { default: pino } = await import("pino");
@@ -104,6 +115,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  authFailure.error = null;
   process.env["ALLOWED_EMAILS"] = TOKEN_EMAIL;
   await pool.query("TRUNCATE users CASCADE");
   const [user] = await db.insert(usersTable).values({ email: TOKEN_EMAIL, name: "Token" }).returning();
@@ -256,6 +268,27 @@ describe("token personali su /api", () => {
     for (const secret of [token, mcpOnly, "Bearer", "authorization", sha256(token), sha256(mcpOnly)]) {
       expect(all.toLowerCase()).not.toContain(secret.toLowerCase());
     }
+  });
+
+  it("errore del DB nella verifica del token: 500 fisso, né token né hash nei log o nella risposta", async () => {
+    const token = await tokenWith(["api:read"]);
+    const hash = sha256(token);
+    // Come DrizzleQueryError: il messaggio riporta la query e i suoi parametri (l'hash)
+    const dbError = new Error(`Failed query: select ... where "token_hash" = $1\nparams: ${hash}`);
+    dbError.name = "DrizzleQueryError";
+    authFailure.error = dbError;
+    logLines.length = 0;
+    for (const path of ["/apps", "/auth/me"]) {
+      const res = await api("GET", path, { token });
+      expect(res.status, path).toBe(500);
+      expect(res.json, path).toEqual({ error: "errore interno" });
+      expect(res.text).not.toContain(hash);
+      expect(res.text).not.toContain(token);
+    }
+    await vi.waitFor(() => expect(logLines.some((l) => l.includes("DrizzleQueryError"))).toBe(true));
+    const all = logLines.join("\n");
+    expect(all).not.toContain(hash);
+    expect(all).not.toContain(token);
   });
 });
 

@@ -202,7 +202,15 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
   try {
     if (req.headers.authorization !== undefined) {
       const raw = bearerToken(req);
-      const found = raw === null ? null : await authenticateApiToken(raw);
+      let found: Awaited<ReturnType<typeof authenticateApiToken>>;
+      try {
+        found = raw === null ? null : await authenticateApiToken(raw);
+      } catch (err) {
+        // Mai l'errore intero: un errore del DB riporta i parametri della query, cioè l'hash del token
+        logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Verifica del token personale non riuscita");
+        res.status(500).json({ error: "errore interno" });
+        return;
+      }
       if (!found) {
         res.status(401).json({ error: TOKEN_MESSAGES.invalid });
         return;

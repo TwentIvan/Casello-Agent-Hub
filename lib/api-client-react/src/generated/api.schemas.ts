@@ -1208,6 +1208,18 @@ export interface AiAccountInput {
   allowPrivateNetwork?: boolean;
 }
 
+/**
+ * mcp = server MCP; api:read = solo lettura su /api; api:write = lettura e scrittura su /api
+ */
+export type ApiTokenScope = typeof ApiTokenScope[keyof typeof ApiTokenScope];
+
+
+export const ApiTokenScope = {
+  mcp: 'mcp',
+  'api:read': 'api:read',
+  'api:write': 'api:write',
+} as const;
+
 export interface ApiTokenInfo {
   id: number;
   name: string;
@@ -1217,6 +1229,7 @@ export interface ApiTokenInfo {
   lastUsedAt: string | null;
   /** @nullable */
   revokedAt: string | null;
+  scopes: ApiTokenScope[];
 }
 
 export interface ApiTokenCreate {
@@ -1230,6 +1243,8 @@ export interface ApiTokenCreate {
      * @maximum 90
      */
   expiresInDays: number;
+  /** Almeno uno, senza ripetizioni; se omesso vale solo mcp */
+  scopes?: ApiTokenScope[];
 }
 
 export interface ApiTokenCreated {

@@ -7,7 +7,7 @@ import {
   RevokeApiTokenParams,
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
-import { ApiTokenInputError, createApiToken, listApiTokens, revokeApiToken } from "../lib/api-tokens";
+import { ApiTokenInputError, type TokenScope, createApiToken, listApiTokens, revokeApiToken } from "../lib/api-tokens";
 import { parseRequest } from "../middlewares/error-handler";
 
 // Token personali dell'utente per gli agenti locali. Il valore compare solo nella risposta di
@@ -23,6 +23,7 @@ function toInfo(row: ApiToken) {
     expiresAt: row.expiresAt,
     lastUsedAt: row.lastUsedAt,
     revokedAt: row.revokedAt,
+    scopes: row.scopes as TokenScope[],
   };
 }
 
@@ -37,7 +38,7 @@ export function createApiTokensRouter(): IRouter {
   router.post("/account/tokens", async (req, res) => {
     const body = parseRequest(CreateApiTokenBody, req.body);
     try {
-      const { token, row } = await createApiToken(currentUserId(req), body.name, body.expiresInDays);
+      const { token, row } = await createApiToken(currentUserId(req), body.name, body.expiresInDays, body.scopes);
       res.status(201).json(CreateApiTokenResponse.parse({ token, info: toInfo(row) }));
     } catch (err) {
       if (err instanceof ApiTokenInputError) {

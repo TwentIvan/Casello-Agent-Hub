@@ -52,6 +52,7 @@ export * from './analysisStatus';
 export * from './apiTokenCreate';
 export * from './apiTokenCreated';
 export * from './apiTokenInfo';
+export * from './apiTokenScope';
 export * from './app';
 export * from './appInput';
 export * from './appPlan';

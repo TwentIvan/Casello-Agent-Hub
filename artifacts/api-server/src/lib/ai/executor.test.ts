@@ -7,7 +7,7 @@ import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type Fa
 import { encryptSecret } from "../secrets";
 import { logger } from "../logger";
 import { ProviderError } from "./discovery";
-import { computeCost, errorLogFields, executorKindFor, modelChat, ModelAccessError, resolveModel, type ResolvedModel } from "./executor";
+import { computeCost, errorLogFields, executorKindFor, modelChat, ModelAccessError, providerModelName, resolveModel, type ResolvedModel } from "./executor";
 
 // Chiavi di prova: non devono mai comparire in errori o log
 const KEY = "sk-ACCOUNT-KEY-0001";
@@ -326,6 +326,15 @@ describe("resolveModel: esecutore dal protocollo del provider", () => {
   });
 });
 
+describe("providerModelName", () => {
+  it("Gemini: senza il prefisso models/ dell'elenco; gli altri provider così com'è", () => {
+    expect(providerModelName("gemini", "models/gemini-2.5-flash-lite")).toBe("gemini-2.5-flash-lite");
+    expect(providerModelName("gemini", "gemini-2.5-flash-lite")).toBe("gemini-2.5-flash-lite");
+    expect(providerModelName("custom", "models/x")).toBe("models/x");
+    expect(providerModelName("openrouter", "google/gemini-2.5-flash")).toBe("google/gemini-2.5-flash");
+  });
+});
+
 describe("modelChat", () => {
   async function resolved(o: AccountOpts = {}): Promise<ResolvedModel> {
     const { aiModelId } = await seed(o);
@@ -341,6 +350,14 @@ describe("modelChat", () => {
     };
     const out = await modelChat(await resolved(), { messages: MESSAGES, tools: TOOLS, caller: "test" });
     expect(out.toolCalls).toEqual([{ id: "call_1", name: "get_user", arguments: "{}", extra }]);
+  });
+
+  it("altri provider: l'id del modello va al provider così com'è", async () => {
+    const { aiModelId } = await seed();
+    await db.update(aiModelsTable).set({ modelId: "models/x" }).where(eq(aiModelsTable.id, aiModelId));
+    fake.chatReply = { content: "ok", toolCalls: [], usage: { prompt_tokens: 1, completion_tokens: 1 } };
+    await modelChat(await resolveModel(aiModelId, { userId: alice, mustOwn: false }), { messages: MESSAGES, caller: "test" });
+    expect((fake.requests.at(-1)!.body as Record<string, unknown>).model).toBe("models/x");
   });
 
   it("manda la chiave dell'account, restituisce tool calls, token e costo", async () => {

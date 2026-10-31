@@ -128,7 +128,7 @@ export default function Dashboard() {
   const inProgress = s ? s.totalRuns - s.successfulRuns - s.failedRuns - s.cancelledRuns : undefined;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-screen-2xl space-y-6">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
         <p className="text-sm text-muted-foreground">Panoramica delle app, degli agenti e delle esecuzioni.</p>

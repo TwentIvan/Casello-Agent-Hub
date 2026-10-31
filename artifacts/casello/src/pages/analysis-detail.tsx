@@ -366,7 +366,7 @@ export default function AnalysisDetailPage() {
 
   if (!Number.isInteger(analysisId) || (analysis.error instanceof ApiError && analysis.error.status === 404)) {
     return (
-      <div className="mx-auto max-w-5xl space-y-4">
+      <div className="mx-auto max-w-screen-2xl space-y-4">
         {backLink}
         <p className="text-sm text-muted-foreground">Analisi non trovata: potrebbe essere stata eliminata con la sua app.</p>
       </div>
@@ -374,7 +374,7 @@ export default function AnalysisDetailPage() {
   }
   if (analysis.isError && !analysis.data) {
     return (
-      <div className="mx-auto max-w-5xl space-y-4">
+      <div className="mx-auto max-w-screen-2xl space-y-4">
         {backLink}
         <p className="text-sm text-destructive">Impossibile caricare l'analisi: {apiErrorMessage(analysis.error)}</p>
       </div>
@@ -382,7 +382,7 @@ export default function AnalysisDetailPage() {
   }
   if (!analysis.data) {
     return (
-      <div className="mx-auto max-w-5xl space-y-4">
+      <div className="mx-auto max-w-screen-2xl space-y-4">
         {backLink}
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-64 w-full" />
@@ -405,7 +405,7 @@ export default function AnalysisDetailPage() {
       : null;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-screen-2xl space-y-6">
       <div className="space-y-3">
         {backLink}
         <div className="flex flex-wrap items-center gap-3">

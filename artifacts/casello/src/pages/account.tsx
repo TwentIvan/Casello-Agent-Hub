@@ -204,7 +204,7 @@ export default function AccountPage() {
   const githubLinked = me.data?.identities.some((identity) => identity.provider === "github") ?? false;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-screen-2xl space-y-6">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Account</h2>
         <p className="text-sm text-muted-foreground">Accessi collegati, account AI e installazioni dell'App Casello su GitHub.</p>

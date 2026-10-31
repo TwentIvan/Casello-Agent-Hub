@@ -54,7 +54,7 @@ export default function AgentsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-screen-2xl space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Agenti</h2>

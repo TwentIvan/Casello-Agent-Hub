@@ -96,7 +96,7 @@ export default function RunDetailPage() {
 
   if (!Number.isInteger(runId) || (run.error instanceof ApiError && run.error.status === 404)) {
     return (
-      <div className="mx-auto max-w-4xl space-y-4">
+      <div className="mx-auto max-w-screen-2xl space-y-4">
         {backLink}
         <p className="text-sm text-muted-foreground">Run non trovata: potrebbe essere stata eliminata con il suo agente.</p>
       </div>
@@ -104,7 +104,7 @@ export default function RunDetailPage() {
   }
   if (run.isError && !run.data) {
     return (
-      <div className="mx-auto max-w-4xl space-y-4">
+      <div className="mx-auto max-w-screen-2xl space-y-4">
         {backLink}
         <p className="text-sm text-destructive">Impossibile caricare la run: {apiErrorMessage(run.error)}</p>
       </div>
@@ -112,7 +112,7 @@ export default function RunDetailPage() {
   }
   if (!run.data) {
     return (
-      <div className="mx-auto max-w-4xl space-y-4">
+      <div className="mx-auto max-w-screen-2xl space-y-4">
         {backLink}
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-64 w-full" />
@@ -124,7 +124,7 @@ export default function RunDetailPage() {
   const cost = formatCost(r.costUsd, (r.promptTokens ?? 0) + (r.completionTokens ?? 0));
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-screen-2xl space-y-6">
       <div className="space-y-3">
         {backLink}
         <div className="flex flex-wrap items-center gap-3">

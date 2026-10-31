@@ -216,8 +216,16 @@ function clientFor(resolved: ResolvedModel): OpenAI {
   return client;
 }
 
+/**
+ * Id del modello come lo vuole il provider nella chiamata. Gemini elenca i modelli come `models/<id>` ma
+ * l'endpoint compatibile OpenAI risponde 404 con il prefisso: si manda l'id senza. Gli altri così com'è.
+ */
+export function providerModelName(provider: string, modelId: string): string {
+  return provider === "gemini" ? modelId.replace(/^models\//i, "") : modelId;
+}
+
 function buildParams(resolved: ResolvedModel, opts: ChatOptions): ChatCompletionCreateParamsNonStreaming {
-  const base = { model: resolved.modelId, messages: opts.messages };
+  const base = { model: providerModelName(resolved.provider, resolved.modelId), messages: opts.messages };
   let params: ChatCompletionCreateParamsNonStreaming;
   if (resolved.provider === "system_gateway") {
     // LiteLLM: stessi parametri di aiGateway.chat (metadati di telemetria inclusi)

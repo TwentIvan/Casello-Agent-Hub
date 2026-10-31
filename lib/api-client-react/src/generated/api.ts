@@ -22,6 +22,7 @@ import type {
 import type {
   Agent,
   AgentInput,
+  AgentModelAssignments,
   AgentSkill,
   AgentToolsInput,
   AgentUpdate,
@@ -1901,6 +1902,78 @@ export const useDeleteAppTool = <TError = ErrorType<NotFoundResponse>,
         TContext
       > => {
       return useMutation(getDeleteAppToolMutationOptions(options));
+    }
+
+export const getSetAppAgentModelsUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/agent-models`
+}
+
+/**
+ * Assegna in una sola chiamata il modello di ciascun agente indicato (null = nessun modello). Tutto o niente: se un agente non è dell'app o un modello non è dell'utente non cambia nulla.
+ * @summary Imposta il modello di più agenti di un'app
+ */
+export const setAppAgentModels = async (id: number,
+    agentModelAssignments: AgentModelAssignments, options?: RequestInit): Promise<Agent[]> => {
+
+  return customFetch<Agent[]>(getSetAppAgentModelsUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(agentModelAssignments)
+  }
+);}
+
+
+
+
+export const getSetAppAgentModelsMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAppAgentModels>>, TError,{id: number;data: BodyType<AgentModelAssignments>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setAppAgentModels>>, TError,{id: number;data: BodyType<AgentModelAssignments>}, TContext> => {
+
+const mutationKey = ['setAppAgentModels'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setAppAgentModels>>, {id: number;data: BodyType<AgentModelAssignments>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  setAppAgentModels(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetAppAgentModelsMutationResult = NonNullable<Awaited<ReturnType<typeof setAppAgentModels>>>
+    export type SetAppAgentModelsMutationBody = BodyType<AgentModelAssignments>
+    export type SetAppAgentModelsMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Imposta il modello di più agenti di un'app
+ */
+export const useSetAppAgentModels = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAppAgentModels>>, TError,{id: number;data: BodyType<AgentModelAssignments>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setAppAgentModels>>,
+        TError,
+        {id: number;data: BodyType<AgentModelAssignments>},
+        TContext
+      > => {
+      return useMutation(getSetAppAgentModelsMutationOptions(options));
     }
 
 export const getSetAgentToolsUrl = (id: number,) => {

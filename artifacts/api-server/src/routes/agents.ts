@@ -24,6 +24,9 @@ import {
   SetAgentToolsParams,
   SetAgentToolsBody,
   SetAgentToolsResponse,
+  SetAppAgentModelsParams,
+  SetAppAgentModelsBody,
+  SetAppAgentModelsResponse,
   TriggerRunParams,
   TriggerRunBody,
   TriggerRunResponse,
@@ -35,6 +38,7 @@ import { startRun } from "../lib/run-executor";
 import { budgetColumn, runBudgetBlock } from "../lib/budget";
 import { currentUserId } from "../lib/auth";
 import { ModelChoiceError, chooseByName, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
+import { NO_MODEL } from "../lib/ai/choice";
 import { resolveAgentModel } from "../lib/ai/default-model";
 import { logger } from "../lib/logger";
 import { toPublicRun, userTokenFrom, withToolIds, withToolIdsOne } from "./serializers";
@@ -198,6 +202,59 @@ router.put("/agents/:id/tools", async (req, res) => {
     return row!;
   });
   res.json(SetAgentToolsResponse.parse(await withToolIdsOne(updated)));
+});
+
+// ── Mappa dei modelli degli agenti di un'app ────────────────────────────────
+
+// Tutto o niente: prima si verifica ogni agente (dell'app) e ogni modello (dell'utente o di sistema,
+// come per `PATCH /agents/:id`), poi si aggiorna in una sola transazione. null = nessun modello.
+router.put("/apps/:id/agent-models", async (req, res) => {
+  const { id } = parseRequest(SetAppAgentModelsParams, req.params);
+  const { assignments } = parseRequest(SetAppAgentModelsBody, req.body);
+
+  const agentIds = assignments.map((a) => a.agentId);
+  if (new Set(agentIds).size !== agentIds.length) {
+    res.status(400).json({ error: "Un agente compare più volte" });
+    return;
+  }
+  const [app] = await db.select({ id: appsTable.id }).from(appsTable).where(eq(appsTable.id, id)).limit(1);
+  if (!app) {
+    res.status(404).json({ error: "App non trovata" });
+    return;
+  }
+  const owned = await db
+    .select({ id: agentsTable.id })
+    .from(agentsTable)
+    .where(and(eq(agentsTable.appId, id), inArray(agentsTable.id, agentIds)));
+  if (owned.length !== agentIds.length) {
+    res.status(400).json({ error: "Alcuni agenti non esistono o non appartengono all'app" });
+    return;
+  }
+  const userId = currentUserId(req);
+  let choices: ModelChoice[];
+  try {
+    choices = await Promise.all(
+      assignments.map((a) => (a.aiModelId === null ? NO_MODEL : chooseOwnModel(a.aiModelId, userId))),
+    );
+  } catch (err) {
+    if (!(err instanceof ModelChoiceError)) throw err;
+    res.status(400).json({ error: err.message });
+    return;
+  }
+
+  const updated = await db.transaction(async (tx) => {
+    const rows = [];
+    for (const [i, a] of assignments.entries()) {
+      const [row] = await tx
+        .update(agentsTable)
+        .set({ ...choices[i]!, updatedAt: new Date() })
+        .where(and(eq(agentsTable.id, a.agentId), eq(agentsTable.appId, id)))
+        .returning();
+      rows.push(row!);
+    }
+    return rows;
+  });
+  res.json(SetAppAgentModelsResponse.parse(await withToolIds(updated)));
 });
 
 // ── Skill dell'agente (create approvando le proposte dell'architetto) ───────

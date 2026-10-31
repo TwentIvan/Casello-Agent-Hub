@@ -10,6 +10,8 @@ export * from './accountBudget';
 export * from './agent';
 export * from './agentBudget';
 export * from './agentInput';
+export * from './agentModelAssignments';
+export * from './agentModelAssignmentsAssignmentsItem';
 export * from './agentRole';
 export * from './agentSkill';
 export * from './agentSkillParamsSchema';

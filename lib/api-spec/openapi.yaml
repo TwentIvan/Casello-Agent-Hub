@@ -494,6 +494,36 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /apps/{id}/agent-models:
+    put:
+      operationId: setAppAgentModels
+      tags: [agents]
+      summary: Imposta il modello di più agenti di un'app
+      description: >-
+        Assegna in una sola chiamata il modello di ciascun agente indicato (null = nessun modello).
+        Tutto o niente: se un agente non è dell'app o un modello non è dell'utente non cambia nulla.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentModelAssignments"
+      responses:
+        "200":
+          description: Gli agenti aggiornati
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /agents/{id}/tools:
     put:
       operationId: setAgentTools
@@ -2390,6 +2420,24 @@ components:
           minimum: 0
           maximum: 1000000
           description: Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite
+
+    AgentModelAssignments:
+      type: object
+      required: [assignments]
+      properties:
+        assignments:
+          type: array
+          minItems: 1
+          maxItems: 200
+          uniqueItems: true
+          items:
+            type: object
+            required: [agentId, aiModelId]
+            properties:
+              agentId:
+                type: integer
+              aiModelId:
+                type: ["integer", "null"]
 
     AgentToolsInput:
       type: object

@@ -361,6 +361,20 @@ export interface AgentUpdate {
   monthlyBudgetUsd?: number | null;
 }
 
+export type AgentModelAssignmentsAssignmentsItem = {
+  agentId: number;
+  /** @nullable */
+  aiModelId: number | null;
+};
+
+export interface AgentModelAssignments {
+  /**
+     * @minItems 1
+     * @maxItems 200
+     */
+  assignments: AgentModelAssignmentsAssignmentsItem[];
+}
+
 export interface AgentToolsInput {
   toolIds: number[];
 }

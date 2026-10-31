@@ -648,6 +648,44 @@ export const DeleteAppToolResponse = zod.void()
 
 
 /**
+ * Assegna in una sola chiamata il modello di ciascun agente indicato (null = nessun modello). Tutto o niente: se un agente non è dell'app o un modello non è dell'utente non cambia nulla.
+ * @summary Imposta il modello di più agenti di un'app
+ */
+export const SetAppAgentModelsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const setAppAgentModelsBodyAssignmentsMax = 200;
+
+
+
+export const SetAppAgentModelsBody = zod.object({
+  "assignments": zod.array(zod.object({
+  "agentId": zod.number(),
+  "aiModelId": zod.number().nullable()
+})).min(1).max(setAppAgentModelsBodyAssignmentsMax)
+})
+
+export const SetAppAgentModelsResponseItem = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "name": zod.string(),
+  "systemPrompt": zod.string().nullish(),
+  "model": zod.string().optional().describe('Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto'),
+  "aiModelId": zod.number().nullable().describe('Modello scelto tra quelli degli account AI; le run usano l\'account di questo modello (chi configura paga). Null = vecchio percorso del gateway'),
+  "status": zod.enum(['active', 'inactive', 'draft']),
+  "role": zod.enum(['general', 'area']),
+  "area": zod.string().nullish(),
+  "defaultIdentity": zod.enum(['user', 'service']),
+  "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const SetAppAgentModelsResponse = zod.array(SetAppAgentModelsResponseItem)
+
+
+/**
  * Sostituisce l'insieme dei tool assegnati all'agente. I tool devono appartenere alla stessa app dell'agente.
  * @summary Imposta i tool di un agente
  */

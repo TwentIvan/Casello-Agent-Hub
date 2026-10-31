@@ -522,6 +522,9 @@ describe("dettaglio ed esportazione", () => {
     ]);
     expect(res.json.items[0].evidence).toEqual([{ source: "code", location: "src/a.ts:1", note: "" }]);
     expect(res.json).toMatchObject({ log: [], architectureMap: null, status: "completed" });
+    // una voce appena creata non ha issue
+    expect(res.json.items.every((i: { issue: unknown }) => i.issue === null)).toBe(true);
+    expect(res.json.items[0]).not.toHaveProperty("issueNumber");
     expect((await api("GET", "/analyses/999")).status).toBe(404);
   });
 

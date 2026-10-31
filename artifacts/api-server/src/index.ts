@@ -4,6 +4,7 @@ import { failInterruptedAnalyses } from "./lib/architect/run-analysis";
 import { startLocalLeaseJob } from "./lib/architect/local-executor";
 import { expireStalePausedRuns, failInterruptedRuns } from "./lib/run-executor";
 import { failInterruptedPlanTurns } from "./lib/plan-chat/run-turn";
+import { resetStaleIssueReservations } from "./lib/plan-issues/service";
 import { ensureSystemAccount } from "./lib/ai/system-account";
 import { failInterruptedCatalogRuns } from "./lib/catalog/refresh";
 import { startCatalogScheduler } from "./lib/catalog/scheduler";
@@ -40,6 +41,13 @@ failInterruptedPlanTurns()
     if (count > 0) logger.warn({ count }, "Turni della chat del piano interrotti dal riavvio chiusi");
   })
   .catch((err: unknown) => logger.error({ err }, "Chiusura dei turni della chat del piano interrotti non riuscita"));
+
+// Le voci prenotate per la creazione di un'issue (`creating` senza numero) quando l'API si è fermata.
+resetStaleIssueReservations()
+  .then((count) => {
+    if (count > 0) logger.warn({ count }, "Prenotazioni di issue interrotte dal riavvio azzerate");
+  })
+  .catch((err: unknown) => logger.error({ err }, "Azzeramento delle prenotazioni di issue non riuscito"));
 
 // Lo stesso vale per le analisi cloud dell'architetto in coda o in corso: diventano `interrupted`.
 // Quelle locali restano: le esegue l'agente, e il job delle lease rimette in coda quelle abbandonate.

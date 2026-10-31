@@ -187,7 +187,7 @@ describe("turni della chat del piano", () => {
     expect(await getMessages()).toHaveLength(2);
   });
 
-  it("le voci da chat approvate delle analisi precedenti sono nel piano", async () => {
+  it("le voci approvate delle analisi precedenti da chat o con un'issue sono nel piano", async () => {
     const [old] = await db
       .insert(analysesTable)
       .values({ appId, model: "m", sources: { code: "none", openapi: false, description: true }, maxTokens: 1000, status: "completed" })
@@ -199,10 +199,13 @@ describe("turni della chat del piano", () => {
       { ...base, analysisId: old!.id, chapter: "completion", ref: "chat:1", payload: completion("b"), origin: "chat", status: "approved" },
       { ...base, analysisId: old!.id, chapter: "completion", ref: "chat:2", payload: completion("c"), origin: "chat", status: "pending" },
       { ...base, analysisId: old!.id, chapter: "completion", ref: "arch:1", payload: completion("d"), status: "approved" },
+      // Voce dell'architetto con un'issue: resta nel piano anche dopo la rianalisi
+      { ...base, analysisId: old!.id, chapter: "completion", ref: "arch:2", payload: completion("e"), status: "approved", issueRepo: "ivan/mister", issueNumber: 4, issueState: "open" },
+      { ...base, analysisId: old!.id, chapter: "completion", ref: "arch:3", payload: completion("f"), status: "discarded", issueRepo: "ivan/mister", issueNumber: 5, issueState: "closed" },
     ]);
 
     const items = await loadPlanItems(analysisId, appId);
-    expect(items.map((i) => i.ref).sort()).toEqual(["chat:1", "completion:1"]);
+    expect(items.map((i) => i.ref).sort()).toEqual(["arch:2", "chat:1", "completion:1"]);
   });
 
   it("cronologia: finisce con l'utente, senza assistant vuoti, e la scelta di scartare porta il titolo della voce", async () => {

@@ -385,7 +385,19 @@ describe("route della chat del piano", () => {
 
     await pool.query("DELETE FROM analyses");
     const empty = await api("GET", `/apps/${appId}/plan`);
-    expect(empty.json).toEqual({ analysisId: null, items: [] });
+    expect(empty.json).toEqual({
+      analysisId: null,
+      items: [],
+      issues: {
+        available: false,
+        unavailableReason: "Collega il repository tramite l'App GitHub per creare le issue",
+        repo: null,
+        open: 0,
+        closed: 0,
+        approvedWithoutIssue: 0,
+        checkedAt: null,
+      },
+    });
     expect((await api("GET", `/apps/99999/plan`)).status).toBe(404);
   });
 

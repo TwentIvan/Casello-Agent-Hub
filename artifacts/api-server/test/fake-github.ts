@@ -6,8 +6,8 @@ import type { AddressInfo } from "node:net";
  * Finto GitHub per i test: API REST (`apiBase`) e sito web (`webBase`, OAuth) su due porte locali.
  * Lo stato è modificabile direttamente dai test. Riproduce le forme JSON reali di GitHub per le sole
  * chiamate usate da Casello: token di installazione (JWT RS256 verificato), utente, email,
- * installazioni, repository di un'installazione, installazione di un repo, zipball (per branch) e scambio del
- * codice OAuth (con PKCE S256 facoltativo).
+ * installazioni, repository di un'installazione, installazione di un repo, zipball (per branch), issue ed
+ * etichette di un repo e scambio del codice OAuth (con PKCE S256 facoltativo).
  */
 
 export interface FakeGithubUser {
@@ -56,6 +56,17 @@ export interface FakeGithubIssuedToken {
   expiresAt: number;
 }
 
+export interface FakeGithubIssue {
+  number: number;
+  title: string;
+  body: string;
+  labels: string[];
+  state: "open" | "closed";
+  stateReason: string | null;
+  /** ISO 8601, confrontata con `since` negli elenchi. */
+  updatedAt: string;
+}
+
 export interface FakeGithubRequest {
   /** Quale dei due server ha ricevuto la richiesta. */
   host: "api" | "web";
@@ -92,6 +103,17 @@ export interface FakeGithub {
   repos: Map<number, FakeGithubRepo[]>;
   /** Codici OAuth validi (monouso). */
   codes: Map<string, FakeGithubCode>;
+  /**
+   * Id installazione → permessi concessi all'App (default `contents: read`, `metadata: read`, `issues: write`).
+   * Un token che chiede un permesso non concesso (o di livello superiore) riceve 422.
+   */
+  installationPermissions: Map<number, Record<string, string>>;
+  /** proprietario/nome → issue del repo (numerate dal test o dalla creazione). */
+  issues: Map<string, FakeGithubIssue[]>;
+  /** proprietario/nome → nomi delle etichette esistenti. */
+  labels: Map<string, Set<string>>;
+  /** Repo con le issue disattivate: 410 su creazione ed elenco. */
+  issuesDisabled: Set<string>;
   /** Installazioni revocate: 404 sui token, 401 con i token già emessi. */
   revoked: Set<number>;
   /** Token di installazione emessi. */
@@ -134,8 +156,12 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+const DEFAULT_PERMISSIONS: Record<string, string> = { contents: "read", metadata: "read", issues: "write" };
+const LEVEL: Record<string, number> = { read: 1, write: 2, admin: 3 };
+
 const NOT_FOUND = { message: "Not Found", documentation_url: "https://docs.github.com/rest" };
 const BAD_CREDENTIALS = { message: "Bad credentials", documentation_url: "https://docs.github.com/rest" };
+const NOT_ACCESSIBLE = { message: "Resource not accessible by integration", documentation_url: "https://docs.github.com/rest" };
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -197,6 +223,10 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
     installations: new Map(),
     repos: new Map(),
     codes: new Map(),
+    installationPermissions: new Map(),
+    issues: new Map(),
+    labels: new Map(),
+    issuesDisabled: new Set(),
     revoked: new Set(),
     issuedTokens: new Map(),
     zipballs: new Map(),
@@ -252,10 +282,14 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
       target_type: inst.accountType,
       account: { login: inst.accountLogin, id: inst.id * 10, type: inst.accountType },
       repository_selection: inst.repositorySelection,
-      permissions: { contents: "read", metadata: "read" },
+      permissions: grantedPermissions(inst.id),
       created_at: "2026-10-01T10:00:00Z",
       updated_at: "2026-10-01T10:00:00Z",
     };
+  }
+
+  function grantedPermissions(installationId: number): Record<string, string> {
+    return fake.installationPermissions.get(installationId) ?? DEFAULT_PERMISSIONS;
   }
 
   function repoJson(r: FakeGithubRepo, i: number) {
@@ -297,9 +331,16 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
           repositories.push(found.fullName);
         }
       }
+      const granted = grantedPermissions(id);
+      // Come GitHub: un permesso non concesso all'installazione (o di livello superiore) → 422
+      for (const [name, level] of Object.entries(b.permissions ?? {})) {
+        if ((LEVEL[granted[name] ?? ""] ?? 0) < (LEVEL[level] ?? Number.POSITIVE_INFINITY)) {
+          return send(res, 422, { message: "The permissions requested are not granted to this installation." });
+        }
+      }
       const token = `ghs_${randomBytes(18).toString("hex")}`;
       const expiresAt = Date.now() + fake.tokenTtlMs;
-      const permissions = b.permissions ?? { contents: "read", metadata: "read" };
+      const permissions = b.permissions ?? granted;
       fake.issuedTokens.set(token, { installationId: id, repositories, permissions, expiresAt });
       return send(res, 201, {
         token,
@@ -349,6 +390,74 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
         return;
       }
       return send(res, 200, { sha });
+    }
+
+    if ((m = /^\/repos\/([^/]+)\/([^/]+)\/(issues|labels)$/.exec(path)) && (method === "POST" || (method === "GET" && m[3] === "issues"))) {
+      // Token valido; repo sconosciuto all'installazione → 404; fuori dal token o senza `issues` → 403
+      const issued = liveToken(req);
+      if (!issued) return send(res, 401, BAD_CREDENTIALS);
+      const fullName = `${decodeURIComponent(m[1]!)}/${decodeURIComponent(m[2]!)}`;
+      if (!(fake.repos.get(issued.installationId) ?? []).some((r) => r.fullName === fullName)) return send(res, 404, NOT_FOUND);
+      const needed = method === "GET" ? LEVEL["read"]! : LEVEL["write"]!;
+      if (!reposOf(issued).some((r) => r.fullName === fullName) || (LEVEL[issued.permissions["issues"] ?? ""] ?? 0) < needed) {
+        return send(res, 403, NOT_ACCESSIBLE);
+      }
+      const labels = fake.labels.get(fullName) ?? new Set<string>();
+      fake.labels.set(fullName, labels);
+
+      if (m[3] === "labels") {
+        const b = (body ?? {}) as { name?: unknown };
+        if (typeof b.name !== "string" || !b.name) return send(res, 422, { message: "Validation Failed" });
+        if (labels.has(b.name)) return send(res, 422, { message: "Validation Failed", errors: [{ resource: "Label", code: "already_exists", field: "name" }] });
+        labels.add(b.name);
+        return send(res, 201, { name: b.name });
+      }
+
+      if (fake.issuesDisabled.has(fullName)) return send(res, 410, { message: "Issues are disabled for this repo" });
+      const list = fake.issues.get(fullName) ?? [];
+      fake.issues.set(fullName, list);
+
+      if (method === "POST") {
+        const b = (body ?? {}) as { title?: unknown; body?: unknown; labels?: unknown };
+        if (typeof b.title !== "string" || !b.title.trim()) return send(res, 422, { message: "Validation Failed" });
+        const names = Array.isArray(b.labels) ? b.labels.filter((l): l is string => typeof l === "string") : [];
+        // Come GitHub: le etichette mancanti vengono create con l'issue
+        for (const n of names) labels.add(n);
+        const issue: FakeGithubIssue = {
+          number: list.reduce((max, i) => Math.max(max, i.number), 0) + 1,
+          title: b.title,
+          body: typeof b.body === "string" ? b.body : "",
+          labels: names,
+          state: "open",
+          stateReason: null,
+          updatedAt: new Date().toISOString(),
+        };
+        list.push(issue);
+        return send(res, 201, { number: issue.number, html_url: `https://github.com/${fullName}/issues/${issue.number}`, state: "open" });
+      }
+
+      const state = url.searchParams.get("state") ?? "open";
+      const wanted = (url.searchParams.get("labels") ?? "").split(",").filter(Boolean);
+      const since = url.searchParams.get("since");
+      const sinceMs = since === null ? null : Date.parse(since);
+      const filtered = list
+        .filter((i) => state === "all" || i.state === state)
+        .filter((i) => wanted.every((l) => i.labels.includes(l)))
+        .filter((i) => sinceMs === null || Date.parse(i.updatedAt) >= sinceMs);
+      return send(
+        res,
+        200,
+        pageOf(filtered, url).map((i) => ({
+          number: i.number,
+          title: i.title,
+          body: i.body,
+          state: i.state,
+          state_reason: i.stateReason,
+          labels: i.labels.map((name) => ({ name })),
+          updated_at: i.updatedAt,
+          html_url: `https://github.com/${fullName}/issues/${i.number}`,
+        })),
+      );
     }
 
     if (method === "GET" && path === "/installation/repositories") {

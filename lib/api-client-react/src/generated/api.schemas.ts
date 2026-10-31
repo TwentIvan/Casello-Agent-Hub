@@ -744,6 +744,32 @@ export interface AnalysisEvidence {
   note: string;
 }
 
+export type ItemIssueState = typeof ItemIssueState[keyof typeof ItemIssueState];
+
+
+export const ItemIssueState = {
+  open: 'open',
+  closed: 'closed',
+} as const;
+
+export interface ItemIssue {
+  /** Repository della issue, nella forma proprietario/nome */
+  repo: string;
+  number: number;
+  url: string;
+  state: ItemIssueState;
+  /**
+     * Motivo di chiusura riportato da GitHub (es. completed, not_planned)
+     * @nullable
+     */
+  stateReason: string | null;
+  /**
+     * Ultimo controllo dello stato su GitHub
+     * @nullable
+     */
+  checkedAt: string | null;
+}
+
 /**
  * Chi ha creato la voce (l'architetto o una proposta accettata in chat)
  */
@@ -778,6 +804,8 @@ export interface AnalysisItem {
   reviewNote: string | null;
   /** @nullable */
   appliedAt: string | null;
+  /** Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione) */
+  issue: ItemIssue | null;
 }
 
 export type PlanTurnStatus = typeof PlanTurnStatus[keyof typeof PlanTurnStatus];
@@ -885,6 +913,29 @@ export type PlanConversationDetail = PlanConversation & ({
   newerAnalysisId: number | null;
 });
 
+export interface PlanIssuesSummary {
+  /** L'utente può creare issue (repository collegato tramite un'installazione sua) */
+  available: boolean;
+  /** @nullable */
+  unavailableReason: string | null;
+  /**
+     * Repository delle issue (null se non disponibile)
+     * @nullable
+     */
+  repo: string | null;
+  /** Voci del piano con issue aperta */
+  open: number;
+  /** Voci del piano con issue chiusa */
+  closed: number;
+  /** Voci approvate di endpoint, completamento ed evoluzione senza issue */
+  approvedWithoutIssue: number;
+  /**
+     * Lettura dello stato più vecchia tra le voci collegate
+     * @nullable
+     */
+  checkedAt: string | null;
+}
+
 export interface AppPlan {
   /**
      * Ultima analisi completata dell'app (null se non ce n'è)
@@ -892,6 +943,7 @@ export interface AppPlan {
      */
   analysisId: number | null;
   items: AnalysisItem[];
+  issues: PlanIssuesSummary;
 }
 
 export interface PlanConversationCreate {
@@ -911,6 +963,52 @@ export interface PlanMessageCreate {
      * @maxLength 8000
      */
   content: string;
+}
+
+export interface PlanIssuesRequest {
+  /**
+     * @minItems 1
+     * @maxItems 30
+     */
+  itemIds: number[];
+  /** Solo anteprima, senza chiamare GitHub */
+  dryRun?: boolean;
+}
+
+export type PlanIssuesPreviewIssuesItem = {
+  itemId: number;
+  title: string;
+  body: string;
+  labels: string[];
+  /** Voce già collegata o non ammessa (non verrebbe creata) */
+  skipped: boolean;
+};
+
+export interface PlanIssuesPreview {
+  repo: string;
+  issues: PlanIssuesPreviewIssuesItem[];
+}
+
+export type PlanIssuesResultResultsItemOutcome = typeof PlanIssuesResultResultsItemOutcome[keyof typeof PlanIssuesResultResultsItemOutcome];
+
+
+export const PlanIssuesResultResultsItemOutcome = {
+  created: 'created',
+  skipped: 'skipped',
+  failed: 'failed',
+} as const;
+
+export type PlanIssuesResultResultsItem = {
+  itemId: number;
+  outcome: PlanIssuesResultResultsItemOutcome;
+  number?: number;
+  url?: string;
+  error?: string;
+};
+
+export interface PlanIssuesResult {
+  repo: string;
+  results: PlanIssuesResultResultsItem[];
 }
 
 export type PlanProposalDecisionAction = typeof PlanProposalDecisionAction[keyof typeof PlanProposalDecisionAction];

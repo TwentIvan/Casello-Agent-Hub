@@ -36,6 +36,13 @@ const row = (payload: unknown, chapter: AnalysisItem["chapter"] = "completion"):
     appliedAt: null,
     origin: "architect",
     conversationId: null,
+    issueRepo: null,
+    issueNumber: null,
+    issueUrl: null,
+    issueState: null,
+    issueStateReason: null,
+    issueCreatedAt: null,
+    issueCheckedAt: null,
     createdAt: new Date(),
   };
 };

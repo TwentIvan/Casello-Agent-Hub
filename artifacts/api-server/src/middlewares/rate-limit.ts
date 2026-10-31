@@ -48,3 +48,9 @@ export const runRateLimit = rateLimit({ limit: 10, windowMs: 60_000 });
 // L'annullamento di una run non consuma token: ha un contatore proprio, più largo, così non
 // compete con avvio e ripresa.
 export const cancelRateLimit = rateLimit({ limit: 30, windowMs: 60_000 });
+
+// Issue GitHub dal piano, per utente (le route passano da requireAuth): 5 creazioni al minuto
+// (le anteprime non contano: vedi la route) e 6 aggiornamenti di stato al minuto.
+const byUser = (req: Request) => (req.userId !== undefined ? `user:${req.userId}` : (req.ip ?? "unknown"));
+export const issueCreateRateLimit = rateLimit({ limit: 5, windowMs: 60_000, key: byUser });
+export const issueRefreshRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byUser });

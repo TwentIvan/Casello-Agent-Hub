@@ -314,7 +314,7 @@ describe("localPhaseInstructions: voci pianificate in chat", () => {
     }
     const ins = await localPhaseInstructions(newId, leaseToken, at(2000));
     expect(ins.phase).toBe("completion");
-    expect(ins.user).toContain("Voci già pianificate dall'utente in chat");
+    expect(ins.user).toContain("Voci già pianificate (approvate in chat o con un'issue su GitHub)");
     expect(ins.user).toContain("[completion] Notifiche push già decise");
   });
 });

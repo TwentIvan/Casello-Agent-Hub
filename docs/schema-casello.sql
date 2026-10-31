@@ -464,3 +464,13 @@ CREATE INDEX "runs_agent_created_idx" ON "runs" USING btree ("agent_id", "create
 -- Tetti di spesa mensili per modello AI e per account AI (USD, null = nessun limite)
 ALTER TABLE "ai_models" ADD COLUMN "monthly_budget_usd" numeric(12, 2);
 ALTER TABLE "ai_accounts" ADD COLUMN "monthly_budget_usd" numeric(12, 2);
+
+-- Collegamento delle voci del piano alle issue GitHub (`issue_state`: creating | open | closed)
+ALTER TABLE "analysis_items" ADD COLUMN "issue_repo" text;
+ALTER TABLE "analysis_items" ADD COLUMN "issue_number" integer;
+ALTER TABLE "analysis_items" ADD COLUMN "issue_url" text;
+ALTER TABLE "analysis_items" ADD COLUMN "issue_state" text;
+ALTER TABLE "analysis_items" ADD COLUMN "issue_state_reason" text;
+ALTER TABLE "analysis_items" ADD COLUMN "issue_created_at" timestamp;
+ALTER TABLE "analysis_items" ADD COLUMN "issue_checked_at" timestamp;
+CREATE INDEX "analysis_items_issue_idx" ON "analysis_items" USING btree ("issue_repo", "issue_number") WHERE "issue_number" IS NOT NULL;

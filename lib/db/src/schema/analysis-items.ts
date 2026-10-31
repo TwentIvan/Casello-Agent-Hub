@@ -1,4 +1,5 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, unique, index } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { analysesTable } from "./analyses";
 import { planConversationsTable } from "./plan-conversations";
 
@@ -35,9 +36,22 @@ export const analysisItemsTable = pgTable(
     // Chi ha creato la voce: l'architetto o la chat del piano (con la conversazione relativa)
     origin: itemOriginEnum("origin").notNull().default("architect"),
     conversationId: integer("conversation_id").references(() => planConversationsTable.id, { onDelete: "set null" }),
+    // Issue GitHub creata da Casello per la voce; `issueState`: creating (prenotazione) | open | closed
+    issueRepo: text("issue_repo"),
+    issueNumber: integer("issue_number"),
+    issueUrl: text("issue_url"),
+    issueState: text("issue_state"),
+    issueStateReason: text("issue_state_reason"),
+    issueCreatedAt: timestamp("issue_created_at"),
+    issueCheckedAt: timestamp("issue_checked_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (table) => [unique("analysis_items_analysis_id_ref_unique").on(table.analysisId, table.ref)],
+  (table) => [
+    unique("analysis_items_analysis_id_ref_unique").on(table.analysisId, table.ref),
+    index("analysis_items_issue_idx")
+      .on(table.issueRepo, table.issueNumber)
+      .where(sql`${table.issueNumber} IS NOT NULL`),
+  ],
 );
 
 export type AnalysisItem = typeof analysisItemsTable.$inferSelect;

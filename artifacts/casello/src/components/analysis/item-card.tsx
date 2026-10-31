@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { ItemEditDialog } from "@/components/analysis/item-edit-dialog";
+import { IssueBadge } from "@/components/plan/issue-badge";
 import {
   DIFF_LABELS,
   DIFF_STYLES,
@@ -433,6 +434,7 @@ export function ItemCard({ item, appId, dependsOnTitles = [] }: ItemCardProps) {
             <Badge variant="outline" className={cn("border-transparent", ITEM_STATUS_STYLES[item.status])}>
               {ITEM_STATUS_LABELS[item.status]}
             </Badge>
+            {item.issue && <IssueBadge issue={item.issue} />}
             {item.origin === "chat" && (
               <Badge variant="secondary" className="font-normal">
                 da chat

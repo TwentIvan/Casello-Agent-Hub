@@ -83,6 +83,10 @@ import type {
   PlanConversationCreate,
   PlanConversationDetail,
   PlanConversationUpdate,
+  PlanIssuesPreview,
+  PlanIssuesRequest,
+  PlanIssuesResult,
+  PlanIssuesSummary,
   PlanMessage,
   PlanMessageCreate,
   PlanProposalDecision,
@@ -5016,6 +5020,149 @@ export function useGetAppPlan<TData = Awaited<ReturnType<typeof getAppPlan>>, TE
 
 
 
+
+export const getCreatePlanIssuesUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/plan/issues`
+}
+
+/**
+ * Le voci (endpoint, completamento, evoluzione approvate) diventano issue sul repository collegato tramite l'App GitHub. Con dryRun l'anteprima non chiama GitHub. Le voci già collegate o non ammesse risultano skipped. Massimo 5 creazioni al minuto per utente (le anteprime non contano).
+ * @summary Crea (o mostra in anteprima) le issue GitHub delle voci approvate del piano
+ */
+export const createPlanIssues = async (id: number,
+    planIssuesRequest: PlanIssuesRequest, options?: RequestInit): Promise<PlanIssuesPreview | PlanIssuesResult> => {
+
+  return customFetch<PlanIssuesPreview | PlanIssuesResult>(getCreatePlanIssuesUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(planIssuesRequest)
+  }
+);}
+
+
+
+
+export const getCreatePlanIssuesMutationOptions = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPlanIssues>>, TError,{id: number;data: BodyType<PlanIssuesRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createPlanIssues>>, TError,{id: number;data: BodyType<PlanIssuesRequest>}, TContext> => {
+
+const mutationKey = ['createPlanIssues'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPlanIssues>>, {id: number;data: BodyType<PlanIssuesRequest>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createPlanIssues(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePlanIssuesMutationResult = NonNullable<Awaited<ReturnType<typeof createPlanIssues>>>
+    export type CreatePlanIssuesMutationBody = BodyType<PlanIssuesRequest>
+    export type CreatePlanIssuesMutationError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>
+
+    /**
+ * @summary Crea (o mostra in anteprima) le issue GitHub delle voci approvate del piano
+ */
+export const useCreatePlanIssues = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPlanIssues>>, TError,{id: number;data: BodyType<PlanIssuesRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createPlanIssues>>,
+        TError,
+        {id: number;data: BodyType<PlanIssuesRequest>},
+        TContext
+      > => {
+      return useMutation(getCreatePlanIssuesMutationOptions(options));
+    }
+
+export const getRefreshPlanIssuesUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/plan/issues/refresh`
+}
+
+/**
+ * Legge le issue con l'etichetta casello del repository collegato (aggiornate dall'ultima lettura) e aggiorna stato e motivo della chiusura delle voci; un'issue non più nell'elenco resta com'era. Massimo 6 al minuto per utente.
+ * @summary Rilegge da GitHub lo stato delle issue collegate alle voci del piano
+ */
+export const refreshPlanIssues = async (id: number, options?: RequestInit): Promise<PlanIssuesSummary> => {
+
+  return customFetch<PlanIssuesSummary>(getRefreshPlanIssuesUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRefreshPlanIssuesMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshPlanIssues>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof refreshPlanIssues>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['refreshPlanIssues'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshPlanIssues>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  refreshPlanIssues(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RefreshPlanIssuesMutationResult = NonNullable<Awaited<ReturnType<typeof refreshPlanIssues>>>
+
+    export type RefreshPlanIssuesMutationError = ErrorType<ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>
+
+    /**
+ * @summary Rilegge da GitHub lo stato delle issue collegate alle voci del piano
+ */
+export const useRefreshPlanIssues = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshPlanIssues>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof refreshPlanIssues>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRefreshPlanIssuesMutationOptions(options));
+    }
 
 export const getListPlanConversationsUrl = (id: number,) => {
 

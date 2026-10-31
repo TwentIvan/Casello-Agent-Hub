@@ -92,7 +92,28 @@ export async function upsertDiscovered(tx: Tx, accountId: number, models: Discov
         },
       });
   }
+  await recognizeCustomProvider(tx, accountId);
   await enrichFromCatalog(tx, { accountId });
+}
+
+/**
+ * Un account `custom` che punta esattamente all'indirizzo predefinito di un provider gestito (es. Gemini)
+ * diventa quel provider: le chiamate non cambiano (stesso indirizzo) e i modelli si abbinano al catalogo.
+ * Solo con una chiave e senza rete privata, che i provider gestiti non ammettono.
+ */
+async function recognizeCustomProvider(tx: Tx, accountId: number): Promise<void> {
+  await tx.execute(sql`
+    UPDATE ai_accounts AS a SET provider = p.slug, updated_at = now()
+    FROM providers p
+    WHERE a.id = ${accountId}
+      AND a.provider = 'custom'
+      AND a.api_key_enc IS NOT NULL
+      AND NOT a.allow_private_network
+      AND p.status = 'managed'
+      AND p.slug NOT IN ('custom', 'system_gateway')
+      AND p.default_base_url IS NOT NULL
+      AND lower(rtrim(a.base_url, '/')) = lower(rtrim(p.default_base_url, '/'))
+  `);
 }
 
 /**

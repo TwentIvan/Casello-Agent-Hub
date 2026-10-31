@@ -46,7 +46,8 @@ Un solo punto: `requireAuth` in `lib/auth.ts`.
     `POST /ai/accounts/:id/default`, `POST /ai/accounts/:id/models`, `PATCH /ai/models/:id` (chiavi, indirizzi,
     prezzi a mano, tetti per account e modello);
   - `PUT /budget` (tetto dell'utente);
-  - `DELETE /auth/github`.
+  - `DELETE /auth/github`, `GET /auth/github/link` (con un token, l'account GitHub che completa il flusso
+    verrebbe collegato all'utente del token e darebbe un login completo).
   Tutto il resto (run, analisi, piano, chat, issue, app, agenti, tool, catalogo, prova di un modello) è
   disponibile con `api:write`.
 - `GET /api/auth/me` (oggi pubblica e basata sulla sessione) accetta anche il token con le stesse regole e

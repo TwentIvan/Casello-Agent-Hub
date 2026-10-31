@@ -57,10 +57,13 @@ async function api(method: string, path: string, opts: { token?: string; auth?: 
   const res = await fetch(`${base}/api${path}`, {
     method,
     headers,
+    // Niente redirect seguiti: GET /auth/github/link risponde con un redirect verso GitHub
+    redirect: "manual",
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   });
   const text = await res.text();
-  return { status: res.status, text, json: text ? JSON.parse(text) : undefined };
+  const isJson = res.headers.get("content-type")?.includes("application/json") ?? false;
+  return { status: res.status, text, json: isJson && text ? JSON.parse(text) : undefined };
 }
 
 async function tokenWith(scopes: TokenScope[], days = 30): Promise<string> {
@@ -185,6 +188,7 @@ describe("token personali su /api", () => {
       ["PATCH", "/ai/models/999999", {}],
       ["PUT", "/budget", {}],
       ["DELETE", "/auth/github"],
+      ["GET", "/auth/github/link"],
     ];
     const token = await tokenWith(["api:write"]);
     for (const [method, path, body] of routes) {
@@ -196,6 +200,8 @@ describe("token personali su /api", () => {
     }
     // DELETE /auth/github esiste davvero (GitHub configurato): senza header non è un 404
     expect((await api("DELETE", "/auth/github")).status).not.toBe(404);
+    // Il collegamento GitHub senza header parte davvero (redirect verso GitHub)
+    expect((await api("GET", "/auth/github/link")).status).toBe(302);
     // Le route vicine non sono solo con il login
     expect((await api("GET", "/ai/accounts", { token })).status).toBe(200);
     expect((await api("GET", "/budget", { token })).status).toBe(200);

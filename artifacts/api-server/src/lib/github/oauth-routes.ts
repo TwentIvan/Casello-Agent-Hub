@@ -70,7 +70,9 @@ export function githubAuthRouter(cfg: GithubConfig, opts: { publicAppUrl: string
   }
 
   router.get("/auth/github/login", startFlow("login"));
-  router.get("/auth/github/link", requireAuth, startFlow("link"));
+  // Solo con il login: con un token, l'account GitHub che completa il flusso verrebbe collegato
+  // all'utente del token e darebbe poi un login completo (da token a sessione)
+  router.get("/auth/github/link", requireAuth, sessionOnly, startFlow("link"));
 
   router.get("/auth/github/callback", async (req, res) => {
     // state monouso: tolto dalla sessione prima di qualsiasi altra cosa

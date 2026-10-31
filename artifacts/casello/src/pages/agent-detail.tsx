@@ -285,7 +285,7 @@ export default function AgentDetailPage() {
 
   if (!Number.isInteger(agentId) || (agent.error instanceof ApiError && agent.error.status === 404)) {
     return (
-      <div className="mx-auto max-w-4xl space-y-4">
+      <div className="mx-auto max-w-screen-2xl space-y-4">
         {backLink}
         <p className="text-sm text-muted-foreground">Agente non trovato: potrebbe essere stato eliminato.</p>
       </div>
@@ -293,7 +293,7 @@ export default function AgentDetailPage() {
   }
   if (agent.isError) {
     return (
-      <div className="mx-auto max-w-4xl space-y-4">
+      <div className="mx-auto max-w-screen-2xl space-y-4">
         {backLink}
         <p className="text-sm text-destructive">Impossibile caricare l'agente: {apiErrorMessage(agent.error)}</p>
       </div>
@@ -301,7 +301,7 @@ export default function AgentDetailPage() {
   }
   if (!agent.data) {
     return (
-      <div className="mx-auto max-w-4xl space-y-4">
+      <div className="mx-auto max-w-screen-2xl space-y-4">
         {backLink}
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-96 w-full" />
@@ -310,7 +310,7 @@ export default function AgentDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-screen-2xl space-y-6">
       <div className="space-y-3">
         {backLink}
         <div className="flex flex-wrap items-start justify-between gap-4">

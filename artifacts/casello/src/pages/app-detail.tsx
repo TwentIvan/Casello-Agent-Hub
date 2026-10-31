@@ -27,7 +27,7 @@ export default function AppDetailPage() {
   const notFound = !validId || (app.error instanceof ApiError && app.error.status === 404);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-screen-2xl space-y-6">
       <Button variant="ghost" size="sm" asChild className="-ml-2">
         <Link href="/apps">
           <ArrowLeft />

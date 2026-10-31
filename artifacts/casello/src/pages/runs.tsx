@@ -73,7 +73,7 @@ export default function RunsPage() {
   const agentNames = useMemo(() => new Map(sortedAgents.map((a) => [a.id, a.name])), [sortedAgents]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-screen-2xl space-y-6">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Run</h2>
         <p className="text-sm text-muted-foreground">Le esecuzioni degli agenti, dalla più recente.</p>

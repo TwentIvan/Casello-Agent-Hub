@@ -256,9 +256,7 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
                 <TableHead>Modello</TableHead>
                 <TableHead>Nome</TableHead>
                 <TableHead className="text-right">Contesto</TableHead>
-                <TableHead>$ input / Mtok</TableHead>
-                <TableHead>$ output / Mtok</TableHead>
-                <TableHead>Prezzo</TableHead>
+                <TableHead>$ / Mtok (input · output)</TableHead>
                 <TableHead>Stato</TableHead>
                 <TableHead>Strumenti</TableHead>
                 <TableHead>Nascosto</TableHead>
@@ -274,33 +272,34 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
                   <TableCell className="text-right text-xs tabular-nums">
                     {model.contextTokens != null ? model.contextTokens.toLocaleString("it-IT") : "—"}
                   </TableCell>
+                  {/* Input e output nella stessa cella, con l'origine del prezzo: la tabella sta nella pagina senza scorrere */}
                   <TableCell>
-                    {readOnly ? (
-                      <span className="text-sm tabular-nums">{formatPrice(model.priceInput)}</span>
-                    ) : (
-                      <PriceInput
-                        // Rimontato quando il valore salvato cambia, così il campo lo rispecchia
-                        key={`in-${model.priceInput}`}
-                        value={model.priceInput}
-                        label={`Prezzo di input di ${model.modelId}`}
-                        onSave={(priceInput, restore) => save(model, { priceInput }, restore)}
-                      />
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {readOnly ? (
-                      <span className="text-sm tabular-nums">{formatPrice(model.priceOutput)}</span>
-                    ) : (
-                      <PriceInput
-                        key={`out-${model.priceOutput}`}
-                        value={model.priceOutput}
-                        label={`Prezzo di output di ${model.modelId}`}
-                        onSave={(priceOutput, restore) => save(model, { priceOutput }, restore)}
-                      />
-                    )}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {model.priceSource ? PRICE_SOURCE_LABELS[model.priceSource] : "—"}
+                    <div className="flex flex-col gap-1">
+                      {readOnly ? (
+                        <span className="text-sm tabular-nums">
+                          {formatPrice(model.priceInput)} · {formatPrice(model.priceOutput)}
+                        </span>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <PriceInput
+                            // Rimontato quando il valore salvato cambia, così il campo lo rispecchia
+                            key={`in-${model.priceInput}`}
+                            value={model.priceInput}
+                            label={`Prezzo di input di ${model.modelId}`}
+                            onSave={(priceInput, restore) => save(model, { priceInput }, restore)}
+                          />
+                          <PriceInput
+                            key={`out-${model.priceOutput}`}
+                            value={model.priceOutput}
+                            label={`Prezzo di output di ${model.modelId}`}
+                            onSave={(priceOutput, restore) => save(model, { priceOutput }, restore)}
+                          />
+                        </div>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {model.priceSource ? PRICE_SOURCE_LABELS[model.priceSource] : "—"}
+                      </span>
+                    </div>
                   </TableCell>
                   <TableCell className="text-xs">{modelStatusLabel(model)}</TableCell>
                   <TableCell className="text-xs">

@@ -89,7 +89,6 @@ function AccountRow({ account, onEdit, onDelete }: { account: AiAccount; onEdit:
               <Star className="size-4 fill-amber-400 text-amber-500" aria-label="Account predefinito" role="img" />
             ) : null}
             <span className="truncate text-sm font-medium">{account.name}</span>
-            {account.isSystem && <Badge variant="secondary">sistema</Badge>}
             <AccountStatusBadge account={account} />
           </div>
           <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
@@ -114,34 +113,30 @@ function AccountRow({ account, onEdit, onDelete }: { account: AiAccount; onEdit:
             {expanded ? <ChevronDown /> : <ChevronRight />}
             Modelli
           </Button>
-          {!account.isSystem && (
-            <>
-              <Button variant="outline" size="sm" disabled={verify.isPending} onClick={() => verify.mutate({ id: account.id })}>
-                {verify.isPending ? "Aggiornamento…" : "Aggiorna modelli"}
-              </Button>
-              {!account.isDefault && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={setDefault.isPending}
-                  onClick={() => setDefault.mutate({ id: account.id })}
-                >
-                  Predefinito
-                </Button>
-              )}
-              <Button variant="outline" size="sm" onClick={onEdit}>
-                Modifica
-              </Button>
-              <Button variant="outline" size="sm" className="text-destructive" onClick={onDelete}>
-                Elimina
-              </Button>
-            </>
+          <Button variant="outline" size="sm" disabled={verify.isPending} onClick={() => verify.mutate({ id: account.id })}>
+            {verify.isPending ? "Aggiornamento…" : "Aggiorna modelli"}
+          </Button>
+          {!account.isDefault && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={setDefault.isPending}
+              onClick={() => setDefault.mutate({ id: account.id })}
+            >
+              Predefinito
+            </Button>
           )}
+          <Button variant="outline" size="sm" onClick={onEdit}>
+            Modifica
+          </Button>
+          <Button variant="outline" size="sm" className="text-destructive" onClick={onDelete}>
+            Elimina
+          </Button>
         </div>
       </div>
       {expanded && (
         <div id={modelsId} className="space-y-3">
-          {!account.isSystem && <AiAccountBudget account={account} />}
+          <AiAccountBudget account={account} />
           <AiModelsTable account={account} />
         </div>
       )}

@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { GatewayMessageContent } from "../ai-gateway";
+import type { ChatMessageContent } from "../ai/chat-types";
 import type { ProviderCompleteArgs, ProviderCompleteResult, ProviderHandler } from "./types";
 
-function flattenContent(content: GatewayMessageContent): string {
+function flattenContent(content: ChatMessageContent): string {
   return Array.isArray(content) ? content.map((c) => c.text).join("\n") : content;
 }
 
@@ -23,7 +23,7 @@ export const completeWithAnthropic: ProviderHandler = async ({
     } else if (msg.role === "user" || msg.role === "assistant") {
       anthropicMessages.push({
         role: msg.role,
-        content: msg.content ? flattenContent(msg.content as GatewayMessageContent) : "",
+        content: msg.content ? flattenContent(msg.content as ChatMessageContent) : "",
       });
     }
   }

@@ -12,7 +12,7 @@ import type { AnalysisExecutor } from './analysisExecutor';
  */
 export interface AnalysisStart {
   executor?: AnalysisExecutor;
-  /** Modello di un account AI dell'utente o dell'account di sistema */
+  /** Modello di un account AI dell'utente */
   aiModelId?: number;
   /**
      * Tetto di token per l'analisi (default 1000000)

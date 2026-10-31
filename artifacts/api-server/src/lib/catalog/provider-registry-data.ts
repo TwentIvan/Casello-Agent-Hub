@@ -39,10 +39,8 @@ export const PROVIDER_REGISTRY: RegistryProvider[] = [
   oa("groq", "Groq", "https://api.groq.com/openai/v1", ["groq"]),
   oa("together", "Together AI", "https://api.together.xyz/v1", ["together_ai"]),
   oa("gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", ["gemini"], "google"),
-  // Pseudo-provider: l'indirizzo lo inserisce l'utente (custom) o arriva da AI_GATEWAY_BASE_URL (system_gateway,
-  // mai selezionabile)
+  // Pseudo-provider: l'indirizzo lo inserisce l'utente
   oa("custom", "Personalizzato (compatibile OpenAI)", null, []),
-  oa("system_gateway", "Gateway di Casello", null, []),
 
   // Compatibili OpenAI
   oa("openai", "OpenAI", "https://api.openai.com/v1", ["openai", "text-completion-openai"], "openai"),

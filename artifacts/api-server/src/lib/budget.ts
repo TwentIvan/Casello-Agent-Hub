@@ -191,7 +191,7 @@ const RAISE_IN_ACCOUNT = "Alzalo nella pagina Account o attendi il mese prossimo
 /**
  * Motivo del blocco di un nuovo avvio che spende sul modello indicato, o null se si può partire. Controlla, in
  * ordine, il tetto del modello, quello del suo account AI e quello dell'utente che possiede l'account (chi paga).
- * L'account di sistema non ha tetti.
+ * Un account senza proprietario (il vecchio account del gateway, non più utilizzabile) non ha tetti.
  */
 export async function userBudgetBlock(aiModelId: number | null): Promise<string | null> {
   if (aiModelId === null) return null;

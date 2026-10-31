@@ -124,7 +124,6 @@ export * from './listCatalogModelsParams';
 export * from './listCatalogModelsSort';
 export * from './listCatalogProvidersParams';
 export * from './listRunsParams';
-export * from './model';
 export * from './modelBudget';
 export * from './notFoundResponse';
 export * from './payloadTooLargeResponse';

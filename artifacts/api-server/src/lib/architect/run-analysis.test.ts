@@ -17,6 +17,7 @@ import {
   type AnalysisLogEntry,
 } from "@workspace/db";
 import { encryptSecret } from "../secrets";
+import { LEGACY_GATEWAY_PROVIDER } from "../ai/providers";
 import { allowTestLoopback } from "../../../test/fake-provider";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { clearInstallationTokenCache } from "../github/app";
@@ -35,7 +36,7 @@ import type { PhaseName } from "./schemas";
 const FILE_SECRET = "CONTENUTO_RISERVATO_DEL_FILE_42";
 const GITHUB_TOKEN = "ghp_TOKENSEGRETISSIMO0123456789";
 
-const ENV_KEYS = ["AI_GATEWAY_BASE_URL", "AI_GATEWAY_API_KEY", "CASELLO_SECRET_KEY"] as const;
+const ENV_KEYS = ["CASELLO_SECRET_KEY"] as const;
 const saved: Record<string, string | undefined> = {};
 
 // --- Esiti validi delle fasi ---
@@ -176,6 +177,8 @@ const PHASE_BY_NUMBER: PhaseName[] = ["map", "capabilities", "catalog", "agents"
 // --- Finto provider a copione: per ogni fase legge un file e poi consegna ---
 
 let llm: http.Server;
+/** Indirizzo compatibile OpenAI del finto modello. */
+let llmBase: string;
 let llmRequests: any[];
 /** Header Authorization ricevuti dal finto provider, uno per richiesta. */
 let llmAuth: (string | undefined)[];
@@ -383,12 +386,11 @@ beforeEach(async () => {
   const llmPort = await listen(llm);
   appBase = `http://127.0.0.1:${await listen(appServer)}`;
   githubBase = `http://127.0.0.1:${await listen(github)}`;
-  process.env["AI_GATEWAY_BASE_URL"] = `http://127.0.0.1:${llmPort}/v1`;
-  process.env["AI_GATEWAY_API_KEY"] = "sk-test";
+  llmBase = `http://127.0.0.1:${llmPort}/v1`;
   process.env["CASELLO_SECRET_KEY"] = "b".repeat(64);
   vi.spyOn(console, "log").mockImplementation(() => {});
   await pool.query("TRUNCATE apps, ai_accounts, users RESTART IDENTITY CASCADE");
-  baseModelId = await seedBaseModel(process.env["AI_GATEWAY_BASE_URL"]!);
+  baseModelId = await seedBaseModel(llmBase);
   appId = await createApp({ functionalDescription: "Gestione di squadre di fantacalcio" });
 });
 
@@ -729,7 +731,7 @@ describe("startAnalysis sugli account AI", () => {
         userId: user!.id,
         name: "Account",
         provider: "custom",
-        baseUrl: process.env["AI_GATEWAY_BASE_URL"]!,
+        baseUrl: llmBase,
         allowPrivateNetwork: true,
         apiKeyEnc: encryptSecret(ACCOUNT_KEY),
         status: "ok",
@@ -922,18 +924,17 @@ describe("startAnalysis sugli account AI", () => {
     expect(llmRequests).toHaveLength(1);
   }, 20_000);
 
-  it("account di sistema senza variabili: failed con 'account di sistema non più disponibile'", async () => {
+  it("modello del vecchio account del gateway rimasto nel DB: failed con 'modello non disponibile'", async () => {
     const [account] = await db
       .insert(aiAccountsTable)
-      .values({ userId: null, name: "Gateway Casello", provider: "system_gateway", baseUrl: "http://gw/v1", status: "ok" })
+      .values({ userId: null, name: "Gateway Casello", provider: LEGACY_GATEWAY_PROVIDER, baseUrl: llmBase, status: "ok" })
       .returning();
     const [model] = await db.insert(aiModelsTable).values({ accountId: account!.id, modelId: "openrouter/auto", displayName: "Auto" }).returning();
-    delete process.env["AI_GATEWAY_API_KEY"];
     const id = await createAnalysis(appId, { aiModelId: model!.id });
     await startAnalysis(id, { zip: testZip() });
     const a = await loadAnalysis(id);
     expect(a.status).toBe("failed");
-    expect(a.error).toBe("account di sistema non più disponibile");
+    expect(a.error).toBe("modello non disponibile");
     expect(llmRequests).toHaveLength(0);
   });
 });

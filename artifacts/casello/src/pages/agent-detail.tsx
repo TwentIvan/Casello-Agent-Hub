@@ -151,8 +151,14 @@ function AgentConfigForm({ agent }: { agent: Agent }) {
                     <ModelDeprecationBadge aiModelId={agent.aiModelId} />
                     {agent.aiModelId === null && (
                       <FormDescription>
-                        Ora usa <span className="font-mono">{agent.model}</span> dal vecchio gateway: scegli un modello
-                        per passare agli account AI.
+                        Nessun modello: scegline uno per eseguire l'agente
+                        {agent.model ? (
+                          <>
+                            {" "}
+                            (prima usava <span className="font-mono">{agent.model}</span> dal vecchio gateway)
+                          </>
+                        ) : null}
+                        .
                       </FormDescription>
                     )}
                     <FormMessage />

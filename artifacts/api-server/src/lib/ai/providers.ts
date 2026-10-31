@@ -11,14 +11,14 @@ export type AiProvider = string;
 
 export interface ProviderInfo {
   label: string;
-  /** Base URL predefinito; null se lo inserisce l'utente (custom) o arriva dall'ambiente (system_gateway). */
+  /** Base URL predefinito; null se lo inserisce l'utente (custom e provider senza indirizzo certo). */
   defaultBaseUrl: string | null;
   editableBaseUrl: boolean;
 }
 
 /**
  * Informazioni per provider derivate dal registro. L'indirizzo è modificabile quando non ce n'è uno
- * predefinito, tranne per system_gateway (arriva da AI_GATEWAY_BASE_URL).
+ * predefinito.
  */
 export const PROVIDERS: ReadonlyMap<AiProvider, ProviderInfo> = new Map(
   PROVIDER_REGISTRY.map((p) => [
@@ -26,10 +26,17 @@ export const PROVIDERS: ReadonlyMap<AiProvider, ProviderInfo> = new Map(
     {
       label: p.name,
       defaultBaseUrl: p.defaultBaseUrl,
-      editableBaseUrl: p.defaultBaseUrl === null && p.slug !== "system_gateway",
+      editableBaseUrl: p.defaultBaseUrl === null,
     },
   ]),
 );
+
+/**
+ * Slug del vecchio account di sistema (gateway LiteLLM, dismesso). La riga in `providers`, l'account (senza
+ * proprietario) e i suoi modelli restano nel DB finché non si applica
+ * `docs/migrations/2026-10-pulizia-gateway-post.sql`: fino ad allora si ignorano ovunque.
+ */
+export const LEGACY_GATEWAY_PROVIDER = "system_gateway";
 
 export const BAD_URL_MESSAGE = "indirizzo non consentito";
 

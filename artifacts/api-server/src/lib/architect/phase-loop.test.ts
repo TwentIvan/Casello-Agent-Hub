@@ -5,7 +5,7 @@ import type {
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ChatResult } from "../ai-gateway";
+import type { ChatResult } from "../ai/chat-types";
 import {
   CACHE_WEIGHT,
   effectiveTokens,

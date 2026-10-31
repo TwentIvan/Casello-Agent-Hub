@@ -22,7 +22,7 @@ const GITHUB_KEYS = [
   "GITHUB_API_BASE",
   "GITHUB_WEB_BASE",
 ];
-const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY", "AI_GATEWAY_BASE_URL", "AI_GATEWAY_API_KEY", ...GITHUB_KEYS];
+const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY", ...GITHUB_KEYS];
 const saved: Record<string, string | undefined> = {};
 
 const NOT_YOURS = "installazione non trovata o non tua";
@@ -113,7 +113,6 @@ beforeAll(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   process.env["AUTH_DISABLED"] = "true";
   process.env["CASELLO_SECRET_KEY"] = "d".repeat(64);
-  process.env["AI_GATEWAY_API_KEY"] = "sk-test";
   gh = await startFakeGithub();
 
   llm = http.createServer((req, res) => {
@@ -132,7 +131,6 @@ beforeAll(async () => {
     });
   });
   const llmBase = `http://127.0.0.1:${await listen(llm)}/v1`;
-  process.env["AI_GATEWAY_BASE_URL"] = llmBase;
   fakeAppBase = `http://127.0.0.1:${await listen(fakeApp)}`;
 
   const { default: app } = await import("../app");

@@ -55,7 +55,7 @@ function ModelItem({ model, selected, onPick }: { model: AiModel; selected: bool
 
 /**
  * Tendina unica dei modelli: raggruppata per account, con prezzo per milione di token. Un modello che non è
- * tra quelli dell'utente (agente configurato da altri, modello nascosto o account di sistema dismesso) resta
+ * tra quelli dell'utente (agente configurato da altri, modello nascosto o del vecchio gateway dismesso) resta
  * come voce disabilitata, così il valore non si perde.
  */
 export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPickerProps) {
@@ -79,9 +79,6 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
   const showOthers = othersToggled ?? (current !== undefined && others.includes(current));
   const known = current !== undefined;
   const foreign = value != null && !known;
-  // L'account di sistema compare nei gruppi solo finché è configurato: se manca, un modello sconosciuto è
-  // con ogni probabilità un collegamento al vecchio gateway rimasto senza account
-  const systemAvailable = data.some((g) => g.account.isSystem);
   const hasModels = main.some((e) => e.models.length > 0) || others.length > 0;
 
   if (!hasModels && !foreign && !staleCurrent) {
@@ -100,9 +97,7 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
     setOpen(false);
   };
   const triggerLabel = foreign
-    ? systemAvailable
-      ? `modello di un altro utente o nascosto (#${value})`
-      : `account di sistema non più disponibile (#${value})`
+    ? `modello di un altro utente, nascosto o non più disponibile (#${value})`
     : current
       ? staleCurrent
         ? `${current.displayName} (${current.status === "retired" ? "ritirato" : "non disponibile"})`
@@ -154,7 +149,6 @@ export function ModelPicker({ value, onChange, disabled, id, ...aria }: ModelPic
                     heading={
                       <span className="flex items-center gap-2">
                         <span className="truncate">{group.account.name}</span>
-                        {group.account.isSystem && <Badge variant="secondary">sistema</Badge>}
                         {group.account.status === "error" && <Badge variant="destructive">errore</Badge>}
                       </span>
                     }

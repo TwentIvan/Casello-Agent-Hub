@@ -3,7 +3,7 @@ import { ModelAccessError, resolveModel } from "./executor";
 
 /**
  * Scelta del modello da parte di un utente (agenti, analisi). Regola "chi configura paga": si può
- * scegliere solo un modello dei propri account o dell'account di sistema; chi esegue (run, analisi)
+ * scegliere solo un modello dei propri account; chi esegue (run, analisi)
  * usa poi il modello salvato, chiunque la avvii.
  */
 
@@ -27,7 +27,7 @@ export class ModelChoiceError extends Error {
 export const MODEL_UNAVAILABLE = "modello non disponibile";
 
 /**
- * Modello scelto dall'utente: deve essere suo o dell'account di sistema (configurato). La chiave
+ * Modello scelto dall'utente: deve essere di un suo account. La chiave
  * eventualmente decifrata da `resolveModel` resta in questa funzione e non viene restituita.
  */
 export async function chooseOwnModel(aiModelId: number, userId: number): Promise<ModelChoice> {

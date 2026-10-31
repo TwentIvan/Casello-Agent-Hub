@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, beforeAll, afterAll } from
 import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
 import { discoverModels, PROVIDER_MESSAGES, ProviderError } from "./discovery";
 import { PRICE_SEED } from "./price-seed";
-import { normalizeBaseUrl, PROVIDERS, validateBaseUrl } from "./providers";
+import { LEGACY_GATEWAY_PROVIDER, normalizeBaseUrl, PROVIDERS, validateBaseUrl } from "./providers";
 
 const KEY = "sk-SECRET-KEY-123";
 
@@ -51,7 +51,7 @@ describe("PROVIDERS", () => {
     expect(PROVIDERS.get("groq")?.defaultBaseUrl).toBe("https://api.groq.com/openai/v1");
     expect(PROVIDERS.get("together")?.defaultBaseUrl).toBe("https://api.together.xyz/v1");
     expect(PROVIDERS.get("custom")).toMatchObject({ defaultBaseUrl: null, editableBaseUrl: true });
-    expect(PROVIDERS.get("system_gateway")?.defaultBaseUrl).toBeNull();
+    expect(PROVIDERS.has(LEGACY_GATEWAY_PROVIDER)).toBe(false);
   });
 });
 

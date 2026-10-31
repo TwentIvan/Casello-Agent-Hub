@@ -2,15 +2,15 @@ import { eq } from "drizzle-orm";
 import { APIConnectionTimeoutError } from "openai";
 import { db, aiModelsTable } from "@workspace/db";
 import { ProviderError } from "./discovery";
-import { modelChat, ModelAccessError, resolveModel } from "./executor";
+import { modelChat, resolveModel } from "./executor";
 
 // Una prova con 1 token non deve tenere la richiesta aperta per i 120 s di una chiamata normale
 const PROBE_TIMEOUT_MS = 20_000;
 
 /**
  * "Prova" di un modello: una chiamata reale con un messaggio minimo e `max_tokens: 1` (costo di
- * frazioni di centesimo, a carico dell'account). Solo per i modelli degli account dell'utente, mai
- * per quelli di sistema. Aggiorna `last_probe_*` e, se riesce, `availability = 'available'`
+ * frazioni di centesimo, a carico dell'account). Solo per i modelli degli account dell'utente.
+ * Aggiorna `last_probe_*` e, se riesce, `availability = 'available'`
  * (un 404 lo segna già `unavailable` modelChat).
  */
 export async function probeModel(
@@ -22,8 +22,6 @@ export async function probeModel(
     // Un ProviderError di resolveModel (indirizzo non più consentito, chiave illeggibile) arriva solo
     // dopo il controllo del proprietario: è l'esito della prova
     const resolved = await resolveModel(aiModelId, { userId, mustOwn: true });
-    // mustOwn ammette anche l'account di sistema: la prova no
-    if (resolved.ownerUserId !== userId) throw new ModelAccessError("modello non disponibile");
     const out = await modelChat(resolved, {
       messages: [{ role: "user", content: "ping" }],
       maxTokens: 1,

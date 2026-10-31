@@ -1,5 +1,5 @@
 import { Router, type IRouter, type RequestHandler, type Response } from "express";
-import { and, asc, count, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, ne, sql } from "drizzle-orm";
 import {
   db,
   agentsTable,
@@ -49,8 +49,13 @@ import { upsertDiscovered, verifyAccount, type Tx } from "../lib/ai/accounts";
 import { ModelAccessError } from "../lib/ai/executor";
 import { effectiveStatus, isSelectable, pickRecommended } from "../lib/ai/model-status";
 import { probeModel } from "../lib/ai/probe";
-import { normalizeBaseUrl, privateNetworkAllowed, validateBaseUrl, type AiProvider } from "../lib/ai/providers";
-import { systemAccountConfigured } from "../lib/ai/system-account";
+import {
+  LEGACY_GATEWAY_PROVIDER,
+  normalizeBaseUrl,
+  privateNetworkAllowed,
+  validateBaseUrl,
+  type AiProvider,
+} from "../lib/ai/providers";
 import { isUniqueViolation } from "../lib/pg-errors";
 import { budgetColumn } from "../lib/budget";
 import { decryptSecret, encryptSecret } from "../lib/secrets";
@@ -58,12 +63,10 @@ import { rateLimit } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
 
 // Account AI dell'utente (provider, chiave cifrata, modelli e prezzi) e stima dei costi.
-// Ogni route vede solo gli account dell'utente corrente più l'account di sistema (gateway di
-// Casello), che si può leggere ma non modificare. La chiave non esce mai: solo `keySet`.
+// Ogni route vede solo gli account dell'utente corrente. La chiave non esce mai: solo `keySet`.
 
 const ACCOUNT_NOT_FOUND = "account non trovato";
 const MODEL_NOT_FOUND = "modello non trovato";
-const SYSTEM_READONLY = "account di sistema non modificabile";
 const PRIVATE_ONLY_CUSTOM = "rete privata consentita solo per gli account personalizzati o di provider non gestiti";
 const BASE_URL_ONLY_CUSTOM = "base URL modificabile solo per gli account personalizzati (custom)";
 const BASE_URL_REQUIRED = "indirizzo obbligatorio per questo provider";
@@ -80,13 +83,6 @@ const USED_BY_MAX_NAMES = 10;
 // eslint-disable-next-line no-control-regex
 const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
 
-function isSystemAccount(a: AiAccount): boolean {
-  return a.provider === "system_gateway" && a.userId === null;
-}
-
-/** L'account di sistema compare negli elenchi solo finché le variabili del gateway sono impostate. */
-const systemConfigured = systemAccountConfigured;
-
 function toNumber(v: string | null): number | null {
   if (v === null) return null;
   const n = Number(v);
@@ -102,21 +98,17 @@ function toPrice(v: number | null | undefined): string | null {
  * quello salvato, solo se lo stato attuale del provider (`providerStatus`) ammette ancora la rete privata.
  */
 function toPublicAccount(a: AiAccount, modelCount: number, providerStatus: string | undefined) {
-  const system = isSystemAccount(a);
   return {
     id: a.id,
     name: a.name,
     provider: a.provider,
-    // L'indirizzo del gateway di sistema (spesso interno) non si espone
-    baseUrl: system ? "" : a.baseUrl,
+    baseUrl: a.baseUrl,
     allowPrivateNetwork: a.allowPrivateNetwork && privateNetworkAllowed({ slug: a.provider, status: providerStatus ?? "" }),
     isDefault: a.isDefault,
     status: a.status,
     lastError: a.lastError,
     lastCheckedAt: a.lastCheckedAt,
-    // La chiave del sistema arriva dall'ambiente, non dal DB
-    keySet: system ? systemConfigured() : a.apiKeyEnc !== null,
-    isSystem: system,
+    keySet: a.apiKeyEnc !== null,
     modelCount,
     monthlyBudgetUsd: toNumber(a.monthlyBudgetUsd),
   };
@@ -181,15 +173,11 @@ async function publicModel(id: number) {
 }
 
 /**
- * Condizione "visibile all'utente": suoi account o account di sistema, quest'ultimo solo finché le
- * variabili del gateway sono impostate (dopo la dismissione sparisce da ogni route).
+ * Condizione "visibile all'utente": solo i suoi account. Il vecchio account del gateway (senza proprietario,
+ * finché la migrazione `-post` non lo elimina) non lo vede nessuno.
  */
 function visibleTo(userId: number) {
-  if (!systemConfigured()) return eq(aiAccountsTable.userId, userId);
-  return or(
-    eq(aiAccountsTable.userId, userId),
-    and(isNull(aiAccountsTable.userId), eq(aiAccountsTable.provider, "system_gateway")),
-  );
+  return eq(aiAccountsTable.userId, userId);
 }
 
 async function findVisibleAccount(id: number, userId: number): Promise<AiAccount | undefined> {
@@ -201,18 +189,11 @@ async function findVisibleAccount(id: number, userId: number): Promise<AiAccount
   return row;
 }
 
-/**
- * Account modificabile dall'utente: altrui o inesistente → 404, di sistema → 403 (risposta già
- * inviata, restituisce undefined).
- */
+/** Account modificabile dall'utente: altrui o inesistente → 404 (risposta già inviata, restituisce undefined). */
 async function findWritableAccount(id: number, userId: number, res: Response): Promise<AiAccount | undefined> {
   const account = await findVisibleAccount(id, userId);
   if (!account) {
     res.status(404).json({ error: ACCOUNT_NOT_FOUND });
-    return undefined;
-  }
-  if (isSystemAccount(account)) {
-    res.status(403).json({ error: SYSTEM_READONLY });
     return undefined;
   }
   return account;
@@ -257,8 +238,12 @@ async function sendAccount(res: Response, id: number, schema: { parse(v: unknown
   res.status(status).json(schema.parse(account));
 }
 
-/** Provider della tabella `providers` (registro o scoperto); undefined se lo slug non esiste. */
+/**
+ * Provider della tabella `providers` (registro o scoperto); undefined se lo slug non esiste o è quello del
+ * vecchio gateway.
+ */
 async function findProvider(slug: string): Promise<ProviderRow | undefined> {
+  if (slug === LEGACY_GATEWAY_PROVIDER) return undefined;
   const [row] = await db.select().from(providersTable).where(eq(providersTable.slug, slug)).limit(1);
   return row;
 }
@@ -271,7 +256,7 @@ async function findProvider(slug: string): Promise<ProviderRow | undefined> {
 function providerRules(p: ProviderRow): { editableBaseUrl: boolean; privateNetwork: boolean } {
   const isCustom = p.slug === "custom";
   const unmanaged = p.status === "unmanaged";
-  const managedNoDefault = p.status === "managed" && p.defaultBaseUrl === null && p.slug !== "system_gateway";
+  const managedNoDefault = p.status === "managed" && p.defaultBaseUrl === null;
   return { editableBaseUrl: isCustom || unmanaged || managedNoDefault, privateNetwork: privateNetworkAllowed(p) };
 }
 
@@ -285,14 +270,12 @@ function cleanName(raw: string): string | null {
 
 /**
  * Account visibili all'utente, nell'ordine della console: il predefinito, poi per nome, quelli in
- * errore in fondo; l'account di sistema (se configurato) per ultimo.
+ * errore in fondo.
  */
 async function visibleAccountsSorted(userId: number): Promise<AiAccount[]> {
   const rows = await db.select().from(aiAccountsTable).where(visibleTo(userId));
-  const rank = (a: AiAccount) => (isSystemAccount(a) ? 3 : a.isDefault ? 0 : a.status === "error" ? 2 : 1);
-  return rows
-    .filter((a) => !isSystemAccount(a) || systemConfigured())
-    .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, "it") || a.id - b.id);
+  const rank = (a: AiAccount) => (a.isDefault ? 0 : a.status === "error" ? 2 : 1);
+  return rows.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, "it") || a.id - b.id);
 }
 
 /** Blocca la riga dell'utente: serializza le operazioni sul predefinito (indice unico parziale). */
@@ -364,7 +347,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
 
   // Registro per la creazione degli account: gestiti per nome, poi in arrivo, poi non gestiti
   router.get("/ai/providers", async (_req, res) => {
-    const rows = await db.select().from(providersTable).where(ne(providersTable.slug, "system_gateway"));
+    const rows = await db.select().from(providersTable).where(ne(providersTable.slug, LEGACY_GATEWAY_PROVIDER));
     rows.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.name.localeCompare(b.name, "it"));
     res.json(
       ListAiProvidersResponse.parse(
@@ -384,10 +367,6 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     const userId = currentUserId(req);
     const body = parseRequest(CreateAiAccountBody, req.body);
     const provider: AiProvider = body.provider;
-    if (provider === "system_gateway") {
-      res.status(400).json({ error: "provider non ammesso: l'account di sistema lo gestisce Casello" });
-      return;
-    }
     // Dalla tabella: i provider scoperti dall'aggiornamento del catalogo esistono solo lì
     const info = await findProvider(provider);
     if (!info) {
@@ -731,10 +710,6 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       res.status(404).json({ error: MODEL_NOT_FOUND });
       return;
     }
-    if (isSystemAccount(row.account)) {
-      res.status(403).json({ error: SYSTEM_READONLY });
-      return;
-    }
     const set: Partial<typeof aiModelsTable.$inferInsert> = {};
     if (body.displayName !== undefined) {
       const displayName = body.displayName.trim();
@@ -765,7 +740,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
   router.post("/ai/models/:id/probe", probeLimit, async (req, res) => {
     const userId = currentUserId(req);
     const { id } = parseRequest(ProbeAiModelParams, req.params);
-    // Solo i modelli dei propri account: altrui, di sistema o inesistente → 404
+    // Solo i modelli dei propri account: altrui o inesistente → 404
     const [owned] = await db
       .select({ id: aiModelsTable.id })
       .from(aiModelsTable)

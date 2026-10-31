@@ -23,7 +23,7 @@ let llmReplies: unknown[];
 let appRequests: { method: string; url: string; auth: string | undefined }[];
 let startRun: (runId: number, opts?: { userToken?: string }) => Promise<void>;
 
-const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY", "AI_GATEWAY_BASE_URL", "AI_GATEWAY_API_KEY"] as const;
+const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY"] as const;
 const saved: Record<string, string | undefined> = {};
 
 function listen(s: http.Server): Promise<number> {
@@ -118,7 +118,6 @@ beforeAll(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   process.env["AUTH_DISABLED"] = "true";
   process.env["CASELLO_SECRET_KEY"] = "b".repeat(64);
-  process.env["AI_GATEWAY_API_KEY"] = "sk-test";
 
   llm = http.createServer((req, res) => {
     req.resume();
@@ -136,7 +135,6 @@ beforeAll(async () => {
     });
   });
   llmBase = `http://127.0.0.1:${await listen(llm)}/v1`;
-  process.env["AI_GATEWAY_BASE_URL"] = llmBase;
   fakeAppBase = `http://127.0.0.1:${await listen(fakeApp)}/api`;
 
   const { default: app } = await import("../app");

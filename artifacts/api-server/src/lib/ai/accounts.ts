@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { db, aiAccountsTable, aiModelsTable, providersTable, type AiAccount } from "@workspace/db";
 import { decryptSecret } from "../secrets";
 import { discoverModels, ProviderError, type DiscoveredModel } from "./discovery";
-import { privateNetworkAllowed } from "./providers";
+import { LEGACY_GATEWAY_PROVIDER, privateNetworkAllowed } from "./providers";
 
 // Modelli degli account AI: salvataggio dei modelli scoperti, verifica di un account e arricchimento
 // dal catalogo. Usati dalle route degli account e dall'aggiornamento del catalogo.
@@ -18,7 +18,7 @@ function toPrice(v: number | null | undefined): string | null {
  * `normalizeModelId`, cioè come `provider_model_id`): `offer_id` (null senza abbinamento), `supports_tools` e,
  * se il prezzo non è manuale e l'offerta li ha entrambi, i prezzi (anche quello dei token in cache, null se
  * l'offerta non lo ha) con `price_source = 'catalog'`. Esclusi gli
- * account `custom` e di sistema; quelli di un provider non gestito si abbinano alle offerte di quel provider.
+ * account `custom` e quelli del vecchio gateway; quelli di un provider non gestito si abbinano alle offerte di quel provider.
  * L'id del modello non cambia mai (i provider possono distinguere le maiuscole).
  */
 export async function enrichFromCatalog(executor: Tx | typeof db, opts: { accountId?: number }): Promise<void> {
@@ -40,7 +40,7 @@ export async function enrichFromCatalog(executor: Tx | typeof db, opts: { accoun
       LEFT JOIN model_offers o
         ON o.provider = a.provider
        AND o.provider_model_id = lower(regexp_replace(m.model_id, '^models/', '', 'i'))
-      WHERE a.provider NOT IN ('custom', 'system_gateway') ${onlyAccount}
+      WHERE a.provider NOT IN ('custom', ${LEGACY_GATEWAY_PROVIDER}) ${onlyAccount}
     )
     UPDATE ai_models AS m SET
       offer_id = x.offer_id,
@@ -110,7 +110,7 @@ async function recognizeCustomProvider(tx: Tx, accountId: number): Promise<void>
       AND a.api_key_enc IS NOT NULL
       AND NOT a.allow_private_network
       AND p.status = 'managed'
-      AND p.slug NOT IN ('custom', 'system_gateway')
+      AND p.slug NOT IN ('custom', ${LEGACY_GATEWAY_PROVIDER})
       AND p.default_base_url IS NOT NULL
       AND lower(rtrim(a.base_url, '/')) = lower(rtrim(p.default_base_url, '/'))
   `);

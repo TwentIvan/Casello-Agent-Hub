@@ -14,7 +14,7 @@ export interface AgentUpdate {
   /** @nullable */
   systemPrompt?: string | null;
   /**
-     * Se diverso da quello salvato deve essere un modello dell'utente o dell'account di sistema (400 altrimenti); uguale a quello salvato non viene ricontrollato
+     * Se diverso da quello salvato deve essere un modello dell'utente (400 altrimenti); uguale a quello salvato non viene ricontrollato
      * @nullable
      */
   aiModelId?: number | null;

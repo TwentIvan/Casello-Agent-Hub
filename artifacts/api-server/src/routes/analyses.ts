@@ -74,8 +74,8 @@ const CHAPTER_ORDER: AnalysisChapter[] = PHASES.flatMap((phase) => PHASE_CHAPTER
 const POSTPONABLE = new Set<AnalysisChapter>(["endpoint", "completion", "evolution"]);
 
 /**
- * Modello dell'analisi cloud: `aiModelId` obbligatorio (modello dell'utente che avvia o dell'account di
- * sistema). Lancia ModelChoiceError con il messaggio per il 400.
+ * Modello dell'analisi cloud: `aiModelId` obbligatorio (modello di un account dell'utente che
+ * avvia). Lancia ModelChoiceError con il messaggio per il 400.
  */
 async function analysisModel(aiModelId: number | undefined, userId: number): Promise<ModelChoice> {
   if (aiModelId === undefined) throw new ModelChoiceError(CHOOSE_MODEL);

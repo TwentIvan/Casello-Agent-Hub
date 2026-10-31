@@ -8,7 +8,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 
 ## Stato (ottobre 2026)
 
-- API completa per il CRUD di App / Agent / Tool / Run e per l'esecuzione delle run via AI gateway.
+- API completa per il CRUD di App / Agent / Tool / Run e per l'esecuzione delle run con gli account AI degli utenti.
 - Fase 1 "Agenti che agiscono": gli agenti chiamano i tool HTTP delle app (catalogo per app), con
   conferma dell'utente per le azioni marcate, timeline dei passi e pausa/ripresa (vedi "Agenti operativi").
 - Fase 3 "Architetto": analizza un'app (codice da GitHub o zip, OpenAPI, descrizione) e propone tool,
@@ -50,26 +50,24 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
   `POST /api/runs/:id/resume` (conferma o annulla l'azione in sospeso), `/api/dashboard/stats`,
-  `/api/models`, `GET|PUT /api/budget` (tetti di spesa), `/api/healthz`; architetto: `GET|POST /api/apps/:id/analyses`,
+  `GET|PUT /api/budget` (tetti di spesa), `/api/healthz`; architetto: `GET|POST /api/apps/:id/analyses`,
   `POST /api/apps/:id/analyses/zip` (corpo zip grezzo), `GET /api/analyses/:id`,
   `GET /api/analyses/:id/issues`, `PATCH /api/analysis-items/:id`, `GET|DELETE /api/agents/:id/skills`; GitHub: `GET /api/github/installations`, `GET /api/github/repos`
   (login e collegamento in `/api/auth/github/*`, vedi "Autenticazione"). Body, parametri e query si leggono con `parseRequest` (errore → 400);
   le risposte con `*Response.parse` (errore → 500, è un bug del server)
 - `artifacts/api-server/src/lib/auth.ts` — login Google (OIDC), sessione e middleware che protegge `/api` (`requireAuth`: sessione o token personale; `sessionOnly`; `TOKEN_MESSAGES`); token in `lib/api-tokens.ts`, limite per token in `middlewares/rate-limit.ts`; UI in `components/account/api-tokens-section.tsx`
-- `artifacts/api-server/src/lib/models.ts` — modelli selezionabili e default (`openrouter/auto`)
 - `artifacts/api-server/src/lib/ai/` — account AI: provider e indirizzi (`providers.ts`), scoperta dei modelli
-  (`discovery.ts`), esecutore unico (`executor.ts`), account di sistema (`system-account.ts`), scelta del modello
+  (`discovery.ts`), esecutore unico (`executor.ts`), tipi condivisi delle chiamate (`chat-types.ts`), scelta del modello
   (`choice.ts`), riverifica e arricchimento dei modelli (`accounts.ts`), stato effettivo e preselezione
   (`model-status.ts`), prova con 1 token (`probe.ts`); route in `src/routes/ai.ts`
 - `artifacts/api-server/src/lib/catalog/` — catalogo dei modelli: fonti pubbliche (`sources.ts`), normalizzazione
   e fusione (`normalize.ts`, `merge.ts`), riepilogo delle novità (`summary.ts`), aggiornamento (`refresh.ts`),
   avvio settimanale (`scheduler.ts`); route in `src/routes/catalog.ts`; fonti finte per i test in
   `artifacts/api-server/test/fake-sources.ts`
-- `artifacts/api-server/src/lib/ai-gateway.ts` — client storico verso LiteLLM (agenti non ancora su un account AI)
 - `artifacts/api-server/src/lib/agent-loop.ts` — ciclo dell'agente (puro, senza DB né rete): chiamate al
   modello, esecuzione dei tool, pause, limiti del turno
 - `artifacts/api-server/src/lib/run-executor.ts` — orchestrazione delle run: collega il ciclo al DB,
-  all'esecutore dei tool e al gateway; scrive i passi in `run_steps`, salva lo stato alla pausa
+  all'esecutore dei tool e all'esecutore dei modelli; scrive i passi in `run_steps`, salva lo stato alla pausa
   (`awaiting_client`) e lo riprende con `resume`. `POST /api/agents/:id/runs` risponde subito con la run
   `pending` e la esegue in background (la UI fa polling su `GET /api/runs/:id`); all'avvio le run rimaste
   `pending`/`running` vengono chiuse come fallite.
@@ -94,7 +92,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `artifacts/api-server/src/lib/mcp/` e `lib/architect/local-executor.ts` — server MCP `/mcp` e coda/lease delle analisi locali
 - `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
 - `artifacts/mockup-sandbox/` — sandbox di mockup: NON va in produzione, non toccare
-- `gateway/` — config LiteLLM storica; la copia viva è nel repo `TwentIvan/AIGateway`
+- `gateway/` — config LiteLLM storica (gateway dismesso, vedi "Modelli AI"); non è più usata dal codice
 - `docker/`, `.github/workflows/deploy.yml` — build e deploy (vedi sotto)
 
 ## Modello di dominio
@@ -123,18 +121,21 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Esecutore unico `lib/ai/executor.ts`: `resolveModel(aiModelId)` → account, indirizzo, chiave (solo in
   memoria) e prezzi; `modelChat` chiama il provider e calcola il costo. Errori con messaggi fissi in italiano
   (`lib/ai/discovery.ts`). Predisposto per un secondo esecutore (agente locale via MCP, prossimo sottoprogetto).
-- "Chi configura paga": un utente sceglie solo modelli dei propri account o dell'account di sistema; le run
-  usano il modello salvato nell'agente (`agents.ai_model_id`), le analisi quello scelto da chi le avvia.
+- "Chi configura paga": un utente sceglie solo modelli dei propri account; le run usano il modello salvato
+  nell'agente (`agents.ai_model_id`; senza modello `POST /agents/:id/runs` risponde 409), le analisi quello scelto
+  da chi le avvia (obbligatorio per le analisi cloud).
   Costi in `runs.cost_usd` e `analyses.cost_usd` (null = costo parziale, prezzo mancante); stima prima
   dell'analisi (`GET /api/ai/estimate`).
 - Indirizzi dei provider: solo `https`; "Consenti rete privata" (solo personalizzato) ammette `http` e reti
   private, mai loopback, link-local o metadata. Nessun redirect seguito.
-- Transizione: con `AI_GATEWAY_BASE_URL`/`AI_GATEWAY_API_KEY` impostate, all'avvio Casello crea l'account di
-  sistema "Gateway Casello" (LiteLLM, repo `TwentIvan/AIGateway`) con i modelli di `lib/models.ts` e vi collega
-  agenti e analisi esistenti. Gli agenti con `ai_model_id` null usano ancora `lib/ai-gateway.ts`. AIGateway va
-  dismesso (togliendo le variabili) solo dopo aver spostato gli agenti sugli account personali, con conferma.
+- Il gateway LiteLLM (account di sistema "Gateway Casello", variabili `AI_GATEWAY_*`) è dismesso e il codice è
+  stato rimosso. Finché in produzione non si applica `docs/migrations/2026-10-pulizia-gateway-post.sql` (dopo il
+  deploy), l'account senza proprietario, i suoi modelli e la riga `system_gateway` di `providers` restano nel DB e
+  il codice li ignora (`LEGACY_GATEWAY_PROVIDER` in `lib/ai/providers.ts`): fuori da elenchi, scelte e catalogo,
+  `resolveModel` li tratta come modello non disponibile. I nomi storici (`agents.model`, `analyses.model`) e i
+  costi registrati restano.
 - Route: `/api/ai/accounts` (+ `/:id/verify`, `/:id/default`, `/:id/models`), `/api/ai/models`,
-  `POST /api/ai/models/:id/probe`, `/api/ai/estimate`; `GET /api/models` resta come alias del vecchio elenco.
+  `POST /api/ai/models/:id/probe`, `/api/ai/estimate`.
 - Costi sempre sotto controllo: a parità di risultato si preferisce il modello o il percorso più economico.
 
 ## Dal piano alle issue
@@ -184,9 +185,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Tetto mensile in USD (null = nessun limite) per utente (`users.monthly_budget_usd`, pagina Account), per agente
   (`agents.monthly_budget_usd`, scheda agente), per account AI (`ai_accounts.monthly_budget_usd`: una chiave, il credito
   si carica per chiave) e per modello (`ai_models.monthly_budget_usd`); questi ultimi due nella pagina Account, solo sui
-  propri account (l'account di sistema non ha tetti). Mese di calendario, ora italiana (`lib/budget.ts`).
+  propri account. Mese di calendario, ora italiana (`lib/budget.ts`).
 - Spesa dell'utente (chi configura paga): run, analisi cloud e conversazioni del piano con un modello dei suoi account
-  AI (una conversazione, a costo cumulativo, conta nel mese del suo ultimo turno); l'account di sistema non conta. Spesa dell'agente: le sue
+  AI (una conversazione, a costo cumulativo, conta nel mese del suo ultimo turno). Spesa dell'agente: le sue
   run con qualsiasi modello. Spesa di un modello o di un account: run, analisi cloud e chat con quel modello o con i
   modelli dell'account. Ogni run ricorda il modello con cui è partita (`runs.ai_model_id`). I costi null (prezzo
   mancante) non si sommano: si contano come esecuzioni senza prezzo.
@@ -226,7 +227,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   mai; quelli presi dal catalogo hanno `price_source = catalog`.
 - Quando: ogni 7 giorni o se `model_offers` è vuota (controllo all'avvio dopo 5 minuti e poi ogni 24 h) e a
   richiesta con `POST /api/catalog/refresh` (2/minuto; 409 se già in corso). Ogni esecuzione rilegge `/models`
-  di tutti gli account non di sistema e ricollega `ai_models` alle offerte; all'avvio le esecuzioni rimaste
+  di tutti gli account degli utenti e ricollega `ai_models` alle offerte; all'avvio le esecuzioni rimaste
   `running` diventano `failed`.
 - API: `GET /api/catalog/models` (ricerca, filtri, ordinamento, paginazione ≤ 100, pagina ≤ 10 000),
   `GET /api/catalog/models/:id/offers`, `GET /api/catalog/providers`, `GET /api/catalog/providers/:slug/issue`,
@@ -237,9 +238,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (`availability = unavailable`, messo da un 404 o "model_not_found" di una chiamata vera) > disponibile. La
   tendina propone solo modelli disponibili con strumenti (o non noti, "?"); gli altri disponibili in "Altri
   modelli". "Prova" (5/minuto, solo sui propri account, 1 token, 20 s) riporta un modello a disponibile.
-- Limiti noti: un modello dell'account di sistema segnato non disponibile non si può riprovare dalla console;
-  l'enum Postgres `ai_provider` resta nel DB inutilizzato (da eliminare in un passo successivo); lo slug storico
-  `system_gateway` contiene `_`.
+- Limiti noti: l'enum Postgres `ai_provider` resta nel DB inutilizzato fino alla migrazione
+  `2026-10-pulizia-gateway-post.sql`, che lo elimina insieme al vecchio gateway.
 
 ## Agenti operativi (fase 1)
 
@@ -376,7 +376,7 @@ dell'agente: skill `docs/skills/casello-architetto-locale/SKILL.md`.
   proxy di `/api/` verso `casello-api:3000`). Il frontend chiama `/api` con URL relativi: un solo dominio.
 - Immagini `node:24-slim` (non alpine: il workspace esclude i binari musl).
 - Variabili dell'API: `DATABASE_URL` (Neon, stringa diretta), `PORT`, `NODE_ENV`, `LOG_LEVEL`,
-  `AI_GATEWAY_BASE_URL`, `AI_GATEWAY_API_KEY`, `AI_GATEWAY_FALLBACK_MODEL`, `CASELLO_SECRET_KEY`
+  `CASELLO_SECRET_KEY`
   (64 caratteri esadecimali, `openssl rand -hex 32`; cifra i segreti a riposo, obbligatoria con
   `NODE_ENV=production`); `PUBLIC_APP_URL`
   (origine della UI, `https://casello.fantamister.cloud`: usata dal login e dal CORS, che in produzione

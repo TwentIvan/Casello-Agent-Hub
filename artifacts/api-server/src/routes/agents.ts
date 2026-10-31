@@ -56,8 +56,8 @@ router.get("/agents", async (req, res) => {
 });
 
 // Gli agenti creati dalla UI sono sempre di area: il generale nasce con l'app.
-// Modello (chi configura paga): `aiModelId` deve essere un modello dell'utente o dell'account di
-// sistema; senza, il predefinito dell'utente (se è ancora suo), altrimenti nessuno.
+// Modello (chi configura paga): `aiModelId` deve essere un modello di un account dell'utente;
+// senza, il predefinito dell'utente (se è ancora suo), altrimenti nessuno.
 router.post("/agents", async (req, res) => {
   const { aiModelId, ...body } = parseRequest(CreateAgentBody, req.body);
   const [app] = await db.select({ id: appsTable.id }).from(appsTable).where(eq(appsTable.id, body.appId)).limit(1);
@@ -201,8 +201,8 @@ router.put("/agents/:id/tools", async (req, res) => {
 
 // ── Mappa dei modelli degli agenti di un'app ────────────────────────────────
 
-// Tutto o niente: prima si verifica ogni agente (dell'app) e ogni modello (dell'utente o di sistema,
-// come per `PATCH /agents/:id`), poi si aggiorna in una sola transazione. null = nessun modello.
+// Tutto o niente: prima si verifica ogni agente (dell'app) e ogni modello (dell'utente, come per
+// `PATCH /agents/:id`), poi si aggiorna in una sola transazione. null = nessun modello.
 router.put("/apps/:id/agent-models", async (req, res) => {
   const { id } = parseRequest(SetAppAgentModelsParams, req.params);
   const { assignments } = parseRequest(SetAppAgentModelsBody, req.body);

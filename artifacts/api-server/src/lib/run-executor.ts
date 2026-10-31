@@ -1,7 +1,7 @@
 import { db, agentsTable, appsTable, appToolsTable, runsTable, runStepsTable, type Agent, type App, type Run } from "@workspace/db";
 import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { APIConnectionTimeoutError, APIUserAbortError } from "openai";
-import type { ChatResult } from "./ai-gateway";
+import type { ChatResult } from "./ai/chat-types";
 import { ProviderError } from "./ai/discovery";
 import { ModelAccessError, modelChat, resolveModel, type ResolvedModel } from "./ai/executor";
 import {
@@ -349,7 +349,6 @@ async function driveLoop(
       const reply = await modelChat(await resolved, {
         messages,
         tools: functionTools,
-        agentId: ctx.agent.id,
         caller: "run-executor",
         maxTokens: 2000,
         temperature: 0.3,

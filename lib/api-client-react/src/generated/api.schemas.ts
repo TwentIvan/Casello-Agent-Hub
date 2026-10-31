@@ -301,7 +301,7 @@ export interface Agent {
   /** Id del modello come testo (compatibilità): con aiModelId impostato è il modelId del modello scelto */
   model?: string;
   /**
-     * Modello scelto tra quelli degli account AI; le run usano l'account di questo modello (chi configura paga). Null = vecchio percorso del gateway
+     * Modello scelto tra quelli degli account AI; le run usano l'account di questo modello (chi configura paga). Null = nessun modello: l'agente non si può eseguire
      * @nullable
      */
   aiModelId: number | null;
@@ -327,7 +327,7 @@ export interface AgentInput {
   name: string;
   systemPrompt?: string;
   /**
-     * Modello di un account AI dell'utente o dell'account di sistema (400 "modello non disponibile" altrimenti). Se assente si usa il modello predefinito dell'utente, se c'è; altrimenti l'agente nasce senza modello.
+     * Modello di un account AI dell'utente (400 "modello non disponibile" altrimenti). Se assente si usa il modello predefinito dell'utente, se c'è; altrimenti l'agente nasce senza modello.
      * @nullable
      */
   aiModelId?: number | null;
@@ -340,7 +340,7 @@ export interface AgentUpdate {
   /** @nullable */
   systemPrompt?: string | null;
   /**
-     * Se diverso da quello salvato deve essere un modello dell'utente o dell'account di sistema (400 altrimenti); uguale a quello salvato non viene ricontrollato
+     * Se diverso da quello salvato deve essere un modello dell'utente (400 altrimenti); uguale a quello salvato non viene ricontrollato
      * @nullable
      */
   aiModelId?: number | null;
@@ -373,14 +373,6 @@ export interface AgentModelAssignments {
 
 export interface AgentToolsInput {
   toolIds: number[];
-}
-
-export interface Model {
-  /** model_name di LiteLLM, da usare in Agent.model */
-  id: string;
-  label: string;
-  /** Modello usato quando un agente viene creato senza model */
-  isDefault: boolean;
 }
 
 export type ToolKind = typeof ToolKind[keyof typeof ToolKind];
@@ -1004,7 +996,7 @@ export interface AppPlan {
 }
 
 export interface PlanConversationCreate {
-  /** Modello di un account AI dell'utente o dell'account di sistema */
+  /** Modello di un account AI dell'utente */
   aiModelId: number;
   /** Analisi di riferimento (default l'ultima completata dell'app) */
   analysisId?: number;
@@ -1105,7 +1097,7 @@ export type AnalysisDetail = Analysis & {
  */
 export interface AnalysisStart {
   executor?: AnalysisExecutor;
-  /** Modello di un account AI dell'utente o dell'account di sistema */
+  /** Modello di un account AI dell'utente */
   aiModelId?: number;
   /**
      * Tetto di token per l'analisi (default 1000000)
@@ -1161,7 +1153,7 @@ export interface AgentSkill {
 }
 
 /**
- * Slug di un provider della tabella providers (system_gateway, con il trattino basso, è un valore storico)
+ * Slug di un provider della tabella providers
  * @pattern ^[a-z0-9_-]{1,64}$
  */
 export type AiProvider = string;
@@ -1231,8 +1223,6 @@ export interface AiAccount {
   lastCheckedAt: string | null;
   /** Indica se la chiave è impostata (il valore non è mai esposto) */
   keySet: boolean;
-  /** Account di sistema (gateway di Casello), non modificabile */
-  isSystem: boolean;
   /** Numero di modelli dell'account (nascosti compresi) */
   modelCount: number;
   /**

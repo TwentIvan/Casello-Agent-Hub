@@ -5,7 +5,6 @@ import { startLocalLeaseJob } from "./lib/architect/local-executor";
 import { expireStalePausedRuns, failInterruptedRuns } from "./lib/run-executor";
 import { failInterruptedPlanTurns } from "./lib/plan-chat/run-turn";
 import { resetStaleIssueReservations } from "./lib/plan-issues/service";
-import { ensureSystemAccount } from "./lib/ai/system-account";
 import { failInterruptedCatalogRuns } from "./lib/catalog/refresh";
 import { startCatalogScheduler } from "./lib/catalog/scheduler";
 import { ensureProviderRegistry } from "./lib/catalog/provider-registry";
@@ -67,20 +66,11 @@ failInterruptedCatalogRuns()
   )
   .finally(() => startCatalogScheduler());
 
-// Registro dei provider allineato alla tabella providers, poi l'account AI di sistema dalle variabili del
-// gateway attuale (collega agenti e analisi esistenti). Un errore non blocca l'avvio: si logga solo il nome,
-// mai il messaggio.
-ensureProviderRegistry()
-  .catch((err: unknown) =>
-    logger.error({ errorName: err instanceof Error ? err.name : "Error" }, "Allineamento del registro dei provider non riuscito"),
-  )
-  .then(() => ensureSystemAccount())
-  .then((res) => {
-    if (res) logger.info({ accountId: res.accountId }, "Account di sistema del gateway allineato");
-  })
-  .catch((err: unknown) =>
-    logger.error({ errorName: err instanceof Error ? err.name : "Error" }, "Allineamento dell'account di sistema non riuscito"),
-  );
+// Registro dei provider allineato alla tabella providers. Un errore non blocca l'avvio: si logga solo il
+// nome, mai il messaggio.
+ensureProviderRegistry().catch((err: unknown) =>
+  logger.error({ errorName: err instanceof Error ? err.name : "Error" }, "Allineamento del registro dei provider non riuscito"),
+);
 
 startLocalLeaseJob();
 

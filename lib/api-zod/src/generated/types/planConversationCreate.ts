@@ -7,7 +7,7 @@
  */
 
 export interface PlanConversationCreate {
-  /** Modello di un account AI dell'utente o dell'account di sistema */
+  /** Modello di un account AI dell'utente */
   aiModelId: number;
   /** Analisi di riferimento (default l'ultima completata dell'app) */
   analysisId?: number;

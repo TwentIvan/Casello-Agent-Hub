@@ -11,7 +11,7 @@ import type { Tx } from "../architect/apply";
 
 type Executor = Tx | typeof db;
 
-/** Modello di un account dell'utente (non di sistema, non di altri), oppure undefined. */
+/** Modello di un account dell'utente (non di altri), oppure undefined. */
 async function ownModel(userId: number, aiModelId: number, executor: Executor): Promise<ModelChoice | undefined> {
   const [row] = await executor
     .select({ id: aiModelsTable.id, modelId: aiModelsTable.modelId })

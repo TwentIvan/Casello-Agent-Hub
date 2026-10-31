@@ -1,8 +1,8 @@
-import type { GatewayMessage } from "../ai-gateway";
+import type { ChatMessage } from "../ai/chat-types";
 
 export interface ProviderCompleteArgs {
   rawModelId: string;
-  messages: GatewayMessage[];
+  messages: ChatMessage[];
   maxTokens?: number;
   temperature?: number;
   caller: string;

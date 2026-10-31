@@ -31,6 +31,7 @@ import { clearUserToken } from "./user-tokens";
 import { logger } from "./logger";
 import { ProviderError } from "./ai/discovery";
 import { encryptSecret } from "./secrets";
+import { LEGACY_GATEWAY_PROVIDER } from "./ai/providers";
 import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 
 // Finto provider compatibile OpenAI (modello dell'agente): risposte in coda, una per chiamata
@@ -50,7 +51,7 @@ let app: http.Server;
 let appBase: string;
 let llmBase: string;
 const saved: Record<string, string | undefined> = {};
-const ENV_KEYS = ["AI_GATEWAY_BASE_URL", "AI_GATEWAY_API_KEY", "CASELLO_SECRET_KEY"] as const;
+const ENV_KEYS = ["CASELLO_SECRET_KEY"] as const;
 
 function listen(server: http.Server): Promise<number> {
   return new Promise((resolve) =>
@@ -131,8 +132,6 @@ beforeEach(async () => {
   const appPort = await listen(app);
   appBase = `http://127.0.0.1:${appPort}/api`;
   llmBase = `http://127.0.0.1:${llmPort}/v1`;
-  process.env["AI_GATEWAY_BASE_URL"] = llmBase;
-  process.env["AI_GATEWAY_API_KEY"] = "sk-test";
   process.env["CASELLO_SECRET_KEY"] = "a".repeat(64);
   vi.spyOn(console, "log").mockImplementation(() => {});
   await pool.query("TRUNCATE apps, ai_accounts, users RESTART IDENTITY CASCADE");
@@ -874,11 +873,11 @@ describe("run sugli account AI (chi configura paga)", () => {
     expect(run.errorMessage).toContain("il modello non ha risposto in tempo");
   });
 
-  it("account di sistema senza variabili: failed con 'account di sistema non più disponibile'", async () => {
+  it("agente sul modello del vecchio account del gateway rimasto nel DB: failed con 'modello non disponibile'", async () => {
     const id = await seedRun(GET_ITEM);
     const [account] = await db
       .insert(aiAccountsTable)
-      .values({ userId: null, name: "Gateway Casello", provider: "system_gateway", baseUrl: "http://gw/v1", status: "ok" })
+      .values({ userId: null, name: "Gateway Casello", provider: LEGACY_GATEWAY_PROVIDER, baseUrl: llmBase, status: "ok" })
       .returning();
     const [model] = await db
       .insert(aiModelsTable)
@@ -886,13 +885,13 @@ describe("run sugli account AI (chi configura paga)", () => {
       .returning();
     const run0 = await getRun(id);
     await db.update(agentsTable).set({ aiModelId: model!.id }).where(eq(agentsTable.id, run0.agentId));
-    delete process.env["AI_GATEWAY_API_KEY"];
 
     await startRun(id);
 
     const run = await getRun(id);
     expect(run.status).toBe("failed");
-    expect(run.errorMessage).toContain("account di sistema non più disponibile");
+    expect(run.errorMessage).toContain("modello non disponibile");
+    expect(llmRequests).toHaveLength(0);
   });
 
   it("agente e run senza modello: failed con 'scegli un modello per l'agente', nessuna chiamata", async () => {

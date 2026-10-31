@@ -10,7 +10,7 @@ import type {
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import type { ZodIssue } from "zod";
-import { assistantToolCalls, type ChatResult } from "../ai-gateway";
+import { assistantToolCalls, type ChatResult } from "../ai/chat-types";
 import { PHASE_SCHEMAS, type PhaseName } from "./schemas";
 import { SOURCE_LIMITS, SourceTreeError, type SourceTree } from "./source-tree";
 import { describeOperation, type OpenApiDoc } from "./sources";

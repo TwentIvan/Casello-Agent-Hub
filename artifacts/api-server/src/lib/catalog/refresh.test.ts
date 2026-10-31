@@ -15,6 +15,7 @@ import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../.
 import { fakeSourcesFetch, LITELLM_FIXTURE, OPENROUTER_FIXTURE } from "../../../test/fake-sources";
 import { encryptSecret } from "../secrets";
 import { upsertDiscovered } from "../ai/accounts";
+import { LEGACY_GATEWAY_PROVIDER } from "../ai/providers";
 import type { OfferSummary } from "./summary";
 import { CatalogBusyError, failInterruptedCatalogRuns, startCatalogRefresh } from "./refresh";
 
@@ -23,8 +24,9 @@ import { CatalogBusyError, failInterruptedCatalogRuns, startCatalogRefresh } fro
 // usano il finto provider.
 
 const KEY = "sk-CHIAVE-DEL-CATALOGO-99";
-// I provider di oggi, già in docs/schema-casello.sql: alla fine restano solo loro (DB di prova condiviso)
-const TODAY = ["deepseek", "openrouter", "huggingface", "mistral", "groq", "together", "gemini", "custom", "system_gateway"];
+// I provider di oggi, già in docs/schema-casello.sql (con la riga rimasta del vecchio gateway): alla fine
+// restano solo loro (DB di prova condiviso)
+const TODAY = ["deepseek", "openrouter", "huggingface", "mistral", "groq", "together", "gemini", "custom", LEGACY_GATEWAY_PROVIDER];
 const saved: Record<string, string | undefined> = {};
 let restoreLoopback: () => void;
 let fake: FakeProvider;
@@ -197,6 +199,31 @@ describe("startCatalogRefresh", () => {
     expect(v4Again).toMatchObject({ priceInputPerMtok: "1.450000", priceCachedInputPerMtok: "0.145000", priceSource: "catalog", offerId: v4!.id });
     const [flashAgain] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.accountId, gemini!.id));
     expect(flashAgain).toMatchObject({ priceInputPerMtok: "5.000000", priceCachedInputPerMtok: null, priceSource: "manual", offerId: flash!.id });
+  });
+
+  it("il vecchio account del gateway rimasto nel DB non si riverifica né si arricchisce dal catalogo", async () => {
+    const [legacy] = await db
+      .insert(aiAccountsTable)
+      .values({ userId: null, name: "Gateway Casello", provider: LEGACY_GATEWAY_PROVIDER, baseUrl: fake.baseUrl, status: "ok" })
+      .returning();
+    const [model] = await db
+      .insert(aiModelsTable)
+      .values({ accountId: legacy!.id, modelId: "deepseek-v4-pro", displayName: "V4 Pro", priceInputPerMtok: "9", priceOutputPerMtok: "9", priceSource: "seed" })
+      .returning();
+    // Un'offerta "del gateway" che si abbinerebbe al modello se l'account non fosse escluso
+    const [canonical] = await db.insert(modelsTable).values({ canonicalKey: "gateway-v4-pro", author: "Prova", family: "Gateway", version: "v4" }).returning();
+    await db.insert(modelOffersTable).values({
+      modelId: canonical!.id, provider: LEGACY_GATEWAY_PROVIDER, providerModelId: "deepseek-v4-pro", priceInputPerMtok: "1", priceOutputPerMtok: "1",
+    });
+
+    const run = await refresh();
+    expect(run.status).toBe("completed");
+    expect(fake.requests).toHaveLength(0);
+    const [after] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.id, model!.id));
+    expect(after).toMatchObject({ offerId: null, priceSource: "seed" });
+    expect([Number(after!.priceInputPerMtok), Number(after!.priceOutputPerMtok)]).toEqual([9, 9]);
+    const [account] = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.id, legacy!.id));
+    expect(account).toMatchObject({ status: "ok", lastCheckedAt: null });
   });
 
   it("al secondo aggiornamento il provider scoperto non si ripete né si modifica", async () => {

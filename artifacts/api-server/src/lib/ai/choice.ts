@@ -14,6 +14,9 @@ export interface ModelChoice {
   model: string;
 }
 
+/** Nessun modello: il testo storico `agents.model` (NOT NULL) resta vuoto. */
+export const NO_MODEL: ModelChoice = { aiModelId: null, model: "" };
+
 /** Scelta non ammessa: il messaggio è già in italiano e sicuro da restituire (400). */
 export class ModelChoiceError extends Error {
   constructor(message: string) {
@@ -22,7 +25,7 @@ export class ModelChoiceError extends Error {
   }
 }
 
-const MODEL_UNAVAILABLE = "modello non disponibile";
+export const MODEL_UNAVAILABLE = "modello non disponibile";
 
 /**
  * Modello scelto dall'utente: deve essere suo o dell'account di sistema (configurato). La chiave

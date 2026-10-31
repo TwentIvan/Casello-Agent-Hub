@@ -35,7 +35,7 @@ import { startRun } from "../lib/run-executor";
 import { budgetColumn, runBudgetBlock } from "../lib/budget";
 import { currentUserId } from "../lib/auth";
 import { ModelChoiceError, chooseByName, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
-import { DEFAULT_MODEL } from "../lib/models";
+import { resolveAgentModel } from "../lib/ai/default-model";
 import { logger } from "../lib/logger";
 import { toPublicRun, userTokenFrom, withToolIds, withToolIdsOne } from "./serializers";
 import { parseRequest } from "../middlewares/error-handler";
@@ -54,9 +54,9 @@ router.get("/agents", async (req, res) => {
 
 // Gli agenti creati dalla UI sono sempre di area: il generale nasce con l'app.
 // Modello (chi configura paga): `aiModelId` deve essere un modello dell'utente o dell'account di
-// sistema; senza, il nome in `model` (console precedente) si collega al modello di sistema equivalente.
+// sistema; senza, il predefinito dell'utente (se è ancora suo), altrimenti nessuno. `model` è ignorato.
 router.post("/agents", async (req, res) => {
-  const { aiModelId, model, ...body } = parseRequest(CreateAgentBody, req.body);
+  const { aiModelId, model: _ignored, ...body } = parseRequest(CreateAgentBody, req.body);
   const [app] = await db.select({ id: appsTable.id }).from(appsTable).where(eq(appsTable.id, body.appId)).limit(1);
   if (!app) {
     res.status(404).json({ error: "App non trovata" });
@@ -64,10 +64,7 @@ router.post("/agents", async (req, res) => {
   }
   let choice: ModelChoice;
   try {
-    choice =
-      aiModelId != null
-        ? await chooseOwnModel(aiModelId, currentUserId(req))
-        : await chooseByName(model ?? DEFAULT_MODEL);
+    choice = await resolveAgentModel(currentUserId(req), aiModelId);
   } catch (err) {
     if (!(err instanceof ModelChoiceError)) throw err;
     res.status(400).json({ error: err.message });

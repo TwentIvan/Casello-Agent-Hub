@@ -188,6 +188,11 @@ export interface App {
   updatedAt: string;
 }
 
+export interface DefaultModel {
+  /** @nullable */
+  aiModelId: number | null;
+}
+
 export interface AppInput {
   /** @minLength 1 */
   name: string;
@@ -217,6 +222,11 @@ export interface AppInput {
   /** @nullable */
   functionalDescription?: string | null;
   status?: AppStatus;
+  /**
+     * Modello dell'agente generale creato con l'app: deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti). Se assente si usa il modello predefinito dell'utente, se c'è; altrimenti l'agente nasce senza modello.
+     * @nullable
+     */
+  generalAgentAiModelId?: number | null;
 }
 
 export interface AppUpdate {
@@ -316,10 +326,10 @@ export interface AgentInput {
   /** @minLength 1 */
   name: string;
   systemPrompt?: string;
-  /** Solo compatibilità; con aiModelId è ignorato */
+  /** Solo compatibilità; ignorato */
   model?: string;
   /**
-     * Modello di un account AI dell'utente o dell'account di sistema (400 "modello non disponibile" altrimenti)
+     * Modello di un account AI dell'utente o dell'account di sistema (400 "modello non disponibile" altrimenti). Se assente si usa il modello predefinito dell'utente, se c'è; altrimenti l'agente nasce senza modello.
      * @nullable
      */
   aiModelId?: number | null;
@@ -1107,6 +1117,11 @@ export interface AnalysisItemUpdate {
   payload?: AnalysisItemUpdatePayload;
   /** @nullable */
   reviewNote?: string | null;
+  /**
+     * Solo con status approved su un agente nuovo: modello dell'agente creato, di un account AI dell'utente (400 "modello non disponibile" altrimenti). Se assente si usa il modello predefinito dell'utente, se c'è; un agente esistente mantiene il suo modello.
+     * @nullable
+     */
+  aiModelId?: number | null;
 }
 
 export interface IssueExport {

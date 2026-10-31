@@ -121,6 +121,28 @@ export const RevokeApiTokenResponse = zod.void()
 
 
 /**
+ * Modello proposto per gli agenti che Casello crea (agente generale di un'app nuova, agenti approvati dall'architetto, agenti creati senza modello). Null se non impostato o se il modello è stato eliminato. Solo con il login: con un token risponde 403.
+ * @summary Modello predefinito dell'utente
+ */
+export const GetDefaultModelResponse = zod.object({
+  "aiModelId": zod.number().nullable()
+})
+
+
+/**
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+ * @summary Imposta o toglie il modello predefinito dell'utente
+ */
+export const SetDefaultModelBody = zod.object({
+  "aiModelId": zod.number().nullable()
+})
+
+export const SetDefaultModelResponse = zod.object({
+  "aiModelId": zod.number().nullable()
+})
+
+
+/**
  * @summary Elenca tutte le app registrate
  */
 
@@ -187,7 +209,8 @@ export const CreateAppBody = zod.object({
   "sourceInstallationId": zod.number().nullish().describe('Installazione della GitHub App dell\'utente che vede sourceRepo (solo con sourceType github); altrimenti 400 \"installazione non trovata o non tua\"'),
   "openapiUrl": zod.string().nullish(),
   "functionalDescription": zod.string().nullish(),
-  "status": zod.enum(['active', 'inactive']).optional()
+  "status": zod.enum(['active', 'inactive']).optional(),
+  "generalAgentAiModelId": zod.number().nullish().describe('Modello dell\'agente generale creato con l\'app: deve essere di un account AI dell\'utente (400 \"modello non disponibile\" altrimenti). Se assente si usa il modello predefinito dell\'utente, se c\'è; altrimenti l\'agente nasce senza modello.')
 })
 
 
@@ -379,8 +402,8 @@ export const CreateAgentBody = zod.object({
   "appId": zod.number(),
   "name": zod.string().min(1),
   "systemPrompt": zod.string().optional(),
-  "model": zod.string().optional().describe('Solo compatibilità; con aiModelId è ignorato'),
-  "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente o dell\'account di sistema (400 \"modello non disponibile\" altrimenti)'),
+  "model": zod.string().optional().describe('Solo compatibilità; ignorato'),
+  "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente o dell\'account di sistema (400 \"modello non disponibile\" altrimenti). Se assente si usa il modello predefinito dell\'utente, se c\'è; altrimenti l\'agente nasce senza modello.'),
   "status": zod.enum(['active', 'inactive', 'draft']).optional()
 })
 
@@ -1146,7 +1169,8 @@ export const UpdateAnalysisItemParams = zod.object({
 export const UpdateAnalysisItemBody = zod.object({
   "status": zod.enum(['pending', 'approved', 'discarded', 'postponed']).optional().describe('postponed solo per i capitoli endpoint, completion ed evolution'),
   "payload": zod.record(zod.string(), zod.unknown()).optional(),
-  "reviewNote": zod.string().nullish()
+  "reviewNote": zod.string().nullish(),
+  "aiModelId": zod.number().nullish().describe('Solo con status approved su un agente nuovo: modello dell\'agente creato, di un account AI dell\'utente (400 \"modello non disponibile\" altrimenti). Se assente si usa il modello predefinito dell\'utente, se c\'è; un agente esistente mantiene il suo modello.')
 })
 
 export const UpdateAnalysisItemResponse = zod.object({

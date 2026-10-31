@@ -10,10 +10,11 @@ import {
   analysisItemsTable,
   appToolsTable,
   appsTable,
+  aiAccountsTable,
   aiModelsTable,
+  usersTable,
   type AnalysisItem,
 } from "@workspace/db";
-import { ensureSystemAccount } from "../ai/system-account";
 import { ApplyError, applyItem } from "./apply";
 import type { ToolProposal } from "./schemas";
 
@@ -159,7 +160,7 @@ describe("applyItem: agenti", () => {
     await applyItem(await item("tool", "new", toolPayload()), appId);
     await applyItem(await item("agent", "new", agentPayload()), appId);
     const [a] = await db.select().from(agentsTable).where(eq(agentsTable.role, "area"));
-    expect(a).toMatchObject({ status: "active", area: "Squadre", model: "openrouter/auto" });
+    expect(a).toMatchObject({ status: "active", area: "Squadre", aiModelId: null, model: "" });
     expect(await db.select().from(agentToolsTable).where(eq(agentToolsTable.agentId, a!.id))).toHaveLength(1);
     // Aggiornamento: i collegamenti vengono sostituiti e l'agente torna active
     await db.update(agentsTable).set({ status: "inactive" }).where(eq(agentsTable.id, a!.id));
@@ -169,29 +170,26 @@ describe("applyItem: agenti", () => {
     expect(await db.select().from(agentToolsTable)).toHaveLength(0);
   });
 
-  it("un agente di area nuovo nasce collegato al modello predefinito di sistema; senza sistema resta null", async () => {
-    const saved = { url: process.env["AI_GATEWAY_BASE_URL"], key: process.env["AI_GATEWAY_API_KEY"] };
+  it("un agente di area nuovo nasce con il modello risolto dal chiamante; un agente esistente mantiene il suo", async () => {
     try {
-      process.env["AI_GATEWAY_BASE_URL"] = "http://gateway.interno:4000/v1";
-      process.env["AI_GATEWAY_API_KEY"] = "sk-gateway-di-prova";
-      await ensureSystemAccount();
-      const [sys] = await db.select({ id: aiModelsTable.id }).from(aiModelsTable).where(eq(aiModelsTable.modelId, "openrouter/auto"));
+      const [user] = await db.insert(usersTable).values({ email: "apply@example.com" }).returning();
+      const [account] = await db
+        .insert(aiAccountsTable)
+        .values({ userId: user!.id, name: "Mio", provider: "custom", baseUrl: "https://llm.example.com/v1" })
+        .returning();
+      const [m] = await db.insert(aiModelsTable).values({ accountId: account!.id, modelId: "scelto", displayName: "Scelto" }).returning();
+      const chosen = { aiModelId: m!.id, model: "scelto" };
       await applyItem(await item("tool", "new", toolPayload()), appId);
-      await applyItem(await item("agent", "new", agentPayload()), appId);
+      await applyItem(await item("agent", "new", agentPayload()), appId, undefined, chosen);
       const [linked] = await db.select().from(agentsTable).where(eq(agentsTable.role, "area"));
-      expect(linked!.aiModelId).toBe(sys!.id);
+      expect(linked).toMatchObject(chosen);
 
-      // Variabili del gateway assenti: il modello di sistema non è utilizzabile, nessun collegamento
-      delete process.env["AI_GATEWAY_API_KEY"];
-      await applyItem(await item("agent", "new", agentPayload({ area: "Partite", name: "Agente partite", toolNames: [] })), appId);
-      const [unlinked] = await db.select().from(agentsTable).where(eq(agentsTable.area, "Partite"));
-      expect(unlinked!.aiModelId).toBeNull();
+      // Aggiornamento di un agente esistente: il modello passato non conta
+      await applyItem(await item("agent", "changed", agentPayload({ name: "Bis" })), appId, undefined, { aiModelId: null, model: "" });
+      const [kept] = await db.select().from(agentsTable).where(eq(agentsTable.role, "area"));
+      expect(kept).toMatchObject({ ...chosen, name: "Bis" });
     } finally {
-      for (const [k, v] of [["AI_GATEWAY_BASE_URL", saved.url], ["AI_GATEWAY_API_KEY", saved.key]] as const) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-      }
-      await pool.query("TRUNCATE apps, ai_accounts RESTART IDENTITY CASCADE");
+      await pool.query("TRUNCATE apps, users, ai_accounts RESTART IDENTITY CASCADE");
     }
   });
 

@@ -64,6 +64,7 @@ import type {
   CostEstimate,
   CurrentUser,
   DashboardStats,
+  DefaultModel,
   ErrorResponse,
   EstimateAnalysisCostParams,
   ExportAnalysisIssuesParams,
@@ -721,6 +722,155 @@ export const useRevokeApiToken = <TError = ErrorType<UnauthorizedResponse | NotF
         TContext
       > => {
       return useMutation(getRevokeApiTokenMutationOptions(options));
+    }
+
+export const getGetDefaultModelUrl = () => {
+
+
+
+
+  return `/api/account/default-model`
+}
+
+/**
+ * Modello proposto per gli agenti che Casello crea (agente generale di un'app nuova, agenti approvati dall'architetto, agenti creati senza modello). Null se non impostato o se il modello è stato eliminato. Solo con il login: con un token risponde 403.
+ * @summary Modello predefinito dell'utente
+ */
+export const getDefaultModel = async ( options?: RequestInit): Promise<DefaultModel> => {
+
+  return customFetch<DefaultModel>(getGetDefaultModelUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDefaultModelQueryKey = () => {
+    return [
+    `/api/account/default-model`
+    ] as const;
+    }
+
+
+export const getGetDefaultModelQueryOptions = <TData = Awaited<ReturnType<typeof getDefaultModel>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDefaultModel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDefaultModelQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDefaultModel>>> = ({ signal }) => getDefaultModel({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDefaultModel>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDefaultModelQueryResult = NonNullable<Awaited<ReturnType<typeof getDefaultModel>>>
+export type GetDefaultModelQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+
+
+/**
+ * @summary Modello predefinito dell'utente
+ */
+
+export function useGetDefaultModel<TData = Awaited<ReturnType<typeof getDefaultModel>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDefaultModel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDefaultModelQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetDefaultModelUrl = () => {
+
+
+
+
+  return `/api/account/default-model`
+}
+
+/**
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+ * @summary Imposta o toglie il modello predefinito dell'utente
+ */
+export const setDefaultModel = async (defaultModel: DefaultModel, options?: RequestInit): Promise<DefaultModel> => {
+
+  return customFetch<DefaultModel>(getSetDefaultModelUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(defaultModel)
+  }
+);}
+
+
+
+
+export const getSetDefaultModelMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setDefaultModel>>, TError,{data: BodyType<DefaultModel>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setDefaultModel>>, TError,{data: BodyType<DefaultModel>}, TContext> => {
+
+const mutationKey = ['setDefaultModel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setDefaultModel>>, {data: BodyType<DefaultModel>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setDefaultModel(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetDefaultModelMutationResult = NonNullable<Awaited<ReturnType<typeof setDefaultModel>>>
+    export type SetDefaultModelMutationBody = BodyType<DefaultModel>
+    export type SetDefaultModelMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>
+
+    /**
+ * @summary Imposta o toglie il modello predefinito dell'utente
+ */
+export const useSetDefaultModel = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setDefaultModel>>, TError,{data: BodyType<DefaultModel>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setDefaultModel>>,
+        TError,
+        {data: BodyType<DefaultModel>},
+        TContext
+      > => {
+      return useMutation(getSetDefaultModelMutationOptions(options));
     }
 
 export const getListAppsUrl = () => {

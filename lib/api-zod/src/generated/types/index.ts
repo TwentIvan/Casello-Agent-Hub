@@ -100,6 +100,7 @@ export * from './currentUserSessionAuthKind';
 export * from './currentUserTokenAuth';
 export * from './currentUserTokenAuthKind';
 export * from './dashboardStats';
+export * from './defaultModel';
 export * from './errorResponse';
 export * from './estimateAnalysisCostParams';
 export * from './exportAnalysisIssuesParams';

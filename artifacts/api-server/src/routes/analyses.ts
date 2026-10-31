@@ -34,6 +34,7 @@ import {
 import { currentUserId } from "../lib/auth";
 import { AVAILABLE_MODELS } from "../lib/models";
 import { ModelChoiceError, chooseByName, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
+import { resolveAgentModel } from "../lib/ai/default-model";
 import { isUniqueViolation } from "../lib/pg-errors";
 import { userBudgetBlock } from "../lib/budget";
 import { ANALYSIS_DEFAULT_MAX_TOKENS, startAnalysis } from "../lib/architect/run-analysis";
@@ -424,6 +425,19 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
       ...(body.reviewNote !== undefined ? { reviewNote: body.reviewNote } : {}),
     };
 
+    // Approvando un agente: modello per l'agente se è nuovo (scelto, poi il predefinito dell'utente, poi
+    // nessuno). Risolto prima della transazione; un agente esistente lo ignora e mantiene il suo.
+    let newAgentModel: ModelChoice | undefined;
+    if (body.status === "approved" && item.chapter === "agent") {
+      try {
+        newAgentModel = await resolveAgentModel(currentUserId(req), body.aiModelId);
+      } catch (err) {
+        if (!(err instanceof ModelChoiceError)) throw err;
+        res.status(400).json({ error: err.message });
+        return;
+      }
+    }
+
     let updated: AnalysisItem;
     try {
       if (body.status === "approved") {
@@ -436,7 +450,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
           if (!row) throw new ItemConflictError("Si può approvare solo un elemento in attesa");
           // Un errore qui (ApplyError o violazione di unicità che ha già interrotto la
           // transazione) esce dalla callback: rollback completo, l'elemento resta `pending`
-          await applyItem(row, appId, tx);
+          await applyItem(row, appId, tx, newAgentModel);
           return row;
         });
       } else {

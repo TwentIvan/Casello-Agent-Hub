@@ -7,8 +7,7 @@ import {
   appToolsTable,
   type AnalysisItem,
 } from "@workspace/db";
-import { findUsableSystemModelId } from "../ai/system-account";
-import { DEFAULT_MODEL } from "../models";
+import { NO_MODEL, type ModelChoice } from "../ai/choice";
 import { isUniqueViolation } from "../pg-errors";
 import { checkParamsSchema, checkPathPlaceholders, parseDefinition } from "../tools/definition";
 import type { HttpDefinition } from "../tools/types";
@@ -165,7 +164,7 @@ async function findAgent(tx: Tx, appId: number, role: "general" | "area", area: 
   return role === "general" ? rows[0] : rows.find((a) => trimArea(a.area) === area);
 }
 
-async function applyAgent(tx: Tx, item: AnalysisItem, appId: number): Promise<void> {
+async function applyAgent(tx: Tx, item: AnalysisItem, appId: number, newAgentModel: ModelChoice): Promise<void> {
   if (item.diff === "removed") return;
   const parsedAgent = parsePayload<AgentProposal>(item);
   const agent = { ...parsedAgent, area: trimArea(parsedAgent.area) };
@@ -213,13 +212,12 @@ async function applyAgent(tx: Tx, item: AnalysisItem, appId: number): Promise<vo
       })
       .where(eq(agentsTable.id, current.id));
   } else {
-    // Nuovo agente di area: attivo, modello predefinito collegato all'account di sistema (null se non c'è)
-    const aiModelId = await findUsableSystemModelId(DEFAULT_MODEL, tx);
+    // Nuovo agente di area: attivo, con il modello già risolto dal chiamante (scelto → predefinito → nessuno)
     const [created] = await tx
       .insert(agentsTable)
       .values({
         appId,
-        aiModelId,
+        ...newAgentModel,
         role: "area",
         area: agent.area,
         name: agent.name,
@@ -289,15 +287,22 @@ function translateUnique(err: unknown): never {
  * Applica un elemento approvato alle tabelle di destinazione, in una sola transazione: se qualcosa
  * non è applicabile si lancia `ApplyError` e non resta scritto nulla. Con `tx` si usa la transazione
  * del chiamante (che così può cambiare lo stato dell'elemento atomicamente) e non se ne apre un'altra.
- * `endpoint`, `completion` ed `evolution` non scrivono nulla.
+ * `endpoint`, `completion` ed `evolution` non scrivono nulla. `newAgentModel` è il modello di un agente di
+ * area NUOVO (già risolto e verificato dal chiamante; senza, l'agente nasce senza modello): un agente
+ * esistente aggiornato mantiene il suo.
  */
-export async function applyItem(item: AnalysisItem, appId: number, tx?: Tx): Promise<void> {
+export async function applyItem(
+  item: AnalysisItem,
+  appId: number,
+  tx?: Tx,
+  newAgentModel: ModelChoice = NO_MODEL,
+): Promise<void> {
   const run = async (t: Tx): Promise<void> => {
     switch (item.chapter) {
       case "tool":
         return applyTool(t, item, appId);
       case "agent":
-        return applyAgent(t, item, appId);
+        return applyAgent(t, item, appId, newAgentModel);
       case "skill":
         return applySkill(t, item, appId);
       default:

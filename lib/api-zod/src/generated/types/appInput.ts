@@ -38,4 +38,9 @@ export interface AppInput {
   /** @nullable */
   functionalDescription?: string | null;
   status?: AppStatus;
+  /**
+     * Modello dell'agente generale creato con l'app: deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti). Se assente si usa il modello predefinito dell'utente, se c'è; altrimenti l'agente nasce senza modello.
+     * @nullable
+     */
+  generalAgentAiModelId?: number | null;
 }

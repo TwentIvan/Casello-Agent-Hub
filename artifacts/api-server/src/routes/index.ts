@@ -14,6 +14,7 @@ import { createPlanIssuesRouter } from "./plan-issues";
 import { createAiRouter } from "./ai";
 import { createCatalogRouter } from "./catalog";
 import { createApiTokensRouter } from "./api-tokens";
+import { createAccountModelRouter } from "./account-model";
 import { authRouter, requireAuth } from "../lib/auth";
 
 const router: IRouter = Router();
@@ -37,5 +38,6 @@ router.use(createPlanIssuesRouter());
 router.use(createAiRouter());
 router.use(createCatalogRouter());
 router.use(createApiTokensRouter());
+router.use(createAccountModelRouter());
 
 export default router;

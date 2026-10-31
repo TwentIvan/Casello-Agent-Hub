@@ -174,6 +174,53 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /account/default-model:
+    get:
+      operationId: getDefaultModel
+      tags: [ai]
+      summary: Modello predefinito dell'utente
+      description: >-
+        Modello proposto per gli agenti che Casello crea (agente generale di un'app nuova, agenti
+        approvati dall'architetto, agenti creati senza modello). Null se non impostato o se il modello
+        è stato eliminato. Solo con il login: con un token risponde 403.
+      responses:
+        "200":
+          description: Modello predefinito
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DefaultModel"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      operationId: setDefaultModel
+      tags: [ai]
+      summary: Imposta o toglie il modello predefinito dell'utente
+      description: >-
+        Il modello deve essere di un account AI dell'utente (400 "modello non disponibile"
+        altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DefaultModel"
+      responses:
+        "200":
+          description: Modello predefinito aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DefaultModel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   # ─── Apps ───────────────────────────────────────────────────────────────────
 
   /apps:
@@ -2134,6 +2181,13 @@ components:
           type: string
           format: date-time
 
+    DefaultModel:
+      type: object
+      required: [aiModelId]
+      properties:
+        aiModelId:
+          type: ["integer", "null"]
+
     AppInput:
       type: object
       required: [name, baseUrl]
@@ -2179,6 +2233,12 @@ components:
           type: ["string", "null"]
         status:
           $ref: "#/components/schemas/AppStatus"
+        generalAgentAiModelId:
+          type: ["integer", "null"]
+          description: >-
+            Modello dell'agente generale creato con l'app: deve essere di un account AI dell'utente
+            (400 "modello non disponibile" altrimenti). Se assente si usa il modello predefinito
+            dell'utente, se c'è; altrimenti l'agente nasce senza modello.
 
     AppUpdate:
       type: object
@@ -2293,12 +2353,13 @@ components:
           type: string
         model:
           type: string
-          description: Solo compatibilità; con aiModelId è ignorato
+          description: Solo compatibilità; ignorato
         aiModelId:
           type: ["integer", "null"]
           description: >-
             Modello di un account AI dell'utente o dell'account di sistema (400 "modello non
-            disponibile" altrimenti)
+            disponibile" altrimenti). Se assente si usa il modello predefinito dell'utente, se c'è;
+            altrimenti l'agente nasce senza modello.
         status:
           $ref: "#/components/schemas/AgentStatus"
 
@@ -3255,6 +3316,12 @@ components:
           additionalProperties: true
         reviewNote:
           type: ["string", "null"]
+        aiModelId:
+          type: ["integer", "null"]
+          description: >-
+            Solo con status approved su un agente nuovo: modello dell'agente creato, di un account AI
+            dell'utente (400 "modello non disponibile" altrimenti). Se assente si usa il modello
+            predefinito dell'utente, se c'è; un agente esistente mantiene il suo modello.
 
     IssueExport:
       type: object

@@ -13,4 +13,9 @@ export interface AnalysisItemUpdate {
   payload?: AnalysisItemUpdatePayload;
   /** @nullable */
   reviewNote?: string | null;
+  /**
+     * Solo con status approved su un agente nuovo: modello dell'agente creato, di un account AI dell'utente (400 "modello non disponibile" altrimenti). Se assente si usa il modello predefinito dell'utente, se c'è; un agente esistente mantiene il suo modello.
+     * @nullable
+     */
+  aiModelId?: number | null;
 }

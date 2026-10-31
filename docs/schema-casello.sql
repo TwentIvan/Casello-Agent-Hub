@@ -475,3 +475,7 @@ ALTER TABLE "analysis_items" ADD COLUMN "issue_state_reason" text;
 ALTER TABLE "analysis_items" ADD COLUMN "issue_created_at" timestamp;
 ALTER TABLE "analysis_items" ADD COLUMN "issue_checked_at" timestamp;
 CREATE INDEX "analysis_items_issue_idx" ON "analysis_items" USING btree ("issue_repo", "issue_number") WHERE "issue_number" IS NOT NULL;
+
+-- Modello predefinito dell'utente per gli agenti che Casello crea (null = nessuno)
+ALTER TABLE "users" ADD COLUMN "default_ai_model_id" integer;
+ALTER TABLE "users" ADD CONSTRAINT "users_default_ai_model_id_ai_models_id_fk" FOREIGN KEY ("default_ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action;

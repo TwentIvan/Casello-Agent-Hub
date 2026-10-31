@@ -54,3 +54,11 @@ export const cancelRateLimit = rateLimit({ limit: 30, windowMs: 60_000 });
 const byUser = (req: Request) => (req.userId !== undefined ? `user:${req.userId}` : (req.ip ?? "unknown"));
 export const issueCreateRateLimit = rateLimit({ limit: 5, windowMs: 60_000, key: byUser });
 export const issueRefreshRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byUser });
+
+// Token personali su /api: 120 richieste al minuto per token (chiave: id del token), in aggiunta ai
+// limiti per utente o IP. Lo applica requireAuth solo alle richieste autenticate con un token.
+export const tokenRateLimit = rateLimit({
+  limit: 120,
+  windowMs: 60_000,
+  key: (req) => `token:${req.auth?.kind === "token" ? req.auth.tokenId : "?"}`,
+});

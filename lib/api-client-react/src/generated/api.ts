@@ -215,6 +215,7 @@ export const getGetCurrentUserUrl = () => {
 }
 
 /**
+ * Con la sessione del login o con un token personale (api:read o api:write); auth dice quale.
  * @summary Utente della sessione corrente
  */
 export const getCurrentUser = async ( options?: RequestInit): Promise<CurrentUser> => {
@@ -239,7 +240,7 @@ export const getGetCurrentUserQueryKey = () => {
     }
 
 
-export const getGetCurrentUserQueryOptions = <TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = ErrorType<UnauthorizedResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetCurrentUserQueryOptions = <TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -258,14 +259,14 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type GetCurrentUserQueryResult = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>
-export type GetCurrentUserQueryError = ErrorType<UnauthorizedResponse>
+export type GetCurrentUserQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
 
 
 /**
  * @summary Utente della sessione corrente
  */
 
-export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = ErrorType<UnauthorizedResponse>>(
+export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -511,7 +512,7 @@ export const getListApiTokensUrl = () => {
 }
 
 /**
- * Token per gli agenti locali (server MCP), i più recenti per primi, revocati compresi. Non contiene mai il valore del token né il suo hash.
+ * Token personali (server MCP e /api, secondo gli ambiti), i più recenti per primi, revocati compresi. Non contiene mai il valore del token né il suo hash. Solo con il login: con un token risponde 403.
  * @summary Elenca i token personali dell'utente
  */
 export const listApiTokens = async ( options?: RequestInit): Promise<ApiTokenInfo[]> => {

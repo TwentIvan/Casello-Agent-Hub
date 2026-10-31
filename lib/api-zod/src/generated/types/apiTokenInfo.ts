@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { ApiTokenScope } from './apiTokenScope';
 
 export interface ApiTokenInfo {
   id: number;
@@ -15,4 +16,5 @@ export interface ApiTokenInfo {
   lastUsedAt: Date | null;
   /** @nullable */
   revokedAt: Date | null;
+  scopes: ApiTokenScope[];
 }

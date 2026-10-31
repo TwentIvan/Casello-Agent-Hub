@@ -65,7 +65,7 @@ describe("token personali", () => {
     expect(list.text).not.toContain(created.json.token);
     expect(list.text).not.toContain("tokenHash");
     expect(list.text).not.toContain("token_hash");
-    expect(Object.keys(list.json[0]).sort()).toEqual(["createdAt", "expiresAt", "id", "lastUsedAt", "name", "revokedAt"]);
+    expect(Object.keys(list.json[0]).sort()).toEqual(["createdAt", "expiresAt", "id", "lastUsedAt", "name", "revokedAt", "scopes"]);
 
     const del = await api("DELETE", `/account/tokens/${created.json.info.id}`);
     expect(del.status).toBe(204);
@@ -73,6 +73,22 @@ describe("token personali", () => {
     expect(after.json[0].revokedAt).not.toBeNull();
     // già revocato: 404
     expect((await api("DELETE", `/account/tokens/${created.json.info.id}`)).status).toBe(404);
+  });
+
+  it("POST con scopes, GET mostra scopes", async () => {
+    const created = await api("POST", "/account/tokens", { name: "Script", expiresInDays: 30, scopes: ["api:write", "api:read"] });
+    expect(created.status, created.text).toBe(201);
+    expect(created.json.info.scopes).toEqual(["api:read", "api:write"]);
+    const without = await api("POST", "/account/tokens", { name: "Agente", expiresInDays: 30 });
+    expect(without.json.info.scopes).toEqual(["mcp"]);
+    const list = await api("GET", "/account/tokens");
+    expect(list.json.map((t: any) => t.scopes).sort()).toEqual([["api:read", "api:write"], ["mcp"]]);
+  });
+
+  it("scopes non validi → 400", async () => {
+    for (const scopes of [[], ["mcp", "mcp"], ["admin"]]) {
+      expect((await api("POST", "/account/tokens", { name: "x", expiresInDays: 30, scopes })).status).toBe(400);
+    }
   });
 
   it("rifiuta con 400 giorni fuori intervallo e nome vuoto", async () => {

@@ -57,6 +57,41 @@ export interface LinkedIdentity {
   email: string | null;
 }
 
+export type CurrentUserSessionAuthKind = typeof CurrentUserSessionAuthKind[keyof typeof CurrentUserSessionAuthKind];
+
+
+export const CurrentUserSessionAuthKind = {
+  session: 'session',
+} as const;
+
+export interface CurrentUserSessionAuth {
+  kind: CurrentUserSessionAuthKind;
+}
+
+export type CurrentUserTokenAuthKind = typeof CurrentUserTokenAuthKind[keyof typeof CurrentUserTokenAuthKind];
+
+
+export const CurrentUserTokenAuthKind = {
+  token: 'token',
+} as const;
+
+/**
+ * mcp = server MCP; api:read = solo lettura su /api; api:write = lettura e scrittura su /api
+ */
+export type ApiTokenScope = typeof ApiTokenScope[keyof typeof ApiTokenScope];
+
+
+export const ApiTokenScope = {
+  mcp: 'mcp',
+  'api:read': 'api:read',
+  'api:write': 'api:write',
+} as const;
+
+export interface CurrentUserTokenAuth {
+  kind: CurrentUserTokenAuthKind;
+  scopes: ApiTokenScope[];
+}
+
 export interface CurrentUser {
   email: string;
   /** @nullable */
@@ -67,6 +102,8 @@ export interface CurrentUser {
   identities: LinkedIdentity[];
   /** Se il login e il collegamento con GitHub sono configurati sul server */
   githubEnabled: boolean;
+  /** Come è autenticata la richiesta (sessione del login o token personale) */
+  auth: CurrentUserSessionAuth | CurrentUserTokenAuth;
 }
 
 export interface AuthProviders {
@@ -1217,6 +1254,7 @@ export interface ApiTokenInfo {
   lastUsedAt: string | null;
   /** @nullable */
   revokedAt: string | null;
+  scopes: ApiTokenScope[];
 }
 
 export interface ApiTokenCreate {
@@ -1230,6 +1268,8 @@ export interface ApiTokenCreate {
      * @maximum 90
      */
   expiresInDays: number;
+  /** Almeno uno, senza ripetizioni; se omesso vale solo mcp */
+  scopes?: ApiTokenScope[];
 }
 
 export interface ApiTokenCreated {

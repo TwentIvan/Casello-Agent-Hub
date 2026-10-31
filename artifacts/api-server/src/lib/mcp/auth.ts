@@ -1,8 +1,8 @@
 // Autenticazione del server MCP: `Authorization: Bearer cas_…` (token personale). Niente cookie di
 // sessione su /mcp. Mai nei log il token, il suo hash o l'header Authorization.
 
-import type { Request, RequestHandler } from "express";
-import { authenticateApiToken } from "../api-tokens";
+import type { RequestHandler } from "express";
+import { authenticateApiToken, bearerToken } from "../api-tokens";
 import { logger } from "../logger";
 
 export const MCP_UNAUTHORIZED = "token non valido o scaduto";
@@ -17,15 +17,7 @@ declare global {
   }
 }
 
-/** Token dall'header `Authorization: Bearer <token>` (schema senza badare alle maiuscole), o null. */
-function bearerToken(req: Request): string | null {
-  const header = req.headers.authorization;
-  if (typeof header !== "string") return null;
-  const match = /^Bearer\s+(\S+)\s*$/i.exec(header);
-  return match ? match[1]! : null;
-}
-
-/** Richiede un token personale valido; altrimenti 401 con il messaggio fisso. */
+/** Richiede un token personale valido con l'ambito mcp; altrimenti 401 con il messaggio fisso. */
 export function requireApiToken(): RequestHandler {
   return (req, res, next) => {
     const token = bearerToken(req);
@@ -35,7 +27,7 @@ export function requireApiToken(): RequestHandler {
     }
     authenticateApiToken(token)
       .then((auth) => {
-        if (!auth) {
+        if (!auth || !auth.scopes.includes("mcp")) {
           res.status(401).json({ error: MCP_UNAUTHORIZED });
           return;
         }

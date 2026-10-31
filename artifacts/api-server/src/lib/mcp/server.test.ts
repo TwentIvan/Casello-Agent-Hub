@@ -232,6 +232,14 @@ describe("autenticazione", () => {
     await expect(connect(url, token)).rejects.toThrow();
   });
 
+  it("token solo api:read su /mcp → 401 token non valido o scaduto", async () => {
+    const url = await startMcp();
+    const { token: readOnly } = await createApiToken(userId, "Solo lettura", 30, ["api:read"]);
+    const res = await rawPost(url, readOnly);
+    expect(res.status).toBe(401);
+    expect(JSON.parse(res.text)).toEqual({ error: "token non valido o scaduto" });
+  });
+
   it("GET e DELETE → 405 JSON (server senza sessioni)", async () => {
     const url = await startMcp();
     for (const method of ["GET", "DELETE"]) {

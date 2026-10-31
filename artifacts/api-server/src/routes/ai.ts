@@ -42,7 +42,7 @@ import {
   VerifyAiAccountParams,
   VerifyAiAccountResponse,
 } from "@workspace/api-zod";
-import { currentUserId } from "../lib/auth";
+import { currentUserId, sessionOnly } from "../lib/auth";
 import { ANALYSIS_DEFAULT_MAX_TOKENS } from "../lib/architect/run-analysis";
 import { discoverModels, ProviderError, type DiscoveredModel } from "../lib/ai/discovery";
 import { upsertDiscovered, verifyAccount, type Tx } from "../lib/ai/accounts";
@@ -380,7 +380,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     );
   });
 
-  router.post("/ai/accounts", providerLimit, async (req, res) => {
+  router.post("/ai/accounts", sessionOnly, providerLimit, async (req, res) => {
     const userId = currentUserId(req);
     const body = parseRequest(CreateAiAccountBody, req.body);
     const provider: AiProvider = body.provider;
@@ -486,7 +486,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     await sendAccount(res, id, CreateAiAccountResponse, 201);
   });
 
-  router.patch("/ai/accounts/:id", providerLimit, async (req, res) => {
+  router.patch("/ai/accounts/:id", sessionOnly, providerLimit, async (req, res) => {
     const userId = currentUserId(req);
     const { id } = parseRequest(UpdateAiAccountParams, req.params);
     const body = parseRequest(UpdateAiAccountBody, req.body);
@@ -604,7 +604,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     await sendAccount(res, account.id, UpdateAiAccountResponse);
   });
 
-  router.delete("/ai/accounts/:id", async (req, res) => {
+  router.delete("/ai/accounts/:id", sessionOnly, async (req, res) => {
     const userId = currentUserId(req);
     const { id } = parseRequest(DeleteAiAccountParams, req.params);
     const account = await findWritableAccount(id, userId, res);
@@ -643,7 +643,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     res.status(204).end();
   });
 
-  router.post("/ai/accounts/:id/verify", providerLimit, async (req, res) => {
+  router.post("/ai/accounts/:id/verify", sessionOnly, providerLimit, async (req, res) => {
     const { id } = parseRequest(VerifyAiAccountParams, req.params);
     const account = await findWritableAccount(id, currentUserId(req), res);
     if (!account) return;
@@ -651,7 +651,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     await sendAccount(res, account.id, VerifyAiAccountResponse);
   });
 
-  router.post("/ai/accounts/:id/default", async (req, res) => {
+  router.post("/ai/accounts/:id/default", sessionOnly, async (req, res) => {
     const userId = currentUserId(req);
     const { id } = parseRequest(SetDefaultAiAccountParams, req.params);
     const account = await findWritableAccount(id, userId, res);
@@ -681,7 +681,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     res.json(ListAiAccountModelsResponse.parse(rows.map((r) => toPublicModel(r.model, linkedOffer(r), now))));
   });
 
-  router.post("/ai/accounts/:id/models", async (req, res) => {
+  router.post("/ai/accounts/:id/models", sessionOnly, async (req, res) => {
     const { id } = parseRequest(AddAiAccountModelParams, req.params);
     const body = parseRequest(AddAiAccountModelBody, req.body);
     const account = await findWritableAccount(id, currentUserId(req), res);
@@ -717,7 +717,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     res.status(201).json(AddAiAccountModelResponse.parse(toPublicModel(created!, null, new Date())));
   });
 
-  router.patch("/ai/models/:id", async (req, res) => {
+  router.patch("/ai/models/:id", sessionOnly, async (req, res) => {
     const userId = currentUserId(req);
     const { id } = parseRequest(UpdateAiModelParams, req.params);
     const body = parseRequest(UpdateAiModelBody, req.body);

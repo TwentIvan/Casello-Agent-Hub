@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { ApiTokenScope } from './apiTokenScope';
 
 export interface ApiTokenCreate {
   /**
@@ -17,4 +18,6 @@ export interface ApiTokenCreate {
      * @maximum 90
      */
   expiresInDays: number;
+  /** Almeno uno, senza ripetizioni; se omesso vale solo mcp */
+  scopes?: ApiTokenScope[];
 }

@@ -8,6 +8,7 @@
 // errori dell'esecutore tornano con `isError` e il solo messaggio fisso. Nessun segreto (token
 // GitHub, chiavi, token personali) esce dagli strumenti.
 
+import type { IncomingMessage } from "node:http";
 import express, { type ErrorRequestHandler, type RequestHandler, type Router } from "express";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -244,7 +245,9 @@ export function mcpRouter(opts: McpRouterOptions = {}): Router {
     });
     try {
       await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
+      // Come IncomingMessage: req.auth di Express (token o sessione su /api) non è l'AuthInfo
+      // dell'SDK MCP, e /mcp non lo imposta (l'utente è in req.mcpUserId)
+      await transport.handleRequest(req as IncomingMessage, res, req.body);
     } catch (err) {
       logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Richiesta MCP non riuscita");
       if (!res.headersSent) {

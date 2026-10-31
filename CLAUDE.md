@@ -55,7 +55,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `GET /api/analyses/:id/issues`, `PATCH /api/analysis-items/:id`, `GET|DELETE /api/agents/:id/skills`; GitHub: `GET /api/github/installations`, `GET /api/github/repos`
   (login e collegamento in `/api/auth/github/*`, vedi "Autenticazione"). Body, parametri e query si leggono con `parseRequest` (errore → 400);
   le risposte con `*Response.parse` (errore → 500, è un bug del server)
-- `artifacts/api-server/src/lib/auth.ts` — login Google (OIDC), sessione e middleware che protegge `/api`
+- `artifacts/api-server/src/lib/auth.ts` — login Google (OIDC), sessione e middleware che protegge `/api` (`requireAuth`: sessione o token personale; `sessionOnly`; `TOKEN_MESSAGES`); token in `lib/api-tokens.ts`, limite per token in `middlewares/rate-limit.ts`; UI in `components/account/api-tokens-section.tsx`
 - `artifacts/api-server/src/lib/models.ts` — modelli selezionabili e default (`openrouter/auto`)
 - `artifacts/api-server/src/lib/ai/` — account AI: provider e indirizzi (`providers.ts`), scoperta dei modelli
   (`discovery.ts`), esecutore unico (`executor.ts`), account di sistema (`system-account.ts`), scelta del modello
@@ -303,6 +303,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Utenti in `users`, identità (`google`, `github`) in `user_identities`; la sessione contiene `userId` (le
   sessioni vecchie con solo l'email vengono convertite alla prima richiesta). Chi entra lo decide solo
   `isAllowed` in `lib/users.ts` (oggi: un'email verificata in `ALLOWED_EMAILS`).
+- Alternativa al cookie: token personale `cas_…` con ambiti `api:read`/`api:write` (vedi "Token personali su `/api`").
 - Login con GitHub (facoltativo) tramite la GitHub App "Casello": `/api/auth/github/login`,
   `/api/auth/github/link` (da loggati), un'unica callback `/api/auth/github/callback` (anche per il ritorno
   dall'installazione: un `code` senza il nostro `state` non viene mai scambiato), `DELETE /api/auth/github`.
@@ -321,12 +322,41 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   user authorization (OAuth) during installation" attivo, nessun Setup URL, nessun webhook; Callback URL
   `${PUBLIC_APP_URL}/api/auth/github/callback`.
 
+## Token personali su `/api`
+
+- Spec: `docs/superpowers/specs/2026-10-31-casello-token-api-design.md`. Il token `cas_…` (Account → "Token personali")
+  vale anche su `/api`, per agenti che agiscono su Casello stesso e per script/automazioni.
+- Ambiti (`api_tokens.scopes`, almeno uno, senza ripetizioni, immutabili dopo la creazione): `mcp` (server `/mcp`),
+  `api:read` (GET/HEAD su `/api`), `api:write` (tutti i metodi, include la lettura). Default alla creazione `["mcp"]`;
+  i token esistenti sono diventati `{mcp}`: nessun permesso nuovo.
+- Regola unica in `requireAuth` (`lib/auth.ts`): con l'header `Authorization` presente conta solo il token, mai il
+  cookie (nemmeno con `AUTH_DISABLED`); header non `Bearer cas_…`, token sconosciuto/revocato/scaduto o utente non più
+  in `ALLOWED_EMAILS` → 401 «token non valido o scaduto». Senza header vale la sessione. Ambito per metodo (GET/HEAD →
+  `api:read` o `api:write`; POST/PUT/PATCH/DELETE → `api:write`), altrimenti 403 «il token non ha l'ambito per questa
+  operazione». Messaggi in `TOKEN_MESSAGES`. `req.auth` = `{kind:"session"}` | `{kind:"token", tokenId, scopes}`.
+- Solo con il login (`sessionOnly`; con un token 403 «operazione disponibile solo con il login»): `GET|POST
+  /account/tokens`, `DELETE /account/tokens/:id`; `POST /ai/accounts`, `PATCH|DELETE /ai/accounts/:id`,
+  `POST /ai/accounts/:id/verify|default|models`, `PATCH /ai/models/:id` (chiavi, indirizzi, prezzi, tetti);
+  `PUT /budget`; `DELETE /auth/github` e `GET /auth/github/link` (con un token, l'account GitHub che completa il
+  flusso verrebbe collegato all'utente del token e darebbe un login completo).
+- `GET /api/auth/me` accetta anche il token e risponde con l'utente più `auth` (`{kind:"session"}` o
+  `{kind:"token", scopes}`).
+- Limite: 120 richieste/min per token (`tokenRateLimit`, chiave: id del token), oltre ai limiti per utente/IP → 429.
+- Log: mai header `Authorization`, token o hash. Un errore del DB nella verifica del token risponde 500 fisso
+  («errore interno») e registra solo il nome dell'errore (i parametri della query conterrebbero l'hash).
+- Migrazione: `docs/migrations/2026-10-token-api.sql` (additiva, idempotente): da applicare in produzione PRIMA del
+  merge e da segnalare nella PR.
+- Casello come app di sé stesso: registrarlo come App con `internal_base_url` `http://casello-api:3000`,
+  autenticazione utente header `Authorization` + scheme `Bearer`, tool con identità `user`; il token arriva come
+  "Token di prova" della run oppure, con identità `service`, come segreto di servizio dell'app.
+- In sviluppo con `AUTH_DISABLED=true` i token funzionano solo se `ALLOWED_EMAILS` include `dev@localhost`.
+
 ## Esecutore locale
 
 Le analisi dell'architetto possono essere eseguite da Claude Code sul Mac dell'utente invece che dal cloud
 (`analyses.executor`). L'agente si collega al server MCP su `/mcp` (Streamable HTTP stateless, solo POST,
 60 chiamate/min per utente; nginx ha `location /mcp`) con un token personale `cas_…` creato in console
-(Account → "Agenti locali"; tabella `api_tokens`, salvato come hash). Gli esiti di fase stanno in
+(Account → "Token personali", casella "Agente locale (MCP)", ambito `mcp`; tabella `api_tokens`, salvato come hash). `/mcp` richiede l'ambito `mcp`: un token senza riceve 401 («token non valido o scaduto»). Gli esiti di fase stanno in
 `analysis_phase_results`; la lease dura 15 minuti (rinnovo con consegna o `ping_analysis`). Migrazione:
 `docs/migrations/2026-10-esecutore-locale.sql` (da applicare in produzione e segnalare nella PR). Procedura
 dell'agente: skill `docs/skills/casello-architetto-locale/SKILL.md`.

@@ -59,7 +59,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `artifacts/api-server/src/lib/ai/` — account AI: provider e indirizzi (`providers.ts`), scoperta dei modelli
   (`discovery.ts`), esecutore unico (`executor.ts`), tipi condivisi delle chiamate (`chat-types.ts`), scelta del modello
   (`choice.ts`), riverifica e arricchimento dei modelli (`accounts.ts`), stato effettivo e preselezione
-  (`model-status.ts`), prova con 1 token (`probe.ts`); route in `src/routes/ai.ts`
+  (`model-status.ts`), prova con 1 token (`probe.ts`), modello predefinito e ripiego degli agenti
+  (`default-model.ts`); route in `src/routes/ai.ts`; `GET|PUT /api/account/default-model` in
+  `src/routes/account-model.ts`; `PUT /api/apps/:id/agent-models` in `src/routes/agents.ts`
 - `artifacts/api-server/src/lib/catalog/` — catalogo dei modelli: fonti pubbliche (`sources.ts`), normalizzazione
   e fusione (`normalize.ts`, `merge.ts`), riepilogo delle novità (`summary.ts`), aggiornamento (`refresh.ts`),
   avvio settimanale (`scheduler.ts`); route in `src/routes/catalog.ts`; fonti finte per i test in
@@ -100,7 +102,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - **App**: applicazione registrata: nome, `slug`, `base_url`, `internal_base_url` (raggiunto
   dall'esecutore al posto di `base_url`), autenticazione utente/servizio (header + scheme), segreto di
   servizio cifrato (mai esposto: l'API dice solo `serviceSecretSet`), stato
-- **Agent**: appartiene a una App; `system_prompt`, `model`, stato (draft/active/inactive), ruolo:
+- **Agent**: appartiene a una App; `system_prompt`, `model` (facoltativo: senza modello le run rispondono 409), stato (draft/active/inactive), ruolo:
   `general` (uno per app, creato con l'app, non eliminabile, usa tutti i tool `active` dell'app) o `area`
   (usa solo i tool collegati in `agent_tools`)
 - **Tool** (`app_tools`): catalogo per App; `kind` (`http`, `ui`, `composite`: nella fase 1 solo `http`
@@ -136,6 +138,15 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   costi registrati restano.
 - Route: `/api/ai/accounts` (+ `/:id/verify`, `/:id/default`, `/:id/models`), `/api/ai/models`,
   `POST /api/ai/models/:id/probe`, `/api/ai/estimate`.
+- Modello predefinito e mappa: `users.default_ai_model_id` (`GET|PUT /api/account/default-model`, solo sessione).
+  Per gli agenti che Casello crea (agente generale di un'app nuova, agenti approvati dall'architetto,
+  `POST /agents`) `resolveAgentModel` sceglie: modello scelto → predefinito (solo se è ancora di un account
+  dell'utente) → nessuno. `PUT /api/apps/:id/agent-models` imposta i modelli di tutti gli agenti dell'app: tutto
+  o niente (un errore non salva nulla). Agente senza modello: run 409 «scegli un modello per l'agente»; analisi
+  cloud: `aiModelId` obbligatorio.
+- Migrazioni: `docs/migrations/2026-10-pulizia-gateway.sql` (additiva: PRIMA del merge; senza, ogni richiesta
+  autenticata fallisce perché `users` si legge con select *) e `2026-10-pulizia-gateway-post.sql` (DOPO il deploy;
+  prima verificare che `model_catalog` non esista più).
 - Costi sempre sotto controllo: a parità di risultato si preferisce il modello o il percorso più economico.
 
 ## Dal piano alle issue

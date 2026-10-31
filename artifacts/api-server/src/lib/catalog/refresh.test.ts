@@ -16,6 +16,7 @@ import { fakeSourcesFetch, LITELLM_FIXTURE, OPENROUTER_FIXTURE } from "../../../
 import { encryptSecret } from "../secrets";
 import { upsertDiscovered } from "../ai/accounts";
 import { LEGACY_GATEWAY_PROVIDER } from "../ai/providers";
+import { ensureLegacyGatewayProvider } from "../../../test/legacy-gateway";
 import type { OfferSummary } from "./summary";
 import { CatalogBusyError, failInterruptedCatalogRuns, startCatalogRefresh } from "./refresh";
 
@@ -202,6 +203,7 @@ describe("startCatalogRefresh", () => {
   });
 
   it("il vecchio account del gateway rimasto nel DB non si riverifica né si arricchisce dal catalogo", async () => {
+    await ensureLegacyGatewayProvider();
     const [legacy] = await db
       .insert(aiAccountsTable)
       .values({ userId: null, name: "Gateway Casello", provider: LEGACY_GATEWAY_PROVIDER, baseUrl: fake.baseUrl, status: "ok" })

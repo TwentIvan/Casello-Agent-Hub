@@ -8,6 +8,7 @@ import { encryptSecret } from "../secrets";
 import { logger } from "../logger";
 import { ProviderError } from "./discovery";
 import { LEGACY_GATEWAY_PROVIDER } from "./providers";
+import { ensureLegacyGatewayProvider } from "../../../test/legacy-gateway";
 import { computeCost, errorLogFields, executorKindFor, modelChat, ModelAccessError, providerModelName, resolveModel, type ResolvedModel } from "./executor";
 
 // Chiavi di prova: non devono mai comparire in errori o log
@@ -69,6 +70,7 @@ interface AccountOpts {
 /** Account + modello; restituisce gli id. */
 async function seed(o: AccountOpts = {}): Promise<{ accountId: number; aiModelId: number }> {
   const provider = o.provider ?? "custom";
+  if (provider === LEGACY_GATEWAY_PROVIDER) await ensureLegacyGatewayProvider();
   const [acc] = await db
     .insert(aiAccountsTable)
     .values({

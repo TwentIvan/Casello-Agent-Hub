@@ -20,6 +20,7 @@ import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type Fa
 import { encryptSecret } from "../lib/secrets";
 import { ensureProviderRegistry } from "../lib/catalog/provider-registry";
 import { LEGACY_GATEWAY_PROVIDER } from "../lib/ai/providers";
+import { ensureLegacyGatewayProvider } from "../../test/legacy-gateway";
 
 // API degli account AI su un'app Express vera (porta 0), senza login (AUTH_DISABLED=true: utente di
 // sviluppo). Il secondo utente e i suoi account si inseriscono a mano nel DB. La scoperta dei modelli
@@ -114,6 +115,7 @@ async function otherUserAccount() {
  * con il provider storico e i suoi modelli.
  */
 async function legacyGatewayAccount() {
+  await ensureLegacyGatewayProvider();
   const [account] = await db
     .insert(aiAccountsTable)
     .values({ userId: null, name: "Gateway Casello", provider: LEGACY_GATEWAY_PROVIDER, baseUrl: "http://gateway.interno:4000/v1", status: "ok" })

@@ -32,6 +32,7 @@ import { logger } from "./logger";
 import { ProviderError } from "./ai/discovery";
 import { encryptSecret } from "./secrets";
 import { LEGACY_GATEWAY_PROVIDER } from "./ai/providers";
+import { ensureLegacyGatewayProvider } from "../../test/legacy-gateway";
 import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 
 // Finto provider compatibile OpenAI (modello dell'agente): risposte in coda, una per chiamata
@@ -875,6 +876,7 @@ describe("run sugli account AI (chi configura paga)", () => {
 
   it("agente sul modello del vecchio account del gateway rimasto nel DB: failed con 'modello non disponibile'", async () => {
     const id = await seedRun(GET_ITEM);
+    await ensureLegacyGatewayProvider();
     const [account] = await db
       .insert(aiAccountsTable)
       .values({ userId: null, name: "Gateway Casello", provider: LEGACY_GATEWAY_PROVIDER, baseUrl: llmBase, status: "ok" })

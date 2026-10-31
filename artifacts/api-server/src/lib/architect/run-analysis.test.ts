@@ -18,6 +18,7 @@ import {
 } from "@workspace/db";
 import { encryptSecret } from "../secrets";
 import { LEGACY_GATEWAY_PROVIDER } from "../ai/providers";
+import { ensureLegacyGatewayProvider } from "../../../test/legacy-gateway";
 import { allowTestLoopback } from "../../../test/fake-provider";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { clearInstallationTokenCache } from "../github/app";
@@ -925,6 +926,7 @@ describe("startAnalysis sugli account AI", () => {
   }, 20_000);
 
   it("modello del vecchio account del gateway rimasto nel DB: failed con 'modello non disponibile'", async () => {
+    await ensureLegacyGatewayProvider();
     const [account] = await db
       .insert(aiAccountsTable)
       .values({ userId: null, name: "Gateway Casello", provider: LEGACY_GATEWAY_PROVIDER, baseUrl: llmBase, status: "ok" })

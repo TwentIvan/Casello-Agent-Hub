@@ -6,6 +6,7 @@ import { db, pool, agentsTable, aiAccountsTable, aiModelsTable, analysesTable, u
 import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 import { encryptSecret } from "../lib/secrets";
 import { LEGACY_GATEWAY_PROVIDER } from "../lib/ai/providers";
+import { ensureLegacyGatewayProvider } from "../../test/legacy-gateway";
 
 // Scelta del modello negli agenti e nell'avvio delle analisi (account AI), sull'app completa senza
 // login (AUTH_DISABLED=true: l'utente corrente è dev@localhost). Il secondo utente e gli account si
@@ -78,6 +79,7 @@ async function createApp() {
 
 /** Modello del vecchio account del gateway, com'è ancora nel DB di produzione fino alla migrazione `-post`. */
 async function legacyGatewayModelId(): Promise<number> {
+  await ensureLegacyGatewayProvider();
   const [account] = await db
     .insert(aiAccountsTable)
     .values({ userId: null, name: "Gateway Casello", provider: LEGACY_GATEWAY_PROVIDER, baseUrl: fake.baseUrl, status: "ok" })

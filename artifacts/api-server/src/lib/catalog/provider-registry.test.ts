@@ -4,6 +4,7 @@ import { db, modelOffersTable, providersTable } from "@workspace/db";
 import { ensureProviderRegistry } from "./provider-registry";
 import { PROVIDER_REGISTRY, statusForProtocol, type RegistryProvider } from "./provider-registry-data";
 import { LEGACY_GATEWAY_PROVIDER, PROVIDERS } from "../ai/providers";
+import { ensureLegacyGatewayProvider } from "../../../test/legacy-gateway";
 
 const bySlug = (slug: string) => PROVIDER_REGISTRY.find((p) => p.slug === slug);
 const sorted = (xs: string[] | undefined) => [...(xs ?? [])].sort();
@@ -90,6 +91,7 @@ describe("ensureProviderRegistry", () => {
   });
 
   it("allinea la tabella al registro ed è idempotente; la riga rimasta del vecchio gateway resta com'è", async () => {
+    await ensureLegacyGatewayProvider();
     const [legacy] = await db.select().from(providersTable).where(eq(providersTable.slug, LEGACY_GATEWAY_PROVIDER));
     expect(legacy).toBeDefined();
     await ensureProviderRegistry();
@@ -111,15 +113,9 @@ describe("ensureProviderRegistry", () => {
   });
 
   it("dopo la migrazione `-post` l'avvio non ricrea il provider del vecchio gateway", async () => {
-    const [legacy] = await db.select().from(providersTable).where(eq(providersTable.slug, LEGACY_GATEWAY_PROVIDER));
     await db.delete(providersTable).where(eq(providersTable.slug, LEGACY_GATEWAY_PROVIDER));
-    try {
-      await ensureProviderRegistry();
-      expect(await db.select().from(providersTable).where(eq(providersTable.slug, LEGACY_GATEWAY_PROVIDER))).toEqual([]);
-    } finally {
-      // Il DB di prova è condiviso: la riga torna com'era
-      await db.insert(providersTable).values(legacy!);
-    }
+    await ensureProviderRegistry();
+    expect(await db.select().from(providersTable).where(eq(providersTable.slug, LEGACY_GATEWAY_PROVIDER))).toEqual([]);
   });
 
   it("un provider scoperto riconosciuto dal registro diventa registry e prende il protocollo", async () => {

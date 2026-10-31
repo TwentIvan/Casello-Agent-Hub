@@ -6,10 +6,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   type App,
   getGetDashboardStatsQueryKey,
+  getGetDefaultModelQueryKey,
   getListAppsQueryKey,
   useCreateApp,
+  useGetDefaultModel,
   useUpdateApp,
 } from "@workspace/api-client-react";
+import { ModelPicker } from "@/components/ai/model-picker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -141,6 +145,10 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
   // Il segreto non torna mai dall'API: resta invariato salvo nuovo valore o rimozione esplicita.
   const [clearSecret, setClearSecret] = useState(false);
   const secretSet = app?.serviceSecretSet === true && !clearSecret;
+  // Solo in creazione: modello dell'agente generale, precompilato col predefinito dell'utente.
+  const defaultModel = useGetDefaultModel({ query: { queryKey: getGetDefaultModelQueryKey(), enabled: !app } });
+  const [generalModel, setGeneralModel] = useState<number | null | undefined>(undefined);
+  const generalAgentAiModelId = generalModel !== undefined ? generalModel : (defaultModel.data?.aiModelId ?? null);
   const form = useForm<AppFormValues>({
     resolver: zodResolver(appFormSchema),
     defaultValues: {
@@ -197,7 +205,12 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
       updateApp.mutate({ id: app.id, data: { ...common, description: rest.description || null, ...secret } });
     } else {
       createApp.mutate({
-        data: { ...common, description: rest.description || undefined, ...(serviceAuthEnabled && serviceSecret ? { serviceSecret } : {}) },
+        data: {
+          ...common,
+          description: rest.description || undefined,
+          ...(serviceAuthEnabled && serviceSecret ? { serviceSecret } : {}),
+          ...(generalAgentAiModelId !== null ? { generalAgentAiModelId } : {}),
+        },
       });
     }
   };
@@ -271,6 +284,15 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
                 </FormItem>
               )}
             />
+            {!app && (
+              <div className="space-y-2">
+                <Label htmlFor="general-agent-model">Modello dell'agente generale</Label>
+                <ModelPicker id="general-agent-model" value={generalAgentAiModelId} onChange={setGeneralModel} />
+                <p className="text-xs text-muted-foreground">
+                  Casello crea con l'app il suo agente generale; senza modello le sue run non partono.
+                </p>
+              </div>
+            )}
             <div className="space-y-4 border-t pt-4">
               <div>
                 <h3 className="text-sm font-medium">Collegamento</h3>

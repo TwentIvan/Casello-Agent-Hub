@@ -7,13 +7,17 @@ import {
   getGetAnalysisQueryKey,
   getGetAppPlanQueryKey,
   getGetDashboardStatsQueryKey,
+  getGetDefaultModelQueryKey,
   getListAppToolsQueryKey,
+  useGetDefaultModel,
   useUpdateAnalysisItem,
 } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ModelPicker } from "@/components/ai/model-picker";
 import { ItemEditDialog } from "@/components/analysis/item-edit-dialog";
 import { IssueBadge } from "@/components/plan/issue-badge";
 import {
@@ -406,8 +410,17 @@ export function ItemCard({ item, appId, dependsOnTitles = [] }: ItemCardProps) {
     },
   });
 
-  const send = (data: AnalysisItemUpdate, onDone?: () => void) =>
-    review.mutate({ id: item.id, data }, { onSuccess: () => onDone?.() });
+  // Agente nuovo in attesa: si sceglie il modello (precompilato col predefinito), inviato con l'approvazione.
+  // Un agente esistente mantiene il suo modello.
+  const isNewAgent = item.chapter === "agent" && item.diff === "new" && item.status === "pending";
+  const defaultModel = useGetDefaultModel({ query: { queryKey: getGetDefaultModelQueryKey(), enabled: isNewAgent } });
+  const [chosenModel, setChosenModel] = useState<number | null | undefined>(undefined);
+  const agentModelId = chosenModel !== undefined ? chosenModel : (defaultModel.data?.aiModelId ?? null);
+
+  const send = (data: AnalysisItemUpdate, onDone?: () => void) => {
+    const withModel = isNewAgent && data.status === "approved" && agentModelId !== null ? { ...data, aiModelId: agentModelId } : data;
+    review.mutate({ id: item.id, data: withModel }, { onSuccess: () => onDone?.() });
+  };
 
   const area = itemArea(item);
   const isTool = item.chapter === "tool";
@@ -451,6 +464,17 @@ export function ItemCard({ item, appId, dependsOnTitles = [] }: ItemCardProps) {
       <CardContent className="space-y-4">
         <ItemBody item={item} dependsOnTitles={dependsOnTitles} />
         <Evidence item={item} />
+        {isNewAgent && (
+          <div className="max-w-md space-y-1">
+            <Label htmlFor={`agent-model-${item.id}`} className="text-xs font-medium text-muted-foreground">
+              Modello dell'agente
+            </Label>
+            <ModelPicker id={`agent-model-${item.id}`} value={agentModelId} onChange={setChosenModel} disabled={busy} />
+            {agentModelId === null && (
+              <p className="text-xs text-muted-foreground">Senza modello le run dell'agente non partono.</p>
+            )}
+          </div>
+        )}
         <ReviewNote
           key={`${item.id}-${item.reviewNote ?? ""}`}
           item={item}

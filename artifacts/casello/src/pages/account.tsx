@@ -12,6 +12,7 @@ import {
   useUnlinkGithub,
 } from "@workspace/api-client-react";
 import { AiAccountsSection } from "@/components/account/ai-accounts-section";
+import { DefaultModelCard } from "@/components/account/default-model-card";
 import { ApiTokensSection } from "@/components/account/api-tokens-section";
 import { UserBudgetCard } from "@/components/budget/budget";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -215,6 +216,7 @@ export default function AccountPage() {
         <>
           <AccessCard user={me.data} />
           <AiAccountsSection />
+          <DefaultModelCard />
           <UserBudgetCard />
           <ApiTokensSection />
           {githubLinked && <InstallationsCard githubEnabled={me.data.githubEnabled} />}

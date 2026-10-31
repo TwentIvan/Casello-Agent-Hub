@@ -150,14 +150,16 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `AnalysisItem.issue` (`repo`, `number`, `url`, `state`, `stateReason`, `checkedAt`; null anche durante la prenotazione).
 - Dati: colonne `analysis_items.issue_repo|number|url|state|state_reason|created_at|checked_at` (indice parziale su
   repo + numero). Prenotazione: prima di chiamare GitHub la voce passa a `issue_state = 'creating'` con un UPDATE
-  condizionato (`issue_number` e `issue_state` null): due richieste concorrenti non fanno doppioni; su errore si toglie,
-  all'avvio quelle rimaste si azzerano (`resetStaleIssueReservations`). Poi `open`/`closed` (+ `completed`,
+  condizionato (`issue_number` e `issue_state` null): due richieste concorrenti non fanno doppioni; se la creazione su
+  GitHub fallisce si toglie; se fallisce solo il collegamento alla voce (scrittura riprovata una volta) resta, la voce è
+  `failed` («Issue creata su GitHub ma non collegata alla voce: ricollegala a mano (#n)») e il log riporta voce, repo,
+  numero e indirizzo. All'avvio quelle rimaste si azzerano (`resetStaleIssueReservations`). Poi `open`/`closed` (+ `completed`,
   `not_planned`, `reopened`).
 - Voci ammesse: `approved` e capitolo endpoint/completion/evolution, senza issue né prenotazione; le altre `skipped`;
   una voce non dell'app → 400. Ordine: completamento per fase e dipendenze, poi le altre; una dipendenza con issue
   diventa `#numero` nel corpo, altrimenti resta il titolo. Piè di pagina «Creata da Casello · piano di <app> · voce #id».
 - Limiti: 30 voci per richiesta, 5 creazioni/min per utente (le anteprime no), refresh 6/min, pausa di 1 s tra due
-  creazioni, lista delle issue di GitHub ≤ 10 pagine da 100 (con `since` = lettura più vecchia; un'issue non trovata
+  tentativi di creazione, lista delle issue di GitHub ≤ 10 pagine da 100 (con `since` = lettura più vecchia; un'issue non trovata
   resta com'era). Chiamate a `GITHUB_API_BASE`, niente redirect.
 - Etichette (create sul repo se mancano, grigie): `casello`, capitolo (`endpoint`, `completamento`, `evoluzione`),
   `fase-N` (completamento), `P1`..`P5` (evoluzione).
@@ -171,7 +173,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Console (pagina Piano): selezione delle voci approvate senza issue, anteprima e creazione, riepilogo con «Aggiorna
   stato» (parte da solo se l'ultima lettura ha più di 10 minuti), badge sulla voce (anche nella pagina dell'analisi).
 - La rianalisi tratta le voci con issue come già pianificate (`chatPlannedItems`: origine chat o `issue_number` non
-  null, capitoli endpoint, completion ed evolution) e non le ripropone.
+  null, capitoli endpoint, completion ed evolution) e non le ripropone: la fase catalog riceve quelle `endpoint`,
+  completion ed evolution tutte. Anche il piano (`loadPlanItems`) porta con sé dalle analisi precedenti le voci
+  approvate da chat o con un'issue, così badge e conteggi restano dopo una rianalisi.
 - Migrazione: `docs/migrations/2026-10-piano-issue.sql` (additiva, da applicare in produzione PRIMA del merge e da
   segnalare nella PR, insieme al permesso Issues della GitHub App, vedi "Autenticazione").
 
@@ -281,8 +285,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   ~30 000 token (la cronologia si riduce); 10 messaggi/min per utente.
 - Nel contesto del modello non entrano segreti né indirizzi delle app. Il turno gira in background: la UI fa
   polling sulla conversazione; all'avvio i turni rimasti aperti (`failInterruptedPlanTurns`) vengono chiusi come falliti.
-- La rianalisi dell'architetto riceve le voci da chat approvate come "già pianificate" (solo fasi completion ed
-  evolution) e non le ripropone.
+- La rianalisi dell'architetto riceve le voci da chat approvate (e quelle con un'issue) come "già pianificate" (fasi
+  completion ed evolution; la fase catalog solo quelle `endpoint`) e non le ripropone. Nel piano restano anche le voci
+  da chat approvate delle analisi precedenti.
 - Migrazione: `docs/migrations/2026-10-chat-del-piano.sql` (da applicare in produzione PRIMA del merge e da
   segnalare nella PR). Dipendenze frontend: `react-markdown`, `remark-gfm`.
 

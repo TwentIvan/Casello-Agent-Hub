@@ -212,6 +212,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   finché il provider lo è). Un account `custom` con chiave, senza rete privata e con esattamente l'indirizzo
   predefinito di un provider gestito (es. Gemini) diventa quel provider alla lettura dei modelli (creazione,
   modifica, «Verifica», aggiornamento del catalogo), così i modelli prendono prezzi e strumenti dal catalogo.
+  Gemini elenca i modelli come `models/<id>`, ma l'endpoint compatibile OpenAI li vuole senza prefisso:
+  l'esecutore lo toglie nella chiamata (`providerModelName`).
 - Aggiornamento deterministico, senza chiamare modelli: fonti pubbliche con indirizzi fissi (OpenRouter
   `/api/v1/models` e listino LiteLLM `model_prices_and_context_window.json`), 30 s, niente redirect, max 20 MB.
   Entra tutto (≈4 300 voci, ogni tipo di modello): `models` (chiave canonica: stesso modello tra provider

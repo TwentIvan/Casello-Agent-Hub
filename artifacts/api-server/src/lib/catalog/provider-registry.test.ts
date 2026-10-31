@@ -9,8 +9,8 @@ import { ensureLegacyGatewayProvider } from "../../../test/legacy-gateway";
 const bySlug = (slug: string) => PROVIDER_REGISTRY.find((p) => p.slug === slug);
 const sorted = (xs: string[] | undefined) => [...(xs ?? [])].sort();
 
-// I provider di oggi, già presenti in docs/schema-casello.sql; nel DB di prova c'è ancora anche la riga del
-// vecchio gateway (come in produzione fino alla migrazione `-post`): i test non li cancellano
+// I provider di oggi, già presenti in docs/schema-casello.sql; la riga del vecchio gateway (come in produzione
+// fino alla migrazione `-post`) non è nello schema: la inserisce `ensureLegacyGatewayProvider` e i test non la cancellano
 const TODAY = ["deepseek", "openrouter", "huggingface", "mistral", "groq", "together", "gemini", "custom"];
 const KEEP = [...TODAY, LEGACY_GATEWAY_PROVIDER];
 
@@ -113,9 +113,14 @@ describe("ensureProviderRegistry", () => {
   });
 
   it("dopo la migrazione `-post` l'avvio non ricrea il provider del vecchio gateway", async () => {
-    await db.delete(providersTable).where(eq(providersTable.slug, LEGACY_GATEWAY_PROVIDER));
-    await ensureProviderRegistry();
-    expect(await db.select().from(providersTable).where(eq(providersTable.slug, LEGACY_GATEWAY_PROVIDER))).toEqual([]);
+    try {
+      await db.delete(providersTable).where(eq(providersTable.slug, LEGACY_GATEWAY_PROVIDER));
+      await ensureProviderRegistry();
+      expect(await db.select().from(providersTable).where(eq(providersTable.slug, LEGACY_GATEWAY_PROVIDER))).toEqual([]);
+    } finally {
+      // DB di prova condiviso: la riga torna com'era per gli altri file
+      await ensureLegacyGatewayProvider();
+    }
   });
 
   it("un provider scoperto riconosciuto dal registro diventa registry e prende il protocollo", async () => {

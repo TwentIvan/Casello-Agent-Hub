@@ -25,8 +25,8 @@ import { CatalogBusyError, failInterruptedCatalogRuns, startCatalogRefresh } fro
 // usano il finto provider.
 
 const KEY = "sk-CHIAVE-DEL-CATALOGO-99";
-// I provider di oggi, già in docs/schema-casello.sql (con la riga rimasta del vecchio gateway): alla fine
-// restano solo loro (DB di prova condiviso)
+// I provider di oggi, già in docs/schema-casello.sql, più la riga del vecchio gateway (non nello schema: la
+// inserisce `ensureLegacyGatewayProvider`): alla fine restano solo loro (DB di prova condiviso)
 const TODAY = ["deepseek", "openrouter", "huggingface", "mistral", "groq", "together", "gemini", "custom", LEGACY_GATEWAY_PROVIDER];
 const saved: Record<string, string | undefined> = {};
 let restoreLoopback: () => void;

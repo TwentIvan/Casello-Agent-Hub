@@ -8,17 +8,12 @@
 import type { AnalysisExecutor } from './analysisExecutor';
 
 /**
- * Con executor cloud (default) indicare esattamente uno tra aiModelId e model (altrimenti 400 "scegli un modello"); con executor local nessuno dei due.
+ * Con executor cloud (default) aiModelId è obbligatorio (altrimenti 400 "scegli un modello"); con executor local non si indica.
  */
 export interface AnalysisStart {
   executor?: AnalysisExecutor;
   /** Modello di un account AI dell'utente o dell'account di sistema */
   aiModelId?: number;
-  /**
-     * Compatibilità, modello AI come model_name di LiteLLM
-     * @minLength 1
-     */
-  model?: string;
   /**
      * Tetto di token per l'analisi (default 1000000)
      * @minimum 50000

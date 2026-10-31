@@ -9,14 +9,9 @@ import type { AnalysisExecutor } from './analysisExecutor';
 
 export type StartZipAnalysisParams = {
 /**
- * Modello di un account AI (esattamente uno tra aiModelId e model)
+ * Modello di un account AI (obbligatorio, altrimenti 400 "scegli un modello")
  */
 aiModelId?: number;
-/**
- * Compatibilità, modello AI come model_name di LiteLLM
- * @minLength 1
- */
-model?: string;
 /**
  * Tetto di token per l'analisi (default 1000000)
  * @minimum 50000

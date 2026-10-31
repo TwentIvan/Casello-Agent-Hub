@@ -262,8 +262,9 @@ describe("blocco degli avvii", () => {
     expect((await api("POST", `/agents/${systemAgent}/runs`, { input: "ciao" })).status).toBe(202);
   });
 
-  it("run: il tetto dell'agente conta tutte le sue run, anche sul vecchio gateway", async () => {
-    const agentId = await createAgent(await createApp(), null);
+  it("run: il tetto dell'agente conta tutte le sue run, anche quelle senza modello registrato", async () => {
+    const own = await modelOf(await devUserId(), "mio");
+    const agentId = await createAgent(await createApp(), own);
     const patched = await api("PATCH", `/agents/${agentId}`, { monthlyBudgetUsd: 1 });
     expect(patched.status, patched.text).toBe(200);
     expect(patched.json.monthlyBudgetUsd).toBe(1);

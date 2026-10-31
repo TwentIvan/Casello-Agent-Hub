@@ -34,11 +34,10 @@ import {
   ListAgentSkillsResponse,
   DeleteAgentSkillParams,
 } from "@workspace/api-zod";
-import { startRun } from "../lib/run-executor";
+import { AGENT_WITHOUT_MODEL, startRun } from "../lib/run-executor";
 import { budgetColumn, runBudgetBlock } from "../lib/budget";
 import { currentUserId } from "../lib/auth";
-import { ModelChoiceError, chooseByName, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
-import { NO_MODEL } from "../lib/ai/choice";
+import { ModelChoiceError, NO_MODEL, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
 import { resolveAgentModel } from "../lib/ai/default-model";
 import { logger } from "../lib/logger";
 import { toPublicRun, userTokenFrom, withToolIds, withToolIdsOne } from "./serializers";
@@ -58,9 +57,9 @@ router.get("/agents", async (req, res) => {
 
 // Gli agenti creati dalla UI sono sempre di area: il generale nasce con l'app.
 // Modello (chi configura paga): `aiModelId` deve essere un modello dell'utente o dell'account di
-// sistema; senza, il predefinito dell'utente (se è ancora suo), altrimenti nessuno. `model` è ignorato.
+// sistema; senza, il predefinito dell'utente (se è ancora suo), altrimenti nessuno.
 router.post("/agents", async (req, res) => {
-  const { aiModelId, model: _ignored, ...body } = parseRequest(CreateAgentBody, req.body);
+  const { aiModelId, ...body } = parseRequest(CreateAgentBody, req.body);
   const [app] = await db.select({ id: appsTable.id }).from(appsTable).where(eq(appsTable.id, body.appId)).limit(1);
   if (!app) {
     res.status(404).json({ error: "App non trovata" });
@@ -94,28 +93,24 @@ router.get("/agents/:id", async (req, res) => {
 /**
  * Campi del modello da aggiornare. Si controlla solo un modello che CAMBIA: chi modifica un agente
  * configurato da un altro utente (es. solo il nome) ne conserva il modello, e quindi l'account che
- * paga, senza poterlo scegliere lui. Con `aiModelId` impostato `model` segue il modello scelto e il
- * `model` del corpo è ignorato; `aiModelId: null` torna al vecchio percorso del gateway.
+ * paga, senza poterlo scegliere lui. `aiModelId: null` toglie il modello: le run non partono finché
+ * non se ne sceglie un altro.
  */
 async function modelUpdate(
-  current: { aiModelId: number | null; model: string },
-  body: { aiModelId?: number | null; model?: string },
+  current: { aiModelId: number | null },
+  aiModelId: number | null | undefined,
   userId: number,
 ): Promise<Partial<ModelChoice>> {
-  const { aiModelId, model } = body;
-  if (aiModelId !== undefined && aiModelId !== current.aiModelId) {
-    if (aiModelId === null) return { aiModelId: null, model: model ?? current.model };
-    return chooseOwnModel(aiModelId, userId);
-  }
-  if (aiModelId === undefined && model !== undefined && model !== current.model) return chooseByName(model);
-  return {};
+  if (aiModelId === undefined || aiModelId === current.aiModelId) return {};
+  if (aiModelId === null) return NO_MODEL;
+  return chooseOwnModel(aiModelId, userId);
 }
 
 router.patch("/agents/:id", async (req, res) => {
   const { id } = parseRequest(UpdateAgentParams, req.params);
-  const { aiModelId, model, monthlyBudgetUsd, ...body } = parseRequest(UpdateAgentBody, req.body);
+  const { aiModelId, monthlyBudgetUsd, ...body } = parseRequest(UpdateAgentBody, req.body);
   const [current] = await db
-    .select({ aiModelId: agentsTable.aiModelId, model: agentsTable.model })
+    .select({ aiModelId: agentsTable.aiModelId })
     .from(agentsTable)
     .where(eq(agentsTable.id, id))
     .limit(1);
@@ -125,7 +120,7 @@ router.patch("/agents/:id", async (req, res) => {
   }
   let modelFields: Partial<ModelChoice>;
   try {
-    modelFields = await modelUpdate(current, { aiModelId, model }, currentUserId(req));
+    modelFields = await modelUpdate(current, aiModelId, currentUserId(req));
   } catch (err) {
     if (!(err instanceof ModelChoiceError)) throw err;
     res.status(400).json({ error: err.message });
@@ -298,6 +293,11 @@ router.post("/agents/:id/runs", runRateLimit, async (req, res) => {
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, id)).limit(1);
   if (!agent) {
     res.status(404).json({ error: "Agente non trovato" });
+    return;
+  }
+  // Niente più ripiego sul gateway: senza modello la run non parte (nessuna run creata)
+  if (agent.aiModelId === null) {
+    res.status(409).json({ error: AGENT_WITHOUT_MODEL });
     return;
   }
 

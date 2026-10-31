@@ -633,8 +633,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           description: >-
-            Tetto di spesa mensile raggiunto (dell'agente o dell'utente che paga il modello): la run non
-            viene creata
+            Agente senza modello ("scegli un modello per l'agente") o tetto di spesa mensile raggiunto
+            (dell'agente o dell'utente che paga il modello): la run non viene creata
           content:
             application/json:
               schema:
@@ -808,14 +808,7 @@ paths:
           required: false
           schema:
             type: integer
-          description: Modello di un account AI (esattamente uno tra aiModelId e model)
-        - name: model
-          in: query
-          required: false
-          schema:
-            type: string
-            minLength: 1
-          description: Compatibilità, modello AI come model_name di LiteLLM
+          description: Modello di un account AI (obbligatorio, altrimenti 400 "scegli un modello")
         - name: maxTokens
           in: query
           required: false
@@ -2381,9 +2374,6 @@ components:
           minLength: 1
         systemPrompt:
           type: string
-        model:
-          type: string
-          description: Solo compatibilità; ignorato
         aiModelId:
           type: ["integer", "null"]
           description: >-
@@ -2401,9 +2391,6 @@ components:
           minLength: 1
         systemPrompt:
           type: ["string", "null"]
-        model:
-          type: string
-          description: Solo compatibilità; con aiModelId è ignorato
         aiModelId:
           type: ["integer", "null"]
           description: >-
@@ -3336,18 +3323,14 @@ components:
     AnalysisStart:
       type: object
       description: >-
-        Con executor cloud (default) indicare esattamente uno tra aiModelId e model (altrimenti 400
-        "scegli un modello"); con executor local nessuno dei due.
+        Con executor cloud (default) aiModelId è obbligatorio (altrimenti 400 "scegli un modello");
+        con executor local non si indica.
       properties:
         executor:
           $ref: "#/components/schemas/AnalysisExecutor"
         aiModelId:
           type: integer
           description: Modello di un account AI dell'utente o dell'account di sistema
-        model:
-          type: string
-          minLength: 1
-          description: Compatibilità, modello AI come model_name di LiteLLM
         maxTokens:
           type: integer
           minimum: 50000

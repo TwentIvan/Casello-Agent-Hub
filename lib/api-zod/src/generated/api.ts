@@ -402,7 +402,6 @@ export const CreateAgentBody = zod.object({
   "appId": zod.number(),
   "name": zod.string().min(1),
   "systemPrompt": zod.string().optional(),
-  "model": zod.string().optional().describe('Solo compatibilità; ignorato'),
   "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente o dell\'account di sistema (400 \"modello non disponibile\" altrimenti). Se assente si usa il modello predefinito dell\'utente, se c\'è; altrimenti l\'agente nasce senza modello.'),
   "status": zod.enum(['active', 'inactive', 'draft']).optional()
 })
@@ -466,7 +465,6 @@ export const updateAgentBodyMonthlyBudgetUsdMax = 1000000;
 export const UpdateAgentBody = zod.object({
   "name": zod.string().min(1).optional(),
   "systemPrompt": zod.string().nullish(),
-  "model": zod.string().optional().describe('Solo compatibilità; con aiModelId è ignorato'),
   "aiModelId": zod.number().nullish().describe('Se diverso da quello salvato deve essere un modello dell\'utente o dell\'account di sistema (400 altrimenti); uguale a quello salvato non viene ricontrollato'),
   "status": zod.enum(['active', 'inactive', 'draft']).optional(),
   "area": zod.string().nullish(),
@@ -958,7 +956,6 @@ export const StartAnalysisParams = zod.object({
   "id": zod.coerce.number()
 })
 
-
 export const startAnalysisBodyMaxTokensMin = 50000;
 export const startAnalysisBodyMaxTokensMax = 2000000;
 
@@ -967,9 +964,8 @@ export const startAnalysisBodyMaxTokensMax = 2000000;
 export const StartAnalysisBody = zod.object({
   "executor": zod.enum(['cloud', 'local']).optional().describe('Chi esegue l\'analisi, il cloud di Casello o un agente locale via MCP'),
   "aiModelId": zod.number().optional().describe('Modello di un account AI dell\'utente o dell\'account di sistema'),
-  "model": zod.string().min(1).optional().describe('Compatibilità, modello AI come model_name di LiteLLM'),
   "maxTokens": zod.number().min(startAnalysisBodyMaxTokensMin).max(startAnalysisBodyMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)')
-}).describe('Con executor cloud (default) indicare esattamente uno tra aiModelId e model (altrimenti 400 \"scegli un modello\"); con executor local nessuno dei due.')
+}).describe('Con executor cloud (default) aiModelId è obbligatorio (altrimenti 400 \"scegli un modello\"); con executor local non si indica.')
 
 export const StartAnalysisResponse = zod.object({
   "id": zod.number(),
@@ -1004,15 +1000,13 @@ export const StartZipAnalysisParams = zod.object({
   "id": zod.coerce.number()
 })
 
-
 export const startZipAnalysisQueryMaxTokensMin = 50000;
 export const startZipAnalysisQueryMaxTokensMax = 2000000;
 
 
 
 export const StartZipAnalysisQueryParams = zod.object({
-  "aiModelId": zod.coerce.number().optional().describe('Modello di un account AI (esattamente uno tra aiModelId e model)'),
-  "model": zod.coerce.string().min(1).optional().describe('Compatibilità, modello AI come model_name di LiteLLM'),
+  "aiModelId": zod.coerce.number().optional().describe('Modello di un account AI (obbligatorio, altrimenti 400 \"scegli un modello\")'),
   "maxTokens": zod.coerce.number().min(startZipAnalysisQueryMaxTokensMin).max(startZipAnalysisQueryMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)'),
   "executor": zod.enum(['cloud', 'local']).optional().describe('Con local risponde 400 \"con l\'agente locale lo zip non serve\"')
 })

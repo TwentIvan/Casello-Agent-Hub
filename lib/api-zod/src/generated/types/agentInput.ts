@@ -12,8 +12,6 @@ export interface AgentInput {
   /** @minLength 1 */
   name: string;
   systemPrompt?: string;
-  /** Solo compatibilità; ignorato */
-  model?: string;
   /**
      * Modello di un account AI dell'utente o dell'account di sistema (400 "modello non disponibile" altrimenti). Se assente si usa il modello predefinito dell'utente, se c'è; altrimenti l'agente nasce senza modello.
      * @nullable

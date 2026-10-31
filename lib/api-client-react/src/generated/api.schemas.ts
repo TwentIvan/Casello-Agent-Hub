@@ -326,8 +326,6 @@ export interface AgentInput {
   /** @minLength 1 */
   name: string;
   systemPrompt?: string;
-  /** Solo compatibilità; ignorato */
-  model?: string;
   /**
      * Modello di un account AI dell'utente o dell'account di sistema (400 "modello non disponibile" altrimenti). Se assente si usa il modello predefinito dell'utente, se c'è; altrimenti l'agente nasce senza modello.
      * @nullable
@@ -341,8 +339,6 @@ export interface AgentUpdate {
   name?: string;
   /** @nullable */
   systemPrompt?: string | null;
-  /** Solo compatibilità; con aiModelId è ignorato */
-  model?: string;
   /**
      * Se diverso da quello salvato deve essere un modello dell'utente o dell'account di sistema (400 altrimenti); uguale a quello salvato non viene ricontrollato
      * @nullable
@@ -1105,17 +1101,12 @@ export type AnalysisDetail = Analysis & {
 };
 
 /**
- * Con executor cloud (default) indicare esattamente uno tra aiModelId e model (altrimenti 400 "scegli un modello"); con executor local nessuno dei due.
+ * Con executor cloud (default) aiModelId è obbligatorio (altrimenti 400 "scegli un modello"); con executor local non si indica.
  */
 export interface AnalysisStart {
   executor?: AnalysisExecutor;
   /** Modello di un account AI dell'utente o dell'account di sistema */
   aiModelId?: number;
-  /**
-     * Compatibilità, modello AI come model_name di LiteLLM
-     * @minLength 1
-     */
-  model?: string;
   /**
      * Tetto di token per l'analisi (default 1000000)
      * @minimum 50000
@@ -1792,14 +1783,9 @@ before?: number;
 
 export type StartZipAnalysisParams = {
 /**
- * Modello di un account AI (esattamente uno tra aiModelId e model)
+ * Modello di un account AI (obbligatorio, altrimenti 400 "scegli un modello")
  */
 aiModelId?: number;
-/**
- * Compatibilità, modello AI come model_name di LiteLLM
- * @minLength 1
- */
-model?: string;
 /**
  * Tetto di token per l'analisi (default 1000000)
  * @minimum 50000

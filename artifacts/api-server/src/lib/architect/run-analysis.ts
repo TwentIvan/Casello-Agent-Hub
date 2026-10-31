@@ -21,7 +21,7 @@ import {
   type AnalysisSources,
   type App,
 } from "@workspace/db";
-import { aiGateway, type ChatResult } from "../ai-gateway";
+import type { ChatResult } from "../ai-gateway";
 import { ProviderError } from "../ai/discovery";
 import { errorLogFields, errorStatus, ModelAccessError, modelChat as executorChat, resolveModel, type ResolvedModel } from "../ai/executor";
 import { logger } from "../logger";
@@ -40,6 +40,8 @@ import { fetchGithubTree, fetchOpenApi, SourceError, type OpenApiDoc } from "./s
 
 export const ANALYSIS_DEFAULT_MAX_TOKENS = 1_000_000;
 export const ANALYSIS_MAX_MS = 1_800_000;
+/** Analisi cloud senza modello (400 all'avvio; difesa anche qui). */
+export const CHOOSE_MODEL = "scegli un modello";
 /** Voci massime del log di un'analisi: si tengono le più recenti. */
 export const ANALYSIS_LOG_MAX = 500;
 
@@ -306,9 +308,8 @@ const STATUS_HINTS: Record<number, string> = {
 };
 
 interface ModelChatOptions {
-  model: string;
-  /** Modello risolto dell'analisi (account AI); null = vecchio percorso del gateway. */
-  resolved: ResolvedModel | null;
+  /** Modello risolto dell'analisi (account AI). */
+  resolved: ResolvedModel;
   cost: CostTracker;
   analysisId: number;
   deadline: number;
@@ -321,7 +322,6 @@ interface ModelChatOptions {
 }
 
 function architectChat({
-  model,
   resolved,
   cost,
   analysisId,
@@ -347,7 +347,7 @@ function architectChat({
       maxRetries: 0,
     };
     const send = async (): Promise<ChatResult> => {
-      const reply = resolved ? await executorChat(resolved, options) : await aiGateway.chat({ modelKey: model, ...options });
+      const reply = await executorChat(resolved, options);
       cost.add(reply);
       return reply;
     };
@@ -453,14 +453,14 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
 
     // Modello dell'analisi risolto una volta all'avvio (chi l'ha avviata l'ha già scelto tra i suoi
     // o quelli di sistema). La chiave resta in memoria nell'oggetto risolto, mai copiato.
-    let resolved: ResolvedModel | null = null;
-    if (analysis.aiModelId !== null) {
-      try {
-        resolved = await resolveModel(analysis.aiModelId, { userId: null, mustOwn: false });
-      } catch (err) {
-        if (err instanceof ModelAccessError || err instanceof ProviderError) throw new AnalysisError(err.message);
-        throw err;
-      }
+    // Niente più ripiego sul gateway: un'analisi cloud senza modello non parte.
+    if (analysis.aiModelId === null) throw new AnalysisError(CHOOSE_MODEL);
+    let resolved: ResolvedModel;
+    try {
+      resolved = await resolveModel(analysis.aiModelId, { userId: null, mustOwn: false });
+    } catch (err) {
+      if (err instanceof ModelAccessError || err instanceof ProviderError) throw new AnalysisError(err.message);
+      throw err;
     }
 
     const loaded = await loadSources(app, opts, log);
@@ -473,7 +473,6 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
     // Senza codice né OpenAPI i tool derivano solo dalla descrizione: vanno sempre verificati
     const forceVerification = sources.code === "none" && !sources.openapi;
     const chat = architectChat({
-      model: analysis.model,
       resolved,
       cost,
       analysisId,
@@ -514,7 +513,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
         chat,
         budget,
         phaseQuota,
-        contextTokens: resolved?.contextTokens ?? null,
+        contextTokens: resolved.contextTokens,
         completionReserve: MAX_COMPLETION_TOKENS,
         log,
         now,

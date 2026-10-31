@@ -2,10 +2,12 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { db, pool, runsTable, type Run } from "@workspace/db";
+import { db, pool, agentsTable, aiAccountsTable, aiModelsTable, runsTable, usersTable, type Run } from "@workspace/db";
+import { encryptSecret } from "../lib/secrets";
+import { allowTestLoopback } from "../../test/fake-provider";
 
 // Route dell'API su un'app Express vera (porta 0), senza login (AUTH_DISABLED=true) e con
-// finti LiteLLM e finta app per le run. auth.ts legge l'ambiente all'import: l'app si importa
+// finto provider compatibile OpenAI (modello degli agenti) e finta app per le run. auth.ts legge l'ambiente all'import: l'app si importa
 // dinamicamente dopo aver impostato le variabili.
 
 const SECRET = "segreto-di-servizio-xyz";
@@ -16,6 +18,7 @@ let server: http.Server;
 let llm: http.Server;
 let fakeApp: http.Server;
 let fakeAppBase: string;
+let llmBase: string;
 let llmReplies: unknown[];
 let appRequests: { method: string; url: string; auth: string | undefined }[];
 let startRun: (runId: number, opts?: { userToken?: string }) => Promise<void>;
@@ -132,7 +135,8 @@ beforeAll(async () => {
       res.end(JSON.stringify({ ok: true }));
     });
   });
-  process.env["AI_GATEWAY_BASE_URL"] = `http://127.0.0.1:${await listen(llm)}/v1`;
+  llmBase = `http://127.0.0.1:${await listen(llm)}/v1`;
+  process.env["AI_GATEWAY_BASE_URL"] = llmBase;
   fakeAppBase = `http://127.0.0.1:${await listen(fakeApp)}/api`;
 
   const { default: app } = await import("../app");
@@ -465,16 +469,64 @@ describe("paginazione delle run", () => {
 });
 
 describe("run", () => {
+  // Modello di un account `custom` verso il finto provider `llm`, collegato agli agenti delle run
+  let modelId: number;
+  let ownerId: number;
+  let restoreLoopback: () => void;
+
+  beforeAll(async () => {
+    restoreLoopback = allowTestLoopback();
+    const [owner] = await db.insert(usersTable).values({ email: "routes-run@example.com", name: "R" }).returning();
+    ownerId = owner!.id;
+    const [account] = await db
+      .insert(aiAccountsTable)
+      .values({
+        userId: ownerId,
+        name: "Account delle run",
+        provider: "custom",
+        baseUrl: llmBase,
+        allowPrivateNetwork: true,
+        apiKeyEnc: encryptSecret("sk-test"),
+        status: "ok",
+      })
+      .returning();
+    const [model] = await db.insert(aiModelsTable).values({ accountId: account!.id, modelId: "modello", displayName: "M" }).returning();
+    modelId = model!.id;
+  });
+
+  afterAll(async () => {
+    await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
+    await db.delete(usersTable).where(eq(usersTable.id, ownerId));
+    restoreLoopback();
+  });
+
+  /** Agente generale dell'app con il modello di prova. */
+  async function runnableAgent(appId: number) {
+    const general = await generalAgentOf(appId);
+    await db.update(agentsTable).set({ aiModelId: modelId, model: "modello" }).where(eq(agentsTable.id, general.id));
+    return general;
+  }
+
   async function pausedRun(): Promise<number> {
     const app = await createApp();
     await api("POST", `/apps/${app.id}/tools`, HTTP_TOOL);
-    const general = await generalAgentOf(app.id);
+    const general = await runnableAgent(app.id);
     const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "Elimina 42" }).returning();
     llmReplies = [toolCallReply("delete_item", { id: "42" }), textReply("Eliminato.")];
     await startRun(run!.id, { userToken: USER_TOKEN });
     expect((await getRun(run!.id)).status).toBe("awaiting_client");
     return run!.id;
   }
+
+  it("trigger su un agente senza modello → 409 'scegli un modello per l'agente', nessuna run", async () => {
+    const app = await createApp();
+    const general = await generalAgentOf(app.id);
+    expect(general).toHaveProperty("aiModelId", null);
+    const res = await api("POST", `/agents/${general.id}/runs`, { input: "Fai" });
+    expect(res.status).toBe(409);
+    expect(res.json).toEqual({ error: "scegli un modello per l'agente" });
+    expect(await db.select().from(runsTable)).toHaveLength(0);
+  });
 
   it("trigger: legge X-App-User-Token, 202 pending; il token arriva all'app e non è salvato", async () => {
     const id = await pausedRun();
@@ -523,7 +575,7 @@ describe("run", () => {
 
   it("resume su run non in pausa → 409; su run inesistente → 404", async () => {
     const app = await createApp();
-    const general = await generalAgentOf(app.id);
+    const general = await runnableAgent(app.id);
     const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "x" }).returning();
     const res = await api("POST", `/runs/${run!.id}/resume`, { decision: "approved" });
     expect(res.status).toBe(409);
@@ -534,7 +586,7 @@ describe("run", () => {
 
   it("cancel: run pending → 200 cancelled; già conclusa → 409; inesistente → 404", async () => {
     const app = await createApp();
-    const general = await generalAgentOf(app.id);
+    const general = await runnableAgent(app.id);
     const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "x" }).returning();
     const res = await api("POST", `/runs/${run!.id}/cancel`);
     expect(res.status).toBe(200);
@@ -562,7 +614,7 @@ describe("run", () => {
   it("argomenti del modello non JSON: GET dei passi → 200 con { _raw }", async () => {
     const app = await createApp();
     await api("POST", `/apps/${app.id}/tools`, HTTP_TOOL);
-    const general = await generalAgentOf(app.id);
+    const general = await runnableAgent(app.id);
     const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "x" }).returning();
     llmReplies = [rawToolCallReply("delete_item", "{non json"), textReply("Non riesco.")];
     await startRun(run!.id, { userToken: USER_TOKEN });
@@ -575,7 +627,7 @@ describe("run", () => {
 
   it("risposta che non rispetta il contratto (ZodError della risposta) → 500 generico", async () => {
     const app = await createApp();
-    const general = await generalAgentOf(app.id);
+    const general = await runnableAgent(app.id);
     const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "x" }).returning();
     // Riga scritta prima della correzione: args come stringa JSON invece di un oggetto
     await pool.query(
@@ -599,7 +651,7 @@ describe("run", () => {
       },
       definition: { method: "PATCH", path: "/items/{id}", paramLocations: { id: "path", password: "body" } },
     });
-    const general = await generalAgentOf(app.id);
+    const general = await runnableAgent(app.id);
     const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "x" }).returning();
     llmReplies = [toolCallReply("set_password", { id: "42", password: "segreta-123" })];
     await startRun(run!.id, { userToken: USER_TOKEN });

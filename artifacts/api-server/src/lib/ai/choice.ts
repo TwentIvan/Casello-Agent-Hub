@@ -1,6 +1,5 @@
 import { ProviderError } from "./discovery";
 import { ModelAccessError, resolveModel } from "./executor";
-import { findUsableSystemModelId } from "./system-account";
 
 /**
  * Scelta del modello da parte di un utente (agenti, analisi). Regola "chi configura paga": si può
@@ -40,12 +39,4 @@ export async function chooseOwnModel(aiModelId: number, userId: number): Promise
     if (err instanceof ModelAccessError || err instanceof ProviderError) throw new ModelChoiceError(err.message);
     throw err;
   }
-}
-
-/**
- * Transizione: modello indicato solo per nome (console precedente). Se l'account di sistema ha un
- * modello con quell'id (ed è configurato) lo si collega, altrimenti resta il vecchio percorso del gateway (null).
- */
-export async function chooseByName(model: string): Promise<ModelChoice> {
-  return { aiModelId: await findUsableSystemModelId(model), model };
 }

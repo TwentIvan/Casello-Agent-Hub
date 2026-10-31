@@ -219,6 +219,24 @@ describe("agenti con aiModelId", () => {
     expect(ok.json.model).toBe("mio");
   });
 
+  it("PATCH con il solo model (testo): ignorato; aiModelId null toglie il modello", async () => {
+    const dev = await devUserId();
+    const mine = await accountFor(dev, KEY, "mio");
+    const app = await createApp();
+    const created = await api("POST", "/agents", { appId: app.id, name: "Area", aiModelId: mine.model.id });
+    expect(created.status, created.text).toBe(201);
+
+    const byName = await api("PATCH", `/agents/${created.json.id}`, { model: "openrouter/auto" });
+    expect(byName.status, byName.text).toBe(200);
+    expect(byName.json.aiModelId).toBe(mine.model.id);
+    expect(byName.json.model).toBe("mio");
+
+    const cleared = await api("PATCH", `/agents/${created.json.id}`, { aiModelId: null });
+    expect(cleared.status, cleared.text).toBe(200);
+    expect(cleared.json.aiModelId).toBeNull();
+    expect(cleared.json.model).toBe("");
+  });
+
   it("un altro utente modifica il nome di un agente con il modello di A → 200, aiModelId invariato (Review Focus 1)", async () => {
     // A = altro utente, proprietario del modello; l'utente corrente (dev) è B
     const a = await otherUser();
@@ -315,39 +333,37 @@ describe("avvio delle analisi con aiModelId", () => {
     expect(await db.select().from(analysesTable)).toHaveLength(0);
   });
 
-  it("né aiModelId né model, oppure entrambi → 400 'scegli un modello'", async () => {
-    const dev = await devUserId();
-    const { model } = await accountFor(dev, KEY);
+  it("senza aiModelId → 400 'scegli un modello', anche via zip e con il solo model (non più accettato)", async () => {
     const app = await createApp();
 
     const none = await api("POST", `/apps/${app.id}/analyses`, {});
     expect(none.status).toBe(400);
     expect(none.json).toEqual({ error: "scegli un modello" });
-    const both = await api("POST", `/apps/${app.id}/analyses`, { aiModelId: model.id, model: "openrouter/auto" });
-    expect(both.status).toBe(400);
-    expect(both.json).toEqual({ error: "scegli un modello" });
+    const byName = await api("POST", `/apps/${app.id}/analyses`, { model: "openrouter/auto" });
+    expect(byName.status).toBe(400);
+    expect(byName.json).toEqual({ error: "scegli un modello" });
+
+    const zip = await fetch(`${base}/api/apps/${app.id}/analyses/zip?model=openrouter%2Fauto`, {
+      method: "POST",
+      headers: { "content-type": "application/zip" },
+      body: new Uint8Array([1, 2, 3]),
+    });
+    const text = await zip.text();
+    bodies.push(text);
+    expect(zip.status).toBe(400);
+    expect(JSON.parse(text)).toEqual({ error: "scegli un modello" });
+    expect(await db.select().from(analysesTable)).toHaveLength(0);
   });
 
-  it("solo model (console attuale): collegato al modello di sistema se esiste, altrimenti vecchio percorso", async () => {
+  it("aiModelId con model: il nome è ignorato, conta il modello scelto", async () => {
+    const dev = await devUserId();
+    const { model } = await accountFor(dev, KEY, "modello-dev");
     const app = await createApp();
-    const legacy = await api("POST", `/apps/${app.id}/analyses`, { model: "openrouter/auto" });
-    expect(legacy.status, legacy.text).toBe(202);
-    expect(legacy.json.aiModelId).toBeNull();
+
+    const res = await api("POST", `/apps/${app.id}/analyses`, { aiModelId: model.id, model: "openrouter/auto" });
+    expect(res.status, res.text).toBe(202);
+    expect(res.json.aiModelId).toBe(model.id);
+    expect(res.json.model).toBe("modello-dev");
     await settleAnalyses();
-    const legacyRow = await loadAnalysis(legacy.json.id);
-    expect(legacyRow.status).toBe("failed");
-    // Vecchio percorso: messaggio del gateway con il suggerimento per il 400
-    expect(legacyRow.error).toContain("il gateway dei modelli ha risposto con errore 400");
-
-    await ensureSystemAccount();
-    const sys = await systemModelId("openrouter/auto");
-    const mapped = await api("POST", `/apps/${app.id}/analyses`, { model: "openrouter/auto" });
-    expect(mapped.status, mapped.text).toBe(202);
-    expect(mapped.json.aiModelId).toBe(sys);
-    expect(mapped.json.model).toBe("openrouter/auto");
-
-    const unknown = await api("POST", `/apps/${app.id}/analyses`, { model: "non-esiste" });
-    expect(unknown.status).toBe(400);
-    expect(unknown.json.error).toContain("modello non disponibile");
   });
 });

@@ -12,8 +12,8 @@ senza l'approvazione dell'utente in console.
 ## Installazione
 
 1. Copia questa cartella in `~/.claude/skills/casello-architetto-locale/`.
-2. Crea un token personale in console: pagina Account, sezione "Agenti locali" (`cas_...`, mostrato una sola volta,
-   validità 1-90 giorni).
+2. Crea un token personale in console: pagina Account, sezione "Token personali": lascia selezionata la casella
+   "Agente locale (MCP)", preselezionata (`cas_...`, mostrato una sola volta, validità 1-90 giorni).
 3. Collega il server MCP per tutte le cartelle (`--scope user`):
 
    ```

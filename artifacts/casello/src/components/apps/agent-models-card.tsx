@@ -28,7 +28,7 @@ export function AgentModelsCard({ appId }: { appId: number }) {
   const agents = useListAgents(params, { query: { queryKey: getListAgentsQueryKey(params) } });
   // Modifiche non salvate: id dell'agente → modello scelto (null = nessuno)
   const [changes, setChanges] = useState<Map<number, number | null>>(new Map());
-  const [bulkModel, setBulkModel] = useState<number | null>(null);
+  const [bulkModel, setBulkModel] = useState<number | null | undefined>(undefined);
 
   const save = useSetAppAgentModels({
     mutation: {
@@ -56,7 +56,7 @@ export function AgentModelsCard({ appId }: { appId: number }) {
 
   const setRow = (agentId: number, aiModelId: number | null) =>
     setChanges((prev) => new Map(prev).set(agentId, aiModelId));
-  const applyToAll = () => setChanges(new Map(list.map((agent) => [agent.id, bulkModel])));
+  const applyToAll = () => setChanges(new Map(list.map((agent) => [agent.id, bulkModel ?? null])));
 
   return (
     <Card>
@@ -75,9 +75,9 @@ export function AgentModelsCard({ appId }: { appId: number }) {
           <>
             <div className="flex flex-wrap items-start gap-2">
               <div className="w-full max-w-md">
-                <ModelPicker id={`agent-models-bulk-${appId}`} value={bulkModel} onChange={setBulkModel} allowNone />
+                <ModelPicker id={`agent-models-bulk-${appId}`} value={bulkModel ?? null} onChange={setBulkModel} allowNone />
               </div>
-              <Button variant="outline" onClick={applyToAll} disabled={save.isPending}>
+              <Button variant="outline" onClick={applyToAll} disabled={save.isPending || bulkModel === undefined}>
                 Applica a tutti
               </Button>
             </div>

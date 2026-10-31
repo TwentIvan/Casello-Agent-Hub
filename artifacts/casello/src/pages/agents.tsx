@@ -154,7 +154,11 @@ export default function AgentsPage() {
                     </TableCell>
                     <TableCell className="hidden font-mono text-xs text-muted-foreground md:table-cell">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span>{agent.model ?? "—"}</span>
+                        {agent.aiModelId === null ? (
+                          <span className="text-amber-800 dark:text-amber-300">nessun modello</span>
+                        ) : (
+                          <span>{agent.model}</span>
+                        )}
                         <ModelDeprecationBadge aiModelId={agent.aiModelId} href={`/agents/${agent.id}`} />
                       </div>
                     </TableCell>

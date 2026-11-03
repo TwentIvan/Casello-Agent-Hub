@@ -1,6 +1,15 @@
 import { useEffect, useRef } from "react";
+import { Link } from "wouter";
 import { Bot, Check, Wrench, X } from "lucide-react";
-import { type Run, type RunStep, getListRunStepsQueryKey, useListRunSteps } from "@workspace/api-client-react";
+import {
+  type Run,
+  type RunStep,
+  getGetPendingActionQueryKey,
+  getListRunStepsQueryKey,
+  useGetPendingAction,
+  useListRunSteps,
+} from "@workspace/api-client-react";
+import { ActionStatusBadge } from "@/components/actions/action-status";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,17 +19,46 @@ import { isRunActive } from "./run-queries";
 
 const POLL_MS = 1500;
 
+/** Numero e sintesi di un passo `queued` (args = { numero, destinatario, sintesi, argomenti }). */
+function queuedInfo(step: RunStep): { numero: number | null; sintesi: string | null; argomenti: unknown } {
+  const a = (step.args ?? {}) as Record<string, unknown>;
+  return {
+    numero: typeof a.numero === "number" ? a.numero : null,
+    sintesi: typeof a.sintesi === "string" ? a.sintesi : null,
+    argomenti: a.argomenti,
+  };
+}
+
+/** Collegamento alla voce della coda con il suo stato attuale (riletto a ogni apertura della pagina). */
+function QueuedLink({ numero }: { numero: number }) {
+  const action = useGetPendingAction(numero, { query: { queryKey: getGetPendingActionQueryKey(numero) } });
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <Link href="/pending-actions" className="font-medium hover:underline">
+        Accodata n. {numero}
+      </Link>
+      {action.data && <ActionStatusBadge status={action.data.status} />}
+    </span>
+  );
+}
+
 function StepRow({ step }: { step: RunStep }) {
   // `queued`: azione L2 accodata per la conferma (args = numero, destinatario, sintesi, argomenti)
   const isTool = step.type === "tool" || step.type === "queued";
   const failed = step.ok === false;
-  const hasArgs = step.args != null && Object.keys(step.args).length > 0;
+  const queued = step.type === "queued" ? queuedInfo(step) : null;
+  const shownArgs = queued ? queued.argomenti : step.args;
+  const hasArgs = shownArgs != null && typeof shownArgs === "object" && Object.keys(shownArgs).length > 0;
   return (
     <li className="space-y-1 py-3">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="w-6 text-right text-xs tabular-nums text-muted-foreground">{step.position + 1}</span>
         {isTool ? <Wrench className="size-4 text-muted-foreground" /> : <Bot className="size-4 text-muted-foreground" />}
-        <span className="font-medium">{step.type === "queued" ? "Accodata" : isTool ? "Tool" : "Modello"}</span>
+        {queued?.numero != null ? (
+          <QueuedLink numero={queued.numero} />
+        ) : (
+          <span className="font-medium">{step.type === "queued" ? "Accodata" : isTool ? "Tool" : "Modello"}</span>
+        )}
         {step.toolName && <span className="font-mono text-xs">{step.toolName}</span>}
         {step.ok != null && (
           <Badge
@@ -43,11 +81,12 @@ function StepRow({ step }: { step: RunStep }) {
         <span className="ml-auto text-xs tabular-nums text-muted-foreground">{formatDuration(step.durationMs)}</span>
       </div>
       {step.error && <p className="pl-8 text-xs text-destructive break-words">{step.error}</p>}
+      {queued?.sintesi && <p className="pl-8 text-xs text-muted-foreground break-words">{queued.sintesi}</p>}
       {hasArgs && (
         <details className="pl-8 text-xs">
           <summary className="cursor-pointer text-muted-foreground">Argomenti</summary>
           <pre className="mt-1 max-h-60 overflow-auto rounded bg-muted p-2 font-mono">
-            {JSON.stringify(step.args, null, 2)}
+            {JSON.stringify(shownArgs, null, 2)}
           </pre>
         </details>
       )}

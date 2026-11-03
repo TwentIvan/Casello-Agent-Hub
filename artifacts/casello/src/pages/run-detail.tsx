@@ -208,7 +208,7 @@ export default function RunDetailPage() {
           <AlertCircle className="size-4" />
           <AlertTitle>Run annullata</AlertTitle>
           <AlertDescription className="whitespace-pre-wrap break-words">
-            {r.errorMessage || "L'azione proposta dall'agente non è stata confermata."}
+            {r.errorMessage || "Run annullata."}
           </AlertDescription>
         </Alert>
       ) : r.status === "failed" ? (

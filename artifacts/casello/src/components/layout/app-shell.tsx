@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, type LucideIcon } from "lucide-react";
+import { Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, type LucideIcon } from "lucide-react";
+import { getGetDashboardStatsQueryKey, useGetDashboardStats } from "@workspace/api-client-react";
 import {
   Sidebar,
   SidebarContent,
@@ -9,6 +10,7 @@ import {
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
@@ -30,6 +32,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/apps", label: "App", icon: Boxes },
   { href: "/agents", label: "Agenti", icon: Bot },
   { href: "/runs", label: "Run", icon: PlayCircle },
+  { href: "/pending-actions", label: "Da confermare", icon: ShieldCheck },
   { href: "/models", label: "Modelli", icon: Cpu },
 ];
 
@@ -39,6 +42,9 @@ function isActive(href: string, location: string): boolean {
 
 function NavMenu({ location }: { location: string }) {
   const { setOpenMobile } = useSidebar();
+  // Contatore delle azioni in attesa: si riallinea ogni 30 s e quando si torna sulla finestra.
+  const stats = useGetDashboardStats({ query: { queryKey: getGetDashboardStatsQueryKey(), refetchInterval: 30_000 } });
+  const pending = stats.data?.pendingActions ?? 0;
 
   return (
     <SidebarMenu>
@@ -51,6 +57,11 @@ function NavMenu({ location }: { location: string }) {
               <span>{item.label}</span>
             </Link>
           </SidebarMenuButton>
+          {item.href === "/pending-actions" && pending > 0 && (
+            <SidebarMenuBadge className="bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+              {pending}
+            </SidebarMenuBadge>
+          )}
         </SidebarMenuItem>
       ))}
     </SidebarMenu>

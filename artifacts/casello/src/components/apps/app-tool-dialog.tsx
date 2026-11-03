@@ -179,10 +179,26 @@ export function AppToolDialog({ appId, open, onOpenChange, tool }: AppToolDialog
           <DialogHeader>
             <DialogTitle>{tool.name}</DialogTitle>
             <DialogDescription>
-              Tool di tipo «{tool.kind}»: nella fase 1 è modificabile solo lo stato, dal menu del catalogo.
+              {tool.kind === "mcp"
+                ? "Strumento MCP: si aggiorna con «Aggiorna strumenti»; dal catalogo si cambiano lo stato e il livello (solo verso l'alto)."
+                : `Tool di tipo «${tool.kind}»: è modificabile solo lo stato, dal menu del catalogo.`}
             </DialogDescription>
           </DialogHeader>
           {tool.description && <p className="text-sm">{tool.description}</p>}
+          <dl className="grid grid-cols-3 gap-3 text-sm">
+            <div>
+              <dt className="text-xs text-muted-foreground">Tipo</dt>
+              <dd>{tool.kind}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Livello dichiarato</dt>
+              <dd>{TOOL_LEVEL_LABELS[tool.level]}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Livello scelto</dt>
+              <dd>{tool.levelOverride ? TOOL_LEVEL_LABELS[tool.levelOverride] : "—"}</dd>
+            </div>
+          </dl>
           <div className="space-y-3">
             <div>
               <div className="mb-1 text-xs font-medium text-muted-foreground">Schema dei parametri</div>

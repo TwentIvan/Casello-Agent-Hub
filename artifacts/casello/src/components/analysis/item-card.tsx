@@ -144,10 +144,12 @@ function ToolBody({ item }: { item: AnalysisItem }) {
             {str(p, "kind") === "mcp" && mcpName ? `MCP ${mcpName}` : method && path ? `${method} ${path}` : "—"}
           </span>
         </Field>
+        <Field label="Tipo">{str(p, "kind") ?? "http"}</Field>
         <Field label="Identità">{IDENTITY_LABELS[str(p, "identity") ?? ""] ?? "—"}</Field>
         <Field label="Livello">
           {level ?? "—"}
           {declaredLevel && declaredLevel !== level ? ` (dichiarato ${declaredLevel})` : ""}
+          {str(p, "kind") === "mcp" && declaredLevel && declaredLevel === level ? " (dichiarato dal servizio)" : ""}
         </Field>
       </Grid>
       {locations && Object.keys(locations).length > 0 && (

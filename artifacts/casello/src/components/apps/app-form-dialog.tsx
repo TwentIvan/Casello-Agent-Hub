@@ -37,6 +37,7 @@ const appFormSchema = z.object({
   baseUrl: z.string().trim().url("Inserisci un URL completo, es. https://mister.example.com."),
   status: z.enum(["active", "inactive"]),
   internalBaseUrl: z.string().trim().refine((v) => v === "" || URL.canParse(v), "Inserisci un URL completo, es. http://mister:3000."),
+  mcpUrl: z.string().trim().refine((v) => v === "" || URL.canParse(v), "Inserisci un URL completo, es. https://mister.example.com/mcp."),
   userAuthEnabled: z.boolean(),
   userAuthHeader: z.string().trim(),
   userAuthScheme: z.string().trim(),
@@ -157,6 +158,7 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
       baseUrl: app?.baseUrl ?? "",
       status: app?.status ?? "active",
       internalBaseUrl: app?.internalBaseUrl ?? "",
+      mcpUrl: app?.mcpUrl ?? "",
       userAuthEnabled: app ? Boolean(app.userAuth) : true,
       userAuthHeader: app?.userAuth?.header ?? "Authorization",
       userAuthScheme: app ? (app.userAuth?.scheme ?? "") : "Bearer",
@@ -187,6 +189,7 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
       baseUrl: rest.baseUrl,
       status: rest.status,
       internalBaseUrl: rest.internalBaseUrl || null,
+      mcpUrl: rest.mcpUrl || null,
       userAuth: userAuthEnabled ? { header: userAuthHeader, scheme: userAuthScheme || null } : null,
       serviceAuth: serviceAuthEnabled ? { header: serviceAuthHeader, scheme: serviceAuthScheme || null } : null,
     };
@@ -308,6 +311,22 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
                       <Input placeholder="Facoltativo, es. http://mister:3000/api" inputMode="url" {...field} />
                     </FormControl>
                     <FormDescription>Se presente, le chiamate dei tool partono da qui invece che dalla base URL.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="mcpUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Server MCP</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Facoltativo, es. https://mister.example.com/mcp" inputMode="url" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      Se presente, «Aggiorna strumenti» nel catalogo legge da qui gli strumenti dell'app.
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

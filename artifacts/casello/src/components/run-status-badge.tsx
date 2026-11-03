@@ -7,7 +7,8 @@ export const RUN_STATUS_LABELS: Record<RunStatus, string> = {
   running: "In corso",
   succeeded: "Riuscita",
   failed: "Fallita",
-  awaiting_client: "In attesa di conferma",
+  // Stato storico: le run non si fermano più in attesa (le azioni L2 vanno in coda)
+  awaiting_client: "In attesa (storico)",
   cancelled: "Annullata",
 };
 

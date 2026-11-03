@@ -85,6 +85,7 @@ import type {
   ListPendingActionsParams,
   ListRunsParams,
   ListSkillsParams,
+  ListTeamTemplatesParams,
   McpSyncResult,
   NotFoundResponse,
   PayloadTooLargeResponse,
@@ -108,6 +109,10 @@ import type {
   RunStep,
   RunTrigger,
   StartZipAnalysisParams,
+  TeamRoleView,
+  TeamTemplate,
+  TeamTemplateDeleteResult,
+  TeamTemplateInput,
   TooManyRequestsResponse,
   UnauthorizedResponse
 } from './api.schemas';
@@ -4171,6 +4176,461 @@ export function useGetSkillVersion<TData = Awaited<ReturnType<typeof getSkillVer
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetSkillVersionQueryOptions(code,version,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListTeamTemplatesUrl = (params?: ListTeamTemplatesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/team-templates?${stringifiedParams}` : `/api/team-templates`
+}
+
+/**
+ * @summary Elenca i modelli di squadra
+ */
+export const listTeamTemplates = async (params?: ListTeamTemplatesParams, options?: RequestInit): Promise<TeamTemplate[]> => {
+
+  return customFetch<TeamTemplate[]>(getListTeamTemplatesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTeamTemplatesQueryKey = (params?: ListTeamTemplatesParams,) => {
+    return [
+    `/api/team-templates`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListTeamTemplatesQueryOptions = <TData = Awaited<ReturnType<typeof listTeamTemplates>>, TError = ErrorType<BadRequestResponse>>(params?: ListTeamTemplatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamTemplates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTeamTemplatesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTeamTemplates>>> = ({ signal }) => listTeamTemplates(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTeamTemplates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTeamTemplatesQueryResult = NonNullable<Awaited<ReturnType<typeof listTeamTemplates>>>
+export type ListTeamTemplatesQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Elenca i modelli di squadra
+ */
+
+export function useListTeamTemplates<TData = Awaited<ReturnType<typeof listTeamTemplates>>, TError = ErrorType<BadRequestResponse>>(
+ params?: ListTeamTemplatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamTemplates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTeamTemplatesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateTeamTemplateUrl = () => {
+
+
+
+
+  return `/api/team-templates`
+}
+
+/**
+ * @summary Crea un modello di squadra (versione 1)
+ */
+export const createTeamTemplate = async (teamTemplateInput: TeamTemplateInput, options?: RequestInit): Promise<TeamTemplate> => {
+
+  return customFetch<TeamTemplate>(getCreateTeamTemplateUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamTemplateInput)
+  }
+);}
+
+
+
+
+export const getCreateTeamTemplateMutationOptions = <TError = ErrorType<BadRequestResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeamTemplate>>, TError,{data: BodyType<TeamTemplateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTeamTemplate>>, TError,{data: BodyType<TeamTemplateInput>}, TContext> => {
+
+const mutationKey = ['createTeamTemplate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTeamTemplate>>, {data: BodyType<TeamTemplateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createTeamTemplate(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTeamTemplateMutationResult = NonNullable<Awaited<ReturnType<typeof createTeamTemplate>>>
+    export type CreateTeamTemplateMutationBody = BodyType<TeamTemplateInput>
+    export type CreateTeamTemplateMutationError = ErrorType<BadRequestResponse | ConflictResponse>
+
+    /**
+ * @summary Crea un modello di squadra (versione 1)
+ */
+export const useCreateTeamTemplate = <TError = ErrorType<BadRequestResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeamTemplate>>, TError,{data: BodyType<TeamTemplateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTeamTemplate>>,
+        TError,
+        {data: BodyType<TeamTemplateInput>},
+        TContext
+      > => {
+      return useMutation(getCreateTeamTemplateMutationOptions(options));
+    }
+
+export const getGetTeamTemplateUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-templates/${id}`
+}
+
+/**
+ * @summary Dettaglio di un modello (versione corrente)
+ */
+export const getTeamTemplate = async (id: number, options?: RequestInit): Promise<TeamTemplate> => {
+
+  return customFetch<TeamTemplate>(getGetTeamTemplateUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamTemplateQueryKey = (id: number,) => {
+    return [
+    `/api/team-templates/${id}`
+    ] as const;
+    }
+
+
+export const getGetTeamTemplateQueryOptions = <TData = Awaited<ReturnType<typeof getTeamTemplate>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamTemplate>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamTemplateQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamTemplate>>> = ({ signal }) => getTeamTemplate(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamTemplate>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamTemplateQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamTemplate>>>
+export type GetTeamTemplateQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Dettaglio di un modello (versione corrente)
+ */
+
+export function useGetTeamTemplate<TData = Awaited<ReturnType<typeof getTeamTemplate>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamTemplate>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamTemplateQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveTeamTemplateUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-templates/${id}`
+}
+
+/**
+ * Tutto o niente, se una regola è violata non nasce nessuna versione.
+ * @summary Salva il modello (crea la versione successiva)
+ */
+export const saveTeamTemplate = async (id: number,
+    teamTemplateInput: TeamTemplateInput, options?: RequestInit): Promise<TeamTemplate> => {
+
+  return customFetch<TeamTemplate>(getSaveTeamTemplateUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamTemplateInput)
+  }
+);}
+
+
+
+
+export const getSaveTeamTemplateMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTeamTemplate>>, TError,{id: number;data: BodyType<TeamTemplateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveTeamTemplate>>, TError,{id: number;data: BodyType<TeamTemplateInput>}, TContext> => {
+
+const mutationKey = ['saveTeamTemplate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveTeamTemplate>>, {id: number;data: BodyType<TeamTemplateInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  saveTeamTemplate(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveTeamTemplateMutationResult = NonNullable<Awaited<ReturnType<typeof saveTeamTemplate>>>
+    export type SaveTeamTemplateMutationBody = BodyType<TeamTemplateInput>
+    export type SaveTeamTemplateMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Salva il modello (crea la versione successiva)
+ */
+export const useSaveTeamTemplate = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTeamTemplate>>, TError,{id: number;data: BodyType<TeamTemplateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveTeamTemplate>>,
+        TError,
+        {id: number;data: BodyType<TeamTemplateInput>},
+        TContext
+      > => {
+      return useMutation(getSaveTeamTemplateMutationOptions(options));
+    }
+
+export const getDeleteTeamTemplateUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-templates/${id}`
+}
+
+/**
+ * @summary Elimina il modello (archivia se ha istanze)
+ */
+export const deleteTeamTemplate = async (id: number, options?: RequestInit): Promise<TeamTemplateDeleteResult> => {
+
+  return customFetch<TeamTemplateDeleteResult>(getDeleteTeamTemplateUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteTeamTemplateMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTeamTemplate>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteTeamTemplate>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteTeamTemplate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTeamTemplate>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteTeamTemplate(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteTeamTemplateMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTeamTemplate>>>
+
+    export type DeleteTeamTemplateMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Elimina il modello (archivia se ha istanze)
+ */
+export const useDeleteTeamTemplate = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTeamTemplate>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteTeamTemplate>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteTeamTemplateMutationOptions(options));
+    }
+
+export const getGetTeamTemplateVersionUrl = (id: number,
+    version: number,) => {
+
+
+
+
+  return `/api/team-templates/${id}/versions/${version}`
+}
+
+/**
+ * @summary I ruoli di una versione del modello
+ */
+export const getTeamTemplateVersion = async (id: number,
+    version: number, options?: RequestInit): Promise<TeamRoleView[]> => {
+
+  return customFetch<TeamRoleView[]>(getGetTeamTemplateVersionUrl(id,version),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamTemplateVersionQueryKey = (id: number,
+    version: number,) => {
+    return [
+    `/api/team-templates/${id}/versions/${version}`
+    ] as const;
+    }
+
+
+export const getGetTeamTemplateVersionQueryOptions = <TData = Awaited<ReturnType<typeof getTeamTemplateVersion>>, TError = ErrorType<NotFoundResponse>>(id: number,
+    version: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamTemplateVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamTemplateVersionQueryKey(id,version);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamTemplateVersion>>> = ({ signal }) => getTeamTemplateVersion(id,version, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && version !== null && version !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamTemplateVersion>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamTemplateVersionQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamTemplateVersion>>>
+export type GetTeamTemplateVersionQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary I ruoli di una versione del modello
+ */
+
+export function useGetTeamTemplateVersion<TData = Awaited<ReturnType<typeof getTeamTemplateVersion>>, TError = ErrorType<NotFoundResponse>>(
+ id: number,
+    version: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamTemplateVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamTemplateVersionQueryOptions(id,version,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

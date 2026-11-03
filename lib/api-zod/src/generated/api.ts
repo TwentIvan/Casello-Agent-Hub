@@ -1556,6 +1556,296 @@ export const GetSkillVersionResponse = zod.object({
 
 
 /**
+ * @summary Elenca i modelli di squadra
+ */
+export const ListTeamTemplatesQueryParams = zod.object({
+  "archived": zod.enum(['true', 'false']).optional().describe('`true` per i modelli archiviati (default, solo quelli non archiviati)')
+})
+
+export const ListTeamTemplatesResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "version": zod.number(),
+  "archived": zod.boolean(),
+  "instanceCount": zod.number(),
+  "roles": zod.array(zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "model": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
+  "tools": zod.array(zod.object({
+  "id": zod.number(),
+  "appId": zod.number().optional(),
+  "appName": zod.string().optional(),
+  "name": zod.string(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional(),
+  "available": zod.boolean()
+}).describe('Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false')),
+  "skills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().optional(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "deprecated": zod.boolean(),
+  "local": zod.boolean().optional()
+}))
+}).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListTeamTemplatesResponse = zod.array(ListTeamTemplatesResponseItem)
+
+
+/**
+ * @summary Crea un modello di squadra (versione 1)
+ */
+export const createTeamTemplateBodyNameMax = 120;
+
+export const createTeamTemplateBodyDescriptionMax = 2000;
+
+export const createTeamTemplateBodyRolesItemKeyRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const createTeamTemplateBodyRolesItemNameMax = 80;
+
+export const createTeamTemplateBodyRolesItemTaskMax = 8000;
+
+export const createTeamTemplateBodyRolesItemSkillsItemRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
+
+
+export const CreateTeamTemplateBody = zod.object({
+  "name": zod.string().min(1).max(createTeamTemplateBodyNameMax),
+  "description": zod.string().max(createTeamTemplateBodyDescriptionMax).optional(),
+  "roles": zod.array(zod.object({
+  "key": zod.string().regex(createTeamTemplateBodyRolesItemKeyRegExp),
+  "name": zod.string().min(1).max(createTeamTemplateBodyRolesItemNameMax),
+  "task": zod.string().max(createTeamTemplateBodyRolesItemTaskMax),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "aiModelId": zod.number().nullable(),
+  "tools": zod.array(zod.number()),
+  "skills": zod.array(zod.string().regex(createTeamTemplateBodyRolesItemSkillsItemRegExp))
+}).describe('Ruolo di un modello di squadra (manifesto in ingresso)'))
+})
+
+export const CreateTeamTemplateResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "version": zod.number(),
+  "archived": zod.boolean(),
+  "instanceCount": zod.number(),
+  "roles": zod.array(zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "model": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
+  "tools": zod.array(zod.object({
+  "id": zod.number(),
+  "appId": zod.number().optional(),
+  "appName": zod.string().optional(),
+  "name": zod.string(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional(),
+  "available": zod.boolean()
+}).describe('Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false')),
+  "skills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().optional(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "deprecated": zod.boolean(),
+  "local": zod.boolean().optional()
+}))
+}).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Dettaglio di un modello (versione corrente)
+ */
+export const GetTeamTemplateParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetTeamTemplateResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "version": zod.number(),
+  "archived": zod.boolean(),
+  "instanceCount": zod.number(),
+  "roles": zod.array(zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "model": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
+  "tools": zod.array(zod.object({
+  "id": zod.number(),
+  "appId": zod.number().optional(),
+  "appName": zod.string().optional(),
+  "name": zod.string(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional(),
+  "available": zod.boolean()
+}).describe('Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false')),
+  "skills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().optional(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "deprecated": zod.boolean(),
+  "local": zod.boolean().optional()
+}))
+}).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * Tutto o niente, se una regola è violata non nasce nessuna versione.
+ * @summary Salva il modello (crea la versione successiva)
+ */
+export const SaveTeamTemplateParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const saveTeamTemplateBodyNameMax = 120;
+
+export const saveTeamTemplateBodyDescriptionMax = 2000;
+
+export const saveTeamTemplateBodyRolesItemKeyRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const saveTeamTemplateBodyRolesItemNameMax = 80;
+
+export const saveTeamTemplateBodyRolesItemTaskMax = 8000;
+
+export const saveTeamTemplateBodyRolesItemSkillsItemRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
+
+
+export const SaveTeamTemplateBody = zod.object({
+  "name": zod.string().min(1).max(saveTeamTemplateBodyNameMax),
+  "description": zod.string().max(saveTeamTemplateBodyDescriptionMax).optional(),
+  "roles": zod.array(zod.object({
+  "key": zod.string().regex(saveTeamTemplateBodyRolesItemKeyRegExp),
+  "name": zod.string().min(1).max(saveTeamTemplateBodyRolesItemNameMax),
+  "task": zod.string().max(saveTeamTemplateBodyRolesItemTaskMax),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "aiModelId": zod.number().nullable(),
+  "tools": zod.array(zod.number()),
+  "skills": zod.array(zod.string().regex(saveTeamTemplateBodyRolesItemSkillsItemRegExp))
+}).describe('Ruolo di un modello di squadra (manifesto in ingresso)'))
+})
+
+export const SaveTeamTemplateResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "version": zod.number(),
+  "archived": zod.boolean(),
+  "instanceCount": zod.number(),
+  "roles": zod.array(zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "model": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
+  "tools": zod.array(zod.object({
+  "id": zod.number(),
+  "appId": zod.number().optional(),
+  "appName": zod.string().optional(),
+  "name": zod.string(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional(),
+  "available": zod.boolean()
+}).describe('Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false')),
+  "skills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().optional(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "deprecated": zod.boolean(),
+  "local": zod.boolean().optional()
+}))
+}).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Elimina il modello (archivia se ha istanze)
+ */
+export const DeleteTeamTemplateParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteTeamTemplateResponse = zod.object({
+  "deleted": zod.boolean(),
+  "archived": zod.boolean()
+})
+
+
+/**
+ * @summary I ruoli di una versione del modello
+ */
+
+
+
+export const GetTeamTemplateVersionParams = zod.object({
+  "id": zod.coerce.number(),
+  "version": zod.coerce.number().min(1)
+})
+
+export const GetTeamTemplateVersionResponseItem = zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "model": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
+  "tools": zod.array(zod.object({
+  "id": zod.number(),
+  "appId": zod.number().optional(),
+  "appName": zod.string().optional(),
+  "name": zod.string(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional(),
+  "available": zod.boolean()
+}).describe('Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false')),
+  "skills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().optional(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "deprecated": zod.boolean(),
+  "local": zod.boolean().optional()
+}))
+}).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')
+export const GetTeamTemplateVersionResponse = zod.array(GetTeamTemplateVersionResponseItem)
+
+
+/**
  * Provider della tabella providers (registro e scoperti), senza quello del vecchio gateway: prima i gestiti per nome, poi quelli in arrivo, poi i non gestiti.
  * @summary Provider del registro per la creazione degli account AI
  */

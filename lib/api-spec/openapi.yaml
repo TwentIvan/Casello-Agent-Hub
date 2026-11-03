@@ -36,6 +36,8 @@ tags:
     description: Chat con il bot sul piano di un'app (conversazioni, messaggi e proposte)
   - name: skills
     description: Catalogo delle skill con codice, versionate, usate dalle squadre di agenti
+  - name: teams
+    description: Modelli di squadra di agenti e le loro istanze
 
 paths:
   /healthz:
@@ -1256,6 +1258,138 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CatalogSkillVersion"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ─── Modelli di squadra ─────────────────────────────────────────────────────
+
+  /team-templates:
+    get:
+      operationId: listTeamTemplates
+      tags: [teams]
+      summary: Elenca i modelli di squadra
+      parameters:
+        - name: archived
+          in: query
+          required: false
+          description: "`true` per i modelli archiviati (default, solo quelli non archiviati)"
+          schema:
+            type: string
+            enum: ["true", "false"]
+      responses:
+        "200":
+          description: Modelli, dal più recente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      operationId: createTeamTemplate
+      tags: [teams]
+      summary: Crea un modello di squadra (versione 1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamTemplateInput"
+      responses:
+        "201":
+          description: Modello creato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-templates/{id}:
+    get:
+      operationId: getTeamTemplate
+      tags: [teams]
+      summary: Dettaglio di un modello (versione corrente)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Modello
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamTemplate"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: saveTeamTemplate
+      tags: [teams]
+      summary: Salva il modello (crea la versione successiva)
+      description: >-
+        Tutto o niente, se una regola è violata non nasce nessuna versione.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamTemplateInput"
+      responses:
+        "200":
+          description: Modello salvato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      operationId: deleteTeamTemplate
+      tags: [teams]
+      summary: Elimina il modello (archivia se ha istanze)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Esito
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamTemplateDeleteResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /team-templates/{id}/versions/{version}:
+    get:
+      operationId: getTeamTemplateVersion
+      tags: [teams]
+      summary: I ruoli di una versione del modello
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Ruoli della versione
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamRoleView"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -4440,3 +4574,154 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    # ── Squadre ─────────────────────────────────────────────────────────────────
+
+    TeamRole:
+      type: object
+      required: [key, name, task, isLead, runsOn, aiModelId, tools, skills]
+      description: Ruolo di un modello di squadra (manifesto in ingresso)
+      properties:
+        key:
+          type: string
+          pattern: "^[a-z0-9_-]{1,40}$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        task:
+          type: string
+          maxLength: 8000
+        isLead:
+          type: boolean
+        runsOn:
+          type: string
+          enum: [cloud, node]
+        aiModelId:
+          type: integer
+          nullable: true
+        tools:
+          type: array
+          items:
+            type: integer
+        skills:
+          type: array
+          items:
+            type: string
+            pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+
+    TeamRoleView:
+      type: object
+      required: [key, name, task, isLead, runsOn, model, tools, skills]
+      description: Ruolo arricchito per la lettura (strumenti, skill e modello con nome)
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        task:
+          type: string
+        isLead:
+          type: boolean
+        runsOn:
+          type: string
+          enum: [cloud, node]
+        model:
+          type: object
+          nullable: true
+          required: [id, name]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+        tools:
+          type: array
+          items:
+            type: object
+            required: [id, name, available]
+            description: Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false
+            properties:
+              id:
+                type: integer
+              appId:
+                type: integer
+              appName:
+                type: string
+              name:
+                type: string
+              level:
+                type: string
+                enum: [L0, L1, L2, L3]
+              available:
+                type: boolean
+        skills:
+          type: array
+          items:
+            type: object
+            required: [code, name, kind, deprecated]
+            properties:
+              code:
+                type: string
+              version:
+                type: integer
+              name:
+                type: string
+              kind:
+                $ref: "#/components/schemas/SkillKind"
+              deprecated:
+                type: boolean
+              local:
+                type: boolean
+
+    TeamTemplate:
+      type: object
+      required: [id, name, description, version, archived, instanceCount, roles, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        version:
+          type: integer
+        archived:
+          type: boolean
+        instanceCount:
+          type: integer
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamRoleView"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TeamTemplateInput:
+      type: object
+      required: [name, roles]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamRole"
+
+    TeamTemplateDeleteResult:
+      type: object
+      required: [deleted, archived]
+      properties:
+        deleted:
+          type: boolean
+        archived:
+          type: boolean

@@ -1869,6 +1869,121 @@ export interface CatalogSkillVersion {
   createdAt: string;
 }
 
+export type TeamRoleRunsOn = typeof TeamRoleRunsOn[keyof typeof TeamRoleRunsOn];
+
+
+export const TeamRoleRunsOn = {
+  cloud: 'cloud',
+  node: 'node',
+} as const;
+
+/**
+ * Ruolo di un modello di squadra (manifesto in ingresso)
+ */
+export interface TeamRole {
+  /** @pattern ^[a-z0-9_-]{1,40}$ */
+  key: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name: string;
+  /** @maxLength 8000 */
+  task: string;
+  isLead: boolean;
+  runsOn: TeamRoleRunsOn;
+  aiModelId: number | null;
+  tools: number[];
+  /** @items.pattern ^[a-z0-9][a-z0-9._-]{1,63}$ */
+  skills: string[];
+}
+
+export type TeamRoleViewRunsOn = typeof TeamRoleViewRunsOn[keyof typeof TeamRoleViewRunsOn];
+
+
+export const TeamRoleViewRunsOn = {
+  cloud: 'cloud',
+  node: 'node',
+} as const;
+
+export type TeamRoleViewModel = {
+  id: number;
+  name: string;
+} | null;
+
+export type TeamRoleViewToolsItemLevel = typeof TeamRoleViewToolsItemLevel[keyof typeof TeamRoleViewToolsItemLevel];
+
+
+export const TeamRoleViewToolsItemLevel = {
+  L0: 'L0',
+  L1: 'L1',
+  L2: 'L2',
+  L3: 'L3',
+} as const;
+
+/**
+ * Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false
+ */
+export type TeamRoleViewToolsItem = {
+  id: number;
+  appId?: number;
+  appName?: string;
+  name: string;
+  level?: TeamRoleViewToolsItemLevel;
+  available: boolean;
+};
+
+export type TeamRoleViewSkillsItem = {
+  code: string;
+  version?: number;
+  name: string;
+  kind: SkillKind;
+  deprecated: boolean;
+  local?: boolean;
+};
+
+/**
+ * Ruolo arricchito per la lettura (strumenti, skill e modello con nome)
+ */
+export interface TeamRoleView {
+  key: string;
+  name: string;
+  task: string;
+  isLead: boolean;
+  runsOn: TeamRoleViewRunsOn;
+  model: TeamRoleViewModel;
+  tools: TeamRoleViewToolsItem[];
+  skills: TeamRoleViewSkillsItem[];
+}
+
+export interface TeamTemplate {
+  id: number;
+  name: string;
+  description: string;
+  version: number;
+  archived: boolean;
+  instanceCount: number;
+  roles: TeamRoleView[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeamTemplateInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  /** @maxLength 2000 */
+  description?: string;
+  roles: TeamRole[];
+}
+
+export interface TeamTemplateDeleteResult {
+  deleted: boolean;
+  archived: boolean;
+}
+
 /**
  * Troppe richieste
  */
@@ -1980,6 +2095,21 @@ export type ListSkillsDeprecated = typeof ListSkillsDeprecated[keyof typeof List
 
 
 export const ListSkillsDeprecated = {
+  true: 'true',
+  false: 'false',
+} as const;
+
+export type ListTeamTemplatesParams = {
+/**
+ * `true` per i modelli archiviati (default, solo quelli non archiviati)
+ */
+archived?: ListTeamTemplatesArchived;
+};
+
+export type ListTeamTemplatesArchived = typeof ListTeamTemplatesArchived[keyof typeof ListTeamTemplatesArchived];
+
+
+export const ListTeamTemplatesArchived = {
   true: 'true',
   false: 'false',
 } as const;

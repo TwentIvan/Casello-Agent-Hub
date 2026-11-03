@@ -130,18 +130,21 @@ export async function createInstance(userId: number, input: CreateInstanceInput,
   await assertAppExists(input.ref.appId);
 
   let roles: InstanceRole[];
+  // Ruoli del modello: le skill deprecate o gli strumenti non più usabili restano validi dove il modello già li ha
+  let previous: TemplateRole[] | null = null;
   let templateVersion: number | null = null;
   if (input.templateId !== undefined) {
     const [template] = await db.select().from(teamTemplatesTable).where(eq(teamTemplatesTable.id, input.templateId)).limit(1);
     if (!template) throw new TemplateError(404, TEMPLATE_MESSAGES.notFound);
     if (template.archived) throw new TemplateError(409, TEMPLATE_MESSAGES.archived);
-    roles = await pinSkills(await getTemplateVersion(template.id, template.version));
+    previous = await getTemplateVersion(template.id, template.version);
+    roles = await pinSkills(previous);
     templateVersion = template.version;
   } else {
     if (!input.roles) throw new TeamRuleError(INSTANCE_MESSAGES.rolesRequired);
     roles = input.roles;
   }
-  await validateRoles({ roles, mode: "instance", userId, previous: null, localSkillCodes: new Map() });
+  await validateRoles({ roles, mode: "instance", userId, previous, localSkillCodes: new Map() });
 
   const [row] = await executor
     .insert(teamInstancesTable)

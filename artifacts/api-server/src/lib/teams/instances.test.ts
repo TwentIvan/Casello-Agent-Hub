@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { db, pool, aiAccountsTable, aiModelsTable, appsTable, skillsTable, skillVersionsTable, teamTemplatesTable, usersTable } from "@workspace/db";
+import { db, pool, aiAccountsTable, aiModelsTable, appToolsTable, appsTable, skillsTable, skillVersionsTable, teamTemplatesTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { encryptSecret } from "../secrets";
 import type { InstanceRole, TemplateRole } from "./manifest";
@@ -63,6 +63,16 @@ afterAll(async () => {
 });
 
 describe("istanze di squadra", () => {
+  it("da modello: una skill deprecata o uno strumento disabilitato dopo il salvataggio del modello non impediscono la copia", async () => {
+    const [tool] = await db.insert(appToolsTable).values({ appId, name: "crea_ordine", kind: "http", status: "active", level: "L1", definition: {} }).returning();
+    const template = await createTemplate(userId, { name: "Sviluppo", roles: [trole({ skills: ["sap.review"], tools: [tool!.id] })] });
+    await deprecateSkill("sap.review");
+    await db.update(appToolsTable).set({ status: "disabled" }).where(eq(appToolsTable.id, tool!.id));
+    const view = await createInstance(userId, { templateId: template.id, name: "S", ref: ref() });
+    expect(view.roles[0]!.skills[0]).toMatchObject({ code: "sap.review", deprecated: true });
+    expect(view.roles[0]!.tools[0]).toMatchObject({ id: tool!.id, available: false });
+  });
+
   it("copia dal modello fissando le skill alla versione corrente e ricorda la versione del modello", async () => {
     await updateSkill("sap.review", { content: "istruzioni v2" });
     const template = await createTemplate(userId, { name: "Sviluppo", roles: [trole({ skills: ["sap.review"] })] });

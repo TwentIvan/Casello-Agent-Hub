@@ -2,7 +2,14 @@ import { inArray } from "drizzle-orm";
 import { db, appToolsTable, skillsTable, skillVersionsTable } from "@workspace/db";
 import { effectiveLevel } from "../tools/levels";
 import { ModelChoiceError, MODEL_UNAVAILABLE, chooseOwnModel } from "../ai/choice";
-import { MAX_ROLES, MAX_SKILLS_PER_ROLE, type InstanceRole, type TemplateRole } from "./manifest";
+import {
+  InstanceRoleSchema,
+  MAX_ROLES,
+  MAX_SKILLS_PER_ROLE,
+  TemplateRoleSchema,
+  type InstanceRole,
+  type TemplateRole,
+} from "./manifest";
 import type { SkillKind } from "./skills";
 
 // Regole applicate a ogni salvataggio di un modello o di un'istanza di squadra (spec §3). Si lancia
@@ -15,6 +22,9 @@ export const TEAM_MESSAGES = {
   duplicateName: "ruoli con lo stesso nome",
   duplicateKey: "ruoli con la stessa chiave",
   tooManyRoles: "troppi ruoli",
+  invalidRoles: "ruoli non validi",
+  repeatedTools: (role: string) => `strumenti ripetuti nel ruolo ${role}`,
+  repeatedSkills: (role: string) => `skill ripetute nel ruolo ${role}`,
   tooManySkills: (role: string) => `troppe skill nel ruolo ${role}`,
   skillNotFound: (code: string) => `skill ${code} inesistente`,
   skillDeprecated: (code: string) => `skill ${code} deprecata`,
@@ -56,6 +66,20 @@ function fail(message: string): never {
 
 export async function validateRoles(input: ValidateRolesInput): Promise<void> {
   const { roles, mode, userId, previous, localSkillCodes } = input;
+
+  // Forma del manifesto: è la stessa che si rilegge a ogni lettura, quindi un ruolo che non la rispetta
+  // (es. strumenti o skill ripetuti) non deve mai essere salvato
+  const shape = (mode === "template" ? TemplateRoleSchema : InstanceRoleSchema).array().safeParse(roles);
+  if (!shape.success) {
+    const issue = shape.error.issues[0];
+    const role = issue && typeof issue.path[0] === "number" ? roles[issue.path[0]] : undefined;
+    const field = issue?.path[1];
+    if (role && issue?.message === "strumenti ripetuti") fail(TEAM_MESSAGES.repeatedTools(role.name));
+    if (role && issue?.message === "skill ripetute" && (field === "skills" || field === "localSkills")) {
+      fail(TEAM_MESSAGES.repeatedSkills(role.name));
+    }
+    fail(TEAM_MESSAGES.invalidRoles);
+  }
 
   // Struttura: capo, numero di ruoli, chiavi e nomi unici, numero di skill
   if (roles.filter((r) => r.isLead).length !== 1) fail(TEAM_MESSAGES.oneLead);

@@ -195,12 +195,12 @@ export async function createTemplate(userId: number, input: TemplateInput, execu
 }
 
 /**
- * Crea la versione successiva senza validare i ruoli (già validati da chi chiama). La riga del modello si
+ * Crea la versione successiva (e la restituisce) senza validare i ruoli (già validati da chi chiama). La riga del modello si
  * blocca (FOR UPDATE) per non assegnare lo stesso numero a due salvataggi concorrenti.
  */
-export async function appendTemplateVersionUnchecked(id: number, input: TemplateInput, executor: Executor = db): Promise<void> {
+export async function appendTemplateVersionUnchecked(id: number, input: TemplateInput, executor: Executor = db): Promise<number> {
   try {
-    await executor.transaction(async (tx) => {
+    return await executor.transaction(async (tx) => {
       const [locked] = await tx.select().from(teamTemplatesTable).where(eq(teamTemplatesTable.id, id)).limit(1).for("update");
       if (!locked) throw new TemplateError(404, TEMPLATE_MESSAGES.notFound);
       if (locked.archived) throw new TemplateError(409, TEMPLATE_MESSAGES.archived);
@@ -210,6 +210,7 @@ export async function appendTemplateVersionUnchecked(id: number, input: Template
         .update(teamTemplatesTable)
         .set({ name: input.name, description: input.description ?? "", version, updatedAt: new Date() })
         .where(eq(teamTemplatesTable.id, id));
+      return version;
     });
   } catch (err) {
     if (isUniqueViolation(err, "team_templates_name_active_unique")) {

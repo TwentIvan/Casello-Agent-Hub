@@ -1,6 +1,6 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db, skillsTable, teamInstanceSkillsTable, teamInstancesTable } from "@workspace/db";
-import { InstanceRoleSchema, type TemplateRole } from "./manifest";
+import { InstanceRoleSchema, type InstanceRole, type TemplateRole } from "./manifest";
 import { INSTANCE_MESSAGES, InstanceError } from "./instances";
 import { TEAM_MESSAGES, TeamRuleError, validateRoles } from "./rules";
 import { SKILL_CODE, SKILL_MESSAGES, SkillError, createSkill } from "./skills";
@@ -99,7 +99,24 @@ export async function saveInstanceAsTemplate(userId: number, instanceId: number,
       await createSkill({ code, name: skill.name, kind: skill.kind, content: skill.content, toolHints: skill.toolHints }, tx);
     }
     if (target) {
-      await appendTemplateVersionUnchecked(target.id, templateInput, tx);
+      const version = await appendTemplateVersionUnchecked(target.id, templateInput, tx);
+      // L'istanza d'origine segue la nuova versione: usa ora le skill promosse dal catalogo (v1) al posto di
+      // quelle specializzate, così non compaiono aggiornamenti che rimetterebbero la stessa skill due volte
+      const promotedLocal = new Set(promote.map((p) => p.localCode));
+      const relinked: InstanceRole[] = instanceRoles.map((role) => ({
+        ...role,
+        skills: [...role.skills, ...role.localSkills.flatMap((code) => (newCodeOf.has(code) ? [{ code: newCodeOf.get(code)!, version: 1 }] : []))],
+        localSkills: role.localSkills.filter((code) => !promotedLocal.has(code)),
+      }));
+      if (promotedLocal.size > 0) {
+        await tx
+          .delete(teamInstanceSkillsTable)
+          .where(and(eq(teamInstanceSkillsTable.instanceId, instanceId), inArray(teamInstanceSkillsTable.code, [...promotedLocal])));
+      }
+      await tx
+        .update(teamInstancesTable)
+        .set({ templateVersion: version, roles: relinked, updatedAt: new Date() })
+        .where(eq(teamInstancesTable.id, instanceId));
       return target.id;
     }
     return insertTemplateUnchecked(templateInput, tx);

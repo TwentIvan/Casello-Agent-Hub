@@ -4,7 +4,8 @@ import { usersTable } from "./users";
 import { teamTemplatesTable } from "./team-templates";
 import { skillKindEnum } from "./skills";
 
-// Forma del manifesto salvato (la valida `InstanceRoleSchema` dell'API a ogni scrittura)
+// Forma del manifesto salvato (`validateRoles` dell'API la verifica con `InstanceRoleSchema` a ogni scrittura
+// e ogni lettura la rilegge con lo stesso schema)
 export type InstanceRoleData = {
   key: string;
   name: string;

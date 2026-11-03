@@ -113,6 +113,25 @@ describe("route dei modelli di squadra", () => {
     expect((await api("PUT", "/team-templates/9999", { name: "Z", roles: [role()] })).status).toBe(404);
   });
 
+  it("strumenti o skill ripetuti in un ruolo → 400 e non si salva nulla (creazione e salvataggio)", async () => {
+    const tools = await api("POST", "/team-templates", { name: "T1", roles: [role({ tools: [1, 1] })] });
+    expect(tools).toMatchObject({ status: 400 });
+    expect(tools.json.error).toBe("strumenti ripetuti nel ruolo Capo");
+    const skills = await api("POST", "/team-templates", { name: "T2", roles: [role({ skills: ["a.b", "a.b"] })] });
+    expect(skills).toMatchObject({ status: 400 });
+    expect(skills.json.error).toBe("skill ripetute nel ruolo Capo");
+    expect((await api("GET", "/team-templates")).json).toEqual([]);
+
+    const ok = await api("POST", "/team-templates", { name: "T3", roles: [role()] });
+    const put = await api("PUT", `/team-templates/${ok.json.id}`, { name: "T3", roles: [role({ tools: [2, 2] })] });
+    expect(put).toMatchObject({ status: 400 });
+    expect(put.json.error).toBe("strumenti ripetuti nel ruolo Capo");
+    const read = await api("GET", `/team-templates/${ok.json.id}`);
+    expect(read.status).toBe(200);
+    expect(read.json.version).toBe(1);
+    expect((await api("GET", "/team-templates")).status).toBe(200);
+  });
+
   it("con un token: GET con api:read, scrittura solo con api:write", async () => {
     const rt = (await createApiToken(userId, "lettura", 30, ["api:read"])).token;
     const wt = (await createApiToken(userId, "scrittura", 30, ["api:write"])).token;

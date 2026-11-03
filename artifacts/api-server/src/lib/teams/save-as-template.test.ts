@@ -3,8 +3,9 @@ import { db, pool, aiAccountsTable, aiModelsTable, appsTable, skillsTable, skill
 import { encryptSecret } from "../secrets";
 import type { TemplateRole } from "./manifest";
 import { createTemplate, deleteTemplate, getTemplate, listTemplates } from "./templates";
-import { createInstance, saveInstance } from "./instances";
+import { createInstance, getInstance, saveInstance } from "./instances";
 import { getSkill, listSkills } from "./skills";
+import { getUpdates } from "./updates";
 import { saveInstanceAsTemplate } from "./save-as-template";
 
 // «Salva come modello» sul Postgres di prova (PGlite)
@@ -75,6 +76,21 @@ describe("saveInstanceAsTemplate", () => {
     expect(skill).toMatchObject({ name: "Uno", kind: "casello", currentVersion: 1, content: "fai uno", toolHints: ["x"] });
     expect((await listSkills()).map((s) => s.code)).toEqual(["sap.review", "team.uno"]);
     expect(await listTemplates({ archived: false })).toHaveLength(2);
+  });
+
+  it("new_version con una skill promossa: l'istanza d'origine segue la nuova versione, senza aggiornamenti spuri", async () => {
+    const { template, inst } = await setup();
+    const saved = await saveInstanceAsTemplate(userId, inst.id, { mode: "new_version", promote: [{ localCode: "spec.uno", code: "team.uno" }] });
+    expect(saved.version).toBe(2);
+    expect(await getUpdates(inst.id)).toEqual([]);
+    const after = await getInstance(inst.id);
+    expect(after.template).toMatchObject({ id: template.id, version: 2 });
+    expect(after.roles[0]!.skills.map((s) => [s.code, s.version])).toEqual([
+      ["sap.review", 1],
+      ["team.uno", 1],
+      ["spec.due", undefined],
+    ]);
+    expect(after.localSkills.map((s) => s.code)).toEqual(["spec.due"]);
   });
 
   it("new senza nome → 400", async () => {

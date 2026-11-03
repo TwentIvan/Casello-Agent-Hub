@@ -1215,7 +1215,7 @@ export const deleteApp = async (id: number, options?: RequestInit): Promise<void
 
 
 
-export const getDeleteAppMutationOptions = <TError = ErrorType<NotFoundResponse>,
+export const getDeleteAppMutationOptions = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteApp>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteApp>>, TError,{id: number}, TContext> => {
 
@@ -1244,12 +1244,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type DeleteAppMutationResult = NonNullable<Awaited<ReturnType<typeof deleteApp>>>
 
-    export type DeleteAppMutationError = ErrorType<NotFoundResponse>
+    export type DeleteAppMutationError = ErrorType<NotFoundResponse | ErrorResponse>
 
     /**
  * @summary Elimina una app
  */
-export const useDeleteApp = <TError = ErrorType<NotFoundResponse>,
+export const useDeleteApp = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteApp>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof deleteApp>>,

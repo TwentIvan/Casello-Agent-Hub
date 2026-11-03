@@ -315,6 +315,12 @@ paths:
           description: App eliminata
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: L'app è il lavoro di riferimento di una o più squadre
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   # ─── Agents ─────────────────────────────────────────────────────────────────
 

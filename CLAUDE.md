@@ -16,6 +16,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   approvazione nella console (vedi "Architetto").
 - Chat del piano: l'utente discute con un modello il piano di un'app e ne accetta le modifiche come schede
   (vedi "Chat del piano").
+- Squadre (definizione): catalogo di skill, modelli di squadra e istanze legate a un lavoro di riferimento, con
+  aggiornamenti proposti e «salva come modello»; l'esecuzione non c'è ancora (vedi "Squadre (definizione)").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -189,7 +191,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   versione copiata (`template_version`) e le skill con la loro versione corrente. Tipi: `role_added`, `role_removed`,
   `role_changed` (per campo: nome, compito, luogo, modello, strumenti, capo), `skill_added`, `skill_removed`, `skill_version`;
   `id` stabile (es. `role_changed:<key>:<campo>`). Una voce compare solo se il modello è cambiato rispetto alla versione
-  copiata E l'istanza non ha già il valore proposto: le modifiche a mano e i valori già uguali non generano voci.
+  copiata E l'istanza non ha già il valore proposto: le modifiche fatte solo nella squadra e i valori già uguali non
+  generano voci; dopo un'applicazione parziale un valore può essere riproposto finché non si applicano tutte le
+  modifiche del modello.
   `POST …/updates/apply` con `{ids}` (senza ripetizioni, 400 «aggiornamenti ripetuti»): tutto o niente, valida il
   risultato (es. senza capo → 400), un id non più attuale o un'istanza cambiata nel frattempo → 409 «aggiornamenti
   cambiati: ricarica». `template_version` passa alla versione corrente solo se non restano voci del modello (le
@@ -198,7 +202,13 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (max 100). `new` richiede il nome (400) e crea un modello con le skill del catalogo senza versione; le specializzate
   elencate in `promote` entrano nel catalogo (v1) con il codice nuovo (già usato → 409, formato non valido → 400, ripetizioni
   → 400), le altre vengono tolte; `new_version` crea la versione successiva del modello d'origine, che ne conserva nome e
-  descrizione (409 se l'istanza non ha modello o è archiviato). Tutto o niente, in una transazione.
+  descrizione (409 se l'istanza non ha modello o è archiviato) e riallinea l'istanza d'origine: `template_version` alla
+  nuova versione e, per le skill promosse, nei ruoli la skill del catalogo (v1) al posto di quella specializzata (che
+  si toglie dall'istanza), così non restano aggiornamenti spuri. Tutto o niente, in una transazione.
+- Regole e legami: ruoli con strumenti o skill ripetuti → 400 («strumenti/skill ripetuti nel ruolo <nome>», verificati da
+  `validateRoles` con gli schemi del manifesto). Copiando da un modello, skill deprecate e strumenti non più usabili già
+  presenti nel modello restano ammessi. Un'app che è il lavoro di riferimento di una squadra non si elimina: `DELETE
+  /api/apps/:id` → 409 «l'app è il lavoro di riferimento di <n> squadre».
 - Route: `GET|POST /api/skills`, `GET|PATCH /api/skills/:code`, `POST …/deprecate`, `GET …/versions`, `GET …/versions/:version`;
   `GET|POST /api/team-templates` (`archived`), `GET|PUT|DELETE /api/team-templates/:id`, `GET …/versions/:version`;
   `GET|POST /api/team-instances` (filtri `status`, `appId`, `refType`, `refId`), `GET|PUT /api/team-instances/:id`,

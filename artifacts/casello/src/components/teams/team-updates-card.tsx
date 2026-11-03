@@ -155,7 +155,8 @@ export function TeamUpdatesCard({ team, dirty }: { team: TeamInstance; dirty: bo
         <CardTitle className="text-base">Aggiornamenti disponibili</CardTitle>
         <CardDescription>
           Novità del modello{team.template ? ` (da v${team.template.version})` : ""} e nuove versioni delle skill. Le
-          modifiche fatte a mano nella squadra non vengono riproposte.
+          modifiche fatte solo nella squadra non vengono proposte; dopo un'applicazione parziale un valore può essere
+          riproposto finché non si applicano tutte le modifiche del modello.
         </CardDescription>
       </CardHeader>
       <CardContent>

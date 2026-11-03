@@ -158,6 +158,36 @@ describe("route delle squadre", () => {
     expect(closed.json.error).toBe("squadra chiusa");
   });
 
+  it("strumenti o skill ripetuti in un ruolo → 400 e non si salva nulla (creazione e salvataggio)", async () => {
+    const ref = { appId, type: "wi", id: "1" };
+    const tools = await api("POST", "/team-instances", { name: "S", ref, roles: [role({ tools: [1, 1] })] });
+    expect(tools).toMatchObject({ status: 400 });
+    expect(tools.json.error).toBe("strumenti ripetuti nel ruolo Capo");
+    const skills = await api("POST", "/team-instances", { name: "S", ref, roles: [role({ skills: [{ code: "a.b", version: 1 }, { code: "a.b", version: 1 }] })] });
+    expect(skills.json.error).toBe("skill ripetute nel ruolo Capo");
+    const locals = await api("POST", "/team-instances", { name: "S", ref, roles: [role({ localSkills: ["x.y", "x.y"] })] });
+    expect(locals.json.error).toBe("skill ripetute nel ruolo Capo");
+    expect((await api("GET", "/team-instances")).json).toEqual([]);
+
+    const ok = await api("POST", "/team-instances", { name: "S", ref, roles: [role()] });
+    const put = await api("PUT", `/team-instances/${ok.json.id}`, { name: "S2", roles: [role({ tools: [3, 3] })], localSkills: [] });
+    expect(put).toMatchObject({ status: 400 });
+    expect(put.json.error).toBe("strumenti ripetuti nel ruolo Capo");
+    expect((await api("GET", `/team-instances/${ok.json.id}`)).json).toMatchObject({ name: "S" });
+    expect((await api("GET", "/team-instances")).status).toBe(200);
+  });
+
+  it("elimina app: se è il lavoro di riferimento di una squadra → 409 e l'app resta", async () => {
+    const made = await api("POST", "/team-instances", { name: "S", ref: { appId, type: "wi", id: "1" }, roles: [role()] });
+    expect(made.status, made.text).toBe(201);
+    const blocked = await api("DELETE", `/apps/${appId}`);
+    expect(blocked.status).toBe(409);
+    expect(blocked.json.error).toBe("l'app è il lavoro di riferimento di 1 squadre");
+    expect((await api("GET", `/apps/${appId}`)).status).toBe(200);
+    await pool.query("DELETE FROM team_instances");
+    expect((await api("DELETE", `/apps/${appId}`)).status).toBe(204);
+  });
+
   it("con un token: GET con api:read, scrittura solo con api:write", async () => {
     const rt = (await createApiToken(userId, "lettura", 30, ["api:read"])).token;
     const wt = (await createApiToken(userId, "scrittura", 30, ["api:write"])).token;

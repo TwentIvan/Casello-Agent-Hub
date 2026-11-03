@@ -19,6 +19,8 @@ import RunDetailPage from "@/pages/run-detail";
 import AnalysisDetailPage from "@/pages/analysis-detail";
 import AccountPage from "@/pages/account";
 import ModelsPage from "@/pages/models";
+import SkillsPage from "@/pages/skills";
+import SkillDetailPage from "@/pages/skill-detail";
 import NotFound from "@/pages/not-found";
 
 const currentUserKey = getGetCurrentUserQueryKey();
@@ -55,6 +57,8 @@ function Router() {
         <Route path="/runs/:id" component={RunDetailPage} />
         <Route path="/pending-actions" component={PendingActionsPage} />
         <Route path="/models" component={ModelsPage} />
+        <Route path="/skills" component={SkillsPage} />
+        <Route path="/skills/:code" component={SkillDetailPage} />
         <Route path="/analyses/:id" component={AnalysisDetailPage} />
         <Route path="/account" component={AccountPage} />
         <Route component={NotFound} />

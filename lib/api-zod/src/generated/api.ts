@@ -2347,6 +2347,68 @@ export const ApplyTeamInstanceUpdatesResponse = zod.object({
 
 
 /**
+ * `new` crea un modello nuovo (nome obbligatorio); `new_version` crea la versione successiva del modello d'origine (409 se la squadra non ha un modello o è archiviato). Le skill del catalogo perdono la versione; le skill specializzate in `promote` entrano nel catalogo (versione 1) con il codice indicato, le altre vengono tolte dai ruoli. Tutto o niente; un codice già usato nel catalogo → 409.
+ * @summary Salva la squadra come modello
+ */
+export const SaveTeamInstanceAsTemplateParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const saveTeamInstanceAsTemplateBodyNameMax = 120;
+
+export const saveTeamInstanceAsTemplateBodyPromoteMax = 100;
+
+
+
+export const SaveTeamInstanceAsTemplateBody = zod.object({
+  "mode": zod.enum(['new', 'new_version']),
+  "name": zod.string().min(1).max(saveTeamInstanceAsTemplateBodyNameMax).optional().describe('Obbligatorio con `new`; con `new_version` si ignora'),
+  "promote": zod.array(zod.object({
+  "localCode": zod.string(),
+  "code": zod.string()
+})).max(saveTeamInstanceAsTemplateBodyPromoteMax).optional().describe('Skill specializzate da promuovere nel catalogo, con il nuovo codice')
+})
+
+export const SaveTeamInstanceAsTemplateResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "version": zod.number(),
+  "archived": zod.boolean(),
+  "instanceCount": zod.number(),
+  "roles": zod.array(zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "model": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
+  "tools": zod.array(zod.object({
+  "id": zod.number(),
+  "appId": zod.number().optional(),
+  "appName": zod.string().optional(),
+  "name": zod.string(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional(),
+  "available": zod.boolean()
+}).describe('Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false')),
+  "skills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().optional(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "deprecated": zod.boolean(),
+  "local": zod.boolean().optional()
+}))
+}).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
  * Provider della tabella providers (registro e scoperti), senza quello del vecchio gateway: prima i gestiti per nome, poi quelli in arrivo, poi i non gestiti.
  * @summary Provider del registro per la creazione degli account AI
  */

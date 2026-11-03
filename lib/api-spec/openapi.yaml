@@ -1584,6 +1584,38 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /team-instances/{id}/save-as-template:
+    post:
+      operationId: saveTeamInstanceAsTemplate
+      tags: [teams]
+      summary: Salva la squadra come modello
+      description: >-
+        `new` crea un modello nuovo (nome obbligatorio); `new_version` crea la versione successiva del modello
+        d'origine (409 se la squadra non ha un modello o è archiviato). Le skill del catalogo perdono la
+        versione; le skill specializzate in `promote` entrano nel catalogo (versione 1) con il codice indicato,
+        le altre vengono tolte dai ruoli. Tutto o niente; un codice già usato nel catalogo → 409.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamSaveAsTemplate"
+      responses:
+        "201":
+          description: Modello creato o nuova versione salvata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   # ─── Account AI ─────────────────────────────────────────────────────────────
 
   /ai/providers:
@@ -5071,6 +5103,31 @@ components:
           type: integer
         toVersion:
           type: integer
+
+    TeamSaveAsTemplate:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [new, new_version]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Obbligatorio con `new`; con `new_version` si ignora
+        promote:
+          type: array
+          maxItems: 100
+          description: Skill specializzate da promuovere nel catalogo, con il nuovo codice
+          items:
+            type: object
+            required: [localCode, code]
+            properties:
+              localCode:
+                type: string
+              code:
+                type: string
 
     TeamUpdateApply:
       type: object

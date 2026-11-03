@@ -115,6 +115,7 @@ import type {
   TeamInstanceCreate,
   TeamInstanceSave,
   TeamRoleView,
+  TeamSaveAsTemplate,
   TeamTemplate,
   TeamTemplateDeleteResult,
   TeamTemplateInput,
@@ -5171,6 +5172,78 @@ export const useApplyTeamInstanceUpdates = <TError = ErrorType<BadRequestRespons
         TContext
       > => {
       return useMutation(getApplyTeamInstanceUpdatesMutationOptions(options));
+    }
+
+export const getSaveTeamInstanceAsTemplateUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/save-as-template`
+}
+
+/**
+ * `new` crea un modello nuovo (nome obbligatorio); `new_version` crea la versione successiva del modello d'origine (409 se la squadra non ha un modello o è archiviato). Le skill del catalogo perdono la versione; le skill specializzate in `promote` entrano nel catalogo (versione 1) con il codice indicato, le altre vengono tolte dai ruoli. Tutto o niente; un codice già usato nel catalogo → 409.
+ * @summary Salva la squadra come modello
+ */
+export const saveTeamInstanceAsTemplate = async (id: number,
+    teamSaveAsTemplate: TeamSaveAsTemplate, options?: RequestInit): Promise<TeamTemplate> => {
+
+  return customFetch<TeamTemplate>(getSaveTeamInstanceAsTemplateUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamSaveAsTemplate)
+  }
+);}
+
+
+
+
+export const getSaveTeamInstanceAsTemplateMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTeamInstanceAsTemplate>>, TError,{id: number;data: BodyType<TeamSaveAsTemplate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveTeamInstanceAsTemplate>>, TError,{id: number;data: BodyType<TeamSaveAsTemplate>}, TContext> => {
+
+const mutationKey = ['saveTeamInstanceAsTemplate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveTeamInstanceAsTemplate>>, {id: number;data: BodyType<TeamSaveAsTemplate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  saveTeamInstanceAsTemplate(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveTeamInstanceAsTemplateMutationResult = NonNullable<Awaited<ReturnType<typeof saveTeamInstanceAsTemplate>>>
+    export type SaveTeamInstanceAsTemplateMutationBody = BodyType<TeamSaveAsTemplate>
+    export type SaveTeamInstanceAsTemplateMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Salva la squadra come modello
+ */
+export const useSaveTeamInstanceAsTemplate = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTeamInstanceAsTemplate>>, TError,{id: number;data: BodyType<TeamSaveAsTemplate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveTeamInstanceAsTemplate>>,
+        TError,
+        {id: number;data: BodyType<TeamSaveAsTemplate>},
+        TContext
+      > => {
+      return useMutation(getSaveTeamInstanceAsTemplateMutationOptions(options));
     }
 
 export const getListAiProvidersUrl = () => {

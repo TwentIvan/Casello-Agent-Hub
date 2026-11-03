@@ -2132,6 +2132,34 @@ export interface TeamUpdateItem {
   toVersion?: number;
 }
 
+export type TeamSaveAsTemplateMode = typeof TeamSaveAsTemplateMode[keyof typeof TeamSaveAsTemplateMode];
+
+
+export const TeamSaveAsTemplateMode = {
+  new: 'new',
+  new_version: 'new_version',
+} as const;
+
+export type TeamSaveAsTemplatePromoteItem = {
+  localCode: string;
+  code: string;
+};
+
+export interface TeamSaveAsTemplate {
+  mode: TeamSaveAsTemplateMode;
+  /**
+     * Obbligatorio con `new`; con `new_version` si ignora
+     * @minLength 1
+     * @maxLength 120
+     */
+  name?: string;
+  /**
+     * Skill specializzate da promuovere nel catalogo, con il nuovo codice
+     * @maxItems 100
+     */
+  promote?: TeamSaveAsTemplatePromoteItem[];
+}
+
 export interface TeamUpdateApply {
   /**
      * Id delle voci da applicare, senza ripetizioni

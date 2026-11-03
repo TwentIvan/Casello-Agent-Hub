@@ -170,11 +170,10 @@ async function readVersion(templateId: number, version: number, executor: Pick<t
   return TemplateRoleSchema.array().parse(row.manifest);
 }
 
-export async function createTemplate(userId: number, input: TemplateInput, executor: Executor = db): Promise<TemplateView> {
-  await validateRoles({ roles: input.roles, mode: "template", userId, previous: null });
-  let id: number;
+/** Scrive modello e versione 1 senza validare: chi chiama ha già validato i ruoli (fuori da ogni transazione). */
+export async function insertTemplateUnchecked(input: TemplateInput, executor: Executor = db): Promise<number> {
   try {
-    id = await executor.transaction(async (tx) => {
+    return await executor.transaction(async (tx) => {
       const [row] = await tx
         .insert(teamTemplatesTable)
         .values({ name: input.name, description: input.description ?? "" })
@@ -188,18 +187,18 @@ export async function createTemplate(userId: number, input: TemplateInput, execu
     }
     throw err;
   }
-  return getTemplate(id);
+}
+
+export async function createTemplate(userId: number, input: TemplateInput, executor: Executor = db): Promise<TemplateView> {
+  await validateRoles({ roles: input.roles, mode: "template", userId, previous: null });
+  return getTemplate(await insertTemplateUnchecked(input, executor));
 }
 
 /**
- * Tutto o niente: valida i ruoli rispetto a quelli della versione corrente e crea la versione successiva.
- * La riga del modello si blocca (FOR UPDATE) per non assegnare lo stesso numero a due salvataggi concorrenti.
+ * Crea la versione successiva senza validare i ruoli (già validati da chi chiama). La riga del modello si
+ * blocca (FOR UPDATE) per non assegnare lo stesso numero a due salvataggi concorrenti.
  */
-export async function saveTemplate(userId: number, id: number, input: TemplateInput, executor: Executor = db): Promise<TemplateView> {
-  const current = await getTemplateRow(id);
-  if (current.archived) throw new TemplateError(409, TEMPLATE_MESSAGES.archived);
-  const previous = await readVersion(id, current.version);
-  await validateRoles({ roles: input.roles, mode: "template", userId, previous });
+export async function appendTemplateVersionUnchecked(id: number, input: TemplateInput, executor: Executor = db): Promise<void> {
   try {
     await executor.transaction(async (tx) => {
       const [locked] = await tx.select().from(teamTemplatesTable).where(eq(teamTemplatesTable.id, id)).limit(1).for("update");
@@ -218,10 +217,19 @@ export async function saveTemplate(userId: number, id: number, input: TemplateIn
     }
     throw err;
   }
+}
+
+/** Tutto o niente: valida i ruoli rispetto a quelli della versione corrente e crea la versione successiva. */
+export async function saveTemplate(userId: number, id: number, input: TemplateInput, executor: Executor = db): Promise<TemplateView> {
+  const current = await getTemplateRow(id);
+  if (current.archived) throw new TemplateError(409, TEMPLATE_MESSAGES.archived);
+  const previous = await readVersion(id, current.version);
+  await validateRoles({ roles: input.roles, mode: "template", userId, previous });
+  await appendTemplateVersionUnchecked(id, input, executor);
   return getTemplate(id);
 }
 
-async function getTemplateRow(id: number): Promise<TeamTemplateRow> {
+export async function getTemplateRow(id: number): Promise<TeamTemplateRow> {
   const [row] = await db.select().from(teamTemplatesTable).where(eq(teamTemplatesTable.id, id)).limit(1);
   if (!row) throw new TemplateError(404, TEMPLATE_MESSAGES.notFound);
   return row;

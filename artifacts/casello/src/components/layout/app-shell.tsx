@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, Sparkles, type LucideIcon } from "lucide-react";
+import { Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, Sparkles, LayoutTemplate, Users, type LucideIcon } from "lucide-react";
 import { getGetDashboardStatsQueryKey, useGetDashboardStats } from "@workspace/api-client-react";
 import {
   Sidebar,
@@ -35,6 +35,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/pending-actions", label: "Da confermare", icon: ShieldCheck },
   { href: "/models", label: "Modelli", icon: Cpu },
   { href: "/skills", label: "Skill", icon: Sparkles },
+  { href: "/team-templates", label: "Modelli di squadra", icon: LayoutTemplate },
+  { href: "/teams", label: "Squadre", icon: Users },
 ];
 
 function isActive(href: string, location: string): boolean {

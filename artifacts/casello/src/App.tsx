@@ -21,6 +21,10 @@ import AccountPage from "@/pages/account";
 import ModelsPage from "@/pages/models";
 import SkillsPage from "@/pages/skills";
 import SkillDetailPage from "@/pages/skill-detail";
+import TeamTemplatesPage from "@/pages/team-templates";
+import TeamTemplateDetailPage from "@/pages/team-template-detail";
+import TeamsPage from "@/pages/teams";
+import TeamDetailPage from "@/pages/team-detail";
 import NotFound from "@/pages/not-found";
 
 const currentUserKey = getGetCurrentUserQueryKey();
@@ -59,6 +63,10 @@ function Router() {
         <Route path="/models" component={ModelsPage} />
         <Route path="/skills" component={SkillsPage} />
         <Route path="/skills/:code" component={SkillDetailPage} />
+        <Route path="/team-templates" component={TeamTemplatesPage} />
+        <Route path="/team-templates/:id" component={TeamTemplateDetailPage} />
+        <Route path="/teams" component={TeamsPage} />
+        <Route path="/teams/:id" component={TeamDetailPage} />
         <Route path="/analyses/:id" component={AnalysisDetailPage} />
         <Route path="/account" component={AccountPage} />
         <Route component={NotFound} />

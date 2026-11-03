@@ -11,7 +11,7 @@ export interface RunStep {
   id: number;
   runId: number;
   position: number;
-  /** model (chiamata al modello) o tool (chiamata a un tool) */
+  /** model (chiamata al modello), tool (chiamata a un tool) o queued (azione accodata per la conferma dell'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti sensibili oscurati) */
   type: string;
   /** @nullable */
   toolName?: string | null;

@@ -1,17 +1,29 @@
-import { db, agentsTable, appsTable, appToolsTable, runsTable, runStepsTable, type Agent, type App, type Run } from "@workspace/db";
-import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import {
+  db,
+  agentsTable,
+  aiAccountsTable,
+  aiModelsTable,
+  appsTable,
+  appToolsTable,
+  runsTable,
+  runStepsTable,
+  type Agent,
+  type App,
+  type Run,
+} from "@workspace/db";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { APIConnectionTimeoutError, APIUserAbortError } from "openai";
 import type { ChatResult } from "./ai/chat-types";
 import { ProviderError } from "./ai/discovery";
 import { ModelAccessError, modelChat, resolveModel, type ResolvedModel } from "./ai/executor";
+import { enqueueAction } from "./actions/queue";
 import {
-  PendingMismatchError,
-  resolvePending,
+  QUEUE_FAILED,
   runAgentLoop,
   type LoopDeps,
   type LoopLimits,
   type LoopState,
-  type PendingAction,
+  type QueueActionResult,
   type StepRecord,
 } from "./agent-loop";
 import { logger } from "./logger";
@@ -23,12 +35,12 @@ import {
 } from "./tools/catalog";
 import { executeTool } from "./tools/executor";
 import type { AppConnection, CatalogTool, ToolResult } from "./tools/types";
-import { PAUSE_TTL_MS, clearUserToken, getUserToken, setUserToken } from "./user-tokens";
+import { clearUserToken, getUserToken, setUserToken } from "./user-tokens";
 
-// Orchestrazione delle run: collega il ciclo dell'agente (puro) al DB, all'esecutore HTTP dei
-// tool e all'esecutore dei modelli (account AI). Ogni passo diventa una riga di `run_steps`; a ogni pausa lo
-// stato del ciclo viene salvato nella run e ripreso da `resumeRun`.
-// Il token dell'utente vive solo in memoria (user-tokens.ts): mai nel DB né nei log.
+// Orchestrazione delle run: collega il ciclo dell'agente (puro) al DB, all'esecutore dei tool (HTTP e
+// MCP), all'esecutore dei modelli (account AI) e alla coda delle azioni. Ogni passo diventa una riga di
+// `run_steps`; le chiamate L2 diventano voci di `pending_actions` e la run prosegue senza fermarsi.
+// Il token dell'utente vive solo in memoria (user-tokens.ts) e solo per la durata della run.
 
 const EXECUTOR_INSTRUCTION =
   "Sei l'esecutore di un agente configurato nell'hub Casello. Usa il contesto fornito per rispondere in modo pertinente al task richiesto. Rispondi in italiano.";
@@ -40,10 +52,10 @@ const TOOL_RESULTS_INSTRUCTION =
 // Tempo minimo concesso a una chiamata al modello, anche a turno quasi esaurito
 const MIN_MODEL_CALL_MS = 1_000;
 
-export const REJECTED_ACTION_MESSAGE = "L'utente ha annullato l'azione.";
-export const PAUSE_EXPIRED_MESSAGE = "Conferma non arrivata entro 10 minuti.";
 export const RUN_CANCELLED_MESSAGE = "Annullata dall'utente.";
 export const AGENT_WITHOUT_MODEL = "scegli un modello per l'agente";
+/** Run rimaste in pausa per conferma (meccanismo dismesso): all'avvio si chiudono con questo messaggio. */
+export const PAUSE_REPLACED_MESSAGE = "conferma sostituita dalla coda delle azioni";
 
 /** Run (e agente) senza modello: la run si chiude come fallita con AGENT_WITHOUT_MODEL, senza chiamate. */
 class RunWithoutModelError extends Error {
@@ -54,7 +66,7 @@ class RunWithoutModelError extends Error {
 }
 
 /**
- * Modello della run: quello fissato alla partenza (anche dopo una ripresa: chi pagava resta chi paga),
+ * Modello della run: quello fissato alla partenza (chi pagava resta chi paga),
  * l'agente solo per una run senza modello registrato. Nessuno dei due → RunWithoutModelError.
  */
 function runModelId(ctx: RunContext): number {
@@ -64,11 +76,11 @@ function runModelId(ctx: RunContext): number {
 }
 
 // Run in corso in questo processo: l'annullamento interrompe le chiamate in volo (modello e tool).
-// Registrata per tutta la durata di un segmento (avvio o ripresa), rimossa quando finisce.
+// Registrata per tutta la durata della run, rimossa quando finisce.
 const activeRuns = new Map<number, AbortController>();
 
 /**
- * Prenota il controller di una run prima della presa in carico. Se c'è già un segmento attivo il suo
+ * Prenota il controller di una run prima della presa in carico. Se la run è già attiva il suo
  * controller non si sostituisce: quello restituito resta fuori dalla mappa (una presa in carico che
  * poi fallisce non può togliere di mezzo il vincitore). Dopo una presa riuscita si chiama `adoptRun`.
  */
@@ -93,23 +105,15 @@ export type CancelRunResult =
   | { kind: "concluded" };
 
 /**
- * Annulla una run `pending`, `running` o `awaiting_client`: UPDATE condizionato (una run già conclusa
+ * Annulla una run `pending` o `running`: UPDATE condizionato (una run già conclusa
  * non cambia), poi interrompe le chiamate in volo. Durata, token e costo già registrati restano.
  * Il ciclo in corso non scrive più lo stato: tutte le sue scritture finali sono condizionate a `running`.
  */
 export async function cancelRun(runId: number): Promise<CancelRunResult> {
   const [run] = await db
     .update(runsTable)
-    .set({
-      status: "cancelled",
-      errorMessage: RUN_CANCELLED_MESSAGE,
-      // R12: a run chiusa non restano argomenti dei tool (pending_action li ha in chiaro)
-      loopState: null,
-      pendingAction: null,
-      pausedAt: null,
-      finishedAt: new Date(),
-    })
-    .where(and(eq(runsTable.id, runId), inArray(runsTable.status, ["pending", "running", "awaiting_client"])))
+    .set({ status: "cancelled", errorMessage: RUN_CANCELLED_MESSAGE, finishedAt: new Date() })
+    .where(and(eq(runsTable.id, runId), inArray(runsTable.status, ["pending", "running"])))
     .returning();
   if (!run) {
     const [existing] = await db.select({ id: runsTable.id }).from(runsTable).where(eq(runsTable.id, runId)).limit(1);
@@ -120,14 +124,6 @@ export async function cancelRun(runId: number): Promise<CancelRunResult> {
   return { kind: "cancelled", run };
 }
 
-/** La run non è (più) in attesa di conferma: già ripresa, scaduta, annullata o mai in pausa. */
-export class ResumeConflictError extends Error {
-  constructor(message = "La run non è in attesa di conferma: è già stata ripresa, è scaduta o non è in pausa.") {
-    super(message);
-    this.name = "ResumeConflictError";
-  }
-}
-
 interface RunContext {
   run: Run;
   agent: Agent;
@@ -135,7 +131,7 @@ interface RunContext {
   conn: AppConnection;
 }
 
-/** Opzioni di avvio e ripresa. `limits` sostituisce i limiti del turno (usato dai test). */
+/** Opzioni di avvio. `limits` sostituisce i limiti del turno (usato dai test). */
 export interface RunOptions {
   userToken?: string;
   limits?: Partial<LoopLimits>;
@@ -187,6 +183,19 @@ async function nextPosition(runId: number): Promise<number> {
  * un oggetto diventano `{ _raw }` (vedi stepArgsWithSchema).
  */
 async function argsForStep(appId: number, tools: CatalogTool[], step: StepRecord): Promise<unknown> {
+  if (step.type === "queued") {
+    // Azione accodata: numero della voce, destinatario, sintesi e argomenti oscurati
+    return {
+      numero: step.queuedNumber ?? null,
+      destinatario: step.recipient ?? null,
+      sintesi: step.summary ?? null,
+      argomenti: await toolArgsForStep(appId, tools, step),
+    };
+  }
+  return toolArgsForStep(appId, tools, step);
+}
+
+async function toolArgsForStep(appId: number, tools: CatalogTool[], step: StepRecord): Promise<unknown> {
   if (step.args === undefined) return null;
   if (!step.toolName) return null;
   const tool = tools.find((t) => t.name === step.toolName);
@@ -228,7 +237,7 @@ function runTool(
 }
 
 /**
- * Uso del segmento corrente (dall'avvio o dalla ripresa fino alla pausa o alla fine). Il costo è
+ * Uso della run in corso (le run storiche riprese dopo una pausa avevano più segmenti). Il costo è
  * parziale se almeno una chiamata con token non ha un costo (prezzo mancante, vecchio gateway).
  */
 interface SegmentUsage {
@@ -322,7 +331,7 @@ export function modelCallError(runId: number, err: unknown): Error {
 
 /**
  * Esegue il ciclo dell'agente dallo stato dato e salva l'esito nella run.
- * Token, costo e durata si sommano a quelli già registrati (la run può attraversare più pause).
+ * Token, costo e durata si sommano a quelli già registrati.
  */
 async function driveLoop(
   ctx: RunContext,
@@ -361,6 +370,35 @@ async function driveLoop(
     }
   };
 
+  // Proprietario delle azioni accodate: chi possiede l'account AI del modello della run (chi configura paga)
+  let owner: Promise<number | null> | null = null;
+  const queueAction = async (
+    tool: CatalogTool,
+    args: Record<string, unknown>,
+    recipient: string,
+    summary: string,
+  ): Promise<QueueActionResult> => {
+    try {
+      owner ??= modelOwner(aiModelId);
+      const userId = await owner;
+      if (userId === null) return { ok: false, message: QUEUE_FAILED };
+      return await enqueueAction({
+        userId,
+        appId: ctx.agent.appId,
+        agentId: ctx.agent.id,
+        runId,
+        tool,
+        args,
+        recipient,
+        summary,
+      });
+    } catch (err) {
+      // Solo il tipo dell'errore: il messaggio del DB può contenere i parametri (argomenti dell'azione)
+      logger.error({ runId, errName: err instanceof Error ? err.name : typeof err }, "Accodamento dell'azione non riuscito");
+      return { ok: false, message: QUEUE_FAILED };
+    }
+  };
+
   const deps: LoopDeps = {
     chat: async (messages, { remainingMs }) => {
       try {
@@ -373,6 +411,7 @@ async function driveLoop(
     },
     tools: ctx.tools,
     executeTool: (tool, args) => runTool(ctx, tool, args, abort),
+    queueAction,
     onStep: writeStep,
     limits,
     signal: abort,
@@ -389,22 +428,6 @@ async function driveLoop(
   };
 
   switch (outcome.type) {
-    case "paused": {
-      await db
-        .update(runsTable)
-        .set({
-          ...totals,
-          status: "awaiting_client",
-          loopState: outcome.state,
-          pendingAction: outcome.pending,
-          pausedAt: new Date(),
-        })
-        .where(and(eq(runsTable.id, runId), eq(runsTable.status, "running")));
-      // La scadenza del token riparte dall'inizio della pausa
-      const token = getUserToken(runId);
-      if (token) setUserToken(runId, token);
-      return;
-    }
     case "finished":
       await db
         .update(runsTable)
@@ -412,9 +435,6 @@ async function driveLoop(
           ...totals,
           status: "succeeded",
           output: outcome.content,
-          loopState: null,
-          pendingAction: null,
-          pausedAt: null,
           finishedAt: new Date(),
         })
         .where(and(eq(runsTable.id, runId), eq(runsTable.status, "running")));
@@ -427,9 +447,6 @@ async function driveLoop(
           ...totals,
           status: "failed",
           errorMessage: outcome.error,
-          loopState: null,
-          pendingAction: null,
-          pausedAt: null,
           finishedAt: new Date(),
         })
         .where(and(eq(runsTable.id, runId), eq(runsTable.status, "running")));
@@ -445,7 +462,7 @@ async function driveLoop(
 
 /**
  * Chiude la run come fallita dopo un errore inatteso; non lancia. Il token non finisce nei log.
- * Durata e token sono i totali della run (segmenti precedenti + quello interrotto).
+ * Durata e token sono i totali della run.
  */
 async function failRun(
   run: Run,
@@ -471,9 +488,6 @@ async function failRun(
       .set({
         status: "failed",
         errorMessage: withoutModel ? message : `Errore durante l'esecuzione: ${message}`,
-        loopState: null,
-        pendingAction: null,
-        pausedAt: null,
         durationMs: (run.durationMs ?? 0) + (Date.now() - segmentStart),
         promptTokens: (run.promptTokens ?? 0) + usage.promptTokens,
         completionTokens: (run.completionTokens ?? 0) + usage.completionTokens,
@@ -489,8 +503,8 @@ async function failRun(
 
 /**
  * Avvia una run in stato `pending`: la porta a `running` ed esegue il ciclo dell'agente fino
- * alla fine, a un errore o a una pausa (`awaiting_client`). Gli errori inattesi chiudono la run
- * come `failed`; lancia solo se la run non esiste o non è `pending`.
+ * alla fine o a un errore. Gli errori inattesi chiudono la run come `failed`; lancia solo se la
+ * run non esiste o non è `pending`.
  */
 export async function startRun(runId: number, opts: RunOptions = {}): Promise<void> {
   // Il controller si registra prima della presa in carico: un annullamento subito dopo l'UPDATE lo trova
@@ -542,197 +556,35 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
   }
 }
 
-function isLoopState(value: unknown): value is LoopState {
-  const v = value as LoopState | null;
-  return !!v && typeof v === "object" && Array.isArray(v.messages) && Array.isArray(v.queue);
-}
-
-function isPendingAction(value: unknown): value is PendingAction {
-  const v = value as PendingAction | null;
-  return !!v && typeof v === "object" && typeof v.toolCallId === "string" && typeof v.toolName === "string";
-}
-
-/**
- * Prima fase della ripresa, da attendere: porta la run da `awaiting_client` a `running` con un
- * UPDATE condizionato e verifica che l'azione in sospeso sia coerente con lo stato del ciclo.
- * Una seconda chiamata (anche concorrente), una pausa scaduta o un'azione incoerente lanciano
- * `ResumeConflictError` senza eseguire nulla. Restituisce la run presa in carico e la
- * continuazione (`proceed`), che esegue il tool confermato e il resto del turno e non lancia.
- */
-export async function claimResume(
-  runId: number,
-  decision: "approved" | "rejected",
-  opts: RunOptions = {},
-): Promise<{ run: Run; proceed: () => Promise<void> }> {
-  const cutoff = new Date(Date.now() - PAUSE_TTL_MS);
-  // Il controller si registra prima della presa in carico: un annullamento subito dopo l'UPDATE lo trova
-  const abort = trackRun(runId);
-  let run: Run | undefined;
-  try {
-    [run] = await db
-      .update(runsTable)
-      .set({ status: "running" })
-      .where(
-        and(eq(runsTable.id, runId), eq(runsTable.status, "awaiting_client"), gte(runsTable.pausedAt, cutoff)),
-      )
-      .returning();
-  } catch (err) {
-    untrackRun(runId, abort);
-    throw err;
-  }
-  if (!run) {
-    untrackRun(runId, abort);
-    throw new ResumeConflictError();
-  }
-  adoptRun(runId, abort);
-
-  if (opts.userToken) {
-    setUserToken(runId, opts.userToken);
-  } else {
-    const token = getUserToken(runId);
-    if (token) setUserToken(runId, token);
-  }
-
-  const segmentStart = Date.now();
-  const usage = newUsage();
-  const state = run.loopState;
-  const pending = run.pendingAction;
-  if (!isLoopState(state) || !isPendingAction(pending)) {
-    // Stato della pausa mancante: la run si chiude come fallita, la ripresa in sé non è in conflitto
-    const err = new Error("stato della pausa mancante o non valido");
-    return {
-      run,
-      proceed: async () => {
-        try {
-          await failRun(run, err, segmentStart, usage);
-        } finally {
-          untrackRun(runId, abort);
-        }
-      },
-    };
-  }
-  try {
-    // Verifica che l'azione sia davvero quella in attesa PRIMA di eseguire il tool
-    resolvePending(state, pending, { ok: false, content: "" });
-  } catch (err) {
-    await failRun(run, err, segmentStart, usage);
-    untrackRun(runId, abort);
-    if (err instanceof PendingMismatchError) {
-      throw new ResumeConflictError(`La run non può essere ripresa: ${err.message}`);
-    }
-    throw err;
-  }
-
-  const proceed = async (): Promise<void> => {
-    try {
-      if (abort.signal.aborted) {
-        // Annullata tra la presa in carico e l'avvio: nulla da eseguire, resta da pulire
-        clearUserToken(runId);
-        return;
-      }
-      const ctx = await loadContext(run);
-      // Senza modello il turno non può proseguire: niente tool confermato, la run fallisce subito
-      runModelId(ctx);
-      const writeStep = stepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools);
-
-      let result: ToolResult;
-      let durationMs = 0;
-      if (decision === "approved") {
-        // Il tool deve essere ancora attivo e visibile all'agente
-        const tool = ctx.tools.find((t) => t.name === pending.toolName);
-        if (!tool) {
-          result = { ok: false, content: `Errore: lo strumento "${pending.toolName}" non è più disponibile` };
-        } else {
-          const t0 = Date.now();
-          result = await runTool(ctx, tool, pending.args, abort.signal);
-          durationMs = Date.now() - t0;
-        }
-      } else {
-        result = { ok: false, content: REJECTED_ACTION_MESSAGE };
-      }
-
-      // Un risultato d'errore ottenuto con l'annullamento attivo viene dall'interruzione: non è un passo.
-      // Un tool concluso con successo ha invece agito davvero e il suo passo si registra.
-      const interrupted = abort.signal.aborted && !result.ok;
-      if (interrupted) {
-        await writeCancelledUsage(run, segmentStart, usage);
-        clearUserToken(runId);
-        return;
-      }
-
-      // resolvePending non registra passi: il passo `tool` della chiamata confermata/rifiutata va scritto qui
-      await writeStep({
-        type: "tool",
-        toolName: pending.toolName,
-        args: pending.args,
-        ok: result.ok,
-        httpStatus: result.status,
-        durationMs,
-        error: result.ok ? undefined : result.content,
-      });
-
-      const next = resolvePending(state, pending, result);
-      // Il tempo del tool confermato è tempo attivo del turno (conta per il limite di 120 s)
-      next.activeMs += durationMs;
-      await driveLoop(ctx, next, segmentStart, writeStep, usage, abort.signal, opts.limits);
-    } catch (err) {
-      await failRun(run, err, segmentStart, usage, abort.signal.aborted);
-    } finally {
-      untrackRun(runId, abort);
-    }
-  };
-  return { run, proceed };
-}
-
-/**
- * Riprende una run in pausa con la decisione dell'utente e attende la fine del turno.
- * Lancia `ResumeConflictError` se la run non è (più) in attesa di conferma (vedi `claimResume`).
- */
-export async function resumeRun(
-  runId: number,
-  decision: "approved" | "rejected",
-  opts: RunOptions = {},
-): Promise<void> {
-  const { proceed } = await claimResume(runId, decision, opts);
-  await proceed();
-}
-
-/** Chiude come `cancelled` le run in pausa da più di PAUSE_TTL_MS. Restituisce quante ne ha chiuse. */
-export async function expireStalePausedRuns(now: Date = new Date()): Promise<number> {
-  const cutoff = new Date(now.getTime() - PAUSE_TTL_MS);
-  const expired = await db
-    .update(runsTable)
-    .set({
-      status: "cancelled",
-      errorMessage: PAUSE_EXPIRED_MESSAGE,
-      // R12: a run chiusa non restano argomenti dei tool (pending_action li ha in chiaro)
-      loopState: null,
-      pendingAction: null,
-      finishedAt: now,
-    })
-    .where(and(eq(runsTable.status, "awaiting_client"), lt(runsTable.pausedAt, cutoff)))
-    .returning({ id: runsTable.id });
-  for (const { id } of expired) clearUserToken(id);
-  return expired.length;
+/** Utente che possiede l'account AI del modello; null se il modello o l'account non ci sono più. */
+async function modelOwner(aiModelId: number): Promise<number | null> {
+  const [row] = await db
+    .select({ userId: aiAccountsTable.userId })
+    .from(aiModelsTable)
+    .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
+    .where(eq(aiModelsTable.id, aiModelId))
+    .limit(1);
+  return row?.userId ?? null;
 }
 
 /**
  * Le run girano nel processo dell'API: se il processo si riavvia (deploy, crash) quelle in corso non
  * finiranno mai. All'avvio si chiudono come fallite, così la UI non le mostra "in corso" per sempre.
+ * Le run rimaste in pausa per conferma (meccanismo dismesso) si chiudono come annullate; le colonne
+ * storiche della pausa (stato del ciclo e azione in sospeso, con gli argomenti in chiaro) si svuotano.
  */
-export async function failInterruptedRuns(): Promise<number> {
-  const interrupted = await db
+export async function failInterruptedRuns(): Promise<{ failed: number; cancelled: number }> {
+  const failed = await db
     .update(runsTable)
-    .set({
-      status: "failed",
-      errorMessage: "Esecuzione interrotta dal riavvio del server.",
-      // R12: una run ripresa e interrotta può avere ancora stato e azione in sospeso
-      loopState: null,
-      pendingAction: null,
-      pausedAt: null,
-      finishedAt: new Date(),
-    })
+    .set({ status: "failed", errorMessage: "Esecuzione interrotta dal riavvio del server.", finishedAt: new Date() })
     .where(inArray(runsTable.status, ["pending", "running"]))
     .returning({ id: runsTable.id });
-  return interrupted.length;
+  // Le colonne della pausa non sono più nello schema Drizzle: restano nel DB e si azzerano qui
+  const cancelled = await db.execute(sql`
+    update runs
+       set status = 'cancelled', error_message = ${PAUSE_REPLACED_MESSAGE}, finished_at = now(),
+           loop_state = null, pending_action = null, paused_at = null
+     where status = 'awaiting_client'
+    returning id`);
+  return { failed: failed.length, cancelled: cancelled.rows.length };
 }

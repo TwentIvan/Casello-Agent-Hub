@@ -755,19 +755,13 @@ export const ListRunsQueryParams = zod.object({
 export const ListRunsResponseItem = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.'),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
   "durationMs": zod.number().nullish(),
   "createdAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullish(),
-  "pendingAction": zod.union([zod.object({
-  "kind": zod.enum(['confirmation', 'ui']),
-  "toolName": zod.string(),
-  "args": zod.record(zod.string(), zod.unknown()),
-  "summary": zod.string()
-}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
@@ -795,19 +789,13 @@ export const TriggerRunBody = zod.object({
 export const TriggerRunResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.'),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
   "durationMs": zod.number().nullish(),
   "createdAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullish(),
-  "pendingAction": zod.union([zod.object({
-  "kind": zod.enum(['confirmation', 'ui']),
-  "toolName": zod.string(),
-  "args": zod.record(zod.string(), zod.unknown()),
-  "summary": zod.string()
-}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
@@ -825,19 +813,13 @@ export const GetRunParams = zod.object({
 export const GetRunResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.'),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
   "durationMs": zod.number().nullish(),
   "createdAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullish(),
-  "pendingAction": zod.union([zod.object({
-  "kind": zod.enum(['confirmation', 'ui']),
-  "toolName": zod.string(),
-  "args": zod.record(zod.string(), zod.unknown()),
-  "summary": zod.string()
-}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
@@ -856,7 +838,7 @@ export const ListRunStepsResponseItem = zod.object({
   "id": zod.number(),
   "runId": zod.number(),
   "position": zod.number(),
-  "type": zod.string().describe('model (chiamata al modello) o tool (chiamata a un tool)'),
+  "type": zod.string().describe('model (chiamata al modello), tool (chiamata a un tool) o queued (azione accodata per la conferma dell\'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti sensibili oscurati)'),
   "toolName": zod.string().nullish(),
   "args": zod.record(zod.string(), zod.unknown()).nullish(),
   "ok": zod.boolean().nullish(),
@@ -869,46 +851,7 @@ export const ListRunStepsResponse = zod.array(ListRunStepsResponseItem)
 
 
 /**
- * Conferma o rifiuta l'azione in sospeso di una run in stato awaiting_client e la riavvia in background. Risponde 409 se la run non è in pausa o la pausa è scaduta.
- * @summary Riprende un'esecuzione in attesa del client
- */
-export const ResumeRunParams = zod.object({
-  "id": zod.coerce.number()
-})
-
-export const ResumeRunHeader = zod.object({
-  "X-App-User-Token": zod.string().optional().describe('Token dell\'utente finale nell\'app, se quello dato all\'avvio non è più in memoria (riavvio del server o pausa lunga). Non viene mai salvato né scritto nei log.')
-})
-
-export const ResumeRunBody = zod.object({
-  "decision": zod.enum(['approved', 'rejected'])
-})
-
-export const ResumeRunResponse = zod.object({
-  "id": zod.number(),
-  "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
-  "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
-  "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
-  "errorMessage": zod.string().nullish(),
-  "durationMs": zod.number().nullish(),
-  "createdAt": zod.coerce.date(),
-  "finishedAt": zod.coerce.date().nullish(),
-  "pendingAction": zod.union([zod.object({
-  "kind": zod.enum(['confirmation', 'ui']),
-  "toolName": zod.string(),
-  "args": zod.record(zod.string(), zod.unknown()),
-  "summary": zod.string()
-}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
-  "promptTokens": zod.number().nullish(),
-  "completionTokens": zod.number().nullish(),
-  "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
-  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
-})
-
-
-/**
- * Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
+ * Porta a cancelled una run pending o running, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
  * @summary Annulla un'esecuzione non ancora conclusa
  */
 export const CancelRunParams = zod.object({
@@ -918,19 +861,13 @@ export const CancelRunParams = zod.object({
 export const CancelRunResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.'),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
   "durationMs": zod.number().nullish(),
   "createdAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullish(),
-  "pendingAction": zod.union([zod.object({
-  "kind": zod.enum(['confirmation', 'ui']),
-  "toolName": zod.string(),
-  "args": zod.record(zod.string(), zod.unknown()),
-  "summary": zod.string()
-}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
@@ -1370,7 +1307,7 @@ export const GetBudgetResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
   "agentName": zod.string(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled'])
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.')
 })).describe('Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell\'utente, del loro agente, del loro modello o del suo account)')
 })
 
@@ -1422,7 +1359,7 @@ export const UpdateBudgetResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
   "agentName": zod.string(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled'])
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.')
 })).describe('Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell\'utente, del loro agente, del loro modello o del suo account)')
 })
 

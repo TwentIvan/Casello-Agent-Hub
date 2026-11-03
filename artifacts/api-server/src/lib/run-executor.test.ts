@@ -10,6 +10,7 @@ import {
   appsTable,
   agentsTable,
   appToolsTable,
+  pendingActionsTable,
   runsTable,
   runStepsTable,
   usersTable,
@@ -17,17 +18,15 @@ import {
 } from "@workspace/db";
 import {
   AGENT_WITHOUT_MODEL,
+  PAUSE_REPLACED_MESSAGE,
   RUN_CANCELLED_MESSAGE,
-  ResumeConflictError,
   cancelRun,
-  claimResume,
-  expireStalePausedRuns,
   failInterruptedRuns,
   modelCallError,
-  resumeRun,
   startRun,
 } from "./run-executor";
-import { clearUserToken } from "./user-tokens";
+import { clearUserToken, getUserToken } from "./user-tokens";
+import { decryptSecret } from "./secrets";
 import { logger } from "./logger";
 import { ProviderError } from "./ai/discovery";
 import { encryptSecret } from "./secrets";
@@ -326,154 +325,93 @@ describe("orchestrazione delle run", () => {
     expect(tool.error).toContain("token utente mancante");
   });
 
-  it("pausa e ripresa: awaiting_client, poi una sola richiesta all'app; seconda ripresa in conflitto", async () => {
+  it("azione L2: accodata (mai eseguita), voce pending collegata alla run, passo queued, run succeeded", async () => {
     const id = await seedRun(DELETE_ITEM);
-    llmReplies = [toolCallReply("delete_item", { id: "42" }), textReply("Eliminato.")];
+    llmReplies = [
+      toolCallReply("delete_item", { id: "42", destinatario: "Rosa", sintesi: "Elimina l'elemento 42 di Rosa" }),
+      textReply("Ho messo in coda l'eliminazione."),
+    ];
 
     await startRun(id, { userToken: "segreto-utente" });
 
-    let run = await getRun(id);
-    expect(run.status).toBe("awaiting_client");
-    expect(run.pendingAction).toMatchObject({ kind: "confirmation", toolName: "delete_item", args: { id: "42" } });
-    expect(run.pausedAt).not.toBeNull();
-    expect(run.loopState).not.toBeNull();
-    expect(appRequests).toHaveLength(0);
-    // Durante la pausa il token resta solo in memoria
-    const paused = await pool.query("select row_to_json(r)::text as j from runs r");
-    expect(paused.rows[0].j).not.toContain("segreto-utente");
-
-    await resumeRun(id, "approved");
-
-    run = await getRun(id);
+    const run = await getRun(id);
     expect(run.status).toBe("succeeded");
-    expect(run.output).toBe("Eliminato.");
-    expect(run.pendingAction).toBeNull();
-    expect(run.promptTokens).toBe(20);
-    expect(appRequests).toHaveLength(1);
-    expect(appRequests[0]).toMatchObject({ method: "DELETE", url: "/api/items/42", auth: "Bearer segreto-utente" });
+    expect(run.output).toBe("Ho messo in coda l'eliminazione.");
+    expect(appRequests).toHaveLength(0);
+    // Al modello: lo strumento L2 ha destinatario e sintesi obbligatori
+    const offered = llmRequests[0].tools.find((t: any) => t.function.name === "delete_item").function.parameters;
+    expect(offered.required).toEqual(["id", "destinatario", "sintesi"]);
+    expect(llmRequests[1].messages.at(-1)).toEqual({
+      role: "tool",
+      tool_call_id: "call_1",
+      content: "accodata come n. 1, in attesa di conferma dell'utente",
+    });
+
+    const [owner] = await db.select().from(usersTable).where(eq(usersTable.email, "seed@example.com"));
+    const actions = await db.select().from(pendingActionsTable);
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({
+      userId: owner!.id,
+      number: 1,
+      runId: id,
+      agentId: run.agentId,
+      status: "pending",
+      recipient: "Rosa",
+      summary: "Elimina l'elemento 42 di Rosa",
+      argsPublic: { id: "42" },
+    });
+    expect(JSON.parse(decryptSecret(actions[0]!.argsEnc))).toEqual({ id: "42" });
+
     const steps = await getSteps(id);
     expect(steps.map((s) => [s.position, s.type, s.toolName, s.ok])).toEqual([
       [0, "model", null, true],
-      [1, "tool", "delete_item", true],
+      [1, "queued", "delete_item", true],
       [2, "model", null, true],
     ]);
-
-    await expect(resumeRun(id, "approved")).rejects.toBeInstanceOf(ResumeConflictError);
-    expect(appRequests).toHaveLength(1);
-  });
-
-  it("ripresa con token nuovo: sostituisce quello in memoria", async () => {
-    const id = await seedRun(DELETE_ITEM);
-    llmReplies = [toolCallReply("delete_item", { id: "42" }), textReply("Eliminato.")];
-    await startRun(id);
-    await resumeRun(id, "approved", { userToken: "tok-nuovo" });
-    expect(appRequests[0]!.auth).toBe("Bearer tok-nuovo");
-  });
-
-  it("due riprese concorrenti: una sola esecuzione del tool", async () => {
-    const id = await seedRun(DELETE_ITEM);
-    llmReplies = [toolCallReply("delete_item", { id: "42" }), textReply("Eliminato.")];
-    await startRun(id, { userToken: "t" });
-
-    const results = await Promise.allSettled([resumeRun(id, "approved"), resumeRun(id, "approved")]);
-    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
-    const rejected = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
-    expect(rejected.reason).toBeInstanceOf(ResumeConflictError);
-    expect(appRequests).toHaveLength(1);
-  });
-
-  it("rifiuto: l'app non riceve nulla, il modello riceve l'annullamento, run succeeded", async () => {
-    const id = await seedRun(DELETE_ITEM);
-    llmReplies = [toolCallReply("delete_item", { id: "42" }), textReply("Va bene, non elimino.")];
-    await startRun(id, { userToken: "t" });
-
-    await resumeRun(id, "rejected");
-
-    const run = await getRun(id);
-    expect(run.status).toBe("succeeded");
-    expect(appRequests).toHaveLength(0);
-    const tool = (await getSteps(id)).find((s) => s.type === "tool")!;
-    expect(tool.ok).toBe(false);
-    expect(tool.error).toBe("L'utente ha annullato l'azione.");
-    const last = llmRequests.at(-1);
-    expect(last.messages.at(-1)).toEqual({
-      role: "tool",
-      tool_call_id: "call_1",
-      content: "L'utente ha annullato l'azione.",
+    expect(steps[1]!.args).toEqual({
+      numero: 1,
+      destinatario: "Rosa",
+      sintesi: "Elimina l'elemento 42 di Rosa",
+      argomenti: { id: "42" },
     });
+    // Il token dell'utente vive solo per la durata della run
+    expect(getUserToken(id)).toBeUndefined();
+    const rows = await pool.query("select row_to_json(r)::text as j from runs r");
+    for (const row of rows.rows) expect(row.j).not.toContain("segreto-utente");
   });
 
-  it("ripresa di una run non in pausa: ResumeConflictError", async () => {
-    const id = await seedRun(GET_ITEM);
-    await expect(resumeRun(id, "approved")).rejects.toBeInstanceOf(ResumeConflictError);
-    expect((await getRun(id)).status).toBe("pending");
-  });
+  it("azione L2 con argomenti sensibili: oscurati nel passo e in args_public, cifrati nella voce", async () => {
+    const id = await seedRun(SET_PASSWORD);
+    llmReplies = [
+      toolCallReply("set_password", { id: "42", password: "segreta-123", destinatario: "Rosa", sintesi: "Nuova password per Rosa" }),
+      textReply("In coda."),
+    ];
 
-  it("scadenza: pausa di 11 minuti fa → cancelled", async () => {
-    const id = await seedRun(DELETE_ITEM);
-    llmReplies = [toolCallReply("delete_item", { id: "42" })];
     await startRun(id, { userToken: "t" });
-    await db
-      .update(runsTable)
-      .set({ pausedAt: new Date(Date.now() - 11 * 60_000) })
-      .where(eq(runsTable.id, id));
 
-    // Scaduta ma non ancora chiusa dal timer: la ripresa è comunque rifiutata
-    await expect(resumeRun(id, "approved")).rejects.toBeInstanceOf(ResumeConflictError);
-
-    expect(await expireStalePausedRuns()).toBe(1);
-    const run = await getRun(id);
-    expect(run.status).toBe("cancelled");
-    expect(run.errorMessage).toBe("Conferma non arrivata entro 10 minuti.");
-    expect(run.finishedAt).not.toBeNull();
-    // R12: a run chiusa non restano argomenti dei tool
-    expect(run.pendingAction).toBeNull();
-    expect(run.loopState).toBeNull();
-    expect(appRequests).toHaveLength(0);
-    expect(await expireStalePausedRuns()).toBe(0);
+    const [queued] = (await getSteps(id)).filter((s) => s.type === "queued");
+    expect(queued!.args).toMatchObject({ numero: 1, argomenti: { id: "42", password: "***" } });
+    const [action] = await db.select().from(pendingActionsTable);
+    expect(action!.argsPublic).toEqual({ id: "42", password: "***" });
+    expect(JSON.parse(decryptSecret(action!.argsEnc))).toEqual({ id: "42", password: "segreta-123" });
+    const stored = await pool.query("select row_to_json(s)::text as j from run_steps s union all select row_to_json(r)::text from runs r");
+    for (const row of stored.rows) expect(row.j).not.toContain("segreta-123");
   });
 
-  it("pausa recente: non scade", async () => {
+  it("azione L2 con un segnaposto nel testo: nessuna voce, il modello riceve «testo non pronto»", async () => {
     const id = await seedRun(DELETE_ITEM);
-    llmReplies = [toolCallReply("delete_item", { id: "42" })];
+    llmReplies = [
+      toolCallReply("delete_item", { id: "42", destinatario: "Rosa", sintesi: "Elimina il [data da concordare]" }),
+      textReply("Correggo."),
+    ];
+
     await startRun(id, { userToken: "t" });
-    expect(await expireStalePausedRuns()).toBe(0);
-    expect((await getRun(id)).status).toBe("awaiting_client");
-    clearUserToken(id);
-  });
 
-  it("stato di pausa incoerente: ResumeConflictError, la run finisce failed e il tool non parte", async () => {
-    const id = await seedRun(DELETE_ITEM);
-    llmReplies = [toolCallReply("delete_item", { id: "42" })];
-    await startRun(id, { userToken: "t" });
-    const run = await getRun(id);
-    const state = run.loopState as { queue: unknown[] };
-    await db
-      .update(runsTable)
-      .set({ loopState: { ...state, queue: [] } })
-      .where(eq(runsTable.id, id));
-
-    await expect(resumeRun(id, "approved")).rejects.toBeInstanceOf(ResumeConflictError);
-    const after = await getRun(id);
-    expect(after.status).toBe("failed");
-    expect(after.errorMessage).toBeTruthy();
-    expect(appRequests).toHaveLength(0);
-  });
-
-  it("errore inatteso (stato di pausa mancante): la run finisce failed, non running", async () => {
-    const id = await seedRun(GET_ITEM);
-    // Stato di pausa mancante: la ripresa non può proseguire
-    await db
-      .update(runsTable)
-      .set({ status: "awaiting_client", pausedAt: new Date(), loopState: null, pendingAction: null })
-      .where(eq(runsTable.id, id));
-
-    await resumeRun(id, "approved");
-
-    const run = await getRun(id);
-    expect(run.status).toBe("failed");
-    expect(run.errorMessage).toBeTruthy();
-    expect(run.finishedAt).not.toBeNull();
+    expect((await getRun(id)).status).toBe("succeeded");
+    expect(await db.select().from(pendingActionsTable)).toEqual([]);
+    expect(llmRequests[1].messages.at(-1).content).toBe('testo non pronto: segnaposto "[data da concordare]"');
+    const tool = (await getSteps(id)).find((s) => s.type === "tool")!;
+    expect(tool).toMatchObject({ toolName: "delete_item", ok: false });
   });
 
   it("errore del modello: la run finisce failed con il messaggio", async () => {
@@ -487,69 +425,28 @@ describe("orchestrazione delle run", () => {
     expect(run.errorMessage).toContain("errore nella chiamata al modello");
   });
 
-  it("failInterruptedRuns: la run ripresa e interrotta perde stato e azione in sospeso", async () => {
-    const id = await seedRun(DELETE_ITEM);
-    llmReplies = [toolCallReply("delete_item", { id: "42" })];
-    await startRun(id, { userToken: "t" });
-    // Come dopo la transizione della ripresa: running con stato ancora salvato
-    await db.update(runsTable).set({ status: "running" }).where(eq(runsTable.id, id));
+  it("failInterruptedRuns: pending/running → failed; awaiting_client → cancelled con le colonne della pausa svuotate", async () => {
+    const running = await seedRun(GET_ITEM);
+    await db.update(runsTable).set({ status: "running" }).where(eq(runsTable.id, running));
+    const [other] = await db.insert(runsTable).values({ agentId: (await getRun(running)).agentId, input: "x" }).returning();
+    // Run in pausa del vecchio meccanismo, con stato e azione in sospeso (argomenti in chiaro)
+    await pool.query(
+      `update runs set status = 'awaiting_client', paused_at = now(),
+         loop_state = '{"messages":[]}'::jsonb, pending_action = '{"args":{"password":"segreta"}}'::jsonb
+       where id = $1`,
+      [other!.id],
+    );
 
-    expect(await failInterruptedRuns()).toBe(1);
-    const run = await getRun(id);
-    expect(run.status).toBe("failed");
-    expect(run.pendingAction).toBeNull();
-    expect(run.loopState).toBeNull();
-    clearUserToken(id);
-  });
-
-  it("tool disattivato durante la pausa: errore al modello, argomenti sensibili oscurati nel passo", async () => {
-    const id = await seedRun(SET_PASSWORD);
-    llmReplies = [toolCallReply("set_password", { id: "42", password: "segreta-123" }), textReply("Non disponibile.")];
-    await startRun(id, { userToken: "t" });
-    await db.update(appToolsTable).set({ status: "disabled" }).where(eq(appToolsTable.name, "set_password"));
-
-    await resumeRun(id, "approved");
-
-    expect(appRequests).toHaveLength(0);
-    expect((await getRun(id)).status).toBe("succeeded");
-    const tool = (await getSteps(id)).find((s) => s.type === "tool")!;
-    expect(tool.ok).toBe(false);
-    expect(tool.error).toContain("non è più disponibile");
-    expect(tool.args).toEqual({ id: "42", password: "***" });
-    const steps = await pool.query("select row_to_json(s)::text as j from run_steps s");
-    for (const row of steps.rows) expect(row.j).not.toContain("segreta-123");
-  });
-
-  it("tool cancellato durante la pausa: il passo non registra gli argomenti", async () => {
-    const id = await seedRun(SET_PASSWORD);
-    llmReplies = [toolCallReply("set_password", { id: "42", password: "segreta-123" }), textReply("Non disponibile.")];
-    await startRun(id, { userToken: "t" });
-    await db.delete(appToolsTable).where(eq(appToolsTable.name, "set_password"));
-
-    await resumeRun(id, "approved");
-
-    const tool = (await getSteps(id)).find((s) => s.type === "tool")!;
-    expect(tool.ok).toBe(false);
-    expect(tool.args).toBeNull();
-  });
-
-  it("il tempo del tool confermato alla ripresa conta nel tempo attivo del turno", async () => {
-    const id = await seedRun(DELETE_ITEM);
-    llmReplies = [
-      toolCallReply("delete_item", { id: "1" }, "call_1"),
-      toolCallReply("delete_item", { id: "2" }, "call_2"),
-    ];
-    await startRun(id, { userToken: "t" });
-    const before = (await getRun(id)).loopState as { activeMs: number };
-    appDelayMs = 150;
-
-    await resumeRun(id, "approved");
-
-    const run = await getRun(id);
-    expect(run.status).toBe("awaiting_client");
-    const after = run.loopState as { activeMs: number };
-    expect(after.activeMs - before.activeMs).toBeGreaterThanOrEqual(150);
-    clearUserToken(id);
+    expect(await failInterruptedRuns()).toEqual({ failed: 1, cancelled: 1 });
+    expect((await getRun(running)).status).toBe("failed");
+    const paused = await getRun(other!.id);
+    expect(paused.status).toBe("cancelled");
+    expect(paused.errorMessage).toBe(PAUSE_REPLACED_MESSAGE);
+    expect(PAUSE_REPLACED_MESSAGE).toBe("conferma sostituita dalla coda delle azioni");
+    expect(paused.finishedAt).not.toBeNull();
+    const raw = await pool.query("select loop_state, pending_action, paused_at from runs where id = $1", [other!.id]);
+    expect(raw.rows[0]).toEqual({ loop_state: null, pending_action: null, paused_at: null });
+    expect(await failInterruptedRuns()).toEqual({ failed: 0, cancelled: 0 });
   });
 
   it("errore inatteso a metà turno: la run failed conserva i token già consumati", async () => {
@@ -659,24 +556,6 @@ describe("annullamento delle run", () => {
     expect(run.errorMessage).toBe(RUN_CANCELLED_MESSAGE);
     expect(run.output).toBeNull();
     expect(llmRequests).toHaveLength(1);
-  });
-
-  it("run in pausa (awaiting_client): cancelled, una ripresa successiva è in conflitto e il tool non parte", async () => {
-    const id = await seedRun(DELETE_ITEM);
-    llmReplies = [toolCallReply("delete_item", { id: "42" })];
-    await startRun(id, { userToken: "t" });
-    expect((await getRun(id)).status).toBe("awaiting_client");
-
-    const result = await cancelRun(id);
-
-    expect(result.kind).toBe("cancelled");
-    const run = await getRun(id);
-    expect(run.status).toBe("cancelled");
-    expect(run.errorMessage).toBe(RUN_CANCELLED_MESSAGE);
-    expect(run.pendingAction).toBeNull();
-    expect(run.loopState).toBeNull();
-    await expect(resumeRun(id, "approved")).rejects.toBeInstanceOf(ResumeConflictError);
-    expect(appRequests).toHaveLength(0);
   });
 
   it("run pending: cancelled, startRun non la esegue", async () => {
@@ -792,35 +671,33 @@ describe("run sugli account AI (chi configura paga)", () => {
     expect(llmRequests).toHaveLength(0);
   });
 
-  it("il costo si somma attraverso la pausa e la ripresa", async () => {
-    const id = await seedRun(DELETE_ITEM);
-    await linkAgentToAccount(id, { input: "1", output: "2" });
-    const replies = [fakeToolCall("delete_item", { id: "42" }), { content: "Eliminato", toolCalls: [], usage: { prompt_tokens: 1000, completion_tokens: 500 } }];
-    fake.chatReply = () => replies.shift()!;
-
-    await startRun(id, { userToken: "t" });
-    const paused = await getRun(id);
-    expect(paused.status).toBe("awaiting_client");
-    expect(Number(paused.costUsd)).toBeCloseTo(0.002, 8);
-
-    await resumeRun(id, "approved", { userToken: "t" });
-    const run = await getRun(id);
-    expect(run.status).toBe("succeeded");
-    expect(Number(run.costUsd)).toBeCloseTo(0.004, 8);
-  });
-
-  it("salva i token in cache, sommati attraverso la pausa e la ripresa", async () => {
+  it("azione accodata: la voce appartiene al proprietario dell'account del modello", async () => {
     const id = await seedRun(DELETE_ITEM);
     await linkAgentToAccount(id, { input: "1", output: "2" });
     const replies = [
-      { ...fakeToolCall("delete_item", { id: "42" }), usage: { prompt_tokens: 1000, completion_tokens: 500, cached_tokens: 800 } },
-      { content: "Eliminato", toolCalls: [], usage: { prompt_tokens: 1000, completion_tokens: 500, cached_tokens: 900 } },
+      fakeToolCall("delete_item", { id: "42", destinatario: "Rosa", sintesi: "Elimina il 42" }),
+      { content: "In coda", toolCalls: [], usage: { prompt_tokens: 1000, completion_tokens: 500 } },
     ];
     fake.chatReply = () => replies.shift()!;
 
     await startRun(id, { userToken: "t" });
-    expect((await getRun(id)).cachedTokens).toBe(800);
-    await resumeRun(id, "approved", { userToken: "t" });
+
+    expect((await getRun(id)).status).toBe("succeeded");
+    const [owner] = await db.select().from(usersTable).where(eq(usersTable.email, `a${id}@example.com`));
+    const [action] = await db.select().from(pendingActionsTable);
+    expect(action).toMatchObject({ userId: owner!.id, number: 1, runId: id });
+  });
+
+  it("salva i token in cache, sommati tra le chiamate della run", async () => {
+    const id = await seedRun(GET_ITEM);
+    await linkAgentToAccount(id, { input: "1", output: "2" });
+    const replies = [
+      { ...fakeToolCall("get_item", { id: "42" }), usage: { prompt_tokens: 1000, completion_tokens: 500, cached_tokens: 800 } },
+      { content: "Letto", toolCalls: [], usage: { prompt_tokens: 1000, completion_tokens: 500, cached_tokens: 900 } },
+    ];
+    fake.chatReply = () => replies.shift()!;
+
+    await startRun(id, { userToken: "t" });
     const run = await getRun(id);
     expect(run.status).toBe("succeeded");
     expect(run.promptTokens).toBe(2000);
@@ -909,25 +786,6 @@ describe("run sugli account AI (chi configura paga)", () => {
     expect(llmRequests).toHaveLength(0);
     expect(fake.requests).toHaveLength(0);
     expect(await getSteps(id)).toHaveLength(0);
-  });
-
-  it("ripresa di una run senza modello: failed con il messaggio, il tool confermato non parte", async () => {
-    const id = await seedRun(DELETE_ITEM);
-    llmReplies = [toolCallReply("delete_item", { id: "42" })];
-    await startRun(id, { userToken: "t" });
-    expect((await getRun(id)).status).toBe("awaiting_client");
-    // Il modello dell'agente viene tolto durante la pausa (la run non ne ha uno registrato)
-    const run0 = await getRun(id);
-    expect(run0.aiModelId).toBeNull();
-    await db.update(agentsTable).set({ aiModelId: null }).where(eq(agentsTable.id, run0.agentId));
-
-    await resumeRun(id, "approved", { userToken: "t" });
-
-    const run = await getRun(id);
-    expect(run.status).toBe("failed");
-    expect(run.errorMessage).toBe(AGENT_WITHOUT_MODEL);
-    expect(appRequests).toHaveLength(0);
-    expect(llmRequests).toHaveLength(1);
   });
 
   it("run con modello registrato: usa quello anche se l'agente non ne ha più", async () => {
@@ -1035,41 +893,6 @@ describe("annullamento: uso registrato", () => {
     expect(run.costUsd).toBeNull();
     expect(run.durationMs).toBeGreaterThan(0);
   });
-
-  it("due riprese concorrenti: ne procede una sola e l'annullamento interrompe la sua chiamata al modello", async () => {
-    const id = await seedRun(DELETE_ITEM);
-    await linkAgent(id);
-    fake.chatReply = {
-      content: null,
-      toolCalls: [{ id: "call_1", name: "delete_item", arguments: JSON.stringify({ id: "42" }) }],
-      usage: { prompt_tokens: 1000, completion_tokens: 500 },
-    };
-    await startRun(id, { userToken: "t" });
-    expect((await getRun(id)).status).toBe("awaiting_client");
-    const chatCount = () => fake.requests.filter((r) => r.path === "/v1/chat/completions").length;
-    const before = chatCount();
-    // dopo la conferma il modello tiene la risposta
-    fake.delayMs = 5_000;
-
-    const claims = await Promise.allSettled([
-      claimResume(id, "approved", { userToken: "t" }),
-      claimResume(id, "approved", { userToken: "t" }),
-    ]);
-    expect(claims.filter((c) => c.status === "fulfilled")).toHaveLength(1);
-    const rejected = claims.find((c) => c.status === "rejected") as PromiseRejectedResult;
-    expect(rejected.reason).toBeInstanceOf(ResumeConflictError);
-    const winner = (claims.find((c) => c.status === "fulfilled") as PromiseFulfilledResult<Awaited<ReturnType<typeof claimResume>>>).value;
-    const proceeding = winner.proceed();
-    await waitFor(() => chatCount() === before + 1);
-
-    const t0 = Date.now();
-    await cancelRun(id);
-    await proceeding;
-
-    // la chiamata al modello del vincitore è stata interrotta, non attesa fino in fondo
-    expect(Date.now() - t0).toBeLessThan(2_000);
-    expect((await getRun(id)).status).toBe("cancelled");
-  }, 10_000);
 
   it("run pending annullata prima dell'avvio: startRun esce senza lanciare", async () => {
     const id = await seedRun(GET_ITEM);

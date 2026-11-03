@@ -21,7 +21,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { RunStatusBadge } from "@/components/run-status-badge";
-import { ConfirmationCard } from "@/components/runs/confirmation-card";
 import { RunSteps } from "@/components/runs/run-steps";
 import { isRunActive } from "@/components/runs/run-queries";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -197,18 +196,7 @@ export default function RunDetailPage() {
 
       <RunSteps run={r} />
 
-      {r.status === "awaiting_client" ? (
-        r.pendingAction ? (
-          <ConfirmationCard run={r} />
-        ) : (
-          <Card>
-            <CardContent className="flex items-center gap-3 py-8 text-sm text-muted-foreground">
-              <Spinner className="size-5" />
-              In attesa di una risposta del client…
-            </CardContent>
-          </Card>
-        )
-      ) : active ? (
+      {active ? (
         <Card>
           <CardContent className="flex items-center gap-3 py-8 text-sm text-muted-foreground">
             <Spinner className="size-5" />

@@ -511,6 +511,9 @@ export interface AppToolUpdate {
   needsVerification?: boolean;
 }
 
+/**
+ * awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all'avvio le run ancora in pausa diventano cancelled.
+ */
 export type RunStatus = typeof RunStatus[keyof typeof RunStatus];
 
 
@@ -522,23 +525,6 @@ export const RunStatus = {
   awaiting_client: 'awaiting_client',
   cancelled: 'cancelled',
 } as const;
-
-export type PendingActionKind = typeof PendingActionKind[keyof typeof PendingActionKind];
-
-
-export const PendingActionKind = {
-  confirmation: 'confirmation',
-  ui: 'ui',
-} as const;
-
-export type PendingActionArgs = { [key: string]: unknown };
-
-export interface PendingAction {
-  kind: PendingActionKind;
-  toolName: string;
-  args: PendingActionArgs;
-  summary: string;
-}
 
 export interface Run {
   id: number;
@@ -561,8 +547,6 @@ export interface Run {
   createdAt: string;
   /** @nullable */
   finishedAt?: string | null;
-  /** Azione in attesa del client (solo con stato awaiting_client) */
-  pendingAction?: PendingAction | null;
   /** @nullable */
   promptTokens?: number | null;
   /** @nullable */
@@ -585,7 +569,7 @@ export interface RunStep {
   id: number;
   runId: number;
   position: number;
-  /** model (chiamata al modello) o tool (chiamata a un tool) */
+  /** model (chiamata al modello), tool (chiamata a un tool) o queued (azione accodata per la conferma dell'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti sensibili oscurati) */
   type: string;
   /** @nullable */
   toolName?: string | null;
@@ -600,18 +584,6 @@ export interface RunStep {
   /** @nullable */
   error?: string | null;
   createdAt: string;
-}
-
-export type RunDecision = typeof RunDecision[keyof typeof RunDecision];
-
-
-export const RunDecision = {
-  approved: 'approved',
-  rejected: 'rejected',
-} as const;
-
-export interface RunResume {
-  decision: RunDecision;
 }
 
 export interface RunTrigger {

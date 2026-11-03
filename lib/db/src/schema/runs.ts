@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, numeric, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, numeric, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { agentsTable } from "./agents";
@@ -9,6 +9,7 @@ export const runStatusEnum = pgEnum("run_status", [
   "running",
   "succeeded",
   "failed",
+  // Solo run storiche: la pausa per conferma non esiste più (all'avvio diventano cancelled)
   "awaiting_client",
   "cancelled",
 ]);
@@ -27,9 +28,8 @@ export const runsTable = pgTable(
     output: text("output"),
     errorMessage: text("error_message"),
     durationMs: integer("duration_ms"),
-    pendingAction: jsonb("pending_action"),
-    loopState: jsonb("loop_state"),
-    pausedAt: timestamp("paused_at"),
+    // Le colonne storiche pending_action, loop_state e paused_at (pausa per conferma) restano nel DB
+    // ma non sono più lette né scritte: la conferma passa dalla coda delle azioni (pending_actions)
     promptTokens: integer("prompt_tokens"),
     completionTokens: integer("completion_tokens"),
     // Quanti dei token di prompt il provider ha letto dalla cache

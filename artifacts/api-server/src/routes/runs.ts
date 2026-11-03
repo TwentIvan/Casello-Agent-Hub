@@ -9,16 +9,12 @@ import {
   GetRunResponse,
   ListRunStepsParams,
   ListRunStepsResponse,
-  ResumeRunParams,
-  ResumeRunBody,
-  ResumeRunResponse,
   CancelRunParams,
   CancelRunResponse,
 } from "@workspace/api-zod";
-import { cancelRateLimit, runRateLimit } from "../middlewares/rate-limit";
-import { ResumeConflictError, cancelRun, claimResume } from "../lib/run-executor";
-import { logger } from "../lib/logger";
-import { toPublicRun, userTokenFrom } from "./serializers";
+import { cancelRateLimit } from "../middlewares/rate-limit";
+import { cancelRun } from "../lib/run-executor";
+import { toPublicRun } from "./serializers";
 import { parseRequest } from "../middlewares/error-handler";
 
 // Il codegen non emette .int() per i parametri integer: cursore e limite si restringono qui.
@@ -70,34 +66,7 @@ router.get("/runs/:id/steps", async (req, res) => {
   res.json(ListRunStepsResponse.parse(steps));
 });
 
-// Ripresa di una run in pausa. La presa in carico (awaiting_client → running, UPDATE condizionato)
-// è attesa qui: una seconda ripresa, una pausa scaduta o un'azione incoerente rispondono 409 senza
-// eseguire il tool. Il resto del turno prosegue in background, come all'avvio.
-router.post("/runs/:id/resume", runRateLimit, async (req, res) => {
-  const { id } = parseRequest(ResumeRunParams, req.params);
-  const { decision } = parseRequest(ResumeRunBody, req.body);
-
-  const [existing] = await db.select({ id: runsTable.id }).from(runsTable).where(eq(runsTable.id, id)).limit(1);
-  if (!existing) {
-    res.status(404).json({ error: "Esecuzione non trovata" });
-    return;
-  }
-
-  let claimed: Awaited<ReturnType<typeof claimResume>>;
-  try {
-    claimed = await claimResume(id, decision, { userToken: userTokenFrom(req) });
-  } catch (err) {
-    if (!(err instanceof ResumeConflictError)) throw err;
-    res.status(409).json({ error: err.message });
-    return;
-  }
-
-  claimed.proceed().catch((err: unknown) => logger.error({ err, runId: id }, "Ripresa della run fallita"));
-
-  res.status(202).json(ResumeRunResponse.parse(toPublicRun(claimed.run)));
-});
-
-// Annullamento: UPDATE condizionato (pending/running/awaiting_client → cancelled) e poi interruzione
+// Annullamento: UPDATE condizionato (pending/running → cancelled) e poi interruzione
 // delle chiamate in volo. Una run già conclusa risponde 409.
 router.post("/runs/:id/cancel", cancelRateLimit, async (req, res) => {
   const { id } = parseRequest(CancelRunParams, req.params);

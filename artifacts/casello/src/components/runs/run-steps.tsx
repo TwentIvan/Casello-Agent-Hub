@@ -11,7 +11,8 @@ import { isRunActive } from "./run-queries";
 const POLL_MS = 1500;
 
 function StepRow({ step }: { step: RunStep }) {
-  const isTool = step.type === "tool";
+  // `queued`: azione L2 accodata per la conferma (args = numero, destinatario, sintesi, argomenti)
+  const isTool = step.type === "tool" || step.type === "queued";
   const failed = step.ok === false;
   const hasArgs = step.args != null && Object.keys(step.args).length > 0;
   return (
@@ -19,7 +20,7 @@ function StepRow({ step }: { step: RunStep }) {
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="w-6 text-right text-xs tabular-nums text-muted-foreground">{step.position + 1}</span>
         {isTool ? <Wrench className="size-4 text-muted-foreground" /> : <Bot className="size-4 text-muted-foreground" />}
-        <span className="font-medium">{isTool ? "Tool" : "Modello"}</span>
+        <span className="font-medium">{step.type === "queued" ? "Accodata" : isTool ? "Tool" : "Modello"}</span>
         {step.toolName && <span className="font-mono text-xs">{step.toolName}</span>}
         {step.ok != null && (
           <Badge

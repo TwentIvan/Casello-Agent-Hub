@@ -701,51 +701,13 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /runs/{id}/resume:
-    post:
-      operationId: resumeRun
-      tags: [runs]
-      summary: Riprende un'esecuzione in attesa del client
-      description: >-
-        Conferma o rifiuta l'azione in sospeso di una run in stato awaiting_client e la
-        riavvia in background. Risponde 409 se la run non è in pausa o la pausa è scaduta.
-      parameters:
-        - $ref: "#/components/parameters/IdParam"
-        - name: X-App-User-Token
-          in: header
-          required: false
-          schema:
-            type: string
-          description: >-
-            Token dell'utente finale nell'app, se quello dato all'avvio non è più in memoria
-            (riavvio del server o pausa lunga). Non viene mai salvato né scritto nei log.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RunResume"
-      responses:
-        "202":
-          description: Esecuzione ripresa
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Run"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-
   /runs/{id}/cancel:
     post:
       operationId: cancelRun
       tags: [runs]
       summary: Annulla un'esecuzione non ancora conclusa
       description: >-
-        Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate
+        Porta a cancelled una run pending o running, interrompe le chiamate
         in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati
         restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
       parameters:
@@ -2615,6 +2577,9 @@ components:
 
     RunStatus:
       type: string
+      description: >-
+        awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla
+        coda delle azioni e all'avvio le run ancora in pausa diventano cancelled.
       enum: [pending, running, succeeded, failed, awaiting_client, cancelled]
 
     Run:
@@ -2643,11 +2608,6 @@ components:
         finishedAt:
           type: ["string", "null"]
           format: date-time
-        pendingAction:
-          oneOf:
-            - $ref: "#/components/schemas/PendingAction"
-            - type: "null"
-          description: Azione in attesa del client (solo con stato awaiting_client)
         promptTokens:
           type: ["integer", "null"]
         completionTokens:
@@ -2658,24 +2618,6 @@ components:
         costUsd:
           type: ["number", "null"]
           description: Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)
-
-    PendingActionKind:
-      type: string
-      enum: [confirmation, ui]
-
-    PendingAction:
-      type: object
-      required: [kind, toolName, args, summary]
-      properties:
-        kind:
-          $ref: "#/components/schemas/PendingActionKind"
-        toolName:
-          type: string
-        args:
-          type: object
-          additionalProperties: true
-        summary:
-          type: string
 
     RunStep:
       type: object
@@ -2689,7 +2631,10 @@ components:
           type: integer
         type:
           type: string
-          description: "model (chiamata al modello) o tool (chiamata a un tool)"
+          description: >-
+            model (chiamata al modello), tool (chiamata a un tool) o queued (azione accodata per la
+            conferma dell'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti
+            sensibili oscurati)
         toolName:
           type: ["string", "null"]
         args:
@@ -2706,17 +2651,6 @@ components:
         createdAt:
           type: string
           format: date-time
-
-    RunDecision:
-      type: string
-      enum: [approved, rejected]
-
-    RunResume:
-      type: object
-      required: [decision]
-      properties:
-        decision:
-          $ref: "#/components/schemas/RunDecision"
 
     RunTrigger:
       type: object

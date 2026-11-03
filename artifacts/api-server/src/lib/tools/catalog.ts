@@ -1,6 +1,7 @@
 import { db, agentsTable, appsTable, appToolsTable, agentToolsTable, type AppTool } from "@workspace/db";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
+import { MAX_SUMMARY_CHARS, RECIPIENT_PARAM, SUMMARY_PARAM } from "../agent-loop";
 import { logger } from "../logger";
 import { parseDefinition } from "./definition";
 import { effectiveLevel, type ToolLevel } from "./levels";
@@ -90,15 +91,46 @@ function stripExtensions(node: unknown, isPropertiesMap = false): unknown {
   return out;
 }
 
+// Parametri che Casello aggiunge agli strumenti L2: servono alla coda delle azioni (chi riceve
+// l'azione e cosa fa, per chi deve confermarla) e non arrivano mai al servizio
+const QUEUE_PARAMS = {
+  [RECIPIENT_PARAM]: {
+    type: "string",
+    description:
+      "Chi riceve l'azione o ne subisce l'effetto (persona, squadra, cliente…): lo legge l'utente che deve confermarla.",
+  },
+  [SUMMARY_PARAM]: {
+    type: "string",
+    maxLength: MAX_SUMMARY_CHARS,
+    description:
+      "Sintesi in italiano di cosa farà l'azione, completa e senza segnaposto: l'azione non viene eseguita subito ma va in coda per la conferma dell'utente.",
+  },
+};
+
+/** Schema offerto al modello per uno strumento L2: quello del tool più destinatario e sintesi obbligatori. */
+function withQueueParams(parameters: Record<string, unknown>): Record<string, unknown> {
+  const props = isPlainObject(parameters["properties"]) ? parameters["properties"] : {};
+  const required = Array.isArray(parameters["required"]) ? (parameters["required"] as unknown[]) : [];
+  const extra = Object.keys(QUEUE_PARAMS).filter((name) => !required.includes(name));
+  return {
+    ...parameters,
+    properties: { ...props, ...QUEUE_PARAMS },
+    required: [...required, ...extra],
+  };
+}
+
 export function toFunctionTools(tools: CatalogTool[]): ChatCompletionTool[] {
-  return tools.filter(isOffered).map((t) => ({
-    type: "function" as const,
-    function: {
-      name: t.name,
-      ...(t.description ? { description: t.description } : {}),
-      parameters: stripExtensions(t.paramsSchema) as Record<string, unknown>,
-    },
-  }));
+  return tools.filter(isOffered).map((t) => {
+    const parameters = stripExtensions(t.paramsSchema) as Record<string, unknown>;
+    return {
+      type: "function" as const,
+      function: {
+        name: t.name,
+        ...(t.description ? { description: t.description } : {}),
+        parameters: effectiveLevel(t) === "L2" ? withQueueParams(parameters) : parameters,
+      },
+    };
+  });
 }
 
 export async function loadAppConnection(appId: number): Promise<AppConnection> {

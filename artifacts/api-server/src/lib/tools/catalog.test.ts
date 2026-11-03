@@ -146,7 +146,10 @@ describe("maskSensitiveArgs", () => {
 
 describe("toFunctionTools", () => {
   it("converte in function tool senza le estensioni x-*", () => {
-    const t = tool({ type: "object", properties: { password: { type: "string", "x-sensitive": true } } });
+    const t = {
+      ...tool({ type: "object", properties: { password: { type: "string", "x-sensitive": true } } }),
+      level: "L1" as const,
+    };
     expect(toFunctionTools([t])).toEqual([
       {
         type: "function",
@@ -164,5 +167,31 @@ describe("toFunctionTools", () => {
     const ui = { ...http, name: "apri", kind: "ui" as const, definition: { action: "navigate" } };
     const composite = { ...http, name: "combo", kind: "composite" as const, definition: { steps: [], output: {} } };
     expect(toFunctionTools([http, ui, composite]).map((t) => (t.type === "function" ? t.function.name : t.type))).toEqual(["login"]);
+  });
+
+  it("strumento L2: aggiunge destinatario e sintesi obbligatori, senza toccare lo schema salvato", () => {
+    const schema = { type: "object", properties: { id: { type: "string" } }, required: ["id"] };
+    const [fn] = toFunctionTools([tool(schema)]);
+    const params = (fn as { function: { parameters: Record<string, any> } }).function.parameters;
+    expect(Object.keys(params.properties)).toEqual(["id", "destinatario", "sintesi"]);
+    expect(params.properties.destinatario).toMatchObject({ type: "string" });
+    expect(params.properties.destinatario.description).toMatch(/\S/);
+    expect(params.properties.sintesi).toMatchObject({ type: "string", maxLength: 500 });
+    expect(params.properties.sintesi.description).toMatch(/\S/);
+    expect(params.required).toEqual(["id", "destinatario", "sintesi"]);
+    expect(schema).toEqual({ type: "object", properties: { id: { type: "string" } }, required: ["id"] });
+  });
+
+  it("strumento L2 senza properties né required, o con override a L2", () => {
+    const [bare] = toFunctionTools([tool({ type: "object" })]);
+    expect((bare as any).function.parameters.required).toEqual(["destinatario", "sintesi"]);
+    const overridden = { ...tool({ type: "object", properties: {} }), level: "L1" as const, levelOverride: "L2" as const };
+    const [fn] = toFunctionTools([overridden]);
+    expect(Object.keys((fn as any).function.parameters.properties)).toEqual(["destinatario", "sintesi"]);
+  });
+
+  it("strumento L1: nessun parametro aggiunto", () => {
+    const t = { ...tool({ type: "object", properties: {} }), level: "L1" as const };
+    expect((toFunctionTools([t])[0] as any).function.parameters).toEqual({ type: "object", properties: {} });
   });
 });

@@ -95,7 +95,6 @@ import type {
   PlanProposalDecisionResult,
   ProviderIssueText,
   Run,
-  RunResume,
   RunStep,
   RunTrigger,
   StartZipAnalysisParams,
@@ -2429,78 +2428,6 @@ export function useListRunSteps<TData = Awaited<ReturnType<typeof listRunSteps>>
 
 
 
-export const getResumeRunUrl = (id: number,) => {
-
-
-
-
-  return `/api/runs/${id}/resume`
-}
-
-/**
- * Conferma o rifiuta l'azione in sospeso di una run in stato awaiting_client e la riavvia in background. Risponde 409 se la run non è in pausa o la pausa è scaduta.
- * @summary Riprende un'esecuzione in attesa del client
- */
-export const resumeRun = async (id: number,
-    runResume: RunResume, options?: RequestInit): Promise<Run> => {
-
-  return customFetch<Run>(getResumeRunUrl(id),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(runResume)
-  }
-);}
-
-
-
-
-export const getResumeRunMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeRun>>, TError,{id: number;data: BodyType<RunResume>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof resumeRun>>, TError,{id: number;data: BodyType<RunResume>}, TContext> => {
-
-const mutationKey = ['resumeRun'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resumeRun>>, {id: number;data: BodyType<RunResume>}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  resumeRun(id,data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type ResumeRunMutationResult = NonNullable<Awaited<ReturnType<typeof resumeRun>>>
-    export type ResumeRunMutationBody = BodyType<RunResume>
-    export type ResumeRunMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
-
-    /**
- * @summary Riprende un'esecuzione in attesa del client
- */
-export const useResumeRun = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeRun>>, TError,{id: number;data: BodyType<RunResume>}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof resumeRun>>,
-        TError,
-        {id: number;data: BodyType<RunResume>},
-        TContext
-      > => {
-      return useMutation(getResumeRunMutationOptions(options));
-    }
-
 export const getCancelRunUrl = (id: number,) => {
 
 
@@ -2510,7 +2437,7 @@ export const getCancelRunUrl = (id: number,) => {
 }
 
 /**
- * Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
+ * Porta a cancelled una run pending o running, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
  * @summary Annulla un'esecuzione non ancora conclusa
  */
 export const cancelRun = async (id: number, options?: RequestInit): Promise<Run> => {

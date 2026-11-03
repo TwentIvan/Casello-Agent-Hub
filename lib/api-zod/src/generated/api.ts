@@ -1372,6 +1372,190 @@ export const UpdateBudgetResponse = zod.object({
 
 
 /**
+ * @summary Elenca le skill del catalogo
+ */
+export const listSkillsQueryQMax = 100;
+
+
+
+export const ListSkillsQueryParams = zod.object({
+  "kind": zod.enum(['casello', 'node']).optional(),
+  "q": zod.coerce.string().max(listSkillsQueryQMax).optional().describe('Ricerca (senza maiuscole) nel codice e nel nome'),
+  "deprecated": zod.enum(['true', 'false']).optional().describe('Filtra per stato di deprecazione, `true` o `false` (se omesso, tutte)')
+})
+
+export const ListSkillsResponseItem = zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "currentVersion": zod.number(),
+  "deprecated": zod.boolean(),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).describe('Skill con il contenuto e i suggerimenti sugli strumenti della versione corrente')
+export const ListSkillsResponse = zod.array(ListSkillsResponseItem)
+
+
+/**
+ * @summary Crea una skill (versione 1)
+ */
+export const createSkillBodyCodeRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
+export const createSkillBodyNameMax = 200;
+
+export const createSkillBodyDescriptionMax = 2000;
+
+export const createSkillBodyToolHintsItemMax = 100;
+
+export const createSkillBodyToolHintsMax = 50;
+
+
+
+export const CreateSkillBody = zod.object({
+  "code": zod.string().regex(createSkillBodyCodeRegExp),
+  "name": zod.string().min(1).max(createSkillBodyNameMax),
+  "description": zod.string().max(createSkillBodyDescriptionMax).optional(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "content": zod.string().describe('`casello`: istruzioni (max 20 000 caratteri); `node`: nome della skill sul nodo'),
+  "toolHints": zod.array(zod.string().min(1).max(createSkillBodyToolHintsItemMax)).max(createSkillBodyToolHintsMax).optional()
+})
+
+export const CreateSkillResponse = zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "currentVersion": zod.number(),
+  "deprecated": zod.boolean(),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).describe('Skill con il contenuto e i suggerimenti sugli strumenti della versione corrente')
+
+
+/**
+ * @summary Dettaglio di una skill (versione corrente)
+ */
+export const GetSkillParams = zod.object({
+  "code": zod.coerce.string()
+})
+
+export const GetSkillResponse = zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "currentVersion": zod.number(),
+  "deprecated": zod.boolean(),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).describe('Skill con il contenuto e i suggerimenti sugli strumenti della versione corrente')
+
+
+/**
+ * Nome e descrizione si cambiano senza nuova versione; `content` o `toolHints` creano la versione successiva (massimo 200 versioni per skill, oltre 409).
+ * @summary Aggiorna una skill
+ */
+export const UpdateSkillParams = zod.object({
+  "code": zod.coerce.string()
+})
+
+export const updateSkillBodyNameMax = 200;
+
+export const updateSkillBodyDescriptionMax = 2000;
+
+export const updateSkillBodyToolHintsItemMax = 100;
+
+export const updateSkillBodyToolHintsMax = 50;
+
+
+
+export const UpdateSkillBody = zod.object({
+  "name": zod.string().min(1).max(updateSkillBodyNameMax).optional(),
+  "description": zod.string().max(updateSkillBodyDescriptionMax).optional(),
+  "content": zod.string().optional(),
+  "toolHints": zod.array(zod.string().min(1).max(updateSkillBodyToolHintsItemMax)).max(updateSkillBodyToolHintsMax).optional()
+})
+
+export const UpdateSkillResponse = zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "currentVersion": zod.number(),
+  "deprecated": zod.boolean(),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).describe('Skill con il contenuto e i suggerimenti sugli strumenti della versione corrente')
+
+
+/**
+ * Resta valida dove è già usata, ma non si può aggiungere a ruoli nuovi o modificati.
+ * @summary Depreca una skill
+ */
+export const DeprecateSkillParams = zod.object({
+  "code": zod.coerce.string()
+})
+
+export const DeprecateSkillResponse = zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "currentVersion": zod.number(),
+  "deprecated": zod.boolean(),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).describe('Skill con il contenuto e i suggerimenti sugli strumenti della versione corrente')
+
+
+/**
+ * @summary Elenca le versioni di una skill
+ */
+export const ListSkillVersionsParams = zod.object({
+  "code": zod.coerce.string()
+})
+
+export const ListSkillVersionsResponseItem = zod.object({
+  "code": zod.string(),
+  "version": zod.number(),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string()),
+  "createdAt": zod.coerce.date()
+})
+export const ListSkillVersionsResponse = zod.array(ListSkillVersionsResponseItem)
+
+
+/**
+ * @summary Una versione di una skill
+ */
+
+
+
+export const GetSkillVersionParams = zod.object({
+  "code": zod.coerce.string(),
+  "version": zod.coerce.number().min(1)
+})
+
+export const GetSkillVersionResponse = zod.object({
+  "code": zod.string(),
+  "version": zod.number(),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string()),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * Provider della tabella providers (registro e scoperti), senza quello del vecchio gateway: prima i gestiti per nome, poi quelli in arrivo, poi i non gestiti.
  * @summary Provider del registro per la creazione degli account AI
  */

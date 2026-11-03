@@ -34,6 +34,8 @@ tags:
     description: Coda delle azioni in attesa di conferma
   - name: plan-chat
     description: Chat con il bot sul piano di un'app (conversazioni, messaggi e proposte)
+  - name: skills
+    description: Catalogo delle skill con codice, versionate, usate dalle squadre di agenti
 
 paths:
   /healthz:
@@ -1092,6 +1094,171 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
+  # ─── Catalogo delle skill ───────────────────────────────────────────────────
+
+  /skills:
+    get:
+      operationId: listSkills
+      tags: [skills]
+      summary: Elenca le skill del catalogo
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/SkillKind"
+        - name: q
+          in: query
+          required: false
+          description: Ricerca (senza maiuscole) nel codice e nel nome
+          schema:
+            type: string
+            maxLength: 100
+        - name: deprecated
+          in: query
+          required: false
+          description: Filtra per stato di deprecazione, `true` o `false` (se omesso, tutte)
+          schema:
+            type: string
+            enum: ["true", "false"]
+      responses:
+        "200":
+          description: Skill del catalogo, in ordine di codice
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CatalogSkill"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      operationId: createSkill
+      tags: [skills]
+      summary: Crea una skill (versione 1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogSkillInput"
+      responses:
+        "201":
+          description: Skill creata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogSkill"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /skills/{code}:
+    get:
+      operationId: getSkill
+      tags: [skills]
+      summary: Dettaglio di una skill (versione corrente)
+      parameters:
+        - $ref: "#/components/parameters/SkillCodeParam"
+      responses:
+        "200":
+          description: Skill
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogSkill"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateSkill
+      tags: [skills]
+      summary: Aggiorna una skill
+      description: >-
+        Nome e descrizione si cambiano senza nuova versione; `content` o `toolHints` creano la versione
+        successiva (massimo 200 versioni per skill, oltre 409).
+      parameters:
+        - $ref: "#/components/parameters/SkillCodeParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogSkillUpdate"
+      responses:
+        "200":
+          description: Skill aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogSkill"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /skills/{code}/deprecate:
+    post:
+      operationId: deprecateSkill
+      tags: [skills]
+      summary: Depreca una skill
+      description: Resta valida dove è già usata, ma non si può aggiungere a ruoli nuovi o modificati.
+      parameters:
+        - $ref: "#/components/parameters/SkillCodeParam"
+      responses:
+        "200":
+          description: Skill deprecata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogSkill"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /skills/{code}/versions:
+    get:
+      operationId: listSkillVersions
+      tags: [skills]
+      summary: Elenca le versioni di una skill
+      parameters:
+        - $ref: "#/components/parameters/SkillCodeParam"
+      responses:
+        "200":
+          description: Versioni, dalla più recente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CatalogSkillVersion"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /skills/{code}/versions/{version}:
+    get:
+      operationId: getSkillVersion
+      tags: [skills]
+      summary: Una versione di una skill
+      parameters:
+        - $ref: "#/components/parameters/SkillCodeParam"
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Versione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogSkillVersion"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   # ─── Account AI ─────────────────────────────────────────────────────────────
 
   /ai/providers:
@@ -2021,6 +2188,13 @@ components:
       description: Numero progressivo dell'azione per utente
       schema:
         type: integer
+
+    SkillCodeParam:
+      name: code
+      in: path
+      required: true
+      schema:
+        type: string
 
     SkillIdParam:
       name: skillId
@@ -4163,3 +4337,106 @@ components:
           oneOf:
             - $ref: "#/components/schemas/CatalogRunView"
             - type: "null"
+
+    # ── Catalogo delle skill ────────────────────────────────────────────────────
+
+    SkillKind:
+      type: string
+      enum: [casello, node]
+      description: >-
+        `casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.
+
+    CatalogSkill:
+      type: object
+      required: [code, name, description, kind, currentVersion, deprecated, content, toolHints, createdAt, updatedAt]
+      description: Skill con il contenuto e i suggerimenti sugli strumenti della versione corrente
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        kind:
+          $ref: "#/components/schemas/SkillKind"
+        currentVersion:
+          type: integer
+        deprecated:
+          type: boolean
+        content:
+          type: string
+        toolHints:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CatalogSkillInput:
+      type: object
+      required: [code, name, kind, content]
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        kind:
+          $ref: "#/components/schemas/SkillKind"
+        content:
+          type: string
+          description: "`casello`: istruzioni (max 20 000 caratteri); `node`: nome della skill sul nodo"
+        toolHints:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 100
+
+    CatalogSkillUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        content:
+          type: string
+        toolHints:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 100
+
+    CatalogSkillVersion:
+      type: object
+      required: [code, version, content, toolHints, createdAt]
+      properties:
+        code:
+          type: string
+        version:
+          type: integer
+        content:
+          type: string
+        toolHints:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time

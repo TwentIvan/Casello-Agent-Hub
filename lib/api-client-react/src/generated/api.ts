@@ -61,6 +61,10 @@ import type {
   CatalogOffer,
   CatalogProvider,
   CatalogRunView,
+  CatalogSkill,
+  CatalogSkillInput,
+  CatalogSkillUpdate,
+  CatalogSkillVersion,
   CatalogStatus,
   ConflictResponse,
   CostEstimate,
@@ -80,6 +84,7 @@ import type {
   ListCatalogProvidersParams,
   ListPendingActionsParams,
   ListRunsParams,
+  ListSkillsParams,
   McpSyncResult,
   NotFoundResponse,
   PayloadTooLargeResponse,
@@ -3644,6 +3649,539 @@ export const useUpdateBudget = <TError = ErrorType<BadRequestResponse>,
       > => {
       return useMutation(getUpdateBudgetMutationOptions(options));
     }
+
+export const getListSkillsUrl = (params?: ListSkillsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/skills?${stringifiedParams}` : `/api/skills`
+}
+
+/**
+ * @summary Elenca le skill del catalogo
+ */
+export const listSkills = async (params?: ListSkillsParams, options?: RequestInit): Promise<CatalogSkill[]> => {
+
+  return customFetch<CatalogSkill[]>(getListSkillsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSkillsQueryKey = (params?: ListSkillsParams,) => {
+    return [
+    `/api/skills`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSkillsQueryOptions = <TData = Awaited<ReturnType<typeof listSkills>>, TError = ErrorType<BadRequestResponse>>(params?: ListSkillsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSkills>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSkillsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSkills>>> = ({ signal }) => listSkills(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSkills>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSkillsQueryResult = NonNullable<Awaited<ReturnType<typeof listSkills>>>
+export type ListSkillsQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Elenca le skill del catalogo
+ */
+
+export function useListSkills<TData = Awaited<ReturnType<typeof listSkills>>, TError = ErrorType<BadRequestResponse>>(
+ params?: ListSkillsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSkills>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSkillsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateSkillUrl = () => {
+
+
+
+
+  return `/api/skills`
+}
+
+/**
+ * @summary Crea una skill (versione 1)
+ */
+export const createSkill = async (catalogSkillInput: CatalogSkillInput, options?: RequestInit): Promise<CatalogSkill> => {
+
+  return customFetch<CatalogSkill>(getCreateSkillUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(catalogSkillInput)
+  }
+);}
+
+
+
+
+export const getCreateSkillMutationOptions = <TError = ErrorType<BadRequestResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSkill>>, TError,{data: BodyType<CatalogSkillInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSkill>>, TError,{data: BodyType<CatalogSkillInput>}, TContext> => {
+
+const mutationKey = ['createSkill'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSkill>>, {data: BodyType<CatalogSkillInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSkill(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSkillMutationResult = NonNullable<Awaited<ReturnType<typeof createSkill>>>
+    export type CreateSkillMutationBody = BodyType<CatalogSkillInput>
+    export type CreateSkillMutationError = ErrorType<BadRequestResponse | ConflictResponse>
+
+    /**
+ * @summary Crea una skill (versione 1)
+ */
+export const useCreateSkill = <TError = ErrorType<BadRequestResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSkill>>, TError,{data: BodyType<CatalogSkillInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSkill>>,
+        TError,
+        {data: BodyType<CatalogSkillInput>},
+        TContext
+      > => {
+      return useMutation(getCreateSkillMutationOptions(options));
+    }
+
+export const getGetSkillUrl = (code: string,) => {
+
+
+
+
+  return `/api/skills/${code}`
+}
+
+/**
+ * @summary Dettaglio di una skill (versione corrente)
+ */
+export const getSkill = async (code: string, options?: RequestInit): Promise<CatalogSkill> => {
+
+  return customFetch<CatalogSkill>(getGetSkillUrl(code),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSkillQueryKey = (code: string,) => {
+    return [
+    `/api/skills/${code}`
+    ] as const;
+    }
+
+
+export const getGetSkillQueryOptions = <TData = Awaited<ReturnType<typeof getSkill>>, TError = ErrorType<NotFoundResponse>>(code: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSkill>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSkillQueryKey(code);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSkill>>> = ({ signal }) => getSkill(code, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: code !== null && code !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSkill>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSkillQueryResult = NonNullable<Awaited<ReturnType<typeof getSkill>>>
+export type GetSkillQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Dettaglio di una skill (versione corrente)
+ */
+
+export function useGetSkill<TData = Awaited<ReturnType<typeof getSkill>>, TError = ErrorType<NotFoundResponse>>(
+ code: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSkill>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSkillQueryOptions(code,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateSkillUrl = (code: string,) => {
+
+
+
+
+  return `/api/skills/${code}`
+}
+
+/**
+ * Nome e descrizione si cambiano senza nuova versione; `content` o `toolHints` creano la versione successiva (massimo 200 versioni per skill, oltre 409).
+ * @summary Aggiorna una skill
+ */
+export const updateSkill = async (code: string,
+    catalogSkillUpdate: CatalogSkillUpdate, options?: RequestInit): Promise<CatalogSkill> => {
+
+  return customFetch<CatalogSkill>(getUpdateSkillUrl(code),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(catalogSkillUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateSkillMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSkill>>, TError,{code: string;data: BodyType<CatalogSkillUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSkill>>, TError,{code: string;data: BodyType<CatalogSkillUpdate>}, TContext> => {
+
+const mutationKey = ['updateSkill'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSkill>>, {code: string;data: BodyType<CatalogSkillUpdate>}> = (props) => {
+          const {code,data} = props ?? {};
+
+          return  updateSkill(code,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSkillMutationResult = NonNullable<Awaited<ReturnType<typeof updateSkill>>>
+    export type UpdateSkillMutationBody = BodyType<CatalogSkillUpdate>
+    export type UpdateSkillMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Aggiorna una skill
+ */
+export const useUpdateSkill = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSkill>>, TError,{code: string;data: BodyType<CatalogSkillUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateSkill>>,
+        TError,
+        {code: string;data: BodyType<CatalogSkillUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateSkillMutationOptions(options));
+    }
+
+export const getDeprecateSkillUrl = (code: string,) => {
+
+
+
+
+  return `/api/skills/${code}/deprecate`
+}
+
+/**
+ * Resta valida dove è già usata, ma non si può aggiungere a ruoli nuovi o modificati.
+ * @summary Depreca una skill
+ */
+export const deprecateSkill = async (code: string, options?: RequestInit): Promise<CatalogSkill> => {
+
+  return customFetch<CatalogSkill>(getDeprecateSkillUrl(code),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getDeprecateSkillMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deprecateSkill>>, TError,{code: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deprecateSkill>>, TError,{code: string}, TContext> => {
+
+const mutationKey = ['deprecateSkill'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deprecateSkill>>, {code: string}> = (props) => {
+          const {code} = props ?? {};
+
+          return  deprecateSkill(code,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeprecateSkillMutationResult = NonNullable<Awaited<ReturnType<typeof deprecateSkill>>>
+
+    export type DeprecateSkillMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Depreca una skill
+ */
+export const useDeprecateSkill = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deprecateSkill>>, TError,{code: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deprecateSkill>>,
+        TError,
+        {code: string},
+        TContext
+      > => {
+      return useMutation(getDeprecateSkillMutationOptions(options));
+    }
+
+export const getListSkillVersionsUrl = (code: string,) => {
+
+
+
+
+  return `/api/skills/${code}/versions`
+}
+
+/**
+ * @summary Elenca le versioni di una skill
+ */
+export const listSkillVersions = async (code: string, options?: RequestInit): Promise<CatalogSkillVersion[]> => {
+
+  return customFetch<CatalogSkillVersion[]>(getListSkillVersionsUrl(code),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSkillVersionsQueryKey = (code: string,) => {
+    return [
+    `/api/skills/${code}/versions`
+    ] as const;
+    }
+
+
+export const getListSkillVersionsQueryOptions = <TData = Awaited<ReturnType<typeof listSkillVersions>>, TError = ErrorType<NotFoundResponse>>(code: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSkillVersions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSkillVersionsQueryKey(code);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSkillVersions>>> = ({ signal }) => listSkillVersions(code, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: code !== null && code !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSkillVersions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSkillVersionsQueryResult = NonNullable<Awaited<ReturnType<typeof listSkillVersions>>>
+export type ListSkillVersionsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Elenca le versioni di una skill
+ */
+
+export function useListSkillVersions<TData = Awaited<ReturnType<typeof listSkillVersions>>, TError = ErrorType<NotFoundResponse>>(
+ code: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSkillVersions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSkillVersionsQueryOptions(code,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSkillVersionUrl = (code: string,
+    version: number,) => {
+
+
+
+
+  return `/api/skills/${code}/versions/${version}`
+}
+
+/**
+ * @summary Una versione di una skill
+ */
+export const getSkillVersion = async (code: string,
+    version: number, options?: RequestInit): Promise<CatalogSkillVersion> => {
+
+  return customFetch<CatalogSkillVersion>(getGetSkillVersionUrl(code,version),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSkillVersionQueryKey = (code: string,
+    version: number,) => {
+    return [
+    `/api/skills/${code}/versions/${version}`
+    ] as const;
+    }
+
+
+export const getGetSkillVersionQueryOptions = <TData = Awaited<ReturnType<typeof getSkillVersion>>, TError = ErrorType<NotFoundResponse>>(code: string,
+    version: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSkillVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSkillVersionQueryKey(code,version);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSkillVersion>>> = ({ signal }) => getSkillVersion(code,version, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: code !== null && code !== undefined && version !== null && version !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSkillVersion>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSkillVersionQueryResult = NonNullable<Awaited<ReturnType<typeof getSkillVersion>>>
+export type GetSkillVersionQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Una versione di una skill
+ */
+
+export function useGetSkillVersion<TData = Awaited<ReturnType<typeof getSkillVersion>>, TError = ErrorType<NotFoundResponse>>(
+ code: string,
+    version: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSkillVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSkillVersionQueryOptions(code,version,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListAiProvidersUrl = () => {
 

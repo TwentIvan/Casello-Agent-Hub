@@ -1797,6 +1797,79 @@ export interface CatalogStatus {
 }
 
 /**
+ * `casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.
+ */
+export type SkillKind = typeof SkillKind[keyof typeof SkillKind];
+
+
+export const SkillKind = {
+  casello: 'casello',
+  node: 'node',
+} as const;
+
+/**
+ * Skill con il contenuto e i suggerimenti sugli strumenti della versione corrente
+ */
+export interface CatalogSkill {
+  code: string;
+  name: string;
+  description: string;
+  kind: SkillKind;
+  currentVersion: number;
+  deprecated: boolean;
+  content: string;
+  toolHints: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CatalogSkillInput {
+  /** @pattern ^[a-z0-9][a-z0-9._-]{1,63}$ */
+  code: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name: string;
+  /** @maxLength 2000 */
+  description?: string;
+  kind: SkillKind;
+  /** `casello`: istruzioni (max 20 000 caratteri); `node`: nome della skill sul nodo */
+  content: string;
+  /**
+     * @maxItems 50
+     * @items.minLength 1
+     * @items.maxLength 100
+     */
+  toolHints?: string[];
+}
+
+export interface CatalogSkillUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name?: string;
+  /** @maxLength 2000 */
+  description?: string;
+  content?: string;
+  /**
+     * @maxItems 50
+     * @items.minLength 1
+     * @items.maxLength 100
+     */
+  toolHints?: string[];
+}
+
+export interface CatalogSkillVersion {
+  code: string;
+  version: number;
+  content: string;
+  toolHints: string[];
+  createdAt: string;
+}
+
+/**
  * Troppe richieste
  */
 export type TooManyRequestsResponse = ErrorResponse;
@@ -1889,6 +1962,27 @@ chapter?: AnalysisChapter;
  */
 status?: ItemStatus;
 };
+
+export type ListSkillsParams = {
+kind?: SkillKind;
+/**
+ * Ricerca (senza maiuscole) nel codice e nel nome
+ * @maxLength 100
+ */
+q?: string;
+/**
+ * Filtra per stato di deprecazione, `true` o `false` (se omesso, tutte)
+ */
+deprecated?: ListSkillsDeprecated;
+};
+
+export type ListSkillsDeprecated = typeof ListSkillsDeprecated[keyof typeof ListSkillsDeprecated];
+
+
+export const ListSkillsDeprecated = {
+  true: 'true',
+  false: 'false',
+} as const;
 
 export type EstimateAnalysisCostParams = {
 aiModelId: number;

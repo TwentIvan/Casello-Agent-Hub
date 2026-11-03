@@ -408,6 +408,33 @@ paths:
 
   # ─── Tools ──────────────────────────────────────────────────────────────────
 
+  /apps/{id}/mcp-tools/refresh:
+    post:
+      operationId: refreshAppMcpTools
+      tags: [tools]
+      summary: Aggiorna il catalogo dagli strumenti del server MCP dell'app
+      description: >-
+        Legge gli strumenti del server MCP dell'app: i nuovi entrano come bozza, quelli esistenti aggiornano
+        descrizione, schema e livello, quelli spariti dal server vengono disattivati; un nome uguale a un tool
+        non MCP non cambia nulla e finisce in `conflicts`. Massimo 6 al minuto per utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Esito della sincronizzazione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpSyncResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
   /apps/{id}/tools:
     get:
       operationId: listAppTools
@@ -3147,6 +3174,24 @@ components:
             $ref: "#/components/schemas/AnalysisItem"
         issues:
           $ref: "#/components/schemas/PlanIssuesSummary"
+
+    McpSyncResult:
+      type: object
+      required: [added, updated, disabled, unchanged, conflicts]
+      properties:
+        added:
+          type: integer
+        updated:
+          type: integer
+        disabled:
+          type: integer
+        unchanged:
+          type: integer
+        conflicts:
+          type: array
+          items:
+            type: string
+          description: Nomi degli strumenti MCP uguali a un tool non MCP del catalogo (lasciato invariato)
 
     PlanIssuesSummary:
       type: object

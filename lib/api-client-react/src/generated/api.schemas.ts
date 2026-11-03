@@ -1030,6 +1030,15 @@ export interface AppPlan {
   issues: PlanIssuesSummary;
 }
 
+export interface McpSyncResult {
+  added: number;
+  updated: number;
+  disabled: number;
+  unchanged: number;
+  /** Nomi degli strumenti MCP uguali a un tool non MCP del catalogo (lasciato invariato) */
+  conflicts: string[];
+}
+
 export interface PlanConversationCreate {
   /** Modello di un account AI dell'utente */
   aiModelId: number;

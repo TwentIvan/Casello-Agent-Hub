@@ -11,11 +11,17 @@ import {
   UpdateAppToolBody,
   UpdateAppToolResponse,
   DeleteAppToolParams,
+  RefreshAppMcpToolsParams,
+  RefreshAppMcpToolsResponse,
 } from "@workspace/api-zod";
 import { checkParamsSchema, checkPathPlaceholders, parseDefinition } from "../lib/tools/definition";
 import { isValidOverride, type ToolLevel } from "../lib/tools/levels";
 import type { HttpDefinition, ToolKind } from "../lib/tools/types";
 import { isUniqueViolation } from "../lib/pg-errors";
+import { loadAppConnection } from "../lib/tools/catalog";
+import { McpError, listMcpTools } from "../lib/tools/mcp-client";
+import { syncMcpTools } from "../lib/tools/mcp-sync";
+import { mcpRefreshRateLimit } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
 
 // Catalogo dei tool di un'app: i tool appartengono all'app e si assegnano agli agenti con
@@ -92,6 +98,24 @@ router.post("/apps/:id/tools", async (req, res) => {
   } catch (err) {
     if (!isUniqueViolation(err, "app_tools_app_id_name_unique")) throw err;
     res.status(409).json({ error: DUPLICATE_NAME });
+  }
+});
+
+// Rilegge gli strumenti del server MCP dell'app e allinea il catalogo
+router.post("/apps/:id/mcp-tools/refresh", mcpRefreshRateLimit, async (req, res) => {
+  const { id } = parseRequest(RefreshAppMcpToolsParams, req.params);
+  if (!(await appExists(id))) return appNotFound(res);
+  const conn = await loadAppConnection(id);
+  if (!conn.mcpUrl) {
+    res.status(409).json({ error: "l'app non ha un server MCP" });
+    return;
+  }
+  try {
+    const tools = await listMcpTools(conn);
+    res.json(RefreshAppMcpToolsResponse.parse(await syncMcpTools(id, tools)));
+  } catch (err) {
+    if (!(err instanceof McpError)) throw err;
+    res.status(502).json({ error: err.message });
   }
 });
 

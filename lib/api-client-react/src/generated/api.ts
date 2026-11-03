@@ -78,6 +78,7 @@ import type {
   ListCatalogModelsParams,
   ListCatalogProvidersParams,
   ListRunsParams,
+  McpSyncResult,
   NotFoundResponse,
   PayloadTooLargeResponse,
   PlanConversation,
@@ -1608,6 +1609,77 @@ export const useDeleteAgent = <TError = ErrorType<NotFoundResponse | ErrorRespon
         TContext
       > => {
       return useMutation(getDeleteAgentMutationOptions(options));
+    }
+
+export const getRefreshAppMcpToolsUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/mcp-tools/refresh`
+}
+
+/**
+ * Legge gli strumenti del server MCP dell'app: i nuovi entrano come bozza, quelli esistenti aggiornano descrizione, schema e livello, quelli spariti dal server vengono disattivati; un nome uguale a un tool non MCP non cambia nulla e finisce in `conflicts`. Massimo 6 al minuto per utente.
+ * @summary Aggiorna il catalogo dagli strumenti del server MCP dell'app
+ */
+export const refreshAppMcpTools = async (id: number, options?: RequestInit): Promise<McpSyncResult> => {
+
+  return customFetch<McpSyncResult>(getRefreshAppMcpToolsUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRefreshAppMcpToolsMutationOptions = <TError = ErrorType<NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshAppMcpTools>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof refreshAppMcpTools>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['refreshAppMcpTools'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshAppMcpTools>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  refreshAppMcpTools(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RefreshAppMcpToolsMutationResult = NonNullable<Awaited<ReturnType<typeof refreshAppMcpTools>>>
+
+    export type RefreshAppMcpToolsMutationError = ErrorType<NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>
+
+    /**
+ * @summary Aggiorna il catalogo dagli strumenti del server MCP dell'app
+ */
+export const useRefreshAppMcpTools = <TError = ErrorType<NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshAppMcpTools>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof refreshAppMcpTools>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRefreshAppMcpToolsMutationOptions(options));
     }
 
 export const getListAppToolsUrl = (id: number,) => {

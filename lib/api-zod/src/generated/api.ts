@@ -507,6 +507,23 @@ export const DeleteAgentResponse = zod.void()
 
 
 /**
+ * Legge gli strumenti del server MCP dell'app: i nuovi entrano come bozza, quelli esistenti aggiornano descrizione, schema e livello, quelli spariti dal server vengono disattivati; un nome uguale a un tool non MCP non cambia nulla e finisce in `conflicts`. Massimo 6 al minuto per utente.
+ * @summary Aggiorna il catalogo dagli strumenti del server MCP dell'app
+ */
+export const RefreshAppMcpToolsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RefreshAppMcpToolsResponse = zod.object({
+  "added": zod.number(),
+  "updated": zod.number(),
+  "disabled": zod.number(),
+  "unchanged": zod.number(),
+  "conflicts": zod.array(zod.string()).describe('Nomi degli strumenti MCP uguali a un tool non MCP del catalogo (lasciato invariato)')
+})
+
+
+/**
  * @summary Elenca i tool del catalogo di un'app
  */
 export const ListAppToolsParams = zod.object({

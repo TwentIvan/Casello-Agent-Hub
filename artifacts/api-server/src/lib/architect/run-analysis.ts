@@ -29,6 +29,8 @@ import { decryptSecret } from "../secrets";
 import { GITHUB_MESSAGES, GithubError, forgetInstallationTokens, installationToken } from "../github/app";
 import { githubConfig, type GithubConfig } from "../github/config";
 import { loadAppConnection } from "../tools/catalog";
+import type { McpToolInfo } from "../tools/mcp-client";
+import { loadMcpSource } from "./mcp-source";
 import { PHASE_TOKEN_SHARES, runPhase, type PhaseBudget } from "./phase-loop";
 import { recordPhaseResult } from "./phase-record";
 import { chatPlannedItems } from "./planned";
@@ -226,6 +228,7 @@ class ProgressWriter {
 interface LoadedSources {
   tree: SourceTree | null;
   openapi: OpenApiDoc | null;
+  mcpTools: McpToolInfo[] | null;
   sources: AnalysisSources;
 }
 
@@ -272,9 +275,12 @@ async function loadSources(app: App, opts: StartAnalysisOptions, log: (m: string
     const openapi = await fetchOpenApi({ openapiUrl: app.openapiUrl, baseUrls });
     log(openapi ? `OpenAPI: ${openapi.operations.length} operazioni` : "OpenAPI: non trovato");
 
+    // Elenco MCP (tools/list), se l'app ha un server MCP: un server spento non ferma l'analisi
+    const mcpTools = await loadMcpSource(conn, log);
+
     const description = !!app.functionalDescription?.trim();
     log(description ? "descrizione funzionale: presente" : "descrizione funzionale: assente");
-    return { tree, openapi, sources: { code, openapi: openapi !== null, description } };
+    return { tree, openapi, mcpTools, sources: { code, openapi: openapi !== null, mcp: mcpTools !== null, description } };
   } catch (err) {
     await tree?.dispose();
     throw err;
@@ -452,13 +458,13 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
 
     const loaded = await loadSources(app, opts, log);
     tree = loaded.tree;
-    const { openapi, sources } = loaded;
+    const { openapi, mcpTools, sources } = loaded;
     // Mappa calcolata una volta; salvata subito, così resta anche se una fase fallisce
     const repoMap = buildRepoMap(tree, openapi);
     await progress.flush({ sources, architectureMap: { repoMap } });
 
-    // Senza codice né OpenAPI i tool derivano solo dalla descrizione: vanno sempre verificati
-    const forceVerification = sources.code === "none" && !sources.openapi;
+    // Senza codice, OpenAPI né elenco MCP i tool derivano solo dalla descrizione: vanno sempre verificati
+    const forceVerification = sources.code === "none" && !sources.openapi && !sources.mcp;
     const chat = architectChat({
       resolved,
       cost,
@@ -485,6 +491,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
         functionalDescription: app.functionalDescription,
         hasCode: tree !== null,
         hasOpenApi: openapi !== null,
+        hasMcp: mcpTools !== null,
         repoMap,
         previous,
         alreadyPlanned,
@@ -497,6 +504,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
         user,
         tree,
         openapi,
+        mcpTools,
         chat,
         budget,
         phaseQuota,

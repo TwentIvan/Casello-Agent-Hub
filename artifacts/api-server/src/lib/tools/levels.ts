@@ -22,21 +22,20 @@ export function isValidOverride(declared: ToolLevel, override: ToolLevel | null)
   return override === null || rank(override) >= rank(declared);
 }
 
-/** Livello dichiarato da uno strumento MCP: metadato `casello/level`, poi `readOnlyHint` (L0), poi L2. */
-export function declaredLevelFromMcp(tool: { _meta?: unknown; annotations?: { readOnlyHint?: boolean } }): ToolLevel {
-  const meta = tool._meta;
-  if (typeof meta === "object" && meta !== null && !Array.isArray(meta)) {
-    const declared = (meta as Record<string, unknown>)[MCP_LEVEL_META_KEY];
-    if (isToolLevel(declared)) return declared;
-  }
-  return tool.annotations?.readOnlyHint === true ? "L0" : "L2";
+/** Livello del metadato `casello/level` di uno strumento MCP, null se manca o non è valido. */
+function metaLevel(meta: unknown): ToolLevel | null {
+  if (typeof meta !== "object" || meta === null || Array.isArray(meta)) return null;
+  const declared = (meta as Record<string, unknown>)[MCP_LEVEL_META_KEY];
+  return isToolLevel(declared) ? declared : null;
 }
 
-/**
- * Livello di un tool HTTP proposto dall'architetto, che ragiona ancora con i due flag:
- * conferma → L2, sola lettura → L0, altrimenti L1.
- */
-export function levelFromProposalFlags(flags: { readOnly: boolean; requiresConfirmation: boolean }): ToolLevel {
-  if (flags.requiresConfirmation) return "L2";
-  return flags.readOnly ? "L0" : "L1";
+/** Livello dichiarato da uno strumento MCP: metadato `casello/level`, poi `readOnlyHint` (L0), poi L2. */
+export function declaredLevelFromMcp(tool: { _meta?: unknown; annotations?: { readOnlyHint?: boolean } }): ToolLevel {
+  return metaLevel(tool._meta) ?? (tool.annotations?.readOnlyHint === true ? "L0" : "L2");
 }
+
+/** Lo strumento MCP dichiara esplicitamente il livello (metadato `casello/level` valido). */
+export function hasMcpLevelMeta(tool: { _meta?: unknown }): boolean {
+  return metaLevel(tool._meta) !== null;
+}
+

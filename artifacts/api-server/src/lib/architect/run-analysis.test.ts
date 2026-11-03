@@ -21,6 +21,7 @@ import { LEGACY_GATEWAY_PROVIDER } from "../ai/providers";
 import { ensureLegacyGatewayProvider } from "../../../test/legacy-gateway";
 import { allowTestLoopback } from "../../../test/fake-provider";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
+import { startFakeMcp, type FakeMcp } from "../../../test/fake-mcp";
 import { clearInstallationTokenCache } from "../github/app";
 import type { GithubConfig } from "../github/config";
 import {
@@ -49,8 +50,7 @@ const toolProposal = (over: Record<string, unknown> = {}) => ({
   description: "Elenco squadre",
   kind: "http",
   identity: "user",
-  requiresConfirmation: false,
-  readOnly: true,
+  level: "L0",
   paramsSchema: { type: "object", properties: { q: { type: "string" } } },
   definition: { method: "GET", path: "/teams", paramLocations: { q: "query" } },
   area: "Squadre",
@@ -83,8 +83,7 @@ const RESULTS: Record<PhaseName, unknown> = {
       toolProposal({
         name: "create_team",
         description: "Crea una squadra",
-        requiresConfirmation: true,
-        readOnly: false,
+        level: "L2",
         paramsSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
         definition: { method: "POST", path: "/teams", paramLocations: { name: "body" } },
       }),
@@ -201,6 +200,8 @@ let llmCachedTokens: number;
 let readUntilNudge: Set<PhaseName>;
 let invalidPhases: Set<PhaseName>;
 let resultOverrides: Partial<Record<PhaseName, unknown>>;
+/** Strumento di lettura chiamato per primo nella fase catalog (default read_file). */
+let catalogRead: { name: string; args: Record<string, unknown> } | null;
 
 function toolCall(name: string, args: Record<string, unknown>, id: string) {
   return {
@@ -234,7 +235,10 @@ function scriptedReply(body: any) {
   const last = messages.at(-1);
   const nudged = last?.role === "user" && String(last.content).startsWith("Budget della fase quasi esaurito");
   if (readUntilNudge.has(phase) && !nudged) return toolCall("read_file", { path: "src/a.ts" }, `read_${phase}_${messages.length}`);
-  if (toolMessages === 0) return toolCall("read_file", { path: "src/a.ts" }, `read_${phase}`);
+  if (toolMessages === 0) {
+    if (phase === "catalog" && catalogRead) return toolCall(catalogRead.name, catalogRead.args, `read_${phase}`);
+    return toolCall("read_file", { path: "src/a.ts" }, `read_${phase}`);
+  }
   if (invalidPhases.has(phase)) return toolCall("submit_result", { result: { items: "non valido" } }, `bad_${toolMessages}`);
   return toolCall("submit_result", { result: resultOverrides[phase] ?? RESULTS[phase] }, `submit_${phase}`);
 }
@@ -334,6 +338,7 @@ beforeEach(async () => {
   readUntilNudge = new Set();
   invalidPhases = new Set();
   resultOverrides = {};
+  catalogRead = null;
   serveOpenApi = true;
   githubAuth = [];
 
@@ -454,7 +459,7 @@ describe("startAnalysis", () => {
     expect(a.error).toBeNull();
     expect(a.status).toBe("completed");
     expect(a.finishedAt).not.toBeNull();
-    expect(a.sources).toEqual({ code: "zip", openapi: true, description: true });
+    expect(a.sources).toEqual({ code: "zip", openapi: true, mcp: false, description: true });
     // La mappa calcolata da Casello si affianca all'esito della fase map
     expect(a.architectureMap).toEqual({ ...(RESULTS.map as object), repoMap: expect.stringContaining("src/") });
     // ...ed è nel messaggio utente di ogni fase
@@ -607,7 +612,7 @@ describe("startAnalysis", () => {
 
     const a = await loadAnalysis(id);
     expect(a.status).toBe("completed");
-    expect(a.sources).toEqual({ code: "none", openapi: false, description: true });
+    expect(a.sources).toEqual({ code: "none", openapi: false, mcp: false, description: true });
     const tools = (await loadItems(id)).filter((i) => i.chapter === "tool");
     expect(tools.length).toBeGreaterThan(0);
     expect(tools.every((t) => (t.payload as any).needsVerification === true)).toBe(true);
@@ -714,6 +719,98 @@ describe("startAnalysis", () => {
     expect(llmRequests).toHaveLength(0);
     // Analisi inesistente: nessuna eccezione
     await expect(startAnalysis(99_999)).resolves.toBeUndefined();
+  });
+});
+
+describe("startAnalysis con il server MCP dell'app", () => {
+  let fake: FakeMcp | null = null;
+  afterEach(async () => {
+    await fake?.close();
+    fake = null;
+  });
+
+  const MCP_TOOLS = [
+    { name: "send_mail", description: "Invia una mail", inputSchema: { properties: { to: { type: "string" } } }, _meta: { "casello/level": "L2" } },
+    { name: "leggi_ordini", description: "Legge gli ordini", annotations: { readOnlyHint: true } },
+  ];
+  const mcpProposal = (level: string) => ({
+    name: "send_mail",
+    description: "Invia una mail al cliente",
+    kind: "mcp",
+    identity: "service",
+    level,
+    paramsSchema: { type: "object", properties: {} },
+    definition: { mcpName: "send_mail" },
+    area: "Squadre",
+    evidence: [{ source: "mcp", location: "send_mail" }],
+    needsVerification: false,
+  });
+  const catalogWith = (level: string) => {
+    const catalog = RESULTS.catalog as { tools: unknown[] };
+    return { ...catalog, tools: [...catalog.tools, mcpProposal(level)] };
+  };
+
+  it("sources.mcp = true, list_mcp_tools offerto e funzionante, livello dichiarato nella voce", async () => {
+    fake = await startFakeMcp({ tools: MCP_TOOLS });
+    const mcpApp = await createApp({ mcpUrl: fake.url });
+    catalogRead = { name: "list_mcp_tools", args: {} };
+    resultOverrides.catalog = catalogWith("L3");
+    const id = await createAnalysis(mcpApp);
+    await startAnalysis(id, { zip: testZip() });
+
+    const a = await loadAnalysis(id);
+    expect(a.error).toBeNull();
+    expect(a.status).toBe("completed");
+    expect(a.sources).toEqual({ code: "zip", openapi: true, mcp: true, description: false });
+    expect(a.log.map((e) => e.message)).toContain("MCP: 2 strumenti");
+    expect(a.log.map((e) => e.message)).toContain("list_mcp_tools (2 strumenti)");
+
+    const catalogReq = llmRequests.find((r) => String(r.messages[1].content).includes("FASE 3"))!;
+    const offered = catalogReq.tools.map((t: any) => t.function.name);
+    expect(offered).toEqual(expect.arrayContaining(["list_mcp_tools", "read_mcp_tool"]));
+    expect(String(catalogReq.messages[1].content)).toContain("strumenti del server MCP (list_mcp_tools, read_mcp_tool)");
+    const answer = llmRequests.flatMap((r) => r.messages).find((m: any) => m.role === "tool" && m.tool_call_id === "read_catalog");
+    expect(answer.content).toBe(
+      "leggi_ordini — livello L0 (non dichiarato: ripiego) — Legge gli ordini\nsend_mail — livello L2 — Invia una mail",
+    );
+
+    const item = (await loadItems(id)).find((i) => i.ref === "tool:send_mail")!;
+    expect(item.diff).toBe("new");
+    expect(item.payload).toMatchObject({
+      kind: "mcp",
+      level: "L3",
+      declaredLevel: "L2",
+      paramsSchema: { type: "object", properties: { to: { type: "string" } } },
+    });
+  });
+
+  it("livello proposto sotto quello dichiarato: correzione chiesta al modello, poi fase non valida", async () => {
+    fake = await startFakeMcp({ tools: MCP_TOOLS });
+    const mcpApp = await createApp({ mcpUrl: fake.url });
+    resultOverrides.catalog = catalogWith("L1");
+    const id = await createAnalysis(mcpApp);
+    await startAnalysis(id, { zip: testZip() });
+
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toContain('livello sotto quello dichiarato dal servizio per "send_mail"');
+    expect((await loadItems(id)).some((i) => i.chapter === "tool")).toBe(false);
+  });
+
+  it("server MCP spento: sources.mcp = false, nessuno strumento MCP, l'analisi prosegue", async () => {
+    fake = await startFakeMcp({ tools: MCP_TOOLS });
+    const url = fake.url;
+    await fake.close();
+    fake = null;
+    const mcpApp = await createApp({ mcpUrl: url });
+    const id = await createAnalysis(mcpApp);
+    await startAnalysis(id, { zip: testZip() });
+
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("completed");
+    expect(a.sources).toMatchObject({ mcp: false });
+    expect(a.log.map((e) => e.message)).toContain("MCP: non raggiungibile");
+    expect(llmRequests.every((r) => !r.tools.some((t: any) => t.function.name === "list_mcp_tools"))).toBe(true);
   });
 });
 

@@ -13,7 +13,7 @@ import {
   resolveAuthFor,
   truncate,
 } from "./executor";
-import { declaredLevelFromMcp, type ToolLevel } from "./levels";
+import { declaredLevelFromMcp, hasMcpLevelMeta, type ToolLevel } from "./levels";
 import type { AppConnection, CatalogTool, McpDefinition, ToolResult } from "./types";
 
 // Client MCP: Casello interroga (tools/list) e chiama (tools/call) il server MCP di un'app.
@@ -45,6 +45,8 @@ export interface McpToolInfo {
   description: string | null;
   inputSchema: Record<string, unknown>;
   level: ToolLevel;
+  /** true se il livello viene dal metadato `casello/level`; false se è il ripiego (readOnlyHint o L2). */
+  levelDeclared: boolean;
 }
 
 /**
@@ -225,6 +227,7 @@ export async function listMcpTools(
             description: t.description ?? null,
             inputSchema: t.inputSchema as Record<string, unknown>,
             level: declaredLevelFromMcp(t),
+            levelDeclared: hasMcpLevelMeta(t),
           });
           if (tools.length > MCP_MAX_TOOLS) throw new McpError(MCP_MESSAGES.invalid);
         }

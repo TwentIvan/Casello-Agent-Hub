@@ -8,8 +8,10 @@
 // in chiaro solo nella risposta al claim; a riposo c'è il suo SHA-256.
 //
 // Al claim Casello legge, per conto dell'agente, il contratto OpenAPI dell'app (l'agente lo consulta
-// con read_openapi, perché può non stare nel clone) e lo sha del branch dall'installazione della
-// GitHub App (il commit atteso). Il token di installazione resta qui: mai nelle risposte né nei log.
+// con read_openapi, perché può non stare nel clone), l'elenco degli strumenti del server MCP dell'app
+// (read_mcp_tools; serve anche a controllare i livelli del catalogo) e lo sha del branch
+// dall'installazione della GitHub App (il commit atteso). Il token di installazione e le credenziali
+// del server MCP restano qui: mai nelle risposte né nei log.
 
 import { createHash, randomBytes } from "node:crypto";
 import { and, count, eq, inArray, lt, or, sql } from "drizzle-orm";
@@ -26,12 +28,15 @@ import { installationToken } from "../github/app";
 import { githubConfig, type GithubConfig } from "../github/config";
 import { readBytesLimited } from "../http-read";
 import { logger } from "../logger";
+import type { McpToolInfo } from "../tools/mcp-client";
+import type { AppConnection } from "../tools/types";
+import { loadMcpSource } from "./mcp-source";
 import { formatIssues } from "./phase-loop";
 import { recordPhaseResult } from "./phase-record";
 import { chatPlannedItems } from "./planned";
 import { phasePrompt, SYSTEM_BASE } from "./prompts";
 import { appendLog } from "./run-analysis";
-import { PHASES, PHASE_SCHEMAS, type AnalysisChapter, type PhaseName } from "./schemas";
+import { PHASES, PHASE_SCHEMAS, checkCatalogAgainstMcp, type AnalysisChapter, type CatalogResult, type PhaseName } from "./schemas";
 import { fetchOpenApi, type OpenApiDoc } from "./sources";
 
 /** Durata della lease: rinnovata da ogni consegna e da ogni ping. */
@@ -46,9 +51,9 @@ export const REASON_MAX_CHARS = 300;
 
 /** Premessa del prompt di sistema per l'agente locale (testo fisso). */
 export const LOCAL_PREFACE =
-  "Esegui questa fase con i tuoi strumenti sul clone locale del repository: gli strumenti di lettura citati sotto (list_dir, read_file, read_files, search) corrispondono ai tuoi; list_operations e read_operation corrispondono allo strumento read_openapi di Casello. Consegna l'esito con lo strumento submit_phase di Casello, non con submit_result.";
+  "Esegui questa fase con i tuoi strumenti sul clone locale del repository: gli strumenti di lettura citati sotto (list_dir, read_file, read_files, search) corrispondono ai tuoi; list_operations e read_operation corrispondono allo strumento read_openapi di Casello; list_mcp_tools e read_mcp_tool corrispondono allo strumento read_mcp_tools di Casello. Consegna l'esito con lo strumento submit_phase di Casello, non con submit_result.";
 
-/** Tetto all'attesa delle sorgenti (OpenAPI e commit) durante il claim: oltre, il claim risponde comunque. */
+/** Tetto all'attesa delle sorgenti (OpenAPI, elenco MCP e commit) durante il claim: oltre, il claim risponde comunque. */
 const CLAIM_SOURCES_DEADLINE_MS = 15_000;
 /** Timeout della lettura dello sha del branch da GitHub. */
 const GITHUB_COMMIT_TIMEOUT_MS = 10_000;
@@ -83,6 +88,8 @@ export interface LocalAppCard {
   sourceBranch: string | null;
   /** L'app espone un contratto OpenAPI raggiungibile (letto al claim, consultabile con read_openapi). */
   hasOpenApi: boolean;
+  /** L'app ha un server MCP raggiungibile (elenco letto al claim, consultabile con read_mcp_tools). */
+  hasMcp: boolean;
 }
 
 /** Solo per i test: dipendenze esterne delle sorgenti dell'analisi locale. */
@@ -175,10 +182,36 @@ function analysisOpenApi(analysisId: number, app: App, opts: LocalSourceOptions)
   return loading;
 }
 
-/** Dimentica OpenAPI e commit atteso di un'analisi chiusa. */
+// --- Strumenti del server MCP dell'app --------------------------------------------------------
+
+// Elenco MCP per analisi, letto al claim come l'OpenAPI. Solo in memoria: dopo un riavvio si rilegge.
+const mcpToolLists = new Map<number, Promise<McpToolInfo[] | null>>();
+
+function appConnection(app: App): AppConnection {
+  return {
+    baseUrl: app.baseUrl,
+    internalBaseUrl: app.internalBaseUrl,
+    userAuth: app.userAuth,
+    serviceAuth: app.serviceAuth,
+    serviceSecretEnc: app.serviceSecretEnc,
+    mcpUrl: app.mcpUrl,
+  };
+}
+
+/** Strumenti MCP dell'app dell'analisi: dalla cache, altrimenti letti ora. Null senza server o se non risponde; mai un errore. */
+function analysisMcpTools(analysisId: number, app: App): Promise<McpToolInfo[] | null> {
+  const cached = mcpToolLists.get(analysisId);
+  if (cached) return cached;
+  const loading = loadMcpSource(appConnection(app)).catch(() => null);
+  mcpToolLists.set(analysisId, loading);
+  return loading;
+}
+
+/** Dimentica OpenAPI, elenco MCP e commit atteso di un'analisi chiusa. */
 function forgetLocalSources(analysisId: number): void {
   expectedCommits.delete(analysisId);
   openApiDocs.delete(analysisId);
+  mcpToolLists.delete(analysisId);
 }
 
 /** Valore della promessa entro `ms`, altrimenti `fallback` (la promessa prosegue per conto suo). */
@@ -212,7 +245,7 @@ function logEntry(now: Date, phase: string, message: string) {
 
 const leaseCleared = { leaseTokenHash: null, leaseUntil: null, leaseLabel: null } as const;
 
-function appCard(app: App, hasOpenApi: boolean): LocalAppCard {
+function appCard(app: App, hasOpenApi: boolean, hasMcp: boolean): LocalAppCard {
   const github = app.sourceType === "github";
   return {
     name: app.name,
@@ -221,6 +254,7 @@ function appCard(app: App, hasOpenApi: boolean): LocalAppCard {
     sourceRepo: github ? app.sourceRepo : null,
     sourceBranch: github ? app.sourceBranch : null,
     hasOpenApi,
+    hasMcp,
   };
 }
 
@@ -299,7 +333,7 @@ export async function listOpenLocalAnalyses(): Promise<LocalAnalysisSummary[]> {
 /**
  * Prende in carico un'analisi locale: atomica (riga bloccata nella transazione), riesce solo se
  * l'analisi è in coda o la lease precedente è scaduta. Riparte dalla prima fase senza esito. Dopo la
- * transazione legge (al meglio, entro 15 s) l'OpenAPI dell'app e il commit atteso.
+ * transazione legge (al meglio, entro 15 s) l'OpenAPI dell'app, l'elenco MCP e il commit atteso.
  */
 export async function claimLocalAnalysis(
   analysisId: number,
@@ -352,14 +386,18 @@ export async function claimLocalAnalysis(
 
   // Un nuovo claim rilegge le sorgenti: l'app o il branch possono essere cambiati
   openApiDocs.delete(analysisId);
-  const [openapi, expectedCommit] = await within(
-    Promise.all([analysisOpenApi(analysisId, result.app, opts), branchCommit(result.app, opts)]),
+  mcpToolLists.delete(analysisId);
+  const [openapi, mcpTools, expectedCommit] = await within(
+    Promise.all([analysisOpenApi(analysisId, result.app, opts), analysisMcpTools(analysisId, result.app), branchCommit(result.app, opts)]),
     CLAIM_SOURCES_DEADLINE_MS,
-    [null, null],
+    [null, null, null],
   );
   setExpectedCommit(analysisId, expectedCommit);
-  logger.info({ analysisId, openapi: openapi !== null, expectedCommit: expectedCommit !== null }, "Sorgenti dell'analisi locale");
-  return { leaseToken, phase: result.phase, app: appCard(result.app, openapi !== null), expectedCommit };
+  logger.info(
+    { analysisId, openapi: openapi !== null, mcp: mcpTools !== null, expectedCommit: expectedCommit !== null },
+    "Sorgenti dell'analisi locale",
+  );
+  return { leaseToken, phase: result.phase, app: appCard(result.app, openapi !== null, mcpTools !== null), expectedCommit };
 }
 
 // --- Istruzioni e consegna ----------------------------------------------------------------------
@@ -380,7 +418,8 @@ export async function localPhaseInstructions(
   const phase = currentPhase(analysis);
   const [app] = await db.select().from(appsTable).where(eq(appsTable.id, analysis.appId)).limit(1);
   if (!app) throw new LocalAnalysisError(LOCAL_MESSAGES.notFound);
-  const card = appCard(app, (await analysisOpenApi(analysisId, app, opts)) !== null);
+  const [openapi, mcpTools] = await Promise.all([analysisOpenApi(analysisId, app, opts), analysisMcpTools(analysisId, app)]);
+  const card = appCard(app, openapi !== null, mcpTools !== null);
   const previous: Partial<Record<PhaseName, unknown>> = {};
   for (const d of await deliveredResults(analysisId)) previous[d.phase] = d.result;
   const user = phasePrompt(phase, {
@@ -389,6 +428,7 @@ export async function localPhaseInstructions(
     functionalDescription: card.functionalDescription,
     hasCode: true,
     hasOpenApi: card.hasOpenApi,
+    hasMcp: card.hasMcp,
     // Casello non scarica il codice: la mappa del repository la costruisce l'agente sul suo clone
     repoMap: "",
     previous,
@@ -418,6 +458,36 @@ export async function localOpenApi(
   return analysisOpenApi(analysisId, app, opts);
 }
 
+/**
+ * Strumenti del server MCP dell'app per l'agente che ha la lease (null se l'app non ne ha uno
+ * raggiungibile). Dalla cache del claim; dopo un riavvio si rileggono.
+ */
+export async function localMcpTools(analysisId: number, leaseToken: string, now: Date = new Date()): Promise<McpToolInfo[] | null> {
+  const [row] = await db
+    .select()
+    .from(analysesTable)
+    .where(and(eq(analysesTable.id, analysisId), eq(analysesTable.executor, "local")))
+    .limit(1);
+  const analysis = requireLease(row, leaseToken, now);
+  const [app] = await db.select().from(appsTable).where(eq(appsTable.id, analysis.appId)).limit(1);
+  if (!app) throw new LocalAnalysisError(LOCAL_MESSAGES.notFound);
+  return analysisMcpTools(analysisId, app);
+}
+
+/**
+ * Elenco MCP per il controllo del catalogo, letto prima della transazione della consegna (niente rete
+ * con la riga bloccata). Lease e fase si controllano poi nella transazione: qui un'analisi mancante dà null.
+ */
+async function catalogMcpTools(analysisId: number): Promise<McpToolInfo[] | null> {
+  const [row] = await db
+    .select({ app: appsTable })
+    .from(analysesTable)
+    .innerJoin(appsTable, eq(appsTable.id, analysesTable.appId))
+    .where(and(eq(analysesTable.id, analysisId), eq(analysesTable.executor, "local")))
+    .limit(1);
+  return row ? analysisMcpTools(analysisId, row.app) : null;
+}
+
 /** Elementi della proposta per capitolo, tutti i capitoli presenti (anche a zero). */
 async function chapterCounts(tx: Tx, analysisId: number): Promise<Record<AnalysisChapter, number>> {
   const rows = await tx
@@ -445,6 +515,7 @@ export async function submitLocalPhase(
   now: Date = new Date(),
 ): Promise<SubmitOutcome> {
   const commit = typeof sourceCommit === "string" && COMMIT_RE.test(sourceCommit) ? sourceCommit : null;
+  const mcpTools = phase === "catalog" ? await catalogMcpTools(analysisId) : null;
   const outcome = await db.transaction(async (tx): Promise<SubmitOutcome & { inserted?: number }> => {
     const analysis = requireLease(await lockLocal(tx, analysisId), leaseToken, now);
     const expected = currentPhase(analysis);
@@ -452,7 +523,13 @@ export async function submitLocalPhase(
 
     const parsed = PHASE_SCHEMAS[phase].safeParse(result);
     if (!parsed.success) return { ok: false, issues: formatIssues(parsed.error.issues) };
-    const data: unknown = parsed.data;
+    let data: unknown = parsed.data;
+    if (phase === "catalog") {
+      // Come nel percorso cloud: strumenti MCP esistenti e livelli non sotto quelli dichiarati
+      const checked = checkCatalogAgainstMcp(data as CatalogResult, mcpTools);
+      if (!checked.ok) return { ok: false, issues: checked.problems };
+      data = checked.result;
+    }
 
     await tx.insert(analysisPhaseResultsTable).values({ analysisId, phase, result: data, submittedAt: now });
     const inserted = await recordPhaseResult({ analysisId, appId: analysis.appId, phase, result: data }, tx);

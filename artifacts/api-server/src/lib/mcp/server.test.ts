@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { db, pool, analysesTable, analysisItemsTable, appsTable, usersTable } from "@workspace/db";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
+import { startFakeMcp } from "../../../test/fake-mcp";
 import { createApiToken, revokeApiToken } from "../api-tokens";
 import { clearInstallationTokenCache } from "../github/app";
 import type { GithubConfig } from "../github/config";
@@ -28,6 +29,7 @@ const TOOL_NAMES = [
   "get_phase_instructions",
   "list_analyses",
   "ping_analysis",
+  "read_mcp_tools",
   "read_openapi",
   "submit_phase",
 ];
@@ -251,7 +253,7 @@ describe("autenticazione", () => {
 });
 
 describe("strumenti", () => {
-  it("listTools elenca i sette strumenti con le descrizioni", async () => {
+  it("listTools elenca gli otto strumenti con le descrizioni", async () => {
     const client = await connect(await startMcp(), token);
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(TOOL_NAMES);
@@ -276,7 +278,7 @@ describe("strumenti", () => {
       analysisId,
       phase: "map",
       expectedCommit: SHA,
-      app: { name: "Fanta", baseUrl: appBase, sourceRepo: "ivan/fanta", sourceBranch: "main", hasOpenApi: true },
+      app: { name: "Fanta", baseUrl: appBase, sourceRepo: "ivan/fanta", sourceBranch: "main", hasOpenApi: true, hasMcp: false },
     });
     const leaseToken: string = claim.json.leaseToken;
     expect(leaseToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -363,6 +365,70 @@ describe("strumenti", () => {
     expect(ops.isError).toBe(false);
     expect(ops.json.hasOpenApi).toBe(false);
     await client.close();
+  });
+
+  it("app con server MCP: hasMcp, read_mcp_tools con la lease giusta; catalogo controllato sui livelli dichiarati", async () => {
+    const fake = await startFakeMcp({
+      tools: [
+        { name: "send_mail", description: "Invia una mail", _meta: { "casello/level": "L2" } },
+        { name: "leggi", annotations: { readOnlyHint: true } },
+      ],
+    });
+    try {
+      await db.update(appsTable).set({ mcpUrl: fake.url }).where(eq(appsTable.id, appId));
+      const client = await connect(await startMcp(), token);
+      const claim = await call(client, "claim_analysis", { analysisId, label: "Mac" });
+      expect(claim.json.app.hasMcp).toBe(true);
+      const leaseToken: string = claim.json.leaseToken;
+
+      const instr = await call(client, "get_phase_instructions", { analysisId, leaseToken });
+      expect(instr.json.system).toMatch(/read_mcp_tools/);
+      expect(instr.json.user).toContain("strumenti del server MCP (list_mcp_tools, read_mcp_tool)");
+
+      const list = await call(client, "read_mcp_tools", { analysisId, leaseToken });
+      expect(list.isError).toBe(false);
+      expect(list.json).toEqual({
+        hasMcp: true,
+        content: "leggi — livello L0 (non dichiarato: ripiego)\nsend_mail — livello L2 — Invia una mail",
+      });
+      const one = await call(client, "read_mcp_tools", { analysisId, leaseToken, name: "send_mail" });
+      expect(one.json.content).toContain("send_mail\nlivello L2\ndescrizione: Invia una mail");
+
+      const wrongLease = await call(client, "read_mcp_tools", { analysisId, leaseToken: "sbagliato" });
+      expect(wrongLease.isError).toBe(true);
+      expect(wrongLease.json).toEqual({ error: "lease scaduta: chiedi di nuovo il compito" });
+
+      for (const phase of ["map", "capabilities"] as const) {
+        expect((await call(client, "submit_phase", { analysisId, leaseToken, phase, result: PHASE_EXAMPLES[phase] })).json.ok).toBe(true);
+      }
+      const catalog = PHASE_EXAMPLES.catalog as { tools: Record<string, unknown>[] };
+      const mail = {
+        ...catalog.tools[0],
+        name: "send_mail",
+        kind: "mcp",
+        level: "L1",
+        paramsSchema: { type: "object", properties: {} },
+        definition: { mcpName: "send_mail" },
+      };
+      const low = await call(client, "submit_phase", { analysisId, leaseToken, phase: "catalog", result: { ...catalog, tools: [...catalog.tools, mail] } });
+      expect(low.json).toEqual({
+        ok: false,
+        error: "esito non valido",
+        issues: ['tools.1.level: livello sotto quello dichiarato dal servizio per "send_mail"'],
+      });
+      const ok = await call(client, "submit_phase", {
+        analysisId,
+        leaseToken,
+        phase: "catalog",
+        result: { ...catalog, tools: [...catalog.tools, { ...mail, level: "L2" }] },
+      });
+      expect(ok.json.ok, ok.text).toBe(true);
+      const [item] = await db.select().from(analysisItemsTable).where(eq(analysisItemsTable.ref, "tool:send_mail"));
+      expect(item!.payload).toMatchObject({ kind: "mcp", level: "L2", declaredLevel: "L2" });
+      await client.close();
+    } finally {
+      await fake.close();
+    }
   });
 
   it("GitHub che non risponde: expectedCommit null, il claim riesce", async () => {
@@ -466,7 +532,7 @@ describe("montaggio nell'app", () => {
     expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
 
     const client = await connect(url, token);
-    expect((await client.listTools()).tools).toHaveLength(7);
+    expect((await client.listTools()).tools).toHaveLength(8);
     await client.close();
   });
 });

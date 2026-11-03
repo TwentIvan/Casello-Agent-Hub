@@ -892,6 +892,7 @@ export const ListAnalysesResponseItem = zod.object({
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
+  "mcp": zod.boolean().describe('Elenco degli strumenti del server MCP dell\'app letto all\'avvio (false nelle analisi precedenti)'),
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
@@ -937,6 +938,7 @@ export const StartAnalysisResponse = zod.object({
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
+  "mcp": zod.boolean().describe('Elenco degli strumenti del server MCP dell\'app letto all\'avvio (false nelle analisi precedenti)'),
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
@@ -981,6 +983,7 @@ export const StartZipAnalysisResponse = zod.object({
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
+  "mcp": zod.boolean().describe('Elenco degli strumenti del server MCP dell\'app letto all\'avvio (false nelle analisi precedenti)'),
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
@@ -1013,6 +1016,7 @@ export const GetAnalysisResponse = zod.object({
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
+  "mcp": zod.boolean().describe('Elenco degli strumenti del server MCP dell\'app letto all\'avvio (false nelle analisi precedenti)'),
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
@@ -1043,7 +1047,7 @@ export const GetAnalysisResponse = zod.object({
   "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
   "ref": zod.string().describe('Chiave stabile nell\'analisi, es. tool:rosa_squadra'),
   "position": zod.number(),
-  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo'),
+  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo. Le voci tool hanno `kind` (\"http\" | \"mcp\"), `level` (\"L0\"..\"L3\", livello proposto) e, per gli strumenti MCP, `declaredLevel` (livello dichiarato dal servizio) e `definition` { mcpName }; le voci tool delle analisi precedenti ai livelli arrivano già convertite (`level` dai vecchi flag).'),
   "diff": zod.enum(['new', 'changed', 'removed', 'unchanged']).describe('Differenza rispetto allo stato approvato'),
   "evidence": zod.array(zod.object({
   "source": zod.string(),
@@ -1083,6 +1087,7 @@ export const ReleaseAnalysisResponse = zod.object({
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
+  "mcp": zod.boolean().describe('Elenco degli strumenti del server MCP dell\'app letto all\'avvio (false nelle analisi precedenti)'),
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
@@ -1116,6 +1121,7 @@ export const CancelAnalysisResponse = zod.object({
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
+  "mcp": zod.boolean().describe('Elenco degli strumenti del server MCP dell\'app letto all\'avvio (false nelle analisi precedenti)'),
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
@@ -1172,7 +1178,7 @@ export const UpdateAnalysisItemResponse = zod.object({
   "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
   "ref": zod.string().describe('Chiave stabile nell\'analisi, es. tool:rosa_squadra'),
   "position": zod.number(),
-  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo'),
+  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo. Le voci tool hanno `kind` (\"http\" | \"mcp\"), `level` (\"L0\"..\"L3\", livello proposto) e, per gli strumenti MCP, `declaredLevel` (livello dichiarato dal servizio) e `definition` { mcpName }; le voci tool delle analisi precedenti ai livelli arrivano già convertite (`level` dai vecchi flag).'),
   "diff": zod.enum(['new', 'changed', 'removed', 'unchanged']).describe('Differenza rispetto allo stato approvato'),
   "evidence": zod.array(zod.object({
   "source": zod.string(),
@@ -2138,7 +2144,7 @@ export const GetAppPlanResponse = zod.object({
   "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
   "ref": zod.string().describe('Chiave stabile nell\'analisi, es. tool:rosa_squadra'),
   "position": zod.number(),
-  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo'),
+  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo. Le voci tool hanno `kind` (\"http\" | \"mcp\"), `level` (\"L0\"..\"L3\", livello proposto) e, per gli strumenti MCP, `declaredLevel` (livello dichiarato dal servizio) e `definition` { mcpName }; le voci tool delle analisi precedenti ai livelli arrivano già convertite (`level` dai vecchi flag).'),
   "diff": zod.enum(['new', 'changed', 'removed', 'unchanged']).describe('Differenza rispetto allo stato approvato'),
   "evidence": zod.array(zod.object({
   "source": zod.string(),
@@ -2414,7 +2420,7 @@ export const DecidePlanProposalResponse = zod.object({
   "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
   "ref": zod.string().describe('Chiave stabile nell\'analisi, es. tool:rosa_squadra'),
   "position": zod.number(),
-  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo'),
+  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo. Le voci tool hanno `kind` (\"http\" | \"mcp\"), `level` (\"L0\"..\"L3\", livello proposto) e, per gli strumenti MCP, `declaredLevel` (livello dichiarato dal servizio) e `definition` { mcpName }; le voci tool delle analisi precedenti ai livelli arrivano già convertite (`level` dai vecchi flag).'),
   "diff": zod.enum(['new', 'changed', 'removed', 'unchanged']).describe('Differenza rispetto allo stato approvato'),
   "evidence": zod.array(zod.object({
   "source": zod.string(),

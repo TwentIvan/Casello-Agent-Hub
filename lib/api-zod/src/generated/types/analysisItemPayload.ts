@@ -7,6 +7,6 @@
  */
 
 /**
- * Contenuto della proposta, la cui forma dipende dal capitolo
+ * Contenuto della proposta, la cui forma dipende dal capitolo. Le voci tool hanno `kind` ("http" | "mcp"), `level` ("L0".."L3", livello proposto) e, per gli strumenti MCP, `declaredLevel` (livello dichiarato dal servizio) e `definition` { mcpName }; le voci tool delle analisi precedenti ai livelli arrivano già convertite (`level` dai vecchi flag).
  */
 export type AnalysisItemPayload = { [key: string]: unknown };

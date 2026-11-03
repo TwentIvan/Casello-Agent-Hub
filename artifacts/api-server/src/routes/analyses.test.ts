@@ -130,8 +130,7 @@ const toolPayload = (over: Record<string, unknown> = {}) => ({
   description: "Elenco squadre",
   kind: "http",
   identity: "user",
-  requiresConfirmation: false,
-  readOnly: true,
+  level: "L0",
   paramsSchema: { type: "object", properties: { q: { type: "string" } } },
   definition: { method: "GET", path: "/teams", paramLocations: { q: "query" } },
   area: "Squadre",
@@ -601,7 +600,7 @@ describe("dettaglio ed esportazione", () => {
     expect(res.json.count).toBe(2);
     expect(res.json.markdown).toContain("## list_teams");
     expect(res.json.markdown).toContain("- Chiamata: GET /teams");
-    expect(res.json.markdown).toContain("- Sola lettura: sì");
+    expect(res.json.markdown).toContain("- Livello: L0");
     expect(res.json.markdown).toContain("## old_tool (da rimuovere)");
 
     expect((await api("GET", `/analyses/${analysisId}/issues?chapter=skill`)).status).toBe(200);
@@ -721,6 +720,23 @@ describe("revisione degli elementi", () => {
     // Scartare un tool non scrive nulla
     expect((await api("PATCH", `/analysis-items/${tool.id}`, { status: "discarded" })).json.status).toBe("discarded");
     expect(await db.select().from(appToolsTable)).toHaveLength(0);
+  });
+
+  it("voce tool di un'analisi precedente ai livelli (readOnly/requiresConfirmation): letta con level e approvabile", async () => {
+    const app = await createApp();
+    const analysisId = await newAnalysis(app.id);
+    const { level: _level, ...legacy } = toolPayload();
+    const item = await addItem(analysisId, "tool", { ...legacy, requiresConfirmation: true, readOnly: false });
+
+    const detail = await api("GET", `/analyses/${analysisId}`);
+    const shown = detail.json.items.find((i: { id: number }) => i.id === item.id);
+    expect(shown.payload).toMatchObject({ kind: "http", level: "L2" });
+    expect(shown.payload).not.toHaveProperty("requiresConfirmation");
+
+    const res = await api("PATCH", `/analysis-items/${item.id}`, { status: "approved" });
+    expect(res.status, res.text).toBe(200);
+    const [tool] = await db.select().from(appToolsTable).where(eq(appToolsTable.appId, app.id));
+    expect(tool).toMatchObject({ name: "list_teams", level: "L2", levelOverride: null, status: "active" });
   });
 
   it("modifica del payload: validata col capitolo, solo se pending, e approvabile nella stessa richiesta", async () => {

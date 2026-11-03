@@ -13,6 +13,7 @@ import {
   type PlanProposal,
   type Run,
 } from "@workspace/db";
+import { normalizeStoredToolPayload } from "../lib/architect/schemas";
 
 // Forma pubblica delle risorse: cosa esce dall'API e cosa no.
 
@@ -96,15 +97,18 @@ export function userTokenFrom(req: Request): string | undefined {
 }
 
 /** Analisi senza log né mappa (elenco e risposta all'avvio): quelli arrivano solo col dettaglio. Mai l'hash della lease. */
+/** Sorgenti dell'analisi: `mcp` manca nelle analisi precedenti alla sorgente MCP. */
+const publicSources = (sources: Analysis["sources"]) => ({ ...sources, mcp: sources.mcp ?? false });
+
 export function toPublicAnalysis(analysis: Analysis) {
   const { log: _log, architectureMap: _map, leaseTokenHash: _lease, ...rest } = analysis;
-  return { ...rest, costUsd: toNumberOrNull(analysis.costUsd) };
+  return { ...rest, sources: publicSources(analysis.sources), costUsd: toNumberOrNull(analysis.costUsd) };
 }
 
 /** Dettaglio dell'analisi: con log e mappa, costo come numero, senza l'hash della lease. */
 export function toPublicAnalysisDetail(analysis: Analysis) {
   const { leaseTokenHash: _lease, ...rest } = analysis;
-  return { ...rest, costUsd: toNumberOrNull(analysis.costUsd) };
+  return { ...rest, sources: publicSources(analysis.sources), costUsd: toNumberOrNull(analysis.costUsd) };
 }
 
 /**
@@ -140,7 +144,8 @@ export function toPublicItem(item: AnalysisItem) {
       : null;
   return {
     ...rest,
-    payload: isPlainObject(item.payload) ? item.payload : {},
+    // Le voci tool delle analisi precedenti ai livelli escono già con `level` e `kind`
+    payload: isPlainObject(item.payload) ? (item.chapter === "tool" ? normalizeStoredToolPayload(item.payload) : item.payload) : {},
     evidence: publicEvidence(item.evidence),
     issue,
   };

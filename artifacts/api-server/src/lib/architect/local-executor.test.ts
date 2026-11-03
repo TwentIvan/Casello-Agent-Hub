@@ -91,6 +91,7 @@ describe("claimLocalAnalysis", () => {
       sourceRepo: "ivan/fanta",
       sourceBranch: "main",
       hasOpenApi: false,
+      hasMcp: false,
     });
     const row = await loadAnalysis();
     expect(row.status).toBe("running");

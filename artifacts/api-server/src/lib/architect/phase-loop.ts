@@ -1,4 +1,4 @@
-// Ciclo di una fase dell'architetto: il modello esplora il codice e l'OpenAPI con strumenti di
+// Ciclo di una fase dell'architetto: il modello esplora il codice, l'OpenAPI e l'elenco MCP con strumenti di
 // sola lettura e consegna l'esito con `submit_result`, validato con lo schema Zod della fase.
 // Modulo senza DB né rete: il modello arriva da `chat`, le sorgenti sono già in memoria.
 // Il contenuto del repository è dato non attendibile: torna al modello come testo e non finisce
@@ -11,7 +11,9 @@ import type {
 } from "openai/resources/chat/completions";
 import type { ZodIssue } from "zod";
 import { assistantToolCalls, type ChatResult } from "../ai/chat-types";
-import { PHASE_SCHEMAS, type PhaseName } from "./schemas";
+import type { McpToolInfo } from "../tools/mcp-client";
+import { describeMcpTool, listMcpToolsPage } from "./mcp-source";
+import { PHASE_SCHEMAS, checkCatalogAgainstMcp, type CatalogResult, type PhaseName } from "./schemas";
 import { SOURCE_LIMITS, SourceTreeError, type SourceTree } from "./source-tree";
 import { describeOperation, type OpenApiDoc } from "./sources";
 import { sliceChars } from "./text";
@@ -131,6 +133,8 @@ export interface RunPhaseInput {
   user: string;
   tree: SourceTree | null;
   openapi: OpenApiDoc | null;
+  /** Strumenti del server MCP dell'app (null se la sorgente manca): consultabili e base del controllo dei livelli. */
+  mcpTools?: McpToolInfo[] | null;
   chat: (messages: ChatCompletionMessageParam[], tools: ChatCompletionTool[]) => Promise<ChatResult>;
   budget: PhaseBudget;
   /**
@@ -148,7 +152,15 @@ export interface RunPhaseInput {
 
 export type PhaseOutcome = { ok: true; result: unknown } | { ok: false; error: string };
 
-type ReadToolName = "list_dir" | "read_file" | "read_files" | "search" | "list_operations" | "read_operation";
+type ReadToolName =
+  | "list_dir"
+  | "read_file"
+  | "read_files"
+  | "search"
+  | "list_operations"
+  | "read_operation"
+  | "list_mcp_tools"
+  | "read_mcp_tool";
 
 function fn(name: string, description: string, parameters: Record<string, unknown>): ChatCompletionFunctionTool {
   return { type: "function", function: { name, description, parameters } };
@@ -233,6 +245,26 @@ export function readTools(limits: ReadLimits): Record<ReadToolName, ChatCompleti
         required: ["method", "path"],
       },
     ),
+    list_mcp_tools: fn(
+      "list_mcp_tools",
+      "Elenca gli strumenti del server MCP dell'app, ordinati per nome: nome — livello dichiarato dal servizio — descrizione. L'elenco è a pagine: se ci sono altri strumenti, l'ultima riga indica l'offset da usare.",
+      {
+        type: "object",
+        properties: {
+          prefix: { type: "string", description: "Solo gli strumenti il cui nome inizia così" },
+          offset: { type: "integer", description: "Strumenti da saltare (dopo il filtro), per la pagina successiva (default 0)" },
+        },
+      },
+    ),
+    read_mcp_tool: fn(
+      "read_mcp_tool",
+      "Descrive uno strumento del server MCP dell'app: descrizione, livello dichiarato e schema JSON dei parametri.",
+      {
+        type: "object",
+        properties: { name: { type: "string", description: "Nome dello strumento, esattamente come nell'elenco" } },
+        required: ["name"],
+      },
+    ),
   };
 }
 
@@ -248,11 +280,13 @@ export function phaseTools(
   hasCode: boolean,
   hasOpenApi: boolean,
   limits: ReadLimits = FULL_READ_LIMITS,
+  hasMcp = false,
 ): ChatCompletionFunctionTool[] {
   const READ_TOOLS = readTools(limits);
   return [
     ...(hasCode ? [READ_TOOLS.list_dir, READ_TOOLS.read_file, READ_TOOLS.read_files, READ_TOOLS.search] : []),
     ...(hasOpenApi ? [READ_TOOLS.list_operations, READ_TOOLS.read_operation] : []),
+    ...(hasMcp ? [READ_TOOLS.list_mcp_tools, READ_TOOLS.read_mcp_tool] : []),
     SUBMIT_TOOL,
   ];
 }
@@ -354,6 +388,8 @@ const READ_SPECS: Record<ReadToolName, ArgSpec> = {
   search: { pattern: { type: "string", required: true }, glob: { type: "string" }, regex: { type: "boolean" }, includeIgnored: { type: "boolean" } },
   list_operations: { prefix: { type: "string" }, offset: { type: "integer" } },
   read_operation: { method: { type: "string", required: true }, path: { type: "string", required: true } },
+  list_mcp_tools: { prefix: { type: "string" }, offset: { type: "integer" } },
+  read_mcp_tool: { name: { type: "string", required: true } },
 };
 
 /**
@@ -578,6 +614,7 @@ async function runReadTool(
   args: Record<string, unknown>,
   tree: SourceTree | null,
   openapi: OpenApiDoc | null,
+  mcpTools: McpToolInfo[] | null,
   limits: ReadLimits,
 ): Promise<ToolOutput> {
   const a = args as Record<string, never>;
@@ -599,6 +636,10 @@ async function runReadTool(
         log: `read_operation ${logArg(method)} ${logArg(a.path)}`,
       };
     }
+    case "list_mcp_tools":
+      return listMcpToolsPage(mcpTools!, { prefix: a.prefix, offset: a.offset }, limits);
+    case "read_mcp_tool":
+      return { content: capOutput(describeMcpTool(mcpTools!, a.name), limits), log: `read_mcp_tool ${logArg(a.name)}` };
   }
 }
 
@@ -616,9 +657,10 @@ const REMINDER =
 
 export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
   const { phase, tree, openapi, budget, log } = input;
+  const mcpTools = input.mcpTools ?? null;
   const now = input.now ?? Date.now;
   const limits = scaleLimitsForContext(input.contextTokens ?? null);
-  const tools = phaseTools(tree !== null, openapi !== null, limits);
+  const tools = phaseTools(tree !== null, openapi !== null, limits, mcpTools !== null);
   const available = new Set(tools.map((t) => t.function.name));
   const schema = PHASE_SCHEMAS[phase];
   const messages: ChatCompletionMessageParam[] = [
@@ -774,7 +816,7 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
         continue;
       }
       try {
-        const out = await runReadTool(name, parsed.args, tree, openapi, limits);
+        const out = await runReadTool(name, parsed.args, tree, openapi, mcpTools, limits);
         answer(c.id, out.content);
         log(out.log);
       } catch (err) {
@@ -795,10 +837,16 @@ export async function runPhase(input: RunPhaseInput): Promise<PhaseOutcome> {
       } else {
         const r = schema.safeParse(parsed.args["result"]);
         if (r.success) {
-          log("submit_result valido");
-          return { ok: true, result: r.data };
+          // Il catalogo si controlla anche contro l'elenco MCP (strumenti esistenti, livelli non più bassi)
+          const checked = phase === "catalog" ? checkCatalogAgainstMcp(r.data as CatalogResult, mcpTools) : { ok: true as const, result: r.data };
+          if (checked.ok) {
+            log("submit_result valido");
+            return { ok: true, result: checked.result };
+          }
+          problems = checked.problems;
+        } else {
+          problems = formatIssues(r.error.issues);
         }
-        problems = formatIssues(r.error.issues);
       }
 
       invalidSubmits += 1;

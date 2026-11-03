@@ -8,8 +8,7 @@ const proposal = (over: Partial<ToolProposal> = {}): ToolProposal => ({
   description: "Elenco squadre",
   kind: "http",
   identity: "user",
-  requiresConfirmation: false,
-  readOnly: true,
+  level: "L0",
   paramsSchema: { type: "object", properties: { q: { type: "string" } } },
   definition: { method: "GET", path: "/teams", paramLocations: { q: "query" } },
   area: "Squadre",
@@ -60,13 +59,21 @@ describe("diffTools", () => {
 
   it("è changed se cambia un campo di comportamento", () => {
     for (const over of [
-      { requiresConfirmation: true },
-      { readOnly: false },
+      { level: "L2" as const },
+      { level: "L1" as const },
+      { kind: "mcp" as const },
       { identity: "service" as const },
       { definition: { method: "GET", path: "/squadre", paramLocations: { q: "query" } } },
     ]) {
       expect(diffTools([proposal(over)], [existingTool()])[0]!.diff).toBe("changed");
     }
+  });
+
+  it("confronta il livello proposto con quello effettivo (dichiarato o deroga)", () => {
+    const mcp = { kind: "mcp" as const, definition: { mcpName: "list_teams" } };
+    const row = existingTool({ kind: "mcp", level: "L2", levelOverride: "L3", definition: { mcpName: "list_teams" } });
+    expect(diffTools([proposal({ ...mcp, level: "L3" })], [row])[0]!.diff).toBe("unchanged");
+    expect(diffTools([proposal({ ...mcp, level: "L2" })], [row])[0]!.diff).toBe("changed");
   });
 });
 

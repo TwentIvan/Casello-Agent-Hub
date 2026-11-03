@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { PHASE_EXAMPLES, phasePrompt, SYSTEM_BASE } from "./prompts";
+import type { McpToolInfo } from "../tools/mcp-client";
+import { PHASE_EXAMPLES, phaseExample, phasePrompt, SYSTEM_BASE } from "./prompts";
 import {
   AgentProposalSchema,
   AgentsResultSchema,
   CatalogResultSchema,
   ITEM_SCHEMAS,
   PHASE_SCHEMAS,
+  checkCatalogAgainstMcp,
+  normalizeStoredToolPayload,
   PHASES,
   SkillProposalSchema,
   ToolProposalSchema,
@@ -18,8 +21,7 @@ const tool = {
   description: "Legge la rosa di una squadra",
   kind: "http" as const,
   identity: "user" as const,
-  requiresConfirmation: false,
-  readOnly: true,
+  level: "L0" as const,
   paramsSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
   definition: { method: "GET", path: "/api/squadre/{id}/rosa", paramLocations: { id: "path" } },
   area: "Squadre",
@@ -275,7 +277,7 @@ describe("prompt", () => {
 
 describe("unicità dei riferimenti e coerenza ruolo/area", () => {
   const tool = (name: string) => ({
-    name, description: "d", kind: "http", identity: "user", requiresConfirmation: false, readOnly: true,
+    name, description: "d", kind: "http", identity: "user", level: "L0",
     paramsSchema: { type: "object", properties: {} },
     definition: { method: "GET", path: "/x", paramLocations: {} },
     area: "A", evidence: [], needsVerification: false,
@@ -324,6 +326,16 @@ describe("esempi delle fasi nel prompt", () => {
     expect(r.success ? [] : r.error.issues).toEqual([]);
   });
 
+  it("con il server MCP l'esempio del catalogo ha anche un tool mcp, valido per lo schema", () => {
+    const example = phaseExample("catalog", true) as { tools: { kind: string; level: string }[] };
+    expect(example.tools.map((t) => [t.kind, t.level])).toEqual([["http", "L1"], ["mcp", "L2"]]);
+    const r = PHASE_SCHEMAS.catalog.safeParse(example);
+    expect(r.success ? [] : r.error.issues).toEqual([]);
+    const ctx = { appName: "App", baseUrl: "https://app.example", functionalDescription: null, hasCode: true, hasOpenApi: false, repoMap: "", previous: {}, alreadyPlanned: [] };
+    expect(phasePrompt("catalog", { ...ctx, hasMcp: true })).toContain(JSON.stringify(example));
+    expect(phasePrompt("catalog", ctx)).not.toContain("notify_customer");
+  });
+
   it.each(PHASES)("il prompt della fase %s contiene l'esempio", (phase) => {
     const prompt = phasePrompt(phase, {
       appName: "App",
@@ -356,5 +368,85 @@ describe("esempi delle fasi nel prompt", () => {
 
   it("il prompt di sistema chiede di rispettare la forma dell'esempio", () => {
     expect(SYSTEM_BASE).toContain("Rispetta esattamente la forma dell'esempio");
+  });
+});
+
+describe("livelli dei tool proposti e strumenti MCP", () => {
+  const mcpTool = (over: Record<string, unknown> = {}) => ({
+    ...tool,
+    name: "send_mail",
+    kind: "mcp" as const,
+    identity: "service" as const,
+    level: "L2" as const,
+    paramsSchema: { type: "object", properties: { to: { type: "string" } } },
+    definition: { mcpName: "send_mail" },
+    ...over,
+  });
+  const listed: McpToolInfo[] = [
+    {
+      name: "send_mail",
+      description: "Invia una mail",
+      inputSchema: { type: "object", properties: { to: { type: "string" }, testo: { type: "string" } }, required: ["to"] },
+      level: "L2",
+      levelDeclared: true,
+    },
+  ];
+  const catalog = (tools: unknown[]) => CatalogResultSchema.parse({ tools, endpoints: [] });
+
+  it("level è obbligatorio e ammette solo L0..L3; i vecchi flag non bastano", () => {
+    const { level: _level, ...noLevel } = tool;
+    expect(ToolProposalSchema.safeParse({ ...noLevel, readOnly: true, requiresConfirmation: false }).success).toBe(false);
+    const bad = ToolProposalSchema.safeParse({ ...tool, level: "L4" });
+    expect(bad.success ? [] : bad.error.issues.map((i) => i.message)).toContain("valore non ammesso (valori ammessi: L0, L1, L2, L3)");
+  });
+
+  it("tool mcp: definition { mcpName } uguale al nome", () => {
+    expect(ToolProposalSchema.safeParse(mcpTool()).success).toBe(true);
+    expect(ToolProposalSchema.safeParse(mcpTool({ definition: { method: "GET", path: "/x" } })).success).toBe(false);
+    const other = ToolProposalSchema.safeParse(mcpTool({ definition: { mcpName: "altro" } }));
+    expect(other.success ? [] : other.error.issues.map((i) => i.message)).toContain(
+      "per uno strumento MCP il nome deve essere uguale a definition.mcpName",
+    );
+  });
+
+  it("rifiuta un livello L1 per uno strumento dichiarato L2", () => {
+    const r = checkCatalogAgainstMcp(catalog([mcpTool({ level: "L1" })]), listed);
+    expect(r).toEqual({ ok: false, problems: ['tools.0.level: livello sotto quello dichiarato dal servizio per "send_mail"'] });
+  });
+
+  it("livello uguale o più alto: ok, con livello dichiarato e schema del servizio", () => {
+    const r = checkCatalogAgainstMcp(catalog([tool, mcpTool({ level: "L3" })]), listed);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.result.tools[0]).toEqual(tool);
+    expect(r.result.tools[1]).toMatchObject({ level: "L3", declaredLevel: "L2", paramsSchema: listed[0]!.inputSchema });
+  });
+
+  it("strumento assente dall'elenco o app senza server MCP: rifiutato", () => {
+    const missing = checkCatalogAgainstMcp(catalog([mcpTool({ name: "x", definition: { mcpName: "x" } })]), listed);
+    expect(missing.ok ? [] : missing.problems).toEqual(['tools.0.definition: lo strumento "x" non è nell\'elenco del server MCP dell\'app']);
+    const noServer = checkCatalogAgainstMcp(catalog([mcpTool()]), null);
+    expect(noServer.ok).toBe(false);
+    // Senza strumenti MCP proposti l'elenco non serve
+    expect(checkCatalogAgainstMcp(catalog([tool]), null).ok).toBe(true);
+  });
+
+  it("voce salvata con declaredLevel: un livello più basso non passa nemmeno in revisione", () => {
+    const r = ITEM_SCHEMAS.tool.safeParse(mcpTool({ level: "L1", declaredLevel: "L2" }));
+    expect(r.success ? [] : r.error.issues.map((i) => i.message)).toEqual(['livello sotto quello dichiarato dal servizio per "send_mail"']);
+    expect(ToolProposalSchema.safeParse({ ...tool, declaredLevel: "L0" }).success).toBe(false);
+  });
+
+  it("compatibilità: le voci delle analisi precedenti (flag) si leggono con level e kind http", () => {
+    const { level: _level, kind: _kind, ...old } = tool;
+    const legacy = (flags: Record<string, boolean>) => ({ ...old, ...flags });
+    expect(normalizeStoredToolPayload(legacy({ readOnly: true, requiresConfirmation: false }))).toMatchObject({ kind: "http", level: "L0" });
+    expect(normalizeStoredToolPayload(legacy({ readOnly: false, requiresConfirmation: false }))).toMatchObject({ level: "L1" });
+    expect(normalizeStoredToolPayload(legacy({ readOnly: true, requiresConfirmation: true }))).toMatchObject({ level: "L2" });
+    const parsed = ITEM_SCHEMAS.tool.safeParse(legacy({ readOnly: false, requiresConfirmation: true }));
+    expect(parsed.success && parsed.data).toMatchObject({ kind: "http", level: "L2" });
+    expect(parsed.success && parsed.data).not.toHaveProperty("readOnly");
+    // Il catalogo di una fase nuova non accetta i flag al posto del livello
+    expect(CatalogResultSchema.safeParse({ tools: [legacy({ readOnly: true, requiresConfirmation: false })], endpoints: [] }).success).toBe(false);
   });
 });

@@ -10,5 +10,7 @@ import type { SourceType } from './sourceType';
 export interface AnalysisSources {
   code: SourceType;
   openapi: boolean;
+  /** Elenco degli strumenti del server MCP dell'app letto all'avvio (false nelle analisi precedenti) */
+  mcp: boolean;
   description: boolean;
 }

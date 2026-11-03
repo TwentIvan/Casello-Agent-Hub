@@ -22,12 +22,14 @@ import {
   abandonLocalAnalysis,
   claimLocalAnalysis,
   listOpenLocalAnalyses,
+  localMcpTools,
   localOpenApi,
   localPhaseInstructions,
   pingLocalAnalysis,
   submitLocalPhase,
   type LocalSourceOptions,
 } from "../architect/local-executor";
+import { describeMcpTool, listMcpToolsPage } from "../architect/mcp-source";
 import { FULL_READ_LIMITS, capOutput, listOperations } from "../architect/phase-loop";
 import { PHASES } from "../architect/schemas";
 import { describeOperation } from "../architect/sources";
@@ -84,7 +86,7 @@ function decodeResult(value: unknown): unknown {
 
 // --- Server -------------------------------------------------------------------------------------
 
-/** Server MCP con i sette strumenti dell'agente locale. */
+/** Server MCP con gli otto strumenti dell'agente locale. */
 export function createMcpServer(sources: LocalSourceOptions = {}): McpServer {
   const server = new McpServer(SERVER_INFO);
 
@@ -107,7 +109,7 @@ export function createMcpServer(sources: LocalSourceOptions = {}): McpServer {
   server.registerTool(
     "claim_analysis",
     {
-      description: `Prende in carico un'analisi (in coda o con la lease scaduta) e restituisce il token della lease, la fase da eseguire, la scheda dell'app (repository GitHub e branch, OpenAPI disponibile sì/no) e il commit atteso del branch (null se ignoto). La lease dura ${LOCAL_LEASE_MS / 60_000} minuti e si rinnova a ogni consegna e con ping_analysis.`,
+      description: `Prende in carico un'analisi (in coda o con la lease scaduta) e restituisce il token della lease, la fase da eseguire, la scheda dell'app (repository GitHub e branch, OpenAPI disponibile sì/no, server MCP disponibile sì/no in hasMcp) e il commit atteso del branch (null se ignoto). La lease dura ${LOCAL_LEASE_MS / 60_000} minuti e si rinnova a ogni consegna e con ping_analysis.`,
       inputSchema: {
         analysisId,
         label: z.string().describe("Nome di questa postazione, mostrato in console (es. \"Mac di Ivan\"), al massimo 100 caratteri"),
@@ -159,6 +161,30 @@ export function createMcpServer(sources: LocalSourceOptions = {}): McpServer {
             ? capOutput(describeOperation(doc, method.toUpperCase(), path), FULL_READ_LIMITS)
             : listOperations(doc, prefix, offset, FULL_READ_LIMITS).content;
         return { hasOpenApi: true, content };
+      }),
+  );
+
+  server.registerTool(
+    "read_mcp_tools",
+    {
+      description:
+        "Legge gli strumenti del server MCP dell'app (elenco letto da Casello al claim). Con `name` descrive uno strumento (livello dichiarato, descrizione, schema dei parametri); altrimenti elenca gli strumenti con il livello, filtrabili per prefisso del nome e paginabili con offset.",
+      inputSchema: {
+        analysisId,
+        leaseToken,
+        prefix: z.string().max(500).optional().describe("Solo gli strumenti il cui nome inizia così"),
+        offset: z.number().int().min(0).optional().describe("Salta i primi N strumenti dell'elenco"),
+        name: z.string().max(200).optional().describe("Nome dello strumento da descrivere, come nell'elenco"),
+      },
+    },
+    ({ analysisId: id, leaseToken: lease, prefix, offset, name }) =>
+      run("read_mcp_tools", async () => {
+        const tools = await localMcpTools(id, lease);
+        if (!tools) return { hasMcp: false, content: "L'app non ha un server MCP raggiungibile." };
+        const content = name
+          ? capOutput(describeMcpTool(tools, name), FULL_READ_LIMITS)
+          : listMcpToolsPage(tools, { prefix, offset }, FULL_READ_LIMITS).content;
+        return { hasMcp: true, content };
       }),
   );
 

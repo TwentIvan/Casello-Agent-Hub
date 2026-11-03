@@ -1,7 +1,9 @@
 import { z, type ZodType } from "zod";
 import type { analysisChapterEnum } from "@workspace/db";
-import { checkParamsSchema, checkPathPlaceholders, parseDefinition } from "../tools/definition";
-import type { HttpDefinition } from "../tools/types";
+import { TOOL_NAME, checkParamsSchema, checkPathPlaceholders, parseDefinition } from "../tools/definition";
+import { TOOL_LEVELS, type ToolLevel } from "../tools/levels";
+import type { McpToolInfo } from "../tools/mcp-client";
+import type { HttpDefinition, McpDefinition } from "../tools/types";
 
 // Schemi Zod degli esiti delle fasi dell'architetto e dei singoli elementi della proposta.
 // I messaggi sono in italiano: tornano al modello come richiesta di correzione.
@@ -19,7 +21,6 @@ const MAX_ITEMS = 100;
 const MAX_TOOLS = 200;
 const MAX_LIST = 200;
 
-const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
 const TOOL_NAME_MSG = "nome non valido: da 1 a 64 caratteri tra lettere, cifre, '_' e '-'";
 
 const TYPE_IT: Record<string, string> = {
@@ -73,7 +74,7 @@ const en = <const V extends [string, ...string[]]>(values: V) => z.enum(values, 
 const obj = <S extends z.ZodRawShape>(shape: S) => z.object(shape, P);
 
 export const EvidenceSchema = obj({
-  source: en(["code", "openapi", "description"]),
+  source: en(["code", "openapi", "mcp", "description"]),
   location: nonEmpty(),
   note: str().optional(),
 });
@@ -115,19 +116,48 @@ export const CapabilitiesResultSchema = obj({
 
 // --- Fase 3: catalogo ---
 
+const toolLevel = () => en(TOOL_LEVELS as unknown as [ToolLevel, ...ToolLevel[]]);
+const levelRank = (level: ToolLevel): number => TOOL_LEVELS.indexOf(level);
+
+/** Messaggio della proposta di uno strumento MCP sotto il livello dichiarato dal servizio. */
+export const levelBelowDeclared = (name: string) => `livello sotto quello dichiarato dal servizio per "${name}"`;
+
 export const ToolProposalSchema = obj({
   name: str(64).regex(TOOL_NAME, TOOL_NAME_MSG),
   description: str(),
-  kind: z.literal("http", { errorMap: () => ({ message: "nella fase 1 sono ammessi solo tool di tipo http" }) }),
+  kind: en(["http", "mcp"]),
   identity: identity(),
-  requiresConfirmation: bool(),
-  readOnly: bool(),
+  level: toolLevel(),
+  /**
+   * Livello dichiarato dal server MCP (solo `kind` "mcp"): non lo scrive il modello, lo aggiunge
+   * Casello dall'elenco MCP dopo la validazione della fase (vedi `checkCatalogAgainstMcp`).
+   */
+  declaredLevel: toolLevel().optional(),
   paramsSchema: jsonObject(),
   definition: jsonObject(),
   area: nonEmpty(),
   evidence: evidenceList(),
   needsVerification: bool(),
 }).superRefine((tool, ctx) => {
+  if (tool.kind === "mcp") {
+    const parsed = parseDefinition("mcp", tool.definition);
+    if (!parsed.ok) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["definition"], message: "per uno strumento MCP definition è { \"mcpName\": nome sul server MCP }" });
+      return;
+    }
+    if ((parsed.value as McpDefinition).mcpName !== tool.name) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["name"], message: "per uno strumento MCP il nome deve essere uguale a definition.mcpName" });
+    }
+    if (tool.declaredLevel !== undefined && levelRank(tool.level) < levelRank(tool.declaredLevel)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["level"], message: levelBelowDeclared(tool.name) });
+    }
+    // Lo schema dei parametri di uno strumento MCP è quello del servizio (Casello lo riprende dall'elenco)
+    return;
+  }
+  if (tool.declaredLevel !== undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["declaredLevel"], message: "solo gli strumenti MCP hanno un livello dichiarato" });
+    return;
+  }
   // Stesse regole del salvataggio di un tool: una proposta non applicabile fallisce qui
   const parsed = parseDefinition("http", tool.definition);
   if (!parsed.ok) {
@@ -144,6 +174,57 @@ export const ToolProposalSchema = obj({
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["paramsSchema"], message: placeholderError });
   }
 });
+
+/**
+ * Compatibilità con le analisi precedenti ai livelli: le voci tool già salvate hanno `readOnly` e
+ * `requiresConfirmation` al posto di `level`. Senza `level` lo si ricava come la migrazione dei tool
+ * HTTP (conferma → L2, sola lettura → L0, altrimenti L1) e `kind` è "http"; i due flag si tolgono.
+ * Serve solo a leggere e approvare le voci salvate: gli esiti nuovi delle fasi devono avere `level`.
+ */
+export function normalizeStoredToolPayload(payload: unknown): unknown {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return payload;
+  const p = payload as Record<string, unknown>;
+  if (p["level"] !== undefined || (p["readOnly"] === undefined && p["requiresConfirmation"] === undefined)) return payload;
+  const { readOnly, requiresConfirmation, ...rest } = p;
+  const level: ToolLevel = requiresConfirmation === true ? "L2" : readOnly === true ? "L0" : "L1";
+  return { ...rest, kind: rest["kind"] ?? "http", level };
+}
+
+/** Voce tool salvata (anche di un'analisi precedente ai livelli): normalizzata, poi lo schema della fase. */
+export const StoredToolProposalSchema = z.preprocess(normalizeStoredToolPayload, ToolProposalSchema);
+
+/**
+ * Controllo dei tool MCP proposti contro l'elenco letto dal server MCP dell'app (lo schema Zod non
+ * lo conosce): ogni strumento deve essere nell'elenco e il livello proposto non può essere sotto
+ * quello dichiarato. Se va bene restituisce il catalogo con, per ogni strumento MCP, il livello
+ * dichiarato e lo schema dei parametri del servizio; altrimenti i problemi, nella forma di
+ * `formatIssues` (percorso: messaggio).
+ */
+export function checkCatalogAgainstMcp(
+  catalog: CatalogResult,
+  mcpTools: McpToolInfo[] | null,
+): { ok: true; result: CatalogResult } | { ok: false; problems: string[] } {
+  const byName = new Map((mcpTools ?? []).map((t) => [t.name, t]));
+  const problems: string[] = [];
+  const tools = catalog.tools.map((tool, index) => {
+    if (tool.kind !== "mcp") return tool;
+    const info = byName.get(tool.name);
+    if (!info) {
+      problems.push(
+        mcpTools === null
+          ? `tools.${index}.kind: l'app non ha un server MCP raggiungibile: "${tool.name}" deve essere un tool http`
+          : `tools.${index}.definition: lo strumento "${tool.name}" non è nell'elenco del server MCP dell'app`,
+      );
+      return tool;
+    }
+    if (levelRank(tool.level) < levelRank(info.level)) {
+      problems.push(`tools.${index}.level: ${levelBelowDeclared(tool.name)}`);
+      return tool;
+    }
+    return { ...tool, declaredLevel: info.level, paramsSchema: info.inputSchema };
+  });
+  return problems.length ? { ok: false, problems } : { ok: true, result: { ...catalog, tools } };
+}
 
 export const EndpointProposalSchema = obj({
   title: nonEmpty(),
@@ -352,7 +433,7 @@ export const PHASE_SCHEMAS: Record<PhaseName, ZodType> = {
 
 /** Schema del payload di un elemento della proposta, per capitolo (usato nella modifica in revisione). */
 export const ITEM_SCHEMAS: Record<AnalysisChapter, ZodType> = {
-  tool: ToolProposalSchema,
+  tool: StoredToolProposalSchema,
   endpoint: EndpointProposalSchema,
   agent: AgentProposalSchema,
   skill: SkillProposalSchema,

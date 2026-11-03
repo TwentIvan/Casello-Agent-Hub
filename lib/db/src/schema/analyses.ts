@@ -14,7 +14,8 @@ export const analysisStatusEnum = pgEnum("analysis_status", [
 // Chi esegue l'analisi: il cloud di Casello o un agente locale (via MCP)
 export const analysisExecutorEnum = pgEnum("analysis_executor", ["cloud", "local"]);
 
-export type AnalysisSources = { code: "github" | "zip" | "none"; openapi: boolean; description: boolean };
+// `mcp` manca nelle analisi precedenti alla sorgente MCP (si legge come false)
+export type AnalysisSources = { code: "github" | "zip" | "none"; openapi: boolean; mcp?: boolean; description: boolean };
 export type AnalysisLogEntry = { at: string; phase: string; message: string };
 
 // Analisi dell'architetto su una app: le sorgenti restano in memoria, qui solo mappa, log ed esiti

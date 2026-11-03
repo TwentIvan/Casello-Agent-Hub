@@ -114,7 +114,7 @@ async function createAndStart(app: App, choice: ModelChoice, maxTokens: number |
     aiModelId: choice.aiModelId,
     maxTokens: maxTokens ?? ANALYSIS_DEFAULT_MAX_TOKENS,
     // Valore iniziale: l'orchestratore lo sovrascrive con le sorgenti usate davvero
-    sources: { code: zip ? "zip" : app.sourceType, openapi: false, description: !!app.functionalDescription?.trim() },
+    sources: { code: zip ? "zip" : app.sourceType, openapi: false, mcp: false, description: !!app.functionalDescription?.trim() },
   });
   void startAnalysis(row.id, zip ? { zip } : undefined);
   return row;
@@ -131,7 +131,7 @@ function createLocal(app: App, maxTokens: number | undefined) {
     aiModelId: null,
     executor: "local",
     maxTokens: maxTokens ?? ANALYSIS_DEFAULT_MAX_TOKENS,
-    sources: { code: app.sourceType, openapi: false, description: !!app.functionalDescription?.trim() },
+    sources: { code: app.sourceType, openapi: false, mcp: false, description: !!app.functionalDescription?.trim() },
   });
 }
 

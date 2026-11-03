@@ -815,6 +815,8 @@ export const ItemStatus = {
 export interface AnalysisSources {
   code: SourceType;
   openapi: boolean;
+  /** Elenco degli strumenti del server MCP dell'app letto all'avvio (false nelle analisi precedenti) */
+  mcp: boolean;
   description: boolean;
 }
 
@@ -914,7 +916,7 @@ export const AnalysisItemOrigin = {
 } as const;
 
 /**
- * Contenuto della proposta, la cui forma dipende dal capitolo
+ * Contenuto della proposta, la cui forma dipende dal capitolo. Le voci tool hanno `kind` ("http" | "mcp"), `level` ("L0".."L3", livello proposto) e, per gli strumenti MCP, `declaredLevel` (livello dichiarato dal servizio) e `definition` { mcpName }; le voci tool delle analisi precedenti ai livelli arrivano già convertite (`level` dai vecchi flag).
  */
 export type AnalysisItemPayload = { [key: string]: unknown };
 
@@ -927,7 +929,7 @@ export interface AnalysisItem {
   /** Chiave stabile nell'analisi, es. tool:rosa_squadra */
   ref: string;
   position: number;
-  /** Contenuto della proposta, la cui forma dipende dal capitolo */
+  /** Contenuto della proposta, la cui forma dipende dal capitolo. Le voci tool hanno `kind` ("http" | "mcp"), `level` ("L0".."L3", livello proposto) e, per gli strumenti MCP, `declaredLevel` (livello dichiarato dal servizio) e `definition` { mcpName }; le voci tool delle analisi precedenti ai livelli arrivano già convertite (`level` dai vecchi flag). */
   payload: AnalysisItemPayload;
   diff: ItemDiff;
   evidence: AnalysisEvidence[];

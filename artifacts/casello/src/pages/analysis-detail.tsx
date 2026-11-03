@@ -396,6 +396,7 @@ export default function AnalysisDetailPage() {
   const sources = [
     SOURCE_TYPE_LABELS[a.sources.code] ?? a.sources.code,
     ...(a.sources.openapi ? ["OpenAPI"] : []),
+    ...(a.sources.mcp ? ["MCP"] : []),
     ...(a.sources.description ? ["descrizione"] : []),
   ].join(", ");
   // Dalla partenza l'architectureMap contiene solo { repoMap }: la mappa c'è quando ha riassunto o stack

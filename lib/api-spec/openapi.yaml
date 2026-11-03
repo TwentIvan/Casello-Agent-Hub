@@ -3036,12 +3036,15 @@ components:
 
     AnalysisSources:
       type: object
-      required: [code, openapi, description]
+      required: [code, openapi, mcp, description]
       properties:
         code:
           $ref: "#/components/schemas/SourceType"
         openapi:
           type: boolean
+        mcp:
+          type: boolean
+          description: Elenco degli strumenti del server MCP dell'app letto all'avvio (false nelle analisi precedenti)
         description:
           type: boolean
 
@@ -3170,7 +3173,11 @@ components:
         payload:
           type: object
           additionalProperties: true
-          description: Contenuto della proposta, la cui forma dipende dal capitolo
+          description: >-
+            Contenuto della proposta, la cui forma dipende dal capitolo. Le voci tool hanno `kind`
+            ("http" | "mcp"), `level` ("L0".."L3", livello proposto) e, per gli strumenti MCP,
+            `declaredLevel` (livello dichiarato dal servizio) e `definition` { mcpName }; le voci tool
+            delle analisi precedenti ai livelli arrivano già convertite (`level` dai vecchi flag).
         diff:
           $ref: "#/components/schemas/ItemDiff"
         evidence:

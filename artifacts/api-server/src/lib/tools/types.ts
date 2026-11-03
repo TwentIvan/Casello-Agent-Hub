@@ -51,4 +51,6 @@ export interface AppConnection {
   userAuth: AuthConfig | null;
   serviceAuth: AuthConfig | null;
   serviceSecretEnc: string | null;
+  /** Indirizzo del server MCP dell'app (null se non ne espone uno) */
+  mcpUrl: string | null;
 }

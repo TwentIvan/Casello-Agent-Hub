@@ -85,6 +85,7 @@ describe("catalogo dei tool", () => {
       userAuth: { header: "authorization", scheme: "Bearer" },
       serviceAuth: null,
       serviceSecretEnc: null,
+      mcpUrl: null,
     });
   });
 

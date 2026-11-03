@@ -113,6 +113,7 @@ function conn(overrides: Partial<AppConnection> = {}): AppConnection {
     userAuth: { header: "Authorization", scheme: "Bearer" },
     serviceAuth: null,
     serviceSecretEnc: null,
+    mcpUrl: null,
     ...overrides,
   };
 }

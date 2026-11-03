@@ -4,6 +4,19 @@ import { usersTable } from "./users";
 import { teamTemplatesTable } from "./team-templates";
 import { skillKindEnum } from "./skills";
 
+// Forma del manifesto salvato (la valida `InstanceRoleSchema` dell'API a ogni scrittura)
+export type InstanceRoleData = {
+  key: string;
+  name: string;
+  task: string;
+  isLead: boolean;
+  runsOn: "cloud" | "node";
+  aiModelId: number | null;
+  tools: number[];
+  skills: Array<{ code: string; version: number }>;
+  localSkills: string[];
+};
+
 export const teamInstanceStatusEnum = pgEnum("team_instance_status", ["draft", "active", "closed"]);
 
 // Squadra legata a un lavoro di riferimento (app + tipo + id), copiata da un modello o creata da zero
@@ -22,7 +35,7 @@ export const teamInstancesTable = pgTable(
     refTitle: text("ref_title").notNull(),
     status: teamInstanceStatusEnum("status").notNull().default("draft"),
     // Manifesto dei ruoli dell'istanza, con le skill fissate a una versione
-    roles: jsonb("roles").notNull().default([]),
+    roles: jsonb("roles").$type<InstanceRoleData[]>().notNull().default([]),
     createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

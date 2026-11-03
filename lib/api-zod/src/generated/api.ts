@@ -1846,6 +1846,409 @@ export const GetTeamTemplateVersionResponse = zod.array(GetTeamTemplateVersionRe
 
 
 /**
+ * @summary Elenca le squadre (istanze), dalla modificata più di recente
+ */
+export const ListTeamInstancesQueryParams = zod.object({
+  "status": zod.enum(['draft', 'active', 'closed']).optional(),
+  "appId": zod.coerce.number().optional().describe('App del lavoro di riferimento'),
+  "refType": zod.coerce.string().optional(),
+  "refId": zod.coerce.string().optional()
+})
+
+export const ListTeamInstancesResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['draft', 'active', 'closed']),
+  "template": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "version": zod.number()
+}).nullable().describe('Modello di origine e versione copiata (null se creata da zero o modello eliminato)'),
+  "ref": zod.object({
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "type": zod.string(),
+  "id": zod.string(),
+  "title": zod.string()
+}),
+  "roles": zod.array(zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "model": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
+  "tools": zod.array(zod.object({
+  "id": zod.number(),
+  "appId": zod.number().optional(),
+  "appName": zod.string().optional(),
+  "name": zod.string(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional(),
+  "available": zod.boolean()
+}).describe('Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false')),
+  "skills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().optional(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "deprecated": zod.boolean(),
+  "local": zod.boolean().optional()
+}))
+}).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "localSkills": zod.array(zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string())
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "closedAt": zod.coerce.date().nullable()
+})
+export const ListTeamInstancesResponse = zod.array(ListTeamInstancesResponseItem)
+
+
+/**
+ * Con `templateId` copia la versione corrente del modello fissando ogni skill alla sua versione corrente; senza modello `roles` è obbligatorio.
+ * @summary Crea una squadra per un lavoro (da un modello o da zero)
+ */
+export const createTeamInstanceBodyNameMax = 120;
+
+export const createTeamInstanceBodyRefTypeRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const createTeamInstanceBodyRefIdMax = 100;
+
+export const createTeamInstanceBodyRefTitleMax = 300;
+
+export const createTeamInstanceBodyRolesItemKeyRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const createTeamInstanceBodyRolesItemNameMax = 80;
+
+export const createTeamInstanceBodyRolesItemTaskMax = 8000;
+
+export const createTeamInstanceBodyRolesItemSkillsItemCodeRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
+
+export const createTeamInstanceBodyRolesItemLocalSkillsItemRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
+
+
+export const CreateTeamInstanceBody = zod.object({
+  "templateId": zod.number().optional(),
+  "name": zod.string().min(1).max(createTeamInstanceBodyNameMax),
+  "ref": zod.object({
+  "appId": zod.number(),
+  "type": zod.string().regex(createTeamInstanceBodyRefTypeRegExp),
+  "id": zod.string().min(1).max(createTeamInstanceBodyRefIdMax),
+  "title": zod.string().max(createTeamInstanceBodyRefTitleMax).optional()
+}).describe('Lavoro di riferimento di una squadra'),
+  "roles": zod.array(zod.object({
+  "key": zod.string().regex(createTeamInstanceBodyRolesItemKeyRegExp),
+  "name": zod.string().min(1).max(createTeamInstanceBodyRolesItemNameMax),
+  "task": zod.string().max(createTeamInstanceBodyRolesItemTaskMax),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "aiModelId": zod.number().nullable(),
+  "tools": zod.array(zod.number()),
+  "skills": zod.array(zod.object({
+  "code": zod.string().regex(createTeamInstanceBodyRolesItemSkillsItemCodeRegExp),
+  "version": zod.number().min(1)
+})),
+  "localSkills": zod.array(zod.string().regex(createTeamInstanceBodyRolesItemLocalSkillsItemRegExp)).describe('Codici delle skill specializzate della squadra usate dal ruolo')
+}).describe('Ruolo di una squadra (manifesto in ingresso, skill fissate a una versione)')).optional().describe('Obbligatori senza modello, ignorati con il modello')
+})
+
+export const CreateTeamInstanceResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['draft', 'active', 'closed']),
+  "template": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "version": zod.number()
+}).nullable().describe('Modello di origine e versione copiata (null se creata da zero o modello eliminato)'),
+  "ref": zod.object({
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "type": zod.string(),
+  "id": zod.string(),
+  "title": zod.string()
+}),
+  "roles": zod.array(zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "model": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
+  "tools": zod.array(zod.object({
+  "id": zod.number(),
+  "appId": zod.number().optional(),
+  "appName": zod.string().optional(),
+  "name": zod.string(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional(),
+  "available": zod.boolean()
+}).describe('Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false')),
+  "skills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().optional(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "deprecated": zod.boolean(),
+  "local": zod.boolean().optional()
+}))
+}).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "localSkills": zod.array(zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string())
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "closedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Dettaglio di una squadra
+ */
+export const GetTeamInstanceParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetTeamInstanceResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['draft', 'active', 'closed']),
+  "template": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "version": zod.number()
+}).nullable().describe('Modello di origine e versione copiata (null se creata da zero o modello eliminato)'),
+  "ref": zod.object({
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "type": zod.string(),
+  "id": zod.string(),
+  "title": zod.string()
+}),
+  "roles": zod.array(zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "model": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
+  "tools": zod.array(zod.object({
+  "id": zod.number(),
+  "appId": zod.number().optional(),
+  "appName": zod.string().optional(),
+  "name": zod.string(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional(),
+  "available": zod.boolean()
+}).describe('Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false')),
+  "skills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().optional(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "deprecated": zod.boolean(),
+  "local": zod.boolean().optional()
+}))
+}).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "localSkills": zod.array(zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string())
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "closedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Tutto o niente. Le skill specializzate inviate sostituiscono quelle esistenti. Una squadra chiusa non si salva (409).
+ * @summary Salva la squadra (ruoli e skill specializzate)
+ */
+export const SaveTeamInstanceParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const saveTeamInstanceBodyNameMax = 120;
+
+export const saveTeamInstanceBodyRefTitleMax = 300;
+
+export const saveTeamInstanceBodyRolesItemKeyRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const saveTeamInstanceBodyRolesItemNameMax = 80;
+
+export const saveTeamInstanceBodyRolesItemTaskMax = 8000;
+
+export const saveTeamInstanceBodyRolesItemSkillsItemCodeRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
+
+export const saveTeamInstanceBodyRolesItemLocalSkillsItemRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
+export const saveTeamInstanceBodyLocalSkillsItemCodeRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
+export const saveTeamInstanceBodyLocalSkillsItemNameMax = 120;
+
+
+
+export const SaveTeamInstanceBody = zod.object({
+  "name": zod.string().min(1).max(saveTeamInstanceBodyNameMax),
+  "refTitle": zod.string().max(saveTeamInstanceBodyRefTitleMax).optional(),
+  "roles": zod.array(zod.object({
+  "key": zod.string().regex(saveTeamInstanceBodyRolesItemKeyRegExp),
+  "name": zod.string().min(1).max(saveTeamInstanceBodyRolesItemNameMax),
+  "task": zod.string().max(saveTeamInstanceBodyRolesItemTaskMax),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "aiModelId": zod.number().nullable(),
+  "tools": zod.array(zod.number()),
+  "skills": zod.array(zod.object({
+  "code": zod.string().regex(saveTeamInstanceBodyRolesItemSkillsItemCodeRegExp),
+  "version": zod.number().min(1)
+})),
+  "localSkills": zod.array(zod.string().regex(saveTeamInstanceBodyRolesItemLocalSkillsItemRegExp)).describe('Codici delle skill specializzate della squadra usate dal ruolo')
+}).describe('Ruolo di una squadra (manifesto in ingresso, skill fissate a una versione)')),
+  "localSkills": zod.array(zod.object({
+  "code": zod.string().regex(saveTeamInstanceBodyLocalSkillsItemCodeRegExp),
+  "name": zod.string().min(1).max(saveTeamInstanceBodyLocalSkillsItemNameMax),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string()).optional()
+}).describe('Skill specializzata di una sola squadra')),
+  "status": zod.enum(['draft', 'active']).optional()
+})
+
+export const SaveTeamInstanceResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['draft', 'active', 'closed']),
+  "template": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "version": zod.number()
+}).nullable().describe('Modello di origine e versione copiata (null se creata da zero o modello eliminato)'),
+  "ref": zod.object({
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "type": zod.string(),
+  "id": zod.string(),
+  "title": zod.string()
+}),
+  "roles": zod.array(zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "model": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
+  "tools": zod.array(zod.object({
+  "id": zod.number(),
+  "appId": zod.number().optional(),
+  "appName": zod.string().optional(),
+  "name": zod.string(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional(),
+  "available": zod.boolean()
+}).describe('Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false')),
+  "skills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().optional(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "deprecated": zod.boolean(),
+  "local": zod.boolean().optional()
+}))
+}).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "localSkills": zod.array(zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string())
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "closedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Chiude la squadra (non si riapre)
+ */
+export const CloseTeamInstanceParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CloseTeamInstanceResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['draft', 'active', 'closed']),
+  "template": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "version": zod.number()
+}).nullable().describe('Modello di origine e versione copiata (null se creata da zero o modello eliminato)'),
+  "ref": zod.object({
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "type": zod.string(),
+  "id": zod.string(),
+  "title": zod.string()
+}),
+  "roles": zod.array(zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "model": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
+  "tools": zod.array(zod.object({
+  "id": zod.number(),
+  "appId": zod.number().optional(),
+  "appName": zod.string().optional(),
+  "name": zod.string(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional(),
+  "available": zod.boolean()
+}).describe('Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false')),
+  "skills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().optional(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "deprecated": zod.boolean(),
+  "local": zod.boolean().optional()
+}))
+}).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "localSkills": zod.array(zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string())
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "closedAt": zod.coerce.date().nullable()
+})
+
+
+/**
  * Provider della tabella providers (registro e scoperti), senza quello del vecchio gateway: prima i gestiti per nome, poi quelli in arrivo, poi i non gestiti.
  * @summary Provider del registro per la creazione degli account AI
  */

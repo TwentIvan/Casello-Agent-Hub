@@ -1984,6 +1984,159 @@ export interface TeamTemplateDeleteResult {
   archived: boolean;
 }
 
+export type TeamInstanceRoleRunsOn = typeof TeamInstanceRoleRunsOn[keyof typeof TeamInstanceRoleRunsOn];
+
+
+export const TeamInstanceRoleRunsOn = {
+  cloud: 'cloud',
+  node: 'node',
+} as const;
+
+export type TeamInstanceRoleSkillsItem = {
+  /** @pattern ^[a-z0-9][a-z0-9._-]{1,63}$ */
+  code: string;
+  /** @minimum 1 */
+  version: number;
+};
+
+/**
+ * Ruolo di una squadra (manifesto in ingresso, skill fissate a una versione)
+ */
+export interface TeamInstanceRole {
+  /** @pattern ^[a-z0-9_-]{1,40}$ */
+  key: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name: string;
+  /** @maxLength 8000 */
+  task: string;
+  isLead: boolean;
+  runsOn: TeamInstanceRoleRunsOn;
+  aiModelId: number | null;
+  tools: number[];
+  skills: TeamInstanceRoleSkillsItem[];
+  /**
+     * Codici delle skill specializzate della squadra usate dal ruolo
+     * @items.pattern ^[a-z0-9][a-z0-9._-]{1,63}$
+     */
+  localSkills: string[];
+}
+
+/**
+ * Lavoro di riferimento di una squadra
+ */
+export interface TeamWorkRef {
+  appId: number;
+  /** @pattern ^[a-z0-9_-]{1,40}$ */
+  type: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  id: string;
+  /** @maxLength 300 */
+  title?: string;
+}
+
+/**
+ * Skill specializzata di una sola squadra
+ */
+export interface TeamLocalSkill {
+  /** @pattern ^[a-z0-9][a-z0-9._-]{1,63}$ */
+  code: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  kind: SkillKind;
+  content: string;
+  toolHints?: string[];
+}
+
+export interface TeamInstanceCreate {
+  templateId?: number;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  ref: TeamWorkRef;
+  /** Obbligatori senza modello, ignorati con il modello */
+  roles?: TeamInstanceRole[];
+}
+
+export type TeamInstanceSaveStatus = typeof TeamInstanceSaveStatus[keyof typeof TeamInstanceSaveStatus];
+
+
+export const TeamInstanceSaveStatus = {
+  draft: 'draft',
+  active: 'active',
+} as const;
+
+export interface TeamInstanceSave {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  /** @maxLength 300 */
+  refTitle?: string;
+  roles: TeamInstanceRole[];
+  localSkills: TeamLocalSkill[];
+  status?: TeamInstanceSaveStatus;
+}
+
+export type TeamInstanceStatus = typeof TeamInstanceStatus[keyof typeof TeamInstanceStatus];
+
+
+export const TeamInstanceStatus = {
+  draft: 'draft',
+  active: 'active',
+  closed: 'closed',
+} as const;
+
+/**
+ * Modello di origine e versione copiata (null se creata da zero o modello eliminato)
+ */
+export type TeamInstanceTemplate = {
+  id: number;
+  name: string;
+  version: number;
+} | null;
+
+export type TeamInstanceRef = {
+  appId: number;
+  appName: string;
+  type: string;
+  id: string;
+  title: string;
+};
+
+export type TeamInstanceLocalSkillsItem = {
+  code: string;
+  name: string;
+  kind: SkillKind;
+  content: string;
+  toolHints: string[];
+};
+
+export interface TeamInstance {
+  id: number;
+  name: string;
+  status: TeamInstanceStatus;
+  /** Modello di origine e versione copiata (null se creata da zero o modello eliminato) */
+  template: TeamInstanceTemplate;
+  ref: TeamInstanceRef;
+  roles: TeamRoleView[];
+  localSkills: TeamInstanceLocalSkillsItem[];
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+}
+
 /**
  * Troppe richieste
  */
@@ -2112,6 +2265,25 @@ export type ListTeamTemplatesArchived = typeof ListTeamTemplatesArchived[keyof t
 export const ListTeamTemplatesArchived = {
   true: 'true',
   false: 'false',
+} as const;
+
+export type ListTeamInstancesParams = {
+status?: ListTeamInstancesStatus;
+/**
+ * App del lavoro di riferimento
+ */
+appId?: number;
+refType?: string;
+refId?: string;
+};
+
+export type ListTeamInstancesStatus = typeof ListTeamInstancesStatus[keyof typeof ListTeamInstancesStatus];
+
+
+export const ListTeamInstancesStatus = {
+  draft: 'draft',
+  active: 'active',
+  closed: 'closed',
 } as const;
 
 export type EstimateAnalysisCostParams = {

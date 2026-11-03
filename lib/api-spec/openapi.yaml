@@ -1393,6 +1393,138 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  # ─── Istanze di squadra ─────────────────────────────────────────────────────
+
+  /team-instances:
+    get:
+      operationId: listTeamInstances
+      tags: [teams]
+      summary: Elenca le squadre (istanze), dalla modificata più di recente
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [draft, active, closed]
+        - name: appId
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: App del lavoro di riferimento
+        - name: refType
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: refId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Squadre
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamInstance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      operationId: createTeamInstance
+      tags: [teams]
+      summary: Crea una squadra per un lavoro (da un modello o da zero)
+      description: >-
+        Con `templateId` copia la versione corrente del modello fissando ogni skill alla sua versione
+        corrente; senza modello `roles` è obbligatorio.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamInstanceCreate"
+      responses:
+        "201":
+          description: Squadra creata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInstance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}:
+    get:
+      operationId: getTeamInstance
+      tags: [teams]
+      summary: Dettaglio di una squadra
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Squadra
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInstance"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: saveTeamInstance
+      tags: [teams]
+      summary: Salva la squadra (ruoli e skill specializzate)
+      description: >-
+        Tutto o niente. Le skill specializzate inviate sostituiscono quelle esistenti. Una squadra chiusa
+        non si salva (409).
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamInstanceSave"
+      responses:
+        "200":
+          description: Squadra salvata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInstance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}/close:
+    post:
+      operationId: closeTeamInstance
+      tags: [teams]
+      summary: Chiude la squadra (non si riapre)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Squadra chiusa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInstance"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   # ─── Account AI ─────────────────────────────────────────────────────────────
 
   /ai/providers:
@@ -4725,3 +4857,199 @@ components:
           type: boolean
         archived:
           type: boolean
+
+    TeamInstanceRole:
+      type: object
+      required: [key, name, task, isLead, runsOn, aiModelId, tools, skills, localSkills]
+      description: Ruolo di una squadra (manifesto in ingresso, skill fissate a una versione)
+      properties:
+        key:
+          type: string
+          pattern: "^[a-z0-9_-]{1,40}$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        task:
+          type: string
+          maxLength: 8000
+        isLead:
+          type: boolean
+        runsOn:
+          type: string
+          enum: [cloud, node]
+        aiModelId:
+          type: integer
+          nullable: true
+        tools:
+          type: array
+          items:
+            type: integer
+        skills:
+          type: array
+          items:
+            type: object
+            required: [code, version]
+            properties:
+              code:
+                type: string
+                pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+              version:
+                type: integer
+                minimum: 1
+        localSkills:
+          type: array
+          description: Codici delle skill specializzate della squadra usate dal ruolo
+          items:
+            type: string
+            pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+
+    TeamWorkRef:
+      type: object
+      required: [appId, type, id]
+      description: Lavoro di riferimento di una squadra
+      properties:
+        appId:
+          type: integer
+        type:
+          type: string
+          pattern: "^[a-z0-9_-]{1,40}$"
+        id:
+          type: string
+          minLength: 1
+          maxLength: 100
+        title:
+          type: string
+          maxLength: 300
+
+    TeamLocalSkill:
+      type: object
+      required: [code, name, kind, content]
+      description: Skill specializzata di una sola squadra
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        kind:
+          $ref: "#/components/schemas/SkillKind"
+        content:
+          type: string
+        toolHints:
+          type: array
+          items:
+            type: string
+
+    TeamInstanceCreate:
+      type: object
+      required: [name, ref]
+      properties:
+        templateId:
+          type: integer
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        ref:
+          $ref: "#/components/schemas/TeamWorkRef"
+        roles:
+          type: array
+          description: Obbligatori senza modello, ignorati con il modello
+          items:
+            $ref: "#/components/schemas/TeamInstanceRole"
+
+    TeamInstanceSave:
+      type: object
+      required: [name, roles, localSkills]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        refTitle:
+          type: string
+          maxLength: 300
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamInstanceRole"
+        localSkills:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamLocalSkill"
+        status:
+          type: string
+          enum: [draft, active]
+
+    TeamInstance:
+      type: object
+      required: [id, name, status, template, ref, roles, localSkills, createdAt, updatedAt, closedAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, closed]
+        template:
+          type: object
+          nullable: true
+          description: Modello di origine e versione copiata (null se creata da zero o modello eliminato)
+          required: [id, name, version]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            version:
+              type: integer
+        ref:
+          type: object
+          required: [appId, appName, type, id, title]
+          properties:
+            appId:
+              type: integer
+            appName:
+              type: string
+            type:
+              type: string
+            id:
+              type: string
+            title:
+              type: string
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamRoleView"
+        localSkills:
+          type: array
+          items:
+            type: object
+            required: [code, name, kind, content, toolHints]
+            properties:
+              code:
+                type: string
+              name:
+                type: string
+              kind:
+                $ref: "#/components/schemas/SkillKind"
+              content:
+                type: string
+              toolHints:
+                type: array
+                items:
+                  type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true

@@ -577,22 +577,18 @@ async function modelOwner(aiModelId: number): Promise<number | null> {
 /**
  * Le run girano nel processo dell'API: se il processo si riavvia (deploy, crash) quelle in corso non
  * finiranno mai. All'avvio si chiudono come fallite, così la UI non le mostra "in corso" per sempre.
- * Le run rimaste in pausa per conferma (meccanismo dismesso) si chiudono come annullate; le colonne
- * storiche della pausa (stato del ciclo e azione in sospeso, con gli argomenti in chiaro) si svuotano.
+ * Le run rimaste in pausa per conferma (meccanismo dismesso) si chiudono come annullate. Le colonne
+ * storiche della pausa non esistono più (le toglie `2026-11-strumenti-mcp-post.sql`): qui non si toccano.
  */
 export async function failInterruptedRuns(): Promise<{ failed: number; cancelled: number }> {
-  // Le colonne della pausa non sono più nello schema Drizzle: restano nel DB e si azzerano qui. Anche le
-  // run `running` possono averle piene (run storiche riprese dopo una pausa e interrotte).
   const failed = await db.execute(sql`
     update runs
-       set status = 'failed', error_message = ${"Esecuzione interrotta dal riavvio del server."}, finished_at = now(),
-           loop_state = null, pending_action = null, paused_at = null
+       set status = 'failed', error_message = ${"Esecuzione interrotta dal riavvio del server."}, finished_at = now()
      where status in ('pending', 'running')
     returning id`);
   const cancelled = await db.execute(sql`
     update runs
-       set status = 'cancelled', error_message = ${PAUSE_REPLACED_MESSAGE}, finished_at = now(),
-           loop_state = null, pending_action = null, paused_at = null
+       set status = 'cancelled', error_message = ${PAUSE_REPLACED_MESSAGE}, finished_at = now()
      where status = 'awaiting_client'
     returning id`);
   return { failed: failed.rows.length, cancelled: cancelled.rows.length };

@@ -55,8 +55,6 @@ CREATE TABLE "app_tools" (
 	"description" text,
 	"kind" "tool_kind" NOT NULL,
 	"identity" "tool_identity" DEFAULT 'user' NOT NULL,
-	"requires_confirmation" boolean DEFAULT false NOT NULL,
-	"read_only" boolean DEFAULT false NOT NULL,
 	"status" "tool_status" DEFAULT 'draft' NOT NULL,
 	"params_schema" jsonb DEFAULT '{"type":"object","properties":{}}'::jsonb NOT NULL,
 	"definition" jsonb NOT NULL,
@@ -83,9 +81,6 @@ CREATE TABLE "runs" (
 	"duration_ms" integer,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"finished_at" timestamp,
-	"pending_action" jsonb,
-	"loop_state" jsonb,
-	"paused_at" timestamp,
 	"prompt_tokens" integer,
 	"completion_tokens" integer
 );

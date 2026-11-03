@@ -450,35 +450,20 @@ describe("orchestrazione delle run", () => {
     expect(run.errorMessage).toContain("errore nella chiamata al modello");
   });
 
-  it("failInterruptedRuns: pending/running → failed; awaiting_client → cancelled con le colonne della pausa svuotate", async () => {
+  it("failInterruptedRuns: pending/running → failed; awaiting_client → cancelled", async () => {
     const running = await seedRun(GET_ITEM);
-    // Run storica ripresa dopo una pausa e interrotta: running con le colonne della pausa ancora piene
-    await pool.query(
-      `update runs set status = 'running', paused_at = now(),
-         loop_state = '{"messages":[]}'::jsonb, pending_action = '{"args":{"password":"segreta-running"}}'::jsonb
-       where id = $1`,
-      [running],
-    );
+    await pool.query(`update runs set status = 'running' where id = $1`, [running]);
     const [other] = await db.insert(runsTable).values({ agentId: (await getRun(running)).agentId, input: "x" }).returning();
-    // Run in pausa del vecchio meccanismo, con stato e azione in sospeso (argomenti in chiaro)
-    await pool.query(
-      `update runs set status = 'awaiting_client', paused_at = now(),
-         loop_state = '{"messages":[]}'::jsonb, pending_action = '{"args":{"password":"segreta"}}'::jsonb
-       where id = $1`,
-      [other!.id],
-    );
+    // Run in pausa del vecchio meccanismo
+    await pool.query(`update runs set status = 'awaiting_client' where id = $1`, [other!.id]);
 
     expect(await failInterruptedRuns()).toEqual({ failed: 1, cancelled: 1 });
     expect((await getRun(running)).status).toBe("failed");
-    const rawRunning = await pool.query("select loop_state, pending_action, paused_at from runs where id = $1", [running]);
-    expect(rawRunning.rows[0]).toEqual({ loop_state: null, pending_action: null, paused_at: null });
     const paused = await getRun(other!.id);
     expect(paused.status).toBe("cancelled");
     expect(paused.errorMessage).toBe(PAUSE_REPLACED_MESSAGE);
     expect(PAUSE_REPLACED_MESSAGE).toBe("conferma sostituita dalla coda delle azioni");
     expect(paused.finishedAt).not.toBeNull();
-    const raw = await pool.query("select loop_state, pending_action, paused_at from runs where id = $1", [other!.id]);
-    expect(raw.rows[0]).toEqual({ loop_state: null, pending_action: null, paused_at: null });
     expect(await failInterruptedRuns()).toEqual({ failed: 0, cancelled: 0 });
   });
 

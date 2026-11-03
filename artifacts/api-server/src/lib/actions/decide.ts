@@ -10,7 +10,7 @@ import { effectiveLevel } from "../tools/levels";
 // originali, senza il modello), rifiutare la chiude. Ogni transizione è un UPDATE condizionato sullo
 // stato, così due richieste concorrenti non eseguono due volte.
 
-export type DecideResult = { ok: true; action: PendingActionRow } | { ok: false; status: 400 | 404 | 409; message: string };
+export type DecideResult = { ok: true; action: PendingActionRow } | { ok: false; status: 400 | 404 | 409 | 500; message: string };
 
 export const ACTION_MESSAGES = {
   notFound: "azione non trovata",
@@ -18,10 +18,11 @@ export const ACTION_MESSAGES = {
   notExecutable: "lo strumento non può più essere eseguito da Casello",
   userTokenRequired: "serve il token dell'utente dell'app",
   internal: "errore interno nell'esecuzione dell'azione",
+  internalFinish: "errore interno: esito dell'azione non registrato",
   uncertain: "esito incerto: verifica sul servizio",
 } as const;
 
-const fail = (status: 400 | 404 | 409, message: string): DecideResult => ({ ok: false, status, message });
+const fail = (status: 400 | 404 | 409 | 500, message: string): DecideResult => ({ ok: false, status, message });
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -55,7 +56,7 @@ async function finish(id: number, set: { status: "done" | "failed"; result?: str
     .set({ ...set, finishedAt: new Date() })
     .where(eq(pendingActionsTable.id, id))
     .returning();
-  return row!;
+  return row;
 }
 
 export async function approveAction(
@@ -91,9 +92,13 @@ export async function approveAction(
     .returning();
   if (!claimed) return fail(409, ACTION_MESSAGES.alreadyDecided);
 
+  // `called` diventa vero appena parte la chiamata al servizio: da lì in poi un errore non prova che
+  // l'azione non sia avvenuta (es. fallisce solo la scrittura dell'esito) e l'esito è incerto.
+  let called = false;
   try {
     const args = JSON.parse(decryptSecret(action.argsEnc)) as unknown;
     const conn = await loadAppConnection(action.appId);
+    called = true;
     const out = await executeTool({
       conn,
       tool,
@@ -106,12 +111,24 @@ export async function approveAction(
     const row = out.ok
       ? await finish(action.id, { status: "done", result: content })
       : await finish(action.id, { status: "failed", errorMessage: content });
-    return { ok: true, action: row };
+    return row ? { ok: true, action: row } : fail(404, ACTION_MESSAGES.notFound);
   } catch (err) {
     // Solo il nome dell'errore: il messaggio potrebbe contenere argomenti o credenziali
     logger.error({ actionId: action.id, errName: err instanceof Error ? err.name : "unknown" }, "Esecuzione dell'azione in coda non riuscita");
-    const row = await finish(action.id, { status: "failed", errorMessage: ACTION_MESSAGES.internal });
-    return { ok: true, action: row };
+    try {
+      const row = await finish(action.id, {
+        status: "failed",
+        errorMessage: called ? ACTION_MESSAGES.uncertain : ACTION_MESSAGES.internal,
+      });
+      return row ? { ok: true, action: row } : fail(404, ACTION_MESSAGES.notFound);
+    } catch (finishErr) {
+      // La riga resta `executing`: all'avvio diventa «incerto» (failInterruptedActions)
+      logger.error(
+        { actionId: action.id, errName: finishErr instanceof Error ? finishErr.name : "unknown" },
+        "Esito dell'azione in coda non registrato",
+      );
+      return fail(500, ACTION_MESSAGES.internalFinish);
+    }
   }
 }
 

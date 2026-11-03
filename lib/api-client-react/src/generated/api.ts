@@ -1934,7 +1934,7 @@ export const deleteAppTool = async (id: number,
 
 
 
-export const getDeleteAppToolMutationOptions = <TError = ErrorType<NotFoundResponse>,
+export const getDeleteAppToolMutationOptions = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAppTool>>, TError,{id: number;toolId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteAppTool>>, TError,{id: number;toolId: number}, TContext> => {
 
@@ -1963,12 +1963,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type DeleteAppToolMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAppTool>>>
 
-    export type DeleteAppToolMutationError = ErrorType<NotFoundResponse>
+    export type DeleteAppToolMutationError = ErrorType<NotFoundResponse | ErrorResponse>
 
     /**
  * @summary Elimina un tool dal catalogo
  */
-export const useDeleteAppTool = <TError = ErrorType<NotFoundResponse>,
+export const useDeleteAppTool = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAppTool>>, TError,{id: number;toolId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof deleteAppTool>>,

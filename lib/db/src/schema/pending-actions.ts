@@ -28,7 +28,7 @@ export const pendingActionsTable = pgTable(
       .references(() => appsTable.id, { onDelete: "cascade" }),
     toolId: integer("tool_id")
       .notNull()
-      .references(() => appToolsTable.id, { onDelete: "cascade" }),
+      .references(() => appToolsTable.id, { onDelete: "restrict" }),
     runId: integer("run_id").references(() => runsTable.id, { onDelete: "set null" }),
     agentId: integer("agent_id").references(() => agentsTable.id, { onDelete: "set null" }),
     // Argomenti cifrati con CASELLO_SECRET_KEY e gli stessi con i parametri x-sensitive oscurati

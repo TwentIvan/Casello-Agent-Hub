@@ -98,7 +98,11 @@ export function createPendingActionsRouter(): IRouter {
       return;
     }
     const row = await loadQueued(userId, decided.action.number);
-    res.json(parse(toQueuedAction(row!)));
+    if (!row) {
+      res.status(404).json({ error: ACTION_MESSAGES.notFound });
+      return;
+    }
+    res.json(parse(toQueuedAction(row)));
   }
 
   router.post("/pending-actions/:number/approve", actionDecideRateLimit, async (req, res) => {

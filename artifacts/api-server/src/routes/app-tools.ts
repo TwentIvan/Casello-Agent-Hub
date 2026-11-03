@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Response } from "express";
 import { and, asc, eq } from "drizzle-orm";
-import { db, appsTable, appToolsTable } from "@workspace/db";
+import { db, appsTable, appToolsTable, pendingActionsTable } from "@workspace/db";
 import {
   ListAppToolsParams,
   ListAppToolsResponse,
@@ -17,7 +17,7 @@ import {
 import { TOOL_NAME, checkParamsSchema, checkPathPlaceholders, parseDefinition } from "../lib/tools/definition";
 import { isValidOverride, type ToolLevel } from "../lib/tools/levels";
 import type { HttpDefinition, ToolKind } from "../lib/tools/types";
-import { isUniqueViolation } from "../lib/pg-errors";
+import { isForeignKeyViolation, isUniqueViolation } from "../lib/pg-errors";
 import { loadAppConnection } from "../lib/tools/catalog";
 import { McpError, listMcpTools } from "../lib/tools/mcp-client";
 import { syncMcpTools } from "../lib/tools/mcp-sync";
@@ -26,6 +26,8 @@ import { parseRequest } from "../middlewares/error-handler";
 
 // Catalogo dei tool di un'app: i tool appartengono all'app e si assegnano agli agenti con
 // PUT /agents/:id/tools.
+
+const TOOL_HAS_ACTIONS = "il tool ha azioni in coda o già decise: disattivalo invece di eliminarlo";
 
 const router: IRouter = Router();
 
@@ -167,10 +169,37 @@ router.patch("/apps/:id/tools/:toolId", async (req, res) => {
 
 router.delete("/apps/:id/tools/:toolId", async (req, res) => {
   const { id, toolId } = parseRequest(DeleteAppToolParams, req.params);
-  const [tool] = await db
-    .delete(appToolsTable)
+  const [exists] = await db
+    .select({ id: appToolsTable.id })
+    .from(appToolsTable)
     .where(and(eq(appToolsTable.id, toolId), eq(appToolsTable.appId, id)))
-    .returning();
+    .limit(1);
+  if (!exists) {
+    res.status(404).json({ error: "Strumento non trovato" });
+    return;
+  }
+  // Lo storico delle approvazioni non si perde: un tool con azioni in coda o già decise si disattiva
+  const [queued] = await db
+    .select({ id: pendingActionsTable.id })
+    .from(pendingActionsTable)
+    .where(eq(pendingActionsTable.toolId, toolId))
+    .limit(1);
+  if (queued) {
+    res.status(409).json({ error: TOOL_HAS_ACTIONS });
+    return;
+  }
+  let tool;
+  try {
+    [tool] = await db
+      .delete(appToolsTable)
+      .where(and(eq(appToolsTable.id, toolId), eq(appToolsTable.appId, id)))
+      .returning();
+  } catch (err) {
+    // Un'azione è entrata in coda tra il controllo e la cancellazione (FK RESTRICT)
+    if (!isForeignKeyViolation(err)) throw err;
+    res.status(409).json({ error: TOOL_HAS_ACTIONS });
+    return;
+  }
   if (!tool) {
     res.status(404).json({ error: "Strumento non trovato" });
     return;

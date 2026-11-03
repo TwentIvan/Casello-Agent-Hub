@@ -520,6 +520,12 @@ paths:
           description: Tool eliminato
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: Il tool ha azioni in coda o già decise (si disattiva invece di eliminarlo)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /apps/{id}/agent-models:
     put:

@@ -110,6 +110,27 @@ beforeEach(async () => {
   tool = { ...row!, paramsSchema: SCHEMA, definition: row!.definition as CatalogTool["definition"] };
 });
 
+describe("tool e app con azioni in coda", () => {
+  it("DELETE del tool con azioni in coda → 409, il tool resta; senza azioni → 204", async () => {
+    const n = await enqueue();
+    const res = await api("DELETE", `/apps/${appId}/tools/${tool.id}`);
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("il tool ha azioni in coda o già decise: disattivalo invece di eliminarlo");
+    expect((await db.select().from(appToolsTable)).length).toBe(1);
+    expect((await api("GET", `/pending-actions/${n}`)).status).toBe(200);
+
+    await pool.query("DELETE FROM pending_actions");
+    expect((await api("DELETE", `/apps/${appId}/tools/${tool.id}`)).status).toBe(204);
+  });
+
+  it("DELETE dell'app porta con sé lo storico della coda", async () => {
+    await enqueue();
+    expect((await api("DELETE", `/apps/${appId}`)).status).toBe(204);
+    expect((await pool.query("SELECT 1 FROM pending_actions")).rowCount).toBe(0);
+    expect((await pool.query("SELECT 1 FROM app_tools")).rowCount).toBe(0);
+  });
+});
+
 describe("GET /pending-actions", () => {
   it("elenca per default le pending, numero decrescente; filtro per stato; degli altri utenti niente", async () => {
     const n1 = await enqueue();

@@ -134,11 +134,13 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   proprietario = chi possiede l'account AI del modello della run. Controllo del testo (`text-check.ts`): segnaposto e
   menzioni sugli argomenti oscurati. Max 50 azioni `pending` per utente. Argomenti cifrati (`args_enc`), copia pubblica
   oscurata (`args_public`).
-- Route (`routes/pending-actions.ts`, 20/min): `GET /api/pending-actions`, `GET /api/pending-actions/:number`,
+- Route (`routes/pending-actions.ts`; il limite di 20/min vale solo per approvare e rifiutare, non per le GET): `GET /api/pending-actions`, `GET /api/pending-actions/:number`,
   `POST …/approve` (con `userToken` se l'identità del tool è `user`), `POST …/reject` (nota ≤ 500 caratteri). Ambiti
   token `api:read` (GET) e `api:write` (approvare/rifiutare). Esecuzione esattamente una volta: UPDATE condizionato
   `pending` → `executing`; all'avvio le azioni `executing` diventano `failed` («esito incerto: verifica sul servizio»).
-  Nessuna scadenza.
+  Nessuna scadenza. `pending_actions.tool_id` è `ON DELETE RESTRICT`: eliminare un tool con azioni in coda o già
+  decise è rifiutato (409 «il tool ha azioni in coda o già decise: disattivalo invece di eliminarlo»), si disattiva;
+  eliminando un'app si elimina anche il suo storico della coda (stessa transazione).
 - Console: pagina «Da confermare» con contatore (`pendingActions` in `/api/dashboard/stats`).
 - Migrazioni: `docs/migrations/2026-11-strumenti-mcp.sql` (additiva: PRIMA del merge) e
   `2026-11-strumenti-mcp-post.sql` (DOPO il deploy: toglie `app_tools.requires_confirmation|read_only` e

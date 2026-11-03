@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, pool, appsTable, appToolsTable, pendingActionsTable, usersTable, type InsertAppTool } from "@workspace/db";
 import { encryptSecret } from "../secrets";
@@ -205,6 +205,45 @@ describe("approveAction", () => {
     const out = await approveAction(userA, n, {});
 
     expect(out.ok && out.action.result).toBe("impostata a ***");
+  });
+
+  // Il servizio ha già eseguito l'azione: se poi fallisce la scrittura dell'esito non è «errore interno»
+  function failUpdates(failing: number[]) {
+    const real = db.update.bind(db);
+    let n = 0;
+    return vi.spyOn(db, "update").mockImplementation(((table: Parameters<typeof db.update>[0]) => {
+      n += 1;
+      if (failing.includes(n)) throw new Error("db giù: password segreta-123");
+      return real(table);
+    }) as typeof db.update);
+  }
+
+  it("scrittura dell'esito fallita dopo la chiamata: voce failed con esito incerto, non errore interno", async () => {
+    const mcp = await startFake();
+    await seedApp(mcp.url);
+    const n = await enqueue(await seedTool("service"));
+    const spy = failUpdates([2]); // 1 = prenotazione, 2 = esito
+
+    const out = await approveAction(userA, n, {});
+    spy.mockRestore();
+
+    expect(mcp.calls).toHaveLength(1);
+    expect(out.ok && out.action).toMatchObject({ status: "failed", errorMessage: "esito incerto: verifica sul servizio" });
+  });
+
+  it("anche la scrittura di ripiego fallisce: 500 fisso, voce executing (incerta al prossimo avvio)", async () => {
+    const mcp = await startFake();
+    await seedApp(mcp.url);
+    const n = await enqueue(await seedTool("service"));
+    const spy = failUpdates([2, 3]);
+
+    const out = await approveAction(userA, n, {});
+    spy.mockRestore();
+
+    expect(out).toEqual({ ok: false, status: 500, message: "errore interno: esito dell'azione non registrato" });
+    expect((await rowOf(userA, n)).status).toBe("executing");
+    expect(await failInterruptedActions()).toBe(1);
+    expect(await rowOf(userA, n)).toMatchObject({ status: "failed", errorMessage: "esito incerto: verifica sul servizio" });
   });
 
   it("voce di un altro utente o inesistente: 404; già decisa: 409", async () => {

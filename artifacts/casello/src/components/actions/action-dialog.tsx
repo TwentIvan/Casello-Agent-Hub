@@ -54,6 +54,8 @@ export function ActionDialog({
   };
   const approve = useApprovePendingAction({
     mutation: {
+      // Il token dell'utente passa nelle variabili: non deve restare nella cache delle mutazioni
+      gcTime: 0,
       onSuccess: (saved) => {
         toast({ title: `Azione n. ${saved.number} approvata`, description: saved.result ?? undefined });
         afterDecision(saved);

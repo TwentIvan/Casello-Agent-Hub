@@ -46,6 +46,11 @@ describe("migrazione 2026-11-strumenti-mcp", () => {
     expect((await db.query<any>("SELECT status FROM pending_actions")).rows).toEqual([{ status: "pending" }]);
   });
 
+  it("elimina un tool con azioni in coda: rifiutato (FK RESTRICT)", async () => {
+    await expect(db.exec("DELETE FROM app_tools WHERE name = 'ro'")).rejects.toThrow(/foreign key|violates/i);
+    expect((await db.query<any>("SELECT 1 FROM app_tools WHERE name = 'ro'")).rows).toHaveLength(1);
+  });
+
   it("accetta il tipo mcp", async () => {
     await db.exec(`INSERT INTO app_tools (app_id, name, kind, definition) SELECT id, 'm', 'mcp', '{}'::jsonb FROM apps`);
     expect((await levels()).m).toBe("L2");

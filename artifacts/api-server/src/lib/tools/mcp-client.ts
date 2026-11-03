@@ -87,6 +87,11 @@ interface WireState {
   tooLarge: boolean;
 }
 
+/** Oscura le credenziali anche nella forma con gli escape JSON (valori dentro un JSON serializzato). */
+function redactWithJson(text: string, secrets: string[]): string {
+  return redact(text, [...secrets, ...secrets.map((v) => JSON.stringify(v).slice(1, -1))]);
+}
+
 function newWireState(): WireState {
   return { status: null, redirected: false, tooLarge: false };
 }
@@ -94,6 +99,9 @@ function newWireState(): WireState {
 /** `fetch` per il trasporto: niente redirect, timeout, risposta POST limitata in byte. */
 function limitedFetch(fetchImpl: typeof fetch, signal: AbortSignal, state: WireState): typeof fetch {
   return async (input, init) => {
+    // Nessun flusso SSE autonomo: 405 = "il server non ne offre", l'SDK prosegue senza (niente
+    // richiesta con credenziali, niente flusso illimitato, lo stato resta quello delle POST)
+    if (init?.method === "GET") return new Response(null, { status: 405 });
     const res = await fetchImpl(input, {
       ...init,
       redirect: "manual",
@@ -190,9 +198,10 @@ export async function listMcpTools(
   const endpoint = resolveMcpEndpoint(conn);
   if (!endpoint) throw new McpError(MCP_MESSAGES.unreachable);
   let headers: Record<string, string> = {};
+  let secrets: string[] = [];
   if (conn.serviceAuth && conn.serviceSecretEnc) {
     try {
-      headers = mcpAuthHeaders(conn, "service").headers;
+      ({ headers, secrets } = mcpAuthHeaders(conn, "service"));
     } catch (err) {
       if (err instanceof ToolError) throw new McpError(MCP_MESSAGES.auth);
       throw err;
@@ -217,7 +226,10 @@ export async function listMcpTools(
         }
         cursor = page.nextCursor;
       } while (cursor);
-      return tools;
+      // Un servizio che rimanda la credenziale in descrizioni o schemi non la porta nel catalogo
+      return secrets.length === 0
+        ? tools
+        : (JSON.parse(redactWithJson(JSON.stringify(tools), secrets)) as McpToolInfo[]);
     });
   } catch (err) {
     if (err instanceof McpError) throw err;
@@ -281,7 +293,7 @@ export async function callMcpTool(input: {
           signal: c.signal,
           timeout: timeoutMs,
         });
-        return { text: redact(renderResult(res), auth.secrets), isError: res["isError"] === true };
+        return { text: redactWithJson(renderResult(res), auth.secrets), isError: res["isError"] === true };
       },
     );
     return text.isError

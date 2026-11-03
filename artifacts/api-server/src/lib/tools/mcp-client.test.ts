@@ -98,6 +98,35 @@ describe("listMcpTools", () => {
     expect(tools[0]?.inputSchema).toMatchObject({ type: "object", properties: { q: { type: "string" } } });
   });
 
+  it("oscura la credenziale rimandata in descrizione e schema", async () => {
+    fake = await startFakeMcp({
+      tools: [
+        {
+          name: "a",
+          description: `usa ${SERVICE_SECRET}`,
+          inputSchema: { properties: { q: { type: "string", description: `chiave ${SERVICE_SECRET}` } } },
+        },
+      ],
+    });
+    const [t] = await listMcpTools(conn());
+    expect(t?.description).toBe("usa ***");
+    expect(JSON.stringify(t?.inputSchema)).not.toContain(SERVICE_SECRET);
+    expect(JSON.stringify(t?.inputSchema)).toContain("chiave ***");
+  });
+
+  it("non apre il flusso SSE (nessuna GET verso il server)", async () => {
+    const methods: string[] = [];
+    const real = fetch;
+    fake = await startFakeMcp({ tools: [{ name: "a" }] });
+    const spy = ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      methods.push(init?.method ?? "GET");
+      return real(input, init);
+    }) as typeof fetch;
+    await listMcpTools(conn(), { fetchImpl: spy });
+    expect(methods.length).toBeGreaterThan(0);
+    expect(methods).not.toContain("GET");
+  });
+
   it("più di 500 strumenti: risposta non valida", async () => {
     const many: FakeTool[] = Array.from({ length: 501 }, (_, i) => ({ name: `t${i}` }));
     fake = await startFakeMcp({ tools: many });
@@ -193,6 +222,17 @@ describe("callMcpTool", () => {
     fake = await startFakeMcp({ tools: [{ name: "echo", text: `chiave ${SERVICE_SECRET} ok` }] });
     const res = await callMcpTool({ conn: conn(), tool: mcpTool("echo"), args: {} });
     expect(res.content).toBe("chiave *** ok");
+  });
+
+  it("il segreto con virgolette in structuredContent diventa ***", async () => {
+    const secret = 'se"gre\\to';
+    fake = await startFakeMcp({ tools: [{ name: "echo", structuredContent: { k: `x ${secret} y` } }] });
+    const res = await callMcpTool({
+      conn: conn({ serviceSecretEnc: encryptSecret(secret) }),
+      tool: mcpTool("echo"),
+      args: {},
+    });
+    expect(res.content).toBe('{"k":"x *** y"}');
   });
 
   it("strumento sconosciuto: non trovato", async () => {

@@ -477,3 +477,40 @@ CREATE INDEX "analysis_items_issue_idx" ON "analysis_items" USING btree ("issue_
 -- Modello predefinito dell'utente per gli agenti che Casello crea (null = nessuno)
 ALTER TABLE "users" ADD COLUMN "default_ai_model_id" integer;
 ALTER TABLE "users" ADD CONSTRAINT "users_default_ai_model_id_ai_models_id_fk" FOREIGN KEY ("default_ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action;
+
+-- Strumenti MCP, livelli d'azione e coda delle azioni da confermare
+ALTER TYPE "public"."tool_kind" ADD VALUE 'mcp';
+CREATE TYPE "public"."tool_level" AS ENUM('L0', 'L1', 'L2', 'L3');
+CREATE TYPE "public"."pending_action_status" AS ENUM('pending', 'executing', 'done', 'failed', 'rejected');
+ALTER TABLE "app_tools" ADD COLUMN "level" "tool_level" DEFAULT 'L2' NOT NULL;
+ALTER TABLE "app_tools" ADD COLUMN "level_override" "tool_level";
+ALTER TABLE "apps" ADD COLUMN "mcp_url" text;
+CREATE TABLE "pending_actions" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"number" integer NOT NULL,
+	"app_id" integer NOT NULL,
+	"tool_id" integer NOT NULL,
+	"run_id" integer,
+	"agent_id" integer,
+	"args_enc" text NOT NULL,
+	"args_public" jsonb NOT NULL,
+	"recipient" text NOT NULL,
+	"summary" text NOT NULL,
+	"status" "pending_action_status" DEFAULT 'pending' NOT NULL,
+	"result" text,
+	"error_message" text,
+	"decided_by" integer,
+	"decision_note" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"decided_at" timestamp,
+	"finished_at" timestamp,
+	CONSTRAINT "pending_actions_user_number_unique" UNIQUE("user_id","number"),
+	CONSTRAINT "pending_actions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "pending_actions_app_id_apps_id_fk" FOREIGN KEY ("app_id") REFERENCES "public"."apps"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "pending_actions_tool_id_app_tools_id_fk" FOREIGN KEY ("tool_id") REFERENCES "public"."app_tools"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "pending_actions_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE set null ON UPDATE no action,
+	CONSTRAINT "pending_actions_run_id_runs_id_fk" FOREIGN KEY ("run_id") REFERENCES "public"."runs"("id") ON DELETE set null ON UPDATE no action,
+	CONSTRAINT "pending_actions_decided_by_users_id_fk" FOREIGN KEY ("decided_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action
+);
+CREATE INDEX "pending_actions_user_status_idx" ON "pending_actions" USING btree ("user_id", "status");

@@ -131,6 +131,8 @@ function tool(
     identity: "user",
     requiresConfirmation: false,
     readOnly: true,
+    level: "L2",
+    levelOverride: null,
     status: "active",
     paramsSchema,
     definition,

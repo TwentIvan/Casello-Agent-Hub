@@ -27,6 +27,8 @@ const existingTool = (over: Partial<AppTool> = {}): AppTool => ({
   identity: "user",
   requiresConfirmation: false,
   readOnly: true,
+  level: "L2",
+  levelOverride: null,
   status: "active",
   // chiavi in ordine diverso: jsonb non conserva l'ordine
   paramsSchema: { properties: { q: { type: "string" } }, type: "object" },

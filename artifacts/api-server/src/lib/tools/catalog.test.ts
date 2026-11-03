@@ -103,6 +103,8 @@ function tool(paramsSchema: Record<string, unknown>): CatalogTool {
     identity: "user",
     requiresConfirmation: false,
     readOnly: false,
+    level: "L2",
+    levelOverride: null,
     status: "active",
     paramsSchema,
     definition: { method: "POST", path: "/login", paramLocations: {} },

@@ -1,6 +1,6 @@
 import type { AppTool } from "@workspace/db";
 
-export type ToolKind = "http" | "ui" | "composite";
+export type ToolKind = "http" | "ui" | "composite" | "mcp";
 export type ToolIdentity = "user" | "service";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";

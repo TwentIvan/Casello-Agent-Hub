@@ -97,7 +97,7 @@ export function parseDefinition(
   kind: ToolKind,
   definition: unknown,
 ): { ok: true; value: ParsedDefinition } | { ok: false; error: string } {
-  const schema = schemasByKind[kind];
+  const schema = (schemasByKind as Partial<Record<ToolKind, z.ZodTypeAny>>)[kind];
   if (!schema) return { ok: false, error: `tipo di tool sconosciuto: ${String(kind)}` };
   const parsed = schema.safeParse(definition);
   if (parsed.success) return { ok: true, value: parsed.data as ParsedDefinition };

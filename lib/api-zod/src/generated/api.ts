@@ -2249,6 +2249,104 @@ export const CloseTeamInstanceResponse = zod.object({
 
 
 /**
+ * Differenze tra la versione del modello copiata e quella corrente (confronto di contenuto per chiave del ruolo) e skill del catalogo fissate a una versione non più recente. Squadra chiusa → 409.
+ * @summary Aggiornamenti proposti alla squadra
+ */
+export const GetTeamInstanceUpdatesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetTeamInstanceUpdatesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string().describe('Deterministico: tipo:chiave del ruolo[:campo|codice della skill]'),
+  "type": zod.enum(['role_added', 'role_removed', 'role_changed', 'skill_added', 'skill_removed', 'skill_version']),
+  "roleKey": zod.string(),
+  "roleName": zod.string(),
+  "field": zod.enum(['name', 'task', 'isLead', 'runsOn', 'aiModelId', 'tools']).optional(),
+  "from": zod.unknown().optional().describe('Valore attuale nella squadra (role_changed)'),
+  "to": zod.unknown().optional().describe('Valore proposto dal modello (role_changed) o ruolo da aggiungere (role_added)'),
+  "skillCode": zod.string().optional(),
+  "fromVersion": zod.number().optional(),
+  "toVersion": zod.number().optional()
+}).describe('Aggiornamento proposto a una squadra'))
+})
+
+
+/**
+ * Tutto o niente. Se una voce non è più tra quelle attuali o la squadra è cambiata nel frattempo → 409 «aggiornamenti cambiati: ricarica». Se non restano voci del modello la squadra passa alla sua versione corrente.
+ * @summary Applica gli aggiornamenti scelti
+ */
+export const ApplyTeamInstanceUpdatesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const applyTeamInstanceUpdatesBodyIdsItemMax = 200;
+
+export const applyTeamInstanceUpdatesBodyIdsMax = 100;
+
+
+
+export const ApplyTeamInstanceUpdatesBody = zod.object({
+  "ids": zod.array(zod.string().max(applyTeamInstanceUpdatesBodyIdsItemMax)).min(1).max(applyTeamInstanceUpdatesBodyIdsMax).describe('Id delle voci da applicare, senza ripetizioni')
+})
+
+export const ApplyTeamInstanceUpdatesResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['draft', 'active', 'closed']),
+  "template": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "version": zod.number()
+}).nullable().describe('Modello di origine e versione copiata (null se creata da zero o modello eliminato)'),
+  "ref": zod.object({
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "type": zod.string(),
+  "id": zod.string(),
+  "title": zod.string()
+}),
+  "roles": zod.array(zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "model": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
+  "tools": zod.array(zod.object({
+  "id": zod.number(),
+  "appId": zod.number().optional(),
+  "appName": zod.string().optional(),
+  "name": zod.string(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional(),
+  "available": zod.boolean()
+}).describe('Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false')),
+  "skills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().optional(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "deprecated": zod.boolean(),
+  "local": zod.boolean().optional()
+}))
+}).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "localSkills": zod.array(zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string())
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "closedAt": zod.coerce.date().nullable()
+})
+
+
+/**
  * Provider della tabella providers (registro e scoperti), senza quello del vecchio gateway: prima i gestiti per nome, poi quelli in arrivo, poi i non gestiti.
  * @summary Provider del registro per la creazione degli account AI
  */

@@ -132,6 +132,32 @@ describe("route delle squadre", () => {
     expect(again.json.error).toBe("modello archiviato");
   });
 
+  it("aggiornamenti: elenco, applicazione, id ripetuti 400, voce non valida 409, chiusa 409", async () => {
+    const r = { key: "capo", name: "Capo", task: "", isLead: true, runsOn: "cloud", aiModelId: modelId, tools: [], skills: [] };
+    const t = await api("POST", "/team-templates", { name: "Mod", roles: [r] });
+    const inst = await api("POST", "/team-instances", { name: "S", templateId: t.json.id, ref: { appId, type: "wi", id: "1" } });
+    expect((await api("GET", `/team-instances/${inst.json.id}/updates`)).json).toEqual({ items: [] });
+    await api("PUT", `/team-templates/${t.json.id}`, { name: "Mod", roles: [{ ...r, task: "Nuovo" }] });
+    const list = await api("GET", `/team-instances/${inst.json.id}/updates`);
+    expect(list.status, list.text).toBe(200);
+    expect(list.json.items).toEqual([
+      { id: "role_changed:capo:task", type: "role_changed", roleKey: "capo", roleName: "Capo", field: "task", from: "", to: "Nuovo" },
+    ]);
+    const path = `/team-instances/${inst.json.id}/updates/apply`;
+    expect((await api("POST", path, { ids: ["role_changed:capo:task", "role_changed:capo:task"] })).status).toBe(400);
+    expect((await api("POST", path, { ids: [] })).status).toBe(400);
+    const stale = await api("POST", path, { ids: ["role_changed:capo:name"] });
+    expect(stale.status).toBe(409);
+    expect(stale.json.error).toBe("aggiornamenti cambiati: ricarica");
+    const applied = await api("POST", path, { ids: ["role_changed:capo:task"] });
+    expect(applied.status, applied.text).toBe(200);
+    expect(applied.json).toMatchObject({ template: { version: 2 }, roles: [{ task: "Nuovo" }] });
+    await api("POST", `/team-instances/${inst.json.id}/close`);
+    const closed = await api("GET", `/team-instances/${inst.json.id}/updates`);
+    expect(closed.status).toBe(409);
+    expect(closed.json.error).toBe("squadra chiusa");
+  });
+
   it("con un token: GET con api:read, scrittura solo con api:write", async () => {
     const rt = (await createApiToken(userId, "lettura", 30, ["api:read"])).token;
     const wt = (await createApiToken(userId, "scrittura", 30, ["api:write"])).token;

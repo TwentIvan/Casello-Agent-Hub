@@ -2089,6 +2089,59 @@ export interface TeamInstanceSave {
   status?: TeamInstanceSaveStatus;
 }
 
+export type TeamUpdateItemType = typeof TeamUpdateItemType[keyof typeof TeamUpdateItemType];
+
+
+export const TeamUpdateItemType = {
+  role_added: 'role_added',
+  role_removed: 'role_removed',
+  role_changed: 'role_changed',
+  skill_added: 'skill_added',
+  skill_removed: 'skill_removed',
+  skill_version: 'skill_version',
+} as const;
+
+export type TeamUpdateItemField = typeof TeamUpdateItemField[keyof typeof TeamUpdateItemField];
+
+
+export const TeamUpdateItemField = {
+  name: 'name',
+  task: 'task',
+  isLead: 'isLead',
+  runsOn: 'runsOn',
+  aiModelId: 'aiModelId',
+  tools: 'tools',
+} as const;
+
+/**
+ * Aggiornamento proposto a una squadra
+ */
+export interface TeamUpdateItem {
+  /** Deterministico: tipo:chiave del ruolo[:campo|codice della skill] */
+  id: string;
+  type: TeamUpdateItemType;
+  roleKey: string;
+  roleName: string;
+  field?: TeamUpdateItemField;
+  /** Valore attuale nella squadra (role_changed) */
+  from?: unknown;
+  /** Valore proposto dal modello (role_changed) o ruolo da aggiungere (role_added) */
+  to?: unknown;
+  skillCode?: string;
+  fromVersion?: number;
+  toVersion?: number;
+}
+
+export interface TeamUpdateApply {
+  /**
+     * Id delle voci da applicare, senza ripetizioni
+     * @minItems 1
+     * @maxItems 100
+     * @items.maxLength 200
+     */
+  ids: string[];
+}
+
 export type TeamInstanceStatus = typeof TeamInstanceStatus[keyof typeof TeamInstanceStatus];
 
 
@@ -2285,6 +2338,10 @@ export const ListTeamInstancesStatus = {
   active: 'active',
   closed: 'closed',
 } as const;
+
+export type GetTeamInstanceUpdates200 = {
+  items: TeamUpdateItem[];
+};
 
 export type EstimateAnalysisCostParams = {
 aiModelId: number;

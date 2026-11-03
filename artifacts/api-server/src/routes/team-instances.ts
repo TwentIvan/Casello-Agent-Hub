@@ -11,11 +11,17 @@ import {
   CloseTeamInstanceParams,
   CloseTeamInstanceResponse,
   CreateTeamInstanceResponse,
+  GetTeamInstanceUpdatesParams,
+  GetTeamInstanceUpdatesResponse,
+  ApplyTeamInstanceUpdatesParams,
+  ApplyTeamInstanceUpdatesBody,
+  ApplyTeamInstanceUpdatesResponse,
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
 import { InstanceError, closeInstance, createInstance, getInstance, listInstances, saveInstance } from "../lib/teams/instances";
 import { TeamRuleError } from "../lib/teams/rules";
 import { TemplateError } from "../lib/teams/templates";
+import { applyUpdates, getUpdates } from "../lib/teams/updates";
 import { parseRequest } from "../middlewares/error-handler";
 
 // Squadre (istanze di modelli) legate a un lavoro. Con un token personale valgono gli ambiti per metodo.
@@ -63,6 +69,25 @@ router.post("/team-instances/:id/close", async (req, res) => {
   const { id } = parseRequest(CloseTeamInstanceParams, req.params);
   await guarded(res, async () => {
     res.json(CloseTeamInstanceResponse.parse(await closeInstance(id)));
+  });
+});
+
+router.get("/team-instances/:id/updates", async (req, res) => {
+  const { id } = parseRequest(GetTeamInstanceUpdatesParams, req.params);
+  await guarded(res, async () => {
+    res.json(GetTeamInstanceUpdatesResponse.parse({ items: await getUpdates(id) }));
+  });
+});
+
+router.post("/team-instances/:id/updates/apply", async (req, res) => {
+  const { id } = parseRequest(ApplyTeamInstanceUpdatesParams, req.params);
+  const { ids } = parseRequest(ApplyTeamInstanceUpdatesBody, req.body);
+  if (new Set(ids).size !== ids.length) {
+    res.status(400).json({ error: "aggiornamenti ripetuti" });
+    return;
+  }
+  await guarded(res, async () => {
+    res.json(ApplyTeamInstanceUpdatesResponse.parse(await applyUpdates(currentUserId(req), id, ids)));
   });
 });
 

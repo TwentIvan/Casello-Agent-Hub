@@ -1525,6 +1525,65 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /team-instances/{id}/updates:
+    get:
+      operationId: getTeamInstanceUpdates
+      tags: [teams]
+      summary: Aggiornamenti proposti alla squadra
+      description: >-
+        Differenze tra la versione del modello copiata e quella corrente (confronto di contenuto per chiave
+        del ruolo) e skill del catalogo fissate a una versione non più recente. Squadra chiusa → 409.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Aggiornamenti proposti
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TeamUpdateItem"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}/updates/apply:
+    post:
+      operationId: applyTeamInstanceUpdates
+      tags: [teams]
+      summary: Applica gli aggiornamenti scelti
+      description: >-
+        Tutto o niente. Se una voce non è più tra quelle attuali o la squadra è cambiata nel frattempo → 409
+        «aggiornamenti cambiati: ricarica». Se non restano voci del modello la squadra passa alla sua versione
+        corrente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamUpdateApply"
+      responses:
+        "200":
+          description: Squadra aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInstance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   # ─── Account AI ─────────────────────────────────────────────────────────────
 
   /ai/providers:
@@ -4983,6 +5042,49 @@ components:
         status:
           type: string
           enum: [draft, active]
+
+    TeamUpdateItem:
+      type: object
+      required: [id, type, roleKey, roleName]
+      description: Aggiornamento proposto a una squadra
+      properties:
+        id:
+          type: string
+          description: "Deterministico: tipo:chiave del ruolo[:campo|codice della skill]"
+        type:
+          type: string
+          enum: [role_added, role_removed, role_changed, skill_added, skill_removed, skill_version]
+        roleKey:
+          type: string
+        roleName:
+          type: string
+        field:
+          type: string
+          enum: [name, task, isLead, runsOn, aiModelId, tools]
+        from:
+          description: Valore attuale nella squadra (role_changed)
+        to:
+          description: Valore proposto dal modello (role_changed) o ruolo da aggiungere (role_added)
+        skillCode:
+          type: string
+        fromVersion:
+          type: integer
+        toVersion:
+          type: integer
+
+    TeamUpdateApply:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          description: Id delle voci da applicare, senza ripetizioni
+          items:
+            type: string
+            maxLength: 200
 
     TeamInstance:
       type: object

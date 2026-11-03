@@ -75,6 +75,7 @@ import type {
   EstimateAnalysisCostParams,
   ExportAnalysisIssuesParams,
   ForbiddenResponse,
+  GetTeamInstanceUpdates200,
   GithubInstallations,
   GithubRepo,
   HealthStatus,
@@ -117,6 +118,7 @@ import type {
   TeamTemplate,
   TeamTemplateDeleteResult,
   TeamTemplateInput,
+  TeamUpdateApply,
   TooManyRequestsResponse,
   UnauthorizedResponse
 } from './api.schemas';
@@ -5019,6 +5021,156 @@ export const useCloseTeamInstance = <TError = ErrorType<NotFoundResponse | Confl
         TContext
       > => {
       return useMutation(getCloseTeamInstanceMutationOptions(options));
+    }
+
+export const getGetTeamInstanceUpdatesUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/updates`
+}
+
+/**
+ * Differenze tra la versione del modello copiata e quella corrente (confronto di contenuto per chiave del ruolo) e skill del catalogo fissate a una versione non più recente. Squadra chiusa → 409.
+ * @summary Aggiornamenti proposti alla squadra
+ */
+export const getTeamInstanceUpdates = async (id: number, options?: RequestInit): Promise<GetTeamInstanceUpdates200> => {
+
+  return customFetch<GetTeamInstanceUpdates200>(getGetTeamInstanceUpdatesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamInstanceUpdatesQueryKey = (id: number,) => {
+    return [
+    `/api/team-instances/${id}/updates`
+    ] as const;
+    }
+
+
+export const getGetTeamInstanceUpdatesQueryOptions = <TData = Awaited<ReturnType<typeof getTeamInstanceUpdates>>, TError = ErrorType<NotFoundResponse | ConflictResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamInstanceUpdates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamInstanceUpdatesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamInstanceUpdates>>> = ({ signal }) => getTeamInstanceUpdates(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamInstanceUpdates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamInstanceUpdatesQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamInstanceUpdates>>>
+export type GetTeamInstanceUpdatesQueryError = ErrorType<NotFoundResponse | ConflictResponse>
+
+
+/**
+ * @summary Aggiornamenti proposti alla squadra
+ */
+
+export function useGetTeamInstanceUpdates<TData = Awaited<ReturnType<typeof getTeamInstanceUpdates>>, TError = ErrorType<NotFoundResponse | ConflictResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamInstanceUpdates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamInstanceUpdatesQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getApplyTeamInstanceUpdatesUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/updates/apply`
+}
+
+/**
+ * Tutto o niente. Se una voce non è più tra quelle attuali o la squadra è cambiata nel frattempo → 409 «aggiornamenti cambiati: ricarica». Se non restano voci del modello la squadra passa alla sua versione corrente.
+ * @summary Applica gli aggiornamenti scelti
+ */
+export const applyTeamInstanceUpdates = async (id: number,
+    teamUpdateApply: TeamUpdateApply, options?: RequestInit): Promise<TeamInstance> => {
+
+  return customFetch<TeamInstance>(getApplyTeamInstanceUpdatesUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamUpdateApply)
+  }
+);}
+
+
+
+
+export const getApplyTeamInstanceUpdatesMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyTeamInstanceUpdates>>, TError,{id: number;data: BodyType<TeamUpdateApply>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof applyTeamInstanceUpdates>>, TError,{id: number;data: BodyType<TeamUpdateApply>}, TContext> => {
+
+const mutationKey = ['applyTeamInstanceUpdates'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof applyTeamInstanceUpdates>>, {id: number;data: BodyType<TeamUpdateApply>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  applyTeamInstanceUpdates(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApplyTeamInstanceUpdatesMutationResult = NonNullable<Awaited<ReturnType<typeof applyTeamInstanceUpdates>>>
+    export type ApplyTeamInstanceUpdatesMutationBody = BodyType<TeamUpdateApply>
+    export type ApplyTeamInstanceUpdatesMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Applica gli aggiornamenti scelti
+ */
+export const useApplyTeamInstanceUpdates = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyTeamInstanceUpdates>>, TError,{id: number;data: BodyType<TeamUpdateApply>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof applyTeamInstanceUpdates>>,
+        TError,
+        {id: number;data: BodyType<TeamUpdateApply>},
+        TContext
+      > => {
+      return useMutation(getApplyTeamInstanceUpdatesMutationOptions(options));
     }
 
 export const getListAiProvidersUrl = () => {

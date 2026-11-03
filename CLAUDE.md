@@ -45,7 +45,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `lib/api-client-react/src/generated/` — client generato da Orval: NON modificare a mano
 - `lib/db/src/schema/` — schema Drizzle, una tabella per file (apps, agents, app_tools, agent_tools, runs,
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
-  ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals)
+  ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals,
+  skills, skill_versions, team_templates, team_template_versions, team_instances, team_instance_skills)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -95,6 +96,11 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   ed etichette (`content.ts`), prenotazione/creazione/aggiornamento (`service.ts`), client GitHub e token `issues: write`
   (`issues.ts`); route in `src/routes/plan-issues.ts` (`POST /api/apps/:id/plan/issues`, `POST /api/apps/:id/plan/issues/refresh`);
   console in `artifacts/casello/src/components/plan/` (`create-issues-dialog.tsx`, `issues-summary.tsx`, `issue-badge.tsx`)
+- `artifacts/api-server/src/lib/teams/` — squadre: skill del catalogo (`skills.ts`), manifesto dei ruoli (`manifest.ts`),
+  regole di salvataggio (`rules.ts`), modelli (`templates.ts`), istanze (`instances.ts`), aggiornamenti proposti
+  (`updates.ts`), salva come modello (`save-as-template.ts`); route in `src/routes/skills.ts`, `team-templates.ts` e
+  `team-instances.ts`; console: pagine `skills.tsx`, `skill-detail.tsx`, `team-templates.tsx`, `team-template-detail.tsx`,
+  `teams.tsx`, `team-detail.tsx` in `artifacts/casello/src/pages/` (route `/skills`, `/team-templates`, `/teams`; vedi "Squadre (definizione)")
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
 - `artifacts/api-server/src/lib/mcp/` e `lib/architect/local-executor.ts` — server MCP `/mcp` e coda/lease delle analisi locali
 - `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
@@ -145,6 +151,67 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Migrazioni: `docs/migrations/2026-11-strumenti-mcp.sql` (additiva: PRIMA del merge) e
   `2026-11-strumenti-mcp-post.sql` (DOPO il deploy: toglie `app_tools.requires_confirmation|read_only` e
   `runs.pending_action|loop_state|paused_at`). Il codice non legge più quelle colonne.
+
+## Squadre (definizione)
+
+- Spec: `docs/superpowers/specs/2026-11-03-casello-squadre-definizione-design.md` (sottoprogetto 3a). Una squadra è un
+  insieme di ruoli con un capo, skill e strumenti: si definisce come **modello** riusabile e si applica a un lavoro come
+  **istanza** (es. The Hub Up · WI 1174). Struttura a stella: un solo capo, gli altri ruoli riferiscono a lui. Squadra
+  trasversale alle app: ogni ruolo sceglie strumenti (`app_tools`) di qualunque app; l'istanza è legata a un'app e a un
+  lavoro (`ref_app_id`, `ref_type`, `ref_id`, `ref_title`).
+- **Skill** (`skills` + `skill_versions`): codice unico (`^[a-z0-9][a-z0-9._-]{1,63}$`), tipo `casello` (istruzioni, max
+  20 000 caratteri, non vuote; `tool_hints` informativi) o `node` (nome della skill sul nodo, `^[a-zA-Z0-9:_-]{1,100}$`, niente
+  `tool_hints`). Versioni immutabili: `PATCH` di `content`/`toolHints` crea la versione `current_version + 1` (riga bloccata
+  FOR UPDATE; max 200 versioni → 409), nome e descrizione si cambiano senza nuova versione. Deprecata (`POST …/deprecate`):
+  resta dove già usata, non entra in ruoli nuovi.
+- **Modello** (`team_templates` + `team_template_versions`): ogni `PUT` (nome, descrizione e ruoli insieme, tutto o niente)
+  crea una versione con il suo manifesto jsonb; le skill nel modello sono codici senza versione. Nome unico tra i non
+  archiviati (409 «nome già usato»); modello archiviato → 409 «modello archiviato» (non si salva né si copia). `DELETE`
+  cancella se non ha istanze, altrimenti archivia e risponde `{deleted, archived}`.
+- **Manifesto del ruolo** (`manifest.ts`): `key` (`^[a-z0-9_-]{1,40}$`, stabile tra versioni), `name` (1..80), `task`
+  (max 8 000), `isLead`, `runsOn` `cloud`|`node`, `aiModelId`, `tools` (id di `app_tools`), `skills`; nell'istanza le skill
+  sono `{code, version}` fissate e c'è `localSkills` (codici delle skill specializzate).
+- **Regole** (`rules.ts`, `validateRoles`, a ogni salvataggio di modello o istanza; violazione → 400 con messaggio fisso in
+  `TEAM_MESSAGES`, nulla salvato): un solo capo («una squadra ha esattamente un capo»); 1..20 ruoli, `key` e `name` unici,
+  ≤ 30 skill per ruolo (catalogo + specializzate); `cloud` → `aiModelId` di un modello dei propri account («modello non
+  disponibile»), `node` → `aiModelId` null; skill `node` solo su ruoli `node`; skill inesistenti o deprecate rifiutate,
+  salvo quelle già nel ruolo della versione precedente (stessa `key`); nelle istanze la versione fissata deve esistere;
+  strumenti `active` e con livello effettivo ≠ L3 («lo strumento <nome> non può essere usato da una squadra»), salvo
+  quelli già nel ruolo precedente. La validazione legge dal pool ed è SEMPRE fuori dalla transazione di scrittura.
+  Strumento poi disattivato o L3 resta nel ruolo e si legge con `available: false` (eliminato: nome «strumento eliminato»).
+- **Istanza** (`team_instances`, `roles` jsonb, `team_instance_skills`): `POST /team-instances` copia il manifesto della
+  versione corrente del modello fissando ogni skill alla sua `current_version` (`template_version`), `draft`; senza modello
+  i `roles` sono obbligatori. `ref_title` di default `<tipo> · <id>`. Skill specializzate (max 100 per istanza, codice
+  unico per istanza e con il formato del catalogo, stesse regole di contenuto delle skill): `PUT` sostituisce ruoli e
+  skill specializzate insieme, può portare `status` `draft`↔`active`; `POST …/close` chiude (non si riapre né si salva più:
+  409 «squadra chiusa», anche su `GET …/updates`). `ref_app_id` è `RESTRICT`, `template_id` `SET NULL`.
+- **Aggiornamenti proposti** (`updates.ts`): `GET /api/team-instances/:id/updates` confronta il modello corrente con la
+  versione copiata (`template_version`) e le skill con la loro versione corrente. Tipi: `role_added`, `role_removed`,
+  `role_changed` (per campo: nome, compito, luogo, modello, strumenti, capo), `skill_added`, `skill_removed`, `skill_version`;
+  `id` stabile (es. `role_changed:<key>:<campo>`). Una voce compare solo se il modello è cambiato rispetto alla versione
+  copiata E l'istanza non ha già il valore proposto: le modifiche a mano e i valori già uguali non generano voci.
+  `POST …/updates/apply` con `{ids}` (senza ripetizioni, 400 «aggiornamenti ripetuti»): tutto o niente, valida il
+  risultato (es. senza capo → 400), un id non più attuale o un'istanza cambiata nel frattempo → 409 «aggiornamenti
+  cambiati: ricarica». `template_version` passa alla versione corrente solo se non restano voci del modello (le
+  `skill_version` non contano).
+- **Salva come modello** (`POST …/save-as-template`, 201): `{mode: "new" | "new_version", name?, promote?: [{localCode, code}]}`
+  (max 100). `new` richiede il nome (400) e crea un modello con le skill del catalogo senza versione; le specializzate
+  elencate in `promote` entrano nel catalogo (v1) con il codice nuovo (già usato → 409, formato non valido → 400, ripetizioni
+  → 400), le altre vengono tolte; `new_version` crea la versione successiva del modello d'origine, che ne conserva nome e
+  descrizione (409 se l'istanza non ha modello o è archiviato). Tutto o niente, in una transazione.
+- Route: `GET|POST /api/skills`, `GET|PATCH /api/skills/:code`, `POST …/deprecate`, `GET …/versions`, `GET …/versions/:version`;
+  `GET|POST /api/team-templates` (`archived`), `GET|PUT|DELETE /api/team-templates/:id`, `GET …/versions/:version`;
+  `GET|POST /api/team-instances` (filtri `status`, `appId`, `refType`, `refId`), `GET|PUT /api/team-instances/:id`,
+  `POST …/close`, `GET …/updates`, `POST …/updates/apply`, `POST …/save-as-template`. Con un token personale valgono gli
+  ambiti per metodo (`api:read` / `api:write`); errori con `{error}` in italiano, mai il testo del DB.
+- Console: voci di menu «Skill» (elenco con filtri, scheda con versioni e confronto), «Modelli di squadra» (ruoli, capo
+  evidenziato, editor) e «Squadre» (istanze, skill specializzate, riquadro «Aggiornamenti disponibili», «Salva come
+  modello», «Attiva»/«Chiudi»); niente scorrimento orizzontale a 1280 px.
+- Migrazione: `docs/migrations/2026-11-squadre.sql` (additiva e idempotente, nessuna modifica a tabelle esistenti, niente
+  `-post`): da applicare in produzione PRIMA del merge e da segnalare nella PR; riportata in `docs/schema-casello.sql`.
+- Non ancora fatto: 3b esecuzione (il capo assegna compiti, compiti ed esiti, PLAN, eventi, bollettino, centralino su
+  `/mcp`: un'istanza oggi si definisce ma non gira) e 4 nodo locale (esecuzione dei ruoli `node`, verifica delle skill
+  presenti sul nodo). Organizzazioni e policy dei dati (2) e The Hub Up (5) restano fuori.
 
 ## Modelli AI (account AI)
 

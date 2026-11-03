@@ -154,6 +154,11 @@ export interface App {
      * @nullable
      */
   internalBaseUrl?: string | null;
+  /**
+     * Indirizzo del server MCP dell'app
+     * @nullable
+     */
+  mcpUrl?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
   /** Indica se il segreto di servizio è impostato (il valore non è mai esposto) */
@@ -201,6 +206,11 @@ export interface AppInput {
   baseUrl: string;
   /** @nullable */
   internalBaseUrl?: string | null;
+  /**
+     * Indirizzo del server MCP dell'app
+     * @nullable
+     */
+  mcpUrl?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
   /** Segreto di servizio (solo scrittura, salvato cifrato) */
@@ -238,6 +248,11 @@ export interface AppUpdate {
   baseUrl?: string;
   /** @nullable */
   internalBaseUrl?: string | null;
+  /**
+     * Indirizzo del server MCP dell'app
+     * @nullable
+     */
+  mcpUrl?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
   /**
@@ -382,6 +397,20 @@ export const ToolKind = {
   http: 'http',
   ui: 'ui',
   composite: 'composite',
+  mcp: 'mcp',
+} as const;
+
+/**
+ * Livello d'azione: L0 lettura, L1 azione reversibile, L2 con conferma, L3 vietata
+ */
+export type ToolLevel = typeof ToolLevel[keyof typeof ToolLevel];
+
+
+export const ToolLevel = {
+  L0: 'L0',
+  L1: 'L1',
+  L2: 'L2',
+  L3: 'L3',
 } as const;
 
 export type ToolStatus = typeof ToolStatus[keyof typeof ToolStatus];
@@ -417,8 +446,10 @@ export interface AppTool {
   description?: string | null;
   kind: ToolKind;
   identity: ToolIdentity;
-  requiresConfirmation: boolean;
-  readOnly: boolean;
+  /** Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura) */
+  level: ToolLevel;
+  /** Livello scelto dall'utente, mai sotto `level` */
+  levelOverride: ToolLevel | null;
   status: ToolStatus;
   /** JSON Schema dei parametri accettati dal tool */
   paramsSchema: AppToolParamsSchema;
@@ -445,8 +476,10 @@ export interface AppToolInput {
   description?: string | null;
   kind: ToolKind;
   identity?: ToolIdentity;
-  requiresConfirmation?: boolean;
-  readOnly?: boolean;
+  /** Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura) */
+  level?: ToolLevel;
+  /** Livello scelto dall'utente, mai sotto `level` */
+  levelOverride?: ToolLevel | null;
   status?: ToolStatus;
   paramsSchema?: AppToolInputParamsSchema;
   definition: AppToolInputDefinition;
@@ -466,8 +499,10 @@ export interface AppToolUpdate {
   description?: string | null;
   kind?: ToolKind;
   identity?: ToolIdentity;
-  requiresConfirmation?: boolean;
-  readOnly?: boolean;
+  /** Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura) */
+  level?: ToolLevel;
+  /** Livello scelto dall'utente, mai sotto `level` */
+  levelOverride?: ToolLevel | null;
   status?: ToolStatus;
   paramsSchema?: AppToolUpdateParamsSchema;
   definition?: AppToolUpdateDefinition;

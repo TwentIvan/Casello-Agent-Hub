@@ -24,7 +24,7 @@ import { AppToolDialog } from "@/components/apps/app-tool-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { TOOL_IDENTITY_LABELS, TOOL_STATUS_LABELS } from "@/lib/tool-labels";
+import { TOOL_IDENTITY_LABELS, TOOL_LEVEL_LABELS, TOOL_STATUS_LABELS } from "@/lib/tool-labels";
 import { cn } from "@/lib/utils";
 
 const STATUS_STYLES: Record<AppTool["status"], string> = {
@@ -115,8 +115,7 @@ export function ToolCatalog({ appId }: { appId: number }) {
                   <TableHead className="hidden sm:table-cell">Tipo</TableHead>
                   <TableHead className="hidden md:table-cell">Chiamata</TableHead>
                   <TableHead className="hidden lg:table-cell">Identità</TableHead>
-                  <TableHead className="hidden lg:table-cell">Conferma</TableHead>
-                  <TableHead className="hidden lg:table-cell">Sola lettura</TableHead>
+                  <TableHead className="hidden lg:table-cell">Livello</TableHead>
                   <TableHead>Stato</TableHead>
                   <TableHead className="w-12 pr-4">
                     <span className="sr-only">Azioni</span>
@@ -137,8 +136,9 @@ export function ToolCatalog({ appId }: { appId: number }) {
                       {endpointOf(tool)}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">{TOOL_IDENTITY_LABELS[tool.identity]}</TableCell>
-                    <TableCell className="hidden lg:table-cell">{tool.requiresConfirmation ? "Sì" : "No"}</TableCell>
-                    <TableCell className="hidden lg:table-cell">{tool.readOnly ? "Sì" : "No"}</TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      {TOOL_LEVEL_LABELS[tool.levelOverride ?? tool.level]}
+                    </TableCell>
                     <TableCell>
                       <Badge variant="outline" className={cn("border-transparent", STATUS_STYLES[tool.status])}>
                         {TOOL_STATUS_LABELS[tool.status]}

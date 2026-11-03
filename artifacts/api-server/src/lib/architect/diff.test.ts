@@ -25,9 +25,7 @@ const existingTool = (over: Partial<AppTool> = {}): AppTool => ({
   description: "Elenco squadre",
   kind: "http",
   identity: "user",
-  requiresConfirmation: false,
-  readOnly: true,
-  level: "L2",
+  level: "L0",
   levelOverride: null,
   status: "active",
   // chiavi in ordine diverso: jsonb non conserva l'ordine

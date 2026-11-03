@@ -84,7 +84,7 @@ describe("applyItem: tool", () => {
   it("un tool new valido viene creato active, con prove e verifica", async () => {
     await applyItem(await item("tool", "new", toolPayload()), appId);
     const [t] = await tools();
-    expect(t).toMatchObject({ name: "list_teams", status: "active", needsVerification: true, readOnly: true });
+    expect(t).toMatchObject({ name: "list_teams", status: "active", needsVerification: true, level: "L0" });
     expect(t!.evidence).toEqual([{ source: "code", location: "src/a.ts:1" }]);
   });
 
@@ -110,7 +110,7 @@ describe("applyItem: tool", () => {
     await applyItem(await item("tool", "new", toolPayload()), appId);
     await db.update(appToolsTable).set({ status: "disabled" }).where(eq(appToolsTable.appId, appId));
     await applyItem(await item("tool", "changed", toolPayload({ description: "nuova", readOnly: false })), appId);
-    expect((await tools())[0]).toMatchObject({ description: "nuova", readOnly: false, status: "active" });
+    expect((await tools())[0]).toMatchObject({ description: "nuova", level: "L1", status: "active" });
     await db.update(appToolsTable).set({ status: "draft" }).where(eq(appToolsTable.appId, appId));
     await applyItem(await item("tool", "changed", toolPayload({ description: "ancora" })), appId);
     expect((await tools())[0]).toMatchObject({ description: "ancora", status: "active" });

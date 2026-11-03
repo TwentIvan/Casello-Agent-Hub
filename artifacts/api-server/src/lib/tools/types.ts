@@ -22,7 +22,11 @@ export interface CompositeDefinition {
   output: Record<string, string>;
 }
 
-export type ToolDefinition = HttpDefinition | UiDefinition | CompositeDefinition;
+export interface McpDefinition {
+  mcpName: string;
+}
+
+export type ToolDefinition = HttpDefinition | UiDefinition | CompositeDefinition | McpDefinition;
 
 // Riga di `app_tools` con schema dei parametri e definizione tipizzati
 export type CatalogTool = Omit<AppTool, "paramsSchema" | "definition"> & {

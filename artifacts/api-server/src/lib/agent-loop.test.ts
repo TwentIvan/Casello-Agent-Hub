@@ -20,8 +20,8 @@ function makeTool(overrides: Partial<CatalogTool> & { name: string }): CatalogTo
     description: `Descrizione di ${overrides.name}`,
     kind: "http",
     identity: "user",
-    requiresConfirmation: false,
-    readOnly: false,
+    level: "L1",
+    levelOverride: null,
     status: "active",
     paramsSchema: { type: "object", properties: {} },
     definition: { method: "GET", path: "/x", paramLocations: {} },
@@ -33,12 +33,12 @@ function makeTool(overrides: Partial<CatalogTool> & { name: string }): CatalogTo
   } as CatalogTool;
 }
 
-const leggiRosa = makeTool({ name: "leggi_rosa", description: "Legge la rosa", readOnly: true });
-const leggiCalendario = makeTool({ name: "leggi_calendario", readOnly: true });
+const leggiRosa = makeTool({ name: "leggi_rosa", description: "Legge la rosa", level: "L0" });
+const leggiCalendario = makeTool({ name: "leggi_calendario", level: "L0" });
 const scambia = makeTool({
   name: "proponi_scambio",
   description: "Propone uno scambio",
-  requiresConfirmation: true,
+  level: "L2",
   definition: { method: "POST", path: "/scambi", paramLocations: {} },
 });
 const apriPagina = makeTool({ name: "apri_pagina", kind: "ui", definition: { action: "navigate" } });
@@ -327,7 +327,7 @@ describe("runAgentLoop", () => {
   });
 
   it("riassunto con valori non stringa e descrizione mancante", async () => {
-    const senzaDescrizione = makeTool({ name: "muovi", description: null, requiresConfirmation: true });
+    const senzaDescrizione = makeTool({ name: "muovi", description: null, level: "L2" });
     const { deps } = makeDeps([callTools([{ id: "c1", name: "muovi", args: '{"n":3,"opz":{"x":true}}' }])], {
       tools: [senzaDescrizione],
     });
@@ -413,7 +413,7 @@ describe("runAgentLoop", () => {
   });
 
   it("le chiamate non readOnly sono eseguite in sequenza", async () => {
-    const scrivi = makeTool({ name: "scrivi", readOnly: false });
+    const scrivi = makeTool({ name: "scrivi", level: "L1" });
     const started: string[] = [];
     const resolvers: ((r: ToolResult) => void)[] = [];
     const { deps } = makeDeps(
@@ -601,7 +601,7 @@ describe("runAgentLoop", () => {
     const cambiaPassword = makeTool({
       name: "cambia_password",
       description: "Cambia la password",
-      requiresConfirmation: true,
+      level: "L2",
       paramsSchema: {
         type: "object",
         properties: { utente: { type: "string" }, password: { type: "string", "x-sensitive": true } },

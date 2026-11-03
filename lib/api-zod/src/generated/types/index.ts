@@ -165,6 +165,7 @@ export * from './startZipAnalysisParams';
 export * from './toolEvidence';
 export * from './toolIdentity';
 export * from './toolKind';
+export * from './toolLevel';
 export * from './toolStatus';
 export * from './tooManyRequestsResponse';
 export * from './unauthorizedResponse';

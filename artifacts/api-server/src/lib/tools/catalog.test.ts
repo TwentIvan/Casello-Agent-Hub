@@ -27,6 +27,9 @@ async function seed() {
       { appId: app!.id, name: "list_a", kind: "http", status: "active", definition: HTTP_DEF },
       { appId: app!.id, name: "list_b", kind: "http", status: "active", definition: HTTP_DEF },
       { appId: app!.id, name: "draft_c", kind: "http", status: "draft", definition: HTTP_DEF },
+      // L0 alzato a L3 dall'utente: livello effettivo vietato, non va offerto
+      { appId: app!.id, name: "blocked_e", kind: "http", status: "active", level: "L0", levelOverride: "L3", definition: HTTP_DEF },
+      { appId: app!.id, name: "mcp_f", kind: "mcp", status: "active", level: "L1", definition: { mcpName: "cerca" } },
       // Definizione non più valida: va saltata
       { appId: app!.id, name: "broken_d", kind: "http", status: "active", definition: { method: "GET" } },
       // Fase 1: nessun client esegue tool ui o composti, non vanno offerti al modello
@@ -60,10 +63,10 @@ describe("catalogo dei tool", () => {
     await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
   });
 
-  it("l'agente general vede tutti i tool http active dell'app e non i draft né ui/composite", async () => {
+  it("l'agente general vede i tool http e mcp active dell'app, non i draft, ui/composite né i L3", async () => {
     const { general } = await seed();
     const tools = await loadAgentTools(general.id);
-    expect(tools.map((t) => t.name).sort()).toEqual(["list_a", "list_b"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["list_a", "list_b", "mcp_f"]);
     expect(tools[0]!.definition).toMatchObject({ method: "GET", path: "/items" });
   });
 
@@ -101,8 +104,6 @@ function tool(paramsSchema: Record<string, unknown>): CatalogTool {
     description: "Accede",
     kind: "http",
     identity: "user",
-    requiresConfirmation: false,
-    readOnly: false,
     level: "L2",
     levelOverride: null,
     status: "active",

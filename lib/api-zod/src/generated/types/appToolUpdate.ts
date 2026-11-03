@@ -10,6 +10,7 @@ import type { AppToolUpdateParamsSchema } from './appToolUpdateParamsSchema';
 import type { ToolEvidence } from './toolEvidence';
 import type { ToolIdentity } from './toolIdentity';
 import type { ToolKind } from './toolKind';
+import type { ToolLevel } from './toolLevel';
 import type { ToolStatus } from './toolStatus';
 
 export interface AppToolUpdate {
@@ -19,8 +20,10 @@ export interface AppToolUpdate {
   description?: string | null;
   kind?: ToolKind;
   identity?: ToolIdentity;
-  requiresConfirmation?: boolean;
-  readOnly?: boolean;
+  /** Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura) */
+  level?: ToolLevel;
+  /** Livello scelto dall'utente, mai sotto `level` */
+  levelOverride?: ToolLevel | null;
   status?: ToolStatus;
   paramsSchema?: AppToolUpdateParamsSchema;
   definition?: AppToolUpdateDefinition;

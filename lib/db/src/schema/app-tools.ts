@@ -31,8 +31,6 @@ export const appToolsTable = pgTable(
     description: text("description"),
     kind: toolKindEnum("kind").notNull(),
     identity: toolIdentityEnum("identity").notNull().default("user"),
-    requiresConfirmation: boolean("requires_confirmation").notNull().default(false),
-    readOnly: boolean("read_only").notNull().default(false),
     level: toolLevelEnum("level").notNull().default("L2"),
     // Livello scelto dall'utente al posto di quello proposto (null = nessuna deroga)
     levelOverride: toolLevelEnum("level_override"),

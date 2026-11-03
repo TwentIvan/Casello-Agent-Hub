@@ -13,6 +13,7 @@ import {
   DeleteAppToolParams,
 } from "@workspace/api-zod";
 import { checkParamsSchema, checkPathPlaceholders, parseDefinition } from "../lib/tools/definition";
+import { isValidOverride, type ToolLevel } from "../lib/tools/levels";
 import type { HttpDefinition, ToolKind } from "../lib/tools/types";
 import { isUniqueViolation } from "../lib/pg-errors";
 import { parseRequest } from "../middlewares/error-handler";
@@ -25,6 +26,8 @@ const router: IRouter = Router();
 // Il nome diventa il nome della function del modello: stesse regole dei provider
 const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
 const DEFAULT_PARAMS_SCHEMA = { type: "object", properties: {} };
+const OVERRIDE_ONLY_RAISES = "il livello può solo essere alzato";
+const MCP_LEVEL_READ_ONLY = "il livello dei tool MCP è dichiarato dal servizio";
 const DUPLICATE_NAME = "Esiste già uno strumento con questo nome nell'app";
 
 /** Errore di validazione in italiano, o null se nome, definizione e schema sono coerenti. */
@@ -38,6 +41,18 @@ function validateTool(name: string, kind: ToolKind, definition: unknown, paramsS
   if (schemaError) return schemaError;
   if (kind === "http") return checkPathPlaceholders(parsed.value as HttpDefinition, paramsSchema as object);
   return null;
+}
+
+/** Regole sui livelli: `level` dei tool MCP solo dal servizio, deroga mai sotto il livello. */
+function validateLevels(
+  kind: ToolKind,
+  body: { level?: ToolLevel; levelOverride?: ToolLevel | null },
+  current: { level: ToolLevel; levelOverride: ToolLevel | null } | null,
+): string | null {
+  if (kind === "mcp" && body.level !== undefined) return MCP_LEVEL_READ_ONLY;
+  const declared = body.level ?? current?.level ?? "L2";
+  const override = body.levelOverride !== undefined ? body.levelOverride : (current?.levelOverride ?? null);
+  return isValidOverride(declared, override) ? null : OVERRIDE_ONLY_RAISES;
 }
 
 async function appExists(id: number): Promise<boolean> {
@@ -62,7 +77,7 @@ router.post("/apps/:id/tools", async (req, res) => {
   if (!(await appExists(id))) return appNotFound(res);
 
   const paramsSchema = body.paramsSchema ?? DEFAULT_PARAMS_SCHEMA;
-  const error = validateTool(body.name, body.kind, body.definition, paramsSchema);
+  const error = validateTool(body.name, body.kind, body.definition, paramsSchema) ?? validateLevels(body.kind, body, null);
   if (error) {
     res.status(400).json({ error });
     return;
@@ -94,12 +109,14 @@ router.patch("/apps/:id/tools/:toolId", async (req, res) => {
   }
 
   // Si valida il tool risultante: cambiare solo kind, definizione o schema deve restare coerente
-  const error = validateTool(
-    body.name ?? current.name,
-    body.kind ?? current.kind,
-    body.definition ?? current.definition,
-    body.paramsSchema ?? current.paramsSchema,
-  );
+  const kind = body.kind ?? current.kind;
+  const error =
+    validateTool(
+      body.name ?? current.name,
+      kind,
+      body.definition ?? current.definition,
+      body.paramsSchema ?? current.paramsSchema,
+    ) ?? validateLevels(kind, body, current);
   if (error) {
     res.status(400).json({ error });
     return;

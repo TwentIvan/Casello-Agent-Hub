@@ -97,7 +97,7 @@ const HTTP_TOOL = {
   description: "Elimina un elemento",
   kind: "http",
   identity: "user",
-  requiresConfirmation: true,
+  level: "L2",
   status: "active",
   paramsSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
   definition: { method: "DELETE", path: "/items/{id}", paramLocations: { id: "path" } },
@@ -235,6 +235,21 @@ describe("validazione del collegamento all'app", () => {
     "non un url",
   ];
 
+  it("mcpUrl: stesse regole di baseUrl, nullable, salvato e restituito", async () => {
+    for (const url of ["ftp://example.com/mcp", "http://example.com/mcp?x=1"]) {
+      const res = await api("POST", "/apps", { name: "Mister", baseUrl: "http://mister.example", mcpUrl: url });
+      expect(res.status, url).toBe(400);
+      expect(res.json.error, url).toMatch(/^mcpUrl: indirizzo dell'app non valido/);
+    }
+    const ok = await api("POST", "/apps", { name: "Mister", baseUrl: "http://mister.example", mcpUrl: "https://mister.example/mcp" });
+    expect(ok.status).toBe(201);
+    expect(ok.json.mcpUrl).toBe("https://mister.example/mcp");
+    const patch = await api("PATCH", `/apps/${ok.json.id}`, { mcpUrl: null });
+    expect(patch.status).toBe(200);
+    expect(patch.json.mcpUrl).toBeNull();
+    expect((await api("PATCH", `/apps/${ok.json.id}`, { mcpUrl: "file:///x" })).status).toBe(400);
+  });
+
   it("POST: baseUrl o internalBaseUrl non validi → 400 con messaggio italiano", async () => {
     for (const url of BAD_URLS) {
       const a = await api("POST", "/apps", { name: "Mister", baseUrl: url });
@@ -282,6 +297,40 @@ describe("catalogo dei tool", () => {
     expect(res.json).toMatchObject({ appId: app.id, name: "delete_item", kind: "http", status: "active" });
     const list = await api("GET", `/apps/${app.id}/tools`);
     expect(list.json).toHaveLength(1);
+  });
+
+  it("la risposta ha level e levelOverride e non più i due flag", async () => {
+    const app = await createApp();
+    const res = await api("POST", `/apps/${app.id}/tools`, HTTP_TOOL);
+    expect(res.json).toMatchObject({ level: "L2", levelOverride: null });
+    expect(res.json).not.toHaveProperty("readOnly");
+    expect(res.json).not.toHaveProperty("requiresConfirmation");
+  });
+
+  it("deroga sotto il livello → 400 «il livello può solo essere alzato»; alzare è ammesso", async () => {
+    const app = await createApp();
+    const tool = (await api("POST", `/apps/${app.id}/tools`, HTTP_TOOL)).json;
+    const bad = await api("PATCH", `/apps/${app.id}/tools/${tool.id}`, { levelOverride: "L1" });
+    expect(bad.status).toBe(400);
+    expect(bad.json.error).toBe("il livello può solo essere alzato");
+    const create = await api("POST", `/apps/${app.id}/tools`, { ...HTTP_TOOL, name: "altro", levelOverride: "L0" });
+    expect(create.status).toBe(400);
+    const ok = await api("PATCH", `/apps/${app.id}/tools/${tool.id}`, { levelOverride: "L3" });
+    expect(ok.status).toBe(200);
+    expect(ok.json).toMatchObject({ level: "L2", levelOverride: "L3" });
+  });
+
+  it("il livello dei tool MCP lo dichiara il servizio: dall'API non si imposta", async () => {
+    const app = await createApp();
+    const mcp = { name: "cerca", kind: "mcp", definition: { mcpName: "cerca" } };
+    const bad = await api("POST", `/apps/${app.id}/tools`, { ...mcp, level: "L0" });
+    expect(bad.status).toBe(400);
+    const ok = await api("POST", `/apps/${app.id}/tools`, mcp);
+    expect(ok.status).toBe(201);
+    expect(ok.json.kind).toBe("mcp");
+    const patch = await api("PATCH", `/apps/${app.id}/tools/${ok.json.id}`, { level: "L0" });
+    expect(patch.status).toBe(400);
+    expect((await api("POST", `/apps/${app.id}/tools`, { ...mcp, name: "x", definition: {} })).status).toBe(400);
   });
 
   it("segnaposto {teamId} non nello schema → 400", async () => {

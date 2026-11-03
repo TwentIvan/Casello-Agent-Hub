@@ -13,4 +13,5 @@ export const ToolKind = {
   http: 'http',
   ui: 'ui',
   composite: 'composite',
+  mcp: 'mcp',
 } as const;

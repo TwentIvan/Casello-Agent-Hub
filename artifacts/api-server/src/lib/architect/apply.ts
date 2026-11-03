@@ -10,6 +10,7 @@ import {
 import { NO_MODEL, type ModelChoice } from "../ai/choice";
 import { isUniqueViolation } from "../pg-errors";
 import { checkParamsSchema, checkPathPlaceholders, parseDefinition } from "../tools/definition";
+import { levelFromProposalFlags } from "../tools/levels";
 import type { HttpDefinition } from "../tools/types";
 import {
   ITEM_SCHEMAS,
@@ -97,8 +98,7 @@ async function applyTool(tx: Tx, item: AnalysisItem, appId: number): Promise<voi
     description: tool.description,
     kind: tool.kind,
     identity: tool.identity,
-    requiresConfirmation: tool.requiresConfirmation,
-    readOnly: tool.readOnly,
+    level: levelFromProposalFlags(tool),
     paramsSchema: tool.paramsSchema,
     definition: tool.definition,
     evidence: tool.evidence,

@@ -156,6 +156,7 @@ export const ListAppsResponseItem = zod.object({
   "description": zod.string().nullish(),
   "baseUrl": zod.string(),
   "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
+  "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -193,6 +194,7 @@ export const CreateAppBody = zod.object({
   "description": zod.string().optional(),
   "baseUrl": zod.string().min(1),
   "internalBaseUrl": zod.string().nullish(),
+  "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -224,6 +226,7 @@ export const CreateAppResponse = zod.object({
   "description": zod.string().nullish(),
   "baseUrl": zod.string(),
   "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
+  "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -264,6 +267,7 @@ export const GetAppResponse = zod.object({
   "description": zod.string().nullish(),
   "baseUrl": zod.string(),
   "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
+  "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -304,6 +308,7 @@ export const UpdateAppBody = zod.object({
   "description": zod.string().nullish(),
   "baseUrl": zod.string().min(1).optional(),
   "internalBaseUrl": zod.string().nullish(),
+  "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -334,6 +339,7 @@ export const UpdateAppResponse = zod.object({
   "description": zod.string().nullish(),
   "baseUrl": zod.string(),
   "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
+  "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -512,10 +518,10 @@ export const ListAppToolsResponseItem = zod.object({
   "appId": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
-  "kind": zod.enum(['http', 'ui', 'composite']),
+  "kind": zod.enum(['http', 'ui', 'composite', 'mcp']),
   "identity": zod.enum(['user', 'service']),
-  "requiresConfirmation": zod.boolean(),
-  "readOnly": zod.boolean(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)'),
+  "levelOverride": zod.union([zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello d\'azione: L0 lettura, L1 azione reversibile, L2 con conferma, L3 vietata'),zod.null()]).describe('Livello scelto dall\'utente, mai sotto `level`'),
   "status": zod.enum(['draft', 'active', 'disabled']),
   "paramsSchema": zod.record(zod.string(), zod.unknown()).describe('JSON Schema dei parametri accettati dal tool'),
   "definition": zod.record(zod.string(), zod.unknown()).describe('Definizione dell\'esecuzione (dipende da kind)'),
@@ -544,10 +550,10 @@ export const CreateAppToolParams = zod.object({
 export const CreateAppToolBody = zod.object({
   "name": zod.string().min(1),
   "description": zod.string().nullish(),
-  "kind": zod.enum(['http', 'ui', 'composite']),
+  "kind": zod.enum(['http', 'ui', 'composite', 'mcp']),
   "identity": zod.enum(['user', 'service']).optional(),
-  "requiresConfirmation": zod.boolean().optional(),
-  "readOnly": zod.boolean().optional(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional().describe('Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)'),
+  "levelOverride": zod.union([zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello d\'azione: L0 lettura, L1 azione reversibile, L2 con conferma, L3 vietata'),zod.null()]).optional().describe('Livello scelto dall\'utente, mai sotto `level`'),
   "status": zod.enum(['draft', 'active', 'disabled']).optional(),
   "paramsSchema": zod.record(zod.string(), zod.unknown()).optional(),
   "definition": zod.record(zod.string(), zod.unknown()),
@@ -564,10 +570,10 @@ export const CreateAppToolResponse = zod.object({
   "appId": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
-  "kind": zod.enum(['http', 'ui', 'composite']),
+  "kind": zod.enum(['http', 'ui', 'composite', 'mcp']),
   "identity": zod.enum(['user', 'service']),
-  "requiresConfirmation": zod.boolean(),
-  "readOnly": zod.boolean(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)'),
+  "levelOverride": zod.union([zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello d\'azione: L0 lettura, L1 azione reversibile, L2 con conferma, L3 vietata'),zod.null()]).describe('Livello scelto dall\'utente, mai sotto `level`'),
   "status": zod.enum(['draft', 'active', 'disabled']),
   "paramsSchema": zod.record(zod.string(), zod.unknown()).describe('JSON Schema dei parametri accettati dal tool'),
   "definition": zod.record(zod.string(), zod.unknown()).describe('Definizione dell\'esecuzione (dipende da kind)'),
@@ -596,10 +602,10 @@ export const UpdateAppToolParams = zod.object({
 export const UpdateAppToolBody = zod.object({
   "name": zod.string().min(1).optional(),
   "description": zod.string().nullish(),
-  "kind": zod.enum(['http', 'ui', 'composite']).optional(),
+  "kind": zod.enum(['http', 'ui', 'composite', 'mcp']).optional(),
   "identity": zod.enum(['user', 'service']).optional(),
-  "requiresConfirmation": zod.boolean().optional(),
-  "readOnly": zod.boolean().optional(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional().describe('Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)'),
+  "levelOverride": zod.union([zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello d\'azione: L0 lettura, L1 azione reversibile, L2 con conferma, L3 vietata'),zod.null()]).optional().describe('Livello scelto dall\'utente, mai sotto `level`'),
   "status": zod.enum(['draft', 'active', 'disabled']).optional(),
   "paramsSchema": zod.record(zod.string(), zod.unknown()).optional(),
   "definition": zod.record(zod.string(), zod.unknown()).optional(),
@@ -616,10 +622,10 @@ export const UpdateAppToolResponse = zod.object({
   "appId": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
-  "kind": zod.enum(['http', 'ui', 'composite']),
+  "kind": zod.enum(['http', 'ui', 'composite', 'mcp']),
   "identity": zod.enum(['user', 'service']),
-  "requiresConfirmation": zod.boolean(),
-  "readOnly": zod.boolean(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)'),
+  "levelOverride": zod.union([zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello d\'azione: L0 lettura, L1 azione reversibile, L2 con conferma, L3 vietata'),zod.null()]).describe('Livello scelto dall\'utente, mai sotto `level`'),
   "status": zod.enum(['draft', 'active', 'disabled']),
   "paramsSchema": zod.record(zod.string(), zod.unknown()).describe('JSON Schema dei parametri accettati dal tool'),
   "definition": zod.record(zod.string(), zod.unknown()).describe('Definizione dell\'esecuzione (dipende da kind)'),

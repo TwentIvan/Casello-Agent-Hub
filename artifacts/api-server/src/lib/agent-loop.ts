@@ -5,6 +5,7 @@
 
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { assistantToolCalls, type ChatResult } from "./ai/chat-types";
+import { effectiveLevel } from "./tools/levels";
 import { maskSensitiveArgs } from "./tools/sensitive";
 import type { CatalogTool, ToolResult } from "./tools/types";
 
@@ -120,12 +121,14 @@ function prepareCall(call: ToolCall, tools: CatalogTool[]): PreparedCall {
 }
 
 function needsPause(tool: CatalogTool): boolean {
-  return tool.requiresConfirmation || tool.kind === "ui";
+  return effectiveLevel(tool) === "L2" || tool.kind === "ui";
 }
 
 // Eseguibili in parallelo: sola lettura, senza conferma, HTTP
 function isParallelSafe(p: PreparedCall): p is Extract<PreparedCall, { kind: "ready" }> {
-  return p.kind === "ready" && p.tool.readOnly && !p.tool.requiresConfirmation && p.tool.kind === "http";
+  return (
+    p.kind === "ready" && effectiveLevel(p.tool) === "L0" && (p.tool.kind === "http" || p.tool.kind === "mcp")
+  );
 }
 
 function formatValue(value: unknown): string {

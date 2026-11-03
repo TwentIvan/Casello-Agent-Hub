@@ -1,4 +1,5 @@
 import type { Agent, AgentSkill, AnalysisItem, AppTool } from "@workspace/db";
+import { levelFromProposalFlags } from "../tools/levels";
 import { skillKey, type AnalysisChapter } from "./schemas";
 import type {
   AgentProposal,
@@ -57,8 +58,7 @@ export function diffTools(proposed: ToolProposal[], existing: AppTool[]): DiffEn
       const same =
         (current.description ?? "") === tool.description &&
         current.identity === tool.identity &&
-        current.requiresConfirmation === tool.requiresConfirmation &&
-        current.readOnly === tool.readOnly &&
+        current.level === levelFromProposalFlags(tool) &&
         jsonEqual(current.definition, tool.definition) &&
         jsonEqual(current.paramsSchema, tool.paramsSchema);
       diff = same ? "unchanged" : "changed";

@@ -2143,6 +2143,9 @@ components:
         internalBaseUrl:
           type: ["string", "null"]
           description: URL raggiunto dall'esecutore al posto di baseUrl (rete interna)
+        mcpUrl:
+          type: ["string", "null"]
+          description: Indirizzo del server MCP dell'app
         userAuth:
           oneOf:
             - $ref: "#/components/schemas/AuthConfig"
@@ -2205,6 +2208,9 @@ components:
           minLength: 1
         internalBaseUrl:
           type: ["string", "null"]
+        mcpUrl:
+          type: ["string", "null"]
+          description: Indirizzo del server MCP dell'app
         userAuth:
           oneOf:
             - $ref: "#/components/schemas/AuthConfig"
@@ -2256,6 +2262,9 @@ components:
           minLength: 1
         internalBaseUrl:
           type: ["string", "null"]
+        mcpUrl:
+          type: ["string", "null"]
+          description: Indirizzo del server MCP dell'app
         userAuth:
           oneOf:
             - $ref: "#/components/schemas/AuthConfig"
@@ -2417,7 +2426,12 @@ components:
 
     ToolKind:
       type: string
-      enum: [http, ui, composite]
+      enum: [http, ui, composite, mcp]
+
+    ToolLevel:
+      type: string
+      enum: [L0, L1, L2, L3]
+      description: "Livello d'azione: L0 lettura, L1 azione reversibile, L2 con conferma, L3 vietata"
 
     ToolIdentity:
       type: string
@@ -2435,8 +2449,8 @@ components:
         - name
         - kind
         - identity
-        - requiresConfirmation
-        - readOnly
+        - level
+        - levelOverride
         - status
         - paramsSchema
         - definition
@@ -2456,10 +2470,14 @@ components:
           $ref: "#/components/schemas/ToolKind"
         identity:
           $ref: "#/components/schemas/ToolIdentity"
-        requiresConfirmation:
-          type: boolean
-        readOnly:
-          type: boolean
+        level:
+          $ref: "#/components/schemas/ToolLevel"
+          description: Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)
+        levelOverride:
+          oneOf:
+            - $ref: "#/components/schemas/ToolLevel"
+            - type: "null"
+          description: Livello scelto dall'utente, mai sotto `level`
         status:
           $ref: "#/components/schemas/ToolStatus"
         paramsSchema:
@@ -2508,10 +2526,14 @@ components:
           $ref: "#/components/schemas/ToolKind"
         identity:
           $ref: "#/components/schemas/ToolIdentity"
-        requiresConfirmation:
-          type: boolean
-        readOnly:
-          type: boolean
+        level:
+          $ref: "#/components/schemas/ToolLevel"
+          description: Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)
+        levelOverride:
+          oneOf:
+            - $ref: "#/components/schemas/ToolLevel"
+            - type: "null"
+          description: Livello scelto dall'utente, mai sotto `level`
         status:
           $ref: "#/components/schemas/ToolStatus"
         paramsSchema:
@@ -2539,10 +2561,14 @@ components:
           $ref: "#/components/schemas/ToolKind"
         identity:
           $ref: "#/components/schemas/ToolIdentity"
-        requiresConfirmation:
-          type: boolean
-        readOnly:
-          type: boolean
+        level:
+          $ref: "#/components/schemas/ToolLevel"
+          description: Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)
+        levelOverride:
+          oneOf:
+            - $ref: "#/components/schemas/ToolLevel"
+            - type: "null"
+          description: Livello scelto dall'utente, mai sotto `level`
         status:
           $ref: "#/components/schemas/ToolStatus"
         paramsSchema:

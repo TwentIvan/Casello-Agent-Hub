@@ -1,8 +1,9 @@
 import { db, agentsTable, appsTable, appToolsTable, agentToolsTable, type AppTool } from "@workspace/db";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { logger } from "../logger";
 import { parseDefinition } from "./definition";
+import { effectiveLevel, type ToolLevel } from "./levels";
 import type { AppConnection, CatalogTool } from "./types";
 
 // Oscuramento degli argomenti: modulo puro, usato anche dal ciclo dell'agente
@@ -26,14 +27,18 @@ function toCatalogTool(row: AppTool): CatalogTool | null {
   return { ...row, paramsSchema: schema, definition: parsed.value };
 }
 
-// Fase 1: solo i tool `http` sono eseguibili. I tool `ui` e `composite` restano nel catalogo
+// Solo i tool `http` e `mcp` sono eseguibili. I tool `ui` e `composite` restano nel catalogo
 // ma non vengono offerti al modello finché non esiste un client che li esegue.
-const EXECUTABLE_KIND = "http";
+const EXECUTABLE_KINDS = ["http", "mcp"] as const;
+
+function isOffered(t: { kind: string; level: ToolLevel; levelOverride: ToolLevel | null }): boolean {
+  return (EXECUTABLE_KINDS as readonly string[]).includes(t.kind) && effectiveLevel(t) !== "L3";
+}
 
 /**
  * Tool disponibili per un agente: l'agente `general` usa tutti i tool `active` della sua app,
  * un agente `area` solo quelli collegati in `agent_tools` e `active`. In entrambi i casi solo
- * i tool `http` (vedi EXECUTABLE_KIND).
+ * i tool `http` e `mcp` con livello effettivo diverso da L3.
  */
 export async function loadAgentTools(agentId: number): Promise<CatalogTool[]> {
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId)).limit(1);
@@ -48,7 +53,7 @@ export async function loadAgentTools(agentId: number): Promise<CatalogTool[]> {
         and(
           eq(appToolsTable.appId, agent.appId),
           eq(appToolsTable.status, "active"),
-          eq(appToolsTable.kind, EXECUTABLE_KIND),
+          inArray(appToolsTable.kind, [...EXECUTABLE_KINDS]),
         ),
       )
       .orderBy(asc(appToolsTable.id));
@@ -63,13 +68,13 @@ export async function loadAgentTools(agentId: number): Promise<CatalogTool[]> {
           // Difesa: un collegamento verso il tool di un'altra app non conta
           eq(appToolsTable.appId, agent.appId),
           eq(appToolsTable.status, "active"),
-          eq(appToolsTable.kind, EXECUTABLE_KIND),
+          inArray(appToolsTable.kind, [...EXECUTABLE_KINDS]),
         ),
       )
       .orderBy(asc(appToolsTable.id));
     rows = linked.map((r) => r.tool);
   }
-  return rows.map(toCatalogTool).filter((t): t is CatalogTool => t !== null);
+  return rows.filter(isOffered).map(toCatalogTool).filter((t): t is CatalogTool => t !== null);
 }
 
 /** Copia dello schema senza le estensioni `x-*` (es. x-sensitive), che alcuni provider rifiutano. */
@@ -86,7 +91,7 @@ function stripExtensions(node: unknown, isPropertiesMap = false): unknown {
 }
 
 export function toFunctionTools(tools: CatalogTool[]): ChatCompletionTool[] {
-  return tools.filter((t) => t.kind === EXECUTABLE_KIND).map((t) => ({
+  return tools.filter(isOffered).map((t) => ({
     type: "function" as const,
     function: {
       name: t.name,

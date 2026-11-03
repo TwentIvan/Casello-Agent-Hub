@@ -31,6 +31,7 @@ const router: IRouter = Router();
 interface ConnectionFields {
   baseUrl?: string;
   internalBaseUrl?: string | null;
+  mcpUrl?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
 }
@@ -41,7 +42,7 @@ interface ConnectionFields {
  * campi presenti; restituisce il primo errore ("<campo>: <motivo>") o null.
  */
 function connectionError(body: ConnectionFields): string | null {
-  for (const field of ["baseUrl", "internalBaseUrl"] as const) {
+  for (const field of ["baseUrl", "internalBaseUrl", "mcpUrl"] as const) {
     const value = body[field];
     if (value === undefined || value === null) continue;
     const parsed = parseAppBaseUrl(value);

@@ -3,6 +3,7 @@ import { z, type ZodIssue } from "zod";
 import type {
   CompositeDefinition,
   HttpDefinition,
+  McpDefinition,
   ToolKind,
   UiDefinition,
 } from "./types";
@@ -59,13 +60,16 @@ const compositeSchema = z.object({
   output: z.record(z.string()),
 });
 
+const mcpSchema = z.object({ mcpName: z.string().min(1) }).strict();
+
 const schemasByKind = {
   http: httpSchema,
   ui: uiSchema,
   composite: compositeSchema,
+  mcp: mcpSchema,
 } as const;
 
-type ParsedDefinition = HttpDefinition | UiDefinition | CompositeDefinition;
+type ParsedDefinition = HttpDefinition | UiDefinition | CompositeDefinition | McpDefinition;
 
 const TYPE_IT: Record<string, string> = {
   string: "una stringa",

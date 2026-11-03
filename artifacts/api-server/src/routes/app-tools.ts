@@ -14,7 +14,7 @@ import {
   RefreshAppMcpToolsParams,
   RefreshAppMcpToolsResponse,
 } from "@workspace/api-zod";
-import { checkParamsSchema, checkPathPlaceholders, parseDefinition } from "../lib/tools/definition";
+import { TOOL_NAME, checkParamsSchema, checkPathPlaceholders, parseDefinition } from "../lib/tools/definition";
 import { isValidOverride, type ToolLevel } from "../lib/tools/levels";
 import type { HttpDefinition, ToolKind } from "../lib/tools/types";
 import { isUniqueViolation } from "../lib/pg-errors";
@@ -29,8 +29,6 @@ import { parseRequest } from "../middlewares/error-handler";
 
 const router: IRouter = Router();
 
-// Il nome diventa il nome della function del modello: stesse regole dei provider
-const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
 const DEFAULT_PARAMS_SCHEMA = { type: "object", properties: {} };
 const OVERRIDE_ONLY_RAISES = "il livello può solo essere alzato";
 const MCP_LEVEL_READ_ONLY = "il livello dei tool MCP è dichiarato dal servizio";

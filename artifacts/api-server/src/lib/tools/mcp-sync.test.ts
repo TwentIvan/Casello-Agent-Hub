@@ -157,6 +157,15 @@ describe("syncMcpTools", () => {
   });
 });
 
+describe("nomi", () => {
+  it("un nome non valido finisce in conflicts e non crea righe", async () => {
+    fake = await startFakeMcp({ tools: [tool("ok"), tool("con spazio")] });
+    const appId = await createApp(fake.url);
+    expect(await sync(appId)).toEqual({ added: 1, updated: 0, disabled: 0, unchanged: 0, conflicts: ["con spazio"] });
+    expect((await rows(appId)).map((t) => t.name)).toEqual(["ok"]);
+  });
+});
+
 describe("POST /api/apps/:id/mcp-tools/refresh", () => {
   const refresh = async (id: number | string) => {
     const res = await fetch(`${base}/api/apps/${id}/mcp-tools/refresh`, { method: "POST" });
@@ -170,6 +179,15 @@ describe("POST /api/apps/:id/mcp-tools/refresh", () => {
     const res = await refresh(appId);
     expect(res.status).toBe(200);
     expect(res.json).toEqual({ added: 1, updated: 0, disabled: 0, unchanged: 0, conflicts: [] });
+  });
+
+  it("nome ripetuto nell'elenco: 502 «risposta MCP non valida» e catalogo invariato", async () => {
+    fake = await startFakeMcp({ tools: [tool("a"), tool("a")] });
+    const appId = await createApp(fake.url);
+    const res = await refresh(appId);
+    expect(res.status).toBe(502);
+    expect(res.json).toEqual({ error: "risposta MCP non valida" });
+    expect(await rows(appId)).toEqual([]);
   });
 
   it("409 senza mcpUrl, 404 se l'app non esiste, 502 con il server spento", async () => {

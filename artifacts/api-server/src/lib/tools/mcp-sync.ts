@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db, appsTable, appToolsTable } from "@workspace/db";
 import type { McpToolInfo } from "./mcp-client";
+import { TOOL_NAME } from "./definition";
 import { isValidOverride } from "./levels";
 
 // Sincronizza il catalogo di un'app (`app_tools`) con gli strumenti del suo server MCP.
@@ -10,7 +11,7 @@ export interface McpSyncResult {
   updated: number;
   disabled: number;
   unchanged: number;
-  /** Nomi di strumenti MCP uguali a un tool non MCP del catalogo: lasciati intatti. */
+  /** Nomi di strumenti MCP uguali a un tool non MCP del catalogo o non validi: lasciati fuori. */
   conflicts: string[];
 }
 
@@ -41,6 +42,11 @@ export async function syncMcpTools(appId: number, tools: McpToolInfo[]): Promise
     const result: McpSyncResult = { added: 0, updated: 0, disabled: 0, unchanged: 0, conflicts: [] };
 
     for (const info of tools) {
+      // Un nome che il catalogo non ammette (non diventerebbe una function valida) non entra
+      if (!TOOL_NAME.test(info.name)) {
+        result.conflicts.push(info.name);
+        continue;
+      }
       const current = byName.get(info.name);
       if (!current) {
         await tx.insert(appToolsTable).values({

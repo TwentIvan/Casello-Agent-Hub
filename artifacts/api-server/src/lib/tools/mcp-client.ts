@@ -212,10 +212,14 @@ export async function listMcpTools(
   try {
     return await withClient(endpoint, headers, state, { fetchImpl: opts.fetchImpl, timeoutMs }, async (c) => {
       const tools: McpToolInfo[] = [];
+      const seen = new Set<string>();
       let cursor: string | undefined;
       do {
         const page = await c.client.listTools(cursor ? { cursor } : {}, { signal: c.signal, timeout: timeoutMs });
         for (const t of page.tools) {
+          // Un nome ripetuto rende l'elenco ambiguo: risposta non valida
+          if (seen.has(t.name)) throw new McpError(MCP_MESSAGES.invalid);
+          seen.add(t.name);
           tools.push({
             name: t.name,
             description: t.description ?? null,

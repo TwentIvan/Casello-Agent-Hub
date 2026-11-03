@@ -229,3 +229,6 @@ export function checkPathPlaceholders(def: HttpDefinition, schema: object): stri
   }
   return null;
 }
+
+// Il nome diventa il nome della function del modello: stesse regole dei provider
+export const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;

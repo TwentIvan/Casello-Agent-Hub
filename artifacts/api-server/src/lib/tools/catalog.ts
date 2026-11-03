@@ -18,7 +18,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /** Converte una riga di `app_tools`; null se la definizione non è più valida. */
-function toCatalogTool(row: AppTool): CatalogTool | null {
+export function toCatalogTool(row: AppTool): CatalogTool | null {
   const parsed = parseDefinition(row.kind, row.definition);
   if (!parsed.ok) {
     logger.warn({ toolId: row.id, tool: row.name, error: parsed.error }, "Tool con definizione non valida: escluso");

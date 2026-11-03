@@ -58,6 +58,9 @@ export const issueRefreshRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key
 // Aggiornamento del catalogo dal server MCP di un'app: 6 al minuto per utente.
 export const mcpRefreshRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byUser });
 
+// Approvazione e rifiuto delle azioni in coda: 20 al minuto per utente.
+export const actionDecideRateLimit = rateLimit({ limit: 20, windowMs: 60_000, key: byUser });
+
 // Token personali su /api: 120 richieste al minuto per token (chiave: id del token), in aggiunta ai
 // limiti per utente o IP. Lo applica requireAuth solo alle richieste autenticate con un token.
 export const tokenRateLimit = rateLimit({

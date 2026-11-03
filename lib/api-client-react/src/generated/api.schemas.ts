@@ -599,8 +599,84 @@ export interface DashboardStats {
   successfulRuns: number;
   failedRuns: number;
   cancelledRuns: number;
+  /** Azioni dell'utente corrente in attesa di conferma */
+  pendingActions: number;
   /** @nullable */
   avgDurationMs?: number | null;
+}
+
+export type QueuedActionStatus = typeof QueuedActionStatus[keyof typeof QueuedActionStatus];
+
+
+export const QueuedActionStatus = {
+  pending: 'pending',
+  executing: 'executing',
+  done: 'done',
+  failed: 'failed',
+  rejected: 'rejected',
+} as const;
+
+export type QueuedActionApp = {
+  id: number;
+  name: string;
+};
+
+export type QueuedActionToolIdentity = typeof QueuedActionToolIdentity[keyof typeof QueuedActionToolIdentity];
+
+
+export const QueuedActionToolIdentity = {
+  user: 'user',
+  service: 'service',
+} as const;
+
+export type QueuedActionTool = {
+  id: number;
+  name: string;
+  identity: QueuedActionToolIdentity;
+};
+
+export interface QueuedAction {
+  number: number;
+  status: QueuedActionStatus;
+  app: QueuedActionApp;
+  tool: QueuedActionTool;
+  /** @nullable */
+  agentId: number | null;
+  /** @nullable */
+  runId: number | null;
+  recipient: string;
+  summary: string;
+  /** Argomenti con i parametri sensibili oscurati */
+  args: unknown;
+  /** @nullable */
+  result: string | null;
+  /** @nullable */
+  errorMessage: string | null;
+  /** @nullable */
+  decisionNote: string | null;
+  createdAt: string;
+  /** @nullable */
+  decidedAt: string | null;
+  /** @nullable */
+  finishedAt: string | null;
+}
+
+export interface QueuedActionList {
+  actions: QueuedAction[];
+}
+
+export interface ApproveActionRequest {
+  /**
+     * Token dell'utente dell'app, per gli strumenti con identità utente
+     * @minLength 1
+     * @maxLength 4096
+     */
+  userToken?: string;
+}
+
+export interface RejectActionRequest {
+  /** @maxLength 500 */
+  note?: string;
 }
 
 export interface UserBudget {
@@ -1906,4 +1982,20 @@ export type ListCatalogProvidersParams = {
 q?: string;
 status?: AiProviderStatus;
 };
+
+export type ListPendingActionsParams = {
+status?: ListPendingActionsStatus;
+};
+
+export type ListPendingActionsStatus = typeof ListPendingActionsStatus[keyof typeof ListPendingActionsStatus];
+
+
+export const ListPendingActionsStatus = {
+  pending: 'pending',
+  executing: 'executing',
+  done: 'done',
+  failed: 'failed',
+  rejected: 'rejected',
+  all: 'all',
+} as const;
 

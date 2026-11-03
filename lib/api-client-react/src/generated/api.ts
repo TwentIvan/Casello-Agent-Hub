@@ -51,6 +51,7 @@ import type {
   AppToolInput,
   AppToolUpdate,
   AppUpdate,
+  ApproveActionRequest,
   AuthProviders,
   BadGatewayResponse,
   BadRequestResponse,
@@ -77,6 +78,7 @@ import type {
   ListAgentsParams,
   ListCatalogModelsParams,
   ListCatalogProvidersParams,
+  ListPendingActionsParams,
   ListRunsParams,
   McpSyncResult,
   NotFoundResponse,
@@ -94,6 +96,9 @@ import type {
   PlanProposalDecision,
   PlanProposalDecisionResult,
   ProviderIssueText,
+  QueuedAction,
+  QueuedActionList,
+  RejectActionRequest,
   Run,
   RunStep,
   RunTrigger,
@@ -5819,5 +5824,310 @@ export const useDecidePlanProposal = <TError = ErrorType<BadRequestResponse | No
         TContext
       > => {
       return useMutation(getDecidePlanProposalMutationOptions(options));
+    }
+
+export const getListPendingActionsUrl = (params?: ListPendingActionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/pending-actions?${stringifiedParams}` : `/api/pending-actions`
+}
+
+/**
+ * Le azioni L2 messe in coda dagli agenti (più recenti prima, massimo 200). Senza filtro solo quelle in attesa di conferma.
+ * @summary Azioni in coda dell'utente corrente
+ */
+export const listPendingActions = async (params?: ListPendingActionsParams, options?: RequestInit): Promise<QueuedActionList> => {
+
+  return customFetch<QueuedActionList>(getListPendingActionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPendingActionsQueryKey = (params?: ListPendingActionsParams,) => {
+    return [
+    `/api/pending-actions`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListPendingActionsQueryOptions = <TData = Awaited<ReturnType<typeof listPendingActions>>, TError = ErrorType<BadRequestResponse>>(params?: ListPendingActionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPendingActions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPendingActionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPendingActions>>> = ({ signal }) => listPendingActions(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPendingActions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPendingActionsQueryResult = NonNullable<Awaited<ReturnType<typeof listPendingActions>>>
+export type ListPendingActionsQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Azioni in coda dell'utente corrente
+ */
+
+export function useListPendingActions<TData = Awaited<ReturnType<typeof listPendingActions>>, TError = ErrorType<BadRequestResponse>>(
+ params?: ListPendingActionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPendingActions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPendingActionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPendingActionUrl = (number: number,) => {
+
+
+
+
+  return `/api/pending-actions/${number}`
+}
+
+/**
+ * @summary Dettaglio di un'azione in coda
+ */
+export const getPendingAction = async (number: number, options?: RequestInit): Promise<QueuedAction> => {
+
+  return customFetch<QueuedAction>(getGetPendingActionUrl(number),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPendingActionQueryKey = (number: number,) => {
+    return [
+    `/api/pending-actions/${number}`
+    ] as const;
+    }
+
+
+export const getGetPendingActionQueryOptions = <TData = Awaited<ReturnType<typeof getPendingAction>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(number: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPendingAction>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPendingActionQueryKey(number);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPendingAction>>> = ({ signal }) => getPendingAction(number, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: number !== null && number !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPendingAction>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPendingActionQueryResult = NonNullable<Awaited<ReturnType<typeof getPendingAction>>>
+export type GetPendingActionQueryError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+
+/**
+ * @summary Dettaglio di un'azione in coda
+ */
+
+export function useGetPendingAction<TData = Awaited<ReturnType<typeof getPendingAction>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(
+ number: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPendingAction>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPendingActionQueryOptions(number,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getApprovePendingActionUrl = (number: number,) => {
+
+
+
+
+  return `/api/pending-actions/${number}/approve`
+}
+
+/**
+ * Esegue una sola volta la chiamata memorizzata, senza il modello. Con identità `user` serve il token dell'utente dell'app (vive solo per la durata della chiamata). Una richiesta già decisa dà 409. Se l'esecuzione fallisce la risposta è 200 con l'azione in stato `failed`. Massimo 20 decisioni al minuto per utente.
+ * @summary Approva ed esegue un'azione in coda
+ */
+export const approvePendingAction = async (number: number,
+    approveActionRequest?: ApproveActionRequest, options?: RequestInit): Promise<QueuedAction> => {
+
+  return customFetch<QueuedAction>(getApprovePendingActionUrl(number),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(approveActionRequest)
+  }
+);}
+
+
+
+
+export const getApprovePendingActionMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approvePendingAction>>, TError,{number: number;data?: BodyType<ApproveActionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof approvePendingAction>>, TError,{number: number;data?: BodyType<ApproveActionRequest>}, TContext> => {
+
+const mutationKey = ['approvePendingAction'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof approvePendingAction>>, {number: number;data?: BodyType<ApproveActionRequest>}> = (props) => {
+          const {number,data} = props ?? {};
+
+          return  approvePendingAction(number,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApprovePendingActionMutationResult = NonNullable<Awaited<ReturnType<typeof approvePendingAction>>>
+    export type ApprovePendingActionMutationBody = BodyType<ApproveActionRequest> | undefined
+    export type ApprovePendingActionMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Approva ed esegue un'azione in coda
+ */
+export const useApprovePendingAction = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approvePendingAction>>, TError,{number: number;data?: BodyType<ApproveActionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof approvePendingAction>>,
+        TError,
+        {number: number;data?: BodyType<ApproveActionRequest>},
+        TContext
+      > => {
+      return useMutation(getApprovePendingActionMutationOptions(options));
+    }
+
+export const getRejectPendingActionUrl = (number: number,) => {
+
+
+
+
+  return `/api/pending-actions/${number}/reject`
+}
+
+/**
+ * @summary Rifiuta un'azione in coda
+ */
+export const rejectPendingAction = async (number: number,
+    rejectActionRequest?: RejectActionRequest, options?: RequestInit): Promise<QueuedAction> => {
+
+  return customFetch<QueuedAction>(getRejectPendingActionUrl(number),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(rejectActionRequest)
+  }
+);}
+
+
+
+
+export const getRejectPendingActionMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectPendingAction>>, TError,{number: number;data?: BodyType<RejectActionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rejectPendingAction>>, TError,{number: number;data?: BodyType<RejectActionRequest>}, TContext> => {
+
+const mutationKey = ['rejectPendingAction'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rejectPendingAction>>, {number: number;data?: BodyType<RejectActionRequest>}> = (props) => {
+          const {number,data} = props ?? {};
+
+          return  rejectPendingAction(number,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RejectPendingActionMutationResult = NonNullable<Awaited<ReturnType<typeof rejectPendingAction>>>
+    export type RejectPendingActionMutationBody = BodyType<RejectActionRequest> | undefined
+    export type RejectPendingActionMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Rifiuta un'azione in coda
+ */
+export const useRejectPendingAction = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectPendingAction>>, TError,{number: number;data?: BodyType<RejectActionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rejectPendingAction>>,
+        TError,
+        {number: number;data?: BodyType<RejectActionRequest>},
+        TContext
+      > => {
+      return useMutation(getRejectPendingActionMutationOptions(options));
     }
 

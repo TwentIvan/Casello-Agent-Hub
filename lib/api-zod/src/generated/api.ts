@@ -1264,6 +1264,7 @@ export const GetDashboardStatsResponse = zod.object({
   "successfulRuns": zod.number(),
   "failedRuns": zod.number(),
   "cancelledRuns": zod.number(),
+  "pendingActions": zod.number().describe('Azioni dell\'utente corrente in attesa di conferma'),
   "avgDurationMs": zod.number().nullish()
 })
 
@@ -2432,6 +2433,160 @@ export const DecidePlanProposalResponse = zod.object({
   "checkedAt": zod.coerce.date().nullable().describe('Ultimo controllo dello stato su GitHub')
 }),zod.null()]).describe('Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)')
 }),zod.null()]).describe('Voce creata o modificata (null se rifiutata)')
+})
+
+
+/**
+ * Le azioni L2 messe in coda dagli agenti (più recenti prima, massimo 200). Senza filtro solo quelle in attesa di conferma.
+ * @summary Azioni in coda dell'utente corrente
+ */
+export const listPendingActionsQueryStatusDefault = `pending`;
+
+export const ListPendingActionsQueryParams = zod.object({
+  "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected', 'all']).default(listPendingActionsQueryStatusDefault)
+})
+
+export const ListPendingActionsResponse = zod.object({
+  "actions": zod.array(zod.object({
+  "number": zod.number(),
+  "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
+  "app": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}),
+  "tool": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "identity": zod.enum(['user', 'service'])
+}),
+  "agentId": zod.number().nullable(),
+  "runId": zod.number().nullable(),
+  "recipient": zod.string(),
+  "summary": zod.string(),
+  "args": zod.unknown().describe('Argomenti con i parametri sensibili oscurati'),
+  "result": zod.string().nullable(),
+  "errorMessage": zod.string().nullable(),
+  "decisionNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "decidedAt": zod.coerce.date().nullable(),
+  "finishedAt": zod.coerce.date().nullable()
+}))
+})
+
+
+/**
+ * @summary Dettaglio di un'azione in coda
+ */
+export const GetPendingActionParams = zod.object({
+  "number": zod.coerce.number().describe('Numero progressivo dell\'azione per utente')
+})
+
+export const GetPendingActionResponse = zod.object({
+  "number": zod.number(),
+  "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
+  "app": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}),
+  "tool": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "identity": zod.enum(['user', 'service'])
+}),
+  "agentId": zod.number().nullable(),
+  "runId": zod.number().nullable(),
+  "recipient": zod.string(),
+  "summary": zod.string(),
+  "args": zod.unknown().describe('Argomenti con i parametri sensibili oscurati'),
+  "result": zod.string().nullable(),
+  "errorMessage": zod.string().nullable(),
+  "decisionNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "decidedAt": zod.coerce.date().nullable(),
+  "finishedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Esegue una sola volta la chiamata memorizzata, senza il modello. Con identità `user` serve il token dell'utente dell'app (vive solo per la durata della chiamata). Una richiesta già decisa dà 409. Se l'esecuzione fallisce la risposta è 200 con l'azione in stato `failed`. Massimo 20 decisioni al minuto per utente.
+ * @summary Approva ed esegue un'azione in coda
+ */
+export const ApprovePendingActionParams = zod.object({
+  "number": zod.coerce.number().describe('Numero progressivo dell\'azione per utente')
+})
+
+export const approvePendingActionBodyUserTokenMax = 4096;
+
+
+
+export const ApprovePendingActionBody = zod.object({
+  "userToken": zod.string().min(1).max(approvePendingActionBodyUserTokenMax).optional().describe('Token dell\'utente dell\'app, per gli strumenti con identità utente')
+})
+
+export const ApprovePendingActionResponse = zod.object({
+  "number": zod.number(),
+  "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
+  "app": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}),
+  "tool": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "identity": zod.enum(['user', 'service'])
+}),
+  "agentId": zod.number().nullable(),
+  "runId": zod.number().nullable(),
+  "recipient": zod.string(),
+  "summary": zod.string(),
+  "args": zod.unknown().describe('Argomenti con i parametri sensibili oscurati'),
+  "result": zod.string().nullable(),
+  "errorMessage": zod.string().nullable(),
+  "decisionNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "decidedAt": zod.coerce.date().nullable(),
+  "finishedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Rifiuta un'azione in coda
+ */
+export const RejectPendingActionParams = zod.object({
+  "number": zod.coerce.number().describe('Numero progressivo dell\'azione per utente')
+})
+
+export const rejectPendingActionBodyNoteMax = 500;
+
+
+
+export const RejectPendingActionBody = zod.object({
+  "note": zod.string().max(rejectPendingActionBodyNoteMax).optional()
+})
+
+export const RejectPendingActionResponse = zod.object({
+  "number": zod.number(),
+  "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
+  "app": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}),
+  "tool": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "identity": zod.enum(['user', 'service'])
+}),
+  "agentId": zod.number().nullable(),
+  "runId": zod.number().nullable(),
+  "recipient": zod.string(),
+  "summary": zod.string(),
+  "args": zod.unknown().describe('Argomenti con i parametri sensibili oscurati'),
+  "result": zod.string().nullable(),
+  "errorMessage": zod.string().nullable(),
+  "decisionNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "decidedAt": zod.coerce.date().nullable(),
+  "finishedAt": zod.coerce.date().nullable()
 })
 
 

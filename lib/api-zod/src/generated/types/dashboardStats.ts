@@ -14,6 +14,8 @@ export interface DashboardStats {
   successfulRuns: number;
   failedRuns: number;
   cancelledRuns: number;
+  /** Azioni dell'utente corrente in attesa di conferma */
+  pendingActions: number;
   /** @nullable */
   avgDurationMs?: number | null;
 }

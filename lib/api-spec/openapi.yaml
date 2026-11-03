@@ -30,6 +30,8 @@ tags:
     description: Catalogo dei modelli per provider e suo aggiornamento
   - name: architect
     description: Analisi dell'architetto (proposte su tool, agenti, skill, endpoint ed evoluzione) e skill degli agenti
+  - name: pending-actions
+    description: Coda delle azioni in attesa di conferma
   - name: plan-chat
     description: Chat con il bot sul piano di un'app (conversazioni, messaggi e proposte)
 
@@ -1882,6 +1884,114 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /pending-actions:
+    get:
+      operationId: listPendingActions
+      tags: [pending-actions]
+      summary: Azioni in coda dell'utente corrente
+      description: >-
+        Le azioni L2 messe in coda dagli agenti (più recenti prima, massimo 200). Senza filtro solo quelle
+        in attesa di conferma.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, executing, done, failed, rejected, all]
+            default: pending
+      responses:
+        "200":
+          description: Elenco delle azioni
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedActionList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /pending-actions/{number}:
+    get:
+      operationId: getPendingAction
+      tags: [pending-actions]
+      summary: Dettaglio di un'azione in coda
+      parameters:
+        - $ref: "#/components/parameters/ActionNumberParam"
+      responses:
+        "200":
+          description: Azione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedAction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pending-actions/{number}/approve:
+    post:
+      operationId: approvePendingAction
+      tags: [pending-actions]
+      summary: Approva ed esegue un'azione in coda
+      description: >-
+        Esegue una sola volta la chiamata memorizzata, senza il modello. Con identità `user` serve il token
+        dell'utente dell'app (vive solo per la durata della chiamata). Una richiesta già decisa dà 409.
+        Se l'esecuzione fallisce la risposta è 200 con l'azione in stato `failed`. Massimo 20 decisioni al
+        minuto per utente.
+      parameters:
+        - $ref: "#/components/parameters/ActionNumberParam"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveActionRequest"
+      responses:
+        "200":
+          description: Azione dopo l'esecuzione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedAction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /pending-actions/{number}/reject:
+    post:
+      operationId: rejectPendingAction
+      tags: [pending-actions]
+      summary: Rifiuta un'azione in coda
+      parameters:
+        - $ref: "#/components/parameters/ActionNumberParam"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectActionRequest"
+      responses:
+        "200":
+          description: Azione rifiutata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedAction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
 components:
   parameters:
     IdParam:
@@ -1895,6 +2005,14 @@ components:
       name: toolId
       in: path
       required: true
+      schema:
+        type: integer
+
+    ActionNumberParam:
+      name: number
+      in: path
+      required: true
+      description: Numero progressivo dell'azione per utente
       schema:
         type: integer
 
@@ -2663,7 +2781,7 @@ components:
 
     DashboardStats:
       type: object
-      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, cancelledRuns, activeAgents]
+      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, cancelledRuns, activeAgents, pendingActions]
       properties:
         totalApps:
           type: integer
@@ -2679,8 +2797,92 @@ components:
           type: integer
         cancelledRuns:
           type: integer
+        pendingActions:
+          type: integer
+          description: Azioni dell'utente corrente in attesa di conferma
         avgDurationMs:
           type: ["number", "null"]
+
+    # ── Coda delle azioni ──────────────────────────────────────────────────────
+
+    QueuedAction:
+      type: object
+      required: [number, status, app, tool, agentId, runId, recipient, summary, args, result, errorMessage, decisionNote, createdAt, decidedAt, finishedAt]
+      properties:
+        number:
+          type: integer
+        status:
+          type: string
+          enum: [pending, executing, done, failed, rejected]
+        app:
+          type: object
+          required: [id, name]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+        tool:
+          type: object
+          required: [id, name, identity]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            identity:
+              type: string
+              enum: [user, service]
+        agentId:
+          type: ["integer", "null"]
+        runId:
+          type: ["integer", "null"]
+        recipient:
+          type: string
+        summary:
+          type: string
+        args:
+          description: Argomenti con i parametri sensibili oscurati
+        result:
+          type: ["string", "null"]
+        errorMessage:
+          type: ["string", "null"]
+        decisionNote:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type: ["string", "null"]
+          format: date-time
+        finishedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    QueuedActionList:
+      type: object
+      required: [actions]
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueuedAction"
+
+    ApproveActionRequest:
+      type: object
+      properties:
+        userToken:
+          type: string
+          description: Token dell'utente dell'app, per gli strumenti con identità utente
+          minLength: 1
+          maxLength: 4096
+
+    RejectActionRequest:
+      type: object
+      properties:
+        note:
+          type: string
+          maxLength: 500
 
     # ── Tetti di spesa ─────────────────────────────────────────────────────────
 

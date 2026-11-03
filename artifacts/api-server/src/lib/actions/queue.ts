@@ -32,7 +32,10 @@ export interface EnqueueInput {
 }
 
 export async function enqueueAction(input: EnqueueInput): Promise<EnqueueResult> {
-  const problems = checkQueuedText({ recipient: input.recipient, summary: input.summary, args: input.args });
+  // Controllo sugli argomenti oscurati: i valori x-sensitive non si controllano né si citano nei problemi
+  const argsPublic = maskArgsWithSchema(input.tool.paramsSchema, input.args);
+  const checked = argsPublic !== null && typeof argsPublic === "object" ? (argsPublic as Record<string, unknown>) : {};
+  const problems = checkQueuedText({ recipient: input.recipient, summary: input.summary, args: checked });
   if (problems.length > 0) return { ok: false, message: `testo non pronto: ${problems.join("; ")}` };
 
   const [pending] = await db
@@ -42,7 +45,6 @@ export async function enqueueAction(input: EnqueueInput): Promise<EnqueueResult>
   if (Number(pending?.n ?? 0) >= MAX_PENDING_PER_USER) return { ok: false, message: TOO_MANY_PENDING_MESSAGE };
 
   const argsEnc = encryptSecret(JSON.stringify(input.args));
-  const argsPublic = maskArgsWithSchema(input.tool.paramsSchema, input.args);
 
   for (let attempt = 1; ; attempt++) {
     try {

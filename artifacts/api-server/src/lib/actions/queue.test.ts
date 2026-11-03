@@ -133,4 +133,10 @@ describe("enqueueAction", () => {
     expect(row!.argsEnc).not.toContain("segreta-123");
     expect(JSON.parse(decryptSecret(row!.argsEnc))).toEqual({ id: "42", password: "segreta-123" });
   });
+
+  it("argomento x-sensitive con @ o <…>: non controllato né citato, la voce si crea", async () => {
+    expect(await enqueue(userA, { args: { id: "42", password: "Pa@ss1<abc>" } })).toEqual({ ok: true, number: 1 });
+    const out = await enqueue(userA, { args: { id: "42", password: "Pa@ss1<abc>" }, summary: "TODO" });
+    expect(out).toEqual({ ok: false, message: 'testo non pronto: segnaposto "TODO"' });
+  });
 });

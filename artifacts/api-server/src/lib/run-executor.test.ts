@@ -398,6 +398,31 @@ describe("orchestrazione delle run", () => {
     for (const row of stored.rows) expect(row.j).not.toContain("segreta-123");
   });
 
+  it("testo non pronto con un argomento sensibile: il valore sensibile non compare nei passi", async () => {
+    const id = await seedRun(SET_PASSWORD);
+    llmReplies = [
+      toolCallReply("set_password", { id: "42", password: "Pa@ss1<abc>", destinatario: "Rosa", sintesi: "Password per [nome]" }),
+      textReply("Correggo."),
+    ];
+
+    await startRun(id, { userToken: "t" });
+
+    expect(await db.select().from(pendingActionsTable)).toEqual([]);
+    const tool = (await getSteps(id)).find((s) => s.type === "tool")!;
+    expect(tool.error).toBe('testo non pronto: segnaposto "[nome]"');
+    const res = await pool.query("select row_to_json(s)::text as j from run_steps s");
+    for (const row of res.rows) {
+      expect(row.j).not.toContain("ss1");
+      expect(row.j).not.toContain("abc");
+    }
+    // Il messaggio tool restituito al modello non cita il valore sensibile
+    expect(llmRequests[1].messages.at(-1)).toEqual({
+      role: "tool",
+      tool_call_id: "call_1",
+      content: 'testo non pronto: segnaposto "[nome]"',
+    });
+  });
+
   it("azione L2 con un segnaposto nel testo: nessuna voce, il modello riceve «testo non pronto»", async () => {
     const id = await seedRun(DELETE_ITEM);
     llmReplies = [
@@ -427,7 +452,13 @@ describe("orchestrazione delle run", () => {
 
   it("failInterruptedRuns: pending/running → failed; awaiting_client → cancelled con le colonne della pausa svuotate", async () => {
     const running = await seedRun(GET_ITEM);
-    await db.update(runsTable).set({ status: "running" }).where(eq(runsTable.id, running));
+    // Run storica ripresa dopo una pausa e interrotta: running con le colonne della pausa ancora piene
+    await pool.query(
+      `update runs set status = 'running', paused_at = now(),
+         loop_state = '{"messages":[]}'::jsonb, pending_action = '{"args":{"password":"segreta-running"}}'::jsonb
+       where id = $1`,
+      [running],
+    );
     const [other] = await db.insert(runsTable).values({ agentId: (await getRun(running)).agentId, input: "x" }).returning();
     // Run in pausa del vecchio meccanismo, con stato e azione in sospeso (argomenti in chiaro)
     await pool.query(
@@ -439,6 +470,8 @@ describe("orchestrazione delle run", () => {
 
     expect(await failInterruptedRuns()).toEqual({ failed: 1, cancelled: 1 });
     expect((await getRun(running)).status).toBe("failed");
+    const rawRunning = await pool.query("select loop_state, pending_action, paused_at from runs where id = $1", [running]);
+    expect(rawRunning.rows[0]).toEqual({ loop_state: null, pending_action: null, paused_at: null });
     const paused = await getRun(other!.id);
     expect(paused.status).toBe("cancelled");
     expect(paused.errorMessage).toBe(PAUSE_REPLACED_MESSAGE);

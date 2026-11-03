@@ -380,7 +380,14 @@ async function driveLoop(
   ): Promise<QueueActionResult> => {
     try {
       owner ??= modelOwner(aiModelId);
-      const userId = await owner;
+      let userId: number | null;
+      try {
+        userId = await owner;
+      } catch (err) {
+        // Un errore transitorio non resta in memoria: il prossimo accodamento riprova la lettura
+        owner = null;
+        throw err;
+      }
       if (userId === null) return { ok: false, message: QUEUE_FAILED };
       return await enqueueAction({
         userId,
@@ -574,17 +581,19 @@ async function modelOwner(aiModelId: number): Promise<number | null> {
  * storiche della pausa (stato del ciclo e azione in sospeso, con gli argomenti in chiaro) si svuotano.
  */
 export async function failInterruptedRuns(): Promise<{ failed: number; cancelled: number }> {
-  const failed = await db
-    .update(runsTable)
-    .set({ status: "failed", errorMessage: "Esecuzione interrotta dal riavvio del server.", finishedAt: new Date() })
-    .where(inArray(runsTable.status, ["pending", "running"]))
-    .returning({ id: runsTable.id });
-  // Le colonne della pausa non sono più nello schema Drizzle: restano nel DB e si azzerano qui
+  // Le colonne della pausa non sono più nello schema Drizzle: restano nel DB e si azzerano qui. Anche le
+  // run `running` possono averle piene (run storiche riprese dopo una pausa e interrotte).
+  const failed = await db.execute(sql`
+    update runs
+       set status = 'failed', error_message = ${"Esecuzione interrotta dal riavvio del server."}, finished_at = now(),
+           loop_state = null, pending_action = null, paused_at = null
+     where status in ('pending', 'running')
+    returning id`);
   const cancelled = await db.execute(sql`
     update runs
        set status = 'cancelled', error_message = ${PAUSE_REPLACED_MESSAGE}, finished_at = now(),
            loop_state = null, pending_action = null, paused_at = null
      where status = 'awaiting_client'
     returning id`);
-  return { failed: failed.length, cancelled: cancelled.rows.length };
+  return { failed: failed.rows.length, cancelled: cancelled.rows.length };
 }

@@ -123,6 +123,15 @@ describe("applyItem: tool MCP", () => {
     );
   });
 
+  it("senza riga sincronizzata né livello dichiarato salvato: si parte da L2", async () => {
+    await expect(applyItem(await item("tool", "new", mcpPayload({ level: "L0", declaredLevel: undefined })), appId)).rejects.toThrow(
+      'livello sotto quello dichiarato dal servizio per "send_mail"',
+    );
+    expect(await tools()).toHaveLength(0);
+    await applyItem(await item("tool", "new", mcpPayload({ level: "L2", declaredLevel: undefined })), appId);
+    expect((await tools())[0]).toMatchObject({ level: "L2", levelOverride: null });
+  });
+
   it("tool http: una deroga esistente resta solo se non sotto il nuovo livello", async () => {
     await applyItem(await item("tool", "new", toolPayload()), appId);
     await db.update(appToolsTable).set({ levelOverride: "L1" }).where(eq(appToolsTable.appId, appId));

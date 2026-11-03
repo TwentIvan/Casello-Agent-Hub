@@ -328,7 +328,7 @@ describe("esempi delle fasi nel prompt", () => {
 
   it("con il server MCP l'esempio del catalogo ha anche un tool mcp, valido per lo schema", () => {
     const example = phaseExample("catalog", true) as { tools: { kind: string; level: string }[] };
-    expect(example.tools.map((t) => [t.kind, t.level])).toEqual([["http", "L1"], ["mcp", "L2"]]);
+    expect(example.tools.map((t) => [t.kind, t.level])).toEqual([["http", "L2"], ["mcp", "L2"]]);
     const r = PHASE_SCHEMAS.catalog.safeParse(example);
     expect(r.success ? [] : r.error.issues).toEqual([]);
     const ctx = { appName: "App", baseUrl: "https://app.example", functionalDescription: null, hasCode: true, hasOpenApi: false, repoMap: "", previous: {}, alreadyPlanned: [] };

@@ -431,6 +431,33 @@ describe("strumenti", () => {
     }
   });
 
+  it("consegna del catalogo con la lease sbagliata: nessuna chiamata al server MCP dell'app", async () => {
+    let hits = 0;
+    const mcpServer = http.createServer((_req, res) => {
+      hits += 1;
+      res.writeHead(500);
+      res.end();
+    });
+    const mcpBase = await listen(mcpServer);
+    servers.push(mcpServer);
+    await db.update(appsTable).set({ mcpUrl: `${mcpBase}/mcp` }).where(eq(appsTable.id, appId));
+    // Id proprio: l'elenco MCP in memoria è per analisi e gli altri test riusano l'id 1
+    // (una sola analisi aperta per app: quella del beforeEach si toglie)
+    await db.delete(analysesTable).where(eq(analysesTable.id, analysisId));
+    const [own] = await db
+      .insert(analysesTable)
+      .values({ id: 4242, appId, model: LOCAL_MODEL, aiModelId: null, executor: "local", status: "running", phase: "catalog", sources: { code: "github", openapi: false, description: true }, maxTokens: 1_000_000 })
+      .returning();
+    const client = await connect(await startMcp(), otherToken);
+    const res = await call(client, "submit_phase", { analysisId: own!.id, leaseToken: "rubato", phase: "catalog", result: PHASE_EXAMPLES.catalog });
+    expect(res.isError).toBe(true);
+    expect(res.json).toEqual({ error: "lease scaduta: chiedi di nuovo il compito" });
+    const read = await call(client, "read_mcp_tools", { analysisId: own!.id, leaseToken: "rubato" });
+    expect(read.json).toEqual({ error: "lease scaduta: chiedi di nuovo il compito" });
+    expect(hits).toBe(0);
+    await client.close();
+  });
+
   it("GitHub che non risponde: expectedCommit null, il claim riesce", async () => {
     gh.failWith = (r) => (r.path.includes("/commits/") ? 500 : null);
     try {

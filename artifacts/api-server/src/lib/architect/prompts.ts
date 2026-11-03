@@ -82,7 +82,7 @@ export const PHASE_EXAMPLES: Record<PhaseName, unknown> = {
         description: "Annulla un ordine non ancora spedito",
         kind: "http",
         identity: "user",
-        level: "L1",
+        level: "L2",
         paramsSchema: {
           type: "object",
           properties: { id: { type: "string" }, reason: { type: "string" } },
@@ -137,7 +137,7 @@ export const PHASE_EXAMPLES: Record<PhaseName, unknown> = {
         paramsSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
       },
     ],
-    notes: "cancel_order (L1) è reversibile; i tool di sola lettura sono L0",
+    notes: "cancel_order (L2) avvisa il cliente e non si annulla: passa dalla coda delle conferme; i tool di sola lettura sono L0",
   },
   completion: {
     items: [

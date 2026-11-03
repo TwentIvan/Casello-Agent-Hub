@@ -132,13 +132,17 @@ router.patch("/apps/:id/tools/:toolId", async (req, res) => {
 
   // Si valida il tool risultante: cambiare solo kind, definizione o schema deve restare coerente
   const kind = body.kind ?? current.kind;
+  // Diventando MCP il livello scelto a mano non vale più: L2 (come un tool MCP nuovo) e niente deroga,
+  // finché la sincronizzazione successiva non porta il livello dichiarato dal servizio
+  const toMcp = kind === "mcp" && current.kind !== "mcp";
+  const levels = toMcp ? { level: "L2" as const, levelOverride: body.levelOverride ?? null } : {};
   const error =
     validateTool(
       body.name ?? current.name,
       kind,
       body.definition ?? current.definition,
       body.paramsSchema ?? current.paramsSchema,
-    ) ?? validateLevels(kind, body, current);
+    ) ?? validateLevels(kind, body, toMcp ? { level: "L2", levelOverride: null } : current);
   if (error) {
     res.status(400).json({ error });
     return;
@@ -147,7 +151,7 @@ router.patch("/apps/:id/tools/:toolId", async (req, res) => {
   try {
     const [tool] = await db
       .update(appToolsTable)
-      .set({ ...body, updatedAt: new Date() })
+      .set({ ...body, ...levels, updatedAt: new Date() })
       .where(and(eq(appToolsTable.id, toolId), eq(appToolsTable.appId, id)))
       .returning();
     if (!tool) {

@@ -40,7 +40,7 @@ import { ANALYSIS_DEFAULT_MAX_TOKENS, CHOOSE_MODEL, startAnalysis } from "../lib
 import { ApplyError, applyItem } from "../lib/architect/apply";
 import { exportAll, exportChapter } from "../lib/architect/issues";
 import { LOCAL_MODEL, cancelLocalAnalysis, releaseLocalAnalysis } from "../lib/architect/local-executor";
-import { ITEM_SCHEMAS, PHASES, type AnalysisChapter } from "../lib/architect/schemas";
+import { ITEM_SCHEMAS, PHASES, reviewedToolPayload, type AnalysisChapter } from "../lib/architect/schemas";
 import { SOURCE_LIMITS } from "../lib/architect/source-tree";
 import { runRateLimit } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
@@ -396,7 +396,17 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
         res.status(409).json({ error: "Si può modificare solo un elemento in attesa" });
         return;
       }
-      const parsed = ITEM_SCHEMAS[item.chapter].safeParse(body.payload);
+      let edited: unknown = body.payload;
+      if (item.chapter === "tool") {
+        // Livello dichiarato dalla voce salvata, mai dal client; strumento MCP non sostituibile
+        const reviewed = reviewedToolPayload(item.payload, body.payload);
+        if (!reviewed.ok) {
+          res.status(400).json({ error: reviewed.error });
+          return;
+        }
+        edited = reviewed.payload;
+      }
+      const parsed = ITEM_SCHEMAS[item.chapter].safeParse(edited);
       if (!parsed.success) {
         const issue = parsed.error.issues[0]!;
         const path = ["payload", ...issue.path].join(".");

@@ -739,6 +739,43 @@ describe("revisione degli elementi", () => {
     expect(tool).toMatchObject({ name: "list_teams", level: "L2", levelOverride: null, status: "active" });
   });
 
+  it("voce MCP modificata in revisione: il livello dichiarato resta quello salvato, tipo e strumento non cambiano", async () => {
+    const app = await createApp();
+    const analysisId = await newAnalysis(app.id);
+    const mcp: Record<string, unknown> = toolPayload({
+      name: "send_mail",
+      kind: "mcp",
+      identity: "service",
+      level: "L2",
+      declaredLevel: "L2",
+      definition: { mcpName: "send_mail" },
+    });
+    const item = await addItem(analysisId, "tool", mcp);
+
+    // Un declaredLevel inviato dal client si ignora: L0 resta sotto il dichiarato L2
+    const lower = await api("PATCH", `/analysis-items/${item.id}`, { payload: { ...mcp, level: "L0", declaredLevel: "L0" }, status: "approved" });
+    expect(lower.status).toBe(400);
+    expect(lower.json.error).toBe('payload.level: livello sotto quello dichiarato dal servizio per "send_mail"');
+    // Senza declaredLevel nel payload inviato resta comunque quello salvato
+    const { declaredLevel: _d, ...noDeclared } = mcp;
+    expect((await api("PATCH", `/analysis-items/${item.id}`, { payload: { ...noDeclared, level: "L1" } })).status).toBe(400);
+
+    const kind = await api("PATCH", `/analysis-items/${item.id}`, {
+      payload: { ...mcp, kind: "http", definition: { method: "GET", path: "/teams", paramLocations: { q: "query" } } },
+    });
+    expect(kind.status).toBe(400);
+    expect(kind.json.error).toBe("payload.kind: il tipo di uno strumento MCP non si può cambiare");
+    const other = await api("PATCH", `/analysis-items/${item.id}`, { payload: { ...mcp, name: "altro", definition: { mcpName: "altro" } } });
+    expect(other.status).toBe(400);
+    expect(other.json.error).toBe("payload.definition.mcpName: lo strumento MCP non si può cambiare");
+
+    const ok = await api("PATCH", `/analysis-items/${item.id}`, { payload: { ...mcp, level: "L3", declaredLevel: "L0" }, status: "approved" });
+    expect(ok.status, ok.text).toBe(200);
+    expect(ok.json.payload.declaredLevel).toBe("L2");
+    const [tool] = await db.select().from(appToolsTable).where(eq(appToolsTable.appId, app.id));
+    expect(tool).toMatchObject({ kind: "mcp", level: "L2", levelOverride: "L3", status: "active" });
+  });
+
   it("modifica del payload: validata col capitolo, solo se pending, e approvabile nella stessa richiesta", async () => {
     const app = await createApp();
     const analysisId = await newAnalysis(app.id);

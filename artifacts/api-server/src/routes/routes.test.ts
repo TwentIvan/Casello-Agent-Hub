@@ -333,6 +333,19 @@ describe("catalogo dei tool", () => {
     expect((await api("POST", `/apps/${app.id}/tools`, { ...mcp, name: "x", definition: {} })).status).toBe(400);
   });
 
+  it("un tool http che diventa mcp perde il livello scelto a mano: L2 e nessuna deroga", async () => {
+    const app = await createApp();
+    const tool = (await api("POST", `/apps/${app.id}/tools`, { ...HTTP_TOOL, level: "L0", levelOverride: "L1" })).json;
+    expect(tool).toMatchObject({ level: "L0", levelOverride: "L1" });
+    const res = await api("PATCH", `/apps/${app.id}/tools/${tool.id}`, { kind: "mcp", definition: { mcpName: tool.name } });
+    expect(res.status, res.text).toBe(200);
+    expect(res.json).toMatchObject({ kind: "mcp", level: "L2", levelOverride: null });
+    // Una deroga inviata insieme al cambio si confronta con L2
+    const http = (await api("POST", `/apps/${app.id}/tools`, { ...HTTP_TOOL, name: "altro", level: "L0" })).json;
+    const low = await api("PATCH", `/apps/${app.id}/tools/${http.id}`, { kind: "mcp", definition: { mcpName: "altro" }, levelOverride: "L1" });
+    expect(low.status).toBe(400);
+  });
+
   it("segnaposto {teamId} non nello schema → 400", async () => {
     const app = await createApp();
     const res = await api("POST", `/apps/${app.id}/tools`, {

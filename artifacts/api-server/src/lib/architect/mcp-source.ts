@@ -6,12 +6,9 @@
 import { McpError, listMcpTools, type McpToolInfo } from "../tools/mcp-client";
 import type { AppConnection } from "../tools/types";
 import type { ReadLimits, ToolOutput } from "./phase-loop";
-import { sliceChars } from "./text";
+import { capOutput, fittingLines, logArg, sliceChars } from "./text";
 
-// Spazio lasciato, sotto il tetto dell'output, al suggerimento finale (come in phase-loop)
-const HINT_RESERVE_CHARS = 300;
 const MAX_DESCRIPTION_CHARS = 150;
-const MAX_LOG_ARG_CHARS = 120;
 const MAX_DESCRIBE_CHARS = 12_000;
 
 /**
@@ -34,27 +31,6 @@ export async function loadMcpSource(
     log("MCP: non raggiungibile");
     return null;
   }
-}
-
-function logArg(value: string): string {
-  const flat = value.replace(/[\r\n\t]+/g, " ");
-  return flat.length > MAX_LOG_ARG_CHARS ? `${sliceChars(flat, MAX_LOG_ARG_CHARS)}…` : flat;
-}
-
-function capOutput(text: string, limits: ReadLimits): string {
-  const max = limits.maxToolOutputChars;
-  return text.length > max ? `${sliceChars(text, max)}\n[...troncato: output oltre ${max} caratteri]` : text;
-}
-
-/** Quante righe, dall'inizio, entrano nel tetto dell'output lasciando spazio al suggerimento finale. */
-function fittingLines(lines: string[], limits: ReadLimits): number {
-  const limit = limits.maxToolOutputChars - HINT_RESERVE_CHARS;
-  let chars = 0;
-  for (let i = 0; i < lines.length; i++) {
-    chars += lines[i]!.length + 1;
-    if (chars > limit) return i;
-  }
-  return lines.length;
 }
 
 /** Livello come lo vede il modello: dichiarato dal servizio o ripiego (livello non dichiarato). */

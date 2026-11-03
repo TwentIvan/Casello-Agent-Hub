@@ -476,16 +476,19 @@ export async function localMcpTools(analysisId: number, leaseToken: string, now:
 
 /**
  * Elenco MCP per il controllo del catalogo, letto prima della transazione della consegna (niente rete
- * con la riga bloccata). Lease e fase si controllano poi nella transazione: qui un'analisi mancante dà null.
+ * con la riga bloccata). La lease si controlla PRIMA di qualsiasi chiamata al server MCP (solo chi ha la
+ * lease fa usare a Casello le credenziali di servizio dell'app); nella transazione si ricontrolla con la
+ * riga bloccata, insieme alla fase.
  */
-async function catalogMcpTools(analysisId: number): Promise<McpToolInfo[] | null> {
+async function catalogMcpTools(analysisId: number, leaseToken: string, now: Date): Promise<McpToolInfo[] | null> {
   const [row] = await db
-    .select({ app: appsTable })
+    .select({ analysis: analysesTable, app: appsTable })
     .from(analysesTable)
     .innerJoin(appsTable, eq(appsTable.id, analysesTable.appId))
     .where(and(eq(analysesTable.id, analysisId), eq(analysesTable.executor, "local")))
     .limit(1);
-  return row ? analysisMcpTools(analysisId, row.app) : null;
+  requireLease(row?.analysis, leaseToken, now);
+  return analysisMcpTools(analysisId, row!.app);
 }
 
 /** Elementi della proposta per capitolo, tutti i capitoli presenti (anche a zero). */
@@ -515,7 +518,7 @@ export async function submitLocalPhase(
   now: Date = new Date(),
 ): Promise<SubmitOutcome> {
   const commit = typeof sourceCommit === "string" && COMMIT_RE.test(sourceCommit) ? sourceCommit : null;
-  const mcpTools = phase === "catalog" ? await catalogMcpTools(analysisId) : null;
+  const mcpTools = phase === "catalog" ? await catalogMcpTools(analysisId, leaseToken, now) : null;
   const outcome = await db.transaction(async (tx): Promise<SubmitOutcome & { inserted?: number }> => {
     const analysis = requireLease(await lockLocal(tx, analysisId), leaseToken, now);
     const expected = currentPhase(analysis);

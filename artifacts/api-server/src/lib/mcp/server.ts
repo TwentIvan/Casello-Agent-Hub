@@ -30,7 +30,8 @@ import {
   type LocalSourceOptions,
 } from "../architect/local-executor";
 import { describeMcpTool, listMcpToolsPage } from "../architect/mcp-source";
-import { FULL_READ_LIMITS, capOutput, listOperations } from "../architect/phase-loop";
+import { FULL_READ_LIMITS, listOperations } from "../architect/phase-loop";
+import { capOutput } from "../architect/text";
 import { PHASES } from "../architect/schemas";
 import { describeOperation } from "../architect/sources";
 import { requireApiToken } from "./auth";

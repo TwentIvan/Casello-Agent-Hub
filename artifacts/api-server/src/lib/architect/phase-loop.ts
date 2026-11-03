@@ -16,7 +16,7 @@ import { describeMcpTool, listMcpToolsPage } from "./mcp-source";
 import { PHASE_SCHEMAS, checkCatalogAgainstMcp, type CatalogResult, type PhaseName } from "./schemas";
 import { SOURCE_LIMITS, SourceTreeError, type SourceTree } from "./source-tree";
 import { describeOperation, type OpenApiDoc } from "./sources";
-import { sliceChars } from "./text";
+import { HINT_RESERVE_CHARS, capOutput, fittingLines, logArg, sliceChars } from "./text";
 
 export const PHASE_MAX_ROUNDS = 18;
 export const MAX_CORRECTIONS = 2;
@@ -76,14 +76,11 @@ export function scaleLimitsForContext(contextTokens: number | null): ReadLimits 
 const MAX_LIST_ENTRIES = 500;
 const MAX_SEARCH_MATCHES = 200;
 const MAX_READ_FILES = 6;
-// Spazio lasciato, sotto il tetto dell'output, al suggerimento finale (es. come continuare)
-const HINT_RESERVE_CHARS = 300;
 const MAX_SUMMARY_CHARS = 150;
 const MAX_ARG_CHARS = 1_000;
 const MAX_ISSUES = 30;
 const MAX_ISSUE_CHARS = 300;
 const MAX_ERROR_CHARS = 1_000;
-const MAX_LOG_ARG_CHARS = 120;
 
 /** Frazione del contesto del modello oltre la quale la cronologia viene riassunta. */
 export const CONTEXT_GUARD_RATIO = 0.75;
@@ -352,19 +349,6 @@ function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/** Valore breve e su una riga per i log (percorsi e pattern scelti dal modello). */
-function logArg(value: string): string {
-  const flat = value.replace(/[\r\n\t]+/g, " ");
-  return flat.length > MAX_LOG_ARG_CHARS ? `${sliceChars(flat, MAX_LOG_ARG_CHARS)}…` : flat;
-}
-
-export function capOutput(text: string, limits: ReadLimits): string {
-  const max = limits.maxToolOutputChars;
-  return text.length > max
-    ? `${sliceChars(text, max)}\n[...troncato: output oltre ${max} caratteri]`
-    : text;
-}
-
 export function formatIssues(issues: ZodIssue[]): string[] {
   const lines = issues.slice(0, MAX_ISSUES).map((i) => {
     const where = i.path.length ? i.path.join(".") : "(esito)";
@@ -391,20 +375,6 @@ const READ_SPECS: Record<ReadToolName, ArgSpec> = {
   list_mcp_tools: { prefix: { type: "string" }, offset: { type: "integer" } },
   read_mcp_tool: { name: { type: "string", required: true } },
 };
-
-/**
- * Quante righe, dall'inizio, entrano nel tetto dell'output lasciando spazio a un suggerimento finale:
- * si taglia prima di aggiungere il suggerimento, così il suggerimento non viene mai troncato.
- */
-function fittingLines(lines: string[], limits: ReadLimits): number {
-  const limit = limits.maxToolOutputChars - HINT_RESERVE_CHARS;
-  let chars = 0;
-  for (let i = 0; i < lines.length; i++) {
-    chars += lines[i]!.length + 1;
-    if (chars > limit) return i;
-  }
-  return lines.length;
-}
 
 function excludedHint(n: number): string {
   return `[${n} file esclusi per default (lockfile, generati, test, minificati): usa includeIgnored=true per includerli]`;

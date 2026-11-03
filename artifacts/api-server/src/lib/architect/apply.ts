@@ -131,7 +131,7 @@ const rank = (level: ToolLevel): number => TOOL_LEVELS.indexOf(level);
 
 /**
  * Livello e deroga della riga del tool. Strumento MCP: `level` è quello dichiarato dal servizio (della
- * riga già sincronizzata dal server, altrimenti quello letto dall'architetto; in mancanza il proposto)
+ * riga già sincronizzata dal server, altrimenti quello letto dall'architetto; in mancanza L2)
  * e il livello proposto, se più alto, diventa la deroga; sotto il dichiarato non si applica. Tool HTTP:
  * `level` è il proposto e una deroga esistente resta solo se ancora valida (non sotto il livello).
  */
@@ -140,7 +140,8 @@ function toolLevels(
   current: { kind: string; level: ToolLevel; levelOverride: ToolLevel | null } | null,
 ): { level: ToolLevel; levelOverride: ToolLevel | null } {
   if (tool.kind === "mcp") {
-    const declared = (current?.kind === "mcp" ? current.level : undefined) ?? tool.declaredLevel ?? tool.level;
+    // Senza riga sincronizzata né livello letto dall'architetto: L2, come un tool MCP creato a mano
+    const declared = (current?.kind === "mcp" ? current.level : undefined) ?? tool.declaredLevel ?? "L2";
     if (rank(tool.level) < rank(declared)) throw new ApplyError(levelBelowDeclared(tool.name));
     return { level: declared, levelOverride: rank(tool.level) > rank(declared) ? tool.level : null };
   }

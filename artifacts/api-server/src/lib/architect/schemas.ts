@@ -190,6 +190,30 @@ export function normalizeStoredToolPayload(payload: unknown): unknown {
   return { ...rest, kind: rest["kind"] ?? "http", level };
 }
 
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
+/**
+ * Payload di una voce tool modificata in revisione. Il livello dichiarato è di Casello (letto dal
+ * server MCP), non del client: si tiene quello della voce salvata e si ignora quello inviato. Di uno
+ * strumento MCP non si cambiano tipo né `definition.mcpName` (il dichiarato vale solo per quello).
+ */
+export function reviewedToolPayload(
+  stored: unknown,
+  edited: unknown,
+): { ok: true; payload: unknown } | { ok: false; error: string } {
+  const next = asRecord(normalizeStoredToolPayload(edited));
+  if (!next) return { ok: true, payload: edited };
+  const { declaredLevel: _fromClient, ...rest } = next;
+  const before = asRecord(normalizeStoredToolPayload(stored));
+  if (before?.["kind"] !== "mcp") return { ok: true, payload: rest };
+  if (rest["kind"] !== "mcp") return { ok: false, error: "payload.kind: il tipo di uno strumento MCP non si può cambiare" };
+  if (asRecord(rest["definition"])?.["mcpName"] !== asRecord(before["definition"])?.["mcpName"]) {
+    return { ok: false, error: "payload.definition.mcpName: lo strumento MCP non si può cambiare" };
+  }
+  return { ok: true, payload: before["declaredLevel"] !== undefined ? { ...rest, declaredLevel: before["declaredLevel"] } : rest };
+}
+
 /** Voce tool salvata (anche di un'analisi precedente ai livelli): normalizzata, poi lo schema della fase. */
 export const StoredToolProposalSchema = z.preprocess(normalizeStoredToolPayload, ToolProposalSchema);
 

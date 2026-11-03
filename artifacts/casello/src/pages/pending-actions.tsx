@@ -122,6 +122,7 @@ export default function PendingActionsPage() {
         </CardContent>
       </Card>
       <ActionDialog
+        key={selected ?? "none"}
         action={selectedAction}
         onOpenChange={(open) => !open && setSelected(null)}
         onDecided={() => void queryClient.invalidateQueries({ queryKey: getListPendingActionsQueryKey() })}

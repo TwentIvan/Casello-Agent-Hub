@@ -83,7 +83,15 @@ export function ActionDialog({
   const needsToken = action?.tool.identity === "user";
 
   return (
-    <Dialog open={action !== null} onOpenChange={(open) => !busy && onOpenChange(open)}>
+    <Dialog open={action !== null} onOpenChange={(open) => {
+        if (busy) return;
+        if (!open) {
+          setUserToken("");
+          setNote("");
+        }
+        onOpenChange(open);
+      }}
+    >
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         {action && (
           <>
@@ -180,12 +188,14 @@ export function ActionDialog({
                   </Button>
                   <Button
                     disabled={busy}
-                    onClick={() =>
+                    onClick={() => {
                       approve.mutate({
                         number: action.number,
                         data: needsToken && userToken ? { userToken } : {},
-                      })
-                    }
+                      });
+                      // Il token non resta nello stato dopo l'invio (nemmeno se l'approvazione fallisce).
+                      setUserToken("");
+                    }}
                   >
                     {approve.isPending ? "Esecuzione…" : "Approva ed esegui"}
                   </Button>

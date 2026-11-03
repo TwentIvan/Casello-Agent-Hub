@@ -109,3 +109,20 @@ describe("checkQueuedText: ordine di apparizione", () => {
     ]);
   });
 });
+
+describe("checkQueuedText: segnaposto tra angolari", () => {
+  it("segnala i segnaposto di una sola parola che non sono tag HTML", () => {
+    expect(ok("Gentile <nome>, cliente <cliente>")).toEqual([
+      'segnaposto "<nome>"',
+      'segnaposto "<cliente>"',
+    ]);
+  });
+
+  it("segnala anche la chiusura di un segnaposto", () => {
+    expect(ok("fine </nome>")).toEqual(['segnaposto "</nome>"']);
+  });
+
+  it("non segnala i tag HTML reali, senza distinzione di maiuscole e con / finale", () => {
+    expect(ok("<A HREF=\"x\">link</A> <BR> <br/> </p>")).toEqual([]);
+  });
+});

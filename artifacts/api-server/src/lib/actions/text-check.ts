@@ -3,8 +3,10 @@
 //
 // Regole (volutamente semplici):
 // - Segnaposto tra quadre: `[...]` con almeno una lettera dentro (`[]`, `[1]` non contano).
-// - Segnaposto tra angolari: `<...>` che non è un tag HTML. Tag = nome con eventuale `/` iniziale o finale
-//   e attributi solo se contengono `=` (`<br>`, `</p>`, `<a href="x">`). Quindi `<da definire>` conta.
+// - Segnaposto tra angolari: `<...>` con almeno una lettera dentro che non è un tag HTML. Tag HTML = nome
+//   di una lista chiusa di tag reali (confronto senza distinzione di maiuscole), con eventuale `/` iniziale
+//   (chiusura), attributi facoltativi e `/` finale facoltativo (`<br>`, `</p>`, `<br/>`, `<A HREF="x">`).
+//   Ogni altro testo tra angolari conta: `<nome>`, `<cliente>`, `</nome>`, `<da definire>`.
 // - `TODO`, `TBD`, `XXX` come parole intere, maiuscole; `???` come testo letterale.
 // - Menzione: `@` a inizio stringa o dopo un carattere che non è lettera, cifra o `_` (così `a@b.it` non lo è),
 //   seguito da lettere, cifre, `.`, `_`, `-`; il nome non termina con `.`, `-` o `_`.
@@ -22,7 +24,13 @@ const BRACKET_RE = /\[[^[\]]*\]/g;
 const ANGLE_RE = /<[^<>]*>/g;
 const WORD_PLACEHOLDER_RE = /\b(?:TODO|TBD|XXX)\b/g;
 const QUESTION_MARKS = "???";
-const HTML_TAG_RE = /^\/?[A-Za-z][A-Za-z0-9]*(?:\s[^<>]*=[^<>]*)?\/?$/;
+// Tag HTML reali ammessi tra angolari (lista chiusa, senza distinzione di maiuscole).
+const HTML_TAGS = [
+  "a", "b", "br", "p", "i", "u", "s", "em", "strong", "small", "sub", "sup",
+  "ul", "ol", "li", "div", "span", "h1", "h2", "h3", "h4", "h5", "h6",
+  "table", "thead", "tbody", "tr", "td", "th", "img", "hr", "code", "pre", "blockquote",
+];
+const HTML_TAG_RE = new RegExp(`^\\/?(?:${HTML_TAGS.join("|")})(?:\\s[^<>]*)?\\/?$`, "i");
 const MENTION_RE = /(?<![\p{L}\p{N}_])@([\p{L}\p{N}_](?:[\p{L}\p{N}_.-]*[\p{L}\p{N}_])?)/gu;
 const HAS_LETTER_RE = /\p{L}/u;
 

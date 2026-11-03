@@ -1,6 +1,7 @@
 import { BodyTooLarge, readBytesLimited } from "../http-read";
 import { decryptSecret } from "../secrets";
 import { checkHttpPath, parseDefinition, validateArgs } from "./definition";
+import { callMcpTool } from "./mcp-client";
 import type { AppConnection, AuthConfig, CatalogTool, HttpDefinition, ToolResult } from "./types";
 
 // Esecutore HTTP dei tool: l'unico punto in cui una chiamata del modello diventa una
@@ -36,7 +37,7 @@ export class ToolError extends Error {
   }
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -128,13 +129,18 @@ function authHeader(config: AuthConfig, secret: string, what: string): [string, 
 }
 
 /** Header di autenticazione e credenziali da oscurare nelle risposte (header completo e valore nudo). */
-interface ResolvedAuth {
+export interface ResolvedAuth {
   header: [string, string];
   secrets: string[];
 }
 
-function resolveAuth(conn: AppConnection, tool: CatalogTool, userToken?: string): ResolvedAuth {
-  if (tool.identity === "service") {
+/** Credenziali per un'identità (utente o servizio): le regole sono le stesse per HTTP e MCP. */
+export function resolveAuthFor(
+  conn: AppConnection,
+  identity: "user" | "service",
+  userToken?: string,
+): ResolvedAuth {
+  if (identity === "service") {
     if (!conn.serviceAuth) {
       throw new ToolError("autenticazione di servizio non configurata per l'app");
     }
@@ -158,6 +164,10 @@ function resolveAuth(conn: AppConnection, tool: CatalogTool, userToken?: string)
   }
   const header = authHeader(conn.userAuth, userToken, "utente");
   return { header, secrets: [header[1], userToken] };
+}
+
+function resolveAuth(conn: AppConnection, tool: CatalogTool, userToken?: string): ResolvedAuth {
+  return resolveAuthFor(conn, tool.identity, userToken);
 }
 
 export function buildHttpRequest(
@@ -238,7 +248,7 @@ async function readLimited(res: Response): Promise<string> {
   return new TextDecoder("utf-8").decode(await readBytesLimited(res, MAX_RESPONSE_BYTES));
 }
 
-function truncate(text: string): string {
+export function truncate(text: string): string {
   if (text.length <= MAX_RESULT_CHARS) return text;
   return `${text.slice(0, MAX_RESULT_CHARS)}… [risposta troncata a ${MAX_RESULT_CHARS} caratteri]`;
 }
@@ -284,7 +294,7 @@ function errorSnippet(text: string, statusText: string): string {
  * segreto nudo): un'app può rimandarle in un errore o in una risposta, che finirebbero nel
  * modello, nei passi della run e nello stato del ciclo. Prima i valori più lunghi.
  */
-function redact(text: string, secrets: string[]): string {
+export function redact(text: string, secrets: string[]): string {
   let out = text;
   const values = [...new Set(secrets)]
     .filter((v) => v.length >= MIN_REDACT_CHARS)
@@ -293,7 +303,7 @@ function redact(text: string, secrets: string[]): string {
   return out;
 }
 
-function fail(content: string, status?: number): ToolResult {
+export function fail(content: string, status?: number): ToolResult {
   return status === undefined ? { ok: false, content } : { ok: false, status, content };
 }
 
@@ -314,6 +324,22 @@ export async function executeTool(input: {
   try {
     if (tool.kind === "ui") return fail("questo tool viene eseguito dal client, non dal server");
     if (tool.kind === "composite") return fail("tool composti non ancora supportati");
+    if (tool.kind === "mcp") {
+      const mcpParsed = parseDefinition("mcp", tool.definition);
+      if (!mcpParsed.ok) return fail(`definizione del tool non valida: ${mcpParsed.error}`);
+      const mcpArgError = validateArgs(tool.paramsSchema, input.args);
+      if (mcpArgError) return fail(`argomenti non validi: ${mcpArgError}`);
+      if (!isPlainObject(input.args)) return fail("argomenti non validi: devono essere un oggetto");
+      return await callMcpTool({
+        conn,
+        tool,
+        args: input.args,
+        ...(userToken !== undefined ? { userToken } : {}),
+        fetchImpl,
+        timeoutMs,
+        ...(input.signal ? { signal: input.signal } : {}),
+      });
+    }
     if (tool.kind !== "http") return fail(`tipo di tool non supportato: ${String(tool.kind)}`);
 
     // La definizione arriva dal DB: la si riverifica prima di usarla
@@ -372,7 +398,7 @@ export async function executeTool(input: {
   }
 }
 
-function describeFetchError(err: unknown, timeoutMs: number): string {
+export function describeFetchError(err: unknown, timeoutMs: number): string {
   const name = err instanceof Error ? err.name : "";
   if (name === "TimeoutError" || name === "AbortError") {
     return `timeout: l'app non ha risposto entro ${Math.round(timeoutMs / 100) / 10} s`;

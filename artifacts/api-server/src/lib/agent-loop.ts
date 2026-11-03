@@ -1,11 +1,12 @@
-// Ciclo dell'agente: alterna chiamate al modello ed esecuzioni dei tool, si ferma
-// per conferme e azioni di interfaccia, applica i limiti del turno.
-// Modulo puro: niente DB né rete, tutte le dipendenze arrivano da `LoopDeps`.
-// Lo stato (`LoopState`) è JSON puro: l'orchestratore lo salva nella run e lo riprende.
+// Ciclo dell'agente: alterna chiamate al modello ed esecuzioni dei tool e applica i limiti del turno.
+// Le chiamate ai tool L2 non si eseguono: diventano voci della coda delle azioni (`queueAction`) e il
+// modello riceve il numero della voce. Modulo puro: niente DB né rete, tutte le dipendenze arrivano da
+// `LoopDeps`. Lo stato (`LoopState`) è JSON puro.
 
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { assistantToolCalls, type ChatResult } from "./ai/chat-types";
-import { maskSensitiveArgs } from "./tools/sensitive";
+import { validateArgs } from "./tools/definition";
+import { effectiveLevel } from "./tools/levels";
 import type { CatalogTool, ToolResult } from "./tools/types";
 
 export interface LoopLimits {
@@ -32,37 +33,39 @@ export interface LoopState {
   rounds: number;
   /** Token (prompt + completamento) di tutte le chiamate al modello del turno */
   tokens: number;
-  /** Tempo passato dentro runAgentLoop (le pause non contano) */
+  /** Tempo passato dentro runAgentLoop */
   activeMs: number;
 }
 
-export interface PendingAction {
-  kind: "confirmation" | "ui";
-  toolCallId: string;
-  toolName: string;
-  /** Argomenti veri: servono per eseguire il tool alla ripresa, mai esposti dall'API */
-  args: Record<string, unknown>;
-  /** Argomenti con le proprietà sensibili oscurate ("***"): la forma pubblica */
-  publicArgs: Record<string, unknown>;
-  /** Riassunto per l'utente, costruito dagli argomenti oscurati */
-  summary: string;
-}
-
 export interface StepRecord {
-  type: "model" | "tool";
+  type: "model" | "tool" | "queued";
   toolName?: string;
   args?: unknown;
   ok: boolean;
   httpStatus?: number;
   durationMs: number;
   error?: string;
+  /** Solo per `queued`: numero della voce nella coda delle azioni dell'utente */
+  queuedNumber?: number;
+  /** Solo per `queued`: destinatario e sintesi dichiarati dal modello */
+  recipient?: string;
+  summary?: string;
 }
+
+export type QueueActionResult = { ok: true; number: number } | { ok: false; message: string };
 
 export interface LoopDeps {
   /** `remainingMs`: tempo attivo ancora disponibile nel turno, per limitare la chiamata */
   chat(messages: ChatCompletionMessageParam[], opts: { remainingMs: number }): Promise<ChatResult>;
   tools: CatalogTool[];
   executeTool(tool: CatalogTool, args: Record<string, unknown>): Promise<ToolResult>;
+  /** Accoda una chiamata L2 per la conferma dell'utente (argomenti senza destinatario e sintesi) */
+  queueAction(
+    tool: CatalogTool,
+    args: Record<string, unknown>,
+    recipient: string,
+    summary: string,
+  ): Promise<QueueActionResult>;
   onStep(step: StepRecord): Promise<void>;
   limits?: Partial<LoopLimits>;
   now?: () => number;
@@ -72,15 +75,35 @@ export interface LoopDeps {
 
 export type LoopOutcome =
   | { type: "finished"; content: string; state: LoopState }
-  | { type: "paused"; pending: PendingAction; state: LoopState }
   | { type: "failed"; error: string; state: LoopState }
   /** Annullato dall'esterno (`deps.signal`): niente altri passi, lo stato della run lo scrive chi ha annullato */
   | { type: "cancelled"; state: LoopState };
 
-// Esito della preparazione di una chiamata: errore da restituire al modello o tool pronto
+/** Parametri che Casello aggiunge agli strumenti L2: servono alla coda, non arrivano al servizio. */
+export const RECIPIENT_PARAM = "destinatario";
+export const SUMMARY_PARAM = "sintesi";
+export const MAX_SUMMARY_CHARS = 500;
+
+export const QUEUE_FIELDS_MISSING = "servono destinatario e sintesi per un'azione da confermare";
+export const QUEUE_FAILED = "impossibile accodare l'azione";
+
+export function queuedMessage(number: number): string {
+  return `accodata come n. ${number}, in attesa di conferma dell'utente`;
+}
+
+// Esito della preparazione di una chiamata: errore da restituire al modello, tool pronto da eseguire
+// o azione L2 da accodare
 type PreparedCall =
   | { kind: "error"; call: ToolCall; args: unknown; message: string }
-  | { kind: "ready"; call: ToolCall; tool: CatalogTool; args: Record<string, unknown> };
+  | { kind: "ready"; call: ToolCall; tool: CatalogTool; args: Record<string, unknown> }
+  | {
+      kind: "queue";
+      call: ToolCall;
+      tool: CatalogTool;
+      args: Record<string, unknown>;
+      recipient: string;
+      summary: string;
+    };
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -116,58 +139,47 @@ function prepareCall(call: ToolCall, tools: CatalogTool[]): PreparedCall {
       message: `Errore: gli argomenti di "${call.name}" devono essere un oggetto JSON`,
     };
   }
-  return { kind: "ready", call, tool, args: parsed as Record<string, unknown> };
+  const { [RECIPIENT_PARAM]: recipient, [SUMMARY_PARAM]: summary, ...rest } = parsed as Record<string, unknown>;
+
+  if (effectiveLevel(tool) !== "L2") {
+    // Destinatario e sintesi superflui si tolgono, a meno che lo strumento non li dichiari come suoi
+    const declared = declaredParams(tool.paramsSchema);
+    const args = { ...rest };
+    if (recipient !== undefined && declared.has(RECIPIENT_PARAM)) args[RECIPIENT_PARAM] = recipient;
+    if (summary !== undefined && declared.has(SUMMARY_PARAM)) args[SUMMARY_PARAM] = summary;
+    return { kind: "ready", call, tool, args };
+  }
+
+  if (
+    typeof recipient !== "string" ||
+    typeof summary !== "string" ||
+    recipient.trim() === "" ||
+    summary.trim() === ""
+  ) {
+    return { kind: "error", call, args: rest, message: QUEUE_FIELDS_MISSING };
+  }
+  if (summary.length > MAX_SUMMARY_CHARS) {
+    return { kind: "error", call, args: rest, message: `la sintesi supera i ${MAX_SUMMARY_CHARS} caratteri` };
+  }
+  const argError = validateArgs(tool.paramsSchema, rest);
+  if (argError) return { kind: "error", call, args: rest, message: `argomenti non validi: ${argError}` };
+  return { kind: "queue", call, tool, args: rest, recipient, summary };
 }
 
-function needsPause(tool: CatalogTool): boolean {
-  return tool.requiresConfirmation || tool.kind === "ui";
+function declaredParams(schema: Record<string, unknown>): Set<string> {
+  const props = schema["properties"];
+  return new Set(props && typeof props === "object" && !Array.isArray(props) ? Object.keys(props) : []);
 }
 
-// Eseguibili in parallelo: sola lettura, senza conferma, HTTP
+// Eseguibili in parallelo: sola lettura (L0), HTTP o MCP
 function isParallelSafe(p: PreparedCall): p is Extract<PreparedCall, { kind: "ready" }> {
-  return p.kind === "ready" && p.tool.readOnly && !p.tool.requiresConfirmation && p.tool.kind === "http";
-}
-
-function formatValue(value: unknown): string {
-  return typeof value === "string" ? value : JSON.stringify(value);
-}
-
-// Riceve gli argomenti già oscurati: i valori sensibili non finiscono nel riassunto
-function buildSummary(tool: CatalogTool, args: Record<string, unknown>): string {
-  const label = tool.description?.trim() || tool.name;
-  const parts = Object.entries(args).map(([k, v]) => `${k}: ${formatValue(v)}`);
-  return `${label}: ${parts.join(", ")}`;
+  return (
+    p.kind === "ready" && effectiveLevel(p.tool) === "L0" && (p.tool.kind === "http" || p.tool.kind === "mcp")
+  );
 }
 
 function toolMessage(toolCallId: string, content: string): ChatCompletionMessageParam {
   return { role: "tool", tool_call_id: toolCallId, content };
-}
-
-/** L'azione in sospeso non corrisponde alla testa della coda (id errato o già risolta) */
-export class PendingMismatchError extends Error {
-  constructor(toolCallId: string, headId: string | undefined) {
-    super(
-      headId === undefined
-        ? `l'azione in sospeso "${toolCallId}" non è in attesa: la coda è vuota`
-        : `l'azione in sospeso "${toolCallId}" non corrisponde alla chiamata in attesa "${headId}"`,
-    );
-    this.name = "PendingMismatchError";
-  }
-}
-
-/**
- * Aggiunge il risultato della chiamata in sospeso come messaggio `tool` e la toglie dalla coda.
- * La chiamata in pausa è sempre in testa alla coda: se l'id non coincide (azione errata o già
- * risolta) lancia `PendingMismatchError` invece di aggiungere un messaggio orfano o duplicato.
- * Non modifica lo stato ricevuto.
- */
-export function resolvePending(state: LoopState, pending: PendingAction, result: ToolResult): LoopState {
-  const headId = state.queue[0]?.id;
-  if (headId !== pending.toolCallId) throw new PendingMismatchError(pending.toolCallId, headId);
-  const next = cloneState(state);
-  next.messages.push(toolMessage(pending.toolCallId, result.content));
-  next.queue.shift();
-  return next;
 }
 
 export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<LoopOutcome> {
@@ -210,6 +222,41 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
     });
   };
 
+  // Accoda un'azione L2: il modello riceve il numero della voce o il motivo del rifiuto
+  const enqueue = async (p: Extract<PreparedCall, { kind: "queue" }>): Promise<void> => {
+    const t0 = now();
+    let outcome: QueueActionResult;
+    try {
+      outcome = await deps.queueAction(p.tool, p.args, p.recipient, p.summary);
+    } catch {
+      outcome = { ok: false, message: QUEUE_FAILED };
+    }
+    const durationMs = now() - t0;
+    if (outcome.ok) {
+      state.messages.push(toolMessage(p.call.id, queuedMessage(outcome.number)));
+      await deps.onStep({
+        type: "queued",
+        toolName: p.tool.name,
+        args: p.args,
+        ok: true,
+        durationMs,
+        queuedNumber: outcome.number,
+        recipient: p.recipient,
+        summary: p.summary,
+      });
+      return;
+    }
+    state.messages.push(toolMessage(p.call.id, outcome.message));
+    await deps.onStep({
+      type: "tool",
+      toolName: p.tool.name,
+      args: p.args,
+      ok: false,
+      durationMs,
+      error: outcome.message,
+    });
+  };
+
   const cancelled = (): LoopOutcome | null =>
     deps.signal?.aborted ? finish({ type: "cancelled", state }) : null;
 
@@ -233,21 +280,11 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
         continue;
       }
 
-      if (needsPause(prepared.tool)) {
-        // La chiamata resta in testa alla coda: la toglie resolvePending
-        const publicArgs = maskSensitiveArgs(prepared.tool, prepared.args) as Record<string, unknown>;
-        return finish({
-          type: "paused",
-          pending: {
-            kind: prepared.tool.kind === "ui" ? "ui" : "confirmation",
-            toolCallId: prepared.call.id,
-            toolName: prepared.tool.name,
-            args: prepared.args,
-            publicArgs,
-            summary: buildSummary(prepared.tool, publicArgs),
-          },
-          state,
-        });
+      if (prepared.kind === "queue") {
+        state.queue.shift();
+        await enqueue(prepared);
+        if (deps.signal?.aborted) return finish({ type: "cancelled", state });
+        continue;
       }
 
       if (isParallelSafe(prepared)) {
@@ -320,8 +357,8 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
       tool_calls: assistantToolCalls(reply.toolCalls),
     });
 
-    // Limiti superati da questa stessa chiamata: le richieste non vengono eseguite (né messe in
-    // pausa); ognuna riceve un messaggio `tool` così la storia resta valida per i turni successivi
+    // Limiti superati da questa stessa chiamata: le richieste non vengono eseguite (né accodate);
+    // ognuna riceve un messaggio `tool` così la storia resta valida per i turni successivi
     syncActive();
     const exceeded =
       state.tokens >= limits.maxTokens

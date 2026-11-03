@@ -18,6 +18,11 @@ export interface AppUpdate {
   baseUrl?: string;
   /** @nullable */
   internalBaseUrl?: string | null;
+  /**
+     * Indirizzo del server MCP dell'app
+     * @nullable
+     */
+  mcpUrl?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
   /**

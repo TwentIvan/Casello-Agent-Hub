@@ -21,6 +21,11 @@ export interface App {
      * @nullable
      */
   internalBaseUrl?: string | null;
+  /**
+     * Indirizzo del server MCP dell'app
+     * @nullable
+     */
+  mcpUrl?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
   /** Indica se il segreto di servizio è impostato (il valore non è mai esposto) */

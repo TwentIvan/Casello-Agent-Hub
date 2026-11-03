@@ -17,7 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { TOOL_IDENTITY_LABELS, TOOL_STATUS_LABELS } from "@/lib/tool-labels";
+import { TOOL_IDENTITY_LABELS, TOOL_LEVEL_LABELS, TOOL_STATUS_LABELS } from "@/lib/tool-labels";
 
 function ToolBadges({ tool }: { tool: AppTool }) {
   return (
@@ -25,16 +25,9 @@ function ToolBadges({ tool }: { tool: AppTool }) {
       <Badge variant="outline" className="text-[11px] font-normal">
         {TOOL_IDENTITY_LABELS[tool.identity]}
       </Badge>
-      {tool.readOnly ? (
-        <Badge variant="outline" className="text-[11px] font-normal">
-          Sola lettura
-        </Badge>
-      ) : null}
-      {tool.requiresConfirmation ? (
-        <Badge variant="outline" className="text-[11px] font-normal">
-          Chiede conferma
-        </Badge>
-      ) : null}
+      <Badge variant="outline" className="text-[11px] font-normal">
+        {TOOL_LEVEL_LABELS[tool.levelOverride ?? tool.level]}
+      </Badge>
       {tool.status !== "active" ? (
         <Badge variant="secondary" className="text-[11px] font-normal">
           {TOOL_STATUS_LABELS[tool.status]}

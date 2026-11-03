@@ -156,6 +156,7 @@ export const ListAppsResponseItem = zod.object({
   "description": zod.string().nullish(),
   "baseUrl": zod.string(),
   "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
+  "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -193,6 +194,7 @@ export const CreateAppBody = zod.object({
   "description": zod.string().optional(),
   "baseUrl": zod.string().min(1),
   "internalBaseUrl": zod.string().nullish(),
+  "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -224,6 +226,7 @@ export const CreateAppResponse = zod.object({
   "description": zod.string().nullish(),
   "baseUrl": zod.string(),
   "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
+  "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -264,6 +267,7 @@ export const GetAppResponse = zod.object({
   "description": zod.string().nullish(),
   "baseUrl": zod.string(),
   "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
+  "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -304,6 +308,7 @@ export const UpdateAppBody = zod.object({
   "description": zod.string().nullish(),
   "baseUrl": zod.string().min(1).optional(),
   "internalBaseUrl": zod.string().nullish(),
+  "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -334,6 +339,7 @@ export const UpdateAppResponse = zod.object({
   "description": zod.string().nullish(),
   "baseUrl": zod.string(),
   "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
+  "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -501,6 +507,23 @@ export const DeleteAgentResponse = zod.void()
 
 
 /**
+ * Legge gli strumenti del server MCP dell'app: i nuovi entrano come bozza, quelli esistenti aggiornano descrizione, schema e livello, quelli spariti dal server vengono disattivati; un nome uguale a un tool non MCP non cambia nulla e finisce in `conflicts`. Massimo 6 al minuto per utente.
+ * @summary Aggiorna il catalogo dagli strumenti del server MCP dell'app
+ */
+export const RefreshAppMcpToolsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RefreshAppMcpToolsResponse = zod.object({
+  "added": zod.number(),
+  "updated": zod.number(),
+  "disabled": zod.number(),
+  "unchanged": zod.number(),
+  "conflicts": zod.array(zod.string()).describe('Nomi degli strumenti MCP uguali a un tool non MCP del catalogo (lasciato invariato)')
+})
+
+
+/**
  * @summary Elenca i tool del catalogo di un'app
  */
 export const ListAppToolsParams = zod.object({
@@ -512,10 +535,10 @@ export const ListAppToolsResponseItem = zod.object({
   "appId": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
-  "kind": zod.enum(['http', 'ui', 'composite']),
+  "kind": zod.enum(['http', 'ui', 'composite', 'mcp']),
   "identity": zod.enum(['user', 'service']),
-  "requiresConfirmation": zod.boolean(),
-  "readOnly": zod.boolean(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)'),
+  "levelOverride": zod.union([zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello d\'azione: L0 lettura, L1 azione reversibile, L2 con conferma, L3 vietata'),zod.null()]).describe('Livello scelto dall\'utente, mai sotto `level`'),
   "status": zod.enum(['draft', 'active', 'disabled']),
   "paramsSchema": zod.record(zod.string(), zod.unknown()).describe('JSON Schema dei parametri accettati dal tool'),
   "definition": zod.record(zod.string(), zod.unknown()).describe('Definizione dell\'esecuzione (dipende da kind)'),
@@ -544,10 +567,10 @@ export const CreateAppToolParams = zod.object({
 export const CreateAppToolBody = zod.object({
   "name": zod.string().min(1),
   "description": zod.string().nullish(),
-  "kind": zod.enum(['http', 'ui', 'composite']),
+  "kind": zod.enum(['http', 'ui', 'composite', 'mcp']),
   "identity": zod.enum(['user', 'service']).optional(),
-  "requiresConfirmation": zod.boolean().optional(),
-  "readOnly": zod.boolean().optional(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional().describe('Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)'),
+  "levelOverride": zod.union([zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello d\'azione: L0 lettura, L1 azione reversibile, L2 con conferma, L3 vietata'),zod.null()]).optional().describe('Livello scelto dall\'utente, mai sotto `level`'),
   "status": zod.enum(['draft', 'active', 'disabled']).optional(),
   "paramsSchema": zod.record(zod.string(), zod.unknown()).optional(),
   "definition": zod.record(zod.string(), zod.unknown()),
@@ -564,10 +587,10 @@ export const CreateAppToolResponse = zod.object({
   "appId": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
-  "kind": zod.enum(['http', 'ui', 'composite']),
+  "kind": zod.enum(['http', 'ui', 'composite', 'mcp']),
   "identity": zod.enum(['user', 'service']),
-  "requiresConfirmation": zod.boolean(),
-  "readOnly": zod.boolean(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)'),
+  "levelOverride": zod.union([zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello d\'azione: L0 lettura, L1 azione reversibile, L2 con conferma, L3 vietata'),zod.null()]).describe('Livello scelto dall\'utente, mai sotto `level`'),
   "status": zod.enum(['draft', 'active', 'disabled']),
   "paramsSchema": zod.record(zod.string(), zod.unknown()).describe('JSON Schema dei parametri accettati dal tool'),
   "definition": zod.record(zod.string(), zod.unknown()).describe('Definizione dell\'esecuzione (dipende da kind)'),
@@ -596,10 +619,10 @@ export const UpdateAppToolParams = zod.object({
 export const UpdateAppToolBody = zod.object({
   "name": zod.string().min(1).optional(),
   "description": zod.string().nullish(),
-  "kind": zod.enum(['http', 'ui', 'composite']).optional(),
+  "kind": zod.enum(['http', 'ui', 'composite', 'mcp']).optional(),
   "identity": zod.enum(['user', 'service']).optional(),
-  "requiresConfirmation": zod.boolean().optional(),
-  "readOnly": zod.boolean().optional(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional().describe('Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)'),
+  "levelOverride": zod.union([zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello d\'azione: L0 lettura, L1 azione reversibile, L2 con conferma, L3 vietata'),zod.null()]).optional().describe('Livello scelto dall\'utente, mai sotto `level`'),
   "status": zod.enum(['draft', 'active', 'disabled']).optional(),
   "paramsSchema": zod.record(zod.string(), zod.unknown()).optional(),
   "definition": zod.record(zod.string(), zod.unknown()).optional(),
@@ -616,10 +639,10 @@ export const UpdateAppToolResponse = zod.object({
   "appId": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
-  "kind": zod.enum(['http', 'ui', 'composite']),
+  "kind": zod.enum(['http', 'ui', 'composite', 'mcp']),
   "identity": zod.enum(['user', 'service']),
-  "requiresConfirmation": zod.boolean(),
-  "readOnly": zod.boolean(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)'),
+  "levelOverride": zod.union([zod.enum(['L0', 'L1', 'L2', 'L3']).describe('Livello d\'azione: L0 lettura, L1 azione reversibile, L2 con conferma, L3 vietata'),zod.null()]).describe('Livello scelto dall\'utente, mai sotto `level`'),
   "status": zod.enum(['draft', 'active', 'disabled']),
   "paramsSchema": zod.record(zod.string(), zod.unknown()).describe('JSON Schema dei parametri accettati dal tool'),
   "definition": zod.record(zod.string(), zod.unknown()).describe('Definizione dell\'esecuzione (dipende da kind)'),
@@ -732,19 +755,13 @@ export const ListRunsQueryParams = zod.object({
 export const ListRunsResponseItem = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.'),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
   "durationMs": zod.number().nullish(),
   "createdAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullish(),
-  "pendingAction": zod.union([zod.object({
-  "kind": zod.enum(['confirmation', 'ui']),
-  "toolName": zod.string(),
-  "args": zod.record(zod.string(), zod.unknown()),
-  "summary": zod.string()
-}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
@@ -772,19 +789,13 @@ export const TriggerRunBody = zod.object({
 export const TriggerRunResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.'),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
   "durationMs": zod.number().nullish(),
   "createdAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullish(),
-  "pendingAction": zod.union([zod.object({
-  "kind": zod.enum(['confirmation', 'ui']),
-  "toolName": zod.string(),
-  "args": zod.record(zod.string(), zod.unknown()),
-  "summary": zod.string()
-}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
@@ -802,19 +813,13 @@ export const GetRunParams = zod.object({
 export const GetRunResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.'),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
   "durationMs": zod.number().nullish(),
   "createdAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullish(),
-  "pendingAction": zod.union([zod.object({
-  "kind": zod.enum(['confirmation', 'ui']),
-  "toolName": zod.string(),
-  "args": zod.record(zod.string(), zod.unknown()),
-  "summary": zod.string()
-}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
@@ -833,7 +838,7 @@ export const ListRunStepsResponseItem = zod.object({
   "id": zod.number(),
   "runId": zod.number(),
   "position": zod.number(),
-  "type": zod.string().describe('model (chiamata al modello) o tool (chiamata a un tool)'),
+  "type": zod.string().describe('model (chiamata al modello), tool (chiamata a un tool) o queued (azione accodata per la conferma dell\'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti sensibili oscurati)'),
   "toolName": zod.string().nullish(),
   "args": zod.record(zod.string(), zod.unknown()).nullish(),
   "ok": zod.boolean().nullish(),
@@ -846,46 +851,7 @@ export const ListRunStepsResponse = zod.array(ListRunStepsResponseItem)
 
 
 /**
- * Conferma o rifiuta l'azione in sospeso di una run in stato awaiting_client e la riavvia in background. Risponde 409 se la run non è in pausa o la pausa è scaduta.
- * @summary Riprende un'esecuzione in attesa del client
- */
-export const ResumeRunParams = zod.object({
-  "id": zod.coerce.number()
-})
-
-export const ResumeRunHeader = zod.object({
-  "X-App-User-Token": zod.string().optional().describe('Token dell\'utente finale nell\'app, se quello dato all\'avvio non è più in memoria (riavvio del server o pausa lunga). Non viene mai salvato né scritto nei log.')
-})
-
-export const ResumeRunBody = zod.object({
-  "decision": zod.enum(['approved', 'rejected'])
-})
-
-export const ResumeRunResponse = zod.object({
-  "id": zod.number(),
-  "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
-  "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
-  "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
-  "errorMessage": zod.string().nullish(),
-  "durationMs": zod.number().nullish(),
-  "createdAt": zod.coerce.date(),
-  "finishedAt": zod.coerce.date().nullish(),
-  "pendingAction": zod.union([zod.object({
-  "kind": zod.enum(['confirmation', 'ui']),
-  "toolName": zod.string(),
-  "args": zod.record(zod.string(), zod.unknown()),
-  "summary": zod.string()
-}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
-  "promptTokens": zod.number().nullish(),
-  "completionTokens": zod.number().nullish(),
-  "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
-  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
-})
-
-
-/**
- * Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
+ * Porta a cancelled una run pending o running, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
  * @summary Annulla un'esecuzione non ancora conclusa
  */
 export const CancelRunParams = zod.object({
@@ -895,19 +861,13 @@ export const CancelRunParams = zod.object({
 export const CancelRunResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.'),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
   "durationMs": zod.number().nullish(),
   "createdAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullish(),
-  "pendingAction": zod.union([zod.object({
-  "kind": zod.enum(['confirmation', 'ui']),
-  "toolName": zod.string(),
-  "args": zod.record(zod.string(), zod.unknown()),
-  "summary": zod.string()
-}),zod.null()]).optional().describe('Azione in attesa del client (solo con stato awaiting_client)'),
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
@@ -932,6 +892,7 @@ export const ListAnalysesResponseItem = zod.object({
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
+  "mcp": zod.boolean().describe('Elenco degli strumenti del server MCP dell\'app letto all\'avvio (false nelle analisi precedenti)'),
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
@@ -977,6 +938,7 @@ export const StartAnalysisResponse = zod.object({
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
+  "mcp": zod.boolean().describe('Elenco degli strumenti del server MCP dell\'app letto all\'avvio (false nelle analisi precedenti)'),
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
@@ -1021,6 +983,7 @@ export const StartZipAnalysisResponse = zod.object({
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
+  "mcp": zod.boolean().describe('Elenco degli strumenti del server MCP dell\'app letto all\'avvio (false nelle analisi precedenti)'),
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
@@ -1053,6 +1016,7 @@ export const GetAnalysisResponse = zod.object({
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
+  "mcp": zod.boolean().describe('Elenco degli strumenti del server MCP dell\'app letto all\'avvio (false nelle analisi precedenti)'),
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
@@ -1083,7 +1047,7 @@ export const GetAnalysisResponse = zod.object({
   "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
   "ref": zod.string().describe('Chiave stabile nell\'analisi, es. tool:rosa_squadra'),
   "position": zod.number(),
-  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo'),
+  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo. Le voci tool hanno `kind` (\"http\" | \"mcp\"), `level` (\"L0\"..\"L3\", livello proposto) e, per gli strumenti MCP, `declaredLevel` (livello dichiarato dal servizio) e `definition` { mcpName }; le voci tool delle analisi precedenti ai livelli arrivano già convertite (`level` dai vecchi flag).'),
   "diff": zod.enum(['new', 'changed', 'removed', 'unchanged']).describe('Differenza rispetto allo stato approvato'),
   "evidence": zod.array(zod.object({
   "source": zod.string(),
@@ -1123,6 +1087,7 @@ export const ReleaseAnalysisResponse = zod.object({
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
+  "mcp": zod.boolean().describe('Elenco degli strumenti del server MCP dell\'app letto all\'avvio (false nelle analisi precedenti)'),
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
@@ -1156,6 +1121,7 @@ export const CancelAnalysisResponse = zod.object({
   "sources": zod.object({
   "code": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "openapi": zod.boolean(),
+  "mcp": zod.boolean().describe('Elenco degli strumenti del server MCP dell\'app letto all\'avvio (false nelle analisi precedenti)'),
   "description": zod.boolean()
 }),
   "maxTokens": zod.number(),
@@ -1212,7 +1178,7 @@ export const UpdateAnalysisItemResponse = zod.object({
   "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
   "ref": zod.string().describe('Chiave stabile nell\'analisi, es. tool:rosa_squadra'),
   "position": zod.number(),
-  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo'),
+  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo. Le voci tool hanno `kind` (\"http\" | \"mcp\"), `level` (\"L0\"..\"L3\", livello proposto) e, per gli strumenti MCP, `declaredLevel` (livello dichiarato dal servizio) e `definition` { mcpName }; le voci tool delle analisi precedenti ai livelli arrivano già convertite (`level` dai vecchi flag).'),
   "diff": zod.enum(['new', 'changed', 'removed', 'unchanged']).describe('Differenza rispetto allo stato approvato'),
   "evidence": zod.array(zod.object({
   "source": zod.string(),
@@ -1304,6 +1270,7 @@ export const GetDashboardStatsResponse = zod.object({
   "successfulRuns": zod.number(),
   "failedRuns": zod.number(),
   "cancelledRuns": zod.number(),
+  "pendingActions": zod.number().describe('Azioni dell\'utente corrente in attesa di conferma'),
   "avgDurationMs": zod.number().nullish()
 })
 
@@ -1347,7 +1314,7 @@ export const GetBudgetResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
   "agentName": zod.string(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled'])
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.')
 })).describe('Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell\'utente, del loro agente, del loro modello o del suo account)')
 })
 
@@ -1399,7 +1366,7 @@ export const UpdateBudgetResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
   "agentName": zod.string(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled'])
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.')
 })).describe('Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell\'utente, del loro agente, del loro modello o del suo account)')
 })
 
@@ -2177,7 +2144,7 @@ export const GetAppPlanResponse = zod.object({
   "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
   "ref": zod.string().describe('Chiave stabile nell\'analisi, es. tool:rosa_squadra'),
   "position": zod.number(),
-  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo'),
+  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo. Le voci tool hanno `kind` (\"http\" | \"mcp\"), `level` (\"L0\"..\"L3\", livello proposto) e, per gli strumenti MCP, `declaredLevel` (livello dichiarato dal servizio) e `definition` { mcpName }; le voci tool delle analisi precedenti ai livelli arrivano già convertite (`level` dai vecchi flag).'),
   "diff": zod.enum(['new', 'changed', 'removed', 'unchanged']).describe('Differenza rispetto allo stato approvato'),
   "evidence": zod.array(zod.object({
   "source": zod.string(),
@@ -2453,7 +2420,7 @@ export const DecidePlanProposalResponse = zod.object({
   "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
   "ref": zod.string().describe('Chiave stabile nell\'analisi, es. tool:rosa_squadra'),
   "position": zod.number(),
-  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo'),
+  "payload": zod.record(zod.string(), zod.unknown()).describe('Contenuto della proposta, la cui forma dipende dal capitolo. Le voci tool hanno `kind` (\"http\" | \"mcp\"), `level` (\"L0\"..\"L3\", livello proposto) e, per gli strumenti MCP, `declaredLevel` (livello dichiarato dal servizio) e `definition` { mcpName }; le voci tool delle analisi precedenti ai livelli arrivano già convertite (`level` dai vecchi flag).'),
   "diff": zod.enum(['new', 'changed', 'removed', 'unchanged']).describe('Differenza rispetto allo stato approvato'),
   "evidence": zod.array(zod.object({
   "source": zod.string(),
@@ -2472,6 +2439,160 @@ export const DecidePlanProposalResponse = zod.object({
   "checkedAt": zod.coerce.date().nullable().describe('Ultimo controllo dello stato su GitHub')
 }),zod.null()]).describe('Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)')
 }),zod.null()]).describe('Voce creata o modificata (null se rifiutata)')
+})
+
+
+/**
+ * Le azioni L2 messe in coda dagli agenti (più recenti prima, massimo 200). Senza filtro solo quelle in attesa di conferma.
+ * @summary Azioni in coda dell'utente corrente
+ */
+export const listPendingActionsQueryStatusDefault = `pending`;
+
+export const ListPendingActionsQueryParams = zod.object({
+  "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected', 'all']).default(listPendingActionsQueryStatusDefault)
+})
+
+export const ListPendingActionsResponse = zod.object({
+  "actions": zod.array(zod.object({
+  "number": zod.number(),
+  "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
+  "app": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}),
+  "tool": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "identity": zod.enum(['user', 'service'])
+}),
+  "agentId": zod.number().nullable(),
+  "runId": zod.number().nullable(),
+  "recipient": zod.string(),
+  "summary": zod.string(),
+  "args": zod.unknown().describe('Argomenti con i parametri sensibili oscurati'),
+  "result": zod.string().nullable(),
+  "errorMessage": zod.string().nullable(),
+  "decisionNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "decidedAt": zod.coerce.date().nullable(),
+  "finishedAt": zod.coerce.date().nullable()
+}))
+})
+
+
+/**
+ * @summary Dettaglio di un'azione in coda
+ */
+export const GetPendingActionParams = zod.object({
+  "number": zod.coerce.number().describe('Numero progressivo dell\'azione per utente')
+})
+
+export const GetPendingActionResponse = zod.object({
+  "number": zod.number(),
+  "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
+  "app": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}),
+  "tool": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "identity": zod.enum(['user', 'service'])
+}),
+  "agentId": zod.number().nullable(),
+  "runId": zod.number().nullable(),
+  "recipient": zod.string(),
+  "summary": zod.string(),
+  "args": zod.unknown().describe('Argomenti con i parametri sensibili oscurati'),
+  "result": zod.string().nullable(),
+  "errorMessage": zod.string().nullable(),
+  "decisionNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "decidedAt": zod.coerce.date().nullable(),
+  "finishedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Esegue una sola volta la chiamata memorizzata, senza il modello. Con identità `user` serve il token dell'utente dell'app (vive solo per la durata della chiamata). Una richiesta già decisa dà 409. Se l'esecuzione fallisce la risposta è 200 con l'azione in stato `failed`. Massimo 20 decisioni al minuto per utente.
+ * @summary Approva ed esegue un'azione in coda
+ */
+export const ApprovePendingActionParams = zod.object({
+  "number": zod.coerce.number().describe('Numero progressivo dell\'azione per utente')
+})
+
+export const approvePendingActionBodyUserTokenMax = 4096;
+
+
+
+export const ApprovePendingActionBody = zod.object({
+  "userToken": zod.string().min(1).max(approvePendingActionBodyUserTokenMax).optional().describe('Token dell\'utente dell\'app, per gli strumenti con identità utente')
+})
+
+export const ApprovePendingActionResponse = zod.object({
+  "number": zod.number(),
+  "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
+  "app": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}),
+  "tool": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "identity": zod.enum(['user', 'service'])
+}),
+  "agentId": zod.number().nullable(),
+  "runId": zod.number().nullable(),
+  "recipient": zod.string(),
+  "summary": zod.string(),
+  "args": zod.unknown().describe('Argomenti con i parametri sensibili oscurati'),
+  "result": zod.string().nullable(),
+  "errorMessage": zod.string().nullable(),
+  "decisionNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "decidedAt": zod.coerce.date().nullable(),
+  "finishedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Rifiuta un'azione in coda
+ */
+export const RejectPendingActionParams = zod.object({
+  "number": zod.coerce.number().describe('Numero progressivo dell\'azione per utente')
+})
+
+export const rejectPendingActionBodyNoteMax = 500;
+
+
+
+export const RejectPendingActionBody = zod.object({
+  "note": zod.string().max(rejectPendingActionBodyNoteMax).optional()
+})
+
+export const RejectPendingActionResponse = zod.object({
+  "number": zod.number(),
+  "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
+  "app": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}),
+  "tool": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "identity": zod.enum(['user', 'service'])
+}),
+  "agentId": zod.number().nullable(),
+  "runId": zod.number().nullable(),
+  "recipient": zod.string(),
+  "summary": zod.string(),
+  "args": zod.unknown().describe('Argomenti con i parametri sensibili oscurati'),
+  "result": zod.string().nullable(),
+  "errorMessage": zod.string().nullable(),
+  "decisionNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "decidedAt": zod.coerce.date().nullable(),
+  "finishedAt": zod.coerce.date().nullable()
 })
 
 

@@ -113,6 +113,7 @@ function conn(overrides: Partial<AppConnection> = {}): AppConnection {
     userAuth: { header: "Authorization", scheme: "Bearer" },
     serviceAuth: null,
     serviceSecretEnc: null,
+    mcpUrl: null,
     ...overrides,
   };
 }
@@ -129,8 +130,8 @@ function tool(
     description: null,
     kind: "http",
     identity: "user",
-    requiresConfirmation: false,
-    readOnly: true,
+    level: "L0",
+    levelOverride: null,
     status: "active",
     paramsSchema,
     definition,
@@ -256,7 +257,7 @@ describe("executeTool", () => {
         },
         required: ["teamId"],
       },
-      { readOnly: false },
+      { level: "L1" },
     );
     const r = await executeTool({
       conn: conn(),
@@ -427,7 +428,7 @@ describe("executeTool", () => {
     const t = tool(
       { method: "POST", path: "/api/teams", paramLocations: { nome: "body" } },
       { type: "object", properties: { nome: { type: "string" } }, required: ["nome"] },
-      { readOnly: false },
+      { level: "L1" },
     );
     const r = await executeTool({
       conn: conn(),
@@ -461,7 +462,7 @@ describe("executeTool", () => {
     const t = tool(
       { method: "POST", path: "/api/x", paramLocations: JSON.parse('{"__proto__":"body"}') as HttpDefinition["paramLocations"] },
       JSON.parse('{"type":"object","properties":{"__proto__":{"type":"string"}}}') as Record<string, unknown>,
-      { readOnly: false },
+      { level: "L1" },
     );
     const args = JSON.parse('{"__proto__":"v"}') as Record<string, unknown>;
     const r = await executeTool({ conn: conn(), tool: t, args, userToken: "tok" });

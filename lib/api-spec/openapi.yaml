@@ -30,6 +30,8 @@ tags:
     description: Catalogo dei modelli per provider e suo aggiornamento
   - name: architect
     description: Analisi dell'architetto (proposte su tool, agenti, skill, endpoint ed evoluzione) e skill degli agenti
+  - name: pending-actions
+    description: Coda delle azioni in attesa di conferma
   - name: plan-chat
     description: Chat con il bot sul piano di un'app (conversazioni, messaggi e proposte)
 
@@ -408,6 +410,33 @@ paths:
 
   # ─── Tools ──────────────────────────────────────────────────────────────────
 
+  /apps/{id}/mcp-tools/refresh:
+    post:
+      operationId: refreshAppMcpTools
+      tags: [tools]
+      summary: Aggiorna il catalogo dagli strumenti del server MCP dell'app
+      description: >-
+        Legge gli strumenti del server MCP dell'app: i nuovi entrano come bozza, quelli esistenti aggiornano
+        descrizione, schema e livello, quelli spariti dal server vengono disattivati; un nome uguale a un tool
+        non MCP non cambia nulla e finisce in `conflicts`. Massimo 6 al minuto per utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Esito della sincronizzazione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpSyncResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
   /apps/{id}/tools:
     get:
       operationId: listAppTools
@@ -491,6 +520,12 @@ paths:
           description: Tool eliminato
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: Il tool ha azioni in coda o già decise (si disattiva invece di eliminarlo)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /apps/{id}/agent-models:
     put:
@@ -674,51 +709,13 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /runs/{id}/resume:
-    post:
-      operationId: resumeRun
-      tags: [runs]
-      summary: Riprende un'esecuzione in attesa del client
-      description: >-
-        Conferma o rifiuta l'azione in sospeso di una run in stato awaiting_client e la
-        riavvia in background. Risponde 409 se la run non è in pausa o la pausa è scaduta.
-      parameters:
-        - $ref: "#/components/parameters/IdParam"
-        - name: X-App-User-Token
-          in: header
-          required: false
-          schema:
-            type: string
-          description: >-
-            Token dell'utente finale nell'app, se quello dato all'avvio non è più in memoria
-            (riavvio del server o pausa lunga). Non viene mai salvato né scritto nei log.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RunResume"
-      responses:
-        "202":
-          description: Esecuzione ripresa
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Run"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-
   /runs/{id}/cancel:
     post:
       operationId: cancelRun
       tags: [runs]
       summary: Annulla un'esecuzione non ancora conclusa
       description: >-
-        Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate
+        Porta a cancelled una run pending o running, interrompe le chiamate
         in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati
         restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
       parameters:
@@ -1893,6 +1890,114 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /pending-actions:
+    get:
+      operationId: listPendingActions
+      tags: [pending-actions]
+      summary: Azioni in coda dell'utente corrente
+      description: >-
+        Le azioni L2 messe in coda dagli agenti (più recenti prima, massimo 200). Senza filtro solo quelle
+        in attesa di conferma.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, executing, done, failed, rejected, all]
+            default: pending
+      responses:
+        "200":
+          description: Elenco delle azioni
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedActionList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /pending-actions/{number}:
+    get:
+      operationId: getPendingAction
+      tags: [pending-actions]
+      summary: Dettaglio di un'azione in coda
+      parameters:
+        - $ref: "#/components/parameters/ActionNumberParam"
+      responses:
+        "200":
+          description: Azione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedAction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pending-actions/{number}/approve:
+    post:
+      operationId: approvePendingAction
+      tags: [pending-actions]
+      summary: Approva ed esegue un'azione in coda
+      description: >-
+        Esegue una sola volta la chiamata memorizzata, senza il modello. Con identità `user` serve il token
+        dell'utente dell'app (vive solo per la durata della chiamata). Una richiesta già decisa dà 409.
+        Se l'esecuzione fallisce la risposta è 200 con l'azione in stato `failed`. Massimo 20 decisioni al
+        minuto per utente.
+      parameters:
+        - $ref: "#/components/parameters/ActionNumberParam"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveActionRequest"
+      responses:
+        "200":
+          description: Azione dopo l'esecuzione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedAction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /pending-actions/{number}/reject:
+    post:
+      operationId: rejectPendingAction
+      tags: [pending-actions]
+      summary: Rifiuta un'azione in coda
+      parameters:
+        - $ref: "#/components/parameters/ActionNumberParam"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectActionRequest"
+      responses:
+        "200":
+          description: Azione rifiutata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedAction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
 components:
   parameters:
     IdParam:
@@ -1906,6 +2011,14 @@ components:
       name: toolId
       in: path
       required: true
+      schema:
+        type: integer
+
+    ActionNumberParam:
+      name: number
+      in: path
+      required: true
+      description: Numero progressivo dell'azione per utente
       schema:
         type: integer
 
@@ -2143,6 +2256,9 @@ components:
         internalBaseUrl:
           type: ["string", "null"]
           description: URL raggiunto dall'esecutore al posto di baseUrl (rete interna)
+        mcpUrl:
+          type: ["string", "null"]
+          description: Indirizzo del server MCP dell'app
         userAuth:
           oneOf:
             - $ref: "#/components/schemas/AuthConfig"
@@ -2205,6 +2321,9 @@ components:
           minLength: 1
         internalBaseUrl:
           type: ["string", "null"]
+        mcpUrl:
+          type: ["string", "null"]
+          description: Indirizzo del server MCP dell'app
         userAuth:
           oneOf:
             - $ref: "#/components/schemas/AuthConfig"
@@ -2256,6 +2375,9 @@ components:
           minLength: 1
         internalBaseUrl:
           type: ["string", "null"]
+        mcpUrl:
+          type: ["string", "null"]
+          description: Indirizzo del server MCP dell'app
         userAuth:
           oneOf:
             - $ref: "#/components/schemas/AuthConfig"
@@ -2417,7 +2539,12 @@ components:
 
     ToolKind:
       type: string
-      enum: [http, ui, composite]
+      enum: [http, ui, composite, mcp]
+
+    ToolLevel:
+      type: string
+      enum: [L0, L1, L2, L3]
+      description: "Livello d'azione: L0 lettura, L1 azione reversibile, L2 con conferma, L3 vietata"
 
     ToolIdentity:
       type: string
@@ -2435,8 +2562,8 @@ components:
         - name
         - kind
         - identity
-        - requiresConfirmation
-        - readOnly
+        - level
+        - levelOverride
         - status
         - paramsSchema
         - definition
@@ -2456,10 +2583,14 @@ components:
           $ref: "#/components/schemas/ToolKind"
         identity:
           $ref: "#/components/schemas/ToolIdentity"
-        requiresConfirmation:
-          type: boolean
-        readOnly:
-          type: boolean
+        level:
+          $ref: "#/components/schemas/ToolLevel"
+          description: Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)
+        levelOverride:
+          oneOf:
+            - $ref: "#/components/schemas/ToolLevel"
+            - type: "null"
+          description: Livello scelto dall'utente, mai sotto `level`
         status:
           $ref: "#/components/schemas/ToolStatus"
         paramsSchema:
@@ -2508,10 +2639,14 @@ components:
           $ref: "#/components/schemas/ToolKind"
         identity:
           $ref: "#/components/schemas/ToolIdentity"
-        requiresConfirmation:
-          type: boolean
-        readOnly:
-          type: boolean
+        level:
+          $ref: "#/components/schemas/ToolLevel"
+          description: Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)
+        levelOverride:
+          oneOf:
+            - $ref: "#/components/schemas/ToolLevel"
+            - type: "null"
+          description: Livello scelto dall'utente, mai sotto `level`
         status:
           $ref: "#/components/schemas/ToolStatus"
         paramsSchema:
@@ -2539,10 +2674,14 @@ components:
           $ref: "#/components/schemas/ToolKind"
         identity:
           $ref: "#/components/schemas/ToolIdentity"
-        requiresConfirmation:
-          type: boolean
-        readOnly:
-          type: boolean
+        level:
+          $ref: "#/components/schemas/ToolLevel"
+          description: Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura)
+        levelOverride:
+          oneOf:
+            - $ref: "#/components/schemas/ToolLevel"
+            - type: "null"
+          description: Livello scelto dall'utente, mai sotto `level`
         status:
           $ref: "#/components/schemas/ToolStatus"
         paramsSchema:
@@ -2562,6 +2701,9 @@ components:
 
     RunStatus:
       type: string
+      description: >-
+        awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla
+        coda delle azioni e all'avvio le run ancora in pausa diventano cancelled.
       enum: [pending, running, succeeded, failed, awaiting_client, cancelled]
 
     Run:
@@ -2590,11 +2732,6 @@ components:
         finishedAt:
           type: ["string", "null"]
           format: date-time
-        pendingAction:
-          oneOf:
-            - $ref: "#/components/schemas/PendingAction"
-            - type: "null"
-          description: Azione in attesa del client (solo con stato awaiting_client)
         promptTokens:
           type: ["integer", "null"]
         completionTokens:
@@ -2605,24 +2742,6 @@ components:
         costUsd:
           type: ["number", "null"]
           description: Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)
-
-    PendingActionKind:
-      type: string
-      enum: [confirmation, ui]
-
-    PendingAction:
-      type: object
-      required: [kind, toolName, args, summary]
-      properties:
-        kind:
-          $ref: "#/components/schemas/PendingActionKind"
-        toolName:
-          type: string
-        args:
-          type: object
-          additionalProperties: true
-        summary:
-          type: string
 
     RunStep:
       type: object
@@ -2636,7 +2755,10 @@ components:
           type: integer
         type:
           type: string
-          description: "model (chiamata al modello) o tool (chiamata a un tool)"
+          description: >-
+            model (chiamata al modello), tool (chiamata a un tool) o queued (azione accodata per la
+            conferma dell'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti
+            sensibili oscurati)
         toolName:
           type: ["string", "null"]
         args:
@@ -2654,17 +2776,6 @@ components:
           type: string
           format: date-time
 
-    RunDecision:
-      type: string
-      enum: [approved, rejected]
-
-    RunResume:
-      type: object
-      required: [decision]
-      properties:
-        decision:
-          $ref: "#/components/schemas/RunDecision"
-
     RunTrigger:
       type: object
       properties:
@@ -2676,7 +2787,7 @@ components:
 
     DashboardStats:
       type: object
-      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, cancelledRuns, activeAgents]
+      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, cancelledRuns, activeAgents, pendingActions]
       properties:
         totalApps:
           type: integer
@@ -2692,8 +2803,92 @@ components:
           type: integer
         cancelledRuns:
           type: integer
+        pendingActions:
+          type: integer
+          description: Azioni dell'utente corrente in attesa di conferma
         avgDurationMs:
           type: ["number", "null"]
+
+    # ── Coda delle azioni ──────────────────────────────────────────────────────
+
+    QueuedAction:
+      type: object
+      required: [number, status, app, tool, agentId, runId, recipient, summary, args, result, errorMessage, decisionNote, createdAt, decidedAt, finishedAt]
+      properties:
+        number:
+          type: integer
+        status:
+          type: string
+          enum: [pending, executing, done, failed, rejected]
+        app:
+          type: object
+          required: [id, name]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+        tool:
+          type: object
+          required: [id, name, identity]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            identity:
+              type: string
+              enum: [user, service]
+        agentId:
+          type: ["integer", "null"]
+        runId:
+          type: ["integer", "null"]
+        recipient:
+          type: string
+        summary:
+          type: string
+        args:
+          description: Argomenti con i parametri sensibili oscurati
+        result:
+          type: ["string", "null"]
+        errorMessage:
+          type: ["string", "null"]
+        decisionNote:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type: ["string", "null"]
+          format: date-time
+        finishedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    QueuedActionList:
+      type: object
+      required: [actions]
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueuedAction"
+
+    ApproveActionRequest:
+      type: object
+      properties:
+        userToken:
+          type: string
+          description: Token dell'utente dell'app, per gli strumenti con identità utente
+          minLength: 1
+          maxLength: 4096
+
+    RejectActionRequest:
+      type: object
+      properties:
+        note:
+          type: string
+          maxLength: 500
 
     # ── Tetti di spesa ─────────────────────────────────────────────────────────
 
@@ -2847,12 +3042,15 @@ components:
 
     AnalysisSources:
       type: object
-      required: [code, openapi, description]
+      required: [code, openapi, mcp, description]
       properties:
         code:
           $ref: "#/components/schemas/SourceType"
         openapi:
           type: boolean
+        mcp:
+          type: boolean
+          description: Elenco degli strumenti del server MCP dell'app letto all'avvio (false nelle analisi precedenti)
         description:
           type: boolean
 
@@ -2981,7 +3179,11 @@ components:
         payload:
           type: object
           additionalProperties: true
-          description: Contenuto della proposta, la cui forma dipende dal capitolo
+          description: >-
+            Contenuto della proposta, la cui forma dipende dal capitolo. Le voci tool hanno `kind`
+            ("http" | "mcp"), `level` ("L0".."L3", livello proposto) e, per gli strumenti MCP,
+            `declaredLevel` (livello dichiarato dal servizio) e `definition` { mcpName }; le voci tool
+            delle analisi precedenti ai livelli arrivano già convertite (`level` dai vecchi flag).
         diff:
           $ref: "#/components/schemas/ItemDiff"
         evidence:
@@ -3121,6 +3323,24 @@ components:
             $ref: "#/components/schemas/AnalysisItem"
         issues:
           $ref: "#/components/schemas/PlanIssuesSummary"
+
+    McpSyncResult:
+      type: object
+      required: [added, updated, disabled, unchanged, conflicts]
+      properties:
+        added:
+          type: integer
+        updated:
+          type: integer
+        disabled:
+          type: integer
+        unchanged:
+          type: integer
+        conflicts:
+          type: array
+          items:
+            type: string
+          description: Nomi degli strumenti MCP uguali a un tool non MCP del catalogo (lasciato invariato)
 
     PlanIssuesSummary:
       type: object

@@ -55,8 +55,6 @@ const EVOLUTION_TYPE_LABELS: Record<string, string> = {
   agentica: "Agentica",
 };
 
-const yesNo = (value: boolean | undefined) => (value === undefined ? "—" : value ? "Sì" : "No");
-
 // Le chiavi delle query degli agenti (elenco, dettaglio, skill) iniziano tutte con /api/agents.
 const isAgentsQuery = (query: Query) => {
   const head = query.queryKey[0];
@@ -127,6 +125,9 @@ function ToolBody({ item }: { item: AnalysisItem }) {
   const definition = rec(p, "definition");
   const method = str(definition, "method");
   const path = str(definition, "path");
+  const mcpName = str(definition, "mcpName");
+  const level = str(p, "level");
+  const declaredLevel = str(p, "declaredLevel");
   const paramsSchema = rec(p, "paramsSchema");
   const locations = rec(definition, "paramLocations");
   return (
@@ -139,11 +140,17 @@ function ToolBody({ item }: { item: AnalysisItem }) {
       <Prose label="Descrizione" text={str(p, "description")} />
       <Grid>
         <Field label="Chiamata">
-          <span className="font-mono text-xs">{method && path ? `${method} ${path}` : "—"}</span>
+          <span className="font-mono text-xs">
+            {str(p, "kind") === "mcp" && mcpName ? `MCP ${mcpName}` : method && path ? `${method} ${path}` : "—"}
+          </span>
         </Field>
+        <Field label="Tipo">{str(p, "kind") ?? "http"}</Field>
         <Field label="Identità">{IDENTITY_LABELS[str(p, "identity") ?? ""] ?? "—"}</Field>
-        <Field label="Chiede conferma">{yesNo(bool(p, "requiresConfirmation"))}</Field>
-        <Field label="Sola lettura">{yesNo(bool(p, "readOnly"))}</Field>
+        <Field label="Livello">
+          {level ?? "—"}
+          {declaredLevel && declaredLevel !== level ? ` (dichiarato ${declaredLevel})` : ""}
+          {str(p, "kind") === "mcp" && declaredLevel && declaredLevel === level ? " (dichiarato dal servizio)" : ""}
+        </Field>
       </Grid>
       {locations && Object.keys(locations).length > 0 && (
         <Field label="Posizione dei parametri">

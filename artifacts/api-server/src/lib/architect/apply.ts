@@ -10,9 +10,11 @@ import {
 import { NO_MODEL, type ModelChoice } from "../ai/choice";
 import { isUniqueViolation } from "../pg-errors";
 import { checkParamsSchema, checkPathPlaceholders, parseDefinition } from "../tools/definition";
+import { TOOL_LEVELS, isValidOverride, type ToolLevel } from "../tools/levels";
 import type { HttpDefinition } from "../tools/types";
 import {
   ITEM_SCHEMAS,
+  levelBelowDeclared,
   type AgentProposal,
   type SkillProposal,
   type ToolProposal,
@@ -79,13 +81,15 @@ async function applyTool(tx: Tx, item: AnalysisItem, appId: number): Promise<voi
   }
 
   const tool = parsePayload<ToolProposal>(item);
-  // Stesse validazioni del salvataggio di un tool (fase 1), anche se lo schema le ripete
-  const parsed = parseDefinition("http", tool.definition);
+  // Stesse validazioni del salvataggio di un tool, anche se lo schema le ripete
+  const parsed = parseDefinition(tool.kind, tool.definition);
   if (!parsed.ok) throw new ApplyError(parsed.error);
-  const schemaError = checkParamsSchema(tool.paramsSchema);
-  if (schemaError) throw new ApplyError(schemaError);
-  const placeholderError = checkPathPlaceholders(parsed.value as HttpDefinition, tool.paramsSchema);
-  if (placeholderError) throw new ApplyError(placeholderError);
+  if (tool.kind === "http") {
+    const schemaError = checkParamsSchema(tool.paramsSchema);
+    if (schemaError) throw new ApplyError(schemaError);
+    const placeholderError = checkPathPlaceholders(parsed.value as HttpDefinition, tool.paramsSchema);
+    if (placeholderError) throw new ApplyError(placeholderError);
+  }
 
   const [current] = await tx
     .select()
@@ -97,8 +101,7 @@ async function applyTool(tx: Tx, item: AnalysisItem, appId: number): Promise<voi
     description: tool.description,
     kind: tool.kind,
     identity: tool.identity,
-    requiresConfirmation: tool.requiresConfirmation,
-    readOnly: tool.readOnly,
+    ...toolLevels(tool, current ?? null),
     paramsSchema: tool.paramsSchema,
     definition: tool.definition,
     evidence: tool.evidence,
@@ -122,6 +125,28 @@ async function applyTool(tx: Tx, item: AnalysisItem, appId: number): Promise<voi
     .update(appToolsTable)
     .set({ ...fields, status: "active", updatedAt: new Date() })
     .where(eq(appToolsTable.id, current.id));
+}
+
+const rank = (level: ToolLevel): number => TOOL_LEVELS.indexOf(level);
+
+/**
+ * Livello e deroga della riga del tool. Strumento MCP: `level` è quello dichiarato dal servizio (della
+ * riga già sincronizzata dal server, altrimenti quello letto dall'architetto; in mancanza L2)
+ * e il livello proposto, se più alto, diventa la deroga; sotto il dichiarato non si applica. Tool HTTP:
+ * `level` è il proposto e una deroga esistente resta solo se ancora valida (non sotto il livello).
+ */
+function toolLevels(
+  tool: ToolProposal,
+  current: { kind: string; level: ToolLevel; levelOverride: ToolLevel | null } | null,
+): { level: ToolLevel; levelOverride: ToolLevel | null } {
+  if (tool.kind === "mcp") {
+    // Senza riga sincronizzata né livello letto dall'architetto: L2, come un tool MCP creato a mano
+    const declared = (current?.kind === "mcp" ? current.level : undefined) ?? tool.declaredLevel ?? "L2";
+    if (rank(tool.level) < rank(declared)) throw new ApplyError(levelBelowDeclared(tool.name));
+    return { level: declared, levelOverride: rank(tool.level) > rank(declared) ? tool.level : null };
+  }
+  const override = current?.levelOverride ?? null;
+  return { level: tool.level, levelOverride: isValidOverride(tool.level, override) ? override : null };
 }
 
 // --- Agenti e skill ---

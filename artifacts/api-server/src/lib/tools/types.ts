@@ -1,6 +1,6 @@
 import type { AppTool } from "@workspace/db";
 
-export type ToolKind = "http" | "ui" | "composite";
+export type ToolKind = "http" | "ui" | "composite" | "mcp";
 export type ToolIdentity = "user" | "service";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -22,7 +22,11 @@ export interface CompositeDefinition {
   output: Record<string, string>;
 }
 
-export type ToolDefinition = HttpDefinition | UiDefinition | CompositeDefinition;
+export interface McpDefinition {
+  mcpName: string;
+}
+
+export type ToolDefinition = HttpDefinition | UiDefinition | CompositeDefinition | McpDefinition;
 
 // Riga di `app_tools` con schema dei parametri e definizione tipizzati
 export type CatalogTool = Omit<AppTool, "paramsSchema" | "definition"> & {
@@ -47,4 +51,6 @@ export interface AppConnection {
   userAuth: AuthConfig | null;
   serviceAuth: AuthConfig | null;
   serviceSecretEnc: string | null;
+  /** Indirizzo del server MCP dell'app (null se non ne espone uno) */
+  mcpUrl: string | null;
 }

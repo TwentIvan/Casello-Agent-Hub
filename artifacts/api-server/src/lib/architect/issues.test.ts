@@ -142,8 +142,7 @@ describe("esportazione compatta e completa", () => {
     description: "Legge X",
     kind: "http",
     identity: "service",
-    requiresConfirmation: true,
-    readOnly: false,
+    level: "L2",
     paramsSchema: { type: "object", properties: {} },
     definition: { method: "POST", path: "/x", paramLocations: {} },
     area: "A",
@@ -159,12 +158,12 @@ describe("esportazione compatta e completa", () => {
     toolNames: ["get_x"],
   };
 
-  it("tool: nome, chiamata, flag e prove", () => {
+  it("tool: nome, chiamata, livello e prove", () => {
     const { markdown, count } = exportChapter([row(tool, "tool")], "tool");
     expect(count).toBe(1);
     expect(markdown).toContain("## get_x");
     expect(markdown).toContain("- Chiamata: POST /x");
-    expect(markdown).toContain("- Richiede conferma: sì");
+    expect(markdown).toContain("- Livello: L2");
     expect(markdown).toContain("- Da verificare: sì");
     expect(markdown).toContain("- code: src/t.ts:1");
   });

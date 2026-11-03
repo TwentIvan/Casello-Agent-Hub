@@ -12,6 +12,7 @@ import { createPlanChatRouter } from "./plan-chat";
 import { createPlanIssuesRouter } from "./plan-issues";
 import { createAiRouter } from "./ai";
 import { createCatalogRouter } from "./catalog";
+import { createPendingActionsRouter } from "./pending-actions";
 import { createApiTokensRouter } from "./api-tokens";
 import { createAccountModelRouter } from "./account-model";
 import { authRouter, requireAuth } from "../lib/auth";
@@ -35,6 +36,7 @@ router.use(createPlanChatRouter());
 router.use(createPlanIssuesRouter());
 router.use(createAiRouter());
 router.use(createCatalogRouter());
+router.use(createPendingActionsRouter());
 router.use(createApiTokensRouter());
 router.use(createAccountModelRouter());
 

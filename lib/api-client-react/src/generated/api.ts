@@ -51,6 +51,7 @@ import type {
   AppToolInput,
   AppToolUpdate,
   AppUpdate,
+  ApproveActionRequest,
   AuthProviders,
   BadGatewayResponse,
   BadRequestResponse,
@@ -77,7 +78,9 @@ import type {
   ListAgentsParams,
   ListCatalogModelsParams,
   ListCatalogProvidersParams,
+  ListPendingActionsParams,
   ListRunsParams,
+  McpSyncResult,
   NotFoundResponse,
   PayloadTooLargeResponse,
   PlanConversation,
@@ -93,8 +96,10 @@ import type {
   PlanProposalDecision,
   PlanProposalDecisionResult,
   ProviderIssueText,
+  QueuedAction,
+  QueuedActionList,
+  RejectActionRequest,
   Run,
-  RunResume,
   RunStep,
   RunTrigger,
   StartZipAnalysisParams,
@@ -1610,6 +1615,77 @@ export const useDeleteAgent = <TError = ErrorType<NotFoundResponse | ErrorRespon
       return useMutation(getDeleteAgentMutationOptions(options));
     }
 
+export const getRefreshAppMcpToolsUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/mcp-tools/refresh`
+}
+
+/**
+ * Legge gli strumenti del server MCP dell'app: i nuovi entrano come bozza, quelli esistenti aggiornano descrizione, schema e livello, quelli spariti dal server vengono disattivati; un nome uguale a un tool non MCP non cambia nulla e finisce in `conflicts`. Massimo 6 al minuto per utente.
+ * @summary Aggiorna il catalogo dagli strumenti del server MCP dell'app
+ */
+export const refreshAppMcpTools = async (id: number, options?: RequestInit): Promise<McpSyncResult> => {
+
+  return customFetch<McpSyncResult>(getRefreshAppMcpToolsUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRefreshAppMcpToolsMutationOptions = <TError = ErrorType<NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshAppMcpTools>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof refreshAppMcpTools>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['refreshAppMcpTools'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshAppMcpTools>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  refreshAppMcpTools(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RefreshAppMcpToolsMutationResult = NonNullable<Awaited<ReturnType<typeof refreshAppMcpTools>>>
+
+    export type RefreshAppMcpToolsMutationError = ErrorType<NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>
+
+    /**
+ * @summary Aggiorna il catalogo dagli strumenti del server MCP dell'app
+ */
+export const useRefreshAppMcpTools = <TError = ErrorType<NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshAppMcpTools>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof refreshAppMcpTools>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRefreshAppMcpToolsMutationOptions(options));
+    }
+
 export const getListAppToolsUrl = (id: number,) => {
 
 
@@ -1858,7 +1934,7 @@ export const deleteAppTool = async (id: number,
 
 
 
-export const getDeleteAppToolMutationOptions = <TError = ErrorType<NotFoundResponse>,
+export const getDeleteAppToolMutationOptions = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAppTool>>, TError,{id: number;toolId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteAppTool>>, TError,{id: number;toolId: number}, TContext> => {
 
@@ -1887,12 +1963,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type DeleteAppToolMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAppTool>>>
 
-    export type DeleteAppToolMutationError = ErrorType<NotFoundResponse>
+    export type DeleteAppToolMutationError = ErrorType<NotFoundResponse | ErrorResponse>
 
     /**
  * @summary Elimina un tool dal catalogo
  */
-export const useDeleteAppTool = <TError = ErrorType<NotFoundResponse>,
+export const useDeleteAppTool = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAppTool>>, TError,{id: number;toolId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof deleteAppTool>>,
@@ -2357,78 +2433,6 @@ export function useListRunSteps<TData = Awaited<ReturnType<typeof listRunSteps>>
 
 
 
-export const getResumeRunUrl = (id: number,) => {
-
-
-
-
-  return `/api/runs/${id}/resume`
-}
-
-/**
- * Conferma o rifiuta l'azione in sospeso di una run in stato awaiting_client e la riavvia in background. Risponde 409 se la run non è in pausa o la pausa è scaduta.
- * @summary Riprende un'esecuzione in attesa del client
- */
-export const resumeRun = async (id: number,
-    runResume: RunResume, options?: RequestInit): Promise<Run> => {
-
-  return customFetch<Run>(getResumeRunUrl(id),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(runResume)
-  }
-);}
-
-
-
-
-export const getResumeRunMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeRun>>, TError,{id: number;data: BodyType<RunResume>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof resumeRun>>, TError,{id: number;data: BodyType<RunResume>}, TContext> => {
-
-const mutationKey = ['resumeRun'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resumeRun>>, {id: number;data: BodyType<RunResume>}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  resumeRun(id,data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type ResumeRunMutationResult = NonNullable<Awaited<ReturnType<typeof resumeRun>>>
-    export type ResumeRunMutationBody = BodyType<RunResume>
-    export type ResumeRunMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
-
-    /**
- * @summary Riprende un'esecuzione in attesa del client
- */
-export const useResumeRun = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeRun>>, TError,{id: number;data: BodyType<RunResume>}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof resumeRun>>,
-        TError,
-        {id: number;data: BodyType<RunResume>},
-        TContext
-      > => {
-      return useMutation(getResumeRunMutationOptions(options));
-    }
-
 export const getCancelRunUrl = (id: number,) => {
 
 
@@ -2438,7 +2442,7 @@ export const getCancelRunUrl = (id: number,) => {
 }
 
 /**
- * Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
+ * Porta a cancelled una run pending o running, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
  * @summary Annulla un'esecuzione non ancora conclusa
  */
 export const cancelRun = async (id: number, options?: RequestInit): Promise<Run> => {
@@ -5820,5 +5824,310 @@ export const useDecidePlanProposal = <TError = ErrorType<BadRequestResponse | No
         TContext
       > => {
       return useMutation(getDecidePlanProposalMutationOptions(options));
+    }
+
+export const getListPendingActionsUrl = (params?: ListPendingActionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/pending-actions?${stringifiedParams}` : `/api/pending-actions`
+}
+
+/**
+ * Le azioni L2 messe in coda dagli agenti (più recenti prima, massimo 200). Senza filtro solo quelle in attesa di conferma.
+ * @summary Azioni in coda dell'utente corrente
+ */
+export const listPendingActions = async (params?: ListPendingActionsParams, options?: RequestInit): Promise<QueuedActionList> => {
+
+  return customFetch<QueuedActionList>(getListPendingActionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPendingActionsQueryKey = (params?: ListPendingActionsParams,) => {
+    return [
+    `/api/pending-actions`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListPendingActionsQueryOptions = <TData = Awaited<ReturnType<typeof listPendingActions>>, TError = ErrorType<BadRequestResponse>>(params?: ListPendingActionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPendingActions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPendingActionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPendingActions>>> = ({ signal }) => listPendingActions(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPendingActions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPendingActionsQueryResult = NonNullable<Awaited<ReturnType<typeof listPendingActions>>>
+export type ListPendingActionsQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Azioni in coda dell'utente corrente
+ */
+
+export function useListPendingActions<TData = Awaited<ReturnType<typeof listPendingActions>>, TError = ErrorType<BadRequestResponse>>(
+ params?: ListPendingActionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPendingActions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPendingActionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPendingActionUrl = (number: number,) => {
+
+
+
+
+  return `/api/pending-actions/${number}`
+}
+
+/**
+ * @summary Dettaglio di un'azione in coda
+ */
+export const getPendingAction = async (number: number, options?: RequestInit): Promise<QueuedAction> => {
+
+  return customFetch<QueuedAction>(getGetPendingActionUrl(number),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPendingActionQueryKey = (number: number,) => {
+    return [
+    `/api/pending-actions/${number}`
+    ] as const;
+    }
+
+
+export const getGetPendingActionQueryOptions = <TData = Awaited<ReturnType<typeof getPendingAction>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(number: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPendingAction>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPendingActionQueryKey(number);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPendingAction>>> = ({ signal }) => getPendingAction(number, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: number !== null && number !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPendingAction>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPendingActionQueryResult = NonNullable<Awaited<ReturnType<typeof getPendingAction>>>
+export type GetPendingActionQueryError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+
+/**
+ * @summary Dettaglio di un'azione in coda
+ */
+
+export function useGetPendingAction<TData = Awaited<ReturnType<typeof getPendingAction>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(
+ number: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPendingAction>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPendingActionQueryOptions(number,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getApprovePendingActionUrl = (number: number,) => {
+
+
+
+
+  return `/api/pending-actions/${number}/approve`
+}
+
+/**
+ * Esegue una sola volta la chiamata memorizzata, senza il modello. Con identità `user` serve il token dell'utente dell'app (vive solo per la durata della chiamata). Una richiesta già decisa dà 409. Se l'esecuzione fallisce la risposta è 200 con l'azione in stato `failed`. Massimo 20 decisioni al minuto per utente.
+ * @summary Approva ed esegue un'azione in coda
+ */
+export const approvePendingAction = async (number: number,
+    approveActionRequest?: ApproveActionRequest, options?: RequestInit): Promise<QueuedAction> => {
+
+  return customFetch<QueuedAction>(getApprovePendingActionUrl(number),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(approveActionRequest)
+  }
+);}
+
+
+
+
+export const getApprovePendingActionMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approvePendingAction>>, TError,{number: number;data?: BodyType<ApproveActionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof approvePendingAction>>, TError,{number: number;data?: BodyType<ApproveActionRequest>}, TContext> => {
+
+const mutationKey = ['approvePendingAction'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof approvePendingAction>>, {number: number;data?: BodyType<ApproveActionRequest>}> = (props) => {
+          const {number,data} = props ?? {};
+
+          return  approvePendingAction(number,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApprovePendingActionMutationResult = NonNullable<Awaited<ReturnType<typeof approvePendingAction>>>
+    export type ApprovePendingActionMutationBody = BodyType<ApproveActionRequest> | undefined
+    export type ApprovePendingActionMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Approva ed esegue un'azione in coda
+ */
+export const useApprovePendingAction = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approvePendingAction>>, TError,{number: number;data?: BodyType<ApproveActionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof approvePendingAction>>,
+        TError,
+        {number: number;data?: BodyType<ApproveActionRequest>},
+        TContext
+      > => {
+      return useMutation(getApprovePendingActionMutationOptions(options));
+    }
+
+export const getRejectPendingActionUrl = (number: number,) => {
+
+
+
+
+  return `/api/pending-actions/${number}/reject`
+}
+
+/**
+ * @summary Rifiuta un'azione in coda
+ */
+export const rejectPendingAction = async (number: number,
+    rejectActionRequest?: RejectActionRequest, options?: RequestInit): Promise<QueuedAction> => {
+
+  return customFetch<QueuedAction>(getRejectPendingActionUrl(number),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(rejectActionRequest)
+  }
+);}
+
+
+
+
+export const getRejectPendingActionMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectPendingAction>>, TError,{number: number;data?: BodyType<RejectActionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rejectPendingAction>>, TError,{number: number;data?: BodyType<RejectActionRequest>}, TContext> => {
+
+const mutationKey = ['rejectPendingAction'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rejectPendingAction>>, {number: number;data?: BodyType<RejectActionRequest>}> = (props) => {
+          const {number,data} = props ?? {};
+
+          return  rejectPendingAction(number,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RejectPendingActionMutationResult = NonNullable<Awaited<ReturnType<typeof rejectPendingAction>>>
+    export type RejectPendingActionMutationBody = BodyType<RejectActionRequest> | undefined
+    export type RejectPendingActionMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Rifiuta un'azione in coda
+ */
+export const useRejectPendingAction = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectPendingAction>>, TError,{number: number;data?: BodyType<RejectActionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rejectPendingAction>>,
+        TError,
+        {number: number;data?: BodyType<RejectActionRequest>},
+        TContext
+      > => {
+      return useMutation(getRejectPendingActionMutationOptions(options));
     }
 

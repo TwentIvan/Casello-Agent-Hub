@@ -13,6 +13,7 @@ import {
   type PlanProposal,
   type Run,
 } from "@workspace/db";
+import { normalizeStoredToolPayload } from "../lib/architect/schemas";
 
 // Forma pubblica delle risorse: cosa esce dall'API e cosa no.
 
@@ -33,32 +34,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/**
- * Argomenti pubblici dell'azione in sospeso: quelli oscurati con lo schema del tool al momento
- * della pausa (`publicArgs`). Senza `publicArgs` (azione salvata prima che esistesse) ogni
- * valore diventa "***": meglio non mostrare che mostrare un segreto.
- */
-function publicPendingArgs(p: { args?: unknown; publicArgs?: unknown }): Record<string, unknown> {
-  if (isPlainObject(p.publicArgs)) return p.publicArgs;
-  if (!isPlainObject(p.args)) return {};
-  return Object.fromEntries(Object.keys(p.args).map((k) => [k, "***"]));
-}
-
-/**
- * Run senza lo stato del ciclo (`loopState`, contiene la conversazione e gli argomenti) e con
- * l'azione in sospeso ridotta ai campi pubblici (argomenti sensibili oscurati), solo mentre la
- * run è in attesa del client.
- */
+/** Run come esce dall'API: costo come numero. Le colonne storiche della pausa non sono più nello schema. */
 export function toPublicRun(run: Run) {
-  const { loopState: _loopState, pausedAt: _pausedAt, pendingAction, costUsd, ...rest } = run;
-  const p = pendingAction as
-    | { kind?: unknown; toolName?: unknown; args?: unknown; publicArgs?: unknown; summary?: unknown }
-    | null;
-  const publicPending =
-    run.status === "awaiting_client" && p && typeof p === "object"
-      ? { kind: p.kind, toolName: p.toolName, args: publicPendingArgs(p), summary: p.summary }
-      : null;
-  return { ...rest, costUsd: toNumberOrNull(costUsd), pendingAction: publicPending };
+  const { costUsd, ...rest } = run;
+  return { ...rest, costUsd: toNumberOrNull(costUsd) };
 }
 
 /**
@@ -118,15 +97,18 @@ export function userTokenFrom(req: Request): string | undefined {
 }
 
 /** Analisi senza log né mappa (elenco e risposta all'avvio): quelli arrivano solo col dettaglio. Mai l'hash della lease. */
+/** Sorgenti dell'analisi: `mcp` manca nelle analisi precedenti alla sorgente MCP. */
+const publicSources = (sources: Analysis["sources"]) => ({ ...sources, mcp: sources.mcp ?? false });
+
 export function toPublicAnalysis(analysis: Analysis) {
   const { log: _log, architectureMap: _map, leaseTokenHash: _lease, ...rest } = analysis;
-  return { ...rest, costUsd: toNumberOrNull(analysis.costUsd) };
+  return { ...rest, sources: publicSources(analysis.sources), costUsd: toNumberOrNull(analysis.costUsd) };
 }
 
 /** Dettaglio dell'analisi: con log e mappa, costo come numero, senza l'hash della lease. */
 export function toPublicAnalysisDetail(analysis: Analysis) {
   const { leaseTokenHash: _lease, ...rest } = analysis;
-  return { ...rest, costUsd: toNumberOrNull(analysis.costUsd) };
+  return { ...rest, sources: publicSources(analysis.sources), costUsd: toNumberOrNull(analysis.costUsd) };
 }
 
 /**
@@ -162,7 +144,8 @@ export function toPublicItem(item: AnalysisItem) {
       : null;
   return {
     ...rest,
-    payload: isPlainObject(item.payload) ? item.payload : {},
+    // Le voci tool delle analisi precedenti ai livelli escono già con `level` e `kind`
+    payload: isPlainObject(item.payload) ? (item.chapter === "tool" ? normalizeStoredToolPayload(item.payload) : item.payload) : {},
     evidence: publicEvidence(item.evidence),
     issue,
   };

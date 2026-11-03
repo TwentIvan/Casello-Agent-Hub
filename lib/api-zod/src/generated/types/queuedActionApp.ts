@@ -5,8 +5,8 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
-import type { RunDecision } from './runDecision';
 
-export interface RunResume {
-  decision: RunDecision;
-}
+export type QueuedActionApp = {
+  id: number;
+  name: string;
+};

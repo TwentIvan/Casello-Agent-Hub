@@ -17,6 +17,11 @@ export interface AppInput {
   baseUrl: string;
   /** @nullable */
   internalBaseUrl?: string | null;
+  /**
+     * Indirizzo del server MCP dell'app
+     * @nullable
+     */
+  mcpUrl?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
   /** Segreto di servizio (solo scrittura, salvato cifrato) */

@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
-import { sql, eq } from "drizzle-orm";
-import { db, appsTable, agentsTable, runsTable } from "@workspace/db";
+import { sql, eq, and } from "drizzle-orm";
+import { currentUserId } from "../lib/auth";
+import { db, appsTable, agentsTable, runsTable, pendingActionsTable } from "@workspace/db";
 import { GetDashboardStatsResponse } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
-router.get("/dashboard/stats", async (_req, res) => {
+router.get("/dashboard/stats", async (req, res) => {
   const [{ count: totalApps }] = await db.select({ count: sql<number>`count(*)::int` }).from(appsTable);
   const [{ count: totalAgents }] = await db.select({ count: sql<number>`count(*)::int` }).from(agentsTable);
   const [{ count: activeAgents }] = await db
@@ -29,6 +30,11 @@ router.get("/dashboard/stats", async (_req, res) => {
     .select({ avg: sql<number | null>`avg(${runsTable.durationMs})::float` })
     .from(runsTable);
 
+  const [{ count: pendingActions }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(pendingActionsTable)
+    .where(and(eq(pendingActionsTable.userId, currentUserId(req)), eq(pendingActionsTable.status, "pending")));
+
   res.json(
     GetDashboardStatsResponse.parse({
       totalApps,
@@ -38,6 +44,7 @@ router.get("/dashboard/stats", async (_req, res) => {
       successfulRuns,
       failedRuns,
       cancelledRuns,
+      pendingActions,
       avgDurationMs,
     })
   );

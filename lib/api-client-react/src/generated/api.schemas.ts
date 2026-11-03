@@ -154,6 +154,11 @@ export interface App {
      * @nullable
      */
   internalBaseUrl?: string | null;
+  /**
+     * Indirizzo del server MCP dell'app
+     * @nullable
+     */
+  mcpUrl?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
   /** Indica se il segreto di servizio è impostato (il valore non è mai esposto) */
@@ -201,6 +206,11 @@ export interface AppInput {
   baseUrl: string;
   /** @nullable */
   internalBaseUrl?: string | null;
+  /**
+     * Indirizzo del server MCP dell'app
+     * @nullable
+     */
+  mcpUrl?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
   /** Segreto di servizio (solo scrittura, salvato cifrato) */
@@ -238,6 +248,11 @@ export interface AppUpdate {
   baseUrl?: string;
   /** @nullable */
   internalBaseUrl?: string | null;
+  /**
+     * Indirizzo del server MCP dell'app
+     * @nullable
+     */
+  mcpUrl?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
   /**
@@ -382,6 +397,20 @@ export const ToolKind = {
   http: 'http',
   ui: 'ui',
   composite: 'composite',
+  mcp: 'mcp',
+} as const;
+
+/**
+ * Livello d'azione: L0 lettura, L1 azione reversibile, L2 con conferma, L3 vietata
+ */
+export type ToolLevel = typeof ToolLevel[keyof typeof ToolLevel];
+
+
+export const ToolLevel = {
+  L0: 'L0',
+  L1: 'L1',
+  L2: 'L2',
+  L3: 'L3',
 } as const;
 
 export type ToolStatus = typeof ToolStatus[keyof typeof ToolStatus];
@@ -417,8 +446,10 @@ export interface AppTool {
   description?: string | null;
   kind: ToolKind;
   identity: ToolIdentity;
-  requiresConfirmation: boolean;
-  readOnly: boolean;
+  /** Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura) */
+  level: ToolLevel;
+  /** Livello scelto dall'utente, mai sotto `level` */
+  levelOverride: ToolLevel | null;
   status: ToolStatus;
   /** JSON Schema dei parametri accettati dal tool */
   paramsSchema: AppToolParamsSchema;
@@ -445,8 +476,10 @@ export interface AppToolInput {
   description?: string | null;
   kind: ToolKind;
   identity?: ToolIdentity;
-  requiresConfirmation?: boolean;
-  readOnly?: boolean;
+  /** Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura) */
+  level?: ToolLevel;
+  /** Livello scelto dall'utente, mai sotto `level` */
+  levelOverride?: ToolLevel | null;
   status?: ToolStatus;
   paramsSchema?: AppToolInputParamsSchema;
   definition: AppToolInputDefinition;
@@ -466,8 +499,10 @@ export interface AppToolUpdate {
   description?: string | null;
   kind?: ToolKind;
   identity?: ToolIdentity;
-  requiresConfirmation?: boolean;
-  readOnly?: boolean;
+  /** Livello proposto; per i tool MCP lo dichiara il servizio (sola lettura) */
+  level?: ToolLevel;
+  /** Livello scelto dall'utente, mai sotto `level` */
+  levelOverride?: ToolLevel | null;
   status?: ToolStatus;
   paramsSchema?: AppToolUpdateParamsSchema;
   definition?: AppToolUpdateDefinition;
@@ -476,6 +511,9 @@ export interface AppToolUpdate {
   needsVerification?: boolean;
 }
 
+/**
+ * awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all'avvio le run ancora in pausa diventano cancelled.
+ */
 export type RunStatus = typeof RunStatus[keyof typeof RunStatus];
 
 
@@ -487,23 +525,6 @@ export const RunStatus = {
   awaiting_client: 'awaiting_client',
   cancelled: 'cancelled',
 } as const;
-
-export type PendingActionKind = typeof PendingActionKind[keyof typeof PendingActionKind];
-
-
-export const PendingActionKind = {
-  confirmation: 'confirmation',
-  ui: 'ui',
-} as const;
-
-export type PendingActionArgs = { [key: string]: unknown };
-
-export interface PendingAction {
-  kind: PendingActionKind;
-  toolName: string;
-  args: PendingActionArgs;
-  summary: string;
-}
 
 export interface Run {
   id: number;
@@ -526,8 +547,6 @@ export interface Run {
   createdAt: string;
   /** @nullable */
   finishedAt?: string | null;
-  /** Azione in attesa del client (solo con stato awaiting_client) */
-  pendingAction?: PendingAction | null;
   /** @nullable */
   promptTokens?: number | null;
   /** @nullable */
@@ -550,7 +569,7 @@ export interface RunStep {
   id: number;
   runId: number;
   position: number;
-  /** model (chiamata al modello) o tool (chiamata a un tool) */
+  /** model (chiamata al modello), tool (chiamata a un tool) o queued (azione accodata per la conferma dell'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti sensibili oscurati) */
   type: string;
   /** @nullable */
   toolName?: string | null;
@@ -567,18 +586,6 @@ export interface RunStep {
   createdAt: string;
 }
 
-export type RunDecision = typeof RunDecision[keyof typeof RunDecision];
-
-
-export const RunDecision = {
-  approved: 'approved',
-  rejected: 'rejected',
-} as const;
-
-export interface RunResume {
-  decision: RunDecision;
-}
-
 export interface RunTrigger {
   /** Input testuale da passare all'agente */
   input?: string;
@@ -592,8 +599,84 @@ export interface DashboardStats {
   successfulRuns: number;
   failedRuns: number;
   cancelledRuns: number;
+  /** Azioni dell'utente corrente in attesa di conferma */
+  pendingActions: number;
   /** @nullable */
   avgDurationMs?: number | null;
+}
+
+export type QueuedActionStatus = typeof QueuedActionStatus[keyof typeof QueuedActionStatus];
+
+
+export const QueuedActionStatus = {
+  pending: 'pending',
+  executing: 'executing',
+  done: 'done',
+  failed: 'failed',
+  rejected: 'rejected',
+} as const;
+
+export type QueuedActionApp = {
+  id: number;
+  name: string;
+};
+
+export type QueuedActionToolIdentity = typeof QueuedActionToolIdentity[keyof typeof QueuedActionToolIdentity];
+
+
+export const QueuedActionToolIdentity = {
+  user: 'user',
+  service: 'service',
+} as const;
+
+export type QueuedActionTool = {
+  id: number;
+  name: string;
+  identity: QueuedActionToolIdentity;
+};
+
+export interface QueuedAction {
+  number: number;
+  status: QueuedActionStatus;
+  app: QueuedActionApp;
+  tool: QueuedActionTool;
+  /** @nullable */
+  agentId: number | null;
+  /** @nullable */
+  runId: number | null;
+  recipient: string;
+  summary: string;
+  /** Argomenti con i parametri sensibili oscurati */
+  args: unknown;
+  /** @nullable */
+  result: string | null;
+  /** @nullable */
+  errorMessage: string | null;
+  /** @nullable */
+  decisionNote: string | null;
+  createdAt: string;
+  /** @nullable */
+  decidedAt: string | null;
+  /** @nullable */
+  finishedAt: string | null;
+}
+
+export interface QueuedActionList {
+  actions: QueuedAction[];
+}
+
+export interface ApproveActionRequest {
+  /**
+     * Token dell'utente dell'app, per gli strumenti con identità utente
+     * @minLength 1
+     * @maxLength 4096
+     */
+  userToken?: string;
+}
+
+export interface RejectActionRequest {
+  /** @maxLength 500 */
+  note?: string;
 }
 
 export interface UserBudget {
@@ -732,6 +815,8 @@ export const ItemStatus = {
 export interface AnalysisSources {
   code: SourceType;
   openapi: boolean;
+  /** Elenco degli strumenti del server MCP dell'app letto all'avvio (false nelle analisi precedenti) */
+  mcp: boolean;
   description: boolean;
 }
 
@@ -831,7 +916,7 @@ export const AnalysisItemOrigin = {
 } as const;
 
 /**
- * Contenuto della proposta, la cui forma dipende dal capitolo
+ * Contenuto della proposta, la cui forma dipende dal capitolo. Le voci tool hanno `kind` ("http" | "mcp"), `level` ("L0".."L3", livello proposto) e, per gli strumenti MCP, `declaredLevel` (livello dichiarato dal servizio) e `definition` { mcpName }; le voci tool delle analisi precedenti ai livelli arrivano già convertite (`level` dai vecchi flag).
  */
 export type AnalysisItemPayload = { [key: string]: unknown };
 
@@ -844,7 +929,7 @@ export interface AnalysisItem {
   /** Chiave stabile nell'analisi, es. tool:rosa_squadra */
   ref: string;
   position: number;
-  /** Contenuto della proposta, la cui forma dipende dal capitolo */
+  /** Contenuto della proposta, la cui forma dipende dal capitolo. Le voci tool hanno `kind` ("http" | "mcp"), `level` ("L0".."L3", livello proposto) e, per gli strumenti MCP, `declaredLevel` (livello dichiarato dal servizio) e `definition` { mcpName }; le voci tool delle analisi precedenti ai livelli arrivano già convertite (`level` dai vecchi flag). */
   payload: AnalysisItemPayload;
   diff: ItemDiff;
   evidence: AnalysisEvidence[];
@@ -993,6 +1078,15 @@ export interface AppPlan {
   analysisId: number | null;
   items: AnalysisItem[];
   issues: PlanIssuesSummary;
+}
+
+export interface McpSyncResult {
+  added: number;
+  updated: number;
+  disabled: number;
+  unchanged: number;
+  /** Nomi degli strumenti MCP uguali a un tool non MCP del catalogo (lasciato invariato) */
+  conflicts: string[];
 }
 
 export interface PlanConversationCreate {
@@ -1890,4 +1984,20 @@ export type ListCatalogProvidersParams = {
 q?: string;
 status?: AiProviderStatus;
 };
+
+export type ListPendingActionsParams = {
+status?: ListPendingActionsStatus;
+};
+
+export type ListPendingActionsStatus = typeof ListPendingActionsStatus[keyof typeof ListPendingActionsStatus];
+
+
+export const ListPendingActionsStatus = {
+  pending: 'pending',
+  executing: 'executing',
+  done: 'done',
+  failed: 'failed',
+  rejected: 'rejected',
+  all: 'all',
+} as const;
 

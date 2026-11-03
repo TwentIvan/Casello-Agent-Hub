@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
 import { and, asc, eq } from "drizzle-orm";
-import { db, appsTable, agentsTable, githubInstallationsTable } from "@workspace/db";
+import { db, appsTable, agentsTable, githubInstallationsTable, pendingActionsTable } from "@workspace/db";
 import {
   ListAppsResponse,
   CreateAppBody,
@@ -31,6 +31,7 @@ const router: IRouter = Router();
 interface ConnectionFields {
   baseUrl?: string;
   internalBaseUrl?: string | null;
+  mcpUrl?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
 }
@@ -41,7 +42,7 @@ interface ConnectionFields {
  * campi presenti; restituisce il primo errore ("<campo>: <motivo>") o null.
  */
 function connectionError(body: ConnectionFields): string | null {
-  for (const field of ["baseUrl", "internalBaseUrl"] as const) {
+  for (const field of ["baseUrl", "internalBaseUrl", "mcpUrl"] as const) {
     const value = body[field];
     if (value === undefined || value === null) continue;
     const parsed = parseAppBaseUrl(value);
@@ -309,7 +310,13 @@ router.patch("/apps/:id", async (req, res) => {
 
 router.delete("/apps/:id", async (req, res) => {
   const { id } = parseRequest(DeleteAppParams, req.params);
-  const [app] = await db.delete(appsTable).where(eq(appsTable.id, id)).returning();
+  // Lo storico della coda segue l'app: va tolto prima, perché `pending_actions.tool_id` è RESTRICT
+  // e bloccherebbe la cascata dell'app verso i suoi tool
+  const app = await db.transaction(async (tx) => {
+    await tx.delete(pendingActionsTable).where(eq(pendingActionsTable.appId, id));
+    const [deleted] = await tx.delete(appsTable).where(eq(appsTable.id, id)).returning();
+    return deleted;
+  });
   if (!app) {
     res.status(404).json({ error: "App non trovata" });
     return;

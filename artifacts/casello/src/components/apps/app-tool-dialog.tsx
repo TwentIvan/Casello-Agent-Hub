@@ -12,7 +12,6 @@ import {
   useUpdateAppTool,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -28,7 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { jsonObjectInput, parseJsonObject } from "@/lib/json-schema-input";
-import { TOOL_IDENTITY_LABELS, TOOL_STATUS_LABELS } from "@/lib/tool-labels";
+import { TOOL_IDENTITY_LABELS, TOOL_LEVEL_LABELS, TOOL_STATUS_LABELS } from "@/lib/tool-labels";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 
@@ -50,8 +49,7 @@ const toolFormSchema = z.object({
   paramsSchema: jsonObjectInput,
   responseFields: z.string().trim(),
   identity: z.enum(["user", "service"]),
-  requiresConfirmation: z.boolean(),
-  readOnly: z.boolean(),
+  level: z.enum(["L0", "L1", "L2", "L3"]),
   status: z.enum(["draft", "active", "disabled"]),
 });
 
@@ -97,8 +95,7 @@ function toValues(tool?: AppTool): ToolFormValues {
       tool && Object.keys(tool.paramsSchema).length > 0 ? JSON.stringify(tool.paramsSchema, null, 2) : "",
     responseFields: fields.join(", "),
     identity: tool?.identity ?? "user",
-    requiresConfirmation: tool?.requiresConfirmation ?? false,
-    readOnly: tool?.readOnly ?? false,
+    level: tool?.level ?? "L2",
     status: tool?.status ?? "active",
   };
 }
@@ -165,8 +162,7 @@ export function AppToolDialog({ appId, open, onOpenChange, tool }: AppToolDialog
       description: values.description || null,
       kind: "http" as const,
       identity: values.identity,
-      requiresConfirmation: values.requiresConfirmation,
-      readOnly: values.readOnly,
+      level: values.level,
       status: values.status,
       paramsSchema,
       definition,
@@ -183,10 +179,26 @@ export function AppToolDialog({ appId, open, onOpenChange, tool }: AppToolDialog
           <DialogHeader>
             <DialogTitle>{tool.name}</DialogTitle>
             <DialogDescription>
-              Tool di tipo «{tool.kind}»: nella fase 1 è modificabile solo lo stato, dal menu del catalogo.
+              {tool.kind === "mcp"
+                ? "Strumento MCP: si aggiorna con «Aggiorna strumenti»; dal catalogo si cambiano lo stato e il livello (solo verso l'alto)."
+                : `Tool di tipo «${tool.kind}»: è modificabile solo lo stato, dal menu del catalogo.`}
             </DialogDescription>
           </DialogHeader>
           {tool.description && <p className="text-sm">{tool.description}</p>}
+          <dl className="grid grid-cols-3 gap-3 text-sm">
+            <div>
+              <dt className="text-xs text-muted-foreground">Tipo</dt>
+              <dd>{tool.kind}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Livello dichiarato</dt>
+              <dd>{TOOL_LEVEL_LABELS[tool.level]}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Livello scelto</dt>
+              <dd>{tool.levelOverride ? TOOL_LEVEL_LABELS[tool.levelOverride] : "—"}</dd>
+            </div>
+          </dl>
           <div className="space-y-3">
             <div>
               <div className="mb-1 text-xs font-medium text-muted-foreground">Schema dei parametri</div>
@@ -401,38 +413,30 @@ export function AppToolDialog({ appId, open, onOpenChange, tool }: AppToolDialog
                 )}
               />
             </div>
-            <div className="space-y-3">
-              <FormField
-                control={form.control}
-                name="requiresConfirmation"
-                render={({ field }) => (
-                  <FormItem className="flex items-start gap-3 space-y-0">
+            <FormField
+              control={form.control}
+              name="level"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Livello d'azione</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
                     <FormControl>
-                      <Checkbox checked={field.value} onCheckedChange={(v) => field.onChange(v === true)} />
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
                     </FormControl>
-                    <div className="space-y-0.5">
-                      <FormLabel>Richiede conferma</FormLabel>
-                      <FormDescription>La run si ferma e chiede l'ok dell'utente prima di eseguire il tool.</FormDescription>
-                    </div>
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="readOnly"
-                render={({ field }) => (
-                  <FormItem className="flex items-start gap-3 space-y-0">
-                    <FormControl>
-                      <Checkbox checked={field.value} onCheckedChange={(v) => field.onChange(v === true)} />
-                    </FormControl>
-                    <div className="space-y-0.5">
-                      <FormLabel>Sola lettura</FormLabel>
-                      <FormDescription>Il tool non modifica dati nell'app.</FormDescription>
-                    </div>
-                  </FormItem>
-                )}
-              />
-            </div>
+                    <SelectContent>
+                      {(["L0", "L1", "L2", "L3"] as const).map((value) => (
+                        <SelectItem key={value} value={value}>
+                          {TOOL_LEVEL_LABELS[value]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Annulla

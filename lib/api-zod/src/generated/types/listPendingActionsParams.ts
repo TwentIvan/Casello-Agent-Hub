@@ -5,5 +5,8 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { ListPendingActionsStatus } from './listPendingActionsStatus';
 
-export type PendingActionArgs = { [key: string]: unknown };
+export type ListPendingActionsParams = {
+status?: ListPendingActionsStatus;
+};

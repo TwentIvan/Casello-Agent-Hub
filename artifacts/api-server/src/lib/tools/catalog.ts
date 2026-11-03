@@ -1,8 +1,10 @@
 import { db, agentsTable, appsTable, appToolsTable, agentToolsTable, type AppTool } from "@workspace/db";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
+import { MAX_SUMMARY_CHARS, RECIPIENT_PARAM, SUMMARY_PARAM } from "../agent-loop";
 import { logger } from "../logger";
 import { parseDefinition } from "./definition";
+import { effectiveLevel, type ToolLevel } from "./levels";
 import type { AppConnection, CatalogTool } from "./types";
 
 // Oscuramento degli argomenti: modulo puro, usato anche dal ciclo dell'agente
@@ -16,7 +18,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /** Converte una riga di `app_tools`; null se la definizione non è più valida. */
-function toCatalogTool(row: AppTool): CatalogTool | null {
+export function toCatalogTool(row: AppTool): CatalogTool | null {
   const parsed = parseDefinition(row.kind, row.definition);
   if (!parsed.ok) {
     logger.warn({ toolId: row.id, tool: row.name, error: parsed.error }, "Tool con definizione non valida: escluso");
@@ -26,14 +28,18 @@ function toCatalogTool(row: AppTool): CatalogTool | null {
   return { ...row, paramsSchema: schema, definition: parsed.value };
 }
 
-// Fase 1: solo i tool `http` sono eseguibili. I tool `ui` e `composite` restano nel catalogo
+// Solo i tool `http` e `mcp` sono eseguibili. I tool `ui` e `composite` restano nel catalogo
 // ma non vengono offerti al modello finché non esiste un client che li esegue.
-const EXECUTABLE_KIND = "http";
+const EXECUTABLE_KINDS = ["http", "mcp"] as const;
+
+function isOffered(t: { kind: string; level: ToolLevel; levelOverride: ToolLevel | null }): boolean {
+  return (EXECUTABLE_KINDS as readonly string[]).includes(t.kind) && effectiveLevel(t) !== "L3";
+}
 
 /**
  * Tool disponibili per un agente: l'agente `general` usa tutti i tool `active` della sua app,
  * un agente `area` solo quelli collegati in `agent_tools` e `active`. In entrambi i casi solo
- * i tool `http` (vedi EXECUTABLE_KIND).
+ * i tool `http` e `mcp` con livello effettivo diverso da L3.
  */
 export async function loadAgentTools(agentId: number): Promise<CatalogTool[]> {
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId)).limit(1);
@@ -48,7 +54,7 @@ export async function loadAgentTools(agentId: number): Promise<CatalogTool[]> {
         and(
           eq(appToolsTable.appId, agent.appId),
           eq(appToolsTable.status, "active"),
-          eq(appToolsTable.kind, EXECUTABLE_KIND),
+          inArray(appToolsTable.kind, [...EXECUTABLE_KINDS]),
         ),
       )
       .orderBy(asc(appToolsTable.id));
@@ -63,13 +69,13 @@ export async function loadAgentTools(agentId: number): Promise<CatalogTool[]> {
           // Difesa: un collegamento verso il tool di un'altra app non conta
           eq(appToolsTable.appId, agent.appId),
           eq(appToolsTable.status, "active"),
-          eq(appToolsTable.kind, EXECUTABLE_KIND),
+          inArray(appToolsTable.kind, [...EXECUTABLE_KINDS]),
         ),
       )
       .orderBy(asc(appToolsTable.id));
     rows = linked.map((r) => r.tool);
   }
-  return rows.map(toCatalogTool).filter((t): t is CatalogTool => t !== null);
+  return rows.filter(isOffered).map(toCatalogTool).filter((t): t is CatalogTool => t !== null);
 }
 
 /** Copia dello schema senza le estensioni `x-*` (es. x-sensitive), che alcuni provider rifiutano. */
@@ -85,15 +91,46 @@ function stripExtensions(node: unknown, isPropertiesMap = false): unknown {
   return out;
 }
 
+// Parametri che Casello aggiunge agli strumenti L2: servono alla coda delle azioni (chi riceve
+// l'azione e cosa fa, per chi deve confermarla) e non arrivano mai al servizio
+const QUEUE_PARAMS = {
+  [RECIPIENT_PARAM]: {
+    type: "string",
+    description:
+      "Chi riceve l'azione o ne subisce l'effetto (persona, squadra, cliente…): lo legge l'utente che deve confermarla.",
+  },
+  [SUMMARY_PARAM]: {
+    type: "string",
+    maxLength: MAX_SUMMARY_CHARS,
+    description:
+      "Sintesi in italiano di cosa farà l'azione, completa e senza segnaposto: l'azione non viene eseguita subito ma va in coda per la conferma dell'utente.",
+  },
+};
+
+/** Schema offerto al modello per uno strumento L2: quello del tool più destinatario e sintesi obbligatori. */
+function withQueueParams(parameters: Record<string, unknown>): Record<string, unknown> {
+  const props = isPlainObject(parameters["properties"]) ? parameters["properties"] : {};
+  const required = Array.isArray(parameters["required"]) ? (parameters["required"] as unknown[]) : [];
+  const extra = Object.keys(QUEUE_PARAMS).filter((name) => !required.includes(name));
+  return {
+    ...parameters,
+    properties: { ...props, ...QUEUE_PARAMS },
+    required: [...required, ...extra],
+  };
+}
+
 export function toFunctionTools(tools: CatalogTool[]): ChatCompletionTool[] {
-  return tools.filter((t) => t.kind === EXECUTABLE_KIND).map((t) => ({
-    type: "function" as const,
-    function: {
-      name: t.name,
-      ...(t.description ? { description: t.description } : {}),
-      parameters: stripExtensions(t.paramsSchema) as Record<string, unknown>,
-    },
-  }));
+  return tools.filter(isOffered).map((t) => {
+    const parameters = stripExtensions(t.paramsSchema) as Record<string, unknown>;
+    return {
+      type: "function" as const,
+      function: {
+        name: t.name,
+        ...(t.description ? { description: t.description } : {}),
+        parameters: effectiveLevel(t) === "L2" ? withQueueParams(parameters) : parameters,
+      },
+    };
+  });
 }
 
 export async function loadAppConnection(appId: number): Promise<AppConnection> {
@@ -105,5 +142,6 @@ export async function loadAppConnection(appId: number): Promise<AppConnection> {
     userAuth: app.userAuth,
     serviceAuth: app.serviceAuth,
     serviceSecretEnc: app.serviceSecretEnc,
+    mcpUrl: app.mcpUrl,
   };
 }

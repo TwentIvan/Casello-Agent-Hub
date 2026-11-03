@@ -2,7 +2,8 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { failInterruptedAnalyses } from "./lib/architect/run-analysis";
 import { startLocalLeaseJob } from "./lib/architect/local-executor";
-import { expireStalePausedRuns, failInterruptedRuns } from "./lib/run-executor";
+import { failInterruptedRuns } from "./lib/run-executor";
+import { failInterruptedActions } from "./lib/actions/decide";
 import { failInterruptedPlanTurns } from "./lib/plan-chat/run-turn";
 import { resetStaleIssueReservations } from "./lib/plan-issues/service";
 import { failInterruptedCatalogRuns } from "./lib/catalog/refresh";
@@ -28,11 +29,20 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 // Una sola istanza dell'API: le run ancora aperte all'avvio sono state interrotte dal riavvio.
+// Le run rimaste in pausa per conferma (meccanismo sostituito dalla coda delle azioni) diventano annullate.
 failInterruptedRuns()
-  .then((count) => {
-    if (count > 0) logger.warn({ count }, "Run interrotte dal riavvio chiuse come fallite");
+  .then(({ failed, cancelled }) => {
+    if (failed > 0) logger.warn({ count: failed }, "Run interrotte dal riavvio chiuse come fallite");
+    if (cancelled > 0) logger.info({ count: cancelled }, "Run in pausa per conferma annullate: sostituite dalla coda delle azioni");
   })
   .catch((err: unknown) => logger.error({ err }, "Chiusura delle run interrotte non riuscita"));
+
+// Azioni in coda rimaste in esecuzione: l'esito è incerto (il servizio può averle eseguite).
+failInterruptedActions()
+  .then((count) => {
+    if (count > 0) logger.warn({ count }, "Azioni in coda interrotte dal riavvio segnate come fallite (esito incerto)");
+  })
+  .catch((err: unknown) => logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Chiusura delle azioni in coda interrotte non riuscita"));
 
 // I turni della chat del piano rimasti in corso: la conversazione torna libera, con un messaggio d'errore.
 failInterruptedPlanTurns()
@@ -73,15 +83,6 @@ ensureProviderRegistry().catch((err: unknown) =>
 );
 
 startLocalLeaseJob();
-
-// Le run in pausa senza conferma entro 10 minuti vengono annullate; il timer non tiene in vita il processo.
-setInterval(() => {
-  expireStalePausedRuns()
-    .then((count) => {
-      if (count > 0) logger.info({ count }, "Run in pausa scadute annullate");
-    })
-    .catch((err: unknown) => logger.error({ err }, "Scadenza delle run in pausa non riuscita"));
-}, 60_000).unref();
 
 app.listen(port, (err) => {
   if (err) {

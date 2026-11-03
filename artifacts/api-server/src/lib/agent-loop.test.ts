@@ -3,11 +3,10 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import type { ChatResult } from "./ai/chat-types";
 import {
   DEFAULT_LIMITS,
-  PendingMismatchError,
-  resolvePending,
   runAgentLoop,
   type LoopDeps,
   type LoopState,
+  type QueueActionResult,
   type StepRecord,
 } from "./agent-loop";
 import type { CatalogTool, ToolResult } from "./tools/types";
@@ -20,8 +19,8 @@ function makeTool(overrides: Partial<CatalogTool> & { name: string }): CatalogTo
     description: `Descrizione di ${overrides.name}`,
     kind: "http",
     identity: "user",
-    requiresConfirmation: false,
-    readOnly: false,
+    level: "L1",
+    levelOverride: null,
     status: "active",
     paramsSchema: { type: "object", properties: {} },
     definition: { method: "GET", path: "/x", paramLocations: {} },
@@ -33,16 +32,24 @@ function makeTool(overrides: Partial<CatalogTool> & { name: string }): CatalogTo
   } as CatalogTool;
 }
 
-const leggiRosa = makeTool({ name: "leggi_rosa", description: "Legge la rosa", readOnly: true });
-const leggiCalendario = makeTool({ name: "leggi_calendario", readOnly: true });
+const leggiRosa = makeTool({ name: "leggi_rosa", description: "Legge la rosa", level: "L0" });
+const leggiCalendario = makeTool({ name: "leggi_calendario", level: "L0" });
 const scambia = makeTool({
   name: "proponi_scambio",
   description: "Propone uno scambio",
-  requiresConfirmation: true,
+  level: "L2",
+  paramsSchema: {
+    type: "object",
+    properties: { da: { type: "string" }, a: { type: "string" } },
+    required: ["da", "a"],
+  },
   definition: { method: "POST", path: "/scambi", paramLocations: {} },
 });
+const scrivi = makeTool({ name: "scrivi", level: "L1" });
 const apriPagina = makeTool({ name: "apri_pagina", kind: "ui", definition: { action: "navigate" } });
-const tools = [leggiRosa, leggiCalendario, scambia, apriPagina];
+const tools = [leggiRosa, leggiCalendario, scambia, scrivi, apriPagina];
+
+const SCAMBIO = '{"da":"Totti","a":"Del Piero","destinatario":"Lazio","sintesi":"Totti per Del Piero"}';
 
 function reply(content: string, tokens = 10): ChatResult {
   return { content, toolCalls: [], promptTokens: tokens, completionTokens: 0, cachedPromptTokens: 0 };
@@ -85,16 +92,25 @@ function makeDeps(responses: ChatResult[], extra: Partial<LoopDeps> = {}) {
       content: `${tool.name}:${JSON.stringify(args)}`,
     }),
   );
+  const queueAction = vi.fn(
+    async (
+      _tool: CatalogTool,
+      _args: Record<string, unknown>,
+      _recipient: string,
+      _summary: string,
+    ): Promise<QueueActionResult> => ({ ok: true, number: 7 }),
+  );
   const deps: LoopDeps = {
     chat,
     tools,
     executeTool,
+    queueAction,
     onStep: async (s) => {
       steps.push(s);
     },
     ...extra,
   };
-  return { deps, steps, chat, executeTool, seen };
+  return { deps, steps, chat, executeTool, queueAction, seen };
 }
 
 // Ogni tool_call di un messaggio assistente ha esattamente un messaggio tool
@@ -236,145 +252,147 @@ describe("runAgentLoop", () => {
     expect(executeTool).toHaveBeenCalledWith(leggiRosa, {});
   });
 
-  it("conferma", async () => {
-    const { deps, steps, executeTool } = makeDeps([
-      callTools([{ id: "c1", name: "proponi_scambio", args: '{"da":"Totti","a":"Del Piero"}' }]),
+  it("azione L2: accodata con gli argomenti senza destinatario e sintesi, mai eseguita", async () => {
+    const { deps, steps, executeTool, queueAction, seen } = makeDeps([
+      callTools([{ id: "c1", name: "proponi_scambio", args: SCAMBIO }]),
       reply("Scambio proposto"),
     ]);
     const out = await runAgentLoop(initialState(), deps);
-    expect(out.type).toBe("paused");
-    if (out.type !== "paused") return;
-    expect(out.pending).toEqual({
-      kind: "confirmation",
-      toolCallId: "c1",
+    expect(out).toMatchObject({ type: "finished", content: "Scambio proposto" });
+    expect(queueAction).toHaveBeenCalledTimes(1);
+    expect(queueAction).toHaveBeenCalledWith(scambia, { da: "Totti", a: "Del Piero" }, "Lazio", "Totti per Del Piero");
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(seen[1].at(-1)).toEqual({
+      role: "tool",
+      tool_call_id: "c1",
+      content: "accodata come n. 7, in attesa di conferma dell'utente",
+    });
+    expect(steps.map((s) => s.type)).toEqual(["model", "queued", "model"]);
+    expect(steps[1]).toMatchObject({
+      type: "queued",
       toolName: "proponi_scambio",
       args: { da: "Totti", a: "Del Piero" },
-      publicArgs: { da: "Totti", a: "Del Piero" },
-      summary: "Propone uno scambio: da: Totti, a: Del Piero",
-    });
-    expect(executeTool).not.toHaveBeenCalled();
-    expect(steps.map((s) => s.type)).toEqual(["model"]);
-    expect(out.state.queue.map((c) => c.id)).toEqual(["c1"]);
-
-    // lo stato attraversa il DB come JSON
-    const stored = JSON.parse(JSON.stringify(out.state)) as LoopState;
-    const resumed = resolvePending(stored, out.pending, { ok: true, status: 201, content: "scambio creato" });
-    expect(resumed.queue).toEqual([]);
-    expect(resumed.messages.at(-1)).toEqual({ role: "tool", tool_call_id: "c1", content: "scambio creato" });
-
-    const final = await runAgentLoop(resumed, deps);
-    expect(final).toMatchObject({ type: "finished", content: "Scambio proposto" });
-    expect(executeTool).not.toHaveBeenCalled();
-    expectValidHistory(final.state.messages);
-  });
-
-  it("resolvePending non modifica lo stato ricevuto", async () => {
-    const { deps } = makeDeps([callTools([{ id: "c1", name: "proponi_scambio", args: "{}" }])]);
-    const out = await runAgentLoop(initialState(), deps);
-    if (out.type !== "paused") throw new Error("atteso paused");
-    const before = JSON.stringify(out.state);
-    resolvePending(out.state, out.pending, { ok: false, content: "rifiutato dall'utente" });
-    expect(JSON.stringify(out.state)).toBe(before);
-  });
-
-  it("resolvePending con id diverso dalla testa della coda → errore", async () => {
-    const { deps } = makeDeps([
-      callTools([
-        { id: "c1", name: "proponi_scambio", args: "{}" },
-        { id: "c2", name: "leggi_rosa", args: "{}" },
-      ]),
-    ]);
-    const out = await runAgentLoop(initialState(), deps);
-    if (out.type !== "paused") throw new Error("atteso paused");
-    expect(() => resolvePending(out.state, { ...out.pending, toolCallId: "c2" }, { ok: true, content: "x" })).toThrow(
-      PendingMismatchError,
-    );
-    expect(() => resolvePending(out.state, { ...out.pending, toolCallId: "zz" }, { ok: true, content: "x" })).toThrow(
-      PendingMismatchError,
-    );
-  });
-
-  it("resolvePending due volte sulla stessa azione → errore, nessun messaggio duplicato", async () => {
-    const { deps } = makeDeps([callTools([{ id: "c1", name: "proponi_scambio", args: "{}" }])]);
-    const out = await runAgentLoop(initialState(), deps);
-    if (out.type !== "paused") throw new Error("atteso paused");
-    const once = resolvePending(out.state, out.pending, { ok: true, content: "ok" });
-    expect(() => resolvePending(once, out.pending, { ok: true, content: "ok" })).toThrow(PendingMismatchError);
-    expect(once.messages.filter((m) => m.role === "tool")).toHaveLength(1);
-  });
-
-  it("id duplicati dal modello: resolvePending toglie solo la testa", async () => {
-    const { deps } = makeDeps([
-      callTools([
-        { id: "dup", name: "proponi_scambio", args: "{}" },
-        { id: "dup", name: "leggi_rosa", args: "{}" },
-      ]),
-    ]);
-    const out = await runAgentLoop(initialState(), deps);
-    if (out.type !== "paused") throw new Error("atteso paused");
-    const resumed = resolvePending(out.state, out.pending, { ok: true, content: "ok" });
-    expect(resumed.queue).toEqual([{ id: "dup", name: "leggi_rosa", arguments: "{}" }]);
-  });
-
-  it("azione di interfaccia → pausa ui", async () => {
-    const { deps, executeTool } = makeDeps([callTools([{ id: "c1", name: "apri_pagina", args: '{"pagina":"rosa"}' }])]);
-    const out = await runAgentLoop(initialState(), deps);
-    expect(out).toMatchObject({
-      type: "paused",
-      pending: { kind: "ui", toolCallId: "c1", toolName: "apri_pagina", args: { pagina: "rosa" } },
-    });
-    expect(executeTool).not.toHaveBeenCalled();
-  });
-
-  it("riassunto con valori non stringa e descrizione mancante", async () => {
-    const senzaDescrizione = makeTool({ name: "muovi", description: null, requiresConfirmation: true });
-    const { deps } = makeDeps([callTools([{ id: "c1", name: "muovi", args: '{"n":3,"opz":{"x":true}}' }])], {
-      tools: [senzaDescrizione],
-    });
-    const out = await runAgentLoop(initialState(), deps);
-    if (out.type !== "paused") throw new Error("atteso paused");
-    expect(out.pending.summary).toBe('muovi: n: 3, opz: {"x":true}');
-  });
-
-  it("coda dopo la pausa", async () => {
-    const order: string[] = [];
-    const { deps, chat, steps } = makeDeps(
-      [
-        callTools([
-          { id: "c1", name: "proponi_scambio", args: "{}" },
-          { id: "c2", name: "leggi_rosa", args: '{"squadra":"Lazio"}' },
-        ]),
-        reply("Fatto"),
-      ],
-      {
-        executeTool: async (tool) => {
-          order.push(`tool:${tool.name}`);
-          return { ok: true, status: 200, content: "rosa" };
-        },
-      },
-    );
-    const out = await runAgentLoop(initialState(), deps);
-    if (out.type !== "paused") throw new Error("atteso paused");
-    expect(out.state.queue.map((c) => c.id)).toEqual(["c1", "c2"]);
-    expect(order).toEqual([]);
-
-    const resumed = resolvePending(JSON.parse(JSON.stringify(out.state)), out.pending, {
       ok: true,
-      content: "ok",
+      queuedNumber: 7,
+      recipient: "Lazio",
+      summary: "Totti per Del Piero",
     });
-    expect(resumed.queue.map((c) => c.id)).toEqual(["c2"]);
-    chat.mockImplementationOnce(async () => {
-      order.push("model");
-      return reply("Fatto");
+    expectValidHistory(out.state.messages);
+  });
+
+  it("azione L2 senza sintesi → errore al modello, nessuna voce", async () => {
+    const { deps, steps, queueAction, executeTool, seen } = makeDeps([
+      callTools([{ id: "c1", name: "proponi_scambio", args: '{"da":"Totti","a":"Del Piero","destinatario":"Lazio"}' }]),
+      reply("ok"),
+    ]);
+    await runAgentLoop(initialState(), deps);
+    expect(queueAction).not.toHaveBeenCalled();
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(seen[1].at(-1)).toMatchObject({
+      role: "tool",
+      content: "servono destinatario e sintesi per un'azione da confermare",
     });
-    const final = await runAgentLoop(resumed, deps);
-    expect(final).toMatchObject({ type: "finished", content: "Fatto" });
-    expect(order).toEqual(["tool:leggi_rosa", "model"]);
-    expect(steps.map((s) => s.type)).toEqual(["model", "tool", "model"]);
-    // ordine dei messaggi tool: c1 (ripresa) poi c2
-    const toolIds = final.state.messages.filter((m) => m.role === "tool").map((m) => m.tool_call_id);
-    expect(toolIds).toEqual(["c1", "c2"]);
-    expectValidHistory(final.state.messages);
+    expect(steps[1]).toMatchObject({ type: "tool", ok: false, error: "servono destinatario e sintesi per un'azione da confermare" });
+  });
+
+  it("azione L2 con destinatario non stringa o sintesi troppo lunga → errore al modello", async () => {
+    const lunga = "x".repeat(501);
+    const { deps, queueAction, seen } = makeDeps([
+      callTools([
+        { id: "c1", name: "proponi_scambio", args: '{"da":"T","a":"D","destinatario":3,"sintesi":"s"}' },
+        { id: "c2", name: "proponi_scambio", args: JSON.stringify({ da: "T", a: "D", destinatario: "L", sintesi: lunga }) },
+      ]),
+      reply("ok"),
+    ]);
+    await runAgentLoop(initialState(), deps);
+    expect(queueAction).not.toHaveBeenCalled();
+    expect(seen[1].slice(-2).map((m) => m.content)).toEqual([
+      "servono destinatario e sintesi per un'azione da confermare",
+      "la sintesi supera i 500 caratteri",
+    ]);
+  });
+
+  it("azione L2 con argomenti non validi per lo schema → errore al modello, nessuna voce", async () => {
+    const { deps, queueAction, seen } = makeDeps([
+      callTools([{ id: "c1", name: "proponi_scambio", args: '{"da":"Totti","destinatario":"Lazio","sintesi":"s"}' }]),
+      reply("ok"),
+    ]);
+    await runAgentLoop(initialState(), deps);
+    expect(queueAction).not.toHaveBeenCalled();
+    expect(String(seen[1].at(-1)!.content)).toMatch(/^argomenti non validi: /);
+  });
+
+  it("queueAction che rifiuta: il motivo arriva al modello, passo tool fallito", async () => {
+    const { deps, steps, seen } = makeDeps(
+      [callTools([{ id: "c1", name: "proponi_scambio", args: SCAMBIO }]), reply("ok")],
+      { queueAction: async () => ({ ok: false, message: "troppe azioni in attesa di conferma" }) },
+    );
+    const out = await runAgentLoop(initialState(), deps);
+    expect(out.type).toBe("finished");
+    expect(seen[1].at(-1)).toEqual({ role: "tool", tool_call_id: "c1", content: "troppe azioni in attesa di conferma" });
+    expect(steps[1]).toMatchObject({ type: "tool", toolName: "proponi_scambio", ok: false, error: "troppe azioni in attesa di conferma" });
+  });
+
+  it("eccezione di queueAction → messaggio fisso al modello", async () => {
+    const { deps, seen } = makeDeps([callTools([{ id: "c1", name: "proponi_scambio", args: SCAMBIO }]), reply("ok")], {
+      queueAction: async () => {
+        throw new Error("connessione al DB persa: postgres://utente:segreto@host");
+      },
+    });
+    await runAgentLoop(initialState(), deps);
+    expect(seen[1].at(-1)!.content).toBe("impossibile accodare l'azione");
+  });
+
+  it("tool L1 con destinatario e sintesi superflui → eseguito senza quei campi", async () => {
+    const { deps, executeTool, queueAction } = makeDeps([
+      callTools([{ id: "c1", name: "scrivi", args: '{"n":1,"destinatario":"Lazio","sintesi":"s"}' }]),
+      reply("ok"),
+    ]);
+    await runAgentLoop(initialState(), deps);
+    expect(executeTool).toHaveBeenCalledWith(scrivi, { n: 1 });
+    expect(queueAction).not.toHaveBeenCalled();
+  });
+
+  it("tool non L2 che dichiara un parametro destinatario: il valore resta", async () => {
+    const invia = makeTool({
+      name: "invia",
+      level: "L1",
+      paramsSchema: { type: "object", properties: { destinatario: { type: "string" } } },
+    });
+    const { deps, executeTool } = makeDeps(
+      [callTools([{ id: "c1", name: "invia", args: '{"destinatario":"Lazio","sintesi":"s"}' }]), reply("ok")],
+      { tools: [invia] },
+    );
+    await runAgentLoop(initialState(), deps);
+    expect(executeTool).toHaveBeenCalledWith(invia, { destinatario: "Lazio" });
+  });
+
+  it("azione L2 tra due letture: le letture si eseguono, l'azione si accoda, ordine dei messaggi rispettato", async () => {
+    const { deps, executeTool, queueAction, seen } = makeDeps([
+      callTools([
+        { id: "c1", name: "leggi_rosa", args: "{}" },
+        { id: "c2", name: "proponi_scambio", args: SCAMBIO },
+        { id: "c3", name: "leggi_calendario", args: "{}" },
+      ]),
+      reply("Fatto"),
+    ]);
+    const out = await runAgentLoop(initialState(), deps);
+    expect(out.type).toBe("finished");
+    expect(executeTool.mock.calls.map((c) => c[0].name)).toEqual(["leggi_rosa", "leggi_calendario"]);
+    expect(queueAction).toHaveBeenCalledTimes(1);
+    expect(seen[1].filter((m) => m.role === "tool").map((m) => m.tool_call_id)).toEqual(["c1", "c2", "c3"]);
+    expectValidHistory(out.state.messages);
+  });
+
+  it("tool di interfaccia: nessuna pausa, l'esito di executeTool arriva al modello", async () => {
+    const { deps, executeTool, queueAction } = makeDeps([
+      callTools([{ id: "c1", name: "apri_pagina", args: '{"pagina":"rosa"}' }]),
+      reply("ok"),
+    ]);
+    const out = await runAgentLoop(initialState(), deps);
+    expect(out.type).toBe("finished");
+    expect(executeTool).toHaveBeenCalledWith(apriPagina, { pagina: "rosa" });
+    expect(queueAction).not.toHaveBeenCalled();
   });
 
   it("parallelo readOnly", async () => {
@@ -413,7 +431,6 @@ describe("runAgentLoop", () => {
   });
 
   it("le chiamate non readOnly sono eseguite in sequenza", async () => {
-    const scrivi = makeTool({ name: "scrivi", readOnly: false });
     const started: string[] = [];
     const resolvers: ((r: ToolResult) => void)[] = [];
     const { deps } = makeDeps(
@@ -514,10 +531,10 @@ describe("runAgentLoop", () => {
     expect(out).toMatchObject({ type: "finished", content: "eccola" });
   });
 
-  it("limite di tempo attivo e tempo in pausa escluso", async () => {
+  it("limite di tempo attivo", async () => {
     let clock = 0;
     const responses: ChatResult[] = [
-      callTools([{ id: "c1", name: "proponi_scambio", args: "{}" }]),
+      callTools([{ id: "c1", name: "proponi_scambio", args: SCAMBIO }]),
       callTools([{ id: "c2", name: "leggi_rosa", args: "{}" }]),
       callTools([{ id: "c3", name: "leggi_rosa", args: "{}" }]),
       reply("mai"),
@@ -527,14 +544,8 @@ describe("runAgentLoop", () => {
       return responses.shift()!;
     });
     const { deps, executeTool } = makeDeps([], { now: () => clock, chat });
-    const out = await runAgentLoop(initialState(), deps);
-    if (out.type !== "paused") throw new Error("atteso paused");
-    expect(out.state.activeMs).toBe(50_000);
-
-    clock += 9 * 60_000; // la pausa non conta come tempo attivo
-    const resumed = resolvePending(JSON.parse(JSON.stringify(out.state)), out.pending, { ok: true, content: "ok" });
-    const final = await runAgentLoop(resumed, deps);
-    // 50 s → 100 s (seconda chiamata, c2 eseguito) → 150 s (terza: c3 non eseguito)
+    const final = await runAgentLoop(initialState(), deps);
+    // 50 s (c1 accodata) → 100 s (seconda chiamata, c2 eseguito) → 150 s (terza: c3 non eseguito)
     expect(final).toMatchObject({ type: "failed", error: "tempo massimo del turno superato" });
     expect(chat).toHaveBeenCalledTimes(3);
     expect(executeTool).toHaveBeenCalledTimes(1);
@@ -597,28 +608,6 @@ describe("runAgentLoop", () => {
     expect(remaining).toEqual([110_000, 80_000]);
   });
 
-  it("pausa su un tool con proprietà sensibili: riassunto e argomenti pubblici oscurati", async () => {
-    const cambiaPassword = makeTool({
-      name: "cambia_password",
-      description: "Cambia la password",
-      requiresConfirmation: true,
-      paramsSchema: {
-        type: "object",
-        properties: { utente: { type: "string" }, password: { type: "string", "x-sensitive": true } },
-      },
-    });
-    const { deps } = makeDeps(
-      [callTools([{ id: "c1", name: "cambia_password", args: '{"utente":"rosa","password":"segreta-123"}' }])],
-      { tools: [cambiaPassword] },
-    );
-    const out = await runAgentLoop(initialState(), deps);
-    if (out.type !== "paused") throw new Error("atteso paused");
-    expect(out.pending.summary).not.toContain("segreta-123");
-    expect(out.pending.summary).toContain("utente: rosa");
-    expect(out.pending.publicArgs).toEqual({ utente: "rosa", password: "***" });
-    // Gli argomenti veri restano per l'esecuzione alla ripresa
-    expect(out.pending.args).toEqual({ utente: "rosa", password: "segreta-123" });
-  });
 });
 
 describe("annullamento durante un tool", () => {

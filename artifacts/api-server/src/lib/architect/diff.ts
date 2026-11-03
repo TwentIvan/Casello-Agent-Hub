@@ -1,4 +1,5 @@
 import type { Agent, AgentSkill, AnalysisItem, AppTool } from "@workspace/db";
+import { effectiveLevel } from "../tools/levels";
 import { skillKey, type AnalysisChapter } from "./schemas";
 import type {
   AgentProposal,
@@ -45,8 +46,9 @@ const trimmed = (area: string | null) => (area ?? "").trim();
 export const toolRef = (name: string) => `tool:${name}`;
 
 /**
- * Confronta i tool proposti con quelli esistenti, per `name`. I tool esistenti non riproposti
- * (e non già disattivati) diventano `removed`, con il tool esistente come payload.
+ * Confronta i tool proposti con quelli esistenti, per `name`: anche `kind` e livello (quello
+ * effettivo del tool esistente, cioè dichiarato o deroga, contro quello proposto). I tool esistenti
+ * non riproposti (e non già disattivati) diventano `removed`, con il tool esistente come payload.
  */
 export function diffTools(proposed: ToolProposal[], existing: AppTool[]): DiffEntry<ToolProposal | AppTool>[] {
   const byName = new Map(existing.map((t) => [t.name, t]));
@@ -57,8 +59,8 @@ export function diffTools(proposed: ToolProposal[], existing: AppTool[]): DiffEn
       const same =
         (current.description ?? "") === tool.description &&
         current.identity === tool.identity &&
-        current.requiresConfirmation === tool.requiresConfirmation &&
-        current.readOnly === tool.readOnly &&
+        current.kind === tool.kind &&
+        effectiveLevel(current) === tool.level &&
         jsonEqual(current.definition, tool.definition) &&
         jsonEqual(current.paramsSchema, tool.paramsSchema);
       diff = same ? "unchanged" : "changed";

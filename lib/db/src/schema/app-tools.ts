@@ -13,7 +13,9 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { appsTable } from "./apps";
 
-export const toolKindEnum = pgEnum("tool_kind", ["http", "ui", "composite"]);
+export const toolKindEnum = pgEnum("tool_kind", ["http", "ui", "composite", "mcp"]);
+// Livello d'azione: L0 lettura, L1 azione reversibile, L2 con conferma (coda), L3 vietata
+export const toolLevelEnum = pgEnum("tool_level", ["L0", "L1", "L2", "L3"]);
 export const toolIdentityEnum = pgEnum("tool_identity", ["user", "service"]);
 export const toolStatusEnum = pgEnum("tool_status", ["draft", "active", "disabled"]);
 
@@ -29,8 +31,9 @@ export const appToolsTable = pgTable(
     description: text("description"),
     kind: toolKindEnum("kind").notNull(),
     identity: toolIdentityEnum("identity").notNull().default("user"),
-    requiresConfirmation: boolean("requires_confirmation").notNull().default(false),
-    readOnly: boolean("read_only").notNull().default(false),
+    level: toolLevelEnum("level").notNull().default("L2"),
+    // Livello scelto dall'utente al posto di quello proposto (null = nessuna deroga)
+    levelOverride: toolLevelEnum("level_override"),
     status: toolStatusEnum("status").notNull().default("draft"),
     paramsSchema: jsonb("params_schema").notNull().default({ type: "object", properties: {} }),
     definition: jsonb("definition").notNull(),

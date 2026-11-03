@@ -10,7 +10,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 
 - API completa per il CRUD di App / Agent / Tool / Run e per l'esecuzione delle run con gli account AI degli utenti.
 - Fase 1 "Agenti che agiscono": gli agenti chiamano i tool HTTP delle app (catalogo per app), con
-  conferma dell'utente per le azioni marcate, timeline dei passi e pausa/ripresa (vedi "Agenti operativi").
+  timeline dei passi; le azioni L2 passano dalla coda «Da confermare» (vedi "Strumenti MCP e coda delle conferme").
 - Fase 3 "Architetto": analizza un'app (codice da GitHub o zip, OpenAPI, descrizione) e propone tool,
   agenti, skill, endpoint mancanti, piano di completamento ed evoluzione; nulla si attiva senza
   approvazione nella console (vedi "Architetto").
@@ -49,7 +49,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
-  `POST /api/runs/:id/resume` (conferma o annulla l'azione in sospeso), `/api/dashboard/stats`,
+  `/api/dashboard/stats`, `/api/pending-actions` (coda delle conferme), `POST /api/apps/:id/mcp-tools/refresh`,
   `GET|PUT /api/budget` (tetti di spesa), `/api/healthz`; architetto: `GET|POST /api/apps/:id/analyses`,
   `POST /api/apps/:id/analyses/zip` (corpo zip grezzo), `GET /api/analyses/:id`,
   `GET /api/analyses/:id/issues`, `PATCH /api/analysis-items/:id`, `GET|DELETE /api/agents/:id/skills`; GitHub: `GET /api/github/installations`, `GET /api/github/repos`
@@ -69,20 +69,25 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `artifacts/api-server/src/lib/agent-loop.ts` — ciclo dell'agente (puro, senza DB né rete): chiamate al
   modello, esecuzione dei tool, pause, limiti del turno
 - `artifacts/api-server/src/lib/run-executor.ts` — orchestrazione delle run: collega il ciclo al DB,
-  all'esecutore dei tool e all'esecutore dei modelli; scrive i passi in `run_steps`, salva lo stato alla pausa
-  (`awaiting_client`) e lo riprende con `resume`. `POST /api/agents/:id/runs` risponde subito con la run
+  all'esecutore dei tool e all'esecutore dei modelli; scrive i passi in `run_steps`; le chiamate L2 diventano voci
+  di `pending_actions` e la run prosegue senza fermarsi (niente più pausa). `POST /api/agents/:id/runs` risponde subito con la run
   `pending` e la esegue in background (la UI fa polling su `GET /api/runs/:id`); all'avvio le run rimaste
   `pending`/`running` vengono chiuse come fallite.
-- `artifacts/api-server/src/lib/tools/` — catalogo (`catalog.ts`), validazione delle definizioni
+- `artifacts/api-server/src/lib/tools/` — client MCP (`mcp-client.ts`), sincronizzazione degli strumenti MCP
+  (`mcp-sync.ts`), livelli d'azione (`levels.ts`), catalogo (`catalog.ts`), validazione delle definizioni
   (`definition.ts`), esecutore HTTP (`executor.ts`), oscuramento degli argomenti sensibili (`sensitive.ts`)
 - `artifacts/api-server/src/lib/secrets.ts` — cifratura AES-256-GCM dei segreti di servizio (anche il token GitHub)
 - `artifacts/api-server/src/lib/users.ts` — utenti e identità (`isAllowed`, `resolveLogin`, `linkIdentity`, `unlinkIdentity`)
 - `artifacts/api-server/src/lib/github/` — GitHub App: configurazione (`config.ts`), client con JWT e token di
   installazione (`app.ts`), login/collegamento/callback (`oauth-routes.ts`), sincronizzazione delle installazioni
   (`installations.ts`); finto GitHub per i test in `artifacts/api-server/test/fake-github.ts`
+- `artifacts/api-server/src/lib/actions/` — coda delle azioni da confermare: accodamento (`queue.ts`), controllo del
+  testo (`text-check.ts`), approvazione/rifiuto (`decide.ts`); route in `src/routes/pending-actions.ts`; pagina
+  `artifacts/casello/src/pages/pending-actions.tsx`; server MCP finto per i test in `artifacts/api-server/test/fake-mcp.ts`
 - `artifacts/api-server/src/lib/architect/` — architetto: sorgenti in memoria (`source-tree.ts`, `zip-reader.ts`,
   `search-worker.ts`, `sources.ts`), schemi ed esempi delle fasi (`schemas.ts`, `prompts.ts`), ciclo di fase
-  (`phase-loop.ts`), orchestrazione (`run-analysis.ts`), differenze/applicazione/issue (`diff.ts`, `apply.ts`, `issues.ts`)
+  (`phase-loop.ts`), orchestrazione (`run-analysis.ts`), differenze/applicazione/issue (`diff.ts`, `apply.ts`, `issues.ts`),
+  fonte MCP (`mcp-source.ts`) e testi condivisi (`text.ts`)
 - `artifacts/api-server/src/lib/plan-chat/` — chat del piano: contesto (`context.ts`), strumenti (`tools.ts`), turno
   (`turn.ts`), decisione sulle schede (`decide.ts`), esecuzione in background (`run-turn.ts`); route in
   `src/routes/plan-chat.ts`; pagina `/apps/:id/plan` in `artifacts/casello/src/pages/app-plan.tsx` e `components/plan/`
@@ -101,16 +106,45 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 
 - **App**: applicazione registrata: nome, `slug`, `base_url`, `internal_base_url` (raggiunto
   dall'esecutore al posto di `base_url`), autenticazione utente/servizio (header + scheme), segreto di
-  servizio cifrato (mai esposto: l'API dice solo `serviceSecretSet`), stato
+  servizio cifrato (mai esposto: l'API dice solo `serviceSecretSet`), `mcp_url` (server MCP dell'app, facoltativo), stato
 - **Agent**: appartiene a una App; `system_prompt`, `model` (facoltativo: senza modello le run rispondono 409), stato (draft/active/inactive), ruolo:
   `general` (uno per app, creato con l'app, non eliminabile, usa tutti i tool `active` dell'app) o `area`
   (usa solo i tool collegati in `agent_tools`)
-- **Tool** (`app_tools`): catalogo per App; `kind` (`http`, `ui`, `composite`: nella fase 1 solo `http`
-  viene offerto al modello), `identity` (`user`: token dell'utente da `X-App-User-Token`; `service`:
-  segreto di servizio), `requiresConfirmation`, `readOnly`, stato (draft/active/disabled), definizione
+- **Tool** (`app_tools`): catalogo per App; `kind` (`http`, `mcp`, `ui`, `composite`: al modello si offrono
+  solo `http` e `mcp`; `mcp` ha `definition {mcpName}`), `identity` (`user`: token dell'utente da `X-App-User-Token`; `service`:
+  segreto di servizio), `level` (L0–L3) e `levelOverride` (al posto dei vecchi flag `requiresConfirmation`/`readOnly`), stato (draft/active/disabled), definizione
   (metodo, path, posizione dei parametri) e `params_schema` JSON (`"x-sensitive": true` oscura un parametro)
 - **Run**: esecuzione di un Agent: input, output, errore, durata, token, stato
-  (pending/running/awaiting_client/succeeded/failed/cancelled); i passi in `run_steps`
+  (pending/running/awaiting_client/succeeded/failed/cancelled; `awaiting_client` è solo storico); i passi in `run_steps`
+
+## Strumenti MCP e coda delle conferme
+
+- Spec: `docs/superpowers/specs/2026-11-03-casello-strumenti-mcp-design.md`.
+- Livelli d'azione dei tool (`app_tools.level`): L0 lettura, L1 scrittura reversibile/a basso rischio (eseguita dalla
+  run), L2 azione con effetti verso terzi (mai eseguita dalla run: va in coda e la decide l'utente), L3 mai offerta al
+  modello. `levelOverride` può solo alzare il livello. Livello dei tool MCP: `_meta["casello/level"]` del server; senza,
+  `readOnlyHint` → L0, altrimenti L2.
+- Server MCP dell'app: `apps.mcp_url` (stesse regole di indirizzo e autenticazione dell'app); i suoi strumenti diventano
+  tool `kind mcp` con `definition {mcpName}`. «Aggiorna strumenti» = `POST /api/apps/:id/mcp-tools/refresh` (6/min): nuovi
+  → `draft`, cambiati → aggiornati, spariti → `disabled`; omonimi di tool esistenti o nomi non validi → `conflicts`;
+  nomi ripetuti dal server → 502. Client (`lib/tools/mcp-client.ts`): `tools/list` 30 s e max 500 strumenti,
+  `tools/call` 15 s e risposta max 1 MiB, nessun redirect, nessun flusso SSE con GET; credenziali e valori
+  `x-sensitive` oscurati; messaggi fissi in italiano.
+- Coda (`pending_actions`, numerata per utente, `UNIQUE(user_id, number)`): i tool L2 hanno `destinatario` e `sintesi`;
+  proprietario = chi possiede l'account AI del modello della run. Controllo del testo (`text-check.ts`): segnaposto e
+  menzioni sugli argomenti oscurati. Max 50 azioni `pending` per utente. Argomenti cifrati (`args_enc`), copia pubblica
+  oscurata (`args_public`).
+- Route (`routes/pending-actions.ts`; il limite di 20/min vale solo per approvare e rifiutare, non per le GET): `GET /api/pending-actions`, `GET /api/pending-actions/:number`,
+  `POST …/approve` (con `userToken` se l'identità del tool è `user`), `POST …/reject` (nota ≤ 500 caratteri). Ambiti
+  token `api:read` (GET) e `api:write` (approvare/rifiutare). Esecuzione esattamente una volta: UPDATE condizionato
+  `pending` → `executing`; all'avvio le azioni `executing` diventano `failed` («esito incerto: verifica sul servizio»).
+  Nessuna scadenza. `pending_actions.tool_id` è `ON DELETE RESTRICT`: eliminare un tool con azioni in coda o già
+  decise è rifiutato (409 «il tool ha azioni in coda o già decise: disattivalo invece di eliminarlo»), si disattiva;
+  eliminando un'app si elimina anche il suo storico della coda (stessa transazione).
+- Console: pagina «Da confermare» con contatore (`pendingActions` in `/api/dashboard/stats`).
+- Migrazioni: `docs/migrations/2026-11-strumenti-mcp.sql` (additiva: PRIMA del merge) e
+  `2026-11-strumenti-mcp-post.sql` (DOPO il deploy: toglie `app_tools.requires_confirmation|read_only` e
+  `runs.pending_action|loop_state|paused_at`). Il codice non legge più quelle colonne.
 
 ## Modelli AI (account AI)
 
@@ -255,15 +289,17 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 ## Agenti operativi (fase 1)
 
 - Spec: `docs/superpowers/specs/2026-10-25-casello-agenti-operativi-design.md`.
-- Limiti per turno: 8 giri di tool, 120 s di tempo attivo (le pause non contano; ogni chiamata al
+- Limiti per turno: 8 giri di tool, 120 s di tempo attivo (ogni chiamata al
   modello è limitata dal tempo rimasto, minimo 1 s), 60 000 token. Per chiamata HTTP: 15 s, risposta
-  massima 1 048 576 byte. Pausa per la conferma: massimo 10 minuti, poi la run diventa `cancelled`.
+  massima 1 048 576 byte. Nessuna pausa per la conferma: i tool L2 vanno in coda e la run
+  continua (vedi "Strumenti MCP e coda delle conferme"). Le run `awaiting_client` rimaste dal vecchio meccanismo si chiudono
+  `cancelled` all'avvio.
 - L'esecutore raggiunge solo `internal_base_url` (o `base_url`) + path del tool: dagli argomenti del
   modello arrivano solo valori codificati. Gli indirizzi e gli header di autenticazione si validano
   già al salvataggio dell'app.
 - Il token dell'utente vive solo in memoria per la durata della run: mai nel DB né nei log. Credenziali
   rimandate dall'app nelle risposte vengono sostituite con `***`; gli argomenti `x-sensitive` sono
-  oscurati nei passi e nell'azione in sospeso pubblica.
+  oscurati nei passi e nell'azione in coda pubblica.
 
 ## Architetto (fase 3)
 
@@ -285,6 +321,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Revisione: approvare un tool/agente/skill lo applica in una transazione e lo rende `active` (un tool
   `removed` diventa `disabled`, mai cancellato); endpoint/completamento/evoluzione si esportano come issue.
   Un'analisi alla volta per app; all'avvio le analisi rimaste aperte diventano `interrupted`.
+- Fonte MCP: se l'app ha `mcp_url` l'architetto legge gli strumenti del server (`list_mcp_tools`, `read_mcp_tool`) e
+  propone tool con `kind` (`http`/`mcp`) e `level`; il livello proposto non scende mai sotto quello dichiarato dal
+  server, nemmeno se modificato in revisione. Le lacune dello strumentario MCP diventano voci `endpoint`.
 
 ## Chat del piano
 
@@ -374,7 +413,8 @@ Le analisi dell'architetto possono essere eseguite da Claude Code sul Mac dell'u
 (Account → "Token personali", casella "Agente locale (MCP)", ambito `mcp`; tabella `api_tokens`, salvato come hash). `/mcp` richiede l'ambito `mcp`: un token senza riceve 401 («token non valido o scaduto»). Gli esiti di fase stanno in
 `analysis_phase_results`; la lease dura 15 minuti (rinnovo con consegna o `ping_analysis`). Migrazione:
 `docs/migrations/2026-10-esecutore-locale.sql` (da applicare in produzione e segnalare nella PR). Procedura
-dell'agente: skill `docs/skills/casello-architetto-locale/SKILL.md`.
+dell'agente: skill `docs/skills/casello-architetto-locale/SKILL.md`. Il server `/mcp` espone anche `read_mcp_tools`
+(strumenti del server MCP dell'app, per l'analisi locale).
 
 ## Deploy (non toccare senza motivo)
 

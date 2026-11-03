@@ -27,8 +27,7 @@ const toolPayload = (over: Partial<ToolProposal> = {}): ToolProposal => ({
   description: "Elenco squadre",
   kind: "http",
   identity: "user",
-  requiresConfirmation: false,
-  readOnly: true,
+  level: "L0",
   paramsSchema: { type: "object", properties: { q: { type: "string" } } },
   definition: { method: "GET", path: "/teams", paramLocations: { q: "query" } },
   area: "Squadre",
@@ -80,11 +79,74 @@ const agentPayload = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+describe("applyItem: tool MCP", () => {
+  const mcpPayload = (over: Partial<ToolProposal> = {}) =>
+    toolPayload({
+      name: "send_mail",
+      kind: "mcp",
+      identity: "service",
+      level: "L3",
+      declaredLevel: "L2",
+      paramsSchema: { type: "object", properties: { to: { type: "string" } } },
+      definition: { mcpName: "send_mail" },
+      ...over,
+    });
+
+  it("proposto L3 su dichiarato L2: riga mcp con level L2, level_override L3, active", async () => {
+    await applyItem(await item("tool", "new", mcpPayload()), appId);
+    const [t] = await tools();
+    expect(t).toMatchObject({
+      name: "send_mail",
+      kind: "mcp",
+      level: "L2",
+      levelOverride: "L3",
+      status: "active",
+      definition: { mcpName: "send_mail" },
+    });
+  });
+
+  it("riga già sincronizzata dal server (bozza): vale il suo livello dichiarato; proposto uguale → nessuna deroga", async () => {
+    await db.insert(appToolsTable).values({
+      appId,
+      name: "send_mail",
+      kind: "mcp",
+      identity: "service",
+      level: "L2",
+      status: "draft",
+      paramsSchema: { type: "object", properties: {} },
+      definition: { mcpName: "send_mail" },
+    });
+    await applyItem(await item("tool", "changed", mcpPayload({ level: "L2", declaredLevel: undefined })), appId);
+    expect((await tools())[0]).toMatchObject({ level: "L2", levelOverride: null, status: "active" });
+    await expect(applyItem(await item("tool", "changed", mcpPayload({ level: "L1", declaredLevel: undefined })), appId)).rejects.toThrow(
+      'livello sotto quello dichiarato dal servizio per "send_mail"',
+    );
+  });
+
+  it("senza riga sincronizzata né livello dichiarato salvato: si parte da L2", async () => {
+    await expect(applyItem(await item("tool", "new", mcpPayload({ level: "L0", declaredLevel: undefined })), appId)).rejects.toThrow(
+      'livello sotto quello dichiarato dal servizio per "send_mail"',
+    );
+    expect(await tools()).toHaveLength(0);
+    await applyItem(await item("tool", "new", mcpPayload({ level: "L2", declaredLevel: undefined })), appId);
+    expect((await tools())[0]).toMatchObject({ level: "L2", levelOverride: null });
+  });
+
+  it("tool http: una deroga esistente resta solo se non sotto il nuovo livello", async () => {
+    await applyItem(await item("tool", "new", toolPayload()), appId);
+    await db.update(appToolsTable).set({ levelOverride: "L1" }).where(eq(appToolsTable.appId, appId));
+    await applyItem(await item("tool", "changed", toolPayload({ level: "L0", description: "x" })), appId);
+    expect((await tools())[0]).toMatchObject({ level: "L0", levelOverride: "L1" });
+    await applyItem(await item("tool", "changed", toolPayload({ level: "L2", description: "y" })), appId);
+    expect((await tools())[0]).toMatchObject({ level: "L2", levelOverride: null });
+  });
+});
+
 describe("applyItem: tool", () => {
   it("un tool new valido viene creato active, con prove e verifica", async () => {
     await applyItem(await item("tool", "new", toolPayload()), appId);
     const [t] = await tools();
-    expect(t).toMatchObject({ name: "list_teams", status: "active", needsVerification: true, readOnly: true });
+    expect(t).toMatchObject({ name: "list_teams", status: "active", needsVerification: true, level: "L0" });
     expect(t!.evidence).toEqual([{ source: "code", location: "src/a.ts:1" }]);
   });
 
@@ -109,8 +171,8 @@ describe("applyItem: tool", () => {
   it("changed aggiorna e rende active un tool disattivato o in bozza", async () => {
     await applyItem(await item("tool", "new", toolPayload()), appId);
     await db.update(appToolsTable).set({ status: "disabled" }).where(eq(appToolsTable.appId, appId));
-    await applyItem(await item("tool", "changed", toolPayload({ description: "nuova", readOnly: false })), appId);
-    expect((await tools())[0]).toMatchObject({ description: "nuova", readOnly: false, status: "active" });
+    await applyItem(await item("tool", "changed", toolPayload({ description: "nuova", level: "L1" })), appId);
+    expect((await tools())[0]).toMatchObject({ description: "nuova", level: "L1", status: "active" });
     await db.update(appToolsTable).set({ status: "draft" }).where(eq(appToolsTable.appId, appId));
     await applyItem(await item("tool", "changed", toolPayload({ description: "ancora" })), appId);
     expect((await tools())[0]).toMatchObject({ description: "ancora", status: "active" });

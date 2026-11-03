@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Eye, MoreHorizontal, Pencil, Plus, Power, Trash2 } from "lucide-react";
+import { Eye, MoreHorizontal, Pencil, Plus, Power, RefreshCw, Trash2 } from "lucide-react";
 import {
   type AppTool,
   getListAgentsQueryKey,
+  getGetAppQueryKey,
   getListAppToolsQueryKey,
   useDeleteAppTool,
+  useGetApp,
   useListAppTools,
+  useRefreshAppMcpTools,
   useUpdateAppTool,
 } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
@@ -18,13 +21,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AppToolDialog } from "@/components/apps/app-tool-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { TOOL_IDENTITY_LABELS, TOOL_STATUS_LABELS } from "@/lib/tool-labels";
+import { TOOL_IDENTITY_LABELS, TOOL_LEVEL_LABELS, TOOL_STATUS_LABELS, overrideLevels } from "@/lib/tool-labels";
 import { cn } from "@/lib/utils";
 
 const STATUS_STYLES: Record<AppTool["status"], string> = {
@@ -34,7 +38,8 @@ const STATUS_STYLES: Record<AppTool["status"], string> = {
 };
 
 function endpointOf(tool: AppTool): string {
-  const { method, path } = tool.definition as { method?: unknown; path?: unknown };
+  const { method, path, mcpName } = tool.definition as { method?: unknown; path?: unknown; mcpName?: unknown };
+  if (tool.kind === "mcp") return typeof mcpName === "string" ? `MCP ${mcpName}` : "MCP";
   return typeof method === "string" && typeof path === "string" ? `${method} ${path}` : "—";
 }
 
@@ -42,6 +47,7 @@ export function ToolCatalog({ appId }: { appId: number }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const tools = useListAppTools(appId, { query: { queryKey: getListAppToolsQueryKey(appId) } });
+  const app = useGetApp(appId, { query: { queryKey: getGetAppQueryKey(appId) } });
 
   // Il dialog si rimonta a ogni apertura (key) per ripartire dai valori giusti.
   const [form, setForm] = useState<{ open: boolean; tool?: AppTool; key: number }>({ open: false, key: 0 });
@@ -52,9 +58,38 @@ export function ToolCatalog({ appId }: { appId: number }) {
 
   const updateTool = useUpdateAppTool({
     mutation: {
-      onSuccess: (saved) => {
+      onSuccess: (saved, variables) => {
         invalidate();
-        toast({ title: saved.status === "active" ? "Tool attivato" : "Tool disattivato", description: saved.name });
+        const title =
+          variables.data.levelOverride !== undefined
+            ? "Livello aggiornato"
+            : saved.status === "active"
+              ? "Tool attivato"
+              : "Tool disattivato";
+        toast({ title, description: saved.name });
+      },
+      onError: (error) =>
+        toast({ variant: "destructive", title: "Aggiornamento non riuscito", description: apiErrorMessage(error) }),
+    },
+  });
+  const refreshMcp = useRefreshAppMcpTools({
+    mutation: {
+      onSuccess: (result) => {
+        invalidate();
+        const parts = [
+          `${result.added} nuovi (in bozza)`,
+          `${result.updated} aggiornati`,
+          `${result.disabled} disattivati`,
+          `${result.unchanged} invariati`,
+        ];
+        toast({
+          title: "Strumenti aggiornati",
+          description:
+            parts.join(", ") +
+            (result.conflicts.length > 0
+              ? `. Nomi in conflitto con tool non MCP, lasciati invariati: ${result.conflicts.join(", ")}`
+              : ""),
+        });
       },
       onError: (error) =>
         toast({ variant: "destructive", title: "Aggiornamento non riuscito", description: apiErrorMessage(error) }),
@@ -84,10 +119,23 @@ export function ToolCatalog({ appId }: { appId: number }) {
           <h3 className="text-lg font-semibold tracking-tight">Catalogo dei tool</h3>
           <p className="text-sm text-muted-foreground">Le operazioni dell'app che gli agenti possono eseguire.</p>
         </div>
-        <Button size="sm" onClick={() => openForm()}>
-          <Plus />
-          Nuovo tool
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {app.data?.mcpUrl && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={refreshMcp.isPending}
+              onClick={() => refreshMcp.mutate({ id: appId })}
+            >
+              <RefreshCw className={refreshMcp.isPending ? "animate-spin" : undefined} />
+              {refreshMcp.isPending ? "Aggiornamento…" : "Aggiorna strumenti"}
+            </Button>
+          )}
+          <Button size="sm" onClick={() => openForm()}>
+            <Plus />
+            Nuovo tool
+          </Button>
+        </div>
       </div>
       <Card>
         <CardContent className="p-0">
@@ -115,8 +163,7 @@ export function ToolCatalog({ appId }: { appId: number }) {
                   <TableHead className="hidden sm:table-cell">Tipo</TableHead>
                   <TableHead className="hidden md:table-cell">Chiamata</TableHead>
                   <TableHead className="hidden lg:table-cell">Identità</TableHead>
-                  <TableHead className="hidden lg:table-cell">Conferma</TableHead>
-                  <TableHead className="hidden lg:table-cell">Sola lettura</TableHead>
+                  <TableHead className="hidden lg:table-cell">Livello</TableHead>
                   <TableHead>Stato</TableHead>
                   <TableHead className="w-12 pr-4">
                     <span className="sr-only">Azioni</span>
@@ -137,8 +184,35 @@ export function ToolCatalog({ appId }: { appId: number }) {
                       {endpointOf(tool)}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">{TOOL_IDENTITY_LABELS[tool.identity]}</TableCell>
-                    <TableCell className="hidden lg:table-cell">{tool.requiresConfirmation ? "Sì" : "No"}</TableCell>
-                    <TableCell className="hidden lg:table-cell">{tool.readOnly ? "Sì" : "No"}</TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      <div className="space-y-1">
+                        <Select
+                          value={tool.levelOverride ?? "declared"}
+                          disabled={updateTool.isPending || overrideLevels(tool.level).length === 0}
+                          onValueChange={(value) =>
+                            updateTool.mutate({
+                              id: appId,
+                              toolId: tool.id,
+                              data: { levelOverride: value === "declared" ? null : (value as AppTool["level"]) },
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-8 w-44" aria-label={`Livello di ${tool.name}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="declared">
+                              {tool.kind === "mcp" ? "Dichiarato" : "Proprio"}: {TOOL_LEVEL_LABELS[tool.level]}
+                            </SelectItem>
+                            {overrideLevels(tool.level).map((l) => (
+                              <SelectItem key={l} value={l}>
+                                Alzato a {TOOL_LEVEL_LABELS[l]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <Badge variant="outline" className={cn("border-transparent", STATUS_STYLES[tool.status])}>
                         {TOOL_STATUS_LABELS[tool.status]}

@@ -122,3 +122,21 @@ describe("phasePrompt: voci già pianificate (chat o issue)", () => {
     expect(p.match(/^- \[completion\] v\d+$/gm)).toHaveLength(100);
   });
 });
+
+describe("phasePrompt: server MCP e livelli", () => {
+  it("il catalogo spiega i livelli e, con il server MCP, list_mcp_tools e le carenze come endpoint", () => {
+    const without = phasePrompt("catalog", ctx);
+    expect(without).toContain('"L2" effetti esterni');
+    expect(without).not.toContain("list_mcp_tools");
+    const p = phasePrompt("catalog", { ...ctx, hasMcp: true });
+    expect(p).toContain("strumenti del server MCP (list_mcp_tools, read_mcp_tool)");
+    expect(p).toContain("Il livello di un tool \"mcp\" non può essere sotto quello dichiarato dal servizio");
+    expect(p).toContain("senza livello dichiarato");
+    expect(p).toContain("senza un parametro che identifichi il destinatario");
+  });
+
+  it("il completamento, con il server MCP, cerca gli strumenti mancanti agli agenti proposti", () => {
+    expect(phasePrompt("completion", ctx)).not.toContain("list_mcp_tools");
+    expect(phasePrompt("completion", { ...ctx, hasMcp: true })).toContain("serve a un agente proposto ma il server non offre");
+  });
+});

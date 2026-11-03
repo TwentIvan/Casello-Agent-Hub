@@ -230,8 +230,13 @@ function compactDoc(item: AnalysisItem): string {
   switch (item.chapter) {
     case "tool": {
       const t = data as unknown as ToolProposal;
-      const def = t.definition as { method?: unknown; path?: unknown };
-      const call = typeof def.method === "string" && typeof def.path === "string" ? `${def.method.toUpperCase()} ${oneLine(def.path)}` : "non definita";
+      const def = t.definition as { method?: unknown; path?: unknown; mcpName?: unknown };
+      const call =
+        t.kind === "mcp" && typeof def.mcpName === "string"
+          ? `strumento MCP ${oneLine(def.mcpName)}`
+          : typeof def.method === "string" && typeof def.path === "string"
+            ? `${def.method.toUpperCase()} ${oneLine(def.path)}`
+            : "non definita";
       return [
         `## ${cleanTitle(t.name)}${removed}`,
         text(t.description),
@@ -239,8 +244,7 @@ function compactDoc(item: AnalysisItem): string {
           `Tipo: ${t.kind}`,
           `Chiamata: ${call}`,
           `Identità: ${t.identity}`,
-          `Richiede conferma: ${yesNo(t.requiresConfirmation)}`,
-          `Sola lettura: ${yesNo(t.readOnly)}`,
+          `Livello: ${t.level}${t.declaredLevel && t.declaredLevel !== t.level ? ` (dichiarato dal servizio: ${t.declaredLevel})` : ""}`,
           `Da verificare: ${yesNo(t.needsVerification)}`,
         ]),
         evidenceBlock,

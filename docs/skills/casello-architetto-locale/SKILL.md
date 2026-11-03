@@ -29,7 +29,8 @@ senza l'approvazione dell'utente in console.
 1. **Elenca**: `list_analyses`. Scegli l'analisi (se è una sola e l'utente non ha detto altro, quella; se sono più
    d'una, chiedi quale).
 2. **Prendi in carico**: `claim_analysis` con `analysisId` e `label` (es. "Claude Code sul Mac di <utente>", max 100
-   caratteri). Conserva `leaseToken`, `phase`, la scheda `app` (`name`, `sourceRepo`, `sourceBranch`, `hasOpenApi`)
+   caratteri). Conserva `leaseToken`, `phase`, la scheda `app` (`name`, `sourceRepo`, `sourceBranch`, `hasOpenApi`,
+   `hasMcp`)
    e `expectedCommit`.
 3. **Scarica il codice in una cartella temporanea** (copia leggera, solo i file del commit, senza storia):
    1. Se `sourceRepo` è null (app senza sorgente GitHub), chiedi all'utente la cartella del codice e usa quella:
@@ -46,7 +47,11 @@ senza l'approvazione dell'utente in console.
       l'esempio JSON dell'esito e gli appunti delle fasi precedenti.
    2. Esplora il clone con i tuoi strumenti. Le istruzioni citano `list_dir`, `read_file`, `read_files`, `search`:
       sono i tuoi equivalenti (elenco cartelle, lettura file, grep). Se `hasOpenApi` è true, il contratto si legge
-      con `read_openapi` (`prefix`, `offset` per l'elenco; `method` e `path` per una singola operazione).
+      con `read_openapi` (`prefix`, `offset` per l'elenco; `method` e `path` per una singola operazione). Se
+      `hasMcp` è true, l'app ha un server MCP: le istruzioni citano `list_mcp_tools` e `read_mcp_tool`, che
+      corrispondono a `read_mcp_tools` di Casello (`prefix`, `offset` per l'elenco con il livello dichiarato di ogni
+      strumento; `name` per descrivere uno strumento). Nel catalogo un tool `mcp` non può avere un `level` sotto
+      quello dichiarato dal servizio: `submit_phase` lo rifiuta.
    3. Scrivi l'esito come oggetto JSON nella forma dell'esempio, con `evidence` (percorso:riga) per ogni voce e
       `notes` (appunti per le fasi successive).
    4. `submit_phase` con `analysisId`, `leaseToken`, `phase` (quella corrente), `result` e `sourceCommit`

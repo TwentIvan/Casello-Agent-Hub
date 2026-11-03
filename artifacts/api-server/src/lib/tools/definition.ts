@@ -3,6 +3,7 @@ import { z, type ZodIssue } from "zod";
 import type {
   CompositeDefinition,
   HttpDefinition,
+  McpDefinition,
   ToolKind,
   UiDefinition,
 } from "./types";
@@ -59,13 +60,16 @@ const compositeSchema = z.object({
   output: z.record(z.string()),
 });
 
+const mcpSchema = z.object({ mcpName: z.string().min(1) }).strict();
+
 const schemasByKind = {
   http: httpSchema,
   ui: uiSchema,
   composite: compositeSchema,
+  mcp: mcpSchema,
 } as const;
 
-type ParsedDefinition = HttpDefinition | UiDefinition | CompositeDefinition;
+type ParsedDefinition = HttpDefinition | UiDefinition | CompositeDefinition | McpDefinition;
 
 const TYPE_IT: Record<string, string> = {
   string: "una stringa",
@@ -97,7 +101,7 @@ export function parseDefinition(
   kind: ToolKind,
   definition: unknown,
 ): { ok: true; value: ParsedDefinition } | { ok: false; error: string } {
-  const schema = schemasByKind[kind];
+  const schema = (schemasByKind as Partial<Record<ToolKind, z.ZodTypeAny>>)[kind];
   if (!schema) return { ok: false, error: `tipo di tool sconosciuto: ${String(kind)}` };
   const parsed = schema.safeParse(definition);
   if (parsed.success) return { ok: true, value: parsed.data as ParsedDefinition };
@@ -225,3 +229,6 @@ export function checkPathPlaceholders(def: HttpDefinition, schema: object): stri
   }
   return null;
 }
+
+// Il nome diventa il nome della function del modello: stesse regole dei provider
+export const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;

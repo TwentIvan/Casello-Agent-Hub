@@ -97,7 +97,7 @@ const HTTP_TOOL = {
   description: "Elimina un elemento",
   kind: "http",
   identity: "user",
-  requiresConfirmation: true,
+  level: "L2",
   status: "active",
   paramsSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
   definition: { method: "DELETE", path: "/items/{id}", paramLocations: { id: "path" } },
@@ -235,6 +235,21 @@ describe("validazione del collegamento all'app", () => {
     "non un url",
   ];
 
+  it("mcpUrl: stesse regole di baseUrl, nullable, salvato e restituito", async () => {
+    for (const url of ["ftp://example.com/mcp", "http://example.com/mcp?x=1"]) {
+      const res = await api("POST", "/apps", { name: "Mister", baseUrl: "http://mister.example", mcpUrl: url });
+      expect(res.status, url).toBe(400);
+      expect(res.json.error, url).toMatch(/^mcpUrl: indirizzo dell'app non valido/);
+    }
+    const ok = await api("POST", "/apps", { name: "Mister", baseUrl: "http://mister.example", mcpUrl: "https://mister.example/mcp" });
+    expect(ok.status).toBe(201);
+    expect(ok.json.mcpUrl).toBe("https://mister.example/mcp");
+    const patch = await api("PATCH", `/apps/${ok.json.id}`, { mcpUrl: null });
+    expect(patch.status).toBe(200);
+    expect(patch.json.mcpUrl).toBeNull();
+    expect((await api("PATCH", `/apps/${ok.json.id}`, { mcpUrl: "file:///x" })).status).toBe(400);
+  });
+
   it("POST: baseUrl o internalBaseUrl non validi → 400 con messaggio italiano", async () => {
     for (const url of BAD_URLS) {
       const a = await api("POST", "/apps", { name: "Mister", baseUrl: url });
@@ -282,6 +297,53 @@ describe("catalogo dei tool", () => {
     expect(res.json).toMatchObject({ appId: app.id, name: "delete_item", kind: "http", status: "active" });
     const list = await api("GET", `/apps/${app.id}/tools`);
     expect(list.json).toHaveLength(1);
+  });
+
+  it("la risposta ha level e levelOverride e non più i due flag", async () => {
+    const app = await createApp();
+    const res = await api("POST", `/apps/${app.id}/tools`, HTTP_TOOL);
+    expect(res.json).toMatchObject({ level: "L2", levelOverride: null });
+    expect(res.json).not.toHaveProperty("readOnly");
+    expect(res.json).not.toHaveProperty("requiresConfirmation");
+  });
+
+  it("deroga sotto il livello → 400 «il livello può solo essere alzato»; alzare è ammesso", async () => {
+    const app = await createApp();
+    const tool = (await api("POST", `/apps/${app.id}/tools`, HTTP_TOOL)).json;
+    const bad = await api("PATCH", `/apps/${app.id}/tools/${tool.id}`, { levelOverride: "L1" });
+    expect(bad.status).toBe(400);
+    expect(bad.json.error).toBe("il livello può solo essere alzato");
+    const create = await api("POST", `/apps/${app.id}/tools`, { ...HTTP_TOOL, name: "altro", levelOverride: "L0" });
+    expect(create.status).toBe(400);
+    const ok = await api("PATCH", `/apps/${app.id}/tools/${tool.id}`, { levelOverride: "L3" });
+    expect(ok.status).toBe(200);
+    expect(ok.json).toMatchObject({ level: "L2", levelOverride: "L3" });
+  });
+
+  it("il livello dei tool MCP lo dichiara il servizio: dall'API non si imposta", async () => {
+    const app = await createApp();
+    const mcp = { name: "cerca", kind: "mcp", definition: { mcpName: "cerca" } };
+    const bad = await api("POST", `/apps/${app.id}/tools`, { ...mcp, level: "L0" });
+    expect(bad.status).toBe(400);
+    const ok = await api("POST", `/apps/${app.id}/tools`, mcp);
+    expect(ok.status).toBe(201);
+    expect(ok.json.kind).toBe("mcp");
+    const patch = await api("PATCH", `/apps/${app.id}/tools/${ok.json.id}`, { level: "L0" });
+    expect(patch.status).toBe(400);
+    expect((await api("POST", `/apps/${app.id}/tools`, { ...mcp, name: "x", definition: {} })).status).toBe(400);
+  });
+
+  it("un tool http che diventa mcp perde il livello scelto a mano: L2 e nessuna deroga", async () => {
+    const app = await createApp();
+    const tool = (await api("POST", `/apps/${app.id}/tools`, { ...HTTP_TOOL, level: "L0", levelOverride: "L1" })).json;
+    expect(tool).toMatchObject({ level: "L0", levelOverride: "L1" });
+    const res = await api("PATCH", `/apps/${app.id}/tools/${tool.id}`, { kind: "mcp", definition: { mcpName: tool.name } });
+    expect(res.status, res.text).toBe(200);
+    expect(res.json).toMatchObject({ kind: "mcp", level: "L2", levelOverride: null });
+    // Una deroga inviata insieme al cambio si confronta con L2
+    const http = (await api("POST", `/apps/${app.id}/tools`, { ...HTTP_TOOL, name: "altro", level: "L0" })).json;
+    const low = await api("PATCH", `/apps/${app.id}/tools/${http.id}`, { kind: "mcp", definition: { mcpName: "altro" }, levelOverride: "L1" });
+    expect(low.status).toBe(400);
   });
 
   it("segnaposto {teamId} non nello schema → 400", async () => {
@@ -373,10 +435,14 @@ describe("errori di richiesta", () => {
     expect(res.json.error).toMatch(/^richiesta non valida: kind: /);
   });
 
-  it("resume con decision non ammessa → 400", async () => {
-    const res = await api("POST", "/runs/1/resume", { decision: "maybe" });
-    expect(res.status).toBe(400);
-    expect(res.json.error).toContain("decision");
+  it("POST /runs/:id/resume non esiste più → 404", async () => {
+    // Route sconosciuta: risponde il 404 predefinito di Express (non JSON)
+    const res = await fetch(`${base}/api/runs/1/resume`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decision: "approved" }),
+    });
+    expect(res.status).toBe(404);
   });
 
   it(":id non numerico → 400 JSON", async () => {
@@ -505,14 +571,17 @@ describe("run", () => {
     return general;
   }
 
-  async function pausedRun(): Promise<number> {
+  const QUEUE_FIELDS = { destinatario: "Rosa", sintesi: "Elimina l'elemento 42" };
+
+  /** Run conclusa con un'azione L2 accodata (passi: model, queued, model). */
+  async function queuedRun(): Promise<number> {
     const app = await createApp();
     await api("POST", `/apps/${app.id}/tools`, HTTP_TOOL);
     const general = await runnableAgent(app.id);
     const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "Elimina 42" }).returning();
-    llmReplies = [toolCallReply("delete_item", { id: "42" }), textReply("Eliminato.")];
+    llmReplies = [toolCallReply("delete_item", { id: "42", ...QUEUE_FIELDS }), textReply("In coda.")];
     await startRun(run!.id, { userToken: USER_TOKEN });
-    expect((await getRun(run!.id)).status).toBe("awaiting_client");
+    expect((await getRun(run!.id)).status).toBe("succeeded");
     return run!.id;
   }
 
@@ -527,59 +596,44 @@ describe("run", () => {
   });
 
   it("trigger: legge X-App-User-Token, 202 pending; il token arriva all'app e non è salvato", async () => {
-    const id = await pausedRun();
-    const agentId = (await getRun(id)).agentId;
+    const app = await createApp();
+    await api("POST", `/apps/${app.id}/tools`, { ...HTTP_TOOL, level: "L1" });
+    const general = await runnableAgent(app.id);
     llmReplies = [toolCallReply("delete_item", { id: "7" }), textReply("ok")];
-    const res = await api("POST", `/agents/${agentId}/runs`, { input: "Elimina 7" }, { "X-App-User-Token": ` ${USER_TOKEN} ` });
+    const res = await api("POST", `/agents/${general.id}/runs`, { input: "Elimina 7" }, { "X-App-User-Token": ` ${USER_TOKEN} ` });
     expect(res.status).toBe(202);
     expect(res.json.status).toBe("pending");
-    const run = await waitForStatus(res.json.id, ["awaiting_client", "failed", "succeeded"]);
-    expect(run.status).toBe("awaiting_client");
-
-    const resumed = await api("POST", `/runs/${res.json.id}/resume`, { decision: "approved" });
-    expect(resumed.status).toBe(202);
-    await waitForStatus(res.json.id, ["succeeded", "failed"]);
+    const run = await waitForStatus(res.json.id, ["failed", "succeeded"]);
+    expect(run.status).toBe("succeeded");
     expect(appRequests).toEqual([{ method: "DELETE", url: "/api/items/7", auth: `Bearer ${USER_TOKEN}` }]);
     const dump = await pool.query("select (select json_agg(r)::text from runs r) as runs, (select json_agg(s)::text from run_steps s) as steps");
     expect(dump.rows[0].runs).not.toContain(USER_TOKEN);
     expect(dump.rows[0].steps ?? "").not.toContain(USER_TOKEN);
   });
 
-  it("GET della run: azione in sospeso con i soli campi pubblici, senza stato del ciclo", async () => {
-    const id = await pausedRun();
+  it("GET della run: niente azione in sospeso né stato del ciclo", async () => {
+    const id = await queuedRun();
     const res = await api("GET", `/runs/${id}`);
     expect(res.status).toBe(200);
-    expect(res.json.pendingAction).toEqual({
-      kind: "confirmation",
-      toolName: "delete_item",
-      args: { id: "42" },
-      summary: expect.any(String),
-    });
+    expect(res.json).not.toHaveProperty("pendingAction");
     expect(res.json).not.toHaveProperty("loopState");
-    expect(res.json.promptTokens).toBe(10);
-    expect(res.json.completionTokens).toBe(5);
+    expect(res.json.promptTokens).toBe(20);
     const list = await api("GET", "/runs");
     expect(list.text).not.toContain("loopState");
-    expect(list.text).not.toContain("toolCallId");
+    expect(list.text).not.toContain("pendingAction");
   });
 
-  it("passi della run in ordine di posizione; run inesistente → 404", async () => {
-    const id = await pausedRun();
+  it("passi della run in ordine di posizione con il passo queued; run inesistente → 404", async () => {
+    const id = await queuedRun();
     const res = await api("GET", `/runs/${id}/steps`);
     expect(res.status).toBe(200);
-    expect(res.json.map((s: { position: number; type: string }) => [s.position, s.type])).toEqual([[0, "model"]]);
+    expect(res.json.map((s: { position: number; type: string }) => [s.position, s.type])).toEqual([
+      [0, "model"],
+      [1, "queued"],
+      [2, "model"],
+    ]);
+    expect(res.json[1].args).toEqual({ numero: 1, destinatario: "Rosa", sintesi: "Elimina l'elemento 42", argomenti: { id: "42" } });
     expect((await api("GET", "/runs/9999/steps")).status).toBe(404);
-  });
-
-  it("resume su run non in pausa → 409; su run inesistente → 404", async () => {
-    const app = await createApp();
-    const general = await runnableAgent(app.id);
-    const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "x" }).returning();
-    const res = await api("POST", `/runs/${run!.id}/resume`, { decision: "approved" });
-    expect(res.status).toBe(409);
-    expect(typeof res.json.error).toBe("string");
-    expect((await getRun(run!.id)).status).toBe("pending");
-    expect((await api("POST", "/runs/9999/resume", { decision: "approved" })).status).toBe(404);
   });
 
   it("cancel: run pending → 200 cancelled; già conclusa → 409; inesistente → 404", async () => {
@@ -594,19 +648,6 @@ describe("run", () => {
     expect(again.status).toBe(409);
     expect(typeof again.json.error).toBe("string");
     expect((await api("POST", "/runs/9999/cancel")).status).toBe(404);
-  });
-
-  it("resume due volte di fila su una run in pausa → 202 poi 409, una sola esecuzione del tool", async () => {
-    const id = await pausedRun();
-    const first = await api("POST", `/runs/${id}/resume`, { decision: "approved" });
-    const second = await api("POST", `/runs/${id}/resume`, { decision: "approved" });
-    expect(first.status).toBe(202);
-    expect(first.json.id).toBe(id);
-    expect(first.json).not.toHaveProperty("loopState");
-    expect(second.status).toBe(409);
-    const run = await waitForStatus(id, ["succeeded", "failed"]);
-    expect(run.status).toBe("succeeded");
-    expect(appRequests).toHaveLength(1);
   });
 
   it("argomenti del modello non JSON: GET dei passi → 200 con { _raw }", async () => {
@@ -637,7 +678,7 @@ describe("run", () => {
     expect(res.json).toEqual({ error: "Errore interno" });
   });
 
-  it("GET della run in pausa: argomenti sensibili oscurati in args e nel riassunto", async () => {
+  it("GET dei passi di una run con un'azione L2 sensibile: nessun valore sensibile nella risposta", async () => {
     const app = await createApp();
     await api("POST", `/apps/${app.id}/tools`, {
       ...HTTP_TOOL,
@@ -651,14 +692,16 @@ describe("run", () => {
     });
     const general = await runnableAgent(app.id);
     const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "x" }).returning();
-    llmReplies = [toolCallReply("set_password", { id: "42", password: "segreta-123" })];
+    llmReplies = [toolCallReply("set_password", { id: "42", password: "segreta-123", ...QUEUE_FIELDS }), textReply("In coda.")];
     await startRun(run!.id, { userToken: USER_TOKEN });
-    expect((await getRun(run!.id)).status).toBe("awaiting_client");
+    expect((await getRun(run!.id)).status).toBe("succeeded");
 
-    const res = await api("GET", `/runs/${run!.id}`);
+    const res = await api("GET", `/runs/${run!.id}/steps`);
     expect(res.status).toBe(200);
-    expect(res.json.pendingAction.args).toEqual({ id: "42", password: "***" });
+    const queued = res.json.find((s: { type: string }) => s.type === "queued");
+    expect(queued.args.argomenti).toEqual({ id: "42", password: "***" });
     expect(res.text).not.toContain("segreta-123");
-    expect((await api("GET", "/runs")).text).not.toContain("segreta-123");
+    expect((await api("GET", `/runs/${run!.id}`)).text).not.toContain("segreta-123");
+    expect(appRequests).toHaveLength(0);
   });
 });

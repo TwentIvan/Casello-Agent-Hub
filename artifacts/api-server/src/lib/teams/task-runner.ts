@@ -47,6 +47,9 @@ export const MAX_TASK_DETAIL = 20_000;
 
 export const TASK_MESSAGES = {
   notInPlan: "il compito non è nel piano approvato: proponi una modifica",
+  alreadyActive: "il compito è già in corso",
+  teamNotActive: "la squadra non è attiva",
+  startFailed: "errore interno",
   notActivated: "squadra non attivata",
   noModel: "il ruolo non ha un modello",
   interrupted: "interrotto dal riavvio",
@@ -202,29 +205,67 @@ function taskMessage(plan: PlanView, task: TeamTaskRow, title: string): string {
 /**
  * Crea l'esecuzione di un compito del PLAN approvato: ruolo `node` → `waiting_node` (lo prenderà il nodo locale),
  * altrimenti `queued` e parte lo scheduler. Lo stato del compito nel PLAN diventa `waiting_node` o `running`.
+ * Solo per squadre `active` e se lo stesso compito non ha già un'esecuzione `queued`, `running` o `waiting_node`
+ * (controllo e inserimento con la riga della squadra bloccata, come la presa in carico). Il PLAN si aggiorna dopo il
+ * commit (la transazione non blocca la riga del PLAN); se fallisce, la riga nuova si chiude `failed`.
  */
 export async function startTask(instanceId: number, planTaskId: string): Promise<TeamTaskRow> {
   const instance = await instanceRow(instanceId);
   if (!instance) throw new InstanceError(404, INSTANCE_MESSAGES.notFound);
+  if (instance.status !== "active") throw new InstanceError(409, TASK_MESSAGES.teamNotActive);
   const planTask = await approvedPlanTask(instanceId, planTaskId);
   if (!planTask) throw new TeamRuleError(TASK_MESSAGES.notInPlan);
   const role = roleOf(instance, planTask.roleKey);
   if (!role) throw new TeamRuleError(PLAN_MESSAGES.roleMissing(planTask.roleKey));
   const status = role.runsOn === "node" ? "waiting_node" : "queued";
-  const [row] = await db
-    .insert(teamTasksTable)
-    .values({
-      instanceId,
-      planTaskId,
-      roleKey: role.key,
-      instructions: planTask.instructions,
-      status,
-      aiModelId: role.runsOn === "cloud" ? role.aiModelId : null,
-    })
-    .returning();
-  await patchPlan(instanceId, { tasks: [{ id: planTaskId, status: status === "waiting_node" ? "waiting_node" : "running", outcome: null }] });
+
+  const row = await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ status: teamInstancesTable.status })
+      .from(teamInstancesTable)
+      .where(eq(teamInstancesTable.id, instanceId))
+      .for("update")
+      .limit(1);
+    if (!locked) throw new InstanceError(404, INSTANCE_MESSAGES.notFound);
+    if (locked.status !== "active") throw new InstanceError(409, TASK_MESSAGES.teamNotActive);
+    const [active] = await tx
+      .select({ id: teamTasksTable.id })
+      .from(teamTasksTable)
+      .where(
+        and(
+          eq(teamTasksTable.instanceId, instanceId),
+          eq(teamTasksTable.planTaskId, planTaskId),
+          inArray(teamTasksTable.status, ["queued", "running", "waiting_node"]),
+        ),
+      )
+      .limit(1);
+    if (active) throw new InstanceError(409, TASK_MESSAGES.alreadyActive);
+    const [inserted] = await tx
+      .insert(teamTasksTable)
+      .values({
+        instanceId,
+        planTaskId,
+        roleKey: role.key,
+        instructions: planTask.instructions,
+        status,
+        aiModelId: role.runsOn === "cloud" ? role.aiModelId : null,
+      })
+      .returning();
+    return inserted!;
+  });
+
+  try {
+    await patchPlan(instanceId, { tasks: [{ id: planTaskId, status: status === "waiting_node" ? "waiting_node" : "running", outcome: null }] });
+  } catch (err) {
+    logger.error({ teamTaskId: row.id, errName: errName(err) }, "Aggiornamento del PLAN all'avvio del compito non riuscito");
+    await db
+      .update(teamTasksTable)
+      .set({ status: "failed", error: TASK_MESSAGES.startFailed, outcome: TASK_MESSAGES.startFailed, finishedAt: new Date() })
+      .where(and(eq(teamTasksTable.id, row.id), eq(teamTasksTable.status, status)));
+    throw err;
+  }
   if (status === "queued") pumpInBackground(instanceId);
-  return row!;
+  return row;
 }
 
 /**
@@ -433,33 +474,47 @@ export async function failInterruptedTeamWork(): Promise<void> {
     .where(eq(teamTurnsTable.status, "running"))
     .returning({ id: teamTurnsTable.id, instanceId: teamTurnsTable.instanceId });
 
+  // Ogni passo per conto suo: un errore (solo il nome nel log) non ferma il recupero degli altri
+  const step = async (label: string, fn: () => Promise<unknown>): Promise<void> => {
+    try {
+      await fn();
+    } catch (err) {
+      logger.error({ errName: errName(err) }, `Recupero dopo il riavvio: ${label} non riuscito`);
+    }
+  };
   for (const task of tasks) {
-    await patchPlan(task.instanceId, { tasks: [{ id: task.planTaskId, status: "failed", outcome: TASK_MESSAGES.interrupted }] });
-    await emitEvent({
-      instanceId: task.instanceId,
-      type: "interrotto",
-      taskId: task.id,
-      bulletin: `Compito ${task.planTaskId} (${task.roleKey}): ${TASK_MESSAGES.interrupted}`,
-    });
+    await step("PLAN del compito", () => patchPlan(task.instanceId, { tasks: [{ id: task.planTaskId, status: "failed", outcome: TASK_MESSAGES.interrupted }] }));
+    await step("evento del compito", () =>
+      emitEvent({
+        instanceId: task.instanceId,
+        type: "interrotto",
+        taskId: task.id,
+        bulletin: `Compito ${task.planTaskId} (${task.roleKey}): ${TASK_MESSAGES.interrupted}`,
+      }),
+    );
   }
   for (const turn of turns) {
-    await emitEvent({ instanceId: turn.instanceId, type: "interrotto", bulletin: `Turno del capo: ${TASK_MESSAGES.interrupted}` });
+    await step("evento del turno", () => emitEvent({ instanceId: turn.instanceId, type: "interrotto", bulletin: `Turno del capo: ${TASK_MESSAGES.interrupted}` }));
   }
 
   const involved = [...new Set([...tasks, ...turns].map((r) => r.instanceId))];
   if (involved.length > 0) {
-    const active = await db
-      .select({ id: teamInstancesTable.id })
-      .from(teamInstancesTable)
-      .where(and(inArray(teamInstancesTable.id, involved), eq(teamInstancesTable.status, "active")))
-      .orderBy(asc(teamInstancesTable.id));
-    for (const { id } of active) await enqueueTurnReason(id, { type: "restart" });
+    await step("turni di ripresa", async () => {
+      const active = await db
+        .select({ id: teamInstancesTable.id })
+        .from(teamInstancesTable)
+        .where(and(inArray(teamInstancesTable.id, involved), eq(teamInstancesTable.status, "active")))
+        .orderBy(asc(teamInstancesTable.id));
+      for (const { id } of active) await step("turno restart", () => enqueueTurnReason(id, { type: "restart" }));
+    });
   }
 
-  const queued = await db
-    .selectDistinct({ instanceId: teamTasksTable.instanceId })
-    .from(teamTasksTable)
-    .innerJoin(teamInstancesTable, eq(teamTasksTable.instanceId, teamInstancesTable.id))
-    .where(and(eq(teamTasksTable.status, "queued"), eq(teamInstancesTable.status, "active")));
-  for (const { instanceId } of queued) pumpInBackground(instanceId);
+  await step("ripartenza dei compiti in coda", async () => {
+    const queued = await db
+      .selectDistinct({ instanceId: teamTasksTable.instanceId })
+      .from(teamTasksTable)
+      .innerJoin(teamInstancesTable, eq(teamTasksTable.instanceId, teamInstancesTable.id))
+      .where(and(eq(teamTasksTable.status, "queued"), eq(teamInstancesTable.status, "active")));
+    for (const { instanceId } of queued) pumpInBackground(instanceId);
+  });
 }

@@ -390,6 +390,28 @@ describe("compiti dei ruoli cloud", () => {
     await expect(startTask(instanceId, "t99")).rejects.toThrow(TASK_MESSAGES.notInPlan);
   });
 
+  it("compito già in corso: seconda esecuzione rifiutata; rilanciare un compito finito è ammesso", async () => {
+    const instanceId = await seedTeam([cloudRole([]), { ...cloudRole([]), key: "operaio-nodo", name: "Operaio", runsOn: "node", aiModelId: null }], ["t1", "tn"]);
+    await startTask(instanceId, "tn");
+    await expect(startTask(instanceId, "tn")).rejects.toThrow(TASK_MESSAGES.alreadyActive);
+
+    script = [report("primo giro")];
+    expect((await runOne(instanceId)).status).toBe("done");
+    script = [report("secondo giro")];
+    expect(await runOne(instanceId)).toMatchObject({ status: "done", outcome: "secondo giro" });
+    const rows = await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, instanceId));
+    expect(rows.filter((r) => r.planTaskId === "tn")).toHaveLength(1);
+    expect(rows.filter((r) => r.planTaskId === "t1")).toHaveLength(2);
+  });
+
+  it("squadra non attiva: compito rifiutato, nessuna riga", async () => {
+    const instanceId = await seedTeam([cloudRole([])]);
+    await db.update(teamInstancesTable).set({ status: "draft" }).where(eq(teamInstancesTable.id, instanceId));
+    await expect(startTask(instanceId, "t1")).rejects.toThrow(TASK_MESSAGES.teamNotActive);
+    expect(await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, instanceId))).toHaveLength(0);
+    expect((await getPlan(instanceId)).tasks[0]).toMatchObject({ status: "planned" });
+  });
+
   it("tetto della squadra raggiunto: blocked ed evento, nessuna chiamata al modello", async () => {
     const instanceId = await seedTeam([cloudRole([])], ["t1"], { monthlyBudgetUsd: "1.00" });
     await db.insert(teamTasksTable).values({ instanceId, planTaskId: "t0", roleKey: "analista", instructions: "", status: "done", costUsd: "1.500000", aiModelId: modelId });
@@ -443,6 +465,18 @@ describe("compiti dei ruoli cloud", () => {
     expect(await markRead(userId, events.map((e) => e.id))).toBe(2);
     expect(await unreadBulletin(userId)).toHaveLength(0);
     expect(await db.select().from(teamEventsTable).where(eq(teamEventsTable.instanceId, instanceId))).toHaveLength(2);
+  });
+
+  it("riavvio: un compito rimasto in coda di una squadra attiva riparte", async () => {
+    const instanceId = await seedTeam([cloudRole([])]);
+    const [queued] = await db.insert(teamTasksTable).values({ instanceId, planTaskId: "t1", roleKey: "analista", instructions: "", status: "queued", aiModelId: modelId }).returning();
+    script = [report("ripreso dopo il riavvio")];
+
+    await failInterruptedTeamWork();
+    await settleTaskExecutions();
+
+    const [task] = await db.select().from(teamTasksTable).where(eq(teamTasksTable.id, queued!.id));
+    expect(task).toMatchObject({ status: "done", outcome: "ripreso dopo il riavvio" });
   });
 
   it("argomenti x-sensitive oscurati in team_task_steps", async () => {

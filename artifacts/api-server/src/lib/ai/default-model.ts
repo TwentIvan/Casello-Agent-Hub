@@ -12,7 +12,7 @@ import type { Tx } from "../architect/apply";
 type Executor = Tx | typeof db;
 
 /** Modello di un account dell'utente (non di altri), oppure undefined. */
-async function ownModel(userId: number, aiModelId: number, executor: Executor): Promise<ModelChoice | undefined> {
+export async function ownModel(userId: number, aiModelId: number, executor: Executor): Promise<ModelChoice | undefined> {
   const [row] = await executor
     .select({ id: aiModelsTable.id, modelId: aiModelsTable.modelId })
     .from(aiModelsTable)
@@ -56,4 +56,32 @@ export async function resolveAgentModel(
   const defaultId = await getDefaultModel(userId, executor);
   if (defaultId === null) return NO_MODEL;
   return (await ownModel(userId, defaultId, executor)) ?? NO_MODEL;
+}
+
+/** Modello del centralino salvato (null se non impostato o se il modello è stato eliminato). */
+export async function getCentralinoModel(userId: number, executor: Executor = db): Promise<number | null> {
+  const [row] = await executor
+    .select({ id: usersTable.centralinoAiModelId })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/** Imposta (modello di un proprio account, altrimenti `ModelChoiceError`) o toglie (null) il modello del centralino. */
+export async function setCentralinoModel(userId: number, aiModelId: number | null): Promise<void> {
+  if (aiModelId !== null) {
+    if (!Number.isSafeInteger(aiModelId) || aiModelId <= 0 || !(await ownModel(userId, aiModelId, db))) {
+      throw new ModelChoiceError(MODEL_UNAVAILABLE);
+    }
+  }
+  await db.update(usersTable).set({ centralinoAiModelId: aiModelId }).where(eq(usersTable.id, userId));
+}
+
+/** Modello per il riassunto del centralino: il suo, altrimenti il predefinito; solo se ancora di un account dell'utente. */
+export async function centralinoModelFor(userId: number): Promise<number | null> {
+  for (const id of [await getCentralinoModel(userId), await getDefaultModel(userId)]) {
+    if (id !== null && (await ownModel(userId, id, db))) return id;
+  }
+  return null;
 }

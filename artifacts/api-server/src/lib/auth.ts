@@ -13,7 +13,7 @@ import { githubConfig } from "./github/config";
 import { githubAuthRouter } from "./github/oauth-routes";
 import { logger } from "./logger";
 import { tokenRateLimit } from "../middlewares/rate-limit";
-import { authenticateApiToken, bearerToken, type TokenScope } from "./api-tokens";
+import { TOKEN_MESSAGES, authenticateApiToken, bearerToken, type TokenScope } from "./api-tokens";
 import { IdentityConflictError, ensureUserByEmail, isAllowed, listIdentities, resolveLogin } from "./users";
 
 export interface SessionUser {
@@ -179,12 +179,8 @@ export async function sessionUserId(req: Request): Promise<number | null> {
   return authDisabled ? devUserId() : resolveSessionUserId(req.session);
 }
 
-/** Risposte fisse per le richieste con un token personale. */
-export const TOKEN_MESSAGES = {
-  invalid: "token non valido o scaduto",
-  scope: "il token non ha l'ambito per questa operazione",
-  sessionOnly: "operazione disponibile solo con il login",
-} as const;
+/** Risposte fisse per le richieste con un token personale (definite in api-tokens, usate anche dal server MCP). */
+export { TOKEN_MESSAGES };
 
 /** GET e HEAD leggono (api:read o api:write); gli altri metodi scrivono (solo api:write). */
 function hasScopeFor(method: string, scopes: TokenScope[]): boolean {

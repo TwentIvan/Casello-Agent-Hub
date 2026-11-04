@@ -12,7 +12,7 @@ import {
   RejectPendingActionParams,
   RejectPendingActionResponse,
 } from "@workspace/api-zod";
-import { db, appToolsTable, appsTable, pendingActionsTable } from "@workspace/db";
+import { db, appToolsTable, appsTable, pendingActionsTable, teamInstancesTable } from "@workspace/db";
 import { ACTION_MESSAGES, approveAction, rejectAction, type DecideResult } from "../lib/actions/decide";
 import { currentUserId } from "../lib/auth";
 import { actionDecideRateLimit } from "../middlewares/rate-limit";
@@ -30,19 +30,27 @@ const selectQueued = () =>
       appName: appsTable.name,
       toolName: appToolsTable.name,
       toolIdentity: appToolsTable.identity,
+      teamName: teamInstancesTable.name,
     })
     .from(pendingActionsTable)
-    .innerJoin(appsTable, eq(appsTable.id, pendingActionsTable.appId))
-    .innerJoin(appToolsTable, eq(appToolsTable.id, pendingActionsTable.toolId));
+    // Left join: le voci `plan`/`plan_change` non hanno app né strumento
+    .leftJoin(appsTable, eq(appsTable.id, pendingActionsTable.appId))
+    .leftJoin(appToolsTable, eq(appToolsTable.id, pendingActionsTable.toolId))
+    .leftJoin(teamInstancesTable, eq(teamInstancesTable.id, pendingActionsTable.teamInstanceId));
 
 type QueuedRow = Awaited<ReturnType<typeof selectQueued>>[number];
 
-function toQueuedAction({ action, appName, toolName, toolIdentity }: QueuedRow) {
+function toQueuedAction({ action, appName, toolName, toolIdentity, teamName }: QueuedRow) {
   return {
     number: action.number,
     status: action.status,
-    app: { id: action.appId, name: appName },
-    tool: { id: action.toolId, name: toolName, identity: toolIdentity },
+    kind: action.kind,
+    team: action.teamInstanceId !== null && teamName !== null ? { id: action.teamInstanceId, name: teamName } : null,
+    app: action.appId !== null && appName !== null ? { id: action.appId, name: appName } : null,
+    tool:
+      action.toolId !== null && toolName !== null && toolIdentity !== null
+        ? { id: action.toolId, name: toolName, identity: toolIdentity }
+        : null,
     agentId: action.agentId,
     runId: action.runId,
     recipient: action.recipient,

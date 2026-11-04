@@ -225,6 +225,52 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /account/centralino-model:
+    get:
+      operationId: getCentralinoModel
+      tags: [ai]
+      summary: Modello del centralino
+      description: >-
+        Modello con cui il centralino riassume lo stato delle squadre quando sono più di 5. Null se non
+        impostato (vale il modello predefinito). Solo con il login: con un token risponde 403.
+      responses:
+        "200":
+          description: Modello del centralino
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CentralinoModel"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      operationId: setCentralinoModel
+      tags: [ai]
+      summary: Imposta o toglie il modello del centralino
+      description: >-
+        Il modello deve essere di un account AI dell'utente (400 "modello non disponibile"
+        altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CentralinoModel"
+      responses:
+        "200":
+          description: Modello del centralino aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CentralinoModel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   # ─── Apps ───────────────────────────────────────────────────────────────────
 
   /apps:
@@ -1489,7 +1535,9 @@ paths:
       summary: Salva la squadra (ruoli e skill specializzate)
       description: >-
         Tutto o niente. Le skill specializzate inviate sostituiscono quelle esistenti. Una squadra chiusa
-        non si salva (409).
+        non si salva (409). Il salvataggio non cambia lo stato: `status` diverso da quello attuale → 400 («usa
+        Attiva per avviare la squadra», da bozza ad attiva) o 409 («una squadra attiva non torna in bozza:
+        chiudila»).
       parameters:
         - $ref: "#/components/parameters/IdParam"
       requestBody:
@@ -1621,6 +1669,293 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}/plan:
+    get:
+      operationId: getTeamPlan
+      tags: [teams]
+      summary: PLAN corrente della squadra
+      description: Se la squadra non ha ancora un PLAN ne crea uno `draft` vuoto (versione 1).
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: PLAN corrente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamPlan"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: saveTeamPlan
+      tags: [teams]
+      summary: Correzione del PLAN da parte dell'utente
+      description: >-
+        Salva il PLAN completo come versione nuova già `approved`, rifiuta le proposte di PLAN ancora in coda
+        della squadra («superata dalla modifica dell'utente») e accoda un turno del capo. `roleKey` dei compiti
+        deve esistere tra i ruoli (400). Squadra chiusa → 409.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamPlanInput"
+      responses:
+        "200":
+          description: PLAN salvato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamPlan"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}/plan/manual-actions/{actionId}/done:
+    post:
+      operationId: markTeamManualActionDone
+      tags: [teams]
+      summary: Segna come fatta un'azione manuale del PLAN
+      description: Aggiorna il PLAN corrente senza creare una versione nuova. Squadra chiusa → 409.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: actionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: PLAN aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamPlan"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}/activate:
+    post:
+      operationId: activateTeamInstance
+      tags: [teams]
+      summary: Attiva la squadra
+      description: >-
+        `draft` → `active`: chi attiva riceve le voci in coda della squadra. Crea il PLAN `draft` se manca e accoda
+        un turno del capo (motivo `activation`). Squadra già attiva o chiusa → 409.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Squadra attivata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInstance"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}/messages:
+    post:
+      operationId: sendTeamMessage
+      tags: [teams]
+      summary: Scrive al capo della squadra
+      description: >-
+        Accoda un turno del capo con motivo `request` (o aggiunge il motivo al turno già in coda). Solo squadre
+        attive (409). 10 messaggi al minuto per utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamMessageInput"
+      responses:
+        "202":
+          description: Messaggio accodato al capo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMessageResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /team-instances/{id}/budget:
+    put:
+      operationId: setTeamBudget
+      tags: [teams]
+      summary: Imposta il tetto di spesa mensile della squadra
+      description: >-
+        Tetto in USD sulla spesa del mese di turni e compiti della squadra (null = nessun tetto). Raggiunto il
+        tetto, turni e compiti non partono. Squadra chiusa → 409.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamBudgetInput"
+      responses:
+        "200":
+          description: Tetto salvato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInstance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}/tasks:
+    get:
+      operationId: listTeamTasks
+      tags: [teams]
+      summary: Esecuzioni dei compiti della squadra, dalla più recente (senza passi)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Compiti
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamTask"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /team-instances/{id}/tasks/{taskId}:
+    get:
+      operationId: getTeamTask
+      tags: [teams]
+      summary: Esecuzione di un compito con i passi
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Compito con i passi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamTask"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /team-instances/{id}/turns:
+    get:
+      operationId: listTeamTurns
+      tags: [teams]
+      summary: Turni del capo, dal più recente (ultimi 50), con i passi
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Turni
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamTurn"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /team-instances/{id}/events:
+    get:
+      operationId: listTeamEvents
+      tags: [teams]
+      summary: Eventi della squadra, dal più recente
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Eventi
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamEvent"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /team-events:
+    get:
+      operationId: listUnreadTeamEvents
+      tags: [teams]
+      summary: Bollettino delle squadre attivate dall'utente
+      description: >-
+        Con `unread=true` solo gli eventi non letti, altrimenti tutti; al massimo i 200 più recenti. Non li segna
+        come letti.
+      parameters:
+        - name: unread
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Eventi
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamEvent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /team-events/read:
+    post:
+      operationId: markTeamEventsRead
+      tags: [teams]
+      summary: Segna come letti gli eventi indicati
+      description: Solo eventi delle squadre attivate dall'utente; gli altri si ignorano.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamEventsReadInput"
+      responses:
+        "200":
+          description: Eventi segnati
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [updated]
+                properties:
+                  updated:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
 
   # ─── Account AI ─────────────────────────────────────────────────────────────
 
@@ -2844,6 +3179,13 @@ components:
         aiModelId:
           type: ["integer", "null"]
 
+    CentralinoModel:
+      type: object
+      required: [aiModelId]
+      properties:
+        aiModelId:
+          type: ["integer", "null"]
+
     AppInput:
       type: object
       required: [name, baseUrl]
@@ -3350,15 +3692,27 @@ components:
 
     QueuedAction:
       type: object
-      required: [number, status, app, tool, agentId, runId, recipient, summary, args, result, errorMessage, decisionNote, createdAt, decidedAt, finishedAt]
+      required: [number, status, kind, team, app, tool, agentId, runId, recipient, summary, args, result, errorMessage, decisionNote, createdAt, decidedAt, finishedAt]
       properties:
         number:
           type: integer
         status:
           type: string
           enum: [pending, executing, done, failed, rejected]
+        kind:
+          type: string
+          enum: [action, plan, plan_change]
+          description: Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra
+        team:
+          type: ["object", "null"]
+          required: [id, name]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
         app:
-          type: object
+          type: ["object", "null"]
           required: [id, name]
           properties:
             id:
@@ -3366,7 +3720,7 @@ components:
             name:
               type: string
         tool:
-          type: object
+          type: ["object", "null"]
           required: [id, name, identity]
           properties:
             id:
@@ -5080,6 +5434,9 @@ components:
         status:
           type: string
           enum: [draft, active]
+          description: >-
+            Facoltativo e solo uguale allo stato attuale: si attiva con `POST /team-instances/{id}/activate` e una
+            squadra attiva non torna in bozza.
 
     TeamUpdateItem:
       type: object
@@ -5149,9 +5506,126 @@ components:
             type: string
             maxLength: 200
 
+    TeamPlanTask:
+      type: object
+      required: [id, title, roleKey, instructions, status, outcome]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 40
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        roleKey:
+          type: string
+          minLength: 1
+          maxLength: 40
+        instructions:
+          type: string
+          maxLength: 4000
+        status:
+          type: string
+          enum: [planned, running, waiting_node, done, blocked, failed]
+        outcome:
+          type: string
+          nullable: true
+          maxLength: 300
+
+    TeamManualAction:
+      type: object
+      required: [id, text, done, doneAt]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 40
+        text:
+          type: string
+          minLength: 1
+          maxLength: 500
+        done:
+          type: boolean
+        doneAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    TeamPlanInput:
+      type: object
+      required: [objective, constraints, openPoints, tasks, manualActions]
+      properties:
+        objective:
+          type: string
+          maxLength: 2000
+        constraints:
+          type: array
+          maxItems: 30
+          items:
+            type: string
+            maxLength: 500
+        openPoints:
+          type: array
+          maxItems: 30
+          items:
+            type: string
+            maxLength: 500
+        tasks:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/TeamPlanTask"
+        manualActions:
+          type: array
+          maxItems: 30
+          items:
+            $ref: "#/components/schemas/TeamManualAction"
+
+    TeamPlan:
+      type: object
+      required: [objective, constraints, openPoints, tasks, manualActions, version, status, approvedVersion, updatedAt]
+      properties:
+        objective:
+          type: string
+        constraints:
+          type: array
+          items:
+            type: string
+        openPoints:
+          type: array
+          items:
+            type: string
+        tasks:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/TeamPlanTask"
+              - type: object
+                required: [updatedAt]
+                properties:
+                  updatedAt:
+                    type: string
+                    format: date-time
+        manualActions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamManualAction"
+        version:
+          type: integer
+        status:
+          type: string
+          enum: [draft, proposed, approved]
+        approvedVersion:
+          type: integer
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+
     TeamInstance:
       type: object
-      required: [id, name, status, template, ref, roles, localSkills, createdAt, updatedAt, closedAt]
+      required: [id, name, status, template, ref, roles, localSkills, createdAt, updatedAt, closedAt, activatedBy, monthlyBudgetUsd, lastTurnAt]
       properties:
         id:
           type: integer
@@ -5218,3 +5692,211 @@ components:
           type: string
           format: date-time
           nullable: true
+        activatedBy:
+          type: integer
+          nullable: true
+          description: Utente che ha attivato la squadra (riceve le voci in coda)
+        monthlyBudgetUsd:
+          type: number
+          nullable: true
+          description: Tetto mensile in USD di turni e compiti (null = nessun tetto)
+        lastTurnAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    TeamMessageInput:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 4000
+
+    TeamMessageResult:
+      type: object
+      required: [queued]
+      properties:
+        queued:
+          type: boolean
+
+    TeamBudgetInput:
+      type: object
+      required: [monthlyBudgetUsd]
+      properties:
+        monthlyBudgetUsd:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1000000
+
+    TeamEventsReadInput:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          maxItems: 500
+          items:
+            type: integer
+
+    TeamStep:
+      type: object
+      required: [id, position, type, toolName, args, ok, httpStatus, durationMs, error, createdAt]
+      properties:
+        id:
+          type: integer
+        position:
+          type: integer
+        type:
+          type: string
+          description: model (chiamata al modello), tool (chiamata a uno strumento) o queued (azione accodata)
+        toolName:
+          type: ["string", "null"]
+        args:
+          description: Argomenti con i valori sensibili oscurati
+          nullable: true
+        ok:
+          type: ["boolean", "null"]
+        httpStatus:
+          type: ["integer", "null"]
+        durationMs:
+          type: ["integer", "null"]
+        error:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    TeamTask:
+      type: object
+      required: [id, instanceId, planTaskId, roleKey, instructions, status, outcome, detail, error, aiModelId, promptTokens, completionTokens, cachedTokens, costUsd, createdAt, startedAt, finishedAt]
+      properties:
+        id:
+          type: integer
+        instanceId:
+          type: integer
+        planTaskId:
+          type: string
+        roleKey:
+          type: string
+        instructions:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, waiting_node, done, blocked, failed, cancelled]
+        outcome:
+          type: ["string", "null"]
+        detail:
+          type: ["string", "null"]
+        error:
+          type: ["string", "null"]
+        aiModelId:
+          type: ["integer", "null"]
+        promptTokens:
+          type: ["integer", "null"]
+        completionTokens:
+          type: ["integer", "null"]
+        cachedTokens:
+          type: integer
+        costUsd:
+          type: ["number", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: ["string", "null"]
+          format: date-time
+        finishedAt:
+          type: ["string", "null"]
+          format: date-time
+        steps:
+          type: array
+          description: Passi dell'esecuzione (solo nel dettaglio)
+          items:
+            $ref: "#/components/schemas/TeamStep"
+
+    TeamTurnReason:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [request, task_finished, decision, activation, restart]
+        text:
+          type: string
+        taskId:
+          type: integer
+        number:
+          type: integer
+        outcome:
+          type: string
+          enum: [approved, rejected]
+        note:
+          type: ["string", "null"]
+
+    TeamTurn:
+      type: object
+      required: [id, instanceId, reasons, status, error, aiModelId, promptTokens, completionTokens, cachedTokens, costUsd, createdAt, startedAt, finishedAt, steps]
+      properties:
+        id:
+          type: integer
+        instanceId:
+          type: integer
+        reasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamTurnReason"
+        status:
+          type: string
+          enum: [queued, running, done, failed]
+        error:
+          type: ["string", "null"]
+        aiModelId:
+          type: ["integer", "null"]
+        promptTokens:
+          type: ["integer", "null"]
+        completionTokens:
+          type: ["integer", "null"]
+        cachedTokens:
+          type: integer
+        costUsd:
+          type: ["number", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: ["string", "null"]
+          format: date-time
+        finishedAt:
+          type: ["string", "null"]
+          format: date-time
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamStep"
+
+    TeamEvent:
+      type: object
+      required: [id, instanceId, type, taskId, bulletin, detail, readAt, createdAt]
+      properties:
+        id:
+          type: integer
+        instanceId:
+          type: integer
+        type:
+          type: string
+          enum: [piano_proposto, compito_finito, bloccato, decisione_richiesta, azione_manuale_richiesta, lavoro_finito, interrotto]
+        taskId:
+          type: ["integer", "null"]
+        bulletin:
+          type: string
+        detail:
+          type: ["string", "null"]
+        readAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time

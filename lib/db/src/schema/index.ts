@@ -26,3 +26,5 @@ export * from "./pending-actions";
 export * from "./skills";
 export * from "./team-templates";
 export * from "./team-instances";
+export * from "./team-plans";
+export * from "./team-work";

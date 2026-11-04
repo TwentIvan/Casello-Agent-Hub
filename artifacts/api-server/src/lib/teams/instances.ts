@@ -2,16 +2,23 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   db,
   appsTable,
+  pendingActionsTable,
   skillsTable,
   teamInstanceSkillsTable,
   teamInstancesTable,
+  teamTasksTable,
   teamTemplatesTable,
+  teamTurnsTable,
   type TeamInstanceRow,
 } from "@workspace/db";
+import { isExhausted } from "../budget";
+import { patchPlan } from "./plan";
 import { InstanceRoleSchema, type InstanceRole, type TemplateRole } from "./manifest";
 import { TEAM_MESSAGES, TeamRuleError, validateRoles } from "./rules";
 import { SKILL_CODE, SKILL_MESSAGES, validateSkillContent, type Executor, type SkillKind } from "./skills";
+import { teamSpend } from "./team-budget";
 import { TEMPLATE_MESSAGES, TemplateError, describeRoles, getTemplateVersion, type LocalSkillInfo, type RoleView } from "./templates";
+import { enqueueTurnReason } from "./turn-queue";
 
 // Istanze di squadra: copia di un modello (o squadra da zero) legata a un lavoro, con le skill fissate a
 // una versione e skill specializzate proprie. La validazione legge dal pool e si fa PRIMA di aprire la
@@ -25,6 +32,8 @@ export const INSTANCE_MESSAGES = {
   duplicateLocalSkill: (code: string) => `skill specializzata ${code} ripetuta`,
   invalidLocalCode: (code: string) => `codice della skill specializzata ${code} non valido`,
   tooManyLocalSkills: "troppe skill specializzate",
+  useActivate: "usa Attiva per avviare la squadra",
+  noBackToDraft: "una squadra attiva non torna in bozza: chiudila",
 } as const;
 
 const MAX_LOCAL_SKILLS = 100;
@@ -53,6 +62,9 @@ export type InstanceView = {
   createdAt: Date;
   updatedAt: Date;
   closedAt: Date | null;
+  activatedBy: number | null;
+  monthlyBudgetUsd: number | null;
+  lastTurnAt: Date | null;
 };
 
 export type CreateInstanceInput = {
@@ -96,6 +108,9 @@ async function toView(row: TeamInstanceRow): Promise<InstanceView> {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     closedAt: row.closedAt,
+    activatedBy: row.activatedBy,
+    monthlyBudgetUsd: row.monthlyBudgetUsd === null ? null : Number(row.monthlyBudgetUsd),
+    lastTurnAt: row.lastTurnAt,
   };
 }
 
@@ -178,12 +193,23 @@ function checkLocalSkills(skills: LocalSkillInput[]): Map<string, SkillKind> {
 }
 
 /**
+ * Il salvataggio non cambia lo stato: si attiva solo con `activateInstance` (chi attiva riceve le voci in coda e il
+ * capo il primo turno) e una squadra attiva non torna in bozza. `status` uguale a quello attuale è ammesso.
+ */
+function checkStatusChange(current: "draft" | "active" | "closed", requested: "draft" | "active" | undefined): void {
+  if (requested === undefined || requested === current) return;
+  if (requested === "active") throw new TeamRuleError(INSTANCE_MESSAGES.useActivate);
+  throw new InstanceError(409, INSTANCE_MESSAGES.noBackToDraft);
+}
+
+/**
  * Tutto o niente: valida (fuori dalla transazione) e poi sostituisce ruoli e skill specializzate. Le skill
  * del catalogo già presenti nei ruoli precedenti restano ammesse anche se nel frattempo deprecate.
  */
 export async function saveInstance(userId: number, id: number, input: SaveInstanceInput, executor: Executor = db): Promise<InstanceView> {
   const current = await getRow(id);
   if (current.status === "closed") throw new InstanceError(409, INSTANCE_MESSAGES.closed);
+  checkStatusChange(current.status, input.status);
   const localSkillCodes = checkLocalSkills(input.localSkills);
   const previous = InstanceRoleSchema.array().parse(current.roles);
   await validateRoles({ roles: input.roles, mode: "instance", userId, previous, localSkillCodes });
@@ -192,6 +218,7 @@ export async function saveInstance(userId: number, id: number, input: SaveInstan
     const [locked] = await tx.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, id)).limit(1).for("update");
     if (!locked) throw new InstanceError(404, INSTANCE_MESSAGES.notFound);
     if (locked.status === "closed") throw new InstanceError(409, INSTANCE_MESSAGES.closed);
+    checkStatusChange(locked.status, input.status);
     await tx.delete(teamInstanceSkillsTable).where(eq(teamInstanceSkillsTable.instanceId, id));
     if (input.localSkills.length > 0) {
       await tx.insert(teamInstanceSkillsTable).values(
@@ -211,7 +238,6 @@ export async function saveInstance(userId: number, id: number, input: SaveInstan
         name: input.name,
         refTitle: input.refTitle ?? locked.refTitle,
         roles: input.roles,
-        status: input.status ?? locked.status,
         updatedAt: new Date(),
       })
       .where(eq(teamInstancesTable.id, id));
@@ -219,16 +245,74 @@ export async function saveInstance(userId: number, id: number, input: SaveInstan
   return getInstance(id);
 }
 
-/** Chiude la squadra: non si riapre e non si salva più. */
+export const CLOSE_MESSAGES = {
+  teamClosed: "squadra chiusa",
+  taskCancelled: "annullato: squadra chiusa",
+} as const;
+
+/**
+ * Chiude la squadra: non si riapre e non si salva più. Nella stessa transazione i compiti `queued` diventano
+ * `cancelled`, le voci `plan`/`plan_change` ancora in coda `rejected` («squadra chiusa») e i turni in coda `failed`.
+ * Compiti e turni `running` finiscono da soli, ma non fanno partire altri turni (la squadra non è più attiva).
+ */
 export async function closeInstance(id: number): Promise<InstanceView> {
   await getRow(id);
-  const now = new Date();
+  const cancelled = await db.transaction(async (tx) => {
+    const now = new Date();
+    const updated = await tx
+      .update(teamInstancesTable)
+      .set({ status: "closed", closedAt: now, updatedAt: now })
+      .where(and(eq(teamInstancesTable.id, id), inArray(teamInstancesTable.status, ["draft", "active"])))
+      .returning({ id: teamInstancesTable.id });
+    if (updated.length === 0) throw new InstanceError(409, INSTANCE_MESSAGES.closed);
+    const tasks = await tx
+      .update(teamTasksTable)
+      .set({ status: "cancelled", outcome: CLOSE_MESSAGES.taskCancelled, finishedAt: now })
+      .where(and(eq(teamTasksTable.instanceId, id), eq(teamTasksTable.status, "queued")))
+      .returning({ planTaskId: teamTasksTable.planTaskId });
+    await tx
+      .update(pendingActionsTable)
+      .set({ status: "rejected", decisionNote: CLOSE_MESSAGES.teamClosed, decidedAt: now, finishedAt: now })
+      .where(
+        and(
+          eq(pendingActionsTable.teamInstanceId, id),
+          inArray(pendingActionsTable.kind, ["plan", "plan_change"]),
+          eq(pendingActionsTable.status, "pending"),
+        ),
+      );
+    await tx
+      .update(teamTurnsTable)
+      .set({ status: "failed", error: CLOSE_MESSAGES.teamClosed, finishedAt: now })
+      .where(and(eq(teamTurnsTable.instanceId, id), eq(teamTurnsTable.status, "queued")));
+    return tasks.map((t) => t.planTaskId);
+  });
+  // Dopo il commit (la transazione non tocca la riga del PLAN): i compiti annullati non restano «in corso» nel PLAN
+  if (cancelled.length > 0) {
+    await patchPlan(id, { tasks: cancelled.map((taskId) => ({ id: taskId, status: "failed" as const, outcome: CLOSE_MESSAGES.taskCancelled })) });
+  }
+  return getInstance(id);
+}
+
+export const BUDGET_RESUME_REQUEST = "Il tetto di spesa della squadra è stato aggiornato: riprendi il lavoro";
+
+/**
+ * Tetto mensile della squadra in USD (null = nessuno). Squadra chiusa → 409. Se la squadra è attiva e il nuovo tetto
+ * lascia margine (nessun tetto o sopra la spesa del mese), il capo riceve un turno `request` per riprendere il lavoro.
+ */
+export async function setInstanceBudget(id: number, monthlyBudgetUsd: number | null): Promise<InstanceView> {
   const updated = await db
     .update(teamInstancesTable)
-    .set({ status: "closed", closedAt: now, updatedAt: now })
+    .set({ monthlyBudgetUsd: monthlyBudgetUsd === null ? null : String(monthlyBudgetUsd), updatedAt: new Date() })
     .where(and(eq(teamInstancesTable.id, id), inArray(teamInstancesTable.status, ["draft", "active"])))
-    .returning({ id: teamInstancesTable.id });
-  if (updated.length === 0) throw new InstanceError(409, INSTANCE_MESSAGES.closed);
+    .returning({ id: teamInstancesTable.id, status: teamInstancesTable.status });
+  if (updated.length === 0) {
+    await getRow(id);
+    throw new InstanceError(409, INSTANCE_MESSAGES.closed);
+  }
+  if (updated[0]!.status === "active") {
+    const room = monthlyBudgetUsd === null || !isExhausted((await teamSpend(id)).spentUsd, monthlyBudgetUsd);
+    if (room) await enqueueTurnReason(id, { type: "request", text: BUDGET_RESUME_REQUEST });
+  }
   return getInstance(id);
 }
 

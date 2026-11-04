@@ -1,10 +1,11 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { db, appToolsTable, pendingActionsTable, type PendingActionRow } from "@workspace/db";
 import { logger } from "../logger";
 import { decryptSecret } from "../secrets";
 import { loadAppConnection, toCatalogTool } from "../tools/catalog";
 import { executeTool, redact } from "../tools/executor";
 import { effectiveLevel } from "../tools/levels";
+import { decidePlanItem } from "../teams/plan-decisions";
 
 // Decisione sulle azioni in coda: approvare esegue UNA volta la chiamata memorizzata (argomenti
 // originali, senza il modello), rifiutare la chiude. Ogni transizione è un UPDATE condizionato sullo
@@ -72,7 +73,12 @@ export async function approveAction(
   if (!action) return fail(404, ACTION_MESSAGES.notFound);
   if (action.status !== "pending") return fail(409, ACTION_MESSAGES.alreadyDecided);
 
-  const [toolRow] = await db.select().from(appToolsTable).where(eq(appToolsTable.id, action.toolId)).limit(1);
+  // Piani e modifiche del piano non hanno tool né app: si decidono sul PLAN della squadra (nessun token utente)
+  if (action.kind !== "action") return decidePlanItem(action, true, null);
+  const { toolId, appId } = action;
+  if (toolId === null || appId === null) return fail(409, ACTION_MESSAGES.notExecutable);
+
+  const [toolRow] = await db.select().from(appToolsTable).where(eq(appToolsTable.id, toolId)).limit(1);
   const tool = toolRow ? toCatalogTool(toolRow) : null;
   if (
     !tool ||
@@ -97,7 +103,7 @@ export async function approveAction(
   let called = false;
   try {
     const args = JSON.parse(decryptSecret(action.argsEnc)) as unknown;
-    const conn = await loadAppConnection(action.appId);
+    const conn = await loadAppConnection(appId);
     called = true;
     const out = await executeTool({
       conn,
@@ -133,6 +139,12 @@ export async function approveAction(
 }
 
 export async function rejectAction(userId: number, number: number, note: string | null): Promise<DecideResult> {
+  const [planItem] = await db
+    .select()
+    .from(pendingActionsTable)
+    .where(and(eq(pendingActionsTable.userId, userId), eq(pendingActionsTable.number, number), ne(pendingActionsTable.kind, "action")))
+    .limit(1);
+  if (planItem) return decidePlanItem(planItem, false, note);
   const [row] = await db
     .update(pendingActionsTable)
     .set({ status: "rejected", decidedBy: userId, decidedAt: new Date(), decisionNote: note })

@@ -17,7 +17,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Chat del piano: l'utente discute con un modello il piano di un'app e ne accetta le modifiche come schede
   (vedi "Chat del piano").
 - Squadre (definizione): catalogo di skill, modelli di squadra e istanze legate a un lavoro di riferimento, con
-  aggiornamenti proposti e «salva come modello»; l'esecuzione non c'è ancora (vedi "Squadre (definizione)").
+  aggiornamenti proposti e «salva come modello» (vedi "Squadre (definizione)").
+- Squadre (esecuzione): una squadra attiva ha un capo a turni, un PLAN versionato da approvare, compiti per i ruoli
+  `cloud`, eventi e bollettino, centralino su `/mcp`; i ruoli `node` restano in attesa del nodo locale (vedi "Squadre (esecuzione)").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -48,7 +50,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `lib/db/src/schema/` — schema Drizzle, una tabella per file (apps, agents, app_tools, agent_tools, runs,
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
   ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals,
-  skills, skill_versions, team_templates, team_template_versions, team_instances, team_instance_skills)
+  skills, skill_versions, team_templates, team_template_versions, team_instances, team_instance_skills,
+  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -103,6 +106,14 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (`updates.ts`), salva come modello (`save-as-template.ts`); route in `src/routes/skills.ts`, `team-templates.ts` e
   `team-instances.ts`; console: pagine `skills.tsx`, `skill-detail.tsx`, `team-templates.tsx`, `team-template-detail.tsx`,
   `teams.tsx`, `team-detail.tsx` in `artifacts/casello/src/pages/` (route `/skills`, `/team-templates`, `/teams`; vedi "Squadre (definizione)")
+- Esecuzione delle squadre (vedi "Squadre (esecuzione)"): in `artifacts/api-server/src/lib/teams/` PLAN (`plan.ts`),
+  decisione sulle voci di piano (`plan-decisions.ts`), coda dei turni (`turn-queue.ts`), strumenti dei ruoli (`role-tools.ts`),
+  strumenti del capo (`lead-tools.ts`), turni del capo (`turn-runner.ts`), compiti (`task-runner.ts`), eventi (`events.ts`),
+  tetto della squadra (`team-budget.ts`), centralino (`centralino.ts`); ciclo e costi condivisi con le run in
+  `artifacts/api-server/src/lib/loop-wiring.ts`; route nuove in `src/routes/team-instances.ts` (attivazione, PLAN, messaggi,
+  compiti, turni, eventi, tetto) e `src/routes/account-model.ts` (modello del centralino); console: componenti in
+  `artifacts/casello/src/components/teams/` (`plan-card.tsx`, `plan-approval-card.tsx`, `plan-editor-dialog.tsx`,
+  `team-activity.tsx`, `team-bulletin.tsx`, `lead-message.tsx`, `team-budget.tsx`) usati da `pages/team-detail.tsx`
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
 - `artifacts/api-server/src/lib/mcp/` e `lib/architect/local-executor.ts` — server MCP `/mcp` e coda/lease delle analisi locali
 - `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
@@ -141,15 +152,21 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Coda (`pending_actions`, numerata per utente, `UNIQUE(user_id, number)`): i tool L2 hanno `destinatario` e `sintesi`;
   proprietario = chi possiede l'account AI del modello della run. Controllo del testo (`text-check.ts`): segnaposto e
   menzioni sugli argomenti oscurati. Max 50 azioni `pending` per utente. Argomenti cifrati (`args_enc`), copia pubblica
-  oscurata (`args_public`).
-- Route (`routes/pending-actions.ts`; il limite di 20/min vale solo per approvare e rifiutare, non per le GET): `GET /api/pending-actions`, `GET /api/pending-actions/:number`,
+  oscurata (`args_public`). Tipi di voce (`pending_actions.kind`, default `action`): `action` (L2 di un tool), `plan` e
+  `plan_change` (piano o modifica del PLAN proposti dal capo di una squadra, vedi "Squadre (esecuzione)"); colonne
+  `team_instance_id` (squadra, `SET NULL`) e `plan_version`; per `plan`/`plan_change` `tool_id` e `app_id` sono null
+  (CHECK: obbligatori solo con `kind = action`) e `args_enc`/`args_public` contengono la proposta; l'approvazione non
+  vuole `userToken`. Numerazione e limite di 50 valgono per tutti i tipi.
+- Route (`routes/pending-actions.ts`; il limite di 20/min per utente vale solo per approvare e rifiutare, non per le GET,
+  ed è lo stesso contatore degli strumenti MCP `approva`/`rifiuta`, `consumeActionDecision`): `GET /api/pending-actions`, `GET /api/pending-actions/:number`,
   `POST …/approve` (con `userToken` se l'identità del tool è `user`), `POST …/reject` (nota ≤ 500 caratteri). Ambiti
   token `api:read` (GET) e `api:write` (approvare/rifiutare). Esecuzione esattamente una volta: UPDATE condizionato
   `pending` → `executing`; all'avvio le azioni `executing` diventano `failed` («esito incerto: verifica sul servizio»).
   Nessuna scadenza. `pending_actions.tool_id` è `ON DELETE RESTRICT`: eliminare un tool con azioni in coda o già
   decise è rifiutato (409 «il tool ha azioni in coda o già decise: disattivalo invece di eliminarlo»), si disattiva;
   eliminando un'app si elimina anche il suo storico della coda (stessa transazione).
-- Console: pagina «Da confermare» con contatore (`pendingActions` in `/api/dashboard/stats`).
+- Console: pagina «Da confermare» con contatore (`pendingActions` in `/api/dashboard/stats`, conta tutti i tipi) e colonne
+  tipo (Azione / Piano / Modifica del piano) e squadra.
 - Migrazioni: `docs/migrations/2026-11-strumenti-mcp.sql` (additiva: PRIMA del merge) e
   `2026-11-strumenti-mcp-post.sql` (DOPO il deploy: toglie `app_tools.requires_confirmation|read_only` e
   `runs.pending_action|loop_state|paused_at`). Il codice non legge più quelle colonne.
@@ -219,9 +236,141 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   modello», «Attiva»/«Chiudi»); niente scorrimento orizzontale a 1280 px.
 - Migrazione: `docs/migrations/2026-11-squadre.sql` (additiva e idempotente, nessuna modifica a tabelle esistenti, niente
   `-post`): da applicare in produzione PRIMA del merge e da segnalare nella PR; riportata in `docs/schema-casello.sql`.
-- Non ancora fatto: 3b esecuzione (il capo assegna compiti, compiti ed esiti, PLAN, eventi, bollettino, centralino su
-  `/mcp`: un'istanza oggi si definisce ma non gira) e 4 nodo locale (esecuzione dei ruoli `node`, verifica delle skill
-  presenti sul nodo). Organizzazioni e policy dei dati (2) e The Hub Up (5) restano fuori.
+- L'esecuzione (3b) è descritta in "Squadre (esecuzione)". Non ancora fatto: 4 nodo locale (esecuzione dei ruoli `node`,
+  scambio di file con la cartella della CR, verifica delle skill presenti sul nodo). Organizzazioni e policy dei dati (2) e
+  The Hub Up (5) restano fuori.
+
+## Squadre (esecuzione)
+
+- Spec: `docs/superpowers/specs/2026-11-04-casello-squadre-esecuzione-design.md` (sottoprogetto 3b). Dove il codice differisce
+  dalla spec vale il codice, descritto qui. Una squadra `active` lavora sul suo lavoro di riferimento: il capo tiene il PLAN,
+  assegna compiti ai ruoli `cloud`, riceve gli esiti; gli eventi alimentano il bollettino; l'utente decide da console o dal
+  centralino. Esecuzione in background nel processo dell'API (come run e analisi), senza `run-executor` né la tabella `agents`.
+- **Attivazione**: `POST /api/team-instances/:id/activate` (`draft` → `active`, `activated_by` = chi attiva, che riceve le
+  voci in coda e paga con i propri account; già attiva → 409 «la squadra è già attiva», chiusa → 409 «squadra chiusa»):
+  crea il PLAN `draft` se manca e accoda un turno con motivo `activation`, tutto in una transazione. Si attiva SOLO così:
+  `PUT /api/team-instances/:id` non cambia più lo stato (`status: "active"` → 400 «usa Attiva per avviare la squadra»,
+  `draft` su una squadra attiva → 409 «una squadra attiva non torna in bozza: chiudila»). `POST …/close` annulla i
+  compiti `queued` (`cancelled`, nel PLAN `failed`), rifiuta le voci `plan`/`plan_change` aperte («squadra chiusa») e fa
+  fallire i turni in coda; compiti e turni `running` finiscono da soli ma non fanno partire altri turni.
+- **Capo a turni** (`turn-runner.ts`): non resta acceso; riceve un turno per un motivo (`team_turns.reasons` jsonb: `activation`,
+  `restart`, `request` con testo, `task_finished` con id, `decision` con numero, esito e nota). Al più un turno `queued` e uno
+  `running` per squadra (indici unici parziali): un motivo nuovo si accoda al turno `queued` con un'unica INSERT … ON CONFLICT
+  (`turn-queue.ts`); presa in carico con UPDATE condizionato `queued` → `running`; finito un turno parte quello accumulato.
+  Limiti: 6 giri, 90 s di tempo attivo, 40 000 token. Il modello è quello del ruolo capo (ruolo `node` → turno `failed`).
+  Richieste e note di rifiuto dell'utente arrivano come messaggi `user`, mai nel prompt di sistema; i risultati degli
+  strumenti sono dati. Un turno fallito chiude `failed` con l'errore ed emette `bloccato`; `team_instances.last_turn_at`.
+  Motivi non consegnati (`carriedReasons`): un turno che fallisce prima del modello (tetto, modello mancante, squadra non
+  attivata…) registra 0 token; il primo turno che arriva al modello riceve anche i motivi della catena di turni `failed`
+  con 0 token immediatamente precedenti (fino al primo turno arrivato al modello o interrotto dal riavvio, che ha token
+  null; al più 20, motivi uguali una volta), così una nota di rifiuto non si perde e si consegna una volta sola.
+- **PLAN** (`plan.ts`; `team_plans` una riga per squadra, `team_plan_versions` una riga per versione): `status`
+  `draft` | `proposed` | `approved`, `version` (+1 a ogni versione), `approved_version`; obiettivo ≤ 2 000, vincoli e punti
+  aperti ≤ 30 da 500, compiti ≤ 50 (`id` `t1`, `t2`… stabile, titolo ≤ 200, `roleKey`, istruzioni ≤ 4 000, stato
+  `planned|running|waiting_node|done|blocked|failed`, esito ≤ 300), azioni manuali ≤ 30 (`m1`… , testo ≤ 500, `done`).
+  Due modi di scrivere: `writePlanVersion` (versione nuova: proposte e correzioni) e `patchPlan` / `setPlanStatus` (sul
+  posto, senza versione nuova: stato ed esito dei compiti, azioni manuali, punti aperti, approvazione/rifiuto). La versione
+  approvata si legge da `team_plan_versions` (`getApprovedPlan`): la riga corrente può già essere una proposta.
+  Ordine dei lock: riga della squadra → riga del PLAN → righe di `pending_actions`; letture e validazioni dal pool, fuori
+  dalle transazioni di scrittura.
+- **Strumenti del capo** (`lead-tools.ts`, risultati `ok: false` con messaggio fisso, mai eccezioni): `leggi_piano`;
+  `proponi_piano` (obiettivo, vincoli, punti aperti, compiti con `id` per gli esistenti, senza per i nuovi; id sconosciuto →
+  «id di compito sconosciuto: ometti l'id per i compiti nuovi»; ruolo inesistente rifiutato); `aggiorna_piano` (punti aperti,
+  azioni manuali, stato/esito dei compiti non in corso: `planned|done|blocked|failed`, compito in corso →
+  «il compito <id> è in corso: aspetta il suo esito»); `assegna_compito` (solo compito del PLAN approvato in `planned|blocked|failed`,
+  altrimenti «il compito non è nel piano approvato: proponi una modifica» o «il compito è già in corso»; se le ultime 3
+  esecuzioni del compito sono tutte `failed` o `blocked` → «compito fallito 3 volte: segnala all'utente», `MAX_TASK_FAILURES`:
+  un'esecuzione riuscita in mezzo azzera il conto); `leggi_esito`;
+  `segnala` (`bloccato|decisione_richiesta|azione_manuale_richiesta`, bollettino ≤ 300, dettaglio ≤ 4 000;
+  `azione_manuale_richiesta` aggiunge l'azione al PLAN, max 30); `chiudi_lavoro` (evento `lavoro_finito`: la squadra resta
+  attiva finché l'utente non la chiude). Tutti i capo-strumenti che scrivono bloccano la squadra e falliscono con «la squadra
+  non è attiva» se non lo è. Il capo usa anche i suoi strumenti di app (livelli di sempre; L2 in coda con `team_instance_id`).
+- **Proposte e approvazioni**: senza versione approvata `proponi_piano` scrive la versione `proposed` e accoda una voce
+  `plan`; con una versione approvata, una modifica rilevante (obiettivo, vincoli, compiti aggiunti/tolti, titolo/ruolo/istruzioni
+  di un compito: `isRelevantChange`) accoda una `plan_change` con le differenze (`diffSummary`); una modifica non rilevante
+  non chiede approvazione (solo punti aperti sul posto, oppure versione nuova già `approved` se la riga corrente non era
+  la versione approvata, e allora una proposta aperta è ritirata con evento «Il capo ha ritirato la proposta di piano»).
+  Una proposta nuova rifiuta le voci `plan`/`plan_change` ancora aperte («superata da una nuova proposta»). Versione nuova,
+  rifiuti e voce in coda stanno nella stessa transazione: se la voce non si può accodare (es. 50 in attesa) non resta
+  scritto nulla, evento `bloccato` «Piano non proposto: …». Stato ed esito dei compiti si conservano dalla riga corrente,
+  dall'ultima esecuzione o dalla versione approvata; i compiti nuovi partono `planned`. Decisione (`plan-decisions.ts`,
+  chiamata da `approveAction`/`rejectAction` per i tipi ≠ `action`): approvare rende approvata la versione proposta
+  (`setPlanStatus`); rifiutare, se c'è una versione approvata, rimette il suo contenuto (`restoreApprovedPlan`, letto da
+  `team_plan_versions`) come versione nuova `approved` che diventa la versione approvata: la proposta rifiutata non resta
+  nella riga corrente; stato ed esito dei compiti dalla riga corrente, per i compiti assenti dall'ultima esecuzione in
+  `team_tasks`; punti aperti e azioni manuali (sul posto, senza approvazione) restano quelli della riga corrente; tutto
+  nella stessa transazione, con il lock del PLAN prima delle righe di `pending_actions`. Senza versione approvata il PLAN
+  torna `draft` (nessuna versione nuova). Poi un turno con motivo `decision` (numero, esito, nota). Proposta non più attuale
+  (versione o stato cambiati) → la voce passa a `failed` «proposta superata da una versione più recente»; squadra chiusa:
+  approvare → 409 «squadra chiusa», rifiutare toglie la voce senza turno.
+- **Correzione dell'utente**: `PUT /api/team-instances/:id/plan` (stesso schema del PLAN; ruolo inesistente → «ruolo <key>
+  inesistente», id ripetuto → «compito <id> ripetuto») scrive una versione nuova già `approved` (l'approvatore è l'utente),
+  stato ed esito dei compiti esistenti restano quelli registrati (i nuovi sono `planned`), rifiuta le voci di piano aperte
+  («superata dalla modifica dell'utente») e accoda al capo un turno `request` con le differenze. `POST
+  …/plan/manual-actions/:actionId/done` segna «Fatto» sul posto (404 «azione manuale non trovata»). `GET …/plan` legge il PLAN
+  (se manca lo crea `draft`).
+- **Compiti** (`task-runner.ts`; `team_tasks` + `team_task_steps`, stati `queued|running|waiting_node|done|blocked|failed|cancelled`):
+  `startTask` (da `assegna_compito`) crea l'esecuzione di un compito del PLAN approvato con la squadra bloccata:
+  «la squadra non è attiva» se non lo è, «il compito è già in corso» se lo stesso compito ha già un'esecuzione
+  `queued|running|waiting_node`. Ruolo `node` → `waiting_node` (lo prenderà il nodo locale, sottoprogetto 4), altrimenti
+  `queued` e lo scheduler li porta a `running` (UPDATE con la squadra bloccata): al massimo 3 `running` per squadra, gli altri
+  in coda. Il ruolo `cloud` esegue il ciclo dell'agente con prompt del ruolo, contenuto delle sue skill `casello` (versione
+  fissata dell'istanza e specializzate), PLAN in sola lettura (messaggio `user`), istruzioni del compito, strumenti del ruolo
+  (`app_tools` di più app, ognuno con la connessione della sua app, solo `active`, `http`/`mcp`, livello effettivo ≠ L3,
+  identità solo di servizio: un tool `user` risponde «token utente mancante»; nome ripetuto o uguale a uno interno →
+  `<nome>_<appId>`) più `riferisci` (`status` `done|blocked`, `outcome` ≤ 300, `detail` ≤ 20 000). Limiti come una run: 8 giri,
+  120 s, 60 000 token. Fine: con `riferisci` l'esito è quello riferito; senza, l'ultimo messaggio (troncato a 300) con stato
+  `done`; errore o limite → `failed`. Poi, in ogni caso: stato ed esito nel PLAN, evento (`compito_finito` se `done`, altrimenti
+  `bloccato`) e turno del capo con motivo `task_finished`. Le azioni L2 di un ruolo vanno in coda all'utente che ha attivato la
+  squadra (voce `action` con `team_instance_id`, la run non si ferma).
+- **Eventi e bollettino** (`events.ts`; `team_events`): tipi `piano_proposto`, `compito_finito`, `bloccato`, `decisione_richiesta`,
+  `azione_manuale_richiesta`, `lavoro_finito`, `interrotto`; bollettino ≤ 300 caratteri, dettaglio ≤ 4 000; mai segreti né
+  indirizzi delle app. Il bollettino è dell'utente che ha attivato la squadra. `GET /api/team-instances/:id/events`,
+  `GET /api/team-events?unread=true|false` (dell'utente, al massimo 200; altro valore → 400), `POST /api/team-events/read`
+  con `{ids}` (risponde `{updated}`).
+- **Centralino** (strumenti su `/mcp`, ambito `mcp`, 60 chiamate/min per utente; logica in `lib/teams/centralino.ts`, solo dati
+  dell'utente: una squadra di un altro è «squadra non trovata»): `squadre_stato` (una riga per squadra attiva), `bollettino`
+  (fino a 100 eventi non letti, li segna letti; `remaining` per gli altri), `squadra_dettaglio` (PLAN, ultimi 30 compiti,
+  ultimi 20 eventi), `invia_al_capo` (`id`, `testo` ≤ 4 000: turno `request`; vuoto → «messaggio vuoto»; stesso contatore di
+  10/min per utente di `POST …/messages`, oltre → «Troppe richieste: riprova tra poco»), `coda_da_confermare` (fino a 50
+  voci `pending` con tipo, squadra, sintesi, `needsUserToken`), `approva` (`numero`, `userToken?`) e `rifiuta` (`numero`, `nota?`
+  ≤ 500) per tutti i tipi; `approva` e `rifiuta` vogliono anche l'ambito `api:write` del token (altrimenti «il token non ha
+  l'ambito per questa operazione») e consumano il limite di 20/min per utente delle route di decisione (oltre → «Troppe
+  richieste: riprova tra poco»). Annotazioni MCP: `destructiveHint` su `approva`/`rifiuta`, `readOnlyHint` su
+  `squadre_stato`, `squadra_dettaglio`, `coda_da_confermare` (non su `bollettino`, che segna letti). **Modello del centralino**: `users.centralino_ai_model_id`, `GET|PUT /api/account/centralino-model`
+  (solo login; modello dei propri account, altrimenti 400; null = modello predefinito); oggi serve solo a `squadre_stato`
+  quando le squadre attive sono più di 5 (riassunto in al massimo 5 righe, 30 s, 1 000 token; senza modello disponibile o in
+  caso di errore, elenco completo; costo del riassunto solo nel log). In console: Account, carta «modello del centralino».
+- **Costi e tetti**: ogni turno e compito registra token e costo (`prompt_tokens`, `completion_tokens`, `cached_tokens`,
+  `cost_usd`; null = prezzo mancante). Prima di ogni turno o compito (`team-budget.ts`): tetto mensile della squadra
+  (`team_instances.monthly_budget_usd`, `PUT /api/team-instances/:id/budget` `{monthlyBudgetUsd}`, null = nessuno; spesa del
+  mese di turni e compiti dell'istanza ≥ tetto → «tetto di spesa della squadra raggiunto»), poi modello, account AI e utente
+  come per le run; l'utente controllato è il proprietario dell'account del modello del ruolo (non per forza chi attiva). Un
+  compito bloccato dal tetto chiude `blocked` (evento `bloccato`), un turno `failed` (evento `bloccato` che finisce con
+  «Alza il tetto per riprendere.»). `PUT …/budget` su una squadra attiva con un tetto nuovo nullo o sopra la spesa del mese
+  accoda al capo un turno `request` «Il tetto di spesa della squadra è stato aggiornato: riprendi il lavoro»
+  (`BUDGET_RESUME_REQUEST`), che riceve anche i motivi dei turni bloccati. Restano i limiti tecnici per turno e per compito.
+- **Avvio e riavvio** (`index.ts`): turni e compiti `running` diventano `failed` («interrotto dal riavvio») con un evento
+  `interrotto` e il compito nel PLAN `failed`; le squadre `active` coinvolte ricevono un turno `restart`; poi ripartono i turni
+  rimasti `queued` e i compiti `queued` delle squadre attive. Turno e compito presi in carico con UPDATE condizionato: una sola
+  esecuzione alla volta.
+- Route: `POST /api/team-instances/:id/activate`, `POST …/messages` (`{text}` ≤ 4 000, 202 `{queued}`, vuoto → 400
+  «messaggio vuoto», squadra non attiva → 409 «la squadra non è attiva», 10/min per utente), `GET|PUT …/plan`, `POST
+  …/plan/manual-actions/:actionId/done`, `GET …/tasks` (ultimi 200), `GET …/tasks/:taskId` (con i passi; 404 «compito non
+  trovato»), `GET …/turns` (ultimi 50, con i passi), `GET …/events`, `PUT …/budget`, `GET /api/team-events`, `POST
+  /api/team-events/read`. Con un token personale valgono gli ambiti per metodo.
+- Console (scheda squadra, `pages/team-detail.tsx`): «Piano da approvare» (Approva / Rifiuta con nota), «Piano» (compiti con
+  stato ed esito, azioni manuali con «Fatto», punti aperti, «Modifica»), «Scrivi al capo», «Attività» (turni e compiti con i
+  passi), «Bollettino» («Segna come letti»), tetto di spesa, «Attiva». Polling ogni 5 s finché un turno o un compito è in
+  coda o in corso, più un periodo di grazia di ~10 s dopo la fine o dopo un'azione dell'utente che accoda un turno. Niente
+  scorrimento orizzontale a 1280 px.
+- Migrazione: `docs/migrations/2026-11-squadre-esecuzione.sql` (additiva e idempotente, nessuna colonna tolta, niente `-post`):
+  tabelle `team_plans`, `team_plan_versions`, `team_tasks`, `team_task_steps`, `team_turns`, `team_turn_steps`, `team_events`;
+  colonne su `team_instances` (`activated_by`, `monthly_budget_usd`, `last_turn_at`), `pending_actions` (`kind`,
+  `team_instance_id`, `plan_version`; `tool_id`/`app_id` nullable) e `users` (`centralino_ai_model_id`). Da applicare in produzione
+  PRIMA del merge e da segnalare nella PR; riportata in `docs/schema-casello.sql`.
+- Non ancora fatto: 4 nodo locale (esecuzione dei ruoli `node` e dei loro compiti `waiting_node`, scambio di file con la
+  cartella della CR, verifica delle skill sul nodo), chat del portale col modello del centralino, interfaccia in The Hub Up (5).
 
 ## Modelli AI (account AI)
 
@@ -312,8 +461,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   AI (una conversazione, a costo cumulativo, conta nel mese del suo ultimo turno). Spesa dell'agente: le sue
   run con qualsiasi modello. Spesa di un modello o di un account: run, analisi cloud e chat con quel modello o con i
   modelli dell'account. Ogni run ricorda il modello con cui è partita (`runs.ai_model_id`). I costi null (prezzo
-  mancante) non si sommano: si contano come esecuzioni senza prezzo.
-- Ordine dei controlli: agente, modello, account AI, utente (il primo raggiunto dà il messaggio).
+  mancante) non si sommano: si contano come esecuzioni senza prezzo. Anche i compiti e i turni del capo delle squadre
+  (`team_tasks`, `team_turns`, con il loro `ai_model_id`) contano nella spesa dell'utente, del modello e dell'account.
+- Ordine dei controlli: agente, modello, account AI, utente (il primo raggiunto dà il messaggio); per i compiti e i turni
+  delle squadre prima il tetto della squadra, poi modello, account AI e utente (vedi "Squadre (esecuzione)").
 - Raggiunto un tetto (spesa ≥ tetto) le nuove run, analisi cloud e messaggi della chat rispondono 409 con il motivo;
   le analisi locali e le riprese delle run in pausa no. `GET|PUT /api/budget`: riepilogo e tetto dell'utente; la
   console avvisa dall'80% e propone di annullare le run ancora attive su un tetto raggiunto (mai da sola).
@@ -473,6 +624,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `GET /api/auth/me` accetta anche il token e risponde con l'utente più `auth` (`{kind:"session"}` o
   `{kind:"token", scopes}`).
 - Limite: 120 richieste/min per token (`tokenRateLimit`, chiave: id del token), oltre ai limiti per utente/IP → 429.
+- Su `/mcp` gli strumenti `approva` e `rifiuta` del centralino vogliono un token con `mcp` **e** `api:write` (solo `mcp` →
+  errore «il token non ha l'ambito per questa operazione», `TOKEN_MESSAGES.scope`); gli altri strumenti bastano con `mcp`.
 - Log: mai header `Authorization`, token o hash. Un errore del DB nella verifica del token risponde 500 fisso
   («errore interno») e registra solo il nome dell'errore (i parametri della query conterrebbero l'hash).
 - Migrazione: `docs/migrations/2026-10-token-api.sql` (additiva, idempotente): da applicare in produzione PRIMA del
@@ -491,7 +644,10 @@ Le analisi dell'architetto possono essere eseguite da Claude Code sul Mac dell'u
 `analysis_phase_results`; la lease dura 15 minuti (rinnovo con consegna o `ping_analysis`). Migrazione:
 `docs/migrations/2026-10-esecutore-locale.sql` (da applicare in produzione e segnalare nella PR). Procedura
 dell'agente: skill `docs/skills/casello-architetto-locale/SKILL.md`. Il server `/mcp` espone anche `read_mcp_tools`
-(strumenti del server MCP dell'app, per l'analisi locale).
+(strumenti del server MCP dell'app, per l'analisi locale) e gli strumenti del centralino (`squadre_stato`, `bollettino`,
+`squadra_dettaglio`, `invia_al_capo`, `coda_da_confermare`, `approva`, `rifiuta`; logica in `lib/teams/centralino.ts`, solo
+dati dell'utente del token; `invia_al_capo` condivide il limite 10/min con `POST …/messages` via `consumeTeamMessage`;
+modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
 
 ## Deploy (non toccare senza motivo)
 

@@ -7,8 +7,11 @@
  */
 import type { QueuedActionToolIdentity } from './queuedActionToolIdentity';
 
+/**
+ * @nullable
+ */
 export type QueuedActionTool = {
   id: number;
   name: string;
   identity: QueuedActionToolIdentity;
-};
+} | null;

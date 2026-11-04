@@ -1,5 +1,43 @@
 import type { Request, RequestHandler } from "express";
 
+/** Contatore a finestra fissa per chiave, in memoria. */
+export function fixedWindowCounter({ limit, windowMs }: { limit: number; windowMs: number }) {
+  const hits = new Map<string, { count: number; resetAt: number }>();
+  return {
+    /** Conta una richiesta: `ok` false oltre il limite, con i secondi da attendere. */
+    consume(k: string): { ok: boolean; retryAfterSec: number } {
+      const now = Date.now();
+
+      // Pulizia delle finestre scadute, così la mappa non cresce senza limite.
+      if (hits.size > 1000) {
+        for (const [key, entry] of hits) {
+          if (entry.resetAt <= now) hits.delete(key);
+        }
+      }
+
+      let entry = hits.get(k);
+      if (!entry || entry.resetAt <= now) {
+        entry = { count: 0, resetAt: now + windowMs };
+        hits.set(k, entry);
+      }
+      entry.count++;
+      return { ok: entry.count <= limit, retryAfterSec: Math.ceil((entry.resetAt - now) / 1000) };
+    },
+  };
+}
+
+function middlewareFor(counter: ReturnType<typeof fixedWindowCounter>, key: (req: Request) => string): RequestHandler {
+  return (req, res, next) => {
+    const out = counter.consume(key(req));
+    if (!out.ok) {
+      res.setHeader("Retry-After", out.retryAfterSec);
+      res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
+      return;
+    }
+    next();
+  };
+}
+
 // Rate limit minimo in memoria, a finestra fissa per chiave (di default l'IP). Basta un solo
 // container API: con più repliche ognuna avrebbe il suo contatore.
 export function rateLimit({
@@ -12,33 +50,7 @@ export function rateLimit({
   /** Chiave del contatore (default: IP del client). */
   key?: (req: Request) => string;
 }): RequestHandler {
-  const hits = new Map<string, { count: number; resetAt: number }>();
-
-  return (req, res, next) => {
-    const now = Date.now();
-
-    // Pulizia delle finestre scadute, così la mappa non cresce senza limite.
-    if (hits.size > 1000) {
-      for (const [key, entry] of hits) {
-        if (entry.resetAt <= now) hits.delete(key);
-      }
-    }
-
-    const k = key(req);
-    let entry = hits.get(k);
-    if (!entry || entry.resetAt <= now) {
-      entry = { count: 0, resetAt: now + windowMs };
-      hits.set(k, entry);
-    }
-    entry.count++;
-
-    if (entry.count > limit) {
-      res.setHeader("Retry-After", Math.ceil((entry.resetAt - now) / 1000));
-      res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
-      return;
-    }
-    next();
-  };
+  return middlewareFor(fixedWindowCounter({ limit, windowMs }), key);
 }
 
 // Ogni run (avvio o ripresa) consuma token sul gateway: massimo 10 al minuto per IP,
@@ -58,8 +70,15 @@ export const issueRefreshRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key
 // Aggiornamento del catalogo dal server MCP di un'app: 6 al minuto per utente.
 export const mcpRefreshRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byUser });
 
-// Approvazione e rifiuto delle azioni in coda: 20 al minuto per utente.
-export const actionDecideRateLimit = rateLimit({ limit: 20, windowMs: 60_000, key: byUser });
+// Approvazione e rifiuto delle azioni in coda: 20 al minuto per utente. Un solo contatore condiviso dalle route
+// `POST /pending-actions/:number/approve|reject` e dagli strumenti MCP `approva`/`rifiuta` (`consumeActionDecision`).
+const actionDecideCounter = fixedWindowCounter({ limit: 20, windowMs: 60_000 });
+export const actionDecideRateLimit = middlewareFor(actionDecideCounter, byUser);
+
+/** Conta una decisione sulla coda dell'utente (stesso budget delle route): false se il limite è raggiunto. */
+export function consumeActionDecision(userId: number): boolean {
+  return actionDecideCounter.consume(`user:${userId}`).ok;
+}
 
 // Token personali su /api: 120 richieste al minuto per token (chiave: id del token), in aggiunta ai
 // limiti per utente o IP. Lo applica requireAuth solo alle richieste autenticate con un token.
@@ -68,3 +87,13 @@ export const tokenRateLimit = rateLimit({
   windowMs: 60_000,
   key: (req) => `token:${req.auth?.kind === "token" ? req.auth.tokenId : "?"}`,
 });
+
+// Messaggi al capo di una squadra (ognuno fa partire un turno che consuma token): 10 al minuto per utente.
+// Un solo contatore condiviso da `POST …/messages` e dallo strumento MCP `invia_al_capo` (`consumeTeamMessage`).
+const teamMessageCounter = fixedWindowCounter({ limit: 10, windowMs: 60_000 });
+export const teamMessageRateLimit = middlewareFor(teamMessageCounter, byUser);
+
+/** Conta un messaggio al capo dell'utente (stesso budget della route): false se il limite è raggiunto. */
+export function consumeTeamMessage(userId: number): boolean {
+  return teamMessageCounter.consume(`user:${userId}`).ok;
+}

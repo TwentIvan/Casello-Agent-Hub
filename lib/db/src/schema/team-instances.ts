@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, unique, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, unique, index, numeric } from "drizzle-orm/pg-core";
 import { appsTable } from "./apps";
 import { usersTable } from "./users";
 import { teamTemplatesTable } from "./team-templates";
@@ -41,6 +41,10 @@ export const teamInstancesTable = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
     closedAt: timestamp("closed_at"),
+    // Esecuzione: chi ha attivato la squadra (riceve le voci di coda), tetto mensile in USD (null = nessuno), ultimo turno del capo
+    activatedBy: integer("activated_by").references(() => usersTable.id, { onDelete: "set null" }),
+    monthlyBudgetUsd: numeric("monthly_budget_usd", { precision: 12, scale: 2 }),
+    lastTurnAt: timestamp("last_turn_at"),
   },
   (table) => [index("team_instances_ref_idx").on(table.refAppId, table.refType, table.refId)],
 );

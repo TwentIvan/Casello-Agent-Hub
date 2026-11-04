@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
@@ -6,13 +6,21 @@ import {
   ApiError,
   type TeamInstance,
   type TeamInstanceSave,
-  type TeamInstanceSaveStatus,
   getGetTeamInstanceQueryKey,
+  getGetDashboardStatsQueryKey,
   getGetTeamInstanceUpdatesQueryKey,
+  getGetTeamPlanQueryKey,
+  getListPendingActionsQueryKey,
+  getListTeamEventsQueryKey,
+  getListTeamTasksQueryKey,
+  getListTeamTurnsQueryKey,
+  getListUnreadTeamEventsQueryKey,
   getListTeamInstancesQueryKey,
   getListTeamTemplatesQueryKey,
+  useActivateTeamInstance,
   useCloseTeamInstance,
   useGetTeamInstance,
+  useGetTeamPlan,
   useSaveTeamInstance,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -32,6 +40,12 @@ import { RolesEditor } from "@/components/teams/roles-editor";
 import { SaveAsTemplateDialog } from "@/components/teams/save-as-template-dialog";
 import { TeamStatusBadge } from "@/components/teams/team-status";
 import { TeamUpdatesCard } from "@/components/teams/team-updates-card";
+import { LeadMessageCard } from "@/components/teams/lead-message";
+import { PlanApprovalCards } from "@/components/teams/plan-approval-card";
+import { PlanCard } from "@/components/teams/plan-card";
+import { TEAM_POLL_MS, TeamActivity, type TeamWorkState, useTeamWork } from "@/components/teams/team-activity";
+import { TeamBudgetCard } from "@/components/teams/team-budget";
+import { TeamBulletin } from "@/components/teams/team-bulletin";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
@@ -47,7 +61,68 @@ function toSave(name: string, refTitle: string, roles: RoleDraft[], localSkills:
 
 type Confirm = "activate" | "close" | null;
 
-function TeamEditor({ team }: { team: TeamInstance }) {
+/** Stato della squadra che sopravvive al rimontaggio dell'editor: polling del lavoro e testo non inviato al capo. */
+interface TeamSession {
+  work: TeamWorkState;
+  leadText: string;
+  setLeadText: (text: string) => void;
+}
+
+/**
+ * Polling del lavoro della squadra (fuori dall'editor, che si rimonta a ogni salvataggio). Quando turni e compiti
+ * tornano fermi si rileggono una volta PLAN, turni, compiti, bollettino e coda; il polling prosegue ancora per il periodo
+ * di grazia, perché il turno del capo che segue un compito finito viene accodato subito dopo.
+ */
+function useTeamSession(teamId: number): TeamSession {
+  const queryClient = useQueryClient();
+  const work = useTeamWork(teamId);
+  const [leadText, setLeadText] = useState("");
+  const wasLive = useRef(work.live);
+  useEffect(() => {
+    if (wasLive.current && !work.live) {
+      void queryClient.invalidateQueries({ queryKey: getListTeamTurnsQueryKey(teamId) });
+      void queryClient.invalidateQueries({ queryKey: getListTeamTasksQueryKey(teamId) });
+      void queryClient.invalidateQueries({ queryKey: getGetTeamPlanQueryKey(teamId) });
+      void queryClient.invalidateQueries({ queryKey: getListTeamEventsQueryKey(teamId) });
+      void queryClient.invalidateQueries({ queryKey: getListUnreadTeamEventsQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: getListPendingActionsQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: getGetDashboardStatsQueryKey() });
+    }
+    wasLive.current = work.live;
+  }, [work.live, queryClient, teamId]);
+  return { work, leadText, setLeadText };
+}
+
+/**
+ * Lavoro della squadra: piano da approvare, piano, messaggi al capo, attività, bollettino e tetto di spesa. Finché un
+ * turno o un compito è in coda o in corso (e per il periodo di grazia dopo) tutte le sezioni si aggiornano ogni 5 secondi.
+ */
+function TeamWork({ team, dirty, session }: { team: TeamInstance; dirty: boolean; session: TeamSession }) {
+  const { work } = session;
+  const poll = work.polling ? TEAM_POLL_MS : false;
+  const plan = useGetTeamPlan(team.id, { query: { queryKey: getGetTeamPlanQueryKey(team.id) } });
+  const taskTitles = useMemo(() => new Map((plan.data?.tasks ?? []).map((t) => [t.id, t.title])), [plan.data]);
+  const usedTaskIds = useMemo(() => (work.tasks.data ?? []).map((t) => t.planTaskId), [work.tasks.data]);
+
+  return (
+    <>
+      <PlanApprovalCards team={team} poll={poll} onDecided={work.kick} />
+      <PlanCard team={team} poll={poll} usedTaskIds={usedTaskIds} onSaved={work.kick} />
+      <LeadMessageCard team={team} text={session.leadText} onTextChange={session.setLeadText} onSent={work.kick} />
+      <TeamActivity team={team} work={work} taskTitles={taskTitles} />
+      <TeamBulletin teamId={team.id} poll={poll} />
+      <TeamBudgetCard team={team} dirty={dirty} />
+    </>
+  );
+}
+
+/** Squadra caricata: la sessione resta, l'editor si rimonta a ogni salvataggio e riparte dallo stato salvato. */
+function TeamDetail({ team }: { team: TeamInstance }) {
+  const session = useTeamSession(team.id);
+  return <TeamEditor key={`${team.id}-${team.updatedAt}`} team={team} session={session} />;
+}
+
+function TeamEditor({ team, session }: { team: TeamInstance; session: TeamSession }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [name, setName] = useState(team.name);
@@ -77,15 +152,26 @@ function TeamEditor({ team }: { team: TeamInstance }) {
 
   const save = useSaveTeamInstance({
     mutation: {
-      onSuccess: (saved, vars) => {
+      onSuccess: (saved) => {
         onUpdated(saved);
-        const status = vars.data.status;
-        toast({
-          title: status === "active" ? "Squadra attivata" : status === "draft" ? "Squadra riportata in bozza" : "Squadra salvata",
-        });
+        toast({ title: "Squadra salvata" });
       },
       onError: (error) =>
         toast({ variant: "destructive", title: "Salvataggio non riuscito", description: apiErrorMessage(error) }),
+    },
+  });
+  const activate = useActivateTeamInstance({
+    mutation: {
+      onSuccess: (saved) => {
+        onUpdated(saved);
+        // Il primo turno del capo è in coda: l'attività riparte e la pagina si aggiorna da sola
+        void queryClient.invalidateQueries({ queryKey: getListTeamTurnsQueryKey(saved.id) });
+        void queryClient.invalidateQueries({ queryKey: getGetTeamPlanQueryKey(saved.id) });
+        session.work.kick();
+        toast({ title: "Squadra attivata", description: "Il capo riceve il primo turno e propone il piano." });
+      },
+      onError: (error) =>
+        toast({ variant: "destructive", title: "Attivazione non riuscita", description: apiErrorMessage(error) }),
     },
   });
   const close = useCloseTeamInstance({
@@ -100,8 +186,7 @@ function TeamEditor({ team }: { team: TeamInstance }) {
     },
   });
 
-  const submit = (status?: TeamInstanceSaveStatus) =>
-    save.mutate({ id: team.id, data: { ...current, ...(status && { status }) } });
+  const submit = () => save.mutate({ id: team.id, data: current });
 
   const removeLocalSkill = (skill: LocalSkillDraft) => {
     setLocalSkills((prev) => prev.filter((s) => s.uid !== skill.uid));
@@ -139,13 +224,13 @@ function TeamEditor({ team }: { team: TeamInstance }) {
             </Button>
           )}
           {team.status === "draft" && (
-            <Button variant="outline" onClick={() => setConfirm("activate")}>
+            <Button
+              variant="outline"
+              onClick={() => setConfirm("activate")}
+              disabled={dirty}
+              title={dirty ? "Salva le modifiche prima di attivare" : undefined}
+            >
               Attiva
-            </Button>
-          )}
-          {team.status === "active" && (
-            <Button variant="outline" onClick={() => submit("draft")} disabled={save.isPending}>
-              Riporta in bozza
             </Button>
           )}
           <Button variant="outline" onClick={() => setSavingAsTemplate(true)} disabled={dirty}>
@@ -201,6 +286,8 @@ function TeamEditor({ team }: { team: TeamInstance }) {
         </CardContent>
       </Card>
 
+      <TeamWork team={team} dirty={dirty} session={session} />
+
       {!closed && <TeamUpdatesCard team={team} dirty={dirty} />}
 
       <section className="space-y-3">
@@ -220,13 +307,11 @@ function TeamEditor({ team }: { team: TeamInstance }) {
         open={confirm === "activate"}
         onOpenChange={(open) => !open && setConfirm(null)}
         title="Attivare la squadra?"
-        description={
-          dirty ? "Le modifiche non salvate vengono salvate insieme all'attivazione." : "La squadra passa da bozza ad attiva."
-        }
+        description="La squadra passa da bozza ad attiva: il capo riceve il primo turno e propone il piano da approvare."
         confirmLabel="Attiva"
         pendingLabel="Attivazione…"
-        pending={save.isPending}
-        onConfirm={() => submit("active")}
+        pending={activate.isPending}
+        onConfirm={() => activate.mutate({ id: team.id })}
       />
       <ConfirmDialog
         open={confirm === "close"}
@@ -270,8 +355,7 @@ export default function TeamDetailPage() {
       ) : !t ? (
         <Skeleton className="h-48 w-full" />
       ) : (
-        // Rimontato a ogni salvataggio: l'editor riparte dallo stato salvato
-        <TeamEditor key={`${t.id}-${t.updatedAt}`} team={t} />
+        <TeamDetail key={t.id} team={t} />
       )}
     </div>
   );

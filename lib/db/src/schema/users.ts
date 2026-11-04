@@ -15,6 +15,8 @@ export const usersTable = pgTable(
     monthlyBudgetUsd: numeric("monthly_budget_usd", { precision: 12, scale: 2 }),
     // Modello predefinito per gli agenti che Casello crea; null = nessuno (anche se il modello è eliminato)
     defaultAiModelId: integer("default_ai_model_id").references((): AnyPgColumn => aiModelsTable.id, { onDelete: "set null" }),
+    // Modello del centralino (squadre); null = nessuno
+    centralinoAiModelId: integer("centralino_ai_model_id").references((): AnyPgColumn => aiModelsTable.id, { onDelete: "set null" }),
   },
   (table) => [unique("users_email_unique").on(table.email)],
 );

@@ -1,7 +1,12 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, Sparkles, LayoutTemplate, Users, type LucideIcon } from "lucide-react";
-import { getGetDashboardStatsQueryKey, useGetDashboardStats } from "@workspace/api-client-react";
+import {
+  getGetDashboardStatsQueryKey,
+  getListUnreadTeamEventsQueryKey,
+  useGetDashboardStats,
+  useListUnreadTeamEvents,
+} from "@workspace/api-client-react";
 import {
   Sidebar,
   SidebarContent,
@@ -43,11 +48,18 @@ function isActive(href: string, location: string): boolean {
   return href === "/" ? location === "/" : location === href || location.startsWith(`${href}/`);
 }
 
+const UNREAD = { unread: true } as const;
+
 function NavMenu({ location }: { location: string }) {
   const { setOpenMobile } = useSidebar();
   // Contatore delle azioni in attesa: si riallinea ogni 30 s e quando si torna sulla finestra.
   const stats = useGetDashboardStats({ query: { queryKey: getGetDashboardStatsQueryKey(), refetchInterval: 30_000 } });
   const pending = stats.data?.pendingActions ?? 0;
+  // Notizie non lette del bollettino delle squadre attivate dall'utente
+  const events = useListUnreadTeamEvents(UNREAD, {
+    query: { queryKey: getListUnreadTeamEventsQueryKey(UNREAD), refetchInterval: 30_000 },
+  });
+  const unread = events.data?.length ?? 0;
 
   return (
     <SidebarMenu>
@@ -63,6 +75,14 @@ function NavMenu({ location }: { location: string }) {
           {item.href === "/pending-actions" && pending > 0 && (
             <SidebarMenuBadge className="bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200">
               {pending}
+            </SidebarMenuBadge>
+          )}
+          {item.href === "/teams" && unread > 0 && (
+            <SidebarMenuBadge
+              className="bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+              title={`${unread} notizie non lette nel bollettino`}
+            >
+              {unread}
             </SidebarMenuBadge>
           )}
         </SidebarMenuItem>

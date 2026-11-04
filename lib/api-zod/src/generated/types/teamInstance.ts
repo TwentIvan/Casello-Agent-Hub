@@ -23,4 +23,9 @@ export interface TeamInstance {
   createdAt: Date;
   updatedAt: Date;
   closedAt: Date | null;
+  /** Utente che ha attivato la squadra (riceve le voci in coda) */
+  activatedBy: number | null;
+  /** Tetto mensile in USD di turni e compiti (null = nessun tetto) */
+  monthlyBudgetUsd: number | null;
+  lastTurnAt: Date | null;
 }

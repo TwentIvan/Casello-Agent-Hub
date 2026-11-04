@@ -13,6 +13,13 @@ const TOKEN_PREFIX = "cas_";
 export const TOKEN_SCOPES = ["mcp", "api:read", "api:write"] as const;
 export type TokenScope = (typeof TOKEN_SCOPES)[number];
 
+/** Risposte fisse per le richieste con un token personale (su /api e per approva/rifiuta su /mcp). */
+export const TOKEN_MESSAGES = {
+  invalid: "token non valido o scaduto",
+  scope: "il token non ha l'ambito per questa operazione",
+  sessionOnly: "operazione disponibile solo con il login",
+} as const;
+
 const NAME_MAX = 100;
 const DAYS_MIN = 1;
 const DAYS_MAX = 90;

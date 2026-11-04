@@ -29,6 +29,7 @@ export interface EnqueueInput {
   args: Record<string, unknown>;
   recipient: string;
   summary: string;
+  teamInstanceId?: number | null;
 }
 
 export async function enqueueAction(input: EnqueueInput): Promise<EnqueueResult> {
@@ -38,36 +39,81 @@ export async function enqueueAction(input: EnqueueInput): Promise<EnqueueResult>
   const problems = checkQueuedText({ recipient: input.recipient, summary: input.summary, args: checked });
   if (problems.length > 0) return { ok: false, message: `testo non pronto: ${problems.join("; ")}` };
 
-  const [pending] = await db
+  const argsEnc = encryptSecret(JSON.stringify(input.args));
+  return insertQueued(input.userId, {
+    appId: input.appId,
+    toolId: input.tool.id,
+    runId: input.runId,
+    agentId: input.agentId,
+    teamInstanceId: input.teamInstanceId ?? null,
+    argsEnc,
+    argsPublic,
+    recipient: input.recipient,
+    summary: input.summary,
+  });
+}
+
+type QueuedValues = Omit<typeof pendingActionsTable.$inferInsert, "userId" | "number">;
+
+/** Esecutore delle scritture in coda: il pool o una transazione aperta dal chiamante. */
+export type QueueExecutor = Pick<typeof db, "select" | "insert" | "transaction">;
+
+/**
+ * Limite per utente e numerazione progressiva (con nuovo tentativo sull'unico), uguali per ogni tipo di voce. Dentro
+ * una transazione del chiamante ogni tentativo d'inserimento è un savepoint: una violazione dell'unico non annulla
+ * la transazione intera.
+ */
+async function insertQueued(userId: number, values: QueuedValues, executor: QueueExecutor = db): Promise<EnqueueResult> {
+  const [pending] = await executor
     .select({ n: count() })
     .from(pendingActionsTable)
-    .where(and(eq(pendingActionsTable.userId, input.userId), eq(pendingActionsTable.status, "pending")));
+    .where(and(eq(pendingActionsTable.userId, userId), eq(pendingActionsTable.status, "pending")));
   if (Number(pending?.n ?? 0) >= MAX_PENDING_PER_USER) return { ok: false, message: TOO_MANY_PENDING_MESSAGE };
-
-  const argsEnc = encryptSecret(JSON.stringify(input.args));
 
   for (let attempt = 1; ; attempt++) {
     try {
-      const [row] = await db
-        .insert(pendingActionsTable)
-        .values({
-          userId: input.userId,
-          // Numero letto e scritto nella stessa istruzione: il massimo dell'utente + 1
-          number: sql`(select coalesce(max(${pendingActionsTable.number}), 0) + 1 from ${pendingActionsTable} where ${pendingActionsTable.userId} = ${input.userId})`,
-          appId: input.appId,
-          toolId: input.tool.id,
-          runId: input.runId,
-          agentId: input.agentId,
-          argsEnc,
-          argsPublic,
-          recipient: input.recipient,
-          summary: input.summary,
-        })
-        .returning({ number: pendingActionsTable.number });
+      const insert = (ex: QueueExecutor) =>
+        ex
+          .insert(pendingActionsTable)
+          .values({
+            ...values,
+            userId,
+            // Numero letto e scritto nella stessa istruzione: il massimo dell'utente + 1
+            number: sql`(select coalesce(max(${pendingActionsTable.number}), 0) + 1 from ${pendingActionsTable} where ${pendingActionsTable.userId} = ${userId})`,
+          })
+          .returning({ number: pendingActionsTable.number });
+      const [row] = executor === db ? await insert(db) : await executor.transaction((sp) => insert(sp));
       return { ok: true, number: row!.number };
     } catch (err) {
       if (attempt < NUMBER_ATTEMPTS && isUniqueViolation(err, NUMBER_CONSTRAINT)) continue;
       throw err;
     }
   }
+}
+
+export interface EnqueuePlanInput {
+  userId: number;
+  instanceId: number;
+  kind: "plan" | "plan_change";
+  planVersion: number;
+  /** Nome della squadra. */
+  recipient: string;
+  summary: string;
+  detail: Record<string, unknown>;
+}
+
+/**
+ * Accoda un piano (o una modifica del piano) proposto dal capo di una squadra: stessa coda e numerazione delle azioni.
+ * Con `executor` l'inserimento avviene nella transazione del chiamante (insieme alla versione del PLAN).
+ */
+export async function enqueuePlanItem(input: EnqueuePlanInput, executor: QueueExecutor = db): Promise<EnqueueResult> {
+  return insertQueued(input.userId, {
+    kind: input.kind,
+    teamInstanceId: input.instanceId,
+    planVersion: input.planVersion,
+    argsEnc: encryptSecret(JSON.stringify(input.detail)),
+    argsPublic: input.detail,
+    recipient: input.recipient,
+    summary: input.summary,
+  }, executor);
 }

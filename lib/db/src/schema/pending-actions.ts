@@ -1,9 +1,11 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, unique, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, unique, index, check } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { appsTable } from "./apps";
 import { appToolsTable } from "./app-tools";
 import { agentsTable } from "./agents";
 import { runsTable } from "./runs";
+import { teamInstancesTable } from "./team-instances";
+import { sql } from "drizzle-orm";
 
 export const pendingActionStatusEnum = pgEnum("pending_action_status", [
   "pending",
@@ -12,6 +14,9 @@ export const pendingActionStatusEnum = pgEnum("pending_action_status", [
   "failed",
   "rejected",
 ]);
+
+// `action` = azione L2 di un tool; `plan` / `plan_change` = proposta di PLAN di una squadra (senza tool né app)
+export const pendingActionKindEnum = pgEnum("pending_action_kind", ["action", "plan", "plan_change"]);
 
 // Coda delle azioni L2 in attesa di conferma: argomenti fissati (cifrati), esito e decisione
 export const pendingActionsTable = pgTable(
@@ -23,12 +28,14 @@ export const pendingActionsTable = pgTable(
       .notNull()
       .references(() => usersTable.id, { onDelete: "cascade" }),
     number: integer("number").notNull(),
+    kind: pendingActionKindEnum("kind").notNull().default("action"),
+    // Null solo per `plan` / `plan_change` (vincolo CHECK)
     appId: integer("app_id")
-      .notNull()
       .references(() => appsTable.id, { onDelete: "cascade" }),
     toolId: integer("tool_id")
-      .notNull()
       .references(() => appToolsTable.id, { onDelete: "restrict" }),
+    teamInstanceId: integer("team_instance_id").references(() => teamInstancesTable.id, { onDelete: "set null" }),
+    planVersion: integer("plan_version"),
     runId: integer("run_id").references(() => runsTable.id, { onDelete: "set null" }),
     agentId: integer("agent_id").references(() => agentsTable.id, { onDelete: "set null" }),
     // Argomenti cifrati con CASELLO_SECRET_KEY e gli stessi con i parametri x-sensitive oscurati
@@ -48,6 +55,7 @@ export const pendingActionsTable = pgTable(
   (table) => [
     unique("pending_actions_user_number_unique").on(table.userId, table.number),
     index("pending_actions_user_status_idx").on(table.userId, table.status),
+    check("pending_actions_action_needs_tool_check", sql`${table.kind} <> 'action' OR (${table.toolId} IS NOT NULL AND ${table.appId} IS NOT NULL)`),
   ],
 );
 

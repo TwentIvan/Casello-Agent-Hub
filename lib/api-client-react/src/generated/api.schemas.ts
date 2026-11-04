@@ -198,6 +198,11 @@ export interface DefaultModel {
   aiModelId: number | null;
 }
 
+export interface CentralinoModel {
+  /** @nullable */
+  aiModelId: number | null;
+}
+
 export interface AppInput {
   /** @minLength 1 */
   name: string;
@@ -616,10 +621,33 @@ export const QueuedActionStatus = {
   rejected: 'rejected',
 } as const;
 
+/**
+ * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra
+ */
+export type QueuedActionKind = typeof QueuedActionKind[keyof typeof QueuedActionKind];
+
+
+export const QueuedActionKind = {
+  action: 'action',
+  plan: 'plan',
+  plan_change: 'plan_change',
+} as const;
+
+/**
+ * @nullable
+ */
+export type QueuedActionTeam = {
+  id: number;
+  name: string;
+} | null;
+
+/**
+ * @nullable
+ */
 export type QueuedActionApp = {
   id: number;
   name: string;
-};
+} | null;
 
 export type QueuedActionToolIdentity = typeof QueuedActionToolIdentity[keyof typeof QueuedActionToolIdentity];
 
@@ -629,16 +657,25 @@ export const QueuedActionToolIdentity = {
   service: 'service',
 } as const;
 
+/**
+ * @nullable
+ */
 export type QueuedActionTool = {
   id: number;
   name: string;
   identity: QueuedActionToolIdentity;
-};
+} | null;
 
 export interface QueuedAction {
   number: number;
   status: QueuedActionStatus;
+  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra */
+  kind: QueuedActionKind;
+  /** @nullable */
+  team: QueuedActionTeam;
+  /** @nullable */
   app: QueuedActionApp;
+  /** @nullable */
   tool: QueuedActionTool;
   /** @nullable */
   agentId: number | null;
@@ -2068,6 +2105,9 @@ export interface TeamInstanceCreate {
   roles?: TeamInstanceRole[];
 }
 
+/**
+ * Facoltativo e solo uguale allo stato attuale: si attiva con `POST /team-instances/{id}/activate` e una squadra attiva non torna in bozza.
+ */
 export type TeamInstanceSaveStatus = typeof TeamInstanceSaveStatus[keyof typeof TeamInstanceSaveStatus];
 
 
@@ -2086,6 +2126,7 @@ export interface TeamInstanceSave {
   refTitle?: string;
   roles: TeamInstanceRole[];
   localSkills: TeamLocalSkill[];
+  /** Facoltativo e solo uguale allo stato attuale: si attiva con `POST /team-instances/{id}/activate` e una squadra attiva non torna in bozza. */
   status?: TeamInstanceSaveStatus;
 }
 
@@ -2170,6 +2211,100 @@ export interface TeamUpdateApply {
   ids: string[];
 }
 
+export type TeamPlanTaskStatus = typeof TeamPlanTaskStatus[keyof typeof TeamPlanTaskStatus];
+
+
+export const TeamPlanTaskStatus = {
+  planned: 'planned',
+  running: 'running',
+  waiting_node: 'waiting_node',
+  done: 'done',
+  blocked: 'blocked',
+  failed: 'failed',
+} as const;
+
+export interface TeamPlanTask {
+  /**
+     * @minLength 1
+     * @maxLength 40
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  title: string;
+  /**
+     * @minLength 1
+     * @maxLength 40
+     */
+  roleKey: string;
+  /** @maxLength 4000 */
+  instructions: string;
+  status: TeamPlanTaskStatus;
+  /** @maxLength 300 */
+  outcome: string | null;
+}
+
+export interface TeamManualAction {
+  /**
+     * @minLength 1
+     * @maxLength 40
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  text: string;
+  done: boolean;
+  doneAt: string | null;
+}
+
+export interface TeamPlanInput {
+  /** @maxLength 2000 */
+  objective: string;
+  /**
+     * @maxItems 30
+     * @items.maxLength 500
+     */
+  constraints: string[];
+  /**
+     * @maxItems 30
+     * @items.maxLength 500
+     */
+  openPoints: string[];
+  /** @maxItems 50 */
+  tasks: TeamPlanTask[];
+  /** @maxItems 30 */
+  manualActions: TeamManualAction[];
+}
+
+export type TeamPlanTasksItem = TeamPlanTask & {
+  updatedAt: string;
+};
+
+export type TeamPlanStatus = typeof TeamPlanStatus[keyof typeof TeamPlanStatus];
+
+
+export const TeamPlanStatus = {
+  draft: 'draft',
+  proposed: 'proposed',
+  approved: 'approved',
+} as const;
+
+export interface TeamPlan {
+  objective: string;
+  constraints: string[];
+  openPoints: string[];
+  tasks: TeamPlanTasksItem[];
+  manualActions: TeamManualAction[];
+  version: number;
+  status: TeamPlanStatus;
+  approvedVersion: number | null;
+  updatedAt: string;
+}
+
 export type TeamInstanceStatus = typeof TeamInstanceStatus[keyof typeof TeamInstanceStatus];
 
 
@@ -2216,6 +2351,190 @@ export interface TeamInstance {
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
+  /** Utente che ha attivato la squadra (riceve le voci in coda) */
+  activatedBy: number | null;
+  /** Tetto mensile in USD di turni e compiti (null = nessun tetto) */
+  monthlyBudgetUsd: number | null;
+  lastTurnAt: string | null;
+}
+
+export interface TeamMessageInput {
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  text: string;
+}
+
+export interface TeamMessageResult {
+  queued: boolean;
+}
+
+export interface TeamBudgetInput {
+  /**
+     * @minimum 0
+     * @maximum 1000000
+     */
+  monthlyBudgetUsd: number | null;
+}
+
+export interface TeamEventsReadInput {
+  /** @maxItems 500 */
+  ids: number[];
+}
+
+export interface TeamStep {
+  id: number;
+  position: number;
+  /** model (chiamata al modello), tool (chiamata a uno strumento) o queued (azione accodata) */
+  type: string;
+  /** @nullable */
+  toolName: string | null;
+  /** Argomenti con i valori sensibili oscurati */
+  args: unknown | null;
+  /** @nullable */
+  ok: boolean | null;
+  /** @nullable */
+  httpStatus: number | null;
+  /** @nullable */
+  durationMs: number | null;
+  /** @nullable */
+  error: string | null;
+  createdAt: string;
+}
+
+export type TeamTaskStatus = typeof TeamTaskStatus[keyof typeof TeamTaskStatus];
+
+
+export const TeamTaskStatus = {
+  queued: 'queued',
+  running: 'running',
+  waiting_node: 'waiting_node',
+  done: 'done',
+  blocked: 'blocked',
+  failed: 'failed',
+  cancelled: 'cancelled',
+} as const;
+
+export interface TeamTask {
+  id: number;
+  instanceId: number;
+  planTaskId: string;
+  roleKey: string;
+  instructions: string;
+  status: TeamTaskStatus;
+  /** @nullable */
+  outcome: string | null;
+  /** @nullable */
+  detail: string | null;
+  /** @nullable */
+  error: string | null;
+  /** @nullable */
+  aiModelId: number | null;
+  /** @nullable */
+  promptTokens: number | null;
+  /** @nullable */
+  completionTokens: number | null;
+  cachedTokens: number;
+  /** @nullable */
+  costUsd: number | null;
+  createdAt: string;
+  /** @nullable */
+  startedAt: string | null;
+  /** @nullable */
+  finishedAt: string | null;
+  /** Passi dell'esecuzione (solo nel dettaglio) */
+  steps?: TeamStep[];
+}
+
+export type TeamTurnReasonType = typeof TeamTurnReasonType[keyof typeof TeamTurnReasonType];
+
+
+export const TeamTurnReasonType = {
+  request: 'request',
+  task_finished: 'task_finished',
+  decision: 'decision',
+  activation: 'activation',
+  restart: 'restart',
+} as const;
+
+export type TeamTurnReasonOutcome = typeof TeamTurnReasonOutcome[keyof typeof TeamTurnReasonOutcome];
+
+
+export const TeamTurnReasonOutcome = {
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export interface TeamTurnReason {
+  type: TeamTurnReasonType;
+  text?: string;
+  taskId?: number;
+  number?: number;
+  outcome?: TeamTurnReasonOutcome;
+  /** @nullable */
+  note?: string | null;
+}
+
+export type TeamTurnStatus = typeof TeamTurnStatus[keyof typeof TeamTurnStatus];
+
+
+export const TeamTurnStatus = {
+  queued: 'queued',
+  running: 'running',
+  done: 'done',
+  failed: 'failed',
+} as const;
+
+export interface TeamTurn {
+  id: number;
+  instanceId: number;
+  reasons: TeamTurnReason[];
+  status: TeamTurnStatus;
+  /** @nullable */
+  error: string | null;
+  /** @nullable */
+  aiModelId: number | null;
+  /** @nullable */
+  promptTokens: number | null;
+  /** @nullable */
+  completionTokens: number | null;
+  cachedTokens: number;
+  /** @nullable */
+  costUsd: number | null;
+  createdAt: string;
+  /** @nullable */
+  startedAt: string | null;
+  /** @nullable */
+  finishedAt: string | null;
+  steps: TeamStep[];
+}
+
+export type TeamEventType = typeof TeamEventType[keyof typeof TeamEventType];
+
+
+export const TeamEventType = {
+  piano_proposto: 'piano_proposto',
+  compito_finito: 'compito_finito',
+  bloccato: 'bloccato',
+  decisione_richiesta: 'decisione_richiesta',
+  azione_manuale_richiesta: 'azione_manuale_richiesta',
+  lavoro_finito: 'lavoro_finito',
+  interrotto: 'interrotto',
+} as const;
+
+export interface TeamEvent {
+  id: number;
+  instanceId: number;
+  type: TeamEventType;
+  /** @nullable */
+  taskId: number | null;
+  bulletin: string;
+  /** @nullable */
+  detail: string | null;
+  /** @nullable */
+  readAt: string | null;
+  createdAt: string;
 }
 
 /**
@@ -2369,6 +2688,14 @@ export const ListTeamInstancesStatus = {
 
 export type GetTeamInstanceUpdates200 = {
   items: TeamUpdateItem[];
+};
+
+export type ListUnreadTeamEventsParams = {
+unread?: boolean;
+};
+
+export type MarkTeamEventsRead200 = {
+  updated: number;
 };
 
 export type EstimateAnalysisCostParams = {

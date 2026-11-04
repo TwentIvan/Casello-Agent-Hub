@@ -1622,6 +1622,78 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /team-instances/{id}/plan:
+    get:
+      operationId: getTeamPlan
+      tags: [teams]
+      summary: PLAN corrente della squadra
+      description: Se la squadra non ha ancora un PLAN ne crea uno `draft` vuoto (versione 1).
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: PLAN corrente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamPlan"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: saveTeamPlan
+      tags: [teams]
+      summary: Correzione del PLAN da parte dell'utente
+      description: >-
+        Salva il PLAN completo come versione nuova già `approved`, rifiuta le proposte di PLAN ancora in coda
+        della squadra («superata dalla modifica dell'utente») e accoda un turno del capo. `roleKey` dei compiti
+        deve esistere tra i ruoli (400). Squadra chiusa → 409.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamPlanInput"
+      responses:
+        "200":
+          description: PLAN salvato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamPlan"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}/plan/manual-actions/{actionId}/done:
+    post:
+      operationId: markTeamManualActionDone
+      tags: [teams]
+      summary: Segna come fatta un'azione manuale del PLAN
+      description: Aggiorna il PLAN corrente senza creare una versione nuova. Squadra chiusa → 409.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: actionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: PLAN aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamPlan"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   # ─── Account AI ─────────────────────────────────────────────────────────────
 
   /ai/providers:
@@ -5148,6 +5220,123 @@ components:
           items:
             type: string
             maxLength: 200
+
+    TeamPlanTask:
+      type: object
+      required: [id, title, roleKey, instructions, status, outcome]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 40
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        roleKey:
+          type: string
+          minLength: 1
+          maxLength: 40
+        instructions:
+          type: string
+          maxLength: 4000
+        status:
+          type: string
+          enum: [planned, running, waiting_node, done, blocked, failed]
+        outcome:
+          type: string
+          nullable: true
+          maxLength: 300
+
+    TeamManualAction:
+      type: object
+      required: [id, text, done, doneAt]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 40
+        text:
+          type: string
+          minLength: 1
+          maxLength: 500
+        done:
+          type: boolean
+        doneAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    TeamPlanInput:
+      type: object
+      required: [objective, constraints, openPoints, tasks, manualActions]
+      properties:
+        objective:
+          type: string
+          maxLength: 2000
+        constraints:
+          type: array
+          maxItems: 30
+          items:
+            type: string
+            maxLength: 500
+        openPoints:
+          type: array
+          maxItems: 30
+          items:
+            type: string
+            maxLength: 500
+        tasks:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/TeamPlanTask"
+        manualActions:
+          type: array
+          maxItems: 30
+          items:
+            $ref: "#/components/schemas/TeamManualAction"
+
+    TeamPlan:
+      type: object
+      required: [objective, constraints, openPoints, tasks, manualActions, version, status, approvedVersion, updatedAt]
+      properties:
+        objective:
+          type: string
+        constraints:
+          type: array
+          items:
+            type: string
+        openPoints:
+          type: array
+          items:
+            type: string
+        tasks:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/TeamPlanTask"
+              - type: object
+                required: [updatedAt]
+                properties:
+                  updatedAt:
+                    type: string
+                    format: date-time
+        manualActions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamManualAction"
+        version:
+          type: integer
+        status:
+          type: string
+          enum: [draft, proposed, approved]
+        approvedVersion:
+          type: integer
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
 
     TeamInstance:
       type: object

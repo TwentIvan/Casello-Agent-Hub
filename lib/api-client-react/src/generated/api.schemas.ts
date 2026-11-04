@@ -2170,6 +2170,100 @@ export interface TeamUpdateApply {
   ids: string[];
 }
 
+export type TeamPlanTaskStatus = typeof TeamPlanTaskStatus[keyof typeof TeamPlanTaskStatus];
+
+
+export const TeamPlanTaskStatus = {
+  planned: 'planned',
+  running: 'running',
+  waiting_node: 'waiting_node',
+  done: 'done',
+  blocked: 'blocked',
+  failed: 'failed',
+} as const;
+
+export interface TeamPlanTask {
+  /**
+     * @minLength 1
+     * @maxLength 40
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  title: string;
+  /**
+     * @minLength 1
+     * @maxLength 40
+     */
+  roleKey: string;
+  /** @maxLength 4000 */
+  instructions: string;
+  status: TeamPlanTaskStatus;
+  /** @maxLength 300 */
+  outcome: string | null;
+}
+
+export interface TeamManualAction {
+  /**
+     * @minLength 1
+     * @maxLength 40
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  text: string;
+  done: boolean;
+  doneAt: string | null;
+}
+
+export interface TeamPlanInput {
+  /** @maxLength 2000 */
+  objective: string;
+  /**
+     * @maxItems 30
+     * @items.maxLength 500
+     */
+  constraints: string[];
+  /**
+     * @maxItems 30
+     * @items.maxLength 500
+     */
+  openPoints: string[];
+  /** @maxItems 50 */
+  tasks: TeamPlanTask[];
+  /** @maxItems 30 */
+  manualActions: TeamManualAction[];
+}
+
+export type TeamPlanTasksItem = TeamPlanTask & {
+  updatedAt: string;
+};
+
+export type TeamPlanStatus = typeof TeamPlanStatus[keyof typeof TeamPlanStatus];
+
+
+export const TeamPlanStatus = {
+  draft: 'draft',
+  proposed: 'proposed',
+  approved: 'approved',
+} as const;
+
+export interface TeamPlan {
+  objective: string;
+  constraints: string[];
+  openPoints: string[];
+  tasks: TeamPlanTasksItem[];
+  manualActions: TeamManualAction[];
+  version: number;
+  status: TeamPlanStatus;
+  approvedVersion: number | null;
+  updatedAt: string;
+}
+
 export type TeamInstanceStatus = typeof TeamInstanceStatus[keyof typeof TeamInstanceStatus];
 
 

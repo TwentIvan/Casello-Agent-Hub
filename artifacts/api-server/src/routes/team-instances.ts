@@ -19,10 +19,18 @@ import {
   SaveTeamInstanceAsTemplateParams,
   SaveTeamInstanceAsTemplateBody,
   SaveTeamInstanceAsTemplateResponse,
+  GetTeamPlanParams,
+  GetTeamPlanResponse,
+  SaveTeamPlanParams,
+  SaveTeamPlanBody,
+  SaveTeamPlanResponse,
+  MarkTeamManualActionDoneParams,
+  MarkTeamManualActionDoneResponse,
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
 import { InstanceError, closeInstance, createInstance, getInstance, listInstances, saveInstance } from "../lib/teams/instances";
 import { SkillError } from "../lib/teams/skills";
+import { correctPlan, getPlan, markManualActionDone } from "../lib/teams/plan";
 import { saveInstanceAsTemplate } from "../lib/teams/save-as-template";
 import { TeamRuleError } from "../lib/teams/rules";
 import { TemplateError } from "../lib/teams/templates";
@@ -101,6 +109,30 @@ router.post("/team-instances/:id/save-as-template", async (req, res) => {
   const body = parseRequest(SaveTeamInstanceAsTemplateBody, req.body);
   await guarded(res, async () => {
     res.status(201).json(SaveTeamInstanceAsTemplateResponse.parse(await saveInstanceAsTemplate(currentUserId(req), id, body)));
+  });
+});
+
+router.get("/team-instances/:id/plan", async (req, res) => {
+  const { id } = parseRequest(GetTeamPlanParams, req.params);
+  await guarded(res, async () => {
+    await getInstance(id);
+    res.json(GetTeamPlanResponse.parse(await getPlan(id)));
+  });
+});
+
+router.put("/team-instances/:id/plan", async (req, res) => {
+  const { id } = parseRequest(SaveTeamPlanParams, req.params);
+  const body = parseRequest(SaveTeamPlanBody, req.body);
+  await guarded(res, async () => {
+    const plan = { ...body, manualActions: body.manualActions.map((a) => ({ ...a, doneAt: a.doneAt ? a.doneAt.toISOString() : null })) };
+    res.json(SaveTeamPlanResponse.parse(await correctPlan(id, plan)));
+  });
+});
+
+router.post("/team-instances/:id/plan/manual-actions/:actionId/done", async (req, res) => {
+  const { id, actionId } = parseRequest(MarkTeamManualActionDoneParams, req.params);
+  await guarded(res, async () => {
+    res.json(MarkTeamManualActionDoneResponse.parse(await markManualActionDone(id, actionId)));
   });
 });
 

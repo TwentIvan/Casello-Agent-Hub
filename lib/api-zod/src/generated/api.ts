@@ -2409,6 +2409,210 @@ export const SaveTeamInstanceAsTemplateResponse = zod.object({
 
 
 /**
+ * Se la squadra non ha ancora un PLAN ne crea uno `draft` vuoto (versione 1).
+ * @summary PLAN corrente della squadra
+ */
+export const GetTeamPlanParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const getTeamPlanResponseTasksItemOneIdMax = 40;
+
+export const getTeamPlanResponseTasksItemOneTitleMax = 200;
+
+export const getTeamPlanResponseTasksItemOneRoleKeyMax = 40;
+
+export const getTeamPlanResponseTasksItemOneInstructionsMax = 4000;
+
+export const getTeamPlanResponseTasksItemOneOutcomeMax = 300;
+
+export const getTeamPlanResponseManualActionsItemIdMax = 40;
+
+export const getTeamPlanResponseManualActionsItemTextMax = 500;
+
+
+
+export const GetTeamPlanResponse = zod.object({
+  "objective": zod.string(),
+  "constraints": zod.array(zod.string()),
+  "openPoints": zod.array(zod.string()),
+  "tasks": zod.array(zod.object({
+  "id": zod.string().min(1).max(getTeamPlanResponseTasksItemOneIdMax),
+  "title": zod.string().min(1).max(getTeamPlanResponseTasksItemOneTitleMax),
+  "roleKey": zod.string().min(1).max(getTeamPlanResponseTasksItemOneRoleKeyMax),
+  "instructions": zod.string().max(getTeamPlanResponseTasksItemOneInstructionsMax),
+  "status": zod.enum(['planned', 'running', 'waiting_node', 'done', 'blocked', 'failed']),
+  "outcome": zod.string().max(getTeamPlanResponseTasksItemOneOutcomeMax).nullable()
+}).and(zod.object({
+  "updatedAt": zod.coerce.date()
+}))),
+  "manualActions": zod.array(zod.object({
+  "id": zod.string().min(1).max(getTeamPlanResponseManualActionsItemIdMax),
+  "text": zod.string().min(1).max(getTeamPlanResponseManualActionsItemTextMax),
+  "done": zod.boolean(),
+  "doneAt": zod.coerce.date().nullable()
+})),
+  "version": zod.number(),
+  "status": zod.enum(['draft', 'proposed', 'approved']),
+  "approvedVersion": zod.number().nullable(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * Salva il PLAN completo come versione nuova già `approved`, rifiuta le proposte di PLAN ancora in coda della squadra («superata dalla modifica dell'utente») e accoda un turno del capo. `roleKey` dei compiti deve esistere tra i ruoli (400). Squadra chiusa → 409.
+ * @summary Correzione del PLAN da parte dell'utente
+ */
+export const SaveTeamPlanParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const saveTeamPlanBodyObjectiveMax = 2000;
+
+export const saveTeamPlanBodyConstraintsItemMax = 500;
+
+export const saveTeamPlanBodyConstraintsMax = 30;
+
+export const saveTeamPlanBodyOpenPointsItemMax = 500;
+
+export const saveTeamPlanBodyOpenPointsMax = 30;
+
+export const saveTeamPlanBodyTasksItemIdMax = 40;
+
+export const saveTeamPlanBodyTasksItemTitleMax = 200;
+
+export const saveTeamPlanBodyTasksItemRoleKeyMax = 40;
+
+export const saveTeamPlanBodyTasksItemInstructionsMax = 4000;
+
+export const saveTeamPlanBodyTasksItemOutcomeMax = 300;
+
+export const saveTeamPlanBodyTasksMax = 50;
+
+export const saveTeamPlanBodyManualActionsItemIdMax = 40;
+
+export const saveTeamPlanBodyManualActionsItemTextMax = 500;
+
+export const saveTeamPlanBodyManualActionsMax = 30;
+
+
+
+export const SaveTeamPlanBody = zod.object({
+  "objective": zod.string().max(saveTeamPlanBodyObjectiveMax),
+  "constraints": zod.array(zod.string().max(saveTeamPlanBodyConstraintsItemMax)).max(saveTeamPlanBodyConstraintsMax),
+  "openPoints": zod.array(zod.string().max(saveTeamPlanBodyOpenPointsItemMax)).max(saveTeamPlanBodyOpenPointsMax),
+  "tasks": zod.array(zod.object({
+  "id": zod.string().min(1).max(saveTeamPlanBodyTasksItemIdMax),
+  "title": zod.string().min(1).max(saveTeamPlanBodyTasksItemTitleMax),
+  "roleKey": zod.string().min(1).max(saveTeamPlanBodyTasksItemRoleKeyMax),
+  "instructions": zod.string().max(saveTeamPlanBodyTasksItemInstructionsMax),
+  "status": zod.enum(['planned', 'running', 'waiting_node', 'done', 'blocked', 'failed']),
+  "outcome": zod.string().max(saveTeamPlanBodyTasksItemOutcomeMax).nullable()
+})).max(saveTeamPlanBodyTasksMax),
+  "manualActions": zod.array(zod.object({
+  "id": zod.string().min(1).max(saveTeamPlanBodyManualActionsItemIdMax),
+  "text": zod.string().min(1).max(saveTeamPlanBodyManualActionsItemTextMax),
+  "done": zod.boolean(),
+  "doneAt": zod.coerce.date().nullable()
+})).max(saveTeamPlanBodyManualActionsMax)
+})
+
+export const saveTeamPlanResponseTasksItemOneIdMax = 40;
+
+export const saveTeamPlanResponseTasksItemOneTitleMax = 200;
+
+export const saveTeamPlanResponseTasksItemOneRoleKeyMax = 40;
+
+export const saveTeamPlanResponseTasksItemOneInstructionsMax = 4000;
+
+export const saveTeamPlanResponseTasksItemOneOutcomeMax = 300;
+
+export const saveTeamPlanResponseManualActionsItemIdMax = 40;
+
+export const saveTeamPlanResponseManualActionsItemTextMax = 500;
+
+
+
+export const SaveTeamPlanResponse = zod.object({
+  "objective": zod.string(),
+  "constraints": zod.array(zod.string()),
+  "openPoints": zod.array(zod.string()),
+  "tasks": zod.array(zod.object({
+  "id": zod.string().min(1).max(saveTeamPlanResponseTasksItemOneIdMax),
+  "title": zod.string().min(1).max(saveTeamPlanResponseTasksItemOneTitleMax),
+  "roleKey": zod.string().min(1).max(saveTeamPlanResponseTasksItemOneRoleKeyMax),
+  "instructions": zod.string().max(saveTeamPlanResponseTasksItemOneInstructionsMax),
+  "status": zod.enum(['planned', 'running', 'waiting_node', 'done', 'blocked', 'failed']),
+  "outcome": zod.string().max(saveTeamPlanResponseTasksItemOneOutcomeMax).nullable()
+}).and(zod.object({
+  "updatedAt": zod.coerce.date()
+}))),
+  "manualActions": zod.array(zod.object({
+  "id": zod.string().min(1).max(saveTeamPlanResponseManualActionsItemIdMax),
+  "text": zod.string().min(1).max(saveTeamPlanResponseManualActionsItemTextMax),
+  "done": zod.boolean(),
+  "doneAt": zod.coerce.date().nullable()
+})),
+  "version": zod.number(),
+  "status": zod.enum(['draft', 'proposed', 'approved']),
+  "approvedVersion": zod.number().nullable(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * Aggiorna il PLAN corrente senza creare una versione nuova. Squadra chiusa → 409.
+ * @summary Segna come fatta un'azione manuale del PLAN
+ */
+export const MarkTeamManualActionDoneParams = zod.object({
+  "id": zod.coerce.number(),
+  "actionId": zod.coerce.string()
+})
+
+export const markTeamManualActionDoneResponseTasksItemOneIdMax = 40;
+
+export const markTeamManualActionDoneResponseTasksItemOneTitleMax = 200;
+
+export const markTeamManualActionDoneResponseTasksItemOneRoleKeyMax = 40;
+
+export const markTeamManualActionDoneResponseTasksItemOneInstructionsMax = 4000;
+
+export const markTeamManualActionDoneResponseTasksItemOneOutcomeMax = 300;
+
+export const markTeamManualActionDoneResponseManualActionsItemIdMax = 40;
+
+export const markTeamManualActionDoneResponseManualActionsItemTextMax = 500;
+
+
+
+export const MarkTeamManualActionDoneResponse = zod.object({
+  "objective": zod.string(),
+  "constraints": zod.array(zod.string()),
+  "openPoints": zod.array(zod.string()),
+  "tasks": zod.array(zod.object({
+  "id": zod.string().min(1).max(markTeamManualActionDoneResponseTasksItemOneIdMax),
+  "title": zod.string().min(1).max(markTeamManualActionDoneResponseTasksItemOneTitleMax),
+  "roleKey": zod.string().min(1).max(markTeamManualActionDoneResponseTasksItemOneRoleKeyMax),
+  "instructions": zod.string().max(markTeamManualActionDoneResponseTasksItemOneInstructionsMax),
+  "status": zod.enum(['planned', 'running', 'waiting_node', 'done', 'blocked', 'failed']),
+  "outcome": zod.string().max(markTeamManualActionDoneResponseTasksItemOneOutcomeMax).nullable()
+}).and(zod.object({
+  "updatedAt": zod.coerce.date()
+}))),
+  "manualActions": zod.array(zod.object({
+  "id": zod.string().min(1).max(markTeamManualActionDoneResponseManualActionsItemIdMax),
+  "text": zod.string().min(1).max(markTeamManualActionDoneResponseManualActionsItemTextMax),
+  "done": zod.boolean(),
+  "doneAt": zod.coerce.date().nullable()
+})),
+  "version": zod.number(),
+  "status": zod.enum(['draft', 'proposed', 'approved']),
+  "approvedVersion": zod.number().nullable(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
  * Provider della tabella providers (registro e scoperti), senza quello del vecchio gateway: prima i gestiti per nome, poi quelli in arrivo, poi i non gestiti.
  * @summary Provider del registro per la creazione degli account AI
  */

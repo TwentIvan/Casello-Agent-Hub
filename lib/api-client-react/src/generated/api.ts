@@ -114,6 +114,8 @@ import type {
   TeamInstance,
   TeamInstanceCreate,
   TeamInstanceSave,
+  TeamPlan,
+  TeamPlanInput,
   TeamRoleView,
   TeamSaveAsTemplate,
   TeamTemplate,
@@ -5244,6 +5246,229 @@ export const useSaveTeamInstanceAsTemplate = <TError = ErrorType<BadRequestRespo
         TContext
       > => {
       return useMutation(getSaveTeamInstanceAsTemplateMutationOptions(options));
+    }
+
+export const getGetTeamPlanUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/plan`
+}
+
+/**
+ * Se la squadra non ha ancora un PLAN ne crea uno `draft` vuoto (versione 1).
+ * @summary PLAN corrente della squadra
+ */
+export const getTeamPlan = async (id: number, options?: RequestInit): Promise<TeamPlan> => {
+
+  return customFetch<TeamPlan>(getGetTeamPlanUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamPlanQueryKey = (id: number,) => {
+    return [
+    `/api/team-instances/${id}/plan`
+    ] as const;
+    }
+
+
+export const getGetTeamPlanQueryOptions = <TData = Awaited<ReturnType<typeof getTeamPlan>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamPlan>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamPlanQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamPlan>>> = ({ signal }) => getTeamPlan(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamPlan>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamPlanQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamPlan>>>
+export type GetTeamPlanQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary PLAN corrente della squadra
+ */
+
+export function useGetTeamPlan<TData = Awaited<ReturnType<typeof getTeamPlan>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamPlan>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamPlanQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveTeamPlanUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/plan`
+}
+
+/**
+ * Salva il PLAN completo come versione nuova già `approved`, rifiuta le proposte di PLAN ancora in coda della squadra («superata dalla modifica dell'utente») e accoda un turno del capo. `roleKey` dei compiti deve esistere tra i ruoli (400). Squadra chiusa → 409.
+ * @summary Correzione del PLAN da parte dell'utente
+ */
+export const saveTeamPlan = async (id: number,
+    teamPlanInput: TeamPlanInput, options?: RequestInit): Promise<TeamPlan> => {
+
+  return customFetch<TeamPlan>(getSaveTeamPlanUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamPlanInput)
+  }
+);}
+
+
+
+
+export const getSaveTeamPlanMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTeamPlan>>, TError,{id: number;data: BodyType<TeamPlanInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveTeamPlan>>, TError,{id: number;data: BodyType<TeamPlanInput>}, TContext> => {
+
+const mutationKey = ['saveTeamPlan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveTeamPlan>>, {id: number;data: BodyType<TeamPlanInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  saveTeamPlan(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveTeamPlanMutationResult = NonNullable<Awaited<ReturnType<typeof saveTeamPlan>>>
+    export type SaveTeamPlanMutationBody = BodyType<TeamPlanInput>
+    export type SaveTeamPlanMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Correzione del PLAN da parte dell'utente
+ */
+export const useSaveTeamPlan = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTeamPlan>>, TError,{id: number;data: BodyType<TeamPlanInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveTeamPlan>>,
+        TError,
+        {id: number;data: BodyType<TeamPlanInput>},
+        TContext
+      > => {
+      return useMutation(getSaveTeamPlanMutationOptions(options));
+    }
+
+export const getMarkTeamManualActionDoneUrl = (id: number,
+    actionId: string,) => {
+
+
+
+
+  return `/api/team-instances/${id}/plan/manual-actions/${actionId}/done`
+}
+
+/**
+ * Aggiorna il PLAN corrente senza creare una versione nuova. Squadra chiusa → 409.
+ * @summary Segna come fatta un'azione manuale del PLAN
+ */
+export const markTeamManualActionDone = async (id: number,
+    actionId: string, options?: RequestInit): Promise<TeamPlan> => {
+
+  return customFetch<TeamPlan>(getMarkTeamManualActionDoneUrl(id,actionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getMarkTeamManualActionDoneMutationOptions = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markTeamManualActionDone>>, TError,{id: number;actionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markTeamManualActionDone>>, TError,{id: number;actionId: string}, TContext> => {
+
+const mutationKey = ['markTeamManualActionDone'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markTeamManualActionDone>>, {id: number;actionId: string}> = (props) => {
+          const {id,actionId} = props ?? {};
+
+          return  markTeamManualActionDone(id,actionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkTeamManualActionDoneMutationResult = NonNullable<Awaited<ReturnType<typeof markTeamManualActionDone>>>
+
+    export type MarkTeamManualActionDoneMutationError = ErrorType<NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Segna come fatta un'azione manuale del PLAN
+ */
+export const useMarkTeamManualActionDone = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markTeamManualActionDone>>, TError,{id: number;actionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markTeamManualActionDone>>,
+        TError,
+        {id: number;actionId: string},
+        TContext
+      > => {
+      return useMutation(getMarkTeamManualActionDoneMutationOptions(options));
     }
 
 export const getListAiProvidersUrl = () => {

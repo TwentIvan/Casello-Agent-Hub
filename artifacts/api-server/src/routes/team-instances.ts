@@ -54,7 +54,7 @@ import {
   DeleteTeamAttachmentParams,
 } from "@workspace/api-zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { db, teamTaskStepsTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamTaskRow, type TeamTurnRow } from "@workspace/db";
+import { db, nodesTable, teamTaskStepsTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamTaskRow, type TeamTurnRow } from "@workspace/db";
 import { currentUserId } from "../lib/auth";
 import { AttachmentError, MAX_ATTACHMENT_BYTES, rfc5987, deleteAttachment, getAttachment, listAttachments, saveAttachment } from "../lib/teams/attachments";
 import { InstanceError, closeInstance, createInstance, getInstance, listInstances, saveInstance, setInstanceBudget } from "../lib/teams/instances";
@@ -237,7 +237,12 @@ const MAX_TURNS = 50;
 const MAX_TASKS = 200;
 const MAX_USER_EVENTS = 200;
 
-const publicTask = ({ costUsd, ...rest }: TeamTaskRow) => ({ ...rest, costUsd: toNumberOrNull(costUsd) });
+// Mai la lease (`leaseToken`): al nodo serve solo a lui, la console vede nodo, scadenza e sessione
+const publicTask = ({ costUsd, leaseToken: _leaseToken, ...rest }: TeamTaskRow, nodeName: string | null) => ({
+  ...rest,
+  costUsd: toNumberOrNull(costUsd),
+  nodeName,
+});
 const publicTurn = ({ costUsd, ...rest }: TeamTurnRow) => ({ ...rest, costUsd: toNumberOrNull(costUsd) });
 
 router.post("/team-instances/:id/activate", async (req, res) => {
@@ -272,18 +277,30 @@ router.get("/team-instances/:id/tasks", async (req, res) => {
   const { id } = parseRequest(ListTeamTasksParams, req.params);
   await guarded(res, async () => {
     await getInstance(id);
-    const rows = await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, id)).orderBy(desc(teamTasksTable.id)).limit(MAX_TASKS);
-    res.json(ListTeamTasksResponse.parse(rows.map(publicTask)));
+    const rows = await db
+      .select({ task: teamTasksTable, nodeName: nodesTable.name })
+      .from(teamTasksTable)
+      .leftJoin(nodesTable, eq(nodesTable.id, teamTasksTable.nodeId))
+      .where(eq(teamTasksTable.instanceId, id))
+      .orderBy(desc(teamTasksTable.id))
+      .limit(MAX_TASKS);
+    res.json(ListTeamTasksResponse.parse(rows.map((r) => publicTask(r.task, r.nodeName))));
   });
 });
 
 router.get("/team-instances/:id/tasks/:taskId", async (req, res) => {
   const { id, taskId } = parseRequest(GetTeamTaskParams, req.params);
   await guarded(res, async () => {
-    const [row] = await db.select().from(teamTasksTable).where(and(eq(teamTasksTable.id, taskId), eq(teamTasksTable.instanceId, id))).limit(1);
+    const [found] = await db
+      .select({ task: teamTasksTable, nodeName: nodesTable.name })
+      .from(teamTasksTable)
+      .leftJoin(nodesTable, eq(nodesTable.id, teamTasksTable.nodeId))
+      .where(and(eq(teamTasksTable.id, taskId), eq(teamTasksTable.instanceId, id)))
+      .limit(1);
+    const row = found?.task;
     if (!row) throw new InstanceError(404, "compito non trovato");
     const steps = await db.select().from(teamTaskStepsTable).where(eq(teamTaskStepsTable.taskId, row.id)).orderBy(teamTaskStepsTable.position);
-    res.json(GetTeamTaskResponse.parse({ ...publicTask(row), steps: steps.map(({ taskId: _taskId, ...step }) => step) }));
+    res.json(GetTeamTaskResponse.parse({ ...publicTask(row, found.nodeName), steps: steps.map(({ taskId: _taskId, ...step }) => step) }));
   });
 });
 

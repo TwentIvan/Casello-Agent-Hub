@@ -88,6 +88,8 @@ function reasonText(r: TeamTurnReason): string {
   }
 }
 
+const formatTime = (value: string) => new Date(value).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+
 function tokens(x: { promptTokens: number | null; completionTokens: number | null }): number {
   return (x.promptTokens ?? 0) + (x.completionTokens ?? 0);
 }
@@ -166,6 +168,17 @@ function TaskEntry({ team, task, title }: { team: TeamInstance; task: TeamTask; 
         <TaskStatusBadge status={task.status} />
         <Meta item={task} />
       </div>
+      {(task.nodeName || task.sessionId || task.leaseExpiresAt) && (
+        <p className="pl-6 text-xs text-muted-foreground break-words">
+          Nodo: <span className="font-medium text-foreground">{task.nodeName ?? "non più registrato"}</span>
+          {task.leaseExpiresAt && task.status === "running" && ` · lease fino alle ${formatTime(task.leaseExpiresAt)}`}
+          {task.sessionId && (
+            <>
+              {" "}· sessione <span className="font-mono">{task.sessionId}</span>
+            </>
+          )}
+        </p>
+      )}
       {task.outcome && <p className="pl-6 text-sm break-words">{task.outcome}</p>}
       {task.error && <p className="pl-6 text-xs text-destructive break-words">{task.error}</p>}
       {task.detail && (

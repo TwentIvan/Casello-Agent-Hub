@@ -2694,6 +2694,26 @@ export interface TeamTask {
   startedAt: string | null;
   /** @nullable */
   finishedAt: string | null;
+  /**
+     * Nodo locale a cui è assegnato il compito (solo ruoli `node`)
+     * @nullable
+     */
+  nodeId: number | null;
+  /**
+     * Nome del nodo (null se il compito non ha nodo o il nodo è stato eliminato)
+     * @nullable
+     */
+  nodeName: string | null;
+  /**
+     * Scadenza della lease del nodo (il token della lease non si espone mai)
+     * @nullable
+     */
+  leaseExpiresAt: string | null;
+  /**
+     * Id della sessione di Claude Code sul nodo
+     * @nullable
+     */
+  sessionId: string | null;
   /** Passi dell'esecuzione (solo nel dettaglio) */
   steps?: TeamStep[];
 }

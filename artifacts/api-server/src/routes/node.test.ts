@@ -454,3 +454,34 @@ describe("allegati dei compiti", () => {
     expect(await res.text()).toBe("contenuto di a.txt");
   });
 });
+
+describe("compiti `node` nella console", () => {
+  it("elenco e dettaglio espongono nodo, scadenza e sessione, mai il token della lease; nodo eliminato → nome null", async () => {
+    const instanceId = await seedNodeTeam({ userId, roles: [sapRole()] });
+    const started = await startTask(instanceId, "t1");
+    const { id: nodeId, token } = await nodeWith(userId, "Mac di Ivan", ["sap:abap-developer"]);
+
+    // Compito ancora in attesa: nessun nodo
+    const waiting = await api("GET", `/team-instances/${instanceId}/tasks`);
+    expect(waiting.json[0]).toMatchObject({ id: started.id, nodeId: null, nodeName: null, leaseExpiresAt: null, sessionId: null });
+
+    expect((await api("POST", "/node/claim", { token })).status).toBe(200);
+    await db.update(teamTasksTable).set({ sessionId: "sess-1" }).where(eq(teamTasksTable.id, started.id));
+    const lease = (await taskRow(started.id)).leaseToken;
+    expect(lease).toBeTruthy();
+
+    const list = await api("GET", `/team-instances/${instanceId}/tasks`);
+    expect(list.json[0]).toMatchObject({ nodeId, nodeName: "Mac di Ivan", sessionId: "sess-1" });
+    expect(typeof list.json[0].leaseExpiresAt).toBe("string");
+    const detail = await api("GET", `/team-instances/${instanceId}/tasks/${started.id}`);
+    expect(detail.json).toMatchObject({ nodeId, nodeName: "Mac di Ivan", sessionId: "sess-1" });
+    expect(list.text).not.toContain("leaseToken");
+    expect(detail.text).not.toContain("leaseToken");
+    expect(list.text).not.toContain(lease!);
+    expect(detail.text).not.toContain(lease!);
+
+    await db.delete(nodesTable).where(eq(nodesTable.id, nodeId));
+    const after = await api("GET", `/team-instances/${instanceId}/tasks/${started.id}`);
+    expect(after.json).toMatchObject({ nodeId: null, nodeName: null });
+  });
+});

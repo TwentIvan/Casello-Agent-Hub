@@ -3179,6 +3179,10 @@ export const ListTeamTasksResponseItem = zod.object({
   "createdAt": zod.coerce.date(),
   "startedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable(),
+  "nodeId": zod.number().nullable().describe('Nodo locale a cui è assegnato il compito (solo ruoli `node`)'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se il compito non ha nodo o il nodo è stato eliminato)'),
+  "leaseExpiresAt": zod.coerce.date().nullable().describe('Scadenza della lease del nodo (il token della lease non si espone mai)'),
+  "sessionId": zod.string().nullable().describe('Id della sessione di Claude Code sul nodo'),
   "steps": zod.array(zod.object({
   "id": zod.number(),
   "position": zod.number(),
@@ -3221,6 +3225,10 @@ export const GetTeamTaskResponse = zod.object({
   "createdAt": zod.coerce.date(),
   "startedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable(),
+  "nodeId": zod.number().nullable().describe('Nodo locale a cui è assegnato il compito (solo ruoli `node`)'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se il compito non ha nodo o il nodo è stato eliminato)'),
+  "leaseExpiresAt": zod.coerce.date().nullable().describe('Scadenza della lease del nodo (il token della lease non si espone mai)'),
+  "sessionId": zod.string().nullable().describe('Id della sessione di Claude Code sul nodo'),
   "steps": zod.array(zod.object({
   "id": zod.number(),
   "position": zod.number(),

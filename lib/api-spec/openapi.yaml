@@ -6443,7 +6443,7 @@ components:
 
     TeamTask:
       type: object
-      required: [id, instanceId, planTaskId, roleKey, instructions, status, outcome, detail, error, aiModelId, promptTokens, completionTokens, cachedTokens, costUsd, createdAt, startedAt, finishedAt]
+      required: [id, instanceId, planTaskId, roleKey, instructions, status, outcome, detail, error, aiModelId, promptTokens, completionTokens, cachedTokens, costUsd, createdAt, startedAt, finishedAt, nodeId, nodeName, leaseExpiresAt, sessionId]
       properties:
         id:
           type: integer
@@ -6483,6 +6483,19 @@ components:
         finishedAt:
           type: ["string", "null"]
           format: date-time
+        nodeId:
+          type: ["integer", "null"]
+          description: Nodo locale a cui è assegnato il compito (solo ruoli `node`)
+        nodeName:
+          type: ["string", "null"]
+          description: Nome del nodo (null se il compito non ha nodo o il nodo è stato eliminato)
+        leaseExpiresAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Scadenza della lease del nodo (il token della lease non si espone mai)
+        sessionId:
+          type: ["string", "null"]
+          description: Id della sessione di Claude Code sul nodo
         steps:
           type: array
           description: Passi dell'esecuzione (solo nel dettaglio)

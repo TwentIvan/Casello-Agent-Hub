@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Copy, Plus } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -67,8 +67,21 @@ function NewNodeDialog({
     },
   });
 
+  // Il token in chiaro passa al chiamante e non deve restare nello stato della mutazione
+  const created = create.data;
+  const resetCreate = create.reset;
+  useEffect(() => {
+    if (created) resetCreate();
+  }, [created, resetCreate]);
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setName("");
+        onOpenChange(next);
+      }}
+    >
       <DialogContent>
         <form
           className="space-y-4"
@@ -95,7 +108,11 @@ function NewNodeDialog({
             />
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" onClick={() => {
+                setName("");
+                onOpenChange(false);
+              }}
+            >
               Annulla
             </Button>
             <Button type="submit" disabled={!nameValid || create.isPending}>
@@ -130,7 +147,12 @@ function TokenRevealDialog({ revealed, onClose }: { revealed: RevealedToken | nu
   return (
     <Dialog open={token !== null} onOpenChange={(open) => !open && close()}>
       {/* Il token si vede una sola volta: si chiude solo con «Fatto», non con Esc o un clic fuori */}
-      <DialogContent onEscapeKeyDown={(e) => e.preventDefault()} onInteractOutside={(e) => e.preventDefault()}>
+      <DialogContent
+        hideClose
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>{revealed?.isNew ? "Nodo creato" : "Nuovo token"}</DialogTitle>
           <DialogDescription>
@@ -210,13 +232,11 @@ function NodeRow({
   onDisable,
   onRegenerate,
   onDelete,
-  disabling,
 }: {
   node: Node;
   onDisable: () => void;
   onRegenerate: () => void;
   onDelete: () => void;
-  disabling: boolean;
 }) {
   const disabled = node.status === "disabled";
   return (
@@ -243,7 +263,7 @@ function NodeRow({
       </div>
       <div className="flex flex-wrap gap-2">
         {!disabled && (
-          <Button variant="outline" size="sm" disabled={disabling} onClick={onDisable}>
+          <Button variant="outline" size="sm" onClick={onDisable}>
             Disattiva
           </Button>
         )}
@@ -265,6 +285,7 @@ export function NodesSection() {
   const nodes = useListNodes({ query: { queryKey: getListNodesQueryKey() } });
   const [createOpen, setCreateOpen] = useState(false);
   const [revealed, setRevealed] = useState<RevealedToken | null>(null);
+  const [disabling, setDisabling] = useState<Node | null>(null);
   const [regenerating, setRegenerating] = useState<Node | null>(null);
   const [deleting, setDeleting] = useState<Node | null>(null);
   const refresh = () => void queryClient.invalidateQueries({ queryKey: getListNodesQueryKey() });
@@ -273,10 +294,13 @@ export function NodesSection() {
     mutation: {
       onSuccess: () => {
         refresh();
-        toast({ title: "Nodo disattivato" });
+        toast({ title: "Nodo disattivato", description: disabling?.name });
+        setDisabling(null);
       },
-      onError: (error) =>
-        toast({ variant: "destructive", title: "Impossibile disattivare il nodo", description: apiErrorMessage(error) }),
+      onError: (error) => {
+        setDisabling(null);
+        toast({ variant: "destructive", title: "Impossibile disattivare il nodo", description: apiErrorMessage(error) });
+      },
     },
   });
   const regenerate = useRegenerateNodeToken({
@@ -335,8 +359,7 @@ export function NodesSection() {
               <NodeRow
                 key={node.id}
                 node={node}
-                disabling={disable.isPending}
-                onDisable={() => disable.mutate({ id: node.id })}
+                onDisable={() => setDisabling(node)}
                 onRegenerate={() => setRegenerating(node)}
                 onDelete={() => setDeleting(node)}
               />
@@ -352,7 +375,24 @@ export function NodesSection() {
           setRevealed(result);
         }}
       />
-      <TokenRevealDialog revealed={revealed} onClose={() => setRevealed(null)} />
+      <TokenRevealDialog
+        revealed={revealed}
+        onClose={() => {
+          setRevealed(null);
+          // Il token in chiaro non deve restare nello stato delle mutazioni
+          regenerate.reset();
+        }}
+      />
+      <ConfirmDialog
+        open={disabling !== null}
+        onOpenChange={(open) => !open && setDisabling(null)}
+        title="Disattivare il nodo?"
+        description={`«${disabling?.name ?? ""}» smette di ricevere compiti e dalla console non si può riattivare: per tornare a usare quel Mac crea un nuovo nodo.`}
+        confirmLabel="Disattiva"
+        pendingLabel="Disattivazione…"
+        pending={disable.isPending}
+        onConfirm={() => disabling && disable.mutate({ id: disabling.id })}
+      />
       <ConfirmDialog
         open={regenerating !== null}
         onOpenChange={(open) => !open && setRegenerating(null)}

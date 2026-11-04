@@ -78,6 +78,14 @@ export function TeamAttachments({ teamId, readOnly }: { teamId: number; readOnly
       });
       return;
     }
+    if (total + file.size > MAX_TOTAL_BYTES) {
+      toast({
+        variant: "destructive",
+        title: "Caricamento non riuscito",
+        description: `spazio allegati della squadra esaurito (${formatBytes(total)} usati su ${formatBytes(MAX_TOTAL_BYTES)}).`,
+      });
+      return;
+    }
     upload.mutate(file);
   };
 

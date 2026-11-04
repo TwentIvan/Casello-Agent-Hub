@@ -193,6 +193,18 @@ describe("startLoop", () => {
     await waitFor(async () => (await readState(statePath))?.tasks.length === 0);
   });
 
+  for (const status of [401, 403]) {
+    it(`report con ${status} non viene ritentato (lease persa)`, async () => {
+      oneTask();
+      casello.on("POST", "/api/node/tasks/:id/report", (_req, res) => json(res, status, { error: "nodo disattivato" }));
+      start(config(), "esito", { reportRetryMs: 10 });
+      await waitFor(() => casello.calls("POST", "/api/node/tasks/42/report").length > 0);
+      await new Promise((r) => setTimeout(r, 200));
+      expect(casello.calls("POST", "/api/node/tasks/42/report")).toHaveLength(1);
+      await waitFor(async () => (await readState(statePath))?.tasks.length === 0);
+    });
+  }
+
   it("rispetta maxConcurrent", async () => {
     let id = 100;
     let reports = 0;

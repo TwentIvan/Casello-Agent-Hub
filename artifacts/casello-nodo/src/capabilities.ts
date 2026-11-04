@@ -1,5 +1,10 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
+import { NodeHeartbeatBody, nodeHeartbeatBodySkillsMax } from "@workspace/api-zod";
+import type { Logger } from "./log";
+
+/** Schema di un nome di skill nell'heartbeat (lunghezza ed eventuale formato del contratto). */
+const SkillName = NodeHeartbeatBody.shape.skills.element;
 
 /** Versione del pacchetto `casello-nodo` (allineata a package.json, verificata dai test). */
 export const NODE_VERSION = "0.1.0";
@@ -56,9 +61,11 @@ async function hasSkillFile(dir: string): Promise<boolean> {
 
 /**
  * Nomi delle skill presenti nelle cartelle date: ogni sottocartella con `SKILL.md` è una skill; nella cache dei
- * plugin (`<marketplace>/<plugin>/<versione>/skills/<skill>`) il nome è `<plugin>:<skill>`.
+ * plugin (`<marketplace>/<plugin>/<versione>/skills/<skill>`) il nome è `<plugin>:<skill>`. I nomi che l'heartbeat
+ * rifiuterebbe (es. oltre 100 caratteri) si tolgono e l'elenco si ferma a 500, con un avviso: un nome sbagliato non deve
+ * bloccare l'heartbeat del nodo.
  */
-export async function scanSkills(dirs: string[]): Promise<string[]> {
+export async function scanSkills(dirs: string[], logger?: Pick<Logger, "warn">): Promise<string[]> {
   const found = new Set<string>();
   for (const dir of dirs) {
     for (const name of await subdirs(dir)) {
@@ -77,5 +84,13 @@ export async function scanSkills(dirs: string[]): Promise<string[]> {
       }
     }
   }
-  return [...found].sort();
+  const sorted = [...found].sort();
+  const valid = sorted.filter((name) => SkillName.safeParse(name).success);
+  if (valid.length < sorted.length) {
+    logger?.warn(`ignorate ${sorted.length - valid.length} skill con un nome non valido (al massimo 100 caratteri)`);
+  }
+  if (valid.length > nodeHeartbeatBodySkillsMax) {
+    logger?.warn(`skill oltre ${nodeHeartbeatBodySkillsMax}: ne dichiaro solo ${nodeHeartbeatBodySkillsMax} (ignorate ${valid.length - nodeHeartbeatBodySkillsMax})`);
+  }
+  return valid.slice(0, nodeHeartbeatBodySkillsMax);
 }

@@ -44,6 +44,8 @@ describe("buildPlist", () => {
     expect(plist).toContain("<string>/usr/bin/node</string>\n    <string>/app/dist/index.mjs</string>\n    <string>run</string>");
     expect(plist).toContain("<key>RunAtLoad</key>\n  <true/>");
     expect(plist).toContain("<key>KeepAlive</key>\n  <true/>");
+    // Allo stop launchd aspetta 30 s prima del SIGKILL: il nodo termina i gruppi di `claude` e riferisce
+    expect(plist).toContain("<key>ExitTimeOut</key>\n  <integer>30</integer>");
     expect(plist).toContain("<string>/Users/x/.casello-nodo/logs/launchd.out.log</string>");
     expect(plist).toContain("<string>/Users/x/.casello-nodo/logs/launchd.err.log</string>");
     expect(plist).toContain("<key>PATH</key>\n    <string>/opt/homebrew/bin:/usr/bin</string>");

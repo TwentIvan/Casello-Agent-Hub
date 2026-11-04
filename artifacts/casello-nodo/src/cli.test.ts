@@ -46,8 +46,9 @@ function deps(over: Partial<CliDeps> = {}): CliDeps {
     whichClaude: async () => "/Users/x/.local/bin/claude",
     out: (t) => (out += t),
     err: (t) => (err += t),
-    startLoop: vi.fn(() => ({ stop: async () => {} })) as unknown as CliDeps["startLoop"],
+    startLoop: vi.fn(() => ({ stop: async () => {}, crash: () => {} })) as unknown as CliDeps["startLoop"],
     onSignal: () => {},
+    onFatal: () => {},
     exit: () => {},
     ...over,
   };
@@ -256,6 +257,27 @@ describe("run", () => {
     expect(stop).toHaveBeenCalledTimes(1);
     release();
     expect(await result).toBe(0);
+  });
+
+  it("eccezione non gestita → compiti interrotti subito (crash) e uscita 1", async () => {
+    await writeConfig();
+    const exit = vi.fn();
+    const crash = vi.fn();
+    let fatal: ((err: unknown) => void) | undefined;
+    const d = deps({
+      startLoop: vi.fn(() => ({ stop: vi.fn(), crash })) as unknown as CliDeps["startLoop"],
+      onFatal: (h) => {
+        fatal = h;
+      },
+      exit,
+    });
+    void runCli(["run"], d);
+    await vi.waitFor(() => expect(fatal).toBeDefined());
+    const boom = new Error("boom");
+    fatal!(boom);
+    expect(crash).toHaveBeenCalledWith(boom);
+    expect(exit).toHaveBeenCalledWith(1);
+    expect(crash.mock.invocationCallOrder[0]).toBeLessThan(exit.mock.invocationCallOrder[0]);
   });
 
   it("config mancante → errore, il ciclo non parte", async () => {

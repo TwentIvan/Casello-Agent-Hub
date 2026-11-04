@@ -33,6 +33,8 @@ export interface CliDeps {
   startLoop: typeof startLoop;
   /** Registra un gestore di segnale (SIGTERM, SIGINT). */
   onSignal: (signal: "SIGTERM" | "SIGINT", handler: () => void) => void;
+  /** Registra il gestore delle eccezioni e dei rifiuti non gestiti (`uncaughtException`, `unhandledRejection`). */
+  onFatal: (handler: (err: unknown) => void) => void;
   exit: (code: number) => void;
   /** Ora corrente (iniettabile nei test). */
   now?: () => Date;
@@ -221,6 +223,14 @@ async function run(d: CliDeps): Promise<number> {
     };
     d.onSignal("SIGTERM", handler);
     d.onSignal("SIGINT", handler);
+    // Un errore non gestito: nessun `claude` deve restare orfano (gruppi `detached`), poi uscita 1 e launchd riavvia
+    d.onFatal((err) => {
+      try {
+        loop.crash(err);
+      } finally {
+        d.exit(1);
+      }
+    });
   });
 }
 
@@ -311,6 +321,10 @@ export function realDeps(entryPath: string): CliDeps {
     err: (t) => void process.stderr.write(t),
     startLoop,
     onSignal: (sig, h) => void process.on(sig, h),
+    onFatal: (h) => {
+      process.on("uncaughtException", h);
+      process.on("unhandledRejection", h);
+    },
     exit: (code) => process.exit(code),
   };
 }

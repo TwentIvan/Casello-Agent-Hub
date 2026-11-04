@@ -39,6 +39,22 @@ describe("scanSkills", () => {
     ]);
   });
 
+  it("nomi non validi per l'heartbeat ignorati con un avviso; al massimo 500 skill", async () => {
+    const long = "x".repeat(101);
+    await skill("skills", long);
+    await skill("cache", "m", "p".repeat(60), "1.0.0", "skills", "s".repeat(45));
+    for (let i = 0; i < 502; i++) await skill("skills", `skill-${String(i).padStart(3, "0")}`);
+    const warnings: string[] = [];
+    const skills = await scanSkills([path.join(dir, "skills"), path.join(dir, "cache")], { warn: (m) => warnings.push(m) });
+    expect(skills).toHaveLength(500);
+    expect(skills).not.toContain(long);
+    expect(skills.every((s) => s.length <= 100)).toBe(true);
+    expect(skills[0]).toBe("skill-000");
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toContain("ignorate 2 skill con un nome non valido");
+    expect(warnings[1]).toContain("oltre 500");
+  });
+
   it("cartelle vuote o inesistenti → nessuna skill", async () => {
     expect(await scanSkills([dir, path.join(dir, "nessuna")])).toEqual([]);
   });

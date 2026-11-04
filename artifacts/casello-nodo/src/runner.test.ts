@@ -5,7 +5,7 @@ import { mkdir, realpath, symlink } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CaselloClient } from "./client";
-import { isLeaseLostReport, runTask, WorkspaceQueue, type RunContext } from "./runner";
+import { isLeaseLostReport, killAllTaskGroups, runTask, WorkspaceQueue, type RunContext } from "./runner";
 import { FakeCasello, json } from "./test/fake-casello";
 import { FAKE_TOKEN, fakeSpawn, taskPackage, tempDir, testConfig, type SpawnCall } from "./test/helpers";
 
@@ -364,6 +364,46 @@ describe("runTask: processi", () => {
     expect(Date.now() - started).toBeLessThan(5_000);
     const pid = Number(readFileSync(path.join(ws, "nipote.pid"), "utf8"));
     await waitDead(pid);
+  });
+
+  for (const status of [401, 403]) {
+    it(`ping con ${status} → lease persa: gruppo terminato, nessun report, spazio di lavoro liberato`, async () => {
+      casello.on("POST", "/api/node/tasks/:id/ping", (_req, res) =>
+        json(res, status, { error: status === 403 ? "nodo disattivato" : "token non valido o scaduto" }),
+      );
+      const lines: string[] = [];
+      const logger = { info: (m: string) => lines.push(m), warn: (m: string) => lines.push(m), error: (m: string) => lines.push(m) };
+      const queue = new WorkspaceQueue();
+      const c = ctx("grandchild", [], { pingIntervalMs: 800, killGraceMs: 100, drainMs: 200, workspaceQueue: queue, logger });
+      const started = Date.now();
+      const report = await runTask(taskPackage(), c);
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(report).toMatchObject({ status: "failed", outcome: "lease non valida o scaduta" });
+      expect(isLeaseLostReport(report)).toBe(true);
+      const pid = Number(readFileSync(path.join(ws, "nipote.pid"), "utf8"));
+      await waitDead(pid);
+      // Coda dello spazio di lavoro libera: un altro compito parte subito
+      const release = await queue.acquire(await realpath(ws), new AbortController().signal);
+      release();
+      const lost = lines.filter((l) => l.includes("lease persa"));
+      expect(lost).toHaveLength(1);
+      expect(lost[0]).toContain(String(status));
+      expect(lines.join("\n")).not.toContain(FAKE_TOKEN);
+    });
+  }
+
+  it("killAllTaskGroups termina subito (SIGKILL, in modo sincrono) i gruppi dei compiti in corso", async () => {
+    const c = ctx("grandchild", [], { killGraceMs: 60_000, drainMs: 200 });
+    const running = runTask(taskPackage(), c);
+    const pidFile = path.join(ws, "nipote.pid");
+    const until = Date.now() + 3_000;
+    while (!existsSync(pidFile) && Date.now() < until) await new Promise((r) => setTimeout(r, 20));
+    const pid = Number(readFileSync(pidFile, "utf8"));
+    expect(killAllTaskGroups()).toBe(1);
+    // Nessuna attesa della grazia (60 s): il nipote che ignora SIGTERM muore subito
+    await waitDead(pid);
+    await running;
+    expect(killAllTaskGroups()).toBe(0);
   });
 
   it("un errore dopo l'avvio non chiude il compito come «non avviabile»", async () => {

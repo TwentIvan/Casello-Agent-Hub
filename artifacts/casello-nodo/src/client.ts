@@ -33,6 +33,19 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * Il compito non è più del nodo: 409 (lease scaduta o compito chiuso/annullato), 401 (token revocato o rigenerato) o
+ * 403 (nodo disattivato). Il lavoro si interrompe e non si riferisce: Casello non lo accetterebbe.
+ */
+export function isLeaseLoss(err: unknown): boolean {
+  return err instanceof LeaseLostError || (err instanceof HttpError && (err.status === 401 || err.status === 403));
+}
+
+/** Motivo breve della perdita della lease, per il log (solo lo stato HTTP, mai token né lease). */
+export function leaseLossReason(err: unknown): string {
+  return err instanceof HttpError ? `risposta ${err.status}` : "risposta 409";
+}
+
 export class NetworkError extends Error {
   constructor() {
     super("Casello non raggiungibile");

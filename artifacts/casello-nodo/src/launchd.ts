@@ -40,7 +40,10 @@ function xmlEscape(value: string): string {
     .replace(/'/g, "&apos;");
 }
 
-/** Plist del LaunchAgent: avvio al login e riavvio se cade. Non contiene mai il token. */
+/**
+ * Plist del LaunchAgent: avvio al login e riavvio se cade. `ExitTimeOut` 30 s: allo stop launchd aspetta prima del
+ * SIGKILL, così il nodo termina i gruppi di `claude` (SIGTERM, SIGKILL dopo 10 s) e riferisce. Non contiene mai il token.
+ */
 export function buildPlist(opts: PlistOptions): string {
   const s = (v: string) => `<string>${xmlEscape(v)}</string>`;
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -64,6 +67,8 @@ ${opts.programArguments.map((a) => `    ${s(a)}`).join("\n")}
   <true/>
   <key>ThrottleInterval</key>
   <integer>10</integer>
+  <key>ExitTimeOut</key>
+  <integer>30</integer>
   <key>StandardOutPath</key>
   ${s(path.join(opts.logsDir, "launchd.out.log"))}
   <key>StandardErrorPath</key>

@@ -395,7 +395,11 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   creazione risponde 201 con il token `cas_…` in chiaro, mostrato una sola volta), `POST …/:id/disable`, `POST …/:id/token`
   («Rigenera token»: revoca i token precedenti e ne crea uno nuovo, riga del nodo bloccata), `DELETE …/:id` (204; elimina anche i
   token a cascata). Nodo di un altro utente → 404 «nodo non trovato». Un nodo disattivato non si riattiva (se ne crea un altro);
-  il suo token smette di valere: 403 «nodo disattivato». Il token ha ambito `node`, scade dopo 365 giorni, non compare in
+  il suo token smette di valere: 403 «nodo disattivato». Disattivare, eliminare o rigenerare il token ferma i compiti che il nodo ha in
+  carico: nella stessa transazione (riga del nodo bloccata, compiti letti prima di eliminare: poi `node_id` diventa null) i compiti
+  `running` con lease del nodo chiudono `failed` «nodo disattivato» con la guardia `node` di `finishTaskExecution` (stessa lease, una
+  volta sola) e perdono la lease; dopo il commit PLAN, evento `bloccato` e turno del capo. Anche «Rigenera token» interrompe i compiti in
+  corso: il vecchio processo non potrebbe più riferire. Il token ha ambito `node`, scade dopo 365 giorni, non compare in
   «Token personali» ed è accettato solo da `/api/node/*` (`requireNodeToken`, montato prima di `requireAuth`: senza header Authorization
   o con un token non di nodo → 403 «il token non ha l'ambito per questa operazione», token non valido → 401). «Online» = visto negli
   ultimi 2 minuti (`NODE_ONLINE_WINDOW_MS`).
@@ -412,24 +416,31 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   scrivono in un colpo, il PLAN diventa `running` dopo il commit (se il pacchetto non si prepara il compito torna `waiting_node`).
   Pacchetto: squadra, spazio di lavoro, ruolo (con il nome del modello preferito), compito, PLAN, skill `casello`, nomi delle skill
   `node`, metadati degli allegati. Un compito di nodo si riconosce da `lease_token IS NOT NULL`: il limite dei compiti
-  cloud (3 `running` per squadra) non lo conta. Se la squadra ha raggiunto il tetto di spesa, al claim i suoi compiti `waiting_node`
-  si chiudono `blocked` «tetto di spesa della squadra raggiunto» (PLAN, evento `bloccato`, turno del capo) e non si consegnano.
+  cloud (3 `running` per squadra) non lo conta. Se la squadra ha raggiunto il tetto di spesa, i suoi compiti `waiting_node` si
+  chiudono `blocked` «tetto di spesa della squadra raggiunto» (PLAN, evento `bloccato`, turno del capo, una volta sola con UPDATE
+  condizionato a `waiting_node`) e non si consegnano: al claim e nel controllo di ogni minuto (`blockCappedWaitingTasks`), perché
+  l'heartbeat non li conta in `pending` e il nodo, con `pending` 0, non chiede il claim.
 - **Lease e scadenze** (`lease-sweeper.ts`, all'avvio e ogni minuto): lease di 15 minuti (`LEASE_MS`), rinnovata da ogni ping. Una
   lease scaduta chiude il compito `failed` «nodo non più raggiungibile» (evento `bloccato`, turno del capo), con UPDATE condizionato
   alla stessa lease: un report o un ping arrivati nel frattempo vincono. Il riavvio dell'API NON fallisce i compiti presi da un nodo
   (restano `running`, non girano nell'API): li chiude il report o la scadenza della lease. Un compito in attesa da oltre 10 minuti
   senza alcun nodo vivo e attivo dell'utente con le skill del ruolo emette una volta sola (`no_node_notified`) l'evento `bloccato`
   «Compito <id> (<ruolo>): nessun nodo disponibile con le skill: …»; il controllo salta i primi 2 minuti di vita del processo (i nodi
-  devono poter ricomparire) e il compito resta in attesa. `POST …/close` annulla (`cancelled`) anche i compiti `waiting_node`.
+  devono poter ricomparire) e il compito resta in attesa. `POST …/close` annulla (`cancelled`) anche i compiti `waiting_node` e quelli
+  `running` presi da un nodo: la lease si toglie (PLAN `failed`, nessun turno), ping e report del nodo ricevono 409 e il nodo interrompe
+  il lavoro.
 - **Report** (`POST …/report`: `leaseToken`, `status` `done|blocked|failed`, `outcome` (troncato a 300), `detail` (≤ 20 000, troncato),
-  `costUsd`, `promptTokens`, `completionTokens`, `sessionId`): chiude il compito come i compiti cloud (`finishTaskExecution`: PLAN, evento
+  `costUsd`, `promptTokens`, `completionTokens` (interi, altrimenti 400), `sessionId`): chiude il compito come i compiti cloud (`finishTaskExecution`: PLAN, evento
   `compito_finito` o `bloccato`, turno del capo `task_finished`) una volta sola. Il costo riferito si registra con `ai_model_id` null: conta
-  solo nel tetto della squadra, non nella spesa di utente, modello o account.
+  solo nel tetto della squadra, non nella spesa di utente, modello o account. `/api/node/*` ha un parser JSON da 256 KB al posto di
+  quello globale da 100 KB (`app.ts`): un `detail` di 20 000 caratteri tutti da escapare non fa perdere il report.
 - **Allegati** (`lib/teams/attachments.ts`, `team_attachments`; route in `team-instances.ts`, ambiti per metodo): `GET|POST
   /api/team-instances/:id/attachments` (il corpo del POST è il file grezzo, nome in `X-Attachment-Name`, anche codificato con
   `encodeURIComponent`), `GET|DELETE …/:attachmentId` (204; il GET scarica con `Content-Disposition: attachment`). Max 10 MiB a file («allegato
   troppo grande», 413) e 50 MiB per squadra tra i non eliminati («spazio allegati della squadra esaurito», 413); nome 1..200 caratteri senza
-  `/`, `\`, `..` né controlli («allegato non valido», 400); squadra chiusa → 409 «squadra chiusa». Come per le squadre non c'è un
+  `/`, `\`, `..` né controlli («allegato non valido», 400); nome già usato da un allegato non eliminato della squadra, senza distinguere
+  le maiuscole (sul nodo si sovrascriverebbero) → 409 «nome già usato», controllato nella transazione con la squadra bloccata; squadra
+  chiusa → 409 «squadra chiusa». Come per le squadre non c'è un
   proprietario per allegato (le squadre sono condivise tra gli utenti ammessi; la proprietà per utente è del sottoprogetto 2). Il capo li
   assegna con `assegna_compito` (`attachments`: id, max 20, tutti della squadra e non eliminati, altrimenti «allegato <id> inesistente»;
   riletti nella transazione di `startTask`, con la squadra bloccata). Eliminare: cancellazione vera se nessun compito `queued`,
@@ -445,7 +456,11 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `casello-esito.json`; a fine compito i file di servizio si tolgono. Lo spazio di lavoro si risolve con `realpath` e deve stare dentro la
   radice (niente `..`, percorsi assoluti o link simbolici in uscita); compiti con lo stesso spazio girano uno alla volta. `claude` parte in un
   gruppo di processi proprio: al timeout (`taskTimeoutMinutes`, default 60) o allo stop riceve SIGTERM e dopo 10 s SIGKILL; lo stop
-  riferisce `failed` «esecuzione interrotta: nodo fermato». Le skill dichiarate sono le cartelle con `SKILL.md` in `~/.claude/skills` e nella
+  riferisce `failed` «esecuzione interrotta: nodo fermato». Un 409, 401 o 403 su ping, report o scarico di un allegato è lease persa
+  (compito chiuso o annullato, token rigenerato, nodo disattivato o eliminato): il gruppo si termina come al timeout, nessun report, lo
+  spazio di lavoro si libera, una riga di log. Su `uncaughtException`/`unhandledRejection` (`run`) il nodo registra l'errore, dà SIGKILL
+  subito a tutti i gruppi di `claude` in corso (`killAllTaskGroups`) ed esce con 1. Skill con un nome non valido per l'heartbeat (oltre
+  100 caratteri) si ignorano con un avviso; al massimo 500. Le skill dichiarate sono le cartelle con `SKILL.md` in `~/.claude/skills` e nella
   cache dei plugin (`<plugin>:<skill>`, solo la versione più recente).
 - **Config e servizio**: config `~/.casello-nodo/config.json` con permessi 600 (altrimenti il nodo non parte), scritta in modo atomico; campi
   `caselloUrl` (https, http solo verso localhost/127.0.0.1/[::1]), `token`, `workspaceRoot`, `claudeBin` (default `claude`),
@@ -455,7 +470,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `node artifacts/casello-nodo/dist/index.mjs install`; chiede indirizzo, token (non mostrato) e radice, oppure `--url`, `--workspace-root`,
   `--token-file`; `--token` lascia il token nella cronologia della shell), `uninstall`, `status`, `run` (in primo piano, è ciò che lancia
   launchd). Servizio LaunchAgent con etichetta `cloud.fantamister.casello-nodo` (`~/Library/LaunchAgents/…plist`, avvio al login e riavvio
-  se cade).
+  se cade; `ExitTimeOut` 30 s: allo stop launchd aspetta che il nodo termini i gruppi di `claude` e riferisca prima del SIGKILL).
 - **Sicurezza**: l'agente gira con `--dangerously-skip-permissions` dentro lo spazio di lavoro (esegue comandi e modifica file senza
   conferma): la radice deve contenere solo ciò che può toccare. Il token del nodo sta in `config.json`, leggibile dallo stesso utente con cui
   gira l'agente; se si sospetta una compromissione: «Rigenera token» o disattiva il nodo in console.

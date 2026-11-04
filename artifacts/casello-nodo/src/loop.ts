@@ -1,8 +1,8 @@
-import { CaselloClient, LeaseLostError, type TaskPackage, type TaskReport } from "./client";
+import { CaselloClient, isLeaseLoss, leaseLossReason, type TaskPackage, type TaskReport } from "./client";
 import { NODE_EXECUTOR, NODE_VERSION, scanSkills } from "./capabilities";
 import { defaultPaths, type Config } from "./config";
 import { createLogger, type Logger } from "./log";
-import { isLeaseLostReport, runTask, WorkspaceQueue, type SpawnFn } from "./runner";
+import { isLeaseLostReport, killAllTaskGroups, runTask, WorkspaceQueue, type SpawnFn } from "./runner";
 import { writeState, type NodeState } from "./state";
 
 export interface LoopDeps {
@@ -24,6 +24,8 @@ export interface LoopDeps {
 export interface Loop {
   /** Ferma heartbeat e nuovi claim, interrompe i compiti in corso (report `failed`) e ne attende la chiusura. */
   stop(): Promise<void>;
+  /** Errore fatale del processo: registra e termina subito (in modo sincrono) i gruppi dei compiti in corso. */
+  crash(err: unknown): void;
 }
 
 const HEARTBEAT_MS = 30_000;
@@ -86,8 +88,8 @@ export function startLoop(config: Config, deps: LoopDeps = {}): Loop {
         logger.info(`compito ${pkg.taskId} riferito: ${report.status}`);
         return;
       } catch (err) {
-        if (err instanceof LeaseLostError) {
-          logger.warn(`compito ${pkg.taskId}: report rifiutato, ${err.message}`);
+        if (isLeaseLoss(err)) {
+          logger.warn(`compito ${pkg.taskId}: report rifiutato, lease persa (${leaseLossReason(err)})`);
           return;
         }
         if (Date.now() >= leaseExpiresAt().getTime() || stopped) {
@@ -140,7 +142,7 @@ export function startLoop(config: Config, deps: LoopDeps = {}): Loop {
 
   async function tick(): Promise<void> {
     try {
-      const skills = await scanSkills(config.skillsDirs);
+      const skills = await scanSkills(config.skillsDirs, logger);
       const { pending } = await client.heartbeat({
         version: NODE_VERSION,
         executor: NODE_EXECUTOR,
@@ -187,6 +189,12 @@ export function startLoop(config: Config, deps: LoopDeps = {}): Loop {
       await Promise.all([...running.values()].map((t) => t.promise));
       await stateWrite;
       logger.info("nodo fermato");
+    },
+    crash(err) {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      const killed = killAllTaskGroups();
+      logger.error(`errore inatteso del nodo (${errorMessage(err)}): ${killed} compiti interrotti, esco`);
     },
   };
 }

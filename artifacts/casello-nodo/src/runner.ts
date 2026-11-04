@@ -4,7 +4,15 @@ import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NodeReportBody, nodeReportBodyDetailMax, nodeReportBodyOutcomeMax } from "@workspace/api-zod";
 import { z } from "zod";
-import { LEASE_LOST, LeaseLostError, type CaselloClient, type TaskPackage, type TaskReport } from "./client";
+import {
+  isLeaseLoss,
+  LEASE_LOST,
+  LeaseLostError,
+  leaseLossReason,
+  type CaselloClient,
+  type TaskPackage,
+  type TaskReport,
+} from "./client";
 import type { Config } from "./config";
 import type { Logger } from "./log";
 import { ATTACHMENTS_DIR, OUTCOME_FILE, renderTaskFile, TASK_FILE } from "./task-file";
@@ -102,7 +110,7 @@ async function fetchAttachments(pkg: TaskPackage, workspace: string, client: Cas
     try {
       data = await client.downloadAttachment(pkg.taskId, a.id, pkg.leaseToken);
     } catch (err) {
-      if (err instanceof LeaseLostError) throw err;
+      if (isLeaseLoss(err)) throw new LeaseLostError();
       throw new AttachmentError();
     }
     const digest = createHash("sha256").update(data).digest("hex");
@@ -141,6 +149,20 @@ function killGroup(child: ChildProcess, signal: NodeJS.Signals): void {
       // processo già finito
     }
   }
+}
+
+/** Processi `claude` in corso in questo processo del nodo (per `killAllTaskGroups`). */
+const activeChildren = new Set<ChildProcess>();
+
+/**
+ * Uscita forzata del nodo (eccezione non gestita): SIGKILL subito, in modo sincrono, a tutti i gruppi di `claude` in
+ * corso, perché nessun processo resti orfano a lavorare. Restituisce quanti gruppi ha terminato.
+ */
+export function killAllTaskGroups(): number {
+  const children = [...activeChildren];
+  for (const child of children) killGroup(child, "SIGKILL");
+  activeChildren.clear();
+  return children.length;
 }
 
 async function runClaude(
@@ -184,6 +206,7 @@ async function runClaude(
       resolve({ ...result, spawnFailed: true });
       return;
     }
+    activeChildren.add(child);
 
     /** SIGTERM al gruppo, SIGKILL dopo l'attesa (il timer non trattiene il processo del nodo). */
     const terminateGroup = () => {
@@ -209,6 +232,7 @@ async function runClaude(
     const finish = () => {
       if (settled) return;
       settled = true;
+      activeChildren.delete(child);
       clearTimeout(timeout);
       if (drainTimer) clearTimeout(drainTimer);
       signal.removeEventListener("abort", onAbort);
@@ -353,7 +377,8 @@ export async function runTask(pkg: TaskPackage, ctx: RunContext): Promise<TaskRe
     throw err;
   }
 
-  // Interruzione del compito: lease persa (ping con 409) o stop del nodo
+  // Interruzione del compito: lease persa (ping con 409, 401 o 403: compito chiuso, token revocato, nodo disattivato)
+  // o stop del nodo
   const control = new AbortController();
   let leaseLost = false;
   const onStop = () => control.abort();
@@ -364,8 +389,8 @@ export async function runTask(pkg: TaskPackage, ctx: RunContext): Promise<TaskRe
       ctx.client.ping(pkg.taskId, pkg.leaseToken).then(
         (expiresAt) => ctx.onLeaseRenewed?.(expiresAt),
         (err: unknown) => {
-          if (err instanceof LeaseLostError) {
-            if (!leaseLost) ctx.logger?.warn(`compito ${pkg.taskId}: lease persa, interrompo il compito`);
+          if (isLeaseLoss(err)) {
+            if (!leaseLost) ctx.logger?.warn(`compito ${pkg.taskId}: lease persa (${leaseLossReason(err)}), interrompo il compito`);
             leaseLost = true;
             control.abort();
           } else {

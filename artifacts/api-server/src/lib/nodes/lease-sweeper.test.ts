@@ -151,3 +151,35 @@ describe("pulizia degli allegati eliminati", () => {
     expect(await exists()).toBe(0);
   });
 });
+
+describe("tetto della squadra nel giro periodico", () => {
+  it("squadra oltre il tetto con un nodo vivo (pending: 0): il giro chiude il compito blocked una volta sola", async () => {
+    const instanceId = await seedNodeTeam({ userId, roles: [sapRole()], monthlyBudgetUsd: "1.00" });
+    await db.insert(teamTasksTable).values({ instanceId, planTaskId: "t0", roleKey: "operaio", instructions: "", status: "done", costUsd: "1.500000" });
+    const started = await startTask(instanceId, "t1");
+    const { node } = await createNode(userId, "Mac");
+    expect(await heartbeat(node.id, caps(["sap:abap-developer"]))).toEqual({ pending: 0 });
+
+    const now = new Date();
+    // Anche nei primi minuti di vita dell'API: il tetto non dipende dai nodi
+    await sweepNodeTasks(now, now);
+    expect(await taskRow(started.id)).toMatchObject({ status: "blocked", outcome: "tetto di spesa della squadra raggiunto", nodeId: null, leaseToken: null });
+    expect((await getPlan(instanceId)).tasks.find((t) => t.id === "t1")).toMatchObject({ status: "blocked", outcome: "tetto di spesa della squadra raggiunto" });
+    expect((await events(instanceId)).map((e) => [e.type, e.taskId])).toEqual([["bloccato", started.id]]);
+    expect((await turns(instanceId)).map((t) => t.reasons)).toEqual([[{ type: "task_finished", taskId: started.id }]]);
+
+    // Un secondo giro non cambia nulla
+    await sweepNodeTasks(now, now);
+    expect(await events(instanceId)).toHaveLength(1);
+    expect((await turns(instanceId))[0]!.reasons).toHaveLength(1);
+  });
+
+  it("squadra entro il tetto: il compito resta in attesa", async () => {
+    const instanceId = await seedNodeTeam({ userId, roles: [sapRole()], monthlyBudgetUsd: "5.00" });
+    const started = await startTask(instanceId, "t1");
+    const now = new Date();
+    await sweepNodeTasks(now, now);
+    expect((await taskRow(started.id)).status).toBe("waiting_node");
+    expect(await events(instanceId)).toHaveLength(0);
+  });
+});

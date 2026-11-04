@@ -1,10 +1,17 @@
 // Nodi locali registrati: creazione con token d'ambito `node`, elenco, disattivazione, rigenerazione del
 // token ed eliminazione. Un nodo è dell'utente che lo registra; quello di un altro utente non esiste (null).
+// Disattivare, eliminare o rigenerare il token ferma i compiti che il nodo ha in carico: nella stessa transazione (riga
+// del nodo bloccata) chiudono `failed` «nodo disattivato» con la lease tolta, dopo il commit PLAN, evento e turno del capo.
 
-import { and, asc, eq, isNull } from "drizzle-orm";
-import { db, apiTokensTable, nodesTable, type Node } from "@workspace/db";
+import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
+import { db, apiTokensTable, nodesTable, teamTasksTable, type Node, type TeamTaskRow } from "@workspace/db";
 import { createNodeToken } from "../api-tokens";
+import { logger } from "../logger";
 import { isUniqueViolation } from "../pg-errors";
+import { closeTaskRow, errName, notifyTaskClosed, type TaskResult } from "../teams/task-runner";
+import { NODE_PROTOCOL_MESSAGES } from "./protocol";
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /** Un nodo è vivo se ha comunicato negli ultimi 2 minuti. */
 export const NODE_ONLINE_WINDOW_MS = 2 * 60_000;
@@ -83,28 +90,78 @@ export async function listNodes(userId: number): Promise<NodeView[]> {
   return rows.map((row) => toNodeView(row, now));
 }
 
-/** Disattiva il nodo (il suo token smette di valere sul protocollo); null se non è dell'utente. */
+const NODE_STOPPED: TaskResult = { status: "failed", outcome: NODE_PROTOCOL_MESSAGES.disabled, error: NODE_PROTOCOL_MESSAGES.disabled };
+
+/**
+ * Nella transazione, con la riga del nodo già bloccata: i compiti `running` che il nodo ha in lease chiudono `failed`
+ * «nodo disattivato» (guardia `node`: stessa lease, una volta sola) e perdono la lease. Restituisce quelli chiusi.
+ */
+async function stopNodeTasks(tx: Tx, nodeId: number): Promise<TeamTaskRow[]> {
+  const leased = await tx
+    .select()
+    .from(teamTasksTable)
+    .where(and(eq(teamTasksTable.nodeId, nodeId), eq(teamTasksTable.status, "running"), isNotNull(teamTasksTable.leaseToken)))
+    .for("update");
+  const closed: TeamTaskRow[] = [];
+  for (const task of leased) {
+    const usage = { promptTokens: null, completionTokens: null, costUsd: null };
+    if (await closeTaskRow(tx, task, NODE_STOPPED, usage, { kind: "node", nodeId, leaseToken: task.leaseToken! })) closed.push(task);
+  }
+  return closed;
+}
+
+/** Dopo il commit: PLAN, evento `bloccato` e turno del capo per ogni compito fermato (un errore non ferma gli altri). */
+async function notifyStoppedTasks(tasks: TeamTaskRow[]): Promise<void> {
+  for (const task of tasks) {
+    try {
+      await notifyTaskClosed(task, NODE_STOPPED);
+    } catch (err) {
+      logger.error({ teamTaskId: task.id, errName: errName(err) }, "Notifica del compito fermato con il nodo non riuscita");
+    }
+  }
+}
+
+/** Disattiva il nodo (il suo token smette di valere sul protocollo) e ne ferma i compiti; null se non è dell'utente. */
 export async function disableNode(userId: number, id: number): Promise<NodeView | null> {
-  const [row] = await db
-    .update(nodesTable)
-    .set({ status: "disabled", updatedAt: new Date() })
-    .where(and(eq(nodesTable.id, id), eq(nodesTable.userId, userId)))
-    .returning();
-  return row ? toNodeView(row) : null;
+  const out = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(nodesTable)
+      .set({ status: "disabled", updatedAt: new Date() })
+      .where(and(eq(nodesTable.id, id), eq(nodesTable.userId, userId)))
+      .returning();
+    if (!row) return null;
+    return { row, stopped: await stopNodeTasks(tx, id) };
+  });
+  if (!out) return null;
+  await notifyStoppedTasks(out.stopped);
+  return toNodeView(out.row);
 }
 
-/** Elimina il nodo e i suoi token (cascade); false se non è dell'utente. */
+/** Elimina il nodo e i suoi token (cascade), dopo averne fermato i compiti; false se non è dell'utente. */
 export async function deleteNode(userId: number, id: number): Promise<boolean> {
-  const rows = await db
-    .delete(nodesTable)
-    .where(and(eq(nodesTable.id, id), eq(nodesTable.userId, userId)))
-    .returning({ id: nodesTable.id });
-  return rows.length > 0;
+  const stopped = await db.transaction(async (tx) => {
+    const [node] = await tx
+      .select({ id: nodesTable.id })
+      .from(nodesTable)
+      .where(and(eq(nodesTable.id, id), eq(nodesTable.userId, userId)))
+      .for("update");
+    if (!node) return null;
+    // Prima dell'eliminazione: poi `node_id` diventa null e i compiti del nodo non si riconoscerebbero più
+    const tasks = await stopNodeTasks(tx, id);
+    await tx.delete(nodesTable).where(eq(nodesTable.id, id));
+    return tasks;
+  });
+  if (!stopped) return false;
+  await notifyStoppedTasks(stopped);
+  return true;
 }
 
-/** Revoca i token del nodo e ne crea uno nuovo (mostrato una sola volta); null se il nodo non è dell'utente. */
+/**
+ * Revoca i token del nodo e ne crea uno nuovo (mostrato una sola volta); null se il nodo non è dell'utente. Il processo
+ * col vecchio token non potrebbe più riferire: i compiti che ha in carico si fermano come con la disattivazione.
+ */
 export async function regenerateNodeToken(userId: number, id: number): Promise<{ token: string } | null> {
-  return db.transaction(async (tx) => {
+  const out = await db.transaction(async (tx) => {
     // Riga del nodo bloccata: due rigenerazioni insieme non lasciano due token validi
     const [node] = await tx
       .select()
@@ -116,6 +173,10 @@ export async function regenerateNodeToken(userId: number, id: number): Promise<{
       .update(apiTokensTable)
       .set({ revokedAt: new Date() })
       .where(and(eq(apiTokensTable.nodeId, id), isNull(apiTokensTable.revokedAt)));
-    return { token: await createNodeToken(tx, userId, id, `Nodo ${node.name}`) };
+    const stopped = await stopNodeTasks(tx, id);
+    return { token: await createNodeToken(tx, userId, id, `Nodo ${node.name}`), stopped };
   });
+  if (!out) return null;
+  await notifyStoppedTasks(out.stopped);
+  return { token: out.token };
 }

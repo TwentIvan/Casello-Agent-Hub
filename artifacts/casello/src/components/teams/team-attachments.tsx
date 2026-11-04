@@ -27,8 +27,8 @@ function formatBytes(bytes: number): string {
 }
 
 /**
- * «Allegati» della squadra: file che il nodo scarica nello spazio di lavoro a ogni compito (max 10 MB l'uno, 50 MB per
- * squadra). Il corpo è il file grezzo, il nome viaggia nell'header `X-Attachment-Name`.
+ * «Allegati» della squadra: il nodo scarica nello spazio di lavoro solo quelli che il capo cita nel compito (max 10 MB
+ * l'uno, 50 MB per squadra). Il corpo è il file grezzo, il nome viaggia nell'header `X-Attachment-Name`.
  */
 export function TeamAttachments({ teamId, readOnly }: { teamId: number; readOnly: boolean }) {
   const queryClient = useQueryClient();
@@ -95,7 +95,7 @@ export function TeamAttachments({ teamId, readOnly }: { teamId: number; readOnly
         <div className="space-y-1.5">
           <CardTitle className="text-base">Allegati</CardTitle>
           <CardDescription>
-            File che il nodo scarica nello spazio di lavoro a ogni compito. Massimo {formatBytes(MAX_FILE_BYTES)} per file e{" "}
+            Il nodo scarica nello spazio di lavoro solo gli allegati che il capo cita nel compito. Massimo {formatBytes(MAX_FILE_BYTES)} per file e{" "}
             {formatBytes(MAX_TOTAL_BYTES)} per squadra{attachments.data ? ` (usati ${formatBytes(total)})` : ""}.
           </CardDescription>
         </div>

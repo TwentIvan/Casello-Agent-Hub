@@ -10,7 +10,7 @@ import { MAX_BULLETIN, emitEvent } from "./events";
 import { INSTANCE_MESSAGES, InstanceError, getInstance, type InstanceView } from "./instances";
 import { LEAD_TOOLS, leadToolHandler, planForModel } from "./lead-tools";
 import { InstanceRoleSchema, type InstanceRole } from "./manifest";
-import { getPlan } from "./plan";
+import { getPlan, type PlanView } from "./plan";
 import { loadRoleTools, roleFunctionTools, roleToolExecutor, teamQueueAction, toolSchemaLookup } from "./role-tools";
 import { TASK_MESSAGES, errName, skillTexts } from "./task-runner";
 import { teamBudgetBlock } from "./team-budget";
@@ -134,7 +134,6 @@ function systemPrompt(
   lead: InstanceRole,
   roles: InstanceRole[],
   skills: { code: string; label: string; content: string }[],
-  attachments: AttachmentView[],
 ): string {
   const parts = [
     LEAD_INSTRUCTION,
@@ -146,18 +145,27 @@ function systemPrompt(
     `Lavoro di riferimento: ${instance.refTitle}`,
     "Ruoli della squadra (roleKey · nome · dove gira):",
     ...roles.map((r) => `- ${r.key} · ${r.name} · ${r.runsOn === "node" ? "nodo locale" : "cloud"}${r.isLead ? " (capo)" : ""}`),
-    ...(attachments.length > 0
-      ? [
-          "",
-          "Allegati della squadra (id · nome · byte): puoi darli a un compito con l'argomento `attachments` di `assegna_compito`; il contenuto non è nel contesto.",
-          ...attachments.map((a) => `- ${a.id} · ${a.name} · ${a.sizeBytes}`),
-        ]
-      : []),
     "",
     "Istruzioni del capo:",
     lead.task || "(nessuna istruzione specifica)",
   ];
   for (const skill of skills) parts.push("", `Skill ${skill.code} · ${skill.label}:`, skill.content);
+  return parts.join("\n");
+}
+
+/**
+ * PLAN corrente e allegati della squadra, nel messaggio `user` del contesto: i nomi degli allegati li sceglie chi li
+ * carica, quindi non entrano nel prompt di sistema.
+ */
+function planMessage(plan: PlanView, attachments: AttachmentView[]): string {
+  const parts = [`PLAN corrente (JSON):\n${planForModel(plan)}`];
+  if (attachments.length > 0) {
+    parts.push(
+      "",
+      "Allegati della squadra (id · nome · byte): puoi darli a un compito con l'argomento `attachments` di `assegna_compito`; il contenuto non è nel contesto.",
+      ...attachments.map((a) => `- ${a.id} · ${a.name} · ${a.sizeBytes}`),
+    );
+  }
   return parts.join("\n");
 }
 
@@ -274,8 +282,8 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
     signal,
   };
   const messages: ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt(instance, lead, roles, skills, attachments) },
-    { role: "user", content: `PLAN corrente (JSON):\n${planForModel(plan)}` },
+    { role: "system", content: systemPrompt(instance, lead, roles, skills) },
+    { role: "user", content: planMessage(plan, attachments) },
     ...reasons.map((content) => ({ role: "user" as const, content })),
   ];
   const outcome = await runAgentLoop({ messages, queue: [], rounds: 0, tokens: 0, activeMs: 0 }, deps);

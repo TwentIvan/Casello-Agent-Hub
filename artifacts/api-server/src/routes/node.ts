@@ -20,6 +20,14 @@ import { nodeClaimRateLimit, nodeHeartbeatRateLimit, nodePingRateLimit } from ".
 // Protocollo dei nodi locali (/api/node/*): montato in routes/index.ts con requireNodeToken, quindi solo con un
 // token d'ambito `node` di un nodo attivo. Il nodo è quello del token.
 
+/** Il contratto dice `integer` ma lo Zod generato accetta qualsiasi numero: i token non interi → 400 (niente arrotondamento). */
+const ReportBody = NodeReportBody.superRefine((body, ctx) => {
+  for (const key of ["promptTokens", "completionTokens"] as const) {
+    const value = body[key];
+    if (value !== undefined && !Number.isInteger(value)) ctx.addIssue({ code: "custom", path: [key], message: "deve essere un numero intero" });
+  }
+});
+
 async function guarded(res: Response, fn: () => Promise<void>): Promise<void> {
   try {
     await fn();
@@ -77,7 +85,7 @@ export function createNodeRouter(): IRouter {
 
   router.post("/tasks/:id/report", async (req, res) => {
     const { id } = parseRequest(NodeReportParams, req.params);
-    const body = parseRequest(NodeReportBody, req.body);
+    const body = parseRequest(ReportBody, req.body);
     await guarded(res, async () => {
       await reportTask(currentNode(req).id, id, body);
       res.status(204).end();

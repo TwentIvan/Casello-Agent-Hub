@@ -18,6 +18,7 @@ export const ATTACHMENT_MESSAGES = {
   tooLarge: "allegato troppo grande",
   quota: "spazio allegati della squadra esaurito",
   notFound: "allegato non trovato",
+  nameUsed: "nome già usato",
   instanceNotFound: "squadra non trovata",
   workspaceInvalid: "spazio di lavoro non valido",
   missing: (id: number) => `allegato ${id} inesistente`,
@@ -57,8 +58,10 @@ function normalizeContentType(value: string): string {
 }
 
 /**
- * Salva un allegato (max 10 MB, 50 MB di allegati non eliminati per squadra). Controllo e inserimento stanno nella
- * stessa transazione con la riga della squadra bloccata: due caricamenti insieme non superano il limite.
+ * Salva un allegato (max 10 MB, 50 MB di allegati non eliminati per squadra; nome unico tra i non eliminati della
+ * squadra, senza distinguere le maiuscole: sul nodo due file così si sovrascriverebbero → 409 «nome già usato»).
+ * Controlli e inserimento stanno nella stessa transazione con la riga della squadra bloccata: due caricamenti insieme
+ * non superano il limite né usano lo stesso nome.
  */
 export async function saveAttachment(userId: number, instanceId: number, input: { name: string; contentType: string; bytes: Buffer }): Promise<AttachmentView> {
   if (!validName(input.name) || input.bytes.length === 0) throw new AttachmentError(400, ATTACHMENT_MESSAGES.invalid);
@@ -73,6 +76,18 @@ export async function saveAttachment(userId: number, instanceId: number, input: 
       .limit(1);
     if (!instance) throw new AttachmentError(404, ATTACHMENT_MESSAGES.instanceNotFound);
     if (instance.status === "closed") throw new AttachmentError(409, TEAM_MESSAGES.teamClosed);
+    const [sameName] = await tx
+      .select({ id: teamAttachmentsTable.id })
+      .from(teamAttachmentsTable)
+      .where(
+        and(
+          eq(teamAttachmentsTable.instanceId, instanceId),
+          isNull(teamAttachmentsTable.deletedAt),
+          sql`lower(${teamAttachmentsTable.name}) = lower(${input.name})`,
+        ),
+      )
+      .limit(1);
+    if (sameName) throw new AttachmentError(409, ATTACHMENT_MESSAGES.nameUsed);
     const [used] = await tx
       .select({ total: sql<string>`coalesce(sum(${teamAttachmentsTable.sizeBytes}), 0)` })
       .from(teamAttachmentsTable)

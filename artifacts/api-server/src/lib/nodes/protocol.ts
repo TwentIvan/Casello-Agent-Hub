@@ -302,16 +302,17 @@ async function releaseClaim(task: TeamTaskRow): Promise<void> {
  * Squadra oltre il tetto: il compito in attesa si chiude `blocked` come un compito cloud bloccato dal tetto (PLAN,
  * evento `bloccato`, turno del capo), con un UPDATE condizionato a `waiting_node`: una volta sola.
  */
-async function blockCappedTask(candidate: Candidate): Promise<void> {
+export async function blockCappedTask(task: TeamTaskRow): Promise<boolean> {
   try {
-    await finishTaskExecution(
-      candidate.task,
+    return await finishTaskExecution(
+      task,
       { status: "blocked", outcome: TEAM_BUDGET_REACHED, error: TEAM_BUDGET_REACHED },
       { promptTokens: null, completionTokens: null, costUsd: null },
       { kind: "waiting" },
     );
   } catch (err) {
-    logger.error({ teamTaskId: candidate.task.id, errName: errName(err) }, "Blocco per tetto del compito del nodo non riuscito");
+    logger.error({ teamTaskId: task.id, errName: errName(err) }, "Blocco per tetto del compito del nodo non riuscito");
+    return false;
   }
 }
 
@@ -319,7 +320,7 @@ async function blockCappedTask(candidate: Candidate): Promise<void> {
 export async function claimTask(nodeId: number): Promise<TaskPackage | null> {
   const node = await activeNode(nodeId);
   const { eligible, capped } = await eligibleTasks(node);
-  for (const candidate of capped) await blockCappedTask(candidate);
+  for (const candidate of capped) await blockCappedTask(candidate.task);
   for (const candidate of eligible) {
     const attempt = await tryClaim(node, candidate);
     if (attempt.kind === "full") return null;

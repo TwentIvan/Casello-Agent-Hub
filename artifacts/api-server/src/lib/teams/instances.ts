@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import {
   db,
   appsTable,
@@ -262,9 +262,10 @@ export const CLOSE_MESSAGES = {
 
 /**
  * Chiude la squadra: non si riapre e non si salva più. Nella stessa transazione i compiti `queued` e `waiting_node`
- * (in attesa di un nodo) diventano `cancelled`, le voci `plan`/`plan_change` ancora in coda `rejected` («squadra chiusa») e i turni in coda `failed`.
- * Compiti e turni `running` (anche quelli già presi da un nodo) finiscono da soli, ma non fanno partire altri turni
- * (la squadra non è più attiva).
+ * (in attesa di un nodo) diventano `cancelled`, come quelli `running` presi da un nodo (lease tolta: il nodo smette di
+ * lavorarci), le voci `plan`/`plan_change` ancora in coda `rejected` («squadra chiusa») e i turni in coda `failed`.
+ * Nessun turno per i compiti annullati. Compiti cloud e turni `running` finiscono da soli, ma non fanno partire altri
+ * turni (la squadra non è più attiva).
  */
 export async function closeInstance(id: number): Promise<InstanceView> {
   await getRow(id);
@@ -281,6 +282,12 @@ export async function closeInstance(id: number): Promise<InstanceView> {
       .set({ status: "cancelled", outcome: CLOSE_MESSAGES.taskCancelled, finishedAt: now })
       .where(and(eq(teamTasksTable.instanceId, id), inArray(teamTasksTable.status, ["queued", "waiting_node"])))
       .returning({ planTaskId: teamTasksTable.planTaskId });
+    // Compiti presi da un nodo: annullati e senza lease (ping e report del nodo → 409, che interrompe il lavoro)
+    const leased = await tx
+      .update(teamTasksTable)
+      .set({ status: "cancelled", outcome: CLOSE_MESSAGES.taskCancelled, finishedAt: now, leaseToken: null, leaseExpiresAt: null })
+      .where(and(eq(teamTasksTable.instanceId, id), eq(teamTasksTable.status, "running"), isNotNull(teamTasksTable.leaseToken)))
+      .returning({ planTaskId: teamTasksTable.planTaskId });
     await tx
       .update(pendingActionsTable)
       .set({ status: "rejected", decisionNote: CLOSE_MESSAGES.teamClosed, decidedAt: now, finishedAt: now })
@@ -295,7 +302,7 @@ export async function closeInstance(id: number): Promise<InstanceView> {
       .update(teamTurnsTable)
       .set({ status: "failed", error: CLOSE_MESSAGES.teamClosed, finishedAt: now })
       .where(and(eq(teamTurnsTable.instanceId, id), eq(teamTurnsTable.status, "queued")));
-    return tasks.map((t) => t.planTaskId);
+    return [...tasks, ...leased].map((t) => t.planTaskId);
   });
   // Dopo il commit (la transazione non tocca la riga del PLAN): i compiti annullati non restano «in corso» nel PLAN
   if (cancelled.length > 0) {

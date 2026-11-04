@@ -1,6 +1,7 @@
 // Controlli periodici dei compiti dei nodi (ogni minuto e all'avvio): lease scadute → compito `failed` («nodo non
 // più raggiungibile») con evento e turno del capo; compiti in attesa da oltre 10 minuti senza alcun nodo vivo
-// adatto → evento `bloccato` una sola volta per compito (`no_node_notified`), il compito resta in attesa.
+// adatto → evento `bloccato` una sola volta per compito (`no_node_notified`), il compito resta in attesa; compiti in
+// attesa di squadre oltre il tetto di spesa → `blocked` (come al claim: il nodo non chiede il claim se `pending` è 0).
 
 import { and, eq, gte, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { db, nodesTable, teamInstancesTable, teamTasksTable } from "@workspace/db";
@@ -10,7 +11,8 @@ import { emitEvent } from "../teams/events";
 import { InstanceRoleSchema } from "../teams/manifest";
 import { errName, finishTaskExecution } from "../teams/task-runner";
 import { NODE_ONLINE_WINDOW_MS } from "./nodes";
-import { hasSkills, roleNodeSkills } from "./protocol";
+import { teamCapBlock } from "../teams/team-budget";
+import { blockCappedTask, hasSkills, roleNodeSkills } from "./protocol";
 
 export const SWEEP_INTERVAL_MS = 60_000;
 /** Attesa oltre la quale un compito senza nodo adatto si segnala. */
@@ -44,6 +46,30 @@ export async function sweepExpiredLeases(now: Date = new Date()): Promise<number
     }
   }
   return closed;
+}
+
+/**
+ * Compiti `waiting_node` di squadre attive oltre il tetto di spesa → `blocked` «tetto di spesa della squadra
+ * raggiunto» (PLAN, evento `bloccato`, turno del capo), una volta sola (UPDATE condizionato a `waiting_node`).
+ * Restituisce quanti ne ha chiusi.
+ */
+export async function blockCappedWaitingTasks(): Promise<number> {
+  const waiting = await db
+    .select({ task: teamTasksTable })
+    .from(teamTasksTable)
+    .innerJoin(teamInstancesTable, eq(teamTasksTable.instanceId, teamInstancesTable.id))
+    .where(and(eq(teamTasksTable.status, "waiting_node"), eq(teamInstancesTable.status, "active"), isNotNull(teamInstancesTable.monthlyBudgetUsd)));
+  const capped = new Map<number, boolean>();
+  let blocked = 0;
+  for (const { task } of waiting) {
+    try {
+      if (!capped.has(task.instanceId)) capped.set(task.instanceId, (await teamCapBlock(task.instanceId)) !== null);
+      if (capped.get(task.instanceId) && (await blockCappedTask(task))) blocked++;
+    } catch (err) {
+      logger.error({ teamTaskId: task.id, errName: errName(err) }, "Controllo del tetto del compito del nodo non riuscito");
+    }
+  }
+  return blocked;
 }
 
 /** Segnala (una volta) i compiti in attesa da oltre 10 minuti senza un nodo vivo dell'utente con le skill del ruolo. */
@@ -105,7 +131,7 @@ export async function notifyNodelessTasks(now: Date = new Date()): Promise<numbe
 const PROCESS_STARTED_AT = new Date();
 
 /**
- * Un giro dei due controlli; un errore si registra (solo il tipo), mai come promise rifiutata. L'avviso «nessun nodo»
+ * Un giro dei controlli; un errore si registra (solo il tipo), mai come promise rifiutata. L'avviso «nessun nodo»
  * aspetta che l'API sia su da almeno NODE_ONLINE_WINDOW_MS (`upSince`), così i nodi hanno avuto modo di farsi vivi.
  */
 export async function sweepNodeTasks(now: Date = new Date(), upSince: Date = PROCESS_STARTED_AT): Promise<void> {
@@ -114,6 +140,12 @@ export async function sweepNodeTasks(now: Date = new Date(), upSince: Date = PRO
     if (expired > 0) logger.warn({ count: expired }, "Compiti dei nodi chiusi per lease scaduta");
   } catch (err) {
     logger.error({ errName: errName(err) }, "Controllo delle lease dei nodi non riuscito");
+  }
+  try {
+    const blocked = await blockCappedWaitingTasks();
+    if (blocked > 0) logger.warn({ count: blocked }, "Compiti dei nodi bloccati dal tetto di spesa della squadra");
+  } catch (err) {
+    logger.error({ errName: errName(err) }, "Controllo del tetto dei compiti dei nodi non riuscito");
   }
   try {
     await purgeDeletedAttachments();

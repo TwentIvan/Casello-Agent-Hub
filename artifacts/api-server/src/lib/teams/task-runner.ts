@@ -427,7 +427,9 @@ export interface TaskUsage {
 export type TaskCloseGuard =
   | { kind: "lease"; nodeId: number; leaseToken: string; now: Date; sessionId?: string | null }
   | { kind: "expired"; leaseToken: string; now: Date }
-  | { kind: "waiting" };
+  | { kind: "waiting" }
+  /** Nodo disattivato, eliminato o con il token rigenerato: il compito che ha in carico, scaduto o no; la lease si toglie. */
+  | { kind: "node"; nodeId: number; leaseToken: string };
 
 function guardCondition(guard: TaskCloseGuard | undefined): SQL | undefined {
   if (!guard) return and(eq(teamTasksTable.status, "running"), isNull(teamTasksTable.leaseToken));
@@ -443,6 +445,8 @@ function guardCondition(guard: TaskCloseGuard | undefined): SQL | undefined {
       return and(eq(teamTasksTable.status, "running"), eq(teamTasksTable.leaseToken, guard.leaseToken), lte(teamTasksTable.leaseExpiresAt, guard.now));
     case "waiting":
       return and(eq(teamTasksTable.status, "waiting_node"), isNull(teamTasksTable.leaseToken));
+    case "node":
+      return and(eq(teamTasksTable.status, "running"), eq(teamTasksTable.nodeId, guard.nodeId), eq(teamTasksTable.leaseToken, guard.leaseToken));
   }
 }
 
@@ -450,12 +454,17 @@ const formatCost = (costUsd: number | null): string | null =>
   costUsd === null || !Number.isFinite(costUsd) ? null : String(Math.round(costUsd * 1e8) / 1e8);
 
 /**
- * Chiude il compito (UPDATE condizionato allo stato e alla guardia), poi stato ed esito nel PLAN, evento e turno
- * del capo. Un compito non più nello stato atteso o con la lease cambiata o scaduta (chiuso da altri nel frattempo)
- * non si tocca: restituisce false e non produce eventi né turni. Usata dai compiti cloud e dai compiti dei nodi.
+ * Solo l'UPDATE condizionato allo stato e alla guardia (anche dentro una transazione): true se ha chiuso il compito.
+ * Dopo, fuori dalla transazione, `notifyTaskClosed`.
  */
-export async function finishTaskExecution(task: TeamTaskRow, result: TaskResult, usage: TaskUsage, guard?: TaskCloseGuard): Promise<boolean> {
-  const [closed] = await db
+export async function closeTaskRow(
+  executor: Pick<typeof db, "update">,
+  task: TeamTaskRow,
+  result: TaskResult,
+  usage: TaskUsage,
+  guard?: TaskCloseGuard,
+): Promise<boolean> {
+  const [closed] = await executor
     .update(teamTasksTable)
     .set({
       status: result.status,
@@ -468,10 +477,15 @@ export async function finishTaskExecution(task: TeamTaskRow, result: TaskResult,
       costUsd: formatCost(usage.costUsd),
       finishedAt: new Date(),
       ...(guard?.kind === "lease" && guard.sessionId !== undefined ? { sessionId: guard.sessionId } : {}),
+      ...(guard?.kind === "node" ? { leaseToken: null, leaseExpiresAt: null } : {}),
     })
     .where(and(eq(teamTasksTable.id, task.id), guardCondition(guard)))
     .returning({ id: teamTasksTable.id });
-  if (!closed) return false;
+  return closed !== undefined;
+}
+
+/** Dopo la chiusura (e dopo il commit): stato ed esito nel PLAN, evento e turno del capo. */
+export async function notifyTaskClosed(task: TeamTaskRow, result: TaskResult): Promise<void> {
   await patchPlan(task.instanceId, { tasks: [{ id: task.planTaskId, status: result.status, outcome: result.outcome }] });
   await emitEvent({
     instanceId: task.instanceId,
@@ -481,6 +495,16 @@ export async function finishTaskExecution(task: TeamTaskRow, result: TaskResult,
     ...(result.error ? { detail: result.error } : {}),
   });
   await enqueueTurnReason(task.instanceId, { type: "task_finished", taskId: task.id });
+}
+
+/**
+ * Chiude il compito (UPDATE condizionato allo stato e alla guardia), poi stato ed esito nel PLAN, evento e turno
+ * del capo. Un compito non più nello stato atteso o con la lease cambiata o scaduta (chiuso da altri nel frattempo)
+ * non si tocca: restituisce false e non produce eventi né turni. Usata dai compiti cloud e dai compiti dei nodi.
+ */
+export async function finishTaskExecution(task: TeamTaskRow, result: TaskResult, usage: TaskUsage, guard?: TaskCloseGuard): Promise<boolean> {
+  if (!(await closeTaskRow(db, task, result, usage, guard))) return false;
+  await notifyTaskClosed(task, result);
   return true;
 }
 

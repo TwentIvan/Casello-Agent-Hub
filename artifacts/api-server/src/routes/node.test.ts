@@ -308,27 +308,103 @@ describe("ping e report", () => {
     expect((await taskRow(taskId)).status).toBe("running");
   });
 
-  it("chiusura della squadra: i compiti in attesa annullati, quello preso dal nodo finisce da solo senza turni", async () => {
+  it("token non interi → 400, nulla salvato", async () => {
+    const { taskId, node, leaseToken } = await claimed();
+    for (const extra of [{ promptTokens: 10.5 }, { completionTokens: 0.1 }]) {
+      const res = await api("POST", `/node/tasks/${taskId}/report`, { token: node.token, body: { leaseToken, status: "done", outcome: "fatto", ...extra } });
+      expect(res.status, JSON.stringify(extra)).toBe(400);
+    }
+    expect((await taskRow(taskId)).status).toBe("running");
+  });
+
+  it("report con un detail di 20 000 caratteri tutti escapati (oltre i 100 KB del parser globale) → 204", async () => {
+    const { taskId, node, leaseToken } = await claimed();
+    // Ogni carattere come \u0001: 6 byte nel JSON, ~120 KB in tutto
+    const detail = "\\u0001".repeat(20_000);
+    const raw = `{"leaseToken":${JSON.stringify(leaseToken)},"status":"done","outcome":"fatto","detail":"${detail}"}`;
+    expect(Buffer.byteLength(raw)).toBeGreaterThan(110 * 1024);
+    const res = await fetch(`${base}/api/node/tasks/${taskId}/report`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${node.token}` },
+      body: raw,
+    });
+    expect(res.status, await res.text()).toBe(204);
+    const row = await taskRow(taskId);
+    expect(row.status).toBe("done");
+    expect(row.detail).toBe("\u0001".repeat(20_000));
+  });
+
+  it("chiusura della squadra: compiti in attesa e quello preso dal nodo annullati, lease tolta, ping e report → 409, nessun turno", async () => {
     const { closeInstance } = await import("../lib/teams/instances");
-    const { pumpTurn } = await import("../lib/teams/turn-runner");
     const instanceId = await seedNodeTeam({ userId, roles: [sapRole()], tasks: { t1: "operaio", t2: "operaio" } });
     const leased = await startTask(instanceId, "t1");
     const waiting = await startTask(instanceId, "t2");
     const node = await nodeWith(userId, "Mac", ["sap:abap-developer"]);
     const claim = await api("POST", "/node/claim", { token: node.token });
     expect(claim.json.taskId).toBe(leased.id);
+    const leaseToken = claim.json.leaseToken as string;
 
     await closeInstance(instanceId);
     expect(await taskRow(waiting.id)).toMatchObject({ status: "cancelled", outcome: "annullato: squadra chiusa" });
-    expect((await getPlan(instanceId)).tasks.find((t) => t.id === "t2")).toMatchObject({ status: "failed", outcome: "annullato: squadra chiusa" });
-    expect((await taskRow(leased.id)).status).toBe("running");
+    expect(await taskRow(leased.id)).toMatchObject({ status: "cancelled", outcome: "annullato: squadra chiusa", leaseToken: null, leaseExpiresAt: null });
+    const plan = await getPlan(instanceId);
+    for (const id of ["t1", "t2"]) expect(plan.tasks.find((t) => t.id === id)).toMatchObject({ status: "failed", outcome: "annullato: squadra chiusa" });
 
-    const rep = await api("POST", `/node/tasks/${leased.id}/report`, { token: node.token, body: { leaseToken: claim.json.leaseToken, status: "done", outcome: "fatto" } });
-    expect(rep.status).toBe(204);
-    expect((await taskRow(leased.id)).status).toBe("done");
-    // Il motivo accodato non fa partire un turno: la squadra è chiusa
-    expect(await pumpTurn(instanceId)).toBeNull();
-    expect((await turns(instanceId)).map((t) => t.status)).toEqual(["failed"]);
+    const ping = await api("POST", `/node/tasks/${leased.id}/ping`, { token: node.token, body: { leaseToken } });
+    expect(ping.status).toBe(409);
+    expect(ping.json).toEqual({ error: LEASE_MSG });
+    const rep = await api("POST", `/node/tasks/${leased.id}/report`, { token: node.token, body: { leaseToken, status: "done", outcome: "fatto" } });
+    expect(rep.status).toBe(409);
+    expect((await taskRow(leased.id)).status).toBe("cancelled");
+    expect(await turns(instanceId)).toHaveLength(0);
+  });
+
+  describe("nodo disattivato, eliminato o con il token rigenerato durante un compito", () => {
+    const NODE_OFF = "nodo disattivato";
+
+    async function expectStopped(instanceId: number, taskId: number) {
+      expect(await taskRow(taskId)).toMatchObject({ status: "failed", outcome: NODE_OFF, error: NODE_OFF, leaseToken: null, leaseExpiresAt: null });
+      expect((await getPlan(instanceId)).tasks[0]).toMatchObject({ status: "failed", outcome: NODE_OFF });
+      expect((await events(instanceId)).map((e) => [e.type, e.taskId])).toEqual([["bloccato", taskId]]);
+      expect((await turns(instanceId)).map((t) => t.reasons)).toEqual([[{ type: "task_finished", taskId }]]);
+    }
+
+    it("disattivazione: il compito chiude failed una volta, il ping → 403", async () => {
+      const { disableNode } = await import("../lib/nodes/nodes");
+      const { instanceId, taskId, node, leaseToken } = await claimed();
+      expect(await disableNode(userId, node.id)).not.toBeNull();
+      await expectStopped(instanceId, taskId);
+      expect((await api("POST", `/node/tasks/${taskId}/ping`, { token: node.token, body: { leaseToken } })).status).toBe(403);
+      // Disattivare di nuovo non produce altri eventi né turni
+      await disableNode(userId, node.id);
+      await expectStopped(instanceId, taskId);
+    });
+
+    it("rigenerazione del token: il compito del vecchio processo chiude failed, il vecchio token → 401", async () => {
+      const { regenerateNodeToken } = await import("../lib/nodes/nodes");
+      const { instanceId, taskId, node, leaseToken } = await claimed();
+      const fresh = await regenerateNodeToken(userId, node.id);
+      expect(fresh).not.toBeNull();
+      await expectStopped(instanceId, taskId);
+      expect((await api("POST", `/node/tasks/${taskId}/ping`, { token: node.token, body: { leaseToken } })).status).toBe(401);
+      expect((await api("POST", `/node/tasks/${taskId}/ping`, { token: fresh!.token, body: { leaseToken } })).status).toBe(409);
+    });
+
+    it("eliminazione: il compito chiude failed prima che node_id diventi null", async () => {
+      const { deleteNode } = await import("../lib/nodes/nodes");
+      const { instanceId, taskId, node, leaseToken } = await claimed();
+      expect(await deleteNode(userId, node.id)).toBe(true);
+      await expectStopped(instanceId, taskId);
+      expect((await taskRow(taskId)).nodeId).toBeNull();
+      expect((await api("POST", `/node/tasks/${taskId}/report`, { token: node.token, body: { leaseToken, status: "done", outcome: "fatto" } })).status).toBe(401);
+    });
+
+    it("nodo di un altro utente: nulla cambia", async () => {
+      const { disableNode } = await import("../lib/nodes/nodes");
+      const { taskId, node } = await claimed();
+      expect(await disableNode(otherUserId, node.id)).toBeNull();
+      expect((await taskRow(taskId)).status).toBe("running");
+    });
   });
 
   it("report blocked → evento bloccato; failed nel PLAN", async () => {

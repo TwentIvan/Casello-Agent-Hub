@@ -62,11 +62,19 @@ app.use(
 // personale (Bearer), niente cookie; nessuna origine CORS ammessa: non è chiamato dai browser.
 app.use("/mcp", mcpRouter());
 app.use(cors(corsOptions));
-// Il caricamento di un allegato ha il suo parser grezzo (10 MB) sulla route: i parser globali lo saltano
+// Il caricamento di un allegato ha il suo parser grezzo (10 MB) sulla route: i parser globali lo saltano.
+// Il protocollo dei nodi ha un parser JSON da 256 KB al posto di quello globale (100 KB): un report con `detail` di
+// 20 000 caratteri tutti da escapare supera i 100 KB e verrebbe perso.
 const jsonParser = express.json();
+const nodeJsonParser = express.json({ limit: "256kb" });
+const NODE_PROTOCOL_PATH = /^\/api\/node(?:\/|$)/i;
 const formParser = express.urlencoded({ extended: true });
 const isAttachmentUpload = (req: express.Request): boolean => req.method === "POST" && ATTACHMENT_UPLOAD_PATH.test(req.originalUrl.split("?")[0]!);
-app.use((req, res, next) => (isAttachmentUpload(req) ? next() : jsonParser(req, res, next)));
+app.use((req, res, next) => {
+  if (isAttachmentUpload(req)) return next();
+  const parser = NODE_PROTOCOL_PATH.test(req.originalUrl.split("?")[0]!) ? nodeJsonParser : jsonParser;
+  return parser(req, res, next);
+});
 app.use((req, res, next) => (isAttachmentUpload(req) ? next() : formParser(req, res, next)));
 app.use(sessionMiddleware());
 

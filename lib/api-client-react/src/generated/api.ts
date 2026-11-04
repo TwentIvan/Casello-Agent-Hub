@@ -5943,7 +5943,7 @@ export const getUploadTeamAttachmentUrl = (id: number,) => {
 }
 
 /**
- * Il corpo è il file grezzo (al massimo 10 MB; 50 MB di allegati non eliminati per squadra), il nome nell'header `X-Attachment-Name` (anche codificato con encodeURIComponent; senza `/`, `\`, `..`, max 200 caratteri) e il tipo nel `Content-Type`. Squadra chiusa → 409.
+ * Il corpo è il file grezzo (al massimo 10 MB; 50 MB di allegati non eliminati per squadra), il nome nell'header `X-Attachment-Name` (anche codificato con encodeURIComponent; senza `/`, `\`, `..`, max 200 caratteri) e il tipo nel `Content-Type`. Squadra chiusa → 409; nome già usato da un allegato non eliminato della squadra (senza distinguere le maiuscole) → 409 «nome già usato».
  * @summary Carica un allegato della squadra
  */
 export const uploadTeamAttachment = async (id: number,

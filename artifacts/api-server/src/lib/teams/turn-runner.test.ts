@@ -246,7 +246,7 @@ describe("turni del capo", () => {
     expect((await getPlan(id)).tasks[0]).toMatchObject({ status: "done", outcome: "WI analizzato: tre punti da chiudere" });
   });
 
-  it("il contesto del capo elenca gli allegati non eliminati (id, nome, byte) senza contenuto", async () => {
+  it("il contesto del capo elenca gli allegati non eliminati (id, nome, byte) senza contenuto, nel messaggio user del PLAN", async () => {
     const id = await seedActiveApproved();
     const keep = await saveAttachment(userId, id, { name: "specifica.txt", contentType: "text/plain", bytes: Buffer.from("SEGRETO-CONTENUTO") });
     const gone = await saveAttachment(userId, id, { name: "vecchio.txt", contentType: "text/plain", bytes: Buffer.from("x") });
@@ -254,9 +254,13 @@ describe("turni del capo", () => {
     leadScript.push(text("ok"));
     await sendToLead(userId, id, "guarda gli allegati");
     await settleAll();
-    const system = String(leadRequests().at(-1)!.messages[0]!.content);
-    expect(system).toContain(`- ${keep.id} · specifica.txt · ${keep.sizeBytes}`);
-    expect(system).not.toContain("vecchio.txt");
+    const [system, planMessage] = leadRequests().at(-1)!.messages;
+    // I nomi li sceglie chi carica: mai nel prompt di sistema
+    expect(String(system!.content)).not.toContain("specifica.txt");
+    expect(planMessage!.role).toBe("user");
+    expect(String(planMessage!.content)).toContain("PLAN corrente");
+    expect(String(planMessage!.content)).toContain(`- ${keep.id} · specifica.txt · ${keep.sizeBytes}`);
+    expect(JSON.stringify(leadRequests().at(-1)!.messages)).not.toContain("vecchio.txt");
     expect(JSON.stringify(leadRequests().at(-1)!.messages)).not.toContain("SEGRETO-CONTENUTO");
   });
 

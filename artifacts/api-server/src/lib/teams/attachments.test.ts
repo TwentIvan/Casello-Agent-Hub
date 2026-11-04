@@ -55,6 +55,20 @@ describe("saveAttachment", () => {
     await expect(saveAttachment(userId, instanceId, file("v.txt", ""))).rejects.toMatchObject({ status: 400 });
   });
 
+  it("nome già usato da un allegato non eliminato della squadra (maiuscole comprese) → 409 «nome già usato»", async () => {
+    const first = await saveAttachment(userId, instanceId, file("Note.txt", "a"));
+    for (const name of ["Note.txt", "note.TXT"]) {
+      const err = await saveAttachment(userId, instanceId, file(name, "b")).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(AttachmentError);
+      expect(err).toMatchObject({ status: 409, message: "nome già usato" });
+    }
+    // Un'altra squadra può usarlo; dopo l'eliminazione il nome torna libero
+    const other = await seedNodeTeam({ userId, roles: [nodeRole()] });
+    await expect(saveAttachment(userId, other, file("note.txt", "c"))).resolves.toMatchObject({ name: "note.txt" });
+    await deleteAttachment(instanceId, first.id);
+    await expect(saveAttachment(userId, instanceId, file("note.txt", "d"))).resolves.toMatchObject({ name: "note.txt" });
+  });
+
   it("squadra chiusa → 409, inesistente → 404", async () => {
     await pool.query("UPDATE team_instances SET status = 'closed' WHERE id = $1", [instanceId]);
     await expect(saveAttachment(userId, instanceId, file("a.txt", "a"))).rejects.toMatchObject({ status: 409, message: "squadra chiusa" });

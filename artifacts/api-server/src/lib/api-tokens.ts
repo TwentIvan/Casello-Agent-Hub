@@ -9,9 +9,16 @@ import { db, apiTokensTable, usersTable, type ApiToken } from "@workspace/db";
 import { isAllowed } from "./users";
 
 const TOKEN_PREFIX = "cas_";
-/** Ambiti di un token: mcp = server MCP; api:read = lettura su /api; api:write = lettura e scrittura su /api. */
-export const TOKEN_SCOPES = ["mcp", "api:read", "api:write"] as const;
+/**
+ * Ambiti di un token: mcp = server MCP; api:read = lettura su /api; api:write = lettura e scrittura su /api;
+ * node = protocollo del nodo locale (solo /api/node, solo token legati a un nodo).
+ */
+export const TOKEN_SCOPES = ["mcp", "api:read", "api:write", "node"] as const;
 export type TokenScope = (typeof TOKEN_SCOPES)[number];
+/** Ambiti che l'utente può scegliere per un token personale: `node` nasce solo con un nodo (createNodeToken). */
+export const PERSONAL_TOKEN_SCOPES = ["mcp", "api:read", "api:write"] as const;
+/** Durata dei token dei nodi. */
+const NODE_TOKEN_DAYS = 365;
 
 /** Risposte fisse per le richieste con un token personale (su /api e per approva/rifiuta su /mcp). */
 export const TOKEN_MESSAGES = {
@@ -61,9 +68,9 @@ export async function createApiToken(
   if (!Number.isInteger(expiresInDays) || expiresInDays < DAYS_MIN || expiresInDays > DAYS_MAX) {
     throw new ApiTokenInputError(`la scadenza deve essere un numero intero di giorni tra ${DAYS_MIN} e ${DAYS_MAX}`);
   }
-  const known = scopes.filter((scope) => TOKEN_SCOPES.includes(scope));
+  const known = scopes.filter((scope) => (PERSONAL_TOKEN_SCOPES as readonly string[]).includes(scope));
   if (scopes.length < 1 || known.length !== scopes.length || new Set(scopes).size !== scopes.length) {
-    throw new ApiTokenInputError(`ambiti non validi: scegline almeno uno tra ${TOKEN_SCOPES.join(", ")}`);
+    throw new ApiTokenInputError(`ambiti non validi: scegline almeno uno tra ${PERSONAL_TOKEN_SCOPES.join(", ")}`);
   }
   const token = TOKEN_PREFIX + randomBytes(32).toString("base64url");
   const [row] = await db
@@ -79,12 +86,31 @@ export async function createApiToken(
   return { token, row: row! };
 }
 
-/** Token dell'utente, i più recenti prima, revocati compresi. */
+/** Crea il token di un nodo (ambito `node`, legato al nodo). Il valore in chiaro esce solo da qui. */
+export async function createNodeToken(
+  executor: Pick<typeof db, "insert">,
+  userId: number,
+  nodeId: number,
+  name: string,
+): Promise<string> {
+  const token = TOKEN_PREFIX + randomBytes(32).toString("base64url");
+  await executor.insert(apiTokensTable).values({
+    userId,
+    nodeId,
+    tokenHash: hashToken(token),
+    name,
+    expiresAt: new Date(Date.now() + NODE_TOKEN_DAYS * DAY_MS),
+    scopes: ["node"],
+  });
+  return token;
+}
+
+/** Token personali dell'utente (non quelli dei nodi), i più recenti prima, revocati compresi. */
 export async function listApiTokens(userId: number): Promise<ApiToken[]> {
   return db
     .select()
     .from(apiTokensTable)
-    .where(eq(apiTokensTable.userId, userId))
+    .where(and(eq(apiTokensTable.userId, userId), isNull(apiTokensTable.nodeId)))
     .orderBy(desc(apiTokensTable.createdAt), desc(apiTokensTable.id));
 }
 
@@ -93,7 +119,14 @@ export async function revokeApiToken(userId: number, id: number): Promise<boolea
   const rows = await db
     .update(apiTokensTable)
     .set({ revokedAt: new Date() })
-    .where(and(eq(apiTokensTable.id, id), eq(apiTokensTable.userId, userId), isNull(apiTokensTable.revokedAt)))
+    .where(
+      and(
+        eq(apiTokensTable.id, id),
+        eq(apiTokensTable.userId, userId),
+        isNull(apiTokensTable.nodeId),
+        isNull(apiTokensTable.revokedAt),
+      ),
+    )
     .returning({ id: apiTokensTable.id });
   return rows.length > 0;
 }
@@ -105,7 +138,7 @@ export async function revokeApiToken(userId: number, id: number): Promise<boolea
 export async function authenticateApiToken(
   raw: string,
   now: Date = new Date(),
-): Promise<{ userId: number; tokenId: number; scopes: TokenScope[] } | null> {
+): Promise<{ userId: number; tokenId: number; scopes: TokenScope[]; nodeId: number | null } | null> {
   if (!raw.startsWith(TOKEN_PREFIX)) return null;
   const [found] = await db
     .select({ token: apiTokensTable, email: usersTable.email })
@@ -128,5 +161,5 @@ export async function authenticateApiToken(
         or(isNull(apiTokensTable.lastUsedAt), lt(apiTokensTable.lastUsedAt, threshold)),
       ),
     );
-  return { userId: token.userId, tokenId: token.id, scopes: token.scopes as TokenScope[] };
+  return { userId: token.userId, tokenId: token.id, scopes: token.scopes as TokenScope[], nodeId: token.nodeId };
 }

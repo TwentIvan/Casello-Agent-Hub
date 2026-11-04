@@ -29,7 +29,7 @@ describe("createApiToken", () => {
     expect(token).toMatch(/^cas_[A-Za-z0-9_-]{43}$/);
     expect(row.name).toBe("Portatile");
     expect(row.expiresAt.getTime()).toBeGreaterThan(Date.now() + 29 * DAY);
-    expect(await authenticateApiToken(token)).toEqual({ userId, tokenId: row.id, scopes: ["mcp"] });
+    expect(await authenticateApiToken(token)).toEqual({ userId, tokenId: row.id, scopes: ["mcp"], nodeId: null });
   });
 
   it("default mcp", async () => {
@@ -70,7 +70,7 @@ describe("createApiToken", () => {
 describe("authenticateApiToken", () => {
   it("authenticate restituisce gli ambiti", async () => {
     const { token, row } = await createApiToken(userId, "Portatile", 30, ["api:read", "api:write"]);
-    expect(await authenticateApiToken(token)).toEqual({ userId, tokenId: row.id, scopes: ["api:read", "api:write"] });
+    expect(await authenticateApiToken(token)).toEqual({ userId, tokenId: row.id, scopes: ["api:read", "api:write"], nodeId: null });
   });
 
   it("null per un token sconosciuto", async () => {

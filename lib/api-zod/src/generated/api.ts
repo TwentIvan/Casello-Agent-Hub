@@ -121,6 +121,109 @@ export const RevokeApiTokenResponse = zod.void()
 
 
 /**
+ * Nodi locali registrati, per nome, con le capacità dichiarate e se sono vivi (comunicato negli ultimi 2 minuti). Solo con il login: con un token risponde 403.
+ * @summary Elenca i nodi locali dell'utente
+ */
+export const ListNodesResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'disabled']),
+  "executor": zod.string().nullable(),
+  "version": zod.string().nullable(),
+  "skills": zod.array(zod.string()),
+  "workspaceRoot": zod.string().nullable(),
+  "maxConcurrent": zod.number(),
+  "lastSeenAt": zod.coerce.date().nullable(),
+  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti')
+})
+export const ListNodesResponse = zod.array(ListNodesResponseItem)
+
+
+/**
+ * Crea il nodo e il suo token d'ambito `node`, che compare solo in questa risposta. Nome unico per utente (409 "nome già usato"). Solo con il login.
+ * @summary Registra un nodo locale
+ */
+export const createNodeBodyNameMax = 100;
+
+
+
+export const CreateNodeBody = zod.object({
+  "name": zod.string().min(1).max(createNodeBodyNameMax)
+})
+
+export const CreateNodeResponse = zod.object({
+  "node": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'disabled']),
+  "executor": zod.string().nullable(),
+  "version": zod.string().nullable(),
+  "skills": zod.array(zod.string()),
+  "workspaceRoot": zod.string().nullable(),
+  "maxConcurrent": zod.number(),
+  "lastSeenAt": zod.coerce.date().nullable(),
+  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti')
+}),
+  "token": zod.string().describe('Valore del token del nodo, mostrato una sola volta')
+})
+
+
+/**
+ * 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Elimina un nodo locale e i suoi token
+ */
+export const DeleteNodeParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteNodeResponse = zod.void()
+
+
+/**
+ * Il token del nodo smette di valere sul protocollo. 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Disattiva un nodo locale
+ */
+export const DisableNodeParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DisableNodeResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'disabled']),
+  "executor": zod.string().nullable(),
+  "version": zod.string().nullable(),
+  "skills": zod.array(zod.string()),
+  "workspaceRoot": zod.string().nullable(),
+  "maxConcurrent": zod.number(),
+  "lastSeenAt": zod.coerce.date().nullable(),
+  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti')
+})
+
+
+/**
+ * Revoca i token precedenti del nodo e ne crea uno nuovo, mostrato solo in questa risposta. 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Rigenera il token di un nodo locale
+ */
+export const RegenerateNodeTokenParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RegenerateNodeTokenResponse = zod.object({
+  "token": zod.string().describe('Valore del token, mostrato una sola volta')
+})
+
+
+/**
+ * Protocollo dei nodi: solo con il token d'ambito `node` di un nodo attivo (sessione e token personali: 403). Risponde con il numero di compiti in attesa.
+ * @summary Heartbeat del nodo locale
+ */
+export const NodeHeartbeatResponse = zod.object({
+  "pending": zod.number().describe('Compiti in attesa di un nodo dell\'utente')
+})
+
+
+/**
  * Modello proposto per gli agenti che Casello crea (agente generale di un'app nuova, agenti approvati dall'architetto, agenti creati senza modello). Null se non impostato o se il modello è stato eliminato. Solo con il login: con un token risponde 403.
  * @summary Modello predefinito dell'utente
  */

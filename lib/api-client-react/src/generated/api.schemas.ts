@@ -1386,6 +1386,56 @@ export interface AiAccountInput {
   allowPrivateNetwork?: boolean;
 }
 
+export type NodeStatus = typeof NodeStatus[keyof typeof NodeStatus];
+
+
+export const NodeStatus = {
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+export interface Node {
+  id: number;
+  name: string;
+  status: NodeStatus;
+  /** @nullable */
+  executor: string | null;
+  /** @nullable */
+  version: string | null;
+  skills: string[];
+  /** @nullable */
+  workspaceRoot: string | null;
+  maxConcurrent: number;
+  /** @nullable */
+  lastSeenAt: string | null;
+  /** Ha comunicato negli ultimi 2 minuti */
+  online: boolean;
+}
+
+export interface NodeCreate {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+}
+
+export interface NodeCreated {
+  node: Node;
+  /** Valore del token del nodo, mostrato una sola volta */
+  token: string;
+}
+
+export interface NodeToken {
+  /** Valore del token, mostrato una sola volta */
+  token: string;
+}
+
+export interface NodeHeartbeat {
+  /** Compiti in attesa di un nodo dell'utente */
+  pending: number;
+}
+
 export interface ApiTokenInfo {
   id: number;
   name: string;

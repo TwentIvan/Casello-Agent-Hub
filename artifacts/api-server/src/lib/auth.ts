@@ -211,6 +211,11 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
         res.status(401).json({ error: TOKEN_MESSAGES.invalid });
         return;
       }
+      // Il token di un nodo vale solo su /api/node (requireNodeToken): qui mai, nemmeno con altri ambiti
+      if (found.nodeId !== null || found.scopes.includes("node")) {
+        res.status(403).json({ error: TOKEN_MESSAGES.scope });
+        return;
+      }
       req.userId = found.userId;
       req.auth = { kind: "token", tokenId: found.tokenId, scopes: found.scopes };
       // Il limite conta ogni richiesta autenticata con il token, anche quelle senza l'ambito

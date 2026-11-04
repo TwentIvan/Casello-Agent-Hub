@@ -8,6 +8,8 @@ servers:
   - url: /api
     description: Base API path
 tags:
+  - name: nodes
+    description: Nodi locali registrati e protocollo del nodo
   - name: health
     description: Health operations
   - name: auth
@@ -177,6 +179,140 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /account/nodes:
+    get:
+      operationId: listNodes
+      tags: [nodes]
+      summary: Elenca i nodi locali dell'utente
+      description: >-
+        Nodi locali registrati, per nome, con le capacità dichiarate e se sono vivi (comunicato negli
+        ultimi 2 minuti). Solo con il login: con un token risponde 403.
+      responses:
+        "200":
+          description: Nodi dell'utente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Node"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createNode
+      tags: [nodes]
+      summary: Registra un nodo locale
+      description: >-
+        Crea il nodo e il suo token d'ambito `node`, che compare solo in questa risposta. Nome unico per
+        utente (409 "nome già usato"). Solo con il login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeCreate"
+      responses:
+        "201":
+          description: Nodo creato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /account/nodes/{id}:
+    delete:
+      operationId: deleteNode
+      tags: [nodes]
+      summary: Elimina un nodo locale e i suoi token
+      description: 404 se il nodo non è dell'utente. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Nodo eliminato
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /account/nodes/{id}/disable:
+    post:
+      operationId: disableNode
+      tags: [nodes]
+      summary: Disattiva un nodo locale
+      description: Il token del nodo smette di valere sul protocollo. 404 se il nodo non è dell'utente. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Nodo disattivato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /account/nodes/{id}/token:
+    post:
+      operationId: regenerateNodeToken
+      tags: [nodes]
+      summary: Rigenera il token di un nodo locale
+      description: >-
+        Revoca i token precedenti del nodo e ne crea uno nuovo, mostrato solo in questa risposta.
+        404 se il nodo non è dell'utente. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Nuovo token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeToken"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /node/heartbeat:
+    post:
+      operationId: nodeHeartbeat
+      tags: [nodes]
+      summary: Heartbeat del nodo locale
+      description: >-
+        Protocollo dei nodi: solo con il token d'ambito `node` di un nodo attivo (sessione e token
+        personali: 403). Risponde con il numero di compiti in attesa.
+      responses:
+        "200":
+          description: Heartbeat registrato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeHeartbeat"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /account/default-model:
     get:
@@ -4559,6 +4695,71 @@ components:
         allowPrivateNetwork:
           type: boolean
           description: Solo custom e provider non gestiti
+
+    Node:
+      type: object
+      required: [id, name, status, executor, version, skills, workspaceRoot, maxConcurrent, lastSeenAt, online]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        executor:
+          type: ["string", "null"]
+        version:
+          type: ["string", "null"]
+        skills:
+          type: array
+          items:
+            type: string
+        workspaceRoot:
+          type: ["string", "null"]
+        maxConcurrent:
+          type: integer
+        lastSeenAt:
+          type: ["string", "null"]
+          format: date-time
+        online:
+          type: boolean
+          description: Ha comunicato negli ultimi 2 minuti
+
+    NodeCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+
+    NodeCreated:
+      type: object
+      required: [node, token]
+      properties:
+        node:
+          $ref: "#/components/schemas/Node"
+        token:
+          type: string
+          description: Valore del token del nodo, mostrato una sola volta
+
+    NodeToken:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: Valore del token, mostrato una sola volta
+
+    NodeHeartbeat:
+      type: object
+      required: [pending]
+      properties:
+        pending:
+          type: integer
+          description: Compiti in attesa di un nodo dell'utente
 
     ApiTokenInfo:
       type: object

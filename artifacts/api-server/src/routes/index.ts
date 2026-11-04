@@ -18,6 +18,9 @@ import { createCatalogRouter } from "./catalog";
 import { createPendingActionsRouter } from "./pending-actions";
 import { createApiTokensRouter } from "./api-tokens";
 import { createAccountModelRouter } from "./account-model";
+import { createNodesRouter } from "./nodes";
+import { createNodeRouter } from "./node";
+import { requireNodeToken } from "../lib/nodes/auth";
 import { authRouter, requireAuth } from "../lib/auth";
 
 const router: IRouter = Router();
@@ -26,6 +29,9 @@ const router: IRouter = Router();
 // sessione o un token personale con l'ambito giusto (requireAuth).
 router.use(healthRouter);
 router.use(authRouter());
+// Protocollo dei nodi: solo token d'ambito `node` (requireNodeToken), mai sessione né token personali;
+// va prima di requireAuth, che a sua volta rifiuta i token `node` su tutto il resto di /api.
+router.use("/node", requireNodeToken, createNodeRouter());
 router.use(requireAuth);
 router.use(appsRouter);
 router.use(appToolsRouter);
@@ -45,5 +51,6 @@ router.use(createCatalogRouter());
 router.use(createPendingActionsRouter());
 router.use(createApiTokensRouter());
 router.use(createAccountModelRouter());
+router.use(createNodesRouter());
 
 export default router;

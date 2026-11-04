@@ -92,6 +92,11 @@ import type {
   ListUnreadTeamEventsParams,
   MarkTeamEventsRead200,
   McpSyncResult,
+  Node,
+  NodeCreate,
+  NodeCreated,
+  NodeHeartbeat,
+  NodeToken,
   NotFoundResponse,
   PayloadTooLargeResponse,
   PlanConversation,
@@ -756,6 +761,439 @@ export const useRevokeApiToken = <TError = ErrorType<UnauthorizedResponse | NotF
         TContext
       > => {
       return useMutation(getRevokeApiTokenMutationOptions(options));
+    }
+
+export const getListNodesUrl = () => {
+
+
+
+
+  return `/api/account/nodes`
+}
+
+/**
+ * Nodi locali registrati, per nome, con le capacità dichiarate e se sono vivi (comunicato negli ultimi 2 minuti). Solo con il login: con un token risponde 403.
+ * @summary Elenca i nodi locali dell'utente
+ */
+export const listNodes = async ( options?: RequestInit): Promise<Node[]> => {
+
+  return customFetch<Node[]>(getListNodesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListNodesQueryKey = () => {
+    return [
+    `/api/account/nodes`
+    ] as const;
+    }
+
+
+export const getListNodesQueryOptions = <TData = Awaited<ReturnType<typeof listNodes>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNodes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNodesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNodes>>> = ({ signal }) => listNodes({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNodes>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListNodesQueryResult = NonNullable<Awaited<ReturnType<typeof listNodes>>>
+export type ListNodesQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+
+
+/**
+ * @summary Elenca i nodi locali dell'utente
+ */
+
+export function useListNodes<TData = Awaited<ReturnType<typeof listNodes>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNodes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListNodesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateNodeUrl = () => {
+
+
+
+
+  return `/api/account/nodes`
+}
+
+/**
+ * Crea il nodo e il suo token d'ambito `node`, che compare solo in questa risposta. Nome unico per utente (409 "nome già usato"). Solo con il login.
+ * @summary Registra un nodo locale
+ */
+export const createNode = async (nodeCreate: NodeCreate, options?: RequestInit): Promise<NodeCreated> => {
+
+  return customFetch<NodeCreated>(getCreateNodeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeCreate)
+  }
+);}
+
+
+
+
+export const getCreateNodeMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createNode>>, TError,{data: BodyType<NodeCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createNode>>, TError,{data: BodyType<NodeCreate>}, TContext> => {
+
+const mutationKey = ['createNode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createNode>>, {data: BodyType<NodeCreate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createNode(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateNodeMutationResult = NonNullable<Awaited<ReturnType<typeof createNode>>>
+    export type CreateNodeMutationBody = BodyType<NodeCreate>
+    export type CreateNodeMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>
+
+    /**
+ * @summary Registra un nodo locale
+ */
+export const useCreateNode = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createNode>>, TError,{data: BodyType<NodeCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createNode>>,
+        TError,
+        {data: BodyType<NodeCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateNodeMutationOptions(options));
+    }
+
+export const getDeleteNodeUrl = (id: number,) => {
+
+
+
+
+  return `/api/account/nodes/${id}`
+}
+
+/**
+ * 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Elimina un nodo locale e i suoi token
+ */
+export const deleteNode = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteNodeUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteNodeMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteNode>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteNode>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteNode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteNode>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteNode(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteNodeMutationResult = NonNullable<Awaited<ReturnType<typeof deleteNode>>>
+
+    export type DeleteNodeMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Elimina un nodo locale e i suoi token
+ */
+export const useDeleteNode = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteNode>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteNode>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteNodeMutationOptions(options));
+    }
+
+export const getDisableNodeUrl = (id: number,) => {
+
+
+
+
+  return `/api/account/nodes/${id}/disable`
+}
+
+/**
+ * Il token del nodo smette di valere sul protocollo. 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Disattiva un nodo locale
+ */
+export const disableNode = async (id: number, options?: RequestInit): Promise<Node> => {
+
+  return customFetch<Node>(getDisableNodeUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getDisableNodeMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disableNode>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof disableNode>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['disableNode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disableNode>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  disableNode(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DisableNodeMutationResult = NonNullable<Awaited<ReturnType<typeof disableNode>>>
+
+    export type DisableNodeMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Disattiva un nodo locale
+ */
+export const useDisableNode = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disableNode>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof disableNode>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDisableNodeMutationOptions(options));
+    }
+
+export const getRegenerateNodeTokenUrl = (id: number,) => {
+
+
+
+
+  return `/api/account/nodes/${id}/token`
+}
+
+/**
+ * Revoca i token precedenti del nodo e ne crea uno nuovo, mostrato solo in questa risposta. 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Rigenera il token di un nodo locale
+ */
+export const regenerateNodeToken = async (id: number, options?: RequestInit): Promise<NodeToken> => {
+
+  return customFetch<NodeToken>(getRegenerateNodeTokenUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRegenerateNodeTokenMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateNodeToken>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof regenerateNodeToken>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['regenerateNodeToken'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof regenerateNodeToken>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  regenerateNodeToken(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegenerateNodeTokenMutationResult = NonNullable<Awaited<ReturnType<typeof regenerateNodeToken>>>
+
+    export type RegenerateNodeTokenMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Rigenera il token di un nodo locale
+ */
+export const useRegenerateNodeToken = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateNodeToken>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof regenerateNodeToken>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRegenerateNodeTokenMutationOptions(options));
+    }
+
+export const getNodeHeartbeatUrl = () => {
+
+
+
+
+  return `/api/node/heartbeat`
+}
+
+/**
+ * Protocollo dei nodi: solo con il token d'ambito `node` di un nodo attivo (sessione e token personali: 403). Risponde con il numero di compiti in attesa.
+ * @summary Heartbeat del nodo locale
+ */
+export const nodeHeartbeat = async ( options?: RequestInit): Promise<NodeHeartbeat> => {
+
+  return customFetch<NodeHeartbeat>(getNodeHeartbeatUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getNodeHeartbeatMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeHeartbeat>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof nodeHeartbeat>>, TError,void, TContext> => {
+
+const mutationKey = ['nodeHeartbeat'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodeHeartbeat>>, void> = () => {
+
+
+          return  nodeHeartbeat(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type NodeHeartbeatMutationResult = NonNullable<Awaited<ReturnType<typeof nodeHeartbeat>>>
+
+    export type NodeHeartbeatMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+
+    /**
+ * @summary Heartbeat del nodo locale
+ */
+export const useNodeHeartbeat = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeHeartbeat>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof nodeHeartbeat>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getNodeHeartbeatMutationOptions(options));
     }
 
 export const getGetDefaultModelUrl = () => {

@@ -97,3 +97,14 @@ export const teamMessageRateLimit = middlewareFor(teamMessageCounter, byUser);
 export function consumeTeamMessage(userId: number): boolean {
   return teamMessageCounter.consume(`user:${userId}`).ok;
 }
+
+// Protocollo dei nodi (/api/node, dopo requireNodeToken): heartbeat e claim 6 al minuto per nodo (contatori
+// separati), ping 4 al minuto per compito dello stesso nodo.
+const byNode = (req: Request) => `node:${req.node?.id ?? "?"}`;
+export const nodeHeartbeatRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byNode });
+export const nodeClaimRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byNode });
+export const nodePingRateLimit = rateLimit({
+  limit: 4,
+  windowMs: 60_000,
+  key: (req) => `${byNode(req)}:task:${String(req.params["id"] ?? "?")}`,
+});

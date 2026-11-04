@@ -93,9 +93,14 @@ import type {
   MarkTeamEventsRead200,
   McpSyncResult,
   Node,
+  NodeCapabilities,
   NodeCreate,
   NodeCreated,
   NodeHeartbeat,
+  NodeLease,
+  NodeLeaseRenewed,
+  NodeReport,
+  NodeTaskPackage,
   NodeToken,
   NotFoundResponse,
   PayloadTooLargeResponse,
@@ -1134,26 +1139,26 @@ export const getNodeHeartbeatUrl = () => {
 }
 
 /**
- * Protocollo dei nodi: solo con il token d'ambito `node` di un nodo attivo (sessione e token personali: 403). Risponde con il numero di compiti in attesa.
+ * Protocollo dei nodi: solo con il token d'ambito `node` di un nodo attivo (sessione e token personali: 403). Aggiorna le capacità dichiarate e `last_seen_at`; risponde con il numero di compiti che il nodo potrebbe prendere. 6 al minuto per nodo.
  * @summary Heartbeat del nodo locale
  */
-export const nodeHeartbeat = async ( options?: RequestInit): Promise<NodeHeartbeat> => {
+export const nodeHeartbeat = async (nodeCapabilities: NodeCapabilities, options?: RequestInit): Promise<NodeHeartbeat> => {
 
   return customFetch<NodeHeartbeat>(getNodeHeartbeatUrl(),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeCapabilities)
   }
 );}
 
 
 
 
-export const getNodeHeartbeatMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeHeartbeat>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof nodeHeartbeat>>, TError,void, TContext> => {
+export const getNodeHeartbeatMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeHeartbeat>>, TError,{data: BodyType<NodeCapabilities>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof nodeHeartbeat>>, TError,{data: BodyType<NodeCapabilities>}, TContext> => {
 
 const mutationKey = ['nodeHeartbeat'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -1165,10 +1170,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodeHeartbeat>>, void> = () => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodeHeartbeat>>, {data: BodyType<NodeCapabilities>}> = (props) => {
+          const {data} = props ?? {};
 
-
-          return  nodeHeartbeat(requestOptions)
+          return  nodeHeartbeat(data,requestOptions)
         }
 
 
@@ -1179,21 +1184,236 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type NodeHeartbeatMutationResult = NonNullable<Awaited<ReturnType<typeof nodeHeartbeat>>>
-
-    export type NodeHeartbeatMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+    export type NodeHeartbeatMutationBody = BodyType<NodeCapabilities>
+    export type NodeHeartbeatMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse>
 
     /**
  * @summary Heartbeat del nodo locale
  */
-export const useNodeHeartbeat = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeHeartbeat>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useNodeHeartbeat = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeHeartbeat>>, TError,{data: BodyType<NodeCapabilities>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof nodeHeartbeat>>,
+        TError,
+        {data: BodyType<NodeCapabilities>},
+        TContext
+      > => {
+      return useMutation(getNodeHeartbeatMutationOptions(options));
+    }
+
+export const getNodeClaimUrl = () => {
+
+
+
+
+  return `/api/node/claim`
+}
+
+/**
+ * Il compito `waiting_node` più vecchio di una squadra attiva dell'utente del nodo, il cui ruolo ha tutte le skill `node` dichiarate dal nodo, nel rispetto di `maxConcurrent`; lo porta a `running` con una lease di 15 minuti. 204 se non c'è niente da prendere. 6 al minuto per nodo.
+ * @summary Prende in carico un compito in attesa
+ */
+export const nodeClaim = async ( options?: RequestInit): Promise<NodeTaskPackage | void> => {
+
+  return customFetch<NodeTaskPackage | void>(getNodeClaimUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getNodeClaimMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeClaim>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof nodeClaim>>, TError,void, TContext> => {
+
+const mutationKey = ['nodeClaim'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodeClaim>>, void> = () => {
+
+
+          return  nodeClaim(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type NodeClaimMutationResult = NonNullable<Awaited<ReturnType<typeof nodeClaim>>>
+
+    export type NodeClaimMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Prende in carico un compito in attesa
+ */
+export const useNodeClaim = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeClaim>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof nodeClaim>>,
         TError,
         void,
         TContext
       > => {
-      return useMutation(getNodeHeartbeatMutationOptions(options));
+      return useMutation(getNodeClaimMutationOptions(options));
+    }
+
+export const getNodePingUrl = (id: number,) => {
+
+
+
+
+  return `/api/node/tasks/${id}/ping`
+}
+
+/**
+ * Rinnova di 15 minuti la lease del compito preso dal nodo. Lease non valida o scaduta → 409. 4 al minuto per compito.
+ * @summary Rinnova la lease di un compito
+ */
+export const nodePing = async (id: number,
+    nodeLease: NodeLease, options?: RequestInit): Promise<NodeLeaseRenewed> => {
+
+  return customFetch<NodeLeaseRenewed>(getNodePingUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeLease)
+  }
+);}
+
+
+
+
+export const getNodePingMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodePing>>, TError,{id: number;data: BodyType<NodeLease>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof nodePing>>, TError,{id: number;data: BodyType<NodeLease>}, TContext> => {
+
+const mutationKey = ['nodePing'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodePing>>, {id: number;data: BodyType<NodeLease>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  nodePing(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type NodePingMutationResult = NonNullable<Awaited<ReturnType<typeof nodePing>>>
+    export type NodePingMutationBody = BodyType<NodeLease>
+    export type NodePingMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Rinnova la lease di un compito
+ */
+export const useNodePing = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodePing>>, TError,{id: number;data: BodyType<NodeLease>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof nodePing>>,
+        TError,
+        {id: number;data: BodyType<NodeLease>},
+        TContext
+      > => {
+      return useMutation(getNodePingMutationOptions(options));
+    }
+
+export const getNodeReportUrl = (id: number,) => {
+
+
+
+
+  return `/api/node/tasks/${id}/report`
+}
+
+/**
+ * Chiude il compito come i compiti cloud: stato ed esito nel PLAN, evento, turno del capo. Il costo riferito conta solo nel tetto della squadra. Lease non valida o scaduta → 409 e nulla salvato.
+ * @summary Riferisce l'esito di un compito
+ */
+export const nodeReport = async (id: number,
+    nodeReport: NodeReport, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getNodeReportUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeReport)
+  }
+);}
+
+
+
+
+export const getNodeReportMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeReport>>, TError,{id: number;data: BodyType<NodeReport>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof nodeReport>>, TError,{id: number;data: BodyType<NodeReport>}, TContext> => {
+
+const mutationKey = ['nodeReport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodeReport>>, {id: number;data: BodyType<NodeReport>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  nodeReport(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type NodeReportMutationResult = NonNullable<Awaited<ReturnType<typeof nodeReport>>>
+    export type NodeReportMutationBody = BodyType<NodeReport>
+    export type NodeReportMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>
+
+    /**
+ * @summary Riferisce l'esito di un compito
+ */
+export const useNodeReport = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeReport>>, TError,{id: number;data: BodyType<NodeReport>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof nodeReport>>,
+        TError,
+        {id: number;data: BodyType<NodeReport>},
+        TContext
+      > => {
+      return useMutation(getNodeReportMutationOptions(options));
     }
 
 export const getGetDefaultModelUrl = () => {

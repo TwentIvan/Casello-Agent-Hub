@@ -14,6 +14,7 @@ const MSG = {
   scope: "il token non ha l'ambito per questa operazione",
   sessionOnly: "operazione disponibile solo con il login",
 };
+const HEARTBEAT = { version: "0.1.0", executor: "claude-code", skills: [], workspaceRoot: "/radice", maxConcurrent: 1 };
 const ENV_KEYS = ["AUTH_DISABLED", "ALLOWED_EMAILS", "CASELLO_SECRET_KEY"];
 const saved: Record<string, string | undefined> = {};
 
@@ -112,7 +113,7 @@ describe("nodi registrati", () => {
 
   it("token node: heartbeat 200; su altre route di /api → 403; su /mcp → 401", async () => {
     const { token } = await createNode(await devUserId(), "Mac");
-    const hb = await api("POST", "/node/heartbeat", { token });
+    const hb = await api("POST", "/node/heartbeat", { token, body: HEARTBEAT });
     expect(hb.status, hb.text).toBe(200);
     expect(hb.json).toEqual({ pending: 0 });
 
@@ -131,7 +132,7 @@ describe("nodi registrati", () => {
     const userId = await devUserId();
     for (const scopes of [["mcp"], ["api:read"], ["api:write"]] as const) {
       const { token } = await createApiToken(userId, "Script", 30, [...scopes]);
-      const res = await api("POST", "/node/heartbeat", { token });
+      const res = await api("POST", "/node/heartbeat", { token, body: HEARTBEAT });
       expect(res.status, scopes.join()).toBe(403);
       expect(res.json).toEqual({ error: MSG.scope });
     }
@@ -141,7 +142,7 @@ describe("nodi registrati", () => {
   it("nodo disattivato → 403 sul protocollo", async () => {
     const { node, token } = await createNode(await devUserId(), "Mac");
     expect((await api("POST", `/account/nodes/${node.id}/disable`)).json.status).toBe("disabled");
-    const hb = await api("POST", "/node/heartbeat", { token });
+    const hb = await api("POST", "/node/heartbeat", { token, body: HEARTBEAT });
     expect(hb.status).toBe(403);
   });
 
@@ -151,16 +152,16 @@ describe("nodi registrati", () => {
     expect(regen.status, regen.text).toBe(200);
     expect(regen.json.token).toMatch(/^cas_/);
     expect(regen.json.token).not.toBe(token);
-    const old = await api("POST", "/node/heartbeat", { token });
+    const old = await api("POST", "/node/heartbeat", { token, body: HEARTBEAT });
     expect(old.status).toBe(401);
-    expect((await api("POST", "/node/heartbeat", { token: regen.json.token })).status).toBe(200);
+    expect((await api("POST", "/node/heartbeat", { token: regen.json.token, body: HEARTBEAT })).status).toBe(200);
   });
 
   it("elimina il nodo e i suoi token", async () => {
     const { node, token } = await createNode(await devUserId(), "Mac");
     expect((await api("DELETE", `/account/nodes/${node.id}`)).status).toBe(204);
     expect(await db.select().from(apiTokensTable).where(eq(apiTokensTable.nodeId, node.id))).toHaveLength(0);
-    expect((await api("POST", "/node/heartbeat", { token })).status).toBe(401);
+    expect((await api("POST", "/node/heartbeat", { token, body: HEARTBEAT })).status).toBe(401);
     expect((await api("DELETE", `/account/nodes/${node.id}`)).status).toBe(404);
   });
 

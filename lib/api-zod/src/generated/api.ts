@@ -215,12 +215,152 @@ export const RegenerateNodeTokenResponse = zod.object({
 
 
 /**
- * Protocollo dei nodi: solo con il token d'ambito `node` di un nodo attivo (sessione e token personali: 403). Risponde con il numero di compiti in attesa.
+ * Protocollo dei nodi: solo con il token d'ambito `node` di un nodo attivo (sessione e token personali: 403). Aggiorna le capacità dichiarate e `last_seen_at`; risponde con il numero di compiti che il nodo potrebbe prendere. 6 al minuto per nodo.
  * @summary Heartbeat del nodo locale
  */
-export const NodeHeartbeatResponse = zod.object({
-  "pending": zod.number().describe('Compiti in attesa di un nodo dell\'utente')
+export const nodeHeartbeatBodyVersionMax = 100;
+
+export const nodeHeartbeatBodyExecutorMax = 100;
+
+export const nodeHeartbeatBodySkillsItemMax = 100;
+
+export const nodeHeartbeatBodySkillsMax = 500;
+
+export const nodeHeartbeatBodyWorkspaceRootMax = 300;
+
+export const nodeHeartbeatBodyMaxConcurrentMax = 3;
+
+
+
+export const NodeHeartbeatBody = zod.object({
+  "version": zod.string().min(1).max(nodeHeartbeatBodyVersionMax),
+  "executor": zod.string().min(1).max(nodeHeartbeatBodyExecutorMax).describe('Esecutore dichiarato (es. claude-code)'),
+  "skills": zod.array(zod.string().min(1).max(nodeHeartbeatBodySkillsItemMax)).max(nodeHeartbeatBodySkillsMax).describe('Nomi delle skill disponibili sul nodo'),
+  "workspaceRoot": zod.string().max(nodeHeartbeatBodyWorkspaceRootMax).describe('Radice degli spazi di lavoro (testo descrittivo)'),
+  "maxConcurrent": zod.number().min(1).max(nodeHeartbeatBodyMaxConcurrentMax)
 })
+
+export const NodeHeartbeatResponse = zod.object({
+  "pending": zod.number().describe('Compiti in attesa che il nodo potrebbe prendere')
+})
+
+
+/**
+ * Il compito `waiting_node` più vecchio di una squadra attiva dell'utente del nodo, il cui ruolo ha tutte le skill `node` dichiarate dal nodo, nel rispetto di `maxConcurrent`; lo porta a `running` con una lease di 15 minuti. 204 se non c'è niente da prendere. 6 al minuto per nodo.
+ * @summary Prende in carico un compito in attesa
+ */
+export const NodeClaimResponse = zod.object({
+  "taskId": zod.number(),
+  "leaseToken": zod.string(),
+  "leaseExpiresAt": zod.coerce.date(),
+  "team": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "refType": zod.string(),
+  "refId": zod.string(),
+  "refTitle": zod.string()
+}),
+  "workspace": zod.string().nullable().describe('Spazio di lavoro della squadra, relativo alla radice del nodo (null se non impostato)'),
+  "role": zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "preferredModel": zod.string().nullable().describe('Modello preferito, solo indicativo')
+}),
+  "task": zod.object({
+  "planTaskId": zod.string(),
+  "title": zod.string(),
+  "instructions": zod.string()
+}),
+  "plan": zod.object({
+  "objective": zod.string(),
+  "constraints": zod.array(zod.string()),
+  "openPoints": zod.array(zod.string()),
+  "tasks": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "roleKey": zod.string(),
+  "status": zod.enum(['planned', 'running', 'waiting_node', 'done', 'blocked', 'failed']),
+  "outcome": zod.string().nullable()
+})),
+  "manualActions": zod.array(zod.object({
+  "id": zod.string(),
+  "text": zod.string(),
+  "done": zod.boolean()
+}))
+}),
+  "caselloSkills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().nullable().describe('Versione fissata del catalogo; null per le skill specializzate'),
+  "content": zod.string()
+})),
+  "nodeSkills": zod.array(zod.string()).describe('Nomi delle skill del nodo richieste dal ruolo'),
+  "attachments": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "sizeBytes": zod.number(),
+  "sha256": zod.string()
+}))
+})
+
+
+/**
+ * Rinnova di 15 minuti la lease del compito preso dal nodo. Lease non valida o scaduta → 409. 4 al minuto per compito.
+ * @summary Rinnova la lease di un compito
+ */
+export const NodePingParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const nodePingBodyLeaseTokenMax = 200;
+
+
+
+export const NodePingBody = zod.object({
+  "leaseToken": zod.string().min(1).max(nodePingBodyLeaseTokenMax)
+})
+
+export const NodePingResponse = zod.object({
+  "leaseExpiresAt": zod.coerce.date()
+})
+
+
+/**
+ * Chiude il compito come i compiti cloud: stato ed esito nel PLAN, evento, turno del capo. Il costo riferito conta solo nel tetto della squadra. Lease non valida o scaduta → 409 e nulla salvato.
+ * @summary Riferisce l'esito di un compito
+ */
+export const NodeReportParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const nodeReportBodyLeaseTokenMax = 200;
+
+export const nodeReportBodyOutcomeMax = 300;
+
+export const nodeReportBodyDetailMax = 20000;
+
+export const nodeReportBodyCostUsdMin = 0;
+
+export const nodeReportBodyPromptTokensMin = 0;
+
+export const nodeReportBodyCompletionTokensMin = 0;
+
+export const nodeReportBodySessionIdMax = 200;
+
+
+
+export const NodeReportBody = zod.object({
+  "leaseToken": zod.string().min(1).max(nodeReportBodyLeaseTokenMax),
+  "status": zod.enum(['done', 'blocked', 'failed']),
+  "outcome": zod.string().min(1).max(nodeReportBodyOutcomeMax),
+  "detail": zod.string().max(nodeReportBodyDetailMax).optional(),
+  "costUsd": zod.number().min(nodeReportBodyCostUsdMin).optional(),
+  "promptTokens": zod.number().min(nodeReportBodyPromptTokensMin).optional(),
+  "completionTokens": zod.number().min(nodeReportBodyCompletionTokensMin).optional(),
+  "sessionId": zod.string().min(1).max(nodeReportBodySessionIdMax).optional()
+})
+
+export const NodeReportResponse = zod.void()
 
 
 /**

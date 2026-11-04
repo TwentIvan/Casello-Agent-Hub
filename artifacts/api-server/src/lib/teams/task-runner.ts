@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, inArray, isNull, lte, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -90,7 +90,7 @@ export const REPORT_TOOL = internalTool(
 );
 
 /** Esito di un compito da scrivere nella riga, nel PLAN e nell'evento. */
-interface TaskResult {
+export interface TaskResult {
   status: "done" | "blocked" | "failed";
   outcome: string;
   detail?: string | null;
@@ -136,8 +136,16 @@ async function approvedPlanTask(instanceId: number, planTaskId: string): Promise
 }
 
 /** Testo delle skill `casello` del ruolo: versioni fissate del catalogo e skill specializzate dell'istanza. */
-export async function skillTexts(instanceId: number, role: InstanceRole): Promise<{ code: string; label: string; content: string }[]> {
-  const out: { code: string; label: string; content: string }[] = [];
+export interface SkillText {
+  code: string;
+  /** Versione fissata del catalogo; null per le skill specializzate dell'istanza */
+  version: number | null;
+  label: string;
+  content: string;
+}
+
+export async function skillTexts(instanceId: number, role: InstanceRole): Promise<SkillText[]> {
+  const out: SkillText[] = [];
   if (role.skills.length > 0) {
     const rows = await db
       .select({ code: skillsTable.code, name: skillsTable.name, kind: skillsTable.kind, version: skillVersionsTable.version, content: skillVersionsTable.content })
@@ -146,7 +154,7 @@ export async function skillTexts(instanceId: number, role: InstanceRole): Promis
       .where(inArray(skillsTable.code, role.skills.map((s) => s.code)));
     for (const pinned of role.skills) {
       const row = rows.find((r) => r.code === pinned.code && r.version === pinned.version);
-      if (row && row.kind === "casello") out.push({ code: row.code, label: `${row.name} (v${row.version})`, content: row.content });
+      if (row && row.kind === "casello") out.push({ code: row.code, version: row.version, label: `${row.name} (v${row.version})`, content: row.content });
     }
   }
   if (role.localSkills.length > 0) {
@@ -156,13 +164,13 @@ export async function skillTexts(instanceId: number, role: InstanceRole): Promis
       .where(and(eq(teamInstanceSkillsTable.instanceId, instanceId), inArray(teamInstanceSkillsTable.code, role.localSkills)));
     for (const code of role.localSkills) {
       const row = rows.find((r) => r.code === code);
-      if (row && row.kind === "casello") out.push({ code: row.code, label: `${row.name} (specializzata)`, content: row.content });
+      if (row && row.kind === "casello") out.push({ code: row.code, version: null, label: `${row.name} (specializzata)`, content: row.content });
     }
   }
   return out;
 }
 
-function systemPrompt(instance: TeamInstanceRow, role: InstanceRole, skills: { code: string; label: string; content: string }[]): string {
+function systemPrompt(instance: TeamInstanceRow, role: InstanceRole, skills: SkillText[]): string {
   const parts = [
     ROLE_INSTRUCTION,
     TOOL_RESULTS_INSTRUCTION,
@@ -240,6 +248,7 @@ export async function startTask(instanceId: number, planTaskId: string): Promise
         instructions: planTask.instructions,
         status,
         aiModelId: role.runsOn === "cloud" ? role.aiModelId : null,
+        waitingSince: status === "waiting_node" ? new Date() : null,
       })
       .returning();
     return inserted!;
@@ -276,7 +285,8 @@ async function claimNext(instanceId: number): Promise<TeamTaskRow | null> {
     const [running] = await tx
       .select({ n: count() })
       .from(teamTasksTable)
-      .where(and(eq(teamTasksTable.instanceId, instanceId), eq(teamTasksTable.status, "running")));
+      // I compiti presi da un nodo (con lease) non contano: il loro limite è `max_concurrent` del nodo
+      .where(and(eq(teamTasksTable.instanceId, instanceId), eq(teamTasksTable.status, "running"), isNull(teamTasksTable.leaseToken)));
     if (Number(running?.n ?? 0) >= MAX_RUNNING_TASKS) return null;
     const [row] = await tx
       .update(teamTasksTable)
@@ -388,11 +398,39 @@ async function executeTask(task: TeamTaskRow, usage: LoopUsage): Promise<TaskRes
 
 const EVENT_TEXT: Record<TaskResult["status"], string> = { done: "fatto", blocked: "bloccato", failed: "fallito" };
 
+/** Token e costo da registrare nel compito (null = non noti). */
+export interface TaskUsage {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  cachedTokens?: number;
+  costUsd: number | null;
+}
+
 /**
- * Chiude il compito (UPDATE condizionato a `running`), poi stato ed esito nel PLAN, evento e turno del capo. Un
- * compito non più `running` (chiuso da altri nel frattempo) non si tocca.
+ * Condizione in più per chiudere un compito preso da un nodo: la lease del report (valida a `now`), oppure la
+ * scadenza della lease (sweep). Senza guardia si chiude un compito cloud (senza lease).
  */
-async function finishTask(task: TeamTaskRow, result: TaskResult, usage: LoopUsage): Promise<void> {
+export type TaskCloseGuard =
+  | { kind: "lease"; nodeId: number; leaseToken: string; now: Date; sessionId?: string | null }
+  | { kind: "expired"; leaseToken: string; now: Date };
+
+function guardCondition(guard: TaskCloseGuard | undefined): SQL | undefined {
+  if (!guard) return isNull(teamTasksTable.leaseToken);
+  if (guard.kind === "lease") {
+    return and(eq(teamTasksTable.nodeId, guard.nodeId), eq(teamTasksTable.leaseToken, guard.leaseToken), gt(teamTasksTable.leaseExpiresAt, guard.now));
+  }
+  return and(eq(teamTasksTable.leaseToken, guard.leaseToken), lte(teamTasksTable.leaseExpiresAt, guard.now));
+}
+
+const formatCost = (costUsd: number | null): string | null =>
+  costUsd === null || !Number.isFinite(costUsd) ? null : String(Math.round(costUsd * 1e8) / 1e8);
+
+/**
+ * Chiude il compito (UPDATE condizionato a `running` e alla guardia), poi stato ed esito nel PLAN, evento e turno
+ * del capo. Un compito non più `running` o con la lease cambiata o scaduta (chiuso da altri nel frattempo) non si
+ * tocca: restituisce false e non produce eventi né turni. Usata dai compiti cloud e dal report dei nodi.
+ */
+export async function finishTaskExecution(task: TeamTaskRow, result: TaskResult, usage: TaskUsage, guard?: TaskCloseGuard): Promise<boolean> {
   const [closed] = await db
     .update(teamTasksTable)
     .set({
@@ -402,13 +440,14 @@ async function finishTask(task: TeamTaskRow, result: TaskResult, usage: LoopUsag
       error: result.error ?? null,
       promptTokens: usage.promptTokens,
       completionTokens: usage.completionTokens,
-      cachedTokens: usage.cachedTokens,
-      costUsd: usageCost(usage),
+      cachedTokens: usage.cachedTokens ?? 0,
+      costUsd: formatCost(usage.costUsd),
       finishedAt: new Date(),
+      ...(guard?.kind === "lease" && guard.sessionId !== undefined ? { sessionId: guard.sessionId } : {}),
     })
-    .where(and(eq(teamTasksTable.id, task.id), eq(teamTasksTable.status, "running")))
+    .where(and(eq(teamTasksTable.id, task.id), eq(teamTasksTable.status, "running"), guardCondition(guard)))
     .returning({ id: teamTasksTable.id });
-  if (!closed) return;
+  if (!closed) return false;
   await patchPlan(task.instanceId, { tasks: [{ id: task.planTaskId, status: result.status, outcome: result.outcome }] });
   await emitEvent({
     instanceId: task.instanceId,
@@ -418,6 +457,18 @@ async function finishTask(task: TeamTaskRow, result: TaskResult, usage: LoopUsag
     ...(result.error ? { detail: result.error } : {}),
   });
   await enqueueTurnReason(task.instanceId, { type: "task_finished", taskId: task.id });
+  return true;
+}
+
+/** Chiusura di un compito cloud con l'uso del ciclo dell'agente. */
+async function finishTask(task: TeamTaskRow, result: TaskResult, usage: LoopUsage): Promise<void> {
+  const cost = usageCost(usage);
+  await finishTaskExecution(task, result, {
+    promptTokens: usage.promptTokens,
+    completionTokens: usage.completionTokens,
+    cachedTokens: usage.cachedTokens,
+    costUsd: cost === null ? null : Number(cost),
+  });
 }
 
 /**
@@ -450,14 +501,15 @@ export async function runTask(taskId: number): Promise<void> {
 /**
  * Turni e compiti `running` all'avvio sono stati interrotti dal riavvio: diventano `failed` («interrotto dal
  * riavvio») con un evento `interrotto`; le squadre `active` coinvolte ricevono un turno con motivo `restart` e i
- * compiti rimasti `queued` ripartono.
+ * compiti rimasti `queued` ripartono. I compiti presi da un nodo (con lease) non girano nell'API: restano `running`
+ * e li chiude il report del nodo o la scadenza della lease.
  */
 export async function failInterruptedTeamWork(): Promise<void> {
   const now = new Date();
   const tasks = await db
     .update(teamTasksTable)
     .set({ status: "failed", outcome: TASK_MESSAGES.interrupted, error: TASK_MESSAGES.interrupted, finishedAt: now })
-    .where(eq(teamTasksTable.status, "running"))
+    .where(and(eq(teamTasksTable.status, "running"), isNull(teamTasksTable.leaseToken)))
     .returning({ id: teamTasksTable.id, instanceId: teamTasksTable.instanceId, planTaskId: teamTasksTable.planTaskId, roleKey: teamTasksTable.roleKey });
   const turns = await db
     .update(teamTurnsTable)

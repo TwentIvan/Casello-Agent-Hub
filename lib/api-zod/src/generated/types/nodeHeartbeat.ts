@@ -7,6 +7,6 @@
  */
 
 export interface NodeHeartbeat {
-  /** Compiti in attesa di un nodo dell'utente */
+  /** Compiti in attesa che il nodo potrebbe prendere */
   pending: number;
 }

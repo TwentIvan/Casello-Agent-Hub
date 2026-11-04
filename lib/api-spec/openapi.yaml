@@ -301,7 +301,14 @@ paths:
       summary: Heartbeat del nodo locale
       description: >-
         Protocollo dei nodi: solo con il token d'ambito `node` di un nodo attivo (sessione e token
-        personali: 403). Risponde con il numero di compiti in attesa.
+        personali: 403). Aggiorna le capacità dichiarate e `last_seen_at`; risponde con il numero di compiti
+        che il nodo potrebbe prendere. 6 al minuto per nodo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeCapabilities"
       responses:
         "200":
           description: Heartbeat registrato
@@ -309,10 +316,101 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NodeHeartbeat"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /node/claim:
+    post:
+      operationId: nodeClaim
+      tags: [nodes]
+      summary: Prende in carico un compito in attesa
+      description: >-
+        Il compito `waiting_node` più vecchio di una squadra attiva dell'utente del nodo, il cui ruolo ha tutte le
+        skill `node` dichiarate dal nodo, nel rispetto di `maxConcurrent`; lo porta a `running` con una lease di 15
+        minuti. 204 se non c'è niente da prendere. 6 al minuto per nodo.
+      responses:
+        "200":
+          description: Pacchetto del compito preso in carico
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeTaskPackage"
+        "204":
+          description: Nessun compito da prendere
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /node/tasks/{id}/ping:
+    post:
+      operationId: nodePing
+      tags: [nodes]
+      summary: Rinnova la lease di un compito
+      description: >-
+        Rinnova di 15 minuti la lease del compito preso dal nodo. Lease non valida o scaduta → 409. 4 al minuto per
+        compito.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeLease"
+      responses:
+        "200":
+          description: Lease rinnovata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeLeaseRenewed"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /node/tasks/{id}/report:
+    post:
+      operationId: nodeReport
+      tags: [nodes]
+      summary: Riferisce l'esito di un compito
+      description: >-
+        Chiude il compito come i compiti cloud: stato ed esito nel PLAN, evento, turno del capo. Il costo riferito
+        conta solo nel tetto della squadra. Lease non valida o scaduta → 409 e nulla salvato.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeReport"
+      responses:
+        "204":
+          description: Esito registrato
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /account/default-model:
     get:
@@ -4759,7 +4857,213 @@ components:
       properties:
         pending:
           type: integer
-          description: Compiti in attesa di un nodo dell'utente
+          description: Compiti in attesa che il nodo potrebbe prendere
+
+    NodeCapabilities:
+      type: object
+      required: [version, executor, skills, workspaceRoot, maxConcurrent]
+      properties:
+        version:
+          type: string
+          minLength: 1
+          maxLength: 100
+        executor:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Esecutore dichiarato (es. claude-code)
+        skills:
+          type: array
+          maxItems: 500
+          items:
+            type: string
+            minLength: 1
+            maxLength: 100
+          description: Nomi delle skill disponibili sul nodo
+        workspaceRoot:
+          type: string
+          maxLength: 300
+          description: Radice degli spazi di lavoro (testo descrittivo)
+        maxConcurrent:
+          type: integer
+          minimum: 1
+          maximum: 3
+
+    NodeLease:
+      type: object
+      required: [leaseToken]
+      properties:
+        leaseToken:
+          type: string
+          minLength: 1
+          maxLength: 200
+
+    NodeLeaseRenewed:
+      type: object
+      required: [leaseExpiresAt]
+      properties:
+        leaseExpiresAt:
+          type: string
+          format: date-time
+
+    NodeReport:
+      type: object
+      required: [leaseToken, status, outcome]
+      properties:
+        leaseToken:
+          type: string
+          minLength: 1
+          maxLength: 200
+        status:
+          type: string
+          enum: [done, blocked, failed]
+        outcome:
+          type: string
+          minLength: 1
+          maxLength: 300
+        detail:
+          type: string
+          maxLength: 20000
+        costUsd:
+          type: number
+          minimum: 0
+        promptTokens:
+          type: integer
+          minimum: 0
+        completionTokens:
+          type: integer
+          minimum: 0
+        sessionId:
+          type: string
+          minLength: 1
+          maxLength: 200
+
+    NodeTaskPackage:
+      type: object
+      required: [taskId, leaseToken, leaseExpiresAt, team, workspace, role, task, plan, caselloSkills, nodeSkills, attachments]
+      properties:
+        taskId:
+          type: integer
+        leaseToken:
+          type: string
+        leaseExpiresAt:
+          type: string
+          format: date-time
+        team:
+          type: object
+          required: [id, name, refType, refId, refTitle]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            refType:
+              type: string
+            refId:
+              type: string
+            refTitle:
+              type: string
+        workspace:
+          type: ["string", "null"]
+          description: Spazio di lavoro della squadra, relativo alla radice del nodo (null se non impostato)
+        role:
+          type: object
+          required: [key, name, task, preferredModel]
+          properties:
+            key:
+              type: string
+            name:
+              type: string
+            task:
+              type: string
+            preferredModel:
+              type: ["string", "null"]
+              description: Modello preferito, solo indicativo
+        task:
+          type: object
+          required: [planTaskId, title, instructions]
+          properties:
+            planTaskId:
+              type: string
+            title:
+              type: string
+            instructions:
+              type: string
+        plan:
+          type: object
+          required: [objective, constraints, openPoints, tasks, manualActions]
+          properties:
+            objective:
+              type: string
+            constraints:
+              type: array
+              items:
+                type: string
+            openPoints:
+              type: array
+              items:
+                type: string
+            tasks:
+              type: array
+              items:
+                type: object
+                required: [id, title, roleKey, status, outcome]
+                properties:
+                  id:
+                    type: string
+                  title:
+                    type: string
+                  roleKey:
+                    type: string
+                  status:
+                    type: string
+                    enum: [planned, running, waiting_node, done, blocked, failed]
+                  outcome:
+                    type: ["string", "null"]
+            manualActions:
+              type: array
+              items:
+                type: object
+                required: [id, text, done]
+                properties:
+                  id:
+                    type: string
+                  text:
+                    type: string
+                  done:
+                    type: boolean
+        caselloSkills:
+          type: array
+          items:
+            type: object
+            required: [code, version, content]
+            properties:
+              code:
+                type: string
+              version:
+                type: ["integer", "null"]
+                description: Versione fissata del catalogo; null per le skill specializzate
+              content:
+                type: string
+        nodeSkills:
+          type: array
+          items:
+            type: string
+          description: Nomi delle skill del nodo richieste dal ruolo
+        attachments:
+          type: array
+          items:
+            type: object
+            required: [id, name, sizeBytes, sha256]
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              sizeBytes:
+                type: integer
+              sha256:
+                type: string
 
     ApiTokenInfo:
       type: object

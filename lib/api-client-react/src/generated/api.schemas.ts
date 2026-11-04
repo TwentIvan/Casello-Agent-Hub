@@ -1432,8 +1432,183 @@ export interface NodeToken {
 }
 
 export interface NodeHeartbeat {
-  /** Compiti in attesa di un nodo dell'utente */
+  /** Compiti in attesa che il nodo potrebbe prendere */
   pending: number;
+}
+
+export interface NodeCapabilities {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  version: string;
+  /**
+     * Esecutore dichiarato (es. claude-code)
+     * @minLength 1
+     * @maxLength 100
+     */
+  executor: string;
+  /**
+     * Nomi delle skill disponibili sul nodo
+     * @maxItems 500
+     * @items.minLength 1
+     * @items.maxLength 100
+     */
+  skills: string[];
+  /**
+     * Radice degli spazi di lavoro (testo descrittivo)
+     * @maxLength 300
+     */
+  workspaceRoot: string;
+  /**
+     * @minimum 1
+     * @maximum 3
+     */
+  maxConcurrent: number;
+}
+
+export interface NodeLease {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  leaseToken: string;
+}
+
+export interface NodeLeaseRenewed {
+  leaseExpiresAt: string;
+}
+
+export type NodeReportStatus = typeof NodeReportStatus[keyof typeof NodeReportStatus];
+
+
+export const NodeReportStatus = {
+  done: 'done',
+  blocked: 'blocked',
+  failed: 'failed',
+} as const;
+
+export interface NodeReport {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  leaseToken: string;
+  status: NodeReportStatus;
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  outcome: string;
+  /** @maxLength 20000 */
+  detail?: string;
+  /** @minimum 0 */
+  costUsd?: number;
+  /** @minimum 0 */
+  promptTokens?: number;
+  /** @minimum 0 */
+  completionTokens?: number;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  sessionId?: string;
+}
+
+export type NodeTaskPackageTeam = {
+  id: number;
+  name: string;
+  refType: string;
+  refId: string;
+  refTitle: string;
+};
+
+export type NodeTaskPackageRole = {
+  key: string;
+  name: string;
+  task: string;
+  /**
+     * Modello preferito, solo indicativo
+     * @nullable
+     */
+  preferredModel: string | null;
+};
+
+export type NodeTaskPackageTask = {
+  planTaskId: string;
+  title: string;
+  instructions: string;
+};
+
+export type NodeTaskPackagePlanTasksItemStatus = typeof NodeTaskPackagePlanTasksItemStatus[keyof typeof NodeTaskPackagePlanTasksItemStatus];
+
+
+export const NodeTaskPackagePlanTasksItemStatus = {
+  planned: 'planned',
+  running: 'running',
+  waiting_node: 'waiting_node',
+  done: 'done',
+  blocked: 'blocked',
+  failed: 'failed',
+} as const;
+
+export type NodeTaskPackagePlanTasksItem = {
+  id: string;
+  title: string;
+  roleKey: string;
+  status: NodeTaskPackagePlanTasksItemStatus;
+  /** @nullable */
+  outcome: string | null;
+};
+
+export type NodeTaskPackagePlanManualActionsItem = {
+  id: string;
+  text: string;
+  done: boolean;
+};
+
+export type NodeTaskPackagePlan = {
+  objective: string;
+  constraints: string[];
+  openPoints: string[];
+  tasks: NodeTaskPackagePlanTasksItem[];
+  manualActions: NodeTaskPackagePlanManualActionsItem[];
+};
+
+export type NodeTaskPackageCaselloSkillsItem = {
+  code: string;
+  /**
+     * Versione fissata del catalogo; null per le skill specializzate
+     * @nullable
+     */
+  version: number | null;
+  content: string;
+};
+
+export type NodeTaskPackageAttachmentsItem = {
+  id: number;
+  name: string;
+  sizeBytes: number;
+  sha256: string;
+};
+
+export interface NodeTaskPackage {
+  taskId: number;
+  leaseToken: string;
+  leaseExpiresAt: string;
+  team: NodeTaskPackageTeam;
+  /**
+     * Spazio di lavoro della squadra, relativo alla radice del nodo (null se non impostato)
+     * @nullable
+     */
+  workspace: string | null;
+  role: NodeTaskPackageRole;
+  task: NodeTaskPackageTask;
+  plan: NodeTaskPackagePlan;
+  caselloSkills: NodeTaskPackageCaselloSkillsItem[];
+  /** Nomi delle skill del nodo richieste dal ruolo */
+  nodeSkills: string[];
+  attachments: NodeTaskPackageAttachmentsItem[];
 }
 
 export interface ApiTokenInfo {

@@ -557,7 +557,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   run con qualsiasi modello. Spesa di un modello o di un account: run, analisi cloud e chat con quel modello o con i
   modelli dell'account. Ogni run ricorda il modello con cui è partita (`runs.ai_model_id`). I costi null (prezzo
   mancante) non si sommano: si contano come esecuzioni senza prezzo. Anche i compiti e i turni del capo delle squadre
-  (`team_tasks`, `team_turns`, con il loro `ai_model_id`) contano nella spesa dell'utente, del modello e dell'account.
+  (`team_tasks`, `team_turns`, con il loro `ai_model_id`) contano nella spesa dell'utente, del modello e dell'account;
+  i compiti eseguiti da un nodo (`ai_model_id` null) contano solo nel tetto della squadra.
 - Ordine dei controlli: agente, modello, account AI, utente (il primo raggiunto dà il messaggio); per i compiti e i turni
   delle squadre prima il tetto della squadra, poi modello, account AI e utente (vedi "Squadre (esecuzione)").
 - Raggiunto un tetto (spesa ≥ tetto) le nuove run, analisi cloud e messaggi della chat rispondono 409 con il motivo;

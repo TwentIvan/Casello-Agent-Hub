@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { type TeamInstance, getListTeamTurnsQueryKey, useSendTeamMessage } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -10,16 +9,27 @@ import { apiErrorMessage } from "@/lib/api-errors";
 const MAX_TEXT = 4000;
 
 /** «Scrivi al capo»: il messaggio diventa un motivo del prossimo turno del capo (solo squadre attive). */
-export function LeadMessageCard({ team }: { team: TeamInstance }) {
+export function LeadMessageCard({
+  team,
+  text,
+  onTextChange: setText,
+  onSent,
+}: {
+  team: TeamInstance;
+  /** Testo tenuto dalla pagina: non si perde quando l'editor della squadra si rimonta. */
+  text: string;
+  onTextChange: (text: string) => void;
+  onSent: () => void;
+}) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [text, setText] = useState("");
   const active = team.status === "active";
   const send = useSendTeamMessage({
     mutation: {
       onSuccess: () => {
         setText("");
         void queryClient.invalidateQueries({ queryKey: getListTeamTurnsQueryKey(team.id) });
+        onSent();
         toast({ title: "Messaggio inviato al capo", description: "Lo legge nel prossimo turno." });
       },
       onError: (error) =>

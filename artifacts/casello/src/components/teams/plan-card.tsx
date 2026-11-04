@@ -43,10 +43,13 @@ export function PlanCard({
   team,
   poll,
   usedTaskIds,
+  onSaved,
 }: {
   team: TeamInstance;
   poll: number | false;
   usedTaskIds: string[];
+  /** Dopo il salvataggio del PLAN (che accoda un turno del capo). */
+  onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -183,7 +186,7 @@ export function PlanCard({
         )}
       </CardContent>
       {editing && p && (
-        <PlanEditorDialog team={team} plan={p} usedTaskIds={usedTaskIds} onOpenChange={setEditing} />
+        <PlanEditorDialog team={team} plan={p} usedTaskIds={usedTaskIds} onOpenChange={setEditing} onSaved={onSaved} />
       )}
     </Card>
   );

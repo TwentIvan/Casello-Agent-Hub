@@ -12,6 +12,7 @@ import {
   getGetTeamPlanQueryKey,
   getListPendingActionsQueryKey,
   getListTeamEventsQueryKey,
+  getListTeamTasksQueryKey,
   getListTeamTurnsQueryKey,
   getListUnreadTeamEventsQueryKey,
   getListTeamInstancesQueryKey,
@@ -42,7 +43,7 @@ import { TeamUpdatesCard } from "@/components/teams/team-updates-card";
 import { LeadMessageCard } from "@/components/teams/lead-message";
 import { PlanApprovalCards } from "@/components/teams/plan-approval-card";
 import { PlanCard } from "@/components/teams/plan-card";
-import { TEAM_POLL_MS, TeamActivity, useTeamWork } from "@/components/teams/team-activity";
+import { TEAM_POLL_MS, TeamActivity, type TeamWorkState, useTeamWork } from "@/components/teams/team-activity";
 import { TeamBudgetCard } from "@/components/teams/team-budget";
 import { TeamBulletin } from "@/components/teams/team-bulletin";
 import { useToast } from "@/hooks/use-toast";
@@ -60,35 +61,54 @@ function toSave(name: string, refTitle: string, roles: RoleDraft[], localSkills:
 
 type Confirm = "activate" | "close" | null;
 
-/**
- * Lavoro della squadra: piano da approvare, piano, messaggi al capo, attività, bollettino e tetto di spesa. Finché un
- * turno o un compito è in coda o in corso tutte le sezioni si aggiornano ogni 5 secondi; alla fine si rileggono una volta.
- */
-function TeamWork({ team, dirty }: { team: TeamInstance; dirty: boolean }) {
-  const queryClient = useQueryClient();
-  const work = useTeamWork(team.id);
-  const poll = work.live ? TEAM_POLL_MS : false;
-  const plan = useGetTeamPlan(team.id, { query: { queryKey: getGetTeamPlanQueryKey(team.id) } });
-  const taskTitles = useMemo(() => new Map((plan.data?.tasks ?? []).map((t) => [t.id, t.title])), [plan.data]);
-  const usedTaskIds = useMemo(() => (work.tasks.data ?? []).map((t) => t.planTaskId), [work.tasks.data]);
+/** Stato della squadra che sopravvive al rimontaggio dell'editor: polling del lavoro e testo non inviato al capo. */
+interface TeamSession {
+  work: TeamWorkState;
+  leadText: string;
+  setLeadText: (text: string) => void;
+}
 
+/**
+ * Polling del lavoro della squadra (fuori dall'editor, che si rimonta a ogni salvataggio). Quando turni e compiti
+ * tornano fermi si rileggono una volta PLAN, turni, compiti, bollettino e coda; il polling prosegue ancora per il periodo
+ * di grazia, perché il turno del capo che segue un compito finito viene accodato subito dopo.
+ */
+function useTeamSession(teamId: number): TeamSession {
+  const queryClient = useQueryClient();
+  const work = useTeamWork(teamId);
+  const [leadText, setLeadText] = useState("");
   const wasLive = useRef(work.live);
   useEffect(() => {
     if (wasLive.current && !work.live) {
-      void queryClient.invalidateQueries({ queryKey: getGetTeamPlanQueryKey(team.id) });
-      void queryClient.invalidateQueries({ queryKey: getListTeamEventsQueryKey(team.id) });
+      void queryClient.invalidateQueries({ queryKey: getListTeamTurnsQueryKey(teamId) });
+      void queryClient.invalidateQueries({ queryKey: getListTeamTasksQueryKey(teamId) });
+      void queryClient.invalidateQueries({ queryKey: getGetTeamPlanQueryKey(teamId) });
+      void queryClient.invalidateQueries({ queryKey: getListTeamEventsQueryKey(teamId) });
       void queryClient.invalidateQueries({ queryKey: getListUnreadTeamEventsQueryKey() });
       void queryClient.invalidateQueries({ queryKey: getListPendingActionsQueryKey() });
       void queryClient.invalidateQueries({ queryKey: getGetDashboardStatsQueryKey() });
     }
     wasLive.current = work.live;
-  }, [work.live, queryClient, team.id]);
+  }, [work.live, queryClient, teamId]);
+  return { work, leadText, setLeadText };
+}
+
+/**
+ * Lavoro della squadra: piano da approvare, piano, messaggi al capo, attività, bollettino e tetto di spesa. Finché un
+ * turno o un compito è in coda o in corso (e per il periodo di grazia dopo) tutte le sezioni si aggiornano ogni 5 secondi.
+ */
+function TeamWork({ team, dirty, session }: { team: TeamInstance; dirty: boolean; session: TeamSession }) {
+  const { work } = session;
+  const poll = work.polling ? TEAM_POLL_MS : false;
+  const plan = useGetTeamPlan(team.id, { query: { queryKey: getGetTeamPlanQueryKey(team.id) } });
+  const taskTitles = useMemo(() => new Map((plan.data?.tasks ?? []).map((t) => [t.id, t.title])), [plan.data]);
+  const usedTaskIds = useMemo(() => (work.tasks.data ?? []).map((t) => t.planTaskId), [work.tasks.data]);
 
   return (
     <>
-      <PlanApprovalCards team={team} poll={poll} />
-      <PlanCard team={team} poll={poll} usedTaskIds={usedTaskIds} />
-      <LeadMessageCard team={team} />
+      <PlanApprovalCards team={team} poll={poll} onDecided={work.kick} />
+      <PlanCard team={team} poll={poll} usedTaskIds={usedTaskIds} onSaved={work.kick} />
+      <LeadMessageCard team={team} text={session.leadText} onTextChange={session.setLeadText} onSent={work.kick} />
       <TeamActivity team={team} work={work} taskTitles={taskTitles} />
       <TeamBulletin teamId={team.id} poll={poll} />
       <TeamBudgetCard team={team} dirty={dirty} />
@@ -96,7 +116,13 @@ function TeamWork({ team, dirty }: { team: TeamInstance; dirty: boolean }) {
   );
 }
 
-function TeamEditor({ team }: { team: TeamInstance }) {
+/** Squadra caricata: la sessione resta, l'editor si rimonta a ogni salvataggio e riparte dallo stato salvato. */
+function TeamDetail({ team }: { team: TeamInstance }) {
+  const session = useTeamSession(team.id);
+  return <TeamEditor key={`${team.id}-${team.updatedAt}`} team={team} session={session} />;
+}
+
+function TeamEditor({ team, session }: { team: TeamInstance; session: TeamSession }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [name, setName] = useState(team.name);
@@ -141,6 +167,7 @@ function TeamEditor({ team }: { team: TeamInstance }) {
         // Il primo turno del capo è in coda: l'attività riparte e la pagina si aggiorna da sola
         void queryClient.invalidateQueries({ queryKey: getListTeamTurnsQueryKey(saved.id) });
         void queryClient.invalidateQueries({ queryKey: getGetTeamPlanQueryKey(saved.id) });
+        session.work.kick();
         toast({ title: "Squadra attivata", description: "Il capo riceve il primo turno e propone il piano." });
       },
       onError: (error) =>
@@ -259,7 +286,7 @@ function TeamEditor({ team }: { team: TeamInstance }) {
         </CardContent>
       </Card>
 
-      <TeamWork team={team} dirty={dirty} />
+      <TeamWork team={team} dirty={dirty} session={session} />
 
       {!closed && <TeamUpdatesCard team={team} dirty={dirty} />}
 
@@ -328,8 +355,7 @@ export default function TeamDetailPage() {
       ) : !t ? (
         <Skeleton className="h-48 w-full" />
       ) : (
-        // Rimontato a ogni salvataggio: l'editor riparte dallo stato salvato
-        <TeamEditor key={`${t.id}-${t.updatedAt}`} team={t} />
+        <TeamDetail key={t.id} team={t} />
       )}
     </div>
   );

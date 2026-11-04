@@ -22,7 +22,7 @@ import { formatRelative } from "@/lib/format";
 
 const PENDING = { status: "pending" } as const;
 
-function Proposal({ team, item }: { team: TeamInstance; item: QueuedAction }) {
+function Proposal({ team, item, onDecided }: { team: TeamInstance; item: QueuedAction; onDecided: () => void }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [note, setNote] = useState("");
@@ -34,6 +34,8 @@ function Proposal({ team, item }: { team: TeamInstance; item: QueuedAction }) {
     void queryClient.invalidateQueries({ queryKey: getGetDashboardStatsQueryKey() });
     void queryClient.invalidateQueries({ queryKey: getGetTeamPlanQueryKey(team.id) });
     void queryClient.invalidateQueries({ queryKey: getListTeamTurnsQueryKey(team.id) });
+    // La decisione accoda un turno del capo: il polling riparte per il periodo di grazia
+    onDecided();
   };
   const approve = useApprovePendingAction({
     mutation: {
@@ -120,7 +122,15 @@ function Proposal({ team, item }: { team: TeamInstance; item: QueuedAction }) {
  * Riquadri «Piano da approvare»: le voci `plan`/`plan_change` della squadra in attesa nella coda di chi l'ha attivata
  * (per gli altri utenti l'elenco è vuoto e non compare nulla).
  */
-export function PlanApprovalCards({ team, poll }: { team: TeamInstance; poll: number | false }) {
+export function PlanApprovalCards({
+  team,
+  poll,
+  onDecided,
+}: {
+  team: TeamInstance;
+  poll: number | false;
+  onDecided: () => void;
+}) {
   const list = useListPendingActions(PENDING, {
     query: { queryKey: getListPendingActionsQueryKey(PENDING), refetchInterval: poll },
   });
@@ -129,7 +139,7 @@ export function PlanApprovalCards({ team, poll }: { team: TeamInstance; poll: nu
   return (
     <>
       {items.map((item) => (
-        <Proposal key={item.number} team={team} item={item} />
+        <Proposal key={item.number} team={team} item={item} onDecided={onDecided} />
       ))}
     </>
   );

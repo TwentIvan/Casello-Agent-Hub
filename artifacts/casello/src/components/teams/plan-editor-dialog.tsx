@@ -65,12 +65,14 @@ export function PlanEditorDialog({
   plan,
   usedTaskIds,
   onOpenChange,
+  onSaved,
 }: {
   team: TeamInstance;
   plan: TeamPlan;
   /** Id dei compiti già eseguiti in passato: un compito nuovo non li riusa. */
   usedTaskIds: string[];
   onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -93,6 +95,7 @@ export function PlanEditorDialog({
         void queryClient.invalidateQueries({ queryKey: getListTeamTurnsQueryKey(team.id) });
         toast({ title: `Piano salvato (versione ${saved.version})`, description: "È il piano approvato della squadra." });
         setConfirming(false);
+        onSaved();
         onOpenChange(false);
       },
       onError: (error) => {

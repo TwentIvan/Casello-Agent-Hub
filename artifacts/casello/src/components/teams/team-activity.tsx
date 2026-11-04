@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Bot, ListChecks } from "lucide-react";
 import {
   type TeamInstance,
@@ -28,19 +28,48 @@ function isTaskLive(t: TeamTask): boolean {
   return t.status === "queued" || t.status === "running";
 }
 
+/** Dopo l'ultimo turno o compito attivo si continua a interrogare per due giri: il turno del capo che segue un compito
+ * finito (o una decisione, un messaggio, l'attivazione) viene accodato un attimo dopo. */
+export const TEAM_GRACE_MS = 2 * TEAM_POLL_MS;
+
 /**
- * Turni e compiti della squadra; `live` è vero finché un turno o un compito è in coda o in corso: allora la pagina
- * si aggiorna ogni 5 secondi.
+ * Turni e compiti della squadra. `live` è vero finché un turno o un compito è in coda o in corso; `polling` anche per
+ * `TEAM_GRACE_MS` dopo la fine e dopo ogni `kick` (azioni dell'utente che accodano un turno): intanto la pagina si
+ * aggiorna ogni 5 secondi.
  */
 export function useTeamWork(teamId: number) {
-  const [live, setLive] = useState(false);
-  const poll = live ? TEAM_POLL_MS : false;
+  const [graceUntil, setGraceUntil] = useState(0);
+  const [inGrace, setInGrace] = useState(false);
+  // `live` del render precedente: dipende dai dati di queste stesse query
+  const [wasLive, setWasLive] = useState(false);
+  const poll = wasLive || inGrace ? TEAM_POLL_MS : false;
   const turns = useListTeamTurns(teamId, { query: { queryKey: getListTeamTurnsQueryKey(teamId), refetchInterval: poll } });
   const tasks = useListTeamTasks(teamId, { query: { queryKey: getListTeamTasksQueryKey(teamId), refetchInterval: poll } });
-  const nowLive = (turns.data ?? []).some(isTurnLive) || (tasks.data ?? []).some(isTaskLive);
-  useEffect(() => setLive(nowLive), [nowLive]);
-  return { turns, tasks, live: nowLive };
+  const live = (turns.data ?? []).some(isTurnLive) || (tasks.data ?? []).some(isTaskLive);
+
+  // Fine del lavoro: parte il periodo di grazia
+  useEffect(() => {
+    if (wasLive && !live) setGraceUntil(Date.now() + TEAM_GRACE_MS);
+    setWasLive(live);
+  }, [live, wasLive]);
+
+  // Periodo di grazia attivo fino alla scadenza
+  useEffect(() => {
+    const left = graceUntil - Date.now();
+    if (left <= 0) {
+      setInGrace(false);
+      return;
+    }
+    setInGrace(true);
+    const timer = setTimeout(() => setInGrace(false), left);
+    return () => clearTimeout(timer);
+  }, [graceUntil]);
+
+  const kick = useCallback(() => setGraceUntil(Date.now() + TEAM_GRACE_MS), []);
+  return { turns, tasks, live, polling: live || inGrace, kick };
 }
+
+export type TeamWorkState = ReturnType<typeof useTeamWork>;
 
 function reasonText(r: TeamTurnReason): string {
   switch (r.type) {
@@ -162,7 +191,7 @@ export function TeamActivity({
   taskTitles,
 }: {
   team: TeamInstance;
-  work: ReturnType<typeof useTeamWork>;
+  work: TeamWorkState;
   /** Titoli dei compiti del PLAN per id. */
   taskTitles: Map<string, string>;
 }) {
@@ -180,7 +209,7 @@ export function TeamActivity({
         <CardTitle className="text-base">Attività</CardTitle>
         <CardDescription>
           Turni del capo e compiti dei ruoli, dal più recente.
-          {work.live && " Aggiornamento automatico in corso."}
+          {work.polling && " Aggiornamento automatico in corso."}
         </CardDescription>
       </CardHeader>
       <CardContent>

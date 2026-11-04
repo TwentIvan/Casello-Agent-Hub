@@ -131,6 +131,20 @@ describe("decisione sulle voci di piano", () => {
     expect(await turns()).toHaveLength(0);
   });
 
+  it("voce vecchia con una proposta più recente: approvazione superata, rifiuto chiude solo la voce; la proposta nuova resta", async () => {
+    const old1 = await propose();
+    const old2 = await propose();
+    const newer = await writePlanVersion(instanceId, plan("Nuova proposta"), "proposed");
+    const approved = await approveAction(userId, old1, {});
+    expect(approved.ok && approved.action).toMatchObject({ status: "failed", errorMessage: "proposta superata da una versione più recente" });
+    const rejected = await rejectAction(userId, old2, "vecchia");
+    expect(rejected.ok && rejected.action.status).toBe("rejected");
+    const p = await getPlan(instanceId);
+    expect(p.version).toBe(newer.version);
+    expect(p.status).toBe("proposed");
+    expect(p.approvedVersion).toBeNull();
+  });
+
   it("squadra chiusa: 409 «squadra chiusa», voce invariata, nessun turno", async () => {
     const n = await propose();
     await closeInstance(instanceId);

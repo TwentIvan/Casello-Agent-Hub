@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db, pendingActionsTable, teamInstancesTable, type PendingActionRow } from "@workspace/db";
 import type { DecideResult } from "../actions/decide";
 import { TEAM_MESSAGES } from "./rules";
-import { getPlan, setPlanStatus } from "./plan";
+import { getPlanForUpdate, setPlanStatus } from "./plan";
 import { enqueueTurnReason } from "./turn-queue";
 
 // Decisione sulle voci `plan` e `plan_change` della coda: approvare rende approvata la versione proposta del PLAN,
@@ -58,7 +58,8 @@ export async function decidePlanItem(row: PendingActionRow, approved: boolean, n
       .returning();
     if (!claimed) return { kind: "already" as const };
 
-    const plan = await getPlan(instanceId, tx);
+    // Riga del PLAN bloccata: versione e stato si confrontano e si scrivono senza che il capo possa proporre nel mezzo
+    const plan = await getPlanForUpdate(instanceId, tx);
     const current = plan.version === row.planVersion && plan.status === "proposed";
 
     if (approved) {

@@ -111,6 +111,11 @@ async function lockPlanRow(tx: Executor, instanceId: number): Promise<TeamPlanRo
   return row!;
 }
 
+/** PLAN corrente letto con la riga bloccata FOR UPDATE: per confrontare versione e stato e scrivere nella stessa transazione `tx`. */
+export async function getPlanForUpdate(instanceId: number, tx: Executor): Promise<PlanView> {
+  return toView(await lockPlanRow(tx, instanceId));
+}
+
 /**
  * Scrive una versione nuova (+1) del PLAN con la sua riga in `team_plan_versions`. Con stato `approved` la versione
  * nuova è anche quella approvata; con gli altri stati `approved_version` resta com'è.

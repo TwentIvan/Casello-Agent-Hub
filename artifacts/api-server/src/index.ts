@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { failInterruptedAnalyses } from "./lib/architect/run-analysis";
 import { startLocalLeaseJob } from "./lib/architect/local-executor";
 import { failInterruptedRuns } from "./lib/run-executor";
+import { failInterruptedTeamWork } from "./lib/teams/task-runner";
 import { failInterruptedActions } from "./lib/actions/decide";
 import { failInterruptedPlanTurns } from "./lib/plan-chat/run-turn";
 import { resetStaleIssueReservations } from "./lib/plan-issues/service";
@@ -36,6 +37,11 @@ failInterruptedRuns()
     if (cancelled > 0) logger.info({ count: cancelled }, "Run in pausa per conferma annullate: sostituite dalla coda delle azioni");
   })
   .catch((err: unknown) => logger.error({ err }, "Chiusura delle run interrotte non riuscita"));
+
+// Turni del capo e compiti delle squadre rimasti in corso: falliti con evento `interrotto` e turno `restart`.
+failInterruptedTeamWork().catch((err: unknown) =>
+  logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Chiusura del lavoro delle squadre interrotto non riuscita"),
+);
 
 // Azioni in coda rimaste in esecuzione: l'esito è incerto (il servizio può averle eseguite).
 failInterruptedActions()

@@ -4,6 +4,8 @@ import { failInterruptedAnalyses } from "./lib/architect/run-analysis";
 import { startLocalLeaseJob } from "./lib/architect/local-executor";
 import { failInterruptedRuns } from "./lib/run-executor";
 import { failInterruptedTeamWork } from "./lib/teams/task-runner";
+import { pumpTurnInBackground, resumeQueuedTurns } from "./lib/teams/turn-runner";
+import { setOnTurnQueued } from "./lib/teams/turn-queue";
 import { failInterruptedActions } from "./lib/actions/decide";
 import { failInterruptedPlanTurns } from "./lib/plan-chat/run-turn";
 import { resetStaleIssueReservations } from "./lib/plan-issues/service";
@@ -38,10 +40,19 @@ failInterruptedRuns()
   })
   .catch((err: unknown) => logger.error({ err }, "Chiusura delle run interrotte non riuscita"));
 
-// Turni del capo e compiti delle squadre rimasti in corso: falliti con evento `interrotto` e turno `restart`.
-failInterruptedTeamWork().catch((err: unknown) =>
-  logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Chiusura del lavoro delle squadre interrotto non riuscita"),
-);
+// Ogni motivo accodato fa partire il turno del capo della squadra (se nessun turno è in corso).
+setOnTurnQueued(pumpTurnInBackground);
+
+// Turni del capo e compiti delle squadre rimasti in corso: falliti con evento `interrotto` e turno `restart`;
+// poi ripartono i turni rimasti in coda delle squadre attive.
+failInterruptedTeamWork()
+  .catch((err: unknown) =>
+    logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Chiusura del lavoro delle squadre interrotto non riuscita"),
+  )
+  .then(() => resumeQueuedTurns())
+  .catch((err: unknown) =>
+    logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Ripartenza dei turni delle squadre in coda non riuscita"),
+  );
 
 // Azioni in coda rimaste in esecuzione: l'esito è incerto (il servizio può averle eseguite).
 failInterruptedActions()

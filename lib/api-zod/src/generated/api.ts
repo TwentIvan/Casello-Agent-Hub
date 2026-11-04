@@ -1907,7 +1907,10 @@ export const ListTeamInstancesResponseItem = zod.object({
 })),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
-  "closedAt": zod.coerce.date().nullable()
+  "closedAt": zod.coerce.date().nullable(),
+  "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
+  "lastTurnAt": zod.coerce.date().nullable()
 })
 export const ListTeamInstancesResponse = zod.array(ListTeamInstancesResponseItem)
 
@@ -2010,7 +2013,10 @@ export const CreateTeamInstanceResponse = zod.object({
 })),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
-  "closedAt": zod.coerce.date().nullable()
+  "closedAt": zod.coerce.date().nullable(),
+  "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
+  "lastTurnAt": zod.coerce.date().nullable()
 })
 
 
@@ -2073,7 +2079,10 @@ export const GetTeamInstanceResponse = zod.object({
 })),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
-  "closedAt": zod.coerce.date().nullable()
+  "closedAt": zod.coerce.date().nullable(),
+  "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
+  "lastTurnAt": zod.coerce.date().nullable()
 })
 
 
@@ -2181,7 +2190,10 @@ export const SaveTeamInstanceResponse = zod.object({
 })),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
-  "closedAt": zod.coerce.date().nullable()
+  "closedAt": zod.coerce.date().nullable(),
+  "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
+  "lastTurnAt": zod.coerce.date().nullable()
 })
 
 
@@ -2244,7 +2256,10 @@ export const CloseTeamInstanceResponse = zod.object({
 })),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
-  "closedAt": zod.coerce.date().nullable()
+  "closedAt": zod.coerce.date().nullable(),
+  "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
+  "lastTurnAt": zod.coerce.date().nullable()
 })
 
 
@@ -2342,7 +2357,10 @@ export const ApplyTeamInstanceUpdatesResponse = zod.object({
 })),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
-  "closedAt": zod.coerce.date().nullable()
+  "closedAt": zod.coerce.date().nullable(),
+  "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
+  "lastTurnAt": zod.coerce.date().nullable()
 })
 
 
@@ -2609,6 +2627,354 @@ export const MarkTeamManualActionDoneResponse = zod.object({
   "status": zod.enum(['draft', 'proposed', 'approved']),
   "approvedVersion": zod.number().nullable(),
   "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * `draft` → `active`: chi attiva riceve le voci in coda della squadra. Crea il PLAN `draft` se manca e accoda un turno del capo (motivo `activation`). Squadra già attiva o chiusa → 409.
+ * @summary Attiva la squadra
+ */
+export const ActivateTeamInstanceParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ActivateTeamInstanceResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['draft', 'active', 'closed']),
+  "template": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "version": zod.number()
+}).nullable().describe('Modello di origine e versione copiata (null se creata da zero o modello eliminato)'),
+  "ref": zod.object({
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "type": zod.string(),
+  "id": zod.string(),
+  "title": zod.string()
+}),
+  "roles": zod.array(zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "model": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
+  "tools": zod.array(zod.object({
+  "id": zod.number(),
+  "appId": zod.number().optional(),
+  "appName": zod.string().optional(),
+  "name": zod.string(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional(),
+  "available": zod.boolean()
+}).describe('Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false')),
+  "skills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().optional(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "deprecated": zod.boolean(),
+  "local": zod.boolean().optional()
+}))
+}).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "localSkills": zod.array(zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string())
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "closedAt": zod.coerce.date().nullable(),
+  "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
+  "lastTurnAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Accoda un turno del capo con motivo `request` (o aggiunge il motivo al turno già in coda). Solo squadre attive (409). 10 messaggi al minuto per utente.
+ * @summary Scrive al capo della squadra
+ */
+export const SendTeamMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const sendTeamMessageBodyTextMax = 4000;
+
+
+
+export const SendTeamMessageBody = zod.object({
+  "text": zod.string().min(1).max(sendTeamMessageBodyTextMax)
+})
+
+export const SendTeamMessageResponse = zod.object({
+  "queued": zod.boolean()
+})
+
+
+/**
+ * Tetto in USD sulla spesa del mese di turni e compiti della squadra (null = nessun tetto). Raggiunto il tetto, turni e compiti non partono. Squadra chiusa → 409.
+ * @summary Imposta il tetto di spesa mensile della squadra
+ */
+export const SetTeamBudgetParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const setTeamBudgetBodyMonthlyBudgetUsdMin = 0;
+export const setTeamBudgetBodyMonthlyBudgetUsdMax = 1000000;
+
+
+
+export const SetTeamBudgetBody = zod.object({
+  "monthlyBudgetUsd": zod.number().min(setTeamBudgetBodyMonthlyBudgetUsdMin).max(setTeamBudgetBodyMonthlyBudgetUsdMax).nullable()
+})
+
+export const SetTeamBudgetResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['draft', 'active', 'closed']),
+  "template": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "version": zod.number()
+}).nullable().describe('Modello di origine e versione copiata (null se creata da zero o modello eliminato)'),
+  "ref": zod.object({
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "type": zod.string(),
+  "id": zod.string(),
+  "title": zod.string()
+}),
+  "roles": zod.array(zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "isLead": zod.boolean(),
+  "runsOn": zod.enum(['cloud', 'node']),
+  "model": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
+  "tools": zod.array(zod.object({
+  "id": zod.number(),
+  "appId": zod.number().optional(),
+  "appName": zod.string().optional(),
+  "name": zod.string(),
+  "level": zod.enum(['L0', 'L1', 'L2', 'L3']).optional(),
+  "available": zod.boolean()
+}).describe('Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false')),
+  "skills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().optional(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "deprecated": zod.boolean(),
+  "local": zod.boolean().optional()
+}))
+}).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "localSkills": zod.array(zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "kind": zod.enum(['casello', 'node']).describe('`casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.'),
+  "content": zod.string(),
+  "toolHints": zod.array(zod.string())
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "closedAt": zod.coerce.date().nullable(),
+  "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
+  "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
+  "lastTurnAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Esecuzioni dei compiti della squadra, dalla più recente (senza passi)
+ */
+export const ListTeamTasksParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListTeamTasksResponseItem = zod.object({
+  "id": zod.number(),
+  "instanceId": zod.number(),
+  "planTaskId": zod.string(),
+  "roleKey": zod.string(),
+  "instructions": zod.string(),
+  "status": zod.enum(['queued', 'running', 'waiting_node', 'done', 'blocked', 'failed', 'cancelled']),
+  "outcome": zod.string().nullable(),
+  "detail": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "aiModelId": zod.number().nullable(),
+  "promptTokens": zod.number().nullable(),
+  "completionTokens": zod.number().nullable(),
+  "cachedTokens": zod.number(),
+  "costUsd": zod.number().nullable(),
+  "createdAt": zod.coerce.date(),
+  "startedAt": zod.coerce.date().nullable(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "steps": zod.array(zod.object({
+  "id": zod.number(),
+  "position": zod.number(),
+  "type": zod.string().describe('model (chiamata al modello), tool (chiamata a uno strumento) o queued (azione accodata)'),
+  "toolName": zod.string().nullable(),
+  "args": zod.unknown().nullable().describe('Argomenti con i valori sensibili oscurati'),
+  "ok": zod.boolean().nullable(),
+  "httpStatus": zod.number().nullable(),
+  "durationMs": zod.number().nullable(),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})).optional().describe('Passi dell\'esecuzione (solo nel dettaglio)')
+})
+export const ListTeamTasksResponse = zod.array(ListTeamTasksResponseItem)
+
+
+/**
+ * @summary Esecuzione di un compito con i passi
+ */
+export const GetTeamTaskParams = zod.object({
+  "id": zod.coerce.number(),
+  "taskId": zod.coerce.number()
+})
+
+export const GetTeamTaskResponse = zod.object({
+  "id": zod.number(),
+  "instanceId": zod.number(),
+  "planTaskId": zod.string(),
+  "roleKey": zod.string(),
+  "instructions": zod.string(),
+  "status": zod.enum(['queued', 'running', 'waiting_node', 'done', 'blocked', 'failed', 'cancelled']),
+  "outcome": zod.string().nullable(),
+  "detail": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "aiModelId": zod.number().nullable(),
+  "promptTokens": zod.number().nullable(),
+  "completionTokens": zod.number().nullable(),
+  "cachedTokens": zod.number(),
+  "costUsd": zod.number().nullable(),
+  "createdAt": zod.coerce.date(),
+  "startedAt": zod.coerce.date().nullable(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "steps": zod.array(zod.object({
+  "id": zod.number(),
+  "position": zod.number(),
+  "type": zod.string().describe('model (chiamata al modello), tool (chiamata a uno strumento) o queued (azione accodata)'),
+  "toolName": zod.string().nullable(),
+  "args": zod.unknown().nullable().describe('Argomenti con i valori sensibili oscurati'),
+  "ok": zod.boolean().nullable(),
+  "httpStatus": zod.number().nullable(),
+  "durationMs": zod.number().nullable(),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})).optional().describe('Passi dell\'esecuzione (solo nel dettaglio)')
+})
+
+
+/**
+ * @summary Turni del capo, dal più recente (ultimi 50), con i passi
+ */
+export const ListTeamTurnsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListTeamTurnsResponseItem = zod.object({
+  "id": zod.number(),
+  "instanceId": zod.number(),
+  "reasons": zod.array(zod.object({
+  "type": zod.enum(['request', 'task_finished', 'decision', 'activation', 'restart']),
+  "text": zod.string().optional(),
+  "taskId": zod.number().optional(),
+  "number": zod.number().optional(),
+  "outcome": zod.enum(['approved', 'rejected']).optional(),
+  "note": zod.string().nullish()
+})),
+  "status": zod.enum(['queued', 'running', 'done', 'failed']),
+  "error": zod.string().nullable(),
+  "aiModelId": zod.number().nullable(),
+  "promptTokens": zod.number().nullable(),
+  "completionTokens": zod.number().nullable(),
+  "cachedTokens": zod.number(),
+  "costUsd": zod.number().nullable(),
+  "createdAt": zod.coerce.date(),
+  "startedAt": zod.coerce.date().nullable(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "steps": zod.array(zod.object({
+  "id": zod.number(),
+  "position": zod.number(),
+  "type": zod.string().describe('model (chiamata al modello), tool (chiamata a uno strumento) o queued (azione accodata)'),
+  "toolName": zod.string().nullable(),
+  "args": zod.unknown().nullable().describe('Argomenti con i valori sensibili oscurati'),
+  "ok": zod.boolean().nullable(),
+  "httpStatus": zod.number().nullable(),
+  "durationMs": zod.number().nullable(),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+})
+export const ListTeamTurnsResponse = zod.array(ListTeamTurnsResponseItem)
+
+
+/**
+ * @summary Eventi della squadra, dal più recente
+ */
+export const ListTeamEventsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListTeamEventsResponseItem = zod.object({
+  "id": zod.number(),
+  "instanceId": zod.number(),
+  "type": zod.enum(['piano_proposto', 'compito_finito', 'bloccato', 'decisione_richiesta', 'azione_manuale_richiesta', 'lavoro_finito', 'interrotto']),
+  "taskId": zod.number().nullable(),
+  "bulletin": zod.string(),
+  "detail": zod.string().nullable(),
+  "readAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
+export const ListTeamEventsResponse = zod.array(ListTeamEventsResponseItem)
+
+
+/**
+ * Con `unread=true` solo gli eventi non letti; altrimenti gli ultimi 200 eventi. Non li segna come letti.
+ * @summary Bollettino delle squadre attivate dall'utente
+ */
+export const ListUnreadTeamEventsQueryParams = zod.object({
+  "unread": zod.coerce.boolean().optional()
+})
+
+export const ListUnreadTeamEventsResponseItem = zod.object({
+  "id": zod.number(),
+  "instanceId": zod.number(),
+  "type": zod.enum(['piano_proposto', 'compito_finito', 'bloccato', 'decisione_richiesta', 'azione_manuale_richiesta', 'lavoro_finito', 'interrotto']),
+  "taskId": zod.number().nullable(),
+  "bulletin": zod.string(),
+  "detail": zod.string().nullable(),
+  "readAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
+export const ListUnreadTeamEventsResponse = zod.array(ListUnreadTeamEventsResponseItem)
+
+
+/**
+ * Solo eventi delle squadre attivate dall'utente; gli altri si ignorano.
+ * @summary Segna come letti gli eventi indicati
+ */
+export const markTeamEventsReadBodyIdsMax = 500;
+
+
+
+export const MarkTeamEventsReadBody = zod.object({
+  "ids": zod.array(zod.number()).max(markTeamEventsReadBodyIdsMax)
+})
+
+export const MarkTeamEventsReadResponse = zod.object({
+  "updated": zod.number()
 })
 
 

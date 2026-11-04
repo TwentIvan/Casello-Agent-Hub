@@ -68,3 +68,6 @@ export const tokenRateLimit = rateLimit({
   windowMs: 60_000,
   key: (req) => `token:${req.auth?.kind === "token" ? req.auth.tokenId : "?"}`,
 });
+
+// Messaggi al capo di una squadra (ognuno fa partire un turno che consuma token): 10 al minuto per utente.
+export const teamMessageRateLimit = rateLimit({ limit: 10, windowMs: 60_000, key: byUser });

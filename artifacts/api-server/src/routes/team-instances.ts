@@ -26,9 +26,34 @@ import {
   SaveTeamPlanResponse,
   MarkTeamManualActionDoneParams,
   MarkTeamManualActionDoneResponse,
+  ActivateTeamInstanceParams,
+  ActivateTeamInstanceResponse,
+  SendTeamMessageParams,
+  SendTeamMessageBody,
+  SendTeamMessageResponse,
+  SetTeamBudgetParams,
+  SetTeamBudgetBody,
+  SetTeamBudgetResponse,
+  ListTeamTasksParams,
+  ListTeamTasksResponse,
+  GetTeamTaskParams,
+  GetTeamTaskResponse,
+  ListTeamTurnsParams,
+  ListTeamTurnsResponse,
+  ListTeamEventsParams,
+  ListTeamEventsResponse,
+  ListUnreadTeamEventsResponse,
+  MarkTeamEventsReadBody,
+  MarkTeamEventsReadResponse,
 } from "@workspace/api-zod";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { db, teamTaskStepsTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamTaskRow, type TeamTurnRow } from "@workspace/db";
 import { currentUserId } from "../lib/auth";
-import { InstanceError, closeInstance, createInstance, getInstance, listInstances, saveInstance } from "../lib/teams/instances";
+import { InstanceError, closeInstance, createInstance, getInstance, listInstances, saveInstance, setInstanceBudget } from "../lib/teams/instances";
+import { listEvents, markRead, userEvents } from "../lib/teams/events";
+import { activateInstance, sendToLead } from "../lib/teams/turn-runner";
+import { teamMessageRateLimit } from "../middlewares/rate-limit";
+import { toNumberOrNull } from "./serializers";
 import { SkillError } from "../lib/teams/skills";
 import { correctPlan, getPlan, markManualActionDone } from "../lib/teams/plan";
 import { saveInstanceAsTemplate } from "../lib/teams/save-as-template";
@@ -134,6 +159,108 @@ router.post("/team-instances/:id/plan/manual-actions/:actionId/done", async (req
   await guarded(res, async () => {
     res.json(MarkTeamManualActionDoneResponse.parse(await markManualActionDone(id, actionId)));
   });
+});
+
+// ─── Esecuzione: attivazione, messaggi al capo, tetto, attività, bollettino ──
+
+const MAX_TURNS = 50;
+const MAX_TASKS = 200;
+const MAX_USER_EVENTS = 200;
+
+const publicTask = ({ costUsd, ...rest }: TeamTaskRow) => ({ ...rest, costUsd: toNumberOrNull(costUsd) });
+const publicTurn = ({ costUsd, ...rest }: TeamTurnRow) => ({ ...rest, costUsd: toNumberOrNull(costUsd) });
+
+router.post("/team-instances/:id/activate", async (req, res) => {
+  const { id } = parseRequest(ActivateTeamInstanceParams, req.params);
+  await guarded(res, async () => {
+    res.json(ActivateTeamInstanceResponse.parse(await activateInstance(currentUserId(req), id)));
+  });
+});
+
+router.post("/team-instances/:id/messages", teamMessageRateLimit, async (req, res) => {
+  const { id } = parseRequest(SendTeamMessageParams, req.params);
+  const { text } = parseRequest(SendTeamMessageBody, req.body);
+  if (text.trim() === "") {
+    res.status(400).json({ error: "messaggio vuoto" });
+    return;
+  }
+  await guarded(res, async () => {
+    await sendToLead(currentUserId(req), id, text.trim());
+    res.status(202).json(SendTeamMessageResponse.parse({ queued: true }));
+  });
+});
+
+router.put("/team-instances/:id/budget", async (req, res) => {
+  const { id } = parseRequest(SetTeamBudgetParams, req.params);
+  const { monthlyBudgetUsd } = parseRequest(SetTeamBudgetBody, req.body);
+  await guarded(res, async () => {
+    res.json(SetTeamBudgetResponse.parse(await setInstanceBudget(id, monthlyBudgetUsd)));
+  });
+});
+
+router.get("/team-instances/:id/tasks", async (req, res) => {
+  const { id } = parseRequest(ListTeamTasksParams, req.params);
+  await guarded(res, async () => {
+    await getInstance(id);
+    const rows = await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, id)).orderBy(desc(teamTasksTable.id)).limit(MAX_TASKS);
+    res.json(ListTeamTasksResponse.parse(rows.map(publicTask)));
+  });
+});
+
+router.get("/team-instances/:id/tasks/:taskId", async (req, res) => {
+  const { id, taskId } = parseRequest(GetTeamTaskParams, req.params);
+  await guarded(res, async () => {
+    const [row] = await db.select().from(teamTasksTable).where(and(eq(teamTasksTable.id, taskId), eq(teamTasksTable.instanceId, id))).limit(1);
+    if (!row) throw new InstanceError(404, "compito non trovato");
+    const steps = await db.select().from(teamTaskStepsTable).where(eq(teamTaskStepsTable.taskId, row.id)).orderBy(teamTaskStepsTable.position);
+    res.json(GetTeamTaskResponse.parse({ ...publicTask(row), steps: steps.map(({ taskId: _taskId, ...step }) => step) }));
+  });
+});
+
+router.get("/team-instances/:id/turns", async (req, res) => {
+  const { id } = parseRequest(ListTeamTurnsParams, req.params);
+  await guarded(res, async () => {
+    await getInstance(id);
+    const rows = await db.select().from(teamTurnsTable).where(eq(teamTurnsTable.instanceId, id)).orderBy(desc(teamTurnsTable.id)).limit(MAX_TURNS);
+    const steps =
+      rows.length === 0
+        ? []
+        : await db
+            .select()
+            .from(teamTurnStepsTable)
+            .where(inArray(teamTurnStepsTable.turnId, rows.map((r) => r.id)))
+            .orderBy(teamTurnStepsTable.turnId, teamTurnStepsTable.position);
+    res.json(
+      ListTeamTurnsResponse.parse(
+        rows.map((turn) => ({ ...publicTurn(turn), steps: steps.filter((s) => s.turnId === turn.id).map(({ turnId: _turnId, ...step }) => step) })),
+      ),
+    );
+  });
+});
+
+router.get("/team-instances/:id/events", async (req, res) => {
+  const { id } = parseRequest(ListTeamEventsParams, req.params);
+  await guarded(res, async () => {
+    await getInstance(id);
+    res.json(ListTeamEventsResponse.parse(await listEvents(id)));
+  });
+});
+
+router.get("/team-events", async (req, res) => {
+  // `unread` si legge come testo: la coercizione booleana tratterebbe "false" come vero
+  const raw = req.query["unread"];
+  if (raw !== undefined && raw !== "true" && raw !== "false") {
+    res.status(400).json({ error: "unread deve essere true o false" });
+    return;
+  }
+  const unread = raw === "true";
+  const rows = await userEvents(currentUserId(req), unread ? { unread } : { limit: MAX_USER_EVENTS });
+  res.json(ListUnreadTeamEventsResponse.parse(rows));
+});
+
+router.post("/team-events/read", async (req, res) => {
+  const { ids } = parseRequest(MarkTeamEventsReadBody, req.body);
+  res.json(MarkTeamEventsReadResponse.parse({ updated: await markRead(currentUserId(req), ids) }));
 });
 
 export default router;

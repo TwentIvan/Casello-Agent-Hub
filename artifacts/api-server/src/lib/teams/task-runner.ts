@@ -6,7 +6,6 @@ import {
   skillsTable,
   teamInstanceSkillsTable,
   teamInstancesTable,
-  teamPlanVersionsTable,
   teamTaskStepsTable,
   teamTasksTable,
   teamTurnsTable,
@@ -20,7 +19,7 @@ import type { ToolResult } from "../tools/types";
 import { emitEvent } from "./events";
 import { InstanceError, INSTANCE_MESSAGES } from "./instances";
 import { InstanceRoleSchema, type InstanceRole } from "./manifest";
-import { PLAN_MESSAGES, getPlan, patchPlan, type PlanTask, type PlanView } from "./plan";
+import { PLAN_MESSAGES, getApprovedPlan, getPlan, patchPlan, type PlanTask, type PlanView } from "./plan";
 import {
   internalTool,
   loadRoleTools,
@@ -98,7 +97,7 @@ interface TaskResult {
   error?: string | null;
 }
 
-const errName = (err: unknown) => (err instanceof Error ? err.name : typeof err);
+export const errName = (err: unknown) => (err instanceof Error ? err.name : typeof err);
 
 // ─── Esecuzioni in background ───────────────────────────────────────────────
 
@@ -133,19 +132,11 @@ function roleOf(instance: TeamInstanceRow, key: string): InstanceRole | undefine
 
 /** Compito della versione approvata del PLAN; undefined se non c'è un PLAN approvato o il compito non vi compare. */
 async function approvedPlanTask(instanceId: number, planTaskId: string): Promise<PlanTask | undefined> {
-  const plan = await getPlan(instanceId);
-  if (plan.approvedVersion === null) return undefined;
-  if (plan.version === plan.approvedVersion) return plan.tasks.find((t) => t.id === planTaskId);
-  const [row] = await db
-    .select({ plan: teamPlanVersionsTable.plan })
-    .from(teamPlanVersionsTable)
-    .where(and(eq(teamPlanVersionsTable.instanceId, instanceId), eq(teamPlanVersionsTable.version, plan.approvedVersion)))
-    .limit(1);
-  return row?.plan.tasks.find((t) => t.id === planTaskId);
+  return (await getApprovedPlan(instanceId))?.tasks.find((t) => t.id === planTaskId);
 }
 
 /** Testo delle skill `casello` del ruolo: versioni fissate del catalogo e skill specializzate dell'istanza. */
-async function skillTexts(instanceId: number, role: InstanceRole): Promise<{ code: string; label: string; content: string }[]> {
+export async function skillTexts(instanceId: number, role: InstanceRole): Promise<{ code: string; label: string; content: string }[]> {
   const out: { code: string; label: string; content: string }[] = [];
   if (role.skills.length > 0) {
     const rows = await db

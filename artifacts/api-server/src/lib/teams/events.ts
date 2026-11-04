@@ -59,11 +59,19 @@ export async function markRead(userId: number, ids: number[]): Promise<number> {
   return updated.length;
 }
 
-/** Eventi non letti delle squadre attivate dall'utente, dal più recente. */
-export async function unreadBulletin(userId: number): Promise<TeamEventRow[]> {
-  return db
+/** Eventi delle squadre attivate dall'utente, dal più recente (al massimo `limit`); con `unread` solo i non letti. */
+export async function userEvents(userId: number, opts: { unread?: boolean; limit?: number } = {}): Promise<TeamEventRow[]> {
+  const conditions = [inArray(teamEventsTable.instanceId, ownedInstances(userId))];
+  if (opts.unread) conditions.push(isNull(teamEventsTable.readAt));
+  const query = db
     .select()
     .from(teamEventsTable)
-    .where(and(isNull(teamEventsTable.readAt), inArray(teamEventsTable.instanceId, ownedInstances(userId))))
+    .where(and(...conditions))
     .orderBy(desc(teamEventsTable.createdAt), desc(teamEventsTable.id));
+  return opts.limit === undefined ? query : query.limit(opts.limit);
+}
+
+/** Eventi non letti delle squadre attivate dall'utente, dal più recente. */
+export async function unreadBulletin(userId: number): Promise<TeamEventRow[]> {
+  return userEvents(userId, { unread: true });
 }

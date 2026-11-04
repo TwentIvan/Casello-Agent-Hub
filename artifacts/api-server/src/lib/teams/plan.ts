@@ -104,6 +104,22 @@ export async function getPlan(instanceId: number, executor: Executor = db): Prom
   return toView(created!);
 }
 
+/**
+ * Contenuto della versione approvata del PLAN (null se non ce n'è una). La riga corrente può contenere una proposta
+ * successiva (o una proposta rifiutata): la versione approvata si legge da `team_plan_versions`.
+ */
+export async function getApprovedPlan(instanceId: number, current?: PlanView): Promise<Plan | null> {
+  const plan = current ?? (await getPlan(instanceId));
+  if (plan.approvedVersion === null) return null;
+  if (plan.version === plan.approvedVersion) return plan;
+  const [row] = await db
+    .select({ plan: teamPlanVersionsTable.plan })
+    .from(teamPlanVersionsTable)
+    .where(and(eq(teamPlanVersionsTable.instanceId, instanceId), eq(teamPlanVersionsTable.version, plan.approvedVersion)))
+    .limit(1);
+  return row?.plan ?? null;
+}
+
 /** Riga del PLAN bloccata FOR UPDATE dentro la transazione `tx` (creata se manca). */
 async function lockPlanRow(tx: Executor, instanceId: number): Promise<TeamPlanRow> {
   await tx.insert(teamPlansTable).values({ instanceId }).onConflictDoNothing();

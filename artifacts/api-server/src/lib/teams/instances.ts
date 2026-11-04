@@ -2,12 +2,16 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   db,
   appsTable,
+  pendingActionsTable,
   skillsTable,
   teamInstanceSkillsTable,
   teamInstancesTable,
+  teamTasksTable,
   teamTemplatesTable,
+  teamTurnsTable,
   type TeamInstanceRow,
 } from "@workspace/db";
+import { patchPlan } from "./plan";
 import { InstanceRoleSchema, type InstanceRole, type TemplateRole } from "./manifest";
 import { TEAM_MESSAGES, TeamRuleError, validateRoles } from "./rules";
 import { SKILL_CODE, SKILL_MESSAGES, validateSkillContent, type Executor, type SkillKind } from "./skills";
@@ -53,6 +57,9 @@ export type InstanceView = {
   createdAt: Date;
   updatedAt: Date;
   closedAt: Date | null;
+  activatedBy: number | null;
+  monthlyBudgetUsd: number | null;
+  lastTurnAt: Date | null;
 };
 
 export type CreateInstanceInput = {
@@ -96,6 +103,9 @@ async function toView(row: TeamInstanceRow): Promise<InstanceView> {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     closedAt: row.closedAt,
+    activatedBy: row.activatedBy,
+    monthlyBudgetUsd: row.monthlyBudgetUsd === null ? null : Number(row.monthlyBudgetUsd),
+    lastTurnAt: row.lastTurnAt,
   };
 }
 
@@ -219,16 +229,65 @@ export async function saveInstance(userId: number, id: number, input: SaveInstan
   return getInstance(id);
 }
 
-/** Chiude la squadra: non si riapre e non si salva più. */
+export const CLOSE_MESSAGES = {
+  teamClosed: "squadra chiusa",
+  taskCancelled: "annullato: squadra chiusa",
+} as const;
+
+/**
+ * Chiude la squadra: non si riapre e non si salva più. Nella stessa transazione i compiti `queued` diventano
+ * `cancelled`, le voci `plan`/`plan_change` ancora in coda `rejected` («squadra chiusa») e i turni in coda `failed`.
+ * Compiti e turni `running` finiscono da soli, ma non fanno partire altri turni (la squadra non è più attiva).
+ */
 export async function closeInstance(id: number): Promise<InstanceView> {
   await getRow(id);
-  const now = new Date();
+  const cancelled = await db.transaction(async (tx) => {
+    const now = new Date();
+    const updated = await tx
+      .update(teamInstancesTable)
+      .set({ status: "closed", closedAt: now, updatedAt: now })
+      .where(and(eq(teamInstancesTable.id, id), inArray(teamInstancesTable.status, ["draft", "active"])))
+      .returning({ id: teamInstancesTable.id });
+    if (updated.length === 0) throw new InstanceError(409, INSTANCE_MESSAGES.closed);
+    const tasks = await tx
+      .update(teamTasksTable)
+      .set({ status: "cancelled", outcome: CLOSE_MESSAGES.taskCancelled, finishedAt: now })
+      .where(and(eq(teamTasksTable.instanceId, id), eq(teamTasksTable.status, "queued")))
+      .returning({ planTaskId: teamTasksTable.planTaskId });
+    await tx
+      .update(pendingActionsTable)
+      .set({ status: "rejected", decisionNote: CLOSE_MESSAGES.teamClosed, decidedAt: now, finishedAt: now })
+      .where(
+        and(
+          eq(pendingActionsTable.teamInstanceId, id),
+          inArray(pendingActionsTable.kind, ["plan", "plan_change"]),
+          eq(pendingActionsTable.status, "pending"),
+        ),
+      );
+    await tx
+      .update(teamTurnsTable)
+      .set({ status: "failed", error: CLOSE_MESSAGES.teamClosed, finishedAt: now })
+      .where(and(eq(teamTurnsTable.instanceId, id), eq(teamTurnsTable.status, "queued")));
+    return tasks.map((t) => t.planTaskId);
+  });
+  // Dopo il commit (la transazione non tocca la riga del PLAN): i compiti annullati non restano «in corso» nel PLAN
+  if (cancelled.length > 0) {
+    await patchPlan(id, { tasks: cancelled.map((taskId) => ({ id: taskId, status: "failed" as const, outcome: CLOSE_MESSAGES.taskCancelled })) });
+  }
+  return getInstance(id);
+}
+
+/** Tetto mensile della squadra in USD (null = nessuno). Squadra chiusa → 409. */
+export async function setInstanceBudget(id: number, monthlyBudgetUsd: number | null): Promise<InstanceView> {
   const updated = await db
     .update(teamInstancesTable)
-    .set({ status: "closed", closedAt: now, updatedAt: now })
+    .set({ monthlyBudgetUsd: monthlyBudgetUsd === null ? null : String(monthlyBudgetUsd), updatedAt: new Date() })
     .where(and(eq(teamInstancesTable.id, id), inArray(teamInstancesTable.status, ["draft", "active"])))
     .returning({ id: teamInstancesTable.id });
-  if (updated.length === 0) throw new InstanceError(409, INSTANCE_MESSAGES.closed);
+  if (updated.length === 0) {
+    await getRow(id);
+    throw new InstanceError(409, INSTANCE_MESSAGES.closed);
+  }
   return getInstance(id);
 }
 

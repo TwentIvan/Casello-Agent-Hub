@@ -2,7 +2,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { db, pool, aiAccountsTable, aiModelsTable, appsTable, appToolsTable, pendingActionsTable, teamTurnsTable, usersTable, type InsertAppTool } from "@workspace/db";
+import { db, pool, aiAccountsTable, aiModelsTable, appsTable, appToolsTable, pendingActionsTable, teamInstancesTable, teamTurnsTable, usersTable, type InsertAppTool } from "@workspace/db";
 import { encryptSecret } from "../secrets";
 import type { CatalogTool } from "../tools/types";
 import { enqueueAction, enqueuePlanItem } from "../actions/queue";
@@ -145,9 +145,20 @@ describe("decisione sulle voci di piano", () => {
     expect(p.approvedVersion).toBeNull();
   });
 
-  it("squadra chiusa: 409 «squadra chiusa», voce invariata, nessun turno", async () => {
+  it("chiudere la squadra rifiuta le voci di piano aperte («squadra chiusa»)", async () => {
     const n = await propose();
     await closeInstance(instanceId);
+    expect(await rowOf(n)).toMatchObject({ status: "rejected", decisionNote: "squadra chiusa" });
+    expect((await api("POST", `/pending-actions/${n}/approve`, {})).status).toBe(409);
+    expect(await turns()).toHaveLength(0);
+  });
+
+  // La squadra si chiude mentre la voce è ancora `pending` (chiusura concorrente alla decisione)
+  const closeWithoutCleanup = () => db.update(teamInstancesTable).set({ status: "closed", closedAt: new Date() }).where(eq(teamInstancesTable.id, instanceId));
+
+  it("squadra chiusa: 409 «squadra chiusa», voce invariata, nessun turno", async () => {
+    const n = await propose();
+    await closeWithoutCleanup();
     const res = await api("POST", `/pending-actions/${n}/approve`, {});
     expect(res.status).toBe(409);
     expect(res.json.error).toBe("squadra chiusa");
@@ -158,7 +169,7 @@ describe("decisione sulle voci di piano", () => {
 
   it("rifiutare in una squadra chiusa chiude la voce senza turno", async () => {
     const n = await propose();
-    await closeInstance(instanceId);
+    await closeWithoutCleanup();
     const res = await api("POST", `/pending-actions/${n}/reject`, { note: "no" });
     expect(res.status).toBe(200);
     expect(res.json.status).toBe("rejected");

@@ -2342,6 +2342,190 @@ export interface TeamInstance {
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
+  /** Utente che ha attivato la squadra (riceve le voci in coda) */
+  activatedBy: number | null;
+  /** Tetto mensile in USD di turni e compiti (null = nessun tetto) */
+  monthlyBudgetUsd: number | null;
+  lastTurnAt: string | null;
+}
+
+export interface TeamMessageInput {
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  text: string;
+}
+
+export interface TeamMessageResult {
+  queued: boolean;
+}
+
+export interface TeamBudgetInput {
+  /**
+     * @minimum 0
+     * @maximum 1000000
+     */
+  monthlyBudgetUsd: number | null;
+}
+
+export interface TeamEventsReadInput {
+  /** @maxItems 500 */
+  ids: number[];
+}
+
+export interface TeamStep {
+  id: number;
+  position: number;
+  /** model (chiamata al modello), tool (chiamata a uno strumento) o queued (azione accodata) */
+  type: string;
+  /** @nullable */
+  toolName: string | null;
+  /** Argomenti con i valori sensibili oscurati */
+  args: unknown | null;
+  /** @nullable */
+  ok: boolean | null;
+  /** @nullable */
+  httpStatus: number | null;
+  /** @nullable */
+  durationMs: number | null;
+  /** @nullable */
+  error: string | null;
+  createdAt: string;
+}
+
+export type TeamTaskStatus = typeof TeamTaskStatus[keyof typeof TeamTaskStatus];
+
+
+export const TeamTaskStatus = {
+  queued: 'queued',
+  running: 'running',
+  waiting_node: 'waiting_node',
+  done: 'done',
+  blocked: 'blocked',
+  failed: 'failed',
+  cancelled: 'cancelled',
+} as const;
+
+export interface TeamTask {
+  id: number;
+  instanceId: number;
+  planTaskId: string;
+  roleKey: string;
+  instructions: string;
+  status: TeamTaskStatus;
+  /** @nullable */
+  outcome: string | null;
+  /** @nullable */
+  detail: string | null;
+  /** @nullable */
+  error: string | null;
+  /** @nullable */
+  aiModelId: number | null;
+  /** @nullable */
+  promptTokens: number | null;
+  /** @nullable */
+  completionTokens: number | null;
+  cachedTokens: number;
+  /** @nullable */
+  costUsd: number | null;
+  createdAt: string;
+  /** @nullable */
+  startedAt: string | null;
+  /** @nullable */
+  finishedAt: string | null;
+  /** Passi dell'esecuzione (solo nel dettaglio) */
+  steps?: TeamStep[];
+}
+
+export type TeamTurnReasonType = typeof TeamTurnReasonType[keyof typeof TeamTurnReasonType];
+
+
+export const TeamTurnReasonType = {
+  request: 'request',
+  task_finished: 'task_finished',
+  decision: 'decision',
+  activation: 'activation',
+  restart: 'restart',
+} as const;
+
+export type TeamTurnReasonOutcome = typeof TeamTurnReasonOutcome[keyof typeof TeamTurnReasonOutcome];
+
+
+export const TeamTurnReasonOutcome = {
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export interface TeamTurnReason {
+  type: TeamTurnReasonType;
+  text?: string;
+  taskId?: number;
+  number?: number;
+  outcome?: TeamTurnReasonOutcome;
+  /** @nullable */
+  note?: string | null;
+}
+
+export type TeamTurnStatus = typeof TeamTurnStatus[keyof typeof TeamTurnStatus];
+
+
+export const TeamTurnStatus = {
+  queued: 'queued',
+  running: 'running',
+  done: 'done',
+  failed: 'failed',
+} as const;
+
+export interface TeamTurn {
+  id: number;
+  instanceId: number;
+  reasons: TeamTurnReason[];
+  status: TeamTurnStatus;
+  /** @nullable */
+  error: string | null;
+  /** @nullable */
+  aiModelId: number | null;
+  /** @nullable */
+  promptTokens: number | null;
+  /** @nullable */
+  completionTokens: number | null;
+  cachedTokens: number;
+  /** @nullable */
+  costUsd: number | null;
+  createdAt: string;
+  /** @nullable */
+  startedAt: string | null;
+  /** @nullable */
+  finishedAt: string | null;
+  steps: TeamStep[];
+}
+
+export type TeamEventType = typeof TeamEventType[keyof typeof TeamEventType];
+
+
+export const TeamEventType = {
+  piano_proposto: 'piano_proposto',
+  compito_finito: 'compito_finito',
+  bloccato: 'bloccato',
+  decisione_richiesta: 'decisione_richiesta',
+  azione_manuale_richiesta: 'azione_manuale_richiesta',
+  lavoro_finito: 'lavoro_finito',
+  interrotto: 'interrotto',
+} as const;
+
+export interface TeamEvent {
+  id: number;
+  instanceId: number;
+  type: TeamEventType;
+  /** @nullable */
+  taskId: number | null;
+  bulletin: string;
+  /** @nullable */
+  detail: string | null;
+  /** @nullable */
+  readAt: string | null;
+  createdAt: string;
 }
 
 /**
@@ -2495,6 +2679,14 @@ export const ListTeamInstancesStatus = {
 
 export type GetTeamInstanceUpdates200 = {
   items: TeamUpdateItem[];
+};
+
+export type ListUnreadTeamEventsParams = {
+unread?: boolean;
+};
+
+export type MarkTeamEventsRead200 = {
+  updated: number;
 };
 
 export type EstimateAnalysisCostParams = {

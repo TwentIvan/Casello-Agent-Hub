@@ -72,7 +72,11 @@ export async function approveAction(
   if (!action) return fail(404, ACTION_MESSAGES.notFound);
   if (action.status !== "pending") return fail(409, ACTION_MESSAGES.alreadyDecided);
 
-  const [toolRow] = await db.select().from(appToolsTable).where(eq(appToolsTable.id, action.toolId)).limit(1);
+  // Le voci `plan`/`plan_change` non hanno tool né app (il CHECK li impone solo per `action`): non si eseguono qui
+  const { toolId, appId } = action;
+  if (action.kind !== "action" || toolId === null || appId === null) return fail(409, ACTION_MESSAGES.notExecutable);
+
+  const [toolRow] = await db.select().from(appToolsTable).where(eq(appToolsTable.id, toolId)).limit(1);
   const tool = toolRow ? toCatalogTool(toolRow) : null;
   if (
     !tool ||
@@ -97,7 +101,7 @@ export async function approveAction(
   let called = false;
   try {
     const args = JSON.parse(decryptSecret(action.argsEnc)) as unknown;
-    const conn = await loadAppConnection(action.appId);
+    const conn = await loadAppConnection(appId);
     called = true;
     const out = await executeTool({
       conn,

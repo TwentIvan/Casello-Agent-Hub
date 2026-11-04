@@ -21,11 +21,20 @@ export interface NodeReport {
   outcome: string;
   /** @maxLength 20000 */
   detail?: string;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 100000
+     */
   costUsd?: number;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 2000000000
+     */
   promptTokens?: number;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 2000000000
+     */
   completionTokens?: number;
   /**
      * @minLength 1

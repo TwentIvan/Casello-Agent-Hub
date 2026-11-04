@@ -407,28 +407,39 @@ export interface TaskUsage {
 }
 
 /**
- * Condizione in più per chiudere un compito preso da un nodo: la lease del report (valida a `now`), oppure la
- * scadenza della lease (sweep). Senza guardia si chiude un compito cloud (senza lease).
+ * Condizione per chiudere un compito: senza guardia un compito cloud `running` (senza lease); `lease` un compito
+ * `running` preso da un nodo con la lease del report valida a `now`; `expired` la stessa lease scaduta (sweep);
+ * `waiting` un compito `waiting_node` mai preso da un nodo (es. squadra oltre il tetto al claim).
  */
 export type TaskCloseGuard =
   | { kind: "lease"; nodeId: number; leaseToken: string; now: Date; sessionId?: string | null }
-  | { kind: "expired"; leaseToken: string; now: Date };
+  | { kind: "expired"; leaseToken: string; now: Date }
+  | { kind: "waiting" };
 
 function guardCondition(guard: TaskCloseGuard | undefined): SQL | undefined {
-  if (!guard) return isNull(teamTasksTable.leaseToken);
-  if (guard.kind === "lease") {
-    return and(eq(teamTasksTable.nodeId, guard.nodeId), eq(teamTasksTable.leaseToken, guard.leaseToken), gt(teamTasksTable.leaseExpiresAt, guard.now));
+  if (!guard) return and(eq(teamTasksTable.status, "running"), isNull(teamTasksTable.leaseToken));
+  switch (guard.kind) {
+    case "lease":
+      return and(
+        eq(teamTasksTable.status, "running"),
+        eq(teamTasksTable.nodeId, guard.nodeId),
+        eq(teamTasksTable.leaseToken, guard.leaseToken),
+        gt(teamTasksTable.leaseExpiresAt, guard.now),
+      );
+    case "expired":
+      return and(eq(teamTasksTable.status, "running"), eq(teamTasksTable.leaseToken, guard.leaseToken), lte(teamTasksTable.leaseExpiresAt, guard.now));
+    case "waiting":
+      return and(eq(teamTasksTable.status, "waiting_node"), isNull(teamTasksTable.leaseToken));
   }
-  return and(eq(teamTasksTable.leaseToken, guard.leaseToken), lte(teamTasksTable.leaseExpiresAt, guard.now));
 }
 
 const formatCost = (costUsd: number | null): string | null =>
   costUsd === null || !Number.isFinite(costUsd) ? null : String(Math.round(costUsd * 1e8) / 1e8);
 
 /**
- * Chiude il compito (UPDATE condizionato a `running` e alla guardia), poi stato ed esito nel PLAN, evento e turno
- * del capo. Un compito non più `running` o con la lease cambiata o scaduta (chiuso da altri nel frattempo) non si
- * tocca: restituisce false e non produce eventi né turni. Usata dai compiti cloud e dal report dei nodi.
+ * Chiude il compito (UPDATE condizionato allo stato e alla guardia), poi stato ed esito nel PLAN, evento e turno
+ * del capo. Un compito non più nello stato atteso o con la lease cambiata o scaduta (chiuso da altri nel frattempo)
+ * non si tocca: restituisce false e non produce eventi né turni. Usata dai compiti cloud e dai compiti dei nodi.
  */
 export async function finishTaskExecution(task: TeamTaskRow, result: TaskResult, usage: TaskUsage, guard?: TaskCloseGuard): Promise<boolean> {
   const [closed] = await db
@@ -445,7 +456,7 @@ export async function finishTaskExecution(task: TeamTaskRow, result: TaskResult,
       finishedAt: new Date(),
       ...(guard?.kind === "lease" && guard.sessionId !== undefined ? { sessionId: guard.sessionId } : {}),
     })
-    .where(and(eq(teamTasksTable.id, task.id), eq(teamTasksTable.status, "running"), guardCondition(guard)))
+    .where(and(eq(teamTasksTable.id, task.id), guardCondition(guard)))
     .returning({ id: teamTasksTable.id });
   if (!closed) return false;
   await patchPlan(task.instanceId, { tasks: [{ id: task.planTaskId, status: result.status, outcome: result.outcome }] });

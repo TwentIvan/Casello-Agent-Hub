@@ -251,9 +251,10 @@ export const CLOSE_MESSAGES = {
 } as const;
 
 /**
- * Chiude la squadra: non si riapre e non si salva più. Nella stessa transazione i compiti `queued` diventano
- * `cancelled`, le voci `plan`/`plan_change` ancora in coda `rejected` («squadra chiusa») e i turni in coda `failed`.
- * Compiti e turni `running` finiscono da soli, ma non fanno partire altri turni (la squadra non è più attiva).
+ * Chiude la squadra: non si riapre e non si salva più. Nella stessa transazione i compiti `queued` e `waiting_node`
+ * (in attesa di un nodo) diventano `cancelled`, le voci `plan`/`plan_change` ancora in coda `rejected` («squadra chiusa») e i turni in coda `failed`.
+ * Compiti e turni `running` (anche quelli già presi da un nodo) finiscono da soli, ma non fanno partire altri turni
+ * (la squadra non è più attiva).
  */
 export async function closeInstance(id: number): Promise<InstanceView> {
   await getRow(id);
@@ -268,7 +269,7 @@ export async function closeInstance(id: number): Promise<InstanceView> {
     const tasks = await tx
       .update(teamTasksTable)
       .set({ status: "cancelled", outcome: CLOSE_MESSAGES.taskCancelled, finishedAt: now })
-      .where(and(eq(teamTasksTable.instanceId, id), eq(teamTasksTable.status, "queued")))
+      .where(and(eq(teamTasksTable.instanceId, id), inArray(teamTasksTable.status, ["queued", "waiting_node"])))
       .returning({ planTaskId: teamTasksTable.planTaskId });
     await tx
       .update(pendingActionsTable)

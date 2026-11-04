@@ -340,10 +340,13 @@ export const nodeReportBodyOutcomeMax = 300;
 export const nodeReportBodyDetailMax = 20000;
 
 export const nodeReportBodyCostUsdMin = 0;
+export const nodeReportBodyCostUsdMax = 100000;
 
 export const nodeReportBodyPromptTokensMin = 0;
+export const nodeReportBodyPromptTokensMax = 2000000000;
 
 export const nodeReportBodyCompletionTokensMin = 0;
+export const nodeReportBodyCompletionTokensMax = 2000000000;
 
 export const nodeReportBodySessionIdMax = 200;
 
@@ -354,9 +357,9 @@ export const NodeReportBody = zod.object({
   "status": zod.enum(['done', 'blocked', 'failed']),
   "outcome": zod.string().min(1).max(nodeReportBodyOutcomeMax),
   "detail": zod.string().max(nodeReportBodyDetailMax).optional(),
-  "costUsd": zod.number().min(nodeReportBodyCostUsdMin).optional(),
-  "promptTokens": zod.number().min(nodeReportBodyPromptTokensMin).optional(),
-  "completionTokens": zod.number().min(nodeReportBodyCompletionTokensMin).optional(),
+  "costUsd": zod.number().min(nodeReportBodyCostUsdMin).max(nodeReportBodyCostUsdMax).optional(),
+  "promptTokens": zod.number().min(nodeReportBodyPromptTokensMin).max(nodeReportBodyPromptTokensMax).optional(),
+  "completionTokens": zod.number().min(nodeReportBodyCompletionTokensMin).max(nodeReportBodyCompletionTokensMax).optional(),
   "sessionId": zod.string().min(1).max(nodeReportBodySessionIdMax).optional()
 })
 

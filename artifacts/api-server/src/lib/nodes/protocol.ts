@@ -23,7 +23,7 @@ import { logger } from "../logger";
 import { InstanceRoleSchema, type InstanceRole } from "../teams/manifest";
 import { getPlan, patchPlan } from "../teams/plan";
 import { errName, finishTaskExecution, skillTexts, MAX_TASK_DETAIL, MAX_TASK_OUTCOME } from "../teams/task-runner";
-import { teamCapBlock } from "../teams/team-budget";
+import { TEAM_BUDGET_REACHED, teamCapBlock } from "../teams/team-budget";
 
 /** Durata della lease di un compito preso da un nodo. */
 export const LEASE_MS = 15 * 60_000;
@@ -136,9 +136,10 @@ interface Candidate {
 
 /**
  * Compiti `waiting_node` delle squadre attive attivate dall'utente del nodo, dal più vecchio, con le skill del ruolo
- * tutte dichiarate dal nodo; le squadre oltre il tetto di spesa si saltano (il blocco lo segnalano i turni del capo).
+ * tutte dichiarate dal nodo: `eligible` quelli delle squadre entro il tetto di spesa, `capped` quelli delle squadre
+ * oltre il tetto (il claim li chiude `blocked`, l'heartbeat non li conta).
  */
-async function eligibleTasks(node: Node): Promise<Candidate[]> {
+async function eligibleTasks(node: Node): Promise<{ eligible: Candidate[]; capped: Candidate[] }> {
   const rows = await db
     .select({ task: teamTasksTable, instance: teamInstancesTable })
     .from(teamTasksTable)
@@ -149,7 +150,8 @@ async function eligibleTasks(node: Node): Promise<Candidate[]> {
 
   const capped = new Map<number, boolean>();
   const skillsByRole = new Map<string, string[]>();
-  const out: Candidate[] = [];
+  const eligible: Candidate[] = [];
+  const cappedTasks: Candidate[] = [];
   for (const { task, instance } of rows) {
     const role = roleOf(instance, task.roleKey);
     if (!role || role.runsOn !== "node") continue;
@@ -161,10 +163,9 @@ async function eligibleTasks(node: Node): Promise<Candidate[]> {
     }
     if (!hasSkills(node.skills, nodeSkills)) continue;
     if (!capped.has(instance.id)) capped.set(instance.id, (await teamCapBlock(instance.id)) !== null);
-    if (capped.get(instance.id)) continue;
-    out.push({ task, instance, role, nodeSkills });
+    (capped.get(instance.id) ? cappedTasks : eligible).push({ task, instance, role, nodeSkills });
   }
-  return out;
+  return { eligible, capped: cappedTasks };
 }
 
 async function activeNode(nodeId: number): Promise<Node> {
@@ -192,7 +193,7 @@ export async function heartbeat(nodeId: number, caps: NodeCapabilities): Promise
     .where(and(eq(nodesTable.id, nodeId), eq(nodesTable.status, "active")))
     .returning();
   if (!node) throw new NodeError(403, NODE_PROTOCOL_MESSAGES.disabled);
-  return { pending: (await eligibleTasks(node)).length };
+  return { pending: (await eligibleTasks(node)).eligible.length };
 }
 
 // ─── Claim ──────────────────────────────────────────────────────────────────
@@ -290,10 +291,29 @@ async function releaseClaim(task: TeamTaskRow): Promise<void> {
   await patchPlan(task.instanceId, { tasks: [{ id: task.planTaskId, status: "waiting_node", outcome: null }] });
 }
 
+/**
+ * Squadra oltre il tetto: il compito in attesa si chiude `blocked` come un compito cloud bloccato dal tetto (PLAN,
+ * evento `bloccato`, turno del capo), con un UPDATE condizionato a `waiting_node`: una volta sola.
+ */
+async function blockCappedTask(candidate: Candidate): Promise<void> {
+  try {
+    await finishTaskExecution(
+      candidate.task,
+      { status: "blocked", outcome: TEAM_BUDGET_REACHED, error: TEAM_BUDGET_REACHED },
+      { promptTokens: null, completionTokens: null, costUsd: null },
+      { kind: "waiting" },
+    );
+  } catch (err) {
+    logger.error({ teamTaskId: candidate.task.id, errName: errName(err) }, "Blocco per tetto del compito del nodo non riuscito");
+  }
+}
+
 /** Prende il compito più vecchio che il nodo può eseguire e ne restituisce il pacchetto; null se non c'è nulla. */
 export async function claimTask(nodeId: number): Promise<TaskPackage | null> {
   const node = await activeNode(nodeId);
-  for (const candidate of await eligibleTasks(node)) {
+  const { eligible, capped } = await eligibleTasks(node);
+  for (const candidate of capped) await blockCappedTask(candidate);
+  for (const candidate of eligible) {
     const attempt = await tryClaim(node, candidate);
     if (attempt.kind === "full") return null;
     if (attempt.kind === "skip") continue;

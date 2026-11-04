@@ -17,6 +17,7 @@ export const NODELESS_AFTER_MS = 10 * 60_000;
 
 export const SWEEP_MESSAGES = {
   unreachable: "nodo non più raggiungibile",
+  roleMissing: (key: string) => `ruolo ${key} non più nella squadra`,
   noNode: (skills: string[]) => `nessun nodo disponibile con le skill: ${skills.length > 0 ? skills.join(", ") : "(nessuna)"}`,
 } as const;
 
@@ -80,7 +81,7 @@ export async function notifyNodelessTasks(now: Date = new Date()): Promise<numbe
       const required = role ? await roleNodeSkills(instance.id, role) : [];
       if (role && live.some((skills) => hasSkills(skills, required))) continue;
 
-      const message = SWEEP_MESSAGES.noNode(required);
+      const message = role ? SWEEP_MESSAGES.noNode(required) : SWEEP_MESSAGES.roleMissing(task.roleKey);
       const emitted = await db.transaction(async (tx) => {
         const [marked] = await tx
           .update(teamTasksTable)
@@ -99,14 +100,21 @@ export async function notifyNodelessTasks(now: Date = new Date()): Promise<numbe
   return notified;
 }
 
-/** Un giro dei due controlli; un errore si registra (solo il tipo), mai come promise rifiutata. */
-export async function sweepNodeTasks(now: Date = new Date()): Promise<void> {
+/** Avvio del processo dell'API: prima di NODE_ONLINE_WINDOW_MS i nodi sembrano spenti solo perché l'API era giù. */
+const PROCESS_STARTED_AT = new Date();
+
+/**
+ * Un giro dei due controlli; un errore si registra (solo il tipo), mai come promise rifiutata. L'avviso «nessun nodo»
+ * aspetta che l'API sia su da almeno NODE_ONLINE_WINDOW_MS (`upSince`), così i nodi hanno avuto modo di farsi vivi.
+ */
+export async function sweepNodeTasks(now: Date = new Date(), upSince: Date = PROCESS_STARTED_AT): Promise<void> {
   try {
     const expired = await sweepExpiredLeases(now);
     if (expired > 0) logger.warn({ count: expired }, "Compiti dei nodi chiusi per lease scaduta");
   } catch (err) {
     logger.error({ errName: errName(err) }, "Controllo delle lease dei nodi non riuscito");
   }
+  if (now.getTime() - upSince.getTime() < NODE_ONLINE_WINDOW_MS) return;
   try {
     await notifyNodelessTasks(now);
   } catch (err) {

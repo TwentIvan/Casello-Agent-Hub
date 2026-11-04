@@ -204,14 +204,42 @@ describe("claim", () => {
     expect(await taskRow(started.id)).toMatchObject({ status: "running", nodeId: winner.id });
   });
 
-  it("squadra oltre il tetto: nessun claim e nessun evento nuovo", async () => {
-    const instanceId = await seedNodeTeam({ userId, roles: [sapRole()], monthlyBudgetUsd: "1.00" });
-    await db.insert(teamTasksTable).values({ instanceId, planTaskId: "t0", roleKey: "operaio", instructions: "", status: "done", costUsd: "1.500000" });
-    await startTask(instanceId, "t1");
+  it("squadra oltre il tetto: l'heartbeat non la conta; il claim chiude il compito blocked (una volta) e prende il prossimo", async () => {
+    const capped = await seedNodeTeam({ userId, roles: [sapRole()], monthlyBudgetUsd: "1.00" });
+    await db.insert(teamTasksTable).values({ instanceId: capped, planTaskId: "t0", roleKey: "operaio", instructions: "", status: "done", costUsd: "1.500000" });
+    const blockedTask = await startTask(capped, "t1");
     const { token } = await nodeWith(userId, "Mac", ["sap:abap-developer"]);
     expect((await api("POST", "/node/heartbeat", { token, body: caps(["sap:abap-developer"]) })).json).toEqual({ pending: 0 });
+    // l'heartbeat non chiude nulla
+    expect((await taskRow(blockedTask.id)).status).toBe("waiting_node");
+    expect(await events(capped)).toHaveLength(0);
+
     expect((await api("POST", "/node/claim", { token })).status).toBe(204);
-    expect(await events(instanceId)).toHaveLength(0);
+    expect(await taskRow(blockedTask.id)).toMatchObject({ status: "blocked", outcome: "tetto di spesa della squadra raggiunto", nodeId: null, leaseToken: null });
+    expect((await getPlan(capped)).tasks.find((t) => t.id === "t1")).toMatchObject({ status: "blocked", outcome: "tetto di spesa della squadra raggiunto" });
+    expect((await events(capped)).map((e) => [e.type, e.taskId])).toEqual([["bloccato", blockedTask.id]]);
+    expect((await turns(capped)).map((t) => t.reasons)).toEqual([[{ type: "task_finished", taskId: blockedTask.id }]]);
+
+    // Un'altra squadra entro il tetto: il claim prende il suo compito; nessun evento in più per quella bloccata
+    const free = await seedNodeTeam({ userId, roles: [sapRole()] });
+    const freeTask = await startTask(free, "t1");
+    const claim = await api("POST", "/node/claim", { token });
+    expect(claim.status).toBe(200);
+    expect(claim.json.taskId).toBe(freeTask.id);
+    expect(await events(capped)).toHaveLength(1);
+    expect((await turns(capped))[0]!.reasons).toHaveLength(1);
+  });
+
+  it("squadra oltre il tetto con un compito più vecchio: il nodo riceve il compito successivo nella stessa chiamata", async () => {
+    const capped = await seedNodeTeam({ userId, roles: [sapRole()], monthlyBudgetUsd: "1.00" });
+    await db.insert(teamTasksTable).values({ instanceId: capped, planTaskId: "t0", roleKey: "operaio", instructions: "", status: "done", costUsd: "1.500000" });
+    const old = await startTask(capped, "t1");
+    const free = await seedNodeTeam({ userId, roles: [sapRole()] });
+    const next = await startTask(free, "t1");
+    const { token } = await nodeWith(userId, "Mac", ["sap:abap-developer"]);
+    const claim = await api("POST", "/node/claim", { token });
+    expect(claim.json.taskId).toBe(next.id);
+    expect((await taskRow(old.id)).status).toBe("blocked");
   });
 });
 
@@ -269,6 +297,38 @@ describe("ping e report", () => {
     expect(again.status).toBe(409);
     expect((await taskRow(taskId)).status).toBe("done");
     expect((await turns(instanceId))[0]!.reasons).toHaveLength(1);
+  });
+
+  it("costo o token fuori misura → 400, nulla salvato", async () => {
+    const { taskId, node, leaseToken } = await claimed();
+    for (const extra of [{ costUsd: 1_000_000 }, { promptTokens: 3_000_000_000 }]) {
+      const res = await api("POST", `/node/tasks/${taskId}/report`, { token: node.token, body: { leaseToken, status: "done", outcome: "fatto", ...extra } });
+      expect(res.status, JSON.stringify(extra)).toBe(400);
+    }
+    expect((await taskRow(taskId)).status).toBe("running");
+  });
+
+  it("chiusura della squadra: i compiti in attesa annullati, quello preso dal nodo finisce da solo senza turni", async () => {
+    const { closeInstance } = await import("../lib/teams/instances");
+    const { pumpTurn } = await import("../lib/teams/turn-runner");
+    const instanceId = await seedNodeTeam({ userId, roles: [sapRole()], tasks: { t1: "operaio", t2: "operaio" } });
+    const leased = await startTask(instanceId, "t1");
+    const waiting = await startTask(instanceId, "t2");
+    const node = await nodeWith(userId, "Mac", ["sap:abap-developer"]);
+    const claim = await api("POST", "/node/claim", { token: node.token });
+    expect(claim.json.taskId).toBe(leased.id);
+
+    await closeInstance(instanceId);
+    expect(await taskRow(waiting.id)).toMatchObject({ status: "cancelled", outcome: "annullato: squadra chiusa" });
+    expect((await getPlan(instanceId)).tasks.find((t) => t.id === "t2")).toMatchObject({ status: "failed", outcome: "annullato: squadra chiusa" });
+    expect((await taskRow(leased.id)).status).toBe("running");
+
+    const rep = await api("POST", `/node/tasks/${leased.id}/report`, { token: node.token, body: { leaseToken: claim.json.leaseToken, status: "done", outcome: "fatto" } });
+    expect(rep.status).toBe(204);
+    expect((await taskRow(leased.id)).status).toBe("done");
+    // Il motivo accodato non fa partire un turno: la squadra è chiusa
+    expect(await pumpTurn(instanceId)).toBeNull();
+    expect((await turns(instanceId)).map((t) => t.status)).toEqual(["failed"]);
   });
 
   it("report blocked → evento bloccato; failed nel PLAN", async () => {

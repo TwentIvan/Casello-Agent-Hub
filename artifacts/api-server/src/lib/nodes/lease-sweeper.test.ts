@@ -1,12 +1,12 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { db, nodesTable, pool, teamEventsTable, teamTasksTable, teamTurnsTable } from "@workspace/db";
+import { db, nodesTable, pool, teamInstancesTable, teamEventsTable, teamTasksTable, teamTurnsTable } from "@workspace/db";
 import { catalogSkill, ensureUser, nodeRole, seedNodeTeam } from "../../../test/team-node-fixture";
 import { getPlan } from "../teams/plan";
 import { failInterruptedTeamWork, startTask } from "../teams/task-runner";
 import { createNode } from "./nodes";
 import { claimTask, heartbeat } from "./protocol";
-import { notifyNodelessTasks, sweepExpiredLeases } from "./lease-sweeper";
+import { notifyNodelessTasks, sweepExpiredLeases, sweepNodeTasks } from "./lease-sweeper";
 
 // Scadenza delle lease e avviso «nessun nodo adatto», chiamati con un orologio esplicito.
 
@@ -105,5 +105,30 @@ describe("nessun nodo adatto", () => {
     await heartbeat(node.id, caps(["sap:abap-developer"]));
     await db.update(nodesTable).set({ lastSeenAt: now }).where(eq(nodesTable.id, node.id));
     expect(await notifyNodelessTasks(now)).toBe(1);
+  });
+
+  it("ruolo non più nella squadra: messaggio fisso sul ruolo, non sulle skill", async () => {
+    const instanceId = await seedNodeTeam({ userId, roles: [sapRole()] });
+    const started = await startTask(instanceId, "t1");
+    const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, instanceId));
+    await db
+      .update(teamInstancesTable)
+      .set({ roles: instance!.roles.filter((r) => r.key !== "operaio") })
+      .where(eq(teamInstancesTable.id, instanceId));
+    expect(await notifyNodelessTasks(new Date(Date.now() + 11 * MIN))).toBe(1);
+    const evs = await events(instanceId);
+    expect(evs[0]!.bulletin).toBe(`Compito t1 (operaio): ruolo operaio non più nella squadra`);
+    expect(evs[0]!.taskId).toBe(started.id);
+    expect(evs[0]!.bulletin).not.toContain("skill");
+  });
+
+  it("giro periodico: niente avviso nei primi 2 minuti di vita dell'API", async () => {
+    const instanceId = await seedNodeTeam({ userId, roles: [sapRole()] });
+    await startTask(instanceId, "t1");
+    const now = new Date(Date.now() + 11 * MIN);
+    await sweepNodeTasks(now, new Date(now.getTime() - 1 * MIN));
+    expect(await events(instanceId)).toHaveLength(0);
+    await sweepNodeTasks(now, new Date(now.getTime() - 3 * MIN));
+    expect((await events(instanceId)).map((e) => e.type)).toEqual(["bloccato"]);
   });
 });

@@ -4927,12 +4927,15 @@ components:
         costUsd:
           type: number
           minimum: 0
+          maximum: 100000
         promptTokens:
           type: integer
           minimum: 0
+          maximum: 2000000000
         completionTokens:
           type: integer
           minimum: 0
+          maximum: 2000000000
         sessionId:
           type: string
           minLength: 1

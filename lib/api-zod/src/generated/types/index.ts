@@ -206,6 +206,7 @@ export * from './runTrigger';
 export * from './skillKind';
 export * from './sourceType';
 export * from './startZipAnalysisParams';
+export * from './teamAttachment';
 export * from './teamBudgetInput';
 export * from './teamEvent';
 export * from './teamEventsReadInput';

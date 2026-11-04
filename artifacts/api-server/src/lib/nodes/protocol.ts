@@ -12,6 +12,7 @@ import {
   nodesTable,
   skillVersionsTable,
   skillsTable,
+  teamAttachmentsTable,
   teamInstanceSkillsTable,
   teamInstancesTable,
   teamTasksTable,
@@ -20,6 +21,7 @@ import {
   type TeamTaskRow,
 } from "@workspace/db";
 import { logger } from "../logger";
+import { ATTACHMENT_MESSAGES, taskAttachmentViews } from "../teams/attachments";
 import { InstanceRoleSchema, type InstanceRole } from "../teams/manifest";
 import { getPlan, patchPlan } from "../teams/plan";
 import { errName, finishTaskExecution, skillTexts, MAX_TASK_DETAIL, MAX_TASK_OUTCOME } from "../teams/task-runner";
@@ -38,7 +40,7 @@ export const NODE_PROTOCOL_MESSAGES = {
 /** Errore del protocollo con lo stato HTTP (409 lease, 403 nodo non attivo). */
 export class NodeError extends Error {
   constructor(
-    public readonly status: 403 | 409,
+    public readonly status: 403 | 404 | 409,
     message: string,
   ) {
     super(message);
@@ -82,8 +84,8 @@ export interface TaskPackage {
   };
   caselloSkills: { code: string; version: number | null; content: string }[];
   nodeSkills: string[];
-  /** Allegati citati dal compito (arrivano con gli allegati delle squadre). */
-  attachments: { id: number; name: string; sizeBytes: number; sha256: string }[];
+  /** Allegati citati dal compito (solo metadati: il nodo scarica i byte con `taskAttachment`). */
+  attachments: { id: number; name: string; contentType: string; sizeBytes: number; sha256: string }[];
 }
 
 // ─── Skill dei ruoli ────────────────────────────────────────────────────────
@@ -256,7 +258,12 @@ async function preferredModel(role: InstanceRole): Promise<string | null> {
 
 async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<TaskPackage> {
   const { instance, role } = candidate;
-  const [plan, skills, model] = await Promise.all([getPlan(instance.id), skillTexts(instance.id, role), preferredModel(role)]);
+  const [plan, skills, model, attachments] = await Promise.all([
+    getPlan(instance.id),
+    skillTexts(instance.id, role),
+    preferredModel(role),
+    taskAttachmentViews(instance.id, task.attachmentIds),
+  ]);
   return {
     taskId: task.id,
     leaseToken: task.leaseToken!,
@@ -278,7 +285,7 @@ async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<Ta
     },
     caselloSkills: skills.map((s) => ({ code: s.code, version: s.version, content: s.content })),
     nodeSkills: candidate.nodeSkills,
-    attachments: [],
+    attachments: attachments.map((a) => ({ id: a.id, name: a.name, contentType: a.contentType, sizeBytes: a.sizeBytes, sha256: a.sha256 })),
   };
 }
 
@@ -355,6 +362,37 @@ export async function pingTask(nodeId: number, taskId: number, leaseToken: strin
     .returning({ leaseExpiresAt: teamTasksTable.leaseExpiresAt });
   if (!row?.leaseExpiresAt) throw new NodeError(409, NODE_PROTOCOL_MESSAGES.lease);
   return { leaseExpiresAt: row.leaseExpiresAt };
+}
+
+/**
+ * Contenuto di un allegato citato dal compito, per il nodo che lo ha in lease (compito `running`, nodo e lease del
+ * claim, lease non scaduta). Un allegato eliminato dopo l'assegnazione si scarica comunque; uno non citato dal
+ * compito o di un'altra squadra → 404; lease non valida o scaduta → 409.
+ */
+export async function taskAttachment(nodeId: number, taskId: number, leaseToken: string, attachmentId: number) {
+  const now = new Date();
+  const [task] = await db
+    .select({ instanceId: teamTasksTable.instanceId, attachmentIds: teamTasksTable.attachmentIds })
+    .from(teamTasksTable)
+    .where(
+      and(
+        eq(teamTasksTable.id, taskId),
+        eq(teamTasksTable.nodeId, nodeId),
+        eq(teamTasksTable.status, "running"),
+        eq(teamTasksTable.leaseToken, leaseToken),
+        gt(teamTasksTable.leaseExpiresAt, now),
+      ),
+    )
+    .limit(1);
+  if (!task) throw new NodeError(409, NODE_PROTOCOL_MESSAGES.lease);
+  if (!task.attachmentIds.includes(attachmentId)) throw new NodeError(404, ATTACHMENT_MESSAGES.notFound);
+  const [row] = await db
+    .select()
+    .from(teamAttachmentsTable)
+    .where(and(eq(teamAttachmentsTable.id, attachmentId), eq(teamAttachmentsTable.instanceId, task.instanceId)))
+    .limit(1);
+  if (!row) throw new NodeError(404, ATTACHMENT_MESSAGES.notFound);
+  return row;
 }
 
 /**

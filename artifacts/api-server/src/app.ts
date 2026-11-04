@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import cors, { type CorsOptions } from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
+import { ATTACHMENT_UPLOAD_PATH } from "./routes/team-instances";
 import { logger } from "./lib/logger";
 import { sessionMiddleware } from "./lib/auth";
 import { mcpRouter } from "./lib/mcp/server";
@@ -61,8 +62,12 @@ app.use(
 // personale (Bearer), niente cookie; nessuna origine CORS ammessa: non è chiamato dai browser.
 app.use("/mcp", mcpRouter());
 app.use(cors(corsOptions));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Il caricamento di un allegato ha il suo parser grezzo (10 MB) sulla route: i parser globali lo saltano
+const jsonParser = express.json();
+const formParser = express.urlencoded({ extended: true });
+const isAttachmentUpload = (req: express.Request): boolean => req.method === "POST" && ATTACHMENT_UPLOAD_PATH.test(req.originalUrl.split("?")[0]!);
+app.use((req, res, next) => (isAttachmentUpload(req) ? next() : jsonParser(req, res, next)));
+app.use((req, res, next) => (isAttachmentUpload(req) ? next() : formParser(req, res, next)));
 app.use(sessionMiddleware());
 
 app.use("/api", router);

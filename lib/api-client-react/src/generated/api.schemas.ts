@@ -1597,6 +1597,7 @@ export type NodeTaskPackageCaselloSkillsItem = {
 export type NodeTaskPackageAttachmentsItem = {
   id: number;
   name: string;
+  contentType: string;
   sizeBytes: number;
   sha256: string;
 };
@@ -2362,6 +2363,20 @@ export interface TeamInstanceSave {
   localSkills: TeamLocalSkill[];
   /** Facoltativo e solo uguale allo stato attuale: si attiva con `POST /team-instances/{id}/activate` e una squadra attiva non torna in bozza. */
   status?: TeamInstanceSaveStatus;
+  /**
+     * Spazio di lavoro sul nodo: percorso relativo, solo lettere, cifre, `._ -` e `/`, senza `/` iniziale né `..` (altrimenti 400 «spazio di lavoro non valido»). Omesso = invariato, null = tolto.
+     * @maxLength 300
+     */
+  nodeWorkspace?: string | null;
+}
+
+export interface TeamAttachment {
+  id: number;
+  name: string;
+  contentType: string;
+  sizeBytes: number;
+  sha256: string;
+  createdAt: string;
 }
 
 export type TeamUpdateItemType = typeof TeamUpdateItemType[keyof typeof TeamUpdateItemType];
@@ -2590,6 +2605,8 @@ export interface TeamInstance {
   /** Tetto mensile in USD di turni e compiti (null = nessun tetto) */
   monthlyBudgetUsd: number | null;
   lastTurnAt: string | null;
+  /** Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato) */
+  nodeWorkspace: string | null;
 }
 
 export interface TeamMessageInput {

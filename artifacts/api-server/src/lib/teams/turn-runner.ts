@@ -5,6 +5,7 @@ import { runAgentLoop, type LoopDeps, type LoopLimits } from "../agent-loop";
 import { logger } from "../logger";
 import { modelChatDeps, newUsage, stepWriter, usageCost, type LoopUsage } from "../loop-wiring";
 import { isUniqueViolation } from "../pg-errors";
+import { listAttachments, type AttachmentView } from "./attachments";
 import { MAX_BULLETIN, emitEvent } from "./events";
 import { INSTANCE_MESSAGES, InstanceError, getInstance, type InstanceView } from "./instances";
 import { LEAD_TOOLS, leadToolHandler, planForModel } from "./lead-tools";
@@ -128,7 +129,13 @@ export async function resumeQueuedTurns(): Promise<void> {
 
 // ─── Contesto del turno ─────────────────────────────────────────────────────
 
-function systemPrompt(instance: TeamInstanceRow, lead: InstanceRole, roles: InstanceRole[], skills: { code: string; label: string; content: string }[]): string {
+function systemPrompt(
+  instance: TeamInstanceRow,
+  lead: InstanceRole,
+  roles: InstanceRole[],
+  skills: { code: string; label: string; content: string }[],
+  attachments: AttachmentView[],
+): string {
   const parts = [
     LEAD_INSTRUCTION,
     TOOL_RESULTS_INSTRUCTION,
@@ -139,6 +146,13 @@ function systemPrompt(instance: TeamInstanceRow, lead: InstanceRole, roles: Inst
     `Lavoro di riferimento: ${instance.refTitle}`,
     "Ruoli della squadra (roleKey · nome · dove gira):",
     ...roles.map((r) => `- ${r.key} · ${r.name} · ${r.runsOn === "node" ? "nodo locale" : "cloud"}${r.isLead ? " (capo)" : ""}`),
+    ...(attachments.length > 0
+      ? [
+          "",
+          "Allegati della squadra (id · nome · byte): puoi darli a un compito con l'argomento `attachments` di `assegna_compito`; il contenuto non è nel contesto.",
+          ...attachments.map((a) => `- ${a.id} · ${a.name} · ${a.sizeBytes}`),
+        ]
+      : []),
     "",
     "Istruzioni del capo:",
     lead.task || "(nessuna istruzione specifica)",
@@ -233,11 +247,12 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
 
   // Motivi dei turni falliti prima del modello: prima dei motivi di questo turno, nell'ordine in cui sono arrivati
   const carried = await carriedReasons(turn);
-  const [plan, skills, roleTools, reasons] = await Promise.all([
+  const [plan, skills, roleTools, reasons, attachments] = await Promise.all([
     getPlan(instance.id),
     skillTexts(instance.id, lead),
     loadRoleTools(lead.tools),
     reasonMessages(instance.id, [...carried, ...turn.reasons]),
+    listAttachments(instance.id),
   ]);
   const tools = [...roleTools.tools, ...LEAD_TOOLS];
   const internal = leadToolHandler({ instanceId: instance.id, userId: instance.activatedBy, teamName: instance.name, roleKeys: roles.map((r) => r.key) });
@@ -259,7 +274,7 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
     signal,
   };
   const messages: ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt(instance, lead, roles, skills) },
+    { role: "system", content: systemPrompt(instance, lead, roles, skills, attachments) },
     { role: "user", content: `PLAN corrente (JSON):\n${planForModel(plan)}` },
     ...reasons.map((content) => ({ role: "user" as const, content })),
   ];

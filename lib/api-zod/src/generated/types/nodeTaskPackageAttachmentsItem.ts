@@ -9,6 +9,7 @@
 export type NodeTaskPackageAttachmentsItem = {
   id: number;
   name: string;
+  contentType: string;
   sizeBytes: number;
   sha256: string;
 };

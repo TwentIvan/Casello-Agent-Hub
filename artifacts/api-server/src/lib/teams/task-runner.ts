@@ -208,7 +208,7 @@ function taskMessage(plan: PlanView, task: TeamTaskRow, title: string): string {
  * (controllo e inserimento con la riga della squadra bloccata, come la presa in carico). Il PLAN si aggiorna dopo il
  * commit (la transazione non blocca la riga del PLAN); se fallisce, la riga nuova si chiude `failed`.
  */
-export async function startTask(instanceId: number, planTaskId: string): Promise<TeamTaskRow> {
+export async function startTask(instanceId: number, planTaskId: string, attachmentIds: number[] = []): Promise<TeamTaskRow> {
   const instance = await instanceRow(instanceId);
   if (!instance) throw new InstanceError(404, INSTANCE_MESSAGES.notFound);
   if (instance.status !== "active") throw new InstanceError(409, TASK_MESSAGES.teamNotActive);
@@ -246,6 +246,7 @@ export async function startTask(instanceId: number, planTaskId: string): Promise
         planTaskId,
         roleKey: role.key,
         instructions: planTask.instructions,
+        attachmentIds,
         status,
         aiModelId: role.runsOn === "cloud" ? role.aiModelId : null,
         waitingSince: status === "waiting_node" ? new Date() : null,

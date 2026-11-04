@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Response } from "express";
+import express, { Router, type IRouter, type RequestHandler, type Response } from "express";
 import {
   ListTeamInstancesQueryParams,
   ListTeamInstancesResponse,
@@ -45,10 +45,18 @@ import {
   ListUnreadTeamEventsResponse,
   MarkTeamEventsReadBody,
   MarkTeamEventsReadResponse,
+  ListTeamAttachmentsParams,
+  ListTeamAttachmentsResponse,
+  UploadTeamAttachmentParams,
+  UploadTeamAttachmentHeader,
+  UploadTeamAttachmentResponse,
+  GetTeamAttachmentParams,
+  DeleteTeamAttachmentParams,
 } from "@workspace/api-zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, teamTaskStepsTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamTaskRow, type TeamTurnRow } from "@workspace/db";
 import { currentUserId } from "../lib/auth";
+import { AttachmentError, MAX_ATTACHMENT_BYTES, deleteAttachment, getAttachment, listAttachments, saveAttachment } from "../lib/teams/attachments";
 import { InstanceError, closeInstance, createInstance, getInstance, listInstances, saveInstance, setInstanceBudget } from "../lib/teams/instances";
 import { listEvents, markRead, userEvents } from "../lib/teams/events";
 import { activateInstance, sendToLead } from "../lib/teams/turn-runner";
@@ -69,8 +77,28 @@ async function guarded(res: Response, run: () => Promise<void>): Promise<void> {
   try {
     await run();
   } catch (err) {
-    if (!(err instanceof TeamRuleError) && !(err instanceof TemplateError) && !(err instanceof InstanceError) && !(err instanceof SkillError)) throw err;
+    if (!(err instanceof TeamRuleError) && !(err instanceof TemplateError) && !(err instanceof InstanceError) && !(err instanceof SkillError) && !(err instanceof AttachmentError)) throw err;
     res.status(err.status).json({ error: err.message });
+  }
+}
+
+/** Percorso del caricamento di un allegato: il corpo è il file grezzo, quindi i parser globali (JSON, form) lo saltano. */
+export const ATTACHMENT_UPLOAD_PATH = /^\/api\/team-instances\/\d+\/attachments\/?$/;
+
+/**
+ * Lettura del file come Buffer, solo in memoria, qualunque sia il tipo di contenuto. Si monta soltanto sulla route del
+ * caricamento: oltre 10 MB il parser lancia `entity.too.large` e l'error handler risponde 413 «allegato troppo grande».
+ */
+function attachmentUpload(): RequestHandler {
+  return express.raw({ type: () => true, limit: MAX_ATTACHMENT_BYTES });
+}
+
+/** Nome dal header `X-Attachment-Name`: decodificato se è codificato con encodeURIComponent, altrimenti com'è. */
+function attachmentName(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
   }
 }
 
@@ -100,6 +128,51 @@ router.put("/team-instances/:id", async (req, res) => {
   const body = parseRequest(SaveTeamInstanceBody, req.body);
   await guarded(res, async () => {
     res.json(SaveTeamInstanceResponse.parse(await saveInstance(currentUserId(req), id, body)));
+  });
+});
+
+router.get("/team-instances/:id/attachments", async (req, res) => {
+  const { id } = parseRequest(ListTeamAttachmentsParams, req.params);
+  await guarded(res, async () => {
+    await getInstance(id);
+    res.json(ListTeamAttachmentsResponse.parse(await listAttachments(id)));
+  });
+});
+
+router.post("/team-instances/:id/attachments", attachmentUpload(), async (req, res) => {
+  const { id } = parseRequest(UploadTeamAttachmentParams, req.params);
+  const header = parseRequest(UploadTeamAttachmentHeader, { "X-Attachment-Name": req.get("x-attachment-name") });
+  const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+  await guarded(res, async () => {
+    await getInstance(id);
+    const view = await saveAttachment(currentUserId(req), id, {
+      name: attachmentName(header["X-Attachment-Name"]),
+      contentType: req.get("content-type") ?? "",
+      bytes,
+    });
+    res.status(201).json(UploadTeamAttachmentResponse.parse(view));
+  });
+});
+
+router.get("/team-instances/:id/attachments/:attachmentId", async (req, res) => {
+  const { id, attachmentId } = parseRequest(GetTeamAttachmentParams, req.params);
+  await guarded(res, async () => {
+    const row = await getAttachment(id, attachmentId);
+    // Scaricato, mai mostrato nella pagina: un file HTML caricato non deve girare con l'origine della console
+    res.set({
+      "Content-Type": row.contentType,
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(row.name)}`,
+      "X-Content-Type-Options": "nosniff",
+    });
+    res.send(row.content);
+  });
+});
+
+router.delete("/team-instances/:id/attachments/:attachmentId", async (req, res) => {
+  const { id, attachmentId } = parseRequest(DeleteTeamAttachmentParams, req.params);
+  await guarded(res, async () => {
+    await deleteAttachment(id, attachmentId);
+    res.status(204).end();
   });
 });
 

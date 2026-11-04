@@ -412,6 +412,42 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /node/tasks/{id}/attachments/{attachmentId}:
+    get:
+      operationId: nodeGetAttachment
+      tags: [nodes]
+      summary: Scarica un allegato citato dal compito
+      description: >-
+        Contenuto di un allegato citato dal compito preso dal nodo, con l'header `X-Lease-Token`. Lease non valida o
+        scaduta → 409; allegato non citato dal compito o di un'altra squadra → 404. Un allegato eliminato dopo
+        l'assegnazione si scarica comunque.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/AttachmentIdParam"
+        - name: X-Lease-Token
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Contenuto dell'allegato
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   /account/default-model:
     get:
       operationId: getDefaultModel
@@ -1794,6 +1830,96 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /team-instances/{id}/attachments:
+    get:
+      operationId: listTeamAttachments
+      tags: [teams]
+      summary: Allegati della squadra (non eliminati)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Allegati, dal più vecchio (senza contenuto)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamAttachment"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: uploadTeamAttachment
+      tags: [teams]
+      summary: Carica un allegato della squadra
+      description: >-
+        Il corpo è il file grezzo (al massimo 10 MB; 50 MB di allegati non eliminati per squadra), il nome nell'header
+        `X-Attachment-Name` (anche codificato con encodeURIComponent; senza `/`, `\`, `..`, max 200 caratteri) e il
+        tipo nel `Content-Type`. Squadra chiusa → 409.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: X-Attachment-Name
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: Allegato salvato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamAttachment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+
+  /team-instances/{id}/attachments/{attachmentId}:
+    get:
+      operationId: getTeamAttachment
+      tags: [teams]
+      summary: Scarica un allegato della squadra
+      description: >-
+        Risponde con `Content-Disposition: attachment` e `X-Content-Type-Options: nosniff`.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/AttachmentIdParam"
+      responses:
+        "200":
+          description: Contenuto dell'allegato
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteTeamAttachment
+      tags: [teams]
+      summary: Elimina un allegato della squadra
+      description: Lo toglie dall'elenco e dal limite di spazio; i compiti del nodo che lo citano già lo scaricano comunque.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/AttachmentIdParam"
+      responses:
+        "204":
+          description: Allegato eliminato
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /team-instances/{id}/close:
     post:
       operationId: closeTeamInstance
@@ -3101,6 +3227,13 @@ components:
   parameters:
     IdParam:
       name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+
+    AttachmentIdParam:
+      name: attachmentId
       in: path
       required: true
       schema:
@@ -5057,11 +5190,13 @@ components:
           type: array
           items:
             type: object
-            required: [id, name, sizeBytes, sha256]
+            required: [id, name, contentType, sizeBytes, sha256]
             properties:
               id:
                 type: integer
               name:
+                type: string
+              contentType:
                 type: string
               sizeBytes:
                 type: integer
@@ -5945,6 +6080,31 @@ components:
           description: >-
             Facoltativo e solo uguale allo stato attuale: si attiva con `POST /team-instances/{id}/activate` e una
             squadra attiva non torna in bozza.
+        nodeWorkspace:
+          type: string
+          nullable: true
+          maxLength: 300
+          description: >-
+            Spazio di lavoro sul nodo: percorso relativo, solo lettere, cifre, `._ -` e `/`, senza `/` iniziale né
+            `..` (altrimenti 400 «spazio di lavoro non valido»). Omesso = invariato, null = tolto.
+
+    TeamAttachment:
+      type: object
+      required: [id, name, contentType, sizeBytes, sha256, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+        sha256:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
 
     TeamUpdateItem:
       type: object
@@ -6133,7 +6293,7 @@ components:
 
     TeamInstance:
       type: object
-      required: [id, name, status, template, ref, roles, localSkills, createdAt, updatedAt, closedAt, activatedBy, monthlyBudgetUsd, lastTurnAt]
+      required: [id, name, status, template, ref, roles, localSkills, createdAt, updatedAt, closedAt, activatedBy, monthlyBudgetUsd, lastTurnAt, nodeWorkspace]
       properties:
         id:
           type: integer
@@ -6212,6 +6372,10 @@ components:
           type: string
           format: date-time
           nullable: true
+        nodeWorkspace:
+          type: string
+          nullable: true
+          description: Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)
 
     TeamMessageInput:
       type: object

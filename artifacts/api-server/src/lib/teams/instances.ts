@@ -12,6 +12,7 @@ import {
   type TeamInstanceRow,
 } from "@workspace/db";
 import { isExhausted } from "../budget";
+import { validateNodeWorkspace } from "./attachments";
 import { patchPlan } from "./plan";
 import { InstanceRoleSchema, type InstanceRole, type TemplateRole } from "./manifest";
 import { TEAM_MESSAGES, TeamRuleError, validateRoles } from "./rules";
@@ -65,6 +66,7 @@ export type InstanceView = {
   activatedBy: number | null;
   monthlyBudgetUsd: number | null;
   lastTurnAt: Date | null;
+  nodeWorkspace: string | null;
 };
 
 export type CreateInstanceInput = {
@@ -80,6 +82,8 @@ export type SaveInstanceInput = {
   roles: InstanceRole[];
   localSkills: LocalSkillInput[];
   status?: "draft" | "active";
+  /** Spazio di lavoro sul nodo (relativo alla radice del nodo): omesso = invariato, null = tolto */
+  nodeWorkspace?: string | null;
 };
 
 export type InstanceFilter = { status?: "draft" | "active" | "closed"; appId?: number; refType?: string; refId?: string };
@@ -111,6 +115,7 @@ async function toView(row: TeamInstanceRow): Promise<InstanceView> {
     activatedBy: row.activatedBy,
     monthlyBudgetUsd: row.monthlyBudgetUsd === null ? null : Number(row.monthlyBudgetUsd),
     lastTurnAt: row.lastTurnAt,
+    nodeWorkspace: row.nodeWorkspace,
   };
 }
 
@@ -211,6 +216,10 @@ export async function saveInstance(userId: number, id: number, input: SaveInstan
   if (current.status === "closed") throw new InstanceError(409, INSTANCE_MESSAGES.closed);
   checkStatusChange(current.status, input.status);
   const localSkillCodes = checkLocalSkills(input.localSkills);
+  if (input.nodeWorkspace !== undefined) {
+    const invalid = validateNodeWorkspace(input.nodeWorkspace);
+    if (invalid) throw new TeamRuleError(invalid);
+  }
   const previous = InstanceRoleSchema.array().parse(current.roles);
   await validateRoles({ roles: input.roles, mode: "instance", userId, previous, localSkillCodes });
 
@@ -238,6 +247,7 @@ export async function saveInstance(userId: number, id: number, input: SaveInstan
         name: input.name,
         refTitle: input.refTitle ?? locked.refTitle,
         roles: input.roles,
+        nodeWorkspace: input.nodeWorkspace === undefined ? locked.nodeWorkspace : input.nodeWorkspace,
         updatedAt: new Date(),
       })
       .where(eq(teamInstancesTable.id, id));

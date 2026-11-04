@@ -124,6 +124,7 @@ import type {
   RunStep,
   RunTrigger,
   StartZipAnalysisParams,
+  TeamAttachment,
   TeamBudgetInput,
   TeamEvent,
   TeamEventsReadInput,
@@ -1415,6 +1416,89 @@ export const useNodeReport = <TError = ErrorType<BadRequestResponse | Unauthoriz
       > => {
       return useMutation(getNodeReportMutationOptions(options));
     }
+
+export const getNodeGetAttachmentUrl = (id: number,
+    attachmentId: number,) => {
+
+
+
+
+  return `/api/node/tasks/${id}/attachments/${attachmentId}`
+}
+
+/**
+ * Contenuto di un allegato citato dal compito preso dal nodo, con l'header `X-Lease-Token`. Lease non valida o scaduta → 409; allegato non citato dal compito o di un'altra squadra → 404. Un allegato eliminato dopo l'assegnazione si scarica comunque.
+ * @summary Scarica un allegato citato dal compito
+ */
+export const nodeGetAttachment = async (id: number,
+    attachmentId: number, options?: RequestInit): Promise<Blob> => {
+
+  return customFetch<Blob>(getNodeGetAttachmentUrl(id,attachmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getNodeGetAttachmentQueryKey = (id: number,
+    attachmentId: number,) => {
+    return [
+    `/api/node/tasks/${id}/attachments/${attachmentId}`
+    ] as const;
+    }
+
+
+export const getNodeGetAttachmentQueryOptions = <TData = Awaited<ReturnType<typeof nodeGetAttachment>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse>>(id: number,
+    attachmentId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof nodeGetAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getNodeGetAttachmentQueryKey(id,attachmentId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof nodeGetAttachment>>> = ({ signal }) => nodeGetAttachment(id,attachmentId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && attachmentId !== null && attachmentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof nodeGetAttachment>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type NodeGetAttachmentQueryResult = NonNullable<Awaited<ReturnType<typeof nodeGetAttachment>>>
+export type NodeGetAttachmentQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse>
+
+
+/**
+ * @summary Scarica un allegato citato dal compito
+ */
+
+export function useNodeGetAttachment<TData = Awaited<ReturnType<typeof nodeGetAttachment>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse>>(
+ id: number,
+    attachmentId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof nodeGetAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getNodeGetAttachmentQueryOptions(id,attachmentId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetDefaultModelUrl = () => {
 
@@ -5771,6 +5855,311 @@ export const useSaveTeamInstance = <TError = ErrorType<BadRequestResponse | NotF
         TContext
       > => {
       return useMutation(getSaveTeamInstanceMutationOptions(options));
+    }
+
+export const getListTeamAttachmentsUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/attachments`
+}
+
+/**
+ * @summary Allegati della squadra (non eliminati)
+ */
+export const listTeamAttachments = async (id: number, options?: RequestInit): Promise<TeamAttachment[]> => {
+
+  return customFetch<TeamAttachment[]>(getListTeamAttachmentsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTeamAttachmentsQueryKey = (id: number,) => {
+    return [
+    `/api/team-instances/${id}/attachments`
+    ] as const;
+    }
+
+
+export const getListTeamAttachmentsQueryOptions = <TData = Awaited<ReturnType<typeof listTeamAttachments>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamAttachments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTeamAttachmentsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTeamAttachments>>> = ({ signal }) => listTeamAttachments(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTeamAttachments>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTeamAttachmentsQueryResult = NonNullable<Awaited<ReturnType<typeof listTeamAttachments>>>
+export type ListTeamAttachmentsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Allegati della squadra (non eliminati)
+ */
+
+export function useListTeamAttachments<TData = Awaited<ReturnType<typeof listTeamAttachments>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamAttachments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTeamAttachmentsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUploadTeamAttachmentUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/attachments`
+}
+
+/**
+ * Il corpo è il file grezzo (al massimo 10 MB; 50 MB di allegati non eliminati per squadra), il nome nell'header `X-Attachment-Name` (anche codificato con encodeURIComponent; senza `/`, `\`, `..`, max 200 caratteri) e il tipo nel `Content-Type`. Squadra chiusa → 409.
+ * @summary Carica un allegato della squadra
+ */
+export const uploadTeamAttachment = async (id: number,
+    uploadTeamAttachmentBody: Blob, options?: RequestInit): Promise<TeamAttachment> => {
+
+  return customFetch<TeamAttachment>(getUploadTeamAttachmentUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', ...options?.headers },
+    body: uploadTeamAttachmentBody
+  }
+);}
+
+
+
+
+export const getUploadTeamAttachmentMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | PayloadTooLargeResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadTeamAttachment>>, TError,{id: number;data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof uploadTeamAttachment>>, TError,{id: number;data: BodyType<Blob>}, TContext> => {
+
+const mutationKey = ['uploadTeamAttachment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadTeamAttachment>>, {id: number;data: BodyType<Blob>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  uploadTeamAttachment(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadTeamAttachmentMutationResult = NonNullable<Awaited<ReturnType<typeof uploadTeamAttachment>>>
+    export type UploadTeamAttachmentMutationBody = BodyType<Blob>
+    export type UploadTeamAttachmentMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | PayloadTooLargeResponse>
+
+    /**
+ * @summary Carica un allegato della squadra
+ */
+export const useUploadTeamAttachment = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | PayloadTooLargeResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadTeamAttachment>>, TError,{id: number;data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof uploadTeamAttachment>>,
+        TError,
+        {id: number;data: BodyType<Blob>},
+        TContext
+      > => {
+      return useMutation(getUploadTeamAttachmentMutationOptions(options));
+    }
+
+export const getGetTeamAttachmentUrl = (id: number,
+    attachmentId: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/attachments/${attachmentId}`
+}
+
+/**
+ * Risponde con `Content-Disposition: attachment` e `X-Content-Type-Options: nosniff`.
+ * @summary Scarica un allegato della squadra
+ */
+export const getTeamAttachment = async (id: number,
+    attachmentId: number, options?: RequestInit): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetTeamAttachmentUrl(id,attachmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamAttachmentQueryKey = (id: number,
+    attachmentId: number,) => {
+    return [
+    `/api/team-instances/${id}/attachments/${attachmentId}`
+    ] as const;
+    }
+
+
+export const getGetTeamAttachmentQueryOptions = <TData = Awaited<ReturnType<typeof getTeamAttachment>>, TError = ErrorType<NotFoundResponse>>(id: number,
+    attachmentId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamAttachmentQueryKey(id,attachmentId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamAttachment>>> = ({ signal }) => getTeamAttachment(id,attachmentId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && attachmentId !== null && attachmentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamAttachment>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamAttachmentQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamAttachment>>>
+export type GetTeamAttachmentQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Scarica un allegato della squadra
+ */
+
+export function useGetTeamAttachment<TData = Awaited<ReturnType<typeof getTeamAttachment>>, TError = ErrorType<NotFoundResponse>>(
+ id: number,
+    attachmentId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamAttachmentQueryOptions(id,attachmentId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDeleteTeamAttachmentUrl = (id: number,
+    attachmentId: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/attachments/${attachmentId}`
+}
+
+/**
+ * Lo toglie dall'elenco e dal limite di spazio; i compiti del nodo che lo citano già lo scaricano comunque.
+ * @summary Elimina un allegato della squadra
+ */
+export const deleteTeamAttachment = async (id: number,
+    attachmentId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteTeamAttachmentUrl(id,attachmentId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteTeamAttachmentMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTeamAttachment>>, TError,{id: number;attachmentId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteTeamAttachment>>, TError,{id: number;attachmentId: number}, TContext> => {
+
+const mutationKey = ['deleteTeamAttachment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTeamAttachment>>, {id: number;attachmentId: number}> = (props) => {
+          const {id,attachmentId} = props ?? {};
+
+          return  deleteTeamAttachment(id,attachmentId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteTeamAttachmentMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTeamAttachment>>>
+
+    export type DeleteTeamAttachmentMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Elimina un allegato della squadra
+ */
+export const useDeleteTeamAttachment = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTeamAttachment>>, TError,{id: number;attachmentId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteTeamAttachment>>,
+        TError,
+        {id: number;attachmentId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteTeamAttachmentMutationOptions(options));
     }
 
 export const getCloseTeamInstanceUrl = (id: number,) => {

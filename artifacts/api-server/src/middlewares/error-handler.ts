@@ -87,6 +87,10 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   }
   // Corpo oltre il limite del parser (express.raw dello zip, express.json): 413 in JSON
   if (status === 413 && (err as { type?: unknown }).type === "entity.too.large") {
+    if (req.method === "POST" && /^\/api\/team-instances\/\d+\/attachments\/?$/.test(req.originalUrl.split("?")[0]!)) {
+      res.status(413).json({ error: "allegato troppo grande" });
+      return;
+    }
     const isArchive = req.is(["application/zip", "application/octet-stream"]);
     res.status(413).json({ error: isArchive ? "archivio troppo grande" : "corpo della richiesta troppo grande" });
     return;

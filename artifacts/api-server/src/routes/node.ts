@@ -1,6 +1,8 @@
 import { Router, type IRouter, type Response } from "express";
 import {
   NodeClaimResponse,
+  NodeGetAttachmentHeader,
+  NodeGetAttachmentParams,
   NodeHeartbeatBody,
   NodeHeartbeatResponse,
   NodePingBody,
@@ -10,7 +12,7 @@ import {
   NodeReportParams,
 } from "@workspace/api-zod";
 import { currentNode } from "../lib/nodes/auth";
-import { NodeError, claimTask, heartbeat, pingTask, reportTask } from "../lib/nodes/protocol";
+import { NodeError, claimTask, heartbeat, pingTask, reportTask, taskAttachment } from "../lib/nodes/protocol";
 import { parseRequest } from "../middlewares/error-handler";
 import { nodeClaimRateLimit, nodeHeartbeatRateLimit, nodePingRateLimit } from "../middlewares/rate-limit";
 
@@ -55,6 +57,20 @@ export function createNodeRouter(): IRouter {
     const { leaseToken } = parseRequest(NodePingBody, req.body);
     await guarded(res, async () => {
       res.json(NodePingResponse.parse(await pingTask(currentNode(req).id, id, leaseToken)));
+    });
+  });
+
+  router.get("/tasks/:id/attachments/:attachmentId", async (req, res) => {
+    const { id, attachmentId } = parseRequest(NodeGetAttachmentParams, req.params);
+    const header = parseRequest(NodeGetAttachmentHeader, { "X-Lease-Token": req.get("x-lease-token") });
+    await guarded(res, async () => {
+      const row = await taskAttachment(currentNode(req).id, id, header["X-Lease-Token"], attachmentId);
+      res.set({
+        "Content-Type": "application/octet-stream",
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(row.name)}`,
+        "X-Content-Type-Options": "nosniff",
+      });
+      res.send(row.content);
     });
   });
 

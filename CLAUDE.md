@@ -397,7 +397,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   token a cascata). Nodo di un altro utente → 404 «nodo non trovato». Un nodo disattivato non si riattiva (se ne crea un altro);
   il suo token smette di valere: 403 «nodo disattivato». Disattivare, eliminare o rigenerare il token ferma i compiti che il nodo ha in
   carico: nella stessa transazione (riga del nodo bloccata, compiti letti prima di eliminare: poi `node_id` diventa null) i compiti
-  `running` con lease del nodo chiudono `failed` «nodo disattivato» con la guardia `node` di `finishTaskExecution` (stessa lease, una
+  `running` con lease del nodo chiudono `failed` «nodo disattivato» con la guardia `node` di `closeTaskRow` (stessa lease, una
   volta sola) e perdono la lease; dopo il commit PLAN, evento `bloccato` e turno del capo. Anche «Rigenera token» interrompe i compiti in
   corso: il vecchio processo non potrebbe più riferire. Il token ha ambito `node`, scade dopo 365 giorni, non compare in
   «Token personali» ed è accettato solo da `/api/node/*` (`requireNodeToken`, montato prima di `requireAuth`: senza header Authorization

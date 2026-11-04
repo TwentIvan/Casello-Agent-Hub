@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { db, pendingActionsTable, teamInstancesTable, teamTasksTable, type TeamTaskRow } from "@workspace/db";
+import { db, pendingActionsTable, teamInstancesTable, teamTasksTable } from "@workspace/db";
 import { enqueuePlanItem } from "../actions/queue";
 import { logger } from "../logger";
 import type { CatalogTool, ToolResult } from "../tools/types";
@@ -14,6 +14,7 @@ import {
   getPlan,
   getPlanForUpdate,
   isRelevantChange,
+  lastExecutions,
   nextTaskIds,
   patchPlan,
   writePlanVersion,
@@ -43,7 +44,11 @@ export const LEAD_MESSAGES = {
   teamNotActive: TASK_MESSAGES.teamNotActive,
   withdrawn: "Il capo ha ritirato la proposta di piano",
   unknownTool: "strumento non disponibile",
+  tooManyFailures: "compito fallito 3 volte: segnala all'utente",
 } as const;
+
+/** Esecuzioni consecutive fallite o bloccate dopo le quali `assegna_compito` rifiuta di riprovare un compito. */
+export const MAX_TASK_FAILURES = 3;
 
 const MAX_SUMMARY = 500;
 const MAX_RESULT_DETAIL = 12_000;
@@ -274,28 +279,6 @@ class NotQueuedError extends Error {
   }
 }
 
-const EXECUTION_TO_PLAN: Record<TeamTaskRow["status"], PlanTask["status"]> = {
-  queued: "running",
-  running: "running",
-  waiting_node: "waiting_node",
-  done: "done",
-  blocked: "blocked",
-  failed: "failed",
-  cancelled: "failed",
-};
-
-/** Stato ed esito dell'ultima esecuzione di ogni compito del PLAN (lettura dal pool, fuori dalle transazioni). */
-async function lastExecutions(instanceId: number): Promise<Map<string, { status: PlanTask["status"]; outcome: string | null }>> {
-  const rows = await db
-    .select({ planTaskId: teamTasksTable.planTaskId, status: teamTasksTable.status, outcome: teamTasksTable.outcome })
-    .from(teamTasksTable)
-    .where(eq(teamTasksTable.instanceId, instanceId))
-    .orderBy(desc(teamTasksTable.id));
-  const out = new Map<string, { status: PlanTask["status"]; outcome: string | null }>();
-  for (const r of rows) if (!out.has(r.planTaskId)) out.set(r.planTaskId, { status: EXECUTION_TO_PLAN[r.status], outcome: r.outcome?.slice(0, 300) ?? null });
-  return out;
-}
-
 /**
  * `proponi_piano`: senza versione approvata → versione `proposed` + voce `plan`; con versione approvata e modifica
  * rilevante → versione `proposed` + voce `plan_change` con le differenze; modifica non rilevante → solo i punti
@@ -480,8 +463,9 @@ async function updatePlan(ctx: LeadContext, args: Record<string, unknown>): Prom
 }
 
 /**
- * `assegna_compito`: solo un compito del PLAN approvato in stato planned, blocked o failed. Lo stato della squadra
- * lo verifica startTask con la riga della squadra bloccata («la squadra non è attiva»).
+ * `assegna_compito`: solo un compito del PLAN approvato in stato planned, blocked o failed, e non se le sue ultime 3
+ * esecuzioni sono tutte fallite o bloccate. Lo stato della squadra lo verifica startTask con la riga della squadra
+ * bloccata («la squadra non è attiva»).
  */
 async function assignTask(ctx: LeadContext, args: Record<string, unknown>): Promise<ToolResult> {
   const parsed = TaskIdSchema.safeParse(args);
@@ -493,6 +477,16 @@ async function assignTask(ctx: LeadContext, args: Record<string, unknown>): Prom
   const status = current.tasks.find((t) => t.id === taskId)?.status ?? "planned";
   if (BUSY.has(status)) return fail(TASK_MESSAGES.alreadyActive);
   if (status === "done") return fail(TASK_MESSAGES.notInPlan);
+  // Freno ai tentativi: dopo 3 esecuzioni di fila finite male il capo deve passare la mano all'utente
+  const recent = await db
+    .select({ status: teamTasksTable.status })
+    .from(teamTasksTable)
+    .where(and(eq(teamTasksTable.instanceId, ctx.instanceId), eq(teamTasksTable.planTaskId, taskId)))
+    .orderBy(desc(teamTasksTable.id))
+    .limit(MAX_TASK_FAILURES);
+  if (recent.length === MAX_TASK_FAILURES && recent.every((r) => r.status === "failed" || r.status === "blocked")) {
+    return fail(LEAD_MESSAGES.tooManyFailures);
+  }
   try {
     const row = await startTask(ctx.instanceId, taskId);
     return done(

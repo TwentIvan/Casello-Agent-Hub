@@ -11,11 +11,14 @@ import {
   teamTurnsTable,
   type TeamInstanceRow,
 } from "@workspace/db";
+import { isExhausted } from "../budget";
 import { patchPlan } from "./plan";
 import { InstanceRoleSchema, type InstanceRole, type TemplateRole } from "./manifest";
 import { TEAM_MESSAGES, TeamRuleError, validateRoles } from "./rules";
 import { SKILL_CODE, SKILL_MESSAGES, validateSkillContent, type Executor, type SkillKind } from "./skills";
+import { teamSpend } from "./team-budget";
 import { TEMPLATE_MESSAGES, TemplateError, describeRoles, getTemplateVersion, type LocalSkillInfo, type RoleView } from "./templates";
+import { enqueueTurnReason } from "./turn-queue";
 
 // Istanze di squadra: copia di un modello (o squadra da zero) legata a un lavoro, con le skill fissate a
 // una versione e skill specializzate proprie. La validazione legge dal pool e si fa PRIMA di aprire la
@@ -290,16 +293,25 @@ export async function closeInstance(id: number): Promise<InstanceView> {
   return getInstance(id);
 }
 
-/** Tetto mensile della squadra in USD (null = nessuno). Squadra chiusa → 409. */
+export const BUDGET_RESUME_REQUEST = "Il tetto di spesa della squadra è stato aggiornato: riprendi il lavoro";
+
+/**
+ * Tetto mensile della squadra in USD (null = nessuno). Squadra chiusa → 409. Se la squadra è attiva e il nuovo tetto
+ * lascia margine (nessun tetto o sopra la spesa del mese), il capo riceve un turno `request` per riprendere il lavoro.
+ */
 export async function setInstanceBudget(id: number, monthlyBudgetUsd: number | null): Promise<InstanceView> {
   const updated = await db
     .update(teamInstancesTable)
     .set({ monthlyBudgetUsd: monthlyBudgetUsd === null ? null : String(monthlyBudgetUsd), updatedAt: new Date() })
     .where(and(eq(teamInstancesTable.id, id), inArray(teamInstancesTable.status, ["draft", "active"])))
-    .returning({ id: teamInstancesTable.id });
+    .returning({ id: teamInstancesTable.id, status: teamInstancesTable.status });
   if (updated.length === 0) {
     await getRow(id);
     throw new InstanceError(409, INSTANCE_MESSAGES.closed);
+  }
+  if (updated[0]!.status === "active") {
+    const room = monthlyBudgetUsd === null || !isExhausted((await teamSpend(id)).spentUsd, monthlyBudgetUsd);
+    if (room) await enqueueTurnReason(id, { type: "request", text: BUDGET_RESUME_REQUEST });
   }
   return getInstance(id);
 }

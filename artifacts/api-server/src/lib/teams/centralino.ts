@@ -4,7 +4,7 @@ import { ACTION_MESSAGES, approveAction, rejectAction } from "../actions/decide"
 import { centralinoModelFor } from "../ai/default-model";
 import { modelChat, resolveModel } from "../ai/executor";
 import { logger } from "../logger";
-import { consumeTeamMessage } from "../../middlewares/rate-limit";
+import { consumeActionDecision, consumeTeamMessage } from "../../middlewares/rate-limit";
 import { markRead, unreadBulletin } from "./events";
 import { INSTANCE_MESSAGES, InstanceError, getInstance, listInstances } from "./instances";
 import { getPlan } from "./plan";
@@ -212,6 +212,8 @@ function decided(out: Awaited<ReturnType<typeof approveAction>>) {
 }
 
 export async function approvePending(userId: number, number: number, userToken?: string) {
+  // Lo stesso budget di `POST /pending-actions/:number/approve|reject` (20/min per utente)
+  if (!consumeActionDecision(userId)) throw new CentralinoError(CENTRALINO_MESSAGES.tooManyMessages);
   // Il token dell'utente serve (e viene passato) solo alle azioni il cui strumento ha identità `user`
   const [row] = await db
     .select({ kind: pendingActionsTable.kind, identity: appToolsTable.identity })
@@ -225,5 +227,6 @@ export async function approvePending(userId: number, number: number, userToken?:
 }
 
 export async function rejectPending(userId: number, number: number, note?: string) {
+  if (!consumeActionDecision(userId)) throw new CentralinoError(CENTRALINO_MESSAGES.tooManyMessages);
   return decided(await rejectAction(userId, number, note ?? null));
 }

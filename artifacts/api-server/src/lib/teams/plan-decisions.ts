@@ -2,12 +2,13 @@ import { and, eq } from "drizzle-orm";
 import { db, pendingActionsTable, teamInstancesTable, type PendingActionRow } from "@workspace/db";
 import type { DecideResult } from "../actions/decide";
 import { TEAM_MESSAGES } from "./rules";
-import { getPlanForUpdate, setPlanStatus } from "./plan";
+import { getPlanForUpdate, lastExecutions, restoreApprovedPlan, setPlanStatus } from "./plan";
 import { enqueueTurnReason } from "./turn-queue";
 
-// Decisione sulle voci `plan` e `plan_change` della coda: approvare rende approvata la versione proposta del PLAN,
-// rifiutare lo riporta allo stato precedente (nessuna versione nuova). Dopo la decisione il capo riceve un turno
-// con il motivo `decision`, accodato a transazione conclusa.
+// Decisione sulle voci `plan` e `plan_change` della coda: approvare rende approvata la versione proposta del PLAN;
+// rifiutare, con una versione approvata, rimette il suo contenuto come versione nuova `approved` (stato ed esito dei
+// compiti conservati), senza una versione approvata torna a `draft`. Dopo la decisione il capo riceve un turno con il motivo `decision`,
+// accodato a transazione conclusa.
 
 export const PLAN_DECISION_MESSAGES = {
   superseded: "proposta superata da una versione più recente",
@@ -44,6 +45,8 @@ export async function decidePlanItem(row: PendingActionRow, approved: boolean, n
     return rejected ? { ok: true, action: rejected } : fail(409, PLAN_DECISION_MESSAGES.alreadyDecided);
   }
 
+  // Ultime esecuzioni dei compiti lette dal pool prima della transazione (servono solo al rifiuto)
+  const executions = approved ? new Map() : await lastExecutions(instanceId);
   const decidedAt = new Date();
   const outcome = await db.transaction(async (tx) => {
     // Ordine dei lock (come in correctPlan): prima la riga del PLAN, poi le righe di pending_actions.
@@ -76,8 +79,9 @@ export async function decidePlanItem(row: PendingActionRow, approved: boolean, n
       return { kind: "decided" as const, row: claimed };
     }
 
-    // Rifiuto: solo se il PLAN è ancora quello proposto; stato di prima, senza versione nuova
-    if (current) await setPlanStatus(instanceId, plan.approvedVersion !== null ? "approved" : "draft", undefined, tx);
+    // Rifiuto: solo se il PLAN è ancora quello proposto. Con una versione approvata il suo contenuto torna nel PLAN
+    // (versione nuova `approved`): la proposta rifiutata non resta nella riga corrente; senza, `draft`
+    if (current) await restoreApprovedPlan(instanceId, plan, executions, tx);
     return { kind: "decided" as const, row: claimed };
   });
 

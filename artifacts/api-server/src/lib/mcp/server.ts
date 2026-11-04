@@ -45,6 +45,7 @@ import {
   teamDetail,
   teamsStatus,
 } from "../teams/centralino";
+import { TOKEN_MESSAGES, type TokenScope } from "../api-tokens";
 import { requireApiToken } from "./auth";
 
 /** Chiamate al minuto per utente (spec §9). */
@@ -99,7 +100,7 @@ function decodeResult(value: unknown): unknown {
 // --- Server -------------------------------------------------------------------------------------
 
 /** Server MCP con gli otto strumenti dell'agente locale. */
-export function createMcpServer(sources: LocalSourceOptions = {}, userId: number): McpServer {
+export function createMcpServer(sources: LocalSourceOptions = {}, userId: number, scopes: readonly TokenScope[] = ["mcp"]): McpServer {
   const server = new McpServer(SERVER_INFO);
 
   server.registerTool(
@@ -251,13 +252,18 @@ export function createMcpServer(sources: LocalSourceOptions = {}, userId: number
       }),
   );
 
-  registerCentralinoTools(server, userId);
+  registerCentralinoTools(server, userId, scopes);
 
   return server;
 }
 
-/** Strumenti del centralino: Claude dell'utente segue le sue squadre e decide la coda delle conferme. */
-function registerCentralinoTools(server: McpServer, userId: number): void {
+/**
+ * Strumenti del centralino: Claude dell'utente segue le sue squadre e decide la coda delle conferme. Decidere la coda
+ * (`approva`, `rifiuta`) vuole anche l'ambito `api:write` del token, come le route HTTP, e ne consuma il limite.
+ */
+function registerCentralinoTools(server: McpServer, userId: number, scopes: readonly TokenScope[]): void {
+  const canDecide = scopes.includes("api:write");
+  const scopeError = () => jsonResult({ error: TOKEN_MESSAGES.scope }, true);
   const teamId = z.number().int().positive().describe("Id della squadra (da squadre_stato)");
   const number = z.number().int().positive().describe("Numero della voce in coda (da coda_da_confermare)");
 
@@ -267,6 +273,7 @@ function registerCentralinoTools(server: McpServer, userId: number): void {
       description:
         "Stato delle squadre attive dell'utente: una riga per squadra (nome, lavoro, stato del piano, compiti in corso/finiti/bloccati, eventi non letti). Con più di 5 squadre le righe sono un riassunto.",
       inputSchema: {},
+      annotations: { readOnlyHint: true },
     },
     () => run("squadre_stato", () => teamsStatus(userId)),
   );
@@ -285,6 +292,7 @@ function registerCentralinoTools(server: McpServer, userId: number): void {
     {
       description: "Dettaglio di una squadra: PLAN (obiettivo, vincoli, compiti, azioni manuali, punti aperti), ultimi compiti e ultimi eventi.",
       inputSchema: { id: teamId },
+      annotations: { readOnlyHint: true },
     },
     ({ id }) => run("squadra_dettaglio", () => teamDetail(userId, id)),
   );
@@ -304,6 +312,7 @@ function registerCentralinoTools(server: McpServer, userId: number): void {
       description:
         "Voci in attesa nella coda delle conferme dell'utente: azioni su app, piani e modifiche del piano, con destinatario e sintesi. `needsUserToken` indica se per approvarla serve `userToken`.",
       inputSchema: {},
+      annotations: { readOnlyHint: true },
     },
     () => run("coda_da_confermare", () => pendingQueue(userId)),
   );
@@ -312,19 +321,22 @@ function registerCentralinoTools(server: McpServer, userId: number): void {
     "approva",
     {
       description:
-        "Approva una voce della coda (un'azione la esegue subito, un piano lo approva). `userToken` è il token dell'utente sull'app, solo per le azioni con `needsUserToken`.",
+        "Approva una voce della coda (un'azione la esegue subito, un piano lo approva). `userToken` è il token dell'utente sull'app, solo per le azioni con `needsUserToken`. Serve un token con l'ambito api:write.",
       inputSchema: { numero: number, userToken: z.string().min(1).max(4_000).optional().describe("Token dell'utente sull'app") },
+      annotations: { destructiveHint: true },
     },
-    ({ numero, userToken }) => run("approva", () => approvePending(userId, numero, userToken)),
+    ({ numero, userToken }) => (canDecide ? run("approva", () => approvePending(userId, numero, userToken)) : scopeError()),
   );
 
   server.registerTool(
     "rifiuta",
     {
-      description: "Rifiuta una voce della coda, con una nota facoltativa (al massimo 500 caratteri) che il capo legge nel turno successivo.",
+      description:
+        "Rifiuta una voce della coda, con una nota facoltativa (al massimo 500 caratteri) che il capo legge nel turno successivo. Serve un token con l'ambito api:write.",
       inputSchema: { numero: number, nota: z.string().max(500).optional().describe("Motivo del rifiuto") },
+      annotations: { destructiveHint: true },
     },
-    ({ numero, nota }) => run("rifiuta", () => rejectPending(userId, numero, nota)),
+    ({ numero, nota }) => (canDecide ? run("rifiuta", () => rejectPending(userId, numero, nota)) : scopeError()),
   );
 }
 
@@ -349,7 +361,7 @@ export function mcpRouter(opts: McpRouterOptions = {}): Router {
   const limiter = rateLimit({ ...(opts.rateLimit ?? MCP_RATE_LIMIT), key: (req) => `user:${req.mcpUserId ?? "?"}` });
 
   const handle: RequestHandler = async (req, res) => {
-    const server = createMcpServer(opts.sources, req.mcpUserId!); // impostato da requireApiToken
+    const server = createMcpServer(opts.sources, req.mcpUserId!, req.mcpScopes); // impostati da requireApiToken
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on("close", () => {
       void transport.close();

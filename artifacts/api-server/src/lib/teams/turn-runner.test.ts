@@ -19,7 +19,7 @@ import { approveAction, rejectAction } from "../actions/decide";
 import { enqueuePlanItem } from "../actions/queue";
 import { allowTestLoopback, startFakeProvider, type FakeChatReply, type FakeProvider } from "../../../test/fake-provider";
 import { listEvents } from "./events";
-import { closeInstance } from "./instances";
+import { BUDGET_RESUME_REQUEST, closeInstance, setInstanceBudget } from "./instances";
 import { LEAD_MESSAGES } from "./lead-tools";
 import { getPlan, patchPlan, writePlanVersion } from "./plan";
 import { TASK_MESSAGES, settleTaskExecutions, startTask } from "./task-runner";
@@ -417,6 +417,30 @@ describe("turni del capo", () => {
     expect(events[0]).toMatchObject({ type: "piano_proposto", bulletin: "Il capo ha ritirato la proposta di piano" });
   });
 
+  it("assegna_compito dopo 3 esecuzioni fallite o bloccate: rifiutato con messaggio fisso, nessun compito nuovo", async () => {
+    const id = await seedActiveApproved();
+    for (const status of ["failed", "blocked", "failed"] as const) {
+      await db.insert(teamTasksTable).values({ instanceId: id, planTaskId: "t1", roleKey: "analista", instructions: "Analizza", status });
+    }
+    await patchPlan(id, { tasks: [{ id: "t1", status: "failed" }] });
+    leadScript.push(call("assegna_compito", { taskId: "t1" }), text("Segnalo all'utente."));
+    await sendToLead(userId, id, "riprova t1");
+    await settleAll();
+    expect(toolMessages(leadRequests()[1]!)).toEqual([LEAD_MESSAGES.tooManyFailures]);
+    expect(await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, id))).toHaveLength(3);
+
+    // Un'esecuzione riuscita in mezzo azzera il conto: con 2 fallimenti dopo si può riprovare
+    await db.insert(teamTasksTable).values({ instanceId: id, planTaskId: "t1", roleKey: "analista", instructions: "Analizza", status: "done" });
+    for (let i = 0; i < 2; i++) {
+      await db.insert(teamTasksTable).values({ instanceId: id, planTaskId: "t1", roleKey: "analista", instructions: "Analizza", status: "failed" });
+    }
+    workerScript.push(call("riferisci", { status: "done", outcome: "ok" }));
+    leadScript.push(call("assegna_compito", { taskId: "t1" }), text("Assegnato."));
+    await sendToLead(userId, id, "riprova ancora");
+    await settleAll();
+    expect(await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, id))).toHaveLength(7);
+  });
+
   it("proponi_piano con un id di compito sconosciuto: messaggio fisso, nulla scritto", async () => {
     const id = await seedActiveApproved();
     leadScript.push(
@@ -442,6 +466,48 @@ describe("turni del capo", () => {
     const events = await listEvents(id);
     expect(events[0]).toMatchObject({ type: "bloccato" });
     expect(events[0]!.bulletin).toContain(TEAM_BUDGET_REACHED);
+    expect(events[0]!.bulletin.endsWith("Alza il tetto per riprendere.")).toBe(true);
     expect(chatCount()).toBe(0);
+  });
+
+  it("nota di rifiuto durante il blocco del tetto: arriva al turno successivo dopo aver alzato il tetto, una volta sola", async () => {
+    const id = await seedActiveApproved({ monthlyBudgetUsd: "1.00" });
+    await db.insert(teamTasksTable).values({ instanceId: id, planTaskId: "t0", roleKey: "analista", instructions: "", status: "done", costUsd: "1.500000", aiModelId: modelId });
+    const proposed = await writePlanVersion(id, { objective: "Altro", constraints: [], openPoints: [], manualActions: [], tasks: [] }, "proposed");
+    const queued = await enqueuePlanItem({ userId, instanceId: id, kind: "plan_change", planVersion: proposed.version, recipient: "Squadra WI", summary: "modifica", detail: {} });
+    if (!queued.ok) throw new Error(queued.message);
+
+    await rejectAction(userId, queued.number, "togli il compito di collaudo");
+    await settleAll();
+    expect((await turns(id)).map((t) => [t.status, t.promptTokens])).toEqual([["failed", 0]]);
+    expect(chatCount()).toBe(0);
+
+    // Un tetto ancora sotto la spesa non fa ripartire nulla
+    await setInstanceBudget(id, 1.2);
+    await settleAll();
+    expect(await turns(id)).toHaveLength(1);
+
+    leadScript.push(text("Riprendo."));
+    await setInstanceBudget(id, 10);
+    await settleAll();
+    const all = await turns(id);
+    expect(all.map((t) => t.status)).toEqual(["failed", "done"]);
+    expect(all[1]!.reasons).toEqual([{ type: "request", text: BUDGET_RESUME_REQUEST }]);
+    const resumed = userMessages(leadRequests().at(-1)!);
+    expect(resumed).toContain(`Nota dell'utente sul rifiuto della voce n. ${queued.number}:\ntogli il compito di collaudo`);
+    expect(resumed).toContain(`Messaggio dell'utente:\n${BUDGET_RESUME_REQUEST}`);
+
+    // Il turno dopo non riceve più la nota: è già stata consegnata
+    leadScript.push(text("ok"));
+    await sendToLead(userId, id, "come va?");
+    await settleAll();
+    expect(userMessages(leadRequests().at(-1)!).some((m) => m.includes("togli il compito di collaudo"))).toBe(false);
+  });
+
+  it("tetto alzato su una squadra in bozza: nessun turno", async () => {
+    const id = await seedTeam();
+    await setInstanceBudget(id, 5);
+    await settleAll();
+    expect(await turns(id)).toHaveLength(0);
   });
 });

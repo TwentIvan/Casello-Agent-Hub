@@ -1,11 +1,11 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, lt, sql } from "drizzle-orm";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { db, teamInstancesTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamInstanceRow, type TeamTurnReason, type TeamTurnRow } from "@workspace/db";
 import { runAgentLoop, type LoopDeps, type LoopLimits } from "../agent-loop";
 import { logger } from "../logger";
 import { modelChatDeps, newUsage, stepWriter, usageCost, type LoopUsage } from "../loop-wiring";
 import { isUniqueViolation } from "../pg-errors";
-import { emitEvent } from "./events";
+import { MAX_BULLETIN, emitEvent } from "./events";
 import { INSTANCE_MESSAGES, InstanceError, getInstance, type InstanceView } from "./instances";
 import { LEAD_TOOLS, leadToolHandler, planForModel } from "./lead-tools";
 import { InstanceRoleSchema, type InstanceRole } from "./manifest";
@@ -29,7 +29,11 @@ export const TURN_MESSAGES = {
   internalError: "errore interno nel turno del capo",
   teamClosed: "squadra chiusa",
   alreadyActive: "la squadra è già attiva",
+  raiseBudget: "Alza il tetto per riprendere.",
 } as const;
+
+/** Quanti turni falliti prima del modello si risalgono al più per recuperarne i motivi. */
+const MAX_CARRIED_TURNS = 20;
 
 const LEAD_INSTRUCTION =
   "Sei il capo di una squadra di agenti nell'hub Casello: tieni il PLAN del lavoro, assegni i compiti ai ruoli, leggi gli esiti e decidi il passo successivo. Lavori a turni: in ogni turno leggi il PLAN e le novità, agisci con i tuoi strumenti e ti fermi. Rispondi in italiano.";
@@ -179,6 +183,37 @@ interface TurnResult {
   status: "done" | "failed";
   error?: string;
   aiModelId: number | null;
+  /** Fallito per un tetto di spesa (della squadra o di chi paga il modello) */
+  budgetBlocked?: boolean;
+}
+
+/**
+ * Motivi dei turni precedenti falliti prima di arrivare al modello (budget, modello mancante, squadra non attivata…),
+ * che il capo non ha mai letto: si risale dal turno più recente finché i turni sono `failed` con 0 token registrati.
+ * Un turno arrivato al modello (o interrotto dal riavvio, con token non registrati) chiude la catena, così ogni motivo
+ * è riconsegnato una volta sola, dal primo turno che raggiunge il modello. Motivi uguali si contano una volta.
+ */
+export async function carriedReasons(turn: TeamTurnRow): Promise<TeamTurnReason[]> {
+  const rows = await db
+    .select({ status: teamTurnsTable.status, reasons: teamTurnsTable.reasons, promptTokens: teamTurnsTable.promptTokens, completionTokens: teamTurnsTable.completionTokens })
+    .from(teamTurnsTable)
+    .where(and(eq(teamTurnsTable.instanceId, turn.instanceId), lt(teamTurnsTable.id, turn.id)))
+    .orderBy(desc(teamTurnsTable.id))
+    .limit(MAX_CARRIED_TURNS);
+  const chain: TeamTurnReason[][] = [];
+  for (const r of rows) {
+    if (r.status !== "failed" || r.promptTokens !== 0 || r.completionTokens !== 0) break;
+    chain.unshift(r.reasons);
+  }
+  const seen = new Set(turn.reasons.map((r) => JSON.stringify(r)));
+  const out: TeamTurnReason[] = [];
+  for (const reason of chain.flat()) {
+    const key = JSON.stringify(reason);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(reason);
+  }
+  return out;
 }
 
 /** Esegue il ciclo dell'agente per un turno `running`; non scrive lo stato finale. */
@@ -194,13 +229,15 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
   if (aiModelId === null) return { status: "failed", error: TASK_MESSAGES.noModel, aiModelId: null };
 
   const block = await teamBudgetBlock(instance.id, aiModelId);
-  if (block) return { status: "failed", error: block, aiModelId };
+  if (block) return { status: "failed", error: block, aiModelId, budgetBlocked: true };
 
+  // Motivi dei turni falliti prima del modello: prima dei motivi di questo turno, nell'ordine in cui sono arrivati
+  const carried = await carriedReasons(turn);
   const [plan, skills, roleTools, reasons] = await Promise.all([
     getPlan(instance.id),
     skillTexts(instance.id, lead),
     loadRoleTools(lead.tools),
-    reasonMessages(instance.id, turn.reasons),
+    reasonMessages(instance.id, [...carried, ...turn.reasons]),
   ]);
   const tools = [...roleTools.tools, ...LEAD_TOOLS];
   const internal = leadToolHandler({ instanceId: instance.id, userId: instance.activatedBy, teamName: instance.name, roleKeys: roles.map((r) => r.key) });
@@ -237,6 +274,13 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
   }
 }
 
+/** Bollettino di un turno fermato da un tetto: finisce sempre con «Alza il tetto per riprendere.» (entro MAX_BULLETIN). */
+function budgetBulletin(text: string): string {
+  const suffix = ` ${TURN_MESSAGES.raiseBudget}`;
+  const head = text.replace(/\.?\s*$/, "").slice(0, MAX_BULLETIN - suffix.length - 1);
+  return `${head}.${suffix}`;
+}
+
 /** Chiude il turno (UPDATE condizionato a `running`), aggiorna `last_turn_at` e, se è fallito, segnala `bloccato`. */
 async function finishTurn(turn: TeamTurnRow, result: TurnResult, usage: LoopUsage): Promise<void> {
   const now = new Date();
@@ -257,7 +301,8 @@ async function finishTurn(turn: TeamTurnRow, result: TurnResult, usage: LoopUsag
   if (!closed) return;
   await db.update(teamInstancesTable).set({ lastTurnAt: now }).where(eq(teamInstancesTable.id, turn.instanceId));
   if (result.status === "failed") {
-    await emitEvent({ instanceId: turn.instanceId, type: "bloccato", bulletin: `Turno del capo non riuscito: ${result.error ?? TURN_MESSAGES.internalError}` });
+    const bulletin = `Turno del capo non riuscito: ${result.error ?? TURN_MESSAGES.internalError}`;
+    await emitEvent({ instanceId: turn.instanceId, type: "bloccato", bulletin: result.budgetBlocked ? budgetBulletin(bulletin) : bulletin });
   }
 }
 

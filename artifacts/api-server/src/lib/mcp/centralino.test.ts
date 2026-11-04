@@ -22,7 +22,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { startFakeMcp, type FakeMcp } from "../../../test/fake-mcp";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
 import { enqueueAction, enqueuePlanItem } from "../actions/queue";
-import { createApiToken } from "../api-tokens";
+import { TOKEN_MESSAGES, createApiToken } from "../api-tokens";
 import { encryptSecret } from "../secrets";
 import type { CatalogTool } from "../tools/types";
 import { emitEvent } from "../teams/events";
@@ -30,7 +30,7 @@ import { createInstance } from "../teams/instances";
 import { getPlan, writePlanVersion } from "../teams/plan";
 import { activateInstance } from "../teams/turn-runner";
 import { setCentralinoModel } from "../ai/default-model";
-import { consumeTeamMessage, teamMessageRateLimit } from "../../middlewares/rate-limit";
+import { actionDecideRateLimit, consumeActionDecision, consumeTeamMessage, teamMessageRateLimit } from "../../middlewares/rate-limit";
 import { mcpRouter } from "./server";
 
 // Strumenti del centralino su /mcp: dati solo dell'utente del token, coda delle conferme, messaggi al capo.
@@ -47,6 +47,7 @@ let userId: number;
 let otherId: number;
 let token: string;
 let otherToken: string;
+let mcpOnlyToken: string;
 let modelId: number;
 let appId: number;
 let tool: CatalogTool;
@@ -117,8 +118,10 @@ beforeEach(async () => {
   userId = u!.id;
   otherId = o!.id;
   // Il limite dei messaggi al capo è per utente in memoria: ogni test ha utenti nuovi (nessun RESTART IDENTITY)
-  token = (await createApiToken(userId, "Mac", 30)).token;
-  otherToken = (await createApiToken(otherId, "Mac", 30)).token;
+  // Decidere la coda dal centralino vuole anche l'ambito api:write
+  token = (await createApiToken(userId, "Mac", 30, ["mcp", "api:write"])).token;
+  otherToken = (await createApiToken(otherId, "Mac", 30, ["mcp", "api:write"])).token;
+  mcpOnlyToken = (await createApiToken(userId, "Solo MCP", 30, ["mcp"])).token;
   modelId = await accountModel(userId, "A");
   const [app] = await db
     .insert(appsTable)
@@ -143,6 +146,44 @@ describe("centralino su /mcp", () => {
     const client = await connect(token);
     const names = (await client.listTools()).tools.map((t) => t.name);
     expect(names).toEqual(expect.arrayContaining(["squadre_stato", "bollettino", "squadra_dettaglio", "invia_al_capo", "coda_da_confermare", "approva", "rifiuta"]));
+    await client.close();
+  });
+
+  it("annotazioni: approva e rifiuta distruttivi, letture in sola lettura (bollettino no: segna letti)", async () => {
+    const client = await connect(token);
+    const byName = new Map((await client.listTools()).tools.map((t) => [t.name, t.annotations ?? {}]));
+    for (const name of ["approva", "rifiuta"]) expect(byName.get(name)).toMatchObject({ destructiveHint: true });
+    for (const name of ["squadre_stato", "squadra_dettaglio", "coda_da_confermare"]) expect(byName.get(name)).toMatchObject({ readOnlyHint: true });
+    expect(byName.get("bollettino")?.readOnlyHint).not.toBe(true);
+    await client.close();
+  });
+
+  it("token con il solo ambito mcp: approva e rifiuta rifiutati, la voce resta in coda; la lettura della coda funziona", async () => {
+    const out = await enqueueAction({ userId, appId, agentId: null, runId: null, tool, args: { id: "42" }, recipient: "Rosa", summary: "Imposta la password" });
+    if (!out.ok) throw new Error("accodamento");
+    const client = await connect(mcpOnlyToken);
+    expect((await call(client, "coda_da_confermare")).json.actions).toHaveLength(1);
+    for (const [name, args] of [["approva", { numero: out.number }], ["rifiuta", { numero: out.number, nota: "no" }]] as const) {
+      const res = await call(client, name, args);
+      expect(res.isError).toBe(true);
+      expect(res.json.error).toBe(TOKEN_MESSAGES.scope);
+    }
+    expect((await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.number, out.number)))[0]!.status).toBe("pending");
+    expect(mcpApp.calls).toHaveLength(0);
+    await client.close();
+  });
+
+  it("approva e rifiuta consumano il limite di 20/min delle route di decisione", async () => {
+    const out = await enqueueAction({ userId, appId, agentId: null, runId: null, tool, args: { id: "42" }, recipient: "Rosa", summary: "Imposta" });
+    if (!out.ok) throw new Error("accodamento");
+    for (let i = 0; i < 20; i++) consumeActionDecision(userId);
+    const client = await connect(token);
+    for (const [name, args] of [["approva", { numero: out.number }], ["rifiuta", { numero: out.number }]] as const) {
+      const res = await call(client, name, args);
+      expect(res.isError).toBe(true);
+      expect(res.json.error).toBe("Troppe richieste: riprova tra poco");
+    }
+    expect((await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.number, out.number)))[0]!.status).toBe("pending");
     await client.close();
   });
 
@@ -321,6 +362,19 @@ describe("centralino su /mcp", () => {
     expect((await call(client, "rifiuta", { numero: out.number })).isError).toBe(true);
     expect((await call(client, "squadre_stato")).json.lines).toEqual([]);
     await client.close();
+  });
+});
+
+describe("limite delle decisioni sulla coda", () => {
+  it("gli strumenti MCP e le route condividono lo stesso contatore", () => {
+    const uid = 987_655;
+    for (let i = 0; i < 20; i++) expect(consumeActionDecision(uid)).toBe(true);
+    expect(consumeActionDecision(uid)).toBe(false);
+    let status = 0;
+    const res = { setHeader: () => {}, status: (s: number) => ({ json: () => void (status = s) }) };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    actionDecideRateLimit({ userId: uid } as any, res as any, () => void (status = 200));
+    expect(status).toBe(429);
   });
 });
 

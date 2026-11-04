@@ -2,7 +2,7 @@
 // sessione su /mcp. Mai nei log il token, il suo hash o l'header Authorization.
 
 import type { RequestHandler } from "express";
-import { authenticateApiToken, bearerToken } from "../api-tokens";
+import { authenticateApiToken, bearerToken, type TokenScope } from "../api-tokens";
 import { logger } from "../logger";
 
 export const MCP_UNAUTHORIZED = "token non valido o scaduto";
@@ -13,6 +13,8 @@ declare global {
     interface Request {
       /** Utente autenticato dal token personale (solo sulle richieste a /mcp). */
       mcpUserId?: number;
+      /** Ambiti del token (solo sulle richieste a /mcp): `approva`/`rifiuta` vogliono anche `api:write`. */
+      mcpScopes?: TokenScope[];
     }
   }
 }
@@ -32,6 +34,7 @@ export function requireApiToken(): RequestHandler {
           return;
         }
         req.mcpUserId = auth.userId;
+        req.mcpScopes = auth.scopes;
         next();
       })
       .catch((err: unknown) => {

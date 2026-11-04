@@ -1,11 +1,13 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   db,
   pendingActionsTable,
   teamPlansTable,
   teamPlanVersionsTable,
+  teamTasksTable,
   type PlanData,
   type TeamPlanRow,
+  type TeamTaskRow,
 } from "@workspace/db";
 import { z } from "zod";
 import { InstanceError, getInstance, type InstanceView } from "./instances";
@@ -120,6 +122,28 @@ export async function getApprovedPlan(instanceId: number, current?: PlanView): P
   return row?.plan ?? null;
 }
 
+const EXECUTION_TO_PLAN: Record<TeamTaskRow["status"], PlanTask["status"]> = {
+  queued: "running",
+  running: "running",
+  waiting_node: "waiting_node",
+  done: "done",
+  blocked: "blocked",
+  failed: "failed",
+  cancelled: "failed",
+};
+
+/** Stato ed esito dell'ultima esecuzione di ogni compito del PLAN (lettura dal pool, fuori dalle transazioni). */
+export async function lastExecutions(instanceId: number): Promise<Map<string, { status: PlanTask["status"]; outcome: string | null }>> {
+  const rows = await db
+    .select({ planTaskId: teamTasksTable.planTaskId, status: teamTasksTable.status, outcome: teamTasksTable.outcome })
+    .from(teamTasksTable)
+    .where(eq(teamTasksTable.instanceId, instanceId))
+    .orderBy(desc(teamTasksTable.id));
+  const out = new Map<string, { status: PlanTask["status"]; outcome: string | null }>();
+  for (const r of rows) if (!out.has(r.planTaskId)) out.set(r.planTaskId, { status: EXECUTION_TO_PLAN[r.status], outcome: r.outcome?.slice(0, 300) ?? null });
+  return out;
+}
+
 /** Riga del PLAN bloccata FOR UPDATE dentro la transazione `tx` (creata se manca). */
 async function lockPlanRow(tx: Executor, instanceId: number): Promise<TeamPlanRow> {
   await tx.insert(teamPlansTable).values({ instanceId }).onConflictDoNothing();
@@ -178,6 +202,40 @@ export async function setPlanStatus(instanceId: number, status: PlanStatus, appr
       .returning();
     return toView(row!);
   });
+}
+
+/**
+ * Rifiuto di una modifica con una versione approvata: il contenuto della versione approvata torna nel PLAN come
+ * versione nuova `approved` (che diventa la versione approvata). Stato ed esito dei compiti restano quelli registrati:
+ * dalla riga corrente `locked` (bloccata dal chiamante nella transazione `tx`), altrimenti dall'ultima esecuzione in
+ * `executions` (letta dal pool prima della transazione), altrimenti quelli della versione approvata. Azioni manuali e
+ * punti aperti, che si aggiornano sul posto senza approvazione, restano quelli della riga corrente.
+ * Senza la riga della versione approvata riporta solo lo stato ad `approved`.
+ */
+export async function restoreApprovedPlan(
+  instanceId: number,
+  locked: PlanView,
+  executions: Map<string, { status: PlanTask["status"]; outcome: string | null }>,
+  tx: Executor,
+): Promise<PlanView> {
+  if (locked.approvedVersion === null) return setPlanStatus(instanceId, "draft", undefined, tx);
+  const [row] = await tx
+    .select({ plan: teamPlanVersionsTable.plan })
+    .from(teamPlanVersionsTable)
+    .where(and(eq(teamPlanVersionsTable.instanceId, instanceId), eq(teamPlanVersionsTable.version, locked.approvedVersion)))
+    .limit(1);
+  if (!row) return setPlanStatus(instanceId, "approved", undefined, tx);
+  const prev = new Map(locked.tasks.map((t) => [t.id, t]));
+  const tasks = row.plan.tasks.map((t) => {
+    const old = prev.get(t.id) ?? executions.get(t.id);
+    return old ? { ...t, status: old.status, outcome: old.outcome } : t;
+  });
+  return writePlanVersion(
+    instanceId,
+    { ...row.plan, tasks, openPoints: locked.openPoints, manualActions: locked.manualActions },
+    "approved",
+    tx,
+  );
 }
 
 /** Aggiorna il PLAN corrente sul posto: nessuna versione nuova, nessun cambio di stato. */

@@ -2,14 +2,14 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { db, pool, aiAccountsTable, aiModelsTable, appsTable, appToolsTable, pendingActionsTable, teamInstancesTable, teamTurnsTable, usersTable, type InsertAppTool } from "@workspace/db";
+import { db, pool, aiAccountsTable, aiModelsTable, appsTable, appToolsTable, pendingActionsTable, teamInstancesTable, teamTasksTable, teamTurnsTable, usersTable, type InsertAppTool } from "@workspace/db";
 import { encryptSecret } from "../secrets";
 import type { CatalogTool } from "../tools/types";
 import { enqueueAction, enqueuePlanItem } from "../actions/queue";
 import { approveAction, rejectAction } from "../actions/decide";
 import type { InstanceRole } from "./manifest";
 import { closeInstance, createInstance } from "./instances";
-import { getPlan, setPlanStatus, writePlanVersion, type Plan } from "./plan";
+import { getApprovedPlan, getPlan, patchPlan, setPlanStatus, writePlanVersion, type Plan, type PlanTask } from "./plan";
 
 // Piani e modifiche del piano nella coda delle conferme (PGlite del global setup, route sull'app completa)
 
@@ -108,16 +108,37 @@ describe("decisione sulle voci di piano", () => {
     expect((await turns())[0]!.reasons).toEqual([{ type: "decision", number: n, outcome: "rejected", note: "manca il vincolo sul budget" }]);
   });
 
-  it("rifiutare una modifica: PLAN torna approvato con la versione approvata di prima", async () => {
-    const first = await propose();
-    await approveAction(userId, first, {});
-    const approvedVersion = (await getPlan(instanceId)).approvedVersion;
-    const n = await propose("plan_change");
-    expect((await getPlan(instanceId)).status).toBe("proposed");
-    await rejectAction(userId, n, null);
+  it("rifiutare una modifica: torna il contenuto approvato come versione nuova, stato dei compiti conservato", async () => {
+    const task = (id: string, title: string, status: PlanTask["status"] = "planned", outcome: string | null = null): PlanTask => ({ id, title, roleKey: "capo", instructions: `Fai ${title}`, status, outcome });
+    const approvedPlan: Plan = { ...plan("Obiettivo approvato"), constraints: ["vincolo"], tasks: [task("t1", "Uno"), task("t2", "Due")] };
+    const v1 = await writePlanVersion(instanceId, approvedPlan, "proposed");
+    await setPlanStatus(instanceId, "approved", v1.version);
+    // t1 finito (sul posto); t2 eseguito e fallito, poi tolto dalla proposta
+    await patchPlan(instanceId, { tasks: [{ id: "t1", status: "done", outcome: "fatto" }] });
+    await db.insert(teamTasksTable).values({ instanceId, planTaskId: "t2", roleKey: "capo", instructions: "", status: "failed", outcome: "errore" });
+    const proposed = await writePlanVersion(
+      instanceId,
+      { ...plan("Obiettivo proposto"), openPoints: ["punto"], tasks: [task("t1", "Uno", "done", "fatto"), task("t3", "Tre")] },
+      "proposed",
+    );
+    const out = await enqueuePlanItem({ userId, instanceId, kind: "plan_change", planVersion: proposed.version, recipient: "S", summary: "Modifica", detail: {} });
+    if (!out.ok) throw new Error(out.message);
+
+    await rejectAction(userId, out.number, "no");
     const p = await getPlan(instanceId);
     expect(p.status).toBe("approved");
-    expect(p.approvedVersion).toBe(approvedVersion);
+    expect(p.version).toBe(proposed.version + 1);
+    expect(p.approvedVersion).toBe(p.version);
+    expect(p.objective).toBe("Obiettivo approvato");
+    expect(p.constraints).toEqual(["vincolo"]);
+    expect(p.openPoints).toEqual(["punto"]);
+    expect(p.tasks.map((t) => [t.id, t.title, t.status, t.outcome])).toEqual([
+      ["t1", "Uno", "done", "fatto"],
+      ["t2", "Due", "failed", "errore"],
+    ]);
+    // La versione approvata letta da team_plan_versions è quella ripristinata
+    expect((await getApprovedPlan(instanceId))?.tasks.map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect((await turns())[0]!.reasons).toEqual([{ type: "decision", number: out.number, outcome: "rejected", note: "no" }]);
   });
 
   it("versione superata: voce failed (HTTP 200), PLAN e turni invariati", async () => {

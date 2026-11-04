@@ -195,6 +195,8 @@ export async function patchPlan(instanceId: number, patch: PlanPatch, executor: 
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const contentOf = (t: PlanTask) => ({ title: t.title, roleKey: t.roleKey, instructions: t.instructions });
+// Confronto campo per campo: indipendente dall'ordine delle chiavi (il jsonb di Postgres le riordina)
+const sameTaskContent = (a: PlanTask, b: PlanTask) => a.title === b.title && a.roleKey === b.roleKey && a.instructions === b.instructions;
 
 /** Una modifica è rilevante (richiede l'approvazione) se cambia obiettivo, vincoli o compiti (aggiunti, tolti, titolo/ruolo/istruzioni). */
 export function isRelevantChange(before: Plan | null, after: Plan): boolean {
@@ -259,19 +261,24 @@ export async function correctPlan(instanceId: number, input: Plan): Promise<Plan
     if (seen.has(task.id)) throw new TeamRuleError(PLAN_MESSAGES.duplicateTask(task.id));
     seen.add(task.id);
   }
-  const before = await getPlan(instanceId);
-  // I compiti invariati conservano la data dell'ultimo aggiornamento
-  const prev = new Map(before.tasks.map((t) => [t.id, t]));
-  const stamped = plan.tasks.map((t) => {
-    const old = prev.get(t.id);
-    return { ...t, updatedAt: old && same({ ...old, updatedAt: 0 }, { ...t, updatedAt: 0 }) ? old.updatedAt : new Date().toISOString() };
-  });
+  let before!: Plan;
   const view = await db.transaction(async (tx) => {
-    const written = await writePlanVersion(instanceId, { ...plan, tasks: stamped }, "approved", tx);
-    const now = new Date();
+    // Stato ed esito dei compiti esistenti li scrivono il capo e i ruoli (patchPlan): si leggono sotto lock e non si
+    // sovrascrivono con i valori del client; i compiti nuovi partono `planned`. Chi non cambia contenuto conserva updatedAt.
+    const current = await lockPlanRow(tx, instanceId);
+    before = toView(current);
+    const prev = new Map(current.tasks.map((t) => [t.id, t]));
+    const now = new Date().toISOString();
+    const merged = plan.tasks.map((t) => {
+      const old = prev.get(t.id);
+      if (!old) return { ...t, status: "planned" as const, outcome: null, updatedAt: now };
+      return { ...t, status: old.status, outcome: old.outcome, updatedAt: sameTaskContent(old, t) ? old.updatedAt : now };
+    });
+    const written = await writePlanVersion(instanceId, { ...plan, tasks: merged }, "approved", tx);
+    const decidedAt = new Date();
     await tx
       .update(pendingActionsTable)
-      .set({ status: "rejected", decisionNote: PLAN_MESSAGES.supersededByUser, decidedAt: now, finishedAt: now })
+      .set({ status: "rejected", decisionNote: PLAN_MESSAGES.supersededByUser, decidedAt, finishedAt: decidedAt })
       .where(
         and(
           eq(pendingActionsTable.teamInstanceId, instanceId),
@@ -288,11 +295,13 @@ export async function correctPlan(instanceId: number, input: Plan): Promise<Plan
 /** Segna «Fatto» un'azione manuale (aggiorna il PLAN corrente senza versione nuova). */
 export async function markManualActionDone(instanceId: number, actionId: string): Promise<PlanView> {
   await openInstance(instanceId);
-  const plan = await getPlan(instanceId);
-  const action = plan.manualActions.find((a) => a.id === actionId);
-  if (!action) throw new InstanceError(404, PLAN_MESSAGES.actionNotFound);
-  if (action.done) return plan;
-  const now = new Date().toISOString();
-  return patchPlan(instanceId, { manualActions: plan.manualActions.map((a) => (a.id === actionId ? { ...a, done: true, doneAt: now } : a)) });
+  // Lettura e scrittura sulla stessa riga bloccata: un patchPlan concorrente non viene sovrascritto
+  return db.transaction(async (tx) => {
+    const current = await lockPlanRow(tx, instanceId);
+    const action = current.manualActions.find((a) => a.id === actionId);
+    if (!action) throw new InstanceError(404, PLAN_MESSAGES.actionNotFound);
+    if (action.done) return toView(current);
+    const now = new Date().toISOString();
+    return patchPlan(instanceId, { manualActions: current.manualActions.map((a) => (a.id === actionId ? { ...a, done: true, doneAt: now } : a)) }, tx);
+  });
 }
-

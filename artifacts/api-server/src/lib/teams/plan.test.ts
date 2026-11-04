@@ -151,6 +151,19 @@ describe("PLAN salvato", () => {
     expect(queued).toEqual([instanceId]);
   });
 
+  it("correctPlan: i compiti invariati conservano updatedAt; stato ed esito dei compiti esistenti non si sovrascrivono", async () => {
+    await writePlanVersion(instanceId, plan({ tasks: [task("t1"), task("t2")] }), "approved");
+    await patchPlan(instanceId, { tasks: [{ id: "t2", status: "running", outcome: "in corso" }] });
+    const before = await getPlan(instanceId);
+    await new Promise((r) => setTimeout(r, 20));
+    const view = await correctPlan(instanceId, plan({ tasks: [task("t1"), task("t2", { title: "Nuovo titolo", status: "planned", outcome: null }), task("t3", { status: "done", outcome: "x" })] }));
+    const [t1, t2, t3] = view.tasks;
+    expect(t1!.updatedAt).toBe(before.tasks[0]!.updatedAt);
+    expect(t2!.updatedAt).not.toBe(before.tasks[1]!.updatedAt);
+    expect(t2).toMatchObject({ title: "Nuovo titolo", status: "running", outcome: "in corso" });
+    expect(t3).toMatchObject({ status: "planned", outcome: null });
+  });
+
   it("correctPlan: ruolo inesistente → TeamRuleError, compito ripetuto, squadra chiusa → 409", async () => {
     await expect(correctPlan(instanceId, plan({ tasks: [task("t1", { roleKey: "boh" })] }))).rejects.toThrow("ruolo boh inesistente");
     await expect(correctPlan(instanceId, plan({ tasks: [task("t1"), task("t1")] }))).rejects.toBeInstanceOf(TeamRuleError);

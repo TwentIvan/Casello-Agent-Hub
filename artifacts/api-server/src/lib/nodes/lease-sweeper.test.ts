@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { db, nodesTable, pool, teamInstancesTable, teamEventsTable, teamTasksTable, teamTurnsTable } from "@workspace/db";
+import { db, nodesTable, teamAttachmentsTable, pool, teamInstancesTable, teamEventsTable, teamTasksTable, teamTurnsTable } from "@workspace/db";
 import { catalogSkill, ensureUser, nodeRole, seedNodeTeam } from "../../../test/team-node-fixture";
 import { getPlan } from "../teams/plan";
 import { failInterruptedTeamWork, startTask } from "../teams/task-runner";
@@ -130,5 +130,24 @@ describe("nessun nodo adatto", () => {
     expect(await events(instanceId)).toHaveLength(0);
     await sweepNodeTasks(now, new Date(now.getTime() - 3 * MIN));
     expect((await events(instanceId)).map((e) => e.type)).toEqual(["bloccato"]);
+  });
+});
+
+describe("pulizia degli allegati eliminati", () => {
+  it("sweepNodeTasks ripulisce gli allegati eliminati che nessun compito attivo cita più", async () => {
+    const { deleteAttachment, saveAttachment } = await import("../teams/attachments");
+    const instanceId = await seedNodeTeam({ userId, roles: [sapRole()] });
+    const view = await saveAttachment(userId, instanceId, { name: "a.txt", contentType: "text/plain", bytes: Buffer.from("a") });
+    const started = await startTask(instanceId, "t1", [view.id]);
+    await deleteAttachment(instanceId, view.id);
+    const exists = async () => (await db.select().from(teamAttachmentsTable).where(eq(teamAttachmentsTable.id, view.id))).length;
+    const now = new Date();
+    const upSince = new Date(now.getTime() - 60 * MIN);
+
+    await sweepNodeTasks(now, upSince);
+    expect(await exists()).toBe(1);
+    await db.update(teamTasksTable).set({ status: "done" }).where(eq(teamTasksTable.id, started.id));
+    await sweepNodeTasks(now, upSince);
+    expect(await exists()).toBe(0);
   });
 });

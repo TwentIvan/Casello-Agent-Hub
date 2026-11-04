@@ -5,6 +5,7 @@ import {
   skillVersionsTable,
   skillsTable,
   teamInstanceSkillsTable,
+  teamAttachmentsTable,
   teamInstancesTable,
   teamTaskStepsTable,
   teamTasksTable,
@@ -16,6 +17,7 @@ import { runAgentLoop, type LoopDeps, type LoopLimits, type LoopOutcome } from "
 import { logger } from "../logger";
 import { modelChatDeps, newUsage, stepWriter, usageCost, type LoopUsage } from "../loop-wiring";
 import type { ToolResult } from "../tools/types";
+import { ATTACHMENT_MESSAGES } from "./attachments";
 import { emitEvent } from "./events";
 import { InstanceError, INSTANCE_MESSAGES } from "./instances";
 import { InstanceRoleSchema, type InstanceRole } from "./manifest";
@@ -227,6 +229,16 @@ export async function startTask(instanceId: number, planTaskId: string, attachme
       .limit(1);
     if (!locked) throw new InstanceError(404, INSTANCE_MESSAGES.notFound);
     if (locked.status !== "active") throw new InstanceError(409, TASK_MESSAGES.teamNotActive);
+    // Allegati citati: riletti con la squadra bloccata, serializzati con l'eliminazione e con la pulizia
+    if (attachmentIds.length > 0) {
+      const present = await tx
+        .select({ id: teamAttachmentsTable.id })
+        .from(teamAttachmentsTable)
+        .where(and(eq(teamAttachmentsTable.instanceId, instanceId), inArray(teamAttachmentsTable.id, attachmentIds), isNull(teamAttachmentsTable.deletedAt)));
+      const found = new Set(present.map((r) => r.id));
+      const missing = attachmentIds.find((id) => !found.has(id));
+      if (missing !== undefined) throw new TeamRuleError(ATTACHMENT_MESSAGES.missing(missing));
+    }
     const [active] = await tx
       .select({ id: teamTasksTable.id })
       .from(teamTasksTable)

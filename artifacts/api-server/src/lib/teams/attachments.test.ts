@@ -99,6 +99,16 @@ describe("deleteAttachment", () => {
   });
 });
 
+describe("startTask e allegati", () => {
+  it("un allegato eliminato o inesistente al momento dell'assegnazione: errore «allegato <id> inesistente», nessun compito", async () => {
+    const view = await saveAttachment(userId, instanceId, file("a.txt", "a"));
+    await deleteAttachment(instanceId, view.id);
+    await expect(startTask(instanceId, "t1", [view.id])).rejects.toThrow(`allegato ${view.id} inesistente`);
+    await expect(startTask(instanceId, "t1", [9999])).rejects.toThrow("allegato 9999 inesistente");
+    expect(await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, instanceId))).toHaveLength(0);
+  });
+});
+
 describe("helper", () => {
   it("rfc5987 codifica anche ' ( ) *", () => {
     expect(rfc5987("a b'(c)*è.txt")).toBe("a%20b%27%28c%29%2A%C3%A8.txt");

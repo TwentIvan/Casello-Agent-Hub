@@ -63,7 +63,7 @@ export function createNodeRouter(): IRouter {
 
   router.get("/tasks/:id/attachments/:attachmentId", async (req, res) => {
     const { id, attachmentId } = parseRequest(NodeGetAttachmentParams, req.params);
-    const header = parseRequest(NodeGetAttachmentHeader, { "X-Lease-Token": req.get("x-lease-token") });
+    const header = parseRequest(NodeGetAttachmentHeader, { "X-Lease-Token": req.get("x-lease-token") ?? "" });
     await guarded(res, async () => {
       const row = await taskAttachment(currentNode(req).id, id, header["X-Lease-Token"], attachmentId);
       res.set({

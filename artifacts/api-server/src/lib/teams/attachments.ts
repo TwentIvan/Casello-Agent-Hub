@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db, teamAttachmentsTable, teamInstancesTable, teamTasksTable, type TeamAttachment } from "@workspace/db";
 import { TEAM_MESSAGES } from "./rules";
 
@@ -151,19 +151,32 @@ export async function deleteAttachment(instanceId: number, id: number): Promise<
   });
 }
 
-/** Cancella gli allegati eliminati che nessun compito `queued`, `waiting_node` o `running` cita più; restituisce quanti. */
+/**
+ * Cancella gli allegati eliminati che nessun compito `queued`, `waiting_node` o `running` cita più; restituisce quanti.
+ * Squadra per squadra, con la riga della squadra bloccata come in `deleteAttachment` e `startTask`: pulizia e
+ * assegnazione si serializzano.
+ */
 export async function purgeDeletedAttachments(): Promise<number> {
-  const result = await db.execute(sql`
-    delete from team_attachments a
-    where a.deleted_at is not null
-      and not exists (
-        select 1 from team_tasks t
-        where t.instance_id = a.instance_id
-          and t.status in ('queued', 'waiting_node', 'running')
-          and t.attachment_ids @> jsonb_build_array(a.id)
-      )
-    returning a.id`);
-  return result.rows.length;
+  const squads = await db.selectDistinct({ id: teamAttachmentsTable.instanceId }).from(teamAttachmentsTable).where(isNotNull(teamAttachmentsTable.deletedAt));
+  let purged = 0;
+  for (const { id } of squads) {
+    purged += await db.transaction(async (tx) => {
+      await tx.select({ id: teamInstancesTable.id }).from(teamInstancesTable).where(eq(teamInstancesTable.id, id)).for("update").limit(1);
+      const result = await tx.execute(sql`
+        delete from team_attachments a
+        where a.instance_id = ${id}
+          and a.deleted_at is not null
+          and not exists (
+            select 1 from team_tasks t
+            where t.instance_id = a.instance_id
+              and t.status in ('queued', 'waiting_node', 'running')
+              and t.attachment_ids @> jsonb_build_array(a.id)
+          )
+        returning a.id`);
+      return result.rows.length;
+    });
+  }
+  return purged;
 }
 
 /**

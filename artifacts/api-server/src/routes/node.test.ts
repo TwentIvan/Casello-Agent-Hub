@@ -372,3 +372,85 @@ describe("ping e report", () => {
     expect(await db.select().from(teamTasksTable).where(and(eq(teamTasksTable.id, taskId), eq(teamTasksTable.status, "done")))).toHaveLength(0);
   });
 });
+
+describe("allegati dei compiti", () => {
+  /** Squadra con un compito `node` che cita gli allegati dati, già preso dal nodo. */
+  async function claimedWithAttachments(names: string[]) {
+    const { saveAttachment } = await import("../lib/teams/attachments");
+    const instanceId = await seedNodeTeam({ userId, roles: [sapRole()] });
+    const views = [];
+    for (const n of names) views.push(await saveAttachment(userId, instanceId, { name: n, contentType: "text/plain", bytes: Buffer.from(`contenuto di ${n}`) }));
+    const started = await startTask(instanceId, "t1", views.map((v) => v.id));
+    const node = await nodeWith(userId, "Mac", ["sap:abap-developer"]);
+    const claim = await api("POST", "/node/claim", { token: node.token });
+    expect(claim.status, claim.text).toBe(200);
+    return { instanceId, views, taskId: started.id, node, leaseToken: claim.json.leaseToken as string, pkg: claim.json };
+  }
+
+  const download = (token: string, taskId: number, attachmentId: number, lease?: string) =>
+    fetch(`${base}/api/node/tasks/${taskId}/attachments/${attachmentId}`, { headers: { authorization: `Bearer ${token}`, ...(lease ? { "x-lease-token": lease } : {}) } });
+
+  it("il pacchetto del claim porta workspace e metadati degli allegati citati", async () => {
+    const { views, pkg } = await claimedWithAttachments(["a.txt", "b.txt"]);
+    expect(pkg.workspace).toBe("SAP/AIMAG/WI_1174");
+    expect(pkg.attachments).toEqual(views.map((v) => ({ id: v.id, name: v.name, contentType: "text/plain", sizeBytes: v.sizeBytes, sha256: v.sha256 })));
+    expect(JSON.stringify(pkg)).not.toContain("contenuto di");
+  });
+
+  it("lease valida → byte giusti, octet-stream, nosniff, attachment", async () => {
+    const { views, taskId, node, leaseToken } = await claimedWithAttachments(["a.txt"]);
+    const res = await download(node.token, taskId, views[0]!.id, leaseToken);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("contenuto di a.txt");
+    expect(res.headers.get("content-type")).toContain("application/octet-stream");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-disposition")).toMatch(/^attachment/);
+  });
+
+  it("senza X-Lease-Token o con uno sbagliato → 409", async () => {
+    const { views, taskId, node } = await claimedWithAttachments(["a.txt"]);
+    for (const lease of [undefined, "sbagliata"]) {
+      const res = await download(node.token, taskId, views[0]!.id, lease);
+      expect(res.status, String(lease)).toBe(409);
+      expect(((await res.json()) as { error: string }).error).toBe(LEASE_MSG);
+    }
+  });
+
+  it("lease di un altro nodo, scaduta o chiusa dallo sweeper → 409; senza token del nodo → 403", async () => {
+    const { sweepExpiredLeases } = await import("../lib/nodes/lease-sweeper");
+    const { views, taskId, node, leaseToken } = await claimedWithAttachments(["a.txt"]);
+    const other = await nodeWith(userId, "Altro", ["sap:abap-developer"]);
+    expect((await download(other.token, taskId, views[0]!.id, leaseToken)).status).toBe(409);
+    expect((await fetch(`${base}/api/node/tasks/${taskId}/attachments/${views[0]!.id}`, { headers: { "x-lease-token": leaseToken } })).status).toBe(403);
+    await db.update(teamTasksTable).set({ leaseExpiresAt: new Date(Date.now() - 1000) }).where(eq(teamTasksTable.id, taskId));
+    expect((await download(node.token, taskId, views[0]!.id, leaseToken)).status).toBe(409);
+    expect(await sweepExpiredLeases()).toBe(1);
+    expect((await download(node.token, taskId, views[0]!.id, leaseToken)).status).toBe(409);
+  });
+
+  it("un allegato non citato dal compito → 404", async () => {
+    const { saveAttachment } = await import("../lib/teams/attachments");
+    const { instanceId, taskId, node, leaseToken } = await claimedWithAttachments(["a.txt"]);
+    const notCited = await saveAttachment(userId, instanceId, { name: "x.txt", contentType: "text/plain", bytes: Buffer.from("x") });
+    expect((await download(node.token, taskId, notCited.id, leaseToken)).status).toBe(404);
+    expect((await download(node.token, taskId, 99999, leaseToken)).status).toBe(404);
+  });
+
+  it("un allegato di un'altra squadra → 404, anche se l'id risultasse citato", async () => {
+    const { saveAttachment } = await import("../lib/teams/attachments");
+    const { views, taskId, node, leaseToken } = await claimedWithAttachments(["a.txt"]);
+    const otherTeam = await seedNodeTeam({ userId, roles: [sapRole({ key: "operaio2" })], tasks: { t1: "operaio2" } });
+    const foreign = await saveAttachment(userId, otherTeam, { name: "f.txt", contentType: "text/plain", bytes: Buffer.from("f") });
+    await db.update(teamTasksTable).set({ attachmentIds: [views[0]!.id, foreign.id] }).where(eq(teamTasksTable.id, taskId));
+    expect((await download(node.token, taskId, foreign.id, leaseToken)).status).toBe(404);
+  });
+
+  it("un allegato eliminato dopo l'assegnazione (eliminazione logica) si scarica comunque", async () => {
+    const { deleteAttachment } = await import("../lib/teams/attachments");
+    const { instanceId, views, taskId, node, leaseToken } = await claimedWithAttachments(["a.txt"]);
+    await deleteAttachment(instanceId, views[0]!.id);
+    const res = await download(node.token, taskId, views[0]!.id, leaseToken);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("contenuto di a.txt");
+  });
+});

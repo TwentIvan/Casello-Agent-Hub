@@ -96,11 +96,11 @@ export default function PendingActionsPage() {
                     onKeyDown={(e) => e.key === "Enter" && setSelected(a.number)}
                   >
                     <TableCell className="pl-4 tabular-nums">{a.number}</TableCell>
-                    <TableCell className="truncate" title={a.app.name}>
-                      {a.app.name}
+                    <TableCell className="truncate" title={a.app?.name ?? a.team?.name}>
+                      {a.app?.name ?? a.team?.name ?? "—"}
                     </TableCell>
-                    <TableCell className="truncate font-mono text-xs" title={a.tool.name}>
-                      {a.tool.name}
+                    <TableCell className="truncate font-mono text-xs" title={a.tool?.name}>
+                      {a.tool?.name ?? (a.kind === "plan" ? "Piano" : "Modifica del piano")}
                     </TableCell>
                     <TableCell className="hidden truncate lg:table-cell" title={a.recipient}>
                       {a.recipient}

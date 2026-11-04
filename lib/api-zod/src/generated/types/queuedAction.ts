@@ -6,13 +6,21 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { QueuedActionApp } from './queuedActionApp';
+import type { QueuedActionKind } from './queuedActionKind';
 import type { QueuedActionStatus } from './queuedActionStatus';
+import type { QueuedActionTeam } from './queuedActionTeam';
 import type { QueuedActionTool } from './queuedActionTool';
 
 export interface QueuedAction {
   number: number;
   status: QueuedActionStatus;
+  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra */
+  kind: QueuedActionKind;
+  /** @nullable */
+  team: QueuedActionTeam;
+  /** @nullable */
   app: QueuedActionApp;
+  /** @nullable */
   tool: QueuedActionTool;
   /** @nullable */
   agentId: number | null;

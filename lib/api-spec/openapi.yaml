@@ -3422,15 +3422,27 @@ components:
 
     QueuedAction:
       type: object
-      required: [number, status, app, tool, agentId, runId, recipient, summary, args, result, errorMessage, decisionNote, createdAt, decidedAt, finishedAt]
+      required: [number, status, kind, team, app, tool, agentId, runId, recipient, summary, args, result, errorMessage, decisionNote, createdAt, decidedAt, finishedAt]
       properties:
         number:
           type: integer
         status:
           type: string
           enum: [pending, executing, done, failed, rejected]
+        kind:
+          type: string
+          enum: [action, plan, plan_change]
+          description: Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra
+        team:
+          type: ["object", "null"]
+          required: [id, name]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
         app:
-          type: object
+          type: ["object", "null"]
           required: [id, name]
           properties:
             id:
@@ -3438,7 +3450,7 @@ components:
             name:
               type: string
         tool:
-          type: object
+          type: ["object", "null"]
           required: [id, name, identity]
           properties:
             id:

@@ -616,10 +616,33 @@ export const QueuedActionStatus = {
   rejected: 'rejected',
 } as const;
 
+/**
+ * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra
+ */
+export type QueuedActionKind = typeof QueuedActionKind[keyof typeof QueuedActionKind];
+
+
+export const QueuedActionKind = {
+  action: 'action',
+  plan: 'plan',
+  plan_change: 'plan_change',
+} as const;
+
+/**
+ * @nullable
+ */
+export type QueuedActionTeam = {
+  id: number;
+  name: string;
+} | null;
+
+/**
+ * @nullable
+ */
 export type QueuedActionApp = {
   id: number;
   name: string;
-};
+} | null;
 
 export type QueuedActionToolIdentity = typeof QueuedActionToolIdentity[keyof typeof QueuedActionToolIdentity];
 
@@ -629,16 +652,25 @@ export const QueuedActionToolIdentity = {
   service: 'service',
 } as const;
 
+/**
+ * @nullable
+ */
 export type QueuedActionTool = {
   id: number;
   name: string;
   identity: QueuedActionToolIdentity;
-};
+} | null;
 
 export interface QueuedAction {
   number: number;
   status: QueuedActionStatus;
+  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra */
+  kind: QueuedActionKind;
+  /** @nullable */
+  team: QueuedActionTeam;
+  /** @nullable */
   app: QueuedActionApp;
+  /** @nullable */
   tool: QueuedActionTool;
   /** @nullable */
   agentId: number | null;

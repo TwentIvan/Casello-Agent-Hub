@@ -82,7 +82,7 @@ export function ActionDialog({
     },
   });
   const busy = approve.isPending || reject.isPending;
-  const needsToken = action?.tool.identity === "user";
+  const needsToken = action?.tool?.identity === "user";
 
   return (
     <Dialog open={action !== null} onOpenChange={(open) => {
@@ -105,14 +105,19 @@ export function ActionDialog({
               <DialogDescription className="break-words">{action.summary}</DialogDescription>
             </DialogHeader>
             <dl className="grid gap-3 sm:grid-cols-2">
-              <Row label="App">
-                <Link href={`/apps/${action.app.id}`} className="hover:underline">
-                  {action.app.name}
-                </Link>
-              </Row>
-              <Row label="Strumento">
-                <span className="font-mono text-xs">{action.tool.name}</span>
-              </Row>
+              {action.app && (
+                <Row label="App">
+                  <Link href={`/apps/${action.app.id}`} className="hover:underline">
+                    {action.app.name}
+                  </Link>
+                </Row>
+              )}
+              {action.tool && (
+                <Row label="Strumento">
+                  <span className="font-mono text-xs">{action.tool.name}</span>
+                </Row>
+              )}
+              {action.team && <Row label="Squadra">{action.team.name}</Row>}
               <Row label="Destinatario">{action.recipient}</Row>
               <Row label="Accodata">
                 <span title={formatDateTime(action.createdAt)}>{formatRelative(action.createdAt)}</span>

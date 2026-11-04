@@ -29,6 +29,7 @@ export interface EnqueueInput {
   args: Record<string, unknown>;
   recipient: string;
   summary: string;
+  teamInstanceId?: number | null;
 }
 
 export async function enqueueAction(input: EnqueueInput): Promise<EnqueueResult> {
@@ -38,30 +39,39 @@ export async function enqueueAction(input: EnqueueInput): Promise<EnqueueResult>
   const problems = checkQueuedText({ recipient: input.recipient, summary: input.summary, args: checked });
   if (problems.length > 0) return { ok: false, message: `testo non pronto: ${problems.join("; ")}` };
 
+  const argsEnc = encryptSecret(JSON.stringify(input.args));
+  return insertQueued(input.userId, {
+    appId: input.appId,
+    toolId: input.tool.id,
+    runId: input.runId,
+    agentId: input.agentId,
+    teamInstanceId: input.teamInstanceId ?? null,
+    argsEnc,
+    argsPublic,
+    recipient: input.recipient,
+    summary: input.summary,
+  });
+}
+
+type QueuedValues = Omit<typeof pendingActionsTable.$inferInsert, "userId" | "number">;
+
+/** Limite per utente e numerazione progressiva (con nuovo tentativo sull'unico), uguali per ogni tipo di voce. */
+async function insertQueued(userId: number, values: QueuedValues): Promise<EnqueueResult> {
   const [pending] = await db
     .select({ n: count() })
     .from(pendingActionsTable)
-    .where(and(eq(pendingActionsTable.userId, input.userId), eq(pendingActionsTable.status, "pending")));
+    .where(and(eq(pendingActionsTable.userId, userId), eq(pendingActionsTable.status, "pending")));
   if (Number(pending?.n ?? 0) >= MAX_PENDING_PER_USER) return { ok: false, message: TOO_MANY_PENDING_MESSAGE };
-
-  const argsEnc = encryptSecret(JSON.stringify(input.args));
 
   for (let attempt = 1; ; attempt++) {
     try {
       const [row] = await db
         .insert(pendingActionsTable)
         .values({
-          userId: input.userId,
+          ...values,
+          userId,
           // Numero letto e scritto nella stessa istruzione: il massimo dell'utente + 1
-          number: sql`(select coalesce(max(${pendingActionsTable.number}), 0) + 1 from ${pendingActionsTable} where ${pendingActionsTable.userId} = ${input.userId})`,
-          appId: input.appId,
-          toolId: input.tool.id,
-          runId: input.runId,
-          agentId: input.agentId,
-          argsEnc,
-          argsPublic,
-          recipient: input.recipient,
-          summary: input.summary,
+          number: sql`(select coalesce(max(${pendingActionsTable.number}), 0) + 1 from ${pendingActionsTable} where ${pendingActionsTable.userId} = ${userId})`,
         })
         .returning({ number: pendingActionsTable.number });
       return { ok: true, number: row!.number };
@@ -70,4 +80,28 @@ export async function enqueueAction(input: EnqueueInput): Promise<EnqueueResult>
       throw err;
     }
   }
+}
+
+export interface EnqueuePlanInput {
+  userId: number;
+  instanceId: number;
+  kind: "plan" | "plan_change";
+  planVersion: number;
+  /** Nome della squadra. */
+  recipient: string;
+  summary: string;
+  detail: Record<string, unknown>;
+}
+
+/** Accoda un piano (o una modifica del piano) proposto dal capo di una squadra: stessa coda e numerazione delle azioni. */
+export async function enqueuePlanItem(input: EnqueuePlanInput): Promise<EnqueueResult> {
+  return insertQueued(input.userId, {
+    kind: input.kind,
+    teamInstanceId: input.instanceId,
+    planVersion: input.planVersion,
+    argsEnc: encryptSecret(JSON.stringify(input.detail)),
+    argsPublic: input.detail,
+    recipient: input.recipient,
+    summary: input.summary,
+  });
 }

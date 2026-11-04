@@ -3697,15 +3697,20 @@ export const ListPendingActionsResponse = zod.object({
   "actions": zod.array(zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
+  "kind": zod.enum(['action', 'plan', 'plan_change']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra'),
+  "team": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
   "app": zod.object({
   "id": zod.number(),
   "name": zod.string()
-}),
+}).nullable(),
   "tool": zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "identity": zod.enum(['user', 'service'])
-}),
+}).nullable(),
   "agentId": zod.number().nullable(),
   "runId": zod.number().nullable(),
   "recipient": zod.string(),
@@ -3731,15 +3736,20 @@ export const GetPendingActionParams = zod.object({
 export const GetPendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
+  "kind": zod.enum(['action', 'plan', 'plan_change']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra'),
+  "team": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
   "app": zod.object({
   "id": zod.number(),
   "name": zod.string()
-}),
+}).nullable(),
   "tool": zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "identity": zod.enum(['user', 'service'])
-}),
+}).nullable(),
   "agentId": zod.number().nullable(),
   "runId": zod.number().nullable(),
   "recipient": zod.string(),
@@ -3773,15 +3783,20 @@ export const ApprovePendingActionBody = zod.object({
 export const ApprovePendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
+  "kind": zod.enum(['action', 'plan', 'plan_change']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra'),
+  "team": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
   "app": zod.object({
   "id": zod.number(),
   "name": zod.string()
-}),
+}).nullable(),
   "tool": zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "identity": zod.enum(['user', 'service'])
-}),
+}).nullable(),
   "agentId": zod.number().nullable(),
   "runId": zod.number().nullable(),
   "recipient": zod.string(),
@@ -3814,15 +3829,20 @@ export const RejectPendingActionBody = zod.object({
 export const RejectPendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
+  "kind": zod.enum(['action', 'plan', 'plan_change']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra'),
+  "team": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).nullable(),
   "app": zod.object({
   "id": zod.number(),
   "name": zod.string()
-}),
+}).nullable(),
   "tool": zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "identity": zod.enum(['user', 'service'])
-}),
+}).nullable(),
   "agentId": zod.number().nullable(),
   "runId": zod.number().nullable(),
   "recipient": zod.string(),

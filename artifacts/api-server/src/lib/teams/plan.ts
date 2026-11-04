@@ -270,6 +270,7 @@ export async function correctPlan(instanceId: number, input: Plan): Promise<Plan
   const view = await db.transaction(async (tx) => {
     // Stato ed esito dei compiti esistenti li scrivono il capo e i ruoli (patchPlan): si leggono sotto lock e non si
     // sovrascrivono con i valori del client; i compiti nuovi partono `planned`. Chi non cambia contenuto conserva updatedAt.
+    // Ordine dei lock: prima la riga del PLAN, poi le righe di pending_actions (come in decidePlanItem)
     const current = await lockPlanRow(tx, instanceId);
     before = toView(current);
     const prev = new Map(current.tasks.map((t) => [t.id, t]));

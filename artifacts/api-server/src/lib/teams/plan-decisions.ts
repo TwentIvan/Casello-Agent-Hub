@@ -46,6 +46,9 @@ export async function decidePlanItem(row: PendingActionRow, approved: boolean, n
 
   const decidedAt = new Date();
   const outcome = await db.transaction(async (tx) => {
+    // Ordine dei lock (come in correctPlan): prima la riga del PLAN, poi le righe di pending_actions.
+    // Versione e stato si confrontano e si scrivono senza che il capo possa proporre nel mezzo.
+    const plan = await getPlanForUpdate(instanceId, tx);
     // Un solo passaggio da pending: due richieste concorrenti non decidono due volte
     const [claimed] = await tx
       .update(pendingActionsTable)
@@ -58,8 +61,6 @@ export async function decidePlanItem(row: PendingActionRow, approved: boolean, n
       .returning();
     if (!claimed) return { kind: "already" as const };
 
-    // Riga del PLAN bloccata: versione e stato si confrontano e si scrivono senza che il capo possa proporre nel mezzo
-    const plan = await getPlanForUpdate(instanceId, tx);
     const current = plan.version === row.planVersion && plan.status === "proposed";
 
     if (approved) {

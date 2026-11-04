@@ -17,9 +17,16 @@ import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
 import { ActionStatusBadge } from "./action-status";
+import { ACTION_KIND_LABELS, PlanProposalDetail, isPlanItem } from "./plan-proposal";
 
 function formatDateTime(value: string): string {
   return new Date(value).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "medium" });
+}
+
+/** «Azione n. 3 approvata», «Piano n. 4 rifiutato», «Modifica del piano n. 5 approvata». */
+function decidedTitle(action: QueuedAction, approved: boolean): string {
+  const ending = action.kind === "plan" ? (approved ? "approvato" : "rifiutato") : approved ? "approvata" : "rifiutata";
+  return `${ACTION_KIND_LABELS[action.kind]} n. ${action.number} ${ending}`;
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -57,7 +64,7 @@ export function ActionDialog({
       // Il token dell'utente passa nelle variabili: non deve restare nella cache delle mutazioni
       gcTime: 0,
       onSuccess: (saved) => {
-        toast({ title: `Azione n. ${saved.number} approvata`, description: saved.result ?? undefined });
+        toast({ title: decidedTitle(saved, true), description: saved.result ?? undefined });
         afterDecision(saved);
         onOpenChange(false);
       },
@@ -71,7 +78,7 @@ export function ActionDialog({
   const reject = useRejectPendingAction({
     mutation: {
       onSuccess: (saved) => {
-        toast({ title: `Azione n. ${saved.number} rifiutata` });
+        toast({ title: decidedTitle(saved, false) });
         afterDecision(saved);
         onOpenChange(false);
       },
@@ -82,7 +89,9 @@ export function ActionDialog({
     },
   });
   const busy = approve.isPending || reject.isPending;
-  const needsToken = action?.tool?.identity === "user";
+  // Solo le azioni di uno strumento con identità utente: i piani non hanno strumento
+  const needsToken = action?.kind === "action" && action.tool?.identity === "user";
+  const plan = action !== null && isPlanItem(action);
 
   return (
     <Dialog open={action !== null} onOpenChange={(open) => {
@@ -99,7 +108,7 @@ export function ActionDialog({
           <>
             <DialogHeader>
               <DialogTitle className="flex flex-wrap items-center gap-2">
-                Azione n. {action.number}
+                {ACTION_KIND_LABELS[action.kind]} n. {action.number}
                 <ActionStatusBadge status={action.status} />
               </DialogTitle>
               <DialogDescription className="break-words">{action.summary}</DialogDescription>
@@ -117,7 +126,13 @@ export function ActionDialog({
                   <span className="font-mono text-xs">{action.tool.name}</span>
                 </Row>
               )}
-              {action.team && <Row label="Squadra">{action.team.name}</Row>}
+              {action.team && (
+                <Row label="Squadra">
+                  <Link href={`/teams/${action.team.id}`} className="hover:underline">
+                    {action.team.name}
+                  </Link>
+                </Row>
+              )}
               <Row label="Destinatario">{action.recipient}</Row>
               <Row label="Accodata">
                 <span title={formatDateTime(action.createdAt)}>{formatRelative(action.createdAt)}</span>
@@ -139,12 +154,18 @@ export function ActionDialog({
               {action.decidedAt && <Row label="Decisa">{formatDateTime(action.decidedAt)}</Row>}
               {action.finishedAt && <Row label="Conclusa">{formatDateTime(action.finishedAt)}</Row>}
             </dl>
-            <div>
-              <div className="mb-1 text-xs text-muted-foreground">Argomenti (i valori sensibili sono oscurati)</div>
-              <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 font-mono text-xs">
-                {JSON.stringify(action.args, null, 2)}
-              </pre>
-            </div>
+            {plan ? (
+              <div className="rounded-md border p-3">
+                <PlanProposalDetail args={action.args} />
+              </div>
+            ) : (
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">Argomenti (i valori sensibili sono oscurati)</div>
+                <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 font-mono text-xs">
+                  {JSON.stringify(action.args, null, 2)}
+                </pre>
+              </div>
+            )}
             {action.result && (
               <div>
                 <div className="mb-1 text-xs text-muted-foreground">Risultato</div>
@@ -204,7 +225,7 @@ export function ActionDialog({
                       setUserToken("");
                     }}
                   >
-                    {approve.isPending ? "Esecuzione…" : "Approva ed esegui"}
+                    {approve.isPending ? (plan ? "Approvazione…" : "Esecuzione…") : plan ? "Approva" : "Approva ed esegui"}
                   </Button>
                 </DialogFooter>
               </div>

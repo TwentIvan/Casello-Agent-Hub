@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ActionDialog } from "@/components/actions/action-dialog";
 import { ACTION_STATUS_LABELS, ActionStatusBadge } from "@/components/actions/action-status";
+import { ACTION_KIND_LABELS } from "@/components/actions/plan-proposal";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
 
@@ -43,7 +44,8 @@ export default function PendingActionsPage() {
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Da confermare</h2>
           <p className="text-sm text-muted-foreground">
-            Le azioni che gli agenti hanno messo in coda: partono solo se le approvi.
+            Le azioni che gli agenti hanno messo in coda e i piani proposti dai capi delle squadre: partono solo se li
+            approvi.
           </p>
         </div>
         <Select value={status} onValueChange={(v) => setStatus(v as ListPendingActionsStatus)}>
@@ -78,9 +80,10 @@ export default function PendingActionsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-16 pl-4">N.</TableHead>
-                  <TableHead className="w-32">App</TableHead>
+                  <TableHead className="w-36">Tipo</TableHead>
+                  <TableHead className="w-36">App / squadra</TableHead>
                   <TableHead className="w-40">Strumento</TableHead>
-                  <TableHead className="hidden w-40 lg:table-cell">Destinatario</TableHead>
+                  <TableHead className="hidden w-40 2xl:table-cell">Destinatario</TableHead>
                   <TableHead>Sintesi</TableHead>
                   <TableHead className="w-28">Stato</TableHead>
                   <TableHead className="hidden w-32 pr-4 md:table-cell">Accodata</TableHead>
@@ -96,13 +99,15 @@ export default function PendingActionsPage() {
                     onKeyDown={(e) => e.key === "Enter" && setSelected(a.number)}
                   >
                     <TableCell className="pl-4 tabular-nums">{a.number}</TableCell>
-                    <TableCell className="truncate" title={a.app?.name ?? a.team?.name}>
+                    <TableCell className="truncate">{ACTION_KIND_LABELS[a.kind]}</TableCell>
+                    <TableCell className="truncate" title={[a.app?.name, a.team?.name].filter(Boolean).join(" · ")}>
                       {a.app?.name ?? a.team?.name ?? "—"}
+                      {a.app && a.team && <div className="truncate text-xs text-muted-foreground">{a.team.name}</div>}
                     </TableCell>
                     <TableCell className="truncate font-mono text-xs" title={a.tool?.name}>
-                      {a.tool?.name ?? (a.kind === "plan" ? "Piano" : "Modifica del piano")}
+                      {a.tool?.name ?? "—"}
                     </TableCell>
-                    <TableCell className="hidden truncate lg:table-cell" title={a.recipient}>
+                    <TableCell className="hidden truncate 2xl:table-cell" title={a.recipient}>
                       {a.recipient}
                     </TableCell>
                     <TableCell className="truncate" title={a.summary}>

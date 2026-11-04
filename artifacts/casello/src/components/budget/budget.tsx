@@ -84,18 +84,20 @@ function SpendLine({ spent, cap, unpriced }: { spent: number; cap: number | null
 }
 
 /** Campo del tetto: vuoto = nessun limite. `compact` per le celle di tabella. */
-function CapForm({
+export function CapForm({
   value,
   pending,
   onSave,
   compact = false,
   label = "Tetto mensile in USD",
+  disabled = false,
 }: {
   value: number | null;
   pending: boolean;
   onSave: (v: number | null) => void;
   compact?: boolean;
   label?: string;
+  disabled?: boolean;
 }) {
   const [text, setText] = useState(value === null ? "" : String(value));
   const trimmed = text.trim().replace(",", ".");
@@ -118,12 +120,13 @@ function CapForm({
         placeholder={compact ? "—" : "Nessun limite"}
         value={text}
         onChange={(event) => setText(event.target.value)}
+        disabled={disabled}
         aria-label={label}
         aria-invalid={!valid}
       />
       {!compact && <span className="text-sm text-muted-foreground">USD al mese</span>}
       {(!compact || changed) && (
-        <Button type="submit" size="sm" className={compact ? "h-8" : undefined} disabled={!valid || !changed || pending}>
+        <Button type="submit" size="sm" className={compact ? "h-8" : undefined} disabled={disabled || !valid || !changed || pending}>
           {pending ? "Salvataggio…" : "Salva"}
         </Button>
       )}

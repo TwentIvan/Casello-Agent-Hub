@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
@@ -7,12 +7,19 @@ import {
   type TeamInstance,
   type TeamInstanceSave,
   getGetTeamInstanceQueryKey,
+  getGetDashboardStatsQueryKey,
   getGetTeamInstanceUpdatesQueryKey,
+  getGetTeamPlanQueryKey,
+  getListPendingActionsQueryKey,
+  getListTeamEventsQueryKey,
+  getListTeamTurnsQueryKey,
+  getListUnreadTeamEventsQueryKey,
   getListTeamInstancesQueryKey,
   getListTeamTemplatesQueryKey,
   useActivateTeamInstance,
   useCloseTeamInstance,
   useGetTeamInstance,
+  useGetTeamPlan,
   useSaveTeamInstance,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -32,6 +39,12 @@ import { RolesEditor } from "@/components/teams/roles-editor";
 import { SaveAsTemplateDialog } from "@/components/teams/save-as-template-dialog";
 import { TeamStatusBadge } from "@/components/teams/team-status";
 import { TeamUpdatesCard } from "@/components/teams/team-updates-card";
+import { LeadMessageCard } from "@/components/teams/lead-message";
+import { PlanApprovalCards } from "@/components/teams/plan-approval-card";
+import { PlanCard } from "@/components/teams/plan-card";
+import { TEAM_POLL_MS, TeamActivity, useTeamWork } from "@/components/teams/team-activity";
+import { TeamBudgetCard } from "@/components/teams/team-budget";
+import { TeamBulletin } from "@/components/teams/team-bulletin";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
@@ -46,6 +59,42 @@ function toSave(name: string, refTitle: string, roles: RoleDraft[], localSkills:
 }
 
 type Confirm = "activate" | "close" | null;
+
+/**
+ * Lavoro della squadra: piano da approvare, piano, messaggi al capo, attività, bollettino e tetto di spesa. Finché un
+ * turno o un compito è in coda o in corso tutte le sezioni si aggiornano ogni 5 secondi; alla fine si rileggono una volta.
+ */
+function TeamWork({ team, dirty }: { team: TeamInstance; dirty: boolean }) {
+  const queryClient = useQueryClient();
+  const work = useTeamWork(team.id);
+  const poll = work.live ? TEAM_POLL_MS : false;
+  const plan = useGetTeamPlan(team.id, { query: { queryKey: getGetTeamPlanQueryKey(team.id) } });
+  const taskTitles = useMemo(() => new Map((plan.data?.tasks ?? []).map((t) => [t.id, t.title])), [plan.data]);
+  const usedTaskIds = useMemo(() => (work.tasks.data ?? []).map((t) => t.planTaskId), [work.tasks.data]);
+
+  const wasLive = useRef(work.live);
+  useEffect(() => {
+    if (wasLive.current && !work.live) {
+      void queryClient.invalidateQueries({ queryKey: getGetTeamPlanQueryKey(team.id) });
+      void queryClient.invalidateQueries({ queryKey: getListTeamEventsQueryKey(team.id) });
+      void queryClient.invalidateQueries({ queryKey: getListUnreadTeamEventsQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: getListPendingActionsQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: getGetDashboardStatsQueryKey() });
+    }
+    wasLive.current = work.live;
+  }, [work.live, queryClient, team.id]);
+
+  return (
+    <>
+      <PlanApprovalCards team={team} poll={poll} />
+      <PlanCard team={team} poll={poll} usedTaskIds={usedTaskIds} />
+      <LeadMessageCard team={team} />
+      <TeamActivity team={team} work={work} taskTitles={taskTitles} />
+      <TeamBulletin teamId={team.id} poll={poll} />
+      <TeamBudgetCard team={team} dirty={dirty} />
+    </>
+  );
+}
 
 function TeamEditor({ team }: { team: TeamInstance }) {
   const queryClient = useQueryClient();
@@ -89,6 +138,9 @@ function TeamEditor({ team }: { team: TeamInstance }) {
     mutation: {
       onSuccess: (saved) => {
         onUpdated(saved);
+        // Il primo turno del capo è in coda: l'attività riparte e la pagina si aggiorna da sola
+        void queryClient.invalidateQueries({ queryKey: getListTeamTurnsQueryKey(saved.id) });
+        void queryClient.invalidateQueries({ queryKey: getGetTeamPlanQueryKey(saved.id) });
         toast({ title: "Squadra attivata", description: "Il capo riceve il primo turno e propone il piano." });
       },
       onError: (error) =>
@@ -206,6 +258,8 @@ function TeamEditor({ team }: { team: TeamInstance }) {
           </div>
         </CardContent>
       </Card>
+
+      <TeamWork team={team} dirty={dirty} />
 
       {!closed && <TeamUpdatesCard team={team} dirty={dirty} />}
 

@@ -19,8 +19,13 @@ import { isRunActive } from "./run-queries";
 
 const POLL_MS = 1500;
 
+/** Passo di una run o di un turno/compito di una squadra: stessa forma di `run_steps`. */
+export type StepView = Pick<RunStep, "id" | "position" | "type" | "toolName" | "ok" | "httpStatus" | "durationMs" | "error"> & {
+  args?: unknown;
+};
+
 /** Numero e sintesi di un passo `queued` (args = { numero, destinatario, sintesi, argomenti }). */
-function queuedInfo(step: RunStep): { numero: number | null; sintesi: string | null; argomenti: unknown } {
+function queuedInfo(step: StepView): { numero: number | null; sintesi: string | null; argomenti: unknown } {
   const a = (step.args ?? {}) as Record<string, unknown>;
   return {
     numero: typeof a.numero === "number" ? a.numero : null,
@@ -42,13 +47,13 @@ function QueuedLink({ numero }: { numero: number }) {
   );
 }
 
-function StepRow({ step }: { step: RunStep }) {
+function StepRow({ step }: { step: StepView }) {
   // `queued`: azione L2 accodata per la conferma (args = numero, destinatario, sintesi, argomenti)
   const isTool = step.type === "tool" || step.type === "queued";
   const failed = step.ok === false;
   const queued = step.type === "queued" ? queuedInfo(step) : null;
   const shownArgs = queued ? queued.argomenti : step.args;
-  const hasArgs = shownArgs != null && typeof shownArgs === "object" && Object.keys(shownArgs).length > 0;
+  const hasArgs = shownArgs != null && typeof shownArgs === "object" && Object.keys(shownArgs as object).length > 0;
   return (
     <li className="space-y-1 py-3">
       <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -94,6 +99,17 @@ function StepRow({ step }: { step: RunStep }) {
   );
 }
 
+/** Elenco dei passi (chiamate al modello e agli strumenti), già caricati. */
+export function StepList({ steps }: { steps: StepView[] }) {
+  return (
+    <ol className="divide-y">
+      {steps.map((step) => (
+        <StepRow key={step.id} step={step} />
+      ))}
+    </ol>
+  );
+}
+
 /** Timeline dei passi di una run (chiamate al modello e ai tool), ricaricata finché la run è attiva. */
 export function RunSteps({ run }: { run: Run }) {
   const active = isRunActive(run);
@@ -127,11 +143,7 @@ export function RunSteps({ run }: { run: Run }) {
         <CardTitle className="text-sm font-medium text-muted-foreground">Passi ({steps.data.length})</CardTitle>
       </CardHeader>
       <CardContent>
-        <ol className="divide-y">
-          {steps.data.map((step) => (
-            <StepRow key={step.id} step={step} />
-          ))}
-        </ol>
+        <StepList steps={steps.data} />
       </CardContent>
     </Card>
   );

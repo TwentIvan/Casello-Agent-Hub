@@ -99,6 +99,7 @@ export * from './catalogSummaryViewAccountsItem';
 export * from './catalogSummaryViewDeprecatingItem';
 export * from './catalogSummaryViewNewProvidersItem';
 export * from './catalogSummaryViewPriceChangedItem';
+export * from './centralinoModel';
 export * from './conflictResponse';
 export * from './costEstimate';
 export * from './currentUser';

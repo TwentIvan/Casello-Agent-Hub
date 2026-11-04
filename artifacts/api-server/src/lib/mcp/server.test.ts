@@ -25,12 +25,19 @@ const savedAllowed = process.env.ALLOWED_EMAILS;
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const TOOL_NAMES = [
   "abandon_analysis",
+  "approva",
+  "bollettino",
   "claim_analysis",
+  "coda_da_confermare",
   "get_phase_instructions",
+  "invia_al_capo",
   "list_analyses",
   "ping_analysis",
   "read_mcp_tools",
   "read_openapi",
+  "rifiuta",
+  "squadra_dettaglio",
+  "squadre_stato",
   "submit_phase",
 ];
 
@@ -253,7 +260,7 @@ describe("autenticazione", () => {
 });
 
 describe("strumenti", () => {
-  it("listTools elenca gli otto strumenti con le descrizioni", async () => {
+  it("listTools elenca gli strumenti con le descrizioni", async () => {
     const client = await connect(await startMcp(), token);
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(TOOL_NAMES);
@@ -559,7 +566,7 @@ describe("montaggio nell'app", () => {
     expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
 
     const client = await connect(url, token);
-    expect((await client.listTools()).tools).toHaveLength(8);
+    expect((await client.listTools()).tools).toHaveLength(TOOL_NAMES.length);
     await client.close();
   });
 });

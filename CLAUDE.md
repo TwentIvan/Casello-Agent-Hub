@@ -491,7 +491,10 @@ Le analisi dell'architetto possono essere eseguite da Claude Code sul Mac dell'u
 `analysis_phase_results`; la lease dura 15 minuti (rinnovo con consegna o `ping_analysis`). Migrazione:
 `docs/migrations/2026-10-esecutore-locale.sql` (da applicare in produzione e segnalare nella PR). Procedura
 dell'agente: skill `docs/skills/casello-architetto-locale/SKILL.md`. Il server `/mcp` espone anche `read_mcp_tools`
-(strumenti del server MCP dell'app, per l'analisi locale).
+(strumenti del server MCP dell'app, per l'analisi locale) e gli strumenti del centralino (`squadre_stato`, `bollettino`,
+`squadra_dettaglio`, `invia_al_capo`, `coda_da_confermare`, `approva`, `rifiuta`; logica in `lib/teams/centralino.ts`, solo
+dati dell'utente del token; `invia_al_capo` condivide il limite 10/min con `POST …/messages` via `consumeTeamMessage`;
+modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
 
 ## Deploy (non toccare senza motivo)
 

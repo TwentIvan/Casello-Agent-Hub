@@ -66,6 +66,7 @@ import type {
   CatalogSkillUpdate,
   CatalogSkillVersion,
   CatalogStatus,
+  CentralinoModel,
   ConflictResponse,
   CostEstimate,
   CurrentUser,
@@ -904,6 +905,155 @@ export const useSetDefaultModel = <TError = ErrorType<BadRequestResponse | Unaut
         TContext
       > => {
       return useMutation(getSetDefaultModelMutationOptions(options));
+    }
+
+export const getGetCentralinoModelUrl = () => {
+
+
+
+
+  return `/api/account/centralino-model`
+}
+
+/**
+ * Modello con cui il centralino riassume lo stato delle squadre quando sono più di 5. Null se non impostato (vale il modello predefinito). Solo con il login: con un token risponde 403.
+ * @summary Modello del centralino
+ */
+export const getCentralinoModel = async ( options?: RequestInit): Promise<CentralinoModel> => {
+
+  return customFetch<CentralinoModel>(getGetCentralinoModelUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCentralinoModelQueryKey = () => {
+    return [
+    `/api/account/centralino-model`
+    ] as const;
+    }
+
+
+export const getGetCentralinoModelQueryOptions = <TData = Awaited<ReturnType<typeof getCentralinoModel>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCentralinoModel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCentralinoModelQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCentralinoModel>>> = ({ signal }) => getCentralinoModel({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCentralinoModel>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCentralinoModelQueryResult = NonNullable<Awaited<ReturnType<typeof getCentralinoModel>>>
+export type GetCentralinoModelQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+
+
+/**
+ * @summary Modello del centralino
+ */
+
+export function useGetCentralinoModel<TData = Awaited<ReturnType<typeof getCentralinoModel>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCentralinoModel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCentralinoModelQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetCentralinoModelUrl = () => {
+
+
+
+
+  return `/api/account/centralino-model`
+}
+
+/**
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+ * @summary Imposta o toglie il modello del centralino
+ */
+export const setCentralinoModel = async (centralinoModel: CentralinoModel, options?: RequestInit): Promise<CentralinoModel> => {
+
+  return customFetch<CentralinoModel>(getSetCentralinoModelUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(centralinoModel)
+  }
+);}
+
+
+
+
+export const getSetCentralinoModelMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setCentralinoModel>>, TError,{data: BodyType<CentralinoModel>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setCentralinoModel>>, TError,{data: BodyType<CentralinoModel>}, TContext> => {
+
+const mutationKey = ['setCentralinoModel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setCentralinoModel>>, {data: BodyType<CentralinoModel>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setCentralinoModel(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetCentralinoModelMutationResult = NonNullable<Awaited<ReturnType<typeof setCentralinoModel>>>
+    export type SetCentralinoModelMutationBody = BodyType<CentralinoModel>
+    export type SetCentralinoModelMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>
+
+    /**
+ * @summary Imposta o toglie il modello del centralino
+ */
+export const useSetCentralinoModel = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setCentralinoModel>>, TError,{data: BodyType<CentralinoModel>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setCentralinoModel>>,
+        TError,
+        {data: BodyType<CentralinoModel>},
+        TContext
+      > => {
+      return useMutation(getSetCentralinoModelMutationOptions(options));
     }
 
 export const getListAppsUrl = () => {

@@ -143,6 +143,28 @@ export const SetDefaultModelResponse = zod.object({
 
 
 /**
+ * Modello con cui il centralino riassume lo stato delle squadre quando sono più di 5. Null se non impostato (vale il modello predefinito). Solo con il login: con un token risponde 403.
+ * @summary Modello del centralino
+ */
+export const GetCentralinoModelResponse = zod.object({
+  "aiModelId": zod.number().nullable()
+})
+
+
+/**
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+ * @summary Imposta o toglie il modello del centralino
+ */
+export const SetCentralinoModelBody = zod.object({
+  "aiModelId": zod.number().nullable()
+})
+
+export const SetCentralinoModelResponse = zod.object({
+  "aiModelId": zod.number().nullable()
+})
+
+
+/**
  * @summary Elenca tutte le app registrate
  */
 

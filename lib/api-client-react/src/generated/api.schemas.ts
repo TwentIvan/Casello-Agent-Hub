@@ -198,6 +198,11 @@ export interface DefaultModel {
   aiModelId: number | null;
 }
 
+export interface CentralinoModel {
+  /** @nullable */
+  aiModelId: number | null;
+}
+
 export interface AppInput {
   /** @minLength 1 */
   name: string;

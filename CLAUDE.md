@@ -157,7 +157,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `team_instance_id` (squadra, `SET NULL`) e `plan_version`; per `plan`/`plan_change` `tool_id` e `app_id` sono null
   (CHECK: obbligatori solo con `kind = action`) e `args_enc`/`args_public` contengono la proposta; l'approvazione non
   vuole `userToken`. Numerazione e limite di 50 valgono per tutti i tipi.
-- Route (`routes/pending-actions.ts`; il limite di 20/min vale solo per approvare e rifiutare, non per le GET): `GET /api/pending-actions`, `GET /api/pending-actions/:number`,
+- Route (`routes/pending-actions.ts`; il limite di 20/min per utente vale solo per approvare e rifiutare, non per le GET,
+  ed è lo stesso contatore degli strumenti MCP `approva`/`rifiuta`, `consumeActionDecision`): `GET /api/pending-actions`, `GET /api/pending-actions/:number`,
   `POST …/approve` (con `userToken` se l'identità del tool è `user`), `POST …/reject` (nota ≤ 500 caratteri). Ambiti
   token `api:read` (GET) e `api:write` (approvare/rifiutare). Esecuzione esattamente una volta: UPDATE condizionato
   `pending` → `executing`; all'avvio le azioni `executing` diventano `failed` («esito incerto: verifica sul servizio»).
@@ -259,6 +260,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   Limiti: 6 giri, 90 s di tempo attivo, 40 000 token. Il modello è quello del ruolo capo (ruolo `node` → turno `failed`).
   Richieste e note di rifiuto dell'utente arrivano come messaggi `user`, mai nel prompt di sistema; i risultati degli
   strumenti sono dati. Un turno fallito chiude `failed` con l'errore ed emette `bloccato`; `team_instances.last_turn_at`.
+  Motivi non consegnati (`carriedReasons`): un turno che fallisce prima del modello (tetto, modello mancante, squadra non
+  attivata…) registra 0 token; il primo turno che arriva al modello riceve anche i motivi della catena di turni `failed`
+  con 0 token immediatamente precedenti (fino al primo turno arrivato al modello o interrotto dal riavvio, che ha token
+  null; al più 20, motivi uguali una volta), così una nota di rifiuto non si perde e si consegna una volta sola.
 - **PLAN** (`plan.ts`; `team_plans` una riga per squadra, `team_plan_versions` una riga per versione): `status`
   `draft` | `proposed` | `approved`, `version` (+1 a ogni versione), `approved_version`; obiettivo ≤ 2 000, vincoli e punti
   aperti ≤ 30 da 500, compiti ≤ 50 (`id` `t1`, `t2`… stabile, titolo ≤ 200, `roleKey`, istruzioni ≤ 4 000, stato
@@ -273,7 +278,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   «id di compito sconosciuto: ometti l'id per i compiti nuovi»; ruolo inesistente rifiutato); `aggiorna_piano` (punti aperti,
   azioni manuali, stato/esito dei compiti non in corso: `planned|done|blocked|failed`, compito in corso →
   «il compito <id> è in corso: aspetta il suo esito»); `assegna_compito` (solo compito del PLAN approvato in `planned|blocked|failed`,
-  altrimenti «il compito non è nel piano approvato: proponi una modifica» o «il compito è già in corso»); `leggi_esito`;
+  altrimenti «il compito non è nel piano approvato: proponi una modifica» o «il compito è già in corso»; se le ultime 3
+  esecuzioni del compito sono tutte `failed` o `blocked` → «compito fallito 3 volte: segnala all'utente», `MAX_TASK_FAILURES`:
+  un'esecuzione riuscita in mezzo azzera il conto); `leggi_esito`;
   `segnala` (`bloccato|decisione_richiesta|azione_manuale_richiesta`, bollettino ≤ 300, dettaglio ≤ 4 000;
   `azione_manuale_richiesta` aggiunge l'azione al PLAN, max 30); `chiudi_lavoro` (evento `lavoro_finito`: la squadra resta
   attiva finché l'utente non la chiude). Tutti i capo-strumenti che scrivono bloccano la squadra e falliscono con «la squadra
@@ -288,8 +295,12 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   scritto nulla, evento `bloccato` «Piano non proposto: …». Stato ed esito dei compiti si conservano dalla riga corrente,
   dall'ultima esecuzione o dalla versione approvata; i compiti nuovi partono `planned`. Decisione (`plan-decisions.ts`,
   chiamata da `approveAction`/`rejectAction` per i tipi ≠ `action`): approvare rende approvata la versione proposta
-  (`setPlanStatus`), rifiutare riporta il PLAN allo stato di prima (`approved` se c'è una versione approvata, altrimenti
-  `draft`; nessuna versione nuova); poi un turno con motivo `decision` (numero, esito, nota). Proposta non più attuale
+  (`setPlanStatus`); rifiutare, se c'è una versione approvata, rimette il suo contenuto (`restoreApprovedPlan`, letto da
+  `team_plan_versions`) come versione nuova `approved` che diventa la versione approvata: la proposta rifiutata non resta
+  nella riga corrente; stato ed esito dei compiti dalla riga corrente, per i compiti assenti dall'ultima esecuzione in
+  `team_tasks`; punti aperti e azioni manuali (sul posto, senza approvazione) restano quelli della riga corrente; tutto
+  nella stessa transazione, con il lock del PLAN prima delle righe di `pending_actions`. Senza versione approvata il PLAN
+  torna `draft` (nessuna versione nuova). Poi un turno con motivo `decision` (numero, esito, nota). Proposta non più attuale
   (versione o stato cambiati) → la voce passa a `failed` «proposta superata da una versione più recente»; squadra chiusa:
   approvare → 409 «squadra chiusa», rifiutare toglie la voce senza turno.
 - **Correzione dell'utente**: `PUT /api/team-instances/:id/plan` (stesso schema del PLAN; ruolo inesistente → «ruolo <key>
@@ -323,7 +334,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   ultimi 20 eventi), `invia_al_capo` (`id`, `testo` ≤ 4 000: turno `request`; vuoto → «messaggio vuoto»; stesso contatore di
   10/min per utente di `POST …/messages`, oltre → «Troppe richieste: riprova tra poco»), `coda_da_confermare` (fino a 50
   voci `pending` con tipo, squadra, sintesi, `needsUserToken`), `approva` (`numero`, `userToken?`) e `rifiuta` (`numero`, `nota?`
-  ≤ 500) per tutti i tipi. **Modello del centralino**: `users.centralino_ai_model_id`, `GET|PUT /api/account/centralino-model`
+  ≤ 500) per tutti i tipi; `approva` e `rifiuta` vogliono anche l'ambito `api:write` del token (altrimenti «il token non ha
+  l'ambito per questa operazione») e consumano il limite di 20/min per utente delle route di decisione (oltre → «Troppe
+  richieste: riprova tra poco»). Annotazioni MCP: `destructiveHint` su `approva`/`rifiuta`, `readOnlyHint` su
+  `squadre_stato`, `squadra_dettaglio`, `coda_da_confermare` (non su `bollettino`, che segna letti). **Modello del centralino**: `users.centralino_ai_model_id`, `GET|PUT /api/account/centralino-model`
   (solo login; modello dei propri account, altrimenti 400; null = modello predefinito); oggi serve solo a `squadre_stato`
   quando le squadre attive sono più di 5 (riassunto in al massimo 5 righe, 30 s, 1 000 token; senza modello disponibile o in
   caso di errore, elenco completo; costo del riassunto solo nel log). In console: Account, carta «modello del centralino».
@@ -332,8 +346,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (`team_instances.monthly_budget_usd`, `PUT /api/team-instances/:id/budget` `{monthlyBudgetUsd}`, null = nessuno; spesa del
   mese di turni e compiti dell'istanza ≥ tetto → «tetto di spesa della squadra raggiunto»), poi modello, account AI e utente
   come per le run; l'utente controllato è il proprietario dell'account del modello del ruolo (non per forza chi attiva). Un
-  compito bloccato dal tetto chiude `blocked` (evento `bloccato`), un turno `failed` (evento `bloccato`). Restano i limiti
-  tecnici per turno e per compito.
+  compito bloccato dal tetto chiude `blocked` (evento `bloccato`), un turno `failed` (evento `bloccato` che finisce con
+  «Alza il tetto per riprendere.»). `PUT …/budget` su una squadra attiva con un tetto nuovo nullo o sopra la spesa del mese
+  accoda al capo un turno `request` «Il tetto di spesa della squadra è stato aggiornato: riprendi il lavoro»
+  (`BUDGET_RESUME_REQUEST`), che riceve anche i motivi dei turni bloccati. Restano i limiti tecnici per turno e per compito.
 - **Avvio e riavvio** (`index.ts`): turni e compiti `running` diventano `failed` («interrotto dal riavvio») con un evento
   `interrotto` e il compito nel PLAN `failed`; le squadre `active` coinvolte ricevono un turno `restart`; poi ripartono i turni
   rimasti `queued` e i compiti `queued` delle squadre attive. Turno e compito presi in carico con UPDATE condizionato: una sola
@@ -445,8 +461,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   AI (una conversazione, a costo cumulativo, conta nel mese del suo ultimo turno). Spesa dell'agente: le sue
   run con qualsiasi modello. Spesa di un modello o di un account: run, analisi cloud e chat con quel modello o con i
   modelli dell'account. Ogni run ricorda il modello con cui è partita (`runs.ai_model_id`). I costi null (prezzo
-  mancante) non si sommano: si contano come esecuzioni senza prezzo.
-- Ordine dei controlli: agente, modello, account AI, utente (il primo raggiunto dà il messaggio).
+  mancante) non si sommano: si contano come esecuzioni senza prezzo. Anche i compiti e i turni del capo delle squadre
+  (`team_tasks`, `team_turns`, con il loro `ai_model_id`) contano nella spesa dell'utente, del modello e dell'account.
+- Ordine dei controlli: agente, modello, account AI, utente (il primo raggiunto dà il messaggio); per i compiti e i turni
+  delle squadre prima il tetto della squadra, poi modello, account AI e utente (vedi "Squadre (esecuzione)").
 - Raggiunto un tetto (spesa ≥ tetto) le nuove run, analisi cloud e messaggi della chat rispondono 409 con il motivo;
   le analisi locali e le riprese delle run in pausa no. `GET|PUT /api/budget`: riepilogo e tetto dell'utente; la
   console avvisa dall'80% e propone di annullare le run ancora attive su un tetto raggiunto (mai da sola).
@@ -606,6 +624,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `GET /api/auth/me` accetta anche il token e risponde con l'utente più `auth` (`{kind:"session"}` o
   `{kind:"token", scopes}`).
 - Limite: 120 richieste/min per token (`tokenRateLimit`, chiave: id del token), oltre ai limiti per utente/IP → 429.
+- Su `/mcp` gli strumenti `approva` e `rifiuta` del centralino vogliono un token con `mcp` **e** `api:write` (solo `mcp` →
+  errore «il token non ha l'ambito per questa operazione», `TOKEN_MESSAGES.scope`); gli altri strumenti bastano con `mcp`.
 - Log: mai header `Authorization`, token o hash. Un errore del DB nella verifica del token risponde 500 fisso
   («errore interno») e registra solo il nome dell'errore (i parametri della query conterrebbero l'hash).
 - Migrazione: `docs/migrations/2026-10-token-api.sql` (additiva, idempotente): da applicare in produzione PRIMA del

@@ -102,15 +102,28 @@ export async function installService(opts: {
   uid: number;
   home: string;
   plist: string;
+  /** Attesa massima dello scaricamento (default 5 s) e intervallo di controllo (default 250 ms). */
+  unloadTimeoutMs?: number;
+  pollMs?: number;
 }): Promise<void> {
   const file = plistPath(opts.home);
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, opts.plist, { mode: 0o644 });
   if ((await serviceStatus(opts.launchctl, opts.uid)).loaded) {
     await opts.launchctl(["bootout", serviceTarget(opts.uid)]);
+    // bootout è asincrono: un bootstrap subito dopo può fallire con «Input/output error»
+    const deadline = Date.now() + (opts.unloadTimeoutMs ?? 5_000);
+    while ((await serviceStatus(opts.launchctl, opts.uid)).loaded && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, opts.pollMs ?? 250));
+    }
   }
   const r = await opts.launchctl(["bootstrap", `gui/${opts.uid}`, file]);
-  if (r.code !== 0) throw new Error(`launchctl bootstrap non riuscito (codice ${r.code}): ${r.stderr.trim()}`);
+  if (r.code !== 0) {
+    const detail = r.stderr.trim();
+    throw new Error(
+      `installazione non riuscita: launchctl bootstrap ha restituito il codice ${r.code}${detail ? ` (${detail})` : ""}`,
+    );
+  }
 }
 
 /** Scarica il servizio (se non è caricato non è un errore) e toglie il plist. */

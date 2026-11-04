@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -34,6 +34,8 @@ export interface CliDeps {
   /** Registra un gestore di segnale (SIGTERM, SIGINT). */
   onSignal: (signal: "SIGTERM" | "SIGINT", handler: () => void) => void;
   exit: (code: number) => void;
+  /** Ora corrente (iniettabile nei test). */
+  now?: () => Date;
 }
 
 const USAGE = `uso: casello-nodo <comando>
@@ -43,6 +45,9 @@ const USAGE = `uso: casello-nodo <comando>
   status      stato del servizio, ultimo heartbeat e compiti in corso
   run         avvia il nodo in primo piano
 `;
+
+const INSTALL_USAGE =
+  "opzioni non valide.\nuso: casello-nodo install [--url <https://…>] [--token-file <file> | --token <token>] [--workspace-root <cartella>]";
 
 class CliError extends Error {}
 
@@ -92,22 +97,37 @@ export function servicePath(claudeBin: string | null, execPath: string, home: st
 }
 
 async function install(argv: string[], d: CliDeps): Promise<number> {
-  const { values } = parseArgs({
-    args: argv,
-    options: {
-      url: { type: "string" },
-      token: { type: "string" },
-      "workspace-root": { type: "string" },
-    },
-    strict: true,
-  });
+  let values: { url?: string; token?: string; "token-file"?: string; "workspace-root"?: string };
+  try {
+    ({ values } = parseArgs({
+      args: argv,
+      options: {
+        url: { type: "string" },
+        token: { type: "string" },
+        "token-file": { type: "string" },
+        "workspace-root": { type: "string" },
+      },
+      strict: true,
+    }));
+  } catch {
+    throw new CliError(INSTALL_USAGE);
+  }
+  if (values.token && values["token-file"]) throw new CliError("usa --token oppure --token-file, non entrambi");
+  let tokenValue = values.token;
+  if (values["token-file"]) {
+    try {
+      tokenValue = (await readFile(expandHome(values["token-file"], d.home), "utf8")).trim();
+    } catch {
+      throw new CliError("file del token non leggibile");
+    }
+  }
   const ask = async (value: string | undefined, question: string, hidden = false): Promise<string> => {
     if (value) return value;
     if (!d.prompt) throw new CliError(`manca ${question.toLowerCase()}: passalo come opzione`);
     return (await d.prompt(`${question}: `, hidden)).trim();
   };
   const url = validateUrl(await ask(values.url, "Indirizzo di Casello (https)"));
-  const token = await ask(values.token, "Token del nodo", true);
+  const token = await ask(tokenValue, "Token del nodo", true);
   if (!token) throw new CliError("il token è vuoto");
   const workspaceRoot = path.resolve(expandHome(await ask(values["workspace-root"], "Radice degli spazi di lavoro"), d.home));
   await ensureDirectory(workspaceRoot);
@@ -116,12 +136,18 @@ async function install(argv: string[], d: CliDeps): Promise<number> {
   }
 
   const paths = defaultPaths(d.home);
-  await mkdir(path.dirname(paths.configPath), { recursive: true, mode: 0o700 });
-  await writeFile(paths.configPath, `${JSON.stringify({ caselloUrl: url, token, workspaceRoot }, null, 2)}\n`, {
+  const configDir = path.dirname(paths.configPath);
+  await mkdir(configDir, { recursive: true, mode: 0o700 });
+  // La cartella può esistere già con permessi più larghi
+  await chmod(configDir, 0o700);
+  // Il token non passa mai da un file con permessi larghi: file temporaneo creato 600, poi rename sulla config
+  const tmp = `${paths.configPath}.${process.pid}.tmp`;
+  await rm(tmp, { force: true });
+  await writeFile(tmp, `${JSON.stringify({ caselloUrl: url, token, workspaceRoot }, null, 2)}\n`, {
     mode: 0o600,
+    flag: "wx",
   });
-  // Un file già esistente mantiene i suoi permessi: si forzano
-  await chmod(paths.configPath, 0o600);
+  await rename(tmp, paths.configPath);
   await mkdir(paths.logsDir, { recursive: true, mode: 0o700 });
 
   const claudeBin = await d.whichClaude();
@@ -159,7 +185,11 @@ async function status(d: CliDeps): Promise<number> {
     d.out("Stato: nessun dato (il nodo non è ancora partito)\n");
     return 0;
   }
-  d.out(`Ultimo heartbeat riuscito: ${state.lastHeartbeatAt ?? "mai"}\n`);
+  const beat = state.lastHeartbeatAt ? Date.parse(state.lastHeartbeatAt) : NaN;
+  const ageMin = Number.isNaN(beat) ? null : Math.floor(((d.now?.() ?? new Date()).getTime() - beat) / 60_000);
+  d.out(
+    `Ultimo heartbeat riuscito: ${state.lastHeartbeatAt ?? "mai"}${ageMin !== null && ageMin >= 2 ? ` (nessun contatto da ${ageMin} minuti)` : ""}\n`,
+  );
   d.out(
     state.tasks.length === 0
       ? "Compiti in corso: nessuno\n"
@@ -224,18 +254,46 @@ function whichClaudeReal(): Promise<string | null> {
 }
 
 function realPrompt(question: string, hidden: boolean): Promise<string> {
-  return new Promise((resolve) => {
-    const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-    if (hidden) {
-      // Niente eco dei caratteri digitati
-      (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = () => {};
-    }
-    process.stdout.write(question);
-    rl.question("", (answer) => {
-      rl.close();
-      if (hidden) process.stdout.write("\n");
-      resolve(answer);
+  if (!hidden) {
+    return new Promise((resolve) => {
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      rl.question(question, (answer) => {
+        rl.close();
+        resolve(answer);
+      });
     });
+  }
+  // Lettura carattere per carattere dal terminale in modalità raw: nessuna eco del token
+  return new Promise((resolve, reject) => {
+    const stdin = process.stdin;
+    let text = "";
+    process.stdout.write(question);
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding("utf8");
+    const finish = () => {
+      stdin.removeListener("data", onData);
+      stdin.setRawMode(false);
+      stdin.pause();
+      process.stdout.write("\n");
+    };
+    const onData = (chunk: string) => {
+      for (const ch of chunk) {
+        if (ch === "\r" || ch === "\n") {
+          finish();
+          resolve(text);
+          return;
+        }
+        if (ch === "\u0003") {
+          finish();
+          reject(new CliError("annullato"));
+          return;
+        }
+        if (ch === "\u007f" || ch === "\b") text = text.slice(0, -1);
+        else text += ch;
+      }
+    };
+    stdin.on("data", onData);
   });
 }
 

@@ -3,7 +3,7 @@ import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, realpath, symlink } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CaselloClient } from "./client";
 import { isLeaseLostReport, runTask, WorkspaceQueue, type RunContext } from "./runner";
 import { FakeCasello, json } from "./test/fake-casello";
@@ -344,32 +344,15 @@ describe("runTask: esiti", () => {
 });
 
 describe("runTask: processi", () => {
-  it("il timer del SIGKILL si cancella quando il processo è uscito", async () => {
-    const GRACE = 54_321;
-    const timers: unknown[] = [];
-    const cleared = new Set<unknown>();
-    const realSet = globalThis.setTimeout;
-    const realClear = globalThis.clearTimeout;
-    const setSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number) => {
-      const t = realSet(fn, ms);
-      if (ms === GRACE) timers.push(t);
-      return t;
-    }) as typeof setTimeout);
-    const clearSpy = vi.spyOn(globalThis, "clearTimeout").mockImplementation(((t: unknown) => {
-      cleared.add(t);
-      return realClear(t as NodeJS.Timeout);
-    }) as typeof clearTimeout);
-    try {
-      const c = ctx("esito", [], { killGraceMs: GRACE, drainMs: 300 });
-      c.config = { ...c.config, taskTimeoutMinutes: 0.0001 };
-      const report = await runTask(taskPackage(), { ...c, spawn: fakeSpawn("sleep") });
-      expect(report.outcome).toBe("tempo massimo superato");
-      expect(timers).toHaveLength(1);
-      expect(cleared.has(timers[0])).toBe(true);
-    } finally {
-      setSpy.mockRestore();
-      clearSpy.mockRestore();
-    }
+  it("un nipote che ignora SIGTERM e sopravvive a claude muore comunque allo scadere del SIGKILL", async () => {
+    const c = ctx("grandchild", [], { killGraceMs: 1_500, drainMs: 200 });
+    c.config = { ...c.config, taskTimeoutMinutes: 0.005 };
+    const report = await runTask(taskPackage(), c);
+    expect(report.outcome).toBe("tempo massimo superato");
+    const pid = Number(readFileSync(path.join(ws, "nipote.pid"), "utf8"));
+    // Il compito è chiuso (drain 200 ms) ma il SIGKILL non è ancora scattato: il nipote è vivo
+    expect(() => process.kill(pid, 0)).not.toThrow();
+    await waitDead(pid);
   });
 
   it("al tempo massimo termina tutto il gruppo, anche un nipote che tiene aperto stdout", async () => {

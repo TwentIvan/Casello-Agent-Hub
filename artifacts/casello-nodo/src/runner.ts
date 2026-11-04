@@ -170,7 +170,6 @@ async function runClaude(
     let started = false;
     let terminating = false;
     let drainTimer: NodeJS.Timeout | undefined;
-    let killTimer: NodeJS.Timeout | undefined;
 
     let child: ChildProcess;
     try {
@@ -191,8 +190,8 @@ async function runClaude(
       if (terminating) return;
       terminating = true;
       killGroup(child, "SIGTERM");
-      killTimer = setTimeout(() => killGroup(child, "SIGKILL"), killGraceMs);
-      killTimer.unref();
+      // Non si cancella all'uscita di `claude`: un nipote che ignora SIGTERM deve morire comunque (ESRCH ignorato)
+      setTimeout(() => killGroup(child, "SIGKILL"), killGraceMs).unref();
     };
 
     const timeout = setTimeout(() => {
@@ -212,8 +211,6 @@ async function runClaude(
       settled = true;
       clearTimeout(timeout);
       if (drainTimer) clearTimeout(drainTimer);
-      // Il processo è uscito: il SIGKILL differito non serve più (e potrebbe colpire un pid riusato)
-      if (killTimer) clearTimeout(killTimer);
       signal.removeEventListener("abort", onAbort);
       result.stdout = Buffer.concat(chunks).toString("utf8");
       resolve(result);

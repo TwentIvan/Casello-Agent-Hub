@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCli, servicePath, type CliDeps } from "./cli";
@@ -82,10 +82,51 @@ describe("install", () => {
     expect((await stat(paths.configPath)).mode & 0o777).toBe(0o600);
   });
 
+  it("il token non passa dal file preesistente 644: la config è un file nuovo (rename) e la cartella torna 700", async () => {
+    const paths = defaultPaths(home);
+    const dir = path.dirname(paths.configPath);
+    await mkdir(dir, { recursive: true });
+    await chmod(dir, 0o755);
+    await writeFile(paths.configPath, "vecchio", { mode: 0o644 });
+    await chmod(paths.configPath, 0o644);
+    const before = (await stat(paths.configPath)).ino;
+    expect(await runCli(installArgs(), deps())).toBe(0);
+    expect((await stat(paths.configPath)).ino).not.toBe(before);
+    expect((await stat(paths.configPath)).mode & 0o777).toBe(0o600);
+    expect((await stat(dir)).mode & 0o777).toBe(0o700);
+    expect((await readdir(dir)).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("--token-file legge il token e lo ripulisce; insieme a --token → errore", async () => {
+    const file = path.join(home, "token.txt");
+    await writeFile(file, `  ${FAKE_TOKEN}\n`);
+    const args = ["install", "--url", "https://c.example.com", "--token-file", file, "--workspace-root", root];
+    expect(await runCli(args, deps())).toBe(0);
+    expect(JSON.parse(await readFile(defaultPaths(home).configPath, "utf8")).token).toBe(FAKE_TOKEN);
+    expect(await runCli([...args, "--token", "x"], deps())).toBe(1);
+    expect(await runCli(["install", "--token-file", path.join(home, "no.txt"), "--url", "https://c.example.com", "--workspace-root", root], deps())).toBe(1);
+  });
+
+  it("opzione sconosciuta → uso in italiano, nulla scritto", async () => {
+    expect(await runCli(["install", "--pippo"], deps())).toBe(1);
+    expect(err).toContain("opzioni non valide");
+    expect(err).toContain("uso: casello-nodo install");
+    expect(calls).toEqual([]);
+  });
+
+  it("bootstrap fallito → messaggio italiano con il codice di uscita", async () => {
+    const d = deps();
+    const base = d.launchctl;
+    d.launchctl = async (a) => (a[0] === "bootstrap" ? { code: 5, stdout: "", stderr: "Input/output error" } : base(a));
+    expect(await runCli(installArgs(), d)).toBe(1);
+    expect(err).toContain("installazione non riuscita");
+    expect(err).toContain("codice 5");
+  });
+
   it("già caricato → bootout prima del bootstrap", async () => {
     loaded = true;
     await runCli(installArgs(), deps());
-    expect(calls.map((c) => c[0])).toEqual(["print", "bootout", "bootstrap"]);
+    expect(calls.map((c) => c[0])).toEqual(["print", "bootout", "print", "bootstrap"]);
   });
 
   it("senza `claude` avvisa e usa i percorsi di ripiego", async () => {
@@ -162,6 +203,20 @@ describe("status", () => {
     expect(out).toContain("2026-11-04T09:59:30.000Z");
     expect(out).toContain("#42");
     expect(calls).toEqual([["print", `gui/501/${LABEL}`]]);
+  });
+  it("heartbeat vecchio di oltre 2 minuti → «nessun contatto da N minuti»", async () => {
+    await writeState(defaultPaths(home).statePath, {
+      pid: 1,
+      updatedAt: "2026-11-04T10:00:00.000Z",
+      lastHeartbeatAt: "2026-11-04T10:00:00.000Z",
+      tasks: [],
+      lastError: null,
+    });
+    await runCli(["status"], deps({ now: () => new Date("2026-11-04T10:07:30.000Z") }));
+    expect(out).toContain("nessun contatto da 7 minuti");
+    out = "";
+    await runCli(["status"], deps({ now: () => new Date("2026-11-04T10:01:00.000Z") }));
+    expect(out).not.toContain("nessun contatto");
   });
   it("servizio assente e nessuno stato", async () => {
     expect(await runCli(["status"], deps())).toBe(0);

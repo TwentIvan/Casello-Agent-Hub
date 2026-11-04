@@ -68,13 +68,28 @@ describe("servizio", () => {
   it("se è già caricato fa prima bootout", async () => {
     const lc = fakeLaunchctl(true);
     await installService({ launchctl: lc.run, uid: 501, home, plist: "<plist/>" });
-    expect(lc.calls.map((c) => c[0])).toEqual(["print", "bootout", "bootstrap"]);
+    expect(lc.calls.map((c) => c[0])).toEqual(["print", "bootout", "print", "bootstrap"]);
     expect(lc.calls[1]).toEqual(["bootout", `gui/501/${LABEL}`]);
+  });
+  it("dopo il bootout aspetta che il servizio risulti scaricato prima del bootstrap", async () => {
+    let prints = 0;
+    const calls: string[] = [];
+    const run: LaunchctlRunner = async (a) => {
+      calls.push(a[0]);
+      if (a[0] === "print") {
+        prints += 1;
+        // caricato alla prima verifica e per altre due dopo il bootout
+        return prints <= 3 ? { code: 0, stdout: "", stderr: "" } : { code: 113, stdout: "", stderr: "" };
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    };
+    await installService({ launchctl: run, uid: 501, home, plist: "x", pollMs: 1 });
+    expect(calls).toEqual(["print", "bootout", "print", "print", "print", "bootstrap"]);
   });
   it("bootstrap fallito → errore", async () => {
     const run: LaunchctlRunner = async (a) =>
       a[0] === "bootstrap" ? { code: 5, stdout: "", stderr: "boom" } : { code: 113, stdout: "", stderr: "" };
-    await expect(installService({ launchctl: run, uid: 501, home, plist: "x" })).rejects.toThrow(/bootstrap/);
+    await expect(installService({ launchctl: run, uid: 501, home, plist: "x" })).rejects.toThrow(/codice 5/);
   });
   it("uninstallService fa bootout e toglie il plist; non caricato non è un errore", async () => {
     await mkdir(path.dirname(plistPath(home)), { recursive: true });

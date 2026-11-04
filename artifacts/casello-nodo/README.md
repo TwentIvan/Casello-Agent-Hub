@@ -14,8 +14,10 @@ prepara lo spazio di lavoro, lancia `claude` e riferisce l'esito a Casello.
 
 Costruisci l'eseguibile (`pnpm --filter @workspace/casello-nodo run build`, produce `dist/index.mjs`), poi:
 
-- `casello-nodo install --url https://casello.fantamister.cloud --token cas_… --workspace-root ~/Lavoro` installa il
-  servizio. Le opzioni mancanti si chiedono a video (il token non viene mostrato mentre lo digiti). Scrive la config
+- `casello-nodo install` installa il servizio e chiede a video indirizzo, token (non mostrato mentre lo digiti) e radice
+  degli spazi di lavoro. In alternativa le opzioni `--url https://casello.fantamister.cloud`, `--workspace-root ~/Lavoro` e
+  `--token-file <file>` (il file contiene il token; viene letto e ripulito dagli spazi). Esiste anche `--token cas_…`,
+  ma il token resta nella cronologia della shell: preferisci il prompt o `--token-file`. Scrive la config
   (permessi 600) e il LaunchAgent `~/Library/LaunchAgents/cloud.fantamister.casello-nodo.plist` (avvio al login,
   riavvio se cade) e lo carica con `launchctl bootstrap`. Rieseguirlo aggiorna config e servizio.
 - `casello-nodo uninstall` ferma e rimuove il servizio; config e log restano.

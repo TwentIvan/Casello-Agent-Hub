@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, asc, eq } from "drizzle-orm";
-import { db, appsTable, agentsTable, githubInstallationsTable, pendingActionsTable } from "@workspace/db";
+import { and, asc, count, eq } from "drizzle-orm";
+import { db, appsTable, agentsTable, githubInstallationsTable, pendingActionsTable, teamInstancesTable } from "@workspace/db";
 import {
   ListAppsResponse,
   CreateAppBody,
@@ -24,6 +24,7 @@ import { githubConfig } from "../lib/github/config";
 import { toPublicApp } from "./serializers";
 import { ModelChoiceError, type ModelChoice } from "../lib/ai/choice";
 import { resolveAgentModel } from "../lib/ai/default-model";
+import { isForeignKeyViolation } from "../lib/pg-errors";
 import { parseRequest } from "../middlewares/error-handler";
 
 const router: IRouter = Router();
@@ -310,13 +311,29 @@ router.patch("/apps/:id", async (req, res) => {
 
 router.delete("/apps/:id", async (req, res) => {
   const { id } = parseRequest(DeleteAppParams, req.params);
+  // Un'app che è il lavoro di riferimento di una squadra non si elimina (`team_instances.ref_app_id` è RESTRICT)
+  const teamsMessage = (n: number) => `l'app è il lavoro di riferimento di ${n} squadre`;
+  const [{ n: teams } = { n: 0 }] = await db.select({ n: count() }).from(teamInstancesTable).where(eq(teamInstancesTable.refAppId, id));
+  if (teams > 0) {
+    res.status(409).json({ error: teamsMessage(teams) });
+    return;
+  }
   // Lo storico della coda segue l'app: va tolto prima, perché `pending_actions.tool_id` è RESTRICT
   // e bloccherebbe la cascata dell'app verso i suoi tool
-  const app = await db.transaction(async (tx) => {
-    await tx.delete(pendingActionsTable).where(eq(pendingActionsTable.appId, id));
-    const [deleted] = await tx.delete(appsTable).where(eq(appsTable.id, id)).returning();
-    return deleted;
-  });
+  let app;
+  try {
+    app = await db.transaction(async (tx) => {
+      await tx.delete(pendingActionsTable).where(eq(pendingActionsTable.appId, id));
+      const [deleted] = await tx.delete(appsTable).where(eq(appsTable.id, id)).returning();
+      return deleted;
+    });
+  } catch (err) {
+    // Una squadra creata tra il controllo e la cancellazione: stessa risposta
+    if (!isForeignKeyViolation(err)) throw err;
+    const [{ n: now } = { n: 0 }] = await db.select({ n: count() }).from(teamInstancesTable).where(eq(teamInstancesTable.refAppId, id));
+    res.status(409).json({ error: teamsMessage(now) });
+    return;
+  }
   if (!app) {
     res.status(404).json({ error: "App non trovata" });
     return;

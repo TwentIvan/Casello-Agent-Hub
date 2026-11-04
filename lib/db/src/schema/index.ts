@@ -23,3 +23,6 @@ export * from "./model-offers";
 export * from "./catalog-runs";
 export * from "./api-tokens";
 export * from "./pending-actions";
+export * from "./skills";
+export * from "./team-templates";
+export * from "./team-instances";

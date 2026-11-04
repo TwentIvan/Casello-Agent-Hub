@@ -1797,6 +1797,428 @@ export interface CatalogStatus {
 }
 
 /**
+ * `casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.
+ */
+export type SkillKind = typeof SkillKind[keyof typeof SkillKind];
+
+
+export const SkillKind = {
+  casello: 'casello',
+  node: 'node',
+} as const;
+
+/**
+ * Skill con il contenuto e i suggerimenti sugli strumenti della versione corrente
+ */
+export interface CatalogSkill {
+  code: string;
+  name: string;
+  description: string;
+  kind: SkillKind;
+  currentVersion: number;
+  deprecated: boolean;
+  content: string;
+  toolHints: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CatalogSkillInput {
+  /** @pattern ^[a-z0-9][a-z0-9._-]{1,63}$ */
+  code: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name: string;
+  /** @maxLength 2000 */
+  description?: string;
+  kind: SkillKind;
+  /** `casello`: istruzioni (max 20 000 caratteri); `node`: nome della skill sul nodo */
+  content: string;
+  /**
+     * @maxItems 50
+     * @items.minLength 1
+     * @items.maxLength 100
+     */
+  toolHints?: string[];
+}
+
+export interface CatalogSkillUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name?: string;
+  /** @maxLength 2000 */
+  description?: string;
+  content?: string;
+  /**
+     * @maxItems 50
+     * @items.minLength 1
+     * @items.maxLength 100
+     */
+  toolHints?: string[];
+}
+
+export interface CatalogSkillVersion {
+  code: string;
+  version: number;
+  content: string;
+  toolHints: string[];
+  createdAt: string;
+}
+
+export type TeamRoleRunsOn = typeof TeamRoleRunsOn[keyof typeof TeamRoleRunsOn];
+
+
+export const TeamRoleRunsOn = {
+  cloud: 'cloud',
+  node: 'node',
+} as const;
+
+/**
+ * Ruolo di un modello di squadra (manifesto in ingresso)
+ */
+export interface TeamRole {
+  /** @pattern ^[a-z0-9_-]{1,40}$ */
+  key: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name: string;
+  /** @maxLength 8000 */
+  task: string;
+  isLead: boolean;
+  runsOn: TeamRoleRunsOn;
+  aiModelId: number | null;
+  tools: number[];
+  /** @items.pattern ^[a-z0-9][a-z0-9._-]{1,63}$ */
+  skills: string[];
+}
+
+export type TeamRoleViewRunsOn = typeof TeamRoleViewRunsOn[keyof typeof TeamRoleViewRunsOn];
+
+
+export const TeamRoleViewRunsOn = {
+  cloud: 'cloud',
+  node: 'node',
+} as const;
+
+export type TeamRoleViewModel = {
+  id: number;
+  name: string;
+} | null;
+
+export type TeamRoleViewToolsItemLevel = typeof TeamRoleViewToolsItemLevel[keyof typeof TeamRoleViewToolsItemLevel];
+
+
+export const TeamRoleViewToolsItemLevel = {
+  L0: 'L0',
+  L1: 'L1',
+  L2: 'L2',
+  L3: 'L3',
+} as const;
+
+/**
+ * Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false
+ */
+export type TeamRoleViewToolsItem = {
+  id: number;
+  appId?: number;
+  appName?: string;
+  name: string;
+  level?: TeamRoleViewToolsItemLevel;
+  available: boolean;
+};
+
+export type TeamRoleViewSkillsItem = {
+  code: string;
+  version?: number;
+  name: string;
+  kind: SkillKind;
+  deprecated: boolean;
+  local?: boolean;
+};
+
+/**
+ * Ruolo arricchito per la lettura (strumenti, skill e modello con nome)
+ */
+export interface TeamRoleView {
+  key: string;
+  name: string;
+  task: string;
+  isLead: boolean;
+  runsOn: TeamRoleViewRunsOn;
+  model: TeamRoleViewModel;
+  tools: TeamRoleViewToolsItem[];
+  skills: TeamRoleViewSkillsItem[];
+}
+
+export interface TeamTemplate {
+  id: number;
+  name: string;
+  description: string;
+  version: number;
+  archived: boolean;
+  instanceCount: number;
+  roles: TeamRoleView[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeamTemplateInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  /** @maxLength 2000 */
+  description?: string;
+  roles: TeamRole[];
+}
+
+export interface TeamTemplateDeleteResult {
+  deleted: boolean;
+  archived: boolean;
+}
+
+export type TeamInstanceRoleRunsOn = typeof TeamInstanceRoleRunsOn[keyof typeof TeamInstanceRoleRunsOn];
+
+
+export const TeamInstanceRoleRunsOn = {
+  cloud: 'cloud',
+  node: 'node',
+} as const;
+
+export type TeamInstanceRoleSkillsItem = {
+  /** @pattern ^[a-z0-9][a-z0-9._-]{1,63}$ */
+  code: string;
+  /** @minimum 1 */
+  version: number;
+};
+
+/**
+ * Ruolo di una squadra (manifesto in ingresso, skill fissate a una versione)
+ */
+export interface TeamInstanceRole {
+  /** @pattern ^[a-z0-9_-]{1,40}$ */
+  key: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name: string;
+  /** @maxLength 8000 */
+  task: string;
+  isLead: boolean;
+  runsOn: TeamInstanceRoleRunsOn;
+  aiModelId: number | null;
+  tools: number[];
+  skills: TeamInstanceRoleSkillsItem[];
+  /**
+     * Codici delle skill specializzate della squadra usate dal ruolo
+     * @items.pattern ^[a-z0-9][a-z0-9._-]{1,63}$
+     */
+  localSkills: string[];
+}
+
+/**
+ * Lavoro di riferimento di una squadra
+ */
+export interface TeamWorkRef {
+  appId: number;
+  /** @pattern ^[a-z0-9_-]{1,40}$ */
+  type: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  id: string;
+  /** @maxLength 300 */
+  title?: string;
+}
+
+/**
+ * Skill specializzata di una sola squadra
+ */
+export interface TeamLocalSkill {
+  /** @pattern ^[a-z0-9][a-z0-9._-]{1,63}$ */
+  code: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  kind: SkillKind;
+  content: string;
+  toolHints?: string[];
+}
+
+export interface TeamInstanceCreate {
+  templateId?: number;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  ref: TeamWorkRef;
+  /** Obbligatori senza modello, ignorati con il modello */
+  roles?: TeamInstanceRole[];
+}
+
+export type TeamInstanceSaveStatus = typeof TeamInstanceSaveStatus[keyof typeof TeamInstanceSaveStatus];
+
+
+export const TeamInstanceSaveStatus = {
+  draft: 'draft',
+  active: 'active',
+} as const;
+
+export interface TeamInstanceSave {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  /** @maxLength 300 */
+  refTitle?: string;
+  roles: TeamInstanceRole[];
+  localSkills: TeamLocalSkill[];
+  status?: TeamInstanceSaveStatus;
+}
+
+export type TeamUpdateItemType = typeof TeamUpdateItemType[keyof typeof TeamUpdateItemType];
+
+
+export const TeamUpdateItemType = {
+  role_added: 'role_added',
+  role_removed: 'role_removed',
+  role_changed: 'role_changed',
+  skill_added: 'skill_added',
+  skill_removed: 'skill_removed',
+  skill_version: 'skill_version',
+} as const;
+
+export type TeamUpdateItemField = typeof TeamUpdateItemField[keyof typeof TeamUpdateItemField];
+
+
+export const TeamUpdateItemField = {
+  name: 'name',
+  task: 'task',
+  isLead: 'isLead',
+  runsOn: 'runsOn',
+  aiModelId: 'aiModelId',
+  tools: 'tools',
+} as const;
+
+/**
+ * Aggiornamento proposto a una squadra
+ */
+export interface TeamUpdateItem {
+  /** Deterministico: tipo:chiave del ruolo[:campo|codice della skill] */
+  id: string;
+  type: TeamUpdateItemType;
+  roleKey: string;
+  roleName: string;
+  field?: TeamUpdateItemField;
+  /** Valore attuale nella squadra (role_changed) */
+  from?: unknown;
+  /** Valore proposto dal modello (role_changed) o ruolo da aggiungere (role_added) */
+  to?: unknown;
+  skillCode?: string;
+  fromVersion?: number;
+  toVersion?: number;
+}
+
+export type TeamSaveAsTemplateMode = typeof TeamSaveAsTemplateMode[keyof typeof TeamSaveAsTemplateMode];
+
+
+export const TeamSaveAsTemplateMode = {
+  new: 'new',
+  new_version: 'new_version',
+} as const;
+
+export type TeamSaveAsTemplatePromoteItem = {
+  localCode: string;
+  code: string;
+};
+
+export interface TeamSaveAsTemplate {
+  mode: TeamSaveAsTemplateMode;
+  /**
+     * Obbligatorio con `new`; con `new_version` si ignora
+     * @minLength 1
+     * @maxLength 120
+     */
+  name?: string;
+  /**
+     * Skill specializzate da promuovere nel catalogo, con il nuovo codice
+     * @maxItems 100
+     */
+  promote?: TeamSaveAsTemplatePromoteItem[];
+}
+
+export interface TeamUpdateApply {
+  /**
+     * Id delle voci da applicare, senza ripetizioni
+     * @minItems 1
+     * @maxItems 100
+     * @items.maxLength 200
+     */
+  ids: string[];
+}
+
+export type TeamInstanceStatus = typeof TeamInstanceStatus[keyof typeof TeamInstanceStatus];
+
+
+export const TeamInstanceStatus = {
+  draft: 'draft',
+  active: 'active',
+  closed: 'closed',
+} as const;
+
+/**
+ * Modello di origine e versione copiata (null se creata da zero o modello eliminato)
+ */
+export type TeamInstanceTemplate = {
+  id: number;
+  name: string;
+  version: number;
+} | null;
+
+export type TeamInstanceRef = {
+  appId: number;
+  appName: string;
+  type: string;
+  id: string;
+  title: string;
+};
+
+export type TeamInstanceLocalSkillsItem = {
+  code: string;
+  name: string;
+  kind: SkillKind;
+  content: string;
+  toolHints: string[];
+};
+
+export interface TeamInstance {
+  id: number;
+  name: string;
+  status: TeamInstanceStatus;
+  /** Modello di origine e versione copiata (null se creata da zero o modello eliminato) */
+  template: TeamInstanceTemplate;
+  ref: TeamInstanceRef;
+  roles: TeamRoleView[];
+  localSkills: TeamInstanceLocalSkillsItem[];
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+}
+
+/**
  * Troppe richieste
  */
 export type TooManyRequestsResponse = ErrorResponse;
@@ -1888,6 +2310,65 @@ chapter?: AnalysisChapter;
  * Stato degli elementi da esportare (default approved)
  */
 status?: ItemStatus;
+};
+
+export type ListSkillsParams = {
+kind?: SkillKind;
+/**
+ * Ricerca (senza maiuscole) nel codice e nel nome
+ * @maxLength 100
+ */
+q?: string;
+/**
+ * Filtra per stato di deprecazione, `true` o `false` (se omesso, tutte)
+ */
+deprecated?: ListSkillsDeprecated;
+};
+
+export type ListSkillsDeprecated = typeof ListSkillsDeprecated[keyof typeof ListSkillsDeprecated];
+
+
+export const ListSkillsDeprecated = {
+  true: 'true',
+  false: 'false',
+} as const;
+
+export type ListTeamTemplatesParams = {
+/**
+ * `true` per i modelli archiviati (default, solo quelli non archiviati)
+ */
+archived?: ListTeamTemplatesArchived;
+};
+
+export type ListTeamTemplatesArchived = typeof ListTeamTemplatesArchived[keyof typeof ListTeamTemplatesArchived];
+
+
+export const ListTeamTemplatesArchived = {
+  true: 'true',
+  false: 'false',
+} as const;
+
+export type ListTeamInstancesParams = {
+status?: ListTeamInstancesStatus;
+/**
+ * App del lavoro di riferimento
+ */
+appId?: number;
+refType?: string;
+refId?: string;
+};
+
+export type ListTeamInstancesStatus = typeof ListTeamInstancesStatus[keyof typeof ListTeamInstancesStatus];
+
+
+export const ListTeamInstancesStatus = {
+  draft: 'draft',
+  active: 'active',
+  closed: 'closed',
+} as const;
+
+export type GetTeamInstanceUpdates200 = {
+  items: TeamUpdateItem[];
 };
 
 export type EstimateAnalysisCostParams = {

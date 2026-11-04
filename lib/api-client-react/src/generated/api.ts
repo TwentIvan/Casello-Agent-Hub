@@ -61,6 +61,10 @@ import type {
   CatalogOffer,
   CatalogProvider,
   CatalogRunView,
+  CatalogSkill,
+  CatalogSkillInput,
+  CatalogSkillUpdate,
+  CatalogSkillVersion,
   CatalogStatus,
   ConflictResponse,
   CostEstimate,
@@ -71,6 +75,7 @@ import type {
   EstimateAnalysisCostParams,
   ExportAnalysisIssuesParams,
   ForbiddenResponse,
+  GetTeamInstanceUpdates200,
   GithubInstallations,
   GithubRepo,
   HealthStatus,
@@ -80,6 +85,9 @@ import type {
   ListCatalogProvidersParams,
   ListPendingActionsParams,
   ListRunsParams,
+  ListSkillsParams,
+  ListTeamInstancesParams,
+  ListTeamTemplatesParams,
   McpSyncResult,
   NotFoundResponse,
   PayloadTooLargeResponse,
@@ -103,6 +111,15 @@ import type {
   RunStep,
   RunTrigger,
   StartZipAnalysisParams,
+  TeamInstance,
+  TeamInstanceCreate,
+  TeamInstanceSave,
+  TeamRoleView,
+  TeamSaveAsTemplate,
+  TeamTemplate,
+  TeamTemplateDeleteResult,
+  TeamTemplateInput,
+  TeamUpdateApply,
   TooManyRequestsResponse,
   UnauthorizedResponse
 } from './api.schemas';
@@ -1198,7 +1215,7 @@ export const deleteApp = async (id: number, options?: RequestInit): Promise<void
 
 
 
-export const getDeleteAppMutationOptions = <TError = ErrorType<NotFoundResponse>,
+export const getDeleteAppMutationOptions = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteApp>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteApp>>, TError,{id: number}, TContext> => {
 
@@ -1227,12 +1244,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type DeleteAppMutationResult = NonNullable<Awaited<ReturnType<typeof deleteApp>>>
 
-    export type DeleteAppMutationError = ErrorType<NotFoundResponse>
+    export type DeleteAppMutationError = ErrorType<NotFoundResponse | ErrorResponse>
 
     /**
  * @summary Elimina una app
  */
-export const useDeleteApp = <TError = ErrorType<NotFoundResponse>,
+export const useDeleteApp = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteApp>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof deleteApp>>,
@@ -3643,6 +3660,1590 @@ export const useUpdateBudget = <TError = ErrorType<BadRequestResponse>,
         TContext
       > => {
       return useMutation(getUpdateBudgetMutationOptions(options));
+    }
+
+export const getListSkillsUrl = (params?: ListSkillsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/skills?${stringifiedParams}` : `/api/skills`
+}
+
+/**
+ * @summary Elenca le skill del catalogo
+ */
+export const listSkills = async (params?: ListSkillsParams, options?: RequestInit): Promise<CatalogSkill[]> => {
+
+  return customFetch<CatalogSkill[]>(getListSkillsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSkillsQueryKey = (params?: ListSkillsParams,) => {
+    return [
+    `/api/skills`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSkillsQueryOptions = <TData = Awaited<ReturnType<typeof listSkills>>, TError = ErrorType<BadRequestResponse>>(params?: ListSkillsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSkills>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSkillsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSkills>>> = ({ signal }) => listSkills(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSkills>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSkillsQueryResult = NonNullable<Awaited<ReturnType<typeof listSkills>>>
+export type ListSkillsQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Elenca le skill del catalogo
+ */
+
+export function useListSkills<TData = Awaited<ReturnType<typeof listSkills>>, TError = ErrorType<BadRequestResponse>>(
+ params?: ListSkillsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSkills>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSkillsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateSkillUrl = () => {
+
+
+
+
+  return `/api/skills`
+}
+
+/**
+ * @summary Crea una skill (versione 1)
+ */
+export const createSkill = async (catalogSkillInput: CatalogSkillInput, options?: RequestInit): Promise<CatalogSkill> => {
+
+  return customFetch<CatalogSkill>(getCreateSkillUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(catalogSkillInput)
+  }
+);}
+
+
+
+
+export const getCreateSkillMutationOptions = <TError = ErrorType<BadRequestResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSkill>>, TError,{data: BodyType<CatalogSkillInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSkill>>, TError,{data: BodyType<CatalogSkillInput>}, TContext> => {
+
+const mutationKey = ['createSkill'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSkill>>, {data: BodyType<CatalogSkillInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSkill(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSkillMutationResult = NonNullable<Awaited<ReturnType<typeof createSkill>>>
+    export type CreateSkillMutationBody = BodyType<CatalogSkillInput>
+    export type CreateSkillMutationError = ErrorType<BadRequestResponse | ConflictResponse>
+
+    /**
+ * @summary Crea una skill (versione 1)
+ */
+export const useCreateSkill = <TError = ErrorType<BadRequestResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSkill>>, TError,{data: BodyType<CatalogSkillInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSkill>>,
+        TError,
+        {data: BodyType<CatalogSkillInput>},
+        TContext
+      > => {
+      return useMutation(getCreateSkillMutationOptions(options));
+    }
+
+export const getGetSkillUrl = (code: string,) => {
+
+
+
+
+  return `/api/skills/${code}`
+}
+
+/**
+ * @summary Dettaglio di una skill (versione corrente)
+ */
+export const getSkill = async (code: string, options?: RequestInit): Promise<CatalogSkill> => {
+
+  return customFetch<CatalogSkill>(getGetSkillUrl(code),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSkillQueryKey = (code: string,) => {
+    return [
+    `/api/skills/${code}`
+    ] as const;
+    }
+
+
+export const getGetSkillQueryOptions = <TData = Awaited<ReturnType<typeof getSkill>>, TError = ErrorType<NotFoundResponse>>(code: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSkill>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSkillQueryKey(code);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSkill>>> = ({ signal }) => getSkill(code, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: code !== null && code !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSkill>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSkillQueryResult = NonNullable<Awaited<ReturnType<typeof getSkill>>>
+export type GetSkillQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Dettaglio di una skill (versione corrente)
+ */
+
+export function useGetSkill<TData = Awaited<ReturnType<typeof getSkill>>, TError = ErrorType<NotFoundResponse>>(
+ code: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSkill>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSkillQueryOptions(code,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateSkillUrl = (code: string,) => {
+
+
+
+
+  return `/api/skills/${code}`
+}
+
+/**
+ * Nome e descrizione si cambiano senza nuova versione; `content` o `toolHints` creano la versione successiva (massimo 200 versioni per skill, oltre 409).
+ * @summary Aggiorna una skill
+ */
+export const updateSkill = async (code: string,
+    catalogSkillUpdate: CatalogSkillUpdate, options?: RequestInit): Promise<CatalogSkill> => {
+
+  return customFetch<CatalogSkill>(getUpdateSkillUrl(code),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(catalogSkillUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateSkillMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSkill>>, TError,{code: string;data: BodyType<CatalogSkillUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSkill>>, TError,{code: string;data: BodyType<CatalogSkillUpdate>}, TContext> => {
+
+const mutationKey = ['updateSkill'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSkill>>, {code: string;data: BodyType<CatalogSkillUpdate>}> = (props) => {
+          const {code,data} = props ?? {};
+
+          return  updateSkill(code,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSkillMutationResult = NonNullable<Awaited<ReturnType<typeof updateSkill>>>
+    export type UpdateSkillMutationBody = BodyType<CatalogSkillUpdate>
+    export type UpdateSkillMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Aggiorna una skill
+ */
+export const useUpdateSkill = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSkill>>, TError,{code: string;data: BodyType<CatalogSkillUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateSkill>>,
+        TError,
+        {code: string;data: BodyType<CatalogSkillUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateSkillMutationOptions(options));
+    }
+
+export const getDeprecateSkillUrl = (code: string,) => {
+
+
+
+
+  return `/api/skills/${code}/deprecate`
+}
+
+/**
+ * Resta valida dove è già usata, ma non si può aggiungere a ruoli nuovi o modificati.
+ * @summary Depreca una skill
+ */
+export const deprecateSkill = async (code: string, options?: RequestInit): Promise<CatalogSkill> => {
+
+  return customFetch<CatalogSkill>(getDeprecateSkillUrl(code),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getDeprecateSkillMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deprecateSkill>>, TError,{code: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deprecateSkill>>, TError,{code: string}, TContext> => {
+
+const mutationKey = ['deprecateSkill'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deprecateSkill>>, {code: string}> = (props) => {
+          const {code} = props ?? {};
+
+          return  deprecateSkill(code,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeprecateSkillMutationResult = NonNullable<Awaited<ReturnType<typeof deprecateSkill>>>
+
+    export type DeprecateSkillMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Depreca una skill
+ */
+export const useDeprecateSkill = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deprecateSkill>>, TError,{code: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deprecateSkill>>,
+        TError,
+        {code: string},
+        TContext
+      > => {
+      return useMutation(getDeprecateSkillMutationOptions(options));
+    }
+
+export const getListSkillVersionsUrl = (code: string,) => {
+
+
+
+
+  return `/api/skills/${code}/versions`
+}
+
+/**
+ * @summary Elenca le versioni di una skill
+ */
+export const listSkillVersions = async (code: string, options?: RequestInit): Promise<CatalogSkillVersion[]> => {
+
+  return customFetch<CatalogSkillVersion[]>(getListSkillVersionsUrl(code),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSkillVersionsQueryKey = (code: string,) => {
+    return [
+    `/api/skills/${code}/versions`
+    ] as const;
+    }
+
+
+export const getListSkillVersionsQueryOptions = <TData = Awaited<ReturnType<typeof listSkillVersions>>, TError = ErrorType<NotFoundResponse>>(code: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSkillVersions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSkillVersionsQueryKey(code);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSkillVersions>>> = ({ signal }) => listSkillVersions(code, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: code !== null && code !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSkillVersions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSkillVersionsQueryResult = NonNullable<Awaited<ReturnType<typeof listSkillVersions>>>
+export type ListSkillVersionsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Elenca le versioni di una skill
+ */
+
+export function useListSkillVersions<TData = Awaited<ReturnType<typeof listSkillVersions>>, TError = ErrorType<NotFoundResponse>>(
+ code: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSkillVersions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSkillVersionsQueryOptions(code,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSkillVersionUrl = (code: string,
+    version: number,) => {
+
+
+
+
+  return `/api/skills/${code}/versions/${version}`
+}
+
+/**
+ * @summary Una versione di una skill
+ */
+export const getSkillVersion = async (code: string,
+    version: number, options?: RequestInit): Promise<CatalogSkillVersion> => {
+
+  return customFetch<CatalogSkillVersion>(getGetSkillVersionUrl(code,version),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSkillVersionQueryKey = (code: string,
+    version: number,) => {
+    return [
+    `/api/skills/${code}/versions/${version}`
+    ] as const;
+    }
+
+
+export const getGetSkillVersionQueryOptions = <TData = Awaited<ReturnType<typeof getSkillVersion>>, TError = ErrorType<NotFoundResponse>>(code: string,
+    version: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSkillVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSkillVersionQueryKey(code,version);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSkillVersion>>> = ({ signal }) => getSkillVersion(code,version, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: code !== null && code !== undefined && version !== null && version !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSkillVersion>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSkillVersionQueryResult = NonNullable<Awaited<ReturnType<typeof getSkillVersion>>>
+export type GetSkillVersionQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Una versione di una skill
+ */
+
+export function useGetSkillVersion<TData = Awaited<ReturnType<typeof getSkillVersion>>, TError = ErrorType<NotFoundResponse>>(
+ code: string,
+    version: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSkillVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSkillVersionQueryOptions(code,version,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListTeamTemplatesUrl = (params?: ListTeamTemplatesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/team-templates?${stringifiedParams}` : `/api/team-templates`
+}
+
+/**
+ * @summary Elenca i modelli di squadra
+ */
+export const listTeamTemplates = async (params?: ListTeamTemplatesParams, options?: RequestInit): Promise<TeamTemplate[]> => {
+
+  return customFetch<TeamTemplate[]>(getListTeamTemplatesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTeamTemplatesQueryKey = (params?: ListTeamTemplatesParams,) => {
+    return [
+    `/api/team-templates`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListTeamTemplatesQueryOptions = <TData = Awaited<ReturnType<typeof listTeamTemplates>>, TError = ErrorType<BadRequestResponse>>(params?: ListTeamTemplatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamTemplates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTeamTemplatesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTeamTemplates>>> = ({ signal }) => listTeamTemplates(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTeamTemplates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTeamTemplatesQueryResult = NonNullable<Awaited<ReturnType<typeof listTeamTemplates>>>
+export type ListTeamTemplatesQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Elenca i modelli di squadra
+ */
+
+export function useListTeamTemplates<TData = Awaited<ReturnType<typeof listTeamTemplates>>, TError = ErrorType<BadRequestResponse>>(
+ params?: ListTeamTemplatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamTemplates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTeamTemplatesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateTeamTemplateUrl = () => {
+
+
+
+
+  return `/api/team-templates`
+}
+
+/**
+ * @summary Crea un modello di squadra (versione 1)
+ */
+export const createTeamTemplate = async (teamTemplateInput: TeamTemplateInput, options?: RequestInit): Promise<TeamTemplate> => {
+
+  return customFetch<TeamTemplate>(getCreateTeamTemplateUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamTemplateInput)
+  }
+);}
+
+
+
+
+export const getCreateTeamTemplateMutationOptions = <TError = ErrorType<BadRequestResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeamTemplate>>, TError,{data: BodyType<TeamTemplateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTeamTemplate>>, TError,{data: BodyType<TeamTemplateInput>}, TContext> => {
+
+const mutationKey = ['createTeamTemplate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTeamTemplate>>, {data: BodyType<TeamTemplateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createTeamTemplate(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTeamTemplateMutationResult = NonNullable<Awaited<ReturnType<typeof createTeamTemplate>>>
+    export type CreateTeamTemplateMutationBody = BodyType<TeamTemplateInput>
+    export type CreateTeamTemplateMutationError = ErrorType<BadRequestResponse | ConflictResponse>
+
+    /**
+ * @summary Crea un modello di squadra (versione 1)
+ */
+export const useCreateTeamTemplate = <TError = ErrorType<BadRequestResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeamTemplate>>, TError,{data: BodyType<TeamTemplateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTeamTemplate>>,
+        TError,
+        {data: BodyType<TeamTemplateInput>},
+        TContext
+      > => {
+      return useMutation(getCreateTeamTemplateMutationOptions(options));
+    }
+
+export const getGetTeamTemplateUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-templates/${id}`
+}
+
+/**
+ * @summary Dettaglio di un modello (versione corrente)
+ */
+export const getTeamTemplate = async (id: number, options?: RequestInit): Promise<TeamTemplate> => {
+
+  return customFetch<TeamTemplate>(getGetTeamTemplateUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamTemplateQueryKey = (id: number,) => {
+    return [
+    `/api/team-templates/${id}`
+    ] as const;
+    }
+
+
+export const getGetTeamTemplateQueryOptions = <TData = Awaited<ReturnType<typeof getTeamTemplate>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamTemplate>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamTemplateQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamTemplate>>> = ({ signal }) => getTeamTemplate(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamTemplate>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamTemplateQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamTemplate>>>
+export type GetTeamTemplateQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Dettaglio di un modello (versione corrente)
+ */
+
+export function useGetTeamTemplate<TData = Awaited<ReturnType<typeof getTeamTemplate>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamTemplate>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamTemplateQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveTeamTemplateUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-templates/${id}`
+}
+
+/**
+ * Tutto o niente, se una regola è violata non nasce nessuna versione.
+ * @summary Salva il modello (crea la versione successiva)
+ */
+export const saveTeamTemplate = async (id: number,
+    teamTemplateInput: TeamTemplateInput, options?: RequestInit): Promise<TeamTemplate> => {
+
+  return customFetch<TeamTemplate>(getSaveTeamTemplateUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamTemplateInput)
+  }
+);}
+
+
+
+
+export const getSaveTeamTemplateMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTeamTemplate>>, TError,{id: number;data: BodyType<TeamTemplateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveTeamTemplate>>, TError,{id: number;data: BodyType<TeamTemplateInput>}, TContext> => {
+
+const mutationKey = ['saveTeamTemplate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveTeamTemplate>>, {id: number;data: BodyType<TeamTemplateInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  saveTeamTemplate(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveTeamTemplateMutationResult = NonNullable<Awaited<ReturnType<typeof saveTeamTemplate>>>
+    export type SaveTeamTemplateMutationBody = BodyType<TeamTemplateInput>
+    export type SaveTeamTemplateMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Salva il modello (crea la versione successiva)
+ */
+export const useSaveTeamTemplate = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTeamTemplate>>, TError,{id: number;data: BodyType<TeamTemplateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveTeamTemplate>>,
+        TError,
+        {id: number;data: BodyType<TeamTemplateInput>},
+        TContext
+      > => {
+      return useMutation(getSaveTeamTemplateMutationOptions(options));
+    }
+
+export const getDeleteTeamTemplateUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-templates/${id}`
+}
+
+/**
+ * @summary Elimina il modello (archivia se ha istanze)
+ */
+export const deleteTeamTemplate = async (id: number, options?: RequestInit): Promise<TeamTemplateDeleteResult> => {
+
+  return customFetch<TeamTemplateDeleteResult>(getDeleteTeamTemplateUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteTeamTemplateMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTeamTemplate>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteTeamTemplate>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteTeamTemplate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTeamTemplate>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteTeamTemplate(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteTeamTemplateMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTeamTemplate>>>
+
+    export type DeleteTeamTemplateMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Elimina il modello (archivia se ha istanze)
+ */
+export const useDeleteTeamTemplate = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTeamTemplate>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteTeamTemplate>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteTeamTemplateMutationOptions(options));
+    }
+
+export const getGetTeamTemplateVersionUrl = (id: number,
+    version: number,) => {
+
+
+
+
+  return `/api/team-templates/${id}/versions/${version}`
+}
+
+/**
+ * @summary I ruoli di una versione del modello
+ */
+export const getTeamTemplateVersion = async (id: number,
+    version: number, options?: RequestInit): Promise<TeamRoleView[]> => {
+
+  return customFetch<TeamRoleView[]>(getGetTeamTemplateVersionUrl(id,version),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamTemplateVersionQueryKey = (id: number,
+    version: number,) => {
+    return [
+    `/api/team-templates/${id}/versions/${version}`
+    ] as const;
+    }
+
+
+export const getGetTeamTemplateVersionQueryOptions = <TData = Awaited<ReturnType<typeof getTeamTemplateVersion>>, TError = ErrorType<NotFoundResponse>>(id: number,
+    version: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamTemplateVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamTemplateVersionQueryKey(id,version);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamTemplateVersion>>> = ({ signal }) => getTeamTemplateVersion(id,version, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && version !== null && version !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamTemplateVersion>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamTemplateVersionQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamTemplateVersion>>>
+export type GetTeamTemplateVersionQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary I ruoli di una versione del modello
+ */
+
+export function useGetTeamTemplateVersion<TData = Awaited<ReturnType<typeof getTeamTemplateVersion>>, TError = ErrorType<NotFoundResponse>>(
+ id: number,
+    version: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamTemplateVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamTemplateVersionQueryOptions(id,version,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListTeamInstancesUrl = (params?: ListTeamInstancesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/team-instances?${stringifiedParams}` : `/api/team-instances`
+}
+
+/**
+ * @summary Elenca le squadre (istanze), dalla modificata più di recente
+ */
+export const listTeamInstances = async (params?: ListTeamInstancesParams, options?: RequestInit): Promise<TeamInstance[]> => {
+
+  return customFetch<TeamInstance[]>(getListTeamInstancesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTeamInstancesQueryKey = (params?: ListTeamInstancesParams,) => {
+    return [
+    `/api/team-instances`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListTeamInstancesQueryOptions = <TData = Awaited<ReturnType<typeof listTeamInstances>>, TError = ErrorType<BadRequestResponse>>(params?: ListTeamInstancesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamInstances>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTeamInstancesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTeamInstances>>> = ({ signal }) => listTeamInstances(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTeamInstances>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTeamInstancesQueryResult = NonNullable<Awaited<ReturnType<typeof listTeamInstances>>>
+export type ListTeamInstancesQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Elenca le squadre (istanze), dalla modificata più di recente
+ */
+
+export function useListTeamInstances<TData = Awaited<ReturnType<typeof listTeamInstances>>, TError = ErrorType<BadRequestResponse>>(
+ params?: ListTeamInstancesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamInstances>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTeamInstancesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateTeamInstanceUrl = () => {
+
+
+
+
+  return `/api/team-instances`
+}
+
+/**
+ * Con `templateId` copia la versione corrente del modello fissando ogni skill alla sua versione corrente; senza modello `roles` è obbligatorio.
+ * @summary Crea una squadra per un lavoro (da un modello o da zero)
+ */
+export const createTeamInstance = async (teamInstanceCreate: TeamInstanceCreate, options?: RequestInit): Promise<TeamInstance> => {
+
+  return customFetch<TeamInstance>(getCreateTeamInstanceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamInstanceCreate)
+  }
+);}
+
+
+
+
+export const getCreateTeamInstanceMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeamInstance>>, TError,{data: BodyType<TeamInstanceCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTeamInstance>>, TError,{data: BodyType<TeamInstanceCreate>}, TContext> => {
+
+const mutationKey = ['createTeamInstance'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTeamInstance>>, {data: BodyType<TeamInstanceCreate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createTeamInstance(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTeamInstanceMutationResult = NonNullable<Awaited<ReturnType<typeof createTeamInstance>>>
+    export type CreateTeamInstanceMutationBody = BodyType<TeamInstanceCreate>
+    export type CreateTeamInstanceMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Crea una squadra per un lavoro (da un modello o da zero)
+ */
+export const useCreateTeamInstance = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeamInstance>>, TError,{data: BodyType<TeamInstanceCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTeamInstance>>,
+        TError,
+        {data: BodyType<TeamInstanceCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateTeamInstanceMutationOptions(options));
+    }
+
+export const getGetTeamInstanceUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}`
+}
+
+/**
+ * @summary Dettaglio di una squadra
+ */
+export const getTeamInstance = async (id: number, options?: RequestInit): Promise<TeamInstance> => {
+
+  return customFetch<TeamInstance>(getGetTeamInstanceUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamInstanceQueryKey = (id: number,) => {
+    return [
+    `/api/team-instances/${id}`
+    ] as const;
+    }
+
+
+export const getGetTeamInstanceQueryOptions = <TData = Awaited<ReturnType<typeof getTeamInstance>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamInstance>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamInstanceQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamInstance>>> = ({ signal }) => getTeamInstance(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamInstance>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamInstanceQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamInstance>>>
+export type GetTeamInstanceQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Dettaglio di una squadra
+ */
+
+export function useGetTeamInstance<TData = Awaited<ReturnType<typeof getTeamInstance>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamInstance>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamInstanceQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveTeamInstanceUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}`
+}
+
+/**
+ * Tutto o niente. Le skill specializzate inviate sostituiscono quelle esistenti. Una squadra chiusa non si salva (409).
+ * @summary Salva la squadra (ruoli e skill specializzate)
+ */
+export const saveTeamInstance = async (id: number,
+    teamInstanceSave: TeamInstanceSave, options?: RequestInit): Promise<TeamInstance> => {
+
+  return customFetch<TeamInstance>(getSaveTeamInstanceUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamInstanceSave)
+  }
+);}
+
+
+
+
+export const getSaveTeamInstanceMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTeamInstance>>, TError,{id: number;data: BodyType<TeamInstanceSave>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveTeamInstance>>, TError,{id: number;data: BodyType<TeamInstanceSave>}, TContext> => {
+
+const mutationKey = ['saveTeamInstance'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveTeamInstance>>, {id: number;data: BodyType<TeamInstanceSave>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  saveTeamInstance(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveTeamInstanceMutationResult = NonNullable<Awaited<ReturnType<typeof saveTeamInstance>>>
+    export type SaveTeamInstanceMutationBody = BodyType<TeamInstanceSave>
+    export type SaveTeamInstanceMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Salva la squadra (ruoli e skill specializzate)
+ */
+export const useSaveTeamInstance = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTeamInstance>>, TError,{id: number;data: BodyType<TeamInstanceSave>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveTeamInstance>>,
+        TError,
+        {id: number;data: BodyType<TeamInstanceSave>},
+        TContext
+      > => {
+      return useMutation(getSaveTeamInstanceMutationOptions(options));
+    }
+
+export const getCloseTeamInstanceUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/close`
+}
+
+/**
+ * @summary Chiude la squadra (non si riapre)
+ */
+export const closeTeamInstance = async (id: number, options?: RequestInit): Promise<TeamInstance> => {
+
+  return customFetch<TeamInstance>(getCloseTeamInstanceUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCloseTeamInstanceMutationOptions = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeTeamInstance>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof closeTeamInstance>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['closeTeamInstance'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof closeTeamInstance>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  closeTeamInstance(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CloseTeamInstanceMutationResult = NonNullable<Awaited<ReturnType<typeof closeTeamInstance>>>
+
+    export type CloseTeamInstanceMutationError = ErrorType<NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Chiude la squadra (non si riapre)
+ */
+export const useCloseTeamInstance = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeTeamInstance>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof closeTeamInstance>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getCloseTeamInstanceMutationOptions(options));
+    }
+
+export const getGetTeamInstanceUpdatesUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/updates`
+}
+
+/**
+ * Differenze tra la versione del modello copiata e quella corrente (confronto di contenuto per chiave del ruolo) e skill del catalogo fissate a una versione non più recente. Squadra chiusa → 409.
+ * @summary Aggiornamenti proposti alla squadra
+ */
+export const getTeamInstanceUpdates = async (id: number, options?: RequestInit): Promise<GetTeamInstanceUpdates200> => {
+
+  return customFetch<GetTeamInstanceUpdates200>(getGetTeamInstanceUpdatesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamInstanceUpdatesQueryKey = (id: number,) => {
+    return [
+    `/api/team-instances/${id}/updates`
+    ] as const;
+    }
+
+
+export const getGetTeamInstanceUpdatesQueryOptions = <TData = Awaited<ReturnType<typeof getTeamInstanceUpdates>>, TError = ErrorType<NotFoundResponse | ConflictResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamInstanceUpdates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamInstanceUpdatesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamInstanceUpdates>>> = ({ signal }) => getTeamInstanceUpdates(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamInstanceUpdates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamInstanceUpdatesQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamInstanceUpdates>>>
+export type GetTeamInstanceUpdatesQueryError = ErrorType<NotFoundResponse | ConflictResponse>
+
+
+/**
+ * @summary Aggiornamenti proposti alla squadra
+ */
+
+export function useGetTeamInstanceUpdates<TData = Awaited<ReturnType<typeof getTeamInstanceUpdates>>, TError = ErrorType<NotFoundResponse | ConflictResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamInstanceUpdates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamInstanceUpdatesQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getApplyTeamInstanceUpdatesUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/updates/apply`
+}
+
+/**
+ * Tutto o niente. Se una voce non è più tra quelle attuali o la squadra è cambiata nel frattempo → 409 «aggiornamenti cambiati: ricarica». Se non restano voci del modello la squadra passa alla sua versione corrente.
+ * @summary Applica gli aggiornamenti scelti
+ */
+export const applyTeamInstanceUpdates = async (id: number,
+    teamUpdateApply: TeamUpdateApply, options?: RequestInit): Promise<TeamInstance> => {
+
+  return customFetch<TeamInstance>(getApplyTeamInstanceUpdatesUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamUpdateApply)
+  }
+);}
+
+
+
+
+export const getApplyTeamInstanceUpdatesMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyTeamInstanceUpdates>>, TError,{id: number;data: BodyType<TeamUpdateApply>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof applyTeamInstanceUpdates>>, TError,{id: number;data: BodyType<TeamUpdateApply>}, TContext> => {
+
+const mutationKey = ['applyTeamInstanceUpdates'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof applyTeamInstanceUpdates>>, {id: number;data: BodyType<TeamUpdateApply>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  applyTeamInstanceUpdates(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApplyTeamInstanceUpdatesMutationResult = NonNullable<Awaited<ReturnType<typeof applyTeamInstanceUpdates>>>
+    export type ApplyTeamInstanceUpdatesMutationBody = BodyType<TeamUpdateApply>
+    export type ApplyTeamInstanceUpdatesMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Applica gli aggiornamenti scelti
+ */
+export const useApplyTeamInstanceUpdates = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyTeamInstanceUpdates>>, TError,{id: number;data: BodyType<TeamUpdateApply>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof applyTeamInstanceUpdates>>,
+        TError,
+        {id: number;data: BodyType<TeamUpdateApply>},
+        TContext
+      > => {
+      return useMutation(getApplyTeamInstanceUpdatesMutationOptions(options));
+    }
+
+export const getSaveTeamInstanceAsTemplateUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/save-as-template`
+}
+
+/**
+ * `new` crea un modello nuovo (nome obbligatorio); `new_version` crea la versione successiva del modello d'origine (409 se la squadra non ha un modello o è archiviato). Le skill del catalogo perdono la versione; le skill specializzate in `promote` entrano nel catalogo (versione 1) con il codice indicato, le altre vengono tolte dai ruoli. Tutto o niente; un codice già usato nel catalogo → 409.
+ * @summary Salva la squadra come modello
+ */
+export const saveTeamInstanceAsTemplate = async (id: number,
+    teamSaveAsTemplate: TeamSaveAsTemplate, options?: RequestInit): Promise<TeamTemplate> => {
+
+  return customFetch<TeamTemplate>(getSaveTeamInstanceAsTemplateUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamSaveAsTemplate)
+  }
+);}
+
+
+
+
+export const getSaveTeamInstanceAsTemplateMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTeamInstanceAsTemplate>>, TError,{id: number;data: BodyType<TeamSaveAsTemplate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveTeamInstanceAsTemplate>>, TError,{id: number;data: BodyType<TeamSaveAsTemplate>}, TContext> => {
+
+const mutationKey = ['saveTeamInstanceAsTemplate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveTeamInstanceAsTemplate>>, {id: number;data: BodyType<TeamSaveAsTemplate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  saveTeamInstanceAsTemplate(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveTeamInstanceAsTemplateMutationResult = NonNullable<Awaited<ReturnType<typeof saveTeamInstanceAsTemplate>>>
+    export type SaveTeamInstanceAsTemplateMutationBody = BodyType<TeamSaveAsTemplate>
+    export type SaveTeamInstanceAsTemplateMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Salva la squadra come modello
+ */
+export const useSaveTeamInstanceAsTemplate = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTeamInstanceAsTemplate>>, TError,{id: number;data: BodyType<TeamSaveAsTemplate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveTeamInstanceAsTemplate>>,
+        TError,
+        {id: number;data: BodyType<TeamSaveAsTemplate>},
+        TContext
+      > => {
+      return useMutation(getSaveTeamInstanceAsTemplateMutationOptions(options));
     }
 
 export const getListAiProvidersUrl = () => {

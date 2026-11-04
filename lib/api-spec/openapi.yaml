@@ -34,6 +34,10 @@ tags:
     description: Coda delle azioni in attesa di conferma
   - name: plan-chat
     description: Chat con il bot sul piano di un'app (conversazioni, messaggi e proposte)
+  - name: skills
+    description: Catalogo delle skill con codice, versionate, usate dalle squadre di agenti
+  - name: teams
+    description: Modelli di squadra di agenti e le loro istanze
 
 paths:
   /healthz:
@@ -311,6 +315,12 @@ paths:
           description: App eliminata
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: L'app è il lavoro di riferimento di una o più squadre
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   # ─── Agents ─────────────────────────────────────────────────────────────────
 
@@ -1091,6 +1101,526 @@ paths:
                 $ref: "#/components/schemas/Budget"
         "400":
           $ref: "#/components/responses/BadRequest"
+
+  # ─── Catalogo delle skill ───────────────────────────────────────────────────
+
+  /skills:
+    get:
+      operationId: listSkills
+      tags: [skills]
+      summary: Elenca le skill del catalogo
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/SkillKind"
+        - name: q
+          in: query
+          required: false
+          description: Ricerca (senza maiuscole) nel codice e nel nome
+          schema:
+            type: string
+            maxLength: 100
+        - name: deprecated
+          in: query
+          required: false
+          description: Filtra per stato di deprecazione, `true` o `false` (se omesso, tutte)
+          schema:
+            type: string
+            enum: ["true", "false"]
+      responses:
+        "200":
+          description: Skill del catalogo, in ordine di codice
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CatalogSkill"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      operationId: createSkill
+      tags: [skills]
+      summary: Crea una skill (versione 1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogSkillInput"
+      responses:
+        "201":
+          description: Skill creata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogSkill"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /skills/{code}:
+    get:
+      operationId: getSkill
+      tags: [skills]
+      summary: Dettaglio di una skill (versione corrente)
+      parameters:
+        - $ref: "#/components/parameters/SkillCodeParam"
+      responses:
+        "200":
+          description: Skill
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogSkill"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateSkill
+      tags: [skills]
+      summary: Aggiorna una skill
+      description: >-
+        Nome e descrizione si cambiano senza nuova versione; `content` o `toolHints` creano la versione
+        successiva (massimo 200 versioni per skill, oltre 409).
+      parameters:
+        - $ref: "#/components/parameters/SkillCodeParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogSkillUpdate"
+      responses:
+        "200":
+          description: Skill aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogSkill"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /skills/{code}/deprecate:
+    post:
+      operationId: deprecateSkill
+      tags: [skills]
+      summary: Depreca una skill
+      description: Resta valida dove è già usata, ma non si può aggiungere a ruoli nuovi o modificati.
+      parameters:
+        - $ref: "#/components/parameters/SkillCodeParam"
+      responses:
+        "200":
+          description: Skill deprecata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogSkill"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /skills/{code}/versions:
+    get:
+      operationId: listSkillVersions
+      tags: [skills]
+      summary: Elenca le versioni di una skill
+      parameters:
+        - $ref: "#/components/parameters/SkillCodeParam"
+      responses:
+        "200":
+          description: Versioni, dalla più recente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CatalogSkillVersion"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /skills/{code}/versions/{version}:
+    get:
+      operationId: getSkillVersion
+      tags: [skills]
+      summary: Una versione di una skill
+      parameters:
+        - $ref: "#/components/parameters/SkillCodeParam"
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Versione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogSkillVersion"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ─── Modelli di squadra ─────────────────────────────────────────────────────
+
+  /team-templates:
+    get:
+      operationId: listTeamTemplates
+      tags: [teams]
+      summary: Elenca i modelli di squadra
+      parameters:
+        - name: archived
+          in: query
+          required: false
+          description: "`true` per i modelli archiviati (default, solo quelli non archiviati)"
+          schema:
+            type: string
+            enum: ["true", "false"]
+      responses:
+        "200":
+          description: Modelli, dal più recente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      operationId: createTeamTemplate
+      tags: [teams]
+      summary: Crea un modello di squadra (versione 1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamTemplateInput"
+      responses:
+        "201":
+          description: Modello creato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-templates/{id}:
+    get:
+      operationId: getTeamTemplate
+      tags: [teams]
+      summary: Dettaglio di un modello (versione corrente)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Modello
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamTemplate"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: saveTeamTemplate
+      tags: [teams]
+      summary: Salva il modello (crea la versione successiva)
+      description: >-
+        Tutto o niente, se una regola è violata non nasce nessuna versione.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamTemplateInput"
+      responses:
+        "200":
+          description: Modello salvato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      operationId: deleteTeamTemplate
+      tags: [teams]
+      summary: Elimina il modello (archivia se ha istanze)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Esito
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamTemplateDeleteResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /team-templates/{id}/versions/{version}:
+    get:
+      operationId: getTeamTemplateVersion
+      tags: [teams]
+      summary: I ruoli di una versione del modello
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Ruoli della versione
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamRoleView"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ─── Istanze di squadra ─────────────────────────────────────────────────────
+
+  /team-instances:
+    get:
+      operationId: listTeamInstances
+      tags: [teams]
+      summary: Elenca le squadre (istanze), dalla modificata più di recente
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [draft, active, closed]
+        - name: appId
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: App del lavoro di riferimento
+        - name: refType
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: refId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Squadre
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamInstance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      operationId: createTeamInstance
+      tags: [teams]
+      summary: Crea una squadra per un lavoro (da un modello o da zero)
+      description: >-
+        Con `templateId` copia la versione corrente del modello fissando ogni skill alla sua versione
+        corrente; senza modello `roles` è obbligatorio.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamInstanceCreate"
+      responses:
+        "201":
+          description: Squadra creata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInstance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}:
+    get:
+      operationId: getTeamInstance
+      tags: [teams]
+      summary: Dettaglio di una squadra
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Squadra
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInstance"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: saveTeamInstance
+      tags: [teams]
+      summary: Salva la squadra (ruoli e skill specializzate)
+      description: >-
+        Tutto o niente. Le skill specializzate inviate sostituiscono quelle esistenti. Una squadra chiusa
+        non si salva (409).
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamInstanceSave"
+      responses:
+        "200":
+          description: Squadra salvata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInstance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}/close:
+    post:
+      operationId: closeTeamInstance
+      tags: [teams]
+      summary: Chiude la squadra (non si riapre)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Squadra chiusa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInstance"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}/updates:
+    get:
+      operationId: getTeamInstanceUpdates
+      tags: [teams]
+      summary: Aggiornamenti proposti alla squadra
+      description: >-
+        Differenze tra la versione del modello copiata e quella corrente (confronto di contenuto per chiave
+        del ruolo) e skill del catalogo fissate a una versione non più recente. Squadra chiusa → 409.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Aggiornamenti proposti
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TeamUpdateItem"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}/updates/apply:
+    post:
+      operationId: applyTeamInstanceUpdates
+      tags: [teams]
+      summary: Applica gli aggiornamenti scelti
+      description: >-
+        Tutto o niente. Se una voce non è più tra quelle attuali o la squadra è cambiata nel frattempo → 409
+        «aggiornamenti cambiati: ricarica». Se non restano voci del modello la squadra passa alla sua versione
+        corrente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamUpdateApply"
+      responses:
+        "200":
+          description: Squadra aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamInstance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}/save-as-template:
+    post:
+      operationId: saveTeamInstanceAsTemplate
+      tags: [teams]
+      summary: Salva la squadra come modello
+      description: >-
+        `new` crea un modello nuovo (nome obbligatorio); `new_version` crea la versione successiva del modello
+        d'origine (409 se la squadra non ha un modello o è archiviato). Le skill del catalogo perdono la
+        versione; le skill specializzate in `promote` entrano nel catalogo (versione 1) con il codice indicato,
+        le altre vengono tolte dai ruoli. Tutto o niente; un codice già usato nel catalogo → 409.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamSaveAsTemplate"
+      responses:
+        "201":
+          description: Modello creato o nuova versione salvata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   # ─── Account AI ─────────────────────────────────────────────────────────────
 
@@ -2021,6 +2551,13 @@ components:
       description: Numero progressivo dell'azione per utente
       schema:
         type: integer
+
+    SkillCodeParam:
+      name: code
+      in: path
+      required: true
+      schema:
+        type: string
 
     SkillIdParam:
       name: skillId
@@ -4163,3 +4700,521 @@ components:
           oneOf:
             - $ref: "#/components/schemas/CatalogRunView"
             - type: "null"
+
+    # ── Catalogo delle skill ────────────────────────────────────────────────────
+
+    SkillKind:
+      type: string
+      enum: [casello, node]
+      description: >-
+        `casello` = istruzioni salvate in Casello; `node` = nome della skill installata sul nodo locale.
+
+    CatalogSkill:
+      type: object
+      required: [code, name, description, kind, currentVersion, deprecated, content, toolHints, createdAt, updatedAt]
+      description: Skill con il contenuto e i suggerimenti sugli strumenti della versione corrente
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        kind:
+          $ref: "#/components/schemas/SkillKind"
+        currentVersion:
+          type: integer
+        deprecated:
+          type: boolean
+        content:
+          type: string
+        toolHints:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CatalogSkillInput:
+      type: object
+      required: [code, name, kind, content]
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        kind:
+          $ref: "#/components/schemas/SkillKind"
+        content:
+          type: string
+          description: "`casello`: istruzioni (max 20 000 caratteri); `node`: nome della skill sul nodo"
+        toolHints:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 100
+
+    CatalogSkillUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        content:
+          type: string
+        toolHints:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 100
+
+    CatalogSkillVersion:
+      type: object
+      required: [code, version, content, toolHints, createdAt]
+      properties:
+        code:
+          type: string
+        version:
+          type: integer
+        content:
+          type: string
+        toolHints:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    # ── Squadre ─────────────────────────────────────────────────────────────────
+
+    TeamRole:
+      type: object
+      required: [key, name, task, isLead, runsOn, aiModelId, tools, skills]
+      description: Ruolo di un modello di squadra (manifesto in ingresso)
+      properties:
+        key:
+          type: string
+          pattern: "^[a-z0-9_-]{1,40}$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        task:
+          type: string
+          maxLength: 8000
+        isLead:
+          type: boolean
+        runsOn:
+          type: string
+          enum: [cloud, node]
+        aiModelId:
+          type: integer
+          nullable: true
+        tools:
+          type: array
+          items:
+            type: integer
+        skills:
+          type: array
+          items:
+            type: string
+            pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+
+    TeamRoleView:
+      type: object
+      required: [key, name, task, isLead, runsOn, model, tools, skills]
+      description: Ruolo arricchito per la lettura (strumenti, skill e modello con nome)
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        task:
+          type: string
+        isLead:
+          type: boolean
+        runsOn:
+          type: string
+          enum: [cloud, node]
+        model:
+          type: object
+          nullable: true
+          required: [id, name]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+        tools:
+          type: array
+          items:
+            type: object
+            required: [id, name, available]
+            description: Uno strumento eliminato dal catalogo ha solo `id`, `name` e `available` false
+            properties:
+              id:
+                type: integer
+              appId:
+                type: integer
+              appName:
+                type: string
+              name:
+                type: string
+              level:
+                type: string
+                enum: [L0, L1, L2, L3]
+              available:
+                type: boolean
+        skills:
+          type: array
+          items:
+            type: object
+            required: [code, name, kind, deprecated]
+            properties:
+              code:
+                type: string
+              version:
+                type: integer
+              name:
+                type: string
+              kind:
+                $ref: "#/components/schemas/SkillKind"
+              deprecated:
+                type: boolean
+              local:
+                type: boolean
+
+    TeamTemplate:
+      type: object
+      required: [id, name, description, version, archived, instanceCount, roles, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        version:
+          type: integer
+        archived:
+          type: boolean
+        instanceCount:
+          type: integer
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamRoleView"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TeamTemplateInput:
+      type: object
+      required: [name, roles]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamRole"
+
+    TeamTemplateDeleteResult:
+      type: object
+      required: [deleted, archived]
+      properties:
+        deleted:
+          type: boolean
+        archived:
+          type: boolean
+
+    TeamInstanceRole:
+      type: object
+      required: [key, name, task, isLead, runsOn, aiModelId, tools, skills, localSkills]
+      description: Ruolo di una squadra (manifesto in ingresso, skill fissate a una versione)
+      properties:
+        key:
+          type: string
+          pattern: "^[a-z0-9_-]{1,40}$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        task:
+          type: string
+          maxLength: 8000
+        isLead:
+          type: boolean
+        runsOn:
+          type: string
+          enum: [cloud, node]
+        aiModelId:
+          type: integer
+          nullable: true
+        tools:
+          type: array
+          items:
+            type: integer
+        skills:
+          type: array
+          items:
+            type: object
+            required: [code, version]
+            properties:
+              code:
+                type: string
+                pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+              version:
+                type: integer
+                minimum: 1
+        localSkills:
+          type: array
+          description: Codici delle skill specializzate della squadra usate dal ruolo
+          items:
+            type: string
+            pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+
+    TeamWorkRef:
+      type: object
+      required: [appId, type, id]
+      description: Lavoro di riferimento di una squadra
+      properties:
+        appId:
+          type: integer
+        type:
+          type: string
+          pattern: "^[a-z0-9_-]{1,40}$"
+        id:
+          type: string
+          minLength: 1
+          maxLength: 100
+        title:
+          type: string
+          maxLength: 300
+
+    TeamLocalSkill:
+      type: object
+      required: [code, name, kind, content]
+      description: Skill specializzata di una sola squadra
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        kind:
+          $ref: "#/components/schemas/SkillKind"
+        content:
+          type: string
+        toolHints:
+          type: array
+          items:
+            type: string
+
+    TeamInstanceCreate:
+      type: object
+      required: [name, ref]
+      properties:
+        templateId:
+          type: integer
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        ref:
+          $ref: "#/components/schemas/TeamWorkRef"
+        roles:
+          type: array
+          description: Obbligatori senza modello, ignorati con il modello
+          items:
+            $ref: "#/components/schemas/TeamInstanceRole"
+
+    TeamInstanceSave:
+      type: object
+      required: [name, roles, localSkills]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        refTitle:
+          type: string
+          maxLength: 300
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamInstanceRole"
+        localSkills:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamLocalSkill"
+        status:
+          type: string
+          enum: [draft, active]
+
+    TeamUpdateItem:
+      type: object
+      required: [id, type, roleKey, roleName]
+      description: Aggiornamento proposto a una squadra
+      properties:
+        id:
+          type: string
+          description: "Deterministico: tipo:chiave del ruolo[:campo|codice della skill]"
+        type:
+          type: string
+          enum: [role_added, role_removed, role_changed, skill_added, skill_removed, skill_version]
+        roleKey:
+          type: string
+        roleName:
+          type: string
+        field:
+          type: string
+          enum: [name, task, isLead, runsOn, aiModelId, tools]
+        from:
+          description: Valore attuale nella squadra (role_changed)
+        to:
+          description: Valore proposto dal modello (role_changed) o ruolo da aggiungere (role_added)
+        skillCode:
+          type: string
+        fromVersion:
+          type: integer
+        toVersion:
+          type: integer
+
+    TeamSaveAsTemplate:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [new, new_version]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Obbligatorio con `new`; con `new_version` si ignora
+        promote:
+          type: array
+          maxItems: 100
+          description: Skill specializzate da promuovere nel catalogo, con il nuovo codice
+          items:
+            type: object
+            required: [localCode, code]
+            properties:
+              localCode:
+                type: string
+              code:
+                type: string
+
+    TeamUpdateApply:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          description: Id delle voci da applicare, senza ripetizioni
+          items:
+            type: string
+            maxLength: 200
+
+    TeamInstance:
+      type: object
+      required: [id, name, status, template, ref, roles, localSkills, createdAt, updatedAt, closedAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, closed]
+        template:
+          type: object
+          nullable: true
+          description: Modello di origine e versione copiata (null se creata da zero o modello eliminato)
+          required: [id, name, version]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            version:
+              type: integer
+        ref:
+          type: object
+          required: [appId, appName, type, id, title]
+          properties:
+            appId:
+              type: integer
+            appName:
+              type: string
+            type:
+              type: string
+            id:
+              type: string
+            title:
+              type: string
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamRoleView"
+        localSkills:
+          type: array
+          items:
+            type: object
+            required: [code, name, kind, content, toolHints]
+            properties:
+              code:
+                type: string
+              name:
+                type: string
+              kind:
+                $ref: "#/components/schemas/SkillKind"
+              content:
+                type: string
+              toolHints:
+                type: array
+                items:
+                  type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true

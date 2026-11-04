@@ -3,7 +3,7 @@ import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, realpath, symlink } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CaselloClient } from "./client";
 import { isLeaseLostReport, runTask, WorkspaceQueue, type RunContext } from "./runner";
 import { FakeCasello, json } from "./test/fake-casello";
@@ -321,9 +321,57 @@ describe("runTask: esiti", () => {
     expect(calls).toHaveLength(0);
     expect(existsSync(path.join(ws, "casello-allegati", "doppio.txt"))).toBe(false);
   });
+
+  it("allegati con nomi uguali a meno delle maiuscole → failed «allegato non valido» (APFS)", async () => {
+    casello.on("GET", "/api/node/tasks/:id/attachments/:aid", (_req, res) => {
+      res.statusCode = 200;
+      res.end("x");
+    });
+    const calls: SpawnCall[] = [];
+    const a = { contentType: "text/plain", sizeBytes: 1, sha256: sha("x") };
+    const report = await runTask(
+      taskPackage({
+        attachments: [
+          { id: 1, name: "Nota.txt", ...a },
+          { id: 2, name: "nota.TXT", ...a },
+        ],
+      }),
+      ctx("esito", calls),
+    );
+    expect(report).toMatchObject({ status: "failed", outcome: "allegato non valido" });
+    expect(calls).toHaveLength(0);
+  });
 });
 
 describe("runTask: processi", () => {
+  it("il timer del SIGKILL si cancella quando il processo è uscito", async () => {
+    const GRACE = 54_321;
+    const timers: unknown[] = [];
+    const cleared = new Set<unknown>();
+    const realSet = globalThis.setTimeout;
+    const realClear = globalThis.clearTimeout;
+    const setSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number) => {
+      const t = realSet(fn, ms);
+      if (ms === GRACE) timers.push(t);
+      return t;
+    }) as typeof setTimeout);
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout").mockImplementation(((t: unknown) => {
+      cleared.add(t);
+      return realClear(t as NodeJS.Timeout);
+    }) as typeof clearTimeout);
+    try {
+      const c = ctx("esito", [], { killGraceMs: GRACE, drainMs: 300 });
+      c.config = { ...c.config, taskTimeoutMinutes: 0.0001 };
+      const report = await runTask(taskPackage(), { ...c, spawn: fakeSpawn("sleep") });
+      expect(report.outcome).toBe("tempo massimo superato");
+      expect(timers).toHaveLength(1);
+      expect(cleared.has(timers[0])).toBe(true);
+    } finally {
+      setSpy.mockRestore();
+      clearSpy.mockRestore();
+    }
+  });
+
   it("al tempo massimo termina tutto il gruppo, anche un nipote che tiene aperto stdout", async () => {
     const c = ctx("grandchild", [], { killGraceMs: 100, drainMs: 300 });
     c.config = { ...c.config, taskTimeoutMinutes: 0.005 };

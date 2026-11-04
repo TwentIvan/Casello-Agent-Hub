@@ -94,8 +94,10 @@ async function fetchAttachments(pkg: TaskPackage, workspace: string, client: Cas
     const name = path.basename(a.name);
     if (!a.name || name !== a.name || name === "." || name === "..") throw new AttachmentError();
     // Due allegati con lo stesso nome si sovrascriverebbero
-    if (names.has(name)) throw new AttachmentError();
-    names.add(name);
+    // (il confronto ignora le maiuscole: APFS non le distingue)
+    const key = name.toLowerCase();
+    if (names.has(key)) throw new AttachmentError();
+    names.add(key);
     let data: Buffer;
     try {
       data = await client.downloadAttachment(pkg.taskId, a.id, pkg.leaseToken);
@@ -168,6 +170,7 @@ async function runClaude(
     let started = false;
     let terminating = false;
     let drainTimer: NodeJS.Timeout | undefined;
+    let killTimer: NodeJS.Timeout | undefined;
 
     let child: ChildProcess;
     try {
@@ -188,7 +191,8 @@ async function runClaude(
       if (terminating) return;
       terminating = true;
       killGroup(child, "SIGTERM");
-      setTimeout(() => killGroup(child, "SIGKILL"), killGraceMs).unref();
+      killTimer = setTimeout(() => killGroup(child, "SIGKILL"), killGraceMs);
+      killTimer.unref();
     };
 
     const timeout = setTimeout(() => {
@@ -208,6 +212,8 @@ async function runClaude(
       settled = true;
       clearTimeout(timeout);
       if (drainTimer) clearTimeout(drainTimer);
+      // Il processo è uscito: il SIGKILL differito non serve più (e potrebbe colpire un pid riusato)
+      if (killTimer) clearTimeout(killTimer);
       signal.removeEventListener("abort", onAbort);
       result.stdout = Buffer.concat(chunks).toString("utf8");
       resolve(result);

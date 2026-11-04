@@ -14,7 +14,16 @@ export function setOnTurnQueued(fn: (instanceId: number) => void): void {
   onTurnQueued = fn;
 }
 
-/** Inserisce il turno `queued` della squadra o aggiunge il motivo a quello già in coda (un'unica istruzione atomica). */
+/** Fa partire il turno accodato (aggancio di `setOnTurnQueued`). */
+export function notifyTurnQueued(instanceId: number): void {
+  onTurnQueued(instanceId);
+}
+
+/**
+ * Inserisce il turno `queued` della squadra o aggiunge il motivo a quello già in coda (un'unica istruzione atomica).
+ * Con il pool l'avvio del turno scatta subito; dentro una transazione (`executor` ≠ db) il turno non è ancora visibile:
+ * chi chiama deve usare `notifyTurnQueued` dopo il commit.
+ */
 export async function enqueueTurnReason(instanceId: number, reason: TurnReason, executor: Executor = db): Promise<void> {
   await executor
     .insert(teamTurnsTable)
@@ -24,5 +33,5 @@ export async function enqueueTurnReason(instanceId: number, reason: TurnReason, 
       targetWhere: sql`${teamTurnsTable.status} = 'queued'`,
       set: { reasons: sql`${teamTurnsTable.reasons} || excluded.reasons` },
     });
-  onTurnQueued(instanceId);
+  if (executor === db) onTurnQueued(instanceId);
 }

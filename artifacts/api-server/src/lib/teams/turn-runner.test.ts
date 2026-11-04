@@ -362,6 +362,74 @@ describe("turni del capo", () => {
     expect(chatCount()).toBe(0);
   });
 
+  it("chiusura durante un turno: la proposta successiva del capo è rifiutata, nessuna voce né versione", async () => {
+    const id = await seedTeam({ status: "active" });
+    let closing: Promise<unknown> | null = null;
+    let leadCalls = 0;
+    fake.chatReply = (body) => {
+      if (!isLeadBody(body)) return text("fatto");
+      leadCalls++;
+      if (leadCalls === 1) {
+        // La squadra si chiude tra il primo e il secondo strumento del capo
+        closing = closeInstance(id);
+        fake.delayMs = 300;
+        return call("leggi_piano", {});
+      }
+      if (leadCalls === 2) return call("proponi_piano", PROPOSAL);
+      return text("fine");
+    };
+    await sendToLead(userId, id, "proponi il piano");
+    await settleAll();
+    await closing;
+
+    const third = leadRequests()[2]!;
+    expect(toolMessages(third).at(-1)).toBe(LEAD_MESSAGES.teamNotActive);
+    expect(await items(id)).toHaveLength(0);
+    expect(await getPlan(id)).toMatchObject({ version: 1, status: "draft" });
+    expect((await listEvents(id)).filter((e) => e.type === "piano_proposto")).toHaveLength(0);
+    expect((await turns(id)).map((t) => t.status)).toEqual(["done"]);
+  });
+
+  it("ritiro di una proposta aperta: evento per l'utente; un compito fatto rimesso nel piano resta fatto", async () => {
+    const id = await seedActiveApproved();
+    await db.insert(teamTasksTable).values({ instanceId: id, planTaskId: "t1", roleKey: "analista", instructions: "Analizza", status: "done", outcome: "analisi fatta" });
+    await patchPlan(id, { tasks: [{ id: "t1", status: "done", outcome: "analisi fatta" }] });
+    const t1 = { id: "t1", title: "Analisi del WI", roleKey: "analista", instructions: "Analizza" };
+
+    // Proposta che toglie t1 (rilevante): versione 3 proposta, t1 non c'è più nella riga corrente
+    leadScript.push(call("proponi_piano", { objective: "Chiudere il WI 1174", tasks: [{ title: "Test", roleKey: "analista", instructions: "Prova" }] }), text("ok"));
+    await sendToLead(userId, id, "togli l'analisi");
+    await settleAll();
+    expect(await getPlan(id)).toMatchObject({ status: "proposed", version: 3 });
+    expect((await getPlan(id)).tasks.map((t) => t.id)).toEqual(["t2"]);
+
+    // Ritorno al piano approvato: nessuna voce nuova, proposta ritirata con evento, t1 di nuovo con il suo esito
+    leadScript.push(call("proponi_piano", { objective: "Chiudere il WI 1174", openPoints: ["serve il collaudo?"], tasks: [t1] }), text("ok"));
+    await sendToLead(userId, id, "ripensaci, tieni l'analisi");
+    await settleAll();
+    const plan = await getPlan(id);
+    expect(plan).toMatchObject({ status: "approved", version: 4, approvedVersion: 4, openPoints: ["serve il collaudo?"] });
+    expect(plan.tasks).toMatchObject([{ id: "t1", status: "done", outcome: "analisi fatta" }]);
+    const all = await items(id);
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({ kind: "plan_change", status: "rejected", decisionNote: LEAD_MESSAGES.superseded });
+    const events = await listEvents(id);
+    expect(events[0]).toMatchObject({ type: "piano_proposto", bulletin: "Il capo ha ritirato la proposta di piano" });
+  });
+
+  it("proponi_piano con un id di compito sconosciuto: messaggio fisso, nulla scritto", async () => {
+    const id = await seedActiveApproved();
+    leadScript.push(
+      call("proponi_piano", { objective: "Chiudere il WI 1174", tasks: [{ id: "t9", title: "Nuovo", roleKey: "analista", instructions: "x" }] }),
+      text("ok"),
+    );
+    await sendToLead(userId, id, "aggiungi un compito");
+    await settleAll();
+    expect(toolMessages(leadRequests()[1]!)).toEqual([LEAD_MESSAGES.unknownTaskId]);
+    expect(await items(id)).toHaveLength(0);
+    expect((await getPlan(id)).version).toBe(2);
+  });
+
   it("tetto della squadra raggiunto: turno failed, evento bloccato, nessuna chiamata al modello", async () => {
     const id = await seedActiveApproved({ monthlyBudgetUsd: "1.00" });
     await db.insert(teamTasksTable).values({ instanceId: id, planTaskId: "t0", roleKey: "analista", instructions: "", status: "done", costUsd: "1.500000", aiModelId: modelId });

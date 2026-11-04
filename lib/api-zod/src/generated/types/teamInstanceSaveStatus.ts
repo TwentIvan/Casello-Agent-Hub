@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Facoltativo e solo uguale allo stato attuale: si attiva con `POST /team-instances/{id}/activate` e una squadra attiva non torna in bozza.
+ */
 export type TeamInstanceSaveStatus = typeof TeamInstanceSaveStatus[keyof typeof TeamInstanceSaveStatus];
 
 

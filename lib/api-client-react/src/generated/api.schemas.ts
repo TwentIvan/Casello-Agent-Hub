@@ -2100,6 +2100,9 @@ export interface TeamInstanceCreate {
   roles?: TeamInstanceRole[];
 }
 
+/**
+ * Facoltativo e solo uguale allo stato attuale: si attiva con `POST /team-instances/{id}/activate` e una squadra attiva non torna in bozza.
+ */
 export type TeamInstanceSaveStatus = typeof TeamInstanceSaveStatus[keyof typeof TeamInstanceSaveStatus];
 
 
@@ -2118,6 +2121,7 @@ export interface TeamInstanceSave {
   refTitle?: string;
   roles: TeamInstanceRole[];
   localSkills: TeamLocalSkill[];
+  /** Facoltativo e solo uguale allo stato attuale: si attiva con `POST /team-instances/{id}/activate` e una squadra attiva non torna in bozza. */
   status?: TeamInstanceSaveStatus;
 }
 

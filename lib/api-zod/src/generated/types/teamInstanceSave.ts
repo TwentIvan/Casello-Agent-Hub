@@ -19,5 +19,6 @@ export interface TeamInstanceSave {
   refTitle?: string;
   roles: TeamInstanceRole[];
   localSkills: TeamLocalSkill[];
+  /** Facoltativo e solo uguale allo stato attuale: si attiva con `POST /team-instances/{id}/activate` e una squadra attiva non torna in bozza. */
   status?: TeamInstanceSaveStatus;
 }

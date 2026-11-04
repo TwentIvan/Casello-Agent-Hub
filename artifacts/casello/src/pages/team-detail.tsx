@@ -6,11 +6,11 @@ import {
   ApiError,
   type TeamInstance,
   type TeamInstanceSave,
-  type TeamInstanceSaveStatus,
   getGetTeamInstanceQueryKey,
   getGetTeamInstanceUpdatesQueryKey,
   getListTeamInstancesQueryKey,
   getListTeamTemplatesQueryKey,
+  useActivateTeamInstance,
   useCloseTeamInstance,
   useGetTeamInstance,
   useSaveTeamInstance,
@@ -77,15 +77,22 @@ function TeamEditor({ team }: { team: TeamInstance }) {
 
   const save = useSaveTeamInstance({
     mutation: {
-      onSuccess: (saved, vars) => {
+      onSuccess: (saved) => {
         onUpdated(saved);
-        const status = vars.data.status;
-        toast({
-          title: status === "active" ? "Squadra attivata" : status === "draft" ? "Squadra riportata in bozza" : "Squadra salvata",
-        });
+        toast({ title: "Squadra salvata" });
       },
       onError: (error) =>
         toast({ variant: "destructive", title: "Salvataggio non riuscito", description: apiErrorMessage(error) }),
+    },
+  });
+  const activate = useActivateTeamInstance({
+    mutation: {
+      onSuccess: (saved) => {
+        onUpdated(saved);
+        toast({ title: "Squadra attivata", description: "Il capo riceve il primo turno e propone il piano." });
+      },
+      onError: (error) =>
+        toast({ variant: "destructive", title: "Attivazione non riuscita", description: apiErrorMessage(error) }),
     },
   });
   const close = useCloseTeamInstance({
@@ -100,8 +107,7 @@ function TeamEditor({ team }: { team: TeamInstance }) {
     },
   });
 
-  const submit = (status?: TeamInstanceSaveStatus) =>
-    save.mutate({ id: team.id, data: { ...current, ...(status && { status }) } });
+  const submit = () => save.mutate({ id: team.id, data: current });
 
   const removeLocalSkill = (skill: LocalSkillDraft) => {
     setLocalSkills((prev) => prev.filter((s) => s.uid !== skill.uid));
@@ -139,13 +145,13 @@ function TeamEditor({ team }: { team: TeamInstance }) {
             </Button>
           )}
           {team.status === "draft" && (
-            <Button variant="outline" onClick={() => setConfirm("activate")}>
+            <Button
+              variant="outline"
+              onClick={() => setConfirm("activate")}
+              disabled={dirty}
+              title={dirty ? "Salva le modifiche prima di attivare" : undefined}
+            >
               Attiva
-            </Button>
-          )}
-          {team.status === "active" && (
-            <Button variant="outline" onClick={() => submit("draft")} disabled={save.isPending}>
-              Riporta in bozza
             </Button>
           )}
           <Button variant="outline" onClick={() => setSavingAsTemplate(true)} disabled={dirty}>
@@ -220,13 +226,11 @@ function TeamEditor({ team }: { team: TeamInstance }) {
         open={confirm === "activate"}
         onOpenChange={(open) => !open && setConfirm(null)}
         title="Attivare la squadra?"
-        description={
-          dirty ? "Le modifiche non salvate vengono salvate insieme all'attivazione." : "La squadra passa da bozza ad attiva."
-        }
+        description="La squadra passa da bozza ad attiva: il capo riceve il primo turno e propone il piano da approvare."
         confirmLabel="Attiva"
         pendingLabel="Attivazione…"
-        pending={save.isPending}
-        onConfirm={() => submit("active")}
+        pending={activate.isPending}
+        onConfirm={() => activate.mutate({ id: team.id })}
       />
       <ConfirmDialog
         open={confirm === "close"}

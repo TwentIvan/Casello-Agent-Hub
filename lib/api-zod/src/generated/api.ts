@@ -2087,7 +2087,7 @@ export const GetTeamInstanceResponse = zod.object({
 
 
 /**
- * Tutto o niente. Le skill specializzate inviate sostituiscono quelle esistenti. Una squadra chiusa non si salva (409).
+ * Tutto o niente. Le skill specializzate inviate sostituiscono quelle esistenti. Una squadra chiusa non si salva (409). Il salvataggio non cambia lo stato: `status` diverso da quello attuale → 400 («usa Attiva per avviare la squadra», da bozza ad attiva) o 409 («una squadra attiva non torna in bozza: chiudila»).
  * @summary Salva la squadra (ruoli e skill specializzate)
  */
 export const SaveTeamInstanceParams = zod.object({
@@ -2135,7 +2135,7 @@ export const SaveTeamInstanceBody = zod.object({
   "content": zod.string(),
   "toolHints": zod.array(zod.string()).optional()
 }).describe('Skill specializzata di una sola squadra')),
-  "status": zod.enum(['draft', 'active']).optional()
+  "status": zod.enum(['draft', 'active']).optional().describe('Facoltativo e solo uguale allo stato attuale: si attiva con `POST \/team-instances\/{id}\/activate` e una squadra attiva non torna in bozza.')
 })
 
 export const SaveTeamInstanceResponse = zod.object({
@@ -2941,7 +2941,7 @@ export const ListTeamEventsResponse = zod.array(ListTeamEventsResponseItem)
 
 
 /**
- * Con `unread=true` solo gli eventi non letti; altrimenti gli ultimi 200 eventi. Non li segna come letti.
+ * Con `unread=true` solo gli eventi non letti, altrimenti tutti; al massimo i 200 più recenti. Non li segna come letti.
  * @summary Bollettino delle squadre attivate dall'utente
  */
 export const ListUnreadTeamEventsQueryParams = zod.object({

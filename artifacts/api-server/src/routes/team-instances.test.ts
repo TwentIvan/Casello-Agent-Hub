@@ -90,6 +90,12 @@ describe("route delle squadre", () => {
     const found = await api("GET", `/team-instances?appId=${appId}&refType=wi&refId=1174`);
     expect(found.json.map((i: { id: number }) => i.id)).toEqual([id]);
 
+    // Il salvataggio non attiva: si usa POST …/activate
+    const activateViaPut = await api("PUT", `/team-instances/${id}`, { name: "Squadra 2", status: "active", roles: [role()], localSkills: [] });
+    expect(activateViaPut.status).toBe(400);
+    expect(activateViaPut.json.error).toBe("usa Attiva per avviare la squadra");
+    expect((await api("POST", `/team-instances/${id}/activate`)).status).toBe(200);
+
     const put = await api("PUT", `/team-instances/${id}`, {
       name: "Squadra 2",
       status: "active",
@@ -98,6 +104,9 @@ describe("route delle squadre", () => {
     });
     expect(put.status, put.text).toBe(200);
     expect(put.json).toMatchObject({ name: "Squadra 2", status: "active", localSkills: [{ code: "spec.uno" }] });
+    const backToDraft = await api("PUT", `/team-instances/${id}`, { name: "Squadra 2", status: "draft", roles: [role()], localSkills: [] });
+    expect(backToDraft.status).toBe(409);
+    expect(backToDraft.json.error).toBe("una squadra attiva non torna in bozza: chiudila");
 
     expect((await api("GET", `/team-instances/${id}`)).status).toBe(200);
     expect((await api("POST", `/team-instances/${id}/close`)).json.status).toBe("closed");

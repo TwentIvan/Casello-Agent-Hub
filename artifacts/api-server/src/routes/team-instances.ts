@@ -254,7 +254,7 @@ router.get("/team-events", async (req, res) => {
     return;
   }
   const unread = raw === "true";
-  const rows = await userEvents(currentUserId(req), unread ? { unread } : { limit: MAX_USER_EVENTS });
+  const rows = await userEvents(currentUserId(req), { unread, limit: MAX_USER_EVENTS });
   res.json(ListUnreadTeamEventsResponse.parse(rows));
 });
 

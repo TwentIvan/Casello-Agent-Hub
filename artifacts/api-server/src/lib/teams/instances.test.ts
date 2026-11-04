@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { db, pool, aiAccountsTable, aiModelsTable, appToolsTable, appsTable, skillsTable, skillVersionsTable, teamTemplatesTable, usersTable } from "@workspace/db";
+import { db, pool, aiAccountsTable, aiModelsTable, appToolsTable, appsTable, skillsTable, skillVersionsTable, teamInstancesTable, teamTemplatesTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { encryptSecret } from "../secrets";
 import type { InstanceRole, TemplateRole } from "./manifest";
@@ -122,17 +122,33 @@ describe("istanze di squadra", () => {
       userId,
       inst.id,
       save([irole({ localSkills: ["spec.uno"] })], {
-        status: "active",
         refTitle: "Nuovo titolo",
         localSkills: [{ code: "spec.uno", name: "Specifica uno", kind: "casello", content: "fai così", toolHints: ["x"] }],
       }),
     );
-    expect(saved).toMatchObject({ status: "active", ref: { title: "Nuovo titolo" } });
+    expect(saved).toMatchObject({ status: "draft", ref: { title: "Nuovo titolo" } });
     expect(saved.localSkills).toEqual([{ code: "spec.uno", name: "Specifica uno", kind: "casello", content: "fai così", toolHints: ["x"] }]);
     expect(saved.roles[0]!.skills[0]).toMatchObject({ code: "spec.uno", local: true, name: "Specifica uno" });
     const replaced = await saveInstance(userId, inst.id, save([irole()], { localSkills: [{ code: "spec.due", name: "Due", kind: "casello", content: "ok" }] }));
     expect(replaced.localSkills.map((s) => s.code)).toEqual(["spec.due"]);
-    expect(replaced.status).toBe("active");
+    expect(replaced.status).toBe("draft");
+  });
+
+  it("il salvataggio non cambia lo stato: bozza → attiva 400, attiva → bozza 409; il contenuto di una squadra attiva si salva", async () => {
+    const inst = await createInstance(userId, { name: "A", ref: ref(), roles: [irole()] });
+    await expect(saveInstance(userId, inst.id, save([irole()], { status: "active" }))).rejects.toMatchObject({
+      status: 400,
+      message: "usa Attiva per avviare la squadra",
+    });
+    expect((await getInstance(inst.id)).status).toBe("draft");
+    expect((await saveInstance(userId, inst.id, save([irole()], { status: "draft", name: "B" }))).name).toBe("B");
+    await db.update(teamInstancesTable).set({ status: "active" }).where(eq(teamInstancesTable.id, inst.id));
+    await expect(saveInstance(userId, inst.id, save([irole()], { status: "draft" }))).rejects.toMatchObject({
+      status: 409,
+      message: "una squadra attiva non torna in bozza: chiudila",
+    });
+    const saved = await saveInstance(userId, inst.id, save([irole()], { name: "C" }));
+    expect(saved).toMatchObject({ name: "C", status: "active" });
   });
 
   it("skill specializzata usata in un ruolo ma non definita, codice doppio o contenuto non valido → 400, niente salvato", async () => {

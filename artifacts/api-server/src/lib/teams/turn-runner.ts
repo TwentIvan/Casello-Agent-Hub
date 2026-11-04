@@ -13,7 +13,7 @@ import { getPlan } from "./plan";
 import { loadRoleTools, roleFunctionTools, roleToolExecutor, teamQueueAction, toolSchemaLookup } from "./role-tools";
 import { TASK_MESSAGES, errName, skillTexts } from "./task-runner";
 import { teamBudgetBlock } from "./team-budget";
-import { enqueueTurnReason } from "./turn-queue";
+import { enqueueTurnReason, notifyTurnQueued } from "./turn-queue";
 
 // Turni del capo: il capo non resta acceso, lavora a turni guidati dagli eventi (richieste, compiti finiti, decisioni
 // sulla coda, attivazione, riavvio). Un turno alla volta per squadra: presa in carico con un UPDATE condizionato
@@ -288,21 +288,29 @@ export async function runTurn(turnId: number): Promise<void> {
 
 // ─── Attivazione e messaggi ─────────────────────────────────────────────────
 
-/** `draft` → `active` (chi attiva riceve le voci in coda), PLAN `draft` se manca, turno con motivo `activation`. */
+/**
+ * `draft` → `active` (chi attiva riceve le voci in coda), PLAN `draft` se manca, turno con motivo `activation`: tutto
+ * in una transazione (o tutto o niente); il turno parte dopo il commit.
+ */
 export async function activateInstance(userId: number, id: number): Promise<InstanceView> {
   const instance = await getInstance(id);
   if (instance.status === "closed") throw new InstanceError(409, INSTANCE_MESSAGES.closed);
-  const [updated] = await db
-    .update(teamInstancesTable)
-    .set({ status: "active", activatedBy: userId, updatedAt: new Date() })
-    .where(and(eq(teamInstancesTable.id, id), eq(teamInstancesTable.status, "draft")))
-    .returning({ id: teamInstancesTable.id });
-  if (!updated) {
+  const activated = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(teamInstancesTable)
+      .set({ status: "active", activatedBy: userId, updatedAt: new Date() })
+      .where(and(eq(teamInstancesTable.id, id), eq(teamInstancesTable.status, "draft")))
+      .returning({ id: teamInstancesTable.id });
+    if (!updated) return false;
+    await getPlan(id, tx);
+    await enqueueTurnReason(id, { type: "activation" }, tx);
+    return true;
+  });
+  if (!activated) {
     const now = await getInstance(id);
     throw new InstanceError(409, now.status === "closed" ? INSTANCE_MESSAGES.closed : TURN_MESSAGES.alreadyActive);
   }
-  await getPlan(id);
-  await enqueueTurnReason(id, { type: "activation" });
+  notifyTurnQueued(id);
   return getInstance(id);
 }
 

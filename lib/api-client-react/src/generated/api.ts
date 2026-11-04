@@ -4902,7 +4902,7 @@ export const getSaveTeamInstanceUrl = (id: number,) => {
 }
 
 /**
- * Tutto o niente. Le skill specializzate inviate sostituiscono quelle esistenti. Una squadra chiusa non si salva (409).
+ * Tutto o niente. Le skill specializzate inviate sostituiscono quelle esistenti. Una squadra chiusa non si salva (409). Il salvataggio non cambia lo stato: `status` diverso da quello attuale → 400 («usa Attiva per avviare la squadra», da bozza ad attiva) o 409 («una squadra attiva non torna in bozza: chiudila»).
  * @summary Salva la squadra (ruoli e skill specializzate)
  */
 export const saveTeamInstance = async (id: number,
@@ -6024,7 +6024,7 @@ export const getListUnreadTeamEventsUrl = (params?: ListUnreadTeamEventsParams,)
 }
 
 /**
- * Con `unread=true` solo gli eventi non letti; altrimenti gli ultimi 200 eventi. Non li segna come letti.
+ * Con `unread=true` solo gli eventi non letti, altrimenti tutti; al massimo i 200 più recenti. Non li segna come letti.
  * @summary Bollettino delle squadre attivate dall'utente
  */
 export const listUnreadTeamEvents = async (params?: ListUnreadTeamEventsParams, options?: RequestInit): Promise<TeamEvent[]> => {

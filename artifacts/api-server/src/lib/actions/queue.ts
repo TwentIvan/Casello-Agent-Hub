@@ -55,9 +55,16 @@ export async function enqueueAction(input: EnqueueInput): Promise<EnqueueResult>
 
 type QueuedValues = Omit<typeof pendingActionsTable.$inferInsert, "userId" | "number">;
 
-/** Limite per utente e numerazione progressiva (con nuovo tentativo sull'unico), uguali per ogni tipo di voce. */
-async function insertQueued(userId: number, values: QueuedValues): Promise<EnqueueResult> {
-  const [pending] = await db
+/** Esecutore delle scritture in coda: il pool o una transazione aperta dal chiamante. */
+export type QueueExecutor = Pick<typeof db, "select" | "insert" | "transaction">;
+
+/**
+ * Limite per utente e numerazione progressiva (con nuovo tentativo sull'unico), uguali per ogni tipo di voce. Dentro
+ * una transazione del chiamante ogni tentativo d'inserimento è un savepoint: una violazione dell'unico non annulla
+ * la transazione intera.
+ */
+async function insertQueued(userId: number, values: QueuedValues, executor: QueueExecutor = db): Promise<EnqueueResult> {
+  const [pending] = await executor
     .select({ n: count() })
     .from(pendingActionsTable)
     .where(and(eq(pendingActionsTable.userId, userId), eq(pendingActionsTable.status, "pending")));
@@ -65,15 +72,17 @@ async function insertQueued(userId: number, values: QueuedValues): Promise<Enque
 
   for (let attempt = 1; ; attempt++) {
     try {
-      const [row] = await db
-        .insert(pendingActionsTable)
-        .values({
-          ...values,
-          userId,
-          // Numero letto e scritto nella stessa istruzione: il massimo dell'utente + 1
-          number: sql`(select coalesce(max(${pendingActionsTable.number}), 0) + 1 from ${pendingActionsTable} where ${pendingActionsTable.userId} = ${userId})`,
-        })
-        .returning({ number: pendingActionsTable.number });
+      const insert = (ex: QueueExecutor) =>
+        ex
+          .insert(pendingActionsTable)
+          .values({
+            ...values,
+            userId,
+            // Numero letto e scritto nella stessa istruzione: il massimo dell'utente + 1
+            number: sql`(select coalesce(max(${pendingActionsTable.number}), 0) + 1 from ${pendingActionsTable} where ${pendingActionsTable.userId} = ${userId})`,
+          })
+          .returning({ number: pendingActionsTable.number });
+      const [row] = executor === db ? await insert(db) : await executor.transaction((sp) => insert(sp));
       return { ok: true, number: row!.number };
     } catch (err) {
       if (attempt < NUMBER_ATTEMPTS && isUniqueViolation(err, NUMBER_CONSTRAINT)) continue;
@@ -93,8 +102,11 @@ export interface EnqueuePlanInput {
   detail: Record<string, unknown>;
 }
 
-/** Accoda un piano (o una modifica del piano) proposto dal capo di una squadra: stessa coda e numerazione delle azioni. */
-export async function enqueuePlanItem(input: EnqueuePlanInput): Promise<EnqueueResult> {
+/**
+ * Accoda un piano (o una modifica del piano) proposto dal capo di una squadra: stessa coda e numerazione delle azioni.
+ * Con `executor` l'inserimento avviene nella transazione del chiamante (insieme alla versione del PLAN).
+ */
+export async function enqueuePlanItem(input: EnqueuePlanInput, executor: QueueExecutor = db): Promise<EnqueueResult> {
   return insertQueued(input.userId, {
     kind: input.kind,
     teamInstanceId: input.instanceId,
@@ -103,5 +115,5 @@ export async function enqueuePlanItem(input: EnqueuePlanInput): Promise<EnqueueR
     argsPublic: input.detail,
     recipient: input.recipient,
     summary: input.summary,
-  });
+  }, executor);
 }

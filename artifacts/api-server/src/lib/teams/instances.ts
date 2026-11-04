@@ -29,6 +29,8 @@ export const INSTANCE_MESSAGES = {
   duplicateLocalSkill: (code: string) => `skill specializzata ${code} ripetuta`,
   invalidLocalCode: (code: string) => `codice della skill specializzata ${code} non valido`,
   tooManyLocalSkills: "troppe skill specializzate",
+  useActivate: "usa Attiva per avviare la squadra",
+  noBackToDraft: "una squadra attiva non torna in bozza: chiudila",
 } as const;
 
 const MAX_LOCAL_SKILLS = 100;
@@ -188,12 +190,23 @@ function checkLocalSkills(skills: LocalSkillInput[]): Map<string, SkillKind> {
 }
 
 /**
+ * Il salvataggio non cambia lo stato: si attiva solo con `activateInstance` (chi attiva riceve le voci in coda e il
+ * capo il primo turno) e una squadra attiva non torna in bozza. `status` uguale a quello attuale è ammesso.
+ */
+function checkStatusChange(current: "draft" | "active" | "closed", requested: "draft" | "active" | undefined): void {
+  if (requested === undefined || requested === current) return;
+  if (requested === "active") throw new TeamRuleError(INSTANCE_MESSAGES.useActivate);
+  throw new InstanceError(409, INSTANCE_MESSAGES.noBackToDraft);
+}
+
+/**
  * Tutto o niente: valida (fuori dalla transazione) e poi sostituisce ruoli e skill specializzate. Le skill
  * del catalogo già presenti nei ruoli precedenti restano ammesse anche se nel frattempo deprecate.
  */
 export async function saveInstance(userId: number, id: number, input: SaveInstanceInput, executor: Executor = db): Promise<InstanceView> {
   const current = await getRow(id);
   if (current.status === "closed") throw new InstanceError(409, INSTANCE_MESSAGES.closed);
+  checkStatusChange(current.status, input.status);
   const localSkillCodes = checkLocalSkills(input.localSkills);
   const previous = InstanceRoleSchema.array().parse(current.roles);
   await validateRoles({ roles: input.roles, mode: "instance", userId, previous, localSkillCodes });
@@ -202,6 +215,7 @@ export async function saveInstance(userId: number, id: number, input: SaveInstan
     const [locked] = await tx.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, id)).limit(1).for("update");
     if (!locked) throw new InstanceError(404, INSTANCE_MESSAGES.notFound);
     if (locked.status === "closed") throw new InstanceError(409, INSTANCE_MESSAGES.closed);
+    checkStatusChange(locked.status, input.status);
     await tx.delete(teamInstanceSkillsTable).where(eq(teamInstanceSkillsTable.instanceId, id));
     if (input.localSkills.length > 0) {
       await tx.insert(teamInstanceSkillsTable).values(
@@ -221,7 +235,6 @@ export async function saveInstance(userId: number, id: number, input: SaveInstan
         name: input.name,
         refTitle: input.refTitle ?? locked.refTitle,
         roles: input.roles,
-        status: input.status ?? locked.status,
         updatedAt: new Date(),
       })
       .where(eq(teamInstancesTable.id, id));

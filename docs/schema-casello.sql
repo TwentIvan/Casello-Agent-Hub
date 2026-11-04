@@ -369,6 +369,24 @@ CREATE TABLE "analysis_phase_results" (
 );
 CREATE UNIQUE INDEX "analysis_phase_results_unique" ON "analysis_phase_results" USING btree ("analysis_id", "phase");
 
+CREATE TYPE "public"."node_status" AS ENUM('active', 'disabled');
+CREATE TABLE "nodes" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"name" text NOT NULL,
+	"status" "node_status" DEFAULT 'active' NOT NULL,
+	"executor" text,
+	"version" text,
+	"skills" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"workspace_root" text,
+	"max_concurrent" integer DEFAULT 1 NOT NULL,
+	"last_seen_at" timestamp,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "nodes_user_name_unique" UNIQUE("user_id","name"),
+	CONSTRAINT "nodes_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action
+);
+
 CREATE TABLE "api_tokens" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"user_id" integer NOT NULL,
@@ -378,8 +396,10 @@ CREATE TABLE "api_tokens" (
 	"last_used_at" timestamp,
 	"revoked_at" timestamp,
 	"scopes" text[] DEFAULT '{mcp}' NOT NULL,
+	"node_id" integer,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "api_tokens_token_hash_unique" UNIQUE("token_hash"),
+	CONSTRAINT "api_tokens_node_id_nodes_id_fk" FOREIGN KEY ("node_id") REFERENCES "public"."nodes"("id") ON DELETE cascade ON UPDATE no action,
 	CONSTRAINT "api_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action
 );
 
@@ -567,6 +587,7 @@ CREATE TABLE "team_instances" (
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"closed_at" timestamp,
+	"node_workspace" text,
 	CONSTRAINT "team_instances_template_id_team_templates_id_fk" FOREIGN KEY ("template_id") REFERENCES "public"."team_templates"("id") ON DELETE set null ON UPDATE no action,
 	CONSTRAINT "team_instances_ref_app_id_apps_id_fk" FOREIGN KEY ("ref_app_id") REFERENCES "public"."apps"("id") ON DELETE restrict ON UPDATE no action,
 	CONSTRAINT "team_instances_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action
@@ -658,9 +679,18 @@ CREATE TABLE IF NOT EXISTS "team_tasks" (
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"started_at" timestamp,
 	"finished_at" timestamp,
+	"node_id" integer,
+	"lease_token" text,
+	"lease_expires_at" timestamp,
+	"session_id" text,
+	"waiting_since" timestamp,
+	"no_node_notified" boolean DEFAULT false NOT NULL,
+	"attachment_ids" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	CONSTRAINT "team_tasks_instance_id_team_instances_id_fk" FOREIGN KEY ("instance_id") REFERENCES "public"."team_instances"("id") ON DELETE cascade ON UPDATE no action,
-	CONSTRAINT "team_tasks_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action
+	CONSTRAINT "team_tasks_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action,
+	CONSTRAINT "team_tasks_node_id_nodes_id_fk" FOREIGN KEY ("node_id") REFERENCES "public"."nodes"("id") ON DELETE set null ON UPDATE no action
 );
+CREATE INDEX IF NOT EXISTS "team_tasks_node_status_idx" ON "team_tasks" USING btree ("node_id", "status");
 CREATE INDEX IF NOT EXISTS "team_tasks_instance_status_idx" ON "team_tasks" USING btree ("instance_id", "status");
 CREATE TABLE IF NOT EXISTS "team_task_steps" (
 	"id" serial PRIMARY KEY NOT NULL,
@@ -742,3 +772,20 @@ DO $$ BEGIN
     ALTER TABLE "pending_actions" ADD CONSTRAINT "pending_actions_action_needs_tool_check" CHECK ("kind" <> 'action' OR ("tool_id" IS NOT NULL AND "app_id" IS NOT NULL));
   END IF;
 END $$;
+
+-- Nodo locale: allegati delle squadre (i nodi, le colonne di api_tokens, team_instances e team_tasks sono sopra)
+CREATE TABLE "team_attachments" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"instance_id" integer NOT NULL,
+	"name" text NOT NULL,
+	"content_type" text NOT NULL,
+	"size_bytes" integer NOT NULL,
+	"sha256" text NOT NULL,
+	"content" bytea NOT NULL,
+	"uploaded_by" integer,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"deleted_at" timestamp,
+	CONSTRAINT "team_attachments_instance_id_team_instances_id_fk" FOREIGN KEY ("instance_id") REFERENCES "public"."team_instances"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "team_attachments_uploaded_by_users_id_fk" FOREIGN KEY ("uploaded_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action
+);
+CREATE INDEX "team_attachments_instance_idx" ON "team_attachments" USING btree ("instance_id");

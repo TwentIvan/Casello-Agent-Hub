@@ -45,6 +45,8 @@ export const teamInstancesTable = pgTable(
     activatedBy: integer("activated_by").references(() => usersTable.id, { onDelete: "set null" }),
     monthlyBudgetUsd: numeric("monthly_budget_usd", { precision: 12, scale: 2 }),
     lastTurnAt: timestamp("last_turn_at"),
+    // Cartella di lavoro relativa alla radice del nodo (ruoli `node`), null = non impostata
+    nodeWorkspace: text("node_workspace"),
   },
   (table) => [index("team_instances_ref_idx").on(table.refAppId, table.refType, table.refId)],
 );

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { pgTable, serial, integer, text, timestamp } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
+import { nodesTable } from "./nodes";
 
 // Token personali (server MCP e /api): a riposo solo l'hash SHA-256 (esadecimale), il valore si mostra una volta
 export const apiTokensTable = pgTable("api_tokens", {
@@ -15,6 +16,8 @@ export const apiTokensTable = pgTable("api_tokens", {
   revokedAt: timestamp("revoked_at"),
   // Ambiti: mcp, api:read, api:write (in ordine di TOKEN_SCOPES); i token vecchi hanno solo mcp
   scopes: text("scopes").array().notNull().default(sql`'{mcp}'::text[]`),
+  // Token di un nodo locale: ha il solo ambito `node`; si elimina insieme al nodo
+  nodeId: integer("node_id").references(() => nodesTable.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

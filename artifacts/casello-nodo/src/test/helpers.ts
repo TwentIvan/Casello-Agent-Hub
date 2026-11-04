@@ -35,10 +35,13 @@ export interface SpawnCall {
 }
 
 /** `spawn` iniettato: al posto di `claude` esegue lo script finto nella modalità data. */
-export function fakeSpawn(mode: string, calls: SpawnCall[] = []) {
+export function fakeSpawn(mode: string, calls: SpawnCall[] = [], extraEnv: Record<string, string> = {}) {
   return (command: string, args: readonly string[], options: SpawnOptions): ChildProcess => {
     calls.push({ command, args: [...args], options });
-    return realSpawn(process.execPath, [FAKE_CLAUDE, mode, ...args], options);
+    return realSpawn(process.execPath, [FAKE_CLAUDE, mode, ...args], {
+      ...options,
+      env: { ...options.env, ...extraEnv },
+    });
   };
 }
 

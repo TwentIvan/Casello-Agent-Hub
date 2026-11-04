@@ -2,7 +2,7 @@ import { CaselloClient, LeaseLostError, type TaskPackage, type TaskReport } from
 import { NODE_EXECUTOR, NODE_VERSION, scanSkills } from "./capabilities";
 import { defaultPaths, type Config } from "./config";
 import { createLogger, type Logger } from "./log";
-import { runTask, type SpawnFn } from "./runner";
+import { isLeaseLostReport, runTask, WorkspaceQueue, type SpawnFn } from "./runner";
 import { writeState, type NodeState } from "./state";
 
 export interface LoopDeps {
@@ -22,7 +22,7 @@ export interface LoopDeps {
 }
 
 export interface Loop {
-  /** Ferma heartbeat e nuovi claim e attende la fine dei compiti in corso. */
+  /** Ferma heartbeat e nuovi claim, interrompe i compiti in corso (report `failed`) e ne attende la chiusura. */
   stop(): Promise<void>;
 }
 
@@ -56,6 +56,9 @@ export function startLoop(config: Config, deps: LoopDeps = {}): Loop {
     lastError: null,
   };
   let stopped = false;
+  // Lo stop interrompe i compiti in corso (gruppo di processi di `claude` terminato)
+  const stopController = new AbortController();
+  const workspaceQueue = new WorkspaceQueue();
   let timer: NodeJS.Timeout | undefined;
   let currentTick: Promise<void> | null = null;
   let stateWrite: Promise<void> = Promise.resolve();
@@ -84,7 +87,7 @@ export function startLoop(config: Config, deps: LoopDeps = {}): Loop {
         return;
       } catch (err) {
         if (err instanceof LeaseLostError) {
-          recordError(`compito ${pkg.taskId}: report rifiutato, ${err.message}`);
+          logger.warn(`compito ${pkg.taskId}: report rifiutato, ${err.message}`);
           return;
         }
         if (Date.now() >= leaseExpiresAt().getTime() || stopped) {
@@ -111,6 +114,8 @@ export function startLoop(config: Config, deps: LoopDeps = {}): Loop {
           logger,
           pingIntervalMs: deps.pingIntervalMs,
           killGraceMs: deps.killGraceMs,
+          signal: stopController.signal,
+          workspaceQueue,
           onLeaseRenewed: (d) => {
             leaseExpiresAt = d;
           },
@@ -120,7 +125,11 @@ export function startLoop(config: Config, deps: LoopDeps = {}): Loop {
         recordError(`compito ${pkg.taskId}: errore inatteso (${errorMessage(err)})`);
         report = { leaseToken: pkg.leaseToken, status: "failed", outcome: "errore del nodo durante l'esecuzione" };
       }
-      await deliverReport(pkg, report, () => leaseExpiresAt);
+      if (isLeaseLostReport(report)) {
+        logger.warn(`compito ${pkg.taskId}: lease persa, nessun report`);
+      } else {
+        await deliverReport(pkg, report, () => leaseExpiresAt);
+      }
     } catch (err) {
       recordError(`compito ${pkg.taskId}: errore inatteso (${errorMessage(err)})`);
     } finally {
@@ -173,6 +182,7 @@ export function startLoop(config: Config, deps: LoopDeps = {}): Loop {
     async stop() {
       stopped = true;
       if (timer) clearTimeout(timer);
+      stopController.abort();
       if (currentTick) await currentTick;
       await Promise.all([...running.values()].map((t) => t.promise));
       await stateWrite;

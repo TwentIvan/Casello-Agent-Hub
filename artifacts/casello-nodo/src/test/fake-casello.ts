@@ -6,6 +6,8 @@ export interface RecordedRequest {
   path: string;
   headers: IncomingMessage["headers"];
   body: unknown;
+  /** Istante di arrivo (ms). */
+  at: number;
 }
 
 export type Handler = (req: RecordedRequest, res: ServerResponse) => void | Promise<void>;
@@ -29,7 +31,13 @@ export class FakeCasello {
         } catch {
           // corpo non JSON: resta testo
         }
-        const rec: RecordedRequest = { method: req.method ?? "", path: req.url ?? "", headers: req.headers, body };
+        const rec: RecordedRequest = {
+          method: req.method ?? "",
+          path: req.url ?? "",
+          headers: req.headers,
+          body,
+          at: Date.now(),
+        };
         this.requests.push(rec);
         const handler = this.find(rec);
         if (!handler) {

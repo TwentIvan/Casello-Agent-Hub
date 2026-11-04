@@ -58,6 +58,13 @@ const ConfigFile = z.object({
     .default(60),
 });
 
+/** Il token viaggia nell'header: https obbligatorio, http solo verso questa macchina (sviluppo e test). */
+function isSecureUrl(url: string): boolean {
+  const u = new URL(url);
+  if (u.protocol === "https:") return true;
+  return u.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
+}
+
 function expandHome(p: string, home: string): string {
   if (p === "~") return home;
   if (p.startsWith("~/")) return path.join(home, p.slice(2));
@@ -91,6 +98,7 @@ export function loadConfig(configPath = defaultPaths().configPath, opts: { home?
     throw new ConfigError(`config non valida: controlla ${fields.join(", ")}`);
   }
   const c = parsed.data;
+  if (!isSecureUrl(c.caselloUrl)) throw new ConfigError("caselloUrl deve essere https");
   return {
     caselloUrl: c.caselloUrl.replace(/\/+$/, ""),
     token: c.token,

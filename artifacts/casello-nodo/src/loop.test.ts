@@ -48,7 +48,7 @@ function start(cfg: Config, mode: string, over: Partial<LoopDeps> = {}) {
     client: new CaselloClient({ baseUrl: casello.url, token: FAKE_TOKEN, sleep: async () => {} }),
     spawn: fakeSpawn(mode),
     logsDir,
-    logToStdout: false,
+    logToStdout: process.env.DEBUG_NODO === "1",
     statePath,
     heartbeatIntervalMs: 50,
     pingIntervalMs: 60_000,
@@ -220,6 +220,26 @@ describe("startLoop", () => {
     }
   });
 
+  it("due compiti nello stesso spazio di lavoro: entrambi done, uno dopo l'altro", async () => {
+    let id = 200;
+    casello.on("POST", "/api/node/heartbeat", (_req, res) => json(res, 200, { pending: id < 202 ? 1 : 0 }));
+    casello.on("POST", "/api/node/claim", (_req, res) =>
+      id < 202 ? json(res, 200, taskPackage({ taskId: id++ })) : json(res, 204),
+    );
+    casello.on("POST", "/api/node/tasks/:id/report", (_req, res) => json(res, 204));
+    process.env.FAKE_CLAUDE_DELAY_MS = "300";
+    try {
+      start(config({ maxConcurrent: 2 }), "slow");
+      await waitFor(
+        () => casello.calls("POST", "/api/node/tasks/").filter((r) => r.path.endsWith("/report")).length === 2,
+      );
+      const bodies = casello.calls("POST", "/api/node/tasks/").filter((r) => r.path.endsWith("/report"));
+      expect(bodies.map((r) => (r.body as { status: string }).status)).toEqual(["done", "done"]);
+    } finally {
+      delete process.env.FAKE_CLAUDE_DELAY_MS;
+    }
+  });
+
   it("nessun claim se pending è 0", async () => {
     casello.on("POST", "/api/node/heartbeat", (_req, res) => json(res, 200, { pending: 0 }));
     start(config(), "esito");
@@ -234,6 +254,35 @@ describe("startLoop", () => {
     const state = await readState(statePath);
     expect(state?.lastError).toContain("nodo disattivato");
     expect(state?.lastHeartbeatAt).toBeNull();
+  });
+
+  it("ping con 409: compito interrotto e nessun report inviato", async () => {
+    oneTask();
+    casello.on("POST", "/api/node/tasks/:id/ping", (_req, res) =>
+      json(res, 409, { error: "lease non valida o scaduta" }),
+    );
+    casello.on("POST", "/api/node/tasks/:id/report", (_req, res) =>
+      json(res, 409, { error: "lease non valida o scaduta" }),
+    );
+    start(config(), "sleep", { pingIntervalMs: 50 });
+    await waitFor(() => casello.calls("POST", "/api/node/tasks/42/ping").length > 0);
+    await waitFor(async () => (await readState(statePath))?.tasks.length === 0);
+    expect(casello.calls("POST", "/api/node/tasks/42/report")).toHaveLength(0);
+    expect((await readState(statePath))?.lastError).toBeNull();
+  });
+
+  it("stop() interrompe il compito in corso e lo riferisce failed", async () => {
+    oneTask();
+    casello.on("POST", "/api/node/tasks/:id/report", (_req, res) => json(res, 204));
+    const loop = start(config(), "sleep", { killGraceMs: 100 });
+    await waitFor(async () => (await readState(statePath))?.tasks.length === 1);
+    const started = Date.now();
+    await loop.stop();
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(casello.calls("POST", "/api/node/tasks/42/report")[0].body).toMatchObject({
+      status: "failed",
+      outcome: "esecuzione interrotta: nodo fermato",
+    });
   });
 
   it("stop() ferma gli heartbeat", async () => {

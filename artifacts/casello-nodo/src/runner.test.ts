@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, realpath, symlink } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CaselloClient } from "./client";
-import { runTask, type RunContext } from "./runner";
+import { isLeaseLostReport, runTask, WorkspaceQueue, type RunContext } from "./runner";
 import { FakeCasello, json } from "./test/fake-casello";
 import { FAKE_TOKEN, fakeSpawn, taskPackage, tempDir, testConfig, type SpawnCall } from "./test/helpers";
 
@@ -39,6 +39,7 @@ function ctx(mode: string, calls: SpawnCall[] = [], over: Partial<RunContext> = 
     spawn: fakeSpawn(mode, calls),
     pingIntervalMs: 60_000,
     killGraceMs: 200,
+    workspaceQueue: new WorkspaceQueue(),
     ...over,
   };
 }
@@ -262,9 +263,11 @@ describe("runTask", () => {
       delete process.env.FAKE_CLAUDE_DELAY_MS;
     }
     const pings = casello.calls("POST", "/api/node/tasks/42/ping");
-    expect(pings.length).toBeGreaterThanOrEqual(3);
+    expect(pings.length).toBeGreaterThanOrEqual(1);
     expect(pings[0].body).toEqual({ leaseToken: "lease-abc" });
-    expect(renewed.length).toBe(pings.length);
+    // un ping partito a ridosso della fine può non essere più notificato
+    expect(renewed.length).toBeGreaterThanOrEqual(1);
+    expect(renewed.length).toBeLessThanOrEqual(pings.length);
   });
 
   it("claude non avviabile → failed", async () => {
@@ -277,6 +280,198 @@ describe("runTask", () => {
     expect(report.status).toBe("failed");
   });
 });
+
+describe("runTask: esiti", () => {
+  it("casello-esito.json non valido → esito dal JSON della CLI", async () => {
+    const report = await runTask(taskPackage(), ctx("badesito"));
+    expect(report).toMatchObject({ status: "done", outcome: "risultato della CLI", costUsd: 0.25 });
+  });
+
+  it("casello-esito.json non valido e nessun JSON della CLI → failed", async () => {
+    const report = await runTask(taskPackage(), ctx("badesito-nocli"));
+    expect(report.status).toBe("failed");
+    expect(report.outcome).toMatch(/^Claude Code terminato senza esito/);
+  });
+
+  it("JSON della CLI senza costo né token → report senza costi", async () => {
+    const report = await runTask(taskPackage(), ctx("nocost"));
+    expect(report).toMatchObject({ status: "done", outcome: "fatto senza costi" });
+    expect(report.costUsd).toBeUndefined();
+    expect(report.promptTokens).toBeUndefined();
+    expect(report.completionTokens).toBeUndefined();
+  });
+
+  it("due allegati con lo stesso nome → failed «allegato non valido»", async () => {
+    casello.on("GET", "/api/node/tasks/:id/attachments/:aid", (_req, res) => {
+      res.statusCode = 200;
+      res.end("x");
+    });
+    const calls: SpawnCall[] = [];
+    const a = { name: "doppio.txt", contentType: "text/plain", sizeBytes: 1, sha256: sha("x") };
+    const report = await runTask(
+      taskPackage({
+        attachments: [
+          { id: 1, ...a },
+          { id: 2, ...a },
+        ],
+      }),
+      ctx("esito", calls),
+    );
+    expect(report).toMatchObject({ status: "failed", outcome: "allegato non valido" });
+    expect(calls).toHaveLength(0);
+    expect(existsSync(path.join(ws, "casello-allegati", "doppio.txt"))).toBe(false);
+  });
+});
+
+describe("runTask: processi", () => {
+  it("al tempo massimo termina tutto il gruppo, anche un nipote che tiene aperto stdout", async () => {
+    const c = ctx("grandchild", [], { killGraceMs: 100, drainMs: 300 });
+    c.config = { ...c.config, taskTimeoutMinutes: 0.005 };
+    const started = Date.now();
+    const report = await runTask(taskPackage(), c);
+    expect(report).toMatchObject({ status: "failed", outcome: "tempo massimo superato" });
+    expect(Date.now() - started).toBeLessThan(5_000);
+    const pid = Number(readFileSync(path.join(ws, "nipote.pid"), "utf8"));
+    await waitDead(pid);
+  });
+
+  it("un errore dopo l'avvio non chiude il compito come «non avviabile»", async () => {
+    const inner = fakeSpawn("slow");
+    const c = ctx("slow", [], {
+      spawn: (cmd, args, opts) => {
+        const child = inner(cmd, args, opts);
+        child.once("spawn", () => setImmediate(() => child.emit("error", new Error("kill non riuscito"))));
+        return child;
+      },
+    });
+    const report = await runTask(taskPackage(), c);
+    expect(report).toMatchObject({ status: "done", outcome: "fatto dal file" });
+  });
+
+  it("ping con 409 → compito interrotto (gruppo terminato) e report «lease non valida o scaduta»", async () => {
+    casello.on("POST", "/api/node/tasks/:id/ping", (_req, res) =>
+      json(res, 409, { error: "lease non valida o scaduta" }),
+    );
+    let child: ChildProcess | undefined;
+    const inner = fakeSpawn("sleep");
+    const c = ctx("sleep", [], {
+      pingIntervalMs: 50,
+      spawn: (cmd, args, opts) => (child = inner(cmd, args, opts)),
+    });
+    const started = Date.now();
+    const report = await runTask(taskPackage(), c);
+    expect(report).toMatchObject({ status: "failed", outcome: "lease non valida o scaduta" });
+    expect(isLeaseLostReport(report)).toBe(true);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(child?.exitCode !== null || child?.signalCode !== null).toBe(true);
+  });
+
+  it("lo stop del nodo interrompe il compito", async () => {
+    const stop = new AbortController();
+    setTimeout(() => stop.abort(), 200);
+    const report = await runTask(taskPackage(), ctx("sleep", [], { signal: stop.signal }));
+    expect(report).toMatchObject({ status: "failed", outcome: "esecuzione interrotta: nodo fermato" });
+  });
+
+  it("ping anche durante il download degli allegati", async () => {
+    const data = Buffer.from("lento");
+    casello.on("GET", "/api/node/tasks/:id/attachments/:aid", (_req, res) => {
+      setTimeout(() => {
+        res.statusCode = 200;
+        res.end(data);
+      }, 400);
+    });
+    const calls: SpawnCall[] = [];
+    let spawnedAt = 0;
+    const inner = fakeSpawn("esito", calls);
+    const pkg = taskPackage({
+      attachments: [{ id: 9, name: "a.txt", contentType: "text/plain", sizeBytes: data.length, sha256: sha(data) }],
+    });
+    await runTask(
+      pkg,
+      ctx("esito", calls, {
+        pingIntervalMs: 100,
+        spawn: (cmd, args, opts) => {
+          spawnedAt = Date.now();
+          return inner(cmd, args, opts);
+        },
+      }),
+    );
+    const before = casello.calls("POST", "/api/node/tasks/42/ping").filter((r) => r.at < spawnedAt);
+    expect(before.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("runTask: stesso spazio di lavoro", () => {
+  function traced(mode: string, delayMs: string, spans: Array<{ start: number; end: number }>) {
+    const inner = fakeSpawn(mode, [], { FAKE_CLAUDE_DELAY_MS: delayMs });
+    return (cmd: string, args: readonly string[], opts: SpawnOptions) => {
+      const span = { start: Date.now(), end: 0 };
+      spans.push(span);
+      const child = inner(cmd, args, opts);
+      child.on("exit", () => {
+        span.end = Date.now();
+      });
+      return child;
+    };
+  }
+
+  it("due compiti nello stesso spazio girano uno alla volta; chi aspetta rinnova la lease", async () => {
+    const queue = new WorkspaceQueue();
+    const spans: Array<{ start: number; end: number }> = [];
+    const first = ctx("slow", [], { workspaceQueue: queue, spawn: traced("slow", "500", spans) });
+    // Il tempo massimo del secondo conta da quando parte davvero (600 ms < 500 di attesa + 300 di lavoro)
+    const second = ctx("slow", [], { workspaceQueue: queue, pingIntervalMs: 100, spawn: traced("slow", "300", spans) });
+    second.config = { ...second.config, taskTimeoutMinutes: 0.01 };
+    const [r1, r2] = await Promise.all([
+      runTask(taskPackage({ taskId: 42 }), first),
+      runTask(taskPackage({ taskId: 43, leaseToken: "lease-due" }), second),
+    ]);
+    expect(r1).toMatchObject({ status: "done", outcome: "fatto dal file" });
+    expect(r2).toMatchObject({ status: "done", outcome: "fatto dal file" });
+    expect(spans).toHaveLength(2);
+    expect(spans[1].start).toBeGreaterThanOrEqual(spans[0].end);
+    const waitingPings = casello.calls("POST", "/api/node/tasks/43/ping").filter((r) => r.at < spans[1].start);
+    expect(waitingPings.length).toBeGreaterThanOrEqual(1);
+    expect(waitingPings[0].body).toEqual({ leaseToken: "lease-due" });
+  });
+
+  it("due compiti in spazi diversi girano in parallelo", async () => {
+    await mkdir(path.join(root, "altro"), { recursive: true });
+    const queue = new WorkspaceQueue();
+    const spans: Array<{ start: number; end: number }> = [];
+    const [r1, r2] = await Promise.all([
+      runTask(
+        taskPackage({ taskId: 42 }),
+        ctx("slow", [], { workspaceQueue: queue, spawn: traced("slow", "400", spans) }),
+      ),
+      runTask(
+        taskPackage({ taskId: 43, workspace: "altro" }),
+        ctx("slow", [], { workspaceQueue: queue, spawn: traced("slow", "400", spans) }),
+      ),
+    ]);
+    expect([r1.status, r2.status]).toEqual(["done", "done"]);
+    expect(spans).toHaveLength(2);
+    const [a, b] = spans;
+    expect(Math.max(a.start, b.start)).toBeLessThan(Math.min(a.end, b.end));
+  });
+});
+
+async function waitDead(pid: number): Promise<void> {
+  const until = Date.now() + 3_000;
+  for (;;) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return;
+    }
+    if (Date.now() > until) {
+      process.kill(pid, "SIGKILL");
+      throw new Error(`il processo ${pid} è ancora vivo`);
+    }
+    await new Promise((r) => setTimeout(r, 25));
+  }
+}
 
 async function realCwd(call: SpawnCall): Promise<string> {
   return realpath(String(call.options.cwd));

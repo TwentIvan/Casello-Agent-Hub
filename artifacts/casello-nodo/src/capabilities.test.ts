@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { NODE_EXECUTOR, NODE_VERSION, scanSkills } from "./capabilities";
+import { latestVersion, NODE_EXECUTOR, NODE_VERSION, scanSkills } from "./capabilities";
 import { tempDir } from "./test/helpers";
 
 let dir: string;
@@ -50,5 +50,22 @@ describe("capacità", () => {
     const pkg = JSON.parse(await readFile(pkgPath, "utf8")) as { version: string };
     expect(NODE_VERSION).toBe(pkg.version);
     expect(NODE_EXECUTOR).toBe("claude-code");
+  });
+});
+
+describe("versione dei plugin", () => {
+  it("conta solo la versione più alta di ogni plugin", async () => {
+    await skill("cache", "m", "p", "1.9.0", "skills", "vecchia");
+    await skill("cache", "m", "p", "1.10.0", "skills", "nuova");
+    await skill("cache", "m", "p", "1.10.0-beta.1", "skills", "beta");
+    const skills = await scanSkills([path.join(dir, "cache")]);
+    expect(skills).toEqual(["p:nuova"]);
+  });
+
+  it("latestVersion: semver, poi ordine lessicografico", () => {
+    expect(latestVersion(["2.0.2", "2.0.10", "2.0.3"])).toBe("2.0.10");
+    expect(latestVersion(["1.0.0-rc.1", "1.0.0"])).toBe("1.0.0");
+    expect(latestVersion(["abc", "abd"])).toBe("abd");
+    expect(latestVersion([])).toBeNull();
   });
 });

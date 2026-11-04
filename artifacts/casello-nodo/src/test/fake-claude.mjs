@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // `claude` finto per i test: il primo argomento è la modalità, poi gli argomenti veri della CLI.
+import { spawn } from "node:child_process";
 import { writeFileSync, existsSync } from "node:fs";
 
 const [mode, ...args] = process.argv.slice(2);
@@ -47,6 +48,26 @@ switch (mode) {
     process.on("SIGTERM", () => {});
     setInterval(() => {}, 1000);
     break;
+  case "badesito":
+    // esito non valido: si usa il JSON della CLI
+    writeFileSync("casello-esito.json", "{ non è json");
+    process.stdout.write(cliJson("risultato della CLI"));
+    break;
+  case "badesito-nocli":
+    writeFileSync("casello-esito.json", JSON.stringify({ status: "forse", outcome: "" }));
+    break;
+  case "nocost":
+    process.stdout.write(JSON.stringify({ type: "result", is_error: false, result: "fatto senza costi" }));
+    break;
+  case "grandchild": {
+    // un nipote che ignora SIGTERM e tiene aperto lo stdout ereditato
+    const nipote = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"], {
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+    writeFileSync("nipote.pid", String(nipote.pid));
+    setInterval(() => {}, 1000);
+    break;
+  }
   default:
     process.exit(2);
 }

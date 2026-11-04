@@ -74,6 +74,22 @@ describe("loadConfig", () => {
     }
   });
 
+  it.each(["http://casello.example", "http://10.0.0.5:3000", "ftp://casello.example"])(
+    "rifiuta caselloUrl non https: %s",
+    async (caselloUrl) => {
+      const file = await writeConfig({ caselloUrl, token: "cas_x", workspaceRoot: "/tmp" });
+      expect(() => loadConfig(file)).toThrow(new ConfigError("caselloUrl deve essere https"));
+    },
+  );
+
+  it.each(["http://localhost:3000", "http://127.0.0.1:8080"])(
+    "accetta http verso questa macchina: %s",
+    async (caselloUrl) => {
+      const file = await writeConfig({ caselloUrl, token: "cas_x", workspaceRoot: "/tmp" });
+      expect(loadConfig(file).caselloUrl).toBe(caselloUrl);
+    },
+  );
+
   it("file mancante → errore chiaro", () => {
     expect(() => loadConfig(path.join(dir, "manca.json"))).toThrow(ConfigError);
   });

@@ -3,8 +3,9 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, pool, teamAttachmentsTable, teamInstancesTable, teamTasksTable } from "@workspace/db";
 import { catalogSkill, ensureUser, nodeRole, seedNodeTeam } from "../../../test/team-node-fixture";
-import { AttachmentError, MAX_ATTACHMENT_BYTES, MAX_TEAM_ATTACHMENT_BYTES, deleteAttachment, getAttachment, listAttachments, saveAttachment, validateNodeWorkspace } from "./attachments";
+import { ATTACHMENT_UPLOAD_PATH, AttachmentError, MAX_ATTACHMENT_BYTES, MAX_TEAM_ATTACHMENT_BYTES, deleteAttachment, getAttachment, listAttachments, purgeDeletedAttachments, rfc5987, saveAttachment, validateNodeWorkspace } from "./attachments";
 import { saveInstance } from "./instances";
+import { startTask } from "./task-runner";
 import { LEAD_TOOLS, leadToolHandler } from "./lead-tools";
 
 // Allegati delle squadre e spazio di lavoro sul nodo (Postgres di prova)
@@ -61,15 +62,51 @@ describe("saveAttachment", () => {
   });
 });
 
+const rowOf = async (id: number) => (await db.select().from(teamAttachmentsTable).where(eq(teamAttachmentsTable.id, id)))[0];
+
 describe("deleteAttachment", () => {
-  it("imposta deleted_at: sparisce dall'elenco ma la riga resta", async () => {
+  it("allegato non citato da compiti attivi: la riga sparisce", async () => {
     const view = await saveAttachment(userId, instanceId, file("a.txt", "a"));
     await deleteAttachment(instanceId, view.id);
     expect(await listAttachments(instanceId)).toEqual([]);
     await expect(getAttachment(instanceId, view.id)).rejects.toBeInstanceOf(AttachmentError);
     await expect(deleteAttachment(instanceId, view.id)).rejects.toMatchObject({ status: 404 });
-    const rows = await db.select().from(teamAttachmentsTable).where(eq(teamAttachmentsTable.id, view.id));
-    expect(rows[0]!.deletedAt).not.toBeNull();
+    expect(await rowOf(view.id)).toBeUndefined();
+  });
+
+  it("allegato citato da un compito queued/waiting_node/running: eliminazione logica; finito il compito lo ripulisce purgeDeletedAttachments", async () => {
+    const cited = await saveAttachment(userId, instanceId, file("a.txt", "a"));
+    const other = await saveAttachment(userId, instanceId, file("b.txt", "b"));
+    const started = await startTask(instanceId, "t1", [cited.id]);
+    await deleteAttachment(instanceId, cited.id);
+    await deleteAttachment(instanceId, other.id);
+    expect(await listAttachments(instanceId)).toEqual([]);
+    expect((await rowOf(cited.id))!.deletedAt).not.toBeNull();
+    expect(await rowOf(other.id)).toBeUndefined();
+
+    // Compito ancora attivo: la pulizia lascia la riga
+    expect(await purgeDeletedAttachments()).toBe(0);
+    expect(await rowOf(cited.id)).toBeDefined();
+    await db.update(teamTasksTable).set({ status: "done" }).where(eq(teamTasksTable.id, started.id));
+    expect(await purgeDeletedAttachments()).toBe(1);
+    expect(await rowOf(cited.id)).toBeUndefined();
+  });
+
+  it("la pulizia non tocca gli allegati non eliminati", async () => {
+    const view = await saveAttachment(userId, instanceId, file("a.txt", "a"));
+    expect(await purgeDeletedAttachments()).toBe(0);
+    expect(await rowOf(view.id)).toBeDefined();
+  });
+});
+
+describe("helper", () => {
+  it("rfc5987 codifica anche ' ( ) *", () => {
+    expect(rfc5987("a b'(c)*è.txt")).toBe("a%20b%27%28c%29%2A%C3%A8.txt");
+  });
+  it("il percorso del caricamento ignora le maiuscole come il routing di Express", () => {
+    expect(ATTACHMENT_UPLOAD_PATH.test("/api/team-instances/3/attachments")).toBe(true);
+    expect(ATTACHMENT_UPLOAD_PATH.test("/api/Team-Instances/3/attachments")).toBe(true);
+    expect(ATTACHMENT_UPLOAD_PATH.test("/api/team-instances/3/attachments/4")).toBe(false);
   });
 });
 
@@ -78,7 +115,7 @@ describe("validateNodeWorkspace", () => {
     expect(validateNodeWorkspace(null)).toBeNull();
     expect(validateNodeWorkspace("SAP/AIMAG/CR/DS5100/WI_1174")).toBeNull();
     expect(validateNodeWorkspace("Mio lavoro/v1.2-x")).toBeNull();
-    for (const bad of ["../x", "/abs", "a/../b", "a/..", "..", "a\\b", "a;b", "a$b", "", "x".repeat(301)]) {
+    for (const bad of ["../x", "/abs", "a/../b", "a/..", "..", "a\\b", "a;b", "a$b", "", "x".repeat(301), "a//b", "./x", "a/./b", "a/b/", ".", "/"]) {
       expect(validateNodeWorkspace(bad), bad).toBe("spazio di lavoro non valido");
     }
     expect(validateNodeWorkspace("x".repeat(300))).toBeNull();

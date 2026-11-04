@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { db, teamAttachmentsTable, teamInstancesTable, type TeamAttachment } from "@workspace/db";
+import { db, teamAttachmentsTable, teamInstancesTable, teamTasksTable, type TeamAttachment } from "@workspace/db";
 import { TEAM_MESSAGES } from "./rules";
 
 // Allegati delle squadre (solo in ingresso, nel DB come bytea) e spazio di lavoro della squadra sul nodo.
@@ -10,6 +10,7 @@ import { TEAM_MESSAGES } from "./rules";
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 export const MAX_TEAM_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 const MAX_NAME = 200;
+const ACTIVE_TASK_STATUSES: ("queued" | "waiting_node" | "running")[] = ["queued", "waiting_node", "running"];
 const MAX_WORKSPACE = 300;
 
 export const ATTACHMENT_MESSAGES = {
@@ -126,14 +127,55 @@ export async function getAttachment(instanceId: number, id: number): Promise<Tea
   return row;
 }
 
-/** Toglie l'allegato dall'elenco (`deleted_at`): la riga resta per i compiti che lo citano già. */
+/**
+ * Elimina l'allegato: se nessun compito `queued`, `waiting_node` o `running` lo cita la riga sparisce, altrimenti si
+ * toglie solo dall'elenco (`deleted_at`) e il nodo che lo ha in carico lo scarica comunque; lo spazio lo libera poi
+ * `purgeDeletedAttachments`. La riga della squadra è bloccata come in `startTask`, che registra le citazioni.
+ */
 export async function deleteAttachment(instanceId: number, id: number): Promise<void> {
-  const rows = await db
-    .update(teamAttachmentsTable)
-    .set({ deletedAt: new Date() })
-    .where(and(eq(teamAttachmentsTable.id, id), eq(teamAttachmentsTable.instanceId, instanceId), isNull(teamAttachmentsTable.deletedAt)))
-    .returning({ id: teamAttachmentsTable.id });
-  if (rows.length === 0) throw new AttachmentError(404, ATTACHMENT_MESSAGES.notFound);
+  await db.transaction(async (tx) => {
+    await tx.select({ id: teamInstancesTable.id }).from(teamInstancesTable).where(eq(teamInstancesTable.id, instanceId)).for("update").limit(1);
+    const [row] = await tx
+      .select({ id: teamAttachmentsTable.id })
+      .from(teamAttachmentsTable)
+      .where(and(eq(teamAttachmentsTable.id, id), eq(teamAttachmentsTable.instanceId, instanceId), isNull(teamAttachmentsTable.deletedAt)))
+      .limit(1);
+    if (!row) throw new AttachmentError(404, ATTACHMENT_MESSAGES.notFound);
+    const [cited] = await tx
+      .select({ id: teamTasksTable.id })
+      .from(teamTasksTable)
+      .where(and(eq(teamTasksTable.instanceId, instanceId), inArray(teamTasksTable.status, ACTIVE_TASK_STATUSES), sql`${teamTasksTable.attachmentIds} @> jsonb_build_array(${id}::int)`))
+      .limit(1);
+    if (cited) await tx.update(teamAttachmentsTable).set({ deletedAt: new Date() }).where(eq(teamAttachmentsTable.id, id));
+    else await tx.delete(teamAttachmentsTable).where(eq(teamAttachmentsTable.id, id));
+  });
+}
+
+/** Cancella gli allegati eliminati che nessun compito `queued`, `waiting_node` o `running` cita più; restituisce quanti. */
+export async function purgeDeletedAttachments(): Promise<number> {
+  const result = await db.execute(sql`
+    delete from team_attachments a
+    where a.deleted_at is not null
+      and not exists (
+        select 1 from team_tasks t
+        where t.instance_id = a.instance_id
+          and t.status in ('queued', 'waiting_node', 'running')
+          and t.attachment_ids @> jsonb_build_array(a.id)
+      )
+    returning a.id`);
+  return result.rows.length;
+}
+
+/**
+ * Percorso del caricamento di un allegato: il corpo è il file grezzo, quindi i parser globali (JSON, form) lo saltano.
+ * Senza distinzione tra maiuscole e minuscole: il routing di Express (impostazione predefinita) non la fa, quindi
+ * `/api/Team-Instances/…` raggiunge la stessa route e deve saltare gli stessi parser.
+ */
+export const ATTACHMENT_UPLOAD_PATH = /^\/api\/team-instances\/\d+\/attachments\/?$/i;
+
+/** Valore di `filename*` (RFC 5987): encodeURIComponent più `'()*`. */
+export function rfc5987(name: string): string {
+  return encodeURIComponent(name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
 /** Id tra quelli dati che sono allegati non eliminati della squadra. */
@@ -159,11 +201,11 @@ export async function taskAttachmentViews(instanceId: number, ids: number[]): Pr
 
 /**
  * Spazio di lavoro della squadra sul nodo: percorso relativo alla radice del nodo, max 300 caratteri, solo
- * `[A-Za-z0-9._ -]` e `/`, senza `/` iniziale né segmenti `..`. Restituisce il messaggio d'errore, o null se valido
+ * `[A-Za-z0-9._ -]` e `/`, senza `/` iniziale o finale, né segmenti vuoti, `.` o `..`. Restituisce il messaggio d'errore, o null se valido
  * (anche `null` = non impostato).
  */
 export function validateNodeWorkspace(value: string | null): string | null {
   if (value === null) return null;
-  const ok = value.length >= 1 && value.length <= MAX_WORKSPACE && /^[A-Za-z0-9._ /-]+$/.test(value) && !value.startsWith("/") && !value.split("/").includes("..");
+  const ok = value.length >= 1 && value.length <= MAX_WORKSPACE && /^[A-Za-z0-9._ /-]+$/.test(value) && value.split("/").every((seg) => seg !== "" && seg !== "." && seg !== "..");
   return ok ? null : ATTACHMENT_MESSAGES.workspaceInvalid;
 }

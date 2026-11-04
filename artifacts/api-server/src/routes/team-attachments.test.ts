@@ -79,6 +79,18 @@ describe("allegati", () => {
     expect((await json(res)).sizeBytes).toBe(Buffer.byteLength(body));
   });
 
+  it("nomi con separatori codificati (..%2Fx, a%2Fb) → 400; il percorso con maiuscole salta i parser globali (file JSON grande)", async () => {
+    for (const name of ["..%2Fx", "a%2Fb"]) {
+      const res = await upload(instanceId, name, "x");
+      expect(res.status, name).toBe(400);
+      expect((await json(res)).error).toBe("allegato non valido");
+    }
+    // Express instrada senza badare alle maiuscole: anche qui il file JSON oltre 100 kB resta un allegato
+    const body = JSON.stringify({ dati: "x".repeat(300_000) });
+    const upper = await fetch(`${base}/api/Team-Instances/${instanceId}/attachments`, { method: "POST", headers: { "x-attachment-name": "d.json", "content-type": "application/json" }, body });
+    expect(upper.status, await upper.clone().text()).toBe(201);
+  });
+
   it("oltre 10 MB → 413 «allegato troppo grande»; nome mancante o non valido → 400; squadra chiusa → 409; squadra inesistente → 404", async () => {
     const big = await upload(instanceId, "g.bin", Buffer.alloc(10 * 1024 * 1024 + 1), "application/octet-stream");
     expect(big.status).toBe(413);
@@ -105,7 +117,7 @@ describe("spazio di lavoro", () => {
   };
 
   it("PUT imposta nodeWorkspace; valori non validi → 400 con il messaggio fisso", async () => {
-    for (const bad of ["../x", "/abs", "a/../b"]) {
+    for (const bad of ["../x", "/abs", "a/../b", "a//b", "./x", "a/"]) {
       const res = await save({ nodeWorkspace: bad });
       expect(res.status, bad).toBe(400);
       expect((await json(res)).error).toBe("spazio di lavoro non valido");

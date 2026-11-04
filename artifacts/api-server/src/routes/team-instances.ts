@@ -56,7 +56,7 @@ import {
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, teamTaskStepsTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamTaskRow, type TeamTurnRow } from "@workspace/db";
 import { currentUserId } from "../lib/auth";
-import { AttachmentError, MAX_ATTACHMENT_BYTES, deleteAttachment, getAttachment, listAttachments, saveAttachment } from "../lib/teams/attachments";
+import { AttachmentError, MAX_ATTACHMENT_BYTES, rfc5987, deleteAttachment, getAttachment, listAttachments, saveAttachment } from "../lib/teams/attachments";
 import { InstanceError, closeInstance, createInstance, getInstance, listInstances, saveInstance, setInstanceBudget } from "../lib/teams/instances";
 import { listEvents, markRead, userEvents } from "../lib/teams/events";
 import { activateInstance, sendToLead } from "../lib/teams/turn-runner";
@@ -81,9 +81,6 @@ async function guarded(res: Response, run: () => Promise<void>): Promise<void> {
     res.status(err.status).json({ error: err.message });
   }
 }
-
-/** Percorso del caricamento di un allegato: il corpo è il file grezzo, quindi i parser globali (JSON, form) lo saltano. */
-export const ATTACHMENT_UPLOAD_PATH = /^\/api\/team-instances\/\d+\/attachments\/?$/;
 
 /**
  * Lettura del file come Buffer, solo in memoria, qualunque sia il tipo di contenuto. Si monta soltanto sulla route del
@@ -161,7 +158,7 @@ router.get("/team-instances/:id/attachments/:attachmentId", async (req, res) => 
     // Scaricato, mai mostrato nella pagina: un file HTML caricato non deve girare con l'origine della console
     res.set({
       "Content-Type": row.contentType,
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(row.name)}`,
+      "Content-Disposition": `attachment; filename*=UTF-8''${rfc5987(row.name)}`,
       "X-Content-Type-Options": "nosniff",
     });
     res.send(row.content);

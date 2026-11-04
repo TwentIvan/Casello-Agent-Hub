@@ -1,6 +1,7 @@
 import type { ErrorRequestHandler } from "express";
 import type { ZodError, ZodIssue } from "zod";
 import { logger } from "../lib/logger";
+import { ATTACHMENT_UPLOAD_PATH } from "../lib/teams/attachments";
 
 // Gestore finale degli errori di /api: risposte sempre JSON `{ error }`.
 // Body, parametri o query che non passano gli schemi Zod generati (letti con `parseRequest`) →
@@ -87,7 +88,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   }
   // Corpo oltre il limite del parser (express.raw dello zip, express.json): 413 in JSON
   if (status === 413 && (err as { type?: unknown }).type === "entity.too.large") {
-    if (req.method === "POST" && /^\/api\/team-instances\/\d+\/attachments\/?$/.test(req.originalUrl.split("?")[0]!)) {
+    if (req.method === "POST" && ATTACHMENT_UPLOAD_PATH.test(req.originalUrl.split("?")[0]!)) {
       res.status(413).json({ error: "allegato troppo grande" });
       return;
     }

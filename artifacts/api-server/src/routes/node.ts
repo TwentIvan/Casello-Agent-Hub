@@ -11,6 +11,7 @@ import {
   NodeReportBody,
   NodeReportParams,
 } from "@workspace/api-zod";
+import { rfc5987 } from "../lib/teams/attachments";
 import { currentNode } from "../lib/nodes/auth";
 import { NodeError, claimTask, heartbeat, pingTask, reportTask, taskAttachment } from "../lib/nodes/protocol";
 import { parseRequest } from "../middlewares/error-handler";
@@ -67,7 +68,7 @@ export function createNodeRouter(): IRouter {
       const row = await taskAttachment(currentNode(req).id, id, header["X-Lease-Token"], attachmentId);
       res.set({
         "Content-Type": "application/octet-stream",
-        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(row.name)}`,
+        "Content-Disposition": `attachment; filename*=UTF-8''${rfc5987(row.name)}`,
         "X-Content-Type-Options": "nosniff",
       });
       res.send(row.content);

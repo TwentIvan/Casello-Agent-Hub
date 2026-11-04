@@ -2,7 +2,7 @@ import express, { type Express } from "express";
 import cors, { type CorsOptions } from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
-import { ATTACHMENT_UPLOAD_PATH } from "./routes/team-instances";
+import { ATTACHMENT_UPLOAD_PATH } from "./lib/teams/attachments";
 import { logger } from "./lib/logger";
 import { sessionMiddleware } from "./lib/auth";
 import { mcpRouter } from "./lib/mcp/server";

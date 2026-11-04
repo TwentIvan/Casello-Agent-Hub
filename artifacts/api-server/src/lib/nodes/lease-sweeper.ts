@@ -5,6 +5,7 @@
 import { and, eq, gte, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { db, nodesTable, teamInstancesTable, teamTasksTable } from "@workspace/db";
 import { logger } from "../logger";
+import { purgeDeletedAttachments } from "../teams/attachments";
 import { emitEvent } from "../teams/events";
 import { InstanceRoleSchema } from "../teams/manifest";
 import { errName, finishTaskExecution } from "../teams/task-runner";
@@ -113,6 +114,11 @@ export async function sweepNodeTasks(now: Date = new Date(), upSince: Date = PRO
     if (expired > 0) logger.warn({ count: expired }, "Compiti dei nodi chiusi per lease scaduta");
   } catch (err) {
     logger.error({ errName: errName(err) }, "Controllo delle lease dei nodi non riuscito");
+  }
+  try {
+    await purgeDeletedAttachments();
+  } catch (err) {
+    logger.error({ errName: errName(err) }, "Pulizia degli allegati eliminati non riuscita");
   }
   if (now.getTime() - upSince.getTime() < NODE_ONLINE_WINDOW_MS) return;
   try {

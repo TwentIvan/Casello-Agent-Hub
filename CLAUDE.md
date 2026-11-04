@@ -19,7 +19,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Squadre (definizione): catalogo di skill, modelli di squadra e istanze legate a un lavoro di riferimento, con
   aggiornamenti proposti e «salva come modello» (vedi "Squadre (definizione)").
 - Squadre (esecuzione): una squadra attiva ha un capo a turni, un PLAN versionato da approvare, compiti per i ruoli
-  `cloud`, eventi e bollettino, centralino su `/mcp`; i ruoli `node` restano in attesa del nodo locale (vedi "Squadre (esecuzione)").
+  `cloud`, eventi e bollettino, centralino su `/mcp`; i ruoli `node` li esegue il nodo locale (vedi "Squadre (esecuzione)").
+- Nodi (esecuzione dei ruoli `node`): servizio `casello-nodo` sul Mac dell'utente che prende i compiti `waiting_node`, li esegue
+  con Claude Code in una cartella di lavoro della squadra e riferisce l'esito; allegati alle squadre, token d'ambito `node`
+  (vedi "Nodi (esecuzione dei ruoli node)").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -37,6 +40,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `/api` verso `API_PORT`, default 3000)
 - `pnpm --filter @workspace/api-server run test` — test dell'API (Vitest; Postgres in memoria con PGlite,
   schema da `docs/schema-casello.sql`, nessun DB esterno necessario)
+- `pnpm --filter @workspace/casello-nodo run test` / `run build` — test e build del servizio `casello-nodo` (la build produce
+  `artifacts/casello-nodo/dist/index.mjs`, richiesto da `casello-nodo install`)
 - `pnpm run typecheck` — typecheck di tutti i package (da far passare prima di ogni commit)
 - `pnpm run build` — typecheck + build
 - `pnpm --filter @workspace/api-spec run codegen` — rigenera hook React Query e schemi Zod da `openapi.yaml`
@@ -51,7 +56,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
   ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals,
   skills, skill_versions, team_templates, team_template_versions, team_instances, team_instance_skills,
-  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events)
+  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, nodes, team_attachments)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -114,6 +119,13 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   compiti, turni, eventi, tetto) e `src/routes/account-model.ts` (modello del centralino); console: componenti in
   `artifacts/casello/src/components/teams/` (`plan-card.tsx`, `plan-approval-card.tsx`, `plan-editor-dialog.tsx`,
   `team-activity.tsx`, `team-bulletin.tsx`, `lead-message.tsx`, `team-budget.tsx`) usati da `pages/team-detail.tsx`
+- Nodi locali (vedi "Nodi (esecuzione dei ruoli node)"): in `artifacts/api-server/src/lib/nodes/` registrazione dei nodi (`nodes.ts`),
+  autenticazione del protocollo (`auth.ts`: `requireNodeToken`), heartbeat/claim/ping/report/scarico degli allegati (`protocol.ts`),
+  controlli periodici (`lease-sweeper.ts`); allegati e spazio di lavoro in `lib/teams/attachments.ts`; route in `src/routes/nodes.ts`
+  (`/api/account/nodes`, solo login) e `src/routes/node.ts` (`/api/node/*`, solo token `node`); allegati in `src/routes/team-instances.ts`;
+  servizio `artifacts/casello-nodo/` (README, `src/`: `cli.ts`, `loop.ts`, `runner.ts`, `client.ts`, `config.ts`, `launchd.ts`,
+  `workspace.ts`, `capabilities.ts`, `task-file.ts`); console: `components/account/nodes-section.tsx` (Account → Nodi) e
+  `components/teams/team-attachments.tsx` (scheda squadra). Spec: `docs/superpowers/specs/2026-11-04-casello-nodo-locale-design.md`
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
 - `artifacts/api-server/src/lib/mcp/` e `lib/architect/local-executor.ts` — server MCP `/mcp` e coda/lease delle analisi locali
 - `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
@@ -236,9 +248,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   modello», «Attiva»/«Chiudi»); niente scorrimento orizzontale a 1280 px.
 - Migrazione: `docs/migrations/2026-11-squadre.sql` (additiva e idempotente, nessuna modifica a tabelle esistenti, niente
   `-post`): da applicare in produzione PRIMA del merge e da segnalare nella PR; riportata in `docs/schema-casello.sql`.
-- L'esecuzione (3b) è descritta in "Squadre (esecuzione)". Non ancora fatto: 4 nodo locale (esecuzione dei ruoli `node`,
-  scambio di file con la cartella della CR, verifica delle skill presenti sul nodo). Organizzazioni e policy dei dati (2) e
-  The Hub Up (5) restano fuori.
+- L'esecuzione (3b) è descritta in "Squadre (esecuzione)", il nodo locale (4) in "Nodi (esecuzione dei ruoli node)".
+  Organizzazioni e policy dei dati (2) e The Hub Up (5) restano fuori.
 
 ## Squadre (esecuzione)
 
@@ -312,7 +323,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - **Compiti** (`task-runner.ts`; `team_tasks` + `team_task_steps`, stati `queued|running|waiting_node|done|blocked|failed|cancelled`):
   `startTask` (da `assegna_compito`) crea l'esecuzione di un compito del PLAN approvato con la squadra bloccata:
   «la squadra non è attiva» se non lo è, «il compito è già in corso» se lo stesso compito ha già un'esecuzione
-  `queued|running|waiting_node`. Ruolo `node` → `waiting_node` (lo prenderà il nodo locale, sottoprogetto 4), altrimenti
+  `queued|running|waiting_node`. Ruolo `node` → `waiting_node` (lo prende il nodo locale, vedi "Nodi (esecuzione dei ruoli node)"), altrimenti
   `queued` e lo scheduler li porta a `running` (UPDATE con la squadra bloccata): al massimo 3 `running` per squadra, gli altri
   in coda. Il ruolo `cloud` esegue il ciclo dell'agente con prompt del ruolo, contenuto delle sue skill `casello` (versione
   fissata dell'istanza e specializzate), PLAN in sola lettura (messaggio `user`), istruzioni del compito, strumenti del ruolo
@@ -369,8 +380,92 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   colonne su `team_instances` (`activated_by`, `monthly_budget_usd`, `last_turn_at`), `pending_actions` (`kind`,
   `team_instance_id`, `plan_version`; `tool_id`/`app_id` nullable) e `users` (`centralino_ai_model_id`). Da applicare in produzione
   PRIMA del merge e da segnalare nella PR; riportata in `docs/schema-casello.sql`.
-- Non ancora fatto: 4 nodo locale (esecuzione dei ruoli `node` e dei loro compiti `waiting_node`, scambio di file con la
-  cartella della CR, verifica delle skill sul nodo), chat del portale col modello del centralino, interfaccia in The Hub Up (5).
+- Il nodo locale (esecuzione dei ruoli `node` e dei loro compiti `waiting_node`) è descritto in "Nodi (esecuzione dei ruoli node)".
+- Non ancora fatto: chat del portale col modello del centralino, interfaccia in The Hub Up (5), organizzazioni e policy dei dati (2).
+
+## Nodi (esecuzione dei ruoli node)
+
+- Spec: `docs/superpowers/specs/2026-11-04-casello-nodo-locale-design.md` (sottoprogetto 4). Dove il codice differisce dalla spec
+  vale il codice, descritto qui. Un **nodo** è il servizio `casello-nodo` sul Mac dell'utente (tabella `nodes`: nome unico per
+  utente, `active|disabled`, capacità dichiarate `executor`, `version`, `skills`, `workspace_root`, `max_concurrent`, `last_seen_at`).
+  Esegue i compiti `waiting_node` dei ruoli `node` con Claude Code; Casello non lo chiama mai: è il nodo che interroga (heartbeat
+  e claim). Un nodo prende solo compiti di squadre attivate dal suo stesso utente.
+- **Nodi e token** (`lib/nodes/nodes.ts`, `routes/nodes.ts`, solo con il login: `sessionOnly`): `GET|POST /api/account/nodes`
+  (`{name}` 1..100 caratteri, 400 «nome obbligatorio, al massimo 100 caratteri», doppione per utente 409 «nome già usato»; la
+  creazione risponde 201 con il token `cas_…` in chiaro, mostrato una sola volta), `POST …/:id/disable`, `POST …/:id/token`
+  («Rigenera token»: revoca i token precedenti e ne crea uno nuovo, riga del nodo bloccata), `DELETE …/:id` (204; elimina anche i
+  token a cascata). Nodo di un altro utente → 404 «nodo non trovato». Un nodo disattivato non si riattiva (se ne crea un altro);
+  il suo token smette di valere: 403 «nodo disattivato». Il token ha ambito `node`, scade dopo 365 giorni, non compare in
+  «Token personali» ed è accettato solo da `/api/node/*` (`requireNodeToken`, montato prima di `requireAuth`: senza header Authorization
+  o con un token non di nodo → 403 «il token non ha l'ambito per questa operazione», token non valido → 401). «Online» = visto negli
+  ultimi 2 minuti (`NODE_ONLINE_WINDOW_MS`).
+- **Protocollo** (`lib/nodes/protocol.ts`, `routes/node.ts`; limiti per nodo in `middlewares/rate-limit.ts`): `POST /api/node/heartbeat`
+  (capacità: `version`, `executor`, `skills`, `workspaceRoot`, `maxConcurrent`; risponde `{pending}` = compiti che il nodo potrebbe
+  prendere; 6/min), `POST /api/node/claim` (204 se non c'è nulla, altrimenti il pacchetto del compito; 6/min, contatore separato),
+  `POST /api/node/tasks/:id/ping` (`{leaseToken}`, rinnova la lease, 4/min per compito), `GET /api/node/tasks/:id/attachments/:attachmentId`
+  (header `X-Lease-Token`; byte come `application/octet-stream`, `attachment`, `nosniff`), `POST /api/node/tasks/:id/report` (204). Lease
+  non valida o scaduta → 409 «lease non valida o scaduta»; allegato non citato dal compito o di un'altra squadra → 404 «allegato non trovato».
+- **Claim e skill**: sono candidati i compiti `waiting_node` di squadre `active` attivate dall'utente del nodo, dal più vecchio
+  (`waiting_since`), fino a 200 per chiamata, il cui ruolo è `node` e le cui skill `node` (catalogo, versione fissata, e specializzate
+  di tipo `node`: `roleNodeSkills`) sono tutte tra quelle dichiarate dal nodo. Il claim blocca squadra → nodo → compito (`SKIP LOCKED`) e
+  rispetta `max_concurrent` (i compiti `running` con lease del nodo); `running`, `node_id`, `lease_token` e `lease_expires_at` si
+  scrivono in un colpo, il PLAN diventa `running` dopo il commit (se il pacchetto non si prepara il compito torna `waiting_node`).
+  Pacchetto: squadra, spazio di lavoro, ruolo (con il nome del modello preferito), compito, PLAN, skill `casello`, nomi delle skill
+  `node`, metadati degli allegati. Un compito di nodo si riconosce da `lease_token IS NOT NULL`: il limite dei compiti
+  cloud (3 `running` per squadra) non lo conta. Se la squadra ha raggiunto il tetto di spesa, al claim i suoi compiti `waiting_node`
+  si chiudono `blocked` «tetto di spesa della squadra raggiunto» (PLAN, evento `bloccato`, turno del capo) e non si consegnano.
+- **Lease e scadenze** (`lease-sweeper.ts`, all'avvio e ogni minuto): lease di 15 minuti (`LEASE_MS`), rinnovata da ogni ping. Una
+  lease scaduta chiude il compito `failed` «nodo non più raggiungibile» (evento `bloccato`, turno del capo), con UPDATE condizionato
+  alla stessa lease: un report o un ping arrivati nel frattempo vincono. Il riavvio dell'API NON fallisce i compiti presi da un nodo
+  (restano `running`, non girano nell'API): li chiude il report o la scadenza della lease. Un compito in attesa da oltre 10 minuti
+  senza alcun nodo vivo e attivo dell'utente con le skill del ruolo emette una volta sola (`no_node_notified`) l'evento `bloccato`
+  «Compito <id> (<ruolo>): nessun nodo disponibile con le skill: …»; il controllo salta i primi 2 minuti di vita del processo (i nodi
+  devono poter ricomparire) e il compito resta in attesa. `POST …/close` annulla (`cancelled`) anche i compiti `waiting_node`.
+- **Report** (`POST …/report`: `leaseToken`, `status` `done|blocked|failed`, `outcome` (troncato a 300), `detail` (≤ 20 000, troncato),
+  `costUsd`, `promptTokens`, `completionTokens`, `sessionId`): chiude il compito come i compiti cloud (`finishTaskExecution`: PLAN, evento
+  `compito_finito` o `bloccato`, turno del capo `task_finished`) una volta sola. Il costo riferito si registra con `ai_model_id` null: conta
+  solo nel tetto della squadra, non nella spesa di utente, modello o account.
+- **Allegati** (`lib/teams/attachments.ts`, `team_attachments`; route in `team-instances.ts`, ambiti per metodo): `GET|POST
+  /api/team-instances/:id/attachments` (il corpo del POST è il file grezzo, nome in `X-Attachment-Name`, anche codificato con
+  `encodeURIComponent`), `GET|DELETE …/:attachmentId` (204; il GET scarica con `Content-Disposition: attachment`). Max 10 MiB a file («allegato
+  troppo grande», 413) e 50 MiB per squadra tra i non eliminati («spazio allegati della squadra esaurito», 413); nome 1..200 caratteri senza
+  `/`, `\`, `..` né controlli («allegato non valido», 400); squadra chiusa → 409 «squadra chiusa». Come per le squadre non c'è un
+  proprietario per allegato (le squadre sono condivise tra gli utenti ammessi; la proprietà per utente è del sottoprogetto 2). Il capo li
+  assegna con `assegna_compito` (`attachments`: id, max 20, tutti della squadra e non eliminati, altrimenti «allegato <id> inesistente»;
+  riletti nella transazione di `startTask`, con la squadra bloccata). Eliminare: cancellazione vera se nessun compito `queued`,
+  `waiting_node` o `running` lo cita, altrimenti solo `deleted_at` (sparisce dall'elenco e dal limite, ma il nodo che lo ha in carico lo
+  scarica ancora); lo sweep cancella poi gli eliminati non più citati.
+- **Spazio di lavoro** (`team_instances.node_workspace`, `PUT /api/team-instances/:id`, `nodeWorkspace` null = tolto): percorso relativo
+  alla radice del nodo, 1..300 caratteri `[A-Za-z0-9._ -]` e `/`, senza `/` iniziale o finale, segmenti vuoti, `.` o `..` (400 «spazio di
+  lavoro non valido»).
+- **`casello-nodo`** (`artifacts/casello-nodo/`, README incluso; Node 24, `claude` nel PATH con il login già fatto): ciclo con heartbeat
+  ogni 30 s; se `pending > 0` e c'è posto prende i compiti, li esegue e riferisce (il report si ritenta finché la lease è valida).
+  Rinnova la lease con i ping. Per ogni compito scrive nello spazio di lavoro `casello-compito.md` (istruzioni, piano, skill) e gli
+  allegati in `casello-allegati/` (verificati con dimensione e sha256), lancia `claude` con quella cartella e legge l'esito da
+  `casello-esito.json`; a fine compito i file di servizio si tolgono. Lo spazio di lavoro si risolve con `realpath` e deve stare dentro la
+  radice (niente `..`, percorsi assoluti o link simbolici in uscita); compiti con lo stesso spazio girano uno alla volta. `claude` parte in un
+  gruppo di processi proprio: al timeout (`taskTimeoutMinutes`, default 60) o allo stop riceve SIGTERM e dopo 10 s SIGKILL; lo stop
+  riferisce `failed` «esecuzione interrotta: nodo fermato». Le skill dichiarate sono le cartelle con `SKILL.md` in `~/.claude/skills` e nella
+  cache dei plugin (`<plugin>:<skill>`, solo la versione più recente).
+- **Config e servizio**: config `~/.casello-nodo/config.json` con permessi 600 (altrimenti il nodo non parte), scritta in modo atomico; campi
+  `caselloUrl` (https, http solo verso localhost/127.0.0.1/[::1]), `token`, `workspaceRoot`, `claudeBin` (default `claude`),
+  `permissionMode` (default `bypassPermissions` = `--dangerously-skip-permissions`), `skillsDirs`, `maxConcurrent` (1..3, default 1),
+  `taskTimeoutMinutes` (default 60). Stato in `~/.casello-nodo/state.json`, log in `~/.casello-nodo/logs/` (senza token, allegati né
+  istruzioni). Comandi: `casello-nodo install` (richiede la build: `corepack pnpm --filter @workspace/casello-nodo run build`, poi
+  `node artifacts/casello-nodo/dist/index.mjs install`; chiede indirizzo, token (non mostrato) e radice, oppure `--url`, `--workspace-root`,
+  `--token-file`; `--token` lascia il token nella cronologia della shell), `uninstall`, `status`, `run` (in primo piano, è ciò che lancia
+  launchd). Servizio LaunchAgent con etichetta `cloud.fantamister.casello-nodo` (`~/Library/LaunchAgents/…plist`, avvio al login e riavvio
+  se cade).
+- **Sicurezza**: l'agente gira con `--dangerously-skip-permissions` dentro lo spazio di lavoro (esegue comandi e modifica file senza
+  conferma): la radice deve contenere solo ciò che può toccare. Il token del nodo sta in `config.json`, leggibile dallo stesso utente con cui
+  gira l'agente; se si sospetta una compromissione: «Rigenera token» o disattiva il nodo in console.
+- Console: Account → «Nodi» (creazione con token mostrato una volta, stato online, «Rigenera token», «Disattiva», elimina) e, nella scheda
+  squadra, spazio di lavoro e «Allegati» (`team-attachments.tsx`).
+- Migrazione: `docs/migrations/2026-11-nodo-locale.sql` (additiva e idempotente, niente `-post`): tabelle `nodes` e `team_attachments`, colonne
+  su `api_tokens` (`node_id`), `team_instances` (`node_workspace`) e `team_tasks` (`node_id`, `lease_token`, `lease_expires_at`, `session_id`,
+  `waiting_since`, `no_node_notified`, `attachment_ids`). Da applicare in produzione PRIMA del merge e da segnalare nella PR; riportata in
+  `docs/schema-casello.sql`.
+- Non ancora fatto: interfaccia in The Hub Up (5), organizzazioni e policy dei dati (2: proprietà degli allegati e dei nodi per organizzazione).
 
 ## Modelli AI (account AI)
 
@@ -609,8 +704,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Spec: `docs/superpowers/specs/2026-10-31-casello-token-api-design.md`. Il token `cas_…` (Account → "Token personali")
   vale anche su `/api`, per agenti che agiscono su Casello stesso e per script/automazioni.
 - Ambiti (`api_tokens.scopes`, almeno uno, senza ripetizioni, immutabili dopo la creazione): `mcp` (server `/mcp`),
-  `api:read` (GET/HEAD su `/api`), `api:write` (tutti i metodi, include la lettura). Default alla creazione `["mcp"]`;
-  i token esistenti sono diventati `{mcp}`: nessun permesso nuovo.
+  `api:read` (GET/HEAD su `/api`), `api:write` (tutti i metodi, include la lettura), `node` (solo `/api/node/*`, vedi "Nodi").
+  Default alla creazione `["mcp"]`; i token esistenti sono diventati `{mcp}`: nessun permesso nuovo. L'ambito `node` non si sceglie
+  (`createNodeToken`: nasce solo con un nodo, `api_tokens.node_id`, scade dopo 365 giorni, non compare tra i token personali);
+  un token di nodo su `/api` (fuori da `/api/node`) → 403 «il token non ha l'ambito per questa operazione», su `/mcp` → 401.
 - Regola unica in `requireAuth` (`lib/auth.ts`): con l'header `Authorization` presente conta solo il token, mai il
   cookie (nemmeno con `AUTH_DISABLED`); header non `Bearer cas_…`, token sconosciuto/revocato/scaduto o utente non più
   in `ALLOWED_EMAILS` → 401 «token non valido o scaduto». Senza header vale la sessione. Ambito per metodo (GET/HEAD →

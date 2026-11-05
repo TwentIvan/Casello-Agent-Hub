@@ -77,9 +77,14 @@ Tabella `alfred_sessions`: `id`, `user_id` (FK utenti, cascade), `ai_model_id` (
   (stesse regole di run e squadre: costo null = esecuzione senza prezzo). I prezzi audio di Gemini possono mancare dal
   catalogo; si possono inserire a mano (prezzi `manual` di sempre). Limite: Casello ha un solo prezzo di ingresso e uno
   di uscita per modello, l'audio di Gemini ha prezzi propri: il costo è una stima con i prezzi del modello.
-- Ripresa: la pagina conserva in memoria l'handle di `sessionResumptionUpdate`; a `goAway` o chiusura inattesa si
-  ricollega con l'handle (token nuovo da `renew` se scaduto). Se la ripresa fallisce, la conversazione riparte da capo
-  sulla stessa riga.
+- Ripresa: la pagina conserva in memoria l'handle di `sessionResumptionUpdate`; a `goAway` o chiusura inattesa chiama
+  `renew` con `{resumptionHandle}` e Casello mette l'handle nel token (`bidiGenerateContentSetup.sessionResumption.handle`).
+  Verificato contro Gemini vero (2026-11-05): l'handle mandato dal browser nel setup viene ignorato con un token
+  vincolato (la conversazione riparte senza memoria), mentre l'handle dentro il token riprende la conversazione. Se la
+  ripresa fallisce, la conversazione riparte da capo sulla stessa riga. L'handle non si salva né si registra nei log.
+- Consumi: `usageMetadata` di Gemini Live è **per turno** (verificato: `promptTokenCount` comprende il contesto di quel
+  turno, `responseTokenCount` la risposta); la pagina somma ogni frame nei totali cumulativi della sessione, anche
+  attraverso le riconnessioni, e li manda a `usage`.
 
 ## 4. Strumenti di Alfred
 

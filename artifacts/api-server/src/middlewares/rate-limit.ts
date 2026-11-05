@@ -136,3 +136,11 @@ export const oauthTokenRateLimit: RequestHandler = middlewareFor(
   },
   (res) => res.status(429).json({ error: "slow_down", error_description: "troppe richieste: riprova tra poco" }),
 );
+
+// Avvio delle sessioni di Alfred (ognuna crea un token temporaneo di Gemini): 10 al minuto per utente.
+const alfredSessionCounter = fixedWindowCounter({ limit: 10, windowMs: 60_000 });
+
+/** Conta un avvio di sessione di Alfred dell'utente: false se il limite è raggiunto. */
+export function consumeAlfredSession(userId: number): boolean {
+  return alfredSessionCounter.consume(`user:${userId}`).ok;
+}

@@ -222,6 +222,19 @@ export interface AlfredChoice {
   voice?: string;
 }
 
+export interface AlfredSession {
+  sessionId: number;
+  token: string;
+  model: string;
+  voice: string;
+  expiresAt: string;
+}
+
+export interface AlfredUsageBody {
+  promptTokens: number;
+  completionTokens: number;
+}
+
 export interface AppInput {
   /** @minLength 1 */
   name: string;

@@ -1,10 +1,29 @@
 import { Router, type IRouter } from "express";
-import { GetAlfredSettingsResponse, SetAlfredSettingsBody, SetAlfredSettingsResponse } from "@workspace/api-zod";
+import {
+  CloseAlfredSessionParams,
+  GetAlfredSettingsResponse,
+  RecordAlfredUsageBody,
+  RecordAlfredUsageParams,
+  RenewAlfredSessionParams,
+  RenewAlfredSessionResponse,
+  SetAlfredSettingsBody,
+  SetAlfredSettingsResponse,
+  StartAlfredSessionResponse,
+} from "@workspace/api-zod";
 import { currentUserId, sessionOnly } from "../lib/auth";
 import { ModelChoiceError } from "../lib/ai/choice";
 import { AlfredError } from "../lib/alfred/gemini";
 import { getAlfredSettings, setAlfredSettings } from "../lib/alfred/settings";
+import { closeSession, recordUsage, renewSession, startSession } from "../lib/alfred/sessions";
 import { parseRequest } from "../middlewares/error-handler";
+import { consumeAlfredSession } from "../middlewares/rate-limit";
+
+/** Errori di Alfred con messaggio fisso e stato; gli altri passano al gestore generale. */
+function replyAlfredError(res: import("express").Response, err: unknown): boolean {
+  if (!(err instanceof AlfredError)) return false;
+  res.status(err.status).json({ error: err.message });
+  return true;
+}
 
 // Alfred, maggiordomo vocale: solo con il login (un token personale non vale).
 
@@ -28,6 +47,49 @@ export function createAlfredRouter(): IRouter {
       throw err;
     }
     res.json(SetAlfredSettingsResponse.parse(await getAlfredSettings(userId)));
+  });
+
+  router.post("/alfred/sessions", sessionOnly, async (req, res) => {
+    const userId = currentUserId(req);
+    if (!consumeAlfredSession(userId)) {
+      res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
+      return;
+    }
+    try {
+      res.status(201).json(StartAlfredSessionResponse.parse(await startSession(userId)));
+    } catch (err) {
+      if (!replyAlfredError(res, err)) throw err;
+    }
+  });
+
+  router.post("/alfred/sessions/:id/renew", sessionOnly, async (req, res) => {
+    const { id } = parseRequest(RenewAlfredSessionParams, req.params);
+    try {
+      res.json(RenewAlfredSessionResponse.parse(await renewSession(currentUserId(req), id)));
+    } catch (err) {
+      if (!replyAlfredError(res, err)) throw err;
+    }
+  });
+
+  router.post("/alfred/sessions/:id/usage", sessionOnly, async (req, res) => {
+    const { id } = parseRequest(RecordAlfredUsageParams, req.params);
+    const body = parseRequest(RecordAlfredUsageBody, req.body);
+    try {
+      await recordUsage(currentUserId(req), id, body);
+      res.status(204).end();
+    } catch (err) {
+      if (!replyAlfredError(res, err)) throw err;
+    }
+  });
+
+  router.post("/alfred/sessions/:id/close", sessionOnly, async (req, res) => {
+    const { id } = parseRequest(CloseAlfredSessionParams, req.params);
+    try {
+      await closeSession(currentUserId(req), id);
+      res.status(204).end();
+    } catch (err) {
+      if (!replyAlfredError(res, err)) throw err;
+    }
   });
 
   return router;

@@ -510,6 +510,62 @@ export const SetAlfredSettingsResponse = zod.object({
 
 
 /**
+ * Chiude le altre sessioni attive dell'utente, crea la sessione e un token temporaneo di Gemini Live con modello, istruzioni, voce e strumenti già fissati. 409 senza modello di Alfred, con modello non più disponibile o con un tetto di spesa raggiunto; 502 se Gemini non risponde o rifiuta la chiave; massimo 10 avvii al minuto per utente. Solo con il login.
+ * @summary Avvia una sessione di Alfred
+ */
+export const StartAlfredSessionResponse = zod.object({
+  "sessionId": zod.number(),
+  "token": zod.string(),
+  "model": zod.string(),
+  "voice": zod.string(),
+  "expiresAt": zod.string()
+})
+
+
+/**
+ * Ricontrolla modello e tetti e rilascia un nuovo token temporaneo (scadenza dei 30 minuti o riconnessione). Sessione chiusa o altrui: 404 "sessione non trovata". Solo con il login.
+ * @summary Nuovo token per una sessione di Alfred attiva
+ */
+export const RenewAlfredSessionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RenewAlfredSessionResponse = zod.object({
+  "sessionId": zod.number(),
+  "token": zod.string(),
+  "model": zod.string(),
+  "voice": zod.string(),
+  "expiresAt": zod.string()
+})
+
+
+/**
+ * Contatori cumulativi della sessione (interi non negativi): Casello tiene il massimo tra il valore salvato e quello ricevuto e ricalcola il costo. Solo con il login.
+ * @summary Registra i token consumati da una sessione di Alfred
+ */
+export const RecordAlfredUsageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RecordAlfredUsageBody = zod.object({
+  "promptTokens": zod.number(),
+  "completionTokens": zod.number()
+})
+
+export const RecordAlfredUsageResponse = zod.void()
+
+
+/**
+ * @summary Chiude una sessione di Alfred
+ */
+export const CloseAlfredSessionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CloseAlfredSessionResponse = zod.void()
+
+
+/**
  * @summary Elenca tutte le app registrate
  */
 

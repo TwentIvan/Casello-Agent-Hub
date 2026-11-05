@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, FolderSearch } from "lucide-react";
 import {
   ApiError,
   type TeamInstance,
@@ -46,6 +46,7 @@ import { PlanCard } from "@/components/teams/plan-card";
 import { TEAM_POLL_MS, TeamActivity, type TeamWorkState, useTeamWork } from "@/components/teams/team-activity";
 import { TeamBudgetCard } from "@/components/teams/team-budget";
 import { TeamAttachments } from "@/components/teams/team-attachments";
+import { NodeFolderPicker } from "@/components/teams/node-folder-picker";
 import { TeamBulletin } from "@/components/teams/team-bulletin";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -136,6 +137,7 @@ function TeamEditor({ team, session }: { team: TeamInstance; session: TeamSessio
   const [name, setName] = useState(team.name);
   const [refTitle, setRefTitle] = useState(team.ref.title);
   const [nodeWorkspace, setNodeWorkspace] = useState(team.nodeWorkspace ?? "");
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [roles, setRoles] = useState<RoleDraft[]>(() => team.roles.map(draftFromView));
   const [localSkills, setLocalSkills] = useState<LocalSkillDraft[]>(() => team.localSkills.map(localSkillDraft));
   const [confirm, setConfirm] = useState<Confirm>(null);
@@ -301,19 +303,28 @@ function TeamEditor({ team, session }: { team: TeamInstance; session: TeamSessio
         </CardHeader>
         <CardContent className="space-y-1.5">
           <Label htmlFor="team-node-workspace">Cartella</Label>
-          <Input
-            id="team-node-workspace"
-            value={nodeWorkspace}
-            onChange={(e) => setNodeWorkspace(e.target.value)}
-            maxLength={300}
-            placeholder="es. SAP/AIMAG/WI_1174"
-            className="font-mono text-sm"
-            disabled={closed}
-          />
+          <div className="flex min-w-0 gap-2">
+            <Input
+              id="team-node-workspace"
+              value={nodeWorkspace}
+              onChange={(e) => setNodeWorkspace(e.target.value)}
+              maxLength={300}
+              placeholder="es. SAP/AIMAG/WI_1174"
+              className="min-w-0 font-mono text-sm"
+              disabled={closed}
+            />
+            {!closed && (
+              <Button type="button" variant="outline" className="shrink-0" onClick={() => setFolderPickerOpen(true)}>
+                <FolderSearch className="mr-1.5 h-4 w-4" />
+                Sfoglia
+              </Button>
+            )}
+          </div>
+          <NodeFolderPicker open={folderPickerOpen} onOpenChange={setFolderPickerOpen} value={nodeWorkspace} onPick={setNodeWorkspace} />
           <p className="text-xs text-muted-foreground">
             Percorso relativo alla cartella radice scelta quando hai installato il nodo (solo lettere, cifre, <span className="font-mono">. _ -</span> e{" "}
             <span className="font-mono">/</span>, senza <span className="font-mono">..</span>). Serve ai compiti dei ruoli «nodo»: se è vuoto
-            risultano bloccati. Si salva con «Salva».
+            risultano bloccati. «Sfoglia» mostra le cartelle che il nodo ha sotto la radice. Si salva con «Salva».
           </p>
         </CardContent>
       </Card>

@@ -96,6 +96,7 @@ import type {
   NodeCapabilities,
   NodeCreate,
   NodeCreated,
+  NodeFolders,
   NodeHeartbeat,
   NodeLease,
   NodeLeaseRenewed,
@@ -1130,6 +1131,84 @@ export const useRegenerateNodeToken = <TError = ErrorType<UnauthorizedResponse |
       > => {
       return useMutation(getRegenerateNodeTokenMutationOptions(options));
     }
+
+export const getGetNodeFoldersUrl = (id: number,) => {
+
+
+
+
+  return `/api/account/nodes/${id}/folders`
+}
+
+/**
+ * Sottocartelle della radice degli spazi di lavoro comunicate dal nodo con l'heartbeat (percorsi relativi, fino a 3 livelli e 2 000 voci; solo nomi di cartelle, mai file). `folders` null se il nodo non le ha mai comunicate. 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Cartelle dichiarate da un nodo locale
+ */
+export const getNodeFolders = async (id: number, options?: RequestInit): Promise<NodeFolders> => {
+
+  return customFetch<NodeFolders>(getGetNodeFoldersUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetNodeFoldersQueryKey = (id: number,) => {
+    return [
+    `/api/account/nodes/${id}/folders`
+    ] as const;
+    }
+
+
+export const getGetNodeFoldersQueryOptions = <TData = Awaited<ReturnType<typeof getNodeFolders>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNodeFolders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNodeFoldersQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNodeFolders>>> = ({ signal }) => getNodeFolders(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNodeFolders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetNodeFoldersQueryResult = NonNullable<Awaited<ReturnType<typeof getNodeFolders>>>
+export type GetNodeFoldersQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+
+/**
+ * @summary Cartelle dichiarate da un nodo locale
+ */
+
+export function useGetNodeFolders<TData = Awaited<ReturnType<typeof getNodeFolders>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNodeFolders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetNodeFoldersQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getNodeHeartbeatUrl = () => {
 

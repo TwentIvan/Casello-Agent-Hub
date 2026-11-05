@@ -19,6 +19,9 @@ export const nodesTable = pgTable(
     skills: jsonb("skills").$type<string[]>().notNull().default([]),
     workspaceRoot: text("workspace_root"),
     maxConcurrent: integer("max_concurrent").notNull().default(1),
+    // Sottocartelle della radice comunicate con l'heartbeat (percorsi relativi): solo per la scelta in console
+    workspaceFolders: jsonb("workspace_folders").$type<string[]>(),
+    foldersUpdatedAt: timestamp("folders_updated_at"),
     lastSeenAt: timestamp("last_seen_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

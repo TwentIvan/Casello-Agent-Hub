@@ -21,7 +21,7 @@ import {
   type TeamTaskRow,
 } from "@workspace/db";
 import { logger } from "../logger";
-import { ATTACHMENT_MESSAGES, taskAttachmentViews } from "../teams/attachments";
+import { ATTACHMENT_MESSAGES, taskAttachmentViews, validateNodeWorkspace } from "../teams/attachments";
 import { InstanceRoleSchema, type InstanceRole } from "../teams/manifest";
 import { getPlan, patchPlan } from "../teams/plan";
 import { errName, finishTaskExecution, skillTexts, MAX_TASK_DETAIL, MAX_TASK_OUTCOME } from "../teams/task-runner";
@@ -54,6 +54,8 @@ export interface NodeCapabilities {
   skills: string[];
   workspaceRoot: string;
   maxConcurrent: number;
+  /** Sottocartelle della radice (percorsi relativi); assente = elenco salvato invariato (nodo di versione precedente). */
+  folders?: string[];
 }
 
 export interface NodeReport {
@@ -179,6 +181,14 @@ async function activeNode(nodeId: number): Promise<Node> {
 // ─── Heartbeat ──────────────────────────────────────────────────────────────
 
 /** Aggiorna le capacità dichiarate e `last_seen_at`; `pending` = compiti che il nodo potrebbe prendere. */
+/**
+ * Cartelle dichiarate dal nodo: solo quelle valide come spazio di lavoro (le altre non si potrebbero scegliere),
+ * senza ripetizioni, in ordine alfabetico.
+ */
+export function cleanFolders(folders: string[]): string[] {
+  return [...new Set(folders.filter((f) => validateNodeWorkspace(f) === null))].sort((a, b) => a.localeCompare(b));
+}
+
 export async function heartbeat(nodeId: number, caps: NodeCapabilities): Promise<{ pending: number }> {
   const now = new Date();
   const [node] = await db
@@ -189,6 +199,7 @@ export async function heartbeat(nodeId: number, caps: NodeCapabilities): Promise
       skills: [...new Set(caps.skills)],
       workspaceRoot: caps.workspaceRoot,
       maxConcurrent: caps.maxConcurrent,
+      ...(caps.folders ? { workspaceFolders: cleanFolders(caps.folders), foldersUpdatedAt: now } : {}),
       lastSeenAt: now,
       updatedAt: now,
     })

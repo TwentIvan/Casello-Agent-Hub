@@ -83,6 +83,26 @@ export async function createNode(userId: number, name: string): Promise<{ node: 
   }
 }
 
+export interface NodeFoldersView {
+  nodeId: number;
+  workspaceRoot: string | null;
+  folders: string[] | null;
+  foldersUpdatedAt: Date | null;
+}
+
+/** Cartelle comunicate dal nodo con l'heartbeat; null se il nodo non è dell'utente. */
+export async function getNodeFolders(userId: number, id: number): Promise<NodeFoldersView | null> {
+  const [row] = await db
+    .select({
+      workspaceRoot: nodesTable.workspaceRoot,
+      folders: nodesTable.workspaceFolders,
+      foldersUpdatedAt: nodesTable.foldersUpdatedAt,
+    })
+    .from(nodesTable)
+    .where(and(eq(nodesTable.id, id), eq(nodesTable.userId, userId)));
+  return row ? { nodeId: id, ...row } : null;
+}
+
 /** Nodi dell'utente, per nome. */
 export async function listNodes(userId: number): Promise<NodeView[]> {
   const rows = await db.select().from(nodesTable).where(eq(nodesTable.userId, userId)).orderBy(asc(nodesTable.name), asc(nodesTable.id));

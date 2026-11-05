@@ -380,6 +380,8 @@ CREATE TABLE "nodes" (
 	"skills" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"workspace_root" text,
 	"max_concurrent" integer DEFAULT 1 NOT NULL,
+	"workspace_folders" jsonb,
+	"folders_updated_at" timestamp,
 	"last_seen_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,

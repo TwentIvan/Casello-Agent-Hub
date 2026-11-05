@@ -35,4 +35,11 @@ export interface NodeCapabilities {
      * @maximum 3
      */
   maxConcurrent: number;
+  /**
+     * Sottocartelle della radice (percorsi relativi con `/`, fino a 3 livelli), per la scelta dello spazio di lavoro in console. Facoltativo: un nodo che non lo manda lascia invariato l'elenco salvato.
+     * @maxItems 2000
+     * @items.minLength 1
+     * @items.maxLength 300
+     */
+  folders?: string[];
 }

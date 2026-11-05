@@ -186,3 +186,45 @@ describe("nodi registrati", () => {
     expect(row!.status).toBe("active");
   });
 });
+
+describe("cartelle del nodo", () => {
+  it("prima di un heartbeat con cartelle: folders null", async () => {
+    const { node } = await createNode(await devUserId(), "Mac");
+    const res = await api("GET", `/account/nodes/${node.id}/folders`);
+    expect(res.status, res.text).toBe(200);
+    expect(res.json).toEqual({ nodeId: node.id, workspaceRoot: null, folders: null, foldersUpdatedAt: null });
+  });
+
+  it("l'heartbeat salva solo le cartelle valide, senza ripetizioni e in ordine; senza `folders` restano quelle di prima", async () => {
+    const { node, token } = await createNode(await devUserId(), "Mac");
+    const folders = ["clienti/acme", "clienti", "../fuori", "/assoluta", "a//b", "clienti", "con$dollaro", "lavoro 1/wi-1174"];
+    expect((await api("POST", "/node/heartbeat", { token, body: { ...HEARTBEAT, folders } })).status).toBe(200);
+    const first = (await api("GET", `/account/nodes/${node.id}/folders`)).json;
+    expect(first.folders).toEqual(["clienti", "clienti/acme", "lavoro 1/wi-1174"]);
+    expect(first.workspaceRoot).toBe("/radice");
+    expect(Date.parse(first.foldersUpdatedAt)).not.toBeNaN();
+
+    expect((await api("POST", "/node/heartbeat", { token, body: HEARTBEAT })).status).toBe(200);
+    expect((await api("GET", `/account/nodes/${node.id}/folders`)).json).toEqual(first);
+
+    expect((await api("POST", "/node/heartbeat", { token, body: { ...HEARTBEAT, folders: [] } })).status).toBe(200);
+    expect((await api("GET", `/account/nodes/${node.id}/folders`)).json.folders).toEqual([]);
+  });
+
+  it("oltre 2 000 cartelle o una cartella oltre 300 caratteri → 400", async () => {
+    const { token } = await createNode(await devUserId(), "Mac");
+    const many = Array.from({ length: 2001 }, (_, i) => `c${i}`);
+    expect((await api("POST", "/node/heartbeat", { token, body: { ...HEARTBEAT, folders: many } })).status).toBe(400);
+    expect((await api("POST", "/node/heartbeat", { token, body: { ...HEARTBEAT, folders: ["a".repeat(301)] } })).status).toBe(400);
+  });
+
+  it("nodo di un altro utente → 404; con un token → 403", async () => {
+    const { node } = await createNode(otherUserId, "Altrui");
+    expect((await api("GET", `/account/nodes/${node.id}/folders`)).status).toBe(404);
+    const mine = await createNode(await devUserId(), "Mio");
+    const { token } = await createApiToken(await devUserId(), "Script", 30, ["api:read"]);
+    const res = await api("GET", `/account/nodes/${mine.node.id}/folders`, { token });
+    expect(res.status).toBe(403);
+    expect(res.json).toEqual({ error: MSG.sessionOnly });
+  });
+});

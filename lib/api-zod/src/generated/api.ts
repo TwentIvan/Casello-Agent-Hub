@@ -215,6 +215,22 @@ export const RegenerateNodeTokenResponse = zod.object({
 
 
 /**
+ * Sottocartelle della radice degli spazi di lavoro comunicate dal nodo con l'heartbeat (percorsi relativi, fino a 3 livelli e 2 000 voci; solo nomi di cartelle, mai file). `folders` null se il nodo non le ha mai comunicate. 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Cartelle dichiarate da un nodo locale
+ */
+export const GetNodeFoldersParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetNodeFoldersResponse = zod.object({
+  "nodeId": zod.number(),
+  "workspaceRoot": zod.string().nullable(),
+  "folders": zod.array(zod.string()).nullable(),
+  "foldersUpdatedAt": zod.coerce.date().nullable()
+})
+
+
+/**
  * Protocollo dei nodi: solo con il token d'ambito `node` di un nodo attivo (sessione e token personali: 403). Aggiorna le capacità dichiarate e `last_seen_at`; risponde con il numero di compiti che il nodo potrebbe prendere. 6 al minuto per nodo.
  * @summary Heartbeat del nodo locale
  */
@@ -230,6 +246,10 @@ export const nodeHeartbeatBodyWorkspaceRootMax = 300;
 
 export const nodeHeartbeatBodyMaxConcurrentMax = 3;
 
+export const nodeHeartbeatBodyFoldersItemMax = 300;
+
+export const nodeHeartbeatBodyFoldersMax = 2000;
+
 
 
 export const NodeHeartbeatBody = zod.object({
@@ -237,7 +257,8 @@ export const NodeHeartbeatBody = zod.object({
   "executor": zod.string().min(1).max(nodeHeartbeatBodyExecutorMax).describe('Esecutore dichiarato (es. claude-code)'),
   "skills": zod.array(zod.string().min(1).max(nodeHeartbeatBodySkillsItemMax)).max(nodeHeartbeatBodySkillsMax).describe('Nomi delle skill disponibili sul nodo'),
   "workspaceRoot": zod.string().max(nodeHeartbeatBodyWorkspaceRootMax).describe('Radice degli spazi di lavoro (testo descrittivo)'),
-  "maxConcurrent": zod.number().min(1).max(nodeHeartbeatBodyMaxConcurrentMax)
+  "maxConcurrent": zod.number().min(1).max(nodeHeartbeatBodyMaxConcurrentMax),
+  "folders": zod.array(zod.string().min(1).max(nodeHeartbeatBodyFoldersItemMax)).max(nodeHeartbeatBodyFoldersMax).optional().describe('Sottocartelle della radice (percorsi relativi con `\/`, fino a 3 livelli), per la scelta dello spazio di lavoro in console. Facoltativo: un nodo che non lo manda lascia invariato l\'elenco salvato.')
 })
 
 export const NodeHeartbeatResponse = zod.object({

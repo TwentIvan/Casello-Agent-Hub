@@ -5,6 +5,8 @@ import {
   DeleteNodeParams,
   DisableNodeParams,
   DisableNodeResponse,
+  GetNodeFoldersParams,
+  GetNodeFoldersResponse,
   ListNodesResponse,
   RegenerateNodeTokenParams,
   RegenerateNodeTokenResponse,
@@ -17,6 +19,7 @@ import {
   createNode,
   deleteNode,
   disableNode,
+  getNodeFolders,
   listNodes,
   regenerateNodeToken,
 } from "../lib/nodes/nodes";
@@ -47,6 +50,16 @@ export function createNodesRouter(): IRouter {
       }
       throw err;
     }
+  });
+
+  router.get("/account/nodes/:id/folders", sessionOnly, async (req, res) => {
+    const { id } = parseRequest(GetNodeFoldersParams, req.params);
+    const out = await getNodeFolders(currentUserId(req), id);
+    if (!out) {
+      res.status(404).json({ error: NODE_MESSAGES.notFound });
+      return;
+    }
+    res.json(GetNodeFoldersResponse.parse(out));
   });
 
   router.post("/account/nodes/:id/disable", sessionOnly, async (req, res) => {

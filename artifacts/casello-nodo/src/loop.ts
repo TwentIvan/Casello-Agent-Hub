@@ -1,5 +1,5 @@
 import { CaselloClient, isLeaseLoss, leaseLossReason, type TaskPackage, type TaskReport } from "./client";
-import { NODE_EXECUTOR, NODE_VERSION, scanSkills } from "./capabilities";
+import { NODE_EXECUTOR, NODE_VERSION, scanFolders, scanSkills } from "./capabilities";
 import { defaultPaths, type Config } from "./config";
 import { createLogger, type Logger } from "./log";
 import { isLeaseLostReport, killAllTaskGroups, runTask, WorkspaceQueue, type SpawnFn } from "./runner";
@@ -149,6 +149,7 @@ export function startLoop(config: Config, deps: LoopDeps = {}): Loop {
         skills,
         workspaceRoot: config.workspaceRoot.slice(0, WORKSPACE_ROOT_MAX),
         maxConcurrent: config.maxConcurrent,
+        folders: await scanFolders(config.workspaceRoot),
       });
       state.lastHeartbeatAt = new Date().toISOString();
       let available = pending;

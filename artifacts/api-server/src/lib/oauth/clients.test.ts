@@ -69,16 +69,30 @@ describe("registrazione", () => {
     });
   });
 
+  it("redirect: si tengono solo quelli ammessi; errore solo se non ne resta nessuno", async () => {
+    const out = await registerClient({ redirect_uris: ["https://evil.example/cb", CLAUDE_CB, "http://localhost/altro"] });
+    expect((out.body as { redirect_uris: string[] }).redirect_uris).toEqual([CLAUDE_CB]);
+    const id = (out.body as { client_id: string }).client_id;
+    const [row] = await db.select().from(oauthClientsTable).where(eq(oauthClientsTable.clientId, id));
+    expect(row!.redirectUris).toEqual([CLAUDE_CB]);
+    await expect(registerClient({ redirect_uris: ["https://evil.example/cb", "http://localhost/altro"] })).rejects.toMatchObject({
+      code: "invalid_redirect_uri",
+    });
+  });
+
   it("redirect estraneo → invalid_redirect_uri", async () => {
     for (const uri of ["https://evil.example/cb", "https://claude.ai/api/mcp/auth_callback/x", "http://localhost/altro"]) {
       await expect(registerClient({ redirect_uris: [uri] })).rejects.toMatchObject({ code: "invalid_redirect_uri", status: 400 });
     }
   });
 
-  it("client_secret_post → invalid_client_metadata; più di 5 redirect o nessuno → 400", async () => {
-    await expect(
-      registerClient({ redirect_uris: [CLAUDE_CB], token_endpoint_auth_method: "client_secret_post" }),
-    ).rejects.toMatchObject({ code: "invalid_client_metadata" });
+  it("client_secret_post non è un errore: la risposta dice sempre «none»", async () => {
+    const out = await registerClient({ redirect_uris: [CLAUDE_CB], token_endpoint_auth_method: "client_secret_post" });
+    expect(out.status).toBe(201);
+    expect(out.body).toMatchObject({ token_endpoint_auth_method: "none" });
+  });
+
+  it("più di 5 redirect o nessuno → 400", async () => {
     const six = Array.from({ length: 6 }, (_, i) => `http://localhost:${3000 + i}/callback`);
     await expect(registerClient({ redirect_uris: six })).rejects.toBeInstanceOf(OAuthError);
     await expect(registerClient({ redirect_uris: [] })).rejects.toMatchObject({ code: "invalid_client_metadata" });
@@ -154,6 +168,26 @@ describe("resolveClient", () => {
       expect(called, host).toBe(false);
     }
     expect(await db.select().from(oauthClientsTable)).toHaveLength(0);
+  });
+
+  it("documento con redirect misti: restano solo quelli ammessi; nessuno ammesso → null", async () => {
+    const mixed = { client_id: DOC_URL, client_name: "x", redirect_uris: ["http://client.example.com/cb", CLAUDE_CB] };
+    expect((await resolveClient(DOC_URL, docFetch(mixed)))?.redirectUris).toEqual([CLAUDE_CB]);
+    await pool.query("TRUNCATE oauth_clients RESTART IDENTITY CASCADE");
+    expect(await resolveClient(DOC_URL, docFetch({ ...mixed, redirect_uris: ["http://client.example.com/cb"] }))).toBeNull();
+  });
+
+  it("documento di claude.ai: client_name oltre 100 caratteri troncato; passa anche con 1 000 client e non conta nel tetto", async () => {
+    await pool.query(
+      `INSERT INTO oauth_clients (client_id, kind, name, redirect_uris)
+       SELECT 'https://m' || g || '.example.com/c', 'metadata', 'x', '[]'::jsonb FROM generate_series(1, 1000) g`,
+    );
+    const claudeId = "https://claude.ai/oauth/client.json";
+    const client = await resolveClient(claudeId, docFetch({ client_id: claudeId, client_name: "n".repeat(150), redirect_uris: [CLAUDE_CB] }));
+    expect(client?.name).toHaveLength(100);
+    // non conta nel tetto: con 999 altri + il documento claude.ai si registra ancora
+    await pool.query("DELETE FROM oauth_clients WHERE client_id = 'https://m1.example.com/c'");
+    await expect(registerClient({ redirect_uris: [CLAUDE_CB] })).resolves.toMatchObject({ status: 201 });
   });
 
   it("oltre 1 000 client: un nuovo documento non si salva (null), uno già noto sì", async () => {

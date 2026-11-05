@@ -116,6 +116,8 @@ export const nodePingRateLimit = rateLimit({
 
 // Registrazione dinamica dei client OAuth del connettore: 10 al minuto per IP.
 export const oauthRegisterRateLimit = rateLimit({ limit: 10, windowMs: 60_000 });
+// ...e al massimo 50 al giorno per IP (finestra di 24 ore); si monta dopo quello al minuto.
+export const oauthRegisterDailyRateLimit = rateLimit({ limit: 50, windowMs: 24 * 3600_000 });
 
 // Autorizzazione OAuth (GET e POST /oauth/authorize): 20 al minuto per utente della sessione, per IP senza sessione.
 export const oauthAuthorizeRateLimit = rateLimit({
@@ -124,12 +126,13 @@ export const oauthAuthorizeRateLimit = rateLimit({
   key: (req) => (req.session?.userId !== undefined ? `user:${req.session.userId}` : (req.ip ?? "unknown")),
 });
 
-// Token endpoint OAuth: 30 al minuto per client_id del corpo (per IP se manca).
+// Token endpoint OAuth: 30 al minuto per client_id del corpo e IP (per solo IP se il client_id manca).
 export const oauthTokenRateLimit: RequestHandler = middlewareFor(
   fixedWindowCounter({ limit: 30, windowMs: 60_000 }),
   (req) => {
     const id = (req.body as { client_id?: unknown } | undefined)?.client_id;
-    return typeof id === "string" && id.length > 0 && id.length <= 2000 ? `client:${id}` : `ip:${req.ip ?? "unknown"}`;
+    const ip = req.ip ?? "unknown";
+    return typeof id === "string" && id.length > 0 && id.length <= 2000 ? `client:${id}:ip:${ip}` : `ip:${ip}`;
   },
   (res) => res.status(429).json({ error: "slow_down", error_description: "troppe richieste: riprova tra poco" }),
 );

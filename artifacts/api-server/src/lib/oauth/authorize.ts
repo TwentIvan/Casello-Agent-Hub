@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { db, oauthCodesTable, oauthGrantsTable } from "@workspace/db";
-import { oauthBase } from "./config";
+import { sameResource, scopeAllowed } from "./config";
 import { redirectMatches, resolveClient } from "./clients";
 
 export const CODE_TTL_MS = 10 * 60 * 1000;
@@ -73,9 +73,9 @@ export async function validateAuthorizeRequest(query: Record<string, unknown>): 
   if (rawState !== undefined && rawState.length > MAX_STATE) fail("invalid_request");
   if (str(query["response_type"]) !== "code") fail("unsupported_response_type");
   const scope = query["scope"];
-  if (scope !== undefined && scope !== "mcp") fail("invalid_scope");
+  if (scope !== undefined && !scopeAllowed(scope)) fail("invalid_scope");
   const resource = query["resource"];
-  if (resource !== undefined && resource !== oauthBase().resource) fail("invalid_target");
+  if (resource !== undefined && !sameResource(resource)) fail("invalid_target");
   const challenge = str(query["code_challenge"]);
   if (!challenge || !CHALLENGE_RE.test(challenge)) fail("invalid_request");
   if (query["code_challenge_method"] !== "S256") fail("invalid_request");

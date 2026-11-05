@@ -196,6 +196,13 @@ describe("connettore OAuth: flusso completo", () => {
     expect(res.status).toBe(401);
   });
 
+  it("car_ (token di rinnovo) usato come credenziale: 401 su /mcp e su /api", async () => {
+    const { refresh } = await connectFlow();
+    expect((await rawMcp(refresh)).status).toBe(401);
+    const res = await fetch(`${base}/api/team-instances`, { headers: { authorization: `Bearer ${refresh}` } });
+    expect(res.status).toBe(401);
+  });
+
   it("collegamento revocato → 401 su /mcp", async () => {
     const { access } = await connectFlow();
     expect((await rawMcp(access)).status).not.toBe(401);

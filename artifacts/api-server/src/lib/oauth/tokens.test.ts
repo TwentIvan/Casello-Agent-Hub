@@ -6,7 +6,7 @@ import { approve, sha256Hex, type AuthorizeParams } from "./authorize";
 import { registerClient } from "./clients";
 import { oauthBase } from "./config";
 import { OAuthError } from "./errors";
-import { exchangeCode, refreshTokens, verifyAccessToken } from "./tokens";
+import { exchangeCode, refreshTokens, resolveLostRefresh, verifyAccessToken } from "./tokens";
 
 const CB = "https://claude.ai/api/mcp/auth_callback";
 const VERIFIER = "v".repeat(60);
@@ -89,7 +89,7 @@ describe("scambio del codice", () => {
     expect(err.status).toBe(401);
     await rejects(exchangeCode(form(code, { code_verifier: undefined })), "invalid_request");
     await rejects(exchangeCode(form(code, { resource: "https://altro.example/mcp" })), "invalid_target");
-    expect((await exchangeCode(form(code, { resource: oauthBase().resource }))).token_type).toBe("Bearer");
+    expect((await exchangeCode(form(code, { resource: `${oauthBase().resource}/` }))).token_type).toBe("Bearer");
   });
 
   it("due scambi concorrenti dello stesso codice: uno solo riesce", async () => {
@@ -116,14 +116,49 @@ describe("rinnovo", () => {
     await rejects(refreshTokens({ refresh_token: first.refresh_token, client_id: clientId }), "invalid_grant");
   });
 
-  it("car_ riusato → invalid_grant e collegamento revocato: anche il cao_ nuovo non vale", async () => {
+  it("car_ riusato subito (entro 60 s) → invalid_grant senza revocare: il token nuovo vale ancora", async () => {
     const first = await exchangeCode(form(await getCode()));
     const second = await refreshTokens({ refresh_token: first.refresh_token, client_id: clientId });
+    await rejects(refreshTokens({ refresh_token: first.refresh_token, client_id: clientId }), "invalid_grant");
+    const [grant] = await db.select().from(oauthGrantsTable);
+    expect(grant!.revokedAt).toBeNull();
+    expect(await verifyAccessToken(second.access_token)).toMatchObject({ userId });
+    const third = await refreshTokens({ refresh_token: second.refresh_token, client_id: clientId });
+    expect(third.access_token).toMatch(/^cao_/);
+  });
+
+  it("due rinnovi concorrenti dello stesso car_: uno riesce, l'altro invalid_grant senza revoca", async () => {
+    const first = await exchangeCode(form(await getCode()));
+    const results = await Promise.allSettled([
+      refreshTokens({ refresh_token: first.refresh_token, client_id: clientId }),
+      refreshTokens({ refresh_token: first.refresh_token, client_id: clientId }),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const [grant] = await db.select().from(oauthGrantsTable);
+    expect(grant!.revokedAt).toBeNull();
+  });
+
+  it("car_ riusato dopo più di 60 s → invalid_grant e collegamento revocato: anche il cao_ nuovo non vale", async () => {
+    const first = await exchangeCode(form(await getCode()));
+    const second = await refreshTokens({ refresh_token: first.refresh_token, client_id: clientId });
+    await pool.query(
+      "UPDATE oauth_tokens SET used_at = timezone('utc', now()) - interval '61 seconds' WHERE token_hash = $1",
+      [sha256Hex(first.refresh_token)],
+    );
     await rejects(refreshTokens({ refresh_token: first.refresh_token, client_id: clientId }), "invalid_grant");
     const [grant] = await db.select().from(oauthGrantsTable);
     expect(grant!.revokedAt).not.toBeNull();
     expect(await verifyAccessToken(second.access_token)).toBeNull();
     await rejects(refreshTokens({ refresh_token: second.refresh_token, client_id: clientId }), "invalid_grant");
+  });
+
+  it("perdita della corsa su un car_ scaduto (non usato): invalid_grant senza revoca", async () => {
+    const first = await exchangeCode(form(await getCode()));
+    await pool.query("UPDATE oauth_tokens SET expires_at = timezone('utc', now()) - interval '1 minute' WHERE kind = 'refresh'");
+    const [tok] = await db.select().from(oauthTokensTable).where(eq(oauthTokensTable.tokenHash, sha256Hex(first.refresh_token)));
+    await rejects(resolveLostRefresh(tok!.id, tok!.grantId), "invalid_grant");
+    const [grant] = await db.select().from(oauthGrantsTable);
+    expect(grant!.revokedAt).toBeNull();
   });
 
   it("rinnovo scaduto, di un altro client o sconosciuto → invalid_grant", async () => {

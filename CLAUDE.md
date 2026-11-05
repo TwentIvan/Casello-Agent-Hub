@@ -777,33 +777,41 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `GET /.well-known/oauth-protected-resource` (anche `…/mcp`) e `GET /.well-known/oauth-authorization-server` (`metadata.ts`): solo
   client pubblici (`token_endpoint_auth_methods_supported: none`), PKCE `S256`, scope `mcp`, `client_id_metadata_document_supported`.
 - **Client** (`clients.ts`, `oauth_clients`, `kind` `dcr` | `metadata`): registrazione dinamica `POST /oauth/register` (RFC 7591: `redirect_uris`
-  1..5, `client_name` ≤ 100, solo `token_endpoint_auth_method` `none`; `client_id` `cac_…`), oppure `client_id` = URL `https` di un documento
+  1..5, `client_name` ≤ 100; registrazione permissiva come RFC 7591 §3.2.1: un `token_endpoint_auth_method` diverso da `none` non è un
+  errore e la risposta dice sempre `none`; dei `redirect_uris` si tengono solo quelli ammessi, errore `invalid_redirect_uri` solo se non ne
+  resta nessuno; `client_id` `cac_…`), oppure `client_id` = URL `https` di un documento
   del client, scaricato alla prima autorizzazione con `node:https` e un DNS guardato (`guardedLookup`/`isPublicIp` di `lib/ai/providers.ts`: ogni
   indirizzo risolto deve essere pubblico e il socket si collega a quello verificato; solo https, nessun redirect, 10 s, 64 KB; il suo
-  `client_id` deve essere lo stesso URL; riscaricato dopo 24 ore). Massimo 1 000 righe in `oauth_clients` (DCR e documenti insieme):
-  oltre, `register` → 503 «registrazioni temporaneamente sospese». Indirizzi di ritorno ammessi, uguali carattere per carattere:
+  `client_id` deve essere lo stesso URL; riscaricato dopo 24 ore; `client_name` troncato a 100 caratteri, `redirect_uris` filtrati come sopra, client nullo se non ne resta
+  nessuno). Massimo 1 000 righe in `oauth_clients` (DCR e documenti insieme): oltre, `register` → 503 «registrazioni temporaneamente
+  sospese»; i client documento con `client_id` che inizia con `https://claude.ai/` o `https://claude.com/` non contano nel tetto e passano
+  anche se è pieno. Indirizzi di ritorno ammessi, uguali carattere per carattere:
   `https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback`, loopback `http://localhost:<porta>/callback` e
   `http://127.0.0.1:<porta>/callback` (Claude Code); altro → `invalid_redirect_uri`.
 - **Autorizzazione** (`authorize.ts`, `pages.ts`): `GET /oauth/authorize` (`response_type=code`, `client_id`, `redirect_uri`, `code_challenge` +
-  `S256`, `state` ≤ 500 caratteri altrimenti `invalid_request`, `scope` solo `mcp`, `resource` uguale a `<PUBLIC_APP_URL>/mcp`). Client
+  `S256`, `state` ≤ 500 caratteri altrimenti `invalid_request`, `scope` lista separata da spazi che contiene `mcp` (valori sconosciuti ignorati, una lista senza `mcp` → `invalid_scope`), `resource` uguale a
+  `<PUBLIC_APP_URL>/mcp` (un `/` finale si ignora, anche sul token endpoint). Client
   sconosciuto o `redirect_uri` non ammesso: pagina d'errore, mai un redirect; altri errori: redirect con `error` e `state`. Senza sessione
   redirect a `/api/auth/login?returnTo=…` (utente fuori da `ALLOWED_EMAILS` respinto dal login). Con sessione: pagina di consenso HTML servita
   dall'API (nome del client E host del ritorno, account, «Consenti»/«Annulla»; CSP restrittiva, `X-Frame-Options: DENY`, testo escapato).
   La richiesta in attesa sta nella sessione (`oauthPending` con token CSRF); `POST /oauth/authorize` (form) con CSRF e `decision`
-  `allow|deny`. Richiesta scaduta o CSRF sbagliato → pagina «Richiesta scaduta: ricomincia dall'app Claude»; `deny` → `access_denied`. `allow`
+  `allow|deny`. Richiesta scaduta o CSRF sbagliato, o due consensi concorrenti per lo stesso client e utente (violazione dell'indice unico) → pagina «Richiesta scaduta:
+  ricomincia dall'app Claude»; un errore DB inatteso su GET/POST `/oauth/authorize` → pagina 500 «Errore interno: riprova tra poco»; `deny` → `access_denied`. `allow`
   crea il **collegamento** (`oauth_grants`, al più uno non revocato per utente e client: un nuovo consenso revoca il precedente, stessa
   transazione) e un codice (32 byte, 10 minuti, una volta, legato a client, `redirect_uri` e `code_challenge`).
 - **Token** (`tokens.ts`): `POST /oauth/token` (form, `Cache-Control: no-store`). `authorization_code` (con `code_verifier` 43..128, consumo con
   UPDATE condizionato: due scambi concorrenti, uno solo riesce) e `refresh_token`. Risposta: `access_token` `cao_…` (3 600 s), `refresh_token`
   `car_…` (30 giorni), `scope: mcp`. **Rotazione**: ogni rinnovo segna il vecchio come usato ed emette una coppia nuova; un token di rinnovo già
-  usato → `invalid_grant` e revoca dell'intero collegamento (un client che ritenta un rinnovo dopo un timeout di rete deve ricollegarsi).
+  usato da PIÙ di 60 s (`REFRESH_REUSE_GRACE_MS`) → `invalid_grant` e revoca dell'intero collegamento (rilevamento del furto); riusato da meno di 60 s
+  (un client che ritenta dopo una risposta persa, o due rinnovi quasi insieme) → `invalid_grant` semplice, senza revoca: il token nuovo resta valido.
+  Perso l'UPDATE condizionato si rilegge la riga: scaduto e mai usato, o usato dentro la finestra → nessuna revoca.
   Errori RFC 6749 con `error_description` fissa in italiano (`errors.ts`); `oauthErrorHandler` montato su `/oauth` trasforma le eccezioni in
   JSON OAuth (`invalid_request`, `server_error`). Di codici e token si salva solo l'hash SHA-256.
 - **Uso su `/mcp`** (`lib/mcp/auth.ts`): `cao_…` valido se non scaduto, collegamento non revocato e utente ancora ammesso (`isAllowed`); dà
   `mcpScopes = ["mcp", "api:write"]` (tutti gli strumenti, `approva` e `rifiuta` compresi: scelta dell'utente), `last_used_at` aggiornato al
   massimo una volta al minuto. Su `/api` `cao_…`/`car_…` sono sconosciuti (401). Le descrizioni di `approva`/`rifiuta` dicono al modello di
   ripetere numero e sintesi e chiedere conferma.
-- **Limiti** (`middlewares/rate-limit.ts`, in memoria): `register` 10/min per IP, `token` 30/min per `client_id` (429 `slow_down`), `authorize`
+- **Limiti** (`middlewares/rate-limit.ts`, in memoria): `register` 10/min e 50/giorno (24 h) per IP (429), `token` 30/min per `client_id` e IP (429 `slow_down`), `authorize`
   (GET e POST) 20/min per utente (per IP senza sessione); restano 60/min di `/mcp` e il contatore di approva/rifiuta. Log: mai token, codici,
   hash, `code_verifier` né Authorization.
 - **Console** (solo login, `sessionOnly`, tag OpenAPI `nodes`): `GET /api/account/oauth-grants`, `DELETE /api/account/oauth-grants/:id` (204;
@@ -821,9 +829,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 
 Le analisi dell'architetto possono essere eseguite da Claude Code sul Mac dell'utente invece che dal cloud
 (`analyses.executor`). L'agente si collega al server MCP su `/mcp` (Streamable HTTP stateless, solo POST,
-60 chiamate/min per utente; nginx ha `location /mcp`) con un token personale `cas_…` creato in console (oppure, dall'app Claude, con
-il token OAuth `cao_…` del connettore, vedi "Connettore OAuth (app Claude)")
-(Account → "Token personali", casella "Agente locale (MCP)", ambito `mcp`; tabella `api_tokens`, salvato come hash). `/mcp` richiede l'ambito `mcp` (un token `cas_…` senza riceve 401 «token non valido o scaduto»; il `cao_…` ha `mcp` e `api:write`). Gli esiti di fase stanno in
+60 chiamate/min per utente; nginx ha `location /mcp`) con un token personale `cas_…` creato in console (Account → "Token personali",
+casella "Agente locale (MCP)", ambito `mcp`; tabella `api_tokens`, salvato come hash) oppure, dall'app Claude, con il token OAuth
+`cao_…` del connettore (vedi "Connettore OAuth (app Claude)"). `/mcp` richiede l'ambito `mcp` (un token `cas_…` senza riceve 401 «token non valido o scaduto»; il `cao_…` ha `mcp` e `api:write`). Gli esiti di fase stanno in
 `analysis_phase_results`; la lease dura 15 minuti (rinnovo con consegna o `ping_analysis`). Migrazione:
 `docs/migrations/2026-10-esecutore-locale.sql` (da applicare in produzione e segnalare nella PR). Procedura
 dell'agente: skill `docs/skills/casello-architetto-locale/SKILL.md`. Il server `/mcp` espone anche `read_mcp_tools`

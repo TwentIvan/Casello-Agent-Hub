@@ -7,7 +7,16 @@ import { db, oauthClientsTable, oauthCodesTable, oauthGrantsTable, pool } from "
 // Autorizzazione OAuth sull'app completa: pagina di consenso, decisione, errori. L'utente è quello di sviluppo
 // (AUTH_DISABLED); il caso «senza sessione» passa da un mock di sessionUserId.
 
-const state = vi.hoisted(() => ({ noUser: false }));
+const state = vi.hoisted(() => ({ noUser: false, approveError: null as unknown, validateError: null as unknown }));
+vi.mock("../lib/oauth/authorize", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../lib/oauth/authorize")>();
+  return {
+    ...orig,
+    approve: (...a: Parameters<typeof orig.approve>) => (state.approveError ? Promise.reject(state.approveError) : orig.approve(...a)),
+    validateAuthorizeRequest: (...a: Parameters<typeof orig.validateAuthorizeRequest>) =>
+      state.validateError ? Promise.reject(state.validateError) : orig.validateAuthorizeRequest(...a),
+  };
+});
 vi.mock("../lib/auth", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../lib/auth")>();
   return { ...orig, sessionUserId: (req: Parameters<typeof orig.sessionUserId>[0]) => (state.noUser ? Promise.resolve(null) : orig.sessionUserId(req)) };
@@ -53,6 +62,8 @@ afterAll(async () => {
 
 beforeEach(async () => {
   state.noUser = false;
+  state.approveError = null;
+  state.validateError = null;
   await pool.query("TRUNCATE oauth_clients RESTART IDENTITY CASCADE");
   const [c] = await db
     .insert(oauthClientsTable)
@@ -155,6 +166,14 @@ describe("GET /oauth/authorize", () => {
     expect(res.status).toBe(200);
   });
 
+  it("scope: lista con mcp e valori sconosciuti ok; senza mcp → invalid_scope; resource con / finale ok", async () => {
+    expect((await get(authQuery({ scope: "mcp offline_access" }))).res.status).toBe(200);
+    expect((await get(authQuery({ scope: "profile mcp", resource: "https://casello.example.test/mcp/" }))).res.status).toBe(200);
+    const bad = await get(authQuery({ scope: "profile email" }));
+    expect(bad.res.status).toBe(302);
+    expect(new URL(bad.res.headers.get("location")!).searchParams.get("error")).toBe("invalid_scope");
+  });
+
   it("senza code_challenge o metodo plain → invalid_request; scope e response_type sbagliati", async () => {
     const cases: [Record<string, string | undefined>, string][] = [
       [{ code_challenge: undefined }, "invalid_request"],
@@ -232,5 +251,32 @@ describe("POST /oauth/authorize", () => {
     const noCsrf = await post(cookie, { decision: "allow" });
     expect(noCsrf.res.status).toBe(400);
     expect(await db.select().from(oauthGrantsTable)).toHaveLength(0);
+  });
+
+  it("violazione dell'indice unico (consensi concorrenti) → pagina «Richiesta scaduta», non 500", async () => {
+    const { text, cookie } = await get(authQuery());
+    state.approveError = Object.assign(new Error("duplicate"), { code: "23505" });
+    const { res, text: page } = await post(cookie, { csrf: csrfOf(text), decision: "allow" });
+    expect(res.status).toBe(400);
+    expect(page).toContain("Richiesta scaduta: ricomincia dall&#39;app Claude");
+  });
+
+  it("errore DB inatteso nel consenso → pagina HTML 500 «Errore interno: riprova tra poco»", async () => {
+    const { text, cookie } = await get(authQuery());
+    state.approveError = new Error("connessione persa");
+    const { res, text: page } = await post(cookie, { csrf: csrfOf(text), decision: "allow" });
+    expect(res.status).toBe(500);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    expect(page).toContain("Errore interno: riprova tra poco");
+  });
+});
+
+describe("GET /oauth/authorize: errori inattesi", () => {
+  it("errore DB inatteso → pagina HTML 500, non JSON", async () => {
+    state.validateError = new Error("connessione persa");
+    const { res, text } = await get(authQuery());
+    expect(res.status).toBe(500);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    expect(text).toContain("Errore interno: riprova tra poco");
   });
 });

@@ -4,11 +4,13 @@ import { db, oauthClientsTable, oauthCodesTable, oauthGrantsTable, oauthTokensTa
 import type { TokenScope } from "../api-tokens";
 import { isAllowed } from "../users";
 import { sha256Hex } from "./authorize";
-import { oauthBase } from "./config";
+import { sameResource } from "./config";
 import { OAuthError } from "./errors";
 
 export const ACCESS_TTL_MS = 3600 * 1000;
 export const REFRESH_TTL_MS = 30 * 24 * 3600 * 1000;
+/** Finestra in cui il riuso di un `car_` è un ritentativo (risposta persa), non un furto. */
+export const REFRESH_REUSE_GRACE_MS = 60 * 1000;
 const LAST_USED_STEP_MS = 60 * 1000;
 const VERIFIER_RE = /^[A-Za-z0-9._~-]{43,128}$/;
 
@@ -33,7 +35,7 @@ function required(form: Record<string, unknown>, name: string): string {
 }
 
 function checkResource(form: Record<string, unknown>): void {
-  if (form["resource"] !== undefined && form["resource"] !== oauthBase().resource) {
+  if (form["resource"] !== undefined && !sameResource(form["resource"])) {
     throw new OAuthError("invalid_target", "risorsa non valida");
   }
 }
@@ -108,7 +110,36 @@ export async function exchangeCode(form: Record<string, unknown>): Promise<Token
   return out;
 }
 
-/** Rinnovo con rotazione: un token di rinnovo già usato revoca l'intero collegamento. */
+async function revokeGrantAndFail(grantId: number): Promise<never> {
+  await db.transaction(async (tx) => {
+    await tx
+      .update(oauthGrantsTable)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(oauthGrantsTable.id, grantId), isNull(oauthGrantsTable.revokedAt)));
+  });
+  throw invalidGrant();
+}
+
+/** Riuso di un `car_` già usato: entro la finestra di tolleranza è un ritentativo (nessuna revoca), oltre è un furto. */
+async function handleReuse(grantId: number, usedAt: Date): Promise<never> {
+  if (usedAt.getTime() >= Date.now() - REFRESH_REUSE_GRACE_MS) throw invalidGrant();
+  return revokeGrantAndFail(grantId);
+}
+
+/**
+ * Perso l'UPDATE condizionato del rinnovo: si rilegge la riga. Scaduto e mai usato, oppure usato da meno di 60 s
+ * (due richieste quasi insieme): `invalid_grant` senza revoca; usato prima della finestra: revoca.
+ */
+export async function resolveLostRefresh(tokenId: number, grantId: number): Promise<never> {
+  const [again] = await db
+    .select({ usedAt: oauthTokensTable.usedAt })
+    .from(oauthTokensTable)
+    .where(eq(oauthTokensTable.id, tokenId));
+  if (!again || again.usedAt === null) throw invalidGrant();
+  return handleReuse(grantId, again.usedAt);
+}
+
+/** Rinnovo con rotazione: un token di rinnovo già usato da più di 60 s revoca l'intero collegamento. */
 export async function refreshTokens(form: Record<string, unknown>): Promise<TokenResponse> {
   const refresh = required(form, "refresh_token");
   const clientId = required(form, "client_id");
@@ -131,17 +162,7 @@ export async function refreshTokens(form: Record<string, unknown>): Promise<Toke
     .where(eq(oauthTokensTable.tokenHash, sha256Hex(refresh)));
   if (!row || row.kind !== "refresh" || row.grantClientRowId !== clientRowId || row.revokedAt !== null) throw invalidGrant();
 
-  const revoke = async (): Promise<never> => {
-    await db.transaction(async (tx) => {
-      await tx
-        .update(oauthGrantsTable)
-        .set({ revokedAt: new Date() })
-        .where(and(eq(oauthGrantsTable.id, row.grantId), isNull(oauthGrantsTable.revokedAt)));
-    });
-    throw invalidGrant();
-  };
-
-  if (row.usedAt !== null) return revoke(); // riuso: probabile furto
+  if (row.usedAt !== null) return handleReuse(row.grantId, row.usedAt); // riuso: tolleranza o probabile furto
   if (row.expiresAt.getTime() <= Date.now() || !isAllowed([row.email])) throw invalidGrant();
 
   const out = await db.transaction(async (tx) => {
@@ -153,8 +174,8 @@ export async function refreshTokens(form: Record<string, unknown>): Promise<Toke
     if (won.length === 0) return null;
     return issuePair(tx, row.grantId);
   });
-  // Perso la corsa: un'altra richiesta ha già usato questo token di rinnovo
-  if (!out) return revoke();
+  // Perso la corsa: si rilegge la riga per capire perché
+  if (!out) return resolveLostRefresh(row.id, row.grantId);
   return out;
 }
 

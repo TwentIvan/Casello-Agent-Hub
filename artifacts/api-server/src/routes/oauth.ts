@@ -16,7 +16,8 @@ import { registerClient } from "../lib/oauth/clients";
 import { OAuthError } from "../lib/oauth/errors";
 import { exchangeCode, refreshTokens } from "../lib/oauth/tokens";
 import { logger } from "../lib/logger";
-import { oauthAuthorizeRateLimit, oauthRegisterRateLimit, oauthTokenRateLimit } from "../middlewares/rate-limit";
+import { isUniqueViolation } from "../lib/pg-errors";
+import { oauthAuthorizeRateLimit, oauthRegisterDailyRateLimit, oauthRegisterRateLimit, oauthTokenRateLimit } from "../middlewares/rate-limit";
 
 /**
  * Errori su /oauth/*, anche quelli dei parser globali (che girano prima del router): sempre JSON OAuth.
@@ -44,6 +45,13 @@ export const oauthErrorHandler: ErrorRequestHandler = (err, _req, res, next) => 
 };
 
 const EXPIRED_MESSAGE = "Richiesta scaduta: ricomincia dall'app Claude";
+
+/** Errore inatteso su /oauth/authorize: pagina d'errore (mai JSON), senza dettagli. */
+function sendInternalError(res: Response, err: unknown): void {
+  logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Errore su /oauth/authorize");
+  if (res.headersSent) return;
+  sendPage(res, 500, errorPage("Errore interno: riprova tra poco"));
+}
 
 function sameToken(a: unknown, b: string): boolean {
   if (typeof a !== "string") return false;
@@ -80,7 +88,7 @@ export function oauthRouter(): IRouter {
     res.json(authorizationServerMetadata());
   });
 
-  r.post("/oauth/register", oauthRegisterRateLimit, async (req, res) => {
+  r.post("/oauth/register", oauthRegisterRateLimit, oauthRegisterDailyRateLimit, async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     try {
       const out = await registerClient(req.body);
@@ -108,32 +116,42 @@ export function oauthRouter(): IRouter {
       await saveSession(req);
       sendPage(res, 200, consentPage({ clientName: params.clientName, redirectHost: new URL(params.redirectUri).host, userEmail: user?.email ?? "", csrf }));
     } catch (err) {
-      if (!handleAuthorizeError(err, res)) throw err;
+      if (!handleAuthorizeError(err, res)) sendInternalError(res, err);
     }
   });
 
   r.post("/oauth/authorize", oauthAuthorizeRateLimit, async (req, res) => {
-    const body = (req.body ?? {}) as Record<string, unknown>;
-    const pending = req.session.oauthPending;
-    const userId = await sessionUserId(req);
-    if (userId === null || !pending || !sameToken(body["csrf"], pending.csrf)) {
-      sendPage(res, 400, errorPage(EXPIRED_MESSAGE));
-      return;
+    try {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const pending = req.session.oauthPending;
+      const userId = await sessionUserId(req);
+      if (userId === null || !pending || !sameToken(body["csrf"], pending.csrf)) {
+        sendPage(res, 400, errorPage(EXPIRED_MESSAGE));
+        return;
+      }
+      const decision = body["decision"];
+      if (decision !== "allow" && decision !== "deny") {
+        sendPage(res, 400, errorPage("Richiesta non valida."));
+        return;
+      }
+      // La richiesta si usa una volta sola
+      delete req.session.oauthPending;
+      await saveSession(req);
+      const { params } = pending;
+      if (decision === "deny") {
+        res.redirect(buildRedirect(params.redirectUri, { error: "access_denied", state: params.state }));
+        return;
+      }
+      try {
+        res.redirect(await approve(userId, params));
+      } catch (err) {
+        // Due consensi insieme per lo stesso client e utente: l'indice unico lascia passare solo il primo
+        if (!isUniqueViolation(err)) throw err;
+        sendPage(res, 400, errorPage(EXPIRED_MESSAGE));
+      }
+    } catch (err) {
+      sendInternalError(res, err);
     }
-    const decision = body["decision"];
-    if (decision !== "allow" && decision !== "deny") {
-      sendPage(res, 400, errorPage("Richiesta non valida."));
-      return;
-    }
-    // La richiesta si usa una volta sola
-    delete req.session.oauthPending;
-    await saveSession(req);
-    const { params } = pending;
-    if (decision === "deny") {
-      res.redirect(buildRedirect(params.redirectUri, { error: "access_denied", state: params.state }));
-      return;
-    }
-    res.redirect(await approve(userId, params));
   });
 
   r.post("/oauth/token", oauthTokenRateLimit, async (req, res) => {

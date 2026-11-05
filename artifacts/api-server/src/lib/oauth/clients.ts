@@ -41,18 +41,32 @@ export function redirectMatches(registered: string[], uri: string): boolean {
   });
 }
 
+/** Tiene solo gli indirizzi ammessi (RFC 7591 §3.2.1: il server può sostituire o ignorare i metadati); null se non ne resta nessuno. */
+function allowedUris(uris: string[]): string[] | null {
+  const kept = uris.filter(isAllowedRedirectUri);
+  return kept.length > 0 ? kept : null;
+}
+
 function parseRedirectUris(value: unknown): string[] {
   if (!Array.isArray(value) || value.length < 1 || value.length > MAX_REDIRECTS || !value.every((v) => typeof v === "string")) {
     throw new OAuthError("invalid_client_metadata", "redirect_uris deve contenere da 1 a 5 indirizzi");
   }
-  const uris = value as string[];
-  if (!uris.every(isAllowedRedirectUri)) throw new OAuthError("invalid_redirect_uri", "indirizzo di ritorno non ammesso");
-  return uris;
+  const kept = allowedUris(value as string[]);
+  if (!kept) throw new OAuthError("invalid_redirect_uri", "indirizzo di ritorno non ammesso");
+  return kept;
 }
 
-/** Tutti i client (dcr e metadata): il tetto di 1 000 li conta insieme. */
+/** Client documento di claude.ai / claude.com: fuori dal tetto globale. */
+export function isClaudeDocumentId(clientId: string): boolean {
+  return clientId.startsWith("https://claude.ai/") || clientId.startsWith("https://claude.com/");
+}
+
+/** Tutti i client (dcr e metadata): il tetto di 1 000 li conta insieme, esclusi i documenti di claude.ai / claude.com. */
 async function countClients(): Promise<number> {
-  const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(oauthClientsTable);
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(oauthClientsTable)
+    .where(sql`${oauthClientsTable.clientId} NOT LIKE 'https://claude.ai/%' AND ${oauthClientsTable.clientId} NOT LIKE 'https://claude.com/%'`);
   return row?.n ?? 0;
 }
 
@@ -60,10 +74,7 @@ async function countClients(): Promise<number> {
 export async function registerClient(body: unknown): Promise<{ status: 201; body: object }> {
   const b = body !== null && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
   const redirectUris = parseRedirectUris(b["redirect_uris"]);
-  const method = b["token_endpoint_auth_method"];
-  if (method !== undefined && method !== "none") {
-    throw new OAuthError("invalid_client_metadata", "sono ammessi solo client pubblici (token_endpoint_auth_method none)");
-  }
+  // token_endpoint_auth_method diverso da «none»: non è un errore, il client è comunque pubblico (la risposta dice «none»)
   const rawName = b["client_name"];
   if (rawName !== undefined && typeof rawName !== "string") {
     throw new OAuthError("invalid_client_metadata", "client_name non valido");
@@ -190,12 +201,14 @@ async function fetchClientDocument(
   const d = doc as Record<string, unknown>;
   if (d["client_id"] !== clientId) return null;
   const uris = d["redirect_uris"];
-  if (!Array.isArray(uris) || uris.length < 1 || uris.length > MAX_REDIRECTS || !uris.every((u) => typeof u === "string" && isAllowedRedirectUri(u))) {
+  if (!Array.isArray(uris) || uris.length < 1 || uris.length > MAX_REDIRECTS || !uris.every((u) => typeof u === "string")) {
     return null;
   }
+  const kept = allowedUris(uris as string[]);
+  if (!kept) return null;
   const rawName = d["client_name"];
   const name = typeof rawName === "string" && rawName.trim() !== "" ? rawName.trim().slice(0, MAX_NAME) : "Client MCP";
-  return { name, redirectUris: uris as string[] };
+  return { name, redirectUris: kept };
 }
 
 /** Trova il client: riga `dcr`, oppure documento del client per un `client_id` https (salvato e riscaricato dopo 24 ore). */
@@ -206,7 +219,7 @@ export async function resolveClient(clientId: string, download: DocumentDownload
     if (!clientId.startsWith("https://")) return null;
     if (row?.metadataFetchedAt && Date.now() - row.metadataFetchedAt.getTime() < DOC_TTL_MS) return row;
 
-    if (!row && (await countClients()) >= MAX_CLIENTS) return null;
+    if (!row && !isClaudeDocumentId(clientId) && (await countClients()) >= MAX_CLIENTS) return null;
     const doc = await fetchClientDocument(clientId, download);
     if (!doc) return null;
     const now = new Date();

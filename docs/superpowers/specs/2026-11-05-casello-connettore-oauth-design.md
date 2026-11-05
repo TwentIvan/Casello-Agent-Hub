@@ -148,3 +148,19 @@ Fuori ambito: uso dei token del connettore su `/api`, strumenti nuovi del centra
   diversa, CSRF mancante, documento del client con redirect o oltre 64 KB, limite dei client.
 - Migrazione applicata due volte; route della console (404 per collegamenti altrui); console nel browser a 1280 px.
 - Prova finale reale dopo il deploy: connettore in claude.ai, poi dall'app del telefono (chat scritta e vocale).
+
+## Aggiornamenti dopo la revisione finale
+
+Prevalgono su §2.2, §2.4 e §5 dove li contraddicono.
+
+- **Riuso del rinnovo (R6)**: un `car_` già usato da meno di 60 s dà `invalid_grant` senza revocare il collegamento (ritentativo dopo una
+  risposta persa, o due rinnovi quasi insieme); usato da più di 60 s revoca il collegamento. Nel ramo perdente dell'UPDATE condizionato la riga
+  si rilegge: scaduto e mai usato, o usato dentro la finestra, nessuna revoca.
+- **Registrazione permissiva (R7, RFC 7591 §3.2.1)**: `token_endpoint_auth_method` diverso da `none` non è un errore (la risposta dice `none`);
+  si tengono solo i `redirect_uris` ammessi (`invalid_redirect_uri` o client nullo solo se non ne resta nessuno), anche per il documento del
+  client, il cui `client_name` si tronca a 100 caratteri.
+- **Tetti (R8)**: `register` anche 50 al giorno per IP; i client documento `https://claude.ai/…` e `https://claude.com/…` non contano nel tetto
+  di 1 000 e passano anche se è pieno. Il limite di `/oauth/token` è per `client_id` e IP insieme.
+- **Parametri**: `scope` è una lista separata da spazi che deve contenere `mcp` (valori sconosciuti ignorati); `resource` si confronta senza `/` finale.
+- **Pagine**: due consensi concorrenti (violazione dell'indice unico) mostrano «Richiesta scaduta: ricomincia dall'app Claude»; un errore DB
+  inatteso su `/oauth/authorize` mostra una pagina 500 «Errore interno: riprova tra poco».

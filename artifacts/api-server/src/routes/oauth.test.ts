@@ -99,13 +99,13 @@ describe("POST /oauth/register", () => {
     }
   });
 
-  it("token_endpoint_auth_method client_secret_post → 400 invalid_client_metadata", async () => {
+  it("token_endpoint_auth_method client_secret_post → 201, la risposta dice «none»", async () => {
     const r = await call("POST", "/oauth/register", {
       redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
       token_endpoint_auth_method: "client_secret_post",
     });
-    expect(r.status).toBe(400);
-    expect(r.json.error).toBe("invalid_client_metadata");
+    expect(r.status).toBe(201);
+    expect(r.json.token_endpoint_auth_method).toBe("none");
   });
 
   it("più di 5 redirect → 400", async () => {

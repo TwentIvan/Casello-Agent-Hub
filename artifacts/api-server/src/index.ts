@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { failInterruptedAnalyses } from "./lib/architect/run-analysis";
 import { startLocalLeaseJob } from "./lib/architect/local-executor";
 import { startNodeSweeper, sweepNodeTasks } from "./lib/nodes/lease-sweeper";
+import { startOAuthSweeper } from "./lib/oauth/grants";
 import { failInterruptedRuns } from "./lib/run-executor";
 import { failInterruptedTeamWork } from "./lib/teams/task-runner";
 import { pumpTurnInBackground, resumeQueuedTurns } from "./lib/teams/turn-runner";
@@ -105,6 +106,9 @@ startLocalLeaseJob();
 // Compiti presi dai nodi: lease scadute chiuse come fallite e avviso «nessun nodo adatto», all'avvio e ogni minuto.
 void sweepNodeTasks();
 startNodeSweeper();
+
+// Connettore OAuth: pulizia di codici, token, collegamenti revocati e client inutilizzati, all'avvio e ogni ora.
+startOAuthSweeper();
 
 app.listen(port, (err) => {
   if (err) {

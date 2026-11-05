@@ -104,6 +104,7 @@ import type {
   NodeTaskPackage,
   NodeToken,
   NotFoundResponse,
+  OAuthGrant,
   PayloadTooLargeResponse,
   PlanConversation,
   PlanConversationCreate,
@@ -768,6 +769,155 @@ export const useRevokeApiToken = <TError = ErrorType<UnauthorizedResponse | NotF
         TContext
       > => {
       return useMutation(getRevokeApiTokenMutationOptions(options));
+    }
+
+export const getListOAuthGrantsUrl = () => {
+
+
+
+
+  return `/api/account/oauth-grants`
+}
+
+/**
+ * Collegamenti non revocati dell'utente (app come Claude che usano `/mcp` con OAuth), dal più recente. Solo con il login: con un token risponde 403.
+ * @summary Elenca le app collegate (connettore OAuth)
+ */
+export const listOAuthGrants = async ( options?: RequestInit): Promise<OAuthGrant[]> => {
+
+  return customFetch<OAuthGrant[]>(getListOAuthGrantsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOAuthGrantsQueryKey = () => {
+    return [
+    `/api/account/oauth-grants`
+    ] as const;
+    }
+
+
+export const getListOAuthGrantsQueryOptions = <TData = Awaited<ReturnType<typeof listOAuthGrants>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listOAuthGrants>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOAuthGrantsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOAuthGrants>>> = ({ signal }) => listOAuthGrants({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOAuthGrants>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListOAuthGrantsQueryResult = NonNullable<Awaited<ReturnType<typeof listOAuthGrants>>>
+export type ListOAuthGrantsQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+
+
+/**
+ * @summary Elenca le app collegate (connettore OAuth)
+ */
+
+export function useListOAuthGrants<TData = Awaited<ReturnType<typeof listOAuthGrants>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listOAuthGrants>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListOAuthGrantsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRevokeOAuthGrantUrl = (id: number,) => {
+
+
+
+
+  return `/api/account/oauth-grants/${id}`
+}
+
+/**
+ * I token del collegamento smettono di valere subito. 404 "collegamento non trovato" se non è dell'utente o è già revocato. Solo con il login.
+ * @summary Revoca un collegamento OAuth
+ */
+export const revokeOAuthGrant = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getRevokeOAuthGrantUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getRevokeOAuthGrantMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeOAuthGrant>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeOAuthGrant>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['revokeOAuthGrant'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeOAuthGrant>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  revokeOAuthGrant(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeOAuthGrantMutationResult = NonNullable<Awaited<ReturnType<typeof revokeOAuthGrant>>>
+
+    export type RevokeOAuthGrantMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Revoca un collegamento OAuth
+ */
+export const useRevokeOAuthGrant = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeOAuthGrant>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof revokeOAuthGrant>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRevokeOAuthGrantMutationOptions(options));
     }
 
 export const getListNodesUrl = () => {

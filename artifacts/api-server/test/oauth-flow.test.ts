@@ -15,6 +15,7 @@ import {
   usersTable,
   type InsertAppTool,
 } from "@workspace/db";
+import { revokeGrant } from "../src/lib/oauth/grants";
 import { enqueueAction } from "../src/lib/actions/queue";
 import { encryptSecret } from "../src/lib/secrets";
 import type { CatalogTool } from "../src/lib/tools/types";
@@ -198,7 +199,8 @@ describe("connettore OAuth: flusso completo", () => {
   it("collegamento revocato → 401 su /mcp", async () => {
     const { access } = await connectFlow();
     expect((await rawMcp(access)).status).not.toBe(401);
-    await db.update(oauthGrantsTable).set({ revokedAt: new Date() });
+    const [g] = await db.select({ id: oauthGrantsTable.id }).from(oauthGrantsTable);
+    expect(await revokeGrant(userId, g!.id)).toBe(true);
     const res = await rawMcp(access);
     expect(res.status).toBe(401);
     expect(res.headers.get("www-authenticate")).toBe(WWW);

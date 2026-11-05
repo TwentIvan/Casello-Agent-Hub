@@ -121,6 +121,32 @@ export const RevokeApiTokenResponse = zod.void()
 
 
 /**
+ * Collegamenti non revocati dell'utente (app come Claude che usano `/mcp` con OAuth), dal più recente. Solo con il login: con un token risponde 403.
+ * @summary Elenca le app collegate (connettore OAuth)
+ */
+export const ListOAuthGrantsResponseItem = zod.object({
+  "id": zod.number(),
+  "clientName": zod.string(),
+  "redirectHost": zod.string().describe('Host dell\'indirizzo di ritorno registrato dal client'),
+  "createdAt": zod.coerce.date(),
+  "lastUsedAt": zod.coerce.date().nullable(),
+  "canDecide": zod.boolean().describe('Può approvare e rifiutare le azioni in coda (ambito api:write)')
+})
+export const ListOAuthGrantsResponse = zod.array(ListOAuthGrantsResponseItem)
+
+
+/**
+ * I token del collegamento smettono di valere subito. 404 "collegamento non trovato" se non è dell'utente o è già revocato. Solo con il login.
+ * @summary Revoca un collegamento OAuth
+ */
+export const RevokeOAuthGrantParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RevokeOAuthGrantResponse = zod.void()
+
+
+/**
  * Nodi locali registrati, per nome, con le capacità dichiarate e se sono vivi (comunicato negli ultimi 2 minuti). Solo con il login: con un token risponde 403.
  * @summary Elenca i nodi locali dell'utente
  */

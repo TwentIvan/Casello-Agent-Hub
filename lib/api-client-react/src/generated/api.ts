@@ -36,6 +36,8 @@ import type {
   AiModelUpdate,
   AiProvider,
   AiProviderInfo,
+  AlfredChoice,
+  AlfredSettings,
   Analysis,
   AnalysisDetail,
   AnalysisItem,
@@ -2025,6 +2027,155 @@ export const useSetCentralinoModel = <TError = ErrorType<BadRequestResponse | Un
         TContext
       > => {
       return useMutation(getSetCentralinoModelMutationOptions(options));
+    }
+
+export const getGetAlfredSettingsUrl = () => {
+
+
+
+
+  return `/api/account/alfred`
+}
+
+/**
+ * Modello e voce salvati, più i modelli idonei ad Alfred dell'utente (account Gemini, nome con live o native-audio, non ritirati; senza chiamare Gemini). Solo con il login: con un token risponde 403.
+ * @summary Modello e voce di Alfred
+ */
+export const getAlfredSettings = async ( options?: RequestInit): Promise<AlfredSettings> => {
+
+  return customFetch<AlfredSettings>(getGetAlfredSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAlfredSettingsQueryKey = () => {
+    return [
+    `/api/account/alfred`
+    ] as const;
+    }
+
+
+export const getGetAlfredSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getAlfredSettings>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAlfredSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAlfredSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAlfredSettings>>> = ({ signal }) => getAlfredSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAlfredSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAlfredSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getAlfredSettings>>>
+export type GetAlfredSettingsQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+
+
+/**
+ * @summary Modello e voce di Alfred
+ */
+
+export function useGetAlfredSettings<TData = Awaited<ReturnType<typeof getAlfredSettings>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAlfredSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAlfredSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetAlfredSettingsUrl = () => {
+
+
+
+
+  return `/api/account/alfred`
+}
+
+/**
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile"), idoneo per nome e con bidiGenerateContent secondo Gemini (400 "modello non adatto ad Alfred"; 502 se Gemini non risponde o rifiuta la chiave). Voce fuori elenco: 400 "voce non disponibile". Con aiModelId null il modello si toglie senza chiamare Gemini; senza voce questa resta com'è. Solo con il login.
+ * @summary Imposta modello e voce di Alfred
+ */
+export const setAlfredSettings = async (alfredChoice: AlfredChoice, options?: RequestInit): Promise<AlfredSettings> => {
+
+  return customFetch<AlfredSettings>(getSetAlfredSettingsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(alfredChoice)
+  }
+);}
+
+
+
+
+export const getSetAlfredSettingsMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAlfredSettings>>, TError,{data: BodyType<AlfredChoice>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setAlfredSettings>>, TError,{data: BodyType<AlfredChoice>}, TContext> => {
+
+const mutationKey = ['setAlfredSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setAlfredSettings>>, {data: BodyType<AlfredChoice>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setAlfredSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetAlfredSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof setAlfredSettings>>>
+    export type SetAlfredSettingsMutationBody = BodyType<AlfredChoice>
+    export type SetAlfredSettingsMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | BadGatewayResponse>
+
+    /**
+ * @summary Imposta modello e voce di Alfred
+ */
+export const useSetAlfredSettings = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAlfredSettings>>, TError,{data: BodyType<AlfredChoice>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setAlfredSettings>>,
+        TError,
+        {data: BodyType<AlfredChoice>},
+        TContext
+      > => {
+      return useMutation(getSetAlfredSettingsMutationOptions(options));
     }
 
 export const getListAppsUrl = () => {

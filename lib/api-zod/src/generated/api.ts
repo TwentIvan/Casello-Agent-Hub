@@ -475,6 +475,41 @@ export const SetCentralinoModelResponse = zod.object({
 
 
 /**
+ * Modello e voce salvati, più i modelli idonei ad Alfred dell'utente (account Gemini, nome con live o native-audio, non ritirati; senza chiamare Gemini). Solo con il login: con un token risponde 403.
+ * @summary Modello e voce di Alfred
+ */
+export const GetAlfredSettingsResponse = zod.object({
+  "aiModelId": zod.number().nullable(),
+  "voice": zod.string(),
+  "models": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string()
+}))
+})
+
+
+/**
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile"), idoneo per nome e con bidiGenerateContent secondo Gemini (400 "modello non adatto ad Alfred"; 502 se Gemini non risponde o rifiuta la chiave). Voce fuori elenco: 400 "voce non disponibile". Con aiModelId null il modello si toglie senza chiamare Gemini; senza voce questa resta com'è. Solo con il login.
+ * @summary Imposta modello e voce di Alfred
+ */
+export const SetAlfredSettingsBody = zod.object({
+  "aiModelId": zod.number().nullable(),
+  "voice": zod.string().optional()
+})
+
+export const SetAlfredSettingsResponse = zod.object({
+  "aiModelId": zod.number().nullable(),
+  "voice": zod.string(),
+  "models": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string()
+}))
+})
+
+
+/**
  * @summary Elenca tutte le app registrate
  */
 

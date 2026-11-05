@@ -203,6 +203,25 @@ export interface CentralinoModel {
   aiModelId: number | null;
 }
 
+export type AlfredSettingsModelsItem = {
+  id: number;
+  name: string;
+  accountName: string;
+};
+
+export interface AlfredSettings {
+  /** @nullable */
+  aiModelId: number | null;
+  voice: string;
+  models: AlfredSettingsModelsItem[];
+}
+
+export interface AlfredChoice {
+  /** @nullable */
+  aiModelId: number | null;
+  voice?: string;
+}
+
 export interface AppInput {
   /** @minLength 1 */
   name: string;

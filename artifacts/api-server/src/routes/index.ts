@@ -21,6 +21,7 @@ import { createAccountModelRouter } from "./account-model";
 import { createNodesRouter } from "./nodes";
 import { createNodeRouter } from "./node";
 import { createOAuthGrantsRouter } from "./oauth-grants";
+import { createAlfredRouter } from "./alfred";
 import { requireNodeToken } from "../lib/nodes/auth";
 import { authRouter, requireAuth } from "../lib/auth";
 
@@ -54,5 +55,6 @@ router.use(createApiTokensRouter());
 router.use(createAccountModelRouter());
 router.use(createNodesRouter());
 router.use(createOAuthGrantsRouter());
+router.use(createAlfredRouter());
 
 export default router;

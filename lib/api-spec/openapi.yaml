@@ -26,6 +26,8 @@ tags:
     description: Statistiche aggregate
   - name: github
     description: Installazioni e repository dell'App GitHub di Casello
+  - name: alfred
+    description: Alfred, il maggiordomo vocale (modello, voce, sessioni)
   - name: ai
     description: Account AI dell'utente (provider, chiave, modelli e prezzi) e stima dei costi
   - name: catalog
@@ -607,6 +609,56 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /account/alfred:
+    get:
+      operationId: getAlfredSettings
+      tags: [alfred]
+      summary: Modello e voce di Alfred
+      description: >-
+        Modello e voce salvati, più i modelli idonei ad Alfred dell'utente (account Gemini, nome con live o
+        native-audio, non ritirati; senza chiamare Gemini). Solo con il login: con un token risponde 403.
+      responses:
+        "200":
+          description: Impostazioni di Alfred
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlfredSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      operationId: setAlfredSettings
+      tags: [alfred]
+      summary: Imposta modello e voce di Alfred
+      description: >-
+        Il modello deve essere di un account AI dell'utente (400 "modello non disponibile"), idoneo per nome e
+        con bidiGenerateContent secondo Gemini (400 "modello non adatto ad Alfred"; 502 se Gemini non risponde
+        o rifiuta la chiave). Voce fuori elenco: 400 "voce non disponibile". Con aiModelId null il modello si
+        toglie senza chiamare Gemini; senza voce questa resta com'è. Solo con il login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlfredChoice"
+      responses:
+        "200":
+          description: Impostazioni di Alfred aggiornate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlfredSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          $ref: "#/components/responses/BadGateway"
 
   # ─── Apps ───────────────────────────────────────────────────────────────────
 
@@ -3620,6 +3672,36 @@ components:
       properties:
         aiModelId:
           type: ["integer", "null"]
+
+    AlfredSettings:
+      type: object
+      required: [aiModelId, voice, models]
+      properties:
+        aiModelId:
+          type: ["integer", "null"]
+        voice:
+          type: string
+        models:
+          type: array
+          items:
+            type: object
+            required: [id, name, accountName]
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              accountName:
+                type: string
+
+    AlfredChoice:
+      type: object
+      required: [aiModelId]
+      properties:
+        aiModelId:
+          type: ["integer", "null"]
+        voice:
+          type: string
 
     AppInput:
       type: object

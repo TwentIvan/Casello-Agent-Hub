@@ -847,13 +847,13 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   tutte solo con il login (`sessionOnly`: con un token personale 403): `POST /api/alfred/sessions` (10/min per utente, 429; senza
   modello 409 «scegli il modello di Alfred in Account»; modello o account non usabili o tetto raggiunto, nell'ordine modello → account
   AI → utente, 409 col motivo; chiude le altre sessioni `active` dell'utente) risponde `{sessionId, token, model, voice, expiresAt}`;
-  `POST …/:id/renew` (nuovo token per la stessa sessione; chiusa o altrui → 404 «sessione non trovata»); `POST …/:id/usage`
-  `{promptTokens, completionTokens}` (cumulativi, interi ≥ 0 altrimenti 400; si tiene il massimo tra salvato e ricevuto, mai
+  `POST …/:id/renew` (nuovo token per la stessa sessione; corpo facoltativo `{resumptionHandle}` 1..4096 caratteri, altrimenti 400, che finisce in `sessionResumption.handle` del token e mai nei log; condivide il limite di 10/min con l'avvio; chiusa o altrui → 404 «sessione non trovata»); `POST …/:id/usage`
+  `{promptTokens, completionTokens}` (totali cumulativi della sessione: il browser somma i `usageMetadata`, che Gemini manda per turno; interi ≥ 0 altrimenti 400; si tiene il massimo tra salvato e ricevuto, mai
   all'indietro; ricalcola il costo; con modello o account eliminati il costo resta null e la sessione si chiude comunque);
   `POST …/:id/close` (204, idempotente). Controllo ogni 5 min: `active` senza attività da 35 min → `closed` (anche le conferme scadute
   da oltre 1 h si cancellano); all'avvio tutte le `active` → `closed`.
 - **Token temporaneo di Gemini** (`gemini.ts`): `POST <GEMINI_NATIVE_BASE>/auth_tokens` con la chiave dell'account (`x-goog-api-key`),
-  `uses: 1`, `expireTime` +30 min, `newSessionExpireTime` +1 min, 15 s, nessun redirect (`GEMINI_NATIVE_BASE` solo per i test, ignorata con
+  `uses: 1`, `expireTime` +30 min, `newSessionExpireTime` +1 min, 15 s, nessun redirect (`GEMINI_NATIVE_BASE`, letta in `config.ts`, solo per i test e ignorata con
   `NODE_ENV=production`). La **configurazione sta tutta nel token** (`bidiGenerateContentSetup`: modello, `responseModalities` AUDIO,
   voce, istruzioni di `instructions.ts`, strumenti di `tool-declarations.ts`, trascrizioni, `sessionResumption`, compressione del
   contesto; senza `fieldMask`): verificato contro Gemini vero, il browser manda solo `{setup: {model}}` e istruzioni o strumenti
@@ -862,7 +862,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `{args}` → `{ok:true,result}` | `{ok:false,error}`; sessione non attiva o altrui, o strumento sconosciuto → 404. Strumenti:
   `squadre_stato`, `squadra_dettaglio` (ridotto per la voce), `bollettino`, `coda_da_confermare`, `scrivi_al_capo` (limite condiviso
   `consumeTeamMessage`, 10/min), `prepara_decisione`, `conferma_decisione`. Ogni chiamata aggiorna `last_activity_at`.
-- **Doppio passo** (`confirmations.ts`, `alfred_confirmations`): `prepara_decisione` `{numero, decisione approva|rifiuta, nota?}` crea una
+- **Doppio passo** (`confirmations.ts`, `alfred_confirmations`): `prepara_decisione` `{numero, decisione approva|rifiuta, nota?}` (`nota` solo con rifiuta) crea una
   conferma con codice di 6 cifre (solo l'hash SHA-256), scadenza 60 s, una volta sola; una voce che richiede il token utente non si
   approva da Alfred; una nuova preparazione invalida le conferme aperte della stessa sessione (vale solo l'ultima, anche se la
   preparazione fallisce). `conferma_decisione` `{codice}` consuma la conferma con UPDATE condizionato e poi approva o rifiuta con lo
@@ -872,8 +872,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - **Console**: Account → carta «Alfred» (modello, voce, «Apri Alfred»); voce di menu «Alfred» e pagina `/alfred` (`use-alfred-voice.ts`:
   AudioWorklet del microfono a PCM 16 bit 16 kHz in pacchetti da 100 ms, riproduzione PCM 24 kHz in coda, stop alla `interrupted`;
   dopo `setupComplete` il testo «[apertura]»; `usageMetadata` → `usage` con i totali cumulativi al più ogni 10 s e alla chiusura;
-  `goAway` o chiusura inattesa → `renew` e ricollegamento con l'handle di `sessionResumptionUpdate` (al più 3 tentativi di fila; senza
-  ripresa riparte da capo sulla stessa riga); un 404 da strumenti o `usage` → stop con «Alfred è stato aperto su un altro dispositivo»;
+  `goAway` o chiusura inattesa → `renew` con l'handle di `sessionResumptionUpdate` (la ripresa vale solo se l'handle è nel token; al più 4
+  tentativi di fila con attesa 0/1/2/4 s, rimandati finché la pagina è in background; senza ripresa riparte da capo sulla stessa riga); un 404 da strumenti o `usage` → stop con «Alfred è stato aperto su un altro dispositivo»;
   trascrizione delle ultime 50 battute). Manifest `alfred.webmanifest` e `apple-touch-icon` inseriti nel `<head>` solo montando la pagina.
   Le route stanno sotto `/api`: `docker/nginx.conf` non cambia.
 - Migrazione: `docs/migrations/2026-11-alfred.sql` (additiva e idempotente, niente `-post`): tabelle `alfred_sessions` e

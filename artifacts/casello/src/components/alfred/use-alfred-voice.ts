@@ -26,7 +26,13 @@ const GEMINI_WS =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained";
 const MAX_LINES = 50;
 const USAGE_EVERY_MS = 10_000;
-const MAX_RECONNECTS = 3;
+const MAX_RECONNECTS = 4;
+const AUDIO_ERROR =
+  "Impossibile avviare l'audio: controlla microfono e permessi del browser e riprova.";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 const ELSEWHERE = "Alfred è stato aperto su un altro dispositivo.";
 
 function b64FromBytes(bytes: Uint8Array): string {
@@ -88,6 +94,8 @@ export function useAlfredVoice() {
     mic: null as MediaStream | null,
     node: null as AudioWorkletNode | null,
     ready: false,
+    resumed: false,
+    deferred: false,
     playHead: 0,
     sources: [] as AudioBufferSourceNode[],
     sessionId: 0,
@@ -97,11 +105,13 @@ export function useAlfredVoice() {
     inText: "",
     outText: "",
     lineId: 0,
+    // Totali della sessione: somma dei frame `usageMetadata` (ognuno è per turno), anche tra ricollegamenti
     prompt: 0,
     completion: 0,
     sentPrompt: 0,
     sentCompletion: 0,
     lastUsageAt: 0,
+    usageInFlight: null as Promise<void> | null,
     usageTimer: null as ReturnType<typeof setTimeout> | null,
   });
 
@@ -163,6 +173,7 @@ export function useAlfredVoice() {
     s.active = false;
     s.gen++;
     s.ready = false;
+    s.deferred = false;
     if (s.usageTimer) clearTimeout(s.usageTimer);
     s.usageTimer = null;
     const ws = s.ws;
@@ -182,6 +193,7 @@ export function useAlfredVoice() {
     s.mic = null;
     s.node?.disconnect();
     s.node = null;
+    if (s.ctx) s.ctx.onstatechange = null;
     void s.ctx?.close().catch(() => undefined);
     s.ctx = null;
   }, [stopPlayback]);
@@ -197,67 +209,96 @@ export function useAlfredVoice() {
 
   const elsewhere = useCallback(() => fail("elsewhere", ELSEWHERE), [fail]);
 
-  const sendUsage = useCallback(async (): Promise<void> => {
+  /** Manda i totali cumulativi; segna come inviato solo a risposta ricevuta, altrimenti ritenta al prossimo giro o alla chiusura. */
+  const sendUsage = useCallback((): Promise<void> => {
     const s = r.current;
+    if (s.usageInFlight) return s.usageInFlight;
     if (s.usageTimer) clearTimeout(s.usageTimer);
     s.usageTimer = null;
-    if (!s.sessionId || (s.prompt === s.sentPrompt && s.completion === s.sentCompletion)) return;
+    if (!s.sessionId || (s.prompt === s.sentPrompt && s.completion === s.sentCompletion)) return Promise.resolve();
     const body = { promptTokens: s.prompt, completionTokens: s.completion };
+    const id = s.sessionId;
     s.lastUsageAt = Date.now();
-    s.sentPrompt = body.promptTokens;
-    s.sentCompletion = body.completionTokens;
-    try {
-      await api.current.recordUsage.mutateAsync({ id: s.sessionId, data: body });
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 404 && s.active) elsewhere();
-    }
+    const p = (async () => {
+      try {
+        await api.current.recordUsage.mutateAsync({ id, data: body });
+        s.sentPrompt = Math.max(s.sentPrompt, body.promptTokens);
+        s.sentCompletion = Math.max(s.sentCompletion, body.completionTokens);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) {
+          if (s.active && s.sessionId === id) elsewhere();
+        } else if (s.active) {
+          scheduleUsageRef.current();
+        }
+      } finally {
+        s.usageInFlight = null;
+      }
+    })();
+    s.usageInFlight = p;
+    return p;
   }, [elsewhere]);
 
   const scheduleUsage = useCallback(() => {
     const s = r.current;
     if (s.usageTimer) return;
     const wait = Math.max(0, USAGE_EVERY_MS - (Date.now() - s.lastUsageAt));
-    s.usageTimer = setTimeout(() => void sendUsage(), wait);
+    s.usageTimer = setTimeout(() => {
+      s.usageTimer = null;
+      void sendUsage();
+    }, wait);
   }, [sendUsage]);
+  const scheduleUsageRef = useRef(scheduleUsage);
+  scheduleUsageRef.current = scheduleUsage;
+
+  /** Chiamate degli strumenti: fuori dal ciclo dei frame, così l'audio non si riordina. */
+  const runToolCalls = useCallback(
+    async (gen: number, ws: WebSocket, calls: { id: string; name: string; args?: Record<string, unknown> }[]) => {
+      const s = r.current;
+      const responses: { id: string; name: string; response: unknown }[] = [];
+      for (const fc of calls) {
+        try {
+          const result = await api.current.runTool.mutateAsync({ id: s.sessionId, name: fc.name, data: { args: fc.args ?? {} } });
+          responses.push({ id: fc.id, name: fc.name, response: result });
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 404) {
+            if (s.gen === gen) elsewhere();
+            return;
+          }
+          responses.push({ id: fc.id, name: fc.name, response: { ok: false, error: apiErrorMessage(e) } });
+        }
+        if (s.gen !== gen) return;
+      }
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ toolResponse: { functionResponses: responses } }));
+    },
+    [elsewhere],
+  );
+
+  const reconnectRef = useRef<(fromGen: number) => Promise<void>>(async () => undefined);
 
   const handleFrame = useCallback(
-    async (gen: number, ws: WebSocket, msg: Frame) => {
+    (gen: number, ws: WebSocket, msg: Frame) => {
       const s = r.current;
       if (msg.setupComplete) {
         s.ready = true;
         s.reconnects = 0;
         setStatus("listening");
         // Solo alla prima apertura: dopo una ripresa la conversazione continua da sola
-        if (!s.handle) ws.send(JSON.stringify({ realtimeInput: { text: "[apertura]" } }));
+        if (!s.resumed) ws.send(JSON.stringify({ realtimeInput: { text: "[apertura]" } }));
         return;
       }
       if (msg.sessionResumptionUpdate?.newHandle) s.handle = msg.sessionResumptionUpdate.newHandle;
       if (msg.usageMetadata) {
         const u = msg.usageMetadata;
-        s.prompt = Math.max(s.prompt, u.promptTokenCount ?? 0);
-        s.completion = Math.max(s.completion, u.responseTokenCount ?? u.candidatesTokenCount ?? 0);
+        s.prompt += u.promptTokenCount ?? 0;
+        s.completion += u.responseTokenCount ?? u.candidatesTokenCount ?? 0;
         scheduleUsage();
       }
       if (msg.goAway) {
-        void reconnect(gen);
+        void reconnectRef.current(gen);
         return;
       }
       if (msg.toolCall?.functionCalls) {
-        const responses: { id: string; name: string; response: unknown }[] = [];
-        for (const fc of msg.toolCall.functionCalls) {
-          try {
-            const result = await api.current.runTool.mutateAsync({ id: s.sessionId, name: fc.name, data: { args: fc.args ?? {} } });
-            responses.push({ id: fc.id, name: fc.name, response: result });
-          } catch (e) {
-            if (e instanceof ApiError && e.status === 404) {
-              if (s.gen === gen) elsewhere();
-              return;
-            }
-            responses.push({ id: fc.id, name: fc.name, response: { ok: false, error: apiErrorMessage(e) } });
-          }
-          if (s.gen !== gen) return;
-        }
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ toolResponse: { functionResponses: responses } }));
+        void runToolCalls(gen, ws, msg.toolCall.functionCalls);
         return;
       }
       const sc = msg.serverContent;
@@ -272,42 +313,41 @@ export function useAlfredVoice() {
       for (const part of sc.modelTurn?.parts ?? []) if (part.inlineData?.data) playPcm(part.inlineData.data);
       if (sc.turnComplete) flushTurn();
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [elsewhere, flushTurn, playPcm, scheduleUsage, stopPlayback],
+    [flushTurn, playPcm, runToolCalls, scheduleUsage, stopPlayback],
   );
 
   const connect = useCallback(
-    (token: string) => {
+    (token: string, resumed: boolean) => {
       const s = r.current;
       const gen = ++s.gen;
       s.ready = false;
+      s.resumed = resumed;
       const ws = new WebSocket(`${GEMINI_WS}?access_token=${encodeURIComponent(token)}`);
+      // Binario come ArrayBuffer e decodifica sincrona: i frame si elaborano nell'ordine di arrivo
+      ws.binaryType = "arraybuffer";
       s.ws = ws;
+      const decoder = new TextDecoder();
       ws.onopen = () => {
-        // Tutta la configurazione sta nel token: il setup porta solo il modello (e l'handle della ripresa)
-        const setup: Record<string, unknown> = { model: `models/${s.model}` };
-        if (s.handle) setup.sessionResumption = { handle: s.handle };
-        ws.send(JSON.stringify({ setup }));
+        // Tutta la configurazione, ripresa compresa, sta nel token: il setup porta solo il modello
+        ws.send(JSON.stringify({ setup: { model: `models/${s.model}` } }));
       };
       ws.onmessage = (ev) => {
-        void (async () => {
-          try {
-            const text = typeof ev.data === "string" ? ev.data : await (ev.data as Blob).text();
-            if (s.gen === gen) await handleFrame(gen, ws, JSON.parse(text) as Frame);
-          } catch {
-            /* messaggio non leggibile: si ignora */
-          }
-        })();
+        if (s.gen !== gen) return;
+        try {
+          const text = typeof ev.data === "string" ? ev.data : decoder.decode(ev.data as ArrayBuffer);
+          handleFrame(gen, ws, JSON.parse(text) as Frame);
+        } catch {
+          /* messaggio non leggibile: si ignora */
+        }
       };
       ws.onerror = () => undefined;
       ws.onclose = () => {
         if (s.gen !== gen || !s.active) return;
         // Chiusura inattesa: se la ripresa non è partita si riparte da capo, altrimenti si riprende
         if (!s.ready) s.handle = null;
-        void reconnect(gen);
+        void reconnectRef.current(gen);
       };
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [handleFrame],
   );
 
@@ -315,12 +355,20 @@ export function useAlfredVoice() {
     async (fromGen: number): Promise<void> => {
       const s = r.current;
       if (!s.active || s.gen !== fromGen) return;
+      setStatus("connecting");
+      // In background (iOS, schermo bloccato) non si prova: si riprende al ritorno in primo piano
+      if (document.hidden) {
+        s.deferred = true;
+        return;
+      }
+      s.deferred = false;
       if (s.reconnects >= MAX_RECONNECTS) {
         fail("other", "Connessione con Gemini persa. Riprova.");
         return;
       }
-      s.reconnects++;
+      const attempt = s.reconnects++;
       s.gen++; // il vecchio socket non conta più
+      const gen = s.gen;
       const old = s.ws;
       s.ws = null;
       s.ready = false;
@@ -333,23 +381,35 @@ export function useAlfredVoice() {
           /* già chiuso */
         }
       }
-      setStatus("connecting");
       stopPlayback();
-      const gen = s.gen;
+      // Attesa crescente tra un tentativo e l'altro: 0, 1 s, 2 s, 4 s
+      if (attempt > 0) await sleep(1000 * 2 ** (attempt - 1));
+      if (!s.active || s.gen !== gen) return;
+      if (document.hidden) {
+        s.deferred = true;
+        s.reconnects--;
+        return;
+      }
       try {
-        // Il token è a uso singolo: per ricollegarsi ne serve uno nuovo
-        const session = await api.current.renewSession.mutateAsync({ id: s.sessionId });
+        // Il token è a uso singolo: ne serve uno nuovo, con dentro l'handle per continuare la conversazione
+        const handle = s.handle;
+        const session = await api.current.renewSession.mutateAsync({
+          id: s.sessionId,
+          data: handle ? { resumptionHandle: handle } : undefined,
+        });
         if (!s.active || s.gen !== gen) return;
         s.model = session.model;
-        connect(session.token);
+        connect(session.token, handle !== null);
       } catch (e) {
         if (!s.active || s.gen !== gen) return;
         if (e instanceof ApiError && e.status === 404) elsewhere();
-        else fail("other", apiErrorMessage(e));
+        else if (e instanceof ApiError && (e.status === 400 || e.status === 409)) fail("other", apiErrorMessage(e));
+        else void reconnectRef.current(gen); // rete o Gemini non raggiungibili: nuovo tentativo con attesa
       }
     },
     [connect, elsewhere, fail, stopPlayback],
   );
+  reconnectRef.current = reconnect;
 
   const start = useCallback(async () => {
     const s = r.current;
@@ -358,38 +418,79 @@ export function useAlfredVoice() {
     setLines([]);
     setStatus("connecting");
     s.active = true;
+    const gen = ++s.gen;
+    s.sessionId = 0;
     s.handle = null;
+    s.resumed = false;
+    s.deferred = false;
     s.reconnects = 0;
     s.prompt = s.completion = s.sentPrompt = s.sentCompletion = 0;
     s.lastUsageAt = 0;
     s.inText = s.outText = "";
-    const gen = s.gen;
+    const cancelled = () => !s.active || s.gen !== gen;
+
+    // L'audio si sblocca dentro il gesto dell'utente (iOS): contesto creato e ripreso prima di ogni attesa
+    let ctx: AudioContext;
     try {
-      const ctx = new AudioContext();
+      ctx = new AudioContext();
       s.ctx = ctx;
-      await ctx.resume();
+      void ctx.resume().catch(() => undefined);
+      ctx.onstatechange = () => {
+        if (s.active && !document.hidden && (ctx.state === "suspended" || (ctx.state as string) === "interrupted"))
+          void ctx.resume().catch(() => undefined);
+      };
+    } catch {
+      fail("other", AUDIO_ERROR);
+      return;
+    }
+
+    let stream: MediaStream | null = null;
+    let sessionId = 0;
+    // Fermato o sostituito durante un'attesa: si libera quel che si è già preso
+    const abort = () => {
+      stream?.getTracks().forEach((t) => t.stop());
+      void ctx.close().catch(() => undefined);
+      if (sessionId) void api.current.closeSession.mutateAsync({ id: sessionId }).catch(() => undefined);
+    };
+
+    // La sessione prima del microfono: modello mancante o tetto raggiunto si vedono senza chiedere il permesso
+    let session;
+    try {
+      session = await api.current.startSession.mutateAsync();
+    } catch (e) {
+      if (cancelled()) return abort();
+      const message = apiErrorMessage(e);
+      const isModel = e instanceof ApiError && e.status === 409 && /modello di Alfred/i.test(message);
+      fail(isModel ? "model" : "other", message);
+      return;
+    }
+    sessionId = session.sessionId;
+    if (cancelled()) return abort();
+    s.sessionId = sessionId;
+    s.model = session.model;
+
+    try {
       try {
-        s.mic = await navigator.mediaDevices.getUserMedia({
+        stream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
         });
       } catch (e) {
+        if (cancelled()) return abort();
+        void api.current.closeSession.mutateAsync({ id: sessionId }).catch(() => undefined);
         fail("mic", micErrorMessage(e));
         return;
       }
+      if (cancelled()) return abort();
+      s.mic = stream;
       const url = URL.createObjectURL(new Blob([MIC_WORKLET_SOURCE], { type: "text/javascript" }));
       try {
         await ctx.audioWorklet.addModule(url);
       } finally {
         URL.revokeObjectURL(url);
       }
-      const session = await api.current.startSession.mutateAsync();
-      if (!s.active || s.gen !== gen) {
-        // Fermato mentre si collegava: la sessione appena creata va chiusa
-        void api.current.closeSession.mutateAsync({ id: session.sessionId }).catch(() => undefined);
-        return;
-      }
-      s.sessionId = session.sessionId;
-      s.model = session.model;
+      if (cancelled()) return abort();
+      await ctx.resume();
+      if (cancelled()) return abort();
       const node = new AudioWorkletNode(ctx, "mic");
       s.node = node;
       node.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
@@ -401,26 +502,40 @@ export function useAlfredVoice() {
             }),
           );
       };
-      ctx.createMediaStreamSource(s.mic).connect(node);
-      connect(session.token);
-    } catch (e) {
-      if (!s.active) return;
-      const message = apiErrorMessage(e);
-      const isModel = e instanceof ApiError && e.status === 409 && /modello di Alfred/i.test(message);
-      fail(isModel ? "model" : "other", message);
+      ctx.createMediaStreamSource(stream).connect(node);
+      connect(session.token, false);
+    } catch {
+      if (cancelled()) return abort();
+      void api.current.closeSession.mutateAsync({ id: sessionId }).catch(() => undefined);
+      fail("other", AUDIO_ERROR);
     }
   }, [connect, fail]);
 
+  /** «Basta così»: vale anche mentre si collega o si ricollega (annulla, chiude la sessione e libera l'audio). */
   const stop = useCallback(async () => {
     const s = r.current;
     if (!s.active) return;
     const id = s.sessionId;
     await sendUsage();
+    if (!s.active) return; // nel frattempo la sessione è finita da sola
     teardown();
     flushTurn();
     setStatus("stopped");
     if (id) await api.current.closeSession.mutateAsync({ id }).catch(() => undefined);
   }, [flushTurn, sendUsage, teardown]);
+
+  // iOS: in background l'audio si sospende e le connessioni cadono; al ritorno in primo piano si riparte
+  useEffect(() => {
+    const onVisible = () => {
+      const s = r.current;
+      if (document.hidden || !s.active) return;
+      if (s.ctx && (s.ctx.state === "suspended" || (s.ctx.state as string) === "interrupted"))
+        void s.ctx.resume().catch(() => undefined);
+      if (s.deferred) void reconnectRef.current(s.gen);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   // Uscendo dalla pagina la conversazione finisce
   useEffect(

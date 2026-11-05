@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Link } from "wouter";
+import { getGetAlfredSettingsQueryKey, useGetAlfredSettings } from "@workspace/api-client-react";
 import { Mic, Square } from "lucide-react";
 import { AlfredTranscript } from "@/components/alfred/alfred-transcript";
 import { type AlfredStatus, useAlfredVoice } from "@/components/alfred/use-alfred-voice";
@@ -36,6 +37,8 @@ function useAlfredInstallable() {
 export default function AlfredPage() {
   useAlfredInstallable();
   const { status, error, lines, start, stop } = useAlfredVoice();
+  const settings = useGetAlfredSettings({ query: { queryKey: getGetAlfredSettingsQueryKey() } });
+  const noModel = settings.data !== undefined && settings.data.aiModelId === null;
   const running = status !== "stopped";
 
   return (
@@ -48,7 +51,6 @@ export default function AlfredPage() {
         size="lg"
         className="h-20 w-full text-xl"
         variant={running ? "destructive" : "default"}
-        disabled={status === "connecting"}
         onClick={() => void (running ? stop() : start())}
       >
         {running ? <Square /> : <Mic />}
@@ -57,6 +59,17 @@ export default function AlfredPage() {
       <p className="text-sm text-muted-foreground" aria-live="polite">
         Stato: <span className="font-medium text-foreground">{STATUS_LABELS[status]}</span>
       </p>
+      {noModel && !error && (
+        <Alert>
+          <AlertTitle>Scegli il modello di Alfred</AlertTitle>
+          <AlertDescription>
+            Prima di parlare serve un modello vocale Gemini.{" "}
+            <Link href="/account" className="font-medium underline">
+              Vai ad Account
+            </Link>
+          </AlertDescription>
+        </Alert>
+      )}
       {error && (
         <Alert variant="destructive">
           <AlertTitle>Alfred non è disponibile</AlertTitle>

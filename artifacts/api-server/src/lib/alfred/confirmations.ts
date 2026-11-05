@@ -109,6 +109,8 @@ export async function prepareDecision(
       decision: input.decisione === "approva" ? "approve" : "reject",
       note,
       codeHash: hashCode(code),
+      // Scritto dall'API: il default now() del DB usa il fuso della sessione e falserebbe il confronto con Date.now()
+      createdAt: now,
       expiresAt: new Date(now.getTime() + CODE_TTL_MS),
     });
   }));

@@ -361,6 +361,18 @@ describe("indurimento della conferma", () => {
     expect(await run("conferma_decisione", { codice: 42 })).toMatchObject({ json: { ok: true, result: { numero: n, esito: "rifiutata" } } });
   });
 
+  it("con il fuso del DB diverso da UTC la conferma dopo 2 s riesce (orari scritti dall'API)", async () => {
+    await pool.query("SET TIME ZONE 'Etc/GMT-1'");
+    try {
+      const n = await queueAction();
+      const code = (await run("prepara_decisione", { numero: n, decisione: "rifiuta" })).json.result.codice;
+      await new Promise((r) => setTimeout(r, 2100));
+      expect(await run("conferma_decisione", { codice: code })).toMatchObject({ json: { ok: true, result: { numero: n, esito: "rifiutata" } } });
+    } finally {
+      await pool.query("SET TIME ZONE 'UTC'");
+    }
+  });
+
   it("una conferma entro 2 s dalla preparazione è rifiutata e invalida il codice", async () => {
     const n = await queueAction();
     const code = (await run("prepara_decisione", { numero: n, decisione: "approva" })).json.result.codice;

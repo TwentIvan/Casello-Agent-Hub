@@ -210,6 +210,20 @@ describe("POST /alfred/sessions", () => {
     expect((await sessionRow(res.json.sessionId)).status).toBe("active");
   });
 
+  it("con il fuso del DB diverso da UTC gli orari della sessione sono quelli dell'API", async () => {
+    await setup();
+    await pool.query("SET TIME ZONE 'Etc/GMT-1'");
+    try {
+      const res = await api("POST", "/alfred/sessions");
+      expect(res.status, res.text).toBe(201);
+      const [row] = await db.select().from(alfredSessionsTable).where(eq(alfredSessionsTable.id, res.json.sessionId));
+      expect(Math.abs(row!.startedAt.getTime() - Date.now())).toBeLessThan(2000);
+      expect(Math.abs(row!.lastActivityAt.getTime() - Date.now())).toBeLessThan(2000);
+    } finally {
+      await pool.query("SET TIME ZONE 'UTC'");
+    }
+  });
+
   it("un secondo avvio chiude la prima sessione", async () => {
     await setup();
     const a = await api("POST", "/alfred/sessions");

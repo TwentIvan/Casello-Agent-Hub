@@ -77,7 +77,9 @@ export async function startSession(userId: number): Promise<AlfredSessionStart> 
       .update(alfredSessionsTable)
       .set({ status: "closed", closedAt: new Date() })
       .where(and(eq(alfredSessionsTable.userId, userId), eq(alfredSessionsTable.status, "active")));
-    const [row] = await tx.insert(alfredSessionsTable).values({ userId, aiModelId: resolved.aiModelId }).returning({ id: alfredSessionsTable.id });
+    // Orari scritti dall'API e non dal default now() del DB (fuso della sessione): si confrontano con l'orologio dell'API
+    const now = new Date();
+    const [row] = await tx.insert(alfredSessionsTable).values({ userId, aiModelId: resolved.aiModelId, startedAt: now, lastActivityAt: now }).returning({ id: alfredSessionsTable.id });
     return row!.id;
   });
   return { sessionId, token, model: bareModelName(resolved.modelId), voice, expiresAt };

@@ -3,6 +3,7 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { db, alfredConfirmationsTable, alfredSessionsTable, appToolsTable, pendingActionsTable, teamInstancesTable } from "@workspace/db";
 import { approvePending, needsUserToken, rejectPending } from "../teams/centralino";
 import { logger } from "../logger";
+import { AlfredError } from "./gemini";
 
 // Conferma a doppio passo (spec §4): `prepareDecision` non decide nulla e consegna un codice di 6 cifre valido 60 s,
 // `confirmDecision` lo consuma una volta sola e solo allora approva o rifiuta. Del codice si salva solo l'hash SHA-256.
@@ -24,6 +25,19 @@ export class ConfirmationError extends Error {
 }
 
 const CODE_TTL_MS = 60_000;
+// Una conferma arrivata prima di 2 s dalla preparazione non può essere una risposta dell'utente
+const MIN_CONFIRM_DELAY_MS = 2_000;
+
+/** Un errore del DB sulle conferme non deve far arrivare l'hash del codice nei log: si registra solo il nome. */
+async function guardDb<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof AlfredError) throw err;
+    logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Scrittura della conferma di Alfred non riuscita");
+    throw new AlfredError("errore interno", 500);
+  }
+}
 
 const KIND_LABEL: Record<string, string> = { action: "azione", plan: "piano", plan_change: "modifica del piano" };
 
@@ -61,7 +75,7 @@ export async function prepareDecision(
   const note = input.nota?.trim() ? input.nota.trim() : null;
 
   // Ogni preparazione, anche se fallisce, chiude le conferme aperte: un codice vecchio non vale dopo un nuovo «sì»
-  await closeOpenConfirmations(sessionId);
+  await guardDb(() => closeOpenConfirmations(sessionId));
   if (note !== null && input.decisione === "approva") throw new ConfirmationError(CONFIRM_MESSAGES.noteWithApprove);
 
   const [row] = await db
@@ -84,7 +98,7 @@ export async function prepareDecision(
   }
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
-  await db.transaction(async (tx) => {
+  await guardDb(() => db.transaction(async (tx) => {
     // La riga della sessione serializza due preparazioni concorrenti: resta aperta una sola conferma
     const now = new Date();
     await closeOpenConfirmations(sessionId, tx);
@@ -97,7 +111,7 @@ export async function prepareDecision(
       codeHash: hashCode(code),
       expiresAt: new Date(now.getTime() + CODE_TTL_MS),
     });
-  });
+  }));
   return {
     codice: code,
     numero: input.numero,
@@ -110,7 +124,7 @@ export async function prepareDecision(
 
 export async function confirmDecision(userId: number, sessionId: number, code: string) {
   // Consumo con UPDATE condizionato: due conferme concorrenti con lo stesso codice, una sola riesce
-  const [used] = await db
+  const [used] = await guardDb(() => db
     .update(alfredConfirmationsTable)
     .set({ usedAt: new Date() })
     .where(
@@ -122,8 +136,10 @@ export async function confirmDecision(userId: number, sessionId: number, code: s
         gt(alfredConfirmationsTable.expiresAt, new Date()),
       ),
     )
-    .returning();
+    .returning());
   if (!used) throw new ConfirmationError(CONFIRM_MESSAGES.expired);
+  // Troppo presto: il codice è già consumato (invalidato), l'utente deve ripetere la richiesta
+  if (Date.now() - used.createdAt.getTime() < MIN_CONFIRM_DELAY_MS) throw new ConfirmationError(CONFIRM_MESSAGES.expired);
 
   // Il limite di 20 decisioni/min e il messaggio d'errore stanno nelle funzioni del centralino
   const out =

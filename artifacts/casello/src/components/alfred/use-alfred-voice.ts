@@ -11,7 +11,7 @@ import { apiErrorMessage } from "@/lib/api-errors";
 import { MIC_WORKLET_SOURCE } from "./mic-worklet";
 
 export type AlfredStatus = "stopped" | "connecting" | "listening" | "speaking";
-export type AlfredErrorKind = "mic" | "model" | "elsewhere" | "other";
+export type AlfredErrorKind = "mic" | "model" | "closed" | "other";
 export interface AlfredError {
   kind: AlfredErrorKind;
   message: string;
@@ -33,7 +33,8 @@ const AUDIO_ERROR =
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-const ELSEWHERE = "Alfred è stato aperto su un altro dispositivo.";
+const CLOSED = "Sessione chiusa: premi Parla per ricominciare";
+const CONFIRM_NOT_HEARD = "conferma non ricevuta: chiedi all'utente";
 
 function b64FromBytes(bytes: Uint8Array): string {
   let s = "";
@@ -111,7 +112,11 @@ export function useAlfredVoice() {
     sentPrompt: 0,
     sentCompletion: 0,
     lastUsageAt: 0,
-    usageInFlight: null as Promise<void> | null,
+    // Invio in corso, legato alla sessione che lo ha avviato
+    usageInFlight: null as { id: number; p: Promise<void> } | null,
+    // Conferma a voce: dopo la risposta di prepara_decisione serve almeno un pezzo di trascrizione dell'utente
+    awaitingHeard: false,
+    heard: false,
     usageTimer: null as ReturnType<typeof setTimeout> | null,
   });
 
@@ -207,36 +212,40 @@ export function useAlfredVoice() {
     [teardown],
   );
 
-  const elsewhere = useCallback(() => fail("elsewhere", ELSEWHERE), [fail]);
+  const sessionClosed = useCallback(() => fail("closed", CLOSED), [fail]);
 
   /** Manda i totali cumulativi; segna come inviato solo a risposta ricevuta, altrimenti ritenta al prossimo giro o alla chiusura. */
   const sendUsage = useCallback((): Promise<void> => {
     const s = r.current;
-    if (s.usageInFlight) return s.usageInFlight;
+    if (s.usageInFlight && s.usageInFlight.id === s.sessionId) return s.usageInFlight.p;
     if (s.usageTimer) clearTimeout(s.usageTimer);
     s.usageTimer = null;
     if (!s.sessionId || (s.prompt === s.sentPrompt && s.completion === s.sentCompletion)) return Promise.resolve();
     const body = { promptTokens: s.prompt, completionTokens: s.completion };
     const id = s.sessionId;
     s.lastUsageAt = Date.now();
-    const p = (async () => {
+    const entry = { id, p: Promise.resolve() };
+    entry.p = (async () => {
       try {
         await api.current.recordUsage.mutateAsync({ id, data: body });
-        s.sentPrompt = Math.max(s.sentPrompt, body.promptTokens);
-        s.sentCompletion = Math.max(s.sentCompletion, body.completionTokens);
+        // Una risposta di una sessione precedente non tocca i contatori di quella nuova
+        if (s.sessionId === id) {
+          s.sentPrompt = Math.max(s.sentPrompt, body.promptTokens);
+          s.sentCompletion = Math.max(s.sentCompletion, body.completionTokens);
+        }
       } catch (e) {
         if (e instanceof ApiError && e.status === 404) {
-          if (s.active && s.sessionId === id) elsewhere();
-        } else if (s.active) {
+          if (s.active && s.sessionId === id) sessionClosed();
+        } else if (s.active && s.sessionId === id) {
           scheduleUsageRef.current();
         }
       } finally {
-        s.usageInFlight = null;
+        if (s.usageInFlight === entry) s.usageInFlight = null;
       }
     })();
-    s.usageInFlight = p;
-    return p;
-  }, [elsewhere]);
+    s.usageInFlight = entry;
+    return entry.p;
+  }, [sessionClosed]);
 
   const scheduleUsage = useCallback(() => {
     const s = r.current;
@@ -256,12 +265,21 @@ export function useAlfredVoice() {
       const s = r.current;
       const responses: { id: string; name: string; response: unknown }[] = [];
       for (const fc of calls) {
+        // Conferma a voce: si inoltra solo se dopo la preparazione l'utente ha detto qualcosa
+        if (fc.name === "conferma_decisione" && !s.heard) {
+          responses.push({ id: fc.id, name: fc.name, response: { ok: false, error: CONFIRM_NOT_HEARD } });
+          continue;
+        }
         try {
           const result = await api.current.runTool.mutateAsync({ id: s.sessionId, name: fc.name, data: { args: fc.args ?? {} } });
           responses.push({ id: fc.id, name: fc.name, response: result });
+          if (fc.name === "prepara_decisione") {
+            s.heard = false;
+            s.awaitingHeard = true;
+          }
         } catch (e) {
           if (e instanceof ApiError && e.status === 404) {
-            if (s.gen === gen) elsewhere();
+            if (s.gen === gen) sessionClosed();
             return;
           }
           responses.push({ id: fc.id, name: fc.name, response: { ok: false, error: apiErrorMessage(e) } });
@@ -270,7 +288,7 @@ export function useAlfredVoice() {
       }
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ toolResponse: { functionResponses: responses } }));
     },
-    [elsewhere],
+    [sessionClosed],
   );
 
   const reconnectRef = useRef<(fromGen: number) => Promise<void>>(async () => undefined);
@@ -308,7 +326,10 @@ export function useAlfredVoice() {
         flushTurn();
         setStatus("listening");
       }
-      if (sc.inputTranscription?.text) s.inText += sc.inputTranscription.text;
+      if (sc.inputTranscription?.text) {
+        s.inText += sc.inputTranscription.text;
+        if (s.awaitingHeard) s.heard = true;
+      }
       if (sc.outputTranscription?.text) s.outText += sc.outputTranscription.text;
       for (const part of sc.modelTurn?.parts ?? []) if (part.inlineData?.data) playPcm(part.inlineData.data);
       if (sc.turnComplete) flushTurn();
@@ -402,12 +423,12 @@ export function useAlfredVoice() {
         connect(session.token, handle !== null);
       } catch (e) {
         if (!s.active || s.gen !== gen) return;
-        if (e instanceof ApiError && e.status === 404) elsewhere();
+        if (e instanceof ApiError && e.status === 404) sessionClosed();
         else if (e instanceof ApiError && (e.status === 400 || e.status === 409)) fail("other", apiErrorMessage(e));
         else void reconnectRef.current(gen); // rete o Gemini non raggiungibili: nuovo tentativo con attesa
       }
     },
-    [connect, elsewhere, fail, stopPlayback],
+    [connect, sessionClosed, fail, stopPlayback],
   );
   reconnectRef.current = reconnect;
 
@@ -426,6 +447,7 @@ export function useAlfredVoice() {
     s.reconnects = 0;
     s.prompt = s.completion = s.sentPrompt = s.sentCompletion = 0;
     s.lastUsageAt = 0;
+    s.awaitingHeard = s.heard = false;
     s.inText = s.outText = "";
     const cancelled = () => !s.active || s.gen !== gen;
 
@@ -516,13 +538,19 @@ export function useAlfredVoice() {
     const s = r.current;
     if (!s.active) return;
     const id = s.sessionId;
-    await sendUsage();
-    if (!s.active) return; // nel frattempo la sessione è finita da sola
+    const totals = { promptTokens: s.prompt, completionTokens: s.completion };
+    // Prima si spengono microfono e connessione: gli invii al server non devono tenerli accesi
     teardown();
     flushTurn();
     setStatus("stopped");
-    if (id) await api.current.closeSession.mutateAsync({ id }).catch(() => undefined);
-  }, [flushTurn, sendUsage, teardown]);
+    if (!id) return;
+    // Poi l'invio eventualmente in corso, l'ultimo con i totali finali e la chiusura (anche se il POST fallisce)
+    const pending = s.usageInFlight;
+    if (pending && pending.id === id) await pending.p;
+    if (totals.promptTokens > 0 || totals.completionTokens > 0)
+      await api.current.recordUsage.mutateAsync({ id, data: totals }).catch(() => undefined);
+    await api.current.closeSession.mutateAsync({ id }).catch(() => undefined);
+  }, [flushTurn, teardown]);
 
   // iOS: in background l'audio si sospende e le connessioni cadono; al ritorno in primo piano si riparte
   useEffect(() => {

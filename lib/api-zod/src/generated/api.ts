@@ -574,7 +574,7 @@ export const CloseAlfredSessionResponse = zod.void()
 
 
 /**
- * Il browser inoltra qui le chiamate di strumento di Gemini Live. Strumento sconosciuto o sessione non attiva: 404; altrimenti 200 con `ok` vero e `result`, oppure `ok` falso e `error` (messaggio fisso). Solo con il login.
+ * Il browser inoltra qui le chiamate di strumento di Gemini Live. Strumento sconosciuto o sessione non attiva: 404; altrimenti 200 con `ok` vero e `result`, oppure `ok` falso e `error` (messaggio fisso). Limite di 60 chiamate al minuto per utente (429). Solo con il login.
  * @summary Esegue uno strumento di Alfred
  */
 export const RunAlfredToolParams = zod.object({

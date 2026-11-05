@@ -144,3 +144,11 @@ const alfredSessionCounter = fixedWindowCounter({ limit: 10, windowMs: 60_000 })
 export function consumeAlfredSession(userId: number): boolean {
   return alfredSessionCounter.consume(`user:${userId}`).ok;
 }
+
+// Strumenti di Alfred (ogni chiamata di Gemini Live passa di qui): 60 al minuto per utente.
+const alfredToolCounter = fixedWindowCounter({ limit: 60, windowMs: 60_000 });
+
+/** Conta una chiamata di strumento di Alfred dell'utente: false se il limite è raggiunto. */
+export function consumeAlfredTool(userId: number): boolean {
+  return alfredToolCounter.consume(`user:${userId}`).ok;
+}

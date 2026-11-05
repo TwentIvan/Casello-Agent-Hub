@@ -31,7 +31,18 @@ const SCHEMAS = {
     decisione: z.enum(["approva", "rifiuta"]),
     nota: z.string().max(500).optional(),
   }),
-  conferma_decisione: z.object({ codice: z.string().min(1).max(64) }),
+  // Il modello può passare il codice come numero: gli zeri iniziali si ripristinano
+  conferma_decisione: z.object({
+    codice: z.union([
+      z.string().regex(/^\d{6}$/),
+      z
+        .number()
+        .int()
+        .min(0)
+        .max(999_999)
+        .transform((n) => String(n).padStart(6, "0")),
+    ]),
+  }),
 } as const;
 
 export function isAlfredTool(name: string): name is keyof typeof SCHEMAS {

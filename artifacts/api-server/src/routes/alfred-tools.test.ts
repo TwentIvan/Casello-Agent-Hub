@@ -27,8 +27,10 @@ import { emitEvent } from "../lib/teams/events";
 import { createInstance } from "../lib/teams/instances";
 import { writePlanVersion } from "../lib/teams/plan";
 import { activateInstance } from "../lib/teams/turn-runner";
+import { createHash } from "node:crypto";
+import { logger } from "../lib/logger";
 import { confirmDecision } from "../lib/alfred/confirmations";
-import { consumeActionDecision, consumeTeamMessage } from "../middlewares/rate-limit";
+import { consumeActionDecision, consumeAlfredTool, consumeTeamMessage } from "../middlewares/rate-limit";
 
 // Strumenti di Alfred su /api/alfred/sessions/:id/tools/:name e conferma a doppio passo. App completa senza login
 // (utente dev@localhost). Nessun RESTART IDENTITY: i limiti sono per utente in memoria e gli id non devono ripetersi.
@@ -54,6 +56,12 @@ async function api(method: string, path: string, body?: unknown): Promise<{ stat
   const res = await fetch(`${base}/api${path}`, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
   const text = await res.text();
   return { status: res.status, json: text ? JSON.parse(text) : undefined };
+}
+
+// Le conferme arrivano dopo almeno 2 s dalla preparazione: i test retrodatano la riga invece di aspettare
+async function confirm(args: unknown, id: number = sessionId) {
+  await db.update(alfredConfirmationsTable).set({ createdAt: new Date(Date.now() - 5000) });
+  return run("conferma_decisione", args, id);
 }
 
 const run = (name: string, args: unknown = {}, id: number = sessionId) => api("POST", `/alfred/sessions/${id}/tools/${name}`, { args });
@@ -246,9 +254,9 @@ describe("prepara_decisione", () => {
     const n = await queueAction();
     const first = (await run("prepara_decisione", { numero: n, decisione: "approva" })).json.result.codice;
     const second = (await run("prepara_decisione", { numero: n, decisione: "approva" })).json.result.codice;
-    expect((await run("conferma_decisione", { codice: first })).json.error).toBe("conferma scaduta: ripeti la richiesta");
+    expect((await confirm({ codice: first })).json.error).toBe("conferma scaduta: ripeti la richiesta");
     expect((await statusOf(n)).status).toBe("pending");
-    expect((await run("conferma_decisione", { codice: second })).json.ok).toBe(true);
+    expect((await confirm({ codice: second })).json.ok).toBe(true);
   });
 });
 
@@ -259,7 +267,7 @@ describe("prepara_decisione: errori", () => {
     const codeA = (await run("prepara_decisione", { numero: a, decisione: "approva" })).json.result.codice;
     await db.update(pendingActionsTable).set({ status: "done" }).where(eq(pendingActionsTable.number, b));
     expect((await run("prepara_decisione", { numero: b, decisione: "approva" })).json.ok).toBe(false);
-    expect((await run("conferma_decisione", { codice: codeA })).json.error).toBe("conferma scaduta: ripeti la richiesta");
+    expect((await confirm({ codice: codeA })).json.error).toBe("conferma scaduta: ripeti la richiesta");
     expect((await statusOf(a)).status).toBe("pending");
   });
 
@@ -274,10 +282,10 @@ describe("conferma_decisione", () => {
   it("approva: esegue l'azione una volta; rifiuta: chiude con la nota", async () => {
     const a = await queueAction();
     const code = (await run("prepara_decisione", { numero: a, decisione: "approva" })).json.result.codice;
-    const done = await run("conferma_decisione", { codice: code });
+    const done = await confirm({ codice: code });
     expect(done.json).toMatchObject({ ok: true, result: { numero: a, esito: "approvata" } });
     expect(mcpApp.calls).toHaveLength(1);
-    expect((await run("conferma_decisione", { codice: code })).json.error).toBe("conferma scaduta: ripeti la richiesta");
+    expect((await confirm({ codice: code })).json.error).toBe("conferma scaduta: ripeti la richiesta");
     expect(mcpApp.calls).toHaveLength(1);
 
     const team = await activeTeam(dev, "Mia", modelId);
@@ -286,7 +294,7 @@ describe("conferma_decisione", () => {
     if (!item.ok) throw new Error("accodamento");
     const prep = await run("prepara_decisione", { numero: item.number, decisione: "rifiuta", nota: "manca il budget" });
     expect(prep.json.result).toMatchObject({ tipo: "piano", squadra: "Mia" });
-    const rej = await run("conferma_decisione", { codice: prep.json.result.codice });
+    const rej = await confirm({ codice: prep.json.result.codice });
     expect(rej.json).toMatchObject({ ok: true, result: { numero: item.number, esito: "rifiutata" } });
     const turns = await db.select().from(teamTurnsTable).where(eq(teamTurnsTable.instanceId, team));
     expect(turns.flatMap((t) => t.reasons as unknown[])).toContainEqual({ type: "decision", number: item.number, outcome: "rejected", note: "manca il budget" });
@@ -295,11 +303,11 @@ describe("conferma_decisione", () => {
   it("codice sbagliato, scaduto (61 s), di un'altra sessione o di un altro utente: conferma scaduta", async () => {
     const msg = "conferma scaduta: ripeti la richiesta";
     const n = await queueAction();
-    expect((await run("conferma_decisione", { codice: "000000" })).json.error).toBe(msg);
+    expect((await confirm({ codice: "000000" })).json.error).toBe(msg);
 
     const code = (await run("prepara_decisione", { numero: n, decisione: "approva" })).json.result.codice;
     const sessionB = await newSession(dev);
-    expect((await run("conferma_decisione", { codice: code }, sessionB)).json.error).toBe(msg);
+    expect((await confirm({ codice: code }, sessionB)).json.error).toBe(msg);
     // altro utente (l'HTTP è sempre dell'utente di sviluppo: si prova la funzione), con la sua sessione o con quella del primo
     await expect(confirmDecision(other, await newSession(other), code)).rejects.toThrow(msg);
     await expect(confirmDecision(other, sessionId, code)).rejects.toThrow(msg);
@@ -307,7 +315,7 @@ describe("conferma_decisione", () => {
 
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(Date.now() + 61_000);
-    expect((await run("conferma_decisione", { codice: code })).json.error).toBe(msg);
+    expect((await confirm({ codice: code })).json.error).toBe(msg);
     vi.useRealTimers();
     expect((await statusOf(n)).status).toBe("pending");
     expect(mcpApp.calls).toHaveLength(0);
@@ -316,7 +324,7 @@ describe("conferma_decisione", () => {
   it("due conferme concorrenti con lo stesso codice: una sola riesce", async () => {
     const n = await queueAction();
     const code = (await run("prepara_decisione", { numero: n, decisione: "approva" })).json.result.codice;
-    const results = await Promise.all([run("conferma_decisione", { codice: code }), run("conferma_decisione", { codice: code })]);
+    const results = await Promise.all([confirm({ codice: code }), confirm({ codice: code })]);
     expect(results.filter((r) => r.json.ok)).toHaveLength(1);
     expect(mcpApp.calls).toHaveLength(1);
   });
@@ -325,15 +333,58 @@ describe("conferma_decisione", () => {
     const n = await queueAction();
     const code = (await run("prepara_decisione", { numero: n, decisione: "approva" })).json.result.codice;
     expect((await api("POST", `/pending-actions/${n}/reject`, {})).status).toBe(200);
-    expect(await run("conferma_decisione", { codice: code })).toMatchObject({ json: { ok: false, error: "azione già decisa" } });
+    expect(await confirm({ codice: code })).toMatchObject({ json: { ok: false, error: "azione già decisa" } });
   });
 
   it("il limite di 20 decisioni/min è condiviso con la console", async () => {
     const n = await queueAction();
     const code = (await run("prepara_decisione", { numero: n, decisione: "approva" })).json.result.codice;
     for (let i = 0; i < 20; i++) consumeActionDecision(dev);
-    expect((await run("conferma_decisione", { codice: code })).json.error).toBe("Troppe richieste: riprova tra poco");
+    expect((await confirm({ codice: code })).json.error).toBe("Troppe richieste: riprova tra poco");
     expect((await statusOf(n)).status).toBe("pending");
     expect(mcpApp.calls).toHaveLength(0);
+  });
+});
+
+describe("indurimento della conferma", () => {
+  it("un codice numerico con zeri iniziali vale come stringa di 6 cifre", async () => {
+    const n = await queueAction();
+    await db.insert(alfredConfirmationsTable).values({
+      userId: dev,
+      sessionId,
+      number: n,
+      decision: "reject",
+      codeHash: createHash("sha256").update("000042").digest("hex"),
+      expiresAt: new Date(Date.now() + 60_000),
+      createdAt: new Date(Date.now() - 5000),
+    });
+    expect(await run("conferma_decisione", { codice: 42 })).toMatchObject({ json: { ok: true, result: { numero: n, esito: "rifiutata" } } });
+  });
+
+  it("una conferma entro 2 s dalla preparazione è rifiutata e invalida il codice", async () => {
+    const n = await queueAction();
+    const code = (await run("prepara_decisione", { numero: n, decisione: "approva" })).json.result.codice;
+    expect((await run("conferma_decisione", { codice: code })).json.error).toBe("conferma scaduta: ripeti la richiesta");
+    expect((await statusOf(n)).status).toBe("pending");
+    expect((await confirm({ codice: code })).json.error).toBe("conferma scaduta: ripeti la richiesta");
+    expect(mcpApp.calls).toHaveLength(0);
+  });
+
+  it("un errore del DB sulle conferme risponde 500 fisso e non registra il testo dell'errore", async () => {
+    const n = await queueAction();
+    const logged: string[] = [];
+    for (const m of ["error", "warn", "info"] as const) vi.spyOn(logger, m).mockImplementation(((...a: unknown[]) => void logged.push(JSON.stringify(a))) as never);
+    vi.spyOn(db, "transaction").mockRejectedValueOnce(new Error("insert ... code_hash = deadbeef"));
+    const res = await run("prepara_decisione", { numero: n, decisione: "approva" });
+    expect(res.status).toBe(500);
+    expect(res.json).toEqual({ error: "errore interno" });
+    expect(logged.join()).not.toContain("deadbeef");
+  });
+
+  it("strumenti: oltre 60 chiamate al minuto per utente → 429", async () => {
+    for (let i = 0; i < 60; i++) consumeAlfredTool(dev);
+    const res = await run("squadre_stato");
+    expect(res.status).toBe(429);
+    expect(res.json).toEqual({ error: "Troppe richieste: riprova tra poco" });
   });
 });

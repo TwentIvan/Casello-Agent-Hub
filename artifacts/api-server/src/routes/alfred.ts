@@ -21,7 +21,7 @@ import { getAlfredSettings, setAlfredSettings } from "../lib/alfred/settings";
 import { runAlfredTool } from "../lib/alfred/tools";
 import { closeSession, recordUsage, renewSession, startSession } from "../lib/alfred/sessions";
 import { parseRequest } from "../middlewares/error-handler";
-import { consumeAlfredSession } from "../middlewares/rate-limit";
+import { consumeAlfredSession, consumeAlfredTool } from "../middlewares/rate-limit";
 
 /** Errori di Alfred con messaggio fisso e stato; gli altri passano al gestore generale. */
 function replyAlfredError(res: import("express").Response, err: unknown): boolean {
@@ -97,6 +97,10 @@ export function createAlfredRouter(): IRouter {
   router.post("/alfred/sessions/:id/tools/:name", sessionOnly, async (req, res) => {
     const { id, name } = parseRequest(RunAlfredToolParams, req.params);
     const { args } = parseRequest(RunAlfredToolBody, req.body);
+    if (!consumeAlfredTool(currentUserId(req))) {
+      res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
+      return;
+    }
     try {
       res.json(RunAlfredToolResponse.parse(await runAlfredTool(currentUserId(req), id, name, args)));
     } catch (err) {

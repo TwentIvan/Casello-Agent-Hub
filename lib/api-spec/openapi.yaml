@@ -723,6 +723,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "502":
           $ref: "#/components/responses/BadGateway"
 
@@ -779,7 +781,7 @@ paths:
       description: >-
         Il browser inoltra qui le chiamate di strumento di Gemini Live. Strumento sconosciuto o sessione non
         attiva: 404; altrimenti 200 con `ok` vero e `result`, oppure `ok` falso e `error` (messaggio fisso).
-        Solo con il login.
+        Limite di 60 chiamate al minuto per utente (429). Solo con il login.
       parameters:
         - $ref: "#/components/parameters/IdParam"
         - name: name
@@ -806,6 +808,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
   # ─── Apps ───────────────────────────────────────────────────────────────────
 

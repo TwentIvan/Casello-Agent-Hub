@@ -2281,7 +2281,7 @@ export const renewAlfredSession = async (id: number,
 
 
 
-export const getRenewAlfredSessionMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | BadGatewayResponse>,
+export const getRenewAlfredSessionMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renewAlfredSession>>, TError,{id: number;data?: BodyType<AlfredRenewBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof renewAlfredSession>>, TError,{id: number;data?: BodyType<AlfredRenewBody>}, TContext> => {
 
@@ -2310,12 +2310,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type RenewAlfredSessionMutationResult = NonNullable<Awaited<ReturnType<typeof renewAlfredSession>>>
     export type RenewAlfredSessionMutationBody = BodyType<AlfredRenewBody> | undefined
-    export type RenewAlfredSessionMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | BadGatewayResponse>
+    export type RenewAlfredSessionMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>
 
     /**
  * @summary Nuovo token per una sessione di Alfred attiva
  */
-export const useRenewAlfredSession = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | BadGatewayResponse>,
+export const useRenewAlfredSession = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renewAlfredSession>>, TError,{id: number;data?: BodyType<AlfredRenewBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof renewAlfredSession>>,
@@ -2478,7 +2478,7 @@ export const getRunAlfredToolUrl = (id: number,
 }
 
 /**
- * Il browser inoltra qui le chiamate di strumento di Gemini Live. Strumento sconosciuto o sessione non attiva: 404; altrimenti 200 con `ok` vero e `result`, oppure `ok` falso e `error` (messaggio fisso). Solo con il login.
+ * Il browser inoltra qui le chiamate di strumento di Gemini Live. Strumento sconosciuto o sessione non attiva: 404; altrimenti 200 con `ok` vero e `result`, oppure `ok` falso e `error` (messaggio fisso). Limite di 60 chiamate al minuto per utente (429). Solo con il login.
  * @summary Esegue uno strumento di Alfred
  */
 export const runAlfredTool = async (id: number,
@@ -2497,7 +2497,7 @@ export const runAlfredTool = async (id: number,
 
 
 
-export const getRunAlfredToolMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+export const getRunAlfredToolMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAlfredTool>>, TError,{id: number;name: string;data: BodyType<AlfredToolBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof runAlfredTool>>, TError,{id: number;name: string;data: BodyType<AlfredToolBody>}, TContext> => {
 
@@ -2526,12 +2526,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type RunAlfredToolMutationResult = NonNullable<Awaited<ReturnType<typeof runAlfredTool>>>
     export type RunAlfredToolMutationBody = BodyType<AlfredToolBody>
-    export type RunAlfredToolMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+    export type RunAlfredToolMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>
 
     /**
  * @summary Esegue uno strumento di Alfred
  */
-export const useRunAlfredTool = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+export const useRunAlfredTool = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAlfredTool>>, TError,{id: number;name: string;data: BodyType<AlfredToolBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof runAlfredTool>>,

@@ -71,8 +71,8 @@ export default function AlfredPage() {
         </Alert>
       )}
       {error && (
-        <Alert variant="destructive">
-          <AlertTitle>Alfred non è disponibile</AlertTitle>
+        <Alert variant={error.kind === "closed" ? "default" : "destructive"}>
+          <AlertTitle>{error.kind === "closed" ? "Alfred si è fermato" : "Alfred non è disponibile"}</AlertTitle>
           <AlertDescription className="space-y-2">
             <p>{error.message}</p>
             {error.kind === "model" && (

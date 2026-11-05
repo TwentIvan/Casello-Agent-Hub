@@ -1,3 +1,4 @@
+import { logger } from "../logger";
 import type { ResolvedModel } from "../ai/executor";
 import { ALFRED_MESSAGES, GEMINI_TIMEOUT_MS, bareModelName, geminiNativeBase } from "./config";
 
@@ -30,8 +31,14 @@ export async function checkLiveSupport(model: ResolvedModel): Promise<void> {
     throw new AlfredError(ALFRED_MESSAGES.geminiUnreachable, 502);
   }
   if (res.status === 404) throw new AlfredError(ALFRED_MESSAGES.modelUnsuitable, 400);
-  if (res.status === 400 || res.status === 401 || res.status === 403) throw new AlfredError(ALFRED_MESSAGES.geminiKeyRejected, 502);
-  if (!res.ok) throw new AlfredError(ALFRED_MESSAGES.geminiUnreachable, 502);
+  if (res.status === 400 || res.status === 401 || res.status === 403) {
+    logger.warn({ operation: "models", status: res.status }, "Gemini ha rifiutato la richiesta");
+    throw new AlfredError(ALFRED_MESSAGES.geminiKeyRejected, 502);
+  }
+  if (!res.ok) {
+    logger.warn({ operation: "models", status: res.status }, "Gemini ha risposto con un errore");
+    throw new AlfredError(ALFRED_MESSAGES.geminiUnreachable, 502);
+  }
   let methods: unknown;
   try {
     methods = ((await res.json()) as { supportedGenerationMethods?: unknown }).supportedGenerationMethods;
@@ -76,8 +83,14 @@ export async function createEphemeralToken(
   } catch {
     throw new AlfredError(ALFRED_MESSAGES.geminiUnreachable, 502);
   }
-  if (res.status === 400 || res.status === 401 || res.status === 403) throw new AlfredError(ALFRED_MESSAGES.geminiKeyRejected, 502);
-  if (!res.ok) throw new AlfredError(ALFRED_MESSAGES.geminiUnreachable, 502);
+  if (res.status === 400 || res.status === 401 || res.status === 403) {
+    logger.warn({ operation: "auth_tokens", status: res.status }, "Gemini ha rifiutato la richiesta");
+    throw new AlfredError(ALFRED_MESSAGES.geminiKeyRejected, 502);
+  }
+  if (!res.ok) {
+    logger.warn({ operation: "auth_tokens", status: res.status }, "Gemini ha risposto con un errore");
+    throw new AlfredError(ALFRED_MESSAGES.geminiUnreachable, 502);
+  }
   let name: unknown;
   try {
     name = ((await res.json()) as { name?: unknown }).name;

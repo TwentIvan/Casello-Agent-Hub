@@ -60,7 +60,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
   ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals,
   skills, skill_versions, team_templates, team_template_versions, team_instances, team_instance_skills,
-  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, nodes, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens)
+  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, nodes, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -595,7 +595,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   modelli dell'account. Ogni run ricorda il modello con cui è partita (`runs.ai_model_id`). I costi null (prezzo
   mancante) non si sommano: si contano come esecuzioni senza prezzo. Anche i compiti e i turni del capo delle squadre
   (`team_tasks`, `team_turns`, con il loro `ai_model_id`) contano nella spesa dell'utente, del modello e dell'account;
-  i compiti eseguiti da un nodo (`ai_model_id` null) contano solo nel tetto della squadra.
+  i compiti eseguiti da un nodo (`ai_model_id` null) contano solo nel tetto della squadra. Contano anche le sessioni di
+  Alfred (`alfred_sessions`, con il loro `ai_model_id`) nella spesa dell'utente, del modello e dell'account.
 - Ordine dei controlli: agente, modello, account AI, utente (il primo raggiunto dà il messaggio); per i compiti e i turni
   delle squadre prima il tetto della squadra, poi modello, account AI e utente (vedi "Squadre (esecuzione)").
 - Raggiunto un tetto (spesa ≥ tetto) le nuove run, analisi cloud e messaggi della chat rispondono 409 con il motivo;

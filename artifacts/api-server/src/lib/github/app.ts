@@ -12,7 +12,7 @@ import type { GithubConfig } from "./config";
 
 export const GITHUB_MESSAGES = {
   notConfigured: "GitHub non configurato",
-  noAccess: "l'App Casello non ha più accesso a questo repository: reinstallala o scegli un altro repo",
+  noAccess: "l'App GitHub di Botcave non ha più accesso a questo repository: reinstallala o scegli un altro repo",
   unavailable: "GitHub non risponde (riprova più tardi)",
   loginFailed: "accesso con GitHub non riuscito",
 } as const;

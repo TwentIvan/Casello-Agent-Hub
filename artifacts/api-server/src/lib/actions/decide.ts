@@ -16,7 +16,7 @@ export type DecideResult = { ok: true; action: PendingActionRow } | { ok: false;
 export const ACTION_MESSAGES = {
   notFound: "azione non trovata",
   alreadyDecided: "azione già decisa",
-  notExecutable: "lo strumento non può più essere eseguito da Casello",
+  notExecutable: "lo strumento non può più essere eseguito da Botcave",
   userTokenRequired: "serve il token dell'utente dell'app",
   internal: "errore interno nell'esecuzione dell'azione",
   internalFinish: "errore interno: esito dell'azione non registrato",

@@ -460,10 +460,10 @@ describe("startAnalysis", () => {
     expect(a.status).toBe("completed");
     expect(a.finishedAt).not.toBeNull();
     expect(a.sources).toEqual({ code: "zip", openapi: true, mcp: false, description: true });
-    // La mappa calcolata da Casello si affianca all'esito della fase map
+    // La mappa calcolata da Botcave si affianca all'esito della fase map
     expect(a.architectureMap).toEqual({ ...(RESULTS.map as object), repoMap: expect.stringContaining("src/") });
     // ...ed è nel messaggio utente di ogni fase
-    expect(llmRequests.every((r) => String(r.messages[1].content).includes("Mappa del repository calcolata da Casello"))).toBe(true);
+    expect(llmRequests.every((r) => String(r.messages[1].content).includes("Mappa del repository calcolata da Botcave"))).toBe(true);
     // 12 chiamate da 120 token
     expect(a.tokensUsed).toBe(12 * 120);
     expect(llmRequests).toHaveLength(12);
@@ -1036,7 +1036,7 @@ describe("startAnalysis sugli account AI", () => {
 });
 
 describe("startAnalysis con l'installazione della GitHub App", () => {
-  const NO_ACCESS = "l'App Casello non ha più accesso a questo repository: reinstallala o scegli un altro repo";
+  const NO_ACCESS = "l'App GitHub di Botcave non ha più accesso a questo repository: reinstallala o scegli un altro repo";
   let gh: FakeGithub;
   let cfg: GithubConfig;
 

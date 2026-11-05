@@ -63,7 +63,7 @@ export default function SkillDetailPage() {
         <>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="break-words text-2xl font-semibold tracking-tight">{s.name}</h2>
+              <h2 className="break-words text-h2">{s.name}</h2>
               <p className="break-all font-mono text-xs text-muted-foreground">{s.code}</p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <SkillKindBadge kind={s.kind} />

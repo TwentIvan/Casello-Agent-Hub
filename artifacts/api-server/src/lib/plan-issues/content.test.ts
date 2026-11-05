@@ -112,13 +112,13 @@ describe("issueContent", () => {
   it("piè di pagina con nome app e id voce", () => {
     const item = comp("a");
     const { body, title, labels } = issueContent(item, { appName: "Mister", issueByKey: new Map(), titleByKey: new Map() });
-    expect(body.endsWith(`\n\n---\nCreata da Casello · piano di Mister · voce #${item.id}`)).toBe(true);
+    expect(body.endsWith(`\n\n---\nCreata da Botcave · piano di Mister · voce #${item.id}`)).toBe(true);
     expect(title).toBe("Titolo a");
     expect(labels).toContain("casello");
   });
   it("piè di pagina: il nome dell'app su una riga sola", () => {
     const item = comp("a");
     const { body } = issueContent(item, { appName: "  Mister\n\n## Titolo\t finto ", issueByKey: new Map(), titleByKey: new Map() });
-    expect(body.endsWith(`\n\n---\nCreata da Casello · piano di Mister ## Titolo finto · voce #${item.id}`)).toBe(true);
+    expect(body.endsWith(`\n\n---\nCreata da Botcave · piano di Mister ## Titolo finto · voce #${item.id}`)).toBe(true);
   });
 });

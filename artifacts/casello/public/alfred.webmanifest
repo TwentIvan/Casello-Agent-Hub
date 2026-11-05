@@ -1,13 +1,14 @@
 {
-  "name": "Alfred",
+  "name": "Alfred · Botcave",
   "short_name": "Alfred",
   "start_url": "/alfred",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#1d1d1b",
-  "theme_color": "#2d5be3",
+  "background_color": "#151A21",
+  "theme_color": "#151A21",
   "icons": [
-    { "src": "/alfred-icon-180.png", "sizes": "180x180", "type": "image/png" },
-    { "src": "/alfred-icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

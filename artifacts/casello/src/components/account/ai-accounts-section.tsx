@@ -10,6 +10,7 @@ import {
   useVerifyAiAccount,
 } from "@workspace/api-client-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Led, LedDot } from "@/components/brand/led";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,16 +26,15 @@ import { AiModelsTable } from "./ai-models-table";
 function AccountStatusBadge({ account }: { account: AiAccount }) {
   if (account.status === "ok") {
     return (
-      <Badge variant="outline" className="border-transparent bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-        verificato
-      </Badge>
+      <Led state="ok" label="verificato" />
     );
   }
   if (account.status === "error") {
     return (
-      <Badge variant="outline" className="border-transparent bg-red-100 whitespace-normal text-red-800 dark:bg-red-950 dark:text-red-300">
-        errore: {account.lastError ?? "sconosciuto"}
-      </Badge>
+      <span className="inline-flex items-start gap-2 text-body-sm text-danger">
+        <LedDot state="ko" className="mt-1.5" />
+        <span>errore: {account.lastError ?? "sconosciuto"}</span>
+      </span>
     );
   }
   return (
@@ -86,7 +86,7 @@ function AccountRow({ account, onEdit, onDelete }: { account: AiAccount; onEdit:
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             {account.isDefault ? (
-              <Star className="size-4 fill-amber-400 text-amber-500" aria-label="Account predefinito" role="img" />
+              <Star className="size-4 fill-brand text-accent-text" aria-label="Account predefinito" role="img" />
             ) : null}
             <span className="truncate text-sm font-medium">{account.name}</span>
             <AccountStatusBadge account={account} />

@@ -2,7 +2,7 @@ import type { SkillKind } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 
 export const SKILL_KIND_LABELS: Record<SkillKind, string> = {
-  casello: "Casello",
+  casello: "Botcave",
   node: "Nodo locale",
 };
 

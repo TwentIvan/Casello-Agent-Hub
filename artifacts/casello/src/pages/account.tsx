@@ -93,7 +93,7 @@ function AccessCard({ user }: { user: CurrentUser }) {
     <Card>
       <CardHeader>
         <CardTitle>Accessi</CardTitle>
-        <CardDescription>Gli account con cui entri in Casello.</CardDescription>
+        <CardDescription>Gli account con cui entri in Botcave.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {google && <IdentityRow label="Google" detail={google.email ?? user.email} />}
@@ -125,7 +125,7 @@ function AccessCard({ user }: { user: CurrentUser }) {
         open={confirmUnlink}
         onOpenChange={setConfirmUnlink}
         title="Scollegare GitHub?"
-        description="Verranno rimosse anche le installazioni dell'App Casello collegate al tuo account. Le app che usano un'installazione non potranno più scaricare il repository finché non la ricolleghi o non imposti un token manuale."
+        description="Verranno rimosse anche le installazioni dell'App GitHub di Botcave collegate al tuo account. Le app che usano un'installazione non potranno più scaricare il repository finché non la ricolleghi o non imposti un token manuale."
         confirmLabel="Scollega"
         pendingLabel="Scollegamento…"
         pending={unlink.isPending}
@@ -146,7 +146,7 @@ function InstallationsCard({ githubEnabled }: { githubEnabled: boolean }) {
     <Card>
       <CardHeader>
         <CardTitle>Installazioni di GitHub</CardTitle>
-        <CardDescription>Account e organizzazioni in cui è installata l'App Casello: da qui l'architetto legge i repository.</CardDescription>
+        <CardDescription>Account e organizzazioni in cui è installata l'App GitHub di Botcave: da qui Lucius legge i repository.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {notConfigured ? (
@@ -161,7 +161,7 @@ function InstallationsCard({ githubEnabled }: { githubEnabled: boolean }) {
           <>
             {installations.data.installations.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Nessuna installazione: installa l'App Casello sul tuo account o su un'organizzazione per scegliere i
+                Nessuna installazione: installa l'App GitHub di Botcave sul tuo account o su un'organizzazione per scegliere i
                 repository.
               </p>
             ) : (
@@ -193,7 +193,7 @@ function InstallationsCard({ githubEnabled }: { githubEnabled: boolean }) {
             <div className="flex justify-end">
               {/* Stessa scheda: GitHub torna al callback, che riporta alla pagina Account */}
               <Button asChild size="sm">
-                <a href={installations.data.installUrl}>Installa Casello su GitHub</a>
+                <a href={installations.data.installUrl}>Installa l'App GitHub di Botcave</a>
               </Button>
             </div>
           </>
@@ -211,8 +211,8 @@ export default function AccountPage() {
   return (
     <div className="mx-auto max-w-screen-2xl space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Account</h2>
-        <p className="text-sm text-muted-foreground">Accessi collegati, account AI e installazioni dell'App Casello su GitHub.</p>
+        <h2 className="text-h2">Account</h2>
+        <p className="text-sm text-muted-foreground">Accessi collegati, account AI e installazioni dell'App GitHub di Botcave.</p>
       </div>
       {!me.data ? (
         <Skeleton className="h-32 w-full" />

@@ -1,0 +1,3 @@
+# ConfirmItem
+
+Una voce della coda «Da confermare»: ciò che ha effetti verso l'esterno, o un piano proposto da un capo, che aspetta la decisione dell'utente. Mostra il numero della voce in `label` mono, il titolo in `body-strong`, squadra e lavoro in `caption`, un riassunto in `body-sm`, l'eventuale costo in mono e due pulsanti: «Approva» principale e «Rifiuta» secondario, con un campo per la nota. Fondo `surface-1`, bordo `border`, raggio `radius-md`, padding `space-3`. Il numero è lo stesso che Alfred legge a voce («approva la numero due»), quindi non cambia finché la voce resta in coda. Chi lo usa fornisce numero, titolo, squadra, riassunto, costo e le due azioni.

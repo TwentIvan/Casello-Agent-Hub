@@ -23,7 +23,7 @@ const saved: Record<string, string | undefined> = {};
 
 const REPO = "ivan/mister";
 const PERMISSION =
-  "L'App Casello non ha il permesso Issues su questo repository (o non lo vede più): attivalo nelle impostazioni dell'installazione su GitHub";
+  "L'App GitHub di Botcave non ha il permesso Issues su questo repository (o non lo vede più): attivalo nelle impostazioni dell'installazione su GitHub";
 const DISABLED = "Le issue sono disattivate su questo repository";
 const UNAVAILABLE = "GitHub non raggiungibile";
 const NO_REPO = "Collega il repository tramite l'App GitHub per creare le issue";
@@ -225,7 +225,7 @@ describe("POST /apps/:id/plan/issues", () => {
     const [ia, ie, ip] = res.json.issues;
     expect(ia.title).toBe("Titolo a");
     expect(ia.labels).toEqual(["casello", "completamento", "fase-1"]);
-    expect(ia.body).toContain(`Creata da Casello · piano di Mister · voce #${a}`);
+    expect(ia.body).toContain(`Creata da Botcave · piano di Mister · voce #${a}`);
     expect(ia.skipped).toBe(false);
     expect(ie.labels).toEqual(["casello", "evoluzione", "P2"]);
     expect(ip.skipped).toBe(true);

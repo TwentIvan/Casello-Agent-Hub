@@ -45,9 +45,9 @@ export function UnmanagedProviders() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Da gestire in Casello</CardTitle>
+        <CardTitle className="text-base">Da gestire in Botcave</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Provider presenti nel catalogo che Casello non riconosce ancora nel registro. Puoi già usarli creando
+          Provider presenti nel catalogo che Botcave non riconosce ancora nel registro. Puoi già usarli creando
           un account compatibile OpenAI e inserendo il loro indirizzo; per farli riconoscere copia il testo
           dell'issue.
         </p>

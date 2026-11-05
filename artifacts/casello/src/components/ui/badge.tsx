@@ -3,25 +3,17 @@ import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
+// Etichetta neutra di Botcave: piccola, raggio radius-sm, senza fondi colorati (gli stati si mostrano con i LED,
+// l'ambra resta per ciò che chiede attenzione: il primario è quindi riservato ai contatori).
 const badgeVariants = cva(
-  // @replit
-  // Whitespace-nowrap: Badges should never wrap.
-  "whitespace-nowrap inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2" +
-  " hover-elevate ",
+  "whitespace-nowrap inline-flex items-center gap-1 rounded-sm border px-2 py-0.5 text-xs font-medium transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
   {
     variants: {
       variant: {
-        default:
-          // @replit shadow-xs instead of shadow, no hover because we use hover-elevate
-          "border-transparent bg-primary text-primary-foreground shadow-xs",
-        secondary:
-          // @replit no hover because we use hover-elevate
-          "border-transparent bg-secondary text-secondary-foreground",
-        destructive:
-          // @replit shadow-xs instead of shadow, no hover because we use hover-elevate
-          "border-transparent bg-destructive text-destructive-foreground shadow-xs",
-          // @replit shadow-xs" - use badge outline variable
-        outline: "text-foreground border [border-color:var(--badge-outline)]",
+        default: "border-transparent bg-brand text-on-brand",
+        secondary: "border-transparent bg-surface-2 text-ink",
+        destructive: "border-border text-danger",
+        outline: "border-border text-ink",
       },
     },
     defaultVariants: {

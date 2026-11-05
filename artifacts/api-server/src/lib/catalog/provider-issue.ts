@@ -69,5 +69,5 @@ export function providerIssue(p: IssueProvider, offerCount: number, exampleIds: 
     "All'avvio il provider risulta dal registro (`origin = registry`) con lo stato del suo protocollo e i suoi modelli " +
       "restano nel catalogo.",
   ].join("\n\n");
-  return { title: `Gestire il provider ${name} in Casello`, body };
+  return { title: `Gestire il provider ${name} in Botcave`, body };
 }

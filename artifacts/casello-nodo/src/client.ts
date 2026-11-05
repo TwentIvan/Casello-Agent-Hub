@@ -28,7 +28,7 @@ export class HttpError extends Error {
     readonly status: number,
     detail: string | null,
   ) {
-    super(detail ? `Casello ha risposto ${status}: ${detail}` : `Casello ha risposto ${status}`);
+    super(detail ? `Botcave ha risposto ${status}: ${detail}` : `Botcave ha risposto ${status}`);
     this.name = "HttpError";
   }
 }
@@ -48,7 +48,7 @@ export function leaseLossReason(err: unknown): string {
 
 export class NetworkError extends Error {
   constructor() {
-    super("Casello non raggiungibile");
+    super("Botcave non raggiungibile");
     this.name = "NetworkError";
   }
 }

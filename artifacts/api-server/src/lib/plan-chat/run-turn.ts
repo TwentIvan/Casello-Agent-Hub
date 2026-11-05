@@ -34,7 +34,7 @@ import { PlanToolRunner, type PlanToolItem } from "./tools";
 import { runPlanTurn } from "./turn";
 
 export const PLAN_MESSAGE_MAX_CHARS = 8_000;
-export const INTERRUPTED_TURN_MESSAGE = "Turno interrotto dal riavvio di Casello: riscrivi il messaggio.";
+export const INTERRUPTED_TURN_MESSAGE = "Turno interrotto dal riavvio di Botcave: riscrivi il messaggio.";
 const NO_MODEL_MESSAGE = "Scegli un modello per la conversazione.";
 export const EMPTY_REPLY_MESSAGE = "(nessuna risposta testuale)";
 const GENERIC_ERROR_MESSAGE = "Errore nel turno della conversazione.";

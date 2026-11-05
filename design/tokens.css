@@ -1,0 +1,84 @@
+/* Botcave — generato da tokens.json. Non modificare a mano: cambiare tokens.json. */
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500&display=swap");
+
+:root, [data-theme="light"] {
+  --notte: #151A21;
+  --nebbia: #ECE8E1;
+  --ardesia: #5B6675;
+  --roccia: #A7AEB7;
+  --ambra: #F2A93B;
+  --surface-0: var(--nebbia);
+  --surface-1: #F6F3EE;
+  --surface-2: #FFFFFF;
+  --ink: var(--notte);
+  --ink-muted: var(--ardesia);
+  --border: #D3CEC4;
+  --border-strong: #8C949E;
+  --accent: var(--ambra);
+  --on-accent: var(--notte);
+  --accent-text: #8A5208;
+  --focus: #8A5208;
+  --led-idle: var(--ardesia);
+  --success: #2D6A4F;
+  --danger: #A8322A;
+  --mark-rock: var(--roccia);
+  --mark-bat: var(--notte);
+}
+[data-theme="dark"] {
+  --surface-0: var(--notte);
+  --surface-1: #1C222B;
+  --surface-2: #252C36;
+  --ink: var(--nebbia);
+  --ink-muted: var(--roccia);
+  --border: #2F3742;
+  --border-strong: #6B7685;
+  --accent-text: var(--ambra);
+  --focus: var(--ambra);
+  --led-idle: #7A8594;
+  --success: #74C69D;
+  --danger: #F28B82;
+  --mark-rock: var(--ardesia);
+  --mark-bat: var(--nebbia);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface-0: var(--notte);
+    --surface-1: #1C222B;
+    --surface-2: #252C36;
+    --ink: var(--nebbia);
+    --ink-muted: var(--roccia);
+    --border: #2F3742;
+    --border-strong: #6B7685;
+    --accent-text: var(--ambra);
+    --focus: var(--ambra);
+    --led-idle: #7A8594;
+    --success: #74C69D;
+    --danger: #F28B82;
+    --mark-rock: var(--ardesia);
+    --mark-bat: var(--nebbia);
+  }
+}
+:root {
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --font-sans: "Space Grotesk", system-ui, sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+  --space-6: 48px;
+  --radius-0: 0px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+.text-display { font-family: var(--font-mono); font-size: 48px; line-height: 52px; font-weight: 500; letter-spacing: -0.02em; }
+.text-h1 { font-family: var(--font-mono); font-size: 32px; line-height: 40px; font-weight: 500; letter-spacing: -0.01em; }
+.text-h2 { font-family: var(--font-mono); font-size: 24px; line-height: 32px; font-weight: 500; }
+.text-h3 { font-family: var(--font-mono); font-size: 18px; line-height: 26px; font-weight: 500; }
+.text-body { font-family: var(--font-sans); font-size: 16px; line-height: 24px; font-weight: 400; }
+.text-body-sm { font-family: var(--font-sans); font-size: 14px; line-height: 20px; font-weight: 400; }
+.text-body-strong { font-family: var(--font-sans); font-size: 14px; line-height: 20px; font-weight: 500; }
+.text-caption { font-family: var(--font-sans); font-size: 12px; line-height: 16px; font-weight: 400; }
+.text-label { font-family: var(--font-mono); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; }
+.text-code { font-family: var(--font-mono); font-size: 14px; line-height: 20px; font-weight: 400; }

@@ -81,7 +81,7 @@ export default function AppsPage() {
     <div className="mx-auto max-w-screen-2xl space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">App</h2>
+          <h2 className="text-h2">App</h2>
           <p className="text-sm text-muted-foreground">Le applicazioni registrate, che gli agenti possono chiamare.</p>
         </div>
         <Button onClick={() => openForm()}>
@@ -138,7 +138,7 @@ export default function AppsPage() {
                     <TableCell>
                       <StatusBadge kind="app" status={app.status} />
                     </TableCell>
-                    <TableCell className="hidden text-right tabular-nums sm:table-cell">
+                    <TableCell className="hidden text-right font-mono tabular-nums sm:table-cell">
                       {agents.isLoading ? "…" : (agentCounts.get(app.id) ?? 0)}
                     </TableCell>
                     <TableCell className="pr-4 text-right">

@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { LogOut, UserRound } from "lucide-react";
+import { LogOut, Monitor, Moon, Sun, UserRound } from "lucide-react";
 import { getGetCurrentUserQueryKey, useGetCurrentUser, useLogout } from "@workspace/api-client-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,18 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { type ThemeChoice, useThemeChoice } from "@/lib/theme";
+
+const THEMES: { value: ThemeChoice; label: string; icon: typeof Sun }[] = [
+  { value: "system", label: "Come il sistema", icon: Monitor },
+  { value: "light", label: "Chiaro", icon: Sun },
+  { value: "dark", label: "Scuro", icon: Moon },
+];
 
 function initials(name: string | null, email: string): string {
   const source = name?.trim() || email;
@@ -23,6 +32,7 @@ function initials(name: string | null, email: string): string {
 }
 
 export function UserMenu() {
+  const [theme, setTheme] = useThemeChoice();
   const { data: user } = useGetCurrentUser({ query: { queryKey: getGetCurrentUserQueryKey() } });
   // Ricarica completa dopo il logout: riparte da zero senza dati in cache.
   const logout = useLogout({ mutation: { onSettled: () => window.location.assign("/") } });
@@ -51,6 +61,17 @@ export function UserMenu() {
             Account
           </Link>
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-label text-ink-muted">Tema</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={theme} onValueChange={(v) => setTheme(v as ThemeChoice)}>
+          {THEMES.map((t) => (
+            <DropdownMenuRadioItem key={t.value} value={t.value} onSelect={(e) => e.preventDefault()}>
+              <t.icon />
+              {t.label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
         <DropdownMenuItem disabled={logout.isPending} onSelect={() => logout.mutate()}>
           <LogOut />
           Esci

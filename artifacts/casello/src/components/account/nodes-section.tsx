@@ -11,6 +11,7 @@ import {
   useRegenerateNodeToken,
 } from "@workspace/api-client-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Led } from "@/components/brand/led";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -167,7 +168,7 @@ function TokenRevealDialog({ revealed, onClose }: { revealed: RevealedToken | nu
         </div>
         <div className="space-y-3 text-sm">
           <p className="text-muted-foreground">
-            {revealed?.isNew ? "Per installare il nodo sul Mac, dalla radice del repository di Casello:" : "Per aggiornare il nodo già installato, riesegui l'installazione con il nuovo token:"}
+            {revealed?.isNew ? "Per installare il nodo sul Mac, dalla radice del repository:" : "Per aggiornare il nodo già installato, riesegui l'installazione con il nuovo token:"}
           </p>
           {revealed?.isNew && (
             <div className="space-y-1">
@@ -245,11 +246,11 @@ function NodeRow({
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm font-medium">{node.name}</span>
           {disabled ? (
-            <Badge variant="secondary">disattivato</Badge>
+            <Led state="idle" label="disattivato" />
           ) : node.online ? (
-            <Badge className="bg-emerald-600 hover:bg-emerald-600">online</Badge>
+            <Led state="ok" label="online" />
           ) : (
-            <Badge variant="outline">offline</Badge>
+            <Led state="ko" label="offline" />
           )}
         </div>
         <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">

@@ -94,7 +94,7 @@ export function AgentModelsCard({ appId }: { appId: number }) {
                 {list.map((agent) => {
                   const value = valueOf(agent.id, agent.aiModelId);
                   return (
-                    <TableRow key={agent.id} className={cn(value === null && "bg-amber-50 dark:bg-amber-950/40")}>
+                    <TableRow key={agent.id} className={cn(value === null && "bg-brand/8")}>
                       <TableCell className="font-medium">
                         <Link href={`/agents/${agent.id}`} className="hover:underline">
                           {agent.name}
@@ -115,7 +115,7 @@ export function AgentModelsCard({ appId }: { appId: number }) {
                           aria-invalid={value === null}
                         />
                         {value === null ? (
-                          <p className="text-xs text-amber-800 dark:text-amber-300">nessun modello: le run non partono</p>
+                          <p className="text-xs text-accent-text">nessun modello: le run non partono</p>
                         ) : (
                           <ModelDeprecationBadge aiModelId={value} />
                         )}

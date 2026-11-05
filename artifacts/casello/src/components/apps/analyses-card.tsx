@@ -12,6 +12,8 @@ import {
   useStartAnalysis,
   useStartZipAnalysis,
 } from "@workspace/api-client-react";
+import { Led, type LedState } from "@/components/brand/led";
+import { LuciusMark } from "@/components/brand/marks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,12 +42,12 @@ export const ANALYSIS_STATUS_LABELS: Record<Analysis["status"], string> = {
   interrupted: "Interrotta",
 };
 
-export const ANALYSIS_STATUS_STYLES: Record<Analysis["status"], string> = {
-  queued: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-  running: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-  completed: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  failed: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
-  interrupted: "bg-muted text-muted-foreground",
+export const ANALYSIS_STATUS_LED: Record<Analysis["status"], LedState> = {
+  queued: "idle",
+  running: "work",
+  completed: "ok",
+  failed: "ko",
+  interrupted: "idle",
 };
 
 const isActive = (a: Analysis) => a.status === "queued" || a.status === "running";
@@ -54,7 +56,7 @@ function formatDateTime(value: string): string {
   return new Date(value).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" });
 }
 
-/** Avvio dell'analisi dell'architetto e storico delle analisi dell'app. */
+/** Avvio dell'analisi di Lucius e storico delle analisi dell'app. */
 export function AnalysesCard({ app }: { app: App }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -156,9 +158,12 @@ export function AnalysesCard({ app }: { app: App }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Analisi</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <LuciusMark size={16} />
+          Analisi di Lucius
+        </CardTitle>
         <CardDescription>
-          L'architetto studia le sorgenti e propone tool, agenti e skill: nulla diventa attivo senza la tua approvazione.
+          Lucius, l'architetto, studia le sorgenti e propone tool, agenti e skill: nulla diventa attivo senza la tua approvazione.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -213,7 +218,7 @@ export function AnalysesCard({ app }: { app: App }) {
         <div className="flex flex-wrap items-center justify-end gap-3">
           {hasActive && <span className="text-xs text-muted-foreground">Un'analisi è già in corso.</span>}
           {!local && aiModelId !== null && tokensValid && estimate.data && (
-            <span className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
+            <span className="text-xs text-muted-foreground font-mono tabular-nums" aria-live="polite">
               {estimate.data.typicalUsd != null && estimate.data.maxUsd != null
                 ? `stima senza cache: circa ${formatUsd(estimate.data.typicalUsd)} (massimo ${formatUsd(estimate.data.maxUsd)}); con provider che la supportano il costo reale è inferiore`
                 : "costo non stimabile: prezzi del modello sconosciuti"}
@@ -240,9 +245,7 @@ export function AnalysesCard({ app }: { app: App }) {
                     <Link href={`/analyses/${a.id}`} className="font-medium underline-offset-2 hover:underline">
                       Analisi #{a.id}
                     </Link>
-                    <Badge variant="outline" className={cn("border-transparent", ANALYSIS_STATUS_STYLES[a.status])}>
-                      {ANALYSIS_STATUS_LABELS[a.status]}
-                    </Badge>
+                    <Led state={ANALYSIS_STATUS_LED[a.status]} label={ANALYSIS_STATUS_LABELS[a.status]} />
                     <span className="font-mono text-xs text-muted-foreground">{a.model}</span>
                     {a.executor === "local" ? (
                       <Badge variant="secondary">agente locale</Badge>
@@ -252,7 +255,7 @@ export function AnalysesCard({ app }: { app: App }) {
                       </span>
                     )}
                     {formatCost(a.costUsd, a.tokensUsed) && (
-                      <span className="text-xs text-muted-foreground tabular-nums">
+                      <span className="text-xs text-muted-foreground font-mono tabular-nums">
                         {formatCost(a.costUsd, a.tokensUsed)}
                       </span>
                     )}

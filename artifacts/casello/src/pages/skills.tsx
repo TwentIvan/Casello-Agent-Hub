@@ -32,7 +32,7 @@ export default function SkillsPage() {
     <div className="mx-auto max-w-screen-2xl space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Skill</h2>
+          <h2 className="text-h2">Skill</h2>
           <p className="text-sm text-muted-foreground">
             Il catalogo delle skill versionate che i ruoli delle squadre possono usare.
           </p>
@@ -115,7 +115,7 @@ export default function SkillsPage() {
                     <TableCell>
                       <SkillKindBadge kind={s.kind} />
                     </TableCell>
-                    <TableCell className="tabular-nums">v{s.currentVersion}</TableCell>
+                    <TableCell className="font-mono tabular-nums">v{s.currentVersion}</TableCell>
                     <TableCell className="hidden pr-4 text-muted-foreground md:table-cell">
                       {formatRelative(s.updatedAt)}
                     </TableCell>

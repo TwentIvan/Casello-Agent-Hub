@@ -6,6 +6,7 @@ import {
   useListTeamEvents,
   useMarkTeamEventsRead,
 } from "@workspace/api-client-react";
+import { Led } from "@/components/brand/led";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -76,12 +77,12 @@ export function TeamBulletin({ teamId, poll }: { teamId: number; poll: number | 
                   key={e.id}
                   className={cn(
                     "rounded-md border p-3",
-                    isUnread && "border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40",
+                    isUnread && "border-brand bg-brand/8",
                   )}
                 >
                   <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     <Badge variant="outline">{EVENT_LABELS[e.type]}</Badge>
-                    {isUnread && <span className="font-medium text-amber-800 dark:text-amber-300">Non letto</span>}
+                    {isUnread && <Led state="ask" label="Non letto" className="text-caption font-medium text-accent-text" />}
                     <span className="ml-auto">{formatRelative(e.createdAt)}</span>
                   </div>
                   <p className="mt-1.5 break-words text-sm">{e.bulletin}</p>

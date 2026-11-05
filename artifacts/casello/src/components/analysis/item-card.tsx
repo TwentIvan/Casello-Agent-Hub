@@ -13,6 +13,7 @@ import {
   useUpdateAnalysisItem,
 } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
+import { Led } from "@/components/brand/led";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -24,7 +25,7 @@ import {
   DIFF_LABELS,
   DIFF_STYLES,
   ITEM_STATUS_LABELS,
-  ITEM_STATUS_STYLES,
+  ITEM_STATUS_LED,
   POSTPONABLE,
   bool,
   isRecord,
@@ -134,7 +135,7 @@ function ToolBody({ item }: { item: AnalysisItem }) {
     <div className="space-y-3">
       {item.diff === "removed" && (
         <p className="text-sm text-muted-foreground">
-          Il tool esiste nel catalogo ma l'architetto non l'ha riproposto: approvando viene disattivato (non eliminato).
+          Il tool esiste nel catalogo ma Lucius non l'ha riproposto: approvando viene disattivato (non eliminato).
         </p>
       )}
       <Prose label="Descrizione" text={str(p, "description")} />
@@ -448,12 +449,10 @@ export function ItemCard({ item, appId, dependsOnTitles = [] }: ItemCardProps) {
             {area && <p className="text-xs text-muted-foreground">Area: {area}</p>}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant="outline" className={cn("border-transparent", DIFF_STYLES[item.diff])}>
+            <Badge variant="outline" className={DIFF_STYLES[item.diff]}>
               {DIFF_LABELS[item.diff]}
             </Badge>
-            <Badge variant="outline" className={cn("border-transparent", ITEM_STATUS_STYLES[item.status])}>
-              {ITEM_STATUS_LABELS[item.status]}
-            </Badge>
+            <Led state={ITEM_STATUS_LED[item.status]} label={ITEM_STATUS_LABELS[item.status]} />
             {item.issue && <IssueBadge issue={item.issue} />}
             {item.origin === "chat" && (
               <Badge variant="secondary" className="font-normal">
@@ -461,7 +460,7 @@ export function ItemCard({ item, appId, dependsOnTitles = [] }: ItemCardProps) {
               </Badge>
             )}
             {needsVerification && (
-              <Badge variant="outline" className="border-transparent bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+              <Badge variant="outline" className="border-border text-accent-text">
                 Da verificare
               </Badge>
             )}

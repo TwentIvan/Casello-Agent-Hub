@@ -524,7 +524,7 @@ describe("provider del catalogo", () => {
     );
     const res = await api("GET", `/catalog/providers/${UNMANAGED}/issue`);
     expect(res.status, res.text).toBe(200);
-    expect(res.json.title).toBe("Gestire il provider `Nuovo Provider` in Casello");
+    expect(res.json.title).toBe("Gestire il provider `Nuovo Provider` in Botcave");
     expect(res.json.body).toContain("6 voci");
     expect(res.json.body).toContain("litellm_provider: nuovo_provider");
     expect(res.json.body).toContain("n-1\nn-2\nn-3\nn-4\nn-5\n");

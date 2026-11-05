@@ -61,7 +61,7 @@ export function issueContent(
   return {
     title,
     // Il nome dell'app su una riga: niente a capo che spezzino il piè di pagina
-    body: `${body}\n\n---\nCreata da Casello · piano di ${ctx.appName.replace(/\s+/g, " ").trim()} · voce #${item.id}`,
+    body: `${body}\n\n---\nCreata da Botcave · piano di ${ctx.appName.replace(/\s+/g, " ").trim()} · voce #${item.id}`,
     labels: issueLabels(item),
   };
 }

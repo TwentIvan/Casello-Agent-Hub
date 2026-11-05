@@ -73,7 +73,7 @@ function PriceInput({
       inputMode="decimal"
       min={0}
       step="any"
-      className="h-8 w-24 tabular-nums"
+      className="h-8 w-24 font-mono tabular-nums"
       aria-label={label}
       placeholder="—"
       value={text}
@@ -264,7 +264,7 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
                 <TableRow key={model.id} className={model.hidden ? "opacity-60" : undefined}>
                   <TableCell className="font-mono text-xs break-all">{model.modelId}</TableCell>
                   <TableCell className="text-sm">{model.displayName}</TableCell>
-                  <TableCell className="text-right text-xs tabular-nums">
+                  <TableCell className="text-right text-xs font-mono tabular-nums">
                     {model.contextTokens != null ? model.contextTokens.toLocaleString("it-IT") : "—"}
                   </TableCell>
                   {/* Input e output nella stessa cella, con l'origine del prezzo: la tabella sta nella pagina senza scorrere */}

@@ -75,7 +75,7 @@ export default function RunsPage() {
   return (
     <div className="mx-auto max-w-screen-2xl space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Run</h2>
+        <h2 className="text-h2">Run</h2>
         <p className="text-sm text-muted-foreground">Le esecuzioni degli agenti, dalla più recente.</p>
       </div>
 
@@ -137,7 +137,7 @@ export default function RunsPage() {
               <TableBody>
                 {runs.data.map((run) => (
                   <TableRow key={run.id} className="relative">
-                    <TableCell className="pl-4 tabular-nums text-muted-foreground">
+                    <TableCell className="pl-4 font-mono tabular-nums text-muted-foreground">
                       {/* Il link copre tutta la riga (after:inset-0) */}
                       <Link href={`/runs/${run.id}`} className="after:absolute after:inset-0 hover:underline">
                         {run.id}
@@ -150,7 +150,7 @@ export default function RunsPage() {
                     <TableCell className="hidden max-w-xs truncate text-muted-foreground md:table-cell">
                       {run.input || "—"}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    <TableCell className="whitespace-nowrap text-right font-mono tabular-nums">
                       {formatDuration(run.durationMs)}
                     </TableCell>
                     <TableCell className="hidden whitespace-nowrap pr-4 text-right text-muted-foreground sm:table-cell">

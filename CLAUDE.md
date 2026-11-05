@@ -1,8 +1,9 @@
-# Casello
+# Botcave (nome in codice: Casello)
 
-Hub per agentificare applicazioni: registri le tue app, le configuri come agenti autonomi dotati di
-strumenti e istruzioni, lanci esecuzioni (run) e le monitori. Casello è lo strato agentico comune a
-tutti i prodotti di Ivan (Mister, The Hub Up, ReMove, Vimini, TradeFlow).
+Il prodotto si chiama **Botcave**: trasforma le applicazioni in squadre di agenti che l'utente dirige, approvando le
+decisioni importanti, anche a voce con Alfred. «Casello» resta il nome in codice: repository, pacchetti (`@workspace/casello`),
+servizi, immagini, variabili, tabelle, URL e identificatori non si rinominano. Nei testi visibili all'utente si scrive sempre
+«Botcave». È lo strato agentico comune a tutti i prodotti di Ivan (Mister, The Hub Up, ReMove, Vimini, TradeFlow).
 
 Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codice e identificatori in inglese.
 
@@ -31,6 +32,28 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
 - In produzione su https://casello.fantamister.cloud (vedi "Deploy").
+
+## Identità Botcave
+
+- Fonte di verità: `design/` alla radice (manuale `design/README.md`, istruzioni `design/IMPLEMENTA.md`). Colori, font, spazi e
+  raggi stanno in `design/tokens.css`, generato da `design/tokens.json`: non si modifica a mano e non si scrivono colori nell'interfaccia
+  (nessun esadecimale né classi di palette Tailwind come `amber-100`): un colore nuovo si propone in `tokens.json`.
+- Console: `main.tsx` importa `@design/tokens.css` prima di `index.css`, dove le variabili di shadcn/ui e di Tailwind sono alias
+  dei token (classi `bg-surface-1`, `text-ink-muted`, `text-accent-text`, `bg-brand`, `text-success`, `text-danger`…). Tema chiaro e
+  scuro: segue il sistema, `data-theme` su `<html>` lo forza (menu utente → Tema, `lib/theme.ts`, chiave `botcave-theme`). JetBrains Mono
+  per titoli, etichette, numeri e codice (`text-h2`, `text-label`, `font-mono`), Space Grotesk per testi e controlli. Niente ombre.
+- Componenti di marca in `artifacts/casello/src/components/brand/`: `Led` (stati: `idle`, `work`, `ask`, `ok`, `ko`; fermi con la
+  riduzione del movimento), `ConfirmItem` (voce della coda: il numero è quello del server, stabile, letto a voce da Alfred), `marks.tsx`
+  (logo, segno, Alfred, Lucius dai file di `design/assets/`, versione chiara o scura secondo il tema). `Button` è `ui/button.tsx`
+  (principale = `default`, secondario = `secondary`/`outline`, discreto = `ghost`/`link`). Gli stati si mostrano con i LED, non con
+  badge colorati.
+- Due personaggi e due aree del menu: **Quartier generale · Alfred** (Dashboard, Squadre, Da confermare, Run, Parla con Alfred) e
+  **Officina · Lucius** (App, Agenti, Skill, Modelli di squadra, Modelli AI). Lucius è l'architetto (analisi, proposte, chat del piano:
+  nei prompt di `architect/prompts.ts` e `plan-chat/context.ts`); Alfred il maggiordomo vocale. Nessun riferimento a Batman.
+- Icone e favicon: `design/icons/` servite alla radice dal plugin `botcaveIcons` di `vite.config.ts` (niente copie in `public/`); il
+  manifest di Alfred usa `icon-192/512` e `icon-maskable-512`, colori `#151A21`. I Dockerfile copiano `design/` (web) e
+  `design/tokens.json` (API: colori della pagina di consenso OAuth, `lib/oauth/pages.ts`).
+- Tono dei testi: pulsanti che dicono cosa fanno, niente punti esclamativi, numeri precisi.
 
 ## Comandi
 

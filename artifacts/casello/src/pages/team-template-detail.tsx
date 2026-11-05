@@ -89,7 +89,7 @@ function TemplateEditor({ template }: { template?: TeamTemplate }) {
     <>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="break-words text-2xl font-semibold tracking-tight">{template?.name ?? "Nuovo modello di squadra"}</h2>
+          <h2 className="break-words text-h2">{template?.name ?? "Nuovo modello di squadra"}</h2>
           {template && (
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <Badge variant="outline">Versione {template.version}</Badge>
@@ -151,7 +151,7 @@ function TemplateEditor({ template }: { template?: TeamTemplate }) {
       </Card>
 
       <section className="space-y-3">
-        <h3 className="text-lg font-semibold">Ruoli</h3>
+        <h3 className="text-lg font-medium">Ruoli</h3>
         <RolesEditor roles={roles} onChange={setRoles} mode="template" readOnly={readOnly} />
       </section>
 

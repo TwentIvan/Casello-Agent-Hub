@@ -21,7 +21,7 @@ export default function TeamTemplatesPage() {
     <div className="mx-auto max-w-screen-2xl space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Modelli di squadra</h2>
+          <h2 className="text-h2">Modelli di squadra</h2>
           <p className="text-sm text-muted-foreground">
             Squadre riusabili: ruoli con un capo, compiti, strumenti e skill. Da un modello nascono le squadre dei lavori.
           </p>
@@ -90,9 +90,9 @@ export default function TeamTemplatesPage() {
                           "—"
                         )}
                       </TableCell>
-                      <TableCell className="tabular-nums">{t.roles.length}</TableCell>
-                      <TableCell className="tabular-nums">{t.instanceCount}</TableCell>
-                      <TableCell className="tabular-nums">v{t.version}</TableCell>
+                      <TableCell className="font-mono tabular-nums">{t.roles.length}</TableCell>
+                      <TableCell className="font-mono tabular-nums">{t.instanceCount}</TableCell>
+                      <TableCell className="font-mono tabular-nums">v{t.version}</TableCell>
                       <TableCell className="hidden pr-4 text-muted-foreground md:table-cell">
                         {formatRelative(t.updatedAt)}
                       </TableCell>

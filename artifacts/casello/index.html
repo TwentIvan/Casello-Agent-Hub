@@ -3,19 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <title>Casello</title>
-    <meta name="description" content="Casello — hub per agentificare applicazioni" />
+    <title>Botcave</title>
+    <meta name="description" content="Botcave: squadre di agenti che lavorano sulle tue applicazioni, sotto la tua regia" />
     <meta name="robots" content="index, follow" />
-    <meta property="og:title" content="Casello" />
-    <meta property="og:description" content="Casello — hub per agentificare applicazioni" />
+    <meta name="color-scheme" content="light dark" />
+    <meta property="og:title" content="Botcave" />
+    <meta property="og:description" content="Botcave: squadre di agenti che lavorano sulle tue applicazioni, sotto la tua regia" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Casello" />
-    <meta name="twitter:description" content="Casello — hub per agentificare applicazioni" />
+    <meta name="twitter:title" content="Botcave" />
+    <meta name="twitter:description" content="Botcave: squadre di agenti che lavorano sulle tue applicazioni, sotto la tua regia" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      // Tema scelto dall'utente (menu utente), applicato prima del disegno della pagina; senza scelta segue il sistema
+      try {
+        var t = localStorage.getItem("botcave-theme");
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

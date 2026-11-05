@@ -8,6 +8,7 @@ import {
   useDecidePlanProposal,
 } from "@workspace/api-client-react";
 import { CHAPTER_LABELS, prettyJson } from "@/components/analysis/payload";
+import { Led, type LedState } from "@/components/brand/led";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,11 +35,11 @@ const STATUS_LABELS: Record<PlanProposal["status"], string> = {
   stale: "Superata",
 };
 
-const STATUS_STYLES: Record<PlanProposal["status"], string> = {
-  pending: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-  accepted: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  rejected: "bg-muted text-muted-foreground",
-  stale: "bg-muted text-muted-foreground",
+const STATUS_LED: Record<PlanProposal["status"], LedState> = {
+  pending: "ask",
+  accepted: "ok",
+  rejected: "idle",
+  stale: "idle",
 };
 
 function Json({ label, value }: { label: string; value: unknown }) {
@@ -91,9 +92,7 @@ export function ProposalCard({ proposal, currentItem, appId }: ProposalCardProps
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="secondary">{KIND_LABELS[proposal.kind]}</Badge>
           <Badge variant="outline">{CHAPTER_LABELS[proposal.chapter]}</Badge>
-          <Badge variant="outline" className={cn("border-transparent", STATUS_STYLES[proposal.status])}>
-            {STATUS_LABELS[proposal.status]}
-          </Badge>
+          <Led state={STATUS_LED[proposal.status]} label={STATUS_LABELS[proposal.status]} />
         </div>
         <p className="text-sm font-medium break-words">{proposal.title}</p>
         {proposal.rationale && <p className="text-sm whitespace-pre-wrap text-muted-foreground">{proposal.rationale}</p>}

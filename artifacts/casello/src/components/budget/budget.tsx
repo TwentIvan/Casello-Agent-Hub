@@ -68,11 +68,11 @@ function SpendLine({ spent, cap, unpriced }: { spent: number; cap: number | null
   return (
     <div className="space-y-2">
       <p className="text-sm">
-        Questo mese: <span className="font-medium tabular-nums">{formatUsd(spent)}</span>
+        Questo mese: <span className="font-medium font-mono tabular-nums">{formatUsd(spent)}</span>
         {cap !== null && (
           <>
             {" "}
-            su <span className="font-medium tabular-nums">{formatUsd(cap)}</span>
+            su <span className="font-medium font-mono tabular-nums">{formatUsd(cap)}</span>
             {r !== null && <span className="text-muted-foreground"> ({Math.round(r * 100)}%)</span>}
           </>
         )}
@@ -116,7 +116,7 @@ export function CapForm({
     >
       <Input
         inputMode="decimal"
-        className={compact ? "h-8 w-24 tabular-nums" : "w-40"}
+        className={compact ? "h-8 w-24 font-mono tabular-nums" : "w-40"}
         placeholder={compact ? "—" : "Nessun limite"}
         value={text}
         onChange={(event) => setText(event.target.value)}
@@ -157,7 +157,7 @@ export function UserBudgetCard() {
       <CardHeader>
         <CardTitle>Tetto di spesa</CardTitle>
         <CardDescription>
-          Spesa del mese sui tuoi account AI (run, analisi nel cloud, chat del piano). Raggiunto il tetto, Casello non
+          Spesa del mese sui tuoi account AI (run, analisi nel cloud, chat del piano). Raggiunto il tetto, Botcave non
           avvia nulla di nuovo fino al mese prossimo.
         </CardDescription>
       </CardHeader>
@@ -288,7 +288,7 @@ export function AiModelBudgetCell({ model }: { model: AiModel }) {
         onSave={(monthlyBudgetUsd) => update.mutate({ id: model.id, data: { monthlyBudgetUsd } })}
       />
       {spend && r !== null && (
-        <p className={`text-xs tabular-nums ${r >= 1 ? "text-destructive" : "text-muted-foreground"}`}>
+        <p className={`text-xs font-mono tabular-nums ${r >= 1 ? "text-destructive" : "text-muted-foreground"}`}>
           spesi {formatUsd(spend.spentUsd)} ({Math.round(r * 100)}%)
         </p>
       )}

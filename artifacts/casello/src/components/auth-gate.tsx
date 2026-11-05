@@ -24,7 +24,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (me.isError) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-4 text-center">
-        <p className="text-sm text-muted-foreground">Impossibile contattare l'API di Casello.</p>
+        <p className="text-sm text-muted-foreground">Impossibile contattare l'API di Botcave.</p>
         <Button variant="outline" size="sm" onClick={() => me.refetch()}>
           Riprova
         </Button>

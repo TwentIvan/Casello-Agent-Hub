@@ -107,7 +107,7 @@ export function createMcpServer(sources: LocalSourceOptions = {}, userId: number
     "list_analyses",
     {
       description:
-        "Elenca le analisi dell'architetto di Casello da eseguire in locale (in coda o in corso): id, app, fase corrente, fasi già consegnate e lease (chi la tiene e fino a quando).",
+        "Elenca le analisi di Lucius, l'architetto di Botcave, da eseguire in locale (in coda o in corso): id, app, fase corrente, fasi già consegnate e lease (chi la tiene e fino a quando).",
       inputSchema: {},
     },
     () =>
@@ -181,7 +181,7 @@ export function createMcpServer(sources: LocalSourceOptions = {}, userId: number
     "read_mcp_tools",
     {
       description:
-        "Legge gli strumenti del server MCP dell'app (elenco letto da Casello al claim). Con `name` descrive uno strumento (livello dichiarato, descrizione, schema dei parametri); altrimenti elenca gli strumenti con il livello, filtrabili per prefisso del nome e paginabili con offset.",
+        "Legge gli strumenti del server MCP dell'app (elenco letto da Botcave al claim). Con `name` descrive uno strumento (livello dichiarato, descrizione, schema dei parametri); altrimenti elenca gli strumenti con il livello, filtrabili per prefisso del nome e paginabili con offset.",
       inputSchema: {
         analysisId,
         leaseToken,

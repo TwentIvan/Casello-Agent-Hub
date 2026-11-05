@@ -17,16 +17,11 @@ import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
 import { ActionStatusBadge } from "./action-status";
+import { decidedTitle } from "./pending-action-item";
 import { ACTION_KIND_LABELS, PlanProposalDetail, isPlanItem } from "./plan-proposal";
 
 function formatDateTime(value: string): string {
   return new Date(value).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "medium" });
-}
-
-/** «Azione n. 3 approvata», «Piano n. 4 rifiutato», «Modifica del piano n. 5 approvata». */
-function decidedTitle(action: QueuedAction, approved: boolean): string {
-  const ending = action.kind === "plan" ? (approved ? "approvato" : "rifiutato") : approved ? "approvata" : "rifiutata";
-  return `${ACTION_KIND_LABELS[action.kind]} n. ${action.number} ${ending}`;
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {

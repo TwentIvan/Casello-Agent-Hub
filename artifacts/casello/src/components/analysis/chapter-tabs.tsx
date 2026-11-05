@@ -25,14 +25,14 @@ function Counters({ items }: { items: AnalysisItem[] }) {
   const pending = items.filter((i) => i.status === "pending").length;
   const approved = items.filter((i) => i.status === "approved").length;
   return (
-    <span className="ml-1.5 text-xs font-normal text-muted-foreground tabular-nums" title={`${pending} in attesa, ${approved} approvati`}>
+    <span className="ml-1.5 text-xs font-normal text-muted-foreground font-mono tabular-nums" title={`${pending} in attesa, ${approved} approvati`}>
       {pending}/{approved}
     </span>
   );
 }
 
 function GroupHeading({ children }: { children: string }) {
-  return <h4 className="pt-2 text-sm font-semibold tracking-tight text-muted-foreground">{children}</h4>;
+  return <h4 className="pt-2 text-label text-muted-foreground">{children}</h4>;
 }
 
 /** Piano di completamento: per fase, e dentro la fase nell'ordine delle dipendenze. */

@@ -104,7 +104,7 @@ function Meta({ item }: { item: TeamTurn | TeamTask }) {
   const cost = formatCost(item.costUsd, tokens(item));
   const duration = elapsed(item.startedAt, item.finishedAt);
   return (
-    <span className="ml-auto flex flex-wrap items-center gap-x-2 text-xs tabular-nums text-muted-foreground">
+    <span className="ml-auto flex flex-wrap items-center gap-x-2 text-xs font-mono tabular-nums text-muted-foreground">
       {cost && <span>{cost}</span>}
       {duration && <span>{duration}</span>}
       <span>{formatRelative(item.createdAt)}</span>

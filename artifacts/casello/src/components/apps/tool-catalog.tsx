@@ -12,6 +12,7 @@ import {
   useRefreshAppMcpTools,
   useUpdateAppTool,
 } from "@workspace/api-client-react";
+import { Led, type LedState } from "@/components/brand/led";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,10 +32,10 @@ import { apiErrorMessage } from "@/lib/api-errors";
 import { TOOL_IDENTITY_LABELS, TOOL_LEVEL_LABELS, TOOL_STATUS_LABELS, overrideLevels } from "@/lib/tool-labels";
 import { cn } from "@/lib/utils";
 
-const STATUS_STYLES: Record<AppTool["status"], string> = {
-  active: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  disabled: "bg-muted text-muted-foreground",
-  draft: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+const STATUS_LED: Record<AppTool["status"], LedState> = {
+  active: "ok",
+  disabled: "idle",
+  draft: "idle",
 };
 
 function endpointOf(tool: AppTool): string {
@@ -116,7 +117,7 @@ export function ToolCatalog({ appId }: { appId: number }) {
     <section className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold tracking-tight">Catalogo dei tool</h3>
+          <h3 className="text-h3">Catalogo dei tool</h3>
           <p className="text-sm text-muted-foreground">Le operazioni dell'app che gli agenti possono eseguire.</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -214,9 +215,7 @@ export function ToolCatalog({ appId }: { appId: number }) {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={cn("border-transparent", STATUS_STYLES[tool.status])}>
-                        {TOOL_STATUS_LABELS[tool.status]}
-                      </Badge>
+                      <Led state={STATUS_LED[tool.status]} label={TOOL_STATUS_LABELS[tool.status]} />
                     </TableCell>
                     <TableCell className="pr-4 text-right">
                       <DropdownMenu>

@@ -11,8 +11,8 @@ import type { GithubConfig } from "./config";
 
 export const ISSUE_MESSAGES = {
   permission:
-    "L'App Casello non ha il permesso Issues su questo repository (o non lo vede più): attivalo nelle impostazioni dell'installazione su GitHub",
-  notFound: "Repository non trovato o non accessibile all'App Casello",
+    "L'App GitHub di Botcave non ha il permesso Issues su questo repository (o non lo vede più): attivalo nelle impostazioni dell'installazione su GitHub",
+  notFound: "Repository non trovato o non accessibile all'App GitHub di Botcave",
   disabled: "Le issue sono disattivate su questo repository",
   rateLimited: "GitHub ha limitato le richieste: riprova tra qualche minuto",
   unavailable: "GitHub non raggiungibile",

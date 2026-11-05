@@ -93,7 +93,7 @@ export function ConversationList({ appId, selectedId, onSelect }: ConversationLi
                 )}
               >
                 <span className="block truncate font-medium">{c.title || "Nuova conversazione"}</span>
-                <span className="block text-xs text-muted-foreground tabular-nums">
+                <span className="block text-xs text-muted-foreground font-mono tabular-nums">
                   {formatDateTime(c.updatedAt)}
                   {formatCost(c.costUsd, c.tokensUsed) ? ` · ${formatCost(c.costUsd, c.tokensUsed)}` : ""}
                 </span>

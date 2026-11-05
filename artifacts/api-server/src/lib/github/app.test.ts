@@ -19,7 +19,7 @@ import {
   repoInstallationId,
 } from "./app";
 
-const NO_ACCESS = "l'App Casello non ha più accesso a questo repository: reinstallala o scegli un altro repo";
+const NO_ACCESS = "l'App GitHub di Botcave non ha più accesso a questo repository: reinstallala o scegli un altro repo";
 const UNAVAILABLE = "GitHub non risponde (riprova più tardi)";
 const USER_TOKEN = "ghu_USER_TOKEN_SEGRETO";
 

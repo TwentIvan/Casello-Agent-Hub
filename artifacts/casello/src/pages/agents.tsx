@@ -57,7 +57,7 @@ export default function AgentsPage() {
     <div className="mx-auto max-w-screen-2xl space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Agenti</h2>
+          <h2 className="text-h2">Agenti</h2>
           <p className="text-sm text-muted-foreground">Gli agenti configurati sulle app, con istruzioni e strumenti.</p>
         </div>
         <Button onClick={openCreate} disabled={!hasApps} title={hasApps ? undefined : "Registra prima un'app"}>
@@ -155,7 +155,7 @@ export default function AgentsPage() {
                     <TableCell className="hidden font-mono text-xs text-muted-foreground md:table-cell">
                       <div className="flex flex-wrap items-center gap-2">
                         {agent.aiModelId === null ? (
-                          <span className="text-amber-800 dark:text-amber-300">nessun modello</span>
+                          <span className="text-accent-text">nessun modello</span>
                         ) : (
                           <span>{agent.model}</span>
                         )}

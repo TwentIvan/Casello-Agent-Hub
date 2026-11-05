@@ -35,7 +35,7 @@ import { clearUserToken, getUserToken, setUserToken } from "./user-tokens";
 // Il token dell'utente vive solo in memoria (user-tokens.ts) e solo per la durata della run.
 
 const EXECUTOR_INSTRUCTION =
-  "Sei l'esecutore di un agente configurato nell'hub Casello. Usa il contesto fornito per rispondere in modo pertinente al task richiesto. Rispondi in italiano.";
+  "Sei l'esecutore di un agente configurato in Botcave. Usa il contesto fornito per rispondere in modo pertinente al task richiesto. Rispondi in italiano.";
 
 // Difesa dalla prompt injection: il contenuto delle risposte dell'app non comanda l'agente
 const TOOL_RESULTS_INSTRUCTION =

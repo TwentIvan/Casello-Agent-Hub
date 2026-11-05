@@ -245,7 +245,7 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
         <DialogHeader>
           <DialogTitle>{editing ? "Modifica account AI" : "Aggiungi account AI"}</DialogTitle>
           <DialogDescription>
-            Casello legge l'elenco dei modelli con la chiave prima di salvare. La chiave è conservata cifrata e non
+            Botcave legge l'elenco dei modelli con la chiave prima di salvare. La chiave è conservata cifrata e non
             viene mai mostrata.
           </DialogDescription>
         </DialogHeader>

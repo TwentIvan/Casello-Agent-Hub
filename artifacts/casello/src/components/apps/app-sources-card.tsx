@@ -26,7 +26,7 @@ import { apiErrorMessage } from "@/lib/api-errors";
 
 const MAX_DESCRIPTION = 20_000;
 
-/** Repository GitHub: dall'installazione dell'App Casello o con un token manuale (fase 3). */
+/** Repository GitHub: dall'installazione dell'App GitHub di Botcave o con un token manuale (fase 3). */
 type GithubMode = "installation" | "manual";
 
 /** Valore della combo: installazione e repo insieme (lo stesso repo può arrivare da più installazioni). */
@@ -41,7 +41,7 @@ function parseRepoValue(value: string): { installationId: number; fullName: stri
   return sep > 0 && Number.isSafeInteger(installationId) && fullName ? { installationId, fullName } : null;
 }
 
-/** Sorgenti che l'architetto analizza: codice (GitHub o zip), OpenAPI e descrizione funzionale. */
+/** Sorgenti che Lucius analizza: codice (GitHub o zip), OpenAPI e descrizione funzionale. */
 export function AppSourcesCard({ app }: { app: App }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -143,7 +143,7 @@ export function AppSourcesCard({ app }: { app: App }) {
     <Card>
       <CardHeader>
         <CardTitle>Sorgenti</CardTitle>
-        <CardDescription>Ciò che l'architetto legge per proporre tool, agenti e skill. Non scrive mai sul codice.</CardDescription>
+        <CardDescription>Ciò che Lucius legge per proporre tool, agenti e skill. Non scrive mai sul codice.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -185,7 +185,7 @@ export function AppSourcesCard({ app }: { app: App }) {
                 </p>
               ) : repoList.length === 0 && !pickedRepo ? (
                 <p className="text-sm text-muted-foreground">
-                  Nessun repository: installa l'App Casello dalla{" "}
+                  Nessun repository: installa l'App GitHub di Botcave dalla{" "}
                   <Link href="/account" className="underline">
                     pagina Account
                   </Link>

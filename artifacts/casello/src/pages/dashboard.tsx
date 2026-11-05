@@ -38,7 +38,7 @@ function StatCard({ label, value, hint, icon: Icon, loading }: StatCardProps) {
         <Icon className="size-4 text-muted-foreground" />
       </CardHeader>
       <CardContent>
-        {loading ? <Skeleton className="h-8 w-16" /> : <div className="text-2xl font-semibold">{value}</div>}
+        {loading ? <Skeleton className="h-8 w-16" /> : <div className="font-mono text-2xl font-medium tabular-nums">{value}</div>}
         {hint && !loading && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
       </CardContent>
     </Card>
@@ -103,7 +103,7 @@ function RecentRuns() {
                   <TableCell className="hidden max-w-xs truncate text-muted-foreground md:table-cell">
                     {run.input || "—"}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  <TableCell className="whitespace-nowrap text-right font-mono tabular-nums">
                     {formatDuration(run.durationMs)}
                   </TableCell>
                   <TableCell className="hidden whitespace-nowrap text-right text-muted-foreground sm:table-cell">
@@ -130,7 +130,7 @@ export default function Dashboard() {
   return (
     <div className="mx-auto max-w-screen-2xl space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
+        <h2 className="text-h2">Dashboard</h2>
         <p className="text-sm text-muted-foreground">Panoramica delle app, degli agenti e delle esecuzioni.</p>
       </div>
 

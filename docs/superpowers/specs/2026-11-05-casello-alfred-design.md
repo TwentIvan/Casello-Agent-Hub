@@ -57,12 +57,13 @@ Tabella `alfred_sessions`: `id`, `user_id` (FK utenti, cascade), `ai_model_id` (
   `{sessionId, token, model, voice, expiresAt}`.
 - **Token temporaneo** (`lib/alfred/gemini-token.ts`): `POST https://generativelanguage.googleapis.com/v1beta/auth_tokens`
   con `x-goog-api-key` dell'account, `uses: 1`, `expireTime` +30 min, `newSessionExpireTime` +1 min,
-  `liveConnectConstraints` con `model` e **tutta la configurazione** della sessione: `responseModalities: ["AUDIO"]`,
-  voce, istruzioni di sistema (§5), dichiarazioni degli strumenti (§4), trascrizione di ingresso e uscita,
-  `sessionResumption: {}`, `contextWindowCompression` a scorrimento. I campi della configurazione sono bloccati (campo
-  `lockAdditionalFields` dell'API come da documentazione): il browser non può cambiare modello, istruzioni né strumenti.
-  Il primo task del piano verifica il blocco contro Gemini vero (una sessione che prova a cambiare le istruzioni deve
-  essere rifiutata o ignorata) e, se il blocco non regge, la spec si aggiorna prima di proseguire. 15 s, nessun redirect;
+  `bidiGenerateContentSetup` (forma REST del setup Live, campi camelCase) con `model` `models/<nome>` e **tutta la
+  configurazione** della sessione: `generationConfig` (`responseModalities: ["AUDIO"]`, `speechConfig` con la voce),
+  `systemInstruction` (§5), `tools` (§4), `inputAudioTranscription`, `outputAudioTranscription`,
+  `sessionResumption: {}`, `contextWindowCompression` a scorrimento; **senza** `fieldMask`. Verificato contro Gemini vero
+  (2026-11-05): con il setup nel token il browser manda solo `{setup: {model}}`, e istruzioni o strumenti diversi
+  mandati dal browser vengono ignorati (resta valida solo la configurazione del token); `liveConnectConstraints` e
+  `lockAdditionalFields` sono i nomi dell'SDK, non dell'API REST (400). 15 s, nessun redirect;
   errore → 502 «Gemini non raggiungibile» o «chiave Gemini rifiutata: controlla l'account in Account».
 - `POST /api/alfred/sessions/:id/renew`: stessa sessione `active` dell'utente, ricontrolla modello e tetti, nuovo token
   (per la scadenza dei 30 minuti o una riconnessione fallita). Sessione chiusa o altrui → 404 «sessione non trovata».

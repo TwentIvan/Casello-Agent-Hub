@@ -45,13 +45,21 @@ import { PlanApprovalCards } from "@/components/teams/plan-approval-card";
 import { PlanCard } from "@/components/teams/plan-card";
 import { TEAM_POLL_MS, TeamActivity, type TeamWorkState, useTeamWork } from "@/components/teams/team-activity";
 import { TeamBudgetCard } from "@/components/teams/team-budget";
+import { TeamAttachments } from "@/components/teams/team-attachments";
 import { TeamBulletin } from "@/components/teams/team-bulletin";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
 
-function toSave(name: string, refTitle: string, roles: RoleDraft[], localSkills: LocalSkillDraft[]): TeamInstanceSave {
+function toSave(
+  name: string,
+  refTitle: string,
+  roles: RoleDraft[],
+  localSkills: LocalSkillDraft[],
+  nodeWorkspace: string,
+): TeamInstanceSave {
   return {
+    nodeWorkspace: nodeWorkspace.trim() === "" ? null : nodeWorkspace.trim(),
     name: name.trim(),
     refTitle: refTitle.trim(),
     roles: withKeys(roles).map(toInstanceRole),
@@ -127,6 +135,7 @@ function TeamEditor({ team, session }: { team: TeamInstance; session: TeamSessio
   const { toast } = useToast();
   const [name, setName] = useState(team.name);
   const [refTitle, setRefTitle] = useState(team.ref.title);
+  const [nodeWorkspace, setNodeWorkspace] = useState(team.nodeWorkspace ?? "");
   const [roles, setRoles] = useState<RoleDraft[]>(() => team.roles.map(draftFromView));
   const [localSkills, setLocalSkills] = useState<LocalSkillDraft[]>(() => team.localSkills.map(localSkillDraft));
   const [confirm, setConfirm] = useState<Confirm>(null);
@@ -136,11 +145,11 @@ function TeamEditor({ team, session }: { team: TeamInstance; session: TeamSessio
   const savedJson = useMemo(
     () =>
       JSON.stringify(
-        toSave(team.name, team.ref.title, team.roles.map(draftFromView), team.localSkills.map(localSkillDraft)),
+        toSave(team.name, team.ref.title, team.roles.map(draftFromView), team.localSkills.map(localSkillDraft), team.nodeWorkspace ?? ""),
       ),
     [team],
   );
-  const current = toSave(name, refTitle, roles, localSkills);
+  const current = toSave(name, refTitle, roles, localSkills, nodeWorkspace);
   const dirty = savedJson !== JSON.stringify(current);
 
   const onUpdated = (saved: TeamInstance) => {
@@ -285,6 +294,31 @@ function TeamEditor({ team, session }: { team: TeamInstance; session: TeamSessio
           </div>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Spazio di lavoro sul nodo</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1.5">
+          <Label htmlFor="team-node-workspace">Cartella</Label>
+          <Input
+            id="team-node-workspace"
+            value={nodeWorkspace}
+            onChange={(e) => setNodeWorkspace(e.target.value)}
+            maxLength={300}
+            placeholder="es. SAP/AIMAG/WI_1174"
+            className="font-mono text-sm"
+            disabled={closed}
+          />
+          <p className="text-xs text-muted-foreground">
+            Percorso relativo alla cartella radice scelta quando hai installato il nodo (solo lettere, cifre, <span className="font-mono">. _ -</span> e{" "}
+            <span className="font-mono">/</span>, senza <span className="font-mono">..</span>). Serve ai compiti dei ruoli «nodo»: se è vuoto
+            risultano bloccati. Si salva con «Salva».
+          </p>
+        </CardContent>
+      </Card>
+
+      <TeamAttachments teamId={team.id} readOnly={closed} />
 
       <TeamWork team={team} dirty={dirty} session={session} />
 

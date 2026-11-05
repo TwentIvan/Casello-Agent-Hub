@@ -92,6 +92,16 @@ import type {
   ListUnreadTeamEventsParams,
   MarkTeamEventsRead200,
   McpSyncResult,
+  Node,
+  NodeCapabilities,
+  NodeCreate,
+  NodeCreated,
+  NodeHeartbeat,
+  NodeLease,
+  NodeLeaseRenewed,
+  NodeReport,
+  NodeTaskPackage,
+  NodeToken,
   NotFoundResponse,
   PayloadTooLargeResponse,
   PlanConversation,
@@ -114,6 +124,7 @@ import type {
   RunStep,
   RunTrigger,
   StartZipAnalysisParams,
+  TeamAttachment,
   TeamBudgetInput,
   TeamEvent,
   TeamEventsReadInput,
@@ -757,6 +768,737 @@ export const useRevokeApiToken = <TError = ErrorType<UnauthorizedResponse | NotF
       > => {
       return useMutation(getRevokeApiTokenMutationOptions(options));
     }
+
+export const getListNodesUrl = () => {
+
+
+
+
+  return `/api/account/nodes`
+}
+
+/**
+ * Nodi locali registrati, per nome, con le capacità dichiarate e se sono vivi (comunicato negli ultimi 2 minuti). Solo con il login: con un token risponde 403.
+ * @summary Elenca i nodi locali dell'utente
+ */
+export const listNodes = async ( options?: RequestInit): Promise<Node[]> => {
+
+  return customFetch<Node[]>(getListNodesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListNodesQueryKey = () => {
+    return [
+    `/api/account/nodes`
+    ] as const;
+    }
+
+
+export const getListNodesQueryOptions = <TData = Awaited<ReturnType<typeof listNodes>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNodes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNodesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNodes>>> = ({ signal }) => listNodes({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNodes>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListNodesQueryResult = NonNullable<Awaited<ReturnType<typeof listNodes>>>
+export type ListNodesQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+
+
+/**
+ * @summary Elenca i nodi locali dell'utente
+ */
+
+export function useListNodes<TData = Awaited<ReturnType<typeof listNodes>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNodes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListNodesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateNodeUrl = () => {
+
+
+
+
+  return `/api/account/nodes`
+}
+
+/**
+ * Crea il nodo e il suo token d'ambito `node`, che compare solo in questa risposta. Nome unico per utente (409 "nome già usato"). Solo con il login.
+ * @summary Registra un nodo locale
+ */
+export const createNode = async (nodeCreate: NodeCreate, options?: RequestInit): Promise<NodeCreated> => {
+
+  return customFetch<NodeCreated>(getCreateNodeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeCreate)
+  }
+);}
+
+
+
+
+export const getCreateNodeMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createNode>>, TError,{data: BodyType<NodeCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createNode>>, TError,{data: BodyType<NodeCreate>}, TContext> => {
+
+const mutationKey = ['createNode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createNode>>, {data: BodyType<NodeCreate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createNode(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateNodeMutationResult = NonNullable<Awaited<ReturnType<typeof createNode>>>
+    export type CreateNodeMutationBody = BodyType<NodeCreate>
+    export type CreateNodeMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>
+
+    /**
+ * @summary Registra un nodo locale
+ */
+export const useCreateNode = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createNode>>, TError,{data: BodyType<NodeCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createNode>>,
+        TError,
+        {data: BodyType<NodeCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateNodeMutationOptions(options));
+    }
+
+export const getDeleteNodeUrl = (id: number,) => {
+
+
+
+
+  return `/api/account/nodes/${id}`
+}
+
+/**
+ * 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Elimina un nodo locale e i suoi token
+ */
+export const deleteNode = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteNodeUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteNodeMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteNode>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteNode>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteNode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteNode>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteNode(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteNodeMutationResult = NonNullable<Awaited<ReturnType<typeof deleteNode>>>
+
+    export type DeleteNodeMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Elimina un nodo locale e i suoi token
+ */
+export const useDeleteNode = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteNode>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteNode>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteNodeMutationOptions(options));
+    }
+
+export const getDisableNodeUrl = (id: number,) => {
+
+
+
+
+  return `/api/account/nodes/${id}/disable`
+}
+
+/**
+ * Il token del nodo smette di valere sul protocollo. 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Disattiva un nodo locale
+ */
+export const disableNode = async (id: number, options?: RequestInit): Promise<Node> => {
+
+  return customFetch<Node>(getDisableNodeUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getDisableNodeMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disableNode>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof disableNode>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['disableNode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disableNode>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  disableNode(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DisableNodeMutationResult = NonNullable<Awaited<ReturnType<typeof disableNode>>>
+
+    export type DisableNodeMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Disattiva un nodo locale
+ */
+export const useDisableNode = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disableNode>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof disableNode>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDisableNodeMutationOptions(options));
+    }
+
+export const getRegenerateNodeTokenUrl = (id: number,) => {
+
+
+
+
+  return `/api/account/nodes/${id}/token`
+}
+
+/**
+ * Revoca i token precedenti del nodo e ne crea uno nuovo, mostrato solo in questa risposta. 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Rigenera il token di un nodo locale
+ */
+export const regenerateNodeToken = async (id: number, options?: RequestInit): Promise<NodeToken> => {
+
+  return customFetch<NodeToken>(getRegenerateNodeTokenUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRegenerateNodeTokenMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateNodeToken>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof regenerateNodeToken>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['regenerateNodeToken'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof regenerateNodeToken>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  regenerateNodeToken(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegenerateNodeTokenMutationResult = NonNullable<Awaited<ReturnType<typeof regenerateNodeToken>>>
+
+    export type RegenerateNodeTokenMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Rigenera il token di un nodo locale
+ */
+export const useRegenerateNodeToken = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateNodeToken>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof regenerateNodeToken>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRegenerateNodeTokenMutationOptions(options));
+    }
+
+export const getNodeHeartbeatUrl = () => {
+
+
+
+
+  return `/api/node/heartbeat`
+}
+
+/**
+ * Protocollo dei nodi: solo con il token d'ambito `node` di un nodo attivo (sessione e token personali: 403). Aggiorna le capacità dichiarate e `last_seen_at`; risponde con il numero di compiti che il nodo potrebbe prendere. 6 al minuto per nodo.
+ * @summary Heartbeat del nodo locale
+ */
+export const nodeHeartbeat = async (nodeCapabilities: NodeCapabilities, options?: RequestInit): Promise<NodeHeartbeat> => {
+
+  return customFetch<NodeHeartbeat>(getNodeHeartbeatUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeCapabilities)
+  }
+);}
+
+
+
+
+export const getNodeHeartbeatMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeHeartbeat>>, TError,{data: BodyType<NodeCapabilities>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof nodeHeartbeat>>, TError,{data: BodyType<NodeCapabilities>}, TContext> => {
+
+const mutationKey = ['nodeHeartbeat'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodeHeartbeat>>, {data: BodyType<NodeCapabilities>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  nodeHeartbeat(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type NodeHeartbeatMutationResult = NonNullable<Awaited<ReturnType<typeof nodeHeartbeat>>>
+    export type NodeHeartbeatMutationBody = BodyType<NodeCapabilities>
+    export type NodeHeartbeatMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Heartbeat del nodo locale
+ */
+export const useNodeHeartbeat = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeHeartbeat>>, TError,{data: BodyType<NodeCapabilities>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof nodeHeartbeat>>,
+        TError,
+        {data: BodyType<NodeCapabilities>},
+        TContext
+      > => {
+      return useMutation(getNodeHeartbeatMutationOptions(options));
+    }
+
+export const getNodeClaimUrl = () => {
+
+
+
+
+  return `/api/node/claim`
+}
+
+/**
+ * Il compito `waiting_node` più vecchio di una squadra attiva dell'utente del nodo, il cui ruolo ha tutte le skill `node` dichiarate dal nodo, nel rispetto di `maxConcurrent`; lo porta a `running` con una lease di 15 minuti. 204 se non c'è niente da prendere. 6 al minuto per nodo.
+ * @summary Prende in carico un compito in attesa
+ */
+export const nodeClaim = async ( options?: RequestInit): Promise<NodeTaskPackage | void> => {
+
+  return customFetch<NodeTaskPackage | void>(getNodeClaimUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getNodeClaimMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeClaim>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof nodeClaim>>, TError,void, TContext> => {
+
+const mutationKey = ['nodeClaim'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodeClaim>>, void> = () => {
+
+
+          return  nodeClaim(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type NodeClaimMutationResult = NonNullable<Awaited<ReturnType<typeof nodeClaim>>>
+
+    export type NodeClaimMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Prende in carico un compito in attesa
+ */
+export const useNodeClaim = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeClaim>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof nodeClaim>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getNodeClaimMutationOptions(options));
+    }
+
+export const getNodePingUrl = (id: number,) => {
+
+
+
+
+  return `/api/node/tasks/${id}/ping`
+}
+
+/**
+ * Rinnova di 15 minuti la lease del compito preso dal nodo. Lease non valida o scaduta → 409. 4 al minuto per compito.
+ * @summary Rinnova la lease di un compito
+ */
+export const nodePing = async (id: number,
+    nodeLease: NodeLease, options?: RequestInit): Promise<NodeLeaseRenewed> => {
+
+  return customFetch<NodeLeaseRenewed>(getNodePingUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeLease)
+  }
+);}
+
+
+
+
+export const getNodePingMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodePing>>, TError,{id: number;data: BodyType<NodeLease>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof nodePing>>, TError,{id: number;data: BodyType<NodeLease>}, TContext> => {
+
+const mutationKey = ['nodePing'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodePing>>, {id: number;data: BodyType<NodeLease>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  nodePing(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type NodePingMutationResult = NonNullable<Awaited<ReturnType<typeof nodePing>>>
+    export type NodePingMutationBody = BodyType<NodeLease>
+    export type NodePingMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Rinnova la lease di un compito
+ */
+export const useNodePing = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodePing>>, TError,{id: number;data: BodyType<NodeLease>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof nodePing>>,
+        TError,
+        {id: number;data: BodyType<NodeLease>},
+        TContext
+      > => {
+      return useMutation(getNodePingMutationOptions(options));
+    }
+
+export const getNodeReportUrl = (id: number,) => {
+
+
+
+
+  return `/api/node/tasks/${id}/report`
+}
+
+/**
+ * Chiude il compito come i compiti cloud: stato ed esito nel PLAN, evento, turno del capo. Il costo riferito conta solo nel tetto della squadra. Lease non valida o scaduta → 409 e nulla salvato.
+ * @summary Riferisce l'esito di un compito
+ */
+export const nodeReport = async (id: number,
+    nodeReport: NodeReport, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getNodeReportUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeReport)
+  }
+);}
+
+
+
+
+export const getNodeReportMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeReport>>, TError,{id: number;data: BodyType<NodeReport>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof nodeReport>>, TError,{id: number;data: BodyType<NodeReport>}, TContext> => {
+
+const mutationKey = ['nodeReport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodeReport>>, {id: number;data: BodyType<NodeReport>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  nodeReport(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type NodeReportMutationResult = NonNullable<Awaited<ReturnType<typeof nodeReport>>>
+    export type NodeReportMutationBody = BodyType<NodeReport>
+    export type NodeReportMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>
+
+    /**
+ * @summary Riferisce l'esito di un compito
+ */
+export const useNodeReport = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeReport>>, TError,{id: number;data: BodyType<NodeReport>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof nodeReport>>,
+        TError,
+        {id: number;data: BodyType<NodeReport>},
+        TContext
+      > => {
+      return useMutation(getNodeReportMutationOptions(options));
+    }
+
+export const getNodeGetAttachmentUrl = (id: number,
+    attachmentId: number,) => {
+
+
+
+
+  return `/api/node/tasks/${id}/attachments/${attachmentId}`
+}
+
+/**
+ * Contenuto di un allegato citato dal compito preso dal nodo, con l'header `X-Lease-Token`. Lease non valida o scaduta → 409; allegato non citato dal compito o di un'altra squadra → 404. Un allegato eliminato dopo l'assegnazione si scarica comunque.
+ * @summary Scarica un allegato citato dal compito
+ */
+export const nodeGetAttachment = async (id: number,
+    attachmentId: number, options?: RequestInit): Promise<Blob> => {
+
+  return customFetch<Blob>(getNodeGetAttachmentUrl(id,attachmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getNodeGetAttachmentQueryKey = (id: number,
+    attachmentId: number,) => {
+    return [
+    `/api/node/tasks/${id}/attachments/${attachmentId}`
+    ] as const;
+    }
+
+
+export const getNodeGetAttachmentQueryOptions = <TData = Awaited<ReturnType<typeof nodeGetAttachment>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse>>(id: number,
+    attachmentId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof nodeGetAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getNodeGetAttachmentQueryKey(id,attachmentId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof nodeGetAttachment>>> = ({ signal }) => nodeGetAttachment(id,attachmentId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && attachmentId !== null && attachmentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof nodeGetAttachment>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type NodeGetAttachmentQueryResult = NonNullable<Awaited<ReturnType<typeof nodeGetAttachment>>>
+export type NodeGetAttachmentQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse>
+
+
+/**
+ * @summary Scarica un allegato citato dal compito
+ */
+
+export function useNodeGetAttachment<TData = Awaited<ReturnType<typeof nodeGetAttachment>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse>>(
+ id: number,
+    attachmentId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof nodeGetAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getNodeGetAttachmentQueryOptions(id,attachmentId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetDefaultModelUrl = () => {
 
@@ -5113,6 +5855,311 @@ export const useSaveTeamInstance = <TError = ErrorType<BadRequestResponse | NotF
         TContext
       > => {
       return useMutation(getSaveTeamInstanceMutationOptions(options));
+    }
+
+export const getListTeamAttachmentsUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/attachments`
+}
+
+/**
+ * @summary Allegati della squadra (non eliminati)
+ */
+export const listTeamAttachments = async (id: number, options?: RequestInit): Promise<TeamAttachment[]> => {
+
+  return customFetch<TeamAttachment[]>(getListTeamAttachmentsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTeamAttachmentsQueryKey = (id: number,) => {
+    return [
+    `/api/team-instances/${id}/attachments`
+    ] as const;
+    }
+
+
+export const getListTeamAttachmentsQueryOptions = <TData = Awaited<ReturnType<typeof listTeamAttachments>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamAttachments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTeamAttachmentsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTeamAttachments>>> = ({ signal }) => listTeamAttachments(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTeamAttachments>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTeamAttachmentsQueryResult = NonNullable<Awaited<ReturnType<typeof listTeamAttachments>>>
+export type ListTeamAttachmentsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Allegati della squadra (non eliminati)
+ */
+
+export function useListTeamAttachments<TData = Awaited<ReturnType<typeof listTeamAttachments>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamAttachments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTeamAttachmentsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUploadTeamAttachmentUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/attachments`
+}
+
+/**
+ * Il corpo è il file grezzo (al massimo 10 MB; 50 MB di allegati non eliminati per squadra), il nome nell'header `X-Attachment-Name` (anche codificato con encodeURIComponent; senza `/`, `\`, `..`, max 200 caratteri) e il tipo nel `Content-Type`. Squadra chiusa → 409; nome già usato da un allegato non eliminato della squadra (senza distinguere le maiuscole) → 409 «nome già usato».
+ * @summary Carica un allegato della squadra
+ */
+export const uploadTeamAttachment = async (id: number,
+    uploadTeamAttachmentBody: Blob, options?: RequestInit): Promise<TeamAttachment> => {
+
+  return customFetch<TeamAttachment>(getUploadTeamAttachmentUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', ...options?.headers },
+    body: uploadTeamAttachmentBody
+  }
+);}
+
+
+
+
+export const getUploadTeamAttachmentMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | PayloadTooLargeResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadTeamAttachment>>, TError,{id: number;data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof uploadTeamAttachment>>, TError,{id: number;data: BodyType<Blob>}, TContext> => {
+
+const mutationKey = ['uploadTeamAttachment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadTeamAttachment>>, {id: number;data: BodyType<Blob>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  uploadTeamAttachment(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadTeamAttachmentMutationResult = NonNullable<Awaited<ReturnType<typeof uploadTeamAttachment>>>
+    export type UploadTeamAttachmentMutationBody = BodyType<Blob>
+    export type UploadTeamAttachmentMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | PayloadTooLargeResponse>
+
+    /**
+ * @summary Carica un allegato della squadra
+ */
+export const useUploadTeamAttachment = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | PayloadTooLargeResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadTeamAttachment>>, TError,{id: number;data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof uploadTeamAttachment>>,
+        TError,
+        {id: number;data: BodyType<Blob>},
+        TContext
+      > => {
+      return useMutation(getUploadTeamAttachmentMutationOptions(options));
+    }
+
+export const getGetTeamAttachmentUrl = (id: number,
+    attachmentId: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/attachments/${attachmentId}`
+}
+
+/**
+ * Risponde con `Content-Disposition: attachment` e `X-Content-Type-Options: nosniff`.
+ * @summary Scarica un allegato della squadra
+ */
+export const getTeamAttachment = async (id: number,
+    attachmentId: number, options?: RequestInit): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetTeamAttachmentUrl(id,attachmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamAttachmentQueryKey = (id: number,
+    attachmentId: number,) => {
+    return [
+    `/api/team-instances/${id}/attachments/${attachmentId}`
+    ] as const;
+    }
+
+
+export const getGetTeamAttachmentQueryOptions = <TData = Awaited<ReturnType<typeof getTeamAttachment>>, TError = ErrorType<NotFoundResponse>>(id: number,
+    attachmentId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamAttachmentQueryKey(id,attachmentId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamAttachment>>> = ({ signal }) => getTeamAttachment(id,attachmentId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && attachmentId !== null && attachmentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamAttachment>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamAttachmentQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamAttachment>>>
+export type GetTeamAttachmentQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Scarica un allegato della squadra
+ */
+
+export function useGetTeamAttachment<TData = Awaited<ReturnType<typeof getTeamAttachment>>, TError = ErrorType<NotFoundResponse>>(
+ id: number,
+    attachmentId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamAttachmentQueryOptions(id,attachmentId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDeleteTeamAttachmentUrl = (id: number,
+    attachmentId: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/attachments/${attachmentId}`
+}
+
+/**
+ * Lo toglie dall'elenco e dal limite di spazio; i compiti del nodo che lo citano già lo scaricano comunque.
+ * @summary Elimina un allegato della squadra
+ */
+export const deleteTeamAttachment = async (id: number,
+    attachmentId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteTeamAttachmentUrl(id,attachmentId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteTeamAttachmentMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTeamAttachment>>, TError,{id: number;attachmentId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteTeamAttachment>>, TError,{id: number;attachmentId: number}, TContext> => {
+
+const mutationKey = ['deleteTeamAttachment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTeamAttachment>>, {id: number;attachmentId: number}> = (props) => {
+          const {id,attachmentId} = props ?? {};
+
+          return  deleteTeamAttachment(id,attachmentId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteTeamAttachmentMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTeamAttachment>>>
+
+    export type DeleteTeamAttachmentMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Elimina un allegato della squadra
+ */
+export const useDeleteTeamAttachment = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTeamAttachment>>, TError,{id: number;attachmentId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteTeamAttachment>>,
+        TError,
+        {id: number;attachmentId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteTeamAttachmentMutationOptions(options));
     }
 
 export const getCloseTeamInstanceUrl = (id: number,) => {

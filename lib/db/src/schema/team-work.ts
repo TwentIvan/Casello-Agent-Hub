@@ -2,6 +2,7 @@ import { pgTable, serial, integer, text, timestamp, boolean, jsonb, pgEnum, nume
 import { sql } from "drizzle-orm";
 import { teamInstancesTable } from "./team-instances";
 import { aiModelsTable } from "./ai-models";
+import { nodesTable } from "./nodes";
 
 export const teamTaskStatusEnum = pgEnum("team_task_status", [
   "queued",
@@ -55,8 +56,19 @@ export const teamTasksTable = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
     startedAt: timestamp("started_at"),
     finishedAt: timestamp("finished_at"),
+    // Nodo locale: nodo assegnato e lease, sessione, attesa di un nodo, avviso «nessun nodo» già dato, allegati citati
+    nodeId: integer("node_id").references(() => nodesTable.id, { onDelete: "set null" }),
+    leaseToken: text("lease_token"),
+    leaseExpiresAt: timestamp("lease_expires_at"),
+    sessionId: text("session_id"),
+    waitingSince: timestamp("waiting_since"),
+    noNodeNotified: boolean("no_node_notified").notNull().default(false),
+    attachmentIds: jsonb("attachment_ids").$type<number[]>().notNull().default([]),
   },
-  (table) => [index("team_tasks_instance_status_idx").on(table.instanceId, table.status)],
+  (table) => [
+    index("team_tasks_instance_status_idx").on(table.instanceId, table.status),
+    index("team_tasks_node_status_idx").on(table.nodeId, table.status),
+  ],
 );
 
 // Passi di un compito: stessa forma di `run_steps`

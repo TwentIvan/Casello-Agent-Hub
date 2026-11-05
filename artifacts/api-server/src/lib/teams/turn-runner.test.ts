@@ -18,6 +18,7 @@ import { encryptSecret } from "../secrets";
 import { approveAction, rejectAction } from "../actions/decide";
 import { enqueuePlanItem } from "../actions/queue";
 import { allowTestLoopback, startFakeProvider, type FakeChatReply, type FakeProvider } from "../../../test/fake-provider";
+import { deleteAttachment, saveAttachment } from "./attachments";
 import { listEvents } from "./events";
 import { BUDGET_RESUME_REQUEST, closeInstance, setInstanceBudget } from "./instances";
 import { LEAD_MESSAGES } from "./lead-tools";
@@ -243,6 +244,24 @@ describe("turni del capo", () => {
     const last = leadRequests().at(-1)!;
     expect(userMessages(last).some((m) => m.includes("Esito: WI analizzato: tre punti da chiudere"))).toBe(true);
     expect((await getPlan(id)).tasks[0]).toMatchObject({ status: "done", outcome: "WI analizzato: tre punti da chiudere" });
+  });
+
+  it("il contesto del capo elenca gli allegati non eliminati (id, nome, byte) senza contenuto, nel messaggio user del PLAN", async () => {
+    const id = await seedActiveApproved();
+    const keep = await saveAttachment(userId, id, { name: "specifica.txt", contentType: "text/plain", bytes: Buffer.from("SEGRETO-CONTENUTO") });
+    const gone = await saveAttachment(userId, id, { name: "vecchio.txt", contentType: "text/plain", bytes: Buffer.from("x") });
+    await deleteAttachment(id, gone.id);
+    leadScript.push(text("ok"));
+    await sendToLead(userId, id, "guarda gli allegati");
+    await settleAll();
+    const [system, planMessage] = leadRequests().at(-1)!.messages;
+    // I nomi li sceglie chi carica: mai nel prompt di sistema
+    expect(String(system!.content)).not.toContain("specifica.txt");
+    expect(planMessage!.role).toBe("user");
+    expect(String(planMessage!.content)).toContain("PLAN corrente");
+    expect(String(planMessage!.content)).toContain(`- ${keep.id} · specifica.txt · ${keep.sizeBytes}`);
+    expect(JSON.stringify(leadRequests().at(-1)!.messages)).not.toContain("vecchio.txt");
+    expect(JSON.stringify(leadRequests().at(-1)!.messages)).not.toContain("SEGRETO-CONTENUTO");
   });
 
   it("rifiuto con nota: il turno riceve la nota come messaggio utente separato, mai nel prompt di sistema", async () => {

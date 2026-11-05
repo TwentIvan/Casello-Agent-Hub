@@ -8,6 +8,8 @@ servers:
   - url: /api
     description: Base API path
 tags:
+  - name: nodes
+    description: Nodi locali registrati e protocollo del nodo
   - name: health
     description: Health operations
   - name: auth
@@ -177,6 +179,274 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /account/nodes:
+    get:
+      operationId: listNodes
+      tags: [nodes]
+      summary: Elenca i nodi locali dell'utente
+      description: >-
+        Nodi locali registrati, per nome, con le capacità dichiarate e se sono vivi (comunicato negli
+        ultimi 2 minuti). Solo con il login: con un token risponde 403.
+      responses:
+        "200":
+          description: Nodi dell'utente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Node"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createNode
+      tags: [nodes]
+      summary: Registra un nodo locale
+      description: >-
+        Crea il nodo e il suo token d'ambito `node`, che compare solo in questa risposta. Nome unico per
+        utente (409 "nome già usato"). Solo con il login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeCreate"
+      responses:
+        "201":
+          description: Nodo creato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /account/nodes/{id}:
+    delete:
+      operationId: deleteNode
+      tags: [nodes]
+      summary: Elimina un nodo locale e i suoi token
+      description: 404 se il nodo non è dell'utente. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Nodo eliminato
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /account/nodes/{id}/disable:
+    post:
+      operationId: disableNode
+      tags: [nodes]
+      summary: Disattiva un nodo locale
+      description: Il token del nodo smette di valere sul protocollo. 404 se il nodo non è dell'utente. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Nodo disattivato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /account/nodes/{id}/token:
+    post:
+      operationId: regenerateNodeToken
+      tags: [nodes]
+      summary: Rigenera il token di un nodo locale
+      description: >-
+        Revoca i token precedenti del nodo e ne crea uno nuovo, mostrato solo in questa risposta.
+        404 se il nodo non è dell'utente. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Nuovo token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeToken"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /node/heartbeat:
+    post:
+      operationId: nodeHeartbeat
+      tags: [nodes]
+      summary: Heartbeat del nodo locale
+      description: >-
+        Protocollo dei nodi: solo con il token d'ambito `node` di un nodo attivo (sessione e token
+        personali: 403). Aggiorna le capacità dichiarate e `last_seen_at`; risponde con il numero di compiti
+        che il nodo potrebbe prendere. 6 al minuto per nodo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeCapabilities"
+      responses:
+        "200":
+          description: Heartbeat registrato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeHeartbeat"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /node/claim:
+    post:
+      operationId: nodeClaim
+      tags: [nodes]
+      summary: Prende in carico un compito in attesa
+      description: >-
+        Il compito `waiting_node` più vecchio di una squadra attiva dell'utente del nodo, il cui ruolo ha tutte le
+        skill `node` dichiarate dal nodo, nel rispetto di `maxConcurrent`; lo porta a `running` con una lease di 15
+        minuti. 204 se non c'è niente da prendere. 6 al minuto per nodo.
+      responses:
+        "200":
+          description: Pacchetto del compito preso in carico
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeTaskPackage"
+        "204":
+          description: Nessun compito da prendere
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /node/tasks/{id}/ping:
+    post:
+      operationId: nodePing
+      tags: [nodes]
+      summary: Rinnova la lease di un compito
+      description: >-
+        Rinnova di 15 minuti la lease del compito preso dal nodo. Lease non valida o scaduta → 409. 4 al minuto per
+        compito.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeLease"
+      responses:
+        "200":
+          description: Lease rinnovata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeLeaseRenewed"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /node/tasks/{id}/report:
+    post:
+      operationId: nodeReport
+      tags: [nodes]
+      summary: Riferisce l'esito di un compito
+      description: >-
+        Chiude il compito come i compiti cloud: stato ed esito nel PLAN, evento, turno del capo. Il costo riferito
+        conta solo nel tetto della squadra. Lease non valida o scaduta → 409 e nulla salvato.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeReport"
+      responses:
+        "204":
+          description: Esito registrato
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /node/tasks/{id}/attachments/{attachmentId}:
+    get:
+      operationId: nodeGetAttachment
+      tags: [nodes]
+      summary: Scarica un allegato citato dal compito
+      description: >-
+        Contenuto di un allegato citato dal compito preso dal nodo, con l'header `X-Lease-Token`. Lease non valida o
+        scaduta → 409; allegato non citato dal compito o di un'altra squadra → 404. Un allegato eliminato dopo
+        l'assegnazione si scarica comunque.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/AttachmentIdParam"
+        - name: X-Lease-Token
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Contenuto dell'allegato
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /account/default-model:
     get:
@@ -1560,6 +1830,97 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /team-instances/{id}/attachments:
+    get:
+      operationId: listTeamAttachments
+      tags: [teams]
+      summary: Allegati della squadra (non eliminati)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Allegati, dal più vecchio (senza contenuto)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamAttachment"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: uploadTeamAttachment
+      tags: [teams]
+      summary: Carica un allegato della squadra
+      description: >-
+        Il corpo è il file grezzo (al massimo 10 MB; 50 MB di allegati non eliminati per squadra), il nome nell'header
+        `X-Attachment-Name` (anche codificato con encodeURIComponent; senza `/`, `\`, `..`, max 200 caratteri) e il
+        tipo nel `Content-Type`. Squadra chiusa → 409; nome già usato da un allegato non eliminato della squadra (senza
+        distinguere le maiuscole) → 409 «nome già usato».
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: X-Attachment-Name
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: Allegato salvato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamAttachment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+
+  /team-instances/{id}/attachments/{attachmentId}:
+    get:
+      operationId: getTeamAttachment
+      tags: [teams]
+      summary: Scarica un allegato della squadra
+      description: >-
+        Risponde con `Content-Disposition: attachment` e `X-Content-Type-Options: nosniff`.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/AttachmentIdParam"
+      responses:
+        "200":
+          description: Contenuto dell'allegato
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteTeamAttachment
+      tags: [teams]
+      summary: Elimina un allegato della squadra
+      description: Lo toglie dall'elenco e dal limite di spazio; i compiti del nodo che lo citano già lo scaricano comunque.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/AttachmentIdParam"
+      responses:
+        "204":
+          description: Allegato eliminato
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /team-instances/{id}/close:
     post:
       operationId: closeTeamInstance
@@ -2867,6 +3228,13 @@ components:
   parameters:
     IdParam:
       name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+
+    AttachmentIdParam:
+      name: attachmentId
       in: path
       required: true
       schema:
@@ -4560,6 +4928,282 @@ components:
           type: boolean
           description: Solo custom e provider non gestiti
 
+    Node:
+      type: object
+      required: [id, name, status, executor, version, skills, workspaceRoot, maxConcurrent, lastSeenAt, online]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        executor:
+          type: ["string", "null"]
+        version:
+          type: ["string", "null"]
+        skills:
+          type: array
+          items:
+            type: string
+        workspaceRoot:
+          type: ["string", "null"]
+        maxConcurrent:
+          type: integer
+        lastSeenAt:
+          type: ["string", "null"]
+          format: date-time
+        online:
+          type: boolean
+          description: Ha comunicato negli ultimi 2 minuti
+
+    NodeCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+
+    NodeCreated:
+      type: object
+      required: [node, token]
+      properties:
+        node:
+          $ref: "#/components/schemas/Node"
+        token:
+          type: string
+          description: Valore del token del nodo, mostrato una sola volta
+
+    NodeToken:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: Valore del token, mostrato una sola volta
+
+    NodeHeartbeat:
+      type: object
+      required: [pending]
+      properties:
+        pending:
+          type: integer
+          description: Compiti in attesa che il nodo potrebbe prendere
+
+    NodeCapabilities:
+      type: object
+      required: [version, executor, skills, workspaceRoot, maxConcurrent]
+      properties:
+        version:
+          type: string
+          minLength: 1
+          maxLength: 100
+        executor:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Esecutore dichiarato (es. claude-code)
+        skills:
+          type: array
+          maxItems: 500
+          items:
+            type: string
+            minLength: 1
+            maxLength: 100
+          description: Nomi delle skill disponibili sul nodo
+        workspaceRoot:
+          type: string
+          maxLength: 300
+          description: Radice degli spazi di lavoro (testo descrittivo)
+        maxConcurrent:
+          type: integer
+          minimum: 1
+          maximum: 3
+
+    NodeLease:
+      type: object
+      required: [leaseToken]
+      properties:
+        leaseToken:
+          type: string
+          minLength: 1
+          maxLength: 200
+
+    NodeLeaseRenewed:
+      type: object
+      required: [leaseExpiresAt]
+      properties:
+        leaseExpiresAt:
+          type: string
+          format: date-time
+
+    NodeReport:
+      type: object
+      required: [leaseToken, status, outcome]
+      properties:
+        leaseToken:
+          type: string
+          minLength: 1
+          maxLength: 200
+        status:
+          type: string
+          enum: [done, blocked, failed]
+        outcome:
+          type: string
+          minLength: 1
+          maxLength: 300
+        detail:
+          type: string
+          maxLength: 20000
+        costUsd:
+          type: number
+          minimum: 0
+          maximum: 100000
+        promptTokens:
+          type: integer
+          minimum: 0
+          maximum: 2000000000
+        completionTokens:
+          type: integer
+          minimum: 0
+          maximum: 2000000000
+        sessionId:
+          type: string
+          minLength: 1
+          maxLength: 200
+
+    NodeTaskPackage:
+      type: object
+      required: [taskId, leaseToken, leaseExpiresAt, team, workspace, role, task, plan, caselloSkills, nodeSkills, attachments]
+      properties:
+        taskId:
+          type: integer
+        leaseToken:
+          type: string
+        leaseExpiresAt:
+          type: string
+          format: date-time
+        team:
+          type: object
+          required: [id, name, refType, refId, refTitle]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            refType:
+              type: string
+            refId:
+              type: string
+            refTitle:
+              type: string
+        workspace:
+          type: ["string", "null"]
+          description: Spazio di lavoro della squadra, relativo alla radice del nodo (null se non impostato)
+        role:
+          type: object
+          required: [key, name, task, preferredModel]
+          properties:
+            key:
+              type: string
+            name:
+              type: string
+            task:
+              type: string
+            preferredModel:
+              type: ["string", "null"]
+              description: Modello preferito, solo indicativo
+        task:
+          type: object
+          required: [planTaskId, title, instructions]
+          properties:
+            planTaskId:
+              type: string
+            title:
+              type: string
+            instructions:
+              type: string
+        plan:
+          type: object
+          required: [objective, constraints, openPoints, tasks, manualActions]
+          properties:
+            objective:
+              type: string
+            constraints:
+              type: array
+              items:
+                type: string
+            openPoints:
+              type: array
+              items:
+                type: string
+            tasks:
+              type: array
+              items:
+                type: object
+                required: [id, title, roleKey, status, outcome]
+                properties:
+                  id:
+                    type: string
+                  title:
+                    type: string
+                  roleKey:
+                    type: string
+                  status:
+                    type: string
+                    enum: [planned, running, waiting_node, done, blocked, failed]
+                  outcome:
+                    type: ["string", "null"]
+            manualActions:
+              type: array
+              items:
+                type: object
+                required: [id, text, done]
+                properties:
+                  id:
+                    type: string
+                  text:
+                    type: string
+                  done:
+                    type: boolean
+        caselloSkills:
+          type: array
+          items:
+            type: object
+            required: [code, version, content]
+            properties:
+              code:
+                type: string
+              version:
+                type: ["integer", "null"]
+                description: Versione fissata del catalogo; null per le skill specializzate
+              content:
+                type: string
+        nodeSkills:
+          type: array
+          items:
+            type: string
+          description: Nomi delle skill del nodo richieste dal ruolo
+        attachments:
+          type: array
+          items:
+            type: object
+            required: [id, name, contentType, sizeBytes, sha256]
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              contentType:
+                type: string
+              sizeBytes:
+                type: integer
+              sha256:
+                type: string
+
     ApiTokenInfo:
       type: object
       required: [id, name, createdAt, expiresAt, lastUsedAt, revokedAt, scopes]
@@ -5437,6 +6081,31 @@ components:
           description: >-
             Facoltativo e solo uguale allo stato attuale: si attiva con `POST /team-instances/{id}/activate` e una
             squadra attiva non torna in bozza.
+        nodeWorkspace:
+          type: string
+          nullable: true
+          maxLength: 300
+          description: >-
+            Spazio di lavoro sul nodo: percorso relativo, solo lettere, cifre, `._ -` e `/`, senza `/` iniziale né
+            `..` (altrimenti 400 «spazio di lavoro non valido»). Omesso = invariato, null = tolto.
+
+    TeamAttachment:
+      type: object
+      required: [id, name, contentType, sizeBytes, sha256, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+        sha256:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
 
     TeamUpdateItem:
       type: object
@@ -5625,7 +6294,7 @@ components:
 
     TeamInstance:
       type: object
-      required: [id, name, status, template, ref, roles, localSkills, createdAt, updatedAt, closedAt, activatedBy, monthlyBudgetUsd, lastTurnAt]
+      required: [id, name, status, template, ref, roles, localSkills, createdAt, updatedAt, closedAt, activatedBy, monthlyBudgetUsd, lastTurnAt, nodeWorkspace]
       properties:
         id:
           type: integer
@@ -5704,6 +6373,10 @@ components:
           type: string
           format: date-time
           nullable: true
+        nodeWorkspace:
+          type: string
+          nullable: true
+          description: Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)
 
     TeamMessageInput:
       type: object
@@ -5771,7 +6444,7 @@ components:
 
     TeamTask:
       type: object
-      required: [id, instanceId, planTaskId, roleKey, instructions, status, outcome, detail, error, aiModelId, promptTokens, completionTokens, cachedTokens, costUsd, createdAt, startedAt, finishedAt]
+      required: [id, instanceId, planTaskId, roleKey, instructions, status, outcome, detail, error, aiModelId, promptTokens, completionTokens, cachedTokens, costUsd, createdAt, startedAt, finishedAt, nodeId, nodeName, leaseExpiresAt, sessionId]
       properties:
         id:
           type: integer
@@ -5811,6 +6484,19 @@ components:
         finishedAt:
           type: ["string", "null"]
           format: date-time
+        nodeId:
+          type: ["integer", "null"]
+          description: Nodo locale a cui è assegnato il compito (solo ruoli `node`)
+        nodeName:
+          type: ["string", "null"]
+          description: Nome del nodo (null se il compito non ha nodo o il nodo è stato eliminato)
+        leaseExpiresAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Scadenza della lease del nodo (il token della lease non si espone mai)
+        sessionId:
+          type: ["string", "null"]
+          description: Id della sessione di Claude Code sul nodo
         steps:
           type: array
           description: Passi dell'esecuzione (solo nel dettaglio)

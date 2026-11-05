@@ -1,0 +1,25 @@
+{
+  "name": "@workspace/casello-nodo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "casello-nodo": "./dist/index.mjs"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node24 --format=esm --banner:js=\"#!/usr/bin/env node\" --outfile=dist/index.mjs",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@workspace/api-zod": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "esbuild": "0.27.3",
+    "tsx": "catalog:",
+    "vitest": "^5.0.5"
+  }
+}

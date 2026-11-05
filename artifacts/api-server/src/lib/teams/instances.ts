@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import {
   db,
   appsTable,
@@ -12,6 +12,7 @@ import {
   type TeamInstanceRow,
 } from "@workspace/db";
 import { isExhausted } from "../budget";
+import { validateNodeWorkspace } from "./attachments";
 import { patchPlan } from "./plan";
 import { InstanceRoleSchema, type InstanceRole, type TemplateRole } from "./manifest";
 import { TEAM_MESSAGES, TeamRuleError, validateRoles } from "./rules";
@@ -65,6 +66,7 @@ export type InstanceView = {
   activatedBy: number | null;
   monthlyBudgetUsd: number | null;
   lastTurnAt: Date | null;
+  nodeWorkspace: string | null;
 };
 
 export type CreateInstanceInput = {
@@ -80,6 +82,8 @@ export type SaveInstanceInput = {
   roles: InstanceRole[];
   localSkills: LocalSkillInput[];
   status?: "draft" | "active";
+  /** Spazio di lavoro sul nodo (relativo alla radice del nodo): omesso = invariato, null = tolto */
+  nodeWorkspace?: string | null;
 };
 
 export type InstanceFilter = { status?: "draft" | "active" | "closed"; appId?: number; refType?: string; refId?: string };
@@ -111,6 +115,7 @@ async function toView(row: TeamInstanceRow): Promise<InstanceView> {
     activatedBy: row.activatedBy,
     monthlyBudgetUsd: row.monthlyBudgetUsd === null ? null : Number(row.monthlyBudgetUsd),
     lastTurnAt: row.lastTurnAt,
+    nodeWorkspace: row.nodeWorkspace,
   };
 }
 
@@ -211,6 +216,10 @@ export async function saveInstance(userId: number, id: number, input: SaveInstan
   if (current.status === "closed") throw new InstanceError(409, INSTANCE_MESSAGES.closed);
   checkStatusChange(current.status, input.status);
   const localSkillCodes = checkLocalSkills(input.localSkills);
+  if (input.nodeWorkspace !== undefined) {
+    const invalid = validateNodeWorkspace(input.nodeWorkspace);
+    if (invalid) throw new TeamRuleError(invalid);
+  }
   const previous = InstanceRoleSchema.array().parse(current.roles);
   await validateRoles({ roles: input.roles, mode: "instance", userId, previous, localSkillCodes });
 
@@ -238,6 +247,7 @@ export async function saveInstance(userId: number, id: number, input: SaveInstan
         name: input.name,
         refTitle: input.refTitle ?? locked.refTitle,
         roles: input.roles,
+        nodeWorkspace: input.nodeWorkspace === undefined ? locked.nodeWorkspace : input.nodeWorkspace,
         updatedAt: new Date(),
       })
       .where(eq(teamInstancesTable.id, id));
@@ -251,9 +261,11 @@ export const CLOSE_MESSAGES = {
 } as const;
 
 /**
- * Chiude la squadra: non si riapre e non si salva più. Nella stessa transazione i compiti `queued` diventano
- * `cancelled`, le voci `plan`/`plan_change` ancora in coda `rejected` («squadra chiusa») e i turni in coda `failed`.
- * Compiti e turni `running` finiscono da soli, ma non fanno partire altri turni (la squadra non è più attiva).
+ * Chiude la squadra: non si riapre e non si salva più. Nella stessa transazione i compiti `queued` e `waiting_node`
+ * (in attesa di un nodo) diventano `cancelled`, come quelli `running` presi da un nodo (lease tolta: il nodo smette di
+ * lavorarci), le voci `plan`/`plan_change` ancora in coda `rejected` («squadra chiusa») e i turni in coda `failed`.
+ * Nessun turno per i compiti annullati. Compiti cloud e turni `running` finiscono da soli, ma non fanno partire altri
+ * turni (la squadra non è più attiva).
  */
 export async function closeInstance(id: number): Promise<InstanceView> {
   await getRow(id);
@@ -268,7 +280,13 @@ export async function closeInstance(id: number): Promise<InstanceView> {
     const tasks = await tx
       .update(teamTasksTable)
       .set({ status: "cancelled", outcome: CLOSE_MESSAGES.taskCancelled, finishedAt: now })
-      .where(and(eq(teamTasksTable.instanceId, id), eq(teamTasksTable.status, "queued")))
+      .where(and(eq(teamTasksTable.instanceId, id), inArray(teamTasksTable.status, ["queued", "waiting_node"])))
+      .returning({ planTaskId: teamTasksTable.planTaskId });
+    // Compiti presi da un nodo: annullati e senza lease (ping e report del nodo → 409, che interrompe il lavoro)
+    const leased = await tx
+      .update(teamTasksTable)
+      .set({ status: "cancelled", outcome: CLOSE_MESSAGES.taskCancelled, finishedAt: now, leaseToken: null, leaseExpiresAt: null })
+      .where(and(eq(teamTasksTable.instanceId, id), eq(teamTasksTable.status, "running"), isNotNull(teamTasksTable.leaseToken)))
       .returning({ planTaskId: teamTasksTable.planTaskId });
     await tx
       .update(pendingActionsTable)
@@ -284,7 +302,7 @@ export async function closeInstance(id: number): Promise<InstanceView> {
       .update(teamTurnsTable)
       .set({ status: "failed", error: CLOSE_MESSAGES.teamClosed, finishedAt: now })
       .where(and(eq(teamTurnsTable.instanceId, id), eq(teamTurnsTable.status, "queued")));
-    return tasks.map((t) => t.planTaskId);
+    return [...tasks, ...leased].map((t) => t.planTaskId);
   });
   // Dopo il commit (la transazione non tocca la riga del PLAN): i compiti annullati non restano «in corso» nel PLAN
   if (cancelled.length > 0) {

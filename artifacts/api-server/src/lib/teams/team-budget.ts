@@ -25,8 +25,8 @@ export async function teamSpend(instanceId: number, since: Date = monthStart()):
   );
 }
 
-/** Motivo del blocco di un compito o turno: prima il tetto della squadra, poi quelli di chi paga il modello. */
-export async function teamBudgetBlock(instanceId: number, aiModelId: number | null): Promise<string | null> {
+/** Tetto della squadra raggiunto: il messaggio fisso, altrimenti null (vale anche per i compiti dei nodi). */
+export async function teamCapBlock(instanceId: number): Promise<string | null> {
   const [row] = await db
     .select({ cap: teamInstancesTable.monthlyBudgetUsd })
     .from(teamInstancesTable)
@@ -36,5 +36,10 @@ export async function teamBudgetBlock(instanceId: number, aiModelId: number | nu
     const { spentUsd } = await teamSpend(instanceId);
     if (isExhausted(spentUsd, Number(row.cap))) return TEAM_BUDGET_REACHED;
   }
-  return userBudgetBlock(aiModelId);
+  return null;
+}
+
+/** Motivo del blocco di un compito o turno: prima il tetto della squadra, poi quelli di chi paga il modello. */
+export async function teamBudgetBlock(instanceId: number, aiModelId: number | null): Promise<string | null> {
+  return (await teamCapBlock(instanceId)) ?? userBudgetBlock(aiModelId);
 }

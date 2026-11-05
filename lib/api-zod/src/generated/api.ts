@@ -121,6 +121,269 @@ export const RevokeApiTokenResponse = zod.void()
 
 
 /**
+ * Nodi locali registrati, per nome, con le capacità dichiarate e se sono vivi (comunicato negli ultimi 2 minuti). Solo con il login: con un token risponde 403.
+ * @summary Elenca i nodi locali dell'utente
+ */
+export const ListNodesResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'disabled']),
+  "executor": zod.string().nullable(),
+  "version": zod.string().nullable(),
+  "skills": zod.array(zod.string()),
+  "workspaceRoot": zod.string().nullable(),
+  "maxConcurrent": zod.number(),
+  "lastSeenAt": zod.coerce.date().nullable(),
+  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti')
+})
+export const ListNodesResponse = zod.array(ListNodesResponseItem)
+
+
+/**
+ * Crea il nodo e il suo token d'ambito `node`, che compare solo in questa risposta. Nome unico per utente (409 "nome già usato"). Solo con il login.
+ * @summary Registra un nodo locale
+ */
+export const createNodeBodyNameMax = 100;
+
+
+
+export const CreateNodeBody = zod.object({
+  "name": zod.string().min(1).max(createNodeBodyNameMax)
+})
+
+export const CreateNodeResponse = zod.object({
+  "node": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'disabled']),
+  "executor": zod.string().nullable(),
+  "version": zod.string().nullable(),
+  "skills": zod.array(zod.string()),
+  "workspaceRoot": zod.string().nullable(),
+  "maxConcurrent": zod.number(),
+  "lastSeenAt": zod.coerce.date().nullable(),
+  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti')
+}),
+  "token": zod.string().describe('Valore del token del nodo, mostrato una sola volta')
+})
+
+
+/**
+ * 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Elimina un nodo locale e i suoi token
+ */
+export const DeleteNodeParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteNodeResponse = zod.void()
+
+
+/**
+ * Il token del nodo smette di valere sul protocollo. 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Disattiva un nodo locale
+ */
+export const DisableNodeParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DisableNodeResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'disabled']),
+  "executor": zod.string().nullable(),
+  "version": zod.string().nullable(),
+  "skills": zod.array(zod.string()),
+  "workspaceRoot": zod.string().nullable(),
+  "maxConcurrent": zod.number(),
+  "lastSeenAt": zod.coerce.date().nullable(),
+  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti')
+})
+
+
+/**
+ * Revoca i token precedenti del nodo e ne crea uno nuovo, mostrato solo in questa risposta. 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Rigenera il token di un nodo locale
+ */
+export const RegenerateNodeTokenParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RegenerateNodeTokenResponse = zod.object({
+  "token": zod.string().describe('Valore del token, mostrato una sola volta')
+})
+
+
+/**
+ * Protocollo dei nodi: solo con il token d'ambito `node` di un nodo attivo (sessione e token personali: 403). Aggiorna le capacità dichiarate e `last_seen_at`; risponde con il numero di compiti che il nodo potrebbe prendere. 6 al minuto per nodo.
+ * @summary Heartbeat del nodo locale
+ */
+export const nodeHeartbeatBodyVersionMax = 100;
+
+export const nodeHeartbeatBodyExecutorMax = 100;
+
+export const nodeHeartbeatBodySkillsItemMax = 100;
+
+export const nodeHeartbeatBodySkillsMax = 500;
+
+export const nodeHeartbeatBodyWorkspaceRootMax = 300;
+
+export const nodeHeartbeatBodyMaxConcurrentMax = 3;
+
+
+
+export const NodeHeartbeatBody = zod.object({
+  "version": zod.string().min(1).max(nodeHeartbeatBodyVersionMax),
+  "executor": zod.string().min(1).max(nodeHeartbeatBodyExecutorMax).describe('Esecutore dichiarato (es. claude-code)'),
+  "skills": zod.array(zod.string().min(1).max(nodeHeartbeatBodySkillsItemMax)).max(nodeHeartbeatBodySkillsMax).describe('Nomi delle skill disponibili sul nodo'),
+  "workspaceRoot": zod.string().max(nodeHeartbeatBodyWorkspaceRootMax).describe('Radice degli spazi di lavoro (testo descrittivo)'),
+  "maxConcurrent": zod.number().min(1).max(nodeHeartbeatBodyMaxConcurrentMax)
+})
+
+export const NodeHeartbeatResponse = zod.object({
+  "pending": zod.number().describe('Compiti in attesa che il nodo potrebbe prendere')
+})
+
+
+/**
+ * Il compito `waiting_node` più vecchio di una squadra attiva dell'utente del nodo, il cui ruolo ha tutte le skill `node` dichiarate dal nodo, nel rispetto di `maxConcurrent`; lo porta a `running` con una lease di 15 minuti. 204 se non c'è niente da prendere. 6 al minuto per nodo.
+ * @summary Prende in carico un compito in attesa
+ */
+export const NodeClaimResponse = zod.object({
+  "taskId": zod.number(),
+  "leaseToken": zod.string(),
+  "leaseExpiresAt": zod.coerce.date(),
+  "team": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "refType": zod.string(),
+  "refId": zod.string(),
+  "refTitle": zod.string()
+}),
+  "workspace": zod.string().nullable().describe('Spazio di lavoro della squadra, relativo alla radice del nodo (null se non impostato)'),
+  "role": zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "task": zod.string(),
+  "preferredModel": zod.string().nullable().describe('Modello preferito, solo indicativo')
+}),
+  "task": zod.object({
+  "planTaskId": zod.string(),
+  "title": zod.string(),
+  "instructions": zod.string()
+}),
+  "plan": zod.object({
+  "objective": zod.string(),
+  "constraints": zod.array(zod.string()),
+  "openPoints": zod.array(zod.string()),
+  "tasks": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "roleKey": zod.string(),
+  "status": zod.enum(['planned', 'running', 'waiting_node', 'done', 'blocked', 'failed']),
+  "outcome": zod.string().nullable()
+})),
+  "manualActions": zod.array(zod.object({
+  "id": zod.string(),
+  "text": zod.string(),
+  "done": zod.boolean()
+}))
+}),
+  "caselloSkills": zod.array(zod.object({
+  "code": zod.string(),
+  "version": zod.number().nullable().describe('Versione fissata del catalogo; null per le skill specializzate'),
+  "content": zod.string()
+})),
+  "nodeSkills": zod.array(zod.string()).describe('Nomi delle skill del nodo richieste dal ruolo'),
+  "attachments": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "contentType": zod.string(),
+  "sizeBytes": zod.number(),
+  "sha256": zod.string()
+}))
+})
+
+
+/**
+ * Rinnova di 15 minuti la lease del compito preso dal nodo. Lease non valida o scaduta → 409. 4 al minuto per compito.
+ * @summary Rinnova la lease di un compito
+ */
+export const NodePingParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const nodePingBodyLeaseTokenMax = 200;
+
+
+
+export const NodePingBody = zod.object({
+  "leaseToken": zod.string().min(1).max(nodePingBodyLeaseTokenMax)
+})
+
+export const NodePingResponse = zod.object({
+  "leaseExpiresAt": zod.coerce.date()
+})
+
+
+/**
+ * Chiude il compito come i compiti cloud: stato ed esito nel PLAN, evento, turno del capo. Il costo riferito conta solo nel tetto della squadra. Lease non valida o scaduta → 409 e nulla salvato.
+ * @summary Riferisce l'esito di un compito
+ */
+export const NodeReportParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const nodeReportBodyLeaseTokenMax = 200;
+
+export const nodeReportBodyOutcomeMax = 300;
+
+export const nodeReportBodyDetailMax = 20000;
+
+export const nodeReportBodyCostUsdMin = 0;
+export const nodeReportBodyCostUsdMax = 100000;
+
+export const nodeReportBodyPromptTokensMin = 0;
+export const nodeReportBodyPromptTokensMax = 2000000000;
+
+export const nodeReportBodyCompletionTokensMin = 0;
+export const nodeReportBodyCompletionTokensMax = 2000000000;
+
+export const nodeReportBodySessionIdMax = 200;
+
+
+
+export const NodeReportBody = zod.object({
+  "leaseToken": zod.string().min(1).max(nodeReportBodyLeaseTokenMax),
+  "status": zod.enum(['done', 'blocked', 'failed']),
+  "outcome": zod.string().min(1).max(nodeReportBodyOutcomeMax),
+  "detail": zod.string().max(nodeReportBodyDetailMax).optional(),
+  "costUsd": zod.number().min(nodeReportBodyCostUsdMin).max(nodeReportBodyCostUsdMax).optional(),
+  "promptTokens": zod.number().min(nodeReportBodyPromptTokensMin).max(nodeReportBodyPromptTokensMax).optional(),
+  "completionTokens": zod.number().min(nodeReportBodyCompletionTokensMin).max(nodeReportBodyCompletionTokensMax).optional(),
+  "sessionId": zod.string().min(1).max(nodeReportBodySessionIdMax).optional()
+})
+
+export const NodeReportResponse = zod.void()
+
+
+/**
+ * Contenuto di un allegato citato dal compito preso dal nodo, con l'header `X-Lease-Token`. Lease non valida o scaduta → 409; allegato non citato dal compito o di un'altra squadra → 404. Un allegato eliminato dopo l'assegnazione si scarica comunque.
+ * @summary Scarica un allegato citato dal compito
+ */
+export const NodeGetAttachmentParams = zod.object({
+  "id": zod.coerce.number(),
+  "attachmentId": zod.coerce.number()
+})
+
+export const NodeGetAttachmentHeader = zod.object({
+  "X-Lease-Token": zod.string()
+})
+
+export const NodeGetAttachmentResponse = zod.unknown()
+
+
+/**
  * Modello proposto per gli agenti che Casello crea (agente generale di un'app nuova, agenti approvati dall'architetto, agenti creati senza modello). Null se non impostato o se il modello è stato eliminato. Solo con il login: con un token risponde 403.
  * @summary Modello predefinito dell'utente
  */
@@ -1932,7 +2195,8 @@ export const ListTeamInstancesResponseItem = zod.object({
   "closedAt": zod.coerce.date().nullable(),
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
-  "lastTurnAt": zod.coerce.date().nullable()
+  "lastTurnAt": zod.coerce.date().nullable(),
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
 })
 export const ListTeamInstancesResponse = zod.array(ListTeamInstancesResponseItem)
 
@@ -2038,7 +2302,8 @@ export const CreateTeamInstanceResponse = zod.object({
   "closedAt": zod.coerce.date().nullable(),
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
-  "lastTurnAt": zod.coerce.date().nullable()
+  "lastTurnAt": zod.coerce.date().nullable(),
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
 })
 
 
@@ -2104,7 +2369,8 @@ export const GetTeamInstanceResponse = zod.object({
   "closedAt": zod.coerce.date().nullable(),
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
-  "lastTurnAt": zod.coerce.date().nullable()
+  "lastTurnAt": zod.coerce.date().nullable(),
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
 })
 
 
@@ -2130,6 +2396,8 @@ export const saveTeamInstanceBodyRolesItemSkillsItemCodeRegExp = new RegExp('^[a
 export const saveTeamInstanceBodyRolesItemLocalSkillsItemRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
 export const saveTeamInstanceBodyLocalSkillsItemCodeRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
 export const saveTeamInstanceBodyLocalSkillsItemNameMax = 120;
+
+export const saveTeamInstanceBodyNodeWorkspaceMax = 300;
 
 
 
@@ -2157,7 +2425,8 @@ export const SaveTeamInstanceBody = zod.object({
   "content": zod.string(),
   "toolHints": zod.array(zod.string()).optional()
 }).describe('Skill specializzata di una sola squadra')),
-  "status": zod.enum(['draft', 'active']).optional().describe('Facoltativo e solo uguale allo stato attuale: si attiva con `POST \/team-instances\/{id}\/activate` e una squadra attiva non torna in bozza.')
+  "status": zod.enum(['draft', 'active']).optional().describe('Facoltativo e solo uguale allo stato attuale: si attiva con `POST \/team-instances\/{id}\/activate` e una squadra attiva non torna in bozza.'),
+  "nodeWorkspace": zod.string().max(saveTeamInstanceBodyNodeWorkspaceMax).nullish().describe('Spazio di lavoro sul nodo: percorso relativo, solo lettere, cifre, `._ -` e `\/`, senza `\/` iniziale né `..` (altrimenti 400 «spazio di lavoro non valido»). Omesso = invariato, null = tolto.')
 })
 
 export const SaveTeamInstanceResponse = zod.object({
@@ -2215,8 +2484,73 @@ export const SaveTeamInstanceResponse = zod.object({
   "closedAt": zod.coerce.date().nullable(),
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
-  "lastTurnAt": zod.coerce.date().nullable()
+  "lastTurnAt": zod.coerce.date().nullable(),
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
 })
+
+
+/**
+ * @summary Allegati della squadra (non eliminati)
+ */
+export const ListTeamAttachmentsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListTeamAttachmentsResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "contentType": zod.string(),
+  "sizeBytes": zod.number(),
+  "sha256": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const ListTeamAttachmentsResponse = zod.array(ListTeamAttachmentsResponseItem)
+
+
+/**
+ * Il corpo è il file grezzo (al massimo 10 MB; 50 MB di allegati non eliminati per squadra), il nome nell'header `X-Attachment-Name` (anche codificato con encodeURIComponent; senza `/`, `\`, `..`, max 200 caratteri) e il tipo nel `Content-Type`. Squadra chiusa → 409; nome già usato da un allegato non eliminato della squadra (senza distinguere le maiuscole) → 409 «nome già usato».
+ * @summary Carica un allegato della squadra
+ */
+export const UploadTeamAttachmentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UploadTeamAttachmentHeader = zod.object({
+  "X-Attachment-Name": zod.string()
+})
+
+export const UploadTeamAttachmentResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "contentType": zod.string(),
+  "sizeBytes": zod.number(),
+  "sha256": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * Risponde con `Content-Disposition: attachment` e `X-Content-Type-Options: nosniff`.
+ * @summary Scarica un allegato della squadra
+ */
+export const GetTeamAttachmentParams = zod.object({
+  "id": zod.coerce.number(),
+  "attachmentId": zod.coerce.number()
+})
+
+export const GetTeamAttachmentResponse = zod.unknown()
+
+
+/**
+ * Lo toglie dall'elenco e dal limite di spazio; i compiti del nodo che lo citano già lo scaricano comunque.
+ * @summary Elimina un allegato della squadra
+ */
+export const DeleteTeamAttachmentParams = zod.object({
+  "id": zod.coerce.number(),
+  "attachmentId": zod.coerce.number()
+})
+
+export const DeleteTeamAttachmentResponse = zod.void()
 
 
 /**
@@ -2281,7 +2615,8 @@ export const CloseTeamInstanceResponse = zod.object({
   "closedAt": zod.coerce.date().nullable(),
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
-  "lastTurnAt": zod.coerce.date().nullable()
+  "lastTurnAt": zod.coerce.date().nullable(),
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
 })
 
 
@@ -2382,7 +2717,8 @@ export const ApplyTeamInstanceUpdatesResponse = zod.object({
   "closedAt": zod.coerce.date().nullable(),
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
-  "lastTurnAt": zod.coerce.date().nullable()
+  "lastTurnAt": zod.coerce.date().nullable(),
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
 })
 
 
@@ -2715,7 +3051,8 @@ export const ActivateTeamInstanceResponse = zod.object({
   "closedAt": zod.coerce.date().nullable(),
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
-  "lastTurnAt": zod.coerce.date().nullable()
+  "lastTurnAt": zod.coerce.date().nullable(),
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
 })
 
 
@@ -2812,7 +3149,8 @@ export const SetTeamBudgetResponse = zod.object({
   "closedAt": zod.coerce.date().nullable(),
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
-  "lastTurnAt": zod.coerce.date().nullable()
+  "lastTurnAt": zod.coerce.date().nullable(),
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
 })
 
 
@@ -2841,6 +3179,10 @@ export const ListTeamTasksResponseItem = zod.object({
   "createdAt": zod.coerce.date(),
   "startedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable(),
+  "nodeId": zod.number().nullable().describe('Nodo locale a cui è assegnato il compito (solo ruoli `node`)'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se il compito non ha nodo o il nodo è stato eliminato)'),
+  "leaseExpiresAt": zod.coerce.date().nullable().describe('Scadenza della lease del nodo (il token della lease non si espone mai)'),
+  "sessionId": zod.string().nullable().describe('Id della sessione di Claude Code sul nodo'),
   "steps": zod.array(zod.object({
   "id": zod.number(),
   "position": zod.number(),
@@ -2883,6 +3225,10 @@ export const GetTeamTaskResponse = zod.object({
   "createdAt": zod.coerce.date(),
   "startedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable(),
+  "nodeId": zod.number().nullable().describe('Nodo locale a cui è assegnato il compito (solo ruoli `node`)'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se il compito non ha nodo o il nodo è stato eliminato)'),
+  "leaseExpiresAt": zod.coerce.date().nullable().describe('Scadenza della lease del nodo (il token della lease non si espone mai)'),
+  "sessionId": zod.string().nullable().describe('Id della sessione di Claude Code sul nodo'),
   "steps": zod.array(zod.object({
   "id": zod.number(),
   "position": zod.number(),

@@ -1386,6 +1386,241 @@ export interface AiAccountInput {
   allowPrivateNetwork?: boolean;
 }
 
+export type NodeStatus = typeof NodeStatus[keyof typeof NodeStatus];
+
+
+export const NodeStatus = {
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+export interface Node {
+  id: number;
+  name: string;
+  status: NodeStatus;
+  /** @nullable */
+  executor: string | null;
+  /** @nullable */
+  version: string | null;
+  skills: string[];
+  /** @nullable */
+  workspaceRoot: string | null;
+  maxConcurrent: number;
+  /** @nullable */
+  lastSeenAt: string | null;
+  /** Ha comunicato negli ultimi 2 minuti */
+  online: boolean;
+}
+
+export interface NodeCreate {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+}
+
+export interface NodeCreated {
+  node: Node;
+  /** Valore del token del nodo, mostrato una sola volta */
+  token: string;
+}
+
+export interface NodeToken {
+  /** Valore del token, mostrato una sola volta */
+  token: string;
+}
+
+export interface NodeHeartbeat {
+  /** Compiti in attesa che il nodo potrebbe prendere */
+  pending: number;
+}
+
+export interface NodeCapabilities {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  version: string;
+  /**
+     * Esecutore dichiarato (es. claude-code)
+     * @minLength 1
+     * @maxLength 100
+     */
+  executor: string;
+  /**
+     * Nomi delle skill disponibili sul nodo
+     * @maxItems 500
+     * @items.minLength 1
+     * @items.maxLength 100
+     */
+  skills: string[];
+  /**
+     * Radice degli spazi di lavoro (testo descrittivo)
+     * @maxLength 300
+     */
+  workspaceRoot: string;
+  /**
+     * @minimum 1
+     * @maximum 3
+     */
+  maxConcurrent: number;
+}
+
+export interface NodeLease {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  leaseToken: string;
+}
+
+export interface NodeLeaseRenewed {
+  leaseExpiresAt: string;
+}
+
+export type NodeReportStatus = typeof NodeReportStatus[keyof typeof NodeReportStatus];
+
+
+export const NodeReportStatus = {
+  done: 'done',
+  blocked: 'blocked',
+  failed: 'failed',
+} as const;
+
+export interface NodeReport {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  leaseToken: string;
+  status: NodeReportStatus;
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  outcome: string;
+  /** @maxLength 20000 */
+  detail?: string;
+  /**
+     * @minimum 0
+     * @maximum 100000
+     */
+  costUsd?: number;
+  /**
+     * @minimum 0
+     * @maximum 2000000000
+     */
+  promptTokens?: number;
+  /**
+     * @minimum 0
+     * @maximum 2000000000
+     */
+  completionTokens?: number;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  sessionId?: string;
+}
+
+export type NodeTaskPackageTeam = {
+  id: number;
+  name: string;
+  refType: string;
+  refId: string;
+  refTitle: string;
+};
+
+export type NodeTaskPackageRole = {
+  key: string;
+  name: string;
+  task: string;
+  /**
+     * Modello preferito, solo indicativo
+     * @nullable
+     */
+  preferredModel: string | null;
+};
+
+export type NodeTaskPackageTask = {
+  planTaskId: string;
+  title: string;
+  instructions: string;
+};
+
+export type NodeTaskPackagePlanTasksItemStatus = typeof NodeTaskPackagePlanTasksItemStatus[keyof typeof NodeTaskPackagePlanTasksItemStatus];
+
+
+export const NodeTaskPackagePlanTasksItemStatus = {
+  planned: 'planned',
+  running: 'running',
+  waiting_node: 'waiting_node',
+  done: 'done',
+  blocked: 'blocked',
+  failed: 'failed',
+} as const;
+
+export type NodeTaskPackagePlanTasksItem = {
+  id: string;
+  title: string;
+  roleKey: string;
+  status: NodeTaskPackagePlanTasksItemStatus;
+  /** @nullable */
+  outcome: string | null;
+};
+
+export type NodeTaskPackagePlanManualActionsItem = {
+  id: string;
+  text: string;
+  done: boolean;
+};
+
+export type NodeTaskPackagePlan = {
+  objective: string;
+  constraints: string[];
+  openPoints: string[];
+  tasks: NodeTaskPackagePlanTasksItem[];
+  manualActions: NodeTaskPackagePlanManualActionsItem[];
+};
+
+export type NodeTaskPackageCaselloSkillsItem = {
+  code: string;
+  /**
+     * Versione fissata del catalogo; null per le skill specializzate
+     * @nullable
+     */
+  version: number | null;
+  content: string;
+};
+
+export type NodeTaskPackageAttachmentsItem = {
+  id: number;
+  name: string;
+  contentType: string;
+  sizeBytes: number;
+  sha256: string;
+};
+
+export interface NodeTaskPackage {
+  taskId: number;
+  leaseToken: string;
+  leaseExpiresAt: string;
+  team: NodeTaskPackageTeam;
+  /**
+     * Spazio di lavoro della squadra, relativo alla radice del nodo (null se non impostato)
+     * @nullable
+     */
+  workspace: string | null;
+  role: NodeTaskPackageRole;
+  task: NodeTaskPackageTask;
+  plan: NodeTaskPackagePlan;
+  caselloSkills: NodeTaskPackageCaselloSkillsItem[];
+  /** Nomi delle skill del nodo richieste dal ruolo */
+  nodeSkills: string[];
+  attachments: NodeTaskPackageAttachmentsItem[];
+}
+
 export interface ApiTokenInfo {
   id: number;
   name: string;
@@ -2128,6 +2363,20 @@ export interface TeamInstanceSave {
   localSkills: TeamLocalSkill[];
   /** Facoltativo e solo uguale allo stato attuale: si attiva con `POST /team-instances/{id}/activate` e una squadra attiva non torna in bozza. */
   status?: TeamInstanceSaveStatus;
+  /**
+     * Spazio di lavoro sul nodo: percorso relativo, solo lettere, cifre, `._ -` e `/`, senza `/` iniziale né `..` (altrimenti 400 «spazio di lavoro non valido»). Omesso = invariato, null = tolto.
+     * @maxLength 300
+     */
+  nodeWorkspace?: string | null;
+}
+
+export interface TeamAttachment {
+  id: number;
+  name: string;
+  contentType: string;
+  sizeBytes: number;
+  sha256: string;
+  createdAt: string;
 }
 
 export type TeamUpdateItemType = typeof TeamUpdateItemType[keyof typeof TeamUpdateItemType];
@@ -2356,6 +2605,8 @@ export interface TeamInstance {
   /** Tetto mensile in USD di turni e compiti (null = nessun tetto) */
   monthlyBudgetUsd: number | null;
   lastTurnAt: string | null;
+  /** Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato) */
+  nodeWorkspace: string | null;
 }
 
 export interface TeamMessageInput {
@@ -2443,6 +2694,26 @@ export interface TeamTask {
   startedAt: string | null;
   /** @nullable */
   finishedAt: string | null;
+  /**
+     * Nodo locale a cui è assegnato il compito (solo ruoli `node`)
+     * @nullable
+     */
+  nodeId: number | null;
+  /**
+     * Nome del nodo (null se il compito non ha nodo o il nodo è stato eliminato)
+     * @nullable
+     */
+  nodeName: string | null;
+  /**
+     * Scadenza della lease del nodo (il token della lease non si espone mai)
+     * @nullable
+     */
+  leaseExpiresAt: string | null;
+  /**
+     * Id della sessione di Claude Code sul nodo
+     * @nullable
+     */
+  sessionId: string | null;
   /** Passi dell'esecuzione (solo nel dettaglio) */
   steps?: TeamStep[];
 }

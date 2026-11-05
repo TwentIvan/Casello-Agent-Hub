@@ -2,6 +2,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, pendingActionsTable, teamInstancesTable, teamTasksTable } from "@workspace/db";
 import { enqueuePlanItem } from "../actions/queue";
+import { ATTACHMENT_MESSAGES, existingAttachmentIds } from "./attachments";
 import { logger } from "../logger";
 import type { CatalogTool, ToolResult } from "../tools/types";
 import { MAX_BULLETIN, MAX_EVENT_DETAIL, emitEvent } from "./events";
@@ -161,7 +162,15 @@ const LEAD_TOOL_DEFS = [
   ),
   internalTool("assegna_compito", "Assegna al suo ruolo un compito del PLAN approvato (stato planned, blocked o failed).", {
     type: "object",
-    properties: { taskId: { type: "string", description: "Id del compito nel PLAN (es. t1)" } },
+    properties: {
+      taskId: { type: "string", description: "Id del compito nel PLAN (es. t1)" },
+      attachments: {
+        type: "array",
+        maxItems: 20,
+        items: { type: "integer" },
+        description: "Id degli allegati della squadra (elencati nel contesto) da mettere a disposizione del compito sul nodo",
+      },
+    },
     required: ["taskId"],
   }),
   internalTool("leggi_esito", "Legge l'esito dell'ultima esecuzione di un compito del PLAN.", {
@@ -219,6 +228,7 @@ const UpdateSchema = z.object({
 });
 
 const TaskIdSchema = z.object({ taskId: z.string().min(1).max(40) });
+const AssignSchema = TaskIdSchema.extend({ attachments: z.array(z.number().int().positive()).max(20).optional() });
 
 const SignalSchema = z.object({
   type: z.enum(["bloccato", "decisione_richiesta", "azione_manuale_richiesta"]),
@@ -468,9 +478,14 @@ async function updatePlan(ctx: LeadContext, args: Record<string, unknown>): Prom
  * bloccata («la squadra non è attiva»).
  */
 async function assignTask(ctx: LeadContext, args: Record<string, unknown>): Promise<ToolResult> {
-  const parsed = TaskIdSchema.safeParse(args);
+  const parsed = AssignSchema.safeParse(args);
   if (!parsed.success) return fail(LEAD_MESSAGES.invalidArgs(zodDetail(parsed.error)));
   const { taskId } = parsed.data;
+  // Solo allegati non eliminati di questa squadra; ripetizioni tolte, ordine per id
+  const attachmentIds = [...new Set(parsed.data.attachments ?? [])].sort((a, b) => a - b);
+  const existing = await existingAttachmentIds(ctx.instanceId, attachmentIds);
+  const missing = attachmentIds.find((id) => !existing.has(id));
+  if (missing !== undefined) return fail(ATTACHMENT_MESSAGES.missing(missing));
   const current = await getPlan(ctx.instanceId);
   const approved = await getApprovedPlan(ctx.instanceId, current);
   if (!approved?.tasks.some((t) => t.id === taskId)) return fail(TASK_MESSAGES.notInPlan);
@@ -488,7 +503,7 @@ async function assignTask(ctx: LeadContext, args: Record<string, unknown>): Prom
     return fail(LEAD_MESSAGES.tooManyFailures);
   }
   try {
-    const row = await startTask(ctx.instanceId, taskId);
+    const row = await startTask(ctx.instanceId, taskId, attachmentIds);
     return done(
       row.status === "waiting_node"
         ? `compito ${taskId} assegnato al ruolo ${row.roleKey}: in attesa del nodo locale`

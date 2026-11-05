@@ -28,4 +28,6 @@ export interface TeamInstance {
   /** Tetto mensile in USD di turni e compiti (null = nessun tetto) */
   monthlyBudgetUsd: number | null;
   lastTurnAt: Date | null;
+  /** Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato) */
+  nodeWorkspace: string | null;
 }

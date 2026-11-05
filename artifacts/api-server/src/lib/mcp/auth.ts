@@ -29,7 +29,7 @@ export function requireApiToken(): RequestHandler {
     }
     authenticateApiToken(token)
       .then((auth) => {
-        if (!auth || !auth.scopes.includes("mcp")) {
+        if (!auth || auth.nodeId !== null || !auth.scopes.includes("mcp")) {
           res.status(401).json({ error: MCP_UNAUTHORIZED });
           return;
         }

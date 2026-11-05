@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Response } from "express";
+import express, { Router, type IRouter, type RequestHandler, type Response } from "express";
 import {
   ListTeamInstancesQueryParams,
   ListTeamInstancesResponse,
@@ -45,10 +45,18 @@ import {
   ListUnreadTeamEventsResponse,
   MarkTeamEventsReadBody,
   MarkTeamEventsReadResponse,
+  ListTeamAttachmentsParams,
+  ListTeamAttachmentsResponse,
+  UploadTeamAttachmentParams,
+  UploadTeamAttachmentHeader,
+  UploadTeamAttachmentResponse,
+  GetTeamAttachmentParams,
+  DeleteTeamAttachmentParams,
 } from "@workspace/api-zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { db, teamTaskStepsTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamTaskRow, type TeamTurnRow } from "@workspace/db";
+import { db, nodesTable, teamTaskStepsTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamTaskRow, type TeamTurnRow } from "@workspace/db";
 import { currentUserId } from "../lib/auth";
+import { AttachmentError, MAX_ATTACHMENT_BYTES, rfc5987, deleteAttachment, getAttachment, listAttachments, saveAttachment } from "../lib/teams/attachments";
 import { InstanceError, closeInstance, createInstance, getInstance, listInstances, saveInstance, setInstanceBudget } from "../lib/teams/instances";
 import { listEvents, markRead, userEvents } from "../lib/teams/events";
 import { activateInstance, sendToLead } from "../lib/teams/turn-runner";
@@ -69,8 +77,25 @@ async function guarded(res: Response, run: () => Promise<void>): Promise<void> {
   try {
     await run();
   } catch (err) {
-    if (!(err instanceof TeamRuleError) && !(err instanceof TemplateError) && !(err instanceof InstanceError) && !(err instanceof SkillError)) throw err;
+    if (!(err instanceof TeamRuleError) && !(err instanceof TemplateError) && !(err instanceof InstanceError) && !(err instanceof SkillError) && !(err instanceof AttachmentError)) throw err;
     res.status(err.status).json({ error: err.message });
+  }
+}
+
+/**
+ * Lettura del file come Buffer, solo in memoria, qualunque sia il tipo di contenuto. Si monta soltanto sulla route del
+ * caricamento: oltre 10 MB il parser lancia `entity.too.large` e l'error handler risponde 413 «allegato troppo grande».
+ */
+function attachmentUpload(): RequestHandler {
+  return express.raw({ type: () => true, limit: MAX_ATTACHMENT_BYTES });
+}
+
+/** Nome dal header `X-Attachment-Name`: decodificato se è codificato con encodeURIComponent, altrimenti com'è. */
+function attachmentName(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
   }
 }
 
@@ -100,6 +125,51 @@ router.put("/team-instances/:id", async (req, res) => {
   const body = parseRequest(SaveTeamInstanceBody, req.body);
   await guarded(res, async () => {
     res.json(SaveTeamInstanceResponse.parse(await saveInstance(currentUserId(req), id, body)));
+  });
+});
+
+router.get("/team-instances/:id/attachments", async (req, res) => {
+  const { id } = parseRequest(ListTeamAttachmentsParams, req.params);
+  await guarded(res, async () => {
+    await getInstance(id);
+    res.json(ListTeamAttachmentsResponse.parse(await listAttachments(id)));
+  });
+});
+
+router.post("/team-instances/:id/attachments", attachmentUpload(), async (req, res) => {
+  const { id } = parseRequest(UploadTeamAttachmentParams, req.params);
+  const header = parseRequest(UploadTeamAttachmentHeader, { "X-Attachment-Name": req.get("x-attachment-name") });
+  const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+  await guarded(res, async () => {
+    await getInstance(id);
+    const view = await saveAttachment(currentUserId(req), id, {
+      name: attachmentName(header["X-Attachment-Name"]),
+      contentType: req.get("content-type") ?? "",
+      bytes,
+    });
+    res.status(201).json(UploadTeamAttachmentResponse.parse(view));
+  });
+});
+
+router.get("/team-instances/:id/attachments/:attachmentId", async (req, res) => {
+  const { id, attachmentId } = parseRequest(GetTeamAttachmentParams, req.params);
+  await guarded(res, async () => {
+    const row = await getAttachment(id, attachmentId);
+    // Scaricato, mai mostrato nella pagina: un file HTML caricato non deve girare con l'origine della console
+    res.set({
+      "Content-Type": row.contentType,
+      "Content-Disposition": `attachment; filename*=UTF-8''${rfc5987(row.name)}`,
+      "X-Content-Type-Options": "nosniff",
+    });
+    res.send(row.content);
+  });
+});
+
+router.delete("/team-instances/:id/attachments/:attachmentId", async (req, res) => {
+  const { id, attachmentId } = parseRequest(DeleteTeamAttachmentParams, req.params);
+  await guarded(res, async () => {
+    await deleteAttachment(id, attachmentId);
+    res.status(204).end();
   });
 });
 
@@ -167,7 +237,12 @@ const MAX_TURNS = 50;
 const MAX_TASKS = 200;
 const MAX_USER_EVENTS = 200;
 
-const publicTask = ({ costUsd, ...rest }: TeamTaskRow) => ({ ...rest, costUsd: toNumberOrNull(costUsd) });
+// Mai la lease (`leaseToken`): al nodo serve solo a lui, la console vede nodo, scadenza e sessione
+const publicTask = ({ costUsd, leaseToken: _leaseToken, ...rest }: TeamTaskRow, nodeName: string | null) => ({
+  ...rest,
+  costUsd: toNumberOrNull(costUsd),
+  nodeName,
+});
 const publicTurn = ({ costUsd, ...rest }: TeamTurnRow) => ({ ...rest, costUsd: toNumberOrNull(costUsd) });
 
 router.post("/team-instances/:id/activate", async (req, res) => {
@@ -202,18 +277,30 @@ router.get("/team-instances/:id/tasks", async (req, res) => {
   const { id } = parseRequest(ListTeamTasksParams, req.params);
   await guarded(res, async () => {
     await getInstance(id);
-    const rows = await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, id)).orderBy(desc(teamTasksTable.id)).limit(MAX_TASKS);
-    res.json(ListTeamTasksResponse.parse(rows.map(publicTask)));
+    const rows = await db
+      .select({ task: teamTasksTable, nodeName: nodesTable.name })
+      .from(teamTasksTable)
+      .leftJoin(nodesTable, eq(nodesTable.id, teamTasksTable.nodeId))
+      .where(eq(teamTasksTable.instanceId, id))
+      .orderBy(desc(teamTasksTable.id))
+      .limit(MAX_TASKS);
+    res.json(ListTeamTasksResponse.parse(rows.map((r) => publicTask(r.task, r.nodeName))));
   });
 });
 
 router.get("/team-instances/:id/tasks/:taskId", async (req, res) => {
   const { id, taskId } = parseRequest(GetTeamTaskParams, req.params);
   await guarded(res, async () => {
-    const [row] = await db.select().from(teamTasksTable).where(and(eq(teamTasksTable.id, taskId), eq(teamTasksTable.instanceId, id))).limit(1);
+    const [found] = await db
+      .select({ task: teamTasksTable, nodeName: nodesTable.name })
+      .from(teamTasksTable)
+      .leftJoin(nodesTable, eq(nodesTable.id, teamTasksTable.nodeId))
+      .where(and(eq(teamTasksTable.id, taskId), eq(teamTasksTable.instanceId, id)))
+      .limit(1);
+    const row = found?.task;
     if (!row) throw new InstanceError(404, "compito non trovato");
     const steps = await db.select().from(teamTaskStepsTable).where(eq(teamTaskStepsTable.taskId, row.id)).orderBy(teamTaskStepsTable.position);
-    res.json(GetTeamTaskResponse.parse({ ...publicTask(row), steps: steps.map(({ taskId: _taskId, ...step }) => step) }));
+    res.json(GetTeamTaskResponse.parse({ ...publicTask(row, found.nodeName), steps: steps.map(({ taskId: _taskId, ...step }) => step) }));
   });
 });
 

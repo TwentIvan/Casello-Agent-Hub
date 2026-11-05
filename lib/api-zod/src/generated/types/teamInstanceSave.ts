@@ -21,4 +21,9 @@ export interface TeamInstanceSave {
   localSkills: TeamLocalSkill[];
   /** Facoltativo e solo uguale allo stato attuale: si attiva con `POST /team-instances/{id}/activate` e una squadra attiva non torna in bozza. */
   status?: TeamInstanceSaveStatus;
+  /**
+     * Spazio di lavoro sul nodo: percorso relativo, solo lettere, cifre, `._ -` e `/`, senza `/` iniziale né `..` (altrimenti 400 «spazio di lavoro non valido»). Omesso = invariato, null = tolto.
+     * @maxLength 300
+     */
+  nodeWorkspace?: string | null;
 }

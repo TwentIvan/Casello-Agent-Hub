@@ -321,7 +321,7 @@ function registerCentralinoTools(server: McpServer, userId: number, scopes: read
     "approva",
     {
       description:
-        "Approva una voce della coda (un'azione la esegue subito, un piano lo approva). `userToken` è il token dell'utente sull'app, solo per le azioni con `needsUserToken`. Serve un token con l'ambito api:write.",
+        "Approva una voce della coda (un'azione la esegue subito, un piano lo approva). `userToken` è il token dell'utente sull'app, solo per le azioni con `needsUserToken`. Serve un token con l'ambito api:write. Prima di chiamarlo ripeti all'utente numero e sintesi della voce e chiedi conferma.",
       inputSchema: { numero: number, userToken: z.string().min(1).max(4_000).optional().describe("Token dell'utente sull'app") },
       annotations: { destructiveHint: true },
     },
@@ -332,7 +332,7 @@ function registerCentralinoTools(server: McpServer, userId: number, scopes: read
     "rifiuta",
     {
       description:
-        "Rifiuta una voce della coda, con una nota facoltativa (al massimo 500 caratteri) che il capo legge nel turno successivo. Serve un token con l'ambito api:write.",
+        "Rifiuta una voce della coda, con una nota facoltativa (al massimo 500 caratteri) che il capo legge nel turno successivo. Serve un token con l'ambito api:write. Prima di chiamarlo ripeti all'utente numero e sintesi della voce e chiedi conferma.",
       inputSchema: { numero: number, nota: z.string().max(500).optional().describe("Motivo del rifiuto") },
       annotations: { destructiveHint: true },
     },

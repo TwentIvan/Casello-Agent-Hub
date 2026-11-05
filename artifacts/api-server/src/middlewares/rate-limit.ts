@@ -108,3 +108,6 @@ export const nodePingRateLimit = rateLimit({
   windowMs: 60_000,
   key: (req) => `${byNode(req)}:task:${String(req.params["id"] ?? "?")}`,
 });
+
+// Registrazione dinamica dei client OAuth del connettore: 10 al minuto per IP.
+export const oauthRegisterRateLimit = rateLimit({ limit: 10, windowMs: 60_000 });

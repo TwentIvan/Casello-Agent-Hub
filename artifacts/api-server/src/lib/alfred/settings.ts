@@ -13,6 +13,19 @@ export interface AlfredSettings {
   models: { id: number; name: string; accountName: string }[];
 }
 
+/** Idoneo ad Alfred: nome Live e stato effettivo disponibile (né ritirato né segnalato non disponibile). */
+function isEligibleModel(
+  model: { modelId: string; availability: "available" | "unavailable" | "unknown" },
+  offer: { status: "available" | "deprecated" | "retired"; deprecationDate: Date | null } | null,
+): boolean {
+  if (!isAlfredModelName(model.modelId)) return false;
+  const status = effectiveStatus(
+    { availability: model.availability, catalogStatus: offer?.status ?? null, deprecationDate: offer?.deprecationDate ?? null },
+    new Date(),
+  );
+  return status === "available";
+}
+
 /** Modello e voce salvati, più i modelli idonei dell'utente (per nome, senza chiamare Gemini). */
 export async function getAlfredSettings(userId: number): Promise<AlfredSettings> {
   const [user] = await db
@@ -26,20 +39,8 @@ export async function getAlfredSettings(userId: number): Promise<AlfredSettings>
     .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
     .leftJoin(modelOffersTable, eq(aiModelsTable.offerId, modelOffersTable.id))
     .where(and(eq(aiAccountsTable.userId, userId), eq(aiAccountsTable.provider, "gemini")));
-  const now = new Date();
   const models = rows
-    .filter(
-      (r) =>
-        isAlfredModelName(r.model.modelId) &&
-        effectiveStatus(
-          {
-            availability: r.model.availability,
-            catalogStatus: r.offer?.status ?? null,
-            deprecationDate: r.offer?.deprecationDate ?? null,
-          },
-          now,
-        ) !== "retired",
-    )
+    .filter((r) => isEligibleModel(r.model, r.offer))
     .map((r) => ({ id: r.model.id, name: bareModelName(r.model.modelId), accountName: r.accountName }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
   const voice = user?.voice && ALFRED_VOICES.includes(user.voice) ? user.voice : DEFAULT_ALFRED_VOICE;
@@ -64,7 +65,13 @@ export async function setAlfredSettings(userId: number, input: { aiModelId: numb
       throw err;
     }
     if (resolved.provider !== "gemini") throw new AlfredError(ALFRED_MESSAGES.modelUnsuitable, 400);
-    if (!isAlfredModelName(resolved.modelId)) throw new AlfredError(ALFRED_MESSAGES.modelUnsuitable, 400);
+    const [row] = await db
+      .select({ model: aiModelsTable, offer: modelOffersTable })
+      .from(aiModelsTable)
+      .leftJoin(modelOffersTable, eq(aiModelsTable.offerId, modelOffersTable.id))
+      .where(eq(aiModelsTable.id, resolved.aiModelId))
+      .limit(1);
+    if (!row || !isEligibleModel(row.model, row.offer)) throw new AlfredError(ALFRED_MESSAGES.modelUnsuitable, 400);
     await checkLiveSupport(resolved);
   }
   await db

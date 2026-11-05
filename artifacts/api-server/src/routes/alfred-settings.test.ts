@@ -2,7 +2,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { db, pool, aiAccountsTable, aiModelsTable, usersTable } from "@workspace/db";
+import { db, pool, aiAccountsTable, aiModelsTable, modelOffersTable, modelsTable, usersTable } from "@workspace/db";
 import { encryptSecret } from "../lib/secrets";
 import { isAlfredModelName } from "../lib/alfred/config";
 import { startFakeGemini, type FakeGemini } from "../../test/fake-gemini";
@@ -88,6 +88,8 @@ afterAll(async () => {
 beforeEach(async () => {
   vi.spyOn(console, "log").mockImplementation(() => {});
   await pool.query("TRUNCATE users, apps, ai_accounts RESTART IDENTITY CASCADE");
+  await pool.query("DELETE FROM model_offers");
+  await pool.query("DELETE FROM models");
   gemini.state.models = { "gemini-3.8-live": ["bidiGenerateContent"], "gemini-no-bidi-live": ["generateContent"] };
   gemini.state.modelRequests = [];
   gemini.state.modelApiKeys = [];
@@ -163,6 +165,46 @@ describe("PUT /account/alfred", () => {
     expect(voice.status).toBe(400);
     expect(voice.json).toEqual({ error: "voce non disponibile" });
     expect((await api("GET", "/account/alfred")).json.aiModelId).toBeNull();
+  });
+
+  it("modello ritirato o non disponibile: fuori dalla GET, PUT → 400", async () => {
+    const dev = await devUserId();
+    const ok = await modelOf(dev, "gemini-3.8-live");
+    const unavailable = await modelOf(dev, "gemini-3.7-live", { availability: "unavailable" });
+    const retiredModel = await modelOf(dev, "gemini-3.6-live");
+    const [canonical] = await db
+      .insert(modelsTable)
+      .values({ canonicalKey: "gemini-3.6-live", author: "Google", family: "Gemini", version: "3.6" })
+      .returning();
+    const [offer] = await db
+      .insert(modelOffersTable)
+      .values({ modelId: canonical!.id, provider: "gemini", providerModelId: "gemini-3.6-live", status: "retired" })
+      .returning();
+    await db.update(aiModelsTable).set({ offerId: offer!.id }).where(eq(aiModelsTable.id, retiredModel));
+    const get = await api("GET", "/account/alfred");
+    expect(get.json.models.map((m: { id: number }) => m.id)).toEqual([ok]);
+    for (const aiModelId of [unavailable, retiredModel]) {
+      const res = await api("PUT", "/account/alfred", { aiModelId });
+      expect(res.status).toBe(400);
+      expect(res.json).toEqual({ error: "modello non adatto ad Alfred" });
+    }
+    expect(gemini.state.modelRequests).toEqual([]);
+  });
+
+  it("chiave non valida (400 di Gemini) → 502; account senza chiave → 502 senza chiamare Gemini", async () => {
+    const dev = await devUserId();
+    const mine = await modelOf(dev, "gemini-3.8-live");
+    gemini.state.modelStatus = 400;
+    const bad = await api("PUT", "/account/alfred", { aiModelId: mine });
+    expect(bad.status).toBe(502);
+    expect(bad.json).toEqual({ error: "chiave Gemini rifiutata: controlla l'account in Account" });
+    gemini.state.modelStatus = null;
+    gemini.state.modelRequests = [];
+    await db.update(aiAccountsTable).set({ apiKeyEnc: null });
+    const none = await api("PUT", "/account/alfred", { aiModelId: mine });
+    expect(none.status).toBe(502);
+    expect(none.json).toEqual({ error: "chiave Gemini rifiutata: controlla l'account in Account" });
+    expect(gemini.state.modelRequests).toEqual([]);
   });
 
   it("Gemini rifiuta la chiave → 502; spento → 502", async () => {

@@ -1,7 +1,7 @@
 import { createHash, randomInt } from "node:crypto";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { db, alfredConfirmationsTable, alfredSessionsTable, appToolsTable, pendingActionsTable, teamInstancesTable } from "@workspace/db";
-import { approvePending, rejectPending } from "../teams/centralino";
+import { approvePending, needsUserToken, rejectPending } from "../teams/centralino";
 import { logger } from "../logger";
 
 // Conferma a doppio passo (spec §4): `prepareDecision` non decide nulla e consegna un codice di 6 cifre valido 60 s,
@@ -10,9 +10,9 @@ import { logger } from "../logger";
 export const CONFIRM_MESSAGES = {
   notPending: "voce non in attesa",
   needsToken: "questa voce va approvata dalla console: serve il token dell'app",
+  failed: "approvata ma l'esecuzione non è riuscita: controlla in console",
   expired: "conferma scaduta: ripeti la richiesta",
   noteWithApprove: "la nota si può dare solo con il rifiuto",
-  noteTooLong: "nota troppo lunga: al massimo 500 caratteri",
 } as const;
 
 /** Errore con messaggio fisso da restituire allo strumento. */
@@ -24,12 +24,25 @@ export class ConfirmationError extends Error {
 }
 
 const CODE_TTL_MS = 60_000;
-const MAX_NOTE = 500;
-const MAX_RESULT = 500;
 
 const KIND_LABEL: Record<string, string> = { action: "azione", plan: "piano", plan_change: "modifica del piano" };
 
 const hashCode = (code: string) => createHash("sha256").update(code).digest("hex");
+
+type Executor = Pick<typeof db, "select" | "update">;
+
+/** Segna usate le conferme aperte della sessione, con la riga della sessione bloccata (serializza le preparazioni). */
+async function closeOpenConfirmations(sessionId: number, executor?: Executor): Promise<void> {
+  const run = async (tx: Executor) => {
+    await tx.select({ id: alfredSessionsTable.id }).from(alfredSessionsTable).where(eq(alfredSessionsTable.id, sessionId)).for("update");
+    await tx
+      .update(alfredConfirmationsTable)
+      .set({ usedAt: new Date() })
+      .where(and(eq(alfredConfirmationsTable.sessionId, sessionId), isNull(alfredConfirmationsTable.usedAt)));
+  };
+  if (executor) await run(executor);
+  else await db.transaction(run);
+}
 
 export interface PreparedDecision {
   codice: string;
@@ -46,8 +59,10 @@ export async function prepareDecision(
   input: { numero: number; decisione: "approva" | "rifiuta"; nota?: string | undefined },
 ): Promise<PreparedDecision> {
   const note = input.nota?.trim() ? input.nota.trim() : null;
+
+  // Ogni preparazione, anche se fallisce, chiude le conferme aperte: un codice vecchio non vale dopo un nuovo «sì»
+  await closeOpenConfirmations(sessionId);
   if (note !== null && input.decisione === "approva") throw new ConfirmationError(CONFIRM_MESSAGES.noteWithApprove);
-  if (note !== null && note.length > MAX_NOTE) throw new ConfirmationError(CONFIRM_MESSAGES.noteTooLong);
 
   const [row] = await db
     .select({
@@ -62,21 +77,17 @@ export async function prepareDecision(
     .leftJoin(teamInstancesTable, eq(teamInstancesTable.id, pendingActionsTable.teamInstanceId))
     .where(and(eq(pendingActionsTable.userId, userId), eq(pendingActionsTable.number, input.numero)))
     .limit(1);
-  if (!row) throw new ConfirmationError("azione non trovata");
+  if (!row) throw new ConfirmationError(CONFIRM_MESSAGES.notPending);
   if (row.status !== "pending") throw new ConfirmationError(CONFIRM_MESSAGES.notPending);
-  if (input.decisione === "approva" && row.kind === "action" && row.identity === "user") {
+  if (input.decisione === "approva" && needsUserToken(row.kind, row.identity)) {
     throw new ConfirmationError(CONFIRM_MESSAGES.needsToken);
   }
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
   await db.transaction(async (tx) => {
     // La riga della sessione serializza due preparazioni concorrenti: resta aperta una sola conferma
-    await tx.select({ id: alfredSessionsTable.id }).from(alfredSessionsTable).where(eq(alfredSessionsTable.id, sessionId)).for("update");
     const now = new Date();
-    await tx
-      .update(alfredConfirmationsTable)
-      .set({ usedAt: now })
-      .where(and(eq(alfredConfirmationsTable.sessionId, sessionId), isNull(alfredConfirmationsTable.usedAt)));
+    await closeOpenConfirmations(sessionId, tx);
     await tx.insert(alfredConfirmationsTable).values({
       userId,
       sessionId,
@@ -120,10 +131,7 @@ export async function confirmDecision(userId: number, sessionId: number, code: s
       ? await approvePending(userId, used.number)
       : await rejectPending(userId, used.number, used.note ?? undefined);
   logger.info({ numero: used.number, esito: out.status }, "decisione via Alfred");
-  return {
-    numero: out.number,
-    stato: out.status,
-    risultato: out.result === null ? null : out.result.slice(0, MAX_RESULT),
-    errore: out.error,
-  };
+  // Esito breve da leggere ad alta voce; il testo dell'app non entra mai nella risposta
+  const esito = out.status === "rejected" ? "rifiutata" : out.status === "failed" ? CONFIRM_MESSAGES.failed : "approvata";
+  return { numero: out.number, esito };
 }

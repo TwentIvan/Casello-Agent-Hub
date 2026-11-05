@@ -230,7 +230,7 @@ describe("prepara_decisione", () => {
     const n = await queueAction();
     await db.update(pendingActionsTable).set({ status: "done" }).where(eq(pendingActionsTable.number, n));
     expect(await run("prepara_decisione", { numero: n, decisione: "rifiuta" })).toMatchObject({ json: { ok: false, error: "voce non in attesa" } });
-    expect((await run("prepara_decisione", { numero: 999, decisione: "rifiuta" })).json.ok).toBe(false);
+    expect(await run("prepara_decisione", { numero: 999, decisione: "rifiuta" })).toMatchObject({ json: { ok: false, error: "voce non in attesa" } });
     const [userTool] = await db
       .insert(appToolsTable)
       .values({ appId, name: "set_user", kind: "mcp", identity: "user", level: "L2", status: "active", paramsSchema: SCHEMA, definition: { mcpName: "set_pw" } } as InsertAppTool)
@@ -252,12 +252,30 @@ describe("prepara_decisione", () => {
   });
 });
 
+describe("prepara_decisione: errori", () => {
+  it("una preparazione fallita invalida il codice precedente della sessione", async () => {
+    const a = await queueAction();
+    const b = await queueAction();
+    const codeA = (await run("prepara_decisione", { numero: a, decisione: "approva" })).json.result.codice;
+    await db.update(pendingActionsTable).set({ status: "done" }).where(eq(pendingActionsTable.number, b));
+    expect((await run("prepara_decisione", { numero: b, decisione: "approva" })).json.ok).toBe(false);
+    expect((await run("conferma_decisione", { codice: codeA })).json.error).toBe("conferma scaduta: ripeti la richiesta");
+    expect((await statusOf(a)).status).toBe("pending");
+  });
+
+  it("nota con approva rifiutata; nota oltre 500 caratteri argomenti non validi", async () => {
+    const n = await queueAction();
+    expect((await run("prepara_decisione", { numero: n, decisione: "approva", nota: "x" })).json).toEqual({ ok: false, error: "la nota si può dare solo con il rifiuto" });
+    expect((await run("prepara_decisione", { numero: n, decisione: "rifiuta", nota: "x".repeat(501) })).json).toEqual({ ok: false, error: "argomenti non validi" });
+  });
+});
+
 describe("conferma_decisione", () => {
   it("approva: esegue l'azione una volta; rifiuta: chiude con la nota", async () => {
     const a = await queueAction();
     const code = (await run("prepara_decisione", { numero: a, decisione: "approva" })).json.result.codice;
     const done = await run("conferma_decisione", { codice: code });
-    expect(done.json).toMatchObject({ ok: true, result: { numero: a, stato: "done" } });
+    expect(done.json).toMatchObject({ ok: true, result: { numero: a, esito: "approvata" } });
     expect(mcpApp.calls).toHaveLength(1);
     expect((await run("conferma_decisione", { codice: code })).json.error).toBe("conferma scaduta: ripeti la richiesta");
     expect(mcpApp.calls).toHaveLength(1);
@@ -269,7 +287,7 @@ describe("conferma_decisione", () => {
     const prep = await run("prepara_decisione", { numero: item.number, decisione: "rifiuta", nota: "manca il budget" });
     expect(prep.json.result).toMatchObject({ tipo: "piano", squadra: "Mia" });
     const rej = await run("conferma_decisione", { codice: prep.json.result.codice });
-    expect(rej.json).toMatchObject({ ok: true, result: { numero: item.number, stato: "rejected" } });
+    expect(rej.json).toMatchObject({ ok: true, result: { numero: item.number, esito: "rifiutata" } });
     const turns = await db.select().from(teamTurnsTable).where(eq(teamTurnsTable.instanceId, team));
     expect(turns.flatMap((t) => t.reasons as unknown[])).toContainEqual({ type: "decision", number: item.number, outcome: "rejected", note: "manca il budget" });
   });

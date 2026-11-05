@@ -37,6 +37,11 @@ const MAX_DETAIL_TASKS = 30;
 const MAX_DETAIL_EVENTS = 20;
 const MAX_QUEUE = 50;
 
+/** Per gli strumenti con identità utente l'approvazione richiede il token dell'utente sull'app. */
+export function needsUserToken(kind: string, identity: string | null): boolean {
+  return kind === "action" && identity === "user";
+}
+
 /** Squadra attivata dall'utente; di un altro (o inesistente) → stesso errore «non trovata». */
 async function ownedInstance(userId: number, id: number) {
   const instance = await getInstance(id);
@@ -199,7 +204,7 @@ export async function pendingQueue(userId: number) {
       summary: action.summary,
       args: action.argsPublic,
       // Per gli strumenti con identità utente l'approvazione richiede il token dell'utente sull'app
-      needsUserToken: action.kind === "action" && toolIdentity === "user",
+      needsUserToken: needsUserToken(action.kind, toolIdentity),
       createdAt: action.createdAt.toISOString(),
     })),
   };
@@ -222,7 +227,7 @@ export async function approvePending(userId: number, number: number, userToken?:
     .where(and(eq(pendingActionsTable.userId, userId), eq(pendingActionsTable.number, number)))
     .limit(1);
   if (!row) throw new CentralinoError(ACTION_MESSAGES.notFound);
-  const pass = row.kind === "action" && row.identity === "user" && userToken !== undefined;
+  const pass = needsUserToken(row.kind, row.identity) && userToken !== undefined;
   return decided(await approveAction(userId, number, pass ? { userToken } : {}));
 }
 

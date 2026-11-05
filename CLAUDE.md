@@ -23,6 +23,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Nodi (esecuzione dei ruoli `node`): servizio `casello-nodo` sul Mac dell'utente che prende i compiti `waiting_node`, li esegue
   con Claude Code in una cartella di lavoro della squadra e riferisce l'esito; allegati alle squadre, token d'ambito `node`
   (vedi "Nodi (esecuzione dei ruoli node)").
+- Connettore OAuth: Casello è un authorization server OAuth 2.1 minimale, così l'app Claude (claude.ai, telefono) lo aggiunge come
+  connettore personalizzato su `/mcp` e parla con le squadre senza token copiati (vedi "Connettore OAuth (app Claude)").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -56,7 +58,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
   ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals,
   skills, skill_versions, team_templates, team_template_versions, team_instances, team_instance_skills,
-  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, nodes, team_attachments)
+  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, nodes, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -128,6 +130,11 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `components/teams/team-attachments.tsx` (scheda squadra). Spec: `docs/superpowers/specs/2026-11-04-casello-nodo-locale-design.md`
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
 - `artifacts/api-server/src/lib/mcp/` e `lib/architect/local-executor.ts` — server MCP `/mcp` e coda/lease delle analisi locali
+  (`lib/mcp/auth.ts`: `requireApiToken`, accetta `cas_…` e `cao_…`)
+- Connettore OAuth (vedi "Connettore OAuth (app Claude)"): `artifacts/api-server/src/lib/oauth/` (`config.ts`, `errors.ts`, `metadata.ts`,
+  `clients.ts`, `authorize.ts`, `pages.ts`, `tokens.ts`, `grants.ts`); route `src/routes/oauth.ts` (alla radice: `/.well-known/…` e `/oauth/…`,
+  fuori da `/api`) e `src/routes/oauth-grants.ts` (`/api/account/oauth-grants`); schema `lib/db/src/schema/oauth.ts`; console
+  `artifacts/casello/src/components/account/oauth-grants-section.tsx` (Account → «App collegate»); limiti in `middlewares/rate-limit.ts`
 - `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
 - `artifacts/mockup-sandbox/` — sandbox di mockup: NON va in produzione, non toccare
 - `gateway/` — config LiteLLM storica (gateway dismesso, vedi "Modelli AI"); non è più usata dal codice
@@ -728,6 +735,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 
 - Spec: `docs/superpowers/specs/2026-10-31-casello-token-api-design.md`. Il token `cas_…` (Account → "Token personali")
   vale anche su `/api`, per agenti che agiscono su Casello stesso e per script/automazioni.
+- I token `cas_…` sono una delle due credenziali di `/mcp`; l'altra è il token OAuth `cao_…` del connettore, che su `/api` NON vale
+  (come `car_…`: 401 «token non valido o scaduto»).
 - Ambiti (`api_tokens.scopes`, almeno uno, senza ripetizioni, immutabili dopo la creazione): `mcp` (server `/mcp`),
   `api:read` (GET/HEAD su `/api`), `api:write` (tutti i metodi, include la lettura), `node` (solo `/api/node/*`, vedi "Nodi").
   Default alla creazione `["mcp"]`; i token esistenti sono diventati `{mcp}`: nessun permesso nuovo. L'ambito `node` non si sceglie
@@ -757,12 +766,72 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   "Token di prova" della run oppure, con identità `service`, come segreto di servizio dell'app.
 - In sviluppo con `AUTH_DISABLED=true` i token funzionano solo se `ALLOWED_EMAILS` include `dev@localhost`.
 
+## Connettore OAuth (app Claude)
+
+- Spec: `docs/superpowers/specs/2026-11-05-casello-connettore-oauth-design.md` (sostituisce la «Tappa 2» dell'esecutore locale). Dove il
+  codice differisce dalla spec vale il codice, descritto qui. Casello è un authorization server OAuth 2.1 minimale: l'app Claude
+  (claude.ai, app del telefono, Enterprise) aggiunge `<PUBLIC_APP_URL>/mcp` come connettore personalizzato, l'utente entra con il login di
+  Casello (Google o GitHub) e acconsente; poi il centralino e gli strumenti dell'architetto locale sono usabili dalla chat. I token
+  personali `cas_…` restano come sono. Indirizzi assoluti da `PUBLIC_APP_URL` (`lib/oauth/config.ts`; in sviluppo `http://localhost:<WEB_PORT>`).
+- **Scoperta**: ogni 401 di `/mcp` porta `WWW-Authenticate: Bearer resource_metadata="<PUBLIC_APP_URL>/.well-known/oauth-protected-resource"`.
+  `GET /.well-known/oauth-protected-resource` (anche `…/mcp`) e `GET /.well-known/oauth-authorization-server` (`metadata.ts`): solo
+  client pubblici (`token_endpoint_auth_methods_supported: none`), PKCE `S256`, scope `mcp`, `client_id_metadata_document_supported`.
+- **Client** (`clients.ts`, `oauth_clients`, `kind` `dcr` | `metadata`): registrazione dinamica `POST /oauth/register` (RFC 7591: `redirect_uris`
+  1..5, `client_name` ≤ 100; registrazione permissiva come RFC 7591 §3.2.1: un `token_endpoint_auth_method` diverso da `none` non è un
+  errore e la risposta dice sempre `none`; dei `redirect_uris` si tengono solo quelli ammessi, errore `invalid_redirect_uri` solo se non ne
+  resta nessuno; `client_id` `cac_…`), oppure `client_id` = URL `https` di un documento
+  del client, scaricato alla prima autorizzazione con `node:https` e un DNS guardato (`guardedLookup`/`isPublicIp` di `lib/ai/providers.ts`: ogni
+  indirizzo risolto deve essere pubblico e il socket si collega a quello verificato; solo https, nessun redirect, 10 s, 64 KB; il suo
+  `client_id` deve essere lo stesso URL; riscaricato dopo 24 ore; `client_name` troncato a 100 caratteri, `redirect_uris` filtrati come sopra, client nullo se non ne resta
+  nessuno). Massimo 1 000 righe in `oauth_clients` (DCR e documenti insieme): oltre, `register` → 503 «registrazioni temporaneamente
+  sospese»; i client documento con `client_id` che inizia con `https://claude.ai/` o `https://claude.com/` non contano nel tetto e passano
+  anche se è pieno. Indirizzi di ritorno ammessi, uguali carattere per carattere:
+  `https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback`, loopback `http://localhost:<porta>/callback` e
+  `http://127.0.0.1:<porta>/callback` (Claude Code); altro → `invalid_redirect_uri`.
+- **Autorizzazione** (`authorize.ts`, `pages.ts`): `GET /oauth/authorize` (`response_type=code`, `client_id`, `redirect_uri`, `code_challenge` +
+  `S256`, `state` ≤ 500 caratteri altrimenti `invalid_request`, `scope` lista separata da spazi che contiene `mcp` (valori sconosciuti ignorati, una lista senza `mcp` → `invalid_scope`), `resource` uguale a
+  `<PUBLIC_APP_URL>/mcp` (un `/` finale si ignora, anche sul token endpoint). Client
+  sconosciuto o `redirect_uri` non ammesso: pagina d'errore, mai un redirect; altri errori: redirect con `error` e `state`. Senza sessione
+  redirect a `/api/auth/login?returnTo=…` (utente fuori da `ALLOWED_EMAILS` respinto dal login). Con sessione: pagina di consenso HTML servita
+  dall'API (nome del client E host del ritorno, account, «Consenti»/«Annulla»; CSP restrittiva, `X-Frame-Options: DENY`, testo escapato).
+  La richiesta in attesa sta nella sessione (`oauthPending` con token CSRF); `POST /oauth/authorize` (form) con CSRF e `decision`
+  `allow|deny`. Richiesta scaduta o CSRF sbagliato, o due consensi concorrenti per lo stesso client e utente (violazione dell'indice unico) → pagina «Richiesta scaduta:
+  ricomincia dall'app Claude»; un errore DB inatteso su GET/POST `/oauth/authorize` → pagina 500 «Errore interno: riprova tra poco»; `deny` → `access_denied`. `allow`
+  crea il **collegamento** (`oauth_grants`, al più uno non revocato per utente e client: un nuovo consenso revoca il precedente, stessa
+  transazione) e un codice (32 byte, 10 minuti, una volta, legato a client, `redirect_uri` e `code_challenge`).
+- **Token** (`tokens.ts`): `POST /oauth/token` (form, `Cache-Control: no-store`). `authorization_code` (con `code_verifier` 43..128, consumo con
+  UPDATE condizionato: due scambi concorrenti, uno solo riesce) e `refresh_token`. Risposta: `access_token` `cao_…` (3 600 s), `refresh_token`
+  `car_…` (30 giorni), `scope: mcp`. **Rotazione**: ogni rinnovo segna il vecchio come usato ed emette una coppia nuova; un token di rinnovo già
+  usato da PIÙ di 60 s (`REFRESH_REUSE_GRACE_MS`) → `invalid_grant` e revoca dell'intero collegamento (rilevamento del furto); riusato da meno di 60 s
+  (un client che ritenta dopo una risposta persa, o due rinnovi quasi insieme) → `invalid_grant` semplice, senza revoca: il token nuovo resta valido.
+  Perso l'UPDATE condizionato si rilegge la riga: scaduto e mai usato, o usato dentro la finestra → nessuna revoca.
+  Errori RFC 6749 con `error_description` fissa in italiano (`errors.ts`); `oauthErrorHandler` montato su `/oauth` trasforma le eccezioni in
+  JSON OAuth (`invalid_request`, `server_error`). Di codici e token si salva solo l'hash SHA-256.
+- **Uso su `/mcp`** (`lib/mcp/auth.ts`): `cao_…` valido se non scaduto, collegamento non revocato e utente ancora ammesso (`isAllowed`); dà
+  `mcpScopes = ["mcp", "api:write"]` (tutti gli strumenti, `approva` e `rifiuta` compresi: scelta dell'utente), `last_used_at` aggiornato al
+  massimo una volta al minuto. Su `/api` `cao_…`/`car_…` sono sconosciuti (401). Le descrizioni di `approva`/`rifiuta` dicono al modello di
+  ripetere numero e sintesi e chiedere conferma.
+- **Limiti** (`middlewares/rate-limit.ts`, in memoria): `register` 10/min e 50/giorno (24 h) per IP (429), `token` 30/min per `client_id` e IP (429 `slow_down`), `authorize`
+  (GET e POST) 20/min per utente (per IP senza sessione); restano 60/min di `/mcp` e il contatore di approva/rifiuta. Log: mai token, codici,
+  hash, `code_verifier` né Authorization.
+- **Console** (solo login, `sessionOnly`, tag OpenAPI `nodes`): `GET /api/account/oauth-grants`, `DELETE /api/account/oauth-grants/:id` (204;
+  altrui o già revocato → 404 «collegamento non trovato»); la revoca vale dalla richiesta successiva. Account → «App collegate» (nome, host del
+  ritorno, collegato il, ultimo uso, «Revoca»; vuota: indirizzo del connettore con «Copia indirizzo»). Pulizia `sweepOAuth` all'avvio e ogni ora
+  (`startOAuthSweeper` in `src/index.ts`): codici e token scaduti da oltre un giorno, collegamenti revocati da oltre 30 giorni, client senza
+  collegamenti da oltre 24 ore.
+- **Enterprise e prova**: i connettori personalizzati li permette l'amministratore dell'organizzazione; il supporto della modalità vocale ai
+  connettori personalizzati è da verificare nella prova finale dopo il deploy (chat scritta e vocale dal telefono).
+- Migrazione: `docs/migrations/2026-11-connettore-oauth.sql` (additiva e idempotente, niente `-post`): tabelle `oauth_clients`, `oauth_grants`,
+  `oauth_codes`, `oauth_tokens`. Da applicare in produzione PRIMA del merge e da segnalare nella PR; riportata in `docs/schema-casello.sql`.
+- Fuori ambito: token OAuth su `/api`, revoca RFC 7009, scelta degli ambiti al consenso, strumenti nuovi del centralino.
+
 ## Esecutore locale
 
 Le analisi dell'architetto possono essere eseguite da Claude Code sul Mac dell'utente invece che dal cloud
 (`analyses.executor`). L'agente si collega al server MCP su `/mcp` (Streamable HTTP stateless, solo POST,
-60 chiamate/min per utente; nginx ha `location /mcp`) con un token personale `cas_…` creato in console
-(Account → "Token personali", casella "Agente locale (MCP)", ambito `mcp`; tabella `api_tokens`, salvato come hash). `/mcp` richiede l'ambito `mcp`: un token senza riceve 401 («token non valido o scaduto»). Gli esiti di fase stanno in
+60 chiamate/min per utente; nginx ha `location /mcp`) con un token personale `cas_…` creato in console (Account → "Token personali",
+casella "Agente locale (MCP)", ambito `mcp`; tabella `api_tokens`, salvato come hash) oppure, dall'app Claude, con il token OAuth
+`cao_…` del connettore (vedi "Connettore OAuth (app Claude)"). `/mcp` richiede l'ambito `mcp` (un token `cas_…` senza riceve 401 «token non valido o scaduto»; il `cao_…` ha `mcp` e `api:write`). Gli esiti di fase stanno in
 `analysis_phase_results`; la lease dura 15 minuti (rinnovo con consegna o `ping_analysis`). Migrazione:
 `docs/migrations/2026-10-esecutore-locale.sql` (da applicare in produzione e segnalare nella PR). Procedura
 dell'agente: skill `docs/skills/casello-architetto-locale/SKILL.md`. Il server `/mcp` espone anche `read_mcp_tools`
@@ -791,7 +860,8 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
   GitHub (tutte facoltative: se ne manca una GitHub è disattivato e nei log compaiono i nomi mancanti):
   `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`,
   `GITHUB_APP_PRIVATE_KEY` (PEM, a capo veri o `\n`); `GITHUB_API_BASE`/`GITHUB_WEB_BASE` solo per i test.
-- nginx inoltra all'API l'`X-Forwarded-Proto` ricevuto da Traefik: serve al cookie `secure`.
+- nginx inoltra all'API l'`X-Forwarded-Proto` ricevuto da Traefik: serve al cookie `secure`. Oltre a `/api/` e `/mcp` inoltra
+  `^~ /.well-known/oauth-` e `^~ /oauth/` (connettore OAuth, stessi header; `^~` impedisce che la fallback della SPA li catturi).
 - Healthcheck di `casello-api`: `GET /api/healthz` sulla porta 3000. È nel `HEALTHCHECK` di
   `docker/api.Dockerfile` (con `node`, l'immagine slim non ha curl/wget); su Coolify impostarlo anche
   in Health Check (path `/api/healthz`, porta 3000), altrimenti Coolify non lo usa per il deploy.

@@ -5,6 +5,7 @@ import router from "./routes";
 import { ATTACHMENT_UPLOAD_PATH } from "./lib/teams/attachments";
 import { logger } from "./lib/logger";
 import { sessionMiddleware } from "./lib/auth";
+import { oauthErrorHandler, oauthRouter } from "./routes/oauth";
 import { mcpRouter } from "./lib/mcp/server";
 import { errorHandler } from "./middlewares/error-handler";
 
@@ -77,6 +78,9 @@ app.use((req, res, next) => {
 });
 app.use((req, res, next) => (isAttachmentUpload(req) ? next() : formParser(req, res, next)));
 app.use(sessionMiddleware());
+// Connettore OAuth (well-known e /oauth/*), alla radice: fuori da /api.
+app.use(oauthRouter());
+app.use("/oauth", oauthErrorHandler);
 
 app.use("/api", router);
 // Dopo il router: errori di validazione → 400, il resto → 500, sempre in JSON

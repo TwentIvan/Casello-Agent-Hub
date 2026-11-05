@@ -4,6 +4,8 @@
 import type { RequestHandler } from "express";
 import { authenticateApiToken, bearerToken, type TokenScope } from "../api-tokens";
 import { logger } from "../logger";
+import { oauthBase } from "../oauth/config";
+import { verifyAccessToken } from "../oauth/tokens";
 
 export const MCP_UNAUTHORIZED = "token non valido o scaduto";
 
@@ -19,18 +21,32 @@ declare global {
   }
 }
 
-/** Richiede un token personale valido con l'ambito mcp; altrimenti 401 con il messaggio fisso. */
+function unauthorized(res: Parameters<RequestHandler>[1]): void {
+  // Indica al client dove trovare i metadati OAuth (RFC 9728): avvia il flusso del connettore.
+  res
+    .status(401)
+    .set("WWW-Authenticate", `Bearer resource_metadata="${oauthBase().issuer}/.well-known/oauth-protected-resource"`)
+    .json({ error: MCP_UNAUTHORIZED });
+}
+
+/**
+ * Richiede un token valido per /mcp: personale `cas_…` con l'ambito mcp, oppure d'accesso `cao_…` del connettore OAuth
+ * (ambiti mcp e api:write); altrimenti 401 con il messaggio fisso e l'indicazione dei metadati OAuth.
+ */
 export function requireApiToken(): RequestHandler {
   return (req, res, next) => {
     const token = bearerToken(req);
     if (!token) {
-      res.status(401).json({ error: MCP_UNAUTHORIZED });
+      unauthorized(res);
       return;
     }
-    authenticateApiToken(token)
+    const verify = token.startsWith("cao_")
+      ? verifyAccessToken(token).then((a) => (a ? { userId: a.userId, scopes: a.scopes } : null))
+      : authenticateApiToken(token).then((a) => (a && a.nodeId === null && a.scopes.includes("mcp") ? { userId: a.userId, scopes: a.scopes } : null));
+    verify
       .then((auth) => {
-        if (!auth || auth.nodeId !== null || !auth.scopes.includes("mcp")) {
-          res.status(401).json({ error: MCP_UNAUTHORIZED });
+        if (!auth) {
+          unauthorized(res);
           return;
         }
         req.mcpUserId = auth.userId;

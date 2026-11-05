@@ -1,4 +1,4 @@
-import type { Request, RequestHandler } from "express";
+import type { Request, RequestHandler, Response } from "express";
 
 /** Contatore a finestra fissa per chiave, in memoria. */
 export function fixedWindowCounter({ limit, windowMs }: { limit: number; windowMs: number }) {
@@ -26,12 +26,17 @@ export function fixedWindowCounter({ limit, windowMs }: { limit: number; windowM
   };
 }
 
-function middlewareFor(counter: ReturnType<typeof fixedWindowCounter>, key: (req: Request) => string): RequestHandler {
+function middlewareFor(
+  counter: ReturnType<typeof fixedWindowCounter>,
+  key: (req: Request) => string,
+  reject?: (res: Response) => void,
+): RequestHandler {
   return (req, res, next) => {
     const out = counter.consume(key(req));
     if (!out.ok) {
       res.setHeader("Retry-After", out.retryAfterSec);
-      res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
+      if (reject) reject(res);
+      else res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
       return;
     }
     next();
@@ -108,3 +113,26 @@ export const nodePingRateLimit = rateLimit({
   windowMs: 60_000,
   key: (req) => `${byNode(req)}:task:${String(req.params["id"] ?? "?")}`,
 });
+
+// Registrazione dinamica dei client OAuth del connettore: 10 al minuto per IP.
+export const oauthRegisterRateLimit = rateLimit({ limit: 10, windowMs: 60_000 });
+// ...e al massimo 50 al giorno per IP (finestra di 24 ore); si monta dopo quello al minuto.
+export const oauthRegisterDailyRateLimit = rateLimit({ limit: 50, windowMs: 24 * 3600_000 });
+
+// Autorizzazione OAuth (GET e POST /oauth/authorize): 20 al minuto per utente della sessione, per IP senza sessione.
+export const oauthAuthorizeRateLimit = rateLimit({
+  limit: 20,
+  windowMs: 60_000,
+  key: (req) => (req.session?.userId !== undefined ? `user:${req.session.userId}` : (req.ip ?? "unknown")),
+});
+
+// Token endpoint OAuth: 30 al minuto per client_id del corpo e IP (per solo IP se il client_id manca).
+export const oauthTokenRateLimit: RequestHandler = middlewareFor(
+  fixedWindowCounter({ limit: 30, windowMs: 60_000 }),
+  (req) => {
+    const id = (req.body as { client_id?: unknown } | undefined)?.client_id;
+    const ip = req.ip ?? "unknown";
+    return typeof id === "string" && id.length > 0 && id.length <= 2000 ? `client:${id}:ip:${ip}` : `ip:${ip}`;
+  },
+  (res) => res.status(429).json({ error: "slow_down", error_description: "troppe richieste: riprova tra poco" }),
+);

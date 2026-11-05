@@ -241,6 +241,19 @@ describe("autenticazione", () => {
     await expect(connect(url, token)).rejects.toThrow();
   });
 
+  it("401 con WWW-Authenticate senza token e con token sconosciuto", async () => {
+    const url = await startMcp();
+    const { oauthBase } = await import("../oauth/config");
+    const expected = `Bearer resource_metadata="${oauthBase().issuer}/.well-known/oauth-protected-resource"`;
+    const { token: readOnly } = await createApiToken(userId, "Solo lettura", 30, ["api:read"]);
+    for (const bearer of [null, "cas_inesistente", "cao_inesistente", "non-un-token", readOnly]) {
+      const res = await rawPost(url, bearer);
+      expect(res.status).toBe(401);
+      expect(res.headers.get("www-authenticate")).toBe(expected);
+      expect(JSON.parse(res.text)).toEqual({ error: "token non valido o scaduto" });
+    }
+  });
+
   it("token solo api:read su /mcp → 401 token non valido o scaduto", async () => {
     const url = await startMcp();
     const { token: readOnly } = await createApiToken(userId, "Solo lettura", 30, ["api:read"]);

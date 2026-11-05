@@ -180,6 +180,48 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /account/oauth-grants:
+    get:
+      operationId: listOAuthGrants
+      tags: [nodes]
+      summary: Elenca le app collegate (connettore OAuth)
+      description: >-
+        Collegamenti non revocati dell'utente (app come Claude che usano `/mcp` con OAuth), dal più recente.
+        Solo con il login: con un token risponde 403.
+      responses:
+        "200":
+          description: Collegamenti attivi dell'utente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OAuthGrant"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /account/oauth-grants/{id}:
+    delete:
+      operationId: revokeOAuthGrant
+      tags: [nodes]
+      summary: Revoca un collegamento OAuth
+      description: >-
+        I token del collegamento smettono di valere subito. 404 "collegamento non trovato" se non è
+        dell'utente o è già revocato. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Collegamento revocato
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /account/nodes:
     get:
       operationId: listNodes
@@ -4952,6 +4994,27 @@ components:
         allowPrivateNetwork:
           type: boolean
           description: Solo custom e provider non gestiti
+
+    OAuthGrant:
+      type: object
+      required: [id, clientName, redirectHost, createdAt, lastUsedAt, canDecide]
+      properties:
+        id:
+          type: integer
+        clientName:
+          type: string
+        redirectHost:
+          type: string
+          description: Host dell'indirizzo di ritorno registrato dal client
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: ["string", "null"]
+          format: date-time
+        canDecide:
+          type: boolean
+          description: Può approvare e rifiutare le azioni in coda (ambito api:write)
 
     Node:
       type: object

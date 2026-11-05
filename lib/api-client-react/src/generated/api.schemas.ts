@@ -1386,6 +1386,18 @@ export interface AiAccountInput {
   allowPrivateNetwork?: boolean;
 }
 
+export interface OAuthGrant {
+  id: number;
+  clientName: string;
+  /** Host dell'indirizzo di ritorno registrato dal client */
+  redirectHost: string;
+  createdAt: string;
+  /** @nullable */
+  lastUsedAt: string | null;
+  /** Può approvare e rifiutare le azioni in coda (ambito api:write) */
+  canDecide: boolean;
+}
+
 export type NodeStatus = typeof NodeStatus[keyof typeof NodeStatus];
 
 

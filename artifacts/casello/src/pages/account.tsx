@@ -16,6 +16,7 @@ import { CentralinoModelCard } from "@/components/account/centralino-model-card"
 import { DefaultModelCard } from "@/components/account/default-model-card";
 import { ApiTokensSection } from "@/components/account/api-tokens-section";
 import { NodesSection } from "@/components/account/nodes-section";
+import { OAuthGrantsSection } from "@/components/account/oauth-grants-section";
 import { UserBudgetCard } from "@/components/budget/budget";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -222,6 +223,7 @@ export default function AccountPage() {
           <CentralinoModelCard />
           <UserBudgetCard />
           <ApiTokensSection />
+          <OAuthGrantsSection />
           <NodesSection />
           {githubLinked && <InstallationsCard githubEnabled={me.data.githubEnabled} />}
         </>

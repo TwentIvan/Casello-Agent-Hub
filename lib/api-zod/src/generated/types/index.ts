@@ -166,6 +166,7 @@ export * from './nodeTaskPackageTask';
 export * from './nodeTaskPackageTeam';
 export * from './nodeToken';
 export * from './notFoundResponse';
+export * from './oAuthGrant';
 export * from './payloadTooLargeResponse';
 export * from './planConversation';
 export * from './planConversationCreate';

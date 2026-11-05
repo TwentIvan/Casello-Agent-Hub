@@ -20,6 +20,7 @@ import { createApiTokensRouter } from "./api-tokens";
 import { createAccountModelRouter } from "./account-model";
 import { createNodesRouter } from "./nodes";
 import { createNodeRouter } from "./node";
+import { createOAuthGrantsRouter } from "./oauth-grants";
 import { requireNodeToken } from "../lib/nodes/auth";
 import { authRouter, requireAuth } from "../lib/auth";
 
@@ -52,5 +53,6 @@ router.use(createPendingActionsRouter());
 router.use(createApiTokensRouter());
 router.use(createAccountModelRouter());
 router.use(createNodesRouter());
+router.use(createOAuthGrantsRouter());
 
 export default router;

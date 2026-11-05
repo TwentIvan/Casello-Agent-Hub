@@ -4,6 +4,7 @@ import { failInterruptedAnalyses } from "./lib/architect/run-analysis";
 import { startLocalLeaseJob } from "./lib/architect/local-executor";
 import { startNodeSweeper, sweepNodeTasks } from "./lib/nodes/lease-sweeper";
 import { startOAuthSweeper } from "./lib/oauth/grants";
+import { closeAllActiveSessions, startAlfredSweeper } from "./lib/alfred/sessions";
 import { failInterruptedRuns } from "./lib/run-executor";
 import { failInterruptedTeamWork } from "./lib/teams/task-runner";
 import { pumpTurnInBackground, resumeQueuedTurns } from "./lib/teams/turn-runner";
@@ -109,6 +110,14 @@ startNodeSweeper();
 
 // Connettore OAuth: pulizia di codici, token, collegamenti revocati e client inutilizzati, all'avvio e ogni ora.
 startOAuthSweeper();
+
+// Alfred: all'avvio le sessioni rimaste attive si chiudono; poi controllo ogni 5 minuti.
+try {
+  await closeAllActiveSessions();
+} catch (err) {
+  logger.error({ errName: err instanceof Error ? err.name : "Error" }, "Chiusura delle sessioni di Alfred non riuscita");
+}
+startAlfredSweeper();
 
 app.listen(port, (err) => {
   if (err) {

@@ -31,3 +31,4 @@ export * from "./team-work";
 export * from "./nodes";
 export * from "./team-attachments";
 export * from "./oauth";
+export * from "./alfred";

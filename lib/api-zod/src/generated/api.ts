@@ -475,6 +475,125 @@ export const SetCentralinoModelResponse = zod.object({
 
 
 /**
+ * Modello e voce salvati, più i modelli idonei ad Alfred dell'utente (account Gemini, nome con live o native-audio, non ritirati; senza chiamare Gemini). Solo con il login: con un token risponde 403.
+ * @summary Modello e voce di Alfred
+ */
+export const GetAlfredSettingsResponse = zod.object({
+  "aiModelId": zod.number().nullable(),
+  "voice": zod.string(),
+  "models": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string()
+}))
+})
+
+
+/**
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile"), idoneo per nome e con bidiGenerateContent secondo Gemini (400 "modello non adatto ad Alfred"; 502 se Gemini non risponde o rifiuta la chiave). Voce fuori elenco: 400 "voce non disponibile". Con aiModelId null il modello si toglie senza chiamare Gemini; senza voce questa resta com'è. Solo con il login.
+ * @summary Imposta modello e voce di Alfred
+ */
+export const SetAlfredSettingsBody = zod.object({
+  "aiModelId": zod.number().nullable(),
+  "voice": zod.string().optional()
+})
+
+export const SetAlfredSettingsResponse = zod.object({
+  "aiModelId": zod.number().nullable(),
+  "voice": zod.string(),
+  "models": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string()
+}))
+})
+
+
+/**
+ * Chiude le altre sessioni attive dell'utente, crea la sessione e un token temporaneo di Gemini Live con modello, istruzioni, voce e strumenti già fissati. 409 senza modello di Alfred, con modello non più disponibile o con un tetto di spesa raggiunto; 502 se Gemini non risponde o rifiuta la chiave; massimo 10 avvii al minuto per utente. Solo con il login.
+ * @summary Avvia una sessione di Alfred
+ */
+export const StartAlfredSessionResponse = zod.object({
+  "sessionId": zod.number(),
+  "token": zod.string(),
+  "model": zod.string(),
+  "voice": zod.string(),
+  "expiresAt": zod.string()
+})
+
+
+/**
+ * Ricontrolla modello e tetti e rilascia un nuovo token temporaneo (scadenza dei 30 minuti o riconnessione). Con `resumptionHandle` (1..4096 caratteri) il token porta l'handle di ripresa di Gemini, così la conversazione continua. Stesso limite di 10 al minuto dell'avvio. Sessione chiusa o altrui: 404 "sessione non trovata". Solo con il login.
+ * @summary Nuovo token per una sessione di Alfred attiva
+ */
+export const RenewAlfredSessionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const renewAlfredSessionBodyResumptionHandleMax = 4096;
+
+
+
+export const RenewAlfredSessionBody = zod.object({
+  "resumptionHandle": zod.string().min(1).max(renewAlfredSessionBodyResumptionHandleMax).optional()
+})
+
+export const RenewAlfredSessionResponse = zod.object({
+  "sessionId": zod.number(),
+  "token": zod.string(),
+  "model": zod.string(),
+  "voice": zod.string(),
+  "expiresAt": zod.string()
+})
+
+
+/**
+ * Contatori cumulativi della sessione (interi non negativi): Casello tiene il massimo tra il valore salvato e quello ricevuto e ricalcola il costo. Solo con il login.
+ * @summary Registra i token consumati da una sessione di Alfred
+ */
+export const RecordAlfredUsageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RecordAlfredUsageBody = zod.object({
+  "promptTokens": zod.number(),
+  "completionTokens": zod.number()
+})
+
+export const RecordAlfredUsageResponse = zod.void()
+
+
+/**
+ * @summary Chiude una sessione di Alfred
+ */
+export const CloseAlfredSessionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CloseAlfredSessionResponse = zod.void()
+
+
+/**
+ * Il browser inoltra qui le chiamate di strumento di Gemini Live. Strumento sconosciuto o sessione non attiva: 404; altrimenti 200 con `ok` vero e `result`, oppure `ok` falso e `error` (messaggio fisso). Limite di 60 chiamate al minuto per utente (429). Solo con il login.
+ * @summary Esegue uno strumento di Alfred
+ */
+export const RunAlfredToolParams = zod.object({
+  "id": zod.coerce.number(),
+  "name": zod.coerce.string()
+})
+
+export const RunAlfredToolBody = zod.object({
+  "args": zod.record(zod.string(), zod.unknown()).optional()
+})
+
+export const RunAlfredToolResponse = zod.object({
+  "ok": zod.boolean(),
+  "result": zod.unknown().optional(),
+  "error": zod.string().optional()
+})
+
+
+/**
  * @summary Elenca tutte le app registrate
  */
 

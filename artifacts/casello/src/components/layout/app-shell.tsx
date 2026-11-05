@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, Sparkles, LayoutTemplate, Users, type LucideIcon } from "lucide-react";
+import { Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, Sparkles, LayoutTemplate, Users, Mic, type LucideIcon } from "lucide-react";
 import {
   getGetDashboardStatsQueryKey,
   getListUnreadTeamEventsQueryKey,
@@ -42,6 +42,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/skills", label: "Skill", icon: Sparkles },
   { href: "/team-templates", label: "Modelli di squadra", icon: LayoutTemplate },
   { href: "/teams", label: "Squadre", icon: Users },
+  { href: "/alfred", label: "Alfred", icon: Mic },
 ];
 
 function isActive(href: string, location: string): boolean {

@@ -36,6 +36,13 @@ import type {
   AiModelUpdate,
   AiProvider,
   AiProviderInfo,
+  AlfredChoice,
+  AlfredRenewBody,
+  AlfredSession,
+  AlfredSettings,
+  AlfredToolBody,
+  AlfredToolResult,
+  AlfredUsageBody,
   Analysis,
   AnalysisDetail,
   AnalysisItem,
@@ -2025,6 +2032,514 @@ export const useSetCentralinoModel = <TError = ErrorType<BadRequestResponse | Un
         TContext
       > => {
       return useMutation(getSetCentralinoModelMutationOptions(options));
+    }
+
+export const getGetAlfredSettingsUrl = () => {
+
+
+
+
+  return `/api/account/alfred`
+}
+
+/**
+ * Modello e voce salvati, più i modelli idonei ad Alfred dell'utente (account Gemini, nome con live o native-audio, non ritirati; senza chiamare Gemini). Solo con il login: con un token risponde 403.
+ * @summary Modello e voce di Alfred
+ */
+export const getAlfredSettings = async ( options?: RequestInit): Promise<AlfredSettings> => {
+
+  return customFetch<AlfredSettings>(getGetAlfredSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAlfredSettingsQueryKey = () => {
+    return [
+    `/api/account/alfred`
+    ] as const;
+    }
+
+
+export const getGetAlfredSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getAlfredSettings>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAlfredSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAlfredSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAlfredSettings>>> = ({ signal }) => getAlfredSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAlfredSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAlfredSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getAlfredSettings>>>
+export type GetAlfredSettingsQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+
+
+/**
+ * @summary Modello e voce di Alfred
+ */
+
+export function useGetAlfredSettings<TData = Awaited<ReturnType<typeof getAlfredSettings>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAlfredSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAlfredSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetAlfredSettingsUrl = () => {
+
+
+
+
+  return `/api/account/alfred`
+}
+
+/**
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile"), idoneo per nome e con bidiGenerateContent secondo Gemini (400 "modello non adatto ad Alfred"; 502 se Gemini non risponde o rifiuta la chiave). Voce fuori elenco: 400 "voce non disponibile". Con aiModelId null il modello si toglie senza chiamare Gemini; senza voce questa resta com'è. Solo con il login.
+ * @summary Imposta modello e voce di Alfred
+ */
+export const setAlfredSettings = async (alfredChoice: AlfredChoice, options?: RequestInit): Promise<AlfredSettings> => {
+
+  return customFetch<AlfredSettings>(getSetAlfredSettingsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(alfredChoice)
+  }
+);}
+
+
+
+
+export const getSetAlfredSettingsMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAlfredSettings>>, TError,{data: BodyType<AlfredChoice>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setAlfredSettings>>, TError,{data: BodyType<AlfredChoice>}, TContext> => {
+
+const mutationKey = ['setAlfredSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setAlfredSettings>>, {data: BodyType<AlfredChoice>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setAlfredSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetAlfredSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof setAlfredSettings>>>
+    export type SetAlfredSettingsMutationBody = BodyType<AlfredChoice>
+    export type SetAlfredSettingsMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | BadGatewayResponse>
+
+    /**
+ * @summary Imposta modello e voce di Alfred
+ */
+export const useSetAlfredSettings = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAlfredSettings>>, TError,{data: BodyType<AlfredChoice>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setAlfredSettings>>,
+        TError,
+        {data: BodyType<AlfredChoice>},
+        TContext
+      > => {
+      return useMutation(getSetAlfredSettingsMutationOptions(options));
+    }
+
+export const getStartAlfredSessionUrl = () => {
+
+
+
+
+  return `/api/alfred/sessions`
+}
+
+/**
+ * Chiude le altre sessioni attive dell'utente, crea la sessione e un token temporaneo di Gemini Live con modello, istruzioni, voce e strumenti già fissati. 409 senza modello di Alfred, con modello non più disponibile o con un tetto di spesa raggiunto; 502 se Gemini non risponde o rifiuta la chiave; massimo 10 avvii al minuto per utente. Solo con il login.
+ * @summary Avvia una sessione di Alfred
+ */
+export const startAlfredSession = async ( options?: RequestInit): Promise<AlfredSession> => {
+
+  return customFetch<AlfredSession>(getStartAlfredSessionUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getStartAlfredSessionMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startAlfredSession>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startAlfredSession>>, TError,void, TContext> => {
+
+const mutationKey = ['startAlfredSession'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startAlfredSession>>, void> = () => {
+
+
+          return  startAlfredSession(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartAlfredSessionMutationResult = NonNullable<Awaited<ReturnType<typeof startAlfredSession>>>
+
+    export type StartAlfredSessionMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>
+
+    /**
+ * @summary Avvia una sessione di Alfred
+ */
+export const useStartAlfredSession = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startAlfredSession>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startAlfredSession>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getStartAlfredSessionMutationOptions(options));
+    }
+
+export const getRenewAlfredSessionUrl = (id: number,) => {
+
+
+
+
+  return `/api/alfred/sessions/${id}/renew`
+}
+
+/**
+ * Ricontrolla modello e tetti e rilascia un nuovo token temporaneo (scadenza dei 30 minuti o riconnessione). Con `resumptionHandle` (1..4096 caratteri) il token porta l'handle di ripresa di Gemini, così la conversazione continua. Stesso limite di 10 al minuto dell'avvio. Sessione chiusa o altrui: 404 "sessione non trovata". Solo con il login.
+ * @summary Nuovo token per una sessione di Alfred attiva
+ */
+export const renewAlfredSession = async (id: number,
+    alfredRenewBody?: AlfredRenewBody, options?: RequestInit): Promise<AlfredSession> => {
+
+  return customFetch<AlfredSession>(getRenewAlfredSessionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(alfredRenewBody)
+  }
+);}
+
+
+
+
+export const getRenewAlfredSessionMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renewAlfredSession>>, TError,{id: number;data?: BodyType<AlfredRenewBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof renewAlfredSession>>, TError,{id: number;data?: BodyType<AlfredRenewBody>}, TContext> => {
+
+const mutationKey = ['renewAlfredSession'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof renewAlfredSession>>, {id: number;data?: BodyType<AlfredRenewBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  renewAlfredSession(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RenewAlfredSessionMutationResult = NonNullable<Awaited<ReturnType<typeof renewAlfredSession>>>
+    export type RenewAlfredSessionMutationBody = BodyType<AlfredRenewBody> | undefined
+    export type RenewAlfredSessionMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>
+
+    /**
+ * @summary Nuovo token per una sessione di Alfred attiva
+ */
+export const useRenewAlfredSession = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renewAlfredSession>>, TError,{id: number;data?: BodyType<AlfredRenewBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof renewAlfredSession>>,
+        TError,
+        {id: number;data?: BodyType<AlfredRenewBody>},
+        TContext
+      > => {
+      return useMutation(getRenewAlfredSessionMutationOptions(options));
+    }
+
+export const getRecordAlfredUsageUrl = (id: number,) => {
+
+
+
+
+  return `/api/alfred/sessions/${id}/usage`
+}
+
+/**
+ * Contatori cumulativi della sessione (interi non negativi): Casello tiene il massimo tra il valore salvato e quello ricevuto e ricalcola il costo. Solo con il login.
+ * @summary Registra i token consumati da una sessione di Alfred
+ */
+export const recordAlfredUsage = async (id: number,
+    alfredUsageBody: AlfredUsageBody, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getRecordAlfredUsageUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(alfredUsageBody)
+  }
+);}
+
+
+
+
+export const getRecordAlfredUsageMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordAlfredUsage>>, TError,{id: number;data: BodyType<AlfredUsageBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof recordAlfredUsage>>, TError,{id: number;data: BodyType<AlfredUsageBody>}, TContext> => {
+
+const mutationKey = ['recordAlfredUsage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recordAlfredUsage>>, {id: number;data: BodyType<AlfredUsageBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  recordAlfredUsage(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecordAlfredUsageMutationResult = NonNullable<Awaited<ReturnType<typeof recordAlfredUsage>>>
+    export type RecordAlfredUsageMutationBody = BodyType<AlfredUsageBody>
+    export type RecordAlfredUsageMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Registra i token consumati da una sessione di Alfred
+ */
+export const useRecordAlfredUsage = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordAlfredUsage>>, TError,{id: number;data: BodyType<AlfredUsageBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof recordAlfredUsage>>,
+        TError,
+        {id: number;data: BodyType<AlfredUsageBody>},
+        TContext
+      > => {
+      return useMutation(getRecordAlfredUsageMutationOptions(options));
+    }
+
+export const getCloseAlfredSessionUrl = (id: number,) => {
+
+
+
+
+  return `/api/alfred/sessions/${id}/close`
+}
+
+/**
+ * @summary Chiude una sessione di Alfred
+ */
+export const closeAlfredSession = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getCloseAlfredSessionUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCloseAlfredSessionMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeAlfredSession>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof closeAlfredSession>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['closeAlfredSession'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof closeAlfredSession>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  closeAlfredSession(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CloseAlfredSessionMutationResult = NonNullable<Awaited<ReturnType<typeof closeAlfredSession>>>
+
+    export type CloseAlfredSessionMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Chiude una sessione di Alfred
+ */
+export const useCloseAlfredSession = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeAlfredSession>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof closeAlfredSession>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getCloseAlfredSessionMutationOptions(options));
+    }
+
+export const getRunAlfredToolUrl = (id: number,
+    name: string,) => {
+
+
+
+
+  return `/api/alfred/sessions/${id}/tools/${name}`
+}
+
+/**
+ * Il browser inoltra qui le chiamate di strumento di Gemini Live. Strumento sconosciuto o sessione non attiva: 404; altrimenti 200 con `ok` vero e `result`, oppure `ok` falso e `error` (messaggio fisso). Limite di 60 chiamate al minuto per utente (429). Solo con il login.
+ * @summary Esegue uno strumento di Alfred
+ */
+export const runAlfredTool = async (id: number,
+    name: string,
+    alfredToolBody: AlfredToolBody, options?: RequestInit): Promise<AlfredToolResult> => {
+
+  return customFetch<AlfredToolResult>(getRunAlfredToolUrl(id,name),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(alfredToolBody)
+  }
+);}
+
+
+
+
+export const getRunAlfredToolMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAlfredTool>>, TError,{id: number;name: string;data: BodyType<AlfredToolBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runAlfredTool>>, TError,{id: number;name: string;data: BodyType<AlfredToolBody>}, TContext> => {
+
+const mutationKey = ['runAlfredTool'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runAlfredTool>>, {id: number;name: string;data: BodyType<AlfredToolBody>}> = (props) => {
+          const {id,name,data} = props ?? {};
+
+          return  runAlfredTool(id,name,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunAlfredToolMutationResult = NonNullable<Awaited<ReturnType<typeof runAlfredTool>>>
+    export type RunAlfredToolMutationBody = BodyType<AlfredToolBody>
+    export type RunAlfredToolMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Esegue uno strumento di Alfred
+ */
+export const useRunAlfredTool = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAlfredTool>>, TError,{id: number;name: string;data: BodyType<AlfredToolBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runAlfredTool>>,
+        TError,
+        {id: number;name: string;data: BodyType<AlfredToolBody>},
+        TContext
+      > => {
+      return useMutation(getRunAlfredToolMutationOptions(options));
     }
 
 export const getListAppsUrl = () => {

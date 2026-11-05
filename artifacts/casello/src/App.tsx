@@ -18,6 +18,7 @@ import PendingActionsPage from "@/pages/pending-actions";
 import RunDetailPage from "@/pages/run-detail";
 import AnalysisDetailPage from "@/pages/analysis-detail";
 import AccountPage from "@/pages/account";
+import AlfredPage from "@/pages/alfred";
 import ModelsPage from "@/pages/models";
 import SkillsPage from "@/pages/skills";
 import SkillDetailPage from "@/pages/skill-detail";
@@ -69,6 +70,7 @@ function Router() {
         <Route path="/teams/:id" component={TeamDetailPage} />
         <Route path="/analyses/:id" component={AnalysisDetailPage} />
         <Route path="/account" component={AccountPage} />
+        <Route path="/alfred" component={AlfredPage} />
         <Route component={NotFound} />
       </Switch>
     </AppShell>

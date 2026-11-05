@@ -203,6 +203,58 @@ export interface CentralinoModel {
   aiModelId: number | null;
 }
 
+export type AlfredSettingsModelsItem = {
+  id: number;
+  name: string;
+  accountName: string;
+};
+
+export interface AlfredSettings {
+  /** @nullable */
+  aiModelId: number | null;
+  voice: string;
+  models: AlfredSettingsModelsItem[];
+}
+
+export interface AlfredChoice {
+  /** @nullable */
+  aiModelId: number | null;
+  voice?: string;
+}
+
+export interface AlfredSession {
+  sessionId: number;
+  token: string;
+  model: string;
+  voice: string;
+  expiresAt: string;
+}
+
+export interface AlfredRenewBody {
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  resumptionHandle?: string;
+}
+
+export interface AlfredUsageBody {
+  promptTokens: number;
+  completionTokens: number;
+}
+
+export type AlfredToolBodyArgs = { [key: string]: unknown };
+
+export interface AlfredToolBody {
+  args?: AlfredToolBodyArgs;
+}
+
+export interface AlfredToolResult {
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+}
+
 export interface AppInput {
   /** @minLength 1 */
   name: string;

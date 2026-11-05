@@ -17,6 +17,9 @@ export const usersTable = pgTable(
     defaultAiModelId: integer("default_ai_model_id").references((): AnyPgColumn => aiModelsTable.id, { onDelete: "set null" }),
     // Modello del centralino (squadre); null = nessuno
     centralinoAiModelId: integer("centralino_ai_model_id").references((): AnyPgColumn => aiModelsTable.id, { onDelete: "set null" }),
+    // Modello e voce di Alfred (maggiordomo vocale); null = nessuno
+    alfredAiModelId: integer("alfred_ai_model_id").references((): AnyPgColumn => aiModelsTable.id, { onDelete: "set null" }),
+    alfredVoice: text("alfred_voice"),
   },
   (table) => [unique("users_email_unique").on(table.email)],
 );

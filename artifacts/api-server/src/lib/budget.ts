@@ -4,6 +4,7 @@ import {
   agentsTable,
   aiAccountsTable,
   aiModelsTable,
+  alfredSessionsTable,
   analysesTable,
   planConversationsTable,
   runsTable,
@@ -13,7 +14,7 @@ import {
 } from "@workspace/db";
 
 // Tetti di spesa mensili (USD). Chi configura paga: la spesa di un utente è quella fatta sui suoi account AI
-// (run, analisi cloud, chat del piano, compiti e turni delle squadre con un suo modello); quella di un agente è la somma delle sue run, con
+// (run, analisi cloud, chat del piano, sessioni di Alfred, compiti e turni delle squadre con un suo modello); quella di un agente è la somma delle sue run, con
 // qualsiasi modello; quella di un modello o di un account AI è la stessa somma ristretta a quel modello o ai
 // modelli dell'account (il credito si carica per chiave). Il mese è quello di calendario, ora italiana. Un costo null (prezzo mancante) non si
 // può sommare: si conta a parte tra le esecuzioni senza prezzo, e la spesa reale è più alta di quella mostrata.
@@ -68,8 +69,8 @@ function toSpend(rows: { spent: string; unpriced: number }[]): Spend {
 
 const runUnpriced = sql<number>`(count(*) filter (where ${runsTable.costUsd} is null and coalesce(${runsTable.promptTokens}, 0) + coalesce(${runsTable.completionTokens}, 0) > 0))::int`;
 
-/** Esecuzioni con token consumati ma costo null (stessa regola delle run), per compiti e turni delle squadre. */
-export function unpricedOf(table: typeof teamTasksTable | typeof teamTurnsTable) {
+/** Esecuzioni con token consumati ma costo null (stessa regola delle run), per compiti, turni delle squadre e sessioni di Alfred. */
+export function unpricedOf(table: typeof teamTasksTable | typeof teamTurnsTable | typeof alfredSessionsTable) {
   return sql<number>`(count(*) filter (where ${table.costUsd} is null and coalesce(${table.promptTokens}, 0) + coalesce(${table.completionTokens}, 0) > 0))::int`;
 }
 
@@ -78,13 +79,13 @@ type SpendKey = typeof aiAccountsTable.userId | typeof aiModelsTable.accountId |
 
 /**
  * Spesa del mese sui modelli degli account AI, raggruppata per `key` e limitata a `ids`: run, analisi cloud,
- * conversazioni del piano, compiti e turni delle squadre fatti con quei modelli. Ogni id richiesto compare nel risultato (spesa 0 se non ce n'è).
+ * conversazioni del piano, sessioni di Alfred, compiti e turni delle squadre fatti con quei modelli. Ogni id richiesto compare nel risultato (spesa 0 se non ce n'è).
  */
 async function spendsBy(key: SpendKey, ids: number[], since: Date): Promise<Map<number, Spend>> {
   const result = new Map<number, Spend>(ids.map((id) => [id, { spentUsd: 0, unpricedCount: 0 }]));
   if (ids.length === 0) return result;
   const scope = inArray(key, ids);
-  const [runs, analyses, chats, tasks, turns] = await Promise.all([
+  const [runs, analyses, chats, tasks, turns, alfred] = await Promise.all([
     db
       .select({ key, spent: sumOf(runsTable.costUsd), unpriced: runUnpriced })
       .from(runsTable)
@@ -131,8 +132,16 @@ async function spendsBy(key: SpendKey, ids: number[], since: Date): Promise<Map<
       .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
       .where(and(scope, gte(teamTurnsTable.createdAt, since)))
       .groupBy(key),
+    // Sessioni di Alfred: costo cumulativo come le conversazioni del piano, contano nel mese dell'ultima attività
+    db
+      .select({ key, spent: sumOf(alfredSessionsTable.costUsd), unpriced: unpricedOf(alfredSessionsTable) })
+      .from(alfredSessionsTable)
+      .innerJoin(aiModelsTable, eq(alfredSessionsTable.aiModelId, aiModelsTable.id))
+      .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
+      .where(and(scope, gte(alfredSessionsTable.lastActivityAt, since)))
+      .groupBy(key),
   ]);
-  for (const r of [...runs, ...analyses, ...chats, ...tasks, ...turns]) {
+  for (const r of [...runs, ...analyses, ...chats, ...tasks, ...turns, ...alfred]) {
     if (r.key === null) continue;
     const acc = result.get(r.key)!;
     result.set(r.key, { spentUsd: acc.spentUsd + Number(r.spent), unpricedCount: acc.unpricedCount + r.unpriced });
@@ -140,7 +149,7 @@ async function spendsBy(key: SpendKey, ids: number[], since: Date): Promise<Map<
   return result;
 }
 
-/** Spesa del mese sugli account AI dell'utente: run, analisi, conversazioni del piano e squadre con un suo modello. */
+/** Spesa del mese sugli account AI dell'utente: run, analisi, conversazioni del piano, sessioni di Alfred e squadre con un suo modello. */
 export async function userSpend(userId: number, since: Date = monthStart()): Promise<Spend> {
   return (await spendsBy(aiAccountsTable.userId, [userId], since)).get(userId)!;
 }

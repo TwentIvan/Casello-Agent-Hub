@@ -25,6 +25,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (vedi "Nodi (esecuzione dei ruoli node)").
 - Connettore OAuth: Casello è un authorization server OAuth 2.1 minimale, così l'app Claude (claude.ai, telefono) lo aggiunge come
   connettore personalizzato su `/mcp` e parla con le squadre senza token copiati (vedi "Connettore OAuth (app Claude)").
+- Alfred: maggiordomo vocale nella console (`/alfred`, installabile sul telefono): parla con Gemini Live e usa gli strumenti del
+  centralino; le decisioni vanno a doppio passo (vedi "Alfred (maggiordomo vocale)").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -58,7 +60,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
   ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals,
   skills, skill_versions, team_templates, team_template_versions, team_instances, team_instance_skills,
-  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, nodes, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens)
+  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, nodes, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -128,6 +130,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   servizio `artifacts/casello-nodo/` (README, `src/`: `cli.ts`, `loop.ts`, `runner.ts`, `client.ts`, `config.ts`, `launchd.ts`,
   `workspace.ts`, `capabilities.ts`, `task-file.ts`); console: `components/account/nodes-section.tsx` (Account → Nodi) e
   `components/teams/team-attachments.tsx` (scheda squadra). Spec: `docs/superpowers/specs/2026-11-04-casello-nodo-locale-design.md`
+- Alfred (vedi "Alfred (maggiordomo vocale)"): `artifacts/api-server/src/lib/alfred/` (`config.ts`, `settings.ts`, `gemini.ts`, `sessions.ts`,
+  `tools.ts`, `tool-declarations.ts`, `confirmations.ts`, `instructions.ts`); route `src/routes/alfred.ts`; schema `lib/db/src/schema/alfred.ts`;
+  console `artifacts/casello/src/pages/alfred.tsx`, `components/alfred/` (`use-alfred-voice.ts`, `mic-worklet.ts`, `alfred-transcript.tsx`),
+  `components/account/alfred-section.tsx`; `public/alfred.webmanifest` e icone. Spec: `docs/superpowers/specs/2026-11-05-casello-alfred-design.md`
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
 - `artifacts/api-server/src/lib/mcp/` e `lib/architect/local-executor.ts` — server MCP `/mcp` e coda/lease delle analisi locali
   (`lib/mcp/auth.ts`: `requireApiToken`, accetta `cas_…` e `cao_…`)
@@ -388,7 +394,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `team_instance_id`, `plan_version`; `tool_id`/`app_id` nullable) e `users` (`centralino_ai_model_id`). Da applicare in produzione
   PRIMA del merge e da segnalare nella PR; riportata in `docs/schema-casello.sql`.
 - Il nodo locale (esecuzione dei ruoli `node` e dei loro compiti `waiting_node`) è descritto in "Nodi (esecuzione dei ruoli node)".
-- Non ancora fatto: chat del portale col modello del centralino, interfaccia in The Hub Up (5), organizzazioni e policy dei dati (2).
+- Non ancora fatto: interfaccia in The Hub Up (5), organizzazioni e policy dei dati (2).
 
 ## Nodi (esecuzione dei ruoli node)
 
@@ -589,7 +595,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   modelli dell'account. Ogni run ricorda il modello con cui è partita (`runs.ai_model_id`). I costi null (prezzo
   mancante) non si sommano: si contano come esecuzioni senza prezzo. Anche i compiti e i turni del capo delle squadre
   (`team_tasks`, `team_turns`, con il loro `ai_model_id`) contano nella spesa dell'utente, del modello e dell'account;
-  i compiti eseguiti da un nodo (`ai_model_id` null) contano solo nel tetto della squadra.
+  i compiti eseguiti da un nodo (`ai_model_id` null) contano solo nel tetto della squadra. Contano anche le sessioni di
+  Alfred (`alfred_sessions`, con il loro `ai_model_id`) nella spesa dell'utente, del modello e dell'account.
 - Ordine dei controlli: agente, modello, account AI, utente (il primo raggiunto dà il messaggio); per i compiti e i turni
   delle squadre prima il tetto della squadra, poi modello, account AI e utente (vedi "Squadre (esecuzione)").
 - Raggiunto un tetto (spesa ≥ tetto) le nuove run, analisi cloud e messaggi della chat rispondono 409 con il motivo;
@@ -824,6 +831,56 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Migrazione: `docs/migrations/2026-11-connettore-oauth.sql` (additiva e idempotente, niente `-post`): tabelle `oauth_clients`, `oauth_grants`,
   `oauth_codes`, `oauth_tokens`. Da applicare in produzione PRIMA del merge e da segnalare nella PR; riportata in `docs/schema-casello.sql`.
 - Fuori ambito: token OAuth su `/api`, revoca RFC 7009, scelta degli ambiti al consenso, strumenti nuovi del centralino.
+
+## Alfred (maggiordomo vocale)
+
+- Spec: `docs/superpowers/specs/2026-11-05-casello-alfred-design.md`; piano `docs/superpowers/plans/2026-11-05-alfred.md`. Dove il codice
+  differisce dalla spec vale il codice, descritto qui. Alfred è la pagina vocale `/alfred` della console: l'utente parla, un modello
+  Gemini Live risponde a voce e consulta le squadre con gli strumenti del centralino. L'audio va direttamente tra browser e Gemini
+  (WebSocket) e non passa mai da Casello: all'API arrivano solo token, chiamate degli strumenti e contatori dei consumi.
+- **Impostazioni** (`lib/alfred/settings.ts`; `users.alfred_ai_model_id`, `users.alfred_voice`): `GET|PUT /api/account/alfred`
+  (`{aiModelId, voice?}`; il GET risponde `{aiModelId, voice, models: [{id, name, accountName}]}`). Modelli idonei: dei propri account
+  Gemini, per nome (senza prefisso `models/`); al salvataggio Casello verifica con la chiave dell'account che il modello supporti
+  `bidiGenerateContent` (`gemini.ts`, `checkLiveSupport`; modello non idoneo → 400, chiave rifiutata o Gemini non raggiungibile → 502,
+  messaggi fissi). Voci (`ALFRED_VOICES`, default `Kore`): `Kore`, `Charon`, `Aoede`, `Puck`, `Fenrir`, `Leda`, `Orus`, `Zephyr`;
+  altro → 400 «voce non disponibile».
+- **Sessioni** (`sessions.ts`, `alfred_sessions`: `active|closed`, `prompt_tokens`, `completion_tokens`, `cost_usd` null = prezzo mancante),
+  tutte solo con il login (`sessionOnly`: con un token personale 403): `POST /api/alfred/sessions` (10/min per utente, 429; senza
+  modello 409 «scegli il modello di Alfred in Account»; modello o account non usabili o tetto raggiunto, nell'ordine modello → account
+  AI → utente, 409 col motivo; chiude le altre sessioni `active` dell'utente) risponde `{sessionId, token, model, voice, expiresAt}`;
+  `POST …/:id/renew` (nuovo token per la stessa sessione; corpo facoltativo `{resumptionHandle}` 1..4096 caratteri, altrimenti 400, che finisce in `sessionResumption.handle` del token e mai nei log; condivide il limite di 10/min con l'avvio; chiusa o altrui → 404 «sessione non trovata»); `POST …/:id/usage`
+  `{promptTokens, completionTokens}` (totali cumulativi della sessione: il browser somma i `usageMetadata`, che Gemini manda per turno; interi ≥ 0 altrimenti 400; si tiene il massimo tra salvato e ricevuto, mai
+  all'indietro; ricalcola il costo; con modello o account eliminati il costo resta null e la sessione si chiude comunque);
+  `POST …/:id/close` (204, idempotente). Controllo ogni 5 min: `active` senza attività da 35 min → `closed` (anche le conferme scadute
+  da oltre 1 h si cancellano); all'avvio tutte le `active` → `closed`.
+- **Token temporaneo di Gemini** (`gemini.ts`): `POST <GEMINI_NATIVE_BASE>/auth_tokens` con la chiave dell'account (`x-goog-api-key`),
+  `uses: 1`, `expireTime` +30 min, `newSessionExpireTime` +1 min, 15 s, nessun redirect (`GEMINI_NATIVE_BASE`, letta in `config.ts`, solo per i test e ignorata con
+  `NODE_ENV=production`). La **configurazione sta tutta nel token** (`bidiGenerateContentSetup`: modello, `responseModalities` AUDIO,
+  voce, istruzioni di `instructions.ts`, strumenti di `tool-declarations.ts`, trascrizioni, `sessionResumption`, compressione del
+  contesto; senza `fieldMask`): verificato contro Gemini vero, il browser manda solo `{setup: {model}}` e istruzioni o strumenti
+  diversi vengono ignorati. Mai chiavi o token nei log; errori verso Gemini → 502 con messaggio fisso.
+- **Strumenti** (`tools.ts`, sopra `lib/teams/centralino.ts`, solo dati dell'utente): `POST /api/alfred/sessions/:id/tools/:name`
+  `{args}` → `{ok:true,result}` | `{ok:false,error}`; sessione non attiva o altrui, o strumento sconosciuto → 404. Strumenti:
+  `squadre_stato`, `squadra_dettaglio` (ridotto per la voce), `bollettino`, `coda_da_confermare`, `scrivi_al_capo` (limite condiviso
+  `consumeTeamMessage`, 10/min), `prepara_decisione`, `conferma_decisione`. Ogni chiamata aggiorna `last_activity_at`.
+- **Doppio passo** (`confirmations.ts`, `alfred_confirmations`): `prepara_decisione` `{numero, decisione approva|rifiuta, nota?}` (`nota` solo con rifiuta) crea una
+  conferma con codice di 6 cifre (solo l'hash SHA-256), scadenza 60 s, una volta sola; una voce che richiede il token utente non si
+  approva da Alfred; una nuova preparazione invalida le conferme aperte della stessa sessione (vale solo l'ultima, anche se la
+  preparazione fallisce). `conferma_decisione` `{codice}` consuma la conferma con UPDATE condizionato e poi approva o rifiuta con lo
+  stesso limite di 20/min di `consumeActionDecision`. Le istruzioni impongono di leggere numero e sintesi e chiedere un sì esplicito.
+- **Spesa**: le sessioni contano nella spesa dell'utente, del modello e dell'account del loro `ai_model_id` (`lib/budget.ts`), con i
+  prezzi del modello: è una stima, l'audio di Gemini ha prezzi propri (si possono inserire a mano).
+- **Console**: Account → carta «Alfred» (modello, voce, «Apri Alfred»); voce di menu «Alfred» e pagina `/alfred` (`use-alfred-voice.ts`:
+  AudioWorklet del microfono a PCM 16 bit 16 kHz in pacchetti da 100 ms, riproduzione PCM 24 kHz in coda, stop alla `interrupted`;
+  dopo `setupComplete` il testo «[apertura]»; `usageMetadata` → `usage` con i totali cumulativi al più ogni 10 s e alla chiusura;
+  `goAway` o chiusura inattesa → `renew` con l'handle di `sessionResumptionUpdate` (la ripresa vale solo se l'handle è nel token; al più 4
+  tentativi di fila con attesa 0/1/2/4 s, rimandati finché la pagina è in background; senza ripresa riparte da capo sulla stessa riga); un 404 da strumenti o `usage` → stop con «Alfred è stato aperto su un altro dispositivo»;
+  trascrizione delle ultime 50 battute). Manifest `alfred.webmanifest` e `apple-touch-icon` inseriti nel `<head>` solo montando la pagina.
+  Le route stanno sotto `/api`: `docker/nginx.conf` non cambia.
+- Migrazione: `docs/migrations/2026-11-alfred.sql` (additiva e idempotente, niente `-post`): tabelle `alfred_sessions` e
+  `alfred_confirmations`, colonne `users.alfred_ai_model_id` e `users.alfred_voice`. Da applicare in produzione PRIMA del merge e da
+  segnalare nella PR; riportata in `docs/schema-casello.sql`.
+- Prova finale dopo il deploy: dall'iPhone, icona sulla schermata Home, conversazione, un messaggio al capo e un'approvazione a voce.
 
 ## Esecutore locale
 

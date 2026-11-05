@@ -14,8 +14,9 @@ import { consentPage, errorPage, sendPage } from "../lib/oauth/pages";
 import { authorizationServerMetadata, protectedResourceMetadata } from "../lib/oauth/metadata";
 import { registerClient } from "../lib/oauth/clients";
 import { OAuthError } from "../lib/oauth/errors";
+import { exchangeCode, refreshTokens } from "../lib/oauth/tokens";
 import { logger } from "../lib/logger";
-import { oauthAuthorizeRateLimit, oauthRegisterRateLimit } from "../middlewares/rate-limit";
+import { oauthAuthorizeRateLimit, oauthRegisterRateLimit, oauthTokenRateLimit } from "../middlewares/rate-limit";
 
 /**
  * Errori su /oauth/*, anche quelli dei parser globali (che girano prima del router): sempre JSON OAuth.
@@ -133,6 +134,17 @@ export function oauthRouter(): IRouter {
       return;
     }
     res.redirect(await approve(userId, params));
+  });
+
+  r.post("/oauth/token", oauthTokenRateLimit, async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Pragma", "no-cache");
+    const form = (req.body ?? {}) as Record<string, unknown>;
+    const grantType = form["grant_type"];
+    if (typeof grantType !== "string") throw new OAuthError("invalid_request", "parametro mancante: grant_type");
+    if (grantType === "authorization_code") res.json(await exchangeCode(form));
+    else if (grantType === "refresh_token") res.json(await refreshTokens(form));
+    else throw new OAuthError("unsupported_grant_type", "grant_type non supportato");
   });
 
   return r;

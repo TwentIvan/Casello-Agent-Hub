@@ -1,4 +1,4 @@
-import type { Request, RequestHandler } from "express";
+import type { Request, RequestHandler, Response } from "express";
 
 /** Contatore a finestra fissa per chiave, in memoria. */
 export function fixedWindowCounter({ limit, windowMs }: { limit: number; windowMs: number }) {
@@ -26,12 +26,17 @@ export function fixedWindowCounter({ limit, windowMs }: { limit: number; windowM
   };
 }
 
-function middlewareFor(counter: ReturnType<typeof fixedWindowCounter>, key: (req: Request) => string): RequestHandler {
+function middlewareFor(
+  counter: ReturnType<typeof fixedWindowCounter>,
+  key: (req: Request) => string,
+  reject?: (res: Response) => void,
+): RequestHandler {
   return (req, res, next) => {
     const out = counter.consume(key(req));
     if (!out.ok) {
       res.setHeader("Retry-After", out.retryAfterSec);
-      res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
+      if (reject) reject(res);
+      else res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
       return;
     }
     next();
@@ -118,3 +123,13 @@ export const oauthAuthorizeRateLimit = rateLimit({
   windowMs: 60_000,
   key: (req) => (req.session?.userId !== undefined ? `user:${req.session.userId}` : (req.ip ?? "unknown")),
 });
+
+// Token endpoint OAuth: 30 al minuto per client_id del corpo (per IP se manca).
+export const oauthTokenRateLimit: RequestHandler = middlewareFor(
+  fixedWindowCounter({ limit: 30, windowMs: 60_000 }),
+  (req) => {
+    const id = (req.body as { client_id?: unknown } | undefined)?.client_id;
+    return typeof id === "string" && id.length > 0 && id.length <= 2000 ? `client:${id}` : `ip:${req.ip ?? "unknown"}`;
+  },
+  (res) => res.status(429).json({ error: "slow_down", error_description: "troppe richieste: riprova tra poco" }),
+);

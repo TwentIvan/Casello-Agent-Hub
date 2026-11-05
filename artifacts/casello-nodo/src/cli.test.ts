@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { chmod, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCli, servicePath, type CliDeps } from "./cli";
@@ -10,6 +10,7 @@ import { FAKE_TOKEN, tempDir } from "./test/helpers";
 
 let home: string;
 let root: string;
+let entry: string;
 let cleanup: () => Promise<void>;
 let calls: string[][];
 let loaded: boolean;
@@ -21,6 +22,10 @@ beforeEach(async () => {
   ({ dir: home, cleanup } = await tempDir("casello-cli-"));
   root = path.join(home, "spazi");
   await mkdir(root);
+  // Programma costruito finto, fuori da ~/.casello-nodo (come dist/ nel repository)
+  entry = path.join(home, "repo", "dist", "index.mjs");
+  await mkdir(path.dirname(entry), { recursive: true });
+  await writeFile(entry, "#!/usr/bin/env node\n// v1\n");
   calls = [];
   loaded = false;
   printOut = "";
@@ -42,7 +47,7 @@ function deps(over: Partial<CliDeps> = {}): CliDeps {
     uid: 501,
     launchctl,
     execPath: "/opt/node/bin/node",
-    entryPath: "/app/dist/index.mjs",
+    entryPath: entry,
     whichClaude: async () => "/Users/x/.local/bin/claude",
     out: (t) => (out += t),
     err: (t) => (err += t),
@@ -67,11 +72,50 @@ describe("install", () => {
       workspaceRoot: root,
     });
     const plist = await readFile(plistPath(home), "utf8");
-    expect(plist).toContain("<string>/opt/node/bin/node</string>\n    <string>/app/dist/index.mjs</string>\n    <string>run</string>");
+    const program = defaultPaths(home).programPath;
+    expect(plist).toContain(`<string>/opt/node/bin/node</string>\n    <string>${program}</string>\n    <string>run</string>`);
+    expect(plist).not.toContain(entry);
     expect(plist).toContain("/Users/x/.local/bin:");
     expect(plist).not.toContain(FAKE_TOKEN);
     expect(out + err).not.toContain(FAKE_TOKEN);
     expect(calls.at(-1)).toEqual(["bootstrap", "gui/501", plistPath(home)]);
+  });
+
+  it("copia il programma in ~/.casello-nodo/bin: il servizio non dipende dalla cartella in cui è stato costruito", async () => {
+    expect(await runCli(installArgs(), deps())).toBe(0);
+    const program = defaultPaths(home).programPath;
+    expect(program).toBe(path.join(home, ".casello-nodo", "bin", "casello-nodo.mjs"));
+    expect(await readFile(program, "utf8")).toBe(await readFile(entry, "utf8"));
+    expect((await stat(program)).mode & 0o777).toBe(0o755);
+    expect((await stat(path.dirname(program))).mode & 0o777).toBe(0o700);
+    expect(out).toContain(`Programma: ${program}`);
+    // Il repository sparisce: la copia resta
+    await rm(path.join(home, "repo"), { recursive: true });
+    expect((await stat(program)).isFile()).toBe(true);
+  });
+
+  it("reinstallare sostituisce la copia con la build nuova, senza file temporanei", async () => {
+    expect(await runCli(installArgs(), deps())).toBe(0);
+    await writeFile(entry, "#!/usr/bin/env node\n// v2\n");
+    expect(await runCli(installArgs(), deps())).toBe(0);
+    const program = defaultPaths(home).programPath;
+    expect(await readFile(program, "utf8")).toContain("v2");
+    expect((await readdir(path.dirname(program))).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("install lanciato dalla copia stessa non la copia su sé stessa", async () => {
+    expect(await runCli(installArgs(), deps())).toBe(0);
+    const program = defaultPaths(home).programPath;
+    expect(await runCli(installArgs(), deps({ entryPath: program }))).toBe(0);
+    expect(await readFile(program, "utf8")).toContain("v1");
+  });
+
+  it("programma costruito illeggibile → errore, nessuna config né servizio", async () => {
+    expect(await runCli(installArgs(), deps({ entryPath: path.join(home, "repo", "dist", "manca.mjs") }))).toBe(1);
+    expect(err).toContain("copia del programma non riuscita");
+    await expect(stat(defaultPaths(home).configPath)).rejects.toThrow();
+    await expect(stat(plistPath(home))).rejects.toThrow();
+    expect(calls).toEqual([]);
   });
 
   it("un config esistente con permessi larghi torna 600", async () => {
@@ -180,6 +224,8 @@ describe("uninstall", () => {
     expect(calls.at(-1)).toEqual(["bootout", `gui/501/${LABEL}`]);
     await expect(stat(plistPath(home))).rejects.toThrow();
     expect((await stat(defaultPaths(home).configPath)).isFile()).toBe(true);
+    await expect(stat(path.dirname(defaultPaths(home).programPath))).rejects.toThrow();
+    expect(out).toContain("programma rimosso");
     expect(out).toContain(defaultPaths(home).configPath);
     expect(out).toContain(defaultPaths(home).logsDir);
   });

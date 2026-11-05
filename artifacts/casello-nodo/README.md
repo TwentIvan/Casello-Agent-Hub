@@ -19,14 +19,17 @@ Costruisci l'eseguibile (`pnpm --filter @workspace/casello-nodo run build`, prod
   `--token-file <file>` (il file contiene il token; viene letto e ripulito dagli spazi). Esiste anche `--token cas_…`,
   ma il token resta nella cronologia della shell: preferisci il prompt o `--token-file`. Scrive la config
   (permessi 600) e il LaunchAgent `~/Library/LaunchAgents/cloud.fantamister.casello-nodo.plist` (avvio al login,
-  riavvio se cade) e lo carica con `launchctl bootstrap`. Rieseguirlo aggiorna config e servizio.
-- `casello-nodo uninstall` ferma e rimuove il servizio; config e log restano.
+  riavvio se cade) e lo carica con `launchctl bootstrap`. Copia il programma costruito in
+  `~/.casello-nodo/bin/casello-nodo.mjs` ed è quella copia che lancia il servizio: dopo l'installazione il repository si
+  può spostare o cancellare. Rieseguirlo (dopo una build nuova) aggiorna programma, config e servizio.
+- `casello-nodo uninstall` ferma e rimuove il servizio e la copia del programma; config e log restano.
 - `casello-nodo status` mostra se launchd ha il servizio, l'ultimo heartbeat riuscito e i compiti in corso.
 - `casello-nodo run` avvia il nodo in primo piano (è quello che lancia launchd). `Ctrl+C` o SIGTERM lo fermano:
   i compiti in corso risultano falliti («esecuzione interrotta: nodo fermato»); un secondo segnale forza l'uscita.
 
 ## Dove stanno le cose
 
+- Programma: `~/.casello-nodo/bin/casello-nodo.mjs` (copia scritta da `install`).
 - Config: `~/.casello-nodo/config.json` (permessi 600; il nodo non parte se sono diversi).
 - Log: `~/.casello-nodo/logs/` (`casello-nodo.log` con rotazione, `launchd.out.log`, `launchd.err.log`).
   Non contengono token, allegati né istruzioni dei compiti.

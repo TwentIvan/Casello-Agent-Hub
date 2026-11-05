@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -142,6 +142,8 @@ async function install(argv: string[], d: CliDeps): Promise<number> {
   await mkdir(configDir, { recursive: true, mode: 0o700 });
   // La cartella può esistere già con permessi più larghi
   await chmod(configDir, 0o700);
+  // Prima della config: se la copia fallisce non resta scritto nulla di nuovo
+  const program = await installProgram(d.entryPath, paths.programPath);
   // Il token non passa mai da un file con permessi larghi: file temporaneo creato 600, poi rename sulla config
   const tmp = `${paths.configPath}.${process.pid}.tmp`;
   await rm(tmp, { force: true });
@@ -157,20 +159,43 @@ async function install(argv: string[], d: CliDeps): Promise<number> {
     d.err("attenzione: `claude` non trovato nel PATH; uso /usr/local/bin, /opt/homebrew/bin e ~/.local/bin. Installa Claude Code e fai il login.\n");
   }
   const plist = buildPlist({
-    programArguments: [d.execPath, d.entryPath, "run"],
+    programArguments: [d.execPath, program, "run"],
     logsDir: paths.logsDir,
     path: servicePath(claudeBin, d.execPath, d.home),
   });
   await installService({ launchctl: d.launchctl, uid: d.uid, home: d.home, plist });
-  d.out(`Servizio installato e avviato (${plistPath(d.home)}).\nConfig: ${paths.configPath}\nLog: ${paths.logsDir}\n`);
+  d.out(`Servizio installato e avviato (${plistPath(d.home)}).\nProgramma: ${program}\nConfig: ${paths.configPath}\nLog: ${paths.logsDir}\n`);
   return 0;
+}
+
+/**
+ * Copia il programma costruito in `~/.casello-nodo/bin/` (file temporaneo e rename: un servizio già avviato non legge
+ * mai un file a metà). Il servizio usa la copia, così la cartella in cui è stato costruito si può spostare o cancellare.
+ * Se l'installazione parte già dalla copia, non c'è nulla da copiare.
+ */
+async function installProgram(entryPath: string, programPath: string): Promise<string> {
+  if (path.resolve(entryPath) === programPath) return programPath;
+  const dir = path.dirname(programPath);
+  const tmp = `${programPath}.${process.pid}.tmp`;
+  try {
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    await rm(tmp, { force: true });
+    await copyFile(entryPath, tmp);
+    await chmod(tmp, 0o755);
+    await rename(tmp, programPath);
+  } catch {
+    await rm(tmp, { force: true }).catch(() => {});
+    throw new CliError(`copia del programma non riuscita in ${dir}`);
+  }
+  return programPath;
 }
 
 async function uninstall(d: CliDeps): Promise<number> {
   const { wasLoaded } = await uninstallService({ launchctl: d.launchctl, uid: d.uid, home: d.home });
   const paths = defaultPaths(d.home);
+  await rm(path.dirname(paths.programPath), { recursive: true, force: true });
   d.out(
-    `${wasLoaded ? "Servizio fermato e rimosso" : "Servizio non caricato; plist rimosso"}.\nConfig e log restano: ${paths.configPath} e ${paths.logsDir}\n`,
+    `${wasLoaded ? "Servizio fermato e rimosso" : "Servizio non caricato; plist rimosso"}, programma rimosso.\nConfig e log restano: ${paths.configPath} e ${paths.logsDir}\n`,
   );
   return 0;
 }

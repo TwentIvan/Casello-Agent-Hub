@@ -98,6 +98,7 @@ describe("loadConfig", () => {
     expect(defaultPaths("/Users/prova")).toEqual({
       configPath: "/Users/prova/.casello-nodo/config.json",
       logsDir: "/Users/prova/.casello-nodo/logs",
+      programPath: "/Users/prova/.casello-nodo/bin/casello-nodo.mjs",
       statePath: "/Users/prova/.casello-nodo/state.json",
     });
   });

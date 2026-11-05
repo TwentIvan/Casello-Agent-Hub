@@ -468,7 +468,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `taskTimeoutMinutes` (default 60). Stato in `~/.casello-nodo/state.json`, log in `~/.casello-nodo/logs/` (senza token, allegati né
   istruzioni). Comandi: `casello-nodo install` (richiede la build: `corepack pnpm --filter @workspace/casello-nodo run build`, poi
   `node artifacts/casello-nodo/dist/index.mjs install`; chiede indirizzo, token (non mostrato) e radice, oppure `--url`, `--workspace-root`,
-  `--token-file`; `--token` lascia il token nella cronologia della shell), `uninstall`, `status`, `run` (in primo piano, è ciò che lancia
+  `--token-file`; `--token` lascia il token nella cronologia della shell; copia il programma costruito in
+  `~/.casello-nodo/bin/casello-nodo.mjs`, file temporaneo e rename, ed è quella copia che lancia il servizio: il repository serve
+  solo per costruire), `uninstall` (toglie anche la copia; config e log restano), `status`, `run` (in primo piano, è ciò che lancia
   launchd). Servizio LaunchAgent con etichetta `cloud.fantamister.casello-nodo` (`~/Library/LaunchAgents/…plist`, avvio al login e riavvio
   se cade; `ExitTimeOut` 30 s: allo stop launchd aspetta che il nodo termini i gruppi di `claude` e riferisca prima del SIGKILL).
 - **Sicurezza**: l'agente gira con `--dangerously-skip-permissions` dentro lo spazio di lavoro (esegue comandi e modifica file senza

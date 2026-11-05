@@ -26,6 +26,8 @@ export interface NodePaths {
   configPath: string;
   logsDir: string;
   statePath: string;
+  /** Copia del programma usata dal servizio: non dipende dalla cartella in cui è stato costruito. */
+  programPath: string;
 }
 
 /** Percorsi predefiniti del nodo sotto `~/.casello-nodo`. */
@@ -35,6 +37,7 @@ export function defaultPaths(home = homedir()): NodePaths {
     configPath: path.join(dir, "config.json"),
     logsDir: path.join(dir, "logs"),
     statePath: path.join(dir, "state.json"),
+    programPath: path.join(dir, "bin", "casello-nodo.mjs"),
   };
 }
 

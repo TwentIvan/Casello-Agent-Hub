@@ -31,6 +31,18 @@ declare module "express-session" {
     oidc?: { state: string; nonce: string; codeVerifier: string; returnTo: string };
     /** Login o collegamento GitHub in corso (state e PKCE). */
     github?: { state: string; codeVerifier: string; mode: "login" | "link"; returnTo: string };
+    /** Richiesta di autorizzazione OAuth (connettore) in attesa della decisione dell'utente. */
+    oauthPending?: {
+      params: {
+        clientId: string;
+        clientRowId: number;
+        clientName: string;
+        redirectUri: string;
+        codeChallenge: string;
+        state: string | null;
+      };
+      csrf: string;
+    };
   }
 }
 

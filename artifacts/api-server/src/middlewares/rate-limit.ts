@@ -111,3 +111,10 @@ export const nodePingRateLimit = rateLimit({
 
 // Registrazione dinamica dei client OAuth del connettore: 10 al minuto per IP.
 export const oauthRegisterRateLimit = rateLimit({ limit: 10, windowMs: 60_000 });
+
+// Autorizzazione OAuth (GET e POST /oauth/authorize): 20 al minuto per utente della sessione, per IP senza sessione.
+export const oauthAuthorizeRateLimit = rateLimit({
+  limit: 20,
+  windowMs: 60_000,
+  key: (req) => (req.session?.userId !== undefined ? `user:${req.session.userId}` : (req.ip ?? "unknown")),
+});

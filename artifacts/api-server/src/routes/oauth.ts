@@ -1,9 +1,21 @@
-import { Router, type ErrorRequestHandler, type IRouter } from "express";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { Router, type ErrorRequestHandler, type IRouter, type Request, type Response } from "express";
+import { eq } from "drizzle-orm";
+import { db, usersTable } from "@workspace/db";
+import { sessionUserId } from "../lib/auth";
+import {
+  AuthorizePageError,
+  AuthorizeRedirectError,
+  approve,
+  buildRedirect,
+  validateAuthorizeRequest,
+} from "../lib/oauth/authorize";
+import { consentPage, errorPage, sendPage } from "../lib/oauth/pages";
 import { authorizationServerMetadata, protectedResourceMetadata } from "../lib/oauth/metadata";
 import { registerClient } from "../lib/oauth/clients";
 import { OAuthError } from "../lib/oauth/errors";
 import { logger } from "../lib/logger";
-import { oauthRegisterRateLimit } from "../middlewares/rate-limit";
+import { oauthAuthorizeRateLimit, oauthRegisterRateLimit } from "../middlewares/rate-limit";
 
 /**
  * Errori su /oauth/*, anche quelli dei parser globali (che girano prima del router): sempre JSON OAuth.
@@ -30,6 +42,32 @@ export const oauthErrorHandler: ErrorRequestHandler = (err, _req, res, next) => 
   res.status(500).json(new OAuthError("server_error", "errore interno", 500).toJSON());
 };
 
+const EXPIRED_MESSAGE = "Richiesta scaduta: ricomincia dall'app Claude";
+
+function sameToken(a: unknown, b: string): boolean {
+  if (typeof a !== "string") return false;
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+function saveSession(req: Request): Promise<void> {
+  return new Promise((resolve, reject) => req.session.save((err) => (err ? reject(err) : resolve())));
+}
+
+/** Errori di validazione: pagina (client o ritorno non validi) o redirect con `error`. Altri errori: false. */
+function handleAuthorizeError(err: unknown, res: Response): boolean {
+  if (err instanceof AuthorizePageError) {
+    sendPage(res, 400, errorPage(err.message));
+    return true;
+  }
+  if (err instanceof AuthorizeRedirectError) {
+    res.redirect(buildRedirect(err.redirectUri, { error: err.code, state: err.state }));
+    return true;
+  }
+  return false;
+}
+
 /** Route OAuth del connettore, alla radice dell'app (fuori da /api). */
 export function oauthRouter(): IRouter {
   const r = Router();
@@ -53,6 +91,48 @@ export function oauthRouter(): IRouter {
       }
       throw err;
     }
+  });
+
+  r.get("/oauth/authorize", oauthAuthorizeRateLimit, async (req, res) => {
+    try {
+      const params = await validateAuthorizeRequest(req.query as Record<string, unknown>);
+      const userId = await sessionUserId(req);
+      if (userId === null) {
+        res.redirect(`/api/auth/login?returnTo=${encodeURIComponent(req.originalUrl)}`);
+        return;
+      }
+      const [user] = await db.select({ email: usersTable.email }).from(usersTable).where(eq(usersTable.id, userId));
+      const csrf = randomBytes(32).toString("base64url");
+      req.session.oauthPending = { params, csrf };
+      await saveSession(req);
+      sendPage(res, 200, consentPage({ clientName: params.clientName, redirectHost: new URL(params.redirectUri).host, userEmail: user?.email ?? "", csrf }));
+    } catch (err) {
+      if (!handleAuthorizeError(err, res)) throw err;
+    }
+  });
+
+  r.post("/oauth/authorize", oauthAuthorizeRateLimit, async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const pending = req.session.oauthPending;
+    const userId = await sessionUserId(req);
+    if (userId === null || !pending || !sameToken(body["csrf"], pending.csrf)) {
+      sendPage(res, 400, errorPage(EXPIRED_MESSAGE));
+      return;
+    }
+    const decision = body["decision"];
+    if (decision !== "allow" && decision !== "deny") {
+      sendPage(res, 400, errorPage("Richiesta non valida."));
+      return;
+    }
+    // La richiesta si usa una volta sola
+    delete req.session.oauthPending;
+    await saveSession(req);
+    const { params } = pending;
+    if (decision === "deny") {
+      res.redirect(buildRedirect(params.redirectUri, { error: "access_denied", state: params.state }));
+      return;
+    }
+    res.redirect(await approve(userId, params));
   });
 
   return r;

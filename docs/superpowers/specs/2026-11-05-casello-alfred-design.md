@@ -105,7 +105,8 @@ italiano, che il browser restituisce a Gemini (`toolResponse`). Logica in `lib/a
   `{ok:false, error: "questa voce va approvata dalla console: serve il token dell'app"}`. Altrimenti crea una conferma
   con un codice casuale di 6 cifre (salvato come hash SHA-256), scadenza 60 s, e risponde `{codice, numero, tipo,
   squadra, sintesi, decisione}`. Le istruzioni impongono di leggere numero e sintesi e chiedere conferma esplicita
-  prima di `conferma_decisione`; il codice non va pronunciato.
+  prima di `conferma_decisione`; il codice non va pronunciato. Una nuova `prepara_decisione` invalida le conferme
+  ancora aperte della stessa sessione: vale solo l'ultima.
 - `conferma_decisione` consuma la conferma con UPDATE condizionato (`used_at` null, non scaduta, stessa sessione e
   utente): codice sbagliato, scaduto o già usato → «conferma scaduta: ripeti la richiesta». Poi `approvePending` o
   `rejectPending` con lo stesso limite di 20/min (`consumeActionDecision`) e gli stessi esiti delle route (voce

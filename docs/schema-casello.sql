@@ -890,6 +890,7 @@ CREATE TABLE IF NOT EXISTS "alfred_confirmations" (
 	CONSTRAINT "alfred_confirmations_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action,
 	CONSTRAINT "alfred_confirmations_session_id_alfred_sessions_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."alfred_sessions"("id") ON DELETE cascade ON UPDATE no action
 );
+CREATE INDEX IF NOT EXISTS "alfred_confirmations_session_used_idx" ON "alfred_confirmations" USING btree ("session_id", "used_at");
 
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_alfred_ai_model_id_ai_models_id_fk') THEN

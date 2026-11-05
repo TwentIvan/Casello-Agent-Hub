@@ -235,6 +235,18 @@ export interface AlfredUsageBody {
   completionTokens: number;
 }
 
+export type AlfredToolBodyArgs = { [key: string]: unknown };
+
+export interface AlfredToolBody {
+  args?: AlfredToolBodyArgs;
+}
+
+export interface AlfredToolResult {
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+}
+
 export interface AppInput {
   /** @minLength 1 */
   name: string;

@@ -5,6 +5,9 @@ import {
   RecordAlfredUsageBody,
   RecordAlfredUsageParams,
   RenewAlfredSessionParams,
+  RunAlfredToolBody,
+  RunAlfredToolParams,
+  RunAlfredToolResponse,
   RenewAlfredSessionResponse,
   SetAlfredSettingsBody,
   SetAlfredSettingsResponse,
@@ -14,6 +17,7 @@ import { currentUserId, sessionOnly } from "../lib/auth";
 import { ModelChoiceError } from "../lib/ai/choice";
 import { AlfredError } from "../lib/alfred/gemini";
 import { getAlfredSettings, setAlfredSettings } from "../lib/alfred/settings";
+import { runAlfredTool } from "../lib/alfred/tools";
 import { closeSession, recordUsage, renewSession, startSession } from "../lib/alfred/sessions";
 import { parseRequest } from "../middlewares/error-handler";
 import { consumeAlfredSession } from "../middlewares/rate-limit";
@@ -82,6 +86,16 @@ export function createAlfredRouter(): IRouter {
     try {
       await recordUsage(currentUserId(req), id, body);
       res.status(204).end();
+    } catch (err) {
+      if (!replyAlfredError(res, err)) throw err;
+    }
+  });
+
+  router.post("/alfred/sessions/:id/tools/:name", sessionOnly, async (req, res) => {
+    const { id, name } = parseRequest(RunAlfredToolParams, req.params);
+    const { args } = parseRequest(RunAlfredToolBody, req.body);
+    try {
+      res.json(RunAlfredToolResponse.parse(await runAlfredTool(currentUserId(req), id, name, args)));
     } catch (err) {
       if (!replyAlfredError(res, err)) throw err;
     }

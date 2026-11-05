@@ -27,7 +27,9 @@ export const alfredSessionsTable = pgTable(
 );
 
 // Conferma a voce di una decisione sulla coda: si salva solo l'hash del codice, uso singolo
-export const alfredConfirmationsTable = pgTable("alfred_confirmations", {
+export const alfredConfirmationsTable = pgTable(
+  "alfred_confirmations",
+  {
   id: serial("id").primaryKey(),
   userId: integer("user_id")
     .notNull()
@@ -42,4 +44,6 @@ export const alfredConfirmationsTable = pgTable("alfred_confirmations", {
   expiresAt: timestamp("expires_at").notNull(),
   usedAt: timestamp("used_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+  },
+  (table) => [index("alfred_confirmations_session_used_idx").on(table.sessionId, table.usedAt)],
+);

@@ -34,6 +34,8 @@ describe("migrazione 2026-11-alfred", () => {
     expect(c.rows.map((r) => r.column_name)).toEqual(["alfred_ai_model_id", "alfred_voice"]);
     const i = await db.query<any>("SELECT indexname FROM pg_indexes WHERE indexname = 'alfred_sessions_user_status_idx'");
     expect(i.rows).toHaveLength(1);
+    const ic = await db.query<any>("SELECT indexname FROM pg_indexes WHERE indexname = 'alfred_confirmations_session_used_idx'");
+    expect(ic.rows).toHaveLength(1);
   });
 
   it("eliminare un modello mette a null i riferimenti", async () => {

@@ -566,6 +566,26 @@ export const CloseAlfredSessionResponse = zod.void()
 
 
 /**
+ * Il browser inoltra qui le chiamate di strumento di Gemini Live. Strumento sconosciuto o sessione non attiva: 404; altrimenti 200 con `ok` vero e `result`, oppure `ok` falso e `error` (messaggio fisso). Solo con il login.
+ * @summary Esegue uno strumento di Alfred
+ */
+export const RunAlfredToolParams = zod.object({
+  "id": zod.coerce.number(),
+  "name": zod.coerce.string()
+})
+
+export const RunAlfredToolBody = zod.object({
+  "args": zod.record(zod.string(), zod.unknown()).optional()
+})
+
+export const RunAlfredToolResponse = zod.object({
+  "ok": zod.boolean(),
+  "result": zod.unknown().optional(),
+  "error": zod.string().optional()
+})
+
+
+/**
  * @summary Elenca tutte le app registrate
  */
 

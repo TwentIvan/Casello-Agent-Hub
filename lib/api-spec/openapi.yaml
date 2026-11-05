@@ -761,6 +761,42 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /alfred/sessions/{id}/tools/{name}:
+    post:
+      operationId: runAlfredTool
+      tags: [alfred]
+      summary: Esegue uno strumento di Alfred
+      description: >-
+        Il browser inoltra qui le chiamate di strumento di Gemini Live. Strumento sconosciuto o sessione non
+        attiva: 404; altrimenti 200 con `ok` vero e `result`, oppure `ok` falso e `error` (messaggio fisso).
+        Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlfredToolBody"
+      responses:
+        "200":
+          description: Esito dello strumento
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlfredToolResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   # ─── Apps ───────────────────────────────────────────────────────────────────
 
   /apps:
@@ -3827,6 +3863,23 @@ components:
           type: number
         completionTokens:
           type: number
+
+    AlfredToolBody:
+      type: object
+      properties:
+        args:
+          type: object
+          additionalProperties: true
+
+    AlfredToolResult:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+        result: {}
+        error:
+          type: string
 
     AppInput:
       type: object

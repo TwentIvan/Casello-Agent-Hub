@@ -39,6 +39,8 @@ import type {
   AlfredChoice,
   AlfredSession,
   AlfredSettings,
+  AlfredToolBody,
+  AlfredToolResult,
   AlfredUsageBody,
   Analysis,
   AnalysisDetail,
@@ -2462,6 +2464,80 @@ export const useCloseAlfredSession = <TError = ErrorType<UnauthorizedResponse | 
         TContext
       > => {
       return useMutation(getCloseAlfredSessionMutationOptions(options));
+    }
+
+export const getRunAlfredToolUrl = (id: number,
+    name: string,) => {
+
+
+
+
+  return `/api/alfred/sessions/${id}/tools/${name}`
+}
+
+/**
+ * Il browser inoltra qui le chiamate di strumento di Gemini Live. Strumento sconosciuto o sessione non attiva: 404; altrimenti 200 con `ok` vero e `result`, oppure `ok` falso e `error` (messaggio fisso). Solo con il login.
+ * @summary Esegue uno strumento di Alfred
+ */
+export const runAlfredTool = async (id: number,
+    name: string,
+    alfredToolBody: AlfredToolBody, options?: RequestInit): Promise<AlfredToolResult> => {
+
+  return customFetch<AlfredToolResult>(getRunAlfredToolUrl(id,name),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(alfredToolBody)
+  }
+);}
+
+
+
+
+export const getRunAlfredToolMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAlfredTool>>, TError,{id: number;name: string;data: BodyType<AlfredToolBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runAlfredTool>>, TError,{id: number;name: string;data: BodyType<AlfredToolBody>}, TContext> => {
+
+const mutationKey = ['runAlfredTool'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runAlfredTool>>, {id: number;name: string;data: BodyType<AlfredToolBody>}> = (props) => {
+          const {id,name,data} = props ?? {};
+
+          return  runAlfredTool(id,name,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunAlfredToolMutationResult = NonNullable<Awaited<ReturnType<typeof runAlfredTool>>>
+    export type RunAlfredToolMutationBody = BodyType<AlfredToolBody>
+    export type RunAlfredToolMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Esegue uno strumento di Alfred
+ */
+export const useRunAlfredTool = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAlfredTool>>, TError,{id: number;name: string;data: BodyType<AlfredToolBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runAlfredTool>>,
+        TError,
+        {id: number;name: string;data: BodyType<AlfredToolBody>},
+        TContext
+      > => {
+      return useMutation(getRunAlfredToolMutationOptions(options));
     }
 
 export const getListAppsUrl = () => {

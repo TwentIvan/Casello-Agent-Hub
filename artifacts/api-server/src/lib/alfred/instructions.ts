@@ -23,7 +23,7 @@ export function alfredInstructions(userName: string | null): string {
  * Parte del setup Live che finisce nel token temporaneo (tutto tranne `model`): voce, istruzioni, strumenti,
  * trascrizioni, ripresa e compressione del contesto. Forma verificata contro Gemini (nessun `fieldMask`).
  */
-export function buildLiveConfig(opts: { voice: string; userName: string | null }): Record<string, unknown> {
+export function buildLiveConfig(opts: { voice: string; userName: string | null; resumptionHandle?: string }): Record<string, unknown> {
   return {
     generationConfig: {
       responseModalities: ["AUDIO"],
@@ -33,7 +33,8 @@ export function buildLiveConfig(opts: { voice: string; userName: string | null }
     tools: [{ functionDeclarations: ALFRED_TOOL_DECLARATIONS }],
     inputAudioTranscription: {},
     outputAudioTranscription: {},
-    sessionResumption: {},
+    // L'handle di ripresa vale solo dentro il token: un handle mandato dal browser è ignorato da Gemini
+    sessionResumption: opts.resumptionHandle ? { handle: opts.resumptionHandle } : {},
     contextWindowCompression: { slidingWindow: {} },
   };
 }

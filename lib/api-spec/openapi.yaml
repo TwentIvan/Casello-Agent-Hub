@@ -695,9 +695,17 @@ paths:
       summary: Nuovo token per una sessione di Alfred attiva
       description: >-
         Ricontrolla modello e tetti e rilascia un nuovo token temporaneo (scadenza dei 30 minuti o
-        riconnessione). Sessione chiusa o altrui: 404 "sessione non trovata". Solo con il login.
+        riconnessione). Con `resumptionHandle` (1..4096 caratteri) il token porta l'handle di ripresa di
+        Gemini, così la conversazione continua. Stesso limite di 10 al minuto dell'avvio. Sessione chiusa o
+        altrui: 404 "sessione non trovata". Solo con il login.
       parameters:
         - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlfredRenewBody"
       responses:
         "200":
           description: Nuovo token
@@ -705,6 +713,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AlfredSession"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -3854,6 +3864,14 @@ components:
           type: string
         expiresAt:
           type: string
+
+    AlfredRenewBody:
+      type: object
+      properties:
+        resumptionHandle:
+          type: string
+          minLength: 1
+          maxLength: 4096
 
     AlfredUsageBody:
       type: object

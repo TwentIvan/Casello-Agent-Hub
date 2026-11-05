@@ -282,6 +282,28 @@ describe("renew", () => {
     expect((gemini.state.tokenRequests[0]!.body as any).bidiGenerateContentSetup.model).toBe("models/gemini-3.8-live");
   });
 
+  it("con resumptionHandle lo mette nel token; senza, sessionResumption resta vuoto", async () => {
+    await setup();
+    const s = await api("POST", "/alfred/sessions");
+    gemini.state.tokenRequests = [];
+    const r = await api("POST", `/alfred/sessions/${s.json.sessionId}/renew`, { resumptionHandle: "handle-123" });
+    expect(r.status, r.text).toBe(200);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((gemini.state.tokenRequests[0]!.body as any).bidiGenerateContentSetup.sessionResumption).toEqual({ handle: "handle-123" });
+    const r2 = await api("POST", `/alfred/sessions/${s.json.sessionId}/renew`);
+    expect(r2.status, r2.text).toBe(200);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((gemini.state.tokenRequests[1]!.body as any).bidiGenerateContentSetup.sessionResumption).toEqual({});
+  });
+
+  it("un resumptionHandle vuoto o troppo lungo risponde 400", async () => {
+    await setup();
+    const s = await api("POST", "/alfred/sessions");
+    const url = `/alfred/sessions/${s.json.sessionId}/renew`;
+    expect((await api("POST", url, { resumptionHandle: "x".repeat(4097) })).status).toBe(400);
+    expect((await api("POST", url, { resumptionHandle: "" })).status).toBe(400);
+  });
+
   it("rilascia un nuovo token per la propria sessione attiva", async () => {
     await setup();
     const s = await api("POST", "/alfred/sessions");

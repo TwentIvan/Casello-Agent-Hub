@@ -523,11 +523,19 @@ export const StartAlfredSessionResponse = zod.object({
 
 
 /**
- * Ricontrolla modello e tetti e rilascia un nuovo token temporaneo (scadenza dei 30 minuti o riconnessione). Sessione chiusa o altrui: 404 "sessione non trovata". Solo con il login.
+ * Ricontrolla modello e tetti e rilascia un nuovo token temporaneo (scadenza dei 30 minuti o riconnessione). Con `resumptionHandle` (1..4096 caratteri) il token porta l'handle di ripresa di Gemini, così la conversazione continua. Stesso limite di 10 al minuto dell'avvio. Sessione chiusa o altrui: 404 "sessione non trovata". Solo con il login.
  * @summary Nuovo token per una sessione di Alfred attiva
  */
 export const RenewAlfredSessionParams = zod.object({
   "id": zod.coerce.number()
+})
+
+export const renewAlfredSessionBodyResumptionHandleMax = 4096;
+
+
+
+export const RenewAlfredSessionBody = zod.object({
+  "resumptionHandle": zod.string().min(1).max(renewAlfredSessionBodyResumptionHandleMax).optional()
 })
 
 export const RenewAlfredSessionResponse = zod.object({

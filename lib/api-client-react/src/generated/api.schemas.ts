@@ -230,6 +230,14 @@ export interface AlfredSession {
   expiresAt: string;
 }
 
+export interface AlfredRenewBody {
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  resumptionHandle?: string;
+}
+
 export interface AlfredUsageBody {
   promptTokens: number;
   completionTokens: number;

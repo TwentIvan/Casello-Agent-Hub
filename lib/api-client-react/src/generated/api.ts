@@ -37,6 +37,7 @@ import type {
   AiProvider,
   AiProviderInfo,
   AlfredChoice,
+  AlfredRenewBody,
   AlfredSession,
   AlfredSettings,
   AlfredToolBody,
@@ -2262,26 +2263,27 @@ export const getRenewAlfredSessionUrl = (id: number,) => {
 }
 
 /**
- * Ricontrolla modello e tetti e rilascia un nuovo token temporaneo (scadenza dei 30 minuti o riconnessione). Sessione chiusa o altrui: 404 "sessione non trovata". Solo con il login.
+ * Ricontrolla modello e tetti e rilascia un nuovo token temporaneo (scadenza dei 30 minuti o riconnessione). Con `resumptionHandle` (1..4096 caratteri) il token porta l'handle di ripresa di Gemini, così la conversazione continua. Stesso limite di 10 al minuto dell'avvio. Sessione chiusa o altrui: 404 "sessione non trovata". Solo con il login.
  * @summary Nuovo token per una sessione di Alfred attiva
  */
-export const renewAlfredSession = async (id: number, options?: RequestInit): Promise<AlfredSession> => {
+export const renewAlfredSession = async (id: number,
+    alfredRenewBody?: AlfredRenewBody, options?: RequestInit): Promise<AlfredSession> => {
 
   return customFetch<AlfredSession>(getRenewAlfredSessionUrl(id),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(alfredRenewBody)
   }
 );}
 
 
 
 
-export const getRenewAlfredSessionMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | BadGatewayResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renewAlfredSession>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof renewAlfredSession>>, TError,{id: number}, TContext> => {
+export const getRenewAlfredSessionMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renewAlfredSession>>, TError,{id: number;data?: BodyType<AlfredRenewBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof renewAlfredSession>>, TError,{id: number;data?: BodyType<AlfredRenewBody>}, TContext> => {
 
 const mutationKey = ['renewAlfredSession'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -2293,10 +2295,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof renewAlfredSession>>, {id: number}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof renewAlfredSession>>, {id: number;data?: BodyType<AlfredRenewBody>}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  renewAlfredSession(id,requestOptions)
+          return  renewAlfredSession(id,data,requestOptions)
         }
 
 
@@ -2307,18 +2309,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type RenewAlfredSessionMutationResult = NonNullable<Awaited<ReturnType<typeof renewAlfredSession>>>
-
-    export type RenewAlfredSessionMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | BadGatewayResponse>
+    export type RenewAlfredSessionMutationBody = BodyType<AlfredRenewBody> | undefined
+    export type RenewAlfredSessionMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | BadGatewayResponse>
 
     /**
  * @summary Nuovo token per una sessione di Alfred attiva
  */
-export const useRenewAlfredSession = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | BadGatewayResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renewAlfredSession>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useRenewAlfredSession = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renewAlfredSession>>, TError,{id: number;data?: BodyType<AlfredRenewBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof renewAlfredSession>>,
         TError,
-        {id: number},
+        {id: number;data?: BodyType<AlfredRenewBody>},
         TContext
       > => {
       return useMutation(getRenewAlfredSessionMutationOptions(options));

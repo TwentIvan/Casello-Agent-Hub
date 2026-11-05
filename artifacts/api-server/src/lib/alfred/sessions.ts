@@ -59,8 +59,8 @@ async function prepare(userId: number, sessionModelId?: number | null): Promise<
   return { resolved, voice, userName: user.name };
 }
 
-async function issueToken(resolved: ResolvedModel, voice: string, userName: string | null) {
-  return createEphemeralToken(resolved, buildLiveConfig({ voice, userName }));
+async function issueToken(resolved: ResolvedModel, voice: string, userName: string | null, resumptionHandle?: string) {
+  return createEphemeralToken(resolved, buildLiveConfig({ voice, userName, resumptionHandle }));
 }
 
 /**
@@ -95,10 +95,10 @@ export async function requireActiveSession(userId: number, id: number): Promise<
 }
 
 /** Nuovo token per la stessa sessione attiva: ricontrolla modello e tetti. */
-export async function renewSession(userId: number, id: number): Promise<AlfredSessionStart> {
+export async function renewSession(userId: number, id: number, resumptionHandle?: string): Promise<AlfredSessionStart> {
   const session = await requireActiveSession(userId, id);
   const { resolved, voice, userName } = await prepare(userId, session.aiModelId);
-  const { token, expiresAt } = await issueToken(resolved, voice, userName);
+  const { token, expiresAt } = await issueToken(resolved, voice, userName, resumptionHandle);
   return { sessionId: id, token, model: bareModelName(resolved.modelId), voice, expiresAt };
 }
 

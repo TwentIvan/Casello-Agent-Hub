@@ -119,6 +119,14 @@ function isPrivateIpv6(ip: string): boolean {
   return false;
 }
 
+/** Indirizzo IP pubblico (IPv4 o IPv6, anche mappato): false per privati, loopback, link-local, ULA, metadati, non specificati o non validi. */
+export function isPublicIp(ip: string): boolean {
+  const kind = isIP(ip);
+  if (kind === 4) return !isPrivateIpv4(ip);
+  if (kind === 6) return !isPrivateIpv6(ip);
+  return false;
+}
+
 /**
  * IPv4 vietati anche con il consenso alla rete privata (Ruling R6): 0.0.0.0/8, loopback (127/8) e
  * link-local/metadati (169.254/16). Un IPv4 non valido è vietato.

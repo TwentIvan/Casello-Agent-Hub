@@ -114,3 +114,34 @@ describe("POST /oauth/register", () => {
     expect(r.status).toBe(400);
   });
 });
+
+describe("errori su /oauth", () => {
+  it("JSON malformato → 400 invalid_request in JSON OAuth", async () => {
+    const res = await fetch(`${base}/oauth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: "{non json" });
+    expect(res.status).toBe(400);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const json = (await res.json()) as { error: string; error_description: unknown };
+    expect(json.error).toBe("invalid_request");
+    expect(typeof json.error_description).toBe("string");
+  });
+
+  it("errore imprevisto → 500 server_error «errore interno»", async () => {
+    const { oauthErrorHandler } = await import("./oauth");
+    const express = (await import("express")).default;
+    const app = express();
+    app.get("/oauth/boom", () => {
+      throw new Error("segreto del DB");
+    });
+    app.use("/oauth", oauthErrorHandler);
+    const s = http.createServer(app);
+    await new Promise<void>((r) => s.listen(0, "127.0.0.1", r));
+    try {
+      const res = await fetch(`http://127.0.0.1:${(s.address() as AddressInfo).port}/oauth/boom`);
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "server_error", error_description: "errore interno" });
+    } finally {
+      s.closeAllConnections();
+      await new Promise<void>((r) => s.close(() => r()));
+    }
+  });
+});

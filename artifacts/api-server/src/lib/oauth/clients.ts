@@ -1,7 +1,10 @@
 import { randomBytes } from "node:crypto";
+import dns from "node:dns";
+import type http from "node:http";
+import https from "node:https";
 import { eq, sql } from "drizzle-orm";
 import { db, oauthClientsTable, type OAuthClient } from "@workspace/db";
-import { validateBaseUrl } from "../ai/providers";
+import { isPublicIp, validateBaseUrl } from "../ai/providers";
 import { logger } from "../logger";
 import { OAuthError } from "./errors";
 
@@ -47,6 +50,12 @@ function parseRedirectUris(value: unknown): string[] {
   return uris;
 }
 
+/** Tutti i client (dcr e metadata): il tetto di 1 000 li conta insieme. */
+async function countClients(): Promise<number> {
+  const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(oauthClientsTable);
+  return row?.n ?? 0;
+}
+
 /** Registrazione dinamica dei client (RFC 7591): solo client pubblici. */
 export async function registerClient(body: unknown): Promise<{ status: 201; body: object }> {
   const b = body !== null && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
@@ -62,8 +71,7 @@ export async function registerClient(body: unknown): Promise<{ status: 201; body
   const name = rawName === undefined || rawName.trim() === "" ? "Client MCP" : rawName.trim();
   if (name.length > MAX_NAME) throw new OAuthError("invalid_client_metadata", "client_name troppo lungo (massimo 100 caratteri)");
 
-  const [{ n } = { n: 0 }] = await db.select({ n: sql<number>`count(*)::int` }).from(oauthClientsTable);
-  if (n >= MAX_CLIENTS) throw new OAuthError("temporarily_unavailable", "registrazioni temporaneamente sospese", 503);
+  if ((await countClients()) >= MAX_CLIENTS) throw new OAuthError("temporarily_unavailable", "registrazioni temporaneamente sospese", 503);
 
   const clientId = `cac_${randomBytes(16).toString("base64url")}`;
   await db.insert(oauthClientsTable).values({ clientId, kind: "dcr", name, redirectUris });
@@ -82,36 +90,100 @@ export async function registerClient(body: unknown): Promise<{ status: 201; body
   };
 }
 
-async function readLimited(res: Response, max: number): Promise<string | null> {
-  const reader = res.body?.getReader();
-  if (!reader) return null;
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > max) {
-      await reader.cancel().catch(() => undefined);
-      return null;
+export type DocumentDownloader = (url: string) => Promise<string | null>;
+type Resolver = (host: string, opts: dns.LookupAllOptions) => Promise<dns.LookupAddress[]>;
+type RequestFn = (url: URL, opts: https.RequestOptions) => http.ClientRequest;
+
+/**
+ * Funzione `lookup` per il socket: risolve il nome, rifiuta se UNO QUALSIASI degli indirizzi non è pubblico e
+ * consegna al socket proprio gli indirizzi verificati (niente seconda risoluzione: nessun DNS rebinding).
+ */
+export function guardedLookup(resolve: Resolver = (h, o) => dns.promises.lookup(h, o)) {
+  return (host: string, options: dns.LookupOptions, cb: (...args: unknown[]) => void): void => {
+    resolve(host, { all: true, family: options?.family, hints: options?.hints }).then(
+      (addrs) => {
+        if (addrs.length === 0 || !addrs.every((a) => isPublicIp(a.address))) {
+          cb(new Error("indirizzo non ammesso"));
+          return;
+        }
+        if (options?.all) cb(null, addrs);
+        else cb(null, addrs[0]!.address, addrs[0]!.family);
+      },
+      (err: unknown) => cb(err),
+    );
+  };
+}
+
+/**
+ * Scarica il documento del client: solo https verso indirizzi pubblici (verificati alla connessione), nessun redirect,
+ * 10 s in tutto, al massimo 64 KB. Qualsiasi problema → null.
+ */
+export function downloadClientDocument(
+  url: string,
+  deps: { lookup?: ReturnType<typeof guardedLookup>; request?: RequestFn } = {},
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    let target: URL;
+    try {
+      target = new URL(url);
+    } catch {
+      resolve(null);
+      return;
     }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks).toString("utf8");
+    if (target.protocol !== "https:") {
+      resolve(null);
+      return;
+    }
+    let done = false;
+    const finish = (v: string | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(v);
+    };
+    const doRequest: RequestFn = deps.request ?? ((u, o) => https.request(u, o));
+    const req = doRequest(target, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      lookup: (deps.lookup ?? guardedLookup()) as unknown as https.RequestOptions["lookup"],
+    });
+    const timer = setTimeout(() => {
+      req.destroy();
+      finish(null);
+    }, DOC_TIMEOUT_MS);
+    req.on("error", () => finish(null));
+    req.on("response", (res) => {
+      const status = res.statusCode ?? 0;
+      if (status < 200 || status >= 300) {
+        res.destroy();
+        finish(null);
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let total = 0;
+      res.on("data", (c: Buffer) => {
+        total += c.length;
+        if (total > DOC_MAX_BYTES) {
+          res.destroy();
+          req.destroy();
+          finish(null);
+          return;
+        }
+        chunks.push(c);
+      });
+      res.on("end", () => finish(Buffer.concat(chunks).toString("utf8")));
+      res.on("error", () => finish(null));
+    });
+    req.end();
+  });
 }
 
 async function fetchClientDocument(
   clientId: string,
-  fetchImpl: typeof fetch,
+  download: DocumentDownloader,
 ): Promise<{ name: string; redirectUris: string[] } | null> {
   if (validateBaseUrl(clientId, false) !== null) return null;
-  const res = await fetchImpl(clientId, {
-    redirect: "error",
-    signal: AbortSignal.timeout(DOC_TIMEOUT_MS),
-    headers: { accept: "application/json" },
-  });
-  if (!res.ok) return null;
-  const text = await readLimited(res, DOC_MAX_BYTES);
+  const text = await download(clientId);
   if (text === null) return null;
   const doc: unknown = JSON.parse(text);
   if (doc === null || typeof doc !== "object" || Array.isArray(doc)) return null;
@@ -127,14 +199,15 @@ async function fetchClientDocument(
 }
 
 /** Trova il client: riga `dcr`, oppure documento del client per un `client_id` https (salvato e riscaricato dopo 24 ore). */
-export async function resolveClient(clientId: string, fetchImpl: typeof fetch = fetch): Promise<OAuthClient | null> {
+export async function resolveClient(clientId: string, download: DocumentDownloader = downloadClientDocument): Promise<OAuthClient | null> {
   try {
     const [row] = await db.select().from(oauthClientsTable).where(eq(oauthClientsTable.clientId, clientId));
     if (row?.kind === "dcr") return row;
     if (!clientId.startsWith("https://")) return null;
     if (row?.metadataFetchedAt && Date.now() - row.metadataFetchedAt.getTime() < DOC_TTL_MS) return row;
 
-    const doc = await fetchClientDocument(clientId, fetchImpl);
+    if (!row && (await countClients()) >= MAX_CLIENTS) return null;
+    const doc = await fetchClientDocument(clientId, download);
     if (!doc) return null;
     const now = new Date();
     const [saved] = await db
@@ -146,7 +219,8 @@ export async function resolveClient(clientId: string, fetchImpl: typeof fetch = 
       })
       .returning();
     return saved ?? null;
-  } catch {
+  } catch (err) {
+    logger.warn({ errName: err instanceof Error ? err.name : "unknown" }, "Client OAuth non risolto");
     return null;
   }
 }

@@ -1,5 +1,5 @@
-import { and, eq, lt } from "drizzle-orm";
-import { db, alfredConfirmationsTable, alfredSessionsTable, usersTable } from "@workspace/db";
+import { and, eq, lt, sql } from "drizzle-orm";
+import { db, aiModelsTable, alfredConfirmationsTable, alfredSessionsTable, usersTable } from "@workspace/db";
 import { ModelAccessError, computeCost, resolveModel, type ResolvedModel } from "../ai/executor";
 import { ProviderError } from "../ai/discovery";
 import { MODEL_UNAVAILABLE } from "../ai/choice";
@@ -35,16 +35,18 @@ const SWEEP_INTERVAL_MS = 5 * 60_000;
 const MAX_COUNTER = 2_000_000_000;
 
 /** Modello, account e tetti ancora validi; restituisce il modello risolto, voce e nome dell'utente. */
-async function prepare(userId: number): Promise<{ resolved: ResolvedModel; voice: string; userName: string | null }> {
+async function prepare(userId: number, sessionModelId?: number | null): Promise<{ resolved: ResolvedModel; voice: string; userName: string | null }> {
   const [user] = await db
     .select({ aiModelId: usersTable.alfredAiModelId, voice: usersTable.alfredVoice, name: usersTable.name })
     .from(usersTable)
     .where(eq(usersTable.id, userId))
     .limit(1);
-  if (!user || user.aiModelId === null) throw new AlfredError(ALFRED_SESSION_MESSAGES.noModel, 409);
+  // Il rinnovo usa il modello della sessione (a lui restano legati costo e spesa), l'avvio quello attuale dell'utente
+  const modelId = sessionModelId === undefined ? user?.aiModelId : sessionModelId;
+  if (!user || modelId === null || modelId === undefined) throw new AlfredError(ALFRED_SESSION_MESSAGES.noModel, 409);
   let resolved: ResolvedModel;
   try {
-    resolved = await resolveModel(user.aiModelId, { userId, mustOwn: true });
+    resolved = await resolveModel(modelId, { userId, mustOwn: true });
   } catch (err) {
     if (err instanceof ModelAccessError) throw new AlfredError(err.message, 409);
     if (err instanceof ProviderError) throw new AlfredError(MODEL_UNAVAILABLE, 409);
@@ -69,6 +71,8 @@ export async function startSession(userId: number): Promise<AlfredSessionStart> 
   const { resolved, voice, userName } = await prepare(userId);
   const { token, expiresAt } = await issueToken(resolved, voice, userName);
   const sessionId = await db.transaction(async (tx) => {
+    // Blocca la riga dell'utente: due avvii concorrenti si serializzano e resta una sola sessione attiva
+    await tx.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, userId)).for("update");
     await tx
       .update(alfredSessionsTable)
       .set({ status: "closed", closedAt: new Date() })
@@ -92,8 +96,8 @@ export async function requireActiveSession(userId: number, id: number): Promise<
 
 /** Nuovo token per la stessa sessione attiva: ricontrolla modello e tetti. */
 export async function renewSession(userId: number, id: number): Promise<AlfredSessionStart> {
-  await requireActiveSession(userId, id);
-  const { resolved, voice, userName } = await prepare(userId);
+  const session = await requireActiveSession(userId, id);
+  const { resolved, voice, userName } = await prepare(userId, session.aiModelId);
   const { token, expiresAt } = await issueToken(resolved, voice, userName);
   return { sessionId: id, token, model: bareModelName(resolved.modelId), voice, expiresAt };
 }
@@ -104,21 +108,37 @@ export async function recordUsage(userId: number, id: number, usage: { promptTok
     if (!Number.isSafeInteger(n) || n < 0 || n > MAX_COUNTER) throw new AlfredError(ALFRED_SESSION_MESSAGES.badCounters, 400);
   }
   const session = await requireActiveSession(userId, id);
-  const promptTokens = Math.max(session.promptTokens, usage.promptTokens);
-  const completionTokens = Math.max(session.completionTokens, usage.completionTokens);
+  // Massimo in SQL: chiamate concorrenti non abbassano mai i contatori
+  const [row] = await db
+    .update(alfredSessionsTable)
+    .set({
+      promptTokens: sql`GREATEST(${alfredSessionsTable.promptTokens}, ${usage.promptTokens})`,
+      completionTokens: sql`GREATEST(${alfredSessionsTable.completionTokens}, ${usage.completionTokens})`,
+    })
+    .where(and(eq(alfredSessionsTable.id, id), eq(alfredSessionsTable.status, "active")))
+    .returning({ promptTokens: alfredSessionsTable.promptTokens, completionTokens: alfredSessionsTable.completionTokens });
+  if (!row) return;
+  // Prezzi letti dal modello (senza decifrare la chiave); modello sparito o senza prezzo → costo null
   let costUsd: number | null = null;
   if (session.aiModelId !== null) {
-    try {
-      const resolved = await resolveModel(session.aiModelId, { userId: null, mustOwn: false });
-      costUsd = computeCost(promptTokens, completionTokens, resolved.priceInput, resolved.priceOutput);
-    } catch {
-      costUsd = null;
-    }
+    const [m] = await db
+      .select({ pin: aiModelsTable.priceInputPerMtok, pout: aiModelsTable.priceOutputPerMtok })
+      .from(aiModelsTable)
+      .where(eq(aiModelsTable.id, session.aiModelId))
+      .limit(1);
+    if (m && m.pin !== null && m.pout !== null) costUsd = computeCost(row.promptTokens, row.completionTokens, Number(m.pin), Number(m.pout));
   }
+  // Il costo segue i contatori: si scrive solo se questi sono ancora quelli letti (un'altra chiamata più alta lo riscrive)
   await db
     .update(alfredSessionsTable)
-    .set({ promptTokens, completionTokens, costUsd: costUsd === null ? null : costUsd.toFixed(8) })
-    .where(and(eq(alfredSessionsTable.id, id), eq(alfredSessionsTable.status, "active")));
+    .set({ costUsd: costUsd === null ? null : costUsd.toFixed(8) })
+    .where(
+      and(
+        eq(alfredSessionsTable.id, id),
+        eq(alfredSessionsTable.promptTokens, row.promptTokens),
+        eq(alfredSessionsTable.completionTokens, row.completionTokens),
+      ),
+    );
 }
 
 /** Chiude la sessione (idempotente per una propria già chiusa); altrui o inesistente → 404. */

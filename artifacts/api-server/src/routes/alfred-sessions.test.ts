@@ -257,7 +257,31 @@ describe("POST /alfred/sessions", () => {
   });
 });
 
+describe("avvii concorrenti", () => {
+  it("due avvii insieme lasciano una sola sessione attiva", async () => {
+    const { dev } = await setup();
+    const [a, b] = await Promise.all([api("POST", "/alfred/sessions"), api("POST", "/alfred/sessions")]);
+    expect([a.status, b.status]).toEqual([201, 201]);
+    const rows = await db.select().from(alfredSessionsTable).where(eq(alfredSessionsTable.userId, dev));
+    expect(rows.filter((r) => r.status === "active")).toHaveLength(1);
+  });
+});
+
 describe("renew", () => {
+  it("usa il modello della sessione anche se l'utente ne ha scelto un altro", async () => {
+    const { dev } = await setup();
+    const s = await api("POST", "/alfred/sessions");
+    gemini.state.models["gemini-altro-live"] = ["bidiGenerateContent"];
+    const other = await modelOf(dev, "gemini-altro-live");
+    await db.update(usersTable).set({ alfredAiModelId: other }).where(eq(usersTable.id, dev));
+    gemini.state.tokenRequests = [];
+    const r = await api("POST", `/alfred/sessions/${s.json.sessionId}/renew`);
+    expect(r.status, r.text).toBe(200);
+    expect(r.json.model).toBe("gemini-3.8-live");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((gemini.state.tokenRequests[0]!.body as any).bidiGenerateContentSetup.model).toBe("models/gemini-3.8-live");
+  });
+
   it("rilascia un nuovo token per la propria sessione attiva", async () => {
     await setup();
     const s = await api("POST", "/alfred/sessions");
@@ -312,7 +336,7 @@ describe("usage e close", () => {
     expect((await api("POST", `/alfred/sessions/${id}/usage`, { promptTokens: 1e12, completionTokens: 0 })).status).toBe(400);
   });
 
-  it("con il modello eliminato dopo l'avvio risponde 204 con costo null e la sessione si chiude", async () => {
+  it("con il modello eliminato dopo l'avvio risponde 204 con costo null e la sessione resta chiudibile", async () => {
     const { model } = await setup({ price: true });
     const s = await api("POST", "/alfred/sessions");
     const id = s.json.sessionId;
@@ -323,6 +347,19 @@ describe("usage e close", () => {
     expect(row.costUsd).toBeNull();
     expect(row.promptTokens).toBe(20);
     expect((await api("POST", `/alfred/sessions/${id}/close`)).status).toBe(204);
+    expect((await sessionRow(id)).status).toBe("closed");
+  });
+
+  it("due usage concorrenti non abbassano i contatori", async () => {
+    await setup({ price: true });
+    const id = (await api("POST", "/alfred/sessions")).json.sessionId;
+    await Promise.all([
+      api("POST", `/alfred/sessions/${id}/usage`, { promptTokens: 100, completionTokens: 50 }),
+      api("POST", `/alfred/sessions/${id}/usage`, { promptTokens: 80, completionTokens: 60 }),
+    ]);
+    const row = await sessionRow(id);
+    expect([row.promptTokens, row.completionTokens]).toEqual([100, 60]);
+    expect(Number(row.costUsd)).toBeCloseTo(computeCost(100, 60, 1, 4)!, 8);
   });
 
   it("close chiude, poi usage risponde 404", async () => {

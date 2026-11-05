@@ -64,6 +64,11 @@ export function createAlfredRouter(): IRouter {
 
   router.post("/alfred/sessions/:id/renew", sessionOnly, async (req, res) => {
     const { id } = parseRequest(RenewAlfredSessionParams, req.params);
+    // Anche il rinnovo crea un token di Gemini: stesso limite dell'avvio
+    if (!consumeAlfredSession(currentUserId(req))) {
+      res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
+      return;
+    }
     try {
       res.json(RenewAlfredSessionResponse.parse(await renewSession(currentUserId(req), id)));
     } catch (err) {

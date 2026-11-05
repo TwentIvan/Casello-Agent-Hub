@@ -112,9 +112,11 @@ startNodeSweeper();
 startOAuthSweeper();
 
 // Alfred: all'avvio le sessioni rimaste attive si chiudono; poi controllo ogni 5 minuti.
-closeAllActiveSessions().catch((err: unknown) =>
-  logger.error({ errName: err instanceof Error ? err.name : "Error" }, "Chiusura delle sessioni di Alfred non riuscita"),
-);
+try {
+  await closeAllActiveSessions();
+} catch (err) {
+  logger.error({ errName: err instanceof Error ? err.name : "Error" }, "Chiusura delle sessioni di Alfred non riuscita");
+}
 startAlfredSweeper();
 
 app.listen(port, (err) => {

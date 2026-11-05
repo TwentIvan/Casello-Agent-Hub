@@ -147,6 +147,7 @@ export * from './node';
 export * from './nodeCapabilities';
 export * from './nodeCreate';
 export * from './nodeCreated';
+export * from './nodeFolders';
 export * from './nodeHeartbeat';
 export * from './nodeLease';
 export * from './nodeLeaseRenewed';

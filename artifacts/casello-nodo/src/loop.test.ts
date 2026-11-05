@@ -98,6 +98,7 @@ describe("startLoop", () => {
       skills: ["sap-code-review"],
       workspaceRoot: root,
       maxConcurrent: 1,
+      folders: expect.any(Array),
     });
     const [report] = casello.calls("POST", "/api/node/tasks/42/report");
     expect(report.headers.authorization).toBe(`Bearer ${FAKE_TOKEN}`);

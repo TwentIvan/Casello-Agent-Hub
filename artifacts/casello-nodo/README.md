@@ -42,6 +42,10 @@ non esce mai dalla radice (nemmeno con link simbolici). Per ogni compito scrive 
 piano, skill) e gli allegati in `casello-allegati/`, lancia `claude` con quella cartella come directory di lavoro e
 legge l'esito da `casello-esito.json`. A fine compito i file di servizio vengono rimossi.
 
+Per scegliere la cartella dalla console («Sfoglia» nella scheda della squadra) il nodo manda con ogni heartbeat i nomi
+delle sottocartelle della radice: solo cartelle (mai file né contenuti), fino a 3 livelli e 2 000 voci, senza cartelle
+nascoste, `node_modules` e link simbolici. Una cartella appena creata compare in console entro 30 secondi.
+
 ## Sicurezza
 
 - L'agente gira con `--dangerously-skip-permissions` dentro lo spazio di lavoro: esegue comandi e modifica file senza

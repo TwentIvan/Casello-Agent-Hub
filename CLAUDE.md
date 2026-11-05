@@ -448,7 +448,13 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   scarica ancora); lo sweep cancella poi gli eliminati non più citati.
 - **Spazio di lavoro** (`team_instances.node_workspace`, `PUT /api/team-instances/:id`, `nodeWorkspace` null = tolto): percorso relativo
   alla radice del nodo, 1..300 caratteri `[A-Za-z0-9._ -]` e `/`, senza `/` iniziale o finale, segmenti vuoti, `.` o `..` (400 «spazio di
-  lavoro non valido»).
+  lavoro non valido»). **Cartelle del nodo** per sceglierlo in console («Sfoglia», `components/teams/node-folder-picker.tsx`): il browser non
+  vede i percorsi del Mac, quindi l'elenco lo manda il nodo. Ogni heartbeat porta `folders` (facoltativo, ≤ 2 000 percorsi relativi ≤ 300
+  caratteri; `scanFolders` in `capabilities.ts`: in ampiezza fino a 3 livelli, al massimo 5 000 cartelle lette, solo cartelle, saltate le
+  nascoste, `node_modules`, `casello-allegati`, i nomi non ammessi con il loro contenuto e i link simbolici); Casello tiene solo quelle valide
+  come spazio di lavoro (`cleanFolders`), senza ripetizioni e in ordine, in `nodes.workspace_folders` con `folders_updated_at`; un heartbeat
+  senza `folders` (nodo di versione precedente) lascia l'elenco com'era. `GET /api/account/nodes/:id/folders` (solo login, 404 per un nodo
+  altrui) risponde `{nodeId, workspaceRoot, folders, foldersUpdatedAt}`, `folders` null se il nodo non le ha mai mandate.
 - **`casello-nodo`** (`artifacts/casello-nodo/`, README incluso; Node 24, `claude` nel PATH con il login già fatto): ciclo con heartbeat
   ogni 30 s; se `pending > 0` e c'è posto prende i compiti, li esegue e riferisce (il report si ritenta finché la lease è valida).
   Rinnova la lease con i ping. Per ogni compito scrive nello spazio di lavoro `casello-compito.md` (istruzioni, piano, skill) e gli
@@ -481,7 +487,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Migrazione: `docs/migrations/2026-11-nodo-locale.sql` (additiva e idempotente, niente `-post`): tabelle `nodes` e `team_attachments`, colonne
   su `api_tokens` (`node_id`), `team_instances` (`node_workspace`) e `team_tasks` (`node_id`, `lease_token`, `lease_expires_at`, `session_id`,
   `waiting_since`, `no_node_notified`, `attachment_ids`). Da applicare in produzione PRIMA del merge e da segnalare nella PR; riportata in
-  `docs/schema-casello.sql`.
+  `docs/schema-casello.sql`. Poi `docs/migrations/2026-11-nodo-cartelle.sql` (additiva e idempotente, PRIMA del merge): colonne
+  `nodes.workspace_folders` (jsonb) e `nodes.folders_updated_at`.
 - Non ancora fatto: interfaccia in The Hub Up (5), organizzazioni e policy dei dati (2: proprietà degli allegati e dei nodi per organizzazione).
 
 ## Modelli AI (account AI)

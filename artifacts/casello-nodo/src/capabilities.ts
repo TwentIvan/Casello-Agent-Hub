@@ -1,6 +1,11 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
-import { NodeHeartbeatBody, nodeHeartbeatBodySkillsMax } from "@workspace/api-zod";
+import {
+  NodeHeartbeatBody,
+  nodeHeartbeatBodyFoldersItemMax,
+  nodeHeartbeatBodyFoldersMax,
+  nodeHeartbeatBodySkillsMax,
+} from "@workspace/api-zod";
 import type { Logger } from "./log";
 
 /** Schema di un nome di skill nell'heartbeat (lunghezza ed eventuale formato del contratto). */
@@ -93,4 +98,50 @@ export async function scanSkills(dirs: string[], logger?: Pick<Logger, "warn">):
     logger?.warn(`skill oltre ${nodeHeartbeatBodySkillsMax}: ne dichiaro solo ${nodeHeartbeatBodySkillsMax} (ignorate ${valid.length - nodeHeartbeatBodySkillsMax})`);
   }
   return valid.slice(0, nodeHeartbeatBodySkillsMax);
+}
+
+/** Profondità massima delle cartelle dichiarate sotto la radice (1 = solo le cartelle direttamente nella radice). */
+export const FOLDERS_MAX_DEPTH = 3;
+/** Cartelle lette al massimo per scansione: una radice enorme non rallenta l'heartbeat. */
+const FOLDERS_MAX_READS = 5_000;
+/** Segmento ammesso in uno spazio di lavoro (stesso formato che Casello accetta per `nodeWorkspace`). */
+const FOLDER_SEGMENT = /^[A-Za-z0-9._ -]+$/;
+const SKIPPED_FOLDERS = new Set(["node_modules", "casello-allegati"]);
+
+/**
+ * Sottocartelle della radice degli spazi di lavoro, come percorsi relativi con `/`, per la scelta in console: solo
+ * nomi di cartelle, mai file. In ampiezza fino a 3 livelli e al massimo 2 000 voci (le meno profonde per prime);
+ * saltate le cartelle nascoste, `node_modules`, `casello-allegati`, i nomi che uno spazio di lavoro non ammette (e ciò
+ * che contengono) e i link simbolici, che non si seguono mai.
+ */
+export async function scanFolders(root: string): Promise<string[]> {
+  const found: string[] = [];
+  let queue: string[] = [""];
+  let reads = 0;
+  for (let depth = 1; depth <= FOLDERS_MAX_DEPTH && queue.length > 0; depth++) {
+    const next: string[] = [];
+    for (const rel of queue) {
+      if (reads >= FOLDERS_MAX_READS || found.length >= nodeHeartbeatBodyFoldersMax) break;
+      reads++;
+      let entries;
+      try {
+        entries = await readdir(rel === "" ? root : path.join(root, rel), { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      const names = entries
+        .filter((e) => e.isDirectory() && !e.name.startsWith(".") && !SKIPPED_FOLDERS.has(e.name) && FOLDER_SEGMENT.test(e.name))
+        .map((e) => e.name)
+        .sort((a, b) => a.localeCompare(b));
+      for (const name of names) {
+        const child = rel === "" ? name : `${rel}/${name}`;
+        if (child.length > nodeHeartbeatBodyFoldersItemMax) continue;
+        if (found.length >= nodeHeartbeatBodyFoldersMax) break;
+        found.push(child);
+        next.push(child);
+      }
+    }
+    queue = next;
+  }
+  return found.sort((a, b) => a.localeCompare(b));
 }

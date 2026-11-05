@@ -294,6 +294,31 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /account/nodes/{id}/folders:
+    get:
+      operationId: getNodeFolders
+      tags: [nodes]
+      summary: Cartelle dichiarate da un nodo locale
+      description: >-
+        Sottocartelle della radice degli spazi di lavoro comunicate dal nodo con l'heartbeat (percorsi relativi,
+        fino a 3 livelli e 2 000 voci; solo nomi di cartelle, mai file). `folders` null se il nodo non le ha mai
+        comunicate. 404 se il nodo non è dell'utente. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Cartelle del nodo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeFolders"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /node/heartbeat:
     post:
       operationId: nodeHeartbeat
@@ -5022,6 +5047,32 @@ components:
           type: integer
           minimum: 1
           maximum: 3
+        folders:
+          type: array
+          maxItems: 2000
+          items:
+            type: string
+            minLength: 1
+            maxLength: 300
+          description: >-
+            Sottocartelle della radice (percorsi relativi con `/`, fino a 3 livelli), per la scelta dello spazio
+            di lavoro in console. Facoltativo: un nodo che non lo manda lascia invariato l'elenco salvato.
+
+    NodeFolders:
+      type: object
+      required: [nodeId, workspaceRoot, folders, foldersUpdatedAt]
+      properties:
+        nodeId:
+          type: integer
+        workspaceRoot:
+          type: ["string", "null"]
+        folders:
+          type: ["array", "null"]
+          items:
+            type: string
+        foldersUpdatedAt:
+          type: ["string", "null"]
+          format: date-time
 
     NodeLease:
       type: object

@@ -49,10 +49,12 @@ interface LuciusPanelProps {
   instanceId: number;
   /** Squadra chiusa: si leggono le conversazioni ma non si scrive né si decide. */
   closed: boolean;
+  /** Modifiche non salvate nell'editor dei ruoli: accettare una scheda le farebbe perdere. */
+  hasUnsavedChanges?: () => boolean;
 }
 
 /** Lucius sulla squadra: conversazioni sull'identità e sulle istruzioni dei ruoli, con schede da accettare. */
-export function LuciusPanel({ instanceId, closed }: LuciusPanelProps) {
+export function LuciusPanel({ instanceId, closed, hasUnsavedChanges }: LuciusPanelProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -137,6 +139,7 @@ export function LuciusPanel({ instanceId, closed }: LuciusPanelProps) {
             conversationId={selectedId}
             instanceId={instanceId}
             closed={closed}
+            hasUnsavedChanges={hasUnsavedChanges}
             onDeleted={() => setSelectedId(null)}
           />
         )}
@@ -173,17 +176,20 @@ function TeamChat({
   conversationId,
   instanceId,
   closed,
+  hasUnsavedChanges,
   onDeleted,
 }: {
   conversationId: number;
   instanceId: number;
   closed: boolean;
+  hasUnsavedChanges?: () => boolean;
   onDeleted: () => void;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [text, setText] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmAccept, setConfirmAccept] = useState<number | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const conversation = useGetTeamChatConversation(conversationId, {
@@ -327,7 +333,10 @@ function TeamChat({
                       proposal={p}
                       roleName={roleNames.get(p.roleKey)}
                       deciding={decide.isPending || closed}
-                      onDecide={(action) => decide.mutate({ id: p.id, data: { action } })}
+                      onDecide={(action) => {
+                        if (action === "accept" && hasUnsavedChanges?.()) setConfirmAccept(p.id);
+                        else decide.mutate({ id: p.id, data: { action } });
+                      }}
                     />
                   ))}
                 </div>
@@ -377,6 +386,21 @@ function TeamChat({
           </div>
         </form>
       )}
+
+      <ConfirmDialog
+        open={confirmAccept !== null}
+        onOpenChange={(open) => !open && setConfirmAccept(null)}
+        title="Accettare la scheda?"
+        description="Hai modifiche non salvate ai ruoli: accettando la scheda andranno perse. Continuare?"
+        confirmLabel="Accetta comunque"
+        pendingLabel="Accettazione…"
+        pending={decide.isPending}
+        onConfirm={() => {
+          const id = confirmAccept;
+          setConfirmAccept(null);
+          if (id !== null) decide.mutate({ id, data: { action: "accept" } });
+        }}
+      />
 
       <ConfirmDialog
         open={confirmDelete}

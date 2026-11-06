@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type MutableRefObject, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, FolderSearch } from "lucide-react";
@@ -129,10 +129,25 @@ function TeamWork({ team, dirty, session }: { team: TeamInstance; dirty: boolean
 /** Squadra caricata: la sessione resta, l'editor si rimonta a ogni salvataggio e riparte dallo stato salvato. */
 function TeamDetail({ team }: { team: TeamInstance }) {
   const session = useTeamSession(team.id);
-  return <TeamEditor key={`${team.id}-${team.updatedAt}`} team={team} session={session} />;
+  // Lucius sta fuori dall'editor rimontato: accettare una scheda cambia `updatedAt` ma non deve chiudere la conversazione
+  const dirtyRef = useRef(false);
+  return (
+    <div className="space-y-6">
+      <TeamEditor key={`${team.id}-${team.updatedAt}`} team={team} session={session} dirtyRef={dirtyRef} />
+      <LuciusPanel instanceId={team.id} closed={team.status === "closed"} hasUnsavedChanges={() => dirtyRef.current} />
+    </div>
+  );
 }
 
-function TeamEditor({ team, session }: { team: TeamInstance; session: TeamSession }) {
+function TeamEditor({
+  team,
+  session,
+  dirtyRef,
+}: {
+  team: TeamInstance;
+  session: TeamSession;
+  dirtyRef: MutableRefObject<boolean>;
+}) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [name, setName] = useState(team.name);
@@ -154,6 +169,7 @@ function TeamEditor({ team, session }: { team: TeamInstance; session: TeamSessio
   );
   const current = toSave(name, refTitle, roles, localSkills, nodeWorkspace);
   const dirty = savedJson !== JSON.stringify(current);
+  dirtyRef.current = dirty;
 
   const onUpdated = (saved: TeamInstance) => {
     queryClient.setQueryData(getGetTeamInstanceQueryKey(saved.id), saved);
@@ -333,8 +349,6 @@ function TeamEditor({ team, session }: { team: TeamInstance; session: TeamSessio
       <TeamAttachments teamId={team.id} readOnly={closed} />
 
       <TeamWork team={team} dirty={dirty} session={session} />
-
-      <LuciusPanel instanceId={team.id} closed={closed} />
 
       {!closed && <TeamUpdatesCard team={team} dirty={dirty} />}
 

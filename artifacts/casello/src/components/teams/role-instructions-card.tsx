@@ -29,6 +29,17 @@ export function proposalText(proposal: TeamChatProposal): string {
   return typeof value === "string" ? value : "";
 }
 
+/** Separa il frontmatter YAML (`---` … `---`) dal corpo: nome e descrizione si leggono come metadati. */
+function splitFrontmatter(markdown: string): { name?: string; description?: string; body: string } {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(markdown);
+  if (!m) return { body: markdown };
+  const field = (key: string) => {
+    const f = new RegExp(`^${key}:[ \\t]*(.*)$`, "m").exec(m[1]);
+    return f ? f[1].trim().replace(/^(["'])(.*)\1$/, "$2") : undefined;
+  };
+  return { name: field("name"), description: field("description"), body: markdown.slice(m[0].length) };
+}
+
 interface RoleInstructionsCardProps {
   proposal: TeamChatProposal;
   /** Nome del ruolo, se la squadra lo conosce ancora (altrimenti si mostra la chiave). */
@@ -43,6 +54,8 @@ export function RoleInstructionsCard({ proposal, roleName, deciding = false, onD
   const pending = proposal.status === "pending";
   const label = proposal.kind === "role_identity" ? "Identità di" : "Istruzioni di";
   const proposed = proposalText(proposal);
+  const preview = proposal.kind === "role_instructions" ? splitFrontmatter(proposed) : { body: proposed };
+  const meta = ["name" in preview ? preview.name : undefined, "description" in preview ? preview.description : undefined].filter(Boolean);
 
   return (
     <Card className={cn(!pending && "opacity-80")}>
@@ -56,7 +69,13 @@ export function RoleInstructionsCard({ proposal, roleName, deciding = false, onD
         {proposal.rationale && <p className="whitespace-pre-wrap break-words text-sm text-ink-muted">{proposal.rationale}</p>}
 
         <div className="max-h-96 min-w-0 overflow-y-auto rounded-md border p-3">
-          {proposed ? <Markdown>{proposed}</Markdown> : <p className="text-sm text-muted-foreground">Nessun testo.</p>}
+          {meta.length > 0 && (
+            <div className="mb-2 space-y-0.5 break-words font-mono text-xs text-ink-muted">
+              {"name" in preview && preview.name && <p>name: {preview.name}</p>}
+              {"description" in preview && preview.description && <p>description: {preview.description}</p>}
+            </div>
+          )}
+          {proposed ? <Markdown>{preview.body}</Markdown> : <p className="text-sm text-muted-foreground">Nessun testo.</p>}
         </div>
 
         <div className="space-y-2">

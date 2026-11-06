@@ -12,6 +12,7 @@ import { pumpTurnInBackground, resumeQueuedTurns } from "./lib/teams/turn-runner
 import { setOnTurnQueued } from "./lib/teams/turn-queue";
 import { failInterruptedActions } from "./lib/actions/decide";
 import { failInterruptedPlanTurns } from "./lib/plan-chat/run-turn";
+import { failInterruptedTeamChatTurns } from "./lib/team-chat/run-turn";
 import { resetStaleIssueReservations } from "./lib/plan-issues/service";
 import { failInterruptedCatalogRuns } from "./lib/catalog/refresh";
 import { startCatalogScheduler } from "./lib/catalog/scheduler";
@@ -71,6 +72,13 @@ failInterruptedPlanTurns()
     if (count > 0) logger.warn({ count }, "Turni della chat del piano interrotti dal riavvio chiusi");
   })
   .catch((err: unknown) => logger.error({ err }, "Chiusura dei turni della chat del piano interrotti non riuscita"));
+
+// I turni della chat di squadra rimasti in corso: come quelli della chat del piano.
+failInterruptedTeamChatTurns()
+  .then((count) => {
+    if (count > 0) logger.warn({ count }, "Turni della chat di squadra interrotti dal riavvio chiusi");
+  })
+  .catch((err: unknown) => logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Chiusura dei turni della chat di squadra interrotti non riuscita"));
 
 // Le voci prenotate per la creazione di un'issue (`creating` senza numero) quando l'API si è fermata.
 resetStaleIssueReservations()

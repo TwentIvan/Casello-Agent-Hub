@@ -103,6 +103,15 @@ export function consumeTeamMessage(userId: number): boolean {
   return teamMessageCounter.consume(`user:${userId}`).ok;
 }
 
+// Messaggi a Lucius nella chat di squadra (ognuno fa partire un turno che consuma token): 10 al minuto per utente,
+// contatore proprio (non condiviso con i messaggi al capo né con la chat del piano).
+const teamChatMessageCounter = fixedWindowCounter({ limit: 10, windowMs: 60_000 });
+
+/** Conta un messaggio della chat di squadra dell'utente: false se il limite è raggiunto. */
+export function consumeTeamChatMessage(userId: number): boolean {
+  return teamChatMessageCounter.consume(`user:${userId}`).ok;
+}
+
 // Protocollo dei nodi (/api/node, dopo requireNodeToken): heartbeat e claim 6 al minuto per nodo (contatori
 // separati), ping 4 al minuto per compito dello stesso nodo.
 const byNode = (req: Request) => `node:${req.node?.id ?? "?"}`;

@@ -207,11 +207,20 @@ function checkStatusChange(current: "draft" | "active" | "closed", requested: "d
   throw new InstanceError(409, INSTANCE_MESSAGES.noBackToDraft);
 }
 
+/** Controllo aggiuntivo nella transazione di `saveInstance`, con la riga della squadra già bloccata: se lancia non si salva nulla. */
+export type SaveInstanceGuard = (tx: Executor, locked: TeamInstanceRow) => Promise<void>;
+
 /**
  * Tutto o niente: valida (fuori dalla transazione) e poi sostituisce ruoli e skill specializzate. Le skill
  * del catalogo già presenti nei ruoli precedenti restano ammesse anche se nel frattempo deprecate.
  */
-export async function saveInstance(userId: number, id: number, input: SaveInstanceInput, executor: Executor = db): Promise<InstanceView> {
+export async function saveInstance(
+  userId: number,
+  id: number,
+  input: SaveInstanceInput,
+  executor: Executor = db,
+  guard?: SaveInstanceGuard,
+): Promise<InstanceView> {
   const current = await getRow(id);
   if (current.status === "closed") throw new InstanceError(409, INSTANCE_MESSAGES.closed);
   checkStatusChange(current.status, input.status);
@@ -228,6 +237,7 @@ export async function saveInstance(userId: number, id: number, input: SaveInstan
     if (!locked) throw new InstanceError(404, INSTANCE_MESSAGES.notFound);
     if (locked.status === "closed") throw new InstanceError(409, INSTANCE_MESSAGES.closed);
     checkStatusChange(locked.status, input.status);
+    if (guard) await guard(tx, locked);
     await tx.delete(teamInstanceSkillsTable).where(eq(teamInstanceSkillsTable.instanceId, id));
     if (input.localSkills.length > 0) {
       await tx.insert(teamInstanceSkillsTable).values(

@@ -15,6 +15,10 @@ function sameOriginOpener(): Window | null {
   }
 }
 
+// Il primo accesso con Google può staccare window.opener (Cross-Origin-Opener-Policy delle pagine di Google):
+// il secondo popup troverà la sessione di Botcave e resterà sulla sua origine.
+const RETRY_TEXT = "Accesso eseguito: chiudi questa finestra e premi di nuovo «Collega con Botcave».";
+
 const DONE_TEXT = "Collegamento completato: puoi chiudere questa finestra";
 
 function showText(text: string): void {
@@ -30,8 +34,12 @@ export function runCallback(): void {
   const code = params.get("code");
   const state = params.get("state");
   const opener = sameOriginOpener();
-  if (!code || !state || !opener) {
+  if (!code || !state) {
     showText(FAILED_TEXT);
+    return;
+  }
+  if (!opener) {
+    showText(RETRY_TEXT);
     return;
   }
   opener.postMessage({ botcave: 1, type: "connect", payload: { code, state } }, window.location.origin);

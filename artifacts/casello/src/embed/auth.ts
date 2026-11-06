@@ -19,6 +19,11 @@ export type StorageLike = {
 
 type OpenFn = (url: string, name: string, features: string) => unknown;
 
+/** Sottoinsieme di `navigator.locks` (Web Locks): coordina il rinnovo tra le schede che condividono lo storage. */
+export type LocksLike = {
+  request(name: string, callback: () => Promise<unknown>): Promise<unknown>;
+};
+
 type AuthDeps = {
   fetch: typeof fetch;
   open: OpenFn;
@@ -26,12 +31,14 @@ type AuthDeps = {
   session: () => StorageLike | null;
   origin: () => string;
   now: () => number;
+  locks: () => LocksLike | null;
 };
 
 const TOKENS_KEY = "botcave-embed-tokens";
 const PENDING_KEY = "botcave-embed-connect";
 /** Rinnovo quando mancano meno di 60 s alla scadenza. */
 const REFRESH_MARGIN_MS = 60_000;
+const REFRESH_LOCK = "botcave-embed-refresh";
 
 function browserDeps(): AuthDeps {
   return {
@@ -41,6 +48,13 @@ function browserDeps(): AuthDeps {
     session: () => window.sessionStorage,
     origin: () => window.location.origin,
     now: () => Date.now(),
+    locks: () => {
+      try {
+        return (navigator as Navigator & { locks?: LocksLike }).locks ?? null;
+      } catch {
+        return null;
+      }
+    },
   };
 }
 
@@ -201,6 +215,8 @@ export function connectMessage(ev: { origin: string; source: unknown; data: unkn
   if (typeof p !== "object" || p === null) return null;
   if (typeof p.code !== "string" || typeof p.state !== "string") return null;
   if (p.code.length < 1 || p.code.length > 512 || p.state.length < 1 || p.state.length > 500) return null;
+  // Un solo messaggio per popup: i successivi si ignorano
+  popup = null;
   return { code: p.code, state: p.state };
 }
 
@@ -264,7 +280,17 @@ export async function completeConnect(code: string, state: string): Promise<Embe
 
 let refreshing: Promise<string | null> | null = null;
 
-async function refresh(current: EmbedTokens): Promise<string | null> {
+function fresh(t: EmbedTokens): boolean {
+  return t.expiresAt - d().now() >= REFRESH_MARGIN_MS;
+}
+
+/**
+ * Rinnova `current`. Le schede dell'app ospite condividono lo storage dell'iframe: se un'altra scheda ha già
+ * ruotato lo stesso refresh token, il nostro riceve `invalid_grant` ma la coppia nuova è già salvata e si usa
+ * quella (rinnovandola a sua volta una volta sola se anch'essa è in scadenza). Si cancella solo se nello storage
+ * c'è ancora il refresh token rifiutato.
+ */
+async function refresh(current: EmbedTokens, retried = false): Promise<string | null> {
   if (!current.clientId) {
     clearTokens();
     return null;
@@ -277,7 +303,17 @@ async function refresh(current: EmbedTokens): Promise<string | null> {
     saveTokens(next);
     return next.access;
   } catch (err) {
-    if (err instanceof TokenError && (err.code === "invalid_grant" || err.code === "invalid_client")) {
+    if (err instanceof TokenError && err.code === "invalid_grant") {
+      const stored = loadTokens();
+      if (stored && stored.refresh !== current.refresh) {
+        if (fresh(stored)) return stored.access;
+        if (!retried) return refresh(stored, true);
+        return stored.expiresAt > d().now() ? stored.access : null;
+      }
+      clearTokens(); // nello storage c'è ancora il refresh rifiutato (o niente)
+      return null;
+    }
+    if (err instanceof TokenError && err.code === "invalid_client") {
       clearTokens();
       return null;
     }
@@ -286,13 +322,30 @@ async function refresh(current: EmbedTokens): Promise<string | null> {
   }
 }
 
+/** Dentro il lock (se c'è) si rileggono i token: un'altra scheda può averli appena rinnovati. */
+async function refreshShared(): Promise<string | null> {
+  const run = async (): Promise<string | null> => {
+    const tokens = loadTokens();
+    if (!tokens) return null;
+    if (fresh(tokens)) return tokens.access;
+    return refresh(tokens);
+  };
+  const locks = d().locks();
+  if (!locks) return run();
+  try {
+    return (await locks.request(REFRESH_LOCK, run)) as string | null;
+  } catch {
+    return run();
+  }
+}
+
 /** Token d'accesso valido, rinnovato se mancano meno di 60 s; un solo rinnovo alla volta. */
 export async function getAccessToken(): Promise<string | null> {
   if (refreshing) return refreshing;
   const tokens = loadTokens();
   if (!tokens) return null;
-  if (tokens.expiresAt - d().now() >= REFRESH_MARGIN_MS) return tokens.access;
-  refreshing = refresh(tokens).finally(() => {
+  if (fresh(tokens)) return tokens.access;
+  refreshing = refreshShared().finally(() => {
     refreshing = null;
   });
   return refreshing;

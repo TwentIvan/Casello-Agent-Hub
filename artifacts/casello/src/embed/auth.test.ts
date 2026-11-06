@@ -51,6 +51,7 @@ beforeEach(() => {
     session: () => session,
     origin: () => "http://localhost:3000",
     now: () => now,
+    locks: () => null,
   });
   clearTokens();
 });
@@ -166,6 +167,60 @@ describe("getAccessToken", () => {
   });
 });
 
+describe("rinnovo concorrente tra schede", () => {
+  it("invalid_grant dopo che un'altra scheda ha già ruotato: usa i token salvati, non li cancella", async () => {
+    saveTokens({ access: "cao_old", refresh: "car_old", expiresAt: now + 30_000, clientId: "embed:x" });
+    fetchMock.mockImplementation(async () => {
+      // Un'altra scheda vince la rotazione e salva la coppia nuova prima della nostra risposta
+      local.data.set(
+        "botcave-embed-tokens",
+        JSON.stringify({ access: "cao_other", refresh: "car_other", expiresAt: now + 3_600_000, clientId: "embed:x" }),
+      );
+      return jsonResponse(400, { error: "invalid_grant" });
+    });
+    expect(await getAccessToken()).toBe("cao_other");
+    expect(loadTokens()?.refresh).toBe("car_other");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("i token dell'altra scheda sono anch'essi in scadenza: un nuovo rinnovo con il loro refresh", async () => {
+    saveTokens({ access: "cao_old", refresh: "car_old", expiresAt: now + 30_000, clientId: "embed:x" });
+    fetchMock
+      .mockImplementationOnce(async () => {
+        local.data.set(
+          "botcave-embed-tokens",
+          JSON.stringify({ access: "cao_other", refresh: "car_other", expiresAt: now + 10_000, clientId: "embed:x" }),
+        );
+        return jsonResponse(400, { error: "invalid_grant" });
+      })
+      .mockResolvedValueOnce(jsonResponse(200, { access_token: "cao_3", refresh_token: "car_3", expires_in: 3600 }));
+    expect(await getAccessToken()).toBe("cao_3");
+    const body = new URLSearchParams(String(fetchMock.mock.calls[1]![1]!.body));
+    expect(body.get("refresh_token")).toBe("car_other");
+  });
+
+  it("con navigator.locks il rinnovo avviene dentro il lock e rilegge i token", async () => {
+    saveTokens({ access: "cao_old", refresh: "car_old", expiresAt: now + 30_000, clientId: "embed:x" });
+    const names: string[] = [];
+    configureAuth({
+      locks: () => ({
+        request: async (name: string, cb: () => Promise<unknown>) => {
+          names.push(name);
+          // Mentre si aspettava il lock un'altra scheda ha rinnovato
+          local.data.set(
+            "botcave-embed-tokens",
+            JSON.stringify({ access: "cao_other", refresh: "car_other", expiresAt: now + 3_600_000, clientId: "embed:x" }),
+          );
+          return cb();
+        },
+      }),
+    });
+    expect(await getAccessToken()).toBe("cao_other");
+    expect(names).toEqual(["botcave-embed-refresh"]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("storage non disponibile", () => {
   it("tiene i token in memoria per la sessione", () => {
     configureAuth({ local: () => brokenStorage(), session: () => brokenStorage() });
@@ -188,5 +243,17 @@ describe("connectMessage", () => {
     expect(
       connectMessage({ origin: "http://localhost:3000", source: popup, data: { botcave: 1, type: "connect", payload: { code: 1 } } }),
     ).toBeNull();
+  });
+
+  it("un secondo messaggio dopo quello accettato si ignora e non tocca i token", async () => {
+    const popup = {};
+    openMock.mockReturnValue(popup);
+    await startConnect("embed:x");
+    const data = { botcave: 1, type: "connect", payload: { code: "c", state: "s" } };
+    expect(connectMessage({ origin: "http://localhost:3000", source: popup, data })).not.toBeNull();
+    expect(connectMessage({ origin: "http://localhost:3000", source: popup, data })).toBeNull();
+    saveTokens({ access: "cao_a", refresh: "car_r", expiresAt: now + 600_000, clientId: "embed:x" });
+    await expect(completeConnect("c", "s")).rejects.toThrow("state_mismatch");
+    expect(loadTokens()?.access).toBe("cao_a");
   });
 });

@@ -58,6 +58,11 @@ function useConnect(clientId: string | null) {
         .then(() => getCurrentUser())
         .then(() => setState({ busy: false, error: null }))
         .catch((err: unknown) => {
+          // Un messaggio fuori sequenza (state diverso) non deve cancellare token validi
+          if (err instanceof Error && err.message === "state_mismatch") {
+            setState((prev) => ({ ...prev, busy: false }));
+            return;
+          }
           clearTokens();
           setState({ busy: false, error: isUnauthorized(err) ? MESSAGES.notEnabled : MESSAGES.failed });
         });

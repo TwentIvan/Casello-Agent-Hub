@@ -40,6 +40,7 @@ import { RolesEditor } from "@/components/teams/roles-editor";
 import { SaveAsTemplateDialog } from "@/components/teams/save-as-template-dialog";
 import { TeamStatusBadge } from "@/components/teams/team-status";
 import { TeamUpdatesCard } from "@/components/teams/team-updates-card";
+import { LuciusPanel } from "@/components/teams/lucius-panel";
 import { LeadMessageCard } from "@/components/teams/lead-message";
 import { PlanApprovalCards } from "@/components/teams/plan-approval-card";
 import { PlanCard } from "@/components/teams/plan-card";
@@ -333,11 +334,13 @@ function TeamEditor({ team, session }: { team: TeamInstance; session: TeamSessio
 
       <TeamWork team={team} dirty={dirty} session={session} />
 
+      <LuciusPanel instanceId={team.id} closed={closed} />
+
       {!closed && <TeamUpdatesCard team={team} dirty={dirty} />}
 
       <section className="space-y-3">
         <h3 className="text-lg font-medium">Ruoli</h3>
-        <RolesEditor roles={roles} onChange={setRoles} mode="instance" localSkills={localOptions} readOnly={closed} />
+        <RolesEditor roles={roles} onChange={setRoles} mode="instance" localSkills={localOptions} readOnly={closed} teamId={team.id} />
       </section>
 
       <section className="space-y-3">

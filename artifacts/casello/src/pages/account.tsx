@@ -16,6 +16,7 @@ import { AlfredSection } from "@/components/account/alfred-section";
 import { CentralinoModelCard } from "@/components/account/centralino-model-card";
 import { DefaultModelCard } from "@/components/account/default-model-card";
 import { ApiTokensSection } from "@/components/account/api-tokens-section";
+import { MemoriesSection } from "@/components/account/memories-section";
 import { NodesSection } from "@/components/account/nodes-section";
 import { OAuthGrantsSection } from "@/components/account/oauth-grants-section";
 import { UserBudgetCard } from "@/components/budget/budget";
@@ -223,6 +224,7 @@ export default function AccountPage() {
           <DefaultModelCard />
           <CentralinoModelCard />
           <AlfredSection />
+          <MemoriesSection />
           <UserBudgetCard />
           <ApiTokensSection />
           <OAuthGrantsSection />

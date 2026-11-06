@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { Crown, Plus, Trash2, X } from "lucide-react";
-import type { TeamRoleRunsOn } from "@workspace/api-client-react";
+import { Crown, Download, Plus, Trash2, X } from "lucide-react";
+import { getDownloadRoleInstructionsUrl, getDownloadRolesExportUrl, type TeamRoleRunsOn } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -32,7 +32,12 @@ interface RolesEditorProps {
   mode: "template" | "instance";
   localSkills?: LocalSkillOption[];
   readOnly?: boolean;
+  /** Squadra (solo `instance`): abilita gli scarichi delle istruzioni dei ruoli. */
+  teamId?: number;
 }
+
+/** Il ruolo ha le istruzioni se tra le sue skill specializzate c'è `ruolo-<key>`. */
+const hasInstructions = (role: RoleDraft) => role.key !== "" && role.localSkills.includes(`ruolo-${role.key}`);
 
 function Chip({ children, onRemove, label, muted }: { children: ReactNode; onRemove?: () => void; label: string; muted?: boolean }) {
   return (
@@ -62,6 +67,7 @@ function RoleCard({
   mode,
   localSkills,
   readOnly,
+  teamId,
   onChange,
   onMakeLead,
   onRemove,
@@ -70,6 +76,7 @@ function RoleCard({
   mode: "template" | "instance";
   localSkills: LocalSkillOption[];
   readOnly: boolean;
+  teamId?: number;
   onChange: (patch: Partial<RoleDraft>) => void;
   onMakeLead: () => void;
   onRemove: () => void;
@@ -99,6 +106,14 @@ function RoleCard({
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {teamId !== undefined && hasInstructions(role) && (
+              <Button asChild variant="outline" size="sm">
+                <a href={getDownloadRoleInstructionsUrl(teamId, role.key)} download={`${role.key}.md`}>
+                  <Download />
+                  Scarica .md
+                </a>
+              </Button>
+            )}
             {role.isLead && (
               <Badge variant="secondary">
                 <Crown className="size-3" />
@@ -273,13 +288,23 @@ function RoleCard({
 }
 
 /** Editor dei ruoli di una squadra (modello o istanza): schede impilate, un solo capo. */
-export function RolesEditor({ roles, onChange, mode, localSkills = [], readOnly = false }: RolesEditorProps) {
+export function RolesEditor({ roles, onChange, mode, localSkills = [], readOnly = false, teamId }: RolesEditorProps) {
   const update = (uid: string, patch: Partial<RoleDraft>) =>
     onChange(roles.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
   const makeLead = (uid: string) => onChange(roles.map((r) => ({ ...r, isLead: r.uid === uid })));
 
   return (
     <div className="space-y-3">
+      {teamId !== undefined && roles.some(hasInstructions) && (
+        <div className="flex justify-end">
+          <Button asChild variant="outline" size="sm">
+            <a href={getDownloadRolesExportUrl(teamId)} download>
+              <Download />
+              Scarica tutti i ruoli (.zip)
+            </a>
+          </Button>
+        </div>
+      )}
       {roles.length === 0 && (
         <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
           Nessun ruolo: una squadra ha da 1 a {MAX_ROLES} ruoli, uno dei quali è il capo.
@@ -292,6 +317,7 @@ export function RolesEditor({ roles, onChange, mode, localSkills = [], readOnly 
           mode={mode}
           localSkills={localSkills}
           readOnly={readOnly}
+          teamId={teamId}
           onChange={(patch) => update(role.uid, patch)}
           onMakeLead={() => makeLead(role.uid)}
           onRemove={() => onChange(roles.filter((r) => r.uid !== role.uid))}

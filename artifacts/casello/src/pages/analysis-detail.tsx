@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { CharacterButton } from "@/components/characters/character-button";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, ArrowLeft } from "lucide-react";
@@ -15,6 +14,7 @@ import {
   useGetApp,
   useReleaseAnalysis,
 } from "@workspace/api-client-react";
+import { CharacterButton } from "@/components/characters/character-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LuciusMark } from "@/components/brand/marks";
 import { ConfirmDialog } from "@/components/confirm-dialog";

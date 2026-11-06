@@ -1,4 +1,3 @@
-import { CharacterButton } from "@/components/characters/character-button";
 import { useMemo } from "react";
 import { Link } from "wouter";
 import type { LucideIcon } from "lucide-react";
@@ -11,6 +10,7 @@ import {
   useListAgents,
   useListRuns,
 } from "@workspace/api-client-react";
+import { CharacterButton } from "@/components/characters/character-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";

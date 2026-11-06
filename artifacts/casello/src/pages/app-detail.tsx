@@ -1,7 +1,7 @@
-import { CharacterButton } from "@/components/characters/character-button";
 import { Link, useParams } from "wouter";
 import { ArrowLeft, MessagesSquare } from "lucide-react";
 import { ApiError, getGetAppQueryKey, useGetApp } from "@workspace/api-client-react";
+import { CharacterButton } from "@/components/characters/character-button";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentModelsCard } from "@/components/apps/agent-models-card";

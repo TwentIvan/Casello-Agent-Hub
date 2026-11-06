@@ -1,10 +1,9 @@
-import { useRef, useState, type MutableRefObject } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { Link, useLocation, useParams } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { CharacterButton } from "@/components/characters/character-button";
 import { AlertTriangle, ArrowLeft, Trash2 } from "lucide-react";
 import {
   type Agent,
@@ -20,6 +19,7 @@ import {
   useGetApp,
   useUpdateAgent,
 } from "@workspace/api-client-react";
+import { CharacterButton } from "@/components/characters/character-button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -83,6 +83,12 @@ function AgentConfigForm({ agent, dirtyRef }: { agent: Agent; dirtyRef: MutableR
   });
 
   dirtyRef.current = form.formState.isDirty;
+
+  // Una scheda accettata da Lucius si vede nel form; le modifiche in corso non si perdono.
+  useEffect(() => {
+    if (!form.formState.isDirty) form.reset(toValues(agent));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.updatedAt]);
 
   const isGeneral = agent.role === "general";
   const onSubmit = ({ area, aiModelId, ...values }: AgentValues) =>
@@ -361,7 +367,7 @@ export default function AgentDetailPage() {
         </Alert>
       )}
       <RunPanel key={`run-${agent.data.id}`} agent={agent.data} />
-      <AgentConfigForm key={`config-${agent.data.id}-${agent.data.updatedAt}`} agent={agent.data} dirtyRef={dirtyRef} />
+      <AgentConfigForm key={`config-${agent.data.id}`} agent={agent.data} dirtyRef={dirtyRef} />
       <AgentBudgetCard key={`budget-${agent.data.id}`} agent={agent.data} />
       <AgentToolsSection key={`tools-${agent.data.id}`} agent={agent.data} />
       <AgentSkillsSection key={`skills-${agent.data.id}`} agent={agent.data} />

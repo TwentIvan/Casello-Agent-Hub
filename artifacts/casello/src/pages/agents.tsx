@@ -1,4 +1,3 @@
-import { CharacterButton } from "@/components/characters/character-button";
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { Plus } from "lucide-react";
@@ -9,6 +8,7 @@ import {
   useListAgents,
   useListApps,
 } from "@workspace/api-client-react";
+import { CharacterButton } from "@/components/characters/character-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";

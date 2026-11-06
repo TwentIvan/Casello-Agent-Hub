@@ -1,4 +1,3 @@
-import { CharacterButton } from "@/components/characters/character-button";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,6 +13,7 @@ import {
   useGetAgent,
   useGetRun,
 } from "@workspace/api-client-react";
+import { CharacterButton } from "@/components/characters/character-button";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";

@@ -1,8 +1,8 @@
-import { CharacterButton } from "@/components/characters/character-button";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { Crown, Plus } from "lucide-react";
 import { getListTeamTemplatesQueryKey, useListTeamTemplates } from "@workspace/api-client-react";
+import { CharacterButton } from "@/components/characters/character-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";

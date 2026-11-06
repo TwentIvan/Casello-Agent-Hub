@@ -1,4 +1,3 @@
-import { CharacterButton } from "@/components/characters/character-button";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,6 +6,7 @@ import {
   getListPendingActionsQueryKey,
   useListPendingActions,
 } from "@workspace/api-client-react";
+import { CharacterButton } from "@/components/characters/character-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -53,19 +53,19 @@ export default function PendingActionsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-        <CharacterButton target={{ kind: "alfred", page: { page: "pending_actions" } }} />
-        <Select value={status} onValueChange={(v) => setStatus(v as ListPendingActionsStatus)}>
-          <SelectTrigger className="w-44" aria-label="Filtra per stato">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {FILTERS.map((f) => (
-              <SelectItem key={f.value} value={f.value}>
-                {f.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          <CharacterButton target={{ kind: "alfred", page: { page: "pending_actions" } }} />
+          <Select value={status} onValueChange={(v) => setStatus(v as ListPendingActionsStatus)}>
+            <SelectTrigger className="w-44" aria-label="Filtra per stato">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {FILTERS.map((f) => (
+                <SelectItem key={f.value} value={f.value}>
+                  {f.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
       {status === "pending" && !list.isError && !list.isLoading && actions.length > 0 ? (

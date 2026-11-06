@@ -11,7 +11,7 @@ import { subjectHash } from "./hash";
 import { LUCIUS_MESSAGES, RATIONALE_PROP, fn, parseArgs, positive, rationaleSchema, readSkillTool } from "./shared";
 
 const MAX_HINTS = 50;
-const MAX_HINT_LENGTH = 200;
+const MAX_HINT_LENGTH = 100;
 
 export const SKILL_TOOLS = [
   fn("leggi_skill", "Rilegge la skill: tipo, versione corrente, contenuto, suggerimenti sugli strumenti, se è deprecata.", {}),
@@ -33,7 +33,7 @@ const SCHEMAS = {
   leggi_versione_skill: z.object({ version: positive }),
   proponi_contenuto_skill: z.object({
     content: z.string(),
-    toolHints: z.array(z.string().max(MAX_HINT_LENGTH)).max(MAX_HINTS).optional(),
+    toolHints: z.array(z.string().min(1).max(MAX_HINT_LENGTH)).max(MAX_HINTS).optional(),
     motivazione: z.unknown(),
   }),
 } as const;
@@ -43,11 +43,11 @@ const isToolName = (name: string): name is ToolName => Object.hasOwn(SCHEMAS, na
 async function runTool(call: ChatToolCall, ctx: TurnContext): Promise<string> {
   if (!isToolName(call.name)) return toolFail(LUCIUS_MESSAGES.unknownTool);
   const code = ctx.subjectId;
-  const skill = code === null ? null : await findSkill(code);
-  if (!skill || code === null) return toolFail(CHARACTER_MESSAGES.subjectGone);
-  const parsed = SCHEMAS[call.name].safeParse(parseArgs(call.arguments));
-  if (!parsed.success) return toolFail(LUCIUS_MESSAGES.badArgs);
   try {
+    const skill = code === null ? null : await findSkill(code);
+    if (!skill || code === null) return toolFail(CHARACTER_MESSAGES.subjectGone);
+    const parsed = SCHEMAS[call.name].safeParse(parseArgs(call.arguments));
+    if (!parsed.success) return toolFail(LUCIUS_MESSAGES.badArgs);
     switch (call.name) {
       case "leggi_skill":
         return await readSkillTool({ code });

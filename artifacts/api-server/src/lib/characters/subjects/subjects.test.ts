@@ -161,6 +161,11 @@ describe("argomento skill", () => {
     const [p] = await db.select().from(characterProposalsTable).where(eq(characterProposalsTable.id, ok.result.proposalId));
     expect(p).toMatchObject({ kind: "skill_content", payload: { content: "Nuove istruzioni", toolHints: ["cambia_password"] } });
     expect(p!.targetHash).toBe(await subjectHash("skill", "fatture"));
+    for (const hint of ["", "x".repeat(101)]) {
+      const r = await call("skill", ctx, "proponi_contenuto_skill", { content: "ok", toolHints: [hint], motivazione: RATIONALE });
+      expect(r.ok).toBe(false);
+    }
+    expect(await db.select().from(characterProposalsTable)).toHaveLength(1);
     const read = await call("skill", ctx, "leggi_versione_skill", { version: 1 });
     expect(read.result.content).toBe("Istruzioni");
     expect((await call("skill", ctx, "leggi_versione_skill", { version: 7 })).ok).toBe(false);
@@ -262,6 +267,10 @@ describe("subjectHash", () => {
     await appendTemplateVersionUnchecked(id, { name: "Squadra", roles: [role({ name: "Altro" })] as never });
     expect(await subjectHash("team_template", String(id))).not.toBe(before.tpl);
 
+    expect(await subjectHash("agent", "9999999999")).toBeNull();
+    expect(await subjectHash("team_template", "9999999999")).toBeNull();
+    expect(await handler("agent").resolve(userId, "9999999999")).toBeNull();
+    expect(await handler("team_template").resolve(userId, "9999999999")).toBeNull();
     expect(await subjectHash("skill", "assente")).toBeNull();
     expect(await subjectHash("team_template", "9999")).toBeNull();
     expect(await subjectHash("alfred_thread", "1")).toBeNull();

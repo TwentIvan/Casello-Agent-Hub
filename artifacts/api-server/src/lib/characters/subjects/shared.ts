@@ -119,7 +119,9 @@ export async function readAppToolsTool(args: z.infer<typeof ReadAppToolsArgs>, d
   return toolOk({ app: app.name, ...(await appToolsView(appId, args.q)) });
 }
 
+const MAX_INT32 = 2_147_483_647;
 export const idFromSubject = (subjectId: string | null): number | null => {
   if (subjectId === null || !/^[1-9][0-9]{0,9}$/.test(subjectId)) return null;
-  return Number(subjectId);
+  const id = Number(subjectId);
+  return id <= MAX_INT32 ? id : null;
 };

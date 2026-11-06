@@ -207,9 +207,13 @@ function hasScopeFor(method: string, scopes: TokenScope[]): boolean {
 
 /**
  * Protegge /api (o una singola route): imposta req.userId e req.auth oppure risponde 401/403/429.
- * Con l'header Authorization presente conta solo il token personale (mai il cookie, nemmeno con
- * AUTH_DISABLED): header non `Bearer cas_…`, token sconosciuto, revocato o scaduto → 401; poi il
- * limite per token e l'ambito richiesto dal metodo. Senza header vale la sessione.
+ * Con l'header Authorization presente conta solo il token (mai il cookie, nemmeno con AUTH_DISABLED):
+ * - `Bearer cao_…` vale solo se è il token d'accesso del pannello incorporato (ambito `embed`): lettura e scrittura,
+ *   `req.auth.via = "embed"`, limite per collegamento (`grantId`); un `cao_…` del connettore (`mcp`), scaduto o revocato → 401;
+ * - `Bearer cas_…` (token personale): sconosciuto, revocato o scaduto → 401, token di nodo → 403; poi il limite per
+ *   token e l'ambito richiesto dal metodo;
+ * - qualunque altro header → 401.
+ * Senza header vale la sessione.
  */
 export const requireAuth: RequestHandler = async (req, res, next) => {
   try {

@@ -242,3 +242,15 @@ Dove il codice differisce da questa spec vale il codice (descritto in CLAUDE.md,
 7. `script-src 'self' blob:` nella CSP di `/embed` per il worklet del microfono; l'elenco delle origini è filtrato anche nel container web (`docker/15-embed-origins.envsh`).
 8. La voce di Alfred nel pannello resta attiva cambiando scheda o chiudendo il pannello.
 9. Prova nel browser rimandata a dopo il deploy (sul Mac mancano Docker e Postgres); nginx verificato dalla prova CI.
+10. Token del pannello per client OAuth, non per sito ospite (§4.1): chiave `botcave-embed-tokens:<clientId>` e lock `botcave-embed-refresh:<clientId>`, token con un altro
+    `clientId` ignorati. Sugli host dello stesso sito di Botcave (`*.fantamister.cloud`) lo storage dell'iframe non è partizionato e il cookie `SameSite=Lax` arriverebbe
+    all'API: il client del pannello manda le richieste con `credentials: "omit"` (`setRequestCredentials` di `custom-fetch.ts`), mai con il cookie. Rinnovo non riuscito per un
+    errore temporaneo con il token d'accesso già scaduto: errore transitorio, nessuna richiesta senza Authorization e token conservati.
+11. Il limite di 120 richieste/min del token `embed` è per collegamento (`grantId`), condiviso tra le schede e tra le rotazioni dei token, non per token (§4.2).
+12. Il nome dell'app ospite nel client `embed` è quello dell'App con quel `base_url` (la prima), non con quello slug; altrimenti l'host (§4.2).
+13. Lucius non riceve il contesto della pagina ospite: la chat del piano non ha `pageContext` (§5.2); lo ricevono solo i messaggi di Alfred. La riga di dati del turno sta tra
+    i delimitatori `<dati>…</dati>` con i campi tagliati (100 caratteri, titolo 200) e il titolo tra virgolette semplici.
+14. `Botcave.setContext` valida il contesto nel caricatore con la stessa regola dell'iframe (`contextMessage`) e ne ignora uno non valido con un avviso in console.
+15. `GET /api/account/characters` accetta anche il token `embed` (`sessionOrEmbed`: il dialogo «Nuova» preseleziona il modello del personaggio); il `PUT` resta solo con il login.
+    Account → «App collegate» mostra «Può approvare e rifiutare» anche per i collegamenti `embed`.
+16. nginx sostituisce solo le variabili `EMBED_*` (`NGINX_ENVSUBST_FILTER`); il job di test della CI esegue anche i test della console.

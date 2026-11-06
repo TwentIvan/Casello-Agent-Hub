@@ -41,7 +41,7 @@ export function requireApiToken(): RequestHandler {
       return;
     }
     const verify = token.startsWith("cao_")
-      ? verifyAccessToken(token).then((a) => (a ? { userId: a.userId, scopes: a.scopes } : null))
+      ? verifyAccessToken(token).then((a) => (a && a.scopes.includes("mcp") ? { userId: a.userId, scopes: a.scopes } : null))
       : authenticateApiToken(token).then((a) => (a && a.nodeId === null && a.scopes.includes("mcp") ? { userId: a.userId, scopes: a.scopes } : null));
     verify
       .then((auth) => {

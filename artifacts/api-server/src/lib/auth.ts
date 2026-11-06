@@ -12,6 +12,7 @@ import { GetAuthProvidersResponse, GetCurrentUserResponse } from "@workspace/api
 import { githubConfig } from "./github/config";
 import { githubAuthRouter } from "./github/oauth-routes";
 import { logger } from "./logger";
+import { verifyAccessToken } from "./oauth/tokens";
 import { tokenRateLimit } from "../middlewares/rate-limit";
 import { TOKEN_MESSAGES, authenticateApiToken, bearerToken, type TokenScope } from "./api-tokens";
 import { IdentityConflictError, ensureUserByEmail, isAllowed, listIdentities, resolveLogin } from "./users";
@@ -56,7 +57,9 @@ declare global {
       /** Impostato da requireAuth. */
       userId?: number;
       /** Come è autenticata la richiesta: impostato da requireAuth. */
-      auth?: { kind: "session" } | { kind: "token"; tokenId: number; scopes: TokenScope[] };
+      auth?:
+        | { kind: "session" }
+        | { kind: "token"; tokenId: number | null; scopes: TokenScope[]; grantId?: number; via?: "embed" };
     }
   }
 }
@@ -212,6 +215,25 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
   try {
     if (req.headers.authorization !== undefined) {
       const raw = bearerToken(req);
+      // Token d'accesso OAuth `cao_…`: su /api vale solo quello del pannello incorporato (ambito embed), come lettura e scrittura
+      if (raw !== null && raw.startsWith("cao_")) {
+        let access: Awaited<ReturnType<typeof verifyAccessToken>>;
+        try {
+          access = await verifyAccessToken(raw);
+        } catch (err) {
+          logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Verifica del token d'accesso non riuscita");
+          res.status(500).json({ error: "errore interno" });
+          return;
+        }
+        if (!access || !access.scopes.includes("embed")) {
+          res.status(401).json({ error: TOKEN_MESSAGES.invalid });
+          return;
+        }
+        req.userId = access.userId;
+        req.auth = { kind: "token", tokenId: null, grantId: access.grantId, scopes: ["api:read", "api:write"], via: "embed" };
+        tokenRateLimit(req, res, next);
+        return;
+      }
       let found: Awaited<ReturnType<typeof authenticateApiToken>>;
       try {
         found = raw === null ? null : await authenticateApiToken(raw);
@@ -258,6 +280,15 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
 /** Operazioni solo con il login (chiavi, tetti, token, account collegati): con un token → 403. */
 export const sessionOnly: RequestHandler = (req, res, next) => {
   if (req.auth?.kind === "token") {
+    res.status(403).json({ error: TOKEN_MESSAGES.sessionOnly });
+    return;
+  }
+  next();
+};
+
+/** Come `sessionOnly`, ma ammette anche il token del pannello incorporato (sessioni vocali di Alfred): gli altri token → 403. */
+export const sessionOrEmbed: RequestHandler = (req, res, next) => {
+  if (req.auth?.kind === "token" && req.auth.via !== "embed") {
     res.status(403).json({ error: TOKEN_MESSAGES.sessionOnly });
     return;
   }

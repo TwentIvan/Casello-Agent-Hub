@@ -169,9 +169,12 @@ export async function refreshTokens(form: Record<string, unknown>): Promise<Toke
       grantClientRowId: oauthGrantsTable.clientRowId,
       revokedAt: oauthGrantsTable.revokedAt,
       email: usersTable.email,
+      clientKind: oauthClientsTable.kind,
+      clientId: oauthClientsTable.clientId,
     })
     .from(oauthTokensTable)
     .innerJoin(oauthGrantsTable, eq(oauthGrantsTable.id, oauthTokensTable.grantId))
+    .innerJoin(oauthClientsTable, eq(oauthClientsTable.id, oauthGrantsTable.clientRowId))
     .innerJoin(usersTable, eq(usersTable.id, oauthGrantsTable.userId))
     .where(eq(oauthTokensTable.tokenHash, sha256Hex(refresh)));
   if (!row || row.kind !== "refresh" || row.grantClientRowId !== clientRowId || row.revokedAt !== null) throw invalidGrant();
@@ -205,9 +208,12 @@ export async function verifyAccessToken(
       scopes: oauthGrantsTable.scopes,
       lastUsedAt: oauthGrantsTable.lastUsedAt,
       email: usersTable.email,
+      clientKind: oauthClientsTable.kind,
+      clientId: oauthClientsTable.clientId,
     })
     .from(oauthTokensTable)
     .innerJoin(oauthGrantsTable, eq(oauthGrantsTable.id, oauthTokensTable.grantId))
+    .innerJoin(oauthClientsTable, eq(oauthClientsTable.id, oauthGrantsTable.clientRowId))
     .innerJoin(usersTable, eq(usersTable.id, oauthGrantsTable.userId))
     .where(
       and(
@@ -218,6 +224,18 @@ export async function verifyAccessToken(
       ),
     );
   if (!row || !isAllowed([row.email])) return null;
+
+  // Un collegamento embed vale solo finché l'origine del suo client è ammessa: poi si revoca alla prima richiesta
+  if (row.clientKind === "embed") {
+    const origin = originOfEmbedClient(row.clientId);
+    if (origin === null || !embedAllowedOrigins().includes(origin)) {
+      await db
+        .update(oauthGrantsTable)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(oauthGrantsTable.id, row.grantId), isNull(oauthGrantsTable.revokedAt)));
+      return null;
+    }
+  }
 
   if (row.lastUsedAt === null || Date.now() - row.lastUsedAt.getTime() >= LAST_USED_STEP_MS) {
     const threshold = new Date(Date.now() - LAST_USED_STEP_MS);

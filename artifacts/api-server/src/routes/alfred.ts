@@ -15,7 +15,7 @@ import {
   SetAlfredSettingsResponse,
   StartAlfredSessionResponse,
 } from "@workspace/api-zod";
-import { currentUserId, sessionOnly } from "../lib/auth";
+import { currentUserId, sessionOnly, sessionOrEmbed } from "../lib/auth";
 import { ModelChoiceError } from "../lib/ai/choice";
 import { AlfredError } from "../lib/alfred/gemini";
 import { getAlfredSettings, setAlfredSettings } from "../lib/alfred/settings";
@@ -55,7 +55,7 @@ export function createAlfredRouter(): IRouter {
     res.json(SetAlfredSettingsResponse.parse(await getAlfredSettings(userId)));
   });
 
-  router.post("/alfred/sessions", sessionOnly, async (req, res) => {
+  router.post("/alfred/sessions", sessionOrEmbed, async (req, res) => {
     const userId = currentUserId(req);
     if (!consumeAlfredSession(userId)) {
       res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
@@ -68,7 +68,7 @@ export function createAlfredRouter(): IRouter {
     }
   });
 
-  router.post("/alfred/sessions/:id/renew", sessionOnly, async (req, res) => {
+  router.post("/alfred/sessions/:id/renew", sessionOrEmbed, async (req, res) => {
     const { id } = parseRequest(RenewAlfredSessionParams, req.params);
     // Corpo facoltativo; l'handle di ripresa non si registra mai nei log
     const { resumptionHandle } = parseRequest(RenewAlfredSessionBody, req.body ?? {});
@@ -84,7 +84,7 @@ export function createAlfredRouter(): IRouter {
     }
   });
 
-  router.post("/alfred/sessions/:id/usage", sessionOnly, async (req, res) => {
+  router.post("/alfred/sessions/:id/usage", sessionOrEmbed, async (req, res) => {
     const { id } = parseRequest(RecordAlfredUsageParams, req.params);
     const body = parseRequest(RecordAlfredUsageBody, req.body);
     try {
@@ -95,7 +95,7 @@ export function createAlfredRouter(): IRouter {
     }
   });
 
-  router.post("/alfred/sessions/:id/tools/:name", sessionOnly, async (req, res) => {
+  router.post("/alfred/sessions/:id/tools/:name", sessionOrEmbed, async (req, res) => {
     const { id, name } = parseRequest(RunAlfredToolParams, req.params);
     const { args } = parseRequest(RunAlfredToolBody, req.body);
     if (!consumeAlfredTool(currentUserId(req))) {
@@ -109,7 +109,7 @@ export function createAlfredRouter(): IRouter {
     }
   });
 
-  router.post("/alfred/sessions/:id/close", sessionOnly, async (req, res) => {
+  router.post("/alfred/sessions/:id/close", sessionOrEmbed, async (req, res) => {
     const { id } = parseRequest(CloseAlfredSessionParams, req.params);
     // Corpo facoltativo; la trascrizione non si registra mai nei log
     const { transcript } = parseRequest(CloseAlfredSessionBody, req.body ?? {});

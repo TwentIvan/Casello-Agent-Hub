@@ -15,7 +15,9 @@ import {
   useReleaseAnalysis,
 } from "@workspace/api-client-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { LuciusMark } from "@/components/brand/marks";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Led } from "@/components/brand/led";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +26,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/hooks/use-toast";
 import { ChapterTabs } from "@/components/analysis/chapter-tabs";
 import { isRecord, list, phaseLabel, rec, str, strList } from "@/components/analysis/payload";
-import { ANALYSIS_STATUS_LABELS, ANALYSIS_STATUS_STYLES } from "@/components/apps/analyses-card";
+import { ANALYSIS_STATUS_LABELS, ANALYSIS_STATUS_LED } from "@/components/apps/analyses-card";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatCost, formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -96,7 +98,7 @@ function AnalysisLog({ log }: { log: AnalysisLogEntry[] }) {
 function MapSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-sm font-semibold">{title}</h4>
+      <h4 className="text-sm font-medium">{title}</h4>
       {children}
     </section>
   );
@@ -105,7 +107,7 @@ function MapSection({ title, children }: { title: string; children: ReactNode })
 function Collapsible({ summary, children }: { summary: string; children: ReactNode }) {
   return (
     <details className="group rounded-md border">
-      <summary className="cursor-pointer px-3 py-2 text-sm font-semibold select-none">{summary}</summary>
+      <summary className="cursor-pointer px-3 py-2 text-sm font-medium select-none">{summary}</summary>
       <div className="border-t p-3">{children}</div>
     </details>
   );
@@ -125,7 +127,7 @@ function ArchitectureMap({ map }: { map: Record<string, unknown> }) {
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Mappa</CardTitle>
-        <CardDescription>Come l'architetto ha letto l'app: stack, struttura, autenticazione, aree, rotte e dati.</CardDescription>
+        <CardDescription>Come Lucius ha letto l'app: stack, struttura, autenticazione, aree, rotte e dati.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         {summary?.trim() && <p className="text-sm whitespace-pre-wrap break-words">{summary}</p>}
@@ -194,7 +196,7 @@ function ArchitectureMap({ map }: { map: Record<string, unknown> }) {
             <ul className="space-y-1 font-mono text-xs">
               {routes.map((route, i) => (
                 <li key={i} className="break-all">
-                  <span className="font-semibold">{str(route, "method") ?? "?"}</span> {str(route, "path") ?? "?"}
+                  <span className="font-medium">{str(route, "method") ?? "?"}</span> {str(route, "path") ?? "?"}
                   {str(route, "file") ? <span className="text-muted-foreground"> — {str(route, "file")}</span> : null}
                 </li>
               ))}
@@ -286,7 +288,7 @@ function LocalExecutionCard({ analysis }: { analysis: AnalysisDetail }) {
           </p>
         )}
         <div className="space-y-1">
-          <h4 className="text-sm font-semibold">Fasi consegnate</h4>
+          <h4 className="text-sm font-medium">Fasi consegnate</h4>
           {analysis.deliveredPhases.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nessuna fase consegnata ancora.</p>
           ) : (
@@ -410,10 +412,9 @@ export default function AnalysisDetailPage() {
       <div className="space-y-3">
         {backLink}
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-2xl font-semibold tracking-tight">Analisi #{a.id}</h2>
-          <Badge variant="outline" className={cn("border-transparent", ANALYSIS_STATUS_STYLES[a.status])}>
-            {ANALYSIS_STATUS_LABELS[a.status]}
-          </Badge>
+          <LuciusMark size={22} alt="Lucius" />
+          <h2 className="text-h2">Analisi #{a.id}</h2>
+          <Led state={ANALYSIS_STATUS_LED[a.status]} label={ANALYSIS_STATUS_LABELS[a.status]} />
           {active && <Spinner className="size-4" />}
         </div>
         <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
@@ -435,7 +436,7 @@ export default function AnalysisDetailPage() {
           </div>
           <div>
             <dt className="text-muted-foreground">Token</dt>
-            <dd className="tabular-nums">
+            <dd className="font-mono tabular-nums">
               {a.executor === "local" ? "—" : `${a.tokensUsed.toLocaleString("it-IT")} / ${a.maxTokens.toLocaleString("it-IT")}`}
               {a.executor !== "local" && a.cachedTokens > 0 && (
                 <span className="text-muted-foreground">
@@ -447,7 +448,7 @@ export default function AnalysisDetailPage() {
           </div>
           <div>
             <dt className="text-muted-foreground">Costo</dt>
-            <dd className="tabular-nums">
+            <dd className="font-mono tabular-nums">
               {a.executor === "local" ? "abbonamento locale" : (formatCost(a.costUsd, a.tokensUsed) ?? "—")}
             </dd>
           </div>
@@ -457,7 +458,7 @@ export default function AnalysisDetailPage() {
           </div>
           <div>
             <dt className="text-muted-foreground">Durata</dt>
-            <dd className="tabular-nums">{formatDuration(durationMs)}</dd>
+            <dd className="font-mono tabular-nums">{formatDuration(durationMs)}</dd>
           </div>
           <div className="sm:col-span-2">
             <dt className="text-muted-foreground">Fonti</dt>
@@ -496,14 +497,14 @@ export default function AnalysisDetailPage() {
         <Card>
           <CardContent className="flex items-center gap-3 py-6 text-sm text-muted-foreground">
             <Spinner className="size-5" />
-            L'architetto sta studiando le sorgenti…
+            Lucius sta studiando le sorgenti…
           </CardContent>
         </Card>
       ) : null}
 
       <section className="space-y-3">
         <div>
-          <h3 className="text-lg font-semibold tracking-tight">Proposta</h3>
+          <h3 className="text-h3">Proposta</h3>
           <p className="text-sm text-muted-foreground">
             Nulla diventa attivo senza approvazione. Approvare un tool, un agente o una skill li applica subito.
           </p>

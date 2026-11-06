@@ -35,8 +35,8 @@ export function DefaultModelCard() {
       <CardHeader>
         <CardTitle>Modello predefinito</CardTitle>
         <CardDescription>
-          Precompila il modello degli agenti che Casello crea: l'agente generale di una nuova app, gli agenti approvati
-          dall'architetto e quelli creati a mano. Puoi sempre cambiarlo agente per agente.
+          Precompila il modello degli agenti che Botcave crea: l'agente generale di una nuova app, gli agenti approvati
+          da Lucius e quelli creati a mano. Puoi sempre cambiarlo agente per agente.
         </CardDescription>
       </CardHeader>
       <CardContent>

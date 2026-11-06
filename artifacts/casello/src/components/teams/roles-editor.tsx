@@ -100,7 +100,7 @@ function RoleCard({
           </div>
           <div className="flex items-center gap-3">
             {role.isLead && (
-              <Badge>
+              <Badge variant="secondary">
                 <Crown className="size-3" />
                 Capo
               </Badge>

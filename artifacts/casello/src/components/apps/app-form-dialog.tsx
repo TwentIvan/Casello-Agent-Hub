@@ -292,7 +292,7 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
                 <Label htmlFor="general-agent-model">Modello dell'agente generale</Label>
                 <ModelPicker id="general-agent-model" value={generalAgentAiModelId} onChange={setGeneralModel} />
                 <p className="text-xs text-muted-foreground">
-                  Casello crea con l'app il suo agente generale; senza modello le sue run non partono.
+                  Botcave crea con l'app il suo agente generale; senza modello le sue run non partono.
                 </p>
               </div>
             )}
@@ -338,7 +338,7 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
                 onDisable={() => {
                   form.setValue("serviceSecret", "");
                   setClearSecret(false);
-                }} title="Autenticazione di servizio" hint="Credenziale propria di Casello, per i tool con identità di servizio.">
+                }} title="Autenticazione di servizio" hint="Credenziale propria di Botcave, per i tool con identità di servizio.">
                 <FormField
                   control={form.control}
                   name="serviceSecret"

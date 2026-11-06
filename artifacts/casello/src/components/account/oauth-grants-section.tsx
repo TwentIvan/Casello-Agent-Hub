@@ -53,7 +53,7 @@ export function OAuthGrantsSection() {
       <CardHeader className="space-y-1.5">
         <CardTitle>App collegate</CardTitle>
         <CardDescription>
-          App come Claude che usano Casello tramite il connettore. Revocando un collegamento l'app smette di funzionare subito.
+          App come Claude che usano Botcave tramite il connettore. Revocando un collegamento l'app smette di funzionare subito.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -99,7 +99,7 @@ export function OAuthGrantsSection() {
         open={revoking !== null}
         onOpenChange={(open) => !open && setRevoking(null)}
         title="Revocare il collegamento?"
-        description={`«${revoking?.clientName ?? ""}» non potrà più usare Casello finché non lo ricolleghi dal connettore.`}
+        description={`«${revoking?.clientName ?? ""}» non potrà più usare Botcave finché non lo ricolleghi dal connettore.`}
         confirmLabel="Revoca"
         pendingLabel="Revoca…"
         pending={revoke.isPending}

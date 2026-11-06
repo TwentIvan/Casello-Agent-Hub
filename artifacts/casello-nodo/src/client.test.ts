@@ -92,7 +92,7 @@ describe("CaselloClient", () => {
   it("ritenta gli errori di rete e si ferma oltre 5 minuti di attesa", async () => {
     await casello.close();
     const c = client({ baseUrl: "http://127.0.0.1:1" });
-    await expect(c.heartbeat(caps)).rejects.toThrow("Casello non raggiungibile");
+    await expect(c.heartbeat(caps)).rejects.toThrow("Botcave non raggiungibile");
     expect(waits.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(5 * 60_000);
     expect(waits.length).toBeGreaterThan(3);
     casello = new FakeCasello();

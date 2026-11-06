@@ -60,7 +60,7 @@ export const TASK_MESSAGES = {
 } as const;
 
 const ROLE_INSTRUCTION =
-  "Sei un ruolo di una squadra di agenti nell'hub Casello: esegui il compito che ti assegna il capo e riferiscigli l'esito. Rispondi in italiano.";
+  "Sei un ruolo di una squadra di agenti in Botcave: esegui il compito che ti assegna il capo e riferiscigli l'esito. Rispondi in italiano.";
 
 // Difesa dalla prompt injection: il contenuto delle risposte delle app non comanda il ruolo
 const TOOL_RESULTS_INSTRUCTION =

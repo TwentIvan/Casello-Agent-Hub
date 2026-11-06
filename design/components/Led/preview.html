@@ -1,0 +1,17 @@
+<!-- @dsCard group="Stati" height=96 -->
+<!doctype html><html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500&display=swap"><style>
+body{margin:0;background:var(--surface-1);font-family:var(--font-sans)}
+.r{display:flex;gap:var(--space-4);padding:var(--space-4) var(--space-3);flex-wrap:wrap}
+.l{display:flex;align-items:center;gap:var(--space-2);font-size:14px;line-height:20px;color:var(--ink-muted)}
+.d{width:8px;height:8px;border-radius:var(--radius-0);flex:none}
+.idle{background:var(--led-idle)}.work{background:var(--accent);animation:p 2.4s ease-in-out infinite}
+.ask{background:var(--accent);animation:b 1s steps(2,jump-none) infinite}.ok{background:var(--success)}.ko{background:var(--danger)}
+@keyframes p{50%{opacity:.35}}@keyframes b{50%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.d{animation:none}}
+</style></head><body><div class="r">
+<span class="l"><span class="d idle"></span>In attesa</span>
+<span class="l"><span class="d work"></span>Al lavoro</span>
+<span class="l"><span class="d ask"></span>Serve una decisione</span>
+<span class="l"><span class="d ok"></span>Concluso</span>
+<span class="l"><span class="d ko"></span>Bloccato</span>
+</div><script></script></body></html>

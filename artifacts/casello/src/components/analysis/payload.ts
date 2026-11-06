@@ -80,11 +80,12 @@ export const DIFF_LABELS: Record<ItemDiff, string> = {
   unchanged: "Invariato",
 };
 
+/** Differenza rispetto all'app: tag con bordo neutro e testo nel colore di stato. */
 export const DIFF_STYLES: Record<ItemDiff, string> = {
-  new: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  changed: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-  removed: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
-  unchanged: "bg-muted text-muted-foreground",
+  new: "border-border text-success",
+  changed: "border-border text-accent-text",
+  removed: "border-border text-danger",
+  unchanged: "border-border text-ink-muted",
 };
 
 export const ITEM_STATUS_LABELS: Record<ItemStatus, string> = {
@@ -94,11 +95,12 @@ export const ITEM_STATUS_LABELS: Record<ItemStatus, string> = {
   postponed: "Rimandato",
 };
 
-export const ITEM_STATUS_STYLES: Record<ItemStatus, string> = {
-  pending: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-  approved: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  discarded: "bg-muted text-muted-foreground",
-  postponed: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300",
+/** Stato della voce come LED: in attesa = serve una decisione. */
+export const ITEM_STATUS_LED: Record<ItemStatus, "idle" | "ask" | "ok"> = {
+  pending: "ask",
+  approved: "ok",
+  discarded: "idle",
+  postponed: "idle",
 };
 
 export const PHASE_LABELS: Record<string, string> = {

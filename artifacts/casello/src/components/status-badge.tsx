@@ -1,6 +1,5 @@
 import type { AgentStatus, AppStatus } from "@workspace/api-client-react";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { Led, type LedState } from "@/components/brand/led";
 
 export const APP_STATUS_LABELS: Record<AppStatus, string> = {
   active: "Attiva",
@@ -13,10 +12,10 @@ export const AGENT_STATUS_LABELS: Record<AgentStatus, string> = {
   draft: "Bozza",
 };
 
-const STYLES: Record<AgentStatus, string> = {
-  active: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  inactive: "bg-muted text-muted-foreground",
-  draft: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+const LED: Record<AgentStatus, LedState> = {
+  active: "ok",
+  inactive: "idle",
+  draft: "idle",
 };
 
 type StatusBadgeProps =
@@ -27,8 +26,6 @@ type StatusBadgeProps =
 export function StatusBadge({ kind, status, className }: StatusBadgeProps) {
   const label = kind === "app" ? APP_STATUS_LABELS[status as AppStatus] : AGENT_STATUS_LABELS[status];
   return (
-    <Badge variant="outline" className={cn("border-transparent", STYLES[status], className)}>
-      {label}
-    </Badge>
+    <Led state={LED[status]} label={label} className={className} />
   );
 }

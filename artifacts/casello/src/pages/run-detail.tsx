@@ -127,7 +127,7 @@ export default function RunDetailPage() {
       <div className="space-y-3">
         {backLink}
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-2xl font-semibold tracking-tight">Run #{r.id}</h2>
+          <h2 className="text-h2">Run #{r.id}</h2>
           <RunStatusBadge status={r.status} />
           {active && (
             <Button variant="outline" size="sm" className="ml-auto" onClick={() => setConfirmCancel(true)}>
@@ -155,12 +155,12 @@ export default function RunDetailPage() {
           </div>
           <div>
             <dt className="text-muted-foreground">Durata</dt>
-            <dd className="tabular-nums">{formatDuration(r.durationMs)}</dd>
+            <dd className="font-mono tabular-nums">{formatDuration(r.durationMs)}</dd>
           </div>
           {(r.promptTokens != null || r.completionTokens != null) && (
             <div>
               <dt className="text-muted-foreground">Token</dt>
-              <dd className="tabular-nums">
+              <dd className="font-mono tabular-nums">
                 {(r.promptTokens ?? 0).toLocaleString("it-IT")} in · {(r.completionTokens ?? 0).toLocaleString("it-IT")} out
               </dd>
             </div>
@@ -168,7 +168,7 @@ export default function RunDetailPage() {
           {cost && (
             <div>
               <dt className="text-muted-foreground">Costo</dt>
-              <dd className="tabular-nums">{cost}</dd>
+              <dd className="font-mono tabular-nums">{cost}</dd>
             </div>
           )}
         </dl>

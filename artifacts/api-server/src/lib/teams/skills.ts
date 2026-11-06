@@ -22,7 +22,7 @@ export const SKILL_MESSAGES = {
   emptyContent: "il contenuto non può essere vuoto",
   contentTooLong: `contenuto troppo lungo: massimo ${MAX_SKILL_CONTENT} caratteri`,
   invalidNodeName: "nome della skill sul nodo non valido: da 1 a 100 caratteri tra lettere, cifre, ':', '_' e '-'",
-  hintsOnlyCasello: "i suggerimenti sugli strumenti valgono solo per le skill casello",
+  hintsOnlyCasello: "i suggerimenti sugli strumenti valgono solo per le skill Botcave",
 } as const;
 
 export class SkillError extends Error {

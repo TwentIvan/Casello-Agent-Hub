@@ -36,7 +36,7 @@ export default function TeamsPage() {
     <div className="mx-auto max-w-screen-2xl space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Squadre</h2>
+          <h2 className="text-h2">Squadre</h2>
           <p className="text-sm text-muted-foreground">
             Squadre al lavoro su un incarico preciso, copiate da un modello e specializzate.
           </p>
@@ -118,7 +118,7 @@ export default function TeamsPage() {
                       <TableCell className="hidden truncate text-muted-foreground lg:table-cell">
                         {t.template ? `${t.template.name} · v${t.template.version}` : "—"}
                       </TableCell>
-                      <TableCell className="tabular-nums">{t.roles.length}</TableCell>
+                      <TableCell className="font-mono tabular-nums">{t.roles.length}</TableCell>
                       <TableCell>
                         <TeamStatusBadge status={t.status} />
                       </TableCell>

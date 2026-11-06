@@ -13,6 +13,7 @@ import {
   getGetAppPlanQueryKey,
 } from "@workspace/api-client-react";
 import { ModelPicker } from "@/components/ai/model-picker";
+import { LuciusMark } from "@/components/brand/marks";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -126,7 +127,7 @@ export function ChatPanel({ conversationId, appId, onDeleted }: ChatPanelProps) 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <h3 className="truncate text-sm font-medium">{data.title || "Nuova conversazione"}</h3>
-          <p className="text-xs text-muted-foreground tabular-nums">
+          <p className="text-xs text-muted-foreground font-mono tabular-nums">
             {data.tokensUsed.toLocaleString("it-IT")} token{cost ? ` · ${cost}` : ""}
           </p>
         </div>
@@ -159,7 +160,7 @@ export function ChatPanel({ conversationId, appId, onDeleted }: ChatPanelProps) 
 
       <div className="max-h-[32rem] space-y-3 overflow-y-auto rounded-md border p-3">
         {data.messages.length === 0 && (
-          <p className="text-sm text-muted-foreground">Scrivi al bot per chiedere integrazioni, correzioni o nuove idee per il piano.</p>
+          <p className="text-sm text-muted-foreground">Scrivi a Lucius per chiedere integrazioni, correzioni o nuove idee per il piano.</p>
         )}
         {data.messages.map((m) => {
           const proposals = data.proposals.filter((p) => p.messageId === m.id);
@@ -172,14 +173,20 @@ export function ChatPanel({ conversationId, appId, onDeleted }: ChatPanelProps) 
               <div
                 className={cn(
                   "max-w-[90%] rounded-lg px-3 py-2",
-                  m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted",
+                  m.role === "user" ? "bg-surface-2 text-ink" : "bg-muted",
                   m.error && "border border-destructive bg-destructive/10 text-destructive",
                 )}
               >
                 {m.role === "user" ? (
                   <p className="text-sm break-words whitespace-pre-wrap">{m.content}</p>
                 ) : (
-                  <Markdown>{m.content}</Markdown>
+                  <>
+                    <p className="mb-1 flex items-center gap-2 text-label text-ink-muted">
+                      <LuciusMark size={12} />
+                      Lucius
+                    </p>
+                    <Markdown>{m.content}</Markdown>
+                  </>
                 )}
               </div>
               )}
@@ -229,7 +236,7 @@ export function ChatPanel({ conversationId, appId, onDeleted }: ChatPanelProps) 
           disabled={running}
         />
         <div className="flex items-center justify-between gap-2">
-          <span className={cn("text-xs tabular-nums text-muted-foreground", text.length > MAX_CHARS && "text-destructive")}>
+          <span className={cn("text-xs font-mono tabular-nums text-muted-foreground", text.length > MAX_CHARS && "text-destructive")}>
             {text.length.toLocaleString("it-IT")} / {MAX_CHARS.toLocaleString("it-IT")}
           </span>
           <Button type="submit" size="sm" disabled={!canSend}>

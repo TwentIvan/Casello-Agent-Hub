@@ -3,6 +3,7 @@ import { Link, useParams } from "wouter";
 import { ArrowLeft } from "lucide-react";
 import { ApiError, getGetAppQueryKey, useGetApp } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { LuciusMark } from "@/components/brand/marks";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatPanel } from "@/components/plan/chat-panel";
 import { ConversationList } from "@/components/plan/conversation-list";
@@ -34,11 +35,14 @@ export default function AppPlanPage() {
         <Skeleton className="h-24 w-full" />
       ) : (
         <>
-          <div className="space-y-1">
-            <h2 className="text-2xl font-semibold tracking-tight">Piano e chat · {app.data.name}</h2>
-            <p className="text-sm text-muted-foreground">
-              Il piano dell'app e una chat per integrarlo: le proposte del bot diventano voci solo quando le accetti.
-            </p>
+          <div className="flex items-center gap-4">
+            <LuciusMark size={30} />
+            <div className="min-w-0 space-y-1">
+              <h2 className="text-h2">Piano e chat · {app.data.name}</h2>
+              <p className="text-sm text-muted-foreground">
+                Il piano dell'app e una chat con Lucius per integrarlo: le sue proposte diventano voci solo quando le accetti.
+              </p>
+            </div>
           </div>
           <div className="grid gap-8 lg:grid-cols-2">
             <section aria-label="Piano" className="min-w-0">

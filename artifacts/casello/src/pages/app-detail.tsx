@@ -45,7 +45,7 @@ export default function AppDetailPage() {
         <>
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-2xl font-semibold tracking-tight">{app.data.name}</h2>
+              <h2 className="text-h2">{app.data.name}</h2>
               <StatusBadge kind="app" status={app.data.status} />
               <Button variant="outline" size="sm" asChild className="ml-auto">
                 <Link href={`/apps/${appId}/plan`}>

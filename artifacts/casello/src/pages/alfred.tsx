@@ -1,21 +1,23 @@
 import { useEffect } from "react";
 import { Link } from "wouter";
 import { getGetAlfredSettingsQueryKey, useGetAlfredSettings } from "@workspace/api-client-react";
-import { Mic, Square } from "lucide-react";
+import { Square } from "lucide-react";
 import { AlfredTranscript } from "@/components/alfred/alfred-transcript";
+import { Led, type LedState } from "@/components/brand/led";
+import { AlfredMark } from "@/components/brand/marks";
 import { type AlfredStatus, useAlfredVoice } from "@/components/alfred/use-alfred-voice";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
-const STATUS_LABELS: Record<AlfredStatus, string> = {
-  stopped: "fermo",
-  connecting: "collego…",
-  listening: "ascolto",
-  speaking: "parla",
+const STATUS: Record<AlfredStatus, [string, LedState]> = {
+  stopped: ["Fermo", "idle"],
+  connecting: ["Mi collego…", "idle"],
+  listening: ["In ascolto", "work"],
+  speaking: ["Alfred parla", "work"],
 };
 
-/** Collega manifest e icona di Alfred solo finché la pagina è montata. */
+/** Collega il manifest di Alfred solo finché la pagina è montata (l'icona Botcave per l'iPhone è in index.html). */
 function useAlfredInstallable() {
   useEffect(() => {
     const base = import.meta.env.BASE_URL;
@@ -27,7 +29,6 @@ function useAlfredInstallable() {
       tags.push(el);
     };
     add("link", { rel: "manifest", href: `${base}alfred.webmanifest` });
-    add("link", { rel: "apple-touch-icon", href: `${base}alfred-icon-180.png` });
     add("meta", { name: "apple-mobile-web-app-capable", content: "yes" });
     add("meta", { name: "apple-mobile-web-app-title", content: "Alfred" });
     return () => tags.forEach((el) => el.remove());
@@ -43,21 +44,26 @@ export default function AlfredPage() {
 
   return (
     <div className="mx-auto w-full max-w-xl space-y-4">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Alfred</h2>
-        <p className="text-sm text-muted-foreground">Il maggiordomo vocale: chiedi delle tue squadre e decidi a voce.</p>
+      <div className="flex items-center gap-4">
+        <AlfredMark size={39} />
+        <div>
+          <h2 className="text-h2">Alfred</h2>
+          <p className="text-sm text-muted-foreground">
+            Il maggiordomo vocale: ti dice come vanno le squadre e, con la tua conferma, decide le voci in coda.
+          </p>
+        </div>
       </div>
       <Button
         size="lg"
-        className="h-20 w-full text-xl"
+        className="h-20 w-full gap-3 text-xl"
         variant={running ? "destructive" : "default"}
         onClick={() => void (running ? stop() : start())}
       >
-        {running ? <Square /> : <Mic />}
-        {running ? "Basta così" : "Parla"}
+        {running ? <Square /> : <AlfredMark size={20} tone="light" />}
+        {running ? "Basta così" : "Parla con Alfred"}
       </Button>
-      <p className="text-sm text-muted-foreground" aria-live="polite">
-        Stato: <span className="font-medium text-foreground">{STATUS_LABELS[status]}</span>
+      <p aria-live="polite">
+        <Led state={STATUS[status][1]} label={STATUS[status][0]} />
       </p>
       {noModel && !error && (
         <Alert>

@@ -18,7 +18,7 @@ export const PLAN_TOOLS: ChatCompletionFunctionTool[] = [
     properties: { ref: { type: "string", description: "Riferimento della voce, come nell'elenco del piano." } },
     required: ["ref"],
   }),
-  fn("read_app", "Legge la scheda di un'altra app registrata in Casello.", {
+  fn("read_app", "Legge la scheda di un'altra app registrata in Botcave.", {
     type: "object",
     properties: { slug: { type: "string", description: "Slug dell'app." } },
     required: ["slug"],

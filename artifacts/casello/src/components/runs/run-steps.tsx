@@ -57,7 +57,7 @@ function StepRow({ step }: { step: StepView }) {
   return (
     <li className="space-y-1 py-3">
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="w-6 text-right text-xs tabular-nums text-muted-foreground">{step.position + 1}</span>
+        <span className="w-6 text-right text-xs font-mono tabular-nums text-muted-foreground">{step.position + 1}</span>
         {isTool ? <Wrench className="size-4 text-muted-foreground" /> : <Bot className="size-4 text-muted-foreground" />}
         {queued?.numero != null ? (
           <QueuedLink numero={queued.numero} />
@@ -70,12 +70,12 @@ function StepRow({ step }: { step: StepView }) {
             variant="outline"
             className={
               failed
-                ? "border-transparent bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
-                : "border-transparent bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                ? "border-border text-danger"
+                : "border-border text-success"
             }
           >
             {failed ? <X className="size-3" /> : <Check className="size-3" />}
-            {failed ? "Errore" : "Ok"}
+            {failed ? "Errore" : "Riuscito"}
           </Badge>
         )}
         {step.httpStatus != null && (
@@ -83,7 +83,7 @@ function StepRow({ step }: { step: StepView }) {
             HTTP {step.httpStatus}
           </Badge>
         )}
-        <span className="ml-auto text-xs tabular-nums text-muted-foreground">{formatDuration(step.durationMs)}</span>
+        <span className="ml-auto text-xs font-mono tabular-nums text-muted-foreground">{formatDuration(step.durationMs)}</span>
       </div>
       {step.error && <p className="pl-8 text-xs text-destructive break-words">{step.error}</p>}
       {queued?.sintesi && <p className="pl-8 text-xs text-muted-foreground break-words">{queued.sintesi}</p>}

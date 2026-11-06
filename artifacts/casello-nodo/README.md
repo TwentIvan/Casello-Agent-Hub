@@ -1,13 +1,13 @@
 # casello-nodo
 
-Servizio per Mac che esegue con Claude Code i compiti «nodo» delle squadre di Casello: prende un compito in coda,
-prepara lo spazio di lavoro, lancia `claude` e riferisce l'esito a Casello.
+Servizio per Mac che esegue con Claude Code i compiti «nodo» delle squadre di Botcave: prende un compito in coda,
+prepara lo spazio di lavoro, lancia `claude` e riferisce l'esito a Botcave.
 
 ## Requisiti
 
 - macOS con Node 24.
 - Claude Code installato (`claude` nel PATH) e con il login già fatto.
-- Un nodo creato nella console di Casello (Account → Nodi): al momento della creazione viene mostrato una sola volta
+- Un nodo creato nella console di Botcave (Account → Nodi): al momento della creazione viene mostrato una sola volta
   il token del nodo (`cas_…`).
 
 ## Comandi

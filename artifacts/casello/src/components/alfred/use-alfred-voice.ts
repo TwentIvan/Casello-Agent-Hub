@@ -33,7 +33,7 @@ const AUDIO_ERROR =
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-const CLOSED = "Sessione chiusa: premi Parla per ricominciare";
+const CLOSED = "Sessione chiusa. Premi «Parla con Alfred» per ricominciare.";
 const CONFIRM_NOT_HEARD = "conferma non ricevuta: chiedi all'utente";
 
 function b64FromBytes(bytes: Uint8Array): string {

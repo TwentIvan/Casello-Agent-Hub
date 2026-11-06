@@ -12,10 +12,7 @@ import {
   useRejectPendingAction,
 } from "@workspace/api-client-react";
 import { ACTION_KIND_LABELS, PlanProposalDetail, isPlanItem } from "@/components/actions/plan-proposal";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { ConfirmItem } from "@/components/brand/confirm-item";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
@@ -26,7 +23,6 @@ function Proposal({ team, item, onDecided }: { team: TeamInstance; item: QueuedA
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [note, setNote] = useState("");
-  const [rejecting, setRejecting] = useState(false);
   const roleName = (key: string) => team.roles.find((r) => r.key === key)?.name ?? key;
 
   const refresh = () => {
@@ -64,57 +60,21 @@ function Proposal({ team, item, onDecided }: { team: TeamInstance; item: QueuedA
   const busy = approve.isPending || reject.isPending;
 
   return (
-    <Card className="border-amber-300 dark:border-amber-800">
-      <CardHeader>
-        <CardTitle className="text-base">
-          {item.kind === "plan" ? "Piano da approvare" : "Modifica del piano da approvare"}
-        </CardTitle>
-        <CardDescription className="break-words">
-          {ACTION_KIND_LABELS[item.kind]} n. {item.number} · proposto {formatRelative(item.createdAt)}. {item.summary}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <PlanProposalDetail args={item.args} roleName={roleName} />
-        {rejecting && (
-          <div className="space-y-1.5">
-            <Label htmlFor={`plan-reject-note-${item.number}`}>Nota per il capo (facoltativa)</Label>
-            <Textarea
-              id={`plan-reject-note-${item.number}`}
-              rows={2}
-              maxLength={500}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Cosa cambiare nel piano"
-            />
-          </div>
-        )}
-        <div className="flex flex-wrap justify-end gap-2">
-          {rejecting ? (
-            <>
-              <Button variant="ghost" disabled={busy} onClick={() => setRejecting(false)}>
-                Annulla
-              </Button>
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() =>
-                  reject.mutate({ number: item.number, data: note.trim() ? { note: note.trim() } : {} })
-                }
-              >
-                {reject.isPending ? "Rifiuto…" : "Rifiuta"}
-              </Button>
-            </>
-          ) : (
-            <Button variant="outline" disabled={busy} onClick={() => setRejecting(true)}>
-              Rifiuta con nota
-            </Button>
-          )}
-          <Button disabled={busy} onClick={() => approve.mutate({ number: item.number, data: {} })}>
-            {approve.isPending ? "Approvazione…" : "Approva"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+    <ConfirmItem
+      number={item.number}
+      title={item.kind === "plan" ? "Piano da approvare" : "Modifica del piano da approvare"}
+      meta={`${ACTION_KIND_LABELS[item.kind]} proposto dal capo · ${formatRelative(item.createdAt)}`}
+      summary={item.summary}
+      note={note}
+      onNoteChange={setNote}
+      busy={busy}
+      approveLabel={approve.isPending ? "Approvazione…" : "Approva"}
+      rejectLabel={reject.isPending ? "Rifiuto…" : "Rifiuta"}
+      onApprove={() => approve.mutate({ number: item.number, data: {} })}
+      onReject={() => reject.mutate({ number: item.number, data: note.trim() ? { note: note.trim() } : {} })}
+    >
+      <PlanProposalDetail args={item.args} roleName={roleName} />
+    </ConfirmItem>
   );
 }
 

@@ -77,7 +77,7 @@ function Offers({ modelId, cheapest }: { modelId: number; cheapest: CatalogModel
                   nei tuoi account
                 </Badge>
               )}
-              {o.id === cheapestId && <Badge className="ml-2">più economica</Badge>}
+              {o.id === cheapestId && <Badge variant="secondary" className="ml-2">più economica</Badge>}
             </TableCell>
             <TableCell className="font-mono text-xs">{o.providerModelId}</TableCell>
             <TableCell>{formatModelPrice(o.priceInput, o.priceOutput)}</TableCell>

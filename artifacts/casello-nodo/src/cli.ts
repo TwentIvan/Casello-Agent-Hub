@@ -65,11 +65,11 @@ export function validateUrl(raw: string): string {
   try {
     u = new URL(raw);
   } catch {
-    throw new CliError("indirizzo di Casello non valido");
+    throw new CliError("indirizzo di Botcave non valido");
   }
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
   if (u.protocol !== "https:" && !(u.protocol === "http:" && local)) {
-    throw new CliError("l'indirizzo di Casello deve essere https");
+    throw new CliError("l'indirizzo di Botcave deve essere https");
   }
   return raw.replace(/\/+$/, "");
 }
@@ -128,7 +128,7 @@ async function install(argv: string[], d: CliDeps): Promise<number> {
     if (!d.prompt) throw new CliError(`manca ${question.toLowerCase()}: passalo come opzione`);
     return (await d.prompt(`${question}: `, hidden)).trim();
   };
-  const url = validateUrl(await ask(values.url, "Indirizzo di Casello (https)"));
+  const url = validateUrl(await ask(values.url, "Indirizzo di Botcave (https)"));
   const token = await ask(tokenValue, "Token del nodo", true);
   if (!token) throw new CliError("il token è vuoto");
   const workspaceRoot = path.resolve(expandHome(await ask(values["workspace-root"], "Radice degli spazi di lavoro"), d.home));

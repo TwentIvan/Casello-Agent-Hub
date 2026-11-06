@@ -48,7 +48,7 @@ export function ItemEditDialog({ item, open, onOpenChange, pending, onSubmit }: 
         <DialogHeader>
           <DialogTitle>Modifica «{itemTitle(item)}»</DialogTitle>
           <DialogDescription>
-            Il contenuto della proposta in JSON. Al salvataggio viene controllato con le stesse regole dell'architetto.
+            Il contenuto della proposta in JSON. Al salvataggio viene controllato con le stesse regole di Lucius.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">

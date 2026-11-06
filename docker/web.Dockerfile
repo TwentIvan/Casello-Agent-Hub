@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Casello web (SPA statica) — build su GitHub Actions, run su Coolify (immagine ghcr.io/twentivan/casello-web)
+# Botcave web (SPA statica; nome in codice Casello) — build su GitHub Actions, run su Coolify (immagine ghcr.io/twentivan/casello-web)
 # NB: immagini glibc (slim), non alpine: pnpm-workspace.yaml esclude i binari *-linux-x64-musl di rollup/esbuild/tailwind
 
 # ---------- stage 1: build ----------
@@ -19,6 +19,8 @@ COPY scripts ./scripts
 # NB: niente NODE_ENV=production qui — le dipendenze di build del web sono devDependencies
 RUN pnpm install --frozen-lockfile --filter @workspace/casello...
 
+# design/ è la fonte dell'identità Botcave: token, logo e icone li legge la build di Vite
+COPY design ./design
 COPY artifacts/casello ./artifacts/casello
 RUN pnpm --filter @workspace/casello run build
 

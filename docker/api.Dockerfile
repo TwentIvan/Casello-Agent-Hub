@@ -14,6 +14,8 @@ COPY scripts ./scripts
 RUN pnpm install --frozen-lockfile --filter @workspace/api-server...
 
 # Poi il sorgente
+# design/tokens.json: colori di Botcave per la pagina di consenso OAuth (inclusi nel bundle)
+COPY design/tokens.json ./design/tokens.json
 COPY artifacts/api-server ./artifacts/api-server
 RUN pnpm --filter @workspace/api-server run build
 

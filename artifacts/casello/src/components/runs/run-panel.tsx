@@ -129,7 +129,7 @@ export function RunPanel({ agent }: { agent: Agent }) {
                   >
                     <RunStatusBadge status={item.status} />
                     <span className="min-w-0 flex-1 truncate text-muted-foreground">{item.input || "—"}</span>
-                    <span className="hidden whitespace-nowrap text-xs tabular-nums text-muted-foreground sm:inline">
+                    <span className="hidden whitespace-nowrap text-xs font-mono tabular-nums text-muted-foreground sm:inline">
                       {formatDuration(item.durationMs)}
                     </span>
                     <span className="whitespace-nowrap text-xs text-muted-foreground">

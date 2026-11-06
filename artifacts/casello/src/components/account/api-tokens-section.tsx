@@ -300,7 +300,7 @@ export function ApiTokensSection() {
           <CardTitle>Token personali</CardTitle>
           <CardDescription>
             Token con cui un agente Claude Code sul tuo computer prende in carico le analisi (agente locale) o con cui
-            uno script chiama l'API di Casello, in sola lettura o anche in scrittura.
+            uno script chiama l'API di Botcave, in sola lettura o anche in scrittura.
           </CardDescription>
         </div>
         <Button size="sm" onClick={() => setCreateOpen(true)}>
@@ -336,7 +336,7 @@ export function ApiTokensSection() {
         open={revoking !== null}
         onOpenChange={(open) => !open && setRevoking(null)}
         title="Revocare il token?"
-        description={`L'agente che usa «${revoking?.name ?? ""}» non potrà più accedere a Casello.`}
+        description={`L'agente che usa «${revoking?.name ?? ""}» non potrà più accedere a Botcave.`}
         confirmLabel="Revoca"
         pendingLabel="Revoca…"
         pending={revoke.isPending}

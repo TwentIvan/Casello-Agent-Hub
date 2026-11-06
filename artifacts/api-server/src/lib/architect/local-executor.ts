@@ -51,7 +51,7 @@ export const REASON_MAX_CHARS = 300;
 
 /** Premessa del prompt di sistema per l'agente locale (testo fisso). */
 export const LOCAL_PREFACE =
-  "Esegui questa fase con i tuoi strumenti sul clone locale del repository: gli strumenti di lettura citati sotto (list_dir, read_file, read_files, search) corrispondono ai tuoi; list_operations e read_operation corrispondono allo strumento read_openapi di Casello; list_mcp_tools e read_mcp_tool corrispondono allo strumento read_mcp_tools di Casello. Consegna l'esito con lo strumento submit_phase di Casello, non con submit_result.";
+  "Esegui questa fase con i tuoi strumenti sul clone locale del repository: gli strumenti di lettura citati sotto (list_dir, read_file, read_files, search) corrispondono ai tuoi; list_operations e read_operation corrispondono allo strumento read_openapi di Botcave; list_mcp_tools e read_mcp_tool corrispondono allo strumento read_mcp_tools di Casello. Consegna l'esito con lo strumento submit_phase di Casello, non con submit_result.";
 
 /** Tetto all'attesa delle sorgenti (OpenAPI, elenco MCP e commit) durante il claim: oltre, il claim risponde comunque. */
 const CLAIM_SOURCES_DEADLINE_MS = 15_000;

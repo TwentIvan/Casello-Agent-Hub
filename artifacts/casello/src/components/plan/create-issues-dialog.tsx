@@ -153,7 +153,7 @@ function ResultRow({ result, title }: { result: PlanIssuesResultResultsItem; tit
           href={result.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-emerald-700 hover:underline dark:text-emerald-400"
+          className="inline-flex items-center gap-1 text-success hover:underline"
         >
           Creata #{result.number}
           <ExternalLink className="size-3.5" />

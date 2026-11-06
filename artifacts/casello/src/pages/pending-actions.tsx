@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ActionDialog } from "@/components/actions/action-dialog";
+import { PendingActionItem } from "@/components/actions/pending-action-item";
 import { ACTION_STATUS_LABELS, ActionStatusBadge } from "@/components/actions/action-status";
 import { ACTION_KIND_LABELS } from "@/components/actions/plan-proposal";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -35,14 +36,16 @@ export default function PendingActionsPage() {
   const list = useListPendingActions(params, {
     query: { queryKey: getListPendingActionsQueryKey(params), refetchInterval: REFRESH_MS },
   });
-  const actions = list.data?.actions ?? [];
+  // Ordine per numero: è il numero che si legge (anche a voce con Alfred), stabile finché la voce è in coda
+  const actions = [...(list.data?.actions ?? [])].sort((a, b) => a.number - b.number);
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: getListPendingActionsQueryKey() });
   const selectedAction: QueuedAction | null = actions.find((a) => a.number === selected) ?? null;
 
   return (
     <div className="mx-auto max-w-screen-2xl space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Da confermare</h2>
+          <h2 className="text-h2">Da confermare</h2>
           <p className="text-sm text-muted-foreground">
             Le azioni che gli agenti hanno messo in coda e i piani proposti dai capi delle squadre: partono solo se li
             approvi.
@@ -61,6 +64,13 @@ export default function PendingActionsPage() {
           </SelectContent>
         </Select>
       </div>
+      {status === "pending" && !list.isError && !list.isLoading && actions.length > 0 ? (
+        <div className="space-y-3">
+          {actions.map((a) => (
+            <PendingActionItem key={a.number} action={a} onOpenDetails={() => setSelected(a.number)} onDecided={refresh} />
+          ))}
+        </div>
+      ) : (
       <Card>
         <CardContent className="p-0">
           {list.isError ? (
@@ -98,7 +108,7 @@ export default function PendingActionsPage() {
                     onClick={() => setSelected(a.number)}
                     onKeyDown={(e) => e.key === "Enter" && setSelected(a.number)}
                   >
-                    <TableCell className="pl-4 tabular-nums">{a.number}</TableCell>
+                    <TableCell className="pl-4 font-mono tabular-nums">#{a.number}</TableCell>
                     <TableCell className="truncate">{ACTION_KIND_LABELS[a.kind]}</TableCell>
                     <TableCell className="truncate" title={[a.app?.name, a.team?.name].filter(Boolean).join(" · ")}>
                       {a.app?.name ?? a.team?.name ?? "—"}
@@ -126,11 +136,12 @@ export default function PendingActionsPage() {
           )}
         </CardContent>
       </Card>
+      )}
       <ActionDialog
         key={selected ?? "none"}
         action={selectedAction}
         onOpenChange={(open) => !open && setSelected(null)}
-        onDecided={() => void queryClient.invalidateQueries({ queryKey: getListPendingActionsQueryKey() })}
+        onDecided={refresh}
       />
     </div>
   );

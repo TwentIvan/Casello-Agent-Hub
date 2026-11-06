@@ -64,7 +64,7 @@ interface SkillDiffProps {
   contentB: string;
 }
 
-/** Due versioni affiancate; le righe diverse sono rosse a sinistra e verdi a destra. */
+/** Due versioni affiancate; le righe diverse hanno il fondo danger a sinistra e success a destra. */
 export function SkillDiff({ labelA, labelB, contentA, contentB }: SkillDiffProps) {
   const rows = useMemo(() => diffLines(contentA, contentB), [contentA, contentB]);
   const identical = rows.every((r) => r.same);
@@ -76,9 +76,9 @@ export function SkillDiff({ labelA, labelB, contentA, contentB }: SkillDiffProps
         <div className="border-b border-l bg-muted px-2 py-1 text-xs font-medium">{labelB}</div>
         {rows.map((r, i) => (
           <div key={i} className="contents">
-            <Cell text={r.left} changed={!r.same} tone="bg-red-100 dark:bg-red-950/60" />
+            <Cell text={r.left} changed={!r.same} tone="bg-danger/12" />
             <div className="border-l">
-              <Cell text={r.right} changed={!r.same} tone="bg-emerald-100 dark:bg-emerald-950/60" />
+              <Cell text={r.right} changed={!r.same} tone="bg-success/12" />
             </div>
           </div>
         ))}

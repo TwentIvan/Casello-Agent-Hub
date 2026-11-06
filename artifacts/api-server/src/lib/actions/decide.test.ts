@@ -148,7 +148,7 @@ describe("approveAction", () => {
     const n = await enqueue(tool);
 
     await db.update(appToolsTable).set({ levelOverride: "L3" }).where(eq(appToolsTable.id, toolId));
-    const msg = "lo strumento non può più essere eseguito da Casello";
+    const msg = "lo strumento non può più essere eseguito da Botcave";
     expect(await approveAction(userA, n, {})).toEqual({ ok: false, status: 409, message: msg });
     await db.update(appToolsTable).set({ levelOverride: null, status: "disabled" }).where(eq(appToolsTable.id, toolId));
     expect(await approveAction(userA, n, {})).toEqual({ ok: false, status: 409, message: msg });

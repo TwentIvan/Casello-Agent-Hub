@@ -32,7 +32,7 @@ export function renderTaskFile(pkg: TaskPackage): string {
   });
   const attachments = pkg.attachments.map((a) => `${ATTACHMENTS_DIR}/${a.name} (${a.sizeBytes} byte)`);
 
-  return `# Compito di Casello: ${pkg.task.title}
+  return `# Compito di Botcave: ${pkg.task.title}
 
 Sei il ruolo **${pkg.role.name}** della squadra **${pkg.team.name}**, che lavora su ${pkg.team.refTitle}.
 Lavori in questa cartella. Leggi tutto il file prima di iniziare.
@@ -42,7 +42,7 @@ Lavori in questa cartella. Leggi tutto il file prima di iniziare.
 1. Leggi il PLAN della squadra e le istruzioni del compito qui sotto.
 2. Prima di proseguire verifica che le azioni manuali segnate come «fatto» lo siano davvero (es. il branch esiste, il
    file c'è). Se una non lo è, fermati e riferisci \`blocked\` spiegando cosa manca.
-3. Usa le skill elencate sotto: quelle di Casello sono riportate per intero, quelle del nodo sono già installate.
+3. Usa le skill elencate sotto: quelle di Botcave sono riportate per intero, quelle del nodo sono già installate.
 4. Alla fine scrivi in questa cartella il file \`${OUTCOME_FILE}\` con questo formato:
 
 \`\`\`json
@@ -79,7 +79,7 @@ ${list(p.openPoints, "nessuno")}
 
 ${list(pkg.nodeSkills, "nessuna")}
 
-## Skill di Casello
+## Skill di Botcave
 
 ${caselloSkills.length ? caselloSkills.join("\n\n") : "Nessuna."}
 

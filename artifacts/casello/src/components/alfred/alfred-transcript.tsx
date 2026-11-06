@@ -12,11 +12,11 @@ export function AlfredTranscript({ lines }: { lines: AlfredLine[] }) {
           key={line.id}
           className={
             line.role === "user"
-              ? "break-words rounded-md bg-primary/10 px-3 py-2 text-sm"
+              ? "break-words rounded-md bg-surface-2 px-3 py-2 text-sm"
               : "break-words rounded-md border px-3 py-2 text-sm"
           }
         >
-          <span className="mr-1 font-medium">{line.role === "user" ? "Tu:" : "Alfred:"}</span>
+          <span className="mr-1 text-label">{line.role === "user" ? "Tu:" : "Alfred:"}</span>
           {line.text}
         </li>
       ))}

@@ -211,7 +211,7 @@ function TeamEditor({ team, session }: { team: TeamInstance; session: TeamSessio
     <>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="break-words text-2xl font-semibold tracking-tight">{team.name}</h2>
+          <h2 className="break-words text-h2">{team.name}</h2>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <TeamStatusBadge status={team.status} />
             {team.template ? (
@@ -336,13 +336,13 @@ function TeamEditor({ team, session }: { team: TeamInstance; session: TeamSessio
       {!closed && <TeamUpdatesCard team={team} dirty={dirty} />}
 
       <section className="space-y-3">
-        <h3 className="text-lg font-semibold">Ruoli</h3>
+        <h3 className="text-lg font-medium">Ruoli</h3>
         <RolesEditor roles={roles} onChange={setRoles} mode="instance" localSkills={localOptions} readOnly={closed} />
       </section>
 
       <section className="space-y-3">
         <div>
-          <h3 className="text-lg font-semibold">Skill specializzate</h3>
+          <h3 className="text-lg font-medium">Skill specializzate</h3>
           <p className="text-sm text-muted-foreground">Proprie di questa squadra, senza versioni: si modificano qui.</p>
         </div>
         <LocalSkillsEditor skills={localSkills} onChange={setLocalSkills} onRemove={removeLocalSkill} readOnly={closed} />

@@ -16,7 +16,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 
-/** Skill dell'agente (approvate dalle analisi dell'architetto): sola lettura, con eliminazione confermata. */
+/** Skill dell'agente (approvate dalle analisi di Lucius): sola lettura, con eliminazione confermata. */
 export function AgentSkillsSection({ agent }: { agent: Agent }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -43,7 +43,7 @@ export function AgentSkillsSection({ agent }: { agent: Agent }) {
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Skill</CardTitle>
-        <CardDescription>Procedure ricorrenti dell'agente, approvate dalle analisi dell'architetto.</CardDescription>
+        <CardDescription>Procedure ricorrenti dell'agente, approvate dalle analisi di Lucius.</CardDescription>
       </CardHeader>
       <CardContent>
         {skills.isError ? (

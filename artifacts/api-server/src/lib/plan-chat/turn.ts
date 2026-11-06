@@ -37,6 +37,7 @@ export async function runPlanTurn(
   messages: ChatCompletionMessageParam[],
   deps: PlanTurnDeps,
   limits: PlanTurnLimits = PLAN_TURN_LIMITS,
+  tools: ChatCompletionFunctionTool[] = PLAN_TOOLS,
 ): Promise<PlanTurnOutcome> {
   const history = [...messages];
   const cost = new CostTracker();
@@ -68,7 +69,7 @@ export async function runPlanTurn(
   if (limits.maxTokens <= 0) return fail("Limite di token del turno raggiunto.");
 
   for (let round = 0; round < limits.maxRounds; round++) {
-    const r = await call(PLAN_TOOLS);
+    const r = await call(tools);
     if (isOutcome(r)) return r;
     if (r.toolCalls.length === 0) return { ok: true, content: r.content ?? "", tokens, costUsd: cost.value() };
     // Budget superato: niente altri strumenti, si va alla risposta finale (non si eseguono le tool call)

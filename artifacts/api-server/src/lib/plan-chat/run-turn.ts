@@ -30,8 +30,10 @@ import {
   type PlanItemRow,
 } from "./context";
 import { itemHash } from "./decide";
-import { PlanToolRunner, type PlanToolItem } from "./tools";
-import { runPlanTurn } from "./turn";
+import { memoryContextBlock } from "../memory/context";
+import { MEMORY_TOOLS } from "../memory/tools";
+import { PLAN_TOOLS, PlanToolRunner, type PlanToolItem } from "./tools";
+import { PLAN_TURN_LIMITS, runPlanTurn } from "./turn";
 
 export const PLAN_MESSAGE_MAX_CHARS = 8_000;
 export const INTERRUPTED_TURN_MESSAGE = "Turno interrotto dal riavvio di Botcave: riscrivi il messaggio.";
@@ -252,10 +254,12 @@ export async function executePlanTurn(conversationId: number, assistantMessageId
         items: items.map(toRow),
         otherApps,
         history: await loadHistory(conversationId, assistantMessageId),
+        memory: await memoryContextBlock(conv.userId, "lucius"),
       });
 
       const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
-      const runner = new PlanToolRunner({
+      const runner = new PlanToolRunner(
+        {
         items: toolItems,
         readApp: readAppCard,
         hash: itemHash,
@@ -275,12 +279,14 @@ export async function executePlanTurn(conversationId: number, assistantMessageId
             .returning({ id: planProposalsTable.id });
           return row!.id;
         },
-      });
+        },
+        conv.userId,
+      );
       const outcome = await runPlanTurn(messages, {
         chat: (msgs, tools, timeoutMs) => modelChat(resolved, { messages: msgs, tools, timeoutMs, caller: "plan-chat" }),
         runTool: (call) => runner.run(call),
         now: () => Date.now(),
-      });
+      }, PLAN_TURN_LIMITS, [...PLAN_TOOLS, ...MEMORY_TOOLS]);
       tokens = outcome.tokens;
       costUsd = outcome.costUsd;
       if (outcome.ok) {

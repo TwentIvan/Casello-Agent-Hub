@@ -14,6 +14,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { encryptSecret } from "../secrets";
+import { listNotes } from "../memory/notes";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
 import {
   INTERRUPTED_TURN_MESSAGE,
@@ -325,5 +326,28 @@ describe("turni della chat del piano", () => {
     expect(messages).toHaveLength(2);
     expect(messages[1]).toMatchObject({ content: INTERRUPTED_TURN_MESSAGE, error: true });
     expect(await failInterruptedPlanTurns()).toBe(0);
+  });
+
+  it("ricorda crea un appunto di Lucius e il turno seguente lo vede nel messaggio user", async () => {
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      return n === 1
+        ? { content: null, toolCalls: [{ id: "m1", name: "ricorda", arguments: JSON.stringify({ testo: "preferisce risposte brevi" }) }], usage: { prompt_tokens: 10, completion_tokens: 5 } }
+        : { content: "Annotato.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+    await startPlanTurn(conversationId, "ricordati che preferisco risposte brevi");
+    await waitIdle(conversationId);
+    const notes = await listNotes(userId, "lucius");
+    expect(notes.map((x) => x.content)).toEqual(["preferisce risposte brevi"]);
+
+    fake.chatReply = { content: "ok", toolCalls: [], usage: { prompt_tokens: 5, completion_tokens: 5 } };
+    fake.requests.length = 0;
+    await startPlanTurn(conversationId, "e adesso?");
+    await waitIdle(conversationId);
+    const body = fake.requests.find((r) => r.path.includes("chat/completions"))!.body as { messages: Array<{ role: string; content: string }>; tools: Array<{ function: { name: string } }> };
+    expect(body.messages.find((m) => m.role === "system")!.content).not.toContain("preferisce risposte brevi");
+    expect(body.messages.find((m) => m.role === "user")!.content).toContain("preferisce risposte brevi");
+    expect(body.tools.map((t) => t.function.name)).toEqual(expect.arrayContaining(["propose", "ricorda", "cerca_nello_storico"]));
   });
 });

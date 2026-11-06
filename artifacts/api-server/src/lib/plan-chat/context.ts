@@ -52,6 +52,8 @@ export interface PlanContextInput {
   items: PlanItemRow[];
   otherApps: OtherAppCard[];
   history: HistoryMessage[];
+  /** Blocco di memoria di Lucius (appunti e conversazioni recenti); vuoto se non c'è nulla. */
+  memory: string;
 }
 
 export const PLAN_CONTEXT_MAX_TOKENS = 30_000;
@@ -73,6 +75,7 @@ export const PLAN_SYSTEM_PROMPT = [
   "Per cambiare il piano usa solo lo strumento `propose`, sempre con un `rationale` che spiega il perché; le proposte restano da approvare dall'utente.",
   "Per un'integrazione tra due app proponi una voce per ciascuna app, e ognuna cita l'altra.",
   "Le voci riguardano solo i capitoli endpoint, completion ed evolution.",
+  "Hai una memoria personale (strumenti `ricorda`, `aggiorna_appunto`, `dimentica`, `cerca_nello_storico`): salva solo fatti e preferenze stabili dell'utente, mai credenziali.",
 ].join("\n");
 
 /** Testo interpolato nel blocco dati: su una riga, senza titoli o delimitatori che ne falsino la struttura. */
@@ -170,6 +173,8 @@ function dataBlock(input: PlanContextInput, opts: { includeOthers: boolean; titl
       );
     }
   }
+  const memory = input.memory.split(DATA_OPEN).join("").split(DATA_CLOSE).join("").trim();
+  if (memory) lines.push("", "## Memoria di Lucius (appunti e conversazioni recenti)", memory);
   lines.push(DATA_CLOSE);
   return lines.join("\n");
 }

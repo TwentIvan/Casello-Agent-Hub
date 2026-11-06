@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { ChatToolCall } from "../ai/chat-types";
 import { ITEM_SCHEMAS } from "../architect/schemas";
 import { formatIssues } from "../architect/phase-loop";
+import { MEMORY_TOOL_NAMES, runMemoryTool } from "../memory/tools";
 import { PLAN_CHAPTERS, type PlanChapter } from "./context";
 
 function fn(name: string, description: string, parameters: Record<string, unknown>): ChatCompletionFunctionTool {
@@ -91,10 +92,14 @@ function parseArgs(raw: string): Record<string, unknown> | null {
 export class PlanToolRunner {
   private corrections = 0;
 
-  constructor(private readonly env: PlanToolEnv) {}
+  constructor(
+    private readonly env: PlanToolEnv,
+    private readonly userId: number,
+  ) {}
 
   async run(call: ChatToolCall): Promise<string> {
     const args = parseArgs(call.arguments);
+    if ((MEMORY_TOOL_NAMES as readonly string[]).includes(call.name)) return this.memory(call.name, args);
     if (!args) return call.name === "propose" ? this.invalid(["argomenti: JSON non valido"]) : "argomenti non validi: serve un oggetto JSON";
     switch (call.name) {
       case "read_item": {
@@ -110,6 +115,17 @@ export class PlanToolRunner {
         return this.propose(args);
       default:
         return `strumento sconosciuto: ${call.name}`;
+    }
+  }
+
+  /** Strumenti di memoria di Lucius: l'esito è sempre testo, anche se lo strumento lancia. */
+  private async memory(name: string, args: Record<string, unknown> | null): Promise<string> {
+    if (!args) return "argomenti non validi: serve un oggetto JSON";
+    try {
+      const r = await runMemoryTool(this.userId, "lucius", name, args);
+      return JSON.stringify(r.ok ? r.result : { error: r.error });
+    } catch {
+      return "errore interno dello strumento";
     }
   }
 

@@ -349,7 +349,7 @@ async function acceptDecision(userId: number, proposal: CharacterProposal, conv:
 
 /**
  * Accetta o rifiuta una scheda dell'utente. Scheda di un'altra conversazione o inesistente → 404 «scheda non trovata»;
- * già decisa → 409; oggetto o voce cambiati → scheda `stale` e 409; errori di regola col loro stato (scheda `pending`);
+ * conversazione archiviata → 409 «conversazione archiviata» (prima di ogni effetto); già decisa → 409; oggetto o voce cambiati → scheda `stale` e 409; errori di regola col loro stato (scheda `pending`);
  * limite delle decisioni sulla coda → 429. Rifiutare non ha effetti; `handoff` accettata non ha effetti sul server.
  */
 export async function decideCharacterProposal(userId: number, proposalId: number, decision: "accept" | "reject"): Promise<ProposalView> {
@@ -361,6 +361,7 @@ export async function decideCharacterProposal(userId: number, proposalId: number
     .limit(1);
   if (!found) throw new CharacterError(404, CHARACTER_MESSAGES.proposalNotFound);
   const { proposal, conv } = found;
+  if (conv.archivedAt !== null) throw new CharacterError(409, CHARACTER_MESSAGES.archived);
   if (proposal.status !== "pending") throw new CharacterError(409, CHARACTER_MESSAGES.alreadyDecided);
 
   if (decision === "reject") return toProposalView(await markDecided(db, proposalId, "rejected"));

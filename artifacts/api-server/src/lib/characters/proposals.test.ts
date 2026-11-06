@@ -268,6 +268,26 @@ describe("impronta, regole, concorrenza", () => {
   });
 });
 
+describe("conversazione archiviata", () => {
+  it("archived_conversation_409: accettare e rifiutare, anche la scheda decision, senza effetti né limite consumato", async () => {
+    const n = await enqueue();
+    const decisionId = await alfredDecision(n, "rifiuta");
+    const luciusId = await lucius("agent", String(agentId), "agent_prompt", { systemPrompt: "nuovo" });
+    const handoffId = await lucius("agent", String(agentId), "handoff", { to: "alfred", question: "?" });
+    await db.update(characterConversationsTable).set({ archivedAt: new Date() });
+    for (let i = 0; i < 20; i++) expect(consumeActionDecision(userId)).toBe(true);
+    for (const id of [decisionId, luciusId, handoffId]) {
+      for (const d of ["accept", "reject"] as const) {
+        await expect(decideCharacterProposal(userId, id, d)).rejects.toMatchObject({ status: 409, message: "conversazione archiviata" });
+      }
+      expect(await status(id)).toBe("pending");
+    }
+    expect((await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.number, n)))[0]!.status).toBe("pending");
+    const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId));
+    expect(agent!.systemPrompt).not.toBe("nuovo");
+  });
+});
+
 describe("scheda decision di Alfred", () => {
   it("decision_approve", async () => {
     const n = await enqueue();

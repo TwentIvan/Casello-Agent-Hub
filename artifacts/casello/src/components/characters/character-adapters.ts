@@ -15,6 +15,7 @@ import {
   useUpdateCharacterConversation,
 } from "@workspace/api-client-react";
 import {
+  forgetConversation,
   POLL_MS,
   SUBJECT_LABELS,
   useInvalidateOnTurnEnd,
@@ -40,6 +41,13 @@ const ACCEPT_PREFIXES = ["/api/agents", "/api/apps", "/api/skills", "/api/team-t
 const isAcceptTouchedQuery = (query: Query) => {
   const head = query.queryKey[0];
   return typeof head === "string" && ACCEPT_PREFIXES.some((p) => head.startsWith(p));
+};
+
+/** Oggetti che un turno di Alfred può cambiare (strumenti del centralino): squadre, eventi, coda, cruscotto. */
+const ALFRED_TURN_PREFIXES = ["/api/team-instances", "/api/team-events", "/api/pending-actions", "/api/dashboard"];
+const isAlfredTouchedQuery = (query: Query) => {
+  const head = query.queryKey[0];
+  return typeof head === "string" && ALFRED_TURN_PREFIXES.some((p) => head.startsWith(p));
 };
 
 function readOnlyReasonOf(d: CharacterConversationDetail): string | null {
@@ -123,6 +131,11 @@ export function useAlfredAdapter(page: PageContext): ChatAdapter {
           queryKey: threadKey,
           refetchInterval: (query) => (query.state.data?.turnStatus === "running" ? POLL_MS : false),
         },
+      });
+      // A fine turno Alfred può aver scritto al capo o deciso una voce: si rileggono squadre, bollettino, coda e cruscotto
+      useInvalidateOnTurnEnd(q.data?.turnStatus === "running", () => {
+        common.refresh();
+        void queryClient.invalidateQueries({ predicate: isAlfredTouchedQuery });
       });
       return { data: q.data ? mapCharacterDetail(q.data) : undefined, isLoading: q.isLoading, error: q.error ?? undefined };
     },
@@ -211,14 +224,19 @@ export function useLuciusSubjectAdapter(target: Extract<ChatTarget, { kind: "cha
       const created = await createConv.mutateAsync({
         data: { character: "lucius", subjectType: target.subjectType, subjectId: target.subjectId },
       });
-      // Il modello si sceglie dopo: senza scelta la conversazione usa il modello di Lucius
-      if (modelId !== null) await update.mutateAsync({ id: created.id, data: { aiModelId: modelId } });
-      common.refresh();
+      // Il modello si sceglie dopo: senza scelta la conversazione usa il modello di Lucius. Se il PATCH fallisce la
+      // conversazione esiste comunque: l'elenco si rilegge in ogni caso.
+      try {
+        if (modelId !== null) await update.mutateAsync({ id: created.id, data: { aiModelId: modelId } });
+      } finally {
+        common.refresh();
+      }
       return created.id;
     },
     remove: async (id) => {
       try {
         await removeConv.mutateAsync({ id });
+        forgetConversation(queryClient, getListCharacterConversationsQueryKey(params), getGetCharacterConversationQueryKey(id), id);
       } finally {
         common.refresh();
       }

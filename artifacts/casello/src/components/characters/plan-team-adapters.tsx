@@ -32,7 +32,7 @@ import {
 import { ProposalCard } from "@/components/plan/proposal-card";
 import { RoleInstructionsCard } from "@/components/teams/role-instructions-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { POLL_MS, useInvalidateOnTurnEnd, type ChatAdapter, type ConvDetail, type ProposalLike } from "./adapters";
+import { forgetConversation, POLL_MS, useInvalidateOnTurnEnd, type ChatAdapter, type ConvDetail, type ProposalLike } from "./adapters";
 
 // Adattatori dei backend di oggi: chat del piano (Lucius sul piano dell'app) e chat di squadra (Lucius sui ruoli).
 
@@ -128,6 +128,7 @@ export function usePlanChatAdapter(appId: number): ChatAdapter {
     remove: async (id) => {
       try {
         await remove.mutateAsync({ id });
+        forgetConversation(queryClient, getListPlanConversationsQueryKey(appId), getGetPlanConversationQueryKey(id), id);
       } finally {
         refreshList();
       }
@@ -224,6 +225,7 @@ export function useTeamChatAdapter(instanceId: number, closed: boolean): ChatAda
     remove: async (id) => {
       try {
         await remove.mutateAsync({ id });
+        forgetConversation(queryClient, getListTeamChatConversationsQueryKey(instanceId), getGetTeamChatConversationQueryKey(id), id);
       } finally {
         refreshList();
       }

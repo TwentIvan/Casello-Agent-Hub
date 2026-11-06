@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import type { CharacterPageContext, CharacterSubjectType } from "@workspace/api-client-react";
 import { useAlfredAdapter, useLuciusSubjectAdapter } from "./character-adapters";
 import { usePlanChatAdapter, useTeamChatAdapter } from "./plan-team-adapters";
@@ -143,6 +144,15 @@ export const SUBJECT_LABELS: Record<Exclude<SubjectType, "alfred_thread">, strin
   area_skills: "Area Skill",
   area_team_templates: "Area Modelli di squadra",
 };
+
+/**
+ * Dopo un'eliminazione riuscita: il dettaglio esce dalla cache e la conversazione dall'elenco, prima di rileggerlo,
+ * così il pannello non chiede (e non mostra in errore 404) la conversazione appena eliminata.
+ */
+export function forgetConversation(queryClient: QueryClient, listKey: QueryKey, detailKey: QueryKey, id: number) {
+  queryClient.setQueryData<{ id: number }[]>(listKey, (old) => old?.filter((c) => c.id !== id));
+  queryClient.removeQueries({ queryKey: detailKey, exact: true });
+}
 
 /** A fine turno cambiano titolo e costo: si rileggono gli elenchi. */
 export function useInvalidateOnTurnEnd(running: boolean, invalidate: () => void) {

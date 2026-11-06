@@ -75,6 +75,7 @@ import type {
   CatalogSkillVersion,
   CatalogStatus,
   CentralinoModel,
+  CharacterSettings,
   ConflictResponse,
   CostEstimate,
   CurrentUser,
@@ -2049,6 +2050,155 @@ export const useSetCentralinoModel = <TError = ErrorType<BadRequestResponse | Un
         TContext
       > => {
       return useMutation(getSetCentralinoModelMutationOptions(options));
+    }
+
+export const getGetCharacterSettingsUrl = () => {
+
+
+
+
+  return `/api/account/characters`
+}
+
+/**
+ * Modello della chat e tetto mensile di Alfred, modello e tetto mensile di Lucius. Null = modello predefinito / nessun tetto. Solo con il login: con un token risponde 403.
+ * @summary Modelli e tetti di Alfred e Lucius nelle aree
+ */
+export const getCharacterSettings = async ( options?: RequestInit): Promise<CharacterSettings> => {
+
+  return customFetch<CharacterSettings>(getGetCharacterSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCharacterSettingsQueryKey = () => {
+    return [
+    `/api/account/characters`
+    ] as const;
+    }
+
+
+export const getGetCharacterSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getCharacterSettings>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCharacterSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCharacterSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCharacterSettings>>> = ({ signal }) => getCharacterSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCharacterSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCharacterSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getCharacterSettings>>>
+export type GetCharacterSettingsQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+
+
+/**
+ * @summary Modelli e tetti di Alfred e Lucius nelle aree
+ */
+
+export function useGetCharacterSettings<TData = Awaited<ReturnType<typeof getCharacterSettings>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCharacterSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCharacterSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateCharacterSettingsUrl = () => {
+
+
+
+
+  return `/api/account/characters`
+}
+
+/**
+ * Sostituisce tutti e quattro i campi. I modelli devono essere di un account AI dell'utente (400 "modello non disponibile"); i tetti sono numeri >= 0 (400 altrimenti). Solo con il login.
+ * @summary Imposta modelli e tetti di Alfred e Lucius
+ */
+export const updateCharacterSettings = async (characterSettings: CharacterSettings, options?: RequestInit): Promise<CharacterSettings> => {
+
+  return customFetch<CharacterSettings>(getUpdateCharacterSettingsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(characterSettings)
+  }
+);}
+
+
+
+
+export const getUpdateCharacterSettingsMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCharacterSettings>>, TError,{data: BodyType<CharacterSettings>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCharacterSettings>>, TError,{data: BodyType<CharacterSettings>}, TContext> => {
+
+const mutationKey = ['updateCharacterSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCharacterSettings>>, {data: BodyType<CharacterSettings>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateCharacterSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCharacterSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateCharacterSettings>>>
+    export type UpdateCharacterSettingsMutationBody = BodyType<CharacterSettings>
+    export type UpdateCharacterSettingsMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>
+
+    /**
+ * @summary Imposta modelli e tetti di Alfred e Lucius
+ */
+export const useUpdateCharacterSettings = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCharacterSettings>>, TError,{data: BodyType<CharacterSettings>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCharacterSettings>>,
+        TError,
+        {data: BodyType<CharacterSettings>},
+        TContext
+      > => {
+      return useMutation(getUpdateCharacterSettingsMutationOptions(options));
     }
 
 export const getGetAlfredSettingsUrl = () => {

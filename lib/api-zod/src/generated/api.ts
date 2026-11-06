@@ -475,6 +475,61 @@ export const SetCentralinoModelResponse = zod.object({
 
 
 /**
+ * Modello della chat e tetto mensile di Alfred, modello e tetto mensile di Lucius. Null = modello predefinito / nessun tetto. Solo con il login: con un token risponde 403.
+ * @summary Modelli e tetti di Alfred e Lucius nelle aree
+ */
+export const getCharacterSettingsResponseAlfredMonthlyBudgetUsdMin = 0;
+export const getCharacterSettingsResponseAlfredMonthlyBudgetUsdMax = 1000000;
+
+export const getCharacterSettingsResponseLuciusMonthlyBudgetUsdMin = 0;
+export const getCharacterSettingsResponseLuciusMonthlyBudgetUsdMax = 1000000;
+
+
+
+export const GetCharacterSettingsResponse = zod.object({
+  "alfredChatAiModelId": zod.number().nullable(),
+  "luciusAiModelId": zod.number().nullable(),
+  "alfredMonthlyBudgetUsd": zod.number().min(getCharacterSettingsResponseAlfredMonthlyBudgetUsdMin).max(getCharacterSettingsResponseAlfredMonthlyBudgetUsdMax).nullable(),
+  "luciusMonthlyBudgetUsd": zod.number().min(getCharacterSettingsResponseLuciusMonthlyBudgetUsdMin).max(getCharacterSettingsResponseLuciusMonthlyBudgetUsdMax).nullable()
+})
+
+
+/**
+ * Sostituisce tutti e quattro i campi. I modelli devono essere di un account AI dell'utente (400 "modello non disponibile"); i tetti sono numeri >= 0 (400 altrimenti). Solo con il login.
+ * @summary Imposta modelli e tetti di Alfred e Lucius
+ */
+export const updateCharacterSettingsBodyAlfredMonthlyBudgetUsdMin = 0;
+export const updateCharacterSettingsBodyAlfredMonthlyBudgetUsdMax = 1000000;
+
+export const updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMin = 0;
+export const updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMax = 1000000;
+
+
+
+export const UpdateCharacterSettingsBody = zod.object({
+  "alfredChatAiModelId": zod.number().nullable(),
+  "luciusAiModelId": zod.number().nullable(),
+  "alfredMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsBodyAlfredMonthlyBudgetUsdMin).max(updateCharacterSettingsBodyAlfredMonthlyBudgetUsdMax).nullable(),
+  "luciusMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMin).max(updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMax).nullable()
+})
+
+export const updateCharacterSettingsResponseAlfredMonthlyBudgetUsdMin = 0;
+export const updateCharacterSettingsResponseAlfredMonthlyBudgetUsdMax = 1000000;
+
+export const updateCharacterSettingsResponseLuciusMonthlyBudgetUsdMin = 0;
+export const updateCharacterSettingsResponseLuciusMonthlyBudgetUsdMax = 1000000;
+
+
+
+export const UpdateCharacterSettingsResponse = zod.object({
+  "alfredChatAiModelId": zod.number().nullable(),
+  "luciusAiModelId": zod.number().nullable(),
+  "alfredMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsResponseAlfredMonthlyBudgetUsdMin).max(updateCharacterSettingsResponseAlfredMonthlyBudgetUsdMax).nullable(),
+  "luciusMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsResponseLuciusMonthlyBudgetUsdMin).max(updateCharacterSettingsResponseLuciusMonthlyBudgetUsdMax).nullable()
+})
+
+
+/**
  * Modello e voce salvati, più i modelli idonei ad Alfred dell'utente (account Gemini, nome con live o native-audio, non ritirati; senza chiamare Gemini). Solo con il login: con un token risponde 403.
  * @summary Modello e voce di Alfred
  */

@@ -111,6 +111,7 @@ export * from './catalogSummaryViewNewProvidersItem';
 export * from './catalogSummaryViewPriceChangedItem';
 export * from './centralinoModel';
 export * from './characterQueryParameter';
+export * from './characterSettings';
 export * from './conflictResponse';
 export * from './costEstimate';
 export * from './currentUser';

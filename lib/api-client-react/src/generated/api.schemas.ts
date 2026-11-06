@@ -203,6 +203,25 @@ export interface CentralinoModel {
   aiModelId: number | null;
 }
 
+export interface CharacterSettings {
+  /** @nullable */
+  alfredChatAiModelId: number | null;
+  /** @nullable */
+  luciusAiModelId: number | null;
+  /**
+     * @minimum 0
+     * @maximum 1000000
+     * @nullable
+     */
+  alfredMonthlyBudgetUsd: number | null;
+  /**
+     * @minimum 0
+     * @maximum 1000000
+     * @nullable
+     */
+  luciusMonthlyBudgetUsd: number | null;
+}
+
 export type AlfredSettingsModelsItem = {
   id: number;
   name: string;

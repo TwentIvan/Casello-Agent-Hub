@@ -614,6 +614,52 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /account/characters:
+    get:
+      operationId: getCharacterSettings
+      tags: [alfred]
+      summary: Modelli e tetti di Alfred e Lucius nelle aree
+      description: >-
+        Modello della chat e tetto mensile di Alfred, modello e tetto mensile di Lucius. Null = modello
+        predefinito / nessun tetto. Solo con il login: con un token risponde 403.
+      responses:
+        "200":
+          description: Impostazioni dei personaggi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      operationId: updateCharacterSettings
+      tags: [alfred]
+      summary: Imposta modelli e tetti di Alfred e Lucius
+      description: >-
+        Sostituisce tutti e quattro i campi. I modelli devono essere di un account AI dell'utente (400
+        "modello non disponibile"); i tetti sono numeri >= 0 (400 altrimenti). Solo con il login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CharacterSettings"
+      responses:
+        "200":
+          description: Impostazioni aggiornate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /account/alfred:
     get:
       operationId: getAlfredSettings
@@ -4157,6 +4203,23 @@ components:
       properties:
         aiModelId:
           type: ["integer", "null"]
+
+    CharacterSettings:
+      type: object
+      required: [alfredChatAiModelId, luciusAiModelId, alfredMonthlyBudgetUsd, luciusMonthlyBudgetUsd]
+      properties:
+        alfredChatAiModelId:
+          type: ["integer", "null"]
+        luciusAiModelId:
+          type: ["integer", "null"]
+        alfredMonthlyBudgetUsd:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 1000000
+        luciusMonthlyBudgetUsd:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 1000000
 
     AlfredSettings:
       type: object

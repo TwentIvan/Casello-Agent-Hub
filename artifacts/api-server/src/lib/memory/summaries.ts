@@ -11,6 +11,7 @@ import {
   teamChatMessagesTable,
 } from "@workspace/db";
 import { logger } from "../logger";
+import { userBudgetBlock } from "../budget";
 import { getDefaultModel, ownModel } from "../ai/default-model";
 import { modelChat, resolveModel, type ModelChatResult, type ResolvedModel } from "../ai/executor";
 import { addHistory, type HistoryKind } from "./history";
@@ -50,6 +51,7 @@ export async function summarizeConversation(input: SummaryInput, deps: SummaryDe
   const defaultId = await getDefaultModel(input.userId);
   if (defaultId === null) return "skipped";
   if (!(await ownModel(input.userId, defaultId, db))) return "skipped";
+  if (await userBudgetBlock(defaultId)) return "skipped";
   let reply: ModelChatResult;
   try {
     const resolved = await resolveModel(defaultId, { userId: input.userId, mustOwn: true });

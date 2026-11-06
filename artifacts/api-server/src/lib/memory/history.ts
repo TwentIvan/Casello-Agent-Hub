@@ -1,5 +1,6 @@
-import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { db, characterHistoryTable } from "@workspace/db";
+import { redactCredentials } from "./credentials";
 import {
   HISTORY_LIST_MAX,
   HISTORY_MAX,
@@ -49,6 +50,9 @@ const view = (r: HistoryRow): HistoryView => ({
 const scope = (userId: number, character: Character) =>
   and(eq(characterHistoryTable.userId, userId), eq(characterHistoryTable.character, character));
 
+// Voci visibili: quelle eliminate (deleted_at) restano solo per la spesa
+const visible = (userId: number, character: Character) => and(scope(userId, character), isNull(characterHistoryTable.deletedAt));
+
 // Salva il riassunto di una conversazione: lo stesso riferimento si sostituisce; oltre 500 voci si tolgono le più vecchie
 export async function addHistory(entry: HistoryEntryInput): Promise<void> {
   const values = {
@@ -56,8 +60,8 @@ export async function addHistory(entry: HistoryEntryInput): Promise<void> {
     character: entry.character,
     kind: entry.kind,
     refId: entry.refId,
-    title: entry.title.trim().slice(0, HISTORY_TITLE_MAX),
-    summary: entry.summary.trim().slice(0, HISTORY_SUMMARY_MAX),
+    title: redactCredentials(entry.title.trim()).slice(0, HISTORY_TITLE_MAX),
+    summary: redactCredentials(entry.summary.trim()).slice(0, HISTORY_SUMMARY_MAX),
     aiModelId: entry.aiModelId,
     tokensUsed: entry.tokensUsed,
     costUsd: entry.costUsd === null ? null : String(entry.costUsd),
@@ -85,25 +89,30 @@ export async function addHistory(entry: HistoryEntryInput): Promise<void> {
               ? sql`null`
               : sql`case when ${characterHistoryTable.costUsd} is not null then ${characterHistoryTable.costUsd} + ${values.costUsd}::numeric when ${characterHistoryTable.tokensUsed} = 0 then ${values.costUsd}::numeric else null end`,
           createdAt: new Date(),
+          deletedAt: null,
         },
       });
     const [{ n }] = (await tx
       .select({ n: sql<number>`count(*)::int` })
       .from(characterHistoryTable)
-      .where(scope(entry.userId, entry.character))) as [{ n: number }];
+      .where(visible(entry.userId, entry.character))) as [{ n: number }];
     if (n > HISTORY_MAX) {
       const old = await tx
         .select({ id: characterHistoryTable.id })
         .from(characterHistoryTable)
-        .where(scope(entry.userId, entry.character))
+        .where(visible(entry.userId, entry.character))
         .orderBy(characterHistoryTable.createdAt, characterHistoryTable.id)
         .limit(n - HISTORY_MAX);
-      await tx.delete(characterHistoryTable).where(
-        inArray(
-          characterHistoryTable.id,
-          old.map((o) => o.id),
-        ),
-      );
+      // Eliminazione logica: il costo dei riassunti resta nella spesa
+      await tx
+        .update(characterHistoryTable)
+        .set({ deletedAt: new Date(), title: "", summary: "" })
+        .where(
+          inArray(
+            characterHistoryTable.id,
+            old.map((o) => o.id),
+          ),
+        );
     }
   });
 }
@@ -115,7 +124,7 @@ export async function recentHistoryTitles(
   return db
     .select({ id: characterHistoryTable.id, title: characterHistoryTable.title, createdAt: characterHistoryTable.createdAt })
     .from(characterHistoryTable)
-    .where(scope(userId, character))
+    .where(visible(userId, character))
     .orderBy(desc(characterHistoryTable.createdAt), desc(characterHistoryTable.id))
     .limit(RECENT_TITLES);
 }
@@ -129,8 +138,8 @@ async function query(userId: number, character: Character, q: string | undefined
     .from(characterHistoryTable)
     .where(
       text
-        ? and(scope(userId, character), or(ilike(characterHistoryTable.title, pattern), ilike(characterHistoryTable.summary, pattern)))
-        : scope(userId, character),
+        ? and(visible(userId, character), or(ilike(characterHistoryTable.title, pattern), ilike(characterHistoryTable.summary, pattern)))
+        : visible(userId, character),
     )
     .orderBy(desc(characterHistoryTable.createdAt), desc(characterHistoryTable.id))
     .limit(limit);
@@ -145,8 +154,9 @@ export const listHistory = (userId: number, character: Character, q?: string) =>
 
 export async function deleteHistory(userId: number, character: Character, id: number): Promise<void> {
   const rows = await db
-    .delete(characterHistoryTable)
-    .where(and(eq(characterHistoryTable.id, id), scope(userId, character)))
+    .update(characterHistoryTable)
+    .set({ deletedAt: new Date(), title: "", summary: "" })
+    .where(and(eq(characterHistoryTable.id, id), visible(userId, character)))
     .returning({ id: characterHistoryTable.id });
   if (rows.length === 0) throw new MemoryError(404, MEMORY_MESSAGES.notFound);
 }

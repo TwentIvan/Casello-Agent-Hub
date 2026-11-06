@@ -12,7 +12,15 @@ describe("migrazione 2026-11-lucius-squadra", () => {
     // Schema di produzione dopo Alfred; lo script si applica due volte
     db = new PGlite();
     await db.exec(read("./fixtures/schema-pre-nodo-locale.sql"));
-    for (const f of ["nodo-locale", "nodo-cartelle", "connettore-oauth", "alfred", "lucius-squadra", "lucius-squadra"]) {
+    for (const f of ["nodo-locale", "nodo-cartelle", "connettore-oauth", "alfred"]) {
+      await db.exec(read(`../../../docs/migrations/2026-11-${f}.sql`));
+    }
+    // Una conversazione del piano esistente prima della migrazione: non va riassunta in blocco
+    await db.exec(`INSERT INTO users (email) VALUES ('pre@example.com');
+      INSERT INTO apps (name, slug, base_url) VALUES ('A', 'a', 'https://x.example');
+      INSERT INTO analyses (app_id, model, sources, max_tokens, status) VALUES (1, 'm', '{"code":"none","openapi":false,"description":true}', 1000, 'completed');
+      INSERT INTO plan_conversations (app_id, analysis_id, user_id, title, updated_at) VALUES (1, 1, 1, 'Vecchia', now() - interval '2 days');`);
+    for (const f of ["lucius-squadra", "lucius-squadra"]) {
       await db.exec(read(`../../../docs/migrations/2026-11-${f}.sql`));
     }
   });
@@ -46,9 +54,16 @@ describe("migrazione 2026-11-lucius-squadra", () => {
     expect(i.rows).toHaveLength(4);
   });
 
+  it("le conversazioni del piano esistenti hanno summarized_at valorizzato; deleted_at sullo storico", async () => {
+    const r = await db.query<any>("SELECT summarized_at IS NOT NULL AS done FROM plan_conversations");
+    expect(r.rows).toEqual([{ done: true }]);
+    const c = await db.query<any>("SELECT column_name FROM information_schema.columns WHERE table_name = 'character_history' AND column_name = 'deleted_at'");
+    expect(c.rows).toHaveLength(1);
+  });
+
   it("storico unico per conversazione; l'eliminazione dell'utente porta via appunti e storico", async () => {
     await db.exec(`INSERT INTO users (email) VALUES ('l@example.com')`);
-    const uid = (await db.query<any>("SELECT id FROM users LIMIT 1")).rows[0].id;
+    const uid = (await db.query<any>("SELECT id FROM users WHERE email = 'l@example.com'")).rows[0].id;
     await db.exec(`
       INSERT INTO character_notes (user_id, character, content) VALUES (${uid}, 'lucius', 'x');
       INSERT INTO character_history (user_id, character, kind, ref_id, title, summary) VALUES (${uid}, 'lucius', 'team_chat', 1, 't', 's');
@@ -63,6 +78,7 @@ describe("migrazione 2026-11-lucius-squadra", () => {
 
   it("lo schema è in schema-casello.sql", () => {
     const schema = read("../../../docs/schema-casello.sql");
+    expect(schema).toMatch(/"character_history"[^;]*"deleted_at" timestamp/);
     for (const n of ["team_chat_conversations", "team_chat_messages", "team_chat_proposals", "character_notes", "character_history"]) {
       expect(schema).toContain(`"${n}"`);
     }

@@ -45,6 +45,8 @@ export const characterHistoryTable = pgTable(
     // null = costo parziale (prezzo mancante)
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
+    // Eliminata dall'utente (o potata): titolo e riassunto svuotati, il costo resta nella spesa
+    deletedAt: timestamp("deleted_at"),
   },
   (table) => [
     index("character_history_user_character_idx").on(table.userId, table.character),

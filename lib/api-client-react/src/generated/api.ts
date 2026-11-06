@@ -10999,7 +10999,7 @@ export const getCreateMemoryNoteUrl = () => {
 }
 
 /**
- * @summary Aggiunge un appunto (max 300 caratteri, 50 per personaggio)
+ * @summary Aggiunge un appunto (max 300 caratteri, 50 per personaggio; solo con il login)
  */
 export const createMemoryNote = async (memoryNoteCreate: MemoryNoteCreate, options?: RequestInit): Promise<MemoryNote> => {
 
@@ -11015,7 +11015,7 @@ export const createMemoryNote = async (memoryNoteCreate: MemoryNoteCreate, optio
 
 
 
-export const getCreateMemoryNoteMutationOptions = <TError = ErrorType<BadRequestResponse | ConflictResponse>,
+export const getCreateMemoryNoteMutationOptions = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | ConflictResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMemoryNote>>, TError,{data: BodyType<MemoryNoteCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createMemoryNote>>, TError,{data: BodyType<MemoryNoteCreate>}, TContext> => {
 
@@ -11044,12 +11044,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateMemoryNoteMutationResult = NonNullable<Awaited<ReturnType<typeof createMemoryNote>>>
     export type CreateMemoryNoteMutationBody = BodyType<MemoryNoteCreate>
-    export type CreateMemoryNoteMutationError = ErrorType<BadRequestResponse | ConflictResponse>
+    export type CreateMemoryNoteMutationError = ErrorType<BadRequestResponse | ForbiddenResponse | ConflictResponse>
 
     /**
- * @summary Aggiunge un appunto (max 300 caratteri, 50 per personaggio)
+ * @summary Aggiunge un appunto (max 300 caratteri, 50 per personaggio; solo con il login)
  */
-export const useCreateMemoryNote = <TError = ErrorType<BadRequestResponse | ConflictResponse>,
+export const useCreateMemoryNote = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | ConflictResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMemoryNote>>, TError,{data: BodyType<MemoryNoteCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createMemoryNote>>,
@@ -11077,7 +11077,7 @@ export const getUpdateMemoryNoteUrl = (id: number,
 }
 
 /**
- * @summary Modifica un appunto
+ * @summary Modifica un appunto (solo con il login)
  */
 export const updateMemoryNote = async (id: number,
     memoryNoteUpdate: MemoryNoteUpdate,
@@ -11095,7 +11095,7 @@ export const updateMemoryNote = async (id: number,
 
 
 
-export const getUpdateMemoryNoteMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+export const getUpdateMemoryNoteMutationOptions = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMemoryNote>>, TError,{id: number;data: BodyType<MemoryNoteUpdate>;params: UpdateMemoryNoteParams}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateMemoryNote>>, TError,{id: number;data: BodyType<MemoryNoteUpdate>;params: UpdateMemoryNoteParams}, TContext> => {
 
@@ -11124,12 +11124,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateMemoryNoteMutationResult = NonNullable<Awaited<ReturnType<typeof updateMemoryNote>>>
     export type UpdateMemoryNoteMutationBody = BodyType<MemoryNoteUpdate>
-    export type UpdateMemoryNoteMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+    export type UpdateMemoryNoteMutationError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>
 
     /**
- * @summary Modifica un appunto
+ * @summary Modifica un appunto (solo con il login)
  */
-export const useUpdateMemoryNote = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+export const useUpdateMemoryNote = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMemoryNote>>, TError,{id: number;data: BodyType<MemoryNoteUpdate>;params: UpdateMemoryNoteParams}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updateMemoryNote>>,
@@ -11157,7 +11157,7 @@ export const getDeleteMemoryNoteUrl = (id: number,
 }
 
 /**
- * @summary Elimina un appunto
+ * @summary Elimina un appunto (solo con il login)
  */
 export const deleteMemoryNote = async (id: number,
     params: DeleteMemoryNoteParams, options?: RequestInit): Promise<void> => {
@@ -11174,7 +11174,7 @@ export const deleteMemoryNote = async (id: number,
 
 
 
-export const getDeleteMemoryNoteMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+export const getDeleteMemoryNoteMutationOptions = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteMemoryNote>>, TError,{id: number;params: DeleteMemoryNoteParams}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteMemoryNote>>, TError,{id: number;params: DeleteMemoryNoteParams}, TContext> => {
 
@@ -11203,12 +11203,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type DeleteMemoryNoteMutationResult = NonNullable<Awaited<ReturnType<typeof deleteMemoryNote>>>
 
-    export type DeleteMemoryNoteMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+    export type DeleteMemoryNoteMutationError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>
 
     /**
- * @summary Elimina un appunto
+ * @summary Elimina un appunto (solo con il login)
  */
-export const useDeleteMemoryNote = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+export const useDeleteMemoryNote = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteMemoryNote>>, TError,{id: number;params: DeleteMemoryNoteParams}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof deleteMemoryNote>>,
@@ -11321,7 +11321,7 @@ export const getDeleteMemoryHistoryEntryUrl = (id: number,
 }
 
 /**
- * @summary Elimina una voce dello storico
+ * @summary Elimina una voce dello storico (solo con il login; il costo del riassunto resta nella spesa)
  */
 export const deleteMemoryHistoryEntry = async (id: number,
     params: DeleteMemoryHistoryEntryParams, options?: RequestInit): Promise<void> => {
@@ -11338,7 +11338,7 @@ export const deleteMemoryHistoryEntry = async (id: number,
 
 
 
-export const getDeleteMemoryHistoryEntryMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+export const getDeleteMemoryHistoryEntryMutationOptions = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteMemoryHistoryEntry>>, TError,{id: number;params: DeleteMemoryHistoryEntryParams}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteMemoryHistoryEntry>>, TError,{id: number;params: DeleteMemoryHistoryEntryParams}, TContext> => {
 
@@ -11367,12 +11367,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type DeleteMemoryHistoryEntryMutationResult = NonNullable<Awaited<ReturnType<typeof deleteMemoryHistoryEntry>>>
 
-    export type DeleteMemoryHistoryEntryMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+    export type DeleteMemoryHistoryEntryMutationError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>
 
     /**
- * @summary Elimina una voce dello storico
+ * @summary Elimina una voce dello storico (solo con il login; il costo del riassunto resta nella spesa)
  */
-export const useDeleteMemoryHistoryEntry = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+export const useDeleteMemoryHistoryEntry = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteMemoryHistoryEntry>>, TError,{id: number;params: DeleteMemoryHistoryEntryParams}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof deleteMemoryHistoryEntry>>,

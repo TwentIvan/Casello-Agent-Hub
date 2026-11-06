@@ -4780,7 +4780,7 @@ export const ListMemoryNotesResponse = zod.array(ListMemoryNotesResponseItem)
 
 
 /**
- * @summary Aggiunge un appunto (max 300 caratteri, 50 per personaggio)
+ * @summary Aggiunge un appunto (max 300 caratteri, 50 per personaggio; solo con il login)
  */
 export const createMemoryNoteBodyContentMax = 2000;
 
@@ -4801,7 +4801,7 @@ export const CreateMemoryNoteResponse = zod.object({
 
 
 /**
- * @summary Modifica un appunto
+ * @summary Modifica un appunto (solo con il login)
  */
 export const UpdateMemoryNoteParams = zod.object({
   "id": zod.coerce.number()
@@ -4829,7 +4829,7 @@ export const UpdateMemoryNoteResponse = zod.object({
 
 
 /**
- * @summary Elimina un appunto
+ * @summary Elimina un appunto (solo con il login)
  */
 export const DeleteMemoryNoteParams = zod.object({
   "id": zod.coerce.number()
@@ -4867,7 +4867,7 @@ export const ListMemoryHistoryResponse = zod.array(ListMemoryHistoryResponseItem
 
 
 /**
- * @summary Elimina una voce dello storico
+ * @summary Elimina una voce dello storico (solo con il login; il costo del riassunto resta nella spesa)
  */
 export const DeleteMemoryHistoryEntryParams = zod.object({
   "id": zod.coerce.number()

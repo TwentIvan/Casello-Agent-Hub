@@ -3604,7 +3604,7 @@ paths:
     post:
       operationId: createMemoryNote
       tags: [memories]
-      summary: Aggiunge un appunto (max 300 caratteri, 50 per personaggio)
+      summary: Aggiunge un appunto (max 300 caratteri, 50 per personaggio; solo con il login)
       requestBody:
         required: true
         content:
@@ -3620,6 +3620,8 @@ paths:
                 $ref: "#/components/schemas/MemoryNote"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/Conflict"
 
@@ -3627,7 +3629,7 @@ paths:
     patch:
       operationId: updateMemoryNote
       tags: [memories]
-      summary: Modifica un appunto
+      summary: Modifica un appunto (solo con il login)
       parameters:
         - $ref: "#/components/parameters/IdParam"
         - $ref: "#/components/parameters/CharacterQuery"
@@ -3646,12 +3648,14 @@ paths:
                 $ref: "#/components/schemas/MemoryNote"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteMemoryNote
       tags: [memories]
-      summary: Elimina un appunto
+      summary: Elimina un appunto (solo con il login)
       parameters:
         - $ref: "#/components/parameters/IdParam"
         - $ref: "#/components/parameters/CharacterQuery"
@@ -3660,6 +3664,8 @@ paths:
           description: Appunto eliminato
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -3693,7 +3699,7 @@ paths:
     delete:
       operationId: deleteMemoryHistoryEntry
       tags: [memories]
-      summary: Elimina una voce dello storico
+      summary: Elimina una voce dello storico (solo con il login; il costo del riassunto resta nella spesa)
       parameters:
         - $ref: "#/components/parameters/IdParam"
         - $ref: "#/components/parameters/CharacterQuery"
@@ -3702,6 +3708,8 @@ paths:
           description: Voce eliminata
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
 

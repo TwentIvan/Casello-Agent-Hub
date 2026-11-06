@@ -957,7 +957,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - **Route** (`routes/team-chat.ts`): `GET|POST /api/team-instances/:id/team-chat-conversations`, `GET|DELETE
   /api/team-chat-conversations/:id`, `POST …/messages` (202), `POST /api/team-chat-proposals/:id/decision`; dati dell'utente (altrui →
   404). Console: pannello «Lucius» nella scheda squadra (`lucius-panel.tsx`, schede con `role-instructions-card.tsx`, anteprima del
-  Markdown senza frontmatter), nell'editor dei ruoli il campo «Identità» e l'anteprima delle istruzioni.
+  Markdown senza frontmatter), nell'editor dei ruoli il campo «Identità» (l'anteprima delle istruzioni è nelle schede del pannello Lucius).
 - **Memorie** (`lib/memory/`, tabelle `character_notes` e `character_history`, personaggio `alfred` | `lucius`, per utente: ogni utente
   e ogni personaggio vede solo i propri dati). **Appunti**: ≤ 300 caratteri, ≤ 50 per personaggio e utente («memoria piena: unisci o
   togli un appunto»); vuoti o troppo lunghi rifiutati. Controllo credenziali (`looksLikeCredential`, vale sia per `ricorda` sia per la
@@ -978,6 +978,16 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - **Memorie in console** (`routes/memories.ts`, solo dati dell'utente; `character` obbligatorio): `GET|POST /api/memories/notes`, `PATCH|DELETE
   /api/memories/notes/:id`, `GET /api/memories/history`, `DELETE /api/memories/history/:id`. Account → «Memorie» (`memories-section.tsx`:
   schede Alfred e Lucius, appunti da aggiungere/modificare/eliminare, storico con riassunti da eliminare).
+  Le scritture (POST/PATCH/DELETE di appunti, DELETE dello storico) sono solo con il login (`sessionOnly`: con un token personale 403);
+  le GET valgono anche con `api:read`.
+- **Storico eliminato e costi**: eliminare una voce dello storico (o la potatura oltre 500) è logico: `character_history.deleted_at`,
+  titolo e riassunto svuotati, la riga resta e il suo costo continua a contare nella spesa; elenchi, ricerca, titoli recenti e contesto
+  la escludono; un riassunto nuovo sullo stesso riferimento la riattiva (costi cumulati). Il riassunto rifatto di una conversazione
+  riporta la voce al mese corrente (`created_at` aggiornato) con il costo cumulato. Prima di riassumere si controlla il tetto di spesa
+  dell'utente (raggiunto: saltato, `summarized_at` scritto comunque). In titolo e riassunto le parole che sembrano credenziali diventano
+  `***`; appunti e titoli nel contesto stanno su una riga sola. Niente recupero delle vecchie conversazioni del piano: la migrazione
+  imposta `summarized_at = updated_at` su quelle esistenti. Rinominare la `key` di un ruolo lascia la skill specializzata
+  `ruolo-<vecchia key>` tra le skill dell'istanza. La trascrizione di Alfred tenuta dal browser si tronca agli ultimi 40 000 caratteri.
 
 ## Esecutore locale
 

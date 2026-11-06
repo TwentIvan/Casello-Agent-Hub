@@ -983,6 +983,7 @@ CREATE TABLE IF NOT EXISTS "character_history" (
 	"tokens_used" integer DEFAULT 0 NOT NULL,
 	"cost_usd" numeric(12, 6),
 	"created_at" timestamp DEFAULT now() NOT NULL,
+	"deleted_at" timestamp,
 	CONSTRAINT "character_history_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action,
 	CONSTRAINT "character_history_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action
 );

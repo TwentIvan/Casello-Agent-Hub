@@ -193,6 +193,15 @@ describe("summarizeConversation", () => {
     expect(chat.mock.calls[0]![1][0].content).toContain("decisioni prese");
   });
 
+  it("tetto di spesa dell'utente raggiunto: nessuna chiamata al modello, nessuna voce", async () => {
+    await db.update(usersTable).set({ monthlyBudgetUsd: "0.01" }).where(eq(usersTable.id, userId));
+    await db.insert(characterHistoryTable).values({ userId, character: "alfred", kind: "alfred_session", refId: 1, title: "t", summary: "s", aiModelId: modelId, tokensUsed: 10, costUsd: "0.05" });
+    const chat = vi.fn();
+    expect(await summarizeConversation(input(), { chat })).toBe("skipped");
+    expect(chat).not.toHaveBeenCalled();
+    expect(await history()).toHaveLength(1);
+  });
+
   it("richiesta al provider: max_tokens 1000", async () => {
     await summarizeConversation(input());
     const body = fake.requests.find((r) => r.path.endsWith("/chat/completions"))!.body as { max_tokens?: number };
@@ -219,6 +228,18 @@ describe("costi dei riassunti", () => {
     await summarizeConversation({ ...input, userId }, { chat: chatCost(0.01) });
     await summarizeConversation({ ...input, userId }, { chat: chatCost(null) });
     expect((await history())[0]!.costUsd).toBeNull();
+  });
+});
+
+describe("storico eliminato e spesa", () => {
+  it("eliminare una voce non cancella il costo dalla spesa", async () => {
+    await summarizeConversation({ userId, character: "lucius", kind: "plan_conversation", refId: 5, title: "T", transcript: "Utente: x" });
+    const before = (await userSpend(userId)).spentUsd;
+    expect(before).toBeGreaterThan(0);
+    const [row] = await history();
+    const { deleteHistory } = await import("./history");
+    await deleteHistory(userId, "lucius", row!.id);
+    expect((await userSpend(userId)).spentUsd).toBeCloseTo(before, 9);
   });
 });
 

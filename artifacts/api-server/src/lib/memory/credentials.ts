@@ -15,3 +15,12 @@ export function looksLikeCredential(text: string): boolean {
   }
   return false;
 }
+
+/** Sostituisce con *** le parole che sembrano credenziali (e i blocchi PEM). */
+export function redactCredentials(text: string): string {
+  return text
+    .replace(/-----BEGIN[\s\S]*?(-----END[^\n]*?-----|$)/g, "***")
+    .split(/(\s+)/)
+    .map((part) => (part.trim() && looksLikeCredential(part) ? "***" : part))
+    .join("");
+}

@@ -6,7 +6,7 @@ import { addHistory } from "../lib/memory/history";
 
 // Route delle memorie dei personaggi (appunti e storico) senza login (AUTH_DISABLED=true)
 
-const ENV_KEYS = ["AUTH_DISABLED"] as const;
+const ENV_KEYS = ["AUTH_DISABLED", "ALLOWED_EMAILS"] as const;
 const saved: Record<string, string | undefined> = {};
 let base: string;
 let server: http.Server;
@@ -18,8 +18,10 @@ function listen(s: http.Server): Promise<number> {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function api(method: string, path: string, body?: unknown): Promise<{ status: number; text: string; json: any }> {
-  const res = await fetch(`${base}/api${path}`, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+async function api(method: string, path: string, body?: unknown, token?: string): Promise<{ status: number; text: string; json: any }> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (token) headers["authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${base}/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const text = await res.text();
   return { status: res.status, text, json: text ? JSON.parse(text) : undefined };
 }
@@ -39,6 +41,7 @@ const entry = (uid: number, character: "alfred" | "lucius", refId: number, title
 beforeAll(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   process.env["AUTH_DISABLED"] = "true";
+  process.env["ALLOWED_EMAILS"] = "dev@localhost";
   vi.spyOn(console, "log").mockImplementation(() => {});
   const { default: app } = await import("../app");
   server = http.createServer(app);
@@ -126,5 +129,29 @@ describe("storico", () => {
     expect((await api("DELETE", `/memories/history/${id}?character=lucius`)).status).toBe(204);
     expect((await api("DELETE", `/memories/history/${id}?character=lucius`)).status).toBe(404);
     expect((await api("GET", "/memories/history?character=alfred")).json).toHaveLength(1);
+  });
+});
+
+describe("scritture solo con il login", () => {
+  it("con un token personale le scritture sono 403, le GET restano ammesse", async () => {
+    const { createApiToken } = await import("../lib/api-tokens");
+    const { token } = await createApiToken(userId, "t", 30, ["api:read", "api:write"]);
+    const note = await api("POST", "/memories/notes", { character: "lucius", content: "x" });
+    expect(note.status).toBe(201);
+    await addHistory(entry(userId, "lucius", 1, "Voce"));
+    const hist = (await api("GET", "/memories/history?character=lucius")).json[0];
+    const denied = "operazione disponibile solo con il login";
+    for (const [m, p, b] of [
+      ["POST", "/memories/notes", { character: "lucius", content: "y" }],
+      ["PATCH", `/memories/notes/${note.json.id}?character=lucius`, { content: "z" }],
+      ["DELETE", `/memories/notes/${note.json.id}?character=lucius`, undefined],
+      ["DELETE", `/memories/history/${hist.id}?character=lucius`, undefined],
+    ] as const) {
+      const r = await api(m, p, b, token);
+      expect(r.status, `${m} ${p}`).toBe(403);
+      expect(r.json.error).toBe(denied);
+    }
+    expect((await api("GET", "/memories/notes?character=lucius", undefined, token)).status).toBe(200);
+    expect((await api("GET", "/memories/history?character=lucius", undefined, token)).status).toBe(200);
   });
 });

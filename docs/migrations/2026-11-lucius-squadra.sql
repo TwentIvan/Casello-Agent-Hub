@@ -2,6 +2,8 @@
 -- Da applicare in produzione PRIMA del merge. Nessun `-post`.
 
 ALTER TABLE "plan_conversations" ADD COLUMN IF NOT EXISTS "summarized_at" timestamp;
+-- Niente recupero dello storico: le conversazioni esistenti non si riassumono in blocco (idempotente)
+UPDATE "plan_conversations" SET "summarized_at" = "updated_at" WHERE "summarized_at" IS NULL;
 
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'team_chat_proposal_kind') THEN
@@ -91,3 +93,6 @@ CREATE TABLE IF NOT EXISTS "character_history" (
 );
 CREATE INDEX IF NOT EXISTS "character_history_user_character_idx" ON "character_history" USING btree ("user_id", "character");
 CREATE UNIQUE INDEX IF NOT EXISTS "character_history_ref_uniq" ON "character_history" USING btree ("user_id", "character", "kind", "ref_id");
+
+-- Voce dello storico eliminata in modo logico: il costo del riassunto resta nella spesa
+ALTER TABLE "character_history" ADD COLUMN IF NOT EXISTS "deleted_at" timestamp;

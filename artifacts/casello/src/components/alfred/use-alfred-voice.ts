@@ -26,6 +26,8 @@ const GEMINI_WS =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained";
 const MAX_LINES = 50;
 const MAX_TRANSCRIPT = 20000;
+// Tetto della trascrizione tenuta in memoria: si tengono le ultime battute
+const TRANSCRIPT_KEEP = 40000;
 const USAGE_EVERY_MS = 10_000;
 const MAX_RECONNECTS = 4;
 const AUDIO_ERROR =
@@ -125,7 +127,7 @@ export function useAlfredVoice() {
 
   const pushLines = useCallback((entries: Omit<AlfredLine, "id">[]) => {
     if (entries.length === 0) return;
-    r.current.transcript += entries.map((e) => `${e.role === "user" ? "Tu" : "Alfred"}: ${e.text}\n`).join("");
+    r.current.transcript = (r.current.transcript + entries.map((e) => `${e.role === "user" ? "Tu" : "Alfred"}: ${e.text}\n`).join("")).slice(-TRANSCRIPT_KEEP);
     setLines((prev) => [...prev, ...entries.map((e) => ({ ...e, id: ++r.current.lineId }))].slice(-MAX_LINES));
   }, []);
 

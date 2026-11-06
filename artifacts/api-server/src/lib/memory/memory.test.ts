@@ -121,9 +121,40 @@ describe("storico", () => {
     );
     await addHistory(entry(u, 9999));
     const rows = await db.select().from(characterHistoryTable).where(eq(characterHistoryTable.userId, u));
-    expect(rows).toHaveLength(500);
-    expect(rows.some((r) => r.refId === 1)).toBe(false);
-    expect(rows.some((r) => r.refId === 9999)).toBe(true);
+    // la più vecchia è eliminata in modo logico (il costo resta), le voci attive sono 500
+    expect(rows).toHaveLength(501);
+    expect(rows.filter((r) => r.deletedAt === null)).toHaveLength(500);
+    expect(rows.find((r) => r.refId === 1)!.deletedAt).not.toBeNull();
+    expect(rows.find((r) => r.refId === 9999)!.deletedAt).toBeNull();
+    expect((await listHistory(u, "lucius")).some((r) => r.refId === 1)).toBe(false);
+  });
+
+  it("parole che sembrano credenziali in titolo e riassunto diventano ***", async () => {
+    const u = await newUser();
+    await addHistory(entry(u, 1, { title: "Chiave sk-proj-abc123 data", summary: "Usa ghp_abcdef e " + "a".repeat(8) + "0123456789abcdef0123456789abcdef0123 ok" }));
+    const [row] = await listHistory(u, "lucius");
+    expect(row!.title).toBe("Chiave *** data");
+    expect(row!.summary).toBe("Usa *** e *** ok");
+  });
+
+  it("una voce eliminata sparisce da elenchi, ricerca e contesto; un riassunto nuovo la riattiva", async () => {
+    const u = await newUser();
+    await addHistory(entry(u, 1, { title: "Uno", summary: "consegna", tokensUsed: 5, costUsd: 0.01 }));
+    const [e] = await listHistory(u, "lucius");
+    await deleteHistory(u, "lucius", e!.id);
+    expect(await listHistory(u, "lucius")).toEqual([]);
+    expect(await searchHistory(u, "lucius", "consegna")).toEqual([]);
+    expect(await recentHistoryTitles(u, "lucius")).toEqual([]);
+    expect(await memoryContextBlock(u, "lucius")).toBe("");
+    const [raw] = await db.select().from(characterHistoryTable).where(eq(characterHistoryTable.userId, u));
+    expect(raw).toMatchObject({ title: "", summary: "", tokensUsed: 5 });
+    expect(raw!.deletedAt).not.toBeNull();
+    await rejects(deleteHistory(u, "lucius", e!.id), 404, MEMORY_MESSAGES.notFound);
+    await addHistory(entry(u, 1, { title: "Di nuovo", summary: "x", tokensUsed: 5, costUsd: 0.02 }));
+    const [back] = await db.select().from(characterHistoryTable).where(eq(characterHistoryTable.userId, u));
+    expect(back!.deletedAt).toBeNull();
+    expect(Number(back!.costUsd)).toBeCloseTo(0.03, 6);
+    expect(await listHistory(u, "lucius")).toHaveLength(1);
   });
 
   it("ricerca, recenti, elimina e isolamento", async () => {
@@ -159,5 +190,15 @@ describe("memoryContextBlock", () => {
     expect(block).toContain("Conversazioni recenti (titoli)");
     expect(block).toContain("Piano di Mister");
     expect(await memoryContextBlock(u, "alfred")).toBe("");
+  });
+
+  it("ogni appunto e titolo su una riga sola", async () => {
+    const u = await newUser();
+    await addNote(u, "lucius", "prima riga\n\nseconda   riga\r\nterza");
+    await addHistory(entry(u, 1, { title: "Titolo\ncon\ta capo" }));
+    const block = await memoryContextBlock(u, "lucius");
+    expect(block).toContain(" · prima riga seconda riga terza\n");
+    expect(block).toContain("Titolo con a capo");
+    expect(block.split("\n")).toHaveLength(5);
   });
 });

@@ -14,7 +14,7 @@ import {
   DeleteMemoryHistoryEntryParams,
   DeleteMemoryHistoryEntryQueryParams,
 } from "@workspace/api-zod";
-import { currentUserId } from "../lib/auth";
+import { currentUserId, sessionOnly } from "../lib/auth";
 import { deleteHistory, listHistory } from "../lib/memory/history";
 import { addNote, deleteNote, listNotes, updateNote } from "../lib/memory/notes";
 import { MemoryError } from "../lib/memory/types";
@@ -22,7 +22,7 @@ import { parseRequest } from "../middlewares/error-handler";
 
 // Memoria dei personaggi (Alfred, Lucius): appunti e storico dell'utente, separati per personaggio.
 // Il personaggio sta nella query (o nel corpo del POST): un valore non valido è 400. Con un token personale
-// valgono gli ambiti per metodo.
+// valgono le sole letture (GET): le scritture (appunti e storico) sono solo con il login.
 
 export function createMemoriesRouter(): IRouter {
   const router: IRouter = Router();
@@ -32,7 +32,7 @@ export function createMemoriesRouter(): IRouter {
     res.json(ListMemoryNotesResponse.parse(await listNotes(currentUserId(req), character)));
   });
 
-  router.post("/memories/notes", async (req, res) => {
+  router.post("/memories/notes", sessionOnly, async (req, res) => {
     const { character, content } = parseRequest(CreateMemoryNoteBody, req.body);
     try {
       res.status(201).json(await addNote(currentUserId(req), character, content));
@@ -42,7 +42,7 @@ export function createMemoriesRouter(): IRouter {
     }
   });
 
-  router.patch("/memories/notes/:id", async (req, res) => {
+  router.patch("/memories/notes/:id", sessionOnly, async (req, res) => {
     const { id } = parseRequest(UpdateMemoryNoteParams, req.params);
     const { character } = parseRequest(UpdateMemoryNoteQueryParams, req.query);
     const { content } = parseRequest(UpdateMemoryNoteBody, req.body);
@@ -54,7 +54,7 @@ export function createMemoriesRouter(): IRouter {
     }
   });
 
-  router.delete("/memories/notes/:id", async (req, res) => {
+  router.delete("/memories/notes/:id", sessionOnly, async (req, res) => {
     const { id } = parseRequest(DeleteMemoryNoteParams, req.params);
     const { character } = parseRequest(DeleteMemoryNoteQueryParams, req.query);
     try {
@@ -71,7 +71,7 @@ export function createMemoriesRouter(): IRouter {
     res.json(ListMemoryHistoryResponse.parse(await listHistory(currentUserId(req), character, q)));
   });
 
-  router.delete("/memories/history/:id", async (req, res) => {
+  router.delete("/memories/history/:id", sessionOnly, async (req, res) => {
     const { id } = parseRequest(DeleteMemoryHistoryEntryParams, req.params);
     const { character } = parseRequest(DeleteMemoryHistoryEntryQueryParams, req.query);
     try {

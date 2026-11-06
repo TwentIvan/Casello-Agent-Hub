@@ -7,6 +7,7 @@ export const characterHistoryKindEnum = pgEnum("character_history_kind", [
   "alfred_session",
   "plan_conversation",
   "team_chat",
+  "character_chat",
 ]);
 
 // Appunti di un personaggio sull'utente: fatti e preferenze stabili (max 300 caratteri, 50 per personaggio)

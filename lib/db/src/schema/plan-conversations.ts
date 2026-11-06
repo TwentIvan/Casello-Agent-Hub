@@ -27,6 +27,8 @@ export const planConversationsTable = pgTable(
     // null = costo parziale (prezzo mancante)
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
     turnStatus: planTurnStatusEnum("turn_status").notNull().default("idle"),
+    // Ultimo riassunto nello storico di Lucius
+    summarizedAt: timestamp("summarized_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

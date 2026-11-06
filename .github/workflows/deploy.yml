@@ -23,7 +23,7 @@ env:
   IMAGE_WEB: ghcr.io/twentivan/casello-web
 
 jobs:
-  # Test dell'API (Vitest + Postgres in memoria): girano a ogni push e bloccano la build
+  # Test dell'API (Vitest + Postgres in memoria) e della console: girano a ogni push e bloccano la build
   test:
     name: Test API
     runs-on: ubuntu-latest
@@ -42,6 +42,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm --filter @workspace/api-server run test
+
+      - run: pnpm --filter @workspace/casello run test
 
   build:
     name: Build ${{ matrix.app }}

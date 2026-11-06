@@ -32,5 +32,7 @@ COPY docker/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --chmod=755 docker/15-embed-origins.envsh /docker-entrypoint.d/15-embed-origins.envsh
 # Origini (separate da virgola) che possono incorporare /embed; vuota = nessuna
 ENV EMBED_ALLOWED_ORIGINS=""
+# envsubst sostituisce solo le variabili EMBED_*: le altre (anche quelle aggiunte da Coolify) restano testo di nginx
+ENV NGINX_ENVSUBST_FILTER=EMBED_
 COPY --from=build /repo/artifacts/casello/dist/public /usr/share/nginx/html
 EXPOSE 80

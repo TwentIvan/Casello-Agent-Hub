@@ -11,22 +11,22 @@ const MSG_UNREACHABLE = "Botcave non risponde: riprova tra poco";
 const CSS = `
 :host { all: initial; }
 .btn { position: fixed; bottom: 16px; width: 48px; height: 48px; padding: 0; border-radius: 50%;
-  border: 1px solid var(--surface-border); background: var(--surface-bg);
+  border: 1px solid var(--surface-border, hsl(0 0% 80%)); background: var(--surface-bg, hsl(0 0% 100%));
   cursor: pointer; z-index: 2147483000; display: flex; align-items: center; justify-content: center; }
 .btn[data-side="right"] { right: 16px; } .btn[data-side="left"] { left: 16px; }
 .btn.inline { position: static; }
 .btn img { width: 28px; height: 28px; display: block; }
 .count { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box;
-  border-radius: 9px; background: var(--surface-accent); color: var(--surface-on-accent);
+  border-radius: 9px; background: var(--surface-accent, hsl(0 0% 25%)); color: var(--surface-on-accent, hsl(0 0% 100%));
   font: 600 11px/18px sans-serif; text-align: center; }
 .panel { position: fixed; top: 0; bottom: 0; width: 440px; max-width: 100%; display: none; z-index: 2147483001;
-  background: var(--surface-bg); border: 0 solid var(--surface-border); }
+  background: var(--surface-bg, hsl(0 0% 100%)); border: 0 solid var(--surface-border, hsl(0 0% 80%)); }
 .panel[data-side="right"] { right: 0; border-left-width: 1px; } .panel[data-side="left"] { left: 0; border-right-width: 1px; }
 .panel.open { display: block; }
 @media (max-width: 640px) { .panel { width: 100%; border-width: 0 !important; } }
 iframe { width: 100%; height: 100%; border: 0; display: block; }
-.msg button { margin-top: 12px; display: block; padding: 6px 12px; cursor: pointer; font: inherit; color: var(--surface-fg); background: var(--surface-bg); border: 1px solid var(--surface-border); border-radius: 6px; }
-.msg { padding: 24px; font: 14px/1.5 sans-serif; color: var(--surface-fg); }
+.msg button { margin-top: 12px; display: block; padding: 6px 12px; cursor: pointer; font: inherit; color: var(--surface-fg, hsl(0 0% 10%)); background: var(--surface-bg, hsl(0 0% 100%)); border: 1px solid var(--surface-border, hsl(0 0% 80%)); border-radius: 6px; }
+.msg { padding: 24px; font: 14px/1.5 sans-serif; color: var(--surface-fg, hsl(0 0% 10%)); }
 `;
 
 function start(): void {
@@ -121,12 +121,16 @@ function start(): void {
       set("--surface-on-accent", "--on-accent", dark ? "hsl(0 0% 10%)" : "hsl(0 0% 100%)");
     };
 
-    const sendTheme = () => {
-      const theme = readHostTheme(
+    const readTheme = () =>
+      readHostTheme(
         document.documentElement,
         getComputedStyle,
         Array.from(document.querySelectorAll<HTMLLinkElement>("link[href]"), (l) => l.href),
       );
+    applyShellVars(readTheme());
+
+    const sendTheme = () => {
+      const theme = readTheme();
       applyShellVars(theme);
       outbox.send({ botcave: 1, type: "theme", payload: theme });
     };

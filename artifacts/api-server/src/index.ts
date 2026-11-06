@@ -18,9 +18,21 @@ import { failInterruptedCatalogRuns } from "./lib/catalog/refresh";
 import { startCatalogScheduler } from "./lib/catalog/scheduler";
 import { ensureProviderRegistry } from "./lib/catalog/provider-registry";
 import { assertSecretKey } from "./lib/secrets";
+import { pluginClients, PluginConfigError } from "./lib/oauth/plugins";
 
 // In produzione la chiave dei segreti è obbligatoria: meglio fallire all'avvio che alla prima cifratura.
 if (process.env["NODE_ENV"] === "production") assertSecretKey();
+
+// Client OAuth dei plugin: una configurazione non valida ferma l'avvio (meglio giù che aperta); il log riporta solo il messaggio.
+try {
+  pluginClients();
+} catch (err) {
+  if (err instanceof PluginConfigError) {
+    logger.error(err.message);
+    process.exit(1);
+  }
+  throw err;
+}
 
 const rawPort = process.env["PORT"];
 

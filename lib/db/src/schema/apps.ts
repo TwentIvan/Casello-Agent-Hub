@@ -31,6 +31,8 @@ export const appsTable = pgTable("apps", {
   openapiUrl: text("openapi_url"),
   // Server MCP dell'app (se espone i suoi strumenti via MCP)
   mcpUrl: text("mcp_url"),
+  // Modello dell'indirizzo del plugin dell'app (Botcave come plugin, es. The Hub Up)
+  pluginUrlTemplate: text("plugin_url_template"),
   functionalDescription: text("functional_description"),
   status: appStatusEnum("status").notNull().default("active"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

@@ -503,6 +503,7 @@ CREATE TYPE "public"."pending_action_status" AS ENUM('pending', 'executing', 'do
 ALTER TABLE "app_tools" ADD COLUMN "level" "tool_level" DEFAULT 'L2' NOT NULL;
 ALTER TABLE "app_tools" ADD COLUMN "level_override" "tool_level";
 ALTER TABLE "apps" ADD COLUMN "mcp_url" text;
+ALTER TABLE "apps" ADD COLUMN "plugin_url_template" text;
 CREATE TABLE "pending_actions" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"user_id" integer NOT NULL,
@@ -794,7 +795,7 @@ CREATE TABLE "team_attachments" (
 CREATE INDEX "team_attachments_instance_idx" ON "team_attachments" USING btree ("instance_id");
 
 -- Connettore OAuth per l'app Claude
-CREATE TYPE "public"."oauth_client_kind" AS ENUM('dcr', 'metadata');
+CREATE TYPE "public"."oauth_client_kind" AS ENUM('dcr', 'metadata', 'plugin');
 CREATE TYPE "public"."oauth_token_kind" AS ENUM('access', 'refresh');
 
 CREATE TABLE "oauth_clients" (

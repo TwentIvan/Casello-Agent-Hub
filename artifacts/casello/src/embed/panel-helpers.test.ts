@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alfredPageContext, badgeIntervalMs, consoleUrl, findAppBySlug, isPanelOpen, nextBadge } from "./panel-helpers";
+import { alfredPageContext, badgeIntervalMs, cleanAppSlug, consoleUrl, findAppBySlug, isPanelOpen, nextBadge } from "./panel-helpers";
 
 describe("alfredPageContext", () => {
   it("senza contesto della pagina ospite: console", () => {
@@ -67,5 +67,16 @@ describe("consoleUrl", () => {
       "https://casello.fantamister.cloud/pending-actions",
     );
     expect(consoleUrl("https://casello.fantamister.cloud", "/teams/12")).toBe("https://casello.fantamister.cloud/teams/12");
+  });
+});
+
+describe("cleanAppSlug", () => {
+  it("stesso formato del server: fino a 64 caratteri, minuscole, cifre e trattini", () => {
+    expect(cleanAppSlug("hub-up")).toBe("hub-up");
+    expect(cleanAppSlug("a".repeat(64))).toBe("a".repeat(64));
+    expect(cleanAppSlug("a".repeat(65))).toBe("");
+    expect(cleanAppSlug("-hub")).toBe("");
+    expect(cleanAppSlug("Hub")).toBe("");
+    expect(cleanAppSlug(null)).toBe("");
   });
 });

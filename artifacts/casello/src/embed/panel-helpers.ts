@@ -5,6 +5,11 @@ import type { HostContextMsg } from "./protocol";
 // Stesso formato che il server accetta in `CharacterPageContext.host.app`
 const HOST_APP_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
+/** Slug dell'app dalla query di /embed: lo stesso formato del server, altrimenti stringa vuota. */
+export function cleanAppSlug(raw: string | null): string {
+  return raw !== null && HOST_APP_RE.test(raw) ? raw : "";
+}
+
 /** Contesto di Alfred: la pagina dell'app ospite se nota, altrimenti `console`. */
 export function alfredPageContext(appSlug: string, ctx: HostContextMsg | null): CharacterPageContext {
   if (!ctx || !HOST_APP_RE.test(appSlug)) return { page: "console" };

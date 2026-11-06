@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getEmbedConfig } from "@workspace/api-client-react";
 import { parseToFrame, type EmbedTab, type FromFrame, type HostContextMsg, type HostTheme } from "./protocol";
 import { cleanFontUrl, themeToCss } from "./theme";
+import { cleanAppSlug } from "./panel-helpers";
 
 export type HostOpenRequest = { tab?: EmbedTab; seq: number };
 
@@ -40,8 +41,7 @@ function cleanOrigin(raw: string | null): string | null {
 
 function readQuery(): { appSlug: string; origin: string | null } {
   const q = new URLSearchParams(window.location.search);
-  const app = q.get("app") ?? "";
-  return { appSlug: /^[a-z0-9][a-z0-9-]{0,99}$/.test(app) ? app : "", origin: cleanOrigin(q.get("origin")) };
+  return { appSlug: cleanAppSlug(q.get("app")), origin: cleanOrigin(q.get("origin")) };
 }
 
 let appliedVars: string[] = [];

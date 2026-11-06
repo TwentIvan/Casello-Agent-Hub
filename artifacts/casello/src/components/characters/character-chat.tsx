@@ -95,18 +95,44 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
     }
   };
 
+  // Dopo un invio, finché la conversazione non torna riletta con il messaggio (o con il turno in corso), l'invio resta
+  // bloccato: tra la risposta 202 e la lettura successiva `turnStatus` è ancora `idle`. Rete di sicurezza: 10 s.
+  const [awaitingRead, setAwaitingRead] = useState<{ messages: number } | null>(null);
+  const messageCount = data?.messages.length ?? 0;
+  useEffect(() => {
+    if (awaitingRead && (running || messageCount > awaitingRead.messages)) setAwaitingRead(null);
+  }, [awaitingRead, running, messageCount]);
+  useEffect(() => {
+    if (!awaitingRead) return;
+    const timer = setTimeout(() => setAwaitingRead(null), 10_000);
+    return () => clearTimeout(timer);
+  }, [awaitingRead]);
+
+  // Con un elenco, la conversazione è quella selezionata anche se il dettaglio non è ancora arrivato (passaggio di
+  // consegne con la domanda già scritta): se ne crea una nuova solo quando l'elenco è vuoto
+  const sendTargetId = list ? effectiveId : (data?.id ?? null);
   const trimmed = text.trim();
-  const canSend = !readOnly && !running && busy === null && trimmed.length > 0 && text.length <= MAX_CHARS && (data !== undefined || list !== null);
+  const canSend =
+    !readOnly &&
+    !running &&
+    busy === null &&
+    awaitingRead === null &&
+    !(list?.isLoading ?? false) &&
+    trimmed.length > 0 &&
+    text.length <= MAX_CHARS &&
+    (sendTargetId !== null || list !== null);
   const submit = () => {
     if (!canSend) return;
     void run("send", "Messaggio non inviato", async () => {
+      let id = sendTargetId;
       // Senza conversazioni la prima si crea con il primo messaggio (modello del personaggio)
-      let id = data?.id ?? null;
       if (id === null) {
         id = await adapter.create(null);
         setSelectedId(id);
       }
+      const before = id === data?.id ? data.messages.length : 0;
       await adapter.send(id, trimmed);
+      setAwaitingRead({ messages: before });
       setText("");
     });
   };
@@ -277,7 +303,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
               rows={3}
               placeholder={adapter.character === "alfred" ? "Scrivi ad Alfred…" : "Scrivi a Lucius…"}
               aria-label={`Messaggio per ${name}`}
-              disabled={running}
+              disabled={running || busy === "send"}
             />
             <div className="flex items-center justify-between gap-2">
               <span className={cn("font-mono text-xs tabular-nums text-ink-muted", text.length > MAX_CHARS && "text-destructive")}>

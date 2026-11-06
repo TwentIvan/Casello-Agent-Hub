@@ -157,7 +157,7 @@ I collegamenti verso la console si aprono in una nuova scheda del browser (`targ
 - Filtro nell'iframe: valori di colore (`H S% L%` di shadcn, `#rgb[a]`, `rgb()`, `hsl()`, `oklch()`), lunghezze (`rem`, `px`)
   e famiglie di font (lettere, cifre, spazi, virgole, apici); qualunque altra cosa (es. `url(`, `;`, `}`) scartata.
 - Traduzione nei token Botcave per la sola pagina `/embed` (`src/embed/theme.ts`): `background` → `surface-1`, `foreground` →
-  `ink`, `primary` → `brand`, `muted` → `surface-2`, `muted-foreground` → `ink-muted`, `border` → `line`, `radius` → raggi,
+  `ink`, `primary` → `accent`, `muted` → `surface-2`, `muted-foreground` → `ink-muted`, `border` → `border`, `radius` → raggi,
   `font-sans` → testi e controlli. Variabili mancanti: token Botcave. Font di Google Fonts già usati dalla pagina ospite: l'iframe
   li carica dallo stesso indirizzo se sono tra i suoi `<link>` (lo script ne passa l'URL, solo da `fonts.googleapis.com`).
 - Restano di Botcave: segni di Alfred e Lucius, LED, mono per numeri e codice, niente ombre.

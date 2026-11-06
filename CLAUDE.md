@@ -57,9 +57,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   La caverna: `components/brand/cave.tsx` (`CaveVault`): la barra in alto di ogni pagina (`CaveHeader` in `app-shell.tsx`, 112 px,
   buia in entrambi i temi) ha la volta di stalattiti con il LED, sotto il logo chiaro su scuro, che è anche il pulsante del menu
   dell'account (`user-menu.tsx`), e a destra il microfono che apre Alfred (`/alfred`, non è una voce di menu), poi il pavimento di
-  roccia; niente titolo della pagina. Fondi e bordi in grigi neutri, senza dominanti calde o fredde. Alfred (il maggiordomo, voce) e
-  Lucius (l'ingegnere del laboratorio: analisi, proposte, chat del piano, nei prompt di `architect/prompts.ts` e
-  `plan-chat/context.ts`) sono due chatbot: compaiono con i loro segni dentro le funzioni dove si chiamano, non nella barra.
+  roccia; niente titolo della pagina. Fondi e bordi in grigi neutri, senza dominanti calde o fredde. Alfred (il maggiordomo: a voce su
+  `/alfred` e per iscritto nel pannello laterale) e Lucius (l'ingegnere del laboratorio: analisi, proposte, chat del piano e delle aree,
+  nei prompt di `architect/prompts.ts`, `plan-chat/context.ts` e, per i due personaggi nel pannello, `lib/characters/instructions.ts`)
+  sono due chatbot: compaiono con i loro segni dentro le funzioni dove si chiamano, non nella barra.
   Nessun riferimento a Batman.
 - Icone e favicon: `design/icons/` servite alla radice dal plugin `botcaveIcons` di `vite.config.ts` (niente copie in `public/`); il
   manifest di Alfred usa `icon-192/512` e `icon-maskable-512`, colori `#151A21`. I Dockerfile copiano `design/` (web) e
@@ -983,7 +984,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - **Route** (`routes/team-chat.ts`): `GET|POST /api/team-instances/:id/team-chat-conversations`, `GET|DELETE
   /api/team-chat-conversations/:id`, `POST …/messages` (202), `POST /api/team-chat-proposals/:id/decision`; dati dell'utente (altrui →
   404). Console: pannello «Lucius» nella scheda squadra (non più incorporato: pulsante «Chiedi a Lucius» che apre il pannello comune
-  `CharacterChat` con `usePlanChatAdapter`/`useTeamChatAdapter` in `components/characters/`; schede con `role-instructions-card.tsx`, anteprima del
+  `CharacterChat` con `useTeamChatAdapter` in `components/characters/`; schede con `role-instructions-card.tsx`, anteprima del
   Markdown senza frontmatter; il tetto e il modello di partenza sono quelli di Lucius, vedi "Alfred e Lucius nelle aree"), nell'editor dei ruoli il campo «Identità» (l'anteprima delle istruzioni è nelle schede del pannello Lucius).
 - **Memorie** (`lib/memory/`, tabelle `character_notes` e `character_history`, personaggio `alfred` | `lucius`, per utente: ogni utente
   e ogni personaggio vede solo i propri dati). **Appunti**: ≤ 300 caratteri, ≤ 50 per personaggio e utente («memoria piena: unisci o
@@ -1058,7 +1059,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (`pending` → `accepted`) prima di `approveAction`/`rejectAction` (limite 20/min, `consumeActionDecision`): se il processo cade in mezzo la
   voce resta in coda e si decide da «Da confermare»; voce non più `pending` o sintesi cambiata → `stale`, 409 «la voce è cambiata: ricarica la
   coda»; `needsUserToken` → niente «Approva» in scheda (si rimanda a «Da confermare»); con un token personale serve `api:write`. In console,
-  con modifiche non salvate sotto il pannello (`hasUnsavedChanges`) l'accettazione avverte che andrebbero perse.
+  con modifiche non salvate sotto il pannello (`hasUnsavedChanges`, passato anche dal pulsante di Alfred della scheda squadra, che i passaggi
+  di consegne ereditano; azzerato al cambio di pagina) l'accettazione avverte che andrebbero perse. Nella scheda agente contano anche le
+  caselle degli strumenti; una scheda accettata entra nella pagina: le caselle si rimontano sugli id salvati e il prompt accettato entra nel
+  form (`resetField`), le altre modifiche restano.
 - **Passaggio di consegne** (`handoff.ts`, strumento `passa_a {argomento, oggetto?, domanda ≤ 2 000}`): il destinatario è sempre l'altro
   personaggio; produce una scheda `handoff` («Chiedo a Lucius» / «Chiedo ad Alfred») senza effetti sul server e senza chiamate tra modelli. Il
   clic apre il pannello dell'altro sull'argomento con la domanda già scritta e non inviata (un solo `Sheet` globale, `HandoffProvider` in

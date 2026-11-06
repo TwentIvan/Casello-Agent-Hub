@@ -5,6 +5,7 @@ import { startLocalLeaseJob } from "./lib/architect/local-executor";
 import { startNodeSweeper, sweepNodeTasks } from "./lib/nodes/lease-sweeper";
 import { startOAuthSweeper } from "./lib/oauth/grants";
 import { closeAllActiveSessions, startAlfredSweeper } from "./lib/alfred/sessions";
+import { startMemorySweeper } from "./lib/memory/summaries";
 import { failInterruptedRuns } from "./lib/run-executor";
 import { failInterruptedTeamWork } from "./lib/teams/task-runner";
 import { pumpTurnInBackground, resumeQueuedTurns } from "./lib/teams/turn-runner";
@@ -118,6 +119,7 @@ try {
   logger.error({ errName: err instanceof Error ? err.name : "Error" }, "Chiusura delle sessioni di Alfred non riuscita");
 }
 startAlfredSweeper();
+startMemorySweeper();
 
 app.listen(port, (err) => {
   if (err) {

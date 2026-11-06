@@ -175,8 +175,16 @@ export function useLuciusSubjectAdapter(target: Extract<ChatTarget, { kind: "cha
   const list = useListCharacterConversations(params, { query: { queryKey: getListCharacterConversationsQueryKey(params) } });
 
   const typeLabel = SUBJECT_LABELS[target.subjectType];
-  const title = target.title || list.data?.[0]?.subjectTitle || target.subjectId || "";
-  const subjectLabel = AREA_TYPES.has(target.subjectType) || !title ? typeLabel : `${typeLabel} · ${title}`;
+  // Il `title` della pagina ha già il prefisso (es. «Agente · Nome»): si usa così com'è. Il prefisso si aggiunge solo
+  // ripiegando sul titolo salvato nelle conversazioni o sull'id (passaggi di consegne, senza titolo).
+  const fallback = list.data?.[0]?.subjectTitle || target.subjectId || "";
+  const subjectLabel = AREA_TYPES.has(target.subjectType)
+    ? typeLabel
+    : target.title
+      ? target.title
+      : fallback
+        ? `${typeLabel} · ${fallback}`
+        : typeLabel;
 
   return {
     character: "lucius",

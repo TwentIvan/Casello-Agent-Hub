@@ -1856,7 +1856,7 @@ export interface OAuthGrant {
   createdAt: string;
   /** @nullable */
   lastUsedAt: string | null;
-  /** Può approvare e rifiutare le azioni in coda (ambito api:write) */
+  /** Può approvare e rifiutare le azioni in coda (ambito api:write o embed) */
   canDecide: boolean;
 }
 

@@ -53,7 +53,8 @@ export async function listGrants(userId: number): Promise<OAuthGrantView[]> {
     redirectHost: hostOf(r.redirectUris, r.clientId),
     createdAt: r.createdAt,
     lastUsedAt: r.lastUsedAt,
-    canDecide: r.scopes.includes("api:write"),
+    // Il pannello incorporabile (ambito embed) approva e rifiuta come il connettore con api:write
+    canDecide: r.scopes.includes("api:write") || r.scopes.includes("embed"),
   }));
 }
 

@@ -6329,7 +6329,7 @@ components:
           format: date-time
         canDecide:
           type: boolean
-          description: Può approvare e rifiutare le azioni in coda (ambito api:write)
+          description: Può approvare e rifiutare le azioni in coda (ambito api:write o embed)
 
     Node:
       type: object

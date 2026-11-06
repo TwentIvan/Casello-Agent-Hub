@@ -145,7 +145,7 @@ export const ListOAuthGrantsResponseItem = zod.object({
   "redirectHost": zod.string().describe('Host dell\'indirizzo di ritorno registrato dal client'),
   "createdAt": zod.coerce.date(),
   "lastUsedAt": zod.coerce.date().nullable(),
-  "canDecide": zod.boolean().describe('Può approvare e rifiutare le azioni in coda (ambito api:write)')
+  "canDecide": zod.boolean().describe('Può approvare e rifiutare le azioni in coda (ambito api:write o embed)')
 })
 export const ListOAuthGrantsResponse = zod.array(ListOAuthGrantsResponseItem)
 

@@ -118,8 +118,10 @@ describe("OAuth: ambito embed", () => {
     expect(rows[0].scopes).toEqual(["embed"]);
 
     const list = await fetch(`${base}/api/account/oauth-grants`);
-    const grants = (await list.json()) as { redirectHost: string }[];
+    const grants = (await list.json()) as { redirectHost: string; canDecide: boolean }[];
     expect(grants[0]!.redirectHost).toBe("hubup.fantamister.cloud");
+    // Il pannello approva e rifiuta le voci della coda: «App collegate» lo deve dire
+    expect(grants[0]!.canDecide).toBe(true);
   });
 
   it("scope=mcp con un client embed: invalid_scope con redirect", async () => {

@@ -42,6 +42,10 @@ tags:
     description: Catalogo delle skill con codice, versionate, usate dalle squadre di agenti
   - name: teams
     description: Modelli di squadra di agenti e le loro istanze
+  - name: team-chat
+    description: Chat di Lucius sulla definizione di una squadra (conversazioni, messaggi, schede) e scarico delle istruzioni dei ruoli
+  - name: memories
+    description: Memoria dei personaggi (Alfred, Lucius) - appunti e storico delle conversazioni
 
 paths:
   /healthz:
@@ -761,11 +765,22 @@ paths:
       operationId: closeAlfredSession
       tags: [alfred]
       summary: Chiude una sessione di Alfred
+      description: >-
+        Con `transcript` (facoltativo, al massimo 20 000 caratteri) Botcave ne ricava, in background, un
+        riassunto per lo storico di Alfred; la trascrizione non si salva mai. Oltre il limite: 400.
       parameters:
         - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlfredCloseBody"
       responses:
         "204":
           description: Sessione chiusa
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -3386,6 +3401,318 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /team-instances/{id}/team-chat-conversations:
+    get:
+      operationId: listTeamChatConversations
+      tags: [team-chat]
+      summary: Conversazioni dell'utente con Lucius su una squadra
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Conversazioni, dalla più recente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamChatConversation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createTeamChatConversation
+      tags: [team-chat]
+      summary: Apre una conversazione con Lucius sulla squadra
+      description: >-
+        Il modello deve essere di un account dell'utente; senza `aiModelId` si usa il modello predefinito
+        (se non c'è, la conversazione nasce senza modello e il primo messaggio risponde con l'invito a sceglierne uno).
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamChatConversationCreate"
+      responses:
+        "201":
+          description: Conversazione creata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamChatConversation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /team-chat-conversations/{id}:
+    get:
+      operationId: getTeamChatConversation
+      tags: [team-chat]
+      summary: Conversazione con messaggi e schede
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Conversazione trovata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamChatConversationDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteTeamChatConversation
+      tags: [team-chat]
+      summary: Elimina la conversazione
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Conversazione eliminata
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /team-chat-conversations/{id}/messages:
+    post:
+      operationId: sendTeamChatMessage
+      tags: [team-chat]
+      summary: Invia un messaggio e avvia il turno di Lucius
+      description: >-
+        Risponde subito col messaggio dell'utente; Lucius risponde in background (turnStatus running, poi idle).
+        409 se un turno è già in corso, se la squadra è chiusa o se chi paga il modello ha raggiunto il tetto di
+        spesa mensile. Massimo 10 messaggi al minuto per utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamChatMessageCreate"
+      responses:
+        "202":
+          description: Messaggio accettato, turno avviato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamChatMessage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /team-chat-proposals/{id}/decision:
+    post:
+      operationId: decideTeamChatProposal
+      tags: [team-chat]
+      summary: Accetta o rifiuta una scheda di Lucius
+      description: >-
+        Accettando la modifica si applica alla squadra con le regole del salvataggio. 409 se la scheda è già decisa,
+        se il valore è cambiato dopo la proposta (scheda stale) o se la squadra è chiusa.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamChatProposalDecision"
+      responses:
+        "200":
+          description: Scheda aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamChatProposal"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}/roles/{key}/instructions.md:
+    get:
+      operationId: downloadRoleInstructions
+      tags: [team-chat]
+      summary: Scarica le istruzioni di un ruolo (Markdown)
+      description: >-
+        File Markdown della skill specializzata `ruolo-<key>`, `Content-Disposition: attachment; filename="<key>.md"`.
+        404 «il ruolo non ha istruzioni» se non esiste.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File Markdown
+          content:
+            text/markdown:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /team-instances/{id}/roles-export.zip:
+    get:
+      operationId: downloadRolesExport
+      tags: [team-chat]
+      summary: Scarica le istruzioni di tutti i ruoli (zip)
+      description: >-
+        Zip con un file `<key>.md` per ogni ruolo che ha istruzioni, `attachment; filename="<squadra>-ruoli.zip"`.
+        404 se nessun ruolo ha istruzioni.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Archivio zip
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /memories/notes:
+    get:
+      operationId: listMemoryNotes
+      tags: [memories]
+      summary: Appunti di un personaggio per l'utente
+      parameters:
+        - $ref: "#/components/parameters/CharacterQuery"
+      responses:
+        "200":
+          description: Appunti, dal più vecchio
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MemoryNote"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      operationId: createMemoryNote
+      tags: [memories]
+      summary: Aggiunge un appunto (max 300 caratteri, 50 per personaggio; solo con il login)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemoryNoteCreate"
+      responses:
+        "201":
+          description: Appunto creato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryNote"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /memories/notes/{id}:
+    patch:
+      operationId: updateMemoryNote
+      tags: [memories]
+      summary: Modifica un appunto (solo con il login)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/CharacterQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemoryNoteUpdate"
+      responses:
+        "200":
+          description: Appunto aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryNote"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteMemoryNote
+      tags: [memories]
+      summary: Elimina un appunto (solo con il login)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/CharacterQuery"
+      responses:
+        "204":
+          description: Appunto eliminato
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /memories/history:
+    get:
+      operationId: listMemoryHistory
+      tags: [memories]
+      summary: Storico delle conversazioni di un personaggio
+      description: Fino a 100 voci, dalla più recente; `q` cerca nel titolo e nel riassunto.
+      parameters:
+        - $ref: "#/components/parameters/CharacterQuery"
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        "200":
+          description: Voci dello storico
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MemoryHistoryEntry"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /memories/history/{id}:
+    delete:
+      operationId: deleteMemoryHistoryEntry
+      tags: [memories]
+      summary: Elimina una voce dello storico (solo con il login; il costo del riassunto resta nella spesa)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/CharacterQuery"
+      responses:
+        "204":
+          description: Voce eliminata
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /pending-actions:
     get:
       operationId: listPendingActions
@@ -3496,6 +3823,13 @@ paths:
 
 components:
   parameters:
+    CharacterQuery:
+      name: character
+      in: query
+      required: true
+      schema:
+        $ref: "#/components/schemas/MemoryCharacter"
+
     IdParam:
       name: id
       in: path
@@ -3868,6 +4202,13 @@ components:
           type: string
         expiresAt:
           type: string
+
+    AlfredCloseBody:
+      type: object
+      properties:
+        transcript:
+          type: string
+          maxLength: 20000
 
     AlfredRenewBody:
       type: object
@@ -5067,6 +5408,179 @@ components:
                 type: string
               error:
                 type: string
+
+    TeamChatConversation:
+      type: object
+      required: [id, teamInstanceId, aiModelId, title, tokensUsed, costUsd, turnStatus, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        teamInstanceId:
+          type: integer
+        aiModelId:
+          type: ["integer", "null"]
+        title:
+          type: string
+        tokensUsed:
+          type: integer
+        costUsd:
+          type: ["number", "null"]
+          description: null = costo parziale (prezzo mancante)
+        turnStatus:
+          $ref: "#/components/schemas/PlanTurnStatus"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TeamChatMessage:
+      type: object
+      required: [id, role, content, error, createdAt]
+      properties:
+        id:
+          type: integer
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+          description: Markdown
+        error:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    TeamChatProposal:
+      type: object
+      required: [id, messageId, kind, roleKey, payload, rationale, status, currentValue, decidedAt, createdAt]
+      properties:
+        id:
+          type: integer
+        messageId:
+          type: integer
+        kind:
+          type: string
+          enum: [role_identity, role_instructions]
+        roleKey:
+          type: string
+        payload:
+          type: ["object", "null"]
+          additionalProperties: true
+          description: "role_identity: {text}; role_instructions: {markdown}"
+        rationale:
+          type: string
+        status:
+          type: string
+          enum: [pending, accepted, rejected, stale]
+        currentValue:
+          type: string
+          description: Identità o istruzioni attuali del ruolo ("" se non ci sono), per mostrare le differenze
+        decidedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    TeamChatConversationDetail:
+      allOf:
+        - $ref: "#/components/schemas/TeamChatConversation"
+        - type: object
+          required: [messages, proposals]
+          properties:
+            messages:
+              type: array
+              items:
+                $ref: "#/components/schemas/TeamChatMessage"
+            proposals:
+              type: array
+              items:
+                $ref: "#/components/schemas/TeamChatProposal"
+
+    TeamChatConversationCreate:
+      type: object
+      properties:
+        aiModelId:
+          type: ["integer", "null"]
+          description: Modello di un account AI dell'utente; null o assente = modello predefinito
+
+    TeamChatMessageCreate:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 8000
+
+    TeamChatProposalDecision:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [accept, reject]
+
+    MemoryCharacter:
+      type: string
+      enum: [alfred, lucius]
+
+    MemoryNote:
+      type: object
+      required: [id, content, ref, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        content:
+          type: string
+        ref:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    MemoryNoteCreate:
+      type: object
+      required: [character, content]
+      properties:
+        character:
+          $ref: "#/components/schemas/MemoryCharacter"
+        content:
+          type: string
+          maxLength: 2000
+
+    MemoryNoteUpdate:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          maxLength: 2000
+
+    MemoryHistoryEntry:
+      type: object
+      required: [id, kind, refId, title, summary, createdAt]
+      properties:
+        id:
+          type: integer
+        kind:
+          type: string
+          enum: [alfred_session, plan_conversation, team_chat]
+        refId:
+          type: integer
+        title:
+          type: string
+        summary:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
 
     PlanProposalDecision:
       type: object

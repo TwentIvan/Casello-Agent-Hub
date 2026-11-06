@@ -119,4 +119,11 @@ describe("runPlanTurn", () => {
     const { deps: d2 } = makeDeps([new Error("boom")]);
     expect(await runPlanTurn(start, d2)).toMatchObject({ ok: false, error: "Errore nella chiamata al modello." });
   });
+
+  it("offre al modello esattamente gli strumenti passati", async () => {
+    const { deps, sent } = makeDeps([reply({ content: "Ciao" })]);
+    const custom = [{ type: "function" as const, function: { name: "solo_questo", parameters: { type: "object" } } }];
+    await runPlanTurn(start, deps, undefined, custom);
+    expect(sent[0]!.tools).toEqual(custom);
+  });
 });

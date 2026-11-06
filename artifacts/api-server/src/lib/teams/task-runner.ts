@@ -182,7 +182,7 @@ function systemPrompt(instance: TeamInstanceRow, role: InstanceRole, skills: Ski
     `Lavoro di riferimento: ${instance.refTitle}`,
     `Ruolo: ${role.name}`,
     "",
-    "Istruzioni del ruolo:",
+    "Identità del ruolo:",
     role.task || "(nessuna istruzione specifica)",
   ];
   for (const skill of skills) parts.push("", `Skill ${skill.code} · ${skill.label}:`, skill.content);

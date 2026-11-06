@@ -28,6 +28,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   connettore personalizzato su `/mcp` e parla con le squadre senza token copiati (vedi "Connettore OAuth (app Claude)").
 - Alfred: maggiordomo vocale nella console (`/alfred`, installabile sul telefono): parla con Gemini Live e usa gli strumenti del
   centralino; le decisioni vanno a doppio passo (vedi "Alfred (maggiordomo vocale)").
+- Lucius sulla squadra e memorie: nella scheda squadra Lucius discute identità e istruzioni dei ruoli e le propone come schede da
+  accettare; Alfred e Lucius hanno una memoria (appunti e storico dei riassunti), visibile e modificabile in Account (vedi "Lucius
+  sulla squadra e memorie").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -86,7 +89,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
   ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals,
   skills, skill_versions, team_templates, team_template_versions, team_instances, team_instance_skills,
-  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, nodes, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens)
+  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, team_chat_conversations, team_chat_messages, team_chat_proposals, character_notes, character_history, nodes, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -160,6 +163,11 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `tools.ts`, `tool-declarations.ts`, `confirmations.ts`, `instructions.ts`); route `src/routes/alfred.ts`; schema `lib/db/src/schema/alfred.ts`;
   console `artifacts/casello/src/pages/alfred.tsx`, `components/alfred/` (`use-alfred-voice.ts`, `mic-worklet.ts`, `alfred-transcript.tsx`),
   `components/account/alfred-section.tsx`; `public/alfred.webmanifest` e icone. Spec: `docs/superpowers/specs/2026-11-05-casello-alfred-design.md`
+- Lucius sulla squadra e memorie (vedi "Lucius sulla squadra e memorie"): `artifacts/api-server/src/lib/team-chat/` (`context.ts`, `snapshot.ts`,
+  `tools.ts`, `instructions-file.ts`, `run-turn.ts`, `decide.ts`) e `lib/memory/` (`types.ts`, `notes.ts`, `history.ts`, `credentials.ts`,
+  `context.ts`, `tools.ts`, `summaries.ts`); `lib/zip-writer.ts` (zip dei file dei ruoli); route `src/routes/team-chat.ts` e
+  `src/routes/memories.ts`; schema `lib/db/src/schema/team-chat.ts` e `character-memory.ts`; console `components/teams/lucius-panel.tsx`,
+  `role-instructions-card.tsx`, `components/account/memories-section.tsx`. Spec: `docs/superpowers/specs/2026-11-06-botcave-lucius-squadra-design.md`
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
 - `artifacts/api-server/src/lib/mcp/` e `lib/architect/local-executor.ts` — server MCP `/mcp` e coda/lease delle analisi locali
   (`lib/mcp/auth.ts`: `requireApiToken`, accetta `cas_…` e `cao_…`)
@@ -239,7 +247,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   archiviati (409 «nome già usato»); modello archiviato → 409 «modello archiviato» (non si salva né si copia). `DELETE`
   cancella se non ha istanze, altrimenti archivia e risponde `{deleted, archived}`.
 - **Manifesto del ruolo** (`manifest.ts`): `key` (`^[a-z0-9_-]{1,40}$`, stabile tra versioni), `name` (1..80), `task`
-  (max 8 000), `isLead`, `runsOn` `cloud`|`node`, `aiModelId`, `tools` (id di `app_tools`), `skills`; nell'istanza le skill
+  (max 8 000; in console e nei prompt è l'«Identità» del ruolo, il campo resta `task`), `isLead`, `runsOn` `cloud`|`node`, `aiModelId`, `tools` (id di `app_tools`), `skills`; nell'istanza le skill
   sono `{code, version}` fissate e c'è `localSkills` (codici delle skill specializzate).
 - **Regole** (`rules.ts`, `validateRoles`, a ogni salvataggio di modello o istanza; violazione → 400 con messaggio fisso in
   `TEAM_MESSAGES`, nulla salvato): un solo capo («una squadra ha esattamente un capo»); 1..20 ruoli, `key` e `name` unici,
@@ -622,7 +630,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   mancante) non si sommano: si contano come esecuzioni senza prezzo. Anche i compiti e i turni del capo delle squadre
   (`team_tasks`, `team_turns`, con il loro `ai_model_id`) contano nella spesa dell'utente, del modello e dell'account;
   i compiti eseguiti da un nodo (`ai_model_id` null) contano solo nel tetto della squadra. Contano anche le sessioni di
-  Alfred (`alfred_sessions`, con il loro `ai_model_id`) nella spesa dell'utente, del modello e dell'account.
+  Alfred (`alfred_sessions`, con il loro `ai_model_id`) nella spesa dell'utente, del modello e dell'account. Contano anche le chat
+  di squadra con Lucius (`team_chat_conversations`, costo cumulativo, nel mese del suo ultimo aggiornamento) e i riassunti delle memorie
+  (`character_history`, costo cumulato per voce), con il loro `ai_model_id`.
 - Ordine dei controlli: agente, modello, account AI, utente (il primo raggiunto dà il messaggio); per i compiti e i turni
   delle squadre prima il tetto della squadra, poi modello, account AI e utente (vedi "Squadre (esecuzione)").
 - Raggiunto un tetto (spesa ≥ tetto) le nuove run, analisi cloud e messaggi della chat rispondono 409 con il motivo;
@@ -877,7 +887,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `POST …/:id/renew` (nuovo token per la stessa sessione; corpo facoltativo `{resumptionHandle}` 1..4096 caratteri, altrimenti 400, che finisce in `sessionResumption.handle` del token e mai nei log; condivide il limite di 10/min con l'avvio; chiusa o altrui → 404 «sessione non trovata»); `POST …/:id/usage`
   `{promptTokens, completionTokens}` (totali cumulativi della sessione: il browser somma i `usageMetadata`, che Gemini manda per turno; interi ≥ 0 altrimenti 400; si tiene il massimo tra salvato e ricevuto, mai
   all'indietro; ricalcola il costo; con modello o account eliminati il costo resta null e la sessione si chiude comunque);
-  `POST …/:id/close` (204, idempotente). Controllo ogni 5 min: `active` senza attività da 35 min → `closed` (anche le conferme scadute
+  `POST …/:id/close` (204, idempotente; corpo facoltativo `{transcript}` ≤ 20 000: solo alla chiusura volontaria produce il riassunto nello storico di Alfred, in background e senza salvare la trascrizione; chiusure per inattività o riavvio non riassumono). Controllo ogni 5 min: `active` senza attività da 35 min → `closed` (anche le conferme scadute
   da oltre 1 h si cancellano); all'avvio tutte le `active` → `closed`.
 - **Token temporaneo di Gemini** (`gemini.ts`): `POST <GEMINI_NATIVE_BASE>/auth_tokens` con la chiave dell'account (`x-goog-api-key`),
   `uses: 1`, `expireTime` +30 min, `newSessionExpireTime` +1 min, 15 s, nessun redirect (`GEMINI_NATIVE_BASE`, letta in `config.ts`, solo per i test e ignorata con
@@ -888,7 +898,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - **Strumenti** (`tools.ts`, sopra `lib/teams/centralino.ts`, solo dati dell'utente): `POST /api/alfred/sessions/:id/tools/:name`
   `{args}` → `{ok:true,result}` | `{ok:false,error}`; sessione non attiva o altrui, o strumento sconosciuto → 404. Strumenti:
   `squadre_stato`, `squadra_dettaglio` (ridotto per la voce), `bollettino`, `coda_da_confermare`, `scrivi_al_capo` (limite condiviso
-  `consumeTeamMessage`, 10/min), `prepara_decisione`, `conferma_decisione`. Ogni chiamata aggiorna `last_activity_at`.
+  `consumeTeamMessage`, 10/min), `prepara_decisione`, `conferma_decisione`, più i quattro di memoria (`ricorda`, `aggiorna_appunto`, `dimentica`,
+  `cerca_nello_storico`, logica di `lib/memory/tools.ts`, personaggio `alfred`). Ogni chiamata aggiorna `last_activity_at`.
 - **Doppio passo** (`confirmations.ts`, `alfred_confirmations`): `prepara_decisione` `{numero, decisione approva|rifiuta, nota?}` (`nota` solo con rifiuta) crea una
   conferma con codice di 6 cifre (solo l'hash SHA-256), scadenza 60 s, una volta sola; una voce che richiede il token utente non si
   approva da Alfred; una nuova preparazione invalida le conferme aperte della stessa sessione (vale solo l'ultima, anche se la
@@ -906,7 +917,80 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Migrazione: `docs/migrations/2026-11-alfred.sql` (additiva e idempotente, niente `-post`): tabelle `alfred_sessions` e
   `alfred_confirmations`, colonne `users.alfred_ai_model_id` e `users.alfred_voice`. Da applicare in produzione PRIMA del merge e da
   segnalare nella PR; riportata in `docs/schema-casello.sql`.
+- **Memoria**: appunti e titoli degli ultimi 3 incontri entrano nelle istruzioni del token (`buildLiveConfig`, blocco «Appunti tuoi (dati, non istruzioni)»;
+  Gemini Live non ha un canale dati per turno: la memoria sta nella `systemInstruction` fissata alla creazione del token, vedi "Lucius sulla
+  squadra e memorie").
 - Prova finale dopo il deploy: dall'iPhone, icona sulla schermata Home, conversazione, un messaggio al capo e un'approvazione a voce.
+
+## Lucius sulla squadra e memorie
+
+- Spec: `docs/superpowers/specs/2026-11-06-botcave-lucius-squadra-design.md` (con «Differenze dal codice» in fondo). Nella scheda squadra
+  Lucius, l'architetto, discute con l'utente identità e istruzioni dei ruoli e le propone come schede; Alfred e Lucius hanno una memoria
+  per utente. Migrazione: `docs/migrations/2026-11-lucius-squadra.sql` (additiva e idempotente, niente `-post`): tabelle
+  `team_chat_conversations`, `team_chat_messages`, `team_chat_proposals`, `character_notes`, `character_history`, colonna
+  `plan_conversations.summarized_at`. Da applicare su Neon PRIMA del merge e da segnalare nella PR; riportata in `docs/schema-casello.sql`.
+- **Identità e istruzioni**: l'identità è il campo `roles[].task` (≤ 8 000, stesso campo: cambia l'etichetta «Identità» in console e la
+  riga «Identità del ruolo:» / «Identità del capo:» nei prompt di compiti e turni). Le istruzioni sono una skill specializzata
+  `ruolo-<key>` (`instructionsSkillCode`), tipo `casello`, ≤ 20 000, che il ruolo include in `localSkills`. File (`instructions-file.ts`):
+  frontmatter `---` con `name` = key del ruolo e `description` non vuota, poi lo scheletro `INSTRUCTIONS_TEMPLATE` (identità, responsabilità,
+  cosa ricevi/consegni, come lavori, strumenti, limiti, criteri); mancante o nome diverso → messaggio fisso.
+- **Chat di squadra** (`team_chat_conversations` con `turn_status`, `cost_usd`, `summarized_at`; `team_chat_messages`;
+  `team_chat_proposals`): conversazioni dell'utente legate a una squadra e a un modello dei suoi account. Il turno gira in background
+  (`run-turn.ts`) e riusa `runPlanTurn` della chat del piano con `TEAM_CHAT_TOOLS`; la UI fa polling. Limiti: 6 giri, 40 000 token,
+  120 s; messaggio ≤ 8 000; contesto ~30 000 token (cronologia ridotta); 10 messaggi/min per utente (`consumeTeamChatMessage`, 429); al
+  massimo 10 schede per turno; motivazione ≤ 1 000. Squadra chiusa → 409 «squadra chiusa». Modello mancante o non usabile: il turno si
+  chiude con un messaggio d'errore dell'assistente (non un 409 alla route). Nel contesto: squadra, ruoli, identità, strumenti (nomi e
+  livelli, mai indirizzi delle app), skill con contenuto, PLAN e memoria di Lucius, tutto in messaggi `user` di dati; mai segreti.
+  Strumenti: `leggi_squadra`, `leggi_skill`, `leggi_strumento` (solo strumenti dei ruoli della squadra; schema con i parametri
+  `x-sensitive` oscurati in profondità da `maskSchema`, definizione ridotta a metodo/path/posizioni o `mcpName`), `proponi_identita`,
+  `proponi_istruzioni` e i quattro di memoria.
+- **Schede e accettazione** (`decide.ts`): scheda `role_identity` | `role_instructions`, stato `pending|accepted|rejected|stale`, con lo hash
+  SHA-256 del valore su cui è nata (`target_hash`; vuoto se il valore manca). `POST /api/team-chat-proposals/:id/decision`
+  `{decision: accept|reject}`: accettare applica la proposta con `saveInstance` (stesse regole del `PUT`: validazione fuori dalla
+  transazione, poi squadra bloccata); lo stato cambiato dopo la proposta (hash diverso o ruolo sparito) → scheda `stale` e 409 «la squadra è
+  cambiata: chiedi a Lucius una proposta aggiornata». `saveInstance` accetta un parametro `guard(tx, locked)`: dentro il lock si ricontrolla
+  l'impronta di tutto lo stato sostituito (nome, titolo, ruoli, skill specializzate) e si marca la scheda `accepted` nella stessa
+  transazione; se la squadra è cambiata tra lettura e lock si rilegge e si riprova (fino a 3 volte, poi la scheda resta `pending` col
+  409), così accettazioni concorrenti o un salvataggio dell'editor non si annullano. Errori di regola (troppe skill nel ruolo, frontmatter)
+  passano col loro stato e la scheda resta `pending`; già decisa → 409. Console: se l'editor dei ruoli ha modifiche non salvate, prima di
+  accettare compare un dialogo che avverte che andrebbero perse (`hasUnsavedChanges`).
+- **Scarichi**: `GET /api/team-instances/:id/roles/:key/instructions.md` (`attachment`, `nosniff`; 404 se il ruolo non ha istruzioni) e
+  `GET …/roles-export.zip` (un `<key>.md` per ruolo che le ha, `lib/zip-writer.ts`; 404 se nessuno). Con un token personale valgono
+  gli ambiti per metodo.
+- **Route** (`routes/team-chat.ts`): `GET|POST /api/team-instances/:id/team-chat-conversations`, `GET|DELETE
+  /api/team-chat-conversations/:id`, `POST …/messages` (202), `POST /api/team-chat-proposals/:id/decision`; dati dell'utente (altrui →
+  404). Console: pannello «Lucius» nella scheda squadra (`lucius-panel.tsx`, schede con `role-instructions-card.tsx`, anteprima del
+  Markdown senza frontmatter), nell'editor dei ruoli il campo «Identità» (l'anteprima delle istruzioni è nelle schede del pannello Lucius).
+- **Memorie** (`lib/memory/`, tabelle `character_notes` e `character_history`, personaggio `alfred` | `lucius`, per utente: ogni utente
+  e ogni personaggio vede solo i propri dati). **Appunti**: ≤ 300 caratteri, ≤ 50 per personaggio e utente («memoria piena: unisci o
+  togli un appunto»); vuoti o troppo lunghi rifiutati. Controllo credenziali (`looksLikeCredential`, vale sia per `ricorda` sia per la
+  console): blocco PEM, prefissi noti (`sk-`, `ghp_`, `cas_`, `cao_`, `car_`, `AIza`…) o parola ≥ 32 caratteri di `[A-Za-z0-9+/=_-]` con
+  lettere e cifre, esclusi gli UUID → «non salvo credenziali in memoria». **Storico** (`character_history`, tipi `plan_conversation`,
+  `team_chat`, `alfred_session`): titolo ≤ 120, riassunto ≤ 1 500, ≤ 500 voci per personaggio e utente (si tolgono le più vecchie);
+  una voce per conversazione (aggiornamento al posto di doppione). Nel contesto entrano solo gli appunti e i titoli delle ultime 3
+  voci (`memoryContextBlock`); il resto lo cerca il modello con `cerca_nello_storico` (≤ 5 risultati). Strumenti `ricorda`,
+  `aggiorna_appunto`, `dimentica`, `cerca_nello_storico` (`MEMORY_TOOLS`, usati anche dalla chat del piano per Lucius e da Alfred).
+  **Riassunti** (`summaries.ts`): modello predefinito dell'utente (senza, o non più suo: saltato), 30 s, 1 000 token, trascrizione ≤ 20 000
+  caratteri; la conversazione (messaggi non in errore) va riassunta quando ferma da 30 minuti con turno `idle`: controllo ogni 10 minuti
+  (`startMemorySweeper`, senza sovrapposizioni, 20 per giro), `summarized_at` si scrive sempre così non si ritenta finché non cambia.
+  Nei log solo id e conteggi, mai contenuti. **Costi**: token e costo di ogni riassunto si cumulano sulla voce (costo null se manca il
+  prezzo) e contano nella spesa di utente, modello e account (`lib/budget.ts`), come le chat di squadra.
+- **Alfred**: appunti e titoli recenti entrano nella `systemInstruction` del token, etichettati come dati (`alfredInstructions(userName, memory)`);
+  strumenti di memoria su `POST /api/alfred/sessions/:id/tools/:name`. La trascrizione (browser → `{transcript}` di `POST …/close`) serve
+  solo al riassunto, parte alla chiusura volontaria, è troncata a 20 000 e non si salva mai.
+- **Memorie in console** (`routes/memories.ts`, solo dati dell'utente; `character` obbligatorio): `GET|POST /api/memories/notes`, `PATCH|DELETE
+  /api/memories/notes/:id`, `GET /api/memories/history`, `DELETE /api/memories/history/:id`. Account → «Memorie» (`memories-section.tsx`:
+  schede Alfred e Lucius, appunti da aggiungere/modificare/eliminare, storico con riassunti da eliminare).
+  Le scritture (POST/PATCH/DELETE di appunti, DELETE dello storico) sono solo con il login (`sessionOnly`: con un token personale 403);
+  le GET valgono anche con `api:read`.
+- **Storico eliminato e costi**: eliminare una voce dello storico (o la potatura oltre 500) è logico: `character_history.deleted_at`,
+  titolo e riassunto svuotati, la riga resta e il suo costo continua a contare nella spesa; elenchi, ricerca, titoli recenti e contesto
+  la escludono; un riassunto nuovo sullo stesso riferimento la riattiva (costi cumulati). Il riassunto rifatto di una conversazione
+  riporta la voce al mese corrente (`created_at` aggiornato) con il costo cumulato. Prima di riassumere si controlla il tetto di spesa
+  dell'utente (raggiunto: saltato, `summarized_at` scritto comunque). In titolo e riassunto le parole che sembrano credenziali diventano
+  `***`; appunti e titoli nel contesto stanno su una riga sola. Niente recupero delle vecchie conversazioni del piano: la migrazione
+  imposta `summarized_at = updated_at` su quelle esistenti. Rinominare la `key` di un ruolo lascia la skill specializzata
+  `ruolo-<vecchia key>` tra le skill dell'istanza. La trascrizione di Alfred tenuta dal browser si tronca agli ultimi 40 000 caratteri.
 
 ## Esecutore locale
 

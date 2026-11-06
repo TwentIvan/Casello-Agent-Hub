@@ -210,6 +210,8 @@ describe("turni del capo", () => {
     const [first, second] = leadRequests();
     expect(first!.messages[0]!.content).toContain("Coordina il lavoro sul WI.");
     expect(first!.messages[0]!.content).toContain("assegna_compito");
+    expect(first!.messages[0]!.content).toContain("Identità del capo:");
+    expect(first!.messages[0]!.content).not.toContain("Istruzioni del capo:");
     expect(first!.messages[1]).toMatchObject({ role: "user" });
     expect(first!.messages[1]!.content).toContain("PLAN corrente (JSON)");
     expect(first!.messages[2]!.content).toContain("attivata");

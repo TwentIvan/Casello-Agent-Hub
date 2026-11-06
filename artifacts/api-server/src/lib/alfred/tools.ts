@@ -4,6 +4,7 @@ import { CentralinoError, messageToLead, pendingQueue, readBulletin, teamDetail,
 import { confirmDecision, prepareDecision, ConfirmationError } from "./confirmations";
 import { requireActiveSession } from "./sessions";
 import { AlfredError } from "./gemini";
+import { MEMORY_TOOL_NAMES, runMemoryTool } from "../memory/tools";
 
 // Strumenti di Alfred (spec §4): il browser inoltra le chiamate di Gemini Live; qui si validano gli argomenti
 // e si riusa il centralino. Esiti `{ok, result}` / `{ok:false, error}` con messaggi fissi in italiano.
@@ -49,6 +50,8 @@ export function isAlfredTool(name: string): name is keyof typeof SCHEMAS {
   return Object.hasOwn(SCHEMAS, name);
 }
 
+const isMemoryTool = (name: string): boolean => (MEMORY_TOOL_NAMES as readonly string[]).includes(name);
+
 /** Dettaglio per la voce: obiettivo, stato del piano, pochi compiti ed eventi, nessun id interno oltre a quello della squadra. */
 async function voiceDetail(userId: number, id: number) {
   const d = await teamDetail(userId, id);
@@ -88,6 +91,15 @@ async function voiceQueue(userId: number) {
 
 /** Esegue uno strumento per una sessione attiva dell'utente (altrimenti AlfredError 404). */
 export async function runAlfredTool(userId: number, sessionId: number, name: string, args: unknown): Promise<AlfredToolOutcome> {
+  if (isMemoryTool(name)) {
+    await requireActiveSession(userId, sessionId);
+    // Gli argomenti li valida lo strumento di memoria; un errore imprevisto non deve far cadere la conversazione
+    try {
+      return await runMemoryTool(userId, "alfred", name, args ?? {});
+    } catch {
+      return { ok: false, error: "errore interno dello strumento" };
+    }
+  }
   if (!isAlfredTool(name)) throw new AlfredError(ALFRED_TOOL_MESSAGES.unknownTool, 404);
   await requireActiveSession(userId, sessionId);
   const parsed = SCHEMAS[name].safeParse(args ?? {});

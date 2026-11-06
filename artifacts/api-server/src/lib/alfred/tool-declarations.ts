@@ -1,5 +1,5 @@
 /**
- * Dichiarazioni Gemini dei sette strumenti di Alfred (spec §4). Tipi dello schema di Gemini
+ * Dichiarazioni Gemini dei sette strumenti del centralino e dei quattro di memoria di Alfred (spec §4). Tipi dello schema di Gemini
  * (`OBJECT`, `INTEGER`, `STRING`); finiscono nel token temporaneo, il browser non può cambiarle.
  */
 export const ALFRED_TOOL_DECLARATIONS: Record<string, unknown>[] = [
@@ -58,6 +58,46 @@ export const ALFRED_TOOL_DECLARATIONS: Record<string, unknown>[] = [
       type: "OBJECT",
       properties: { codice: { type: "STRING", description: "Codice restituito da prepara_decisione" } },
       required: ["codice"],
+    },
+  },
+  {
+    name: "ricorda",
+    description:
+      "Salva un appunto sull'utente per le conversazioni future: solo un fatto o una preferenza stabile, breve (al massimo 300 caratteri). Mai credenziali, chiavi, password o token.",
+    parameters: {
+      type: "OBJECT",
+      properties: { testo: { type: "STRING", description: "L'appunto, breve e stabile" } },
+      required: ["testo"],
+    },
+  },
+  {
+    name: "aggiorna_appunto",
+    description: "Sostituisce il testo di un appunto esistente (stesse regole di ricorda).",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        id: { type: "INTEGER", description: "Id dell'appunto" },
+        testo: { type: "STRING", description: "Il nuovo testo" },
+      },
+      required: ["id", "testo"],
+    },
+  },
+  {
+    name: "dimentica",
+    description: "Elimina un appunto che non vale più.",
+    parameters: {
+      type: "OBJECT",
+      properties: { id: { type: "INTEGER", description: "Id dell'appunto" } },
+      required: ["id"],
+    },
+  },
+  {
+    name: "cerca_nello_storico",
+    description: "Cerca nei riassunti delle conversazioni passate con l'utente. Usalo solo quando serve ritrovare qualcosa; al massimo 5 risultati.",
+    parameters: {
+      type: "OBJECT",
+      properties: { testo: { type: "STRING", description: "Parole da cercare" } },
+      required: ["testo"],
     },
   },
 ];

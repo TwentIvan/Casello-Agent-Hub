@@ -25,6 +25,9 @@ export interface AlfredLine {
 const GEMINI_WS =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained";
 const MAX_LINES = 50;
+const MAX_TRANSCRIPT = 20000;
+// Tetto della trascrizione tenuta in memoria: si tengono le ultime battute
+const TRANSCRIPT_KEEP = 40000;
 const USAGE_EVERY_MS = 10_000;
 const MAX_RECONNECTS = 4;
 const AUDIO_ERROR =
@@ -118,10 +121,13 @@ export function useAlfredVoice() {
     awaitingHeard: false,
     heard: false,
     usageTimer: null as ReturnType<typeof setTimeout> | null,
+    // Trascrizione intera della conversazione (le sole battute mostrate sono 50): va a «chiudi» solo con «Basta così»
+    transcript: "",
   });
 
   const pushLines = useCallback((entries: Omit<AlfredLine, "id">[]) => {
     if (entries.length === 0) return;
+    r.current.transcript = (r.current.transcript + entries.map((e) => `${e.role === "user" ? "Tu" : "Alfred"}: ${e.text}\n`).join("")).slice(-TRANSCRIPT_KEEP);
     setLines((prev) => [...prev, ...entries.map((e) => ({ ...e, id: ++r.current.lineId }))].slice(-MAX_LINES));
   }, []);
 
@@ -437,6 +443,7 @@ export function useAlfredVoice() {
     if (s.active) return;
     setError(null);
     setLines([]);
+    s.transcript = "";
     setStatus("connecting");
     s.active = true;
     const gen = ++s.gen;
@@ -549,7 +556,9 @@ export function useAlfredVoice() {
     if (pending && pending.id === id) await pending.p;
     if (totals.promptTokens > 0 || totals.completionTokens > 0)
       await api.current.recordUsage.mutateAsync({ id, data: totals }).catch(() => undefined);
-    await api.current.closeSession.mutateAsync({ id }).catch(() => undefined);
+    // Gli ultimi 20 000 caratteri servono solo a scrivere il riassunto in memoria: il server non le salva
+    const transcript = s.transcript.trim().slice(-MAX_TRANSCRIPT);
+    await api.current.closeSession.mutateAsync({ id, data: transcript ? { transcript } : undefined }).catch(() => undefined);
   }, [flushTurn, teardown]);
 
   // iOS: in background l'audio si sospende e le connessioni cadono; al ritorno in primo piano si riparte

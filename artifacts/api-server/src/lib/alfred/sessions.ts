@@ -8,6 +8,8 @@ import { logger } from "../logger";
 import { ALFRED_VOICES, DEFAULT_ALFRED_VOICE, bareModelName } from "./config";
 import { AlfredError, createEphemeralToken } from "./gemini";
 import { buildLiveConfig } from "./instructions";
+import { memoryContextBlock } from "../memory/context";
+import { summarizeConversation, TRANSCRIPT_MAX_CHARS } from "../memory/summaries";
 
 // Sessioni di Alfred (spec §3): riga di sessione, token temporaneo di Gemini Live, consumi e pulizia.
 
@@ -59,8 +61,10 @@ async function prepare(userId: number, sessionModelId?: number | null): Promise<
   return { resolved, voice, userName: user.name };
 }
 
-async function issueToken(resolved: ResolvedModel, voice: string, userName: string | null, resumptionHandle?: string) {
-  return createEphemeralToken(resolved, buildLiveConfig({ voice, userName, resumptionHandle }));
+async function issueToken(userId: number, resolved: ResolvedModel, voice: string, userName: string | null, resumptionHandle?: string) {
+  // Appunti e titoli di Alfred entrano nelle istruzioni, che restano bloccate nel token
+  const memory = await memoryContextBlock(userId, "alfred");
+  return createEphemeralToken(resolved, buildLiveConfig({ voice, userName, memory, resumptionHandle }));
 }
 
 /**
@@ -69,7 +73,7 @@ async function issueToken(resolved: ResolvedModel, voice: string, userName: stri
  */
 export async function startSession(userId: number): Promise<AlfredSessionStart> {
   const { resolved, voice, userName } = await prepare(userId);
-  const { token, expiresAt } = await issueToken(resolved, voice, userName);
+  const { token, expiresAt } = await issueToken(userId, resolved, voice, userName);
   const sessionId = await db.transaction(async (tx) => {
     // Blocca la riga dell'utente: due avvii concorrenti si serializzano e resta una sola sessione attiva
     await tx.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, userId)).for("update");
@@ -100,7 +104,7 @@ export async function requireActiveSession(userId: number, id: number): Promise<
 export async function renewSession(userId: number, id: number, resumptionHandle?: string): Promise<AlfredSessionStart> {
   const session = await requireActiveSession(userId, id);
   const { resolved, voice, userName } = await prepare(userId, session.aiModelId);
-  const { token, expiresAt } = await issueToken(resolved, voice, userName, resumptionHandle);
+  const { token, expiresAt } = await issueToken(userId, resolved, voice, userName, resumptionHandle);
   return { sessionId: id, token, model: bareModelName(resolved.modelId), voice, expiresAt };
 }
 
@@ -143,14 +147,42 @@ export async function recordUsage(userId: number, id: number, usage: { promptTok
     );
 }
 
-/** Chiude la sessione (idempotente per una propria già chiusa); altrui o inesistente → 404. */
-export async function closeSession(userId: number, id: number): Promise<void> {
+const romeFormat = new Intl.DateTimeFormat("it-IT", {
+  timeZone: "Europe/Rome",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+/** «Conversazione del dd/mm/yyyy HH:mm», ora italiana. */
+export function sessionTitle(at: Date): string {
+  const p = Object.fromEntries(romeFormat.formatToParts(at).map((x) => [x.type, x.value]));
+  return `Conversazione del ${p["day"]}/${p["month"]}/${p["year"]} ${p["hour"]}:${p["minute"]}`;
+}
+
+/**
+ * Chiude la sessione (idempotente per una propria già chiusa); altrui o inesistente → 404. Con una trascrizione non
+ * vuota, alla prima chiusura parte in background il riassunto per lo storico; la trascrizione non si salva né si registra.
+ */
+export async function closeSession(userId: number, id: number, transcript?: string): Promise<void> {
   const closed = await db
     .update(alfredSessionsTable)
     .set({ status: "closed", closedAt: new Date() })
     .where(and(eq(alfredSessionsTable.id, id), eq(alfredSessionsTable.userId, userId), eq(alfredSessionsTable.status, "active")))
     .returning({ id: alfredSessionsTable.id });
-  if (closed.length > 0) return;
+  if (closed.length > 0) {
+    const text = transcript?.trim();
+    if (text) {
+      const input = { userId, character: "alfred" as const, kind: "alfred_session" as const, refId: id, title: sessionTitle(new Date()), transcript: text.slice(-TRANSCRIPT_MAX_CHARS) };
+      void summarizeConversation(input).catch((err: unknown) =>
+        logger.error({ errName: err instanceof Error ? err.name : "Error", sessionId: id }, "Riassunto della sessione di Alfred non riuscito"),
+      );
+    }
+    return;
+  }
   const [own] = await db
     .select({ id: alfredSessionsTable.id })
     .from(alfredSessionsTable)

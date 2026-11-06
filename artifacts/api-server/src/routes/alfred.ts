@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import {
+  CloseAlfredSessionBody,
   CloseAlfredSessionParams,
   GetAlfredSettingsResponse,
   RecordAlfredUsageBody,
@@ -110,8 +111,10 @@ export function createAlfredRouter(): IRouter {
 
   router.post("/alfred/sessions/:id/close", sessionOnly, async (req, res) => {
     const { id } = parseRequest(CloseAlfredSessionParams, req.params);
+    // Corpo facoltativo; la trascrizione non si registra mai nei log
+    const { transcript } = parseRequest(CloseAlfredSessionBody, req.body ?? {});
     try {
-      await closeSession(currentUserId(req), id);
+      await closeSession(currentUserId(req), id, transcript);
       res.status(204).end();
     } catch (err) {
       if (!replyAlfredError(res, err)) throw err;

@@ -36,6 +36,7 @@ export * from './aiProviderInfo';
 export * from './aiProviderProtocol';
 export * from './aiProviderStatus';
 export * from './alfredChoice';
+export * from './alfredCloseBody';
 export * from './alfredRenewBody';
 export * from './alfredSession';
 export * from './alfredSettings';

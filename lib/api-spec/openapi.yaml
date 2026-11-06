@@ -765,11 +765,22 @@ paths:
       operationId: closeAlfredSession
       tags: [alfred]
       summary: Chiude una sessione di Alfred
+      description: >-
+        Con `transcript` (facoltativo, al massimo 20 000 caratteri) Botcave ne ricava, in background, un
+        riassunto per lo storico di Alfred; la trascrizione non si salva mai. Oltre il limite: 400.
       parameters:
         - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlfredCloseBody"
       responses:
         "204":
           description: Sessione chiusa
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -4183,6 +4194,13 @@ components:
           type: string
         expiresAt:
           type: string
+
+    AlfredCloseBody:
+      type: object
+      properties:
+        transcript:
+          type: string
+          maxLength: 20000
 
     AlfredRenewBody:
       type: object

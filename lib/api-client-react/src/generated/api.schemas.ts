@@ -230,6 +230,11 @@ export interface AlfredSession {
   expiresAt: string;
 }
 
+export interface AlfredCloseBody {
+  /** @maxLength 20000 */
+  transcript?: string;
+}
+
 export interface AlfredRenewBody {
   /**
      * @minLength 1

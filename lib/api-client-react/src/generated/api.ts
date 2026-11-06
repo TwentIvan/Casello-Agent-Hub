@@ -37,6 +37,7 @@ import type {
   AiProvider,
   AiProviderInfo,
   AlfredChoice,
+  AlfredCloseBody,
   AlfredRenewBody,
   AlfredSession,
   AlfredSettings,
@@ -2423,25 +2424,27 @@ export const getCloseAlfredSessionUrl = (id: number,) => {
 }
 
 /**
+ * Con `transcript` (facoltativo, al massimo 20 000 caratteri) Botcave ne ricava, in background, un riassunto per lo storico di Alfred; la trascrizione non si salva mai. Oltre il limite: 400.
  * @summary Chiude una sessione di Alfred
  */
-export const closeAlfredSession = async (id: number, options?: RequestInit): Promise<void> => {
+export const closeAlfredSession = async (id: number,
+    alfredCloseBody?: AlfredCloseBody, options?: RequestInit): Promise<void> => {
 
   return customFetch<void>(getCloseAlfredSessionUrl(id),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(alfredCloseBody)
   }
 );}
 
 
 
 
-export const getCloseAlfredSessionMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeAlfredSession>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof closeAlfredSession>>, TError,{id: number}, TContext> => {
+export const getCloseAlfredSessionMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeAlfredSession>>, TError,{id: number;data?: BodyType<AlfredCloseBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof closeAlfredSession>>, TError,{id: number;data?: BodyType<AlfredCloseBody>}, TContext> => {
 
 const mutationKey = ['closeAlfredSession'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -2453,10 +2456,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof closeAlfredSession>>, {id: number}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof closeAlfredSession>>, {id: number;data?: BodyType<AlfredCloseBody>}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  closeAlfredSession(id,requestOptions)
+          return  closeAlfredSession(id,data,requestOptions)
         }
 
 
@@ -2467,18 +2470,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type CloseAlfredSessionMutationResult = NonNullable<Awaited<ReturnType<typeof closeAlfredSession>>>
-
-    export type CloseAlfredSessionMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+    export type CloseAlfredSessionMutationBody = BodyType<AlfredCloseBody> | undefined
+    export type CloseAlfredSessionMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
 
     /**
  * @summary Chiude una sessione di Alfred
  */
-export const useCloseAlfredSession = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeAlfredSession>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useCloseAlfredSession = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeAlfredSession>>, TError,{id: number;data?: BodyType<AlfredCloseBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof closeAlfredSession>>,
         TError,
-        {id: number},
+        {id: number;data?: BodyType<AlfredCloseBody>},
         TContext
       > => {
       return useMutation(getCloseAlfredSessionMutationOptions(options));

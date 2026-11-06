@@ -564,10 +564,19 @@ export const RecordAlfredUsageResponse = zod.void()
 
 
 /**
+ * Con `transcript` (facoltativo, al massimo 20 000 caratteri) Botcave ne ricava, in background, un riassunto per lo storico di Alfred; la trascrizione non si salva mai. Oltre il limite: 400.
  * @summary Chiude una sessione di Alfred
  */
 export const CloseAlfredSessionParams = zod.object({
   "id": zod.coerce.number()
+})
+
+export const closeAlfredSessionBodyTranscriptMax = 20000;
+
+
+
+export const CloseAlfredSessionBody = zod.object({
+  "transcript": zod.string().max(closeAlfredSessionBodyTranscriptMax).optional()
 })
 
 export const CloseAlfredSessionResponse = zod.void()

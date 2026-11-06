@@ -12,7 +12,7 @@ import {
   useUnlinkGithub,
 } from "@workspace/api-client-react";
 import { AiAccountsSection } from "@/components/account/ai-accounts-section";
-import { AlfredSection } from "@/components/account/alfred-section";
+import { CharactersSection } from "@/components/account/characters-section";
 import { CentralinoModelCard } from "@/components/account/centralino-model-card";
 import { DefaultModelCard } from "@/components/account/default-model-card";
 import { ApiTokensSection } from "@/components/account/api-tokens-section";
@@ -223,7 +223,7 @@ export default function AccountPage() {
           <AiAccountsSection />
           <DefaultModelCard />
           <CentralinoModelCard />
-          <AlfredSection />
+          <CharactersSection />
           <MemoriesSection />
           <UserBudgetCard />
           <ApiTokensSection />

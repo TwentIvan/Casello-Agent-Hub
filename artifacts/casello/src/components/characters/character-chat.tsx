@@ -17,6 +17,7 @@ import { MAX_CHARS, targetKey, useCharacterAdapter, type ChatTarget, type Propos
 import { handoffTarget, pageFromPath, useHandoff } from "./handoff-context";
 import { ChatMessages } from "./chat-messages";
 import { ChatToolbar } from "./chat-toolbar";
+import { NewConversationDialog } from "./new-conversation-dialog";
 
 interface CharacterChatProps {
   target: ChatTarget;
@@ -63,6 +64,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   const [confirmAccept, setConfirmAccept] = useState<ProposalLike | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmRestart, setConfirmRestart] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const modelFieldId = useId();
 
@@ -214,11 +216,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
           canCreate={!adapter.closedReason}
           canDelete={!!adapter.remove && !!data && !adapter.closedReason}
           canRestart={!!adapter.restart}
-          onCreate={() =>
-            void run("create", "Conversazione non creata", async () => {
-              setSelectedId(await adapter.create(null));
-            })
-          }
+          onCreate={() => setNewOpen(true)}
           onDelete={() => setConfirmDelete(true)}
           onRestart={() => setConfirmRestart(true)}
         />
@@ -318,6 +316,19 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
         )}
       </div>
 
+      <NewConversationDialog
+        open={newOpen}
+        onOpenChange={setNewOpen}
+        character={adapter.character}
+        pending={busy === "create"}
+        onCreate={(modelId) =>
+          void run("create", "Conversazione non creata", async () => {
+            setSelectedId(await adapter.create(modelId));
+            setNewOpen(false);
+          })
+        }
+      />
+
       <ConfirmDialog
         open={confirmAccept !== null}
         onOpenChange={(open) => !open && setConfirmAccept(null)}
@@ -346,7 +357,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
             await remove(data.id);
             setConfirmDelete(false);
             setSelectedId(null);
-            toast({ title: "Conversazione eliminata" });
+            toast({ title: "Conversazione eliminata", description: adapter.deleteNote });
           });
         }}
       />

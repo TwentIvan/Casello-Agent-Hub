@@ -116,6 +116,20 @@ describe("token embed su /api", () => {
     expect((await call("GET", "/api/account/alfred", t)).status).toBe(403);
   });
 
+  it("impostazioni dei personaggi: lettura ammessa (dialogo «Nuova» del pannello), modifica solo con il login", async () => {
+    const t = await embedToken();
+    const get = await call("GET", "/api/account/characters", t);
+    expect(get.status).toBe(200);
+    expect(await get.json()).toMatchObject({ alfredChatAiModelId: null, luciusAiModelId: null });
+    const put = await call("PUT", "/api/account/characters", t, {
+      alfredChatAiModelId: null,
+      luciusAiModelId: null,
+      alfredMonthlyBudgetUsd: null,
+      luciusMonthlyBudgetUsd: null,
+    });
+    expect(put.status).toBe(403);
+  });
+
   it("sessioni di Alfred: ammesse (409 senza modello)", async () => {
     const t = await embedToken();
     const res = await call("POST", "/api/alfred/sessions", t, {});

@@ -2158,7 +2158,7 @@ export const getGetCharacterSettingsUrl = () => {
 }
 
 /**
- * Modello della chat e tetto mensile di Alfred, modello e tetto mensile di Lucius. Con la spesa del mese di ciascun personaggio e il numero di esecuzioni senza prezzo. Null = modello predefinito / nessun tetto. Solo con il login: con un token risponde 403.
+ * Modello della chat e tetto mensile di Alfred, modello e tetto mensile di Lucius. Con la spesa del mese di ciascun personaggio e il numero di esecuzioni senza prezzo. Null = modello predefinito / nessun tetto. Con il login o con il token del pannello incorporato; con un altro token risponde 403.
  * @summary Modelli e tetti di Alfred e Lucius nelle aree
  */
 export const getCharacterSettings = async ( options?: RequestInit): Promise<CharacterSettingsView> => {

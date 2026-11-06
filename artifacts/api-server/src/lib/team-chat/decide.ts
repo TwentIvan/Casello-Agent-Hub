@@ -83,6 +83,32 @@ export function currentValueHash(instance: HashSource, kind: TeamChatProposalKin
 /** Segnale interno: il valore è cambiato, la transazione si annulla e la scheda diventa `stale`. */
 class StaleValue extends Error {}
 
+/** Segnale interno: la squadra è cambiata tra la lettura e il lock, si rilegge e si riprova. */
+class ChangedMeanwhile extends Error {}
+
+const MAX_ACCEPT_ATTEMPTS = 3;
+
+type SkillRowLike = { code: string; name: string; kind: "casello" | "node"; content: string; toolHints: string[] };
+const toLocalSkill = (s: SkillRowLike): LocalSkillInput => ({ code: s.code, name: s.name, kind: s.kind, content: s.content, toolHints: s.toolHints });
+
+async function readState(instanceId: number, rawRoles: unknown): Promise<{ roles: InstanceRole[]; localSkills: LocalSkillInput[] }> {
+  const rows = await db.select().from(teamInstanceSkillsTable).where(eq(teamInstanceSkillsTable.instanceId, instanceId));
+  return { roles: InstanceRoleSchema.array().parse(rawRoles), localSkills: rows.map(toLocalSkill) };
+}
+
+async function readFresh(instanceId: number) {
+  const [row] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, instanceId)).limit(1);
+  if (!row) throw new InstanceError(404, INSTANCE_MESSAGES.notFound);
+  return { row, ...(await readState(instanceId, row.roles)) };
+}
+
+/** Impronta dello stato che `saveInstance` sostituisce: nome, titolo, ruoli e skill specializzate (in ordine di codice). */
+function stateKey(name: string, refTitle: string, roles: InstanceRole[], localSkills: LocalSkillInput[]): string {
+  const skills = [...localSkills].sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0)).map(toLocalSkill);
+  // I ruoli passano dallo schema zod: chiavi sempre nello stesso ordine, qualunque sia quello del jsonb
+  return JSON.stringify({ name, refTitle, roles: InstanceRoleSchema.array().parse(roles), skills: skills.map((s) => ({ ...s, toolHints: s.toolHints ?? [] })) });
+}
+
 function payloadText(p: TeamChatProposal): string {
   const payload = (p.payload && typeof p.payload === "object" ? p.payload : {}) as Record<string, unknown>;
   const value = p.kind === "role_identity" ? payload.text : payload.markdown;
@@ -153,31 +179,35 @@ export async function decideTeamChatProposal(userId: number, proposalId: number,
 
   if (decision === "reject") return toProposalView(await markDecided(db, "rejected"));
 
-  // Letture dal pool, fuori dalla transazione di scrittura (come `saveInstance`)
-  const roles = InstanceRoleSchema.array().parse(instance.roles);
-  const skillRows = await db.select().from(teamInstanceSkillsTable).where(eq(teamInstanceSkillsTable.instanceId, instanceId));
-  const localSkills: LocalSkillInput[] = skillRows.map((s) => ({ code: s.code, name: s.name, kind: s.kind, content: s.content, toolHints: s.toolHints }));
-  if (currentValueHash({ roles, localSkills }, proposal.kind, proposal.roleKey) !== proposal.targetHash) {
-    await markStale(proposalId);
-    throw new TeamChatError(409, TEAM_CHAT_MESSAGES.stale);
+  // Letture dal pool e validazione fuori dalla transazione (come `saveInstance`); dentro, con la squadra bloccata, si
+  // verifica che TUTTO lo stato salvato sia ancora quello da cui si è partiti: altrimenti si rilegge e si riprova, così
+  // un'accettazione concorrente o un salvataggio dall'editor non vengono annullati.
+  for (let attempt = 1; ; attempt++) {
+    const base = attempt === 1 ? { row: instance, ...(await readState(instanceId, instance.roles)) } : await readFresh(instanceId);
+    if (base.row.status === "closed") throw new InstanceError(409, INSTANCE_MESSAGES.closed);
+    if (currentValueHash(base, proposal.kind, proposal.roleKey) !== proposal.targetHash) {
+      await markStale(proposalId);
+      throw new TeamChatError(409, TEAM_CHAT_MESSAGES.stale);
+    }
+    const baseKey = stateKey(base.row.name, base.row.refTitle, base.roles, base.localSkills);
+    let accepted = null as TeamChatProposal | null;
+    try {
+      const next = applyProposal(proposal, base.roles, base.localSkills);
+      const input = { name: base.row.name, refTitle: base.row.refTitle, roles: next.roles, localSkills: next.localSkills };
+      await saveInstance(userId, instanceId, input, db, async (tx, locked) => {
+        const lockedSkills = await tx.select().from(teamInstanceSkillsTable).where(eq(teamInstanceSkillsTable.instanceId, instanceId));
+        const lockedRoles = InstanceRoleSchema.array().parse(locked.roles);
+        if (stateKey(locked.name, locked.refTitle, lockedRoles, lockedSkills.map(toLocalSkill)) !== baseKey) throw new ChangedMeanwhile();
+        accepted = await markDecided(tx, "accepted");
+      });
+      return toProposalView(accepted!);
+    } catch (err) {
+      if (err instanceof ChangedMeanwhile && attempt < MAX_ACCEPT_ATTEMPTS) continue;
+      // Squadra che cambia di continuo: la scheda resta `pending`, si può riprovare
+      if (err instanceof ChangedMeanwhile) throw new TeamChatError(409, TEAM_CHAT_MESSAGES.stale);
+      if (!(err instanceof StaleValue)) throw err;
+      await markStale(proposalId);
+      throw new TeamChatError(409, TEAM_CHAT_MESSAGES.stale);
+    }
   }
-
-  let accepted = null as TeamChatProposal | null;
-  try {
-    const next = applyProposal(proposal, roles, localSkills);
-    await saveInstance(userId, instanceId, { name: instance.name, refTitle: instance.refTitle, roles: next.roles, localSkills: next.localSkills }, db, async (tx, locked) => {
-      // Stesso controllo con la squadra bloccata: nel frattempo può essere cambiata
-      const lockedRoles = InstanceRoleSchema.array().parse(locked.roles);
-      const lockedSkills = await tx.select().from(teamInstanceSkillsTable).where(eq(teamInstanceSkillsTable.instanceId, instanceId));
-      if (currentValueHash({ roles: lockedRoles, localSkills: lockedSkills }, proposal.kind, proposal.roleKey) !== proposal.targetHash) {
-        throw new StaleValue();
-      }
-      accepted = await markDecided(tx, "accepted");
-    });
-  } catch (err) {
-    if (!(err instanceof StaleValue)) throw err;
-    await markStale(proposalId);
-    throw new TeamChatError(409, TEAM_CHAT_MESSAGES.stale);
-  }
-  return toProposalView(accepted!);
 }

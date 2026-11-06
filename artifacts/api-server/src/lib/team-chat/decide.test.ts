@@ -166,6 +166,36 @@ describe("decisione sulle schede della chat di squadra", () => {
     await expect(decideTeamChatProposal(userId, 9999, "accept")).rejects.toBeInstanceOf(TeamChatError);
   });
 
+  it("due accettazioni concorrenti su ruoli diversi: restano entrambe le modifiche", async () => {
+    const a = await propose("role_identity", "dev", { text: "Identità dev" });
+    const b = await propose("role_instructions", "capo", { markdown: MD("capo") });
+    const c = await propose("role_identity", "capo", { text: "Identità capo" });
+    const views = await Promise.all([a, b, c].map((id) => decideTeamChatProposal(userId, id, "accept")));
+    expect(views.map((v) => v.status)).toEqual(["accepted", "accepted", "accepted"]);
+    const instance = await getInstance(instanceId);
+    expect(instance.roles.find((r) => r.key === "dev")!.task).toBe("Identità dev");
+    expect(instance.roles.find((r) => r.key === "capo")!.task).toBe("Identità capo");
+    expect(instance.localSkills.map((s) => s.code)).toEqual(["ruolo-capo"]);
+    expect(instance.roles.find((r) => r.key === "capo")!.skills.map((s) => s.code)).toEqual(["ruolo-capo"]);
+  });
+
+  it("un'accettazione in corsa con un salvataggio dall'editor non annulla la modifica dell'editor", async () => {
+    const id = await propose("role_identity", "dev", { text: "Identità dev" });
+    const current = await getInstance(instanceId);
+    const editor = saveInstance(userId, instanceId, {
+      name: "Squadra rinominata",
+      roles: [role({ task: "Coordina meglio" }), role({ key: "dev", name: "Sviluppatore", task: "Sviluppa", isLead: false })],
+      localSkills: [],
+    });
+    const [, view] = await Promise.all([editor, decideTeamChatProposal(userId, id, "accept")]);
+    expect(view.status).toBe("accepted");
+    const instance = await getInstance(instanceId);
+    expect(current.name).toBe("Squadra");
+    expect(instance.name).toBe("Squadra rinominata");
+    expect(instance.roles.find((r) => r.key === "capo")!.task).toBe("Coordina meglio");
+    expect(instance.roles.find((r) => r.key === "dev")!.task).toBe("Identità dev");
+  });
+
   it("istruzioni con un frontmatter non valido non si accettano", async () => {
     const id = await propose("role_instructions", "dev", { markdown: MD("tester") });
     await expect(decideTeamChatProposal(userId, id, "accept")).rejects.toMatchObject({ status: 400, message: "il nome nel frontmatter deve essere dev" });

@@ -81,9 +81,22 @@ export function maskSchema(schema: unknown): unknown {
     return typeof schema["type"] === "string" ? { type: schema["type"], "x-sensitive": true } : { "x-sensitive": true };
   }
   const out: Record<string, unknown> = { ...schema };
-  const props = schema["properties"];
-  if (isPlainObject(props)) out["properties"] = Object.fromEntries(Object.entries(props).map(([k, v]) => [k, maskSchema(v)]));
-  if (isPlainObject(schema["items"])) out["items"] = maskSchema(schema["items"]);
+  const mapValues = (v: Record<string, unknown>) => Object.fromEntries(Object.entries(v).map(([k, s]) => [k, maskSchema(s)]));
+  // Mappe nome → schema
+  for (const key of ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"]) {
+    const v = schema[key];
+    if (isPlainObject(v)) out[key] = mapValues(v);
+  }
+  // Liste di schemi (anche `items` in forma di tupla)
+  for (const key of ["anyOf", "oneOf", "allOf", "prefixItems", "items"]) {
+    const v = schema[key];
+    if (Array.isArray(v)) out[key] = v.map(maskSchema);
+  }
+  // Schemi singoli
+  for (const key of ["items", "additionalProperties", "additionalItems", "unevaluatedProperties", "unevaluatedItems", "contains", "propertyNames", "not", "if", "then", "else"]) {
+    const v = schema[key];
+    if (isPlainObject(v)) out[key] = maskSchema(v);
+  }
   return out;
 }
 

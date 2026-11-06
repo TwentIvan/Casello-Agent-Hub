@@ -51,7 +51,17 @@ beforeEach(async () => {
       definition: { method: "POST", path: "/ordini", paramLocations: { pin: "body", nota: "body" } },
       paramsSchema: {
         type: "object",
-        properties: { pin: { type: "string", "x-sensitive": true, default: "PIN-SEGRETO", description: "pin 1234" }, nota: { type: "string" } },
+        properties: {
+          pin: { type: "string", "x-sensitive": true, default: "PIN-SEGRETO", description: "pin 1234" },
+          nota: { type: "string" },
+          scelta: { anyOf: [{ type: "object", properties: { token: { type: "string", "x-sensitive": true, default: "TOK-ANYOF", examples: ["TOK-ESEMPIO"] } } }, { type: "null" }] },
+          tutti: { allOf: [{ type: "object", properties: { chiave: { type: "string", "x-sensitive": true, default: "CHIAVE-ALLOF" } } }] },
+          uno: { oneOf: [{ type: "string", "x-sensitive": true, examples: ["ONEOF-SEGRETO"] }] },
+          mappa: { type: "object", additionalProperties: { type: "string", "x-sensitive": true, default: "ADDPROP-SEGRETO" } },
+          rif: { $ref: "#/$defs/cred" },
+        },
+        $defs: { cred: { type: "string", "x-sensitive": true, default: "DEFS-SEGRETO" } },
+        definitions: { vecchia: { type: "string", "x-sensitive": true, default: "DEFINITIONS-SEGRETO" } },
       },
     })
     .returning();
@@ -96,6 +106,10 @@ describe("strumenti di Lucius sulla squadra", () => {
     expect(out).toContain("nota");
     expect(out).not.toContain("PIN-SEGRETO");
     expect(out).not.toContain("1234");
+    for (const secret of ["TOK-ANYOF", "TOK-ESEMPIO", "CHIAVE-ALLOF", "ONEOF-SEGRETO", "ADDPROP-SEGRETO", "DEFS-SEGRETO", "DEFINITIONS-SEGRETO"]) {
+      expect(out).not.toContain(secret);
+    }
+    expect(out).toContain("scelta");
     expect(out).not.toContain("segreto.example");
     expect(JSON.parse(await r.run(call("leggi_strumento", { id: foreignToolId })))).toEqual({ ok: false, error: "strumento non presente nella squadra" });
   });

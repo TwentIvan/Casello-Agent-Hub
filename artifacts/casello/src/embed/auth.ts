@@ -1,14 +1,16 @@
 // Collegamento della pagina /embed a Botcave: OAuth 2.1 con popup e PKCE, ambito `embed`.
-// I token stanno solo nel localStorage dell'iframe (spazio separato per sito ospite); se lo storage non è
-// disponibile restano in memoria per la sessione. Mai token, codici o verifier nei log.
+// I token stanno solo nel localStorage dell'iframe, sotto una chiave per client OAuth (`botcave-embed-tokens:<clientId>`,
+// un client per origine ospite): sugli host dello stesso sito di Botcave lo storage dell'iframe non è partizionato, e
+// due app ospiti non devono vedere i token l'una dell'altra. Se lo storage non è disponibile restano in memoria per
+// la sessione. Mai token, codici o verifier nei log.
 // Le dipendenze del browser (fetch, window.open, storage, origine, orologio) sono iniettabili per i test in node.
 
 export type EmbedTokens = {
   access: string;
   refresh: string;
   expiresAt: number;
-  /** client OAuth che ha emesso i token: serve al rinnovo. */
-  clientId?: string;
+  /** client OAuth che ha emesso i token: serve al rinnovo e alla chiave dello storage. */
+  clientId: string;
 };
 
 export type StorageLike = {
@@ -34,11 +36,22 @@ type AuthDeps = {
   locks: () => LocksLike | null;
 };
 
-const TOKENS_KEY = "botcave-embed-tokens";
 const PENDING_KEY = "botcave-embed-connect";
 /** Rinnovo quando mancano meno di 60 s alla scadenza. */
 const REFRESH_MARGIN_MS = 60_000;
-const REFRESH_LOCK = "botcave-embed-refresh";
+
+const tokensKey = (clientId: string) => `botcave-embed-tokens:${clientId}`;
+const refreshLock = (clientId: string) => `botcave-embed-refresh:${clientId}`;
+
+/**
+ * Rinnovo non riuscito per un motivo temporaneo (rete, server) con il token d'accesso già scaduto: la richiesta non
+ * parte (né senza Authorization né con un token scaduto) e i token restano, così un 401 non cancella un refresh valido.
+ */
+export class TransientAuthError extends Error {
+  constructor() {
+    super("token_refresh_unavailable");
+  }
+}
 
 function browserDeps(): AuthDeps {
   return {
@@ -129,28 +142,40 @@ function isTokens(v: unknown): v is EmbedTokens {
     typeof t.access === "string" &&
     typeof t.refresh === "string" &&
     typeof t.expiresAt === "number" &&
-    (t.clientId === undefined || typeof t.clientId === "string")
+    typeof t.clientId === "string"
   );
 }
 
+/** Client OAuth della pagina ospite (da GET /api/embed/config): sceglie lo spazio dei token. */
+let currentClientId: string | null = null;
+
+/** Imposta il client della pagina ospite e avvisa gli ascoltatori con i suoi token (null senza client). */
+export function setEmbedClient(clientId: string | null): void {
+  if (clientId === currentClientId) return;
+  currentClientId = clientId;
+  notify(loadTokens());
+}
+
+/** Token del client corrente; quelli salvati con un clientId diverso si ignorano. */
 export function loadTokens(): EmbedTokens | null {
-  const raw = storageGet("local", TOKENS_KEY);
+  if (!currentClientId) return null;
+  const raw = storageGet("local", tokensKey(currentClientId));
   if (!raw) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
-    return isTokens(parsed) ? parsed : null;
+    return isTokens(parsed) && parsed.clientId === currentClientId ? parsed : null;
   } catch {
     return null;
   }
 }
 
 export function saveTokens(t: EmbedTokens): void {
-  storageSet("local", TOKENS_KEY, JSON.stringify(t));
-  notify(t);
+  storageSet("local", tokensKey(t.clientId), JSON.stringify(t));
+  if (t.clientId === currentClientId) notify(t);
 }
 
 export function clearTokens(): void {
-  storageRemove("local", TOKENS_KEY);
+  if (currentClientId) storageRemove("local", tokensKey(currentClientId));
   notify(null);
 }
 
@@ -291,10 +316,6 @@ function fresh(t: EmbedTokens): boolean {
  * c'è ancora il refresh token rifiutato.
  */
 async function refresh(current: EmbedTokens, retried = false): Promise<string | null> {
-  if (!current.clientId) {
-    clearTokens();
-    return null;
-  }
   try {
     const next = await tokenRequest(
       { grant_type: "refresh_token", refresh_token: current.refresh, client_id: current.clientId },
@@ -308,7 +329,9 @@ async function refresh(current: EmbedTokens, retried = false): Promise<string | 
       if (stored && stored.refresh !== current.refresh) {
         if (fresh(stored)) return stored.access;
         if (!retried) return refresh(stored, true);
-        return stored.expiresAt > d().now() ? stored.access : null;
+        // Un'altra scheda sta ancora ruotando: i token non sono nostri da cancellare
+        if (stored.expiresAt > d().now()) return stored.access;
+        throw new TransientAuthError();
       }
       clearTokens(); // nello storage c'è ancora il refresh rifiutato (o niente)
       return null;
@@ -317,8 +340,9 @@ async function refresh(current: EmbedTokens, retried = false): Promise<string | 
       clearTokens();
       return null;
     }
-    // Errore temporaneo (rete, server): si tiene il token finché non scade davvero.
-    return current.expiresAt > d().now() ? current.access : null;
+    // Errore temporaneo (rete, server): si tiene il token finché non scade davvero, poi errore transitorio
+    if (current.expiresAt > d().now()) return current.access;
+    throw new TransientAuthError();
   }
 }
 
@@ -331,15 +355,20 @@ async function refreshShared(): Promise<string | null> {
     return refresh(tokens);
   };
   const locks = d().locks();
-  if (!locks) return run();
+  if (!locks || !currentClientId) return run();
   try {
-    return (await locks.request(REFRESH_LOCK, run)) as string | null;
-  } catch {
+    return (await locks.request(refreshLock(currentClientId), run)) as string | null;
+  } catch (err) {
+    // Un errore transitorio del rinnovo fatto nel lock non si ripete fuori; si ripiega solo se il lock non va
+    if (err instanceof TransientAuthError) throw err;
     return run();
   }
 }
 
-/** Token d'accesso valido, rinnovato se mancano meno di 60 s; un solo rinnovo alla volta. */
+/**
+ * Token d'accesso valido, rinnovato se mancano meno di 60 s; un solo rinnovo alla volta. null = non collegato;
+ * rifiuta con `TransientAuthError` se il token è scaduto e il rinnovo non è riuscito per un motivo temporaneo.
+ */
 export async function getAccessToken(): Promise<string | null> {
   if (refreshing) return refreshing;
   const tokens = loadTokens();

@@ -6,7 +6,9 @@ import {
   connectMessage,
   getAccessToken,
   loadTokens,
+  onTokensChange,
   saveTokens,
+  setEmbedClient,
   startConnect,
   type StorageLike,
 } from "./auth";
@@ -53,6 +55,7 @@ beforeEach(() => {
     now: () => now,
     locks: () => null,
   });
+  setEmbedClient("embed:x");
   clearTokens();
 });
 
@@ -92,6 +95,7 @@ describe("completeConnect", () => {
   });
 
   it("scambia il codice con code_verifier e salva i token", async () => {
+    setEmbedClient("embed:https://hubup.example");
     openMock.mockReturnValue({});
     await startConnect("embed:https://hubup.example");
     const url = new URL(openMock.mock.calls[0]![0], "http://localhost:3000");
@@ -173,7 +177,7 @@ describe("rinnovo concorrente tra schede", () => {
     fetchMock.mockImplementation(async () => {
       // Un'altra scheda vince la rotazione e salva la coppia nuova prima della nostra risposta
       local.data.set(
-        "botcave-embed-tokens",
+        "botcave-embed-tokens:embed:x",
         JSON.stringify({ access: "cao_other", refresh: "car_other", expiresAt: now + 3_600_000, clientId: "embed:x" }),
       );
       return jsonResponse(400, { error: "invalid_grant" });
@@ -188,7 +192,7 @@ describe("rinnovo concorrente tra schede", () => {
     fetchMock
       .mockImplementationOnce(async () => {
         local.data.set(
-          "botcave-embed-tokens",
+          "botcave-embed-tokens:embed:x",
           JSON.stringify({ access: "cao_other", refresh: "car_other", expiresAt: now + 10_000, clientId: "embed:x" }),
         );
         return jsonResponse(400, { error: "invalid_grant" });
@@ -208,7 +212,7 @@ describe("rinnovo concorrente tra schede", () => {
           names.push(name);
           // Mentre si aspettava il lock un'altra scheda ha rinnovato
           local.data.set(
-            "botcave-embed-tokens",
+            "botcave-embed-tokens:embed:x",
             JSON.stringify({ access: "cao_other", refresh: "car_other", expiresAt: now + 3_600_000, clientId: "embed:x" }),
           );
           return cb();
@@ -216,8 +220,70 @@ describe("rinnovo concorrente tra schede", () => {
       }),
     });
     expect(await getAccessToken()).toBe("cao_other");
-    expect(names).toEqual(["botcave-embed-refresh"]);
+    expect(names).toEqual(["botcave-embed-refresh:embed:x"]);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("token in scadenza ed errore temporaneo", () => {
+  it("token d'accesso scaduto ed errore di rete: errore transitorio, token conservati", async () => {
+    saveTokens({ access: "cao_old", refresh: "car_old", expiresAt: now - 1, clientId: "embed:x" });
+    fetchMock.mockRejectedValue(new TypeError("network"));
+    await expect(getAccessToken()).rejects.toThrow("token_refresh_unavailable");
+    expect(loadTokens()?.refresh).toBe("car_old");
+  });
+
+  it("token d'accesso scaduto e 500 dal server: errore transitorio, token conservati", async () => {
+    saveTokens({ access: "cao_old", refresh: "car_old", expiresAt: now - 1, clientId: "embed:x" });
+    fetchMock.mockResolvedValue(jsonResponse(500, { error: "server_error" }));
+    await expect(getAccessToken()).rejects.toThrow("token_refresh_unavailable");
+    expect(loadTokens()?.refresh).toBe("car_old");
+  });
+
+  it("con navigator.locks l'errore transitorio non fa ripetere il rinnovo fuori dal lock", async () => {
+    saveTokens({ access: "cao_old", refresh: "car_old", expiresAt: now - 1, clientId: "embed:x" });
+    configureAuth({ locks: () => ({ request: async (_name: string, cb: () => Promise<unknown>) => cb() }) });
+    fetchMock.mockRejectedValue(new TypeError("network"));
+    await expect(getAccessToken()).rejects.toThrow("token_refresh_unavailable");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("spazio dei token per client", () => {
+  it("chiave dello storage per client: due app ospiti sullo stesso sito non condividono i token", () => {
+    saveTokens({ access: "cao_x", refresh: "car_x", expiresAt: now + 600_000, clientId: "embed:x" });
+    expect(local.data.has("botcave-embed-tokens:embed:x")).toBe(true);
+    expect(local.data.has("botcave-embed-tokens")).toBe(false);
+    setEmbedClient("embed:y");
+    expect(loadTokens()).toBeNull();
+    setEmbedClient("embed:x");
+    expect(loadTokens()?.access).toBe("cao_x");
+  });
+
+  it("token salvati con un clientId diverso da quello della chiave si ignorano", async () => {
+    local.data.set(
+      "botcave-embed-tokens:embed:x",
+      JSON.stringify({ access: "cao_y", refresh: "car_y", expiresAt: now + 600_000, clientId: "embed:y" }),
+    );
+    expect(loadTokens()).toBeNull();
+    expect(await getAccessToken()).toBeNull();
+  });
+
+  it("senza client scelto non ci sono token", async () => {
+    saveTokens({ access: "cao_x", refresh: "car_x", expiresAt: now + 600_000, clientId: "embed:x" });
+    setEmbedClient(null);
+    expect(loadTokens()).toBeNull();
+    expect(await getAccessToken()).toBeNull();
+  });
+
+  it("il cambio di client avvisa gli ascoltatori con i token del nuovo client", () => {
+    saveTokens({ access: "cao_x", refresh: "car_x", expiresAt: now + 600_000, clientId: "embed:x" });
+    setEmbedClient(null);
+    const seen: (string | null)[] = [];
+    const off = onTokensChange((t) => seen.push(t?.access ?? null));
+    setEmbedClient("embed:x");
+    off();
+    expect(seen).toEqual(["cao_x"]);
   });
 });
 

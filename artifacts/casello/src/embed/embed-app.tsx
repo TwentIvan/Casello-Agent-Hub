@@ -1,9 +1,10 @@
 // Pagina /embed: il pannello di Botcave dentro l'iframe dell'app ospite.
-// Accesso con il token `embed` (auth.ts), mai con il cookie di sessione; dialogo con l'ospite in use-host.ts.
-import { useCallback, useEffect, useState } from "react";
+// Accesso con il token `embed` (auth.ts), mai con il cookie di sessione (richieste con credentials "omit");
+// dialogo con l'ospite in use-host.ts.
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { QueryCache, QueryClient, QueryClientProvider, MutationCache } from "@tanstack/react-query";
 import { Router } from "wouter";
-import { getCurrentUser, setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
+import { getCurrentUser, setAuthTokenGetter, setBaseUrl, setRequestCredentials } from "@workspace/api-client-react";
 import { HandoffProvider } from "@/components/characters/handoff-context";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/toaster";
@@ -13,7 +14,16 @@ import { Led } from "@/components/brand/led";
 import { isClientError } from "@/lib/api-errors";
 import { isUnauthorized } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import { clearTokens, completeConnect, connectMessage, getAccessToken, loadTokens, onTokensChange, startConnect } from "./auth";
+import {
+  clearTokens,
+  completeConnect,
+  connectMessage,
+  getAccessToken,
+  loadTokens,
+  onTokensChange,
+  setEmbedClient,
+  startConnect,
+} from "./auth";
 import { useHost } from "./use-host";
 import { TAB_LABELS, TAB_ORDER, TabContent } from "./tab-content";
 import { useBadge, usePanelOpen } from "./use-badge";
@@ -23,6 +33,8 @@ import type { EmbedTab } from "./protocol";
 
 setBaseUrl(null);
 setAuthTokenGetter(getAccessToken);
+// Sugli host dello stesso sito di Botcave il cookie SameSite=Lax arriverebbe all'API anche dall'iframe: mai cookie
+setRequestCredentials("omit");
 
 const MESSAGES = {
   popupBlocked: "Consenti i popup per questo sito e riprova",
@@ -158,6 +170,11 @@ function EmbedRoot() {
   const connect = useConnect(host.clientId);
 
   useEffect(() => onTokensChange((t) => setConnected(t !== null)), []);
+  // Lo spazio dei token è quello del client della pagina ospite: si sceglie appena la configurazione lo dà
+  useLayoutEffect(() => {
+    setEmbedClient(host.clientId);
+    setConnected(loadTokens() !== null);
+  }, [host.clientId]);
   useEffect(() => {
     if (!connected) queryClient.clear();
   }, [connected]);

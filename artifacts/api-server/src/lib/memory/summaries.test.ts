@@ -205,6 +205,14 @@ describe("conversazioni dei personaggi", () => {
     expect((await getChar(lucius)).summarizedAt).not.toBeNull();
   });
 
+  it("la trascrizione di una conversazione di Alfred dice «Alfred:», mai «Lucius:»", async () => {
+    await charConv("alfred", minutesAgo(31));
+    await sweepSummaries();
+    const body = fake.requests.find((r) => r.path.endsWith("/chat/completions"))!.body as { messages: { content: string }[] };
+    expect(body.messages[1]!.content).toBe("Utente: Vorrei il piano B\n\nAlfred: Ok, piano B");
+    expect(body.messages[1]!.content).not.toContain("Lucius:");
+  });
+
   it("summary_skipped_on_character_cap: tetto di Lucius raggiunto, nessun riassunto ma summarized_at scritto", async () => {
     await db.update(usersTable).set({ luciusMonthlyBudgetUsd: "0.01" }).where(eq(usersTable.id, userId));
     await db.insert(characterHistoryTable).values({ userId, character: "lucius", kind: "team_chat", refId: 999, title: "t", summary: "s", aiModelId: modelId, tokensUsed: 10, costUsd: "0.05" });

@@ -219,10 +219,10 @@ export async function executePlanTurn(conversationId: number, assistantMessageId
   try {
     const [conv] = await db.select().from(planConversationsTable).where(eq(planConversationsTable.id, conversationId));
     if (!conv) return;
-    let blocked: string | null;
+    const blocked = conv.aiModelId === null ? null : await characterBudgetBlock(conv.userId, "lucius", conv.aiModelId);
     if (conv.aiModelId === null) {
       content = NO_MODEL_MESSAGE;
-    } else if ((blocked = await characterBudgetBlock(conv.userId, "lucius", conv.aiModelId))) {
+    } else if (blocked) {
       content = blocked;
     } else {
       const [app] = await db.select().from(appsTable).where(eq(appsTable.id, conv.appId));

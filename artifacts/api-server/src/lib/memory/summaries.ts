@@ -81,11 +81,12 @@ export async function summarizeConversation(input: SummaryInput, deps: SummaryDe
   return "saved";
 }
 
-const line = (role: "user" | "assistant", content: string) => `${role === "user" ? "Utente" : "Lucius"}: ${content}`;
+const line = (role: "user" | "assistant", content: string, name: string) => `${role === "user" ? "Utente" : name}: ${content}`;
 
 /** Righe in ordine, tagliate dalla fine a TRANSCRIPT_MAX_CHARS. */
-function buildTranscript(rows: { role: "user" | "assistant"; content: string }[]): string {
-  return rows.map((r) => line(r.role, r.content)).join("\n\n").slice(-TRANSCRIPT_MAX_CHARS);
+function buildTranscript(rows: { role: "user" | "assistant"; content: string }[], character: Character): string {
+  const name = character === "alfred" ? "Alfred" : "Lucius";
+  return rows.map((r) => line(r.role, r.content, name)).join("\n\n").slice(-TRANSCRIPT_MAX_CHARS);
 }
 
 type SummaryKind = "plan_conversation" | "team_chat" | "character_chat";
@@ -120,7 +121,7 @@ async function summarizeOne(
       kind,
       refId: conv.id,
       title: conv.title,
-      transcript: buildTranscript(rows),
+      transcript: buildTranscript(rows, conv.character ?? "lucius"),
     });
   }
   // Sempre, anche se saltato: non si ritenta finché la conversazione non cambia

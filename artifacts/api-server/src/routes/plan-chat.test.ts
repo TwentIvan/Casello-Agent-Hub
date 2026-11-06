@@ -1,7 +1,7 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   db,
   pool,
@@ -465,7 +465,9 @@ describe("route della chat del piano", () => {
       expect(res.json.error).toContain("Tetto di spesa mensile di Lucius raggiunto");
     } finally {
       await db.update(usersTable).set({ luciusMonthlyBudgetUsd: null }).where(eq(usersTable.id, userId));
-      await new Promise((r) => small.close(r));
+      await db.delete(characterHistoryTable).where(and(eq(characterHistoryTable.userId, userId), eq(characterHistoryTable.refId, 998)));
+      small.closeAllConnections?.();
+      await new Promise<void>((r) => small.close(() => r()));
     }
   });
 });

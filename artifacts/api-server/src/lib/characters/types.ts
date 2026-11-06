@@ -74,6 +74,12 @@ export const CHARACTER_MESSAGES = {
   rationaleTooLong: `la motivazione supera ${RATIONALE_MAX} caratteri`,
   noModel: "Scegli un modello per la conversazione.",
   archived: "conversazione archiviata",
+  proposalNotFound: "scheda non trovata",
+  alreadyDecided: "scheda già decisa",
+  invalidProposal: "scheda non valida",
+  staleObject: "l'oggetto è cambiato: chiedi a Lucius una proposta aggiornata",
+  staleItem: "la voce è cambiata: ricarica la coda",
+  userTokenItem: "questa voce si approva dalla pagina Da confermare",
 } as const;
 
 // Errore con stato HTTP: le route lo traducono direttamente

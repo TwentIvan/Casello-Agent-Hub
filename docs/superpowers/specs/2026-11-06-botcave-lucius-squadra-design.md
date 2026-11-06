@@ -157,3 +157,20 @@ aggiungi a mano) e storico (riassunti, elimina). Route `GET /api/memories/notes?
 `docs/migrations/2026-11-lucius-squadra.sql`, additiva e idempotente (niente `-post`): tabelle `team_chat_conversations`,
 `team_chat_messages`, `team_chat_proposals`, `character_notes`, `character_history`; colonna `plan_conversations.summarized_at`.
 Da applicare su Neon PRIMA del merge; riportata in `docs/schema-casello.sql`.
+
+## Differenze dal codice
+
+Dove il codice differisce dalla spec vale il codice (descritto in CLAUDE.md, «Lucius sulla squadra e memorie»):
+
+- `looksLikeCredential` esclude le parole che sono UUID (id, non segreti); le altre stringhe lunghe devono avere almeno una lettera e una cifra.
+- Riassunti: token e costo si cumulano sulla voce dello storico (un riassunto aggiornato somma al precedente; costo null solo se mancava il
+  prezzo), e il controllo periodico non si sovrappone a sé stesso.
+- `saveInstance` ha un parametro `guard(tx, locked)` e l'accettazione di una scheda rilegge e riprova (fino a 3 volte) se la squadra cambia
+  tra lettura e lock; l'impronta controllata è tutto lo stato sostituito, non solo il valore della scheda.
+- `leggi_strumento` legge solo strumenti dei ruoli della squadra; lo schema dei parametri oscura `x-sensitive` anche nelle strutture annidate.
+- La memoria di Alfred sta nella `systemInstruction` del token (Gemini Live non ha un canale dati per turno), etichettata come dati.
+- Con modello della chat di squadra assente o non usabile la route accetta il messaggio e il turno si chiude con un messaggio d'errore
+  dell'assistente, invece di rispondere 409 come la chat del piano.
+- La chat di squadra riusa il ciclo `runPlanTurn` della chat del piano con l'elenco di strumenti della squadra.
+- Il prompt del capo usa «Identità del capo:» (stesso campo `task`).
+- Le route di test stanno in `artifacts/api-server/src/routes/*.test.ts`.

@@ -160,10 +160,9 @@ function WrittenBlock({ character, settings }: { character: Character; settings:
 
   const update = useUpdateCharacterSettings({
     mutation: {
-      onSuccess: () => {
-        // La risposta del PUT non porta la spesa: si rilegge la vista
-        void queryClient.invalidateQueries({ queryKey: getGetCharacterSettingsQueryKey() });
-        setChosen(undefined);
+      onSuccess: (result) => {
+        // La risposta del PUT è la vista completa, con la spesa
+        queryClient.setQueryData(getGetCharacterSettingsQueryKey(), result);
         toast({ title: `Impostazioni di ${name} salvate` });
       },
       onError: (error) =>
@@ -175,14 +174,22 @@ function WrittenBlock({ character, settings }: { character: Character; settings:
   const send = (next: { model?: number | null; cap?: number | null }) => {
     const model = next.model !== undefined ? next.model : savedModel;
     const newCap = next.cap !== undefined ? next.cap : cap;
-    update.mutate({
-      data: {
-        alfredChatAiModelId: isAlfred ? model : settings.alfredChatAiModelId,
-        luciusAiModelId: isAlfred ? settings.luciusAiModelId : model,
-        alfredMonthlyBudgetUsd: isAlfred ? newCap : settings.alfredMonthlyBudgetUsd,
-        luciusMonthlyBudgetUsd: isAlfred ? settings.luciusMonthlyBudgetUsd : newCap,
+    update.mutate(
+      {
+        data: {
+          alfredChatAiModelId: isAlfred ? model : settings.alfredChatAiModelId,
+          luciusAiModelId: isAlfred ? settings.luciusAiModelId : model,
+          alfredMonthlyBudgetUsd: isAlfred ? newCap : settings.alfredMonthlyBudgetUsd,
+          luciusMonthlyBudgetUsd: isAlfred ? settings.luciusMonthlyBudgetUsd : newCap,
+        },
       },
-    });
+      {
+        // Una scelta di modello non ancora salvata si perde solo se si è salvato il modello
+        onSuccess: () => {
+          if (next.model !== undefined) setChosen(undefined);
+        },
+      },
+    );
   };
 
   return (

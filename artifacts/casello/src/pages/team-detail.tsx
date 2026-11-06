@@ -249,7 +249,11 @@ function TeamEditor({
             target={{ kind: "team", instanceId: team.id, closed }}
             hasUnsavedChanges={() => dirtyRef.current}
           />
-          <CharacterButton target={{ kind: "alfred", page: { page: "team", id: String(team.id) } }} />
+          {/* Anche Alfred: un suo passaggio a Lucius sulla stessa squadra eredita questo controllo */}
+          <CharacterButton
+            target={{ kind: "alfred", page: { page: "team", id: String(team.id) } }}
+            hasUnsavedChanges={() => dirtyRef.current}
+          />
           {!closed && (
             <Button onClick={() => submit()} disabled={!dirty || save.isPending}>
               {save.isPending ? "Salvataggio…" : "Salva"}

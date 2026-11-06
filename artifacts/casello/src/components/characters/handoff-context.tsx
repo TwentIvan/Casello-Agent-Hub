@@ -29,7 +29,11 @@ export function HandoffProvider({ children }: { children: ReactNode }) {
   // Cambiando pagina il pannello si chiude: l'argomento e l'avviso delle modifiche non salvate erano della pagina lasciata
   const lastLocation = useRef(location);
   useEffect(() => {
-    if (lastLocation.current !== location) setIsOpen(false);
+    if (lastLocation.current !== location) {
+      setIsOpen(false);
+      // Il controllo era della pagina lasciata: i passaggi successivi non devono dare avvisi spuri
+      setState((prev) => (prev && prev.hasUnsavedChanges ? { ...prev, hasUnsavedChanges: undefined } : prev));
+    }
     lastLocation.current = location;
   }, [location]);
 

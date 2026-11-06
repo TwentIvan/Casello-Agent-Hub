@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import { LogOut, Monitor, Moon, Sun, UserRound } from "lucide-react";
 import { getGetCurrentUserQueryKey, useGetCurrentUser, useLogout } from "@workspace/api-client-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { BotcaveLogo } from "@/components/brand/marks";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -21,16 +21,6 @@ const THEMES: { value: ThemeChoice; label: string; icon: typeof Sun }[] = [
   { value: "dark", label: "Scuro", icon: Moon },
 ];
 
-function initials(name: string | null, email: string): string {
-  const source = name?.trim() || email;
-  return source
-    .split(/[\s@.]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]!.toUpperCase())
-    .join("");
-}
-
 export function UserMenu() {
   const [theme, setTheme] = useThemeChoice();
   const { data: user } = useGetCurrentUser({ query: { queryKey: getGetCurrentUserQueryKey() } });
@@ -42,17 +32,12 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        {/* Sta nella barra buia della caverna: quadrato a spigoli vivi come i pixel, roccia in ombra e carta */}
-        <Button variant="ghost" size="icon" className="rounded-none hover:bg-ardesia" aria-label="Menu utente">
-          <Avatar className="size-8 rounded-none">
-            {user.picture && <AvatarImage src={user.picture} alt="" referrerPolicy="no-referrer" />}
-            <AvatarFallback className="rounded-none bg-ardesia font-mono text-xs font-medium text-nebbia">
-              {initials(user.name, user.email)}
-            </AvatarFallback>
-          </Avatar>
+        {/* L'account è il logo stesso, nella versione chiara su scuro della barra della caverna */}
+        <Button variant="ghost" className="h-auto rounded-sm px-1.5 py-1 hover:bg-ardesia" aria-label="Menu utente: account, tema, esci">
+          <BotcaveLogo tone="dark" className="h-6" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
+      <DropdownMenuContent align="start" className="w-56">
         <DropdownMenuLabel className="font-normal">
           <div className="truncate text-sm font-medium">{user.name ?? user.email}</div>
           {user.name && <div className="truncate text-xs text-muted-foreground">{user.email}</div>}

@@ -1,6 +1,9 @@
-// Contenuto delle quattro schede del pannello incorporato. Punto di aggancio unico per il Task 9
-// (Alfred, Da confermare, Bollettino, Lucius): qui per ora un segnaposto.
+// Contenuto delle quattro schede del pannello incorporato: Alfred, Da confermare, Bollettino, Lucius (in tabs/).
 import type { EmbedTab, HostContextMsg } from "./protocol";
+import { AlfredTab } from "./tabs/alfred-tab";
+import { BulletinTab } from "./tabs/bulletin-tab";
+import { LuciusTab } from "./tabs/lucius-tab";
+import { PendingTab } from "./tabs/pending-tab";
 
 export const TAB_LABELS: Record<EmbedTab, string> = {
   alfred: "Alfred",
@@ -21,10 +24,15 @@ export type TabContentProps = {
   hostContext: HostContextMsg | null;
 };
 
-export function TabContent({ tab }: TabContentProps) {
-  return (
-    <div className="flex flex-1 items-center justify-center p-6">
-      <p className="text-body-sm text-ink-muted">{TAB_LABELS[tab]}</p>
-    </div>
-  );
+export function TabContent({ tab, appSlug, appName, hostContext }: TabContentProps) {
+  switch (tab) {
+    case "alfred":
+      return <AlfredTab appSlug={appSlug} hostContext={hostContext} />;
+    case "pending":
+      return <PendingTab />;
+    case "bulletin":
+      return <BulletinTab />;
+    case "lucius":
+      return <LuciusTab appSlug={appSlug} appName={appName} />;
+  }
 }

@@ -27,15 +27,20 @@ export function needsDialogToApprove(action: QueuedAction): boolean {
 /**
  * Voce in attesa della pagina «Da confermare»: decisione diretta con ConfirmItem. «Approva» apre la scheda quando la
  * voce va letta per intero o chiede il token dell'utente; «Dettagli» la apre sempre.
+ * Nel pannello incorporato (`consoleHref`) non c'è la scheda: quelle voci si approvano nella console («Apri in Botcave»,
+ * nuova scheda) e «Dettagli» non compare; «Rifiuta» con nota resta per tutte.
  */
 export function PendingActionItem({
   action,
   onOpenDetails,
   onDecided,
+  consoleHref,
 }: {
   action: QueuedAction;
-  onOpenDetails: () => void;
+  onOpenDetails?: () => void;
   onDecided: () => void;
+  /** Indirizzo della pagina «Da confermare» della console (pannello incorporato). */
+  consoleHref?: string;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -73,6 +78,7 @@ export function PendingActionItem({
     .filter(Boolean)
     .join(" · ");
   const plan = isPlanItem(action);
+  const toConsole = consoleHref !== undefined && needsDialogToApprove(action);
 
   return (
     <ConfirmItem
@@ -81,7 +87,10 @@ export function PendingActionItem({
       meta={meta}
       summary={
         plan ? (
-          <>{ACTION_KIND_LABELS[action.kind]} proposto dal capo della squadra: apri i dettagli per leggerlo prima di decidere.</>
+          <>
+            {ACTION_KIND_LABELS[action.kind]} proposto dal capo della squadra:{" "}
+            {consoleHref !== undefined ? "aprilo in Botcave" : "apri i dettagli"} per leggerlo prima di decidere.
+          </>
         ) : (
           <>
             Destinatario: {action.recipient}
@@ -98,12 +107,25 @@ export function PendingActionItem({
       busy={busy}
       approveLabel={plan ? "Leggi e approva" : approve.isPending ? "Esecuzione…" : "Approva"}
       rejectLabel={reject.isPending ? "Rifiuto…" : "Rifiuta"}
-      onApprove={() => (needsDialogToApprove(action) ? onOpenDetails() : approve.mutate({ number: action.number, data: {} }))}
+      onApprove={() =>
+        needsDialogToApprove(action) ? onOpenDetails?.() : approve.mutate({ number: action.number, data: {} })
+      }
       onReject={() => reject.mutate({ number: action.number, data: note.trim() ? { note: note.trim() } : {} })}
+      approveSlot={
+        toConsole ? (
+          <Button asChild>
+            <a href={consoleHref} target="_blank" rel="noopener">
+              Apri in Botcave
+            </a>
+          </Button>
+        ) : undefined
+      }
       extraActions={
-        <Button variant="ghost" size="sm" onClick={onOpenDetails} disabled={busy}>
-          Dettagli
-        </Button>
+        onOpenDetails ? (
+          <Button variant="ghost" size="sm" onClick={onOpenDetails} disabled={busy}>
+            Dettagli
+          </Button>
+        ) : undefined
       }
     />
   );

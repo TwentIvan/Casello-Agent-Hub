@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { QueryCache, QueryClient, QueryClientProvider, MutationCache } from "@tanstack/react-query";
 import { getCurrentUser, setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
+import { HandoffProvider } from "@/components/characters/handoff-context";
 import { Button } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { BotcaveLogo, BotcaveMark } from "@/components/brand/marks";
 import { Led } from "@/components/brand/led";
 import { isClientError } from "@/lib/api-errors";
@@ -12,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { clearTokens, completeConnect, connectMessage, getAccessToken, loadTokens, onTokensChange, startConnect } from "./auth";
 import { useHost } from "./use-host";
 import { TAB_LABELS, TAB_ORDER, TabContent } from "./tab-content";
+import { useBadge, usePanelOpen } from "./use-badge";
 import type { EmbedTab } from "./protocol";
 
 setBaseUrl(null);
@@ -103,6 +107,8 @@ function Shell({
 }) {
   const [tab, setTab] = useState<EmbedTab>("alfred");
   const { openRequest } = host;
+  const open = usePanelOpen(openRequest);
+  useBadge(open, host.post);
 
   useEffect(() => {
     if (openRequest?.tab) setTab(openRequest.tab);
@@ -133,7 +139,7 @@ function Shell({
           Chiudi
         </Button>
       </header>
-      <main role="tabpanel" className="flex min-h-0 flex-1 flex-col overflow-auto">
+      <main role="tabpanel" className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
         <TabContent tab={tab} appSlug={host.appSlug} appName={host.appName} hostContext={host.context} />
       </main>
     </div>
@@ -181,13 +187,21 @@ function EmbedRoot() {
   if (!connected || connect.busy) {
     return <ConnectScreen busy={connect.busy} error={connect.error} onConnect={connect.connect} />;
   }
-  return <Shell host={host} />;
+  // HandoffProvider: i passaggi di consegne tra Alfred e Lucius aprono il pannello dell'altro personaggio
+  return (
+    <HandoffProvider>
+      <Shell host={host} />
+    </HandoffProvider>
+  );
 }
 
 export function EmbedApp() {
   return (
     <QueryClientProvider client={queryClient}>
-      <EmbedRoot />
+      <TooltipProvider>
+        <EmbedRoot />
+        <Toaster />
+      </TooltipProvider>
     </QueryClientProvider>
   );
 }

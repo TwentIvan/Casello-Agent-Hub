@@ -18,6 +18,21 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * Dice se l'origine è tra quelle ammesse (EMBED_ALLOWED_ORIGINS) e con quale client OAuth si collega. Origine mancante o non valida: sempre allowed false, mai un errore.
+ * @summary Configurazione del plugin per un'origine ospite (pubblica)
+ */
+export const GetEmbedConfigQueryParams = zod.object({
+  "origin": zod.coerce.string().optional()
+})
+
+export const GetEmbedConfigResponse = zod.object({
+  "allowed": zod.boolean(),
+  "clientId": zod.string().nullable(),
+  "appName": zod.string().nullable()
+})
+
+
+/**
  * Con la sessione del login o con un token personale (api:read o api:write); auth dice quale.
  * @summary Utente della sessione corrente
  */

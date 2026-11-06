@@ -6,6 +6,7 @@ import { eq, sql } from "drizzle-orm";
 import { db, oauthClientsTable, type OAuthClient } from "@workspace/db";
 import { isPublicIp, validateBaseUrl } from "../ai/providers";
 import { logger } from "../logger";
+import { embedAllowedOrigins, originOfEmbedClient } from "../embed/origins";
 import { OAuthError } from "./errors";
 
 const FIXED_REDIRECTS = new Set(["https://claude.ai/api/mcp/auth_callback", "https://claude.com/api/mcp/auth_callback"]);
@@ -66,7 +67,9 @@ async function countClients(): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(oauthClientsTable)
-    .where(sql`${oauthClientsTable.clientId} NOT LIKE 'https://claude.ai/%' AND ${oauthClientsTable.clientId} NOT LIKE 'https://claude.com/%'`);
+    .where(
+      sql`${oauthClientsTable.clientId} NOT LIKE 'https://claude.ai/%' AND ${oauthClientsTable.clientId} NOT LIKE 'https://claude.com/%' AND ${oauthClientsTable.kind} <> 'embed'`,
+    );
   return row?.n ?? 0;
 }
 
@@ -214,6 +217,13 @@ async function fetchClientDocument(
 /** Trova il client: riga `dcr`, oppure documento del client per un `client_id` https (salvato e riscaricato dopo 24 ore). */
 export async function resolveClient(clientId: string, download: DocumentDownloader = downloadClientDocument): Promise<OAuthClient | null> {
   try {
+    // Client del plugin incorporabile: mai un documento da scaricare, vale solo se l'origine è ancora in elenco.
+    if (clientId.startsWith("embed:")) {
+      const origin = originOfEmbedClient(clientId);
+      if (origin === null || !embedAllowedOrigins().includes(origin)) return null;
+      const [embedRow] = await db.select().from(oauthClientsTable).where(eq(oauthClientsTable.clientId, clientId));
+      return embedRow?.kind === "embed" ? embedRow : null;
+    }
     const [row] = await db.select().from(oauthClientsTable).where(eq(oauthClientsTable.clientId, clientId));
     if (row?.kind === "dcr") return row;
     if (!clientId.startsWith("https://")) return null;

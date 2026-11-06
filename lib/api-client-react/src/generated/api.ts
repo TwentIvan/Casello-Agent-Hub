@@ -92,10 +92,12 @@ import type {
   DefaultModel,
   DeleteMemoryHistoryEntryParams,
   DeleteMemoryNoteParams,
+  EmbedConfig,
   ErrorResponse,
   EstimateAnalysisCostParams,
   ExportAnalysisIssuesParams,
   ForbiddenResponse,
+  GetEmbedConfigParams,
   GetTeamInstanceUpdates200,
   GithubInstallations,
   GithubRepo,
@@ -277,6 +279,91 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getHealthCheckQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetEmbedConfigUrl = (params?: GetEmbedConfigParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/embed/config?${stringifiedParams}` : `/api/embed/config`
+}
+
+/**
+ * Dice se l'origine è tra quelle ammesse (EMBED_ALLOWED_ORIGINS) e con quale client OAuth si collega. Origine mancante o non valida: sempre allowed false, mai un errore.
+ * @summary Configurazione del plugin per un'origine ospite (pubblica)
+ */
+export const getEmbedConfig = async (params?: GetEmbedConfigParams, options?: RequestInit): Promise<EmbedConfig> => {
+
+  return customFetch<EmbedConfig>(getGetEmbedConfigUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEmbedConfigQueryKey = (params?: GetEmbedConfigParams,) => {
+    return [
+    `/api/embed/config`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetEmbedConfigQueryOptions = <TData = Awaited<ReturnType<typeof getEmbedConfig>>, TError = ErrorType<unknown>>(params?: GetEmbedConfigParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmbedConfig>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEmbedConfigQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEmbedConfig>>> = ({ signal }) => getEmbedConfig(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEmbedConfig>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEmbedConfigQueryResult = NonNullable<Awaited<ReturnType<typeof getEmbedConfig>>>
+export type GetEmbedConfigQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Configurazione del plugin per un'origine ospite (pubblica)
+ */
+
+export function useGetEmbedConfig<TData = Awaited<ReturnType<typeof getEmbedConfig>>, TError = ErrorType<unknown>>(
+ params?: GetEmbedConfigParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmbedConfig>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEmbedConfigQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

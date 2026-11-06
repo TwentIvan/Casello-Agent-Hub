@@ -5,6 +5,12 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+export interface EmbedConfig {
+  allowed: boolean;
+  clientId: string | null;
+  appName: string | null;
+}
+
 export interface HealthStatus {
   status: string;
 }
@@ -3306,6 +3312,10 @@ export type BadGatewayResponse = ErrorResponse;
 export type PayloadTooLargeResponse = ErrorResponse;
 
 export type CharacterQueryParameter = MemoryCharacter;
+
+export type GetEmbedConfigParams = {
+origin?: string;
+};
 
 export type ListAgentsParams = {
 /**

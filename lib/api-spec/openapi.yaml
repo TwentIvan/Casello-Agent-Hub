@@ -12,6 +12,8 @@ tags:
     description: Nodi locali registrati e protocollo del nodo
   - name: health
     description: Health operations
+  - name: embed
+    description: Plugin incorporabile di Botcave (configurazione pubblica per le app ospiti)
   - name: auth
     description: Login (Google, GitHub) e sessione (tutte le altre route richiedono la sessione, tranne /healthz e /auth/providers)
   - name: apps
@@ -63,6 +65,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /embed/config:
+    get:
+      operationId: getEmbedConfig
+      tags: [embed]
+      summary: Configurazione del plugin per un'origine ospite (pubblica)
+      description: >-
+        Dice se l'origine è tra quelle ammesse (EMBED_ALLOWED_ORIGINS) e con quale client OAuth si collega.
+        Origine mancante o non valida: sempre allowed false, mai un errore.
+      parameters:
+        - name: origin
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Configurazione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedConfig"
 
   # ─── Auth ───────────────────────────────────────────────────────────────────
   # /auth/login e /auth/callback sono redirect del flusso OIDC (Google), non chiamate JSON.
@@ -4188,6 +4212,18 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
+    EmbedConfig:
+      type: object
+      required: [allowed, clientId, appName]
+      properties:
+        allowed:
+          type: boolean
+        clientId:
+          type: string
+          nullable: true
+        appName:
+          type: string
+          nullable: true
     HealthStatus:
       type: object
       properties:

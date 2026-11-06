@@ -16,7 +16,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RunStatusBadge } from "@/components/run-status-badge";
 import { BudgetAlerts } from "@/components/budget/budget";
-import { CaveCover } from "@/components/brand/cave";
 import { formatDuration, formatRelative } from "@/lib/format";
 
 // Le run durano da secondi a decine di secondi: aggiornamento periodico leggero.
@@ -130,7 +129,6 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-screen-2xl space-y-6">
-      <CaveCover />
       <div>
         <h2 className="text-h2">Dashboard</h2>
         <p className="text-sm text-muted-foreground">Panoramica delle app, degli agenti e delle esecuzioni.</p>

@@ -65,8 +65,25 @@ export function AlfredMark({
 }
 
 /** Segno di Lucius (occhiali), Lucius: Officina, analisi e chat del piano. */
-export function LuciusMark({ size = 15, alt = "", className }: { size?: number; alt?: string; className?: string }) {
+export function LuciusMark({
+  size = 15,
+  alt = "",
+  tone,
+  className,
+}: {
+  size?: number;
+  alt?: string;
+  tone?: "light" | "dark";
+  className?: string;
+}) {
   return (
-    <Themed light={luciusLight} dark={luciusDark} alt={alt} className={cn("w-auto", className)} height={size * LUCIUS_RATIO} />
+    <Themed
+      light={luciusLight}
+      dark={luciusDark}
+      alt={alt}
+      tone={tone}
+      className={cn("w-auto", className)}
+      height={size * LUCIUS_RATIO}
+    />
   );
 }

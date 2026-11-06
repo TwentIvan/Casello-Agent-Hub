@@ -31,6 +31,11 @@
   --color-led-idle: var(--led-idle);
   --color-border-strong: var(--border-strong);
   --color-focus: var(--focus);
+  /* Colori di marca per la caverna (barra in alto): buio, roccia in ombra e in luce, carta */
+  --color-notte: var(--notte);
+  --color-ardesia: var(--ardesia);
+  --color-roccia: var(--roccia);
+  --color-nebbia: var(--nebbia);
 
   /* Nomi di shadcn/ui, mappati sui token */
   --color-background: var(--surface-0);

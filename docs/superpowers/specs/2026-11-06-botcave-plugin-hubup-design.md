@@ -129,3 +129,18 @@ e collegamento OAuth, provisioning dell'app, modulo «Agenti» (pagina, riquadro
 2. Strumenti e livelli della tabella in §3 (in particolare `registra_tempo` L1 e `aggiorna_stato_task` L1).
 3. Squadre solo sui task (`ref_type = task`); i progetti in una versione successiva.
 4. Esecutore AI interno di The Hub Up lasciato com'è (nessuna fusione con Botcave in questa versione).
+
+## Differenze dal codice
+
+Dove il codice differisce da questa spec vale il codice.
+
+- L'hash del segreto del client sta nella variabile `OAUTH_PLUGIN_CLIENTS` (`secretSha256`), non in colonne di `oauth_clients`: la
+  migrazione non aggiunge colonne a quella tabella.
+- `oauth_grants.scopes` esisteva già: la migrazione non lo tocca. Aggiunge solo il valore `plugin` all'enum `oauth_client_kind` e
+  `apps.plugin_url_template`.
+- Il tipo di client è `plugin`, non `confidential`.
+- Il link al servizio (`ref.url`) vale solo per `ref.type = task`; per gli altri tipi è null.
+- La CSP `form-action` della pagina di consenso include le origini di ritorno dei plugin configurati, perché Chrome controlla anche i
+  redirect che seguono l'invio del form.
+- Un plugin tolto dalla configurazione resta come riga in `oauth_clients` ma non vale più: niente consenso, niente scambio o rinnovo di
+  token, i `cap_…` già emessi sono rifiutati.

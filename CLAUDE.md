@@ -184,7 +184,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 
 - **App**: applicazione registrata: nome, `slug`, `base_url`, `internal_base_url` (raggiunto
   dall'esecutore al posto di `base_url`), autenticazione utente/servizio (header + scheme), segreto di
-  servizio cifrato (mai esposto: l'API dice solo `serviceSecretSet`), `mcp_url` (server MCP dell'app, facoltativo), stato
+  servizio cifrato (mai esposto: l'API dice solo `serviceSecretSet`), `mcp_url` (server MCP dell'app, facoltativo),
+  `plugin_url_template` (facoltativo: indirizzo della pagina di un lavoro nel servizio, con `{refId}` una sola volta; vedi
+  "Connettore OAuth (app Claude)", paragrafo Plugin), stato
 - **Agent**: appartiene a una App; `system_prompt`, `model` (facoltativo: senza modello le run rispondono 409), stato (draft/active/inactive), ruolo:
   `general` (uno per app, creato con l'app, non eliminabile, usa tutti i tool `active` dell'app) o `area`
   (usa solo i tool collegati in `agent_tools`)
@@ -779,7 +781,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Spec: `docs/superpowers/specs/2026-10-31-casello-token-api-design.md`. Il token `cas_…` (Account → "Token personali")
   vale anche su `/api`, per agenti che agiscono su Casello stesso e per script/automazioni.
 - I token `cas_…` sono una delle due credenziali di `/mcp`; l'altra è il token OAuth `cao_…` del connettore, che su `/api` NON vale
-  (come `car_…`: 401 «token non valido o scaduto»).
+  (come `car_…`: 401 «token non valido o scaduto»). Vale invece `cap_…`, il token OAuth di un plugin (es. The Hub Up), con gli ambiti
+  `api:read` e `api:write` del collegamento (vedi "Connettore OAuth (app Claude)", paragrafo Plugin): `requireAuth` imposta
+  `req.auth = {kind: "oauth", grantId, scopes}`, vale l'ambito per metodo come per `cas_…`, 120 richieste/min per collegamento
+  (`tokenRateLimit`, chiave `oauth:<grantId>`), `sessionOnly` lo rifiuta (403 «operazione disponibile solo con il login») e su `/mcp` è 401.
 - Ambiti (`api_tokens.scopes`, almeno uno, senza ripetizioni, immutabili dopo la creazione): `mcp` (server `/mcp`),
   `api:read` (GET/HEAD su `/api`), `api:write` (tutti i metodi, include la lettura), `node` (solo `/api/node/*`, vedi "Nodi").
   Default alla creazione `["mcp"]`; i token esistenti sono diventati `{mcp}`: nessun permesso nuovo. L'ambito `node` non si sceglie
@@ -866,7 +871,30 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   connettori personalizzati è da verificare nella prova finale dopo il deploy (chat scritta e vocale dal telefono).
 - Migrazione: `docs/migrations/2026-11-connettore-oauth.sql` (additiva e idempotente, niente `-post`): tabelle `oauth_clients`, `oauth_grants`,
   `oauth_codes`, `oauth_tokens`. Da applicare in produzione PRIMA del merge e da segnalare nella PR; riportata in `docs/schema-casello.sql`.
-- Fuori ambito: token OAuth su `/api`, revoca RFC 7009, scelta degli ambiti al consenso, strumenti nuovi del centralino.
+  Poi `docs/migrations/2026-11-plugin-hubup.sql` (additiva e idempotente, PRIMA del merge): valore `plugin` dell'enum `oauth_client_kind` e
+  colonna `apps.plugin_url_template`.
+- **Plugin** (spec `docs/superpowers/specs/2026-11-06-botcave-plugin-hubup-design.md`; `lib/oauth/plugins.ts`): client di prima parte come
+  The Hub Up, che usa Botcave come plugin e parla con `/api` per conto dell'utente. Si dichiarano nella variabile `OAUTH_PLUGIN_CLIENTS`
+  (facoltativa; assente o vuota = nessun plugin), un array JSON di al massimo 10 voci `{clientId, name, redirectUri, secretSha256}`:
+  `clientId` `^[a-z][a-z0-9-]{1,39}$` e unico, `name` 1..100, `redirectUri` https senza credenziali né `#` (http solo verso
+  `localhost`/`127.0.0.1` con porta, fuori produzione), `secretSha256` = SHA-256 esadecimale del segreto (`printf %s "$SEGRETO" | shasum -a 256`):
+  il segreto in chiaro lo conosce solo il plugin e il suo hash sta solo nella variabile, mai nel DB. Una variabile non valida
+  (`PluginConfigError`, «OAUTH_PLUGIN_CLIENTS non valida: …», senza il valore) ferma l'avvio in `index.ts`; la configurazione si rilegge a ogni
+  chiamata. Lo stesso flusso del connettore con queste differenze: client riservato (`client_secret` nel corpo del token endpoint, solo
+  `client_secret_post`; segreto assente o errato, o plugin non configurato → 401 `invalid_client` «applicazione non riconosciuta», controllato
+  prima di leggere codice o token di rinnovo, quindi senza consumare né revocare nulla); `redirect_uri` uguale a quello configurato;
+  `scope` solo `api:read`/`api:write` (almeno uno; `mcp` → `invalid_scope`), ma il collegamento ha sempre `["api:read", "api:write"]`
+  (`PLUGIN_SCOPES`); `resource` = `<PUBLIC_APP_URL>/api`; pagina di consenso dedicata («Collegare <nome> a Botcave?», senza host del ritorno)
+  e CSP `form-action` con anche le origini di ritorno dei plugin configurati. Token d'accesso `cap_…` (3 600 s) e di rinnovo `car_…`
+  (30 giorni, stessa rotazione e finestra di 60 s del connettore); risposta con `scope: "api:read api:write"`. `cap_…` vale su `/api`,
+  non su `/mcp`; `cao_…` e `car_…` restano sconosciuti su `/api`. Il collegamento compare in Account → «App collegate» e si revoca come gli altri.
+  La riga in `oauth_clients` (`kind plugin`) la crea o aggiorna `ensurePluginClientRow` (nome e ritorno dalla configurazione) e non conta nel
+  tetto di 1 000 né nella pulizia `sweepOAuth`. Un plugin tolto dalla variabile resta come riga ma non vale più: niente consenso, niente scambio
+  o rinnovo, i `cap_…` già emessi rifiutati (`verifyPluginAccessToken` controlla che il client sia ancora configurato).
+- **Link al servizio**: `apps.plugin_url_template` (in `POST|PUT /api/apps`; 1..500 caratteri, `{refId}` una sola volta, https senza
+  credenziali, http solo verso `localhost`/`127.0.0.1` fuori produzione, altrimenti 400; vuoto = tolto) fa comparire in `ref.url` della squadra
+  l'indirizzo della pagina del lavoro, solo per `ref.type = task` (null altrimenti); la scheda squadra lo mostra come link.
+- Fuori ambito: token OAuth del connettore (`cao_…`) su `/api`, revoca RFC 7009, scelta degli ambiti al consenso, strumenti nuovi del centralino.
 
 ## Alfred (maggiordomo vocale)
 
@@ -1024,6 +1052,7 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
   (origine della UI, `https://casello.fantamister.cloud`: usata dal login e dal CORS, che in produzione
   accetta solo quella e in dev qualsiasi `localhost`); per il login `GOOGLE_CLIENT_ID`,
   `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, `ALLOWED_EMAILS` (separati da virgola); `OIDC_ISSUER` solo per i test.
+  `OAUTH_PLUGIN_CLIENTS` (facoltativa, JSON dei client plugin, vedi "Connettore OAuth (app Claude)"): se non è valida l'API non parte.
   GitHub (tutte facoltative: se ne manca una GitHub è disattivato e nei log compaiono i nomi mancanti):
   `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`,
   `GITHUB_APP_PRIVATE_KEY` (PEM, a capo veri o `\n`); `GITHUB_API_BASE`/`GITHUB_WEB_BASE` solo per i test.

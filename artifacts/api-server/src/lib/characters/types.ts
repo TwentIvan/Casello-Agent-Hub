@@ -31,7 +31,10 @@ export const PROPOSAL_KINDS = [
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
 
 /** Pagina della console da cui l'utente scrive (solo sui messaggi dell'utente). */
-export type PageContext = { page: string; id?: string };
+export type PageContext = { page: string; id?: string; host?: HostContext };
+
+/** Pagina dell'app ospite da cui scrive l'utente nel pannello incorporato (`page: "host"`). */
+export type HostContext = { app: string; page: string; id?: string; title?: string };
 
 /** Contesto di un turno passato agli strumenti dell'argomento. */
 export interface TurnContext {
@@ -72,6 +75,7 @@ export const CHARACTER_MESSAGES = {
   tooMany: "Troppe richieste: riprova tra poco",
   tooManyProposals: "troppe schede in questo turno",
   rationaleTooLong: `la motivazione supera ${RATIONALE_MAX} caratteri`,
+  badPageContext: "contesto della pagina non valido",
   noModel: "Scegli un modello per la conversazione.",
   archived: "conversazione archiviata",
   threadKeep: "il filo di Alfred si ricomincia, non si elimina",

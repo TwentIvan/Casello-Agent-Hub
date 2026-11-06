@@ -1465,6 +1465,32 @@ export interface CharacterConversation {
   updatedAt: string;
 }
 
+/**
+ * Pagina dell'app ospite (pannello incorporato); ammesso solo con page "host"
+ */
+export type CharacterPageContextHost = {
+  /** @pattern ^[a-z0-9][a-z0-9-]{0,63}$ */
+  app: string;
+  /**
+     * @minLength 1
+     * @maxLength 40
+     * @pattern ^[A-Za-z0-9._:-]+$
+     */
+  page: string;
+  /**
+     * @minLength 1
+     * @maxLength 40
+     * @pattern ^[A-Za-z0-9._:-]+$
+     */
+  id?: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     * @pattern ^[^\r\n]+$
+     */
+  title?: string;
+};
+
 export interface CharacterPageContext {
   /**
      * @minLength 1
@@ -1477,6 +1503,8 @@ export interface CharacterPageContext {
      * @maxLength 100
      */
   id?: string;
+  /** Pagina dell'app ospite (pannello incorporato); ammesso solo con page "host" */
+  host?: CharacterPageContextHost;
 }
 
 export type CharacterMessageRole = typeof CharacterMessageRole[keyof typeof CharacterMessageRole];

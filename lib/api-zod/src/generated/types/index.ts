@@ -119,6 +119,7 @@ export * from './characterMessage';
 export * from './characterMessageCreate';
 export * from './characterMessageRole';
 export * from './characterPageContext';
+export * from './characterPageContextHost';
 export * from './characterProposal';
 export * from './characterProposalDecision';
 export * from './characterProposalDecisionAction';

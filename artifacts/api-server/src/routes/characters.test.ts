@@ -234,6 +234,24 @@ describe("messaggi", () => {
     }
   });
 
+  it("host_page_context_400: host con titolo lungo o con page diversa da host, page host senza host", async () => {
+    const { id } = await createConv();
+    const host = { app: "hub-up", page: "workitem", id: "1174", title: "Fix ordini" };
+    const bad = [
+      { page: "host", host: { ...host, title: "t".repeat(201) } },
+      { page: "host", host: { ...host, title: "due\nrighe" } },
+      { page: "host", host: { ...host, app: "Hub Up" } },
+      { page: "dashboard", host },
+      { page: "host" },
+    ];
+    for (const pageContext of bad) {
+      const res = await api("POST", `/character-conversations/${id}/messages`, { content: "ciao", pageContext });
+      expect(res.status, JSON.stringify(pageContext)).toBe(400);
+    }
+    const dashboard = await api("POST", `/character-conversations/${id}/messages`, { content: "ciao", pageContext: { page: "dashboard", host } });
+    expect(dashboard.json.error).toBe("contesto della pagina non valido");
+  });
+
   it("send_busy_409: turno già in corso", async () => {
     const { id } = await createConv();
     await db.update(characterConversationsTable).set({ turnStatus: "running" }).where(eq(characterConversationsTable.id, id));

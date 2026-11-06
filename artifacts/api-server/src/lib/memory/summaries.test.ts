@@ -7,6 +7,8 @@ import {
   aiModelsTable,
   appsTable,
   analysesTable,
+  characterConversationsTable,
+  characterMessagesTable,
   characterHistoryTable,
   planConversationsTable,
   planMessagesTable,
@@ -166,6 +168,53 @@ describe("sweepSummaries", () => {
     expect(await sweepSummaries()).toBe(1);
     const rows = await history();
     expect(rows[0]).toMatchObject({ kind: "team_chat", refId: c!.id, title: "Ruoli" });
+  });
+});
+
+async function charConv(character: "alfred" | "lucius", updatedAt: Date, archived = false) {
+  const [c] = await db
+    .insert(characterConversationsTable)
+    .values({
+      userId,
+      character,
+      subjectType: character === "alfred" ? "alfred_thread" : "agent",
+      subjectId: character === "alfred" ? null : "7",
+      aiModelId: modelId,
+      title: "Filo",
+      updatedAt,
+      archivedAt: archived ? updatedAt : null,
+    })
+    .returning();
+  await db.insert(characterMessagesTable).values([
+    { conversationId: c!.id, role: "user", content: "Vorrei il piano B" },
+    { conversationId: c!.id, role: "assistant", content: "Ok, piano B" },
+  ]);
+  return c!.id;
+}
+const getChar = async (id: number) => (await db.select().from(characterConversationsTable).where(eq(characterConversationsTable.id, id)))[0]!;
+
+describe("conversazioni dei personaggi", () => {
+  it("summarizes_character_conversations: Lucius e Alfred (anche archiviata) finiscono nello storico", async () => {
+    const lucius = await charConv("lucius", minutesAgo(31));
+    const alfred = await charConv("alfred", minutesAgo(31), true);
+    expect(await sweepSummaries()).toBe(2);
+    const rows = await history();
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.refId === lucius)).toMatchObject({ character: "lucius", kind: "character_chat", userId });
+    expect(rows.find((r) => r.refId === alfred)).toMatchObject({ character: "alfred", kind: "character_chat", userId });
+    expect((await getChar(lucius)).summarizedAt).not.toBeNull();
+  });
+
+  it("summary_skipped_on_character_cap: tetto di Lucius raggiunto, nessun riassunto ma summarized_at scritto", async () => {
+    await db.update(usersTable).set({ luciusMonthlyBudgetUsd: "0.01" }).where(eq(usersTable.id, userId));
+    await db.insert(characterHistoryTable).values({ userId, character: "lucius", kind: "team_chat", refId: 999, title: "t", summary: "s", aiModelId: modelId, tokensUsed: 10, costUsd: "0.05" });
+    const id = await charConv("lucius", minutesAgo(31));
+    const plan = await planConv(minutesAgo(31));
+    await sweepSummaries();
+    expect(await history()).toHaveLength(1);
+    expect((await getChar(id)).summarizedAt).not.toBeNull();
+    expect((await getPlan(plan)).summarizedAt).not.toBeNull();
+    expect(fake.requests.filter((r) => r.path.endsWith("/chat/completions"))).toHaveLength(0);
   });
 });
 

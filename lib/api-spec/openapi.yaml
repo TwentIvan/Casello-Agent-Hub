@@ -5591,11 +5591,10 @@ components:
 
     PlanConversationCreate:
       type: object
-      required: [aiModelId]
       properties:
         aiModelId:
-          type: integer
-          description: Modello di un account AI dell'utente
+          type: ["integer", "null"]
+          description: Modello di un account AI dell'utente; null o assente = modello di Lucius (o predefinito)
         analysisId:
           type: integer
           description: Analisi di riferimento (default l'ultima completata dell'app)

@@ -4468,7 +4468,7 @@ export const CreatePlanConversationParams = zod.object({
 })
 
 export const CreatePlanConversationBody = zod.object({
-  "aiModelId": zod.number().describe('Modello di un account AI dell\'utente'),
+  "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente; null o assente = modello di Lucius (o predefinito)'),
   "analysisId": zod.number().optional().describe('Analisi di riferimento (default l\'ultima completata dell\'app)')
 })
 

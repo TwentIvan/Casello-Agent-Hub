@@ -9,6 +9,7 @@ import {
   aiAccountsTable,
   aiModelsTable,
   appsTable,
+  characterHistoryTable,
   teamChatConversationsTable,
   teamChatMessagesTable,
   teamChatProposalsTable,
@@ -227,6 +228,24 @@ describe("messaggi", () => {
     expect(typeof res.json.error).toBe("string");
     await db.update(teamChatConversationsTable).set({ turnStatus: "idle" }).where(eq(teamChatConversationsTable.id, id));
     expect((await api("POST", `/team-chat-conversations/9999/messages`, { content: "ciao" })).status).toBe(404);
+  });
+
+  it("team_chat_turn_blocked_by_lucius_cap: tetto di Lucius raggiunto → 409 anche con quello dell'utente libero", async () => {
+    const { id } = await createConv();
+    await db.update(usersTable).set({ luciusMonthlyBudgetUsd: "0.01" }).where(eq(usersTable.id, userId));
+    await db.insert(characterHistoryTable).values({ userId, character: "lucius", kind: "plan_conversation", refId: 997, title: "t", summary: "s", aiModelId: modelId, tokensUsed: 10, costUsd: "0.05" });
+    const res = await api("POST", `/team-chat-conversations/${id}/messages`, { content: "ciao" });
+    expect(res.status, res.text).toBe(409);
+    expect(res.json.error).toContain("Tetto di spesa mensile di Lucius raggiunto");
+    expect(await db.select().from(teamChatMessagesTable)).toHaveLength(0);
+    await db.update(usersTable).set({ luciusMonthlyBudgetUsd: null }).where(eq(usersTable.id, userId));
+  });
+
+  it("new_team_chat_conversation_uses_lucius_model: senza modello nel corpo si usa quello di Lucius", async () => {
+    await db.update(usersTable).set({ luciusAiModelId: modelId }).where(eq(usersTable.id, userId));
+    const res = await api("POST", `/team-instances/${instanceId}/team-chat-conversations`, {});
+    expect(res.status, res.text).toBe(201);
+    expect(res.json.aiModelId).toBe(modelId);
   });
 
   it("tetto di spesa raggiunto → 409 col motivo, nessun messaggio salvato", async () => {

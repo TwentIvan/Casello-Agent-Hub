@@ -16,6 +16,7 @@ import {
   type PlanMessage,
 } from "@workspace/db";
 import { logger } from "../logger";
+import { characterBudgetBlock } from "../budget";
 import { ProviderError } from "../ai/discovery";
 import { ModelAccessError, modelChat, resolveModel } from "../ai/executor";
 import { sliceChars } from "../architect/text";
@@ -218,8 +219,11 @@ export async function executePlanTurn(conversationId: number, assistantMessageId
   try {
     const [conv] = await db.select().from(planConversationsTable).where(eq(planConversationsTable.id, conversationId));
     if (!conv) return;
+    let blocked: string | null;
     if (conv.aiModelId === null) {
       content = NO_MODEL_MESSAGE;
+    } else if ((blocked = await characterBudgetBlock(conv.userId, "lucius", conv.aiModelId))) {
+      content = blocked;
     } else {
       const [app] = await db.select().from(appsTable).where(eq(appsTable.id, conv.appId));
       const [analysis] = await db.select().from(analysesTable).where(eq(analysesTable.id, conv.analysisId));

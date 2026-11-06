@@ -9,9 +9,11 @@ import {
   planMessagesTable,
   teamChatConversationsTable,
   teamChatMessagesTable,
+  characterConversationsTable,
+  characterMessagesTable,
 } from "@workspace/db";
 import { logger } from "../logger";
-import { userBudgetBlock } from "../budget";
+import { characterBudgetBlock } from "../budget";
 import { getDefaultModel, ownModel } from "../ai/default-model";
 import { modelChat, resolveModel, type ModelChatResult, type ResolvedModel } from "../ai/executor";
 import { addHistory, type HistoryKind } from "./history";
@@ -51,7 +53,7 @@ export async function summarizeConversation(input: SummaryInput, deps: SummaryDe
   const defaultId = await getDefaultModel(input.userId);
   if (defaultId === null) return "skipped";
   if (!(await ownModel(input.userId, defaultId, db))) return "skipped";
-  if (await userBudgetBlock(defaultId)) return "skipped";
+  if (await characterBudgetBlock(input.userId, input.character, defaultId)) return "skipped";
   let reply: ModelChatResult;
   try {
     const resolved = await resolveModel(defaultId, { userId: input.userId, mustOwn: true });
@@ -86,13 +88,21 @@ function buildTranscript(rows: { role: "user" | "assistant"; content: string }[]
   return rows.map((r) => line(r.role, r.content)).join("\n\n").slice(-TRANSCRIPT_MAX_CHARS);
 }
 
+type SummaryKind = "plan_conversation" | "team_chat" | "character_chat";
+
 async function summarizeOne(
-  kind: "plan_conversation" | "team_chat",
-  conv: { id: number; userId: number; title: string },
+  kind: SummaryKind,
+  conv: { id: number; userId: number; title: string; character?: Character },
   now: Date,
 ): Promise<void> {
   const plan = kind === "plan_conversation";
-  const rows = plan
+  const rows = kind === "character_chat"
+    ? await db
+        .select({ role: characterMessagesTable.role, content: characterMessagesTable.content })
+        .from(characterMessagesTable)
+        .where(and(eq(characterMessagesTable.conversationId, conv.id), eq(characterMessagesTable.error, false)))
+        .orderBy(asc(characterMessagesTable.id))
+    : plan
     ? await db
         .select({ role: planMessagesTable.role, content: planMessagesTable.content })
         .from(planMessagesTable)
@@ -106,7 +116,7 @@ async function summarizeOne(
   if (rows.length > 0) {
     await summarizeConversation({
       userId: conv.userId,
-      character: "lucius",
+      character: conv.character ?? "lucius",
       kind,
       refId: conv.id,
       title: conv.title,
@@ -114,7 +124,8 @@ async function summarizeOne(
     });
   }
   // Sempre, anche se saltato: non si ritenta finché la conversazione non cambia
-  if (plan) await db.update(planConversationsTable).set({ summarizedAt: now }).where(eq(planConversationsTable.id, conv.id));
+  if (kind === "character_chat") await db.update(characterConversationsTable).set({ summarizedAt: now }).where(eq(characterConversationsTable.id, conv.id));
+  else if (plan) await db.update(planConversationsTable).set({ summarizedAt: now }).where(eq(planConversationsTable.id, conv.id));
   else await db.update(teamChatConversationsTable).set({ summarizedAt: now }).where(eq(teamChatConversationsTable.id, conv.id));
 }
 
@@ -145,9 +156,30 @@ export async function sweepSummaries(now: Date = new Date()): Promise<number> {
     )
     .orderBy(asc(teamChatConversationsTable.updatedAt))
     .limit(BATCH);
+  const charDue = await db
+    .select({
+      id: characterConversationsTable.id,
+      userId: characterConversationsTable.userId,
+      title: characterConversationsTable.title,
+      character: characterConversationsTable.character,
+    })
+    .from(characterConversationsTable)
+    .where(
+      and(
+        eq(characterConversationsTable.turnStatus, "idle"),
+        lt(characterConversationsTable.updatedAt, limit),
+        or(
+          isNull(characterConversationsTable.summarizedAt),
+          sql`${characterConversationsTable.summarizedAt} < ${characterConversationsTable.updatedAt}`,
+        ),
+      ),
+    )
+    .orderBy(asc(characterConversationsTable.updatedAt))
+    .limit(BATCH);
   const jobs = [
     ...planDue.map((c) => ({ kind: "plan_conversation" as const, c })),
     ...teamDue.map((c) => ({ kind: "team_chat" as const, c })),
+    ...charDue.map((c) => ({ kind: "character_chat" as const, c })),
   ].slice(0, BATCH);
   let done = 0;
   for (const j of jobs) {

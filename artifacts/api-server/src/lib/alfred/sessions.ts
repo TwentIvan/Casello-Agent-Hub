@@ -3,7 +3,7 @@ import { db, aiModelsTable, alfredConfirmationsTable, alfredSessionsTable, users
 import { ModelAccessError, computeCost, resolveModel, type ResolvedModel } from "../ai/executor";
 import { ProviderError } from "../ai/discovery";
 import { MODEL_UNAVAILABLE } from "../ai/choice";
-import { userBudgetBlock } from "../budget";
+import { characterBudgetBlock } from "../budget";
 import { logger } from "../logger";
 import { ALFRED_VOICES, DEFAULT_ALFRED_VOICE, bareModelName } from "./config";
 import { AlfredError, createEphemeralToken } from "./gemini";
@@ -55,7 +55,7 @@ async function prepare(userId: number, sessionModelId?: number | null): Promise<
     throw err;
   }
   if (resolved.provider !== "gemini") throw new AlfredError(MODEL_UNAVAILABLE, 409);
-  const block = await userBudgetBlock(resolved.aiModelId);
+  const block = await characterBudgetBlock(userId, "alfred", resolved.aiModelId);
   if (block) throw new AlfredError(block, 409);
   const voice = user.voice && ALFRED_VOICES.includes(user.voice) ? user.voice : DEFAULT_ALFRED_VOICE;
   return { resolved, voice, userName: user.name };

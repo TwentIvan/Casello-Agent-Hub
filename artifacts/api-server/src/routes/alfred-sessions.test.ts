@@ -173,6 +173,16 @@ describe("POST /alfred/sessions", () => {
     }
   });
 
+  it("alfred_session_blocked_by_character_cap: tetto di Alfred raggiunto → 409", async () => {
+    const { dev, model } = await setup();
+    await db.update(usersTable).set({ alfredMonthlyBudgetUsd: "1.00" }).where(eq(usersTable.id, dev));
+    await db.insert(alfredSessionsTable).values({ userId: dev, aiModelId: model, status: "closed", costUsd: "5.00000000" });
+    const res = await api("POST", "/alfred/sessions");
+    expect(res.status, res.text).toBe(409);
+    expect(res.json.error).toContain("Tetto di spesa mensile di Alfred raggiunto");
+    await db.update(usersTable).set({ alfredMonthlyBudgetUsd: null }).where(eq(usersTable.id, dev));
+  });
+
   it("avvia: token, scadenze, configurazione fissata, chiave dell'account", async () => {
     await setup();
     const before = Date.now();

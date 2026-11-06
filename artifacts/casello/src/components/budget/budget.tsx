@@ -44,13 +44,13 @@ import { formatUsd } from "@/lib/format";
 // che continuano a spendere su un tetto già raggiunto.
 
 const REFRESH_MS = 60_000;
-const WARN_RATIO = 0.8;
+export const WARN_RATIO = 0.8;
 
 export function useBudget() {
   return useGetBudget({ query: { queryKey: getGetBudgetQueryKey(), refetchInterval: REFRESH_MS } });
 }
 
-function ratio(spent: number, cap: number | null): number | null {
+export function ratio(spent: number, cap: number | null): number | null {
   if (cap === null) return null;
   return cap === 0 ? 1 : spent / cap;
 }
@@ -63,7 +63,7 @@ function unpricedNote(count: number): string {
 }
 
 /** Riga "spesi X su Y" con barra; senza tetto solo la spesa. */
-function SpendLine({ spent, cap, unpriced }: { spent: number; cap: number | null; unpriced: number }) {
+export function SpendLine({ spent, cap, unpriced }: { spent: number; cap: number | null; unpriced: number }) {
   const r = ratio(spent, cap);
   return (
     <div className="space-y-2">

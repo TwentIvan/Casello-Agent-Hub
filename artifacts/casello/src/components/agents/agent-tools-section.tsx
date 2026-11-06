@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MutableRefObject } from "react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -41,7 +41,7 @@ function ToolBadges({ tool }: { tool: AppTool }) {
  * Strumenti dell'agente. Il generale usa tutti i tool attivi dell'app (elenco in sola lettura);
  * un agente di area ha le caselle sui tool del catalogo (si assegnano solo quelli attivi).
  */
-export function AgentToolsSection({ agent }: { agent: Agent }) {
+export function AgentToolsSection({ agent, dirtyRef }: { agent: Agent; dirtyRef?: MutableRefObject<boolean> }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const tools = useListAppTools(agent.appId, { query: { queryKey: getListAppToolsQueryKey(agent.appId) } });
@@ -52,9 +52,18 @@ export function AgentToolsSection({ agent }: { agent: Agent }) {
     [tools.data],
   );
   const [selected, setSelected] = useState<Set<number>>(() => new Set(agent.toolIds));
-  // Il componente viene rimontato a ogni cambio di agente (key): la selezione parte sempre da quella salvata.
+  // Il componente viene rimontato a ogni cambio di agente o dei suoi strumenti salvati (key con gli id): la selezione
+  // parte sempre da quella salvata, anche dopo una scheda di Lucius accettata.
   const savedKey = [...agent.toolIds].sort((a, b) => a - b).join(",");
   const dirty = savedKey !== [...selected].sort((a, b) => a - b).join(",");
+  // La pagina lo legge per avvisare prima di accettare una scheda: le caselle cambiate andrebbero perse
+  if (dirtyRef) dirtyRef.current = dirty;
+  useEffect(
+    () => () => {
+      if (dirtyRef) dirtyRef.current = false;
+    },
+    [dirtyRef],
+  );
 
   const setTools = useSetAgentTools({
     mutation: {

@@ -203,6 +203,39 @@ export interface CentralinoModel {
   aiModelId: number | null;
 }
 
+export interface CharacterSettings {
+  /** @nullable */
+  alfredChatAiModelId: number | null;
+  /** @nullable */
+  luciusAiModelId: number | null;
+  /**
+     * @minimum 0
+     * @maximum 1000000
+     * @nullable
+     */
+  alfredMonthlyBudgetUsd: number | null;
+  /**
+     * @minimum 0
+     * @maximum 1000000
+     * @nullable
+     */
+  luciusMonthlyBudgetUsd: number | null;
+}
+
+/**
+ * Impostazioni dei personaggi più la spesa del mese (mese di calendario, ora italiana).
+ */
+export type CharacterSettingsView = CharacterSettings & {
+  /** @minimum 0 */
+  alfredSpentUsd: number;
+  /** @minimum 0 */
+  luciusSpentUsd: number;
+  /** @minimum 0 */
+  alfredUnpricedCount: number;
+  /** @minimum 0 */
+  luciusUnpricedCount: number;
+};
+
 export type AlfredSettingsModelsItem = {
   id: number;
   name: string;
@@ -1184,8 +1217,11 @@ export interface McpSyncResult {
 }
 
 export interface PlanConversationCreate {
-  /** Modello di un account AI dell'utente */
-  aiModelId: number;
+  /**
+     * Modello di un account AI dell'utente; null o assente = modello di Lucius (o predefinito)
+     * @nullable
+     */
+  aiModelId?: number | null;
   /** Analisi di riferimento (default l'ultima completata dell'app) */
   analysisId?: number;
 }
@@ -1358,6 +1394,34 @@ export interface TeamChatProposalDecision {
   action: TeamChatProposalDecisionAction;
 }
 
+export type CharacterSubjectType = typeof CharacterSubjectType[keyof typeof CharacterSubjectType];
+
+
+export const CharacterSubjectType = {
+  alfred_thread: 'alfred_thread',
+  agent: 'agent',
+  skill: 'skill',
+  team_template: 'team_template',
+  area_agents: 'area_agents',
+  area_skills: 'area_skills',
+  area_team_templates: 'area_team_templates',
+} as const;
+
+export type CharacterProposalKind = typeof CharacterProposalKind[keyof typeof CharacterProposalKind];
+
+
+export const CharacterProposalKind = {
+  agent_prompt: 'agent_prompt',
+  agent_tools: 'agent_tools',
+  skill_content: 'skill_content',
+  template_roles: 'template_roles',
+  agent_create: 'agent_create',
+  skill_create: 'skill_create',
+  template_create: 'template_create',
+  decision: 'decision',
+  handoff: 'handoff',
+} as const;
+
 export type MemoryCharacter = typeof MemoryCharacter[keyof typeof MemoryCharacter];
 
 
@@ -1365,6 +1429,157 @@ export const MemoryCharacter = {
   alfred: 'alfred',
   lucius: 'lucius',
 } as const;
+
+export interface CharacterConversation {
+  id: number;
+  character: MemoryCharacter;
+  subjectType: CharacterSubjectType;
+  /** @nullable */
+  subjectId: string | null;
+  /**
+     * Titolo dell'oggetto alla creazione
+     * @nullable
+     */
+  subjectTitle: string | null;
+  /** L'argomento non esiste più; calcolato solo nel dettaglio */
+  subjectGone?: boolean;
+  /** @nullable */
+  aiModelId: number | null;
+  title: string;
+  tokensUsed: number;
+  /**
+     * null = costo parziale (prezzo mancante)
+     * @nullable
+     */
+  costUsd: number | null;
+  turnStatus: PlanTurnStatus;
+  /** @nullable */
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CharacterPageContext {
+  /**
+     * @minLength 1
+     * @maxLength 40
+     * @pattern ^[a-z_]+$
+     */
+  page: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  id?: string;
+}
+
+export type CharacterMessageRole = typeof CharacterMessageRole[keyof typeof CharacterMessageRole];
+
+
+export const CharacterMessageRole = {
+  user: 'user',
+  assistant: 'assistant',
+} as const;
+
+export interface CharacterMessage {
+  id: number;
+  role: CharacterMessageRole;
+  /** Markdown */
+  content: string;
+  error: boolean;
+  pageContext: CharacterPageContext | null;
+  createdAt: string;
+}
+
+/**
+ * @nullable
+ */
+export type CharacterProposalPayload = { [key: string]: unknown } | null;
+
+export type CharacterProposalStatus = typeof CharacterProposalStatus[keyof typeof CharacterProposalStatus];
+
+
+export const CharacterProposalStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  rejected: 'rejected',
+  stale: 'stale',
+} as const;
+
+export interface CharacterProposal {
+  id: number;
+  messageId: number;
+  kind: CharacterProposalKind;
+  /** @nullable */
+  payload: CharacterProposalPayload;
+  rationale: string;
+  status: CharacterProposalStatus;
+  /** @nullable */
+  decidedAt: string | null;
+  createdAt: string;
+}
+
+export type CharacterConversationDetail = CharacterConversation & {
+  messages: CharacterMessage[];
+  proposals: CharacterProposal[];
+};
+
+export type CharacterConversationCreateSubjectType = typeof CharacterConversationCreateSubjectType[keyof typeof CharacterConversationCreateSubjectType];
+
+
+export const CharacterConversationCreateSubjectType = {
+  agent: 'agent',
+  skill: 'skill',
+  team_template: 'team_template',
+  area_agents: 'area_agents',
+  area_skills: 'area_skills',
+  area_team_templates: 'area_team_templates',
+} as const;
+
+export interface CharacterConversationCreate {
+  character: MemoryCharacter;
+  subjectType: CharacterConversationCreateSubjectType;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     * @nullable
+     */
+  subjectId?: string | null;
+}
+
+export interface CharacterConversationUpdate {
+  /**
+     * Modello di un account AI dell'utente
+     * @nullable
+     */
+  aiModelId?: number | null;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  title?: string;
+}
+
+export interface CharacterMessageCreate {
+  /**
+     * @minLength 1
+     * @maxLength 8000
+     */
+  content: string;
+  pageContext?: CharacterPageContext;
+}
+
+export type CharacterProposalDecisionAction = typeof CharacterProposalDecisionAction[keyof typeof CharacterProposalDecisionAction];
+
+
+export const CharacterProposalDecisionAction = {
+  accept: 'accept',
+  reject: 'reject',
+} as const;
+
+export interface CharacterProposalDecision {
+  action: CharacterProposalDecisionAction;
+}
 
 export interface MemoryNote {
   id: number;
@@ -3306,6 +3521,16 @@ export type ListCatalogProvidersParams = {
  */
 q?: string;
 status?: AiProviderStatus;
+};
+
+export type ListCharacterConversationsParams = {
+character: MemoryCharacter;
+subjectType?: CharacterSubjectType;
+/**
+ * @minLength 1
+ * @maxLength 100
+ */
+subjectId?: string;
 };
 
 export type ListMemoryNotesParams = {

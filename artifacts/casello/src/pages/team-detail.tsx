@@ -40,7 +40,7 @@ import { RolesEditor } from "@/components/teams/roles-editor";
 import { SaveAsTemplateDialog } from "@/components/teams/save-as-template-dialog";
 import { TeamStatusBadge } from "@/components/teams/team-status";
 import { TeamUpdatesCard } from "@/components/teams/team-updates-card";
-import { LuciusPanel } from "@/components/teams/lucius-panel";
+import { CharacterButton } from "@/components/characters/character-button";
 import { LeadMessageCard } from "@/components/teams/lead-message";
 import { PlanApprovalCards } from "@/components/teams/plan-approval-card";
 import { PlanCard } from "@/components/teams/plan-card";
@@ -129,12 +129,11 @@ function TeamWork({ team, dirty, session }: { team: TeamInstance; dirty: boolean
 /** Squadra caricata: la sessione resta, l'editor si rimonta a ogni salvataggio e riparte dallo stato salvato. */
 function TeamDetail({ team }: { team: TeamInstance }) {
   const session = useTeamSession(team.id);
-  // Lucius sta fuori dall'editor rimontato: accettare una scheda cambia `updatedAt` ma non deve chiudere la conversazione
+  // il pannello dei personaggi è globale: accettare una scheda cambia `updatedAt` e rimonta l'editor, ma non chiude la conversazione
   const dirtyRef = useRef(false);
   return (
     <div className="space-y-6">
       <TeamEditor key={`${team.id}-${team.updatedAt}`} team={team} session={session} dirtyRef={dirtyRef} />
-      <LuciusPanel instanceId={team.id} closed={team.status === "closed"} hasUnsavedChanges={() => dirtyRef.current} />
     </div>
   );
 }
@@ -246,6 +245,15 @@ function TeamEditor({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <CharacterButton
+            target={{ kind: "team", instanceId: team.id, closed }}
+            hasUnsavedChanges={() => dirtyRef.current}
+          />
+          {/* Anche Alfred: un suo passaggio a Lucius sulla stessa squadra eredita questo controllo */}
+          <CharacterButton
+            target={{ kind: "alfred", page: { page: "team", id: String(team.id) } }}
+            hasUnsavedChanges={() => dirtyRef.current}
+          />
           {!closed && (
             <Button onClick={() => submit()} disabled={!dirty || save.isPending}>
               {save.isPending ? "Salvataggio…" : "Salva"}

@@ -1,7 +1,7 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   db,
   pool,
@@ -10,6 +10,7 @@ import {
   analysesTable,
   analysisItemsTable,
   appsTable,
+  characterHistoryTable,
   planConversationsTable,
   planMessagesTable,
   planProposalsTable,
@@ -157,6 +158,16 @@ describe("route della chat del piano", () => {
     const list = await api("GET", `/apps/${appId}/plan-conversations`);
     expect(list.status).toBe(200);
     expect(list.json.map((c: { id: number }) => c.id)).toEqual([res.json.id]);
+  });
+
+  it("new_plan_conversation_uses_lucius_model: senza modello nel corpo si usa quello di Lucius", async () => {
+    const res = await api("POST", `/apps/${appId}/plan-conversations`, {});
+    expect(res.status, res.text).toBe(201);
+    expect(res.json.aiModelId).toBeNull();
+    await db.update(usersTable).set({ luciusAiModelId: modelId }).where(eq(usersTable.id, userId));
+    const lucius = await api("POST", `/apps/${appId}/plan-conversations`, {});
+    expect(lucius.status, lucius.text).toBe(201);
+    expect(lucius.json.aiModelId).toBe(modelId);
   });
 
   it("senza analisi completata → 409", async () => {
@@ -428,6 +439,33 @@ describe("route della chat del piano", () => {
       await waitIdleApi(id);
       expect((await api("POST", `/plan-conversations/${id}/messages`, { content: "due" }, root)).status).toBe(429);
     } finally {
+      small.closeAllConnections?.();
+      await new Promise<void>((r) => small.close(() => r()));
+    }
+  });
+
+  it("plan_turn_blocked_by_lucius_cap: tetto di Lucius raggiunto → 409 anche con quello dell'utente libero", async () => {
+    // router con un proprio contatore: quello globale del file è già esaurito dagli altri test
+    const { createPlanChatRouter } = await import("./plan-chat");
+    const { default: express } = await import("express");
+    const { errorHandler } = await import("../middlewares/error-handler");
+    const { requireAuth } = await import("../lib/auth");
+    const app = express();
+    app.use(express.json());
+    app.use("/api", requireAuth, createPlanChatRouter({ messageLimit: 5 }));
+    app.use(errorHandler);
+    const small = http.createServer(app);
+    const root = `http://127.0.0.1:${await listen(small)}`;
+    try {
+      const { id } = await createConv();
+      await db.update(usersTable).set({ luciusMonthlyBudgetUsd: "0.01" }).where(eq(usersTable.id, userId));
+      await db.insert(characterHistoryTable).values({ userId, character: "lucius", kind: "team_chat", refId: 998, title: "t", summary: "s", aiModelId: modelId, tokensUsed: 10, costUsd: "0.05" });
+      const res = await api("POST", `/plan-conversations/${id}/messages`, { content: "ciao" }, root);
+      expect(res.status, res.text).toBe(409);
+      expect(res.json.error).toContain("Tetto di spesa mensile di Lucius raggiunto");
+    } finally {
+      await db.update(usersTable).set({ luciusMonthlyBudgetUsd: null }).where(eq(usersTable.id, userId));
+      await db.delete(characterHistoryTable).where(and(eq(characterHistoryTable.userId, userId), eq(characterHistoryTable.refId, 998)));
       small.closeAllConnections?.();
       await new Promise<void>((r) => small.close(() => r()));
     }

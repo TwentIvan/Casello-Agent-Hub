@@ -4,9 +4,7 @@ import {
   db,
   agentSkillsTable,
   agentsTable,
-  agentToolsTable,
   appsTable,
-  appToolsTable,
   runsTable,
 } from "@workspace/db";
 import { runRateLimit } from "../middlewares/rate-limit";
@@ -35,6 +33,7 @@ import {
   DeleteAgentSkillParams,
 } from "@workspace/api-zod";
 import { AGENT_WITHOUT_MODEL, startRun } from "../lib/run-executor";
+import { AgentError, createAreaAgent, setAgentTools, updateAgent } from "../lib/agents";
 import { budgetColumn, runBudgetBlock } from "../lib/budget";
 import { currentUserId } from "../lib/auth";
 import { ModelChoiceError, NO_MODEL, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
@@ -73,11 +72,15 @@ router.post("/agents", async (req, res) => {
     res.status(400).json({ error: err.message });
     return;
   }
-  const [agent] = await db
-    .insert(agentsTable)
-    .values({ ...body, ...choice, role: "area" })
-    .returning();
-  res.status(201).json(CreateAgentResponse.parse(await withToolIdsOne(agent!)));
+  let agent;
+  try {
+    agent = await createAreaAgent(body, choice);
+  } catch (err) {
+    if (!(err instanceof AgentError)) throw err;
+    res.status(err.status).json({ error: err.message });
+    return;
+  }
+  res.status(201).json(CreateAgentResponse.parse(await withToolIdsOne(agent)));
 });
 
 router.get("/agents/:id", async (req, res) => {
@@ -126,21 +129,17 @@ router.patch("/agents/:id", async (req, res) => {
     res.status(400).json({ error: err.message });
     return;
   }
-  const [agent] = await db
-    .update(agentsTable)
-    .set({
+  try {
+    const agent = await updateAgent(id, {
       ...body,
       ...modelFields,
       ...(monthlyBudgetUsd !== undefined && { monthlyBudgetUsd: budgetColumn(monthlyBudgetUsd) }),
-      updatedAt: new Date(),
-    })
-    .where(eq(agentsTable.id, id))
-    .returning();
-  if (!agent) {
-    res.status(404).json({ error: "Agente non trovato" });
-    return;
+    });
+    res.json(UpdateAgentResponse.parse(await withToolIdsOne(agent)));
+  } catch (err) {
+    if (!(err instanceof AgentError)) throw err;
+    res.status(err.status).json({ error: err.message });
   }
-  res.json(UpdateAgentResponse.parse(await withToolIdsOne(agent)));
 });
 
 router.delete("/agents/:id", async (req, res) => {
@@ -162,40 +161,15 @@ router.delete("/agents/:id", async (req, res) => {
 
 router.put("/agents/:id/tools", async (req, res) => {
   const { id } = parseRequest(SetAgentToolsParams, req.params);
-  const toolIds = [...new Set(parseRequest(SetAgentToolsBody, req.body).toolIds)];
-
-  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, id)).limit(1);
-  if (!agent) {
-    res.status(404).json({ error: "Agente non trovato" });
+  const { toolIds } = parseRequest(SetAgentToolsBody, req.body);
+  let updated;
+  try {
+    updated = await setAgentTools(id, toolIds);
+  } catch (err) {
+    if (!(err instanceof AgentError)) throw err;
+    res.status(err.status).json({ error: err.message });
     return;
   }
-  if (agent.role === "general") {
-    res.status(400).json({ error: "L'agente generale usa tutti i tool attivi dell'app: non gli si assegnano tool" });
-    return;
-  }
-  if (toolIds.length) {
-    const owned = await db
-      .select({ id: appToolsTable.id })
-      .from(appToolsTable)
-      .where(and(eq(appToolsTable.appId, agent.appId), inArray(appToolsTable.id, toolIds)));
-    if (owned.length !== toolIds.length) {
-      res.status(400).json({ error: "Alcuni strumenti non esistono o non appartengono all'app dell'agente" });
-      return;
-    }
-  }
-
-  const updated = await db.transaction(async (tx) => {
-    await tx.delete(agentToolsTable).where(eq(agentToolsTable.agentId, id));
-    if (toolIds.length) {
-      await tx.insert(agentToolsTable).values(toolIds.map((toolId) => ({ agentId: id, toolId })));
-    }
-    const [row] = await tx
-      .update(agentsTable)
-      .set({ updatedAt: new Date() })
-      .where(eq(agentsTable.id, id))
-      .returning();
-    return row!;
-  });
   res.json(SetAgentToolsResponse.parse(await withToolIdsOne(updated)));
 });
 

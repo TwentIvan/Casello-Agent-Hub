@@ -9,6 +9,7 @@ import {
   useListApps,
   useListTeamInstances,
 } from "@workspace/api-client-react";
+import { CharacterButton } from "@/components/characters/character-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -41,10 +42,13 @@ export default function TeamsPage() {
             Squadre al lavoro su un incarico preciso, copiate da un modello e specializzate.
           </p>
         </div>
-        <Button onClick={() => setCreating(true)}>
-          <Plus />
-          Nuova squadra
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <CharacterButton target={{ kind: "alfred", page: { page: "teams" } }} />
+          <Button onClick={() => setCreating(true)}>
+            <Plus />
+            Nuova squadra
+          </Button>
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Select value={status} onValueChange={(v) => setStatus(v as TeamInstanceStatus | "all")}>

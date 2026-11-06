@@ -28,8 +28,8 @@ import {
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
 import { ModelChoiceError, chooseOwnModel } from "../lib/ai/choice";
-import { getDefaultModel, ownModel } from "../lib/ai/default-model";
-import { userBudgetBlock } from "../lib/budget";
+import { characterBudgetBlock } from "../lib/budget";
+import { characterModelFor } from "../lib/characters/settings";
 import { buildZip } from "../lib/zip-writer";
 import { TeamChatError, decideTeamChatProposal, toProposalView, type ProposalView } from "../lib/team-chat/decide";
 import { instructionsSkillCode } from "../lib/team-chat/instructions-file";
@@ -135,9 +135,8 @@ export function createTeamChatRouter(): IRouter {
         }
         aiModelId = body.aiModelId;
       } else {
-        // Il predefinito vale solo se è ancora di un account dell'utente
-        const def = await getDefaultModel(userId);
-        aiModelId = def !== null && (await ownModel(userId, def, db)) ? def : null;
+        // Modello di Lucius, con ripiego sul predefinito (solo se ancora di un account dell'utente)
+        aiModelId = await characterModelFor(userId, "lucius");
       }
       const [conv] = await db.insert(teamChatConversationsTable).values({ teamInstanceId: id, userId, aiModelId, title: "" }).returning();
       res.status(201).json(toPublicConversation(conv!));
@@ -201,7 +200,7 @@ export function createTeamChatRouter(): IRouter {
       res.status(404).json({ error: CONVERSATION_NOT_FOUND });
       return;
     }
-    const blocked = conv.aiModelId === null ? null : await userBudgetBlock(conv.aiModelId);
+    const blocked = conv.aiModelId === null ? null : await characterBudgetBlock(userId, "lucius", conv.aiModelId);
     if (blocked) {
       res.status(409).json({ error: blocked });
       return;

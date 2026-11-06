@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { Plus } from "lucide-react";
 import { type SkillKind, getListSkillsQueryKey, useListSkills } from "@workspace/api-client-react";
+import { CharacterButton } from "@/components/characters/character-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,10 +38,13 @@ export default function SkillsPage() {
             Il catalogo delle skill versionate che i ruoli delle squadre possono usare.
           </p>
         </div>
-        <Button onClick={() => setCreating(true)}>
-          <Plus />
-          Nuova skill
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <CharacterButton target={{ kind: "character", subjectType: "area_skills", subjectId: null, title: "Area Skill" }} />
+          <Button onClick={() => setCreating(true)}>
+            <Plus />
+            Nuova skill
+          </Button>
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Input

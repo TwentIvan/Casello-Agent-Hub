@@ -31,6 +31,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Lucius sulla squadra e memorie: nella scheda squadra Lucius discute identità e istruzioni dei ruoli e le propone come schede da
   accettare; Alfred e Lucius hanno una memoria (appunti e storico dei riassunti), visibile e modificabile in Account (vedi "Lucius
   sulla squadra e memorie").
+- Alfred e Lucius nelle aree: un pulsante per area apre il personaggio giusto in un pannello laterale (Alfred scritto con un filo unico che
+  sa da quale pagina scrivi, Lucius per oggetto: agente, skill, modello di squadra, aree, piano, squadra); schede da accettare, passaggio di
+  consegne tra i due, modello e tetto mensile per personaggio in Account → «Personaggi» (vedi "Alfred e Lucius nelle aree").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -50,13 +53,14 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (logo, segno, Alfred, Lucius dai file di `design/assets/`, versione chiara o scura secondo il tema). `Button` è `ui/button.tsx`
   (principale = `default`, secondario = `secondary`/`outline`, discreto = `ghost`/`link`). Gli stati si mostrano con i LED, non con
   badge colorati.
-- Due aree del menu, separate solo da una fila di stalattiti in pixel (`CaveDivider`), senza titoli: quartier generale (Dashboard,
-  Squadre, Da confermare, Run, Parla con Alfred) e officina (App, Agenti, Skill, Modelli di squadra, Modelli AI). La caverna:
-  `components/brand/cave.tsx` (`CaveVault`): la barra in alto di ogni pagina (`CaveHeader` in `app-shell.tsx`, 112 px, buia in
-  entrambi i temi) ha la volta di stalattiti con il LED, sotto il padrone di casa dell'area aperta (Alfred · quartier generale,
-  Lucius · officina, nessuno fuori dal menu) e l'account (quadrato, ardesia e carta), poi il pavimento di roccia; niente titolo
-  della pagina. Fondi e bordi in grigi neutri, senza dominanti calde o fredde. I due personaggi si mostrano dentro le loro funzioni, con i loro segni: Alfred il maggiordomo (voce, `/alfred`),
-  Lucius l'ingegnere del laboratorio (analisi, proposte, chat del piano: nei prompt di `architect/prompts.ts` e `plan-chat/context.ts`).
+- Menu in un solo elenco (Dashboard, Squadre, Da confermare, Run, App, Agenti, Skill, Modelli di squadra, Modelli AI), senza aree.
+  La caverna: `components/brand/cave.tsx` (`CaveVault`): la barra in alto di ogni pagina (`CaveHeader` in `app-shell.tsx`, 112 px,
+  buia in entrambi i temi) ha la volta di stalattiti con il LED, sotto il logo chiaro su scuro, che è anche il pulsante del menu
+  dell'account (`user-menu.tsx`), e a destra il microfono che apre Alfred (`/alfred`, non è una voce di menu), poi il pavimento di
+  roccia; niente titolo della pagina. Fondi e bordi in grigi neutri, senza dominanti calde o fredde. Alfred (il maggiordomo: a voce su
+  `/alfred` e per iscritto nel pannello laterale) e Lucius (l'ingegnere del laboratorio: analisi, proposte, chat del piano e delle aree,
+  nei prompt di `architect/prompts.ts`, `plan-chat/context.ts` e, per i due personaggi nel pannello, `lib/characters/instructions.ts`)
+  sono due chatbot: compaiono con i loro segni dentro le funzioni dove si chiamano, non nella barra.
   Nessun riferimento a Batman.
 - Icone e favicon: `design/icons/` servite alla radice dal plugin `botcaveIcons` di `vite.config.ts` (niente copie in `public/`); il
   manifest di Alfred usa `icon-192/512` e `icon-maskable-512`, colori `#151A21`. I Dockerfile copiano `design/` (web) e
@@ -91,7 +95,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
   ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals,
   skills, skill_versions, team_templates, team_template_versions, team_instances, team_instance_skills,
-  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, team_chat_conversations, team_chat_messages, team_chat_proposals, character_notes, character_history, nodes, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens)
+  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, team_chat_conversations, team_chat_messages, team_chat_proposals, character_notes, character_history, character_conversations, character_messages, character_proposals, nodes, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -164,12 +168,20 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Alfred (vedi "Alfred (maggiordomo vocale)"): `artifacts/api-server/src/lib/alfred/` (`config.ts`, `settings.ts`, `gemini.ts`, `sessions.ts`,
   `tools.ts`, `tool-declarations.ts`, `confirmations.ts`, `instructions.ts`); route `src/routes/alfred.ts`; schema `lib/db/src/schema/alfred.ts`;
   console `artifacts/casello/src/pages/alfred.tsx`, `components/alfred/` (`use-alfred-voice.ts`, `mic-worklet.ts`, `alfred-transcript.tsx`),
-  `components/account/alfred-section.tsx`; `public/alfred.webmanifest` e icone. Spec: `docs/superpowers/specs/2026-11-05-casello-alfred-design.md`
+  `components/account/characters-section.tsx` (la carta «Personaggi» che assorbe le impostazioni di Alfred); `public/alfred.webmanifest` e icone. Spec: `docs/superpowers/specs/2026-11-05-casello-alfred-design.md`
 - Lucius sulla squadra e memorie (vedi "Lucius sulla squadra e memorie"): `artifacts/api-server/src/lib/team-chat/` (`context.ts`, `snapshot.ts`,
   `tools.ts`, `instructions-file.ts`, `run-turn.ts`, `decide.ts`) e `lib/memory/` (`types.ts`, `notes.ts`, `history.ts`, `credentials.ts`,
   `context.ts`, `tools.ts`, `summaries.ts`); `lib/zip-writer.ts` (zip dei file dei ruoli); route `src/routes/team-chat.ts` e
-  `src/routes/memories.ts`; schema `lib/db/src/schema/team-chat.ts` e `character-memory.ts`; console `components/teams/lucius-panel.tsx`,
-  `role-instructions-card.tsx`, `components/account/memories-section.tsx`. Spec: `docs/superpowers/specs/2026-11-06-botcave-lucius-squadra-design.md`
+  `src/routes/memories.ts`; schema `lib/db/src/schema/team-chat.ts` e `character-memory.ts`; console `components/teams/role-instructions-card.tsx`
+  (il pannello della squadra è ora il pannello comune `components/characters/`), `components/account/memories-section.tsx`. Spec: `docs/superpowers/specs/2026-11-06-botcave-lucius-squadra-design.md`
+- Alfred e Lucius nelle aree (vedi "Alfred e Lucius nelle aree"): `artifacts/api-server/src/lib/characters/` (`types.ts`, `registry.ts`,
+  `conversations.ts`, `run-turn.ts`, `instructions.ts`, `proposals.ts`, `handoff.ts`, `settings.ts`; `subjects/`: `index.ts` (registrazione
+  unica), `alfred-thread.ts`, `agent.ts`, `skill.ts`, `team-template.ts`, `areas.ts`, `shared.ts`, `hash.ts`), `lib/agents.ts` (funzioni
+  condivise con `routes/agents.ts`); route `src/routes/characters.ts` e `src/routes/account-characters.ts`; schema
+  `lib/db/src/schema/characters.ts`; console `artifacts/casello/src/components/characters/` (`character-chat.tsx`, `character-sheet.tsx`,
+  `character-button.tsx`, `handoff-context.tsx`, adattatori `adapters.ts`, `character-adapters.ts`, `plan-team-adapters.tsx`, schede
+  `proposal-cards.tsx`, `proposal-previews.tsx`, `chat-messages.tsx`, `chat-toolbar.tsx`, `new-conversation-dialog.tsx`) e
+  `components/account/characters-section.tsx`. Spec: `docs/superpowers/specs/2026-11-06-botcave-personaggi-design.md`
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
 - `artifacts/api-server/src/lib/mcp/` e `lib/architect/local-executor.ts` — server MCP `/mcp` e coda/lease delle analisi locali
   (`lib/mcp/auth.ts`: `requireApiToken`, accetta `cas_…` e `cao_…`)
@@ -634,7 +646,15 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   i compiti eseguiti da un nodo (`ai_model_id` null) contano solo nel tetto della squadra. Contano anche le sessioni di
   Alfred (`alfred_sessions`, con il loro `ai_model_id`) nella spesa dell'utente, del modello e dell'account. Contano anche le chat
   di squadra con Lucius (`team_chat_conversations`, costo cumulativo, nel mese del suo ultimo aggiornamento) e i riassunti delle memorie
-  (`character_history`, costo cumulato per voce), con il loro `ai_model_id`.
+  (`character_history`, costo cumulato per voce), con il loro `ai_model_id`. Contano anche le conversazioni dei personaggi
+  (`character_conversations`, costo cumulativo, nel mese dell'ultimo aggiornamento).
+- Tetto per personaggio (`users.alfred_monthly_budget_usd`, `users.lucius_monthly_budget_usd`, Account → «Personaggi»; `characterSpend` e
+  `characterBudgetBlock` in `lib/budget.ts`): spesa di Alfred = `alfred_sessions`, `character_conversations` con `character = alfred` e
+  `character_history` di Alfred; spesa di Lucius = `plan_conversations`, `team_chat_conversations`, `character_conversations` con
+  `character = lucius` e `character_history` di Lucius (le analisi dell'architetto restano fuori: hanno i loro tetti). Filtrata per
+  `user_id` della riga, non per proprietario del modello. Ordine dei controlli: personaggio, modello, account AI, utente; raggiunto → 409
+  «Tetto di spesa mensile di Alfred/Lucius…» su messaggi e sessioni a voce (dopo «senza modello» e «modello non usabile»); i riassunti si
+  saltano (`summarized_at` scritto comunque).
 - Ordine dei controlli: agente, modello, account AI, utente (il primo raggiunto dà il messaggio); per i compiti e i turni
   delle squadre prima il tetto della squadra, poi modello, account AI e utente (vedi "Squadre (esecuzione)").
 - Raggiunto un tetto (spesa ≥ tetto) le nuove run, analisi cloud e messaggi della chat rispondono 409 con il motivo;
@@ -729,14 +749,16 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 
 - Spec: `docs/superpowers/specs/2026-10-29-casello-chat-del-piano-design.md`.
 - Pagina `/apps/:id/plan` (`src/pages/app-plan.tsx`, `src/components/plan/`): piano dell'app e conversazioni con
-  un modello. Il modello propone schede `add` / `update` / `discard`; solo quelle accettate dall'utente diventano
+  un modello; la chat è il pannello comune `CharacterChat` (`components/characters/`, adattatore `usePlanChatAdapter`) a pagina intera, i
+  vecchi `chat-panel.tsx` e `conversation-list.tsx` non esistono più (vedi "Alfred e Lucius nelle aree"). Il modello propone schede `add` / `update` / `discard`; solo quelle accettate dall'utente diventano
   voci `analysis_items` con `origin = chat` (e `conversation_id`). Niente lettura del codice.
 - Route (`routes/plan-chat.ts`): `GET /api/apps/:id/plan`, `GET|POST /api/apps/:id/plan-conversations`,
   `GET|PATCH|DELETE /api/plan-conversations/:id`, `POST /api/plan-conversations/:id/messages`,
   `POST /api/plan-proposals/:id/decision`. Codice in `lib/plan-chat/` (`context.ts`, `tools.ts`, `turn.ts`,
   `decide.ts`, `run-turn.ts`).
 - Limiti per turno: 6 giri, 40 000 token, 120 s di tempo attivo; messaggio max 8 000 caratteri; contesto
-  ~30 000 token (la cronologia si riduce); 10 messaggi/min per utente.
+  ~30 000 token (la cronologia si riduce); 10 messaggi/min per utente. `PlanConversationCreate.aiModelId` è facoltativo: senza modello si
+  usa quello di Lucius (`characterModelFor`); il tetto di Lucius vale anche qui (409 nella route, messaggio d'errore dell'assistente nel turno).
 - Nel contesto del modello non entrano segreti né indirizzi delle app. Il turno gira in background: la UI fa
   polling sulla conversazione; all'avvio i turni rimasti aperti (`failInterruptedPlanTurns`) vengono chiusi come falliti.
 - La rianalisi dell'architetto riceve le voci da chat approvate (e quelle con un'issue) come "già pianificate" (fasi
@@ -909,7 +931,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   stesso limite di 20/min di `consumeActionDecision`. Le istruzioni impongono di leggere numero e sintesi e chiedere un sì esplicito.
 - **Spesa**: le sessioni contano nella spesa dell'utente, del modello e dell'account del loro `ai_model_id` (`lib/budget.ts`), con i
   prezzi del modello: è una stima, l'audio di Gemini ha prezzi propri (si possono inserire a mano).
-- **Console**: Account → carta «Alfred» (modello, voce, «Apri Alfred»); voce di menu «Alfred» e pagina `/alfred` (`use-alfred-voice.ts`:
+- **Console**: Account → carta «Personaggi» (per Alfred: modello vocale, voce, «Apri Alfred», più modello scritto e tetto, vedi "Alfred e Lucius nelle aree"); voce di menu «Alfred» e pagina `/alfred` (`use-alfred-voice.ts`:
   AudioWorklet del microfono a PCM 16 bit 16 kHz in pacchetti da 100 ms, riproduzione PCM 24 kHz in coda, stop alla `interrupted`;
   dopo `setupComplete` il testo «[apertura]»; `usageMetadata` → `usage` con i totali cumulativi al più ogni 10 s e alla chiusura;
   `goAway` o chiusura inattesa → `renew` con l'handle di `sessionResumptionUpdate` (la ripresa vale solo se l'handle è nel token; al più 4
@@ -961,8 +983,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   gli ambiti per metodo.
 - **Route** (`routes/team-chat.ts`): `GET|POST /api/team-instances/:id/team-chat-conversations`, `GET|DELETE
   /api/team-chat-conversations/:id`, `POST …/messages` (202), `POST /api/team-chat-proposals/:id/decision`; dati dell'utente (altrui →
-  404). Console: pannello «Lucius» nella scheda squadra (`lucius-panel.tsx`, schede con `role-instructions-card.tsx`, anteprima del
-  Markdown senza frontmatter), nell'editor dei ruoli il campo «Identità» (l'anteprima delle istruzioni è nelle schede del pannello Lucius).
+  404). Console: pannello «Lucius» nella scheda squadra (non più incorporato: pulsante «Chiedi a Lucius» che apre il pannello comune
+  `CharacterChat` con `useTeamChatAdapter` in `components/characters/`; schede con `role-instructions-card.tsx`, anteprima del
+  Markdown senza frontmatter; il tetto e il modello di partenza sono quelli di Lucius, vedi "Alfred e Lucius nelle aree"), nell'editor dei ruoli il campo «Identità» (l'anteprima delle istruzioni è nelle schede del pannello Lucius).
 - **Memorie** (`lib/memory/`, tabelle `character_notes` e `character_history`, personaggio `alfred` | `lucius`, per utente: ogni utente
   e ogni personaggio vede solo i propri dati). **Appunti**: ≤ 300 caratteri, ≤ 50 per personaggio e utente («memoria piena: unisci o
   togli un appunto»); vuoti o troppo lunghi rifiutati. Controllo credenziali (`looksLikeCredential`, vale sia per `ricorda` sia per la
@@ -993,6 +1016,86 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `***`; appunti e titoli nel contesto stanno su una riga sola. Niente recupero delle vecchie conversazioni del piano: la migrazione
   imposta `summarized_at = updated_at` su quelle esistenti. Rinominare la `key` di un ruolo lascia la skill specializzata
   `ruolo-<vecchia key>` tra le skill dell'istanza. La trascrizione di Alfred tenuta dal browser si tronca agli ultimi 40 000 caratteri.
+
+## Alfred e Lucius nelle aree
+
+- Spec: `docs/superpowers/specs/2026-11-06-botcave-personaggi-design.md` (con «Differenze dal codice» in §13); piano
+  `docs/superpowers/plans/2026-11-06-botcave-personaggi.md`. Dove il codice differisce dalla spec vale il codice, descritto qui. Alfred
+  (maggiordomo: squadre, coda, bollettino, run) e Lucius (ingegnere: piano, agenti, skill, modelli di squadra) sono richiamabili da ogni area
+  della console con un pulsante che apre un pannello laterale; la voce di Alfred resta su `/alfred`, invariata. Le chat del piano e di
+  squadra restano sulle loro tabelle (adattatori); le conversazioni nuove usano un motore unico.
+- **Motore** (`lib/characters/`; tabelle `character_conversations`, `character_messages`, `character_proposals`): conversazione per utente,
+  personaggio (`alfred`|`lucius`, enum `character`) e argomento (`subject_type`, `subject_id`, `subject_title` al momento della creazione);
+  `ai_model_id` (`SET NULL`), `title` ≤ 80, `tokens_used`, `cost_usd` (null = parziale), `turn_status` `idle|running`, `archived_at`,
+  `summarized_at`. Il turno (`run-turn.ts`: `startCharacterTurn`/`executeCharacterTurn`) ricalca la chat di squadra: un turno alla volta
+  (UPDATE condizionato, altrimenti 409 «il personaggio sta già rispondendo»), in background con polling dalla console, `runPlanTurn` con
+  6 giri, 40 000 token, 120 s; contesto ~30 000 token; messaggio ≤ 8 000; schede salvate durante il turno (restano valide anche se il turno
+  poi fallisce); all'avvio i turni rimasti `running` si chiudono (`failInterruptedCharacterTurns`). Istruzioni per personaggio in
+  `instructions.ts`; dati, memoria (`memoryContextBlock`) e pagina arrivano come messaggi `user` di dati. Senza modello: messaggio d'errore
+  dell'assistente «Scegli un modello per la conversazione». Limite 10 messaggi/min per utente e personaggio (`consumeCharacterMessage`, 429),
+  separato da quelli delle chat del piano e di squadra. Una conversazione archiviata è in sola lettura (409 «conversazione archiviata»).
+- **Argomenti e mappa delle pagine** (`lib/characters/subjects/`, un file per argomento, registrati in `subjects/index.ts`, importato da
+  `app.ts`; `SubjectHandler`: `resolve`, `context`, `tools`, `runTool`): `alfred_thread` (Alfred, filo unico: contesto con le squadre attive
+  dell'utente, una riga ciascuna e al massimo 30, voci in coda e bollettino non letto in conteggio, la pagina da cui scrive; nessuna
+  chiamata a modelli), `agent`, `skill`, `team_template`, `area_agents`, `area_skills`, `area_team_templates` (Lucius). Mappa: Alfred su
+  Dashboard, Squadre, scheda squadra, Da confermare, Run e dettaglio run (`pageContext` `{page, id?}` con `page` ∈ `dashboard`, `teams`,
+  `team`, `pending_actions`, `runs`, `run`, più `console` per le altre pagine); Lucius su scheda app, pagina dell'analisi e piano (chat del piano), scheda squadra (chat di squadra),
+  elenco e scheda di Agenti, Skill, Modelli di squadra; nessuno in Modelli AI e Account. Oggetto eliminato: la conversazione resta
+  leggibile col titolo salvato, nuovi messaggi → 409 «argomento eliminato». Strumenti di Alfred: `squadre_stato`, `squadra_dettaglio`,
+  `bollettino`, `coda_da_confermare`, `scrivi_al_capo` (limite condiviso `consumeTeamMessage`), `leggi_run` (una run appartiene a chi
+  possiede l'account AI del suo modello; modello eliminato = «run non trovata»; niente input né passi), `proponi_decisione`, `passa_a`,
+  memoria (`alfred`); niente doppio passo: in chat decide il clic. Strumenti di Lucius per argomento: `leggi_agente`,
+  `leggi_strumenti_app` (parametri `x-sensitive` oscurati da `maskSchema`), `leggi_skill`, `leggi_versione_skill`, `leggi_modello`,
+  `proponi_*`, `elenca_*`, `passa_a`, memoria (`lucius`). Risultati `ok: false` con messaggio fisso, mai segreti né indirizzi delle app.
+- **Schede e decisione** (`proposals.ts`, `POST /api/character-proposals/:id/decision` `{action: accept|reject}`): tipi `agent_prompt`,
+  `agent_tools` (solo agenti `area`), `skill_content`, `template_roles` (modifiche, con `target_hash` = impronta dello stato su cui nascono,
+  `subjectHash`), `agent_create` (stato `draft`, modello con `resolveAgentModel`), `skill_create`, `template_create` (creazioni, senza impronta:
+  il nome o codice già usato dà l'errore di regola), `decision` (Alfred), `handoff`. Al massimo 10 schede per turno, motivazione ≤ 1 000.
+  Accettare ricontrolla l'impronta dentro la transazione con la riga dell'oggetto bloccata, applica con le stesse funzioni delle route
+  (`lib/agents.ts`, `updateSkill`, `saveTemplate`, `createSkill`, `createTemplate`) e marca `accepted` nella stessa transazione; validazioni
+  dal pool fuori dalla transazione, scritture con le funzioni `Unchecked` dentro; impronta diversa o oggetto sparito → scheda `stale` e 409
+  «l'oggetto è cambiato: chiedi a Lucius una proposta aggiornata»; errori di regola col loro stato, scheda `pending`; già decisa → 409. Scheda
+  `decision` (`proponi_decisione {numero, decisione, nota?}`): salva tipo, squadra e sintesi della voce; la scheda si prenota
+  (`pending` → `accepted`) prima di `approveAction`/`rejectAction` (limite 20/min, `consumeActionDecision`): se il processo cade in mezzo la
+  voce resta in coda e si decide da «Da confermare»; voce non più `pending` o sintesi cambiata → `stale`, 409 «la voce è cambiata: ricarica la
+  coda»; `needsUserToken` → niente «Approva» in scheda (si rimanda a «Da confermare»); con un token personale serve `api:write`. In console,
+  con modifiche non salvate sotto il pannello (`hasUnsavedChanges`, passato anche dal pulsante di Alfred della scheda squadra, che i passaggi
+  di consegne ereditano; azzerato al cambio di pagina) l'accettazione avverte che andrebbero perse. Nella scheda agente contano anche le
+  caselle degli strumenti; una scheda accettata entra nella pagina: le caselle si rimontano sugli id salvati e il prompt accettato entra nel
+  form (`resetField`), le altre modifiche restano.
+- **Passaggio di consegne** (`handoff.ts`, strumento `passa_a {argomento, oggetto?, domanda ≤ 2 000}`): il destinatario è sempre l'altro
+  personaggio; produce una scheda `handoff` («Chiedo a Lucius» / «Chiedo ad Alfred») senza effetti sul server e senza chiamate tra modelli. Il
+  clic apre il pannello dell'altro sull'argomento con la domanda già scritta e non inviata (un solo `Sheet` globale, `HandoffProvider` in
+  `App.tsx`, aperto dai `CharacterButton`). Per Lucius valgono anche `plan` (id dell'app) e `team`; per Alfred il filo unico.
+- **Filo di Alfred**: `GET /api/characters/alfred/thread` restituisce o crea la conversazione aperta (indice unico parziale: una per utente);
+  `POST …/thread/restart` («Ricomincia») la archivia e ne apre una nuova; il filo aperto non si elimina (409). Alfred a voce e scritto
+  condividono appunti e storico, non il filo.
+- **Modelli e tetti per personaggio**: `GET|PUT /api/account/characters` (solo login) `{alfredChatAiModelId, luciusAiModelId,
+  alfredMonthlyBudgetUsd, luciusMonthlyBudgetUsd}`: il PUT sostituisce tutti e quattro i campi, un modello non dei propri account → 400;
+  il GET aggiunge `alfredSpentUsd`, `luciusSpentUsd`, `alfredUnpricedCount`, `luciusUnpricedCount` (`getCharacterSettings`). Una conversazione
+  nuova parte dal modello del personaggio, poi dal modello predefinito dell'utente (se ancora suo); le chat del piano e di squadra propongono
+  quello di Lucius. Il modello di Alfred a voce resta `users.alfred_ai_model_id`. Le fonti della spesa sono in "Tetti di spesa".
+- **Riassunti**: lo sweeper delle memorie (`lib/memory/summaries.ts`) riassume anche le `character_conversations` ferme da 30 minuti con
+  turno `idle` e quelle archiviate, con tipo di storico `character_chat` e il nome del personaggio della conversazione nella trascrizione;
+  stesse regole di prima (modello predefinito, 30 s, 1 000 token, trascrizione ≤ 20 000); tetto del personaggio raggiunto → saltato.
+- **Route** (`routes/characters.ts`, `routes/account-characters.ts`; dati dell'utente, altrui → 404; con un token personale ambiti per metodo):
+  `GET /api/characters/alfred/thread`, `POST …/thread/restart`, `GET|POST /api/character-conversations` (filtri `character` obbligatorio,
+  `subjectType`, `subjectId`; il POST verifica l'argomento; senza il filo di Alfred, al massimo 100), `GET|PATCH|DELETE
+  /api/character-conversations/:id` (`PATCH`: modello e titolo), `POST …/messages` (`{content, pageContext?}`, 202; il tetto del personaggio è
+  controllato già nella route, 409 col motivo, e di nuovo nel turno), `POST /api/character-proposals/:id/decision`, `GET|PUT
+  /api/account/characters`. Messaggi fissi in `CHARACTER_MESSAGES`.
+- **Console** (`components/characters/`): `CharacterChat` (pannello comune con adattatore per backend: `useAlfredAdapter`,
+  `useLuciusSubjectAdapter`, `usePlanChatAdapter`, `useTeamChatAdapter`), `CharacterSheet` e `CharacterButton` («Chiedi a Lucius» /
+  «Chiedi ad Alfred», in alto a destra nell'intestazione della pagina; a schermo intero sul telefono, ~440 px su desktop), «Nuova» chiede il
+  modello (`NewConversationDialog`, preselezione del modello del personaggio), costo cumulato in ogni conversazione, schede in
+  `proposal-cards.tsx`. La chat del piano resta a pagina intera in `/apps/:id/plan`. Account → «Personaggi» (`characters-section.tsx`): Alfred
+  (voce: modello vocale e voce, «Apri Alfred»; scritto: modello; tetto con spesa e avviso dall'80%) e Lucius (modello, tetto con spesa).
+  Niente scorrimento orizzontale a 1280 px.
+- Migrazione: `docs/migrations/2026-11-personaggi.sql` (additiva e idempotente, niente `-post`): tabelle `character_conversations`,
+  `character_messages`, `character_proposals`, colonne `users.alfred_chat_ai_model_id`, `users.lucius_ai_model_id`,
+  `users.alfred_monthly_budget_usd`, `users.lucius_monthly_budget_usd`, valore `character_chat` dell'enum `character_history_kind`
+  (`ALTER TYPE … ADD VALUE IF NOT EXISTS`, fuori da una transazione esplicita). Da applicare su Neon PRIMA del merge e da segnalare nella PR;
+  riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
 
 ## Esecutore locale
 

@@ -8,6 +8,7 @@ import {
   analysesTable,
   analysisItemsTable,
   appsTable,
+  characterHistoryTable,
   planConversationsTable,
   planMessagesTable,
   planProposalsTable,
@@ -177,6 +178,17 @@ describe("turni della chat del piano", () => {
 
     const messages = await getMessages();
     expect(messages[1]).toMatchObject({ error: true, content: "Scegli un modello per la conversazione." });
+  });
+
+  it("tetto di Lucius raggiunto: messaggio d'errore «Tetto di spesa mensile di Lucius…», nessuna chiamata al provider", async () => {
+    await db.update(usersTable).set({ luciusMonthlyBudgetUsd: "0.01" }).where(eq(usersTable.id, userId));
+    await db.insert(characterHistoryTable).values({ userId, character: "lucius", kind: "team_chat", refId: 996, title: "t", summary: "s", aiModelId: modelId, tokensUsed: 10, costUsd: "0.05" });
+    await startPlanTurn(conversationId, "ciao");
+    await waitIdle(conversationId);
+    const msg = (await getMessages())[1]!;
+    expect(msg.error).toBe(true);
+    expect(msg.content).toContain("Tetto di spesa mensile di Lucius raggiunto");
+    expect(fake.requests.filter((r) => r.path.includes("chat/completions"))).toHaveLength(0);
   });
 
   it("secondo startPlanTurn durante un turno → TurnBusyError", async () => {

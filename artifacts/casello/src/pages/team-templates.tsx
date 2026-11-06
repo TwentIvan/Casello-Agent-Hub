@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { Crown, Plus } from "lucide-react";
 import { getListTeamTemplatesQueryKey, useListTeamTemplates } from "@workspace/api-client-react";
+import { CharacterButton } from "@/components/characters/character-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,10 +27,13 @@ export default function TeamTemplatesPage() {
             Squadre riusabili: ruoli con un capo, compiti, strumenti e skill. Da un modello nascono le squadre dei lavori.
           </p>
         </div>
-        <Button onClick={() => navigate("/team-templates/new")}>
-          <Plus />
-          Nuovo modello
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <CharacterButton target={{ kind: "character", subjectType: "area_team_templates", subjectId: null, title: "Area Modelli di squadra" }} />
+          <Button onClick={() => navigate("/team-templates/new")}>
+            <Plus />
+            Nuovo modello
+          </Button>
+        </div>
       </div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} />

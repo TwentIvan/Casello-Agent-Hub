@@ -35,7 +35,8 @@ import {
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
 import { ModelChoiceError, chooseOwnModel } from "../lib/ai/choice";
-import { userBudgetBlock } from "../lib/budget";
+import { characterBudgetBlock } from "../lib/budget";
+import { characterModelFor } from "../lib/characters/settings";
 import { effectiveStatus } from "../lib/ai/model-status";
 import { itemTitle, type PlanChapter } from "../lib/plan-chat/context";
 import { ProposalConflictError, ProposalNotFoundError, decideProposal } from "../lib/plan-chat/decide";
@@ -154,16 +155,23 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
       res.status(404).json({ error: APP_NOT_FOUND });
       return;
     }
-    try {
-      await chooseOwnModel(body.aiModelId, userId);
-    } catch (err) {
-      if (!(err instanceof ModelChoiceError)) throw err;
-      res.status(400).json({ error: err.message });
-      return;
-    }
-    if (await isModelUnavailable(body.aiModelId)) {
-      res.status(400).json({ error: MODEL_UNAVAILABLE });
-      return;
+    let aiModelId: number | null;
+    if (body.aiModelId !== undefined && body.aiModelId !== null) {
+      try {
+        await chooseOwnModel(body.aiModelId, userId);
+      } catch (err) {
+        if (!(err instanceof ModelChoiceError)) throw err;
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      if (await isModelUnavailable(body.aiModelId)) {
+        res.status(400).json({ error: MODEL_UNAVAILABLE });
+        return;
+      }
+      aiModelId = body.aiModelId;
+    } else {
+      // Senza modello nel corpo: quello di Lucius, con ripiego sul predefinito
+      aiModelId = await characterModelFor(userId, "lucius");
     }
 
     let analysisId: number | null;
@@ -189,7 +197,7 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
 
     const [conv] = await db
       .insert(planConversationsTable)
-      .values({ appId: id, analysisId, userId, aiModelId: body.aiModelId, title: "" })
+      .values({ appId: id, analysisId, userId, aiModelId, title: "" })
       .returning();
     res.status(201).json(toPublicPlanConversation(conv!));
   });
@@ -296,7 +304,7 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
       res.status(409).json({ error: MODEL_UNAVAILABLE });
       return;
     }
-    const blocked = await userBudgetBlock(conv.aiModelId);
+    const blocked = await characterBudgetBlock(currentUserId(req), "lucius", conv.aiModelId);
     if (blocked) {
       res.status(409).json({ error: blocked });
       return;

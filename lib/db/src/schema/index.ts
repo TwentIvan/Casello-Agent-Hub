@@ -34,3 +34,4 @@ export * from "./oauth";
 export * from "./alfred";
 export * from "./team-chat";
 export * from "./character-memory";
+export * from "./characters";

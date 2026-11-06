@@ -6,6 +6,7 @@ import {
   aiModelsTable,
   alfredSessionsTable,
   analysesTable,
+  characterConversationsTable,
   characterHistoryTable,
   planConversationsTable,
   teamChatConversationsTable,
@@ -14,6 +15,7 @@ import {
   teamTurnsTable,
   usersTable,
 } from "@workspace/db";
+import type { Character } from "./memory/types";
 
 // Tetti di spesa mensili (USD). Chi configura paga: la spesa di un utente è quella fatta sui suoi account AI
 // (run, analisi cloud, chat del piano, sessioni di Alfred, chat di squadra di Lucius, riassunti delle memorie, compiti e turni delle squadre con un suo modello); quella di un agente è la somma delle sue run, con
@@ -87,7 +89,7 @@ async function spendsBy(key: SpendKey, ids: number[], since: Date): Promise<Map<
   const result = new Map<number, Spend>(ids.map((id) => [id, { spentUsd: 0, unpricedCount: 0 }]));
   if (ids.length === 0) return result;
   const scope = inArray(key, ids);
-  const [runs, analyses, chats, tasks, turns, alfred, teamChats, summaries] = await Promise.all([
+  const [runs, analyses, chats, tasks, turns, alfred, teamChats, summaries, characterChats] = await Promise.all([
     db
       .select({ key, spent: sumOf(runsTable.costUsd), unpriced: runUnpriced })
       .from(runsTable)
@@ -166,13 +168,63 @@ async function spendsBy(key: SpendKey, ids: number[], since: Date): Promise<Map<
       .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
       .where(and(scope, gte(characterHistoryTable.createdAt, since)))
       .groupBy(key),
+    // Conversazioni di Alfred e Lucius nelle aree: costo cumulativo, mese dell'ultimo aggiornamento
+    db
+      .select({
+        key,
+        spent: sumOf(characterConversationsTable.costUsd),
+        unpriced: sql<number>`(count(*) filter (where ${characterConversationsTable.costUsd} is null and ${characterConversationsTable.tokensUsed} > 0))::int`,
+      })
+      .from(characterConversationsTable)
+      .innerJoin(aiModelsTable, eq(characterConversationsTable.aiModelId, aiModelsTable.id))
+      .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
+      .where(and(scope, gte(characterConversationsTable.updatedAt, since)))
+      .groupBy(key),
   ]);
-  for (const r of [...runs, ...analyses, ...chats, ...tasks, ...turns, ...alfred, ...teamChats, ...summaries]) {
+  for (const r of [...runs, ...analyses, ...chats, ...tasks, ...turns, ...alfred, ...teamChats, ...summaries, ...characterChats]) {
     if (r.key === null) continue;
     const acc = result.get(r.key)!;
     result.set(r.key, { spentUsd: acc.spentUsd + Number(r.spent), unpricedCount: acc.unpricedCount + r.unpriced });
   }
   return result;
+}
+
+const noSpend = (): Spend => ({ spentUsd: 0, unpricedCount: 0 });
+
+/**
+ * Spesa del mese di un personaggio, per utente (non per proprietario del modello). Alfred: sessioni vocali,
+ * conversazioni e riassunti. Lucius: chat del piano e di squadra, conversazioni e riassunti. Le analisi non contano.
+ */
+export async function characterSpend(userId: number, character: Character, since: Date = monthStart()): Promise<Spend> {
+  const conv = characterConversationsTable;
+  const hist = characterHistoryTable;
+  const rowsOf = (table: typeof conv | typeof hist | typeof planConversationsTable | typeof teamChatConversationsTable, when: SQLWrapper, who: SQLWrapper, extra?: SQL) =>
+    db
+      .select({
+        spent: sumOf(table.costUsd),
+        unpriced: sql<number>`(count(*) filter (where ${table.costUsd} is null and ${table.tokensUsed} > 0))::int`,
+      })
+      .from(table)
+      .where(and(who, gte(when as never, since), extra));
+  const queries = [
+    rowsOf(conv, conv.updatedAt, eq(conv.userId, userId), eq(conv.character, character)),
+    rowsOf(hist, hist.createdAt, eq(hist.userId, userId), eq(hist.character, character)),
+  ];
+  const parts: Spend[] = [];
+  for (const rows of await Promise.all(queries)) parts.push(toSpend(rows));
+  if (character === "alfred") {
+    const rows = await db
+      .select({ spent: sumOf(alfredSessionsTable.costUsd), unpriced: unpricedOf(alfredSessionsTable) })
+      .from(alfredSessionsTable)
+      .where(and(eq(alfredSessionsTable.userId, userId), gte(alfredSessionsTable.lastActivityAt, since)));
+    parts.push(toSpend(rows));
+  } else {
+    parts.push(
+      toSpend(await rowsOf(planConversationsTable, planConversationsTable.updatedAt, eq(planConversationsTable.userId, userId))),
+      toSpend(await rowsOf(teamChatConversationsTable, teamChatConversationsTable.updatedAt, eq(teamChatConversationsTable.userId, userId))),
+    );
+  }
+  return parts.reduce((a, b) => ({ spentUsd: a.spentUsd + b.spentUsd, unpricedCount: a.unpricedCount + b.unpricedCount }), noSpend());
 }
 
 /** Spesa del mese sugli account AI dell'utente: run, analisi, conversazioni del piano, sessioni di Alfred e squadre con un suo modello. */
@@ -273,6 +325,26 @@ export async function userBudgetBlock(aiModelId: number | null): Promise<string 
   const { spentUsd } = await userSpend(row.userId);
   if (!isExhausted(spentUsd, cap)) return null;
   return `Tetto di spesa mensile raggiunto: spesi ${usd(spentUsd)} su ${usd(cap)} USD. ${RAISE_IN_ACCOUNT}`;
+}
+
+const CHARACTER_NAMES: Record<Character, string> = { alfred: "Alfred", lucius: "Lucius" };
+
+/** Motivo del blocco di un messaggio a un personaggio: prima il suo tetto, poi quelli del modello, dell'account e dell'utente. */
+export async function characterBudgetBlock(userId: number, character: Character, aiModelId: number | null): Promise<string | null> {
+  const [row] = await db
+    .select({ alfred: usersTable.alfredMonthlyBudgetUsd, lucius: usersTable.luciusMonthlyBudgetUsd })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  const raw = row?.[character];
+  if (raw != null) {
+    const cap = Number(raw);
+    const { spentUsd } = await characterSpend(userId, character);
+    if (isExhausted(spentUsd, cap)) {
+      return `Tetto di spesa mensile di ${CHARACTER_NAMES[character]} raggiunto: spesi ${usd(spentUsd)} su ${usd(cap)} USD. ${RAISE_IN_ACCOUNT}`;
+    }
+  }
+  return userBudgetBlock(aiModelId);
 }
 
 /** Motivo del blocco di una nuova run dell'agente: prima il tetto dell'agente, poi quello di chi paga il modello. */

@@ -475,6 +475,87 @@ export const SetCentralinoModelResponse = zod.object({
 
 
 /**
+ * Modello della chat e tetto mensile di Alfred, modello e tetto mensile di Lucius. Con la spesa del mese di ciascun personaggio e il numero di esecuzioni senza prezzo. Null = modello predefinito / nessun tetto. Solo con il login: con un token risponde 403.
+ * @summary Modelli e tetti di Alfred e Lucius nelle aree
+ */
+export const getCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMin = 0;
+export const getCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax = 1000000;
+
+export const getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin = 0;
+export const getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax = 1000000;
+
+export const getCharacterSettingsResponseTwoAlfredSpentUsdMin = 0;
+
+export const getCharacterSettingsResponseTwoLuciusSpentUsdMin = 0;
+
+export const getCharacterSettingsResponseTwoAlfredUnpricedCountMin = 0;
+
+export const getCharacterSettingsResponseTwoLuciusUnpricedCountMin = 0;
+
+
+
+export const GetCharacterSettingsResponse = zod.object({
+  "alfredChatAiModelId": zod.number().nullable(),
+  "luciusAiModelId": zod.number().nullable(),
+  "alfredMonthlyBudgetUsd": zod.number().min(getCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMin).max(getCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax).nullable(),
+  "luciusMonthlyBudgetUsd": zod.number().min(getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin).max(getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax).nullable()
+}).and(zod.object({
+  "alfredSpentUsd": zod.number().min(getCharacterSettingsResponseTwoAlfredSpentUsdMin),
+  "luciusSpentUsd": zod.number().min(getCharacterSettingsResponseTwoLuciusSpentUsdMin),
+  "alfredUnpricedCount": zod.number().min(getCharacterSettingsResponseTwoAlfredUnpricedCountMin),
+  "luciusUnpricedCount": zod.number().min(getCharacterSettingsResponseTwoLuciusUnpricedCountMin)
+})).describe('Impostazioni dei personaggi più la spesa del mese (mese di calendario, ora italiana).')
+
+
+/**
+ * Sostituisce tutti e quattro i campi. I modelli devono essere di un account AI dell'utente (400 "modello non disponibile"); i tetti sono numeri >= 0 (400 altrimenti). Solo con il login.
+ * @summary Imposta modelli e tetti di Alfred e Lucius
+ */
+export const updateCharacterSettingsBodyAlfredMonthlyBudgetUsdMin = 0;
+export const updateCharacterSettingsBodyAlfredMonthlyBudgetUsdMax = 1000000;
+
+export const updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMin = 0;
+export const updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMax = 1000000;
+
+
+
+export const UpdateCharacterSettingsBody = zod.object({
+  "alfredChatAiModelId": zod.number().nullable(),
+  "luciusAiModelId": zod.number().nullable(),
+  "alfredMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsBodyAlfredMonthlyBudgetUsdMin).max(updateCharacterSettingsBodyAlfredMonthlyBudgetUsdMax).nullable(),
+  "luciusMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMin).max(updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMax).nullable()
+})
+
+export const updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMin = 0;
+export const updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax = 1000000;
+
+export const updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin = 0;
+export const updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax = 1000000;
+
+export const updateCharacterSettingsResponseTwoAlfredSpentUsdMin = 0;
+
+export const updateCharacterSettingsResponseTwoLuciusSpentUsdMin = 0;
+
+export const updateCharacterSettingsResponseTwoAlfredUnpricedCountMin = 0;
+
+export const updateCharacterSettingsResponseTwoLuciusUnpricedCountMin = 0;
+
+
+
+export const UpdateCharacterSettingsResponse = zod.object({
+  "alfredChatAiModelId": zod.number().nullable(),
+  "luciusAiModelId": zod.number().nullable(),
+  "alfredMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMin).max(updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax).nullable(),
+  "luciusMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin).max(updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax).nullable()
+}).and(zod.object({
+  "alfredSpentUsd": zod.number().min(updateCharacterSettingsResponseTwoAlfredSpentUsdMin),
+  "luciusSpentUsd": zod.number().min(updateCharacterSettingsResponseTwoLuciusSpentUsdMin),
+  "alfredUnpricedCount": zod.number().min(updateCharacterSettingsResponseTwoAlfredUnpricedCountMin),
+  "luciusUnpricedCount": zod.number().min(updateCharacterSettingsResponseTwoLuciusUnpricedCountMin)
+})).describe('Impostazioni dei personaggi più la spesa del mese (mese di calendario, ora italiana).')
+
+
+/**
  * Modello e voce salvati, più i modelli idonei ad Alfred dell'utente (account Gemini, nome con live o native-audio, non ritirati; senza chiamare Gemini). Solo con il login: con un token risponde 403.
  * @summary Modello e voce di Alfred
  */
@@ -4413,7 +4494,7 @@ export const CreatePlanConversationParams = zod.object({
 })
 
 export const CreatePlanConversationBody = zod.object({
-  "aiModelId": zod.number().describe('Modello di un account AI dell\'utente'),
+  "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente; null o assente = modello di Lucius (o predefinito)'),
   "analysisId": zod.number().optional().describe('Analisi di riferimento (default l\'ultima completata dell\'app)')
 })
 
@@ -4760,6 +4841,345 @@ export const DownloadRolesExportParams = zod.object({
 })
 
 export const DownloadRolesExportResponse = zod.unknown()
+
+
+/**
+ * Restituisce il filo aperto di Alfred; crea il filo se non esiste (la GET può quindi scrivere).
+ * @summary Il filo aperto di Alfred scritto (lo crea se manca)
+ */
+export const getAlfredThreadResponseTwoMessagesItemPageContextOnePageMax = 40;
+
+
+export const getAlfredThreadResponseTwoMessagesItemPageContextOnePageRegExp = new RegExp('^[a-z_]+$');
+export const getAlfredThreadResponseTwoMessagesItemPageContextOneIdMax = 100;
+
+
+
+export const GetAlfredThreadResponse = zod.object({
+  "id": zod.number(),
+  "character": zod.enum(['alfred', 'lucius']),
+  "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
+  "subjectId": zod.string().nullable(),
+  "subjectTitle": zod.string().nullable().describe('Titolo dell\'oggetto alla creazione'),
+  "subjectGone": zod.boolean().optional().describe('L\'argomento non esiste più; calcolato solo nel dettaglio'),
+  "aiModelId": zod.number().nullable(),
+  "title": zod.string(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)'),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "archivedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "messages": zod.array(zod.object({
+  "id": zod.number(),
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string().describe('Markdown'),
+  "error": zod.boolean(),
+  "pageContext": zod.union([zod.object({
+  "page": zod.string().min(1).max(getAlfredThreadResponseTwoMessagesItemPageContextOnePageMax).regex(getAlfredThreadResponseTwoMessagesItemPageContextOnePageRegExp),
+  "id": zod.string().min(1).max(getAlfredThreadResponseTwoMessagesItemPageContextOneIdMax).optional()
+}),zod.null()]),
+  "createdAt": zod.coerce.date()
+})),
+  "proposals": zod.array(zod.object({
+  "id": zod.number(),
+  "messageId": zod.number(),
+  "kind": zod.enum(['agent_prompt', 'agent_tools', 'skill_content', 'template_roles', 'agent_create', 'skill_create', 'template_create', 'decision', 'handoff']),
+  "payload": zod.record(zod.string(), zod.unknown()).nullable(),
+  "rationale": zod.string(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
+  "decidedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+
+
+/**
+ * @summary Archivia il filo di Alfred e ne apre uno nuovo
+ */
+export const restartAlfredThreadResponseTwoMessagesItemPageContextOnePageMax = 40;
+
+
+export const restartAlfredThreadResponseTwoMessagesItemPageContextOnePageRegExp = new RegExp('^[a-z_]+$');
+export const restartAlfredThreadResponseTwoMessagesItemPageContextOneIdMax = 100;
+
+
+
+export const RestartAlfredThreadResponse = zod.object({
+  "id": zod.number(),
+  "character": zod.enum(['alfred', 'lucius']),
+  "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
+  "subjectId": zod.string().nullable(),
+  "subjectTitle": zod.string().nullable().describe('Titolo dell\'oggetto alla creazione'),
+  "subjectGone": zod.boolean().optional().describe('L\'argomento non esiste più; calcolato solo nel dettaglio'),
+  "aiModelId": zod.number().nullable(),
+  "title": zod.string(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)'),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "archivedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "messages": zod.array(zod.object({
+  "id": zod.number(),
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string().describe('Markdown'),
+  "error": zod.boolean(),
+  "pageContext": zod.union([zod.object({
+  "page": zod.string().min(1).max(restartAlfredThreadResponseTwoMessagesItemPageContextOnePageMax).regex(restartAlfredThreadResponseTwoMessagesItemPageContextOnePageRegExp),
+  "id": zod.string().min(1).max(restartAlfredThreadResponseTwoMessagesItemPageContextOneIdMax).optional()
+}),zod.null()]),
+  "createdAt": zod.coerce.date()
+})),
+  "proposals": zod.array(zod.object({
+  "id": zod.number(),
+  "messageId": zod.number(),
+  "kind": zod.enum(['agent_prompt', 'agent_tools', 'skill_content', 'template_roles', 'agent_create', 'skill_create', 'template_create', 'decision', 'handoff']),
+  "payload": zod.record(zod.string(), zod.unknown()).nullable(),
+  "rationale": zod.string(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
+  "decidedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+
+
+/**
+ * Dalla più recente (`updatedAt`), al massimo 100. Non comprende il filo di Alfred (si legge da `/characters/alfred/thread`).
+ * @summary Conversazioni dell'utente con un personaggio
+ */
+export const listCharacterConversationsQuerySubjectIdMax = 100;
+
+
+
+export const ListCharacterConversationsQueryParams = zod.object({
+  "character": zod.enum(['alfred', 'lucius']),
+  "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']).optional(),
+  "subjectId": zod.coerce.string().min(1).max(listCharacterConversationsQuerySubjectIdMax).optional()
+})
+
+export const ListCharacterConversationsResponseItem = zod.object({
+  "id": zod.number(),
+  "character": zod.enum(['alfred', 'lucius']),
+  "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
+  "subjectId": zod.string().nullable(),
+  "subjectTitle": zod.string().nullable().describe('Titolo dell\'oggetto alla creazione'),
+  "subjectGone": zod.boolean().optional().describe('L\'argomento non esiste più; calcolato solo nel dettaglio'),
+  "aiModelId": zod.number().nullable(),
+  "title": zod.string(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)'),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "archivedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListCharacterConversationsResponse = zod.array(ListCharacterConversationsResponseItem)
+
+
+/**
+ * Verifica l'argomento (404 «argomento non trovato» se manca o non è di quel personaggio). Il filo di Alfred non si crea qui. Il modello iniziale è quello del personaggio, poi il predefinito.
+ * @summary Apre una conversazione con un personaggio su un argomento
+ */
+export const createCharacterConversationBodySubjectIdMax = 100;
+
+
+
+export const CreateCharacterConversationBody = zod.object({
+  "character": zod.enum(['alfred', 'lucius']),
+  "subjectType": zod.enum(['agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
+  "subjectId": zod.string().min(1).max(createCharacterConversationBodySubjectIdMax).nullish()
+})
+
+export const CreateCharacterConversationResponse = zod.object({
+  "id": zod.number(),
+  "character": zod.enum(['alfred', 'lucius']),
+  "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
+  "subjectId": zod.string().nullable(),
+  "subjectTitle": zod.string().nullable().describe('Titolo dell\'oggetto alla creazione'),
+  "subjectGone": zod.boolean().optional().describe('L\'argomento non esiste più; calcolato solo nel dettaglio'),
+  "aiModelId": zod.number().nullable(),
+  "title": zod.string(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)'),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "archivedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Conversazione con messaggi e schede
+ */
+export const GetCharacterConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const getCharacterConversationResponseTwoMessagesItemPageContextOnePageMax = 40;
+
+
+export const getCharacterConversationResponseTwoMessagesItemPageContextOnePageRegExp = new RegExp('^[a-z_]+$');
+export const getCharacterConversationResponseTwoMessagesItemPageContextOneIdMax = 100;
+
+
+
+export const GetCharacterConversationResponse = zod.object({
+  "id": zod.number(),
+  "character": zod.enum(['alfred', 'lucius']),
+  "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
+  "subjectId": zod.string().nullable(),
+  "subjectTitle": zod.string().nullable().describe('Titolo dell\'oggetto alla creazione'),
+  "subjectGone": zod.boolean().optional().describe('L\'argomento non esiste più; calcolato solo nel dettaglio'),
+  "aiModelId": zod.number().nullable(),
+  "title": zod.string(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)'),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "archivedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "messages": zod.array(zod.object({
+  "id": zod.number(),
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string().describe('Markdown'),
+  "error": zod.boolean(),
+  "pageContext": zod.union([zod.object({
+  "page": zod.string().min(1).max(getCharacterConversationResponseTwoMessagesItemPageContextOnePageMax).regex(getCharacterConversationResponseTwoMessagesItemPageContextOnePageRegExp),
+  "id": zod.string().min(1).max(getCharacterConversationResponseTwoMessagesItemPageContextOneIdMax).optional()
+}),zod.null()]),
+  "createdAt": zod.coerce.date()
+})),
+  "proposals": zod.array(zod.object({
+  "id": zod.number(),
+  "messageId": zod.number(),
+  "kind": zod.enum(['agent_prompt', 'agent_tools', 'skill_content', 'template_roles', 'agent_create', 'skill_create', 'template_create', 'decision', 'handoff']),
+  "payload": zod.record(zod.string(), zod.unknown()).nullable(),
+  "rationale": zod.string(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
+  "decidedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+
+
+/**
+ * @summary Cambia il modello o il titolo della conversazione
+ */
+export const UpdateCharacterConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const updateCharacterConversationBodyTitleMax = 80;
+
+
+
+export const UpdateCharacterConversationBody = zod.object({
+  "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente'),
+  "title": zod.string().min(1).max(updateCharacterConversationBodyTitleMax).optional()
+})
+
+export const UpdateCharacterConversationResponse = zod.object({
+  "id": zod.number(),
+  "character": zod.enum(['alfred', 'lucius']),
+  "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
+  "subjectId": zod.string().nullable(),
+  "subjectTitle": zod.string().nullable().describe('Titolo dell\'oggetto alla creazione'),
+  "subjectGone": zod.boolean().optional().describe('L\'argomento non esiste più; calcolato solo nel dettaglio'),
+  "aiModelId": zod.number().nullable(),
+  "title": zod.string(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)'),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "archivedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * Il filo di Alfred aperto non si elimina (409): si ricomincia.
+ * @summary Elimina la conversazione
+ */
+export const DeleteCharacterConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteCharacterConversationResponse = zod.void()
+
+
+/**
+ * Risponde subito col messaggio dell'utente; il personaggio risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se l'argomento non esiste più, se la conversazione è archiviata o se è raggiunto il tetto di spesa. Massimo 10 messaggi al minuto per utente e personaggio.
+ * @summary Invia un messaggio e avvia il turno del personaggio
+ */
+export const SendCharacterMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const sendCharacterMessageBodyContentMax = 8000;
+
+export const sendCharacterMessageBodyPageContextPageMax = 40;
+
+
+export const sendCharacterMessageBodyPageContextPageRegExp = new RegExp('^[a-z_]+$');
+export const sendCharacterMessageBodyPageContextIdMax = 100;
+
+
+
+export const SendCharacterMessageBody = zod.object({
+  "content": zod.string().min(1).max(sendCharacterMessageBodyContentMax),
+  "pageContext": zod.object({
+  "page": zod.string().min(1).max(sendCharacterMessageBodyPageContextPageMax).regex(sendCharacterMessageBodyPageContextPageRegExp),
+  "id": zod.string().min(1).max(sendCharacterMessageBodyPageContextIdMax).optional()
+}).optional()
+})
+
+export const sendCharacterMessageResponsePageContextOnePageMax = 40;
+
+
+export const sendCharacterMessageResponsePageContextOnePageRegExp = new RegExp('^[a-z_]+$');
+export const sendCharacterMessageResponsePageContextOneIdMax = 100;
+
+
+
+export const SendCharacterMessageResponse = zod.object({
+  "id": zod.number(),
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string().describe('Markdown'),
+  "error": zod.boolean(),
+  "pageContext": zod.union([zod.object({
+  "page": zod.string().min(1).max(sendCharacterMessageResponsePageContextOnePageMax).regex(sendCharacterMessageResponsePageContextOnePageRegExp),
+  "id": zod.string().min(1).max(sendCharacterMessageResponsePageContextOneIdMax).optional()
+}),zod.null()]),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * Accettando la modifica si applica con le regole del salvataggio dell'oggetto; una scheda `decision` di Alfred approva o rifiuta la voce in coda. 409 se la scheda è già decisa o non più attuale (stale).
+ * @summary Accetta o rifiuta una scheda di un personaggio
+ */
+export const DecideCharacterProposalParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DecideCharacterProposalBody = zod.object({
+  "action": zod.enum(['accept', 'reject'])
+})
+
+export const DecideCharacterProposalResponse = zod.object({
+  "id": zod.number(),
+  "messageId": zod.number(),
+  "kind": zod.enum(['agent_prompt', 'agent_tools', 'skill_content', 'template_roles', 'agent_create', 'skill_create', 'template_create', 'decision', 'handoff']),
+  "payload": zod.record(zod.string(), zod.unknown()).nullable(),
+  "rationale": zod.string(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
+  "decidedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
 
 
 /**

@@ -75,13 +75,3 @@ export function CaveStalactites({ columns = 32, rows = 6, led = true, tone = "va
 export function CaveVault({ className }: { className?: string }) {
   return <CaveStalactites className={cn("h-full w-full", className)} rows={5} columns={160} />;
 }
-
-/** Separatore tra le due aree del menu: una fila corta di stalattiti, senza LED. */
-export function CaveDivider({ className }: { className?: string }) {
-  return (
-    <div role="separator" className={cn("px-3 py-2 group-data-[collapsible=icon]:px-2", className)}>
-      <CaveStalactites tone="page" led={false} rows={3} columns={9} scale={0.5} className="group-data-[collapsible=icon]:hidden" />
-      <CaveStalactites tone="page" led={false} rows={3} columns={2} scale={0.5} className="hidden group-data-[collapsible=icon]:block" />
-    </div>
-  );
-}

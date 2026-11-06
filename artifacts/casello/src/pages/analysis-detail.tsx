@@ -14,6 +14,7 @@ import {
   useGetApp,
   useReleaseAnalysis,
 } from "@workspace/api-client-react";
+import { CharacterButton } from "@/components/characters/character-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LuciusMark } from "@/components/brand/marks";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -416,6 +417,9 @@ export default function AnalysisDetailPage() {
           <h2 className="text-h2">Analisi #{a.id}</h2>
           <Led state={ANALYSIS_STATUS_LED[a.status]} label={ANALYSIS_STATUS_LABELS[a.status]} />
           {active && <Spinner className="size-4" />}
+          <div className="ml-auto">
+            <CharacterButton target={{ kind: "plan", appId: a.appId }} />
+          </div>
         </div>
         <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <div>

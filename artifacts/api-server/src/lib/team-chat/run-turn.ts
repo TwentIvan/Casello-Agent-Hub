@@ -15,7 +15,7 @@ import { logger } from "../logger";
 import { ProviderError } from "../ai/discovery";
 import { ModelAccessError, modelChat, resolveModel } from "../ai/executor";
 import { sliceChars } from "../architect/text";
-import { userBudgetBlock } from "../budget";
+import { characterBudgetBlock } from "../budget";
 import { memoryContextBlock } from "../memory/context";
 import { EMPTY_REPLY_MESSAGE, INTERRUPTED_TURN_MESSAGE, TurnBusyError } from "../plan-chat/run-turn";
 import { PLAN_TURN_LIMITS, runPlanTurn } from "../plan-chat/turn";
@@ -116,7 +116,7 @@ export async function executeTeamChatTurn(conversationId: number, assistantMessa
   try {
     const [conv] = await db.select().from(teamChatConversationsTable).where(eq(teamChatConversationsTable.id, conversationId));
     if (!conv) return;
-    const blocked = conv.aiModelId === null ? null : await userBudgetBlock(conv.aiModelId);
+    const blocked = conv.aiModelId === null ? null : await characterBudgetBlock(conv.userId, "lucius", conv.aiModelId);
     if (conv.aiModelId === null) {
       content = NO_MODEL_MESSAGE;
     } else if (blocked) {

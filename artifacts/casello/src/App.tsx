@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthGate } from "@/components/auth-gate";
 import { AppShell } from "@/components/layout/app-shell";
+import { HandoffProvider } from "@/components/characters/handoff-context";
 import { isClientError } from "@/lib/api-errors";
 import { isUnauthorized } from "@/lib/auth";
 import Dashboard from "@/pages/dashboard";
@@ -49,31 +50,34 @@ const queryClient: QueryClient = new QueryClient({
 });
 
 function Router() {
+  // HandoffProvider: un solo pannello dei personaggi per tutta la console (pulsanti «Chiedi a…» e passaggi di consegne)
   return (
-    <AppShell>
-      <Switch>
-        <Route path="/" component={Dashboard} />
-        <Route path="/apps" component={AppsPage} />
-        <Route path="/apps/:id" component={AppDetailPage} />
-        <Route path="/apps/:id/plan" component={AppPlanPage} />
-        <Route path="/agents" component={AgentsPage} />
-        <Route path="/agents/:id" component={AgentDetailPage} />
-        <Route path="/runs" component={RunsPage} />
-        <Route path="/runs/:id" component={RunDetailPage} />
-        <Route path="/pending-actions" component={PendingActionsPage} />
-        <Route path="/models" component={ModelsPage} />
-        <Route path="/skills" component={SkillsPage} />
-        <Route path="/skills/:code" component={SkillDetailPage} />
-        <Route path="/team-templates" component={TeamTemplatesPage} />
-        <Route path="/team-templates/:id" component={TeamTemplateDetailPage} />
-        <Route path="/teams" component={TeamsPage} />
-        <Route path="/teams/:id" component={TeamDetailPage} />
-        <Route path="/analyses/:id" component={AnalysisDetailPage} />
-        <Route path="/account" component={AccountPage} />
-        <Route path="/alfred" component={AlfredPage} />
-        <Route component={NotFound} />
-      </Switch>
-    </AppShell>
+    <HandoffProvider>
+      <AppShell>
+        <Switch>
+          <Route path="/" component={Dashboard} />
+          <Route path="/apps" component={AppsPage} />
+          <Route path="/apps/:id" component={AppDetailPage} />
+          <Route path="/apps/:id/plan" component={AppPlanPage} />
+          <Route path="/agents" component={AgentsPage} />
+          <Route path="/agents/:id" component={AgentDetailPage} />
+          <Route path="/runs" component={RunsPage} />
+          <Route path="/runs/:id" component={RunDetailPage} />
+          <Route path="/pending-actions" component={PendingActionsPage} />
+          <Route path="/models" component={ModelsPage} />
+          <Route path="/skills" component={SkillsPage} />
+          <Route path="/skills/:code" component={SkillDetailPage} />
+          <Route path="/team-templates" component={TeamTemplatesPage} />
+          <Route path="/team-templates/:id" component={TeamTemplateDetailPage} />
+          <Route path="/teams" component={TeamsPage} />
+          <Route path="/teams/:id" component={TeamDetailPage} />
+          <Route path="/analyses/:id" component={AnalysisDetailPage} />
+          <Route path="/account" component={AccountPage} />
+          <Route path="/alfred" component={AlfredPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </AppShell>
+    </HandoffProvider>
   );
 }
 

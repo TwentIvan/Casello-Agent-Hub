@@ -1,4 +1,5 @@
 import type { Request, RequestHandler, Response } from "express";
+import type { Character } from "../lib/memory/types";
 
 /** Contatore a finestra fissa per chiave, in memoria. */
 export function fixedWindowCounter({ limit, windowMs }: { limit: number; windowMs: number }) {
@@ -110,6 +111,15 @@ const teamChatMessageCounter = fixedWindowCounter({ limit: 10, windowMs: 60_000 
 /** Conta un messaggio della chat di squadra dell'utente: false se il limite è raggiunto. */
 export function consumeTeamChatMessage(userId: number): boolean {
   return teamChatMessageCounter.consume(`user:${userId}`).ok;
+}
+
+// Messaggi ad Alfred e Lucius nelle conversazioni dei personaggi: 10 al minuto per utente e personaggio, contatori
+// propri (non condivisi con la chat del piano né con quella di squadra).
+const characterMessageCounter = fixedWindowCounter({ limit: 10, windowMs: 60_000 });
+
+/** Conta un messaggio dell'utente al personaggio: false se il limite è raggiunto. */
+export function consumeCharacterMessage(userId: number, character: Character): boolean {
+  return characterMessageCounter.consume(`${character}:user:${userId}`).ok;
 }
 
 // Protocollo dei nodi (/api/node, dopo requireNodeToken): heartbeat e claim 6 al minuto per nodo (contatori

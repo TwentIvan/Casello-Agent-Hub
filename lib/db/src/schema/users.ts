@@ -20,6 +20,12 @@ export const usersTable = pgTable(
     // Modello e voce di Alfred (maggiordomo vocale); null = nessuno
     alfredAiModelId: integer("alfred_ai_model_id").references((): AnyPgColumn => aiModelsTable.id, { onDelete: "set null" }),
     alfredVoice: text("alfred_voice"),
+    // Modello di Alfred nelle chat delle aree e modello di Lucius; null = nessuno
+    alfredChatAiModelId: integer("alfred_chat_ai_model_id").references((): AnyPgColumn => aiModelsTable.id, { onDelete: "set null" }),
+    luciusAiModelId: integer("lucius_ai_model_id").references((): AnyPgColumn => aiModelsTable.id, { onDelete: "set null" }),
+    // Tetti di spesa mensili per personaggio in USD; null = nessun limite
+    alfredMonthlyBudgetUsd: numeric("alfred_monthly_budget_usd", { precision: 12, scale: 2 }),
+    luciusMonthlyBudgetUsd: numeric("lucius_monthly_budget_usd", { precision: 12, scale: 2 }),
   },
   (table) => [unique("users_email_unique").on(table.email)],
 );

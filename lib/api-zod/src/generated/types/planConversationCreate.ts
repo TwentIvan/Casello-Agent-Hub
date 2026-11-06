@@ -7,8 +7,11 @@
  */
 
 export interface PlanConversationCreate {
-  /** Modello di un account AI dell'utente */
-  aiModelId: number;
+  /**
+     * Modello di un account AI dell'utente; null o assente = modello di Lucius (o predefinito)
+     * @nullable
+     */
+  aiModelId?: number | null;
   /** Analisi di riferimento (default l'ultima completata dell'app) */
   analysisId?: number;
 }

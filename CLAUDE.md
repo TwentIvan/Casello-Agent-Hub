@@ -172,7 +172,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `artifacts/api-server/src/lib/mcp/` e `lib/architect/local-executor.ts` — server MCP `/mcp` e coda/lease delle analisi locali
   (`lib/mcp/auth.ts`: `requireApiToken`, accetta `cas_…` e `cao_…`)
 - Connettore OAuth (vedi "Connettore OAuth (app Claude)"): `artifacts/api-server/src/lib/oauth/` (`config.ts`, `errors.ts`, `metadata.ts`,
-  `clients.ts`, `authorize.ts`, `pages.ts`, `tokens.ts`, `grants.ts`); route `src/routes/oauth.ts` (alla radice: `/.well-known/…` e `/oauth/…`,
+  `clients.ts`, `plugins.ts`, `authorize.ts`, `pages.ts`, `tokens.ts`, `grants.ts`); route `src/routes/oauth.ts` (alla radice: `/.well-known/…` e `/oauth/…`,
   fuori da `/api`) e `src/routes/oauth-grants.ts` (`/api/account/oauth-grants`); schema `lib/db/src/schema/oauth.ts`; console
   `artifacts/casello/src/components/account/oauth-grants-section.tsx` (Account → «App collegate»); limiti in `middlewares/rate-limit.ts`
 - `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
@@ -791,10 +791,11 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (`createNodeToken`: nasce solo con un nodo, `api_tokens.node_id`, scade dopo 365 giorni, non compare tra i token personali);
   un token di nodo su `/api` (fuori da `/api/node`) → 403 «il token non ha l'ambito per questa operazione», su `/mcp` → 401.
 - Regola unica in `requireAuth` (`lib/auth.ts`): con l'header `Authorization` presente conta solo il token, mai il
-  cookie (nemmeno con `AUTH_DISABLED`); header non `Bearer cas_…`, token sconosciuto/revocato/scaduto o utente non più
+  cookie (nemmeno con `AUTH_DISABLED`): `cas_…` personale oppure `cap_…` di un plugin (ambiti del collegamento filtrati a
+  `api:read`/`api:write`); altro header, token sconosciuto/revocato/scaduto o utente non più
   in `ALLOWED_EMAILS` → 401 «token non valido o scaduto». Senza header vale la sessione. Ambito per metodo (GET/HEAD →
   `api:read` o `api:write`; POST/PUT/PATCH/DELETE → `api:write`), altrimenti 403 «il token non ha l'ambito per questa
-  operazione». Messaggi in `TOKEN_MESSAGES`. `req.auth` = `{kind:"session"}` | `{kind:"token", tokenId, scopes}`.
+  operazione». Messaggi in `TOKEN_MESSAGES`. `req.auth` = `{kind:"session"}` | `{kind:"token", tokenId, scopes}` | `{kind:"oauth", grantId, scopes}` (`cap_…`).
 - Solo con il login (`sessionOnly`; con un token 403 «operazione disponibile solo con il login»): `GET|POST
   /account/tokens`, `DELETE /account/tokens/:id`; `POST /ai/accounts`, `PATCH|DELETE /ai/accounts/:id`,
   `POST /ai/accounts/:id/verify|default|models`, `PATCH /ai/models/:id` (chiavi, indirizzi, prezzi, tetti);
@@ -823,8 +824,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   personali `cas_…` restano come sono. Indirizzi assoluti da `PUBLIC_APP_URL` (`lib/oauth/config.ts`; in sviluppo `http://localhost:<WEB_PORT>`).
 - **Scoperta**: ogni 401 di `/mcp` porta `WWW-Authenticate: Bearer resource_metadata="<PUBLIC_APP_URL>/.well-known/oauth-protected-resource"`.
   `GET /.well-known/oauth-protected-resource` (anche `…/mcp`) e `GET /.well-known/oauth-authorization-server` (`metadata.ts`): solo
-  client pubblici (`token_endpoint_auth_methods_supported: none`), PKCE `S256`, scope `mcp`, `client_id_metadata_document_supported`.
-- **Client** (`clients.ts`, `oauth_clients`, `kind` `dcr` | `metadata`): registrazione dinamica `POST /oauth/register` (RFC 7591: `redirect_uris`
+  `token_endpoint_auth_methods_supported` `["none","client_secret_post"]` (`none` per i client del connettore, `client_secret_post` per i plugin), PKCE `S256`,
+  `scopes_supported` `["mcp","api:read","api:write"]` nei metadati dell'authorization server (il documento della risorsa `/mcp` resta solo `mcp`), `client_id_metadata_document_supported`.
+- **Client** (`clients.ts`, `oauth_clients`, `kind` `dcr` | `metadata` | `plugin`: i plugin vengono dalla configurazione, non da registrazione): registrazione dinamica `POST /oauth/register` (RFC 7591: `redirect_uris`
   1..5, `client_name` ≤ 100; registrazione permissiva come RFC 7591 §3.2.1: un `token_endpoint_auth_method` diverso da `none` non è un
   errore e la risposta dice sempre `none`; dei `redirect_uris` si tengono solo quelli ammessi, errore `invalid_redirect_uri` solo se non ne
   resta nessuno; `client_id` `cac_…`), oppure `client_id` = URL `https` di un documento
@@ -891,9 +893,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   La riga in `oauth_clients` (`kind plugin`) la crea o aggiorna `ensurePluginClientRow` (nome e ritorno dalla configurazione) e non conta nel
   tetto di 1 000 né nella pulizia `sweepOAuth`. Un plugin tolto dalla variabile resta come riga ma non vale più: niente consenso, niente scambio
   o rinnovo, i `cap_…` già emessi rifiutati (`verifyPluginAccessToken` controlla che il client sia ancora configurato).
-- **Link al servizio**: `apps.plugin_url_template` (in `POST|PUT /api/apps`; 1..500 caratteri, `{refId}` una sola volta, https senza
+- **Link al servizio**: `apps.plugin_url_template` (in `POST /api/apps` e `PATCH /api/apps/:id`; 1..500 caratteri, `{refId}` una sola volta, https senza
   credenziali, http solo verso `localhost`/`127.0.0.1` fuori produzione, altrimenti 400; vuoto = tolto) fa comparire in `ref.url` della squadra
-  l'indirizzo della pagina del lavoro, solo per `ref.type = task` (null altrimenti); la scheda squadra lo mostra come link.
+  l'indirizzo della pagina del lavoro, solo per `ref.type = task` (null altrimenti); la scheda squadra lo mostra come link («Apri in …», per qualunque app che abbia il template).
 - Fuori ambito: token OAuth del connettore (`cao_…`) su `/api`, revoca RFC 7009, scelta degli ambiti al consenso, strumenti nuovi del centralino.
 
 ## Alfred (maggiordomo vocale)

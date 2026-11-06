@@ -144,3 +144,7 @@ Dove il codice differisce da questa spec vale il codice.
   redirect che seguono l'invio del form.
 - Un plugin tolto dalla configurazione resta come riga in `oauth_clients` ma non vale più: niente consenso, niente scambio o rinnovo di
   token, i `cap_…` già emessi sono rifiutati.
+- La pagina di consenso del plugin ha un testo dedicato che descrive i permessi a parole (non elenca gli ambiti) e non mostra l'host
+  del ritorno.
+- Il link «Apri in …» compare per qualunque app che abbia `plugin_url_template` (non solo per le app plugin), sempre solo con
+  `ref.type = task`.

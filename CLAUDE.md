@@ -50,13 +50,13 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (logo, segno, Alfred, Lucius dai file di `design/assets/`, versione chiara o scura secondo il tema). `Button` è `ui/button.tsx`
   (principale = `default`, secondario = `secondary`/`outline`, discreto = `ghost`/`link`). Gli stati si mostrano con i LED, non con
   badge colorati.
-- Due aree del menu, separate solo da una fila di stalattiti in pixel (`CaveDivider`), senza titoli: quartier generale (Dashboard,
-  Squadre, Da confermare, Run, Parla con Alfred) e officina (App, Agenti, Skill, Modelli di squadra, Modelli AI). La caverna:
-  `components/brand/cave.tsx` (`CaveVault`): la barra in alto di ogni pagina (`CaveHeader` in `app-shell.tsx`, 112 px, buia in
-  entrambi i temi) ha la volta di stalattiti con il LED, sotto il padrone di casa dell'area aperta (Alfred · quartier generale,
-  Lucius · officina, nessuno fuori dal menu) e l'account (quadrato, ardesia e carta), poi il pavimento di roccia; niente titolo
-  della pagina. Fondi e bordi in grigi neutri, senza dominanti calde o fredde. I due personaggi si mostrano dentro le loro funzioni, con i loro segni: Alfred il maggiordomo (voce, `/alfred`),
-  Lucius l'ingegnere del laboratorio (analisi, proposte, chat del piano: nei prompt di `architect/prompts.ts` e `plan-chat/context.ts`).
+- Menu in un solo elenco (Dashboard, Squadre, Da confermare, Run, App, Agenti, Skill, Modelli di squadra, Modelli AI), senza aree.
+  La caverna: `components/brand/cave.tsx` (`CaveVault`): la barra in alto di ogni pagina (`CaveHeader` in `app-shell.tsx`, 112 px,
+  buia in entrambi i temi) ha la volta di stalattiti con il LED, sotto il logo chiaro su scuro, che è anche il pulsante del menu
+  dell'account (`user-menu.tsx`), e a destra il microfono che apre Alfred (`/alfred`, non è una voce di menu), poi il pavimento di
+  roccia; niente titolo della pagina. Fondi e bordi in grigi neutri, senza dominanti calde o fredde. Alfred (il maggiordomo, voce) e
+  Lucius (l'ingegnere del laboratorio: analisi, proposte, chat del piano, nei prompt di `architect/prompts.ts` e
+  `plan-chat/context.ts`) sono due chatbot: compaiono con i loro segni dentro le funzioni dove si chiamano, non nella barra.
   Nessun riferimento a Batman.
 - Icone e favicon: `design/icons/` servite alla radice dal plugin `botcaveIcons` di `vite.config.ts` (niente copie in `public/`); il
   manifest di Alfred usa `icon-192/512` e `icon-maskable-512`, colori `#151A21`. I Dockerfile copiano `design/` (web) e

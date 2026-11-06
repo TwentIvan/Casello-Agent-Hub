@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, Sparkles, LayoutTemplate, Users, Mic, type LucideIcon } from "lucide-react";
 import {
@@ -12,7 +12,6 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarHeader,
   SidebarInset,
   SidebarMenu,
   SidebarMenuBadge,
@@ -23,8 +22,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { BudgetGuard } from "@/components/budget/budget";
-import { AlfredMark, BotcaveLogo, BotcaveMark, LuciusMark } from "@/components/brand/marks";
-import { CaveDivider, CaveVault } from "@/components/brand/cave";
+import { CaveVault } from "@/components/brand/cave";
+import { Button } from "@/components/ui/button";
 import { UserMenu } from "./user-menu";
 
 interface NavItem {
@@ -33,41 +32,17 @@ interface NavItem {
   icon: LucideIcon;
 }
 
-/*
- * Due aree, separate nel menu solo da un elemento grafico (le stalattiti), senza titoli:
- * - quartier generale: dirigere il lavoro delle squadre e decidere (il regno di Alfred);
- * - officina: analizzare e migliorare le applicazioni e costruire agenti, skill e squadre (il laboratorio di Lucius).
- * I nomi restano per i lettori di schermo.
- */
-interface NavArea {
-  key: "hq" | "workshop";
-  title: string;
-  items: NavItem[];
-}
-
-const NAV_AREAS: NavArea[] = [
-  {
-    key: "hq",
-    title: "Quartier generale",
-    items: [
-      { href: "/", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/teams", label: "Squadre", icon: Users },
-      { href: "/pending-actions", label: "Da confermare", icon: ShieldCheck },
-      { href: "/runs", label: "Run", icon: PlayCircle },
-      { href: "/alfred", label: "Parla con Alfred", icon: Mic },
-    ],
-  },
-  {
-    key: "workshop",
-    title: "Officina",
-    items: [
-      { href: "/apps", label: "App", icon: Boxes },
-      { href: "/agents", label: "Agenti", icon: Bot },
-      { href: "/skills", label: "Skill", icon: Sparkles },
-      { href: "/team-templates", label: "Modelli di squadra", icon: LayoutTemplate },
-      { href: "/models", label: "Modelli AI", icon: Cpu },
-    ],
-  },
+// Un solo elenco: le aree non servono a orientarsi. Alfred non è una voce di menu: si chiama dalla barra in alto.
+const NAV_ITEMS: NavItem[] = [
+  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/teams", label: "Squadre", icon: Users },
+  { href: "/pending-actions", label: "Da confermare", icon: ShieldCheck },
+  { href: "/runs", label: "Run", icon: PlayCircle },
+  { href: "/apps", label: "App", icon: Boxes },
+  { href: "/agents", label: "Agenti", icon: Bot },
+  { href: "/skills", label: "Skill", icon: Sparkles },
+  { href: "/team-templates", label: "Modelli di squadra", icon: LayoutTemplate },
+  { href: "/models", label: "Modelli AI", icon: Cpu },
 ];
 
 function isActive(href: string, location: string): boolean {
@@ -115,25 +90,11 @@ function NavMenu({ location, items }: { location: string; items: NavItem[] }) {
 }
 
 /*
- * Chi abita l'area aperta: Alfred nel quartier generale, Lucius nell'officina. Le pagine fuori dal menu (Account)
- * non hanno un padrone di casa.
+ * Barra in alto: la volta della caverna (stalattiti sul buio e LED ambra), sotto il logo chiaro su scuro, che apre il
+ * menu dell'account, e a destra il microfono per parlare con Alfred. È buia in entrambi i temi, come la copertina del
+ * manuale.
  */
-const AREA_HOSTS: Record<NavArea["key"], { name: string; area: string }> = {
-  hq: { name: "Alfred", area: "quartier generale" },
-  workshop: { name: "Lucius", area: "officina" },
-};
-
-function currentArea(location: string): NavArea["key"] | null {
-  return NAV_AREAS.find((area) => area.items.some((item) => isActive(item.href, location)))?.key ?? null;
-}
-
-/*
- * Barra in alto: la volta della caverna (stalattiti sul buio e LED ambra), sotto il padrone di casa dell'area con il
- * suo segno, a destra l'account. È buia in entrambi i temi, come la copertina del manuale.
- */
-function CaveHeader({ location }: { location: string }) {
-  const area = currentArea(location);
-  const host = area ? AREA_HOSTS[area] : null;
+function CaveHeader() {
   return (
     <header className="relative flex h-28 shrink-0 flex-col overflow-hidden bg-notte">
       <div aria-hidden="true" className="h-16 shrink-0">
@@ -141,17 +102,19 @@ function CaveHeader({ location }: { location: string }) {
       </div>
       <div className="flex min-h-0 flex-1 items-center gap-3 pl-4 pr-4 sm:pr-6">
         <SidebarTrigger className="-ml-1 text-nebbia hover:bg-ardesia hover:text-nebbia" />
-        {host && (
-          <p className="flex items-center gap-2 text-label uppercase text-roccia" title={`${host.name}, ${host.area}`}>
-            {area === "hq" ? <AlfredMark size={16} tone="dark" /> : <LuciusMark size={16} tone="dark" />}
-            <span className="text-nebbia">{host.name}</span>
-            <span aria-hidden="true">·</span>
-            <span>{host.area}</span>
-          </p>
-        )}
-        <div className="ml-auto">
-          <UserMenu />
-        </div>
+        <UserMenu />
+        <Button
+          asChild
+          variant="ghost"
+          size="icon"
+          className="ml-auto text-nebbia hover:bg-ardesia hover:text-nebbia"
+          aria-label="Parla con Alfred"
+          title="Parla con Alfred"
+        >
+          <Link href="/alfred">
+            <Mic />
+          </Link>
+        </Button>
       </div>
       {/* Il pavimento di roccia */}
       <div aria-hidden="true" className="h-1.5 shrink-0 bg-ardesia" />
@@ -165,32 +128,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider>
       <Sidebar collapsible="icon">
-        <SidebarHeader>
-          {/* Logo orizzontale (oltre 96 px); con la barra chiusa a icone solo il segno */}
-          <Link href="/" className="flex items-center px-2 py-2" aria-label="Botcave, vai alla dashboard">
-            <span className="flex group-data-[collapsible=icon]:hidden">
-              <BotcaveLogo className="h-6" />
-            </span>
-            <span className="hidden group-data-[collapsible=icon]:flex">
-              <BotcaveMark className="h-4" />
-            </span>
-          </Link>
-        </SidebarHeader>
         <SidebarContent>
-          {NAV_AREAS.map((area, index) => (
-            <Fragment key={area.key}>
-              {index > 0 && <CaveDivider />}
-              <SidebarGroup aria-label={area.title}>
-                <SidebarGroupContent>
-                  <NavMenu location={location} items={area.items} />
-                </SidebarGroupContent>
-              </SidebarGroup>
-            </Fragment>
-          ))}
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <NavMenu location={location} items={NAV_ITEMS} />
+            </SidebarGroupContent>
+          </SidebarGroup>
         </SidebarContent>
       </Sidebar>
       <SidebarInset className="min-w-0">
-        <CaveHeader location={location} />
+        <CaveHeader />
         <main className="flex-1 p-4 md:p-6">{children}</main>
         <BudgetGuard />
       </SidebarInset>

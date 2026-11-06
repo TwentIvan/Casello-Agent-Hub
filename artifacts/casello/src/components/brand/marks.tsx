@@ -34,8 +34,8 @@ function Themed({ light, dark, alt, className, height, tone }: ThemedProps & { t
 }
 
 /** Logo orizzontale «bot cave»: almeno 96 px di larghezza (sotto si usa BotcaveMark). */
-export function BotcaveLogo({ className }: { className?: string }) {
-  return <Themed light={logoLight} dark={logoDark} alt="Botcave" className={cn("h-7 w-auto", className)} />;
+export function BotcaveLogo({ className, tone }: { className?: string; tone?: "light" | "dark" }) {
+  return <Themed light={logoLight} dark={logoDark} alt="Botcave" tone={tone} className={cn("h-7 w-auto", className)} />;
 }
 
 /** Solo il segno (pipistrello nella caverna): per spazi stretti, regge fino a 16 px di altezza. */

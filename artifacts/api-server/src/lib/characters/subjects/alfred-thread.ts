@@ -225,7 +225,8 @@ async function runTool(call: ChatToolCall, ctx: TurnContext): Promise<string> {
   try {
     switch (call.name) {
       case "squadre_stato":
-        return toolOk(await teamsStatus(userId));
+        // Il modello della chat riassume da sé: nessuna chiamata al modello del centralino, fuori dai tetti dei personaggi
+        return toolOk(await teamsStatus(userId, { summarize: false }));
       case "squadra_dettaglio":
         return toolOk(await voiceDetail(userId, a["id"] as number));
       case "bollettino": {

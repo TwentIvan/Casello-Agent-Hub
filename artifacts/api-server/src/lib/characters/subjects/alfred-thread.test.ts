@@ -137,6 +137,25 @@ describe("filo di Alfred", () => {
     }
   });
 
+  it("squadre_stato_no_model_calls: 6 squadre attive, 6 righe e nessuna richiesta al provider", async () => {
+    const fake = await startFakeProvider({ apiKey: "sk-X" });
+    const restore = allowTestLoopback();
+    try {
+      const [acc] = await db.insert(aiAccountsTable).values({ userId, name: "F", provider: "custom", baseUrl: fake.baseUrl, allowPrivateNetwork: true, apiKeyEnc: encryptSecret("sk-X"), status: "ok" }).returning();
+      const [m] = await db.insert(aiModelsTable).values({ accountId: acc!.id, modelId: "fake-model", displayName: "F" }).returning();
+      await db.update(usersTable).set({ centralinoAiModelId: m!.id }).where(eq(usersTable.id, userId));
+      for (let i = 1; i <= 6; i++) await makeTeam(`Squadra${i}`, userId);
+      const out = await call(await newCtx(), "squadre_stato", {});
+      expect(out.ok).toBe(true);
+      expect(out.result).toMatchObject({ summarized: false, teams: 6 });
+      expect(out.result.lines).toHaveLength(6);
+      expect(fake.requests).toHaveLength(0);
+    } finally {
+      restore();
+      await fake.close();
+    }
+  });
+
   it("leggi_run_own_only: solo le run dell'utente", async () => {
     const [agent] = await db.insert(agentsTable).values({ appId, name: "Gen", role: "general" }).returning();
     const [mine] = await db.insert(runsTable).values({ agentId: agent!.id, aiModelId: modelId, status: "failed", input: "SEGRETO-INPUT", errorMessage: "Errore durante l'esecuzione: boom", durationMs: 1200 }).returning();

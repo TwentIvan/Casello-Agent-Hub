@@ -84,8 +84,11 @@ async function summarize(userId: number, lines: string[]): Promise<string[] | nu
   }
 }
 
-/** Una riga per squadra attiva dell'utente; con più di 5 squadre un riassunto di al massimo 5 righe, se il modello c'è. */
-export async function teamsStatus(userId: number): Promise<{ summarized: boolean; teams: number; lines: string[] }> {
+/**
+ * Una riga per squadra attiva dell'utente; con più di 5 squadre un riassunto di al massimo 5 righe, se il modello c'è.
+ * `summarize: false` salta il riassunto (nessuna chiamata a modelli: elenco sempre completo).
+ */
+export async function teamsStatus(userId: number, opts: { summarize?: boolean } = {}): Promise<{ summarized: boolean; teams: number; lines: string[] }> {
   const instances = (await listInstances({ status: "active" })).filter((i) => i.activatedBy === userId);
   if (instances.length === 0) return { summarized: false, teams: 0, lines: [] };
   const ids = instances.map((i) => i.id);
@@ -110,7 +113,7 @@ export async function teamsStatus(userId: number): Promise<{ summarized: boolean
       `#${i.id} ${i.name} · ${i.ref.title} · piano ${plan.status} · compiti in corso ${count(i.id, "running")}, finiti ${count(i.id, "done")}, bloccati ${count(i.id, "blocked")} · eventi non letti ${unread}`,
     );
   }
-  if (lines.length > SUMMARY_THRESHOLD) {
+  if (opts.summarize !== false && lines.length > SUMMARY_THRESHOLD) {
     const summary = await summarize(userId, lines);
     if (summary) return { summarized: true, teams: lines.length, lines: summary };
   }

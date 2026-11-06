@@ -188,7 +188,7 @@ Risultati degli strumenti: `ok: false` con messaggio fisso, mai eccezioni; mai s
 
 - Ogni scheda di modifica porta `target_hash`, l'impronta SHA-256 dello stato su cui è nata. Le schede di creazione non la
   portano: un nome o un codice già usato dà l'errore di regola (409).
-- `POST /api/character-proposals/:id/decision` `{decision: accept|reject}`:
+- `POST /api/character-proposals/:id/decision` `{action: accept|reject}` (come la chat di squadra):
   - accettare ricontrolla l'impronta dentro la transazione, con la riga dell'oggetto bloccata (`FOR UPDATE`), applica e marca
     la scheda `accepted` nella stessa transazione;
   - impronta diversa o oggetto sparito → scheda `stale` e 409 «l'oggetto è cambiato: chiedi a Lucius una proposta aggiornata»;
@@ -294,3 +294,16 @@ della regola.
 - Ramo `feat/botcave-personaggi`, dopo il merge di `feat/botcave-barra-logo`.
 - PR con la migrazione da applicare PRIMA del merge (SQL completo in chat) e l'aggiornamento di `CLAUDE.md` (nuova sezione
   «Alfred e Lucius nelle aree»).
+
+## 13. Differenze dal codice (parte API)
+
+- Corpo della decisione sulle schede: `{action: accept|reject}`, come `/team-chat-proposals/:id/decision`.
+- `POST …/messages` controlla il tetto del personaggio già nella route (409 col motivo), come le chat del piano e di squadra;
+  il turno lo ricontrolla e, se nel frattempo è raggiunto, chiude con un messaggio d'errore dell'assistente.
+- Un filo di Alfred archiviato è in sola lettura (409 «conversazione archiviata»); il filo aperto non si elimina (409).
+- Il contesto del filo di Alfred non chiama modelli: elenco semplice delle squadre attive dell'utente (al massimo 30 righe).
+- `leggi_run`: una run appartiene a chi possiede l'account AI del suo modello; run con modello eliminato = «run non trovata».
+- `PlanConversationCreate.aiModelId` è facoltativo: senza modello si usa il modello di Lucius.
+- Sessione vocale di Alfred: il tetto di Alfred si controlla dopo «senza modello» e «modello non usabile», prima degli altri tetti.
+- Scheda `decision`: la scheda si prenota (`pending` → `accepted`) prima di decidere la voce; se il processo cade in mezzo, la voce
+  resta in coda e si decide dalla pagina Da confermare.

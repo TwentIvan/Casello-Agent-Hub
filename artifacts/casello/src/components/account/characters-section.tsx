@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import {
+  type CharacterSettings,
   type CharacterSettingsView,
   getGetAlfredSettingsQueryKey,
   getGetCharacterSettingsQueryKey,
@@ -145,10 +146,21 @@ function AlfredVoiceBlock() {
   );
 }
 
-/** Modello e tetto di un personaggio per le conversazioni scritte; il PUT sostituisce tutti e quattro i campi. */
-function WrittenBlock({ character, settings }: { character: Character; settings: CharacterSettingsView }) {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
+/** Salva una parte delle impostazioni dei personaggi; `onSaved` dopo il successo. */
+type SaveSettings = (patch: Partial<CharacterSettings>, name: string, onSaved?: () => void) => void;
+
+/** Modello e tetto di un personaggio per le conversazioni scritte (il salvataggio è uno solo per i due blocchi). */
+function WrittenBlock({
+  character,
+  settings,
+  save,
+  pending,
+}: {
+  character: Character;
+  settings: CharacterSettingsView;
+  save: SaveSettings;
+  pending: boolean;
+}) {
   const isAlfred = character === "alfred";
   const name = isAlfred ? "Alfred" : "Lucius";
   const savedModel = isAlfred ? settings.alfredChatAiModelId : settings.luciusAiModelId;
@@ -158,38 +170,12 @@ function WrittenBlock({ character, settings }: { character: Character; settings:
   const [chosen, setChosen] = useState<number | null | undefined>(undefined);
   const modelValue = chosen !== undefined ? chosen : savedModel;
 
-  const update = useUpdateCharacterSettings({
-    mutation: {
-      onSuccess: (result) => {
-        // La risposta del PUT è la vista completa, con la spesa
-        queryClient.setQueryData(getGetCharacterSettingsQueryKey(), result);
-        toast({ title: `Impostazioni di ${name} salvate` });
-      },
-      onError: (error) =>
-        toast({ variant: "destructive", title: "Salvataggio non riuscito", description: apiErrorMessage(error) }),
-    },
-  });
-
-  // Sempre tutti e quattro i valori: gli altri restano quelli salvati
   const send = (next: { model?: number | null; cap?: number | null }) => {
-    const model = next.model !== undefined ? next.model : savedModel;
-    const newCap = next.cap !== undefined ? next.cap : cap;
-    update.mutate(
-      {
-        data: {
-          alfredChatAiModelId: isAlfred ? model : settings.alfredChatAiModelId,
-          luciusAiModelId: isAlfred ? settings.luciusAiModelId : model,
-          alfredMonthlyBudgetUsd: isAlfred ? newCap : settings.alfredMonthlyBudgetUsd,
-          luciusMonthlyBudgetUsd: isAlfred ? settings.luciusMonthlyBudgetUsd : newCap,
-        },
-      },
-      {
-        // Una scelta di modello non ancora salvata si perde solo se si è salvato il modello
-        onSuccess: () => {
-          if (next.model !== undefined) setChosen(undefined);
-        },
-      },
-    );
+    const patch: Partial<CharacterSettings> = {};
+    if (next.model !== undefined) patch[isAlfred ? "alfredChatAiModelId" : "luciusAiModelId"] = next.model;
+    if (next.cap !== undefined) patch[isAlfred ? "alfredMonthlyBudgetUsd" : "luciusMonthlyBudgetUsd"] = next.cap;
+    // Una scelta di modello non ancora salvata si perde solo se si è salvato il modello
+    save(patch, name, next.model !== undefined ? () => setChosen(undefined) : undefined);
   };
 
   return (
@@ -209,11 +195,11 @@ function WrittenBlock({ character, settings }: { character: Character; settings:
             value={modelValue}
             onChange={setChosen}
             allowNone
-            disabled={update.isPending}
+            disabled={pending}
           />
         </div>
-        <Button disabled={modelValue === savedModel || update.isPending} onClick={() => send({ model: modelValue })}>
-          {update.isPending ? "Salvataggio…" : `Salva il modello di ${name}`}
+        <Button disabled={modelValue === savedModel || pending} onClick={() => send({ model: modelValue })}>
+          {pending ? "Salvataggio…" : `Salva il modello di ${name}`}
         </Button>
       </div>
       <div className="space-y-3">
@@ -222,7 +208,7 @@ function WrittenBlock({ character, settings }: { character: Character; settings:
         <CapForm
           key={String(cap)}
           value={cap}
-          pending={update.isPending}
+          pending={pending}
           label={`Tetto mensile in USD di ${name}`}
           onSave={(next) => send({ cap: next })}
         />
@@ -234,7 +220,40 @@ function WrittenBlock({ character, settings }: { character: Character; settings:
 
 /** Account → Personaggi: Alfred (voce, modello scritto, tetto) e Lucius (modello, tetto). */
 export function CharactersSection() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const settings = useGetCharacterSettings({ query: { queryKey: getGetCharacterSettingsQueryKey() } });
+  // Un solo PUT per i due personaggi: mentre è in corso entrambi i blocchi sono disattivati, e il successivo parte
+  // dalla cache aggiornata con la risposta del precedente (altrimenti si riscriverebbero valori vecchi).
+  const update = useUpdateCharacterSettings({
+    mutation: {
+      onSuccess: (result) => queryClient.setQueryData(getGetCharacterSettingsQueryKey(), result),
+      onError: (error) =>
+        toast({ variant: "destructive", title: "Salvataggio non riuscito", description: apiErrorMessage(error) }),
+    },
+  });
+  const save: SaveSettings = (patch, name, onSaved) => {
+    const latest = queryClient.getQueryData<CharacterSettingsView>(getGetCharacterSettingsQueryKey()) ?? settings.data;
+    if (!latest || update.isPending) return;
+    // Il PUT sostituisce tutti e quattro i campi: gli altri restano quelli salvati
+    update.mutate(
+      {
+        data: {
+          alfredChatAiModelId: latest.alfredChatAiModelId,
+          luciusAiModelId: latest.luciusAiModelId,
+          alfredMonthlyBudgetUsd: latest.alfredMonthlyBudgetUsd,
+          luciusMonthlyBudgetUsd: latest.luciusMonthlyBudgetUsd,
+          ...patch,
+        },
+      },
+      {
+        onSuccess: () => {
+          onSaved?.();
+          toast({ title: `Impostazioni di ${name} salvate` });
+        },
+      },
+    );
+  };
 
   return (
     <Card>
@@ -257,7 +276,7 @@ export function CharactersSection() {
           ) : !settings.data ? (
             <Skeleton className="h-24 w-full max-w-md" />
           ) : (
-            <WrittenBlock character="alfred" settings={settings.data} />
+            <WrittenBlock character="alfred" settings={settings.data} save={save} pending={update.isPending} />
           )}
         </section>
         {settings.data && (
@@ -265,7 +284,7 @@ export function CharactersSection() {
             <h2 id="characters-lucius" className="text-h2">
               Lucius
             </h2>
-            <WrittenBlock character="lucius" settings={settings.data} />
+            <WrittenBlock character="lucius" settings={settings.data} save={save} pending={update.isPending} />
           </section>
         )}
       </CardContent>

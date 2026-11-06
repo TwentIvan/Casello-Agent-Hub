@@ -34,6 +34,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Alfred e Lucius nelle aree: un pulsante per area apre il personaggio giusto in un pannello laterale (Alfred scritto con un filo unico che
   sa da quale pagina scrivi, Lucius per oggetto: agente, skill, modello di squadra, aree, piano, squadra); schede da accettare, passaggio di
   consegne tra i due, modello e tetto mensile per personaggio in Account → «Personaggi» (vedi "Alfred e Lucius nelle aree").
+- Botcave incorporabile: una riga `<script>` nell'app ospite (prima prova: The Hub Up) mostra pulsante e pannello laterale con Alfred, Da confermare,
+  Bollettino e Lucius, in un iframe `/embed` con accesso OAuth «Collega con Botcave» (vedi "Botcave incorporabile (app ospiti)").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -79,6 +81,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `/api` verso `API_PORT`, default 3000)
 - `pnpm --filter @workspace/api-server run test` — test dell'API (Vitest; Postgres in memoria con PGlite,
   schema da `docs/schema-casello.sql`, nessun DB esterno necessario)
+- `pnpm --filter @workspace/casello run test` — test della console (Vitest: protocollo, tema, rinnovo del token e coda del caricatore del pannello incorporabile)
 - `pnpm --filter @workspace/casello-nodo run test` / `run build` — test e build del servizio `casello-nodo` (la build produce
   `artifacts/casello-nodo/dist/index.mjs`, richiesto da `casello-nodo install`)
 - `pnpm run typecheck` — typecheck di tutti i package (da far passare prima di ogni commit)
@@ -189,6 +192,12 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `clients.ts`, `authorize.ts`, `pages.ts`, `tokens.ts`, `grants.ts`); route `src/routes/oauth.ts` (alla radice: `/.well-known/…` e `/oauth/…`,
   fuori da `/api`) e `src/routes/oauth-grants.ts` (`/api/account/oauth-grants`); schema `lib/db/src/schema/oauth.ts`; console
   `artifacts/casello/src/components/account/oauth-grants-section.tsx` (Account → «App collegate»); limiti in `middlewares/rate-limit.ts`
+- Botcave incorporabile (vedi "Botcave incorporabile (app ospiti)"): API in `artifacts/api-server/src/lib/embed/` (`origins.ts`, `clients.ts`) e
+  `src/routes/embed.ts` (`GET /api/embed/config`), con le parti in `lib/auth.ts` (`sessionOrEmbed`), `lib/oauth/` (`authorize.ts`, `tokens.ts`,
+  `grants.ts`) e `routes/alfred.ts`; console `artifacts/casello/embed.html`, `src/embed/` (`main.tsx`, `embed-app.tsx`, `auth.ts`, `callback.ts`,
+  `protocol.ts`, `theme.ts`, `use-host.ts`, `use-badge.ts`, `tab-content.tsx`, `tabs/`, `loader/`: il caricatore `botcave.js`),
+  `vite.loader.config.ts`, `embed-demo.html` (solo sviluppo); `docker/nginx.conf.template`, `docker/15-embed-origins.envsh`. Spec:
+  `docs/superpowers/specs/2026-11-06-botcave-plugin-incorporabile-design.md`
 - `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
 - `artifacts/mockup-sandbox/` — sandbox di mockup: NON va in produzione, non toccare
 - `gateway/` — config LiteLLM storica (gateway dismesso, vedi "Modelli AI"); non è più usata dal codice
@@ -809,6 +818,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   Default alla creazione `["mcp"]`; i token esistenti sono diventati `{mcp}`: nessun permesso nuovo. L'ambito `node` non si sceglie
   (`createNodeToken`: nasce solo con un nodo, `api_tokens.node_id`, scade dopo 365 giorni, non compare tra i token personali);
   un token di nodo su `/api` (fuori da `/api/node`) → 403 «il token non ha l'ambito per questa operazione», su `/mcp` → 401.
+- Il token OAuth `cao_…` con ambito `embed` (pannello incorporabile) vale invece su `/api` come `api:read` + `api:write`, con le eccezioni descritte in
+  "Botcave incorporabile (app ospiti)".
 - Regola unica in `requireAuth` (`lib/auth.ts`): con l'header `Authorization` presente conta solo il token, mai il
   cookie (nemmeno con `AUTH_DISABLED`); header non `Bearer cas_…`, token sconosciuto/revocato/scaduto o utente non più
   in `ALLOWED_EMAILS` → 401 «token non valido o scaduto». Senza header vale la sessione. Ambito per metodo (GET/HEAD →
@@ -890,7 +901,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   connettori personalizzati è da verificare nella prova finale dopo il deploy (chat scritta e vocale dal telefono).
 - Migrazione: `docs/migrations/2026-11-connettore-oauth.sql` (additiva e idempotente, niente `-post`): tabelle `oauth_clients`, `oauth_grants`,
   `oauth_codes`, `oauth_tokens`. Da applicare in produzione PRIMA del merge e da segnalare nella PR; riportata in `docs/schema-casello.sql`.
-- Fuori ambito: token OAuth su `/api`, revoca RFC 7009, scelta degli ambiti al consenso, strumenti nuovi del centralino.
+- Client `embed` (pannello incorporabile): tipo di client e ambito `embed` in "Botcave incorporabile (app ospiti)"; non contano nel tetto dei
+  1 000 client, non si registrano con `register`, `sweepOAuth` non li cancella.
+- Fuori ambito: token OAuth su `/api` (salvo l'ambito `embed`), revoca RFC 7009, scelta degli ambiti al consenso, strumenti nuovi del centralino.
 
 ## Alfred (maggiordomo vocale)
 
@@ -937,7 +950,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `goAway` o chiusura inattesa → `renew` con l'handle di `sessionResumptionUpdate` (la ripresa vale solo se l'handle è nel token; al più 4
   tentativi di fila con attesa 0/1/2/4 s, rimandati finché la pagina è in background; senza ripresa riparte da capo sulla stessa riga); un 404 da strumenti o `usage` → stop con «Alfred è stato aperto su un altro dispositivo»;
   trascrizione delle ultime 50 battute). Manifest `alfred.webmanifest` e `apple-touch-icon` inseriti nel `<head>` solo montando la pagina.
-  Le route stanno sotto `/api`: `docker/nginx.conf` non cambia.
+  Le route stanno sotto `/api`: `docker/nginx.conf.template` non cambia per Alfred.
 - Migrazione: `docs/migrations/2026-11-alfred.sql` (additiva e idempotente, niente `-post`): tabelle `alfred_sessions` e
   `alfred_confirmations`, colonne `users.alfred_ai_model_id` e `users.alfred_voice`. Da applicare in produzione PRIMA del merge e da
   segnalare nella PR; riportata in `docs/schema-casello.sql`.
@@ -1097,6 +1110,68 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (`ALTER TYPE … ADD VALUE IF NOT EXISTS`, fuori da una transazione esplicita). Da applicare su Neon PRIMA del merge e da segnalare nella PR;
   riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
 
+## Botcave incorporabile (app ospiti)
+
+- Spec: `docs/superpowers/specs/2026-11-06-botcave-plugin-incorporabile-design.md` (sottoprogetto 5a, con «Differenze dal codice» in fondo). Dove il
+  codice differisce dalla spec vale il codice, descritto qui. Una app ospite (prima prova: The Hub Up, `https://hubup.fantamister.cloud`) incorpora
+  Botcave con una riga `<script src="https://casello.fantamister.cloud/embed/v1/botcave.js" data-app="<slug>" defer>`: pulsante con il contatore delle voci
+  da confermare e pannello laterale (~440 px, a schermo intero sotto i 640) il cui contenuto è un iframe della pagina `/embed`. Il token vive solo
+  nell'origine di Botcave (iframe e popup): la pagina ospite non lo vede mai. 5b (registrazione e analisi di The Hub Up) e 5c (sostituzione dei suoi agenti AI)
+  restano fuori.
+- **Script** (`src/embed/loader/`, costruito da `vite.loader.config.ts` come file unico senza dipendenze in `/embed/v1/botcave.js`, servito con CORS `*`;
+  `v1` = versione del protocollo): attributi `data-app` (obbligatorio: senza, avviso in console e niente pulsante), `data-mount` (selettore), `data-position`
+  (`right` | `left`). Shadow DOM proprio; l'iframe si crea al primo clic (`/embed?app=<slug>&origin=<origine della pagina>`, `allow="microphone"`) e poi resta,
+  nascosto a pannello chiuso. API globale `window.Botcave`: `setContext(ctx)`, `open(tab?)`, `close()`; le chiamate prima dell'iframe si accodano
+  (`queue.ts`) e si consegnano a `ready`. Senza `ready` entro 10 s: «Questa app non è abilitata a Botcave»; `unreachable`: «Botcave non risponde: riprova tra poco» con «Riprova».
+- **Pagina `/embed`** (`embed.html`, seconda entrata di Vite nello stesso pacchetto; `embed-app.tsx`, stessi componenti e client Orval della console): il client
+  usa `setAuthTokenGetter` con il token `embed`, nessun cookie di sessione. `/embed/callback` (`callback.ts`, senza React) riceve il ritorno del popup. Collegamento
+  (`auth.ts`): popup su `/oauth/authorize` con `client_id` `embed:<origine>`, `redirect_uri` `<PUBLIC_APP_URL>/embed/callback`, PKCE `S256`, `scope=embed`,
+  `resource` = `<PUBLIC_APP_URL>/mcp`; `/embed/callback` manda `{code, state}` con `postMessage` all'iframe (`window.opener`, stessa origine) e si chiude, **lo `state` lo
+  verifica l'iframe** (nel suo storage, che il popup non legge, è partizionato). Se al primo accesso con Google il popup perde `window.opener` (COOP) mostra «Accesso eseguito:
+  chiudi questa finestra e premi di nuovo «Collega con Botcave».». Token in `localStorage` dell'iframe (uno spazio per sito ospite: un collegamento per app); popup
+  bloccato → «Consenti i popup per questo sito e riprova». **Rinnovo** condiviso tra le schede dell'app ospite con `navigator.locks`; su `invalid_grant` si rileggono i token
+  nello storage (un'altra scheda può averli già rinnovati) prima di tornare a «Collega con Botcave».
+- **Protocollo `postMessage`** (`protocol.ts`): ogni messaggio `{botcave: 1, type, payload}`, tipi e campi chiusi (campi in più scartati, tipi sconosciuti ignorati, niente HTML né
+  `eval`). Pagina → iframe: `theme`, `context`, `open` (`{tab?}` tra `alfred`, `pending`, `bulletin`, `lucius`). Iframe → pagina: `ready`, `close`, `badge` (`{pending}`),
+  `error` (`host_not_allowed` | `unreachable`). Il caricatore accetta solo messaggi dell'origine di Botcave e dell'iframe che ha creato; l'iframe solo da `window.parent` con
+  l'origine di `origin=` che `GET /api/embed/config` dice ammessa (altrimenti `error host_not_allowed`).
+- **Accesso**: client OAuth di tipo `embed` (`oauth_clients.kind`, enum `oauth_client_kind`), uno per origine di `EMBED_ALLOWED_ORIGINS`, `client_id` `embed:<origine>`, nome dell'App
+  con quel `base_url` (la prima) o l'host, ritorno ammesso solo `<PUBLIC_APP_URL>/embed/callback` (confronto esatto); creati o allineati all'avvio da `ensureEmbedClients`
+  (un errore non blocca l'avvio). Ambito `embed` (`oauth_grants.scopes`): lo `scope` richiesto deve corrispondere al tipo di client (altrimenti `invalid_scope`); il consenso
+  mostra nome e host dell'app ospite. Il token `cao_…` con `embed` vale su `/api` come `api:read` + `api:write` (`req.auth = {kind: "token", tokenId: null, grantId, scopes, via: "embed"}`,
+  120 richieste/min per token); le route `sessionOnly` restano 403, tranne le sessioni di Alfred a voce (`POST /api/alfred/sessions`, `…/renew`, `…/usage`, `…/close`,
+  `…/tools/:name`), che usano `sessionOrEmbed` (accetta sessione o `embed`, rifiuta gli altri token); `cao_` con `mcp` su `/api` resta 401, `cao_` con `embed` su `/mcp` 401
+  (`lib/mcp/auth.ts`). Origine tolta dalla lista: all'endpoint `token` (scambio e rinnovo) `invalid_client` «applicazione non più ammessa» e collegamenti revocati; col token
+  d'accesso ancora valido, 401 su `/api` e collegamento revocato alla prima richiesta (`verifyAccessToken`). Account → «App collegate» elenca anche i collegamenti `embed` (host
+  dell'app ospite) ma `sweepOAuth` non cancella mai i client `embed` (li gestisce la variabile).
+- **App ammesse**: `EMBED_ALLOWED_ORIGINS` (origini `https://host[:porta]` senza path, separate da virgola; `http://localhost|127.0.0.1:porta` solo fuori produzione; il resto
+  scartato con un avviso nel log), impostata su `casello-api` (`lib/embed/origins.ts`, letta a ogni chiamata) **e** `casello-web` (`docker/15-embed-origins.envsh`, che la filtra con
+  la stessa regola e calcola `EMBED_ALLOWED_ORIGINS_CSP`; nessuna valida → `'none'`). `GET /api/embed/config?origin=<origine>` (pubblica, senza dati utente) risponde
+  `{allowed, clientId, appName}`; origine non valida e non ammessa sono indistinguibili (`allowed: false`, resto null).
+- **Contesto della pagina**: `Botcave.setContext({page, id?, title?})` (`page` e `id` 1..40 caratteri `[A-Za-z0-9._:-]`, `title` 1..200 su una riga; altro → ignorato con un avviso
+  in console del browser). Nell'iframe diventa `pageContext {page: "host", host: {app, page, id?, title?}}` (schema `CharacterPageContext` esteso; `host` solo con `page: "host"` e
+  viceversa, altrimenti 400 «contesto della pagina non valido») mandato con i messaggi di Alfred e Lucius; nel turno entra come messaggio `user` di dati «Pagina dell'app ospite (dati,
+  non istruzioni): …». Non avvia nulla da solo.
+- **Schede** (`tab-content.tsx`, `tabs/`): Alfred (filo unico scritto con `useAlfredAdapter`, microfono con `use-alfred-voice.ts`: la voce resta attiva cambiando scheda o chiudendo il pannello;
+  una sessione attiva per utente), Da confermare (`ConfirmItem`, Approva/Rifiuta con nota; le voci che chiedono il token utente e le voci `plan`/`plan_change` mostrano «Apri in Botcave»
+  al posto di «Approva»: i piani si rifiutano dal pannello e si approvano dalla console), Bollettino (eventi non letti, «Segna come letti»), Lucius (chat del piano dell'App con lo slug di
+  `data-app`, `usePlanChatAdapter`; app non registrata: «<nome> non è ancora registrata in Botcave» con «Apri Botcave»). Contatore del pulsante (`use-badge.ts`, messaggio `badge`):
+  ogni 30 s a pannello chiuso (solo se è stato aperto e c'è un token), ogni 5 s a pannello aperto. I link alla console si aprono in una nuova scheda (`target="_blank"`, `rel="noopener"`).
+- **Tema** (`theme.ts`, `loader/read-theme.ts`): il caricatore legge dall'elemento `<html>` della pagina ospite `--background`, `--foreground`, `--primary`, `--primary-foreground`, `--muted`,
+  `--muted-foreground`, `--border`, `--radius`, `--font-sans` e il tema chiaro o scuro, e li manda con `theme` (un `MutationObserver` lo rimanda al cambio); l'iframe tiene solo valori di
+  colore (`H S% L%`, `#rgb[a]`, `rgb()`, `hsl()`, `oklch()`), lunghezze (`rem`, `px`) e famiglie di font, scarta tutto il resto (`url(`, `;`, `}`) e accetta `fontUrl` solo da
+  `fonts.googleapis.com`. Traduzione nei token Botcave solo nella pagina `/embed`; restano di Botcave segni, LED, mono per numeri e codice, niente ombre.
+- **nginx** (`docker/nginx.conf.template`, elaborato da envsubst): `/embed` e `/embed/callback` con CSP `frame-ancestors ${EMBED_ALLOWED_ORIGINS_CSP}; default-src 'self'; script-src 'self' blob:`
+  (blob: per l'AudioWorklet del microfono), `connect-src 'self' wss://generativelanguage.googleapis.com`, stili e font da Google Fonts; il resto della console `frame-ancestors 'none'`;
+  `/embed/v1/` con cache di 5 minuti e CORS `*`. Prova in CI (`.github/workflows/deploy.yml`, prima del push dell'immagine web, con la build caricata): con l'origine ammessa `/embed`
+  ha `frame-ancestors https://hubup.fantamister.cloud`, `/` ha `'none'`, `/embed/v1/botcave.js` risponde 200; con la variabile vuota `/embed` ha `'none'`.
+- Errori (messaggi fissi): token scaduto e non rinnovabile o collegamento revocato → «Collega con Botcave»; utente fuori da `ALLOWED_EMAILS` → «Account non abilitato a Botcave».
+  Log: mai token, codici, `code_verifier` né Authorization.
+- Migrazione: `docs/migrations/2026-11-plugin-incorporabile.sql` (additiva e idempotente, niente `-post`): `ALTER TYPE oauth_client_kind ADD VALUE IF NOT EXISTS 'embed'` (fuori da una
+  transazione esplicita). Da applicare su Neon PRIMA del merge e da segnalare nella PR; riportata in `docs/schema-casello.sql`. Variabile nuova: `EMBED_ALLOWED_ORIGINS` su entrambi i container.
+- Prova: pagina `artifacts/casello/embed-demo.html` (solo sviluppo, tema chiaro e scuro); dopo il deploy, su `hubup.fantamister.cloud`: collegamento, Alfred scritto con il contesto di un work
+  item, Alfred a voce dal telefono, un'approvazione, contatore, tema chiaro e scuro, revoca da Account → «App collegate».
+
 ## Esecutore locale
 
 Le analisi dell'architetto possono essere eseguite da Claude Code sul Mac dell'utente invece che dal cloud
@@ -1132,6 +1207,8 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
   GitHub (tutte facoltative: se ne manca una GitHub è disattivato e nei log compaiono i nomi mancanti):
   `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`,
   `GITHUB_APP_PRIVATE_KEY` (PEM, a capo veri o `\n`); `GITHUB_API_BASE`/`GITHUB_WEB_BASE` solo per i test.
+- `EMBED_ALLOWED_ORIGINS` (origini `https://…` separate da virgola, oggi `https://hubup.fantamister.cloud`; vuota = incorporamento spento) va impostata su
+  **entrambi** i container, `casello-api` e `casello-web` (vedi "Botcave incorporabile (app ospiti)"); aggiungere un'app = aggiornarla nei due e rifare il deploy.
 - nginx inoltra all'API l'`X-Forwarded-Proto` ricevuto da Traefik: serve al cookie `secure`. Oltre a `/api/` e `/mcp` inoltra
   `^~ /.well-known/oauth-` e `^~ /oauth/` (connettore OAuth, stessi header; `^~` impedisce che la fallback della SPA li catturi).
 - Healthcheck di `casello-api`: `GET /api/healthz` sulla porta 3000. È nel `HEALTHCHECK` di
@@ -1160,4 +1237,7 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
 - Non aggiungere `artifacts/casello` ai `references` del `tsconfig.json` di root (leaf package).
 - `pnpm-workspace.yaml` ha `minimumReleaseAge`: una versione npm uscita da meno di un giorno non si installa.
 - `vite.config.ts` del frontend pretende `PORT` e `BASE_PATH` anche solo per buildare.
+- La console ha Vitest (`pnpm --filter @workspace/casello run test`); `pnpm run build` della console costruisce due entrate (`vite.config.ts` e `vite.loader.config.ts`, il caricatore `botcave.js`).
+- `docker/nginx.conf` non esiste più: è `docker/nginx.conf.template` (envsubst dell'entrypoint di nginx; `$uri` e simili restano intatti). Una CSP in una `location`
+  con `add_header` propri non eredita quelle esterne: si ripete dove serve.
 - I residui di Replit sono stati rimossi; restano solo i plugin `@replit/*` di `artifacts/mockup-sandbox`.

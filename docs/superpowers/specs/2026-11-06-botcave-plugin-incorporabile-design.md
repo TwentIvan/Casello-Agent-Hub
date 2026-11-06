@@ -228,3 +228,17 @@ PR piccola nel repository `TwentIvan/AbapCrm`:
 Registrazione e analisi di The Hub Up (5b); sostituzione degli agenti AI di The Hub Up (5c); avvio di una squadra da un work
 item; utenti di The Hub Up non in `ALLOWED_EMAILS` e organizzazioni (sottoprogetto 2); incorporamento delle altre app (stesso
 script, basta la lista delle origini); pacchetto npm o componenti React per le app.
+
+## Differenze dal codice
+
+Dove il codice differisce da questa spec vale il codice (descritto in CLAUDE.md, «Botcave incorporabile (app ospiti)»).
+
+1. Lo `state` si verifica nell'iframe, non in `/embed/callback`: il popup non legge lo storage partizionato dell'iframe (§4.1 punto 4).
+2. Al primo accesso con Google il popup può perdere `window.opener` (COOP): `/embed/callback` mostra «Accesso eseguito: chiudi questa finestra e premi di nuovo «Collega con Botcave».».
+3. Le voci `plan`/`plan_change` nel pannello mostrano «Apri in Botcave» al posto di «Approva» (si rifiutano dal pannello, si approvano dalla console).
+4. Il rinnovo del token è condiviso tra le schede dell'app ospite (`navigator.locks`, rilettura dei token su `invalid_grant`).
+5. `sweepOAuth` non cancella i client `embed`.
+6. Il token d'accesso `embed` di un'origine tolta dalla lista vale 401 su `/api` e revoca il collegamento.
+7. `script-src 'self' blob:` nella CSP di `/embed` per il worklet del microfono; l'elenco delle origini è filtrato anche nel container web (`docker/15-embed-origins.envsh`).
+8. La voce di Alfred nel pannello resta attiva cambiando scheda o chiudendo il pannello.
+9. Prova nel browser rimandata a dopo il deploy (sul Mac mancano Docker e Postgres); nginx verificato dalla prova CI.

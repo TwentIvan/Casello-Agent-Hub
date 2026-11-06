@@ -1,12 +1,10 @@
-import { useState } from "react";
 import { Link, useParams } from "wouter";
 import { ArrowLeft } from "lucide-react";
 import { ApiError, getGetAppQueryKey, useGetApp } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { LuciusMark } from "@/components/brand/marks";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChatPanel } from "@/components/plan/chat-panel";
-import { ConversationList } from "@/components/plan/conversation-list";
+import { CharacterChat } from "@/components/characters/character-chat";
 import { PlanList } from "@/components/plan/plan-list";
 import { apiErrorMessage } from "@/lib/api-errors";
 
@@ -15,7 +13,6 @@ export default function AppPlanPage() {
   const appId = Number(params.id);
   const validId = Number.isInteger(appId) && appId > 0;
   const app = useGetApp(appId, { query: { queryKey: getGetAppQueryKey(appId), enabled: validId } });
-  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const notFound = !validId || (app.error instanceof ApiError && app.error.status === 404);
 
@@ -48,11 +45,8 @@ export default function AppPlanPage() {
             <section aria-label="Piano" className="min-w-0">
               <PlanList appId={appId} />
             </section>
-            <section aria-label="Conversazioni" className="min-w-0 space-y-6">
-              <ConversationList appId={appId} selectedId={selectedId} onSelect={setSelectedId} />
-              {selectedId !== null && (
-                <ChatPanel key={selectedId} conversationId={selectedId} appId={appId} onDeleted={() => setSelectedId(null)} />
-              )}
+            <section aria-label="Conversazioni" className="min-w-0">
+              <CharacterChat target={{ kind: "plan", appId }} layout="page" />
             </section>
           </div>
         </>

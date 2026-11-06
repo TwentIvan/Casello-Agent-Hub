@@ -67,7 +67,7 @@ async function countClients(): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(oauthClientsTable)
-    .where(sql`${oauthClientsTable.clientId} NOT LIKE 'https://claude.ai/%' AND ${oauthClientsTable.clientId} NOT LIKE 'https://claude.com/%'`);
+    .where(sql`${oauthClientsTable.kind} <> 'plugin' AND ${oauthClientsTable.clientId} NOT LIKE 'https://claude.ai/%' AND ${oauthClientsTable.clientId} NOT LIKE 'https://claude.com/%'`);
   return row?.n ?? 0;
 }
 

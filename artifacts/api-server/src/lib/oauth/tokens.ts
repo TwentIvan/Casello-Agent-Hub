@@ -4,8 +4,9 @@ import { db, oauthClientsTable, oauthCodesTable, oauthGrantsTable, oauthTokensTa
 import type { TokenScope } from "../api-tokens";
 import { isAllowed } from "../users";
 import { sha256Hex } from "./authorize";
-import { sameResource } from "./config";
+import { sameApiResource, sameResource } from "./config";
 import { OAuthError } from "./errors";
+import { ensurePluginClientRow, PLUGIN_SCOPES, pluginClient, pluginClients, pluginSecretMatches } from "./plugins";
 
 export const ACCESS_TTL_MS = 3600 * 1000;
 export const REFRESH_TTL_MS = 30 * 24 * 3600 * 1000;
@@ -19,7 +20,7 @@ export type TokenResponse = {
   token_type: "Bearer";
   expires_in: 3600;
   refresh_token: string;
-  scope: "mcp";
+  scope: string;
 };
 
 const invalidGrant = () => new OAuthError("invalid_grant", "codice o token non valido, scaduto o già usato");
@@ -34,30 +35,47 @@ function required(form: Record<string, unknown>, name: string): string {
   return v;
 }
 
-function checkResource(form: Record<string, unknown>): void {
-  if (form["resource"] !== undefined && !sameResource(form["resource"])) {
+function checkResource(form: Record<string, unknown>, plugin: boolean): void {
+  if (form["resource"] !== undefined && !(plugin ? sameApiResource(form["resource"]) : sameResource(form["resource"]))) {
     throw new OAuthError("invalid_target", "risorsa non valida");
   }
 }
 
-async function findClientRowId(clientId: string): Promise<number> {
-  const [row] = await db.select({ id: oauthClientsTable.id }).from(oauthClientsTable).where(eq(oauthClientsTable.clientId, clientId));
-  if (!row) throw new OAuthError("invalid_client", "applicazione non riconosciuta", 401);
-  return row.id;
+const invalidClient = () => new OAuthError("invalid_client", "applicazione non riconosciuta", 401);
+
+/**
+ * Autentica il client al token endpoint. Un plugin configurato vuole `client_secret` (solo `client_secret_post`): il
+ * controllo avviene prima di leggere codice o token di rinnovo, così un segreto sbagliato non consuma né revoca nulla.
+ * Un plugin non più configurato è sconosciuto; per i client pubblici un `client_secret` si ignora.
+ */
+async function authenticateClient(form: Record<string, unknown>, clientId: string): Promise<{ id: number; plugin: boolean }> {
+  const configured = pluginClient(clientId);
+  if (configured) {
+    const secret = str(form["client_secret"]);
+    if (secret === undefined || !pluginSecretMatches(configured, secret)) throw invalidClient();
+    const row = await ensurePluginClientRow(configured);
+    return { id: row.id, plugin: true };
+  }
+  const [row] = await db
+    .select({ id: oauthClientsTable.id, kind: oauthClientsTable.kind })
+    .from(oauthClientsTable)
+    .where(eq(oauthClientsTable.clientId, clientId));
+  if (!row || row.kind === "plugin") throw invalidClient();
+  return { id: row.id, plugin: false };
 }
 
 type TokenTx = Pick<typeof db, "insert">;
 
 /** Inserisce la coppia di token (solo gli hash nel DB) e restituisce la risposta con i valori in chiaro. */
-async function issuePair(tx: TokenTx, grantId: number): Promise<TokenResponse> {
-  const access = `cao_${randomBytes(32).toString("base64url")}`;
+async function issuePair(tx: TokenTx, grantId: number, plugin: boolean): Promise<TokenResponse> {
+  const access = `${plugin ? "cap_" : "cao_"}${randomBytes(32).toString("base64url")}`;
   const refresh = `car_${randomBytes(32).toString("base64url")}`;
   const now = Date.now();
   await tx.insert(oauthTokensTable).values([
     { tokenHash: sha256Hex(access), grantId, kind: "access", expiresAt: new Date(now + ACCESS_TTL_MS) },
     { tokenHash: sha256Hex(refresh), grantId, kind: "refresh", expiresAt: new Date(now + REFRESH_TTL_MS) },
   ]);
-  return { access_token: access, token_type: "Bearer", expires_in: 3600, refresh_token: refresh, scope: "mcp" };
+  return { access_token: access, token_type: "Bearer", expires_in: 3600, refresh_token: refresh, scope: plugin ? PLUGIN_SCOPES.join(" ") : "mcp" };
 }
 
 /** Scambio del codice d'autorizzazione (PKCE S256, client pubblico). */
@@ -67,8 +85,9 @@ export async function exchangeCode(form: Record<string, unknown>): Promise<Token
   const clientId = required(form, "client_id");
   const verifier = required(form, "code_verifier");
   if (!VERIFIER_RE.test(verifier)) throw new OAuthError("invalid_request", "code_verifier non valido");
-  checkResource(form);
-  const clientRowId = await findClientRowId(clientId);
+  const client = await authenticateClient(form, clientId);
+  checkResource(form, client.plugin);
+  const clientRowId = client.id;
 
   const [row] = await db
     .select({
@@ -104,7 +123,7 @@ export async function exchangeCode(form: Record<string, unknown>): Promise<Token
       .where(and(eq(oauthCodesTable.id, row.id), isNull(oauthCodesTable.usedAt), gt(oauthCodesTable.expiresAt, new Date())))
       .returning({ id: oauthCodesTable.id });
     if (won.length === 0) return null;
-    return issuePair(tx, row.grantId);
+    return issuePair(tx, row.grantId, client.plugin);
   });
   if (!out) throw invalidGrant();
   return out;
@@ -143,7 +162,8 @@ export async function resolveLostRefresh(tokenId: number, grantId: number): Prom
 export async function refreshTokens(form: Record<string, unknown>): Promise<TokenResponse> {
   const refresh = required(form, "refresh_token");
   const clientId = required(form, "client_id");
-  const clientRowId = await findClientRowId(clientId);
+  const client = await authenticateClient(form, clientId);
+  const clientRowId = client.id;
 
   const [row] = await db
     .select({
@@ -172,18 +192,18 @@ export async function refreshTokens(form: Record<string, unknown>): Promise<Toke
       .where(and(eq(oauthTokensTable.id, row.id), isNull(oauthTokensTable.usedAt), gt(oauthTokensTable.expiresAt, new Date())))
       .returning({ id: oauthTokensTable.id });
     if (won.length === 0) return null;
-    return issuePair(tx, row.grantId);
+    return issuePair(tx, row.grantId, client.plugin);
   });
   // Perso la corsa: si rilegge la riga per capire perché
   if (!out) return resolveLostRefresh(row.id, row.grantId);
   return out;
 }
 
-/** Verifica un token d'accesso `cao_…`: null se sconosciuto, scaduto, revocato o utente non più ammesso. */
-export async function verifyAccessToken(
-  raw: string,
-): Promise<{ userId: number; grantId: number; scopes: TokenScope[] } | null> {
-  if (!raw.startsWith("cao_")) return null;
+type Verified = { userId: number; grantId: number; scopes: TokenScope[] };
+
+/** Verifica comune: prefisso, token non scaduto, collegamento non revocato, utente ammesso e client del tipo atteso. */
+async function verifyToken(raw: string, prefix: string, plugin: boolean): Promise<Verified | null> {
+  if (!raw.startsWith(prefix)) return null;
   const [row] = await db
     .select({
       grantId: oauthGrantsTable.id,
@@ -191,9 +211,12 @@ export async function verifyAccessToken(
       scopes: oauthGrantsTable.scopes,
       lastUsedAt: oauthGrantsTable.lastUsedAt,
       email: usersTable.email,
+      clientId: oauthClientsTable.clientId,
+      clientKind: oauthClientsTable.kind,
     })
     .from(oauthTokensTable)
     .innerJoin(oauthGrantsTable, eq(oauthGrantsTable.id, oauthTokensTable.grantId))
+    .innerJoin(oauthClientsTable, eq(oauthClientsTable.id, oauthGrantsTable.clientRowId))
     .innerJoin(usersTable, eq(usersTable.id, oauthGrantsTable.userId))
     .where(
       and(
@@ -204,6 +227,11 @@ export async function verifyAccessToken(
       ),
     );
   if (!row || !isAllowed([row.email])) return null;
+  if (plugin) {
+    if (row.clientKind !== "plugin" || !pluginClients().some((c) => c.clientId === row.clientId)) return null;
+  } else if (row.clientKind === "plugin") {
+    return null;
+  }
 
   if (row.lastUsedAt === null || Date.now() - row.lastUsedAt.getTime() >= LAST_USED_STEP_MS) {
     const threshold = new Date(Date.now() - LAST_USED_STEP_MS);
@@ -218,4 +246,14 @@ export async function verifyAccessToken(
       );
   }
   return { userId: row.userId, grantId: row.grantId, scopes: row.scopes as TokenScope[] };
+}
+
+/** Verifica un token d'accesso `cao_…` del connettore: null se sconosciuto, scaduto, revocato, di un plugin o utente non più ammesso. */
+export function verifyAccessToken(raw: string): Promise<Verified | null> {
+  return verifyToken(raw, "cao_", false);
+}
+
+/** Verifica un token d'accesso `cap_…` di un plugin ancora configurato. */
+export function verifyPluginAccessToken(raw: string): Promise<Verified | null> {
+  return verifyToken(raw, "cap_", true);
 }

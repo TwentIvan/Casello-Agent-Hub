@@ -1,6 +1,6 @@
 // Collegamenti OAuth (app come Claude collegate a /mcp): elenco, revoca e pulizia periodica.
 
-import { and, desc, eq, isNull, lt, notExists, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, ne, notExists, sql } from "drizzle-orm";
 import { db, oauthClientsTable, oauthCodesTable, oauthGrantsTable, oauthTokensTable } from "@workspace/db";
 import { logger } from "../logger";
 
@@ -72,6 +72,7 @@ export async function sweepOAuth(now: Date = new Date()): Promise<void> {
     .delete(oauthClientsTable)
     .where(
       and(
+        ne(oauthClientsTable.kind, "plugin"),
         lt(oauthClientsTable.createdAt, dayAgo),
         notExists(db.select({ one: sql`1` }).from(oauthGrantsTable).where(eq(oauthGrantsTable.clientRowId, oauthClientsTable.id))),
       ),

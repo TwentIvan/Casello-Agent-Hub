@@ -79,6 +79,8 @@ import type {
   CurrentUser,
   DashboardStats,
   DefaultModel,
+  DeleteMemoryHistoryEntryParams,
+  DeleteMemoryNoteParams,
   ErrorResponse,
   EstimateAnalysisCostParams,
   ExportAnalysisIssuesParams,
@@ -91,6 +93,8 @@ import type {
   ListAgentsParams,
   ListCatalogModelsParams,
   ListCatalogProvidersParams,
+  ListMemoryHistoryParams,
+  ListMemoryNotesParams,
   ListPendingActionsParams,
   ListRunsParams,
   ListSkillsParams,
@@ -99,6 +103,10 @@ import type {
   ListUnreadTeamEventsParams,
   MarkTeamEventsRead200,
   McpSyncResult,
+  MemoryHistoryEntry,
+  MemoryNote,
+  MemoryNoteCreate,
+  MemoryNoteUpdate,
   Node,
   NodeCapabilities,
   NodeCreate,
@@ -135,6 +143,13 @@ import type {
   StartZipAnalysisParams,
   TeamAttachment,
   TeamBudgetInput,
+  TeamChatConversation,
+  TeamChatConversationCreate,
+  TeamChatConversationDetail,
+  TeamChatMessage,
+  TeamChatMessageCreate,
+  TeamChatProposal,
+  TeamChatProposalDecision,
   TeamEvent,
   TeamEventsReadInput,
   TeamInstance,
@@ -153,7 +168,8 @@ import type {
   TeamTurn,
   TeamUpdateApply,
   TooManyRequestsResponse,
-  UnauthorizedResponse
+  UnauthorizedResponse,
+  UpdateMemoryNoteParams
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -10284,6 +10300,1084 @@ export const useDecidePlanProposal = <TError = ErrorType<BadRequestResponse | No
         TContext
       > => {
       return useMutation(getDecidePlanProposalMutationOptions(options));
+    }
+
+export const getListTeamChatConversationsUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/team-chat-conversations`
+}
+
+/**
+ * @summary Conversazioni dell'utente con Lucius su una squadra
+ */
+export const listTeamChatConversations = async (id: number, options?: RequestInit): Promise<TeamChatConversation[]> => {
+
+  return customFetch<TeamChatConversation[]>(getListTeamChatConversationsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTeamChatConversationsQueryKey = (id: number,) => {
+    return [
+    `/api/team-instances/${id}/team-chat-conversations`
+    ] as const;
+    }
+
+
+export const getListTeamChatConversationsQueryOptions = <TData = Awaited<ReturnType<typeof listTeamChatConversations>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamChatConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTeamChatConversationsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTeamChatConversations>>> = ({ signal }) => listTeamChatConversations(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTeamChatConversations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTeamChatConversationsQueryResult = NonNullable<Awaited<ReturnType<typeof listTeamChatConversations>>>
+export type ListTeamChatConversationsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Conversazioni dell'utente con Lucius su una squadra
+ */
+
+export function useListTeamChatConversations<TData = Awaited<ReturnType<typeof listTeamChatConversations>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamChatConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTeamChatConversationsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateTeamChatConversationUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/team-chat-conversations`
+}
+
+/**
+ * Il modello deve essere di un account dell'utente; senza `aiModelId` si usa il modello predefinito (se non c'è, la conversazione nasce senza modello e il primo messaggio risponde con l'invito a sceglierne uno).
+ * @summary Apre una conversazione con Lucius sulla squadra
+ */
+export const createTeamChatConversation = async (id: number,
+    teamChatConversationCreate: TeamChatConversationCreate, options?: RequestInit): Promise<TeamChatConversation> => {
+
+  return customFetch<TeamChatConversation>(getCreateTeamChatConversationUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamChatConversationCreate)
+  }
+);}
+
+
+
+
+export const getCreateTeamChatConversationMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeamChatConversation>>, TError,{id: number;data: BodyType<TeamChatConversationCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTeamChatConversation>>, TError,{id: number;data: BodyType<TeamChatConversationCreate>}, TContext> => {
+
+const mutationKey = ['createTeamChatConversation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTeamChatConversation>>, {id: number;data: BodyType<TeamChatConversationCreate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createTeamChatConversation(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTeamChatConversationMutationResult = NonNullable<Awaited<ReturnType<typeof createTeamChatConversation>>>
+    export type CreateTeamChatConversationMutationBody = BodyType<TeamChatConversationCreate>
+    export type CreateTeamChatConversationMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Apre una conversazione con Lucius sulla squadra
+ */
+export const useCreateTeamChatConversation = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeamChatConversation>>, TError,{id: number;data: BodyType<TeamChatConversationCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTeamChatConversation>>,
+        TError,
+        {id: number;data: BodyType<TeamChatConversationCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateTeamChatConversationMutationOptions(options));
+    }
+
+export const getGetTeamChatConversationUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-chat-conversations/${id}`
+}
+
+/**
+ * @summary Conversazione con messaggi e schede
+ */
+export const getTeamChatConversation = async (id: number, options?: RequestInit): Promise<TeamChatConversationDetail> => {
+
+  return customFetch<TeamChatConversationDetail>(getGetTeamChatConversationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamChatConversationQueryKey = (id: number,) => {
+    return [
+    `/api/team-chat-conversations/${id}`
+    ] as const;
+    }
+
+
+export const getGetTeamChatConversationQueryOptions = <TData = Awaited<ReturnType<typeof getTeamChatConversation>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamChatConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamChatConversationQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamChatConversation>>> = ({ signal }) => getTeamChatConversation(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamChatConversation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamChatConversationQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamChatConversation>>>
+export type GetTeamChatConversationQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Conversazione con messaggi e schede
+ */
+
+export function useGetTeamChatConversation<TData = Awaited<ReturnType<typeof getTeamChatConversation>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamChatConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamChatConversationQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDeleteTeamChatConversationUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-chat-conversations/${id}`
+}
+
+/**
+ * @summary Elimina la conversazione
+ */
+export const deleteTeamChatConversation = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteTeamChatConversationUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteTeamChatConversationMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTeamChatConversation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteTeamChatConversation>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteTeamChatConversation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTeamChatConversation>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteTeamChatConversation(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteTeamChatConversationMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTeamChatConversation>>>
+
+    export type DeleteTeamChatConversationMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Elimina la conversazione
+ */
+export const useDeleteTeamChatConversation = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTeamChatConversation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteTeamChatConversation>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteTeamChatConversationMutationOptions(options));
+    }
+
+export const getSendTeamChatMessageUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-chat-conversations/${id}/messages`
+}
+
+/**
+ * Risponde subito col messaggio dell'utente; Lucius risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se la squadra è chiusa o se chi paga il modello ha raggiunto il tetto di spesa mensile. Massimo 10 messaggi al minuto per utente.
+ * @summary Invia un messaggio e avvia il turno di Lucius
+ */
+export const sendTeamChatMessage = async (id: number,
+    teamChatMessageCreate: TeamChatMessageCreate, options?: RequestInit): Promise<TeamChatMessage> => {
+
+  return customFetch<TeamChatMessage>(getSendTeamChatMessageUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamChatMessageCreate)
+  }
+);}
+
+
+
+
+export const getSendTeamChatMessageMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendTeamChatMessage>>, TError,{id: number;data: BodyType<TeamChatMessageCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendTeamChatMessage>>, TError,{id: number;data: BodyType<TeamChatMessageCreate>}, TContext> => {
+
+const mutationKey = ['sendTeamChatMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendTeamChatMessage>>, {id: number;data: BodyType<TeamChatMessageCreate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  sendTeamChatMessage(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendTeamChatMessageMutationResult = NonNullable<Awaited<ReturnType<typeof sendTeamChatMessage>>>
+    export type SendTeamChatMessageMutationBody = BodyType<TeamChatMessageCreate>
+    export type SendTeamChatMessageMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Invia un messaggio e avvia il turno di Lucius
+ */
+export const useSendTeamChatMessage = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendTeamChatMessage>>, TError,{id: number;data: BodyType<TeamChatMessageCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof sendTeamChatMessage>>,
+        TError,
+        {id: number;data: BodyType<TeamChatMessageCreate>},
+        TContext
+      > => {
+      return useMutation(getSendTeamChatMessageMutationOptions(options));
+    }
+
+export const getDecideTeamChatProposalUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-chat-proposals/${id}/decision`
+}
+
+/**
+ * Accettando la modifica si applica alla squadra con le regole del salvataggio. 409 se la scheda è già decisa, se il valore è cambiato dopo la proposta (scheda stale) o se la squadra è chiusa.
+ * @summary Accetta o rifiuta una scheda di Lucius
+ */
+export const decideTeamChatProposal = async (id: number,
+    teamChatProposalDecision: TeamChatProposalDecision, options?: RequestInit): Promise<TeamChatProposal> => {
+
+  return customFetch<TeamChatProposal>(getDecideTeamChatProposalUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamChatProposalDecision)
+  }
+);}
+
+
+
+
+export const getDecideTeamChatProposalMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decideTeamChatProposal>>, TError,{id: number;data: BodyType<TeamChatProposalDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof decideTeamChatProposal>>, TError,{id: number;data: BodyType<TeamChatProposalDecision>}, TContext> => {
+
+const mutationKey = ['decideTeamChatProposal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof decideTeamChatProposal>>, {id: number;data: BodyType<TeamChatProposalDecision>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  decideTeamChatProposal(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DecideTeamChatProposalMutationResult = NonNullable<Awaited<ReturnType<typeof decideTeamChatProposal>>>
+    export type DecideTeamChatProposalMutationBody = BodyType<TeamChatProposalDecision>
+    export type DecideTeamChatProposalMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Accetta o rifiuta una scheda di Lucius
+ */
+export const useDecideTeamChatProposal = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decideTeamChatProposal>>, TError,{id: number;data: BodyType<TeamChatProposalDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof decideTeamChatProposal>>,
+        TError,
+        {id: number;data: BodyType<TeamChatProposalDecision>},
+        TContext
+      > => {
+      return useMutation(getDecideTeamChatProposalMutationOptions(options));
+    }
+
+export const getDownloadRoleInstructionsUrl = (id: number,
+    key: string,) => {
+
+
+
+
+  return `/api/team-instances/${id}/roles/${key}/instructions.md`
+}
+
+/**
+ * File Markdown della skill specializzata `ruolo-<key>`, `Content-Disposition: attachment; filename="<key>.md"`. 404 «il ruolo non ha istruzioni» se non esiste.
+ * @summary Scarica le istruzioni di un ruolo (Markdown)
+ */
+export const downloadRoleInstructions = async (id: number,
+    key: string, options?: RequestInit): Promise<string> => {
+
+  return customFetch<string>(getDownloadRoleInstructionsUrl(id,key),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getDownloadRoleInstructionsQueryKey = (id: number,
+    key: string,) => {
+    return [
+    `/api/team-instances/${id}/roles/${key}/instructions.md`
+    ] as const;
+    }
+
+
+export const getDownloadRoleInstructionsQueryOptions = <TData = Awaited<ReturnType<typeof downloadRoleInstructions>>, TError = ErrorType<NotFoundResponse>>(id: number,
+    key: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadRoleInstructions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getDownloadRoleInstructionsQueryKey(id,key);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof downloadRoleInstructions>>> = ({ signal }) => downloadRoleInstructions(id,key, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && key !== null && key !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof downloadRoleInstructions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type DownloadRoleInstructionsQueryResult = NonNullable<Awaited<ReturnType<typeof downloadRoleInstructions>>>
+export type DownloadRoleInstructionsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Scarica le istruzioni di un ruolo (Markdown)
+ */
+
+export function useDownloadRoleInstructions<TData = Awaited<ReturnType<typeof downloadRoleInstructions>>, TError = ErrorType<NotFoundResponse>>(
+ id: number,
+    key: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadRoleInstructions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getDownloadRoleInstructionsQueryOptions(id,key,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDownloadRolesExportUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/roles-export.zip`
+}
+
+/**
+ * Zip con un file `<key>.md` per ogni ruolo che ha istruzioni, `attachment; filename="<squadra>-ruoli.zip"`. 404 se nessun ruolo ha istruzioni.
+ * @summary Scarica le istruzioni di tutti i ruoli (zip)
+ */
+export const downloadRolesExport = async (id: number, options?: RequestInit): Promise<Blob> => {
+
+  return customFetch<Blob>(getDownloadRolesExportUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getDownloadRolesExportQueryKey = (id: number,) => {
+    return [
+    `/api/team-instances/${id}/roles-export.zip`
+    ] as const;
+    }
+
+
+export const getDownloadRolesExportQueryOptions = <TData = Awaited<ReturnType<typeof downloadRolesExport>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadRolesExport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getDownloadRolesExportQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof downloadRolesExport>>> = ({ signal }) => downloadRolesExport(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof downloadRolesExport>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type DownloadRolesExportQueryResult = NonNullable<Awaited<ReturnType<typeof downloadRolesExport>>>
+export type DownloadRolesExportQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Scarica le istruzioni di tutti i ruoli (zip)
+ */
+
+export function useDownloadRolesExport<TData = Awaited<ReturnType<typeof downloadRolesExport>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadRolesExport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getDownloadRolesExportQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListMemoryNotesUrl = (params: ListMemoryNotesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/memories/notes?${stringifiedParams}` : `/api/memories/notes`
+}
+
+/**
+ * @summary Appunti di un personaggio per l'utente
+ */
+export const listMemoryNotes = async (params: ListMemoryNotesParams, options?: RequestInit): Promise<MemoryNote[]> => {
+
+  return customFetch<MemoryNote[]>(getListMemoryNotesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListMemoryNotesQueryKey = (params?: ListMemoryNotesParams,) => {
+    return [
+    `/api/memories/notes`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListMemoryNotesQueryOptions = <TData = Awaited<ReturnType<typeof listMemoryNotes>>, TError = ErrorType<BadRequestResponse>>(params: ListMemoryNotesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMemoryNotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMemoryNotesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMemoryNotes>>> = ({ signal }) => listMemoryNotes(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMemoryNotes>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListMemoryNotesQueryResult = NonNullable<Awaited<ReturnType<typeof listMemoryNotes>>>
+export type ListMemoryNotesQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Appunti di un personaggio per l'utente
+ */
+
+export function useListMemoryNotes<TData = Awaited<ReturnType<typeof listMemoryNotes>>, TError = ErrorType<BadRequestResponse>>(
+ params: ListMemoryNotesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMemoryNotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListMemoryNotesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateMemoryNoteUrl = () => {
+
+
+
+
+  return `/api/memories/notes`
+}
+
+/**
+ * @summary Aggiunge un appunto (max 300 caratteri, 50 per personaggio)
+ */
+export const createMemoryNote = async (memoryNoteCreate: MemoryNoteCreate, options?: RequestInit): Promise<MemoryNote> => {
+
+  return customFetch<MemoryNote>(getCreateMemoryNoteUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(memoryNoteCreate)
+  }
+);}
+
+
+
+
+export const getCreateMemoryNoteMutationOptions = <TError = ErrorType<BadRequestResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMemoryNote>>, TError,{data: BodyType<MemoryNoteCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createMemoryNote>>, TError,{data: BodyType<MemoryNoteCreate>}, TContext> => {
+
+const mutationKey = ['createMemoryNote'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createMemoryNote>>, {data: BodyType<MemoryNoteCreate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createMemoryNote(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateMemoryNoteMutationResult = NonNullable<Awaited<ReturnType<typeof createMemoryNote>>>
+    export type CreateMemoryNoteMutationBody = BodyType<MemoryNoteCreate>
+    export type CreateMemoryNoteMutationError = ErrorType<BadRequestResponse | ConflictResponse>
+
+    /**
+ * @summary Aggiunge un appunto (max 300 caratteri, 50 per personaggio)
+ */
+export const useCreateMemoryNote = <TError = ErrorType<BadRequestResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMemoryNote>>, TError,{data: BodyType<MemoryNoteCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createMemoryNote>>,
+        TError,
+        {data: BodyType<MemoryNoteCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateMemoryNoteMutationOptions(options));
+    }
+
+export const getUpdateMemoryNoteUrl = (id: number,
+    params: UpdateMemoryNoteParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/memories/notes/${id}?${stringifiedParams}` : `/api/memories/notes/${id}`
+}
+
+/**
+ * @summary Modifica un appunto
+ */
+export const updateMemoryNote = async (id: number,
+    memoryNoteUpdate: MemoryNoteUpdate,
+    params: UpdateMemoryNoteParams, options?: RequestInit): Promise<MemoryNote> => {
+
+  return customFetch<MemoryNote>(getUpdateMemoryNoteUrl(id,params),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(memoryNoteUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateMemoryNoteMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMemoryNote>>, TError,{id: number;data: BodyType<MemoryNoteUpdate>;params: UpdateMemoryNoteParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateMemoryNote>>, TError,{id: number;data: BodyType<MemoryNoteUpdate>;params: UpdateMemoryNoteParams}, TContext> => {
+
+const mutationKey = ['updateMemoryNote'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateMemoryNote>>, {id: number;data: BodyType<MemoryNoteUpdate>;params: UpdateMemoryNoteParams}> = (props) => {
+          const {id,data,params} = props ?? {};
+
+          return  updateMemoryNote(id,data,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateMemoryNoteMutationResult = NonNullable<Awaited<ReturnType<typeof updateMemoryNote>>>
+    export type UpdateMemoryNoteMutationBody = BodyType<MemoryNoteUpdate>
+    export type UpdateMemoryNoteMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Modifica un appunto
+ */
+export const useUpdateMemoryNote = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMemoryNote>>, TError,{id: number;data: BodyType<MemoryNoteUpdate>;params: UpdateMemoryNoteParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateMemoryNote>>,
+        TError,
+        {id: number;data: BodyType<MemoryNoteUpdate>;params: UpdateMemoryNoteParams},
+        TContext
+      > => {
+      return useMutation(getUpdateMemoryNoteMutationOptions(options));
+    }
+
+export const getDeleteMemoryNoteUrl = (id: number,
+    params: DeleteMemoryNoteParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/memories/notes/${id}?${stringifiedParams}` : `/api/memories/notes/${id}`
+}
+
+/**
+ * @summary Elimina un appunto
+ */
+export const deleteMemoryNote = async (id: number,
+    params: DeleteMemoryNoteParams, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteMemoryNoteUrl(id,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteMemoryNoteMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteMemoryNote>>, TError,{id: number;params: DeleteMemoryNoteParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteMemoryNote>>, TError,{id: number;params: DeleteMemoryNoteParams}, TContext> => {
+
+const mutationKey = ['deleteMemoryNote'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteMemoryNote>>, {id: number;params: DeleteMemoryNoteParams}> = (props) => {
+          const {id,params} = props ?? {};
+
+          return  deleteMemoryNote(id,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteMemoryNoteMutationResult = NonNullable<Awaited<ReturnType<typeof deleteMemoryNote>>>
+
+    export type DeleteMemoryNoteMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Elimina un appunto
+ */
+export const useDeleteMemoryNote = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteMemoryNote>>, TError,{id: number;params: DeleteMemoryNoteParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteMemoryNote>>,
+        TError,
+        {id: number;params: DeleteMemoryNoteParams},
+        TContext
+      > => {
+      return useMutation(getDeleteMemoryNoteMutationOptions(options));
+    }
+
+export const getListMemoryHistoryUrl = (params: ListMemoryHistoryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/memories/history?${stringifiedParams}` : `/api/memories/history`
+}
+
+/**
+ * Fino a 100 voci, dalla più recente; `q` cerca nel titolo e nel riassunto.
+ * @summary Storico delle conversazioni di un personaggio
+ */
+export const listMemoryHistory = async (params: ListMemoryHistoryParams, options?: RequestInit): Promise<MemoryHistoryEntry[]> => {
+
+  return customFetch<MemoryHistoryEntry[]>(getListMemoryHistoryUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListMemoryHistoryQueryKey = (params?: ListMemoryHistoryParams,) => {
+    return [
+    `/api/memories/history`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListMemoryHistoryQueryOptions = <TData = Awaited<ReturnType<typeof listMemoryHistory>>, TError = ErrorType<BadRequestResponse>>(params: ListMemoryHistoryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMemoryHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMemoryHistoryQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMemoryHistory>>> = ({ signal }) => listMemoryHistory(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMemoryHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListMemoryHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof listMemoryHistory>>>
+export type ListMemoryHistoryQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Storico delle conversazioni di un personaggio
+ */
+
+export function useListMemoryHistory<TData = Awaited<ReturnType<typeof listMemoryHistory>>, TError = ErrorType<BadRequestResponse>>(
+ params: ListMemoryHistoryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMemoryHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListMemoryHistoryQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDeleteMemoryHistoryEntryUrl = (id: number,
+    params: DeleteMemoryHistoryEntryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/memories/history/${id}?${stringifiedParams}` : `/api/memories/history/${id}`
+}
+
+/**
+ * @summary Elimina una voce dello storico
+ */
+export const deleteMemoryHistoryEntry = async (id: number,
+    params: DeleteMemoryHistoryEntryParams, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteMemoryHistoryEntryUrl(id,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteMemoryHistoryEntryMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteMemoryHistoryEntry>>, TError,{id: number;params: DeleteMemoryHistoryEntryParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteMemoryHistoryEntry>>, TError,{id: number;params: DeleteMemoryHistoryEntryParams}, TContext> => {
+
+const mutationKey = ['deleteMemoryHistoryEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteMemoryHistoryEntry>>, {id: number;params: DeleteMemoryHistoryEntryParams}> = (props) => {
+          const {id,params} = props ?? {};
+
+          return  deleteMemoryHistoryEntry(id,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteMemoryHistoryEntryMutationResult = NonNullable<Awaited<ReturnType<typeof deleteMemoryHistoryEntry>>>
+
+    export type DeleteMemoryHistoryEntryMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Elimina una voce dello storico
+ */
+export const useDeleteMemoryHistoryEntry = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteMemoryHistoryEntry>>, TError,{id: number;params: DeleteMemoryHistoryEntryParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteMemoryHistoryEntry>>,
+        TError,
+        {id: number;params: DeleteMemoryHistoryEntryParams},
+        TContext
+      > => {
+      return useMutation(getDeleteMemoryHistoryEntryMutationOptions(options));
     }
 
 export const getListPendingActionsUrl = (params?: ListPendingActionsParams,) => {

@@ -1243,6 +1243,162 @@ export interface PlanIssuesResult {
   results: PlanIssuesResultResultsItem[];
 }
 
+export interface TeamChatConversation {
+  id: number;
+  teamInstanceId: number;
+  /** @nullable */
+  aiModelId: number | null;
+  title: string;
+  tokensUsed: number;
+  /**
+     * null = costo parziale (prezzo mancante)
+     * @nullable
+     */
+  costUsd: number | null;
+  turnStatus: PlanTurnStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TeamChatMessageRole = typeof TeamChatMessageRole[keyof typeof TeamChatMessageRole];
+
+
+export const TeamChatMessageRole = {
+  user: 'user',
+  assistant: 'assistant',
+} as const;
+
+export interface TeamChatMessage {
+  id: number;
+  role: TeamChatMessageRole;
+  /** Markdown */
+  content: string;
+  error: boolean;
+  createdAt: string;
+}
+
+export type TeamChatProposalKind = typeof TeamChatProposalKind[keyof typeof TeamChatProposalKind];
+
+
+export const TeamChatProposalKind = {
+  role_identity: 'role_identity',
+  role_instructions: 'role_instructions',
+} as const;
+
+/**
+ * role_identity: {text}; role_instructions: {markdown}
+ * @nullable
+ */
+export type TeamChatProposalPayload = { [key: string]: unknown } | null;
+
+export type TeamChatProposalStatus = typeof TeamChatProposalStatus[keyof typeof TeamChatProposalStatus];
+
+
+export const TeamChatProposalStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  rejected: 'rejected',
+  stale: 'stale',
+} as const;
+
+export interface TeamChatProposal {
+  id: number;
+  messageId: number;
+  kind: TeamChatProposalKind;
+  roleKey: string;
+  /**
+     * role_identity: {text}; role_instructions: {markdown}
+     * @nullable
+     */
+  payload: TeamChatProposalPayload;
+  rationale: string;
+  status: TeamChatProposalStatus;
+  /** Identità o istruzioni attuali del ruolo ("" se non ci sono), per mostrare le differenze */
+  currentValue: string;
+  /** @nullable */
+  decidedAt: string | null;
+  createdAt: string;
+}
+
+export type TeamChatConversationDetail = TeamChatConversation & {
+  messages: TeamChatMessage[];
+  proposals: TeamChatProposal[];
+};
+
+export interface TeamChatConversationCreate {
+  /**
+     * Modello di un account AI dell'utente; null o assente = modello predefinito
+     * @nullable
+     */
+  aiModelId?: number | null;
+}
+
+export interface TeamChatMessageCreate {
+  /**
+     * @minLength 1
+     * @maxLength 8000
+     */
+  content: string;
+}
+
+export type TeamChatProposalDecisionAction = typeof TeamChatProposalDecisionAction[keyof typeof TeamChatProposalDecisionAction];
+
+
+export const TeamChatProposalDecisionAction = {
+  accept: 'accept',
+  reject: 'reject',
+} as const;
+
+export interface TeamChatProposalDecision {
+  action: TeamChatProposalDecisionAction;
+}
+
+export type MemoryCharacter = typeof MemoryCharacter[keyof typeof MemoryCharacter];
+
+
+export const MemoryCharacter = {
+  alfred: 'alfred',
+  lucius: 'lucius',
+} as const;
+
+export interface MemoryNote {
+  id: number;
+  content: string;
+  /** @nullable */
+  ref: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MemoryNoteCreate {
+  character: MemoryCharacter;
+  /** @maxLength 2000 */
+  content: string;
+}
+
+export interface MemoryNoteUpdate {
+  /** @maxLength 2000 */
+  content: string;
+}
+
+export type MemoryHistoryEntryKind = typeof MemoryHistoryEntryKind[keyof typeof MemoryHistoryEntryKind];
+
+
+export const MemoryHistoryEntryKind = {
+  alfred_session: 'alfred_session',
+  plan_conversation: 'plan_conversation',
+  team_chat: 'team_chat',
+} as const;
+
+export interface MemoryHistoryEntry {
+  id: number;
+  kind: MemoryHistoryEntryKind;
+  refId: number;
+  title: string;
+  summary: string;
+  createdAt: string;
+}
+
 export type PlanProposalDecisionAction = typeof PlanProposalDecisionAction[keyof typeof PlanProposalDecisionAction];
 
 
@@ -2929,6 +3085,8 @@ export type BadGatewayResponse = ErrorResponse;
  */
 export type PayloadTooLargeResponse = ErrorResponse;
 
+export type CharacterQueryParameter = MemoryCharacter;
+
 export type ListAgentsParams = {
 /**
  * Filtra per app
@@ -3143,6 +3301,30 @@ export type ListCatalogProvidersParams = {
  */
 q?: string;
 status?: AiProviderStatus;
+};
+
+export type ListMemoryNotesParams = {
+character: CharacterQueryParameter;
+};
+
+export type UpdateMemoryNoteParams = {
+character: CharacterQueryParameter;
+};
+
+export type DeleteMemoryNoteParams = {
+character: CharacterQueryParameter;
+};
+
+export type ListMemoryHistoryParams = {
+character: CharacterQueryParameter;
+/**
+ * @maxLength 200
+ */
+q?: string;
+};
+
+export type DeleteMemoryHistoryEntryParams = {
+character: CharacterQueryParameter;
 };
 
 export type ListPendingActionsParams = {

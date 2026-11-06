@@ -4584,6 +4584,294 @@ export const DecidePlanProposalResponse = zod.object({
 
 
 /**
+ * @summary Conversazioni dell'utente con Lucius su una squadra
+ */
+export const ListTeamChatConversationsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListTeamChatConversationsResponseItem = zod.object({
+  "id": zod.number(),
+  "teamInstanceId": zod.number(),
+  "aiModelId": zod.number().nullable(),
+  "title": zod.string(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)'),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListTeamChatConversationsResponse = zod.array(ListTeamChatConversationsResponseItem)
+
+
+/**
+ * Il modello deve essere di un account dell'utente; senza `aiModelId` si usa il modello predefinito (se non c'è, la conversazione nasce senza modello e il primo messaggio risponde con l'invito a sceglierne uno).
+ * @summary Apre una conversazione con Lucius sulla squadra
+ */
+export const CreateTeamChatConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CreateTeamChatConversationBody = zod.object({
+  "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente; null o assente = modello predefinito')
+})
+
+export const CreateTeamChatConversationResponse = zod.object({
+  "id": zod.number(),
+  "teamInstanceId": zod.number(),
+  "aiModelId": zod.number().nullable(),
+  "title": zod.string(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)'),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Conversazione con messaggi e schede
+ */
+export const GetTeamChatConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetTeamChatConversationResponse = zod.object({
+  "id": zod.number(),
+  "teamInstanceId": zod.number(),
+  "aiModelId": zod.number().nullable(),
+  "title": zod.string(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)'),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "messages": zod.array(zod.object({
+  "id": zod.number(),
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string().describe('Markdown'),
+  "error": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})),
+  "proposals": zod.array(zod.object({
+  "id": zod.number(),
+  "messageId": zod.number(),
+  "kind": zod.enum(['role_identity', 'role_instructions']),
+  "roleKey": zod.string(),
+  "payload": zod.record(zod.string(), zod.unknown()).nullable().describe('role_identity: {text}; role_instructions: {markdown}'),
+  "rationale": zod.string(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
+  "currentValue": zod.string().describe('Identità o istruzioni attuali del ruolo (\"\" se non ci sono), per mostrare le differenze'),
+  "decidedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+
+
+/**
+ * @summary Elimina la conversazione
+ */
+export const DeleteTeamChatConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteTeamChatConversationResponse = zod.void()
+
+
+/**
+ * Risponde subito col messaggio dell'utente; Lucius risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se la squadra è chiusa o se chi paga il modello ha raggiunto il tetto di spesa mensile. Massimo 10 messaggi al minuto per utente.
+ * @summary Invia un messaggio e avvia il turno di Lucius
+ */
+export const SendTeamChatMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const sendTeamChatMessageBodyContentMax = 8000;
+
+
+
+export const SendTeamChatMessageBody = zod.object({
+  "content": zod.string().min(1).max(sendTeamChatMessageBodyContentMax)
+})
+
+export const SendTeamChatMessageResponse = zod.object({
+  "id": zod.number(),
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string().describe('Markdown'),
+  "error": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * Accettando la modifica si applica alla squadra con le regole del salvataggio. 409 se la scheda è già decisa, se il valore è cambiato dopo la proposta (scheda stale) o se la squadra è chiusa.
+ * @summary Accetta o rifiuta una scheda di Lucius
+ */
+export const DecideTeamChatProposalParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DecideTeamChatProposalBody = zod.object({
+  "action": zod.enum(['accept', 'reject'])
+})
+
+export const DecideTeamChatProposalResponse = zod.object({
+  "id": zod.number(),
+  "messageId": zod.number(),
+  "kind": zod.enum(['role_identity', 'role_instructions']),
+  "roleKey": zod.string(),
+  "payload": zod.record(zod.string(), zod.unknown()).nullable().describe('role_identity: {text}; role_instructions: {markdown}'),
+  "rationale": zod.string(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
+  "currentValue": zod.string().describe('Identità o istruzioni attuali del ruolo (\"\" se non ci sono), per mostrare le differenze'),
+  "decidedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * File Markdown della skill specializzata `ruolo-<key>`, `Content-Disposition: attachment; filename="<key>.md"`. 404 «il ruolo non ha istruzioni» se non esiste.
+ * @summary Scarica le istruzioni di un ruolo (Markdown)
+ */
+export const DownloadRoleInstructionsParams = zod.object({
+  "id": zod.coerce.number(),
+  "key": zod.coerce.string()
+})
+
+export const DownloadRoleInstructionsResponse = zod.unknown()
+
+
+/**
+ * Zip con un file `<key>.md` per ogni ruolo che ha istruzioni, `attachment; filename="<squadra>-ruoli.zip"`. 404 se nessun ruolo ha istruzioni.
+ * @summary Scarica le istruzioni di tutti i ruoli (zip)
+ */
+export const DownloadRolesExportParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DownloadRolesExportResponse = zod.unknown()
+
+
+/**
+ * @summary Appunti di un personaggio per l'utente
+ */
+export const ListMemoryNotesQueryParams = zod.object({
+  "character": zod.enum(['alfred', 'lucius'])
+})
+
+export const ListMemoryNotesResponseItem = zod.object({
+  "id": zod.number(),
+  "content": zod.string(),
+  "ref": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListMemoryNotesResponse = zod.array(ListMemoryNotesResponseItem)
+
+
+/**
+ * @summary Aggiunge un appunto (max 300 caratteri, 50 per personaggio)
+ */
+export const createMemoryNoteBodyContentMax = 2000;
+
+
+
+export const CreateMemoryNoteBody = zod.object({
+  "character": zod.enum(['alfred', 'lucius']),
+  "content": zod.string().max(createMemoryNoteBodyContentMax)
+})
+
+export const CreateMemoryNoteResponse = zod.object({
+  "id": zod.number(),
+  "content": zod.string(),
+  "ref": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Modifica un appunto
+ */
+export const UpdateMemoryNoteParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateMemoryNoteQueryParams = zod.object({
+  "character": zod.enum(['alfred', 'lucius'])
+})
+
+export const updateMemoryNoteBodyContentMax = 2000;
+
+
+
+export const UpdateMemoryNoteBody = zod.object({
+  "content": zod.string().max(updateMemoryNoteBodyContentMax)
+})
+
+export const UpdateMemoryNoteResponse = zod.object({
+  "id": zod.number(),
+  "content": zod.string(),
+  "ref": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Elimina un appunto
+ */
+export const DeleteMemoryNoteParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteMemoryNoteQueryParams = zod.object({
+  "character": zod.enum(['alfred', 'lucius'])
+})
+
+export const DeleteMemoryNoteResponse = zod.void()
+
+
+/**
+ * Fino a 100 voci, dalla più recente; `q` cerca nel titolo e nel riassunto.
+ * @summary Storico delle conversazioni di un personaggio
+ */
+export const listMemoryHistoryQueryQMax = 200;
+
+
+
+export const ListMemoryHistoryQueryParams = zod.object({
+  "character": zod.enum(['alfred', 'lucius']),
+  "q": zod.coerce.string().max(listMemoryHistoryQueryQMax).optional()
+})
+
+export const ListMemoryHistoryResponseItem = zod.object({
+  "id": zod.number(),
+  "kind": zod.enum(['alfred_session', 'plan_conversation', 'team_chat']),
+  "refId": zod.number(),
+  "title": zod.string(),
+  "summary": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const ListMemoryHistoryResponse = zod.array(ListMemoryHistoryResponseItem)
+
+
+/**
+ * @summary Elimina una voce dello storico
+ */
+export const DeleteMemoryHistoryEntryParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteMemoryHistoryEntryQueryParams = zod.object({
+  "character": zod.enum(['alfred', 'lucius'])
+})
+
+export const DeleteMemoryHistoryEntryResponse = zod.void()
+
+
+/**
  * Le azioni L2 messe in coda dagli agenti (più recenti prima, massimo 200). Senza filtro solo quelle in attesa di conferma.
  * @summary Azioni in coda dell'utente corrente
  */

@@ -34,6 +34,7 @@ export const INSTANCE_MESSAGES = {
   invalidLocalCode: (code: string) => `codice della skill specializzata ${code} non valido`,
   tooManyLocalSkills: "troppe skill specializzate",
   useActivate: "usa Attiva per avviare la squadra",
+  noRoleInstructions: "nessun ruolo ha istruzioni",
   noBackToDraft: "una squadra attiva non torna in bozza: chiudila",
 } as const;
 

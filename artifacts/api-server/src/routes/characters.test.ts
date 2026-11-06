@@ -253,6 +253,18 @@ describe("messaggi", () => {
     expect(detail.json).toMatchObject({ subjectGone: true, subjectTitle: "Skill di prova" });
   });
 
+  it("tetto del personaggio raggiunto → 409 col motivo, nessun messaggio salvato né turno avviato", async () => {
+    const { id } = await createConv();
+    await db.update(usersTable).set({ luciusMonthlyBudgetUsd: "0" }).where(eq(usersTable.id, userId));
+    const res = await api("POST", `/character-conversations/${id}/messages`, { content: "ciao" });
+    expect(res.status, res.text).toBe(409);
+    expect(res.json.error).toMatch(/^Tetto di spesa mensile di Lucius/);
+    expect(await db.select().from(characterMessagesTable).where(eq(characterMessagesTable.conversationId, id))).toHaveLength(0);
+    const [conv] = await db.select().from(characterConversationsTable).where(eq(characterConversationsTable.id, id));
+    expect(conv!.turnStatus).toBe("idle");
+    expect(fake.requests).toHaveLength(0);
+  });
+
   it("conversazione archiviata → 409", async () => {
     const t1 = await api("GET", "/characters/alfred/thread");
     await api("POST", "/characters/alfred/thread/restart");

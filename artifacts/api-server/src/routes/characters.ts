@@ -29,6 +29,7 @@ import {
   DecideCharacterProposalResponse,
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
+import { characterBudgetBlock } from "../lib/budget";
 import { ownModel } from "../lib/ai/default-model";
 import { createConversation, getConversation } from "../lib/characters/conversations";
 import { decideCharacterProposal, toProposalView, type ProposalView } from "../lib/characters/proposals";
@@ -203,6 +204,12 @@ export function createCharactersRouter(): IRouter {
     }
     await guarded(res, async () => {
       const conv = await getConversation(userId, id);
+      // Tetto raggiunto: 409 col motivo, prima di consumare il limite dei messaggi
+      const blocked = await characterBudgetBlock(userId, conv.character, conv.aiModelId);
+      if (blocked) {
+        res.status(409).json({ error: blocked });
+        return;
+      }
       if (!consumeCharacterMessage(userId, conv.character)) {
         res.status(429).json({ error: CHARACTER_MESSAGES.tooMany });
         return;

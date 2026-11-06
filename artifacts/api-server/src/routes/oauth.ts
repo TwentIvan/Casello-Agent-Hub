@@ -13,6 +13,7 @@ import {
 import { consentPage, errorPage, sendPage } from "../lib/oauth/pages";
 import { authorizationServerMetadata, protectedResourceMetadata } from "../lib/oauth/metadata";
 import { registerClient } from "../lib/oauth/clients";
+import { pluginClient } from "../lib/oauth/plugins";
 import { OAuthError } from "../lib/oauth/errors";
 import { exchangeCode, refreshTokens } from "../lib/oauth/tokens";
 import { logger } from "../lib/logger";
@@ -140,6 +141,11 @@ export function oauthRouter(): IRouter {
       const { params } = pending;
       if (decision === "deny") {
         res.redirect(buildRedirect(params.redirectUri, { error: "access_denied", state: params.state }));
+        return;
+      }
+      // Un plugin tolto dalla configurazione dopo la pagina di consenso non ottiene né collegamento né codice
+      if (params.kind === "plugin" && !pluginClient(params.clientId)) {
+        sendPage(res, 400, errorPage("Applicazione non riconosciuta."));
         return;
       }
       try {

@@ -69,6 +69,7 @@ describe("pluginUrlTemplate sulle app", () => {
     ["segnaposto ripetuto", "https://hub.example/{refId}/{refId}"],
     ["501 caratteri", `https://hub.example/${"a".repeat(501 - "https://hub.example/{refId}".length)}{refId}`],
     ["credenziali", "https://u:p@hub.example/{refId}"],
+    ["segnaposto nell'origine", "https://{refId}.hub.example/x"],
   ])("%s → 400", async (_name, value) => {
     const res = await create({ pluginUrlTemplate: value });
     expect(res.status).toBe(400);

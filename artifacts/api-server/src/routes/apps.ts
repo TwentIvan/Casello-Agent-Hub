@@ -77,6 +77,8 @@ export function pluginUrlTemplateError(value: string): string | null {
   let url: URL;
   try {
     url = new URL(value.replace("{refId}", "1"));
+    // {refId} deve stare dopo l'origine: se cambia con il valore, finisce nell'host o nella porta
+    if (new URL(value.replace("{refId}", "2")).origin !== url.origin) return PLUGIN_URL_MESSAGE;
   } catch {
     return PLUGIN_URL_MESSAGE;
   }

@@ -207,9 +207,11 @@ function hasScopeFor(method: string, scopes: TokenScope[]): boolean {
 
 /**
  * Protegge /api (o una singola route): imposta req.userId e req.auth oppure risponde 401/403/429.
- * Con l'header Authorization presente conta solo il token personale (mai il cookie, nemmeno con
- * AUTH_DISABLED): header non `Bearer cas_…`, token sconosciuto, revocato o scaduto → 401; poi il
- * limite per token e l'ambito richiesto dal metodo. Senza header vale la sessione.
+ * Con l'header Authorization presente conta solo il token (mai il cookie, nemmeno con
+ * AUTH_DISABLED): `cas_…` personale (req.auth `token`) o `cap_…` di un plugin (req.auth `oauth`,
+ * ambiti api:read/api:write del collegamento); altro header, token sconosciuto, revocato o scaduto
+ * → 401; poi il limite per token (o per collegamento) e l'ambito richiesto dal metodo.
+ * Senza header vale la sessione.
  */
 export const requireAuth: RequestHandler = async (req, res, next) => {
   try {
@@ -229,10 +231,12 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
           res.status(401).json({ error: TOKEN_MESSAGES.invalid });
           return;
         }
+        // Difesa in profondità: da un collegamento non escono mai ambiti diversi da api:read/api:write
+        const pluginScopes = plugin.scopes.filter((s) => s === "api:read" || s === "api:write");
         req.userId = plugin.userId;
-        req.auth = { kind: "oauth", grantId: plugin.grantId, scopes: plugin.scopes };
+        req.auth = { kind: "oauth", grantId: plugin.grantId, scopes: pluginScopes };
         tokenRateLimit(req, res, () => {
-          if (!hasScopeFor(req.method, plugin.scopes)) {
+          if (!hasScopeFor(req.method, pluginScopes)) {
             res.status(403).json({ error: TOKEN_MESSAGES.scope });
             return;
           }

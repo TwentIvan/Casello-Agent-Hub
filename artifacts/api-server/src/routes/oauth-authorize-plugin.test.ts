@@ -122,6 +122,22 @@ describe("autorizzazione dei client plugin", () => {
     expect(grants[0]!.scopes).toEqual(["api:read", "api:write"]);
   });
 
+  it("plugin tolto dopo il consenso mostrato → POST allow 400, nessun collegamento", async () => {
+    const { text, cookie } = await get(authPath());
+    const csrf = /name="csrf" value="([^"]+)"/.exec(text)![1]!;
+    process.env["OAUTH_PLUGIN_CLIENTS"] = "[]";
+    const res = await fetch(`${base}/oauth/authorize`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie },
+      body: new URLSearchParams({ csrf, decision: "allow" }).toString(),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("Applicazione non riconosciuta.");
+    expect(res.headers.get("location")).toBeNull();
+    expect(await db.select().from(oauthGrantsTable)).toHaveLength(0);
+  });
+
   it("plugin tolto dalla configurazione → Applicazione non riconosciuta", async () => {
     await get(authPath());
     process.env["OAUTH_PLUGIN_CLIENTS"] = "[]";

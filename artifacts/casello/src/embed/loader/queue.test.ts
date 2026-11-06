@@ -27,4 +27,22 @@ describe("createOutbox", () => {
     box.send(ctx("x"));
     expect(sent).toEqual([ctx("x")]);
   });
+
+  it("reset dopo ready → torna a tenere i messaggi e li consegna al nuovo ready, compresi gli ultimi theme e context", () => {
+    const sent: ToFrame[] = [];
+    const box = createOutbox((m) => sent.push(m));
+    box.send(theme);
+    box.send(ctx("a"));
+    box.ready();
+    sent.length = 0;
+    box.reset();
+    box.send(ctx("b"));
+    expect(sent).toEqual([]);
+    box.ready();
+    expect(sent).toEqual([theme, ctx("b")]);
+    sent.length = 0;
+    box.reset();
+    box.ready();
+    expect(sent).toEqual([theme, ctx("b")]);
+  });
 });

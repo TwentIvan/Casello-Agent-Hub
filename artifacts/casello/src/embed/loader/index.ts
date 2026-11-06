@@ -2,6 +2,7 @@
 import { parseFromFrame, type EmbedTab, type HostContextMsg, type ToFrame } from "../protocol";
 import { createOutbox } from "./queue";
 import { readHostTheme } from "./read-theme";
+import { themeToCss } from "../theme";
 
 const READY_TIMEOUT_MS = 10_000;
 const MSG_DISABLED = "Questa app non è abilitata a Botcave";
@@ -10,21 +11,22 @@ const MSG_UNREACHABLE = "Botcave non risponde: riprova tra poco";
 const CSS = `
 :host { all: initial; }
 .btn { position: fixed; bottom: 16px; width: 48px; height: 48px; padding: 0; border-radius: 50%;
-  border: 1px solid hsl(var(--border, 0 0% 80%)); background: hsl(var(--background, 0 0% 100%));
+  border: 1px solid var(--surface-border); background: var(--surface-bg);
   cursor: pointer; z-index: 2147483000; display: flex; align-items: center; justify-content: center; }
 .btn[data-side="right"] { right: 16px; } .btn[data-side="left"] { left: 16px; }
 .btn.inline { position: static; }
 .btn img { width: 28px; height: 28px; display: block; }
 .count { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box;
-  border-radius: 9px; background: hsl(var(--primary, 0 0% 25%)); color: hsl(var(--primary-foreground, 0 0% 100%));
+  border-radius: 9px; background: var(--surface-accent); color: var(--surface-on-accent);
   font: 600 11px/18px sans-serif; text-align: center; }
 .panel { position: fixed; top: 0; bottom: 0; width: 440px; max-width: 100%; display: none; z-index: 2147483001;
-  background: hsl(var(--background, 0 0% 100%)); border: 0 solid hsl(var(--border, 0 0% 80%)); }
+  background: var(--surface-bg); border: 0 solid var(--surface-border); }
 .panel[data-side="right"] { right: 0; border-left-width: 1px; } .panel[data-side="left"] { left: 0; border-right-width: 1px; }
 .panel.open { display: block; }
 @media (max-width: 640px) { .panel { width: 100%; border-width: 0 !important; } }
 iframe { width: 100%; height: 100%; border: 0; display: block; }
-.msg { padding: 24px; font: 14px/1.5 sans-serif; color: hsl(var(--foreground, 0 0% 10%)); }
+.msg button { margin-top: 12px; display: block; padding: 6px 12px; cursor: pointer; font: inherit; color: var(--surface-fg); background: var(--surface-bg); border: 1px solid var(--surface-border); border-radius: 6px; }
+.msg { padding: 24px; font: 14px/1.5 sans-serif; color: var(--surface-fg); }
 `;
 
 function start(): void {
@@ -50,7 +52,14 @@ function start(): void {
 
   const mount = () => {
     const host = document.createElement("div");
-    const target = mountSel ? document.querySelector(mountSel) : null;
+    let target: Element | null = null;
+    if (mountSel) {
+      try {
+        target = document.querySelector(mountSel);
+      } catch {
+        console.warn("Botcave: data-mount non è un selettore valido, il pulsante va nel body");
+      }
+    }
     (target ?? document.body).appendChild(host);
     const shadow = host.attachShadow({ mode: "open" });
     const style = document.createElement("style");
@@ -82,25 +91,45 @@ function start(): void {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const outbox = createOutbox((m: ToFrame) => iframe?.contentWindow?.postMessage(m, origin));
 
-    const showMessage = (text: string) => {
+    const showMessage = (text: string, retry: boolean) => {
+      clearTimeout(timer);
       iframe?.remove();
       iframe = null;
       const p = document.createElement("div");
       p.className = "msg";
       p.textContent = text;
+      if (retry) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = "Riprova";
+        b.addEventListener("click", () => ensureFrame());
+        p.appendChild(b);
+      }
       panel.replaceChildren(p);
     };
 
-    const sendTheme = () =>
-      outbox.send({
-        botcave: 1,
-        type: "theme",
-        payload: readHostTheme(
-          document.documentElement,
-          getComputedStyle,
-          Array.from(document.querySelectorAll<HTMLLinkElement>("link[href]"), (l) => l.href),
-        ),
-      });
+    // Variabili del guscio dal tema ospite già filtrato; HSL shadcn convertito come in themeToCss.
+    const applyShellVars = (theme: ReturnType<typeof readHostTheme>) => {
+      const css = themeToCss(theme);
+      const dark = theme.mode === "dark";
+      const set = (name: string, key: string, fallback: string) =>
+        host.style.setProperty(name, css[key] ?? fallback);
+      set("--surface-bg", "--surface-1", dark ? "hsl(0 0% 12%)" : "hsl(0 0% 100%)");
+      set("--surface-fg", "--ink", dark ? "hsl(0 0% 95%)" : "hsl(0 0% 10%)");
+      set("--surface-border", "--border", dark ? "hsl(0 0% 30%)" : "hsl(0 0% 80%)");
+      set("--surface-accent", "--accent", dark ? "hsl(0 0% 80%)" : "hsl(0 0% 25%)");
+      set("--surface-on-accent", "--on-accent", dark ? "hsl(0 0% 10%)" : "hsl(0 0% 100%)");
+    };
+
+    const sendTheme = () => {
+      const theme = readHostTheme(
+        document.documentElement,
+        getComputedStyle,
+        Array.from(document.querySelectorAll<HTMLLinkElement>("link[href]"), (l) => l.href),
+      );
+      applyShellVars(theme);
+      outbox.send({ botcave: 1, type: "theme", payload: theme });
+    };
 
     const ensureFrame = () => {
       if (iframe) return;
@@ -109,9 +138,10 @@ function start(): void {
       f.allow = "microphone";
       f.src = `${origin}/embed?app=${encodeURIComponent(app)}&origin=${encodeURIComponent(location.origin)}`;
       iframe = f;
+      outbox.reset();
       panel.replaceChildren(f);
       sendTheme();
-      timer = setTimeout(() => showMessage(MSG_DISABLED), READY_TIMEOUT_MS);
+      timer = setTimeout(() => showMessage(MSG_DISABLED, false), READY_TIMEOUT_MS);
     };
 
     const setOpen = (open: boolean) => {
@@ -136,8 +166,8 @@ function start(): void {
           count.textContent = String(m.payload.pending);
           break;
         case "error":
-          clearTimeout(timer);
-          showMessage(m.payload.code === "unreachable" ? MSG_UNREACHABLE : MSG_DISABLED);
+          if (m.payload.code === "unreachable") showMessage(MSG_UNREACHABLE, true);
+          else showMessage(MSG_DISABLED, false);
           break;
       }
     });

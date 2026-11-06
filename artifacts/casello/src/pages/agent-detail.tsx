@@ -84,11 +84,18 @@ function AgentConfigForm({ agent, dirtyRef }: { agent: Agent; dirtyRef: MutableR
 
   dirtyRef.current = form.formState.isDirty;
 
-  // Una scheda accettata da Lucius si vede nel form; le modifiche in corso non si perdono.
+  // Un agente cambiato altrove (es. scheda di Lucius accettata) aggiorna i valori salvati del form senza toccare i
+  // campi che l'utente sta modificando.
   useEffect(() => {
-    if (!form.formState.isDirty) form.reset(toValues(agent));
+    form.reset(toValues(agent), { keepDirtyValues: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.updatedAt]);
+  // Il prompt accettato entra sempre nel form, come annuncia l'avviso prima di accettare: altrimenti il «Salva»
+  // successivo riscriverebbe il prompt vecchio. Dopo un salvataggio dell'utente è già lo stesso valore.
+  useEffect(() => {
+    form.resetField("systemPrompt", { defaultValue: agent.systemPrompt ?? "" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.systemPrompt]);
 
   const isGeneral = agent.role === "general";
   const onSubmit = ({ area, aiModelId, ...values }: AgentValues) =>
@@ -271,6 +278,7 @@ export default function AgentDetailPage() {
   const { toast } = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const dirtyRef = useRef(false);
+  const toolsDirtyRef = useRef(false);
 
   const agent = useGetAgent(agentId, {
     query: { queryKey: getGetAgentQueryKey(agentId), enabled: Number.isInteger(agentId) },
@@ -348,7 +356,7 @@ export default function AgentDetailPage() {
           <div className="flex flex-wrap gap-2">
             <CharacterButton
               target={{ kind: "character", subjectType: "agent", subjectId: String(agent.data.id), title: `Agente · ${agent.data.name}` }}
-              hasUnsavedChanges={() => dirtyRef.current}
+              hasUnsavedChanges={() => dirtyRef.current || toolsDirtyRef.current}
             />
             {agent.data.role !== "general" && (
               <Button variant="outline" className="text-destructive" onClick={() => setConfirmDelete(true)}>
@@ -369,7 +377,12 @@ export default function AgentDetailPage() {
       <RunPanel key={`run-${agent.data.id}`} agent={agent.data} />
       <AgentConfigForm key={`config-${agent.data.id}`} agent={agent.data} dirtyRef={dirtyRef} />
       <AgentBudgetCard key={`budget-${agent.data.id}`} agent={agent.data} />
-      <AgentToolsSection key={`tools-${agent.data.id}`} agent={agent.data} />
+      <AgentToolsSection
+        // Gli id salvati nella key: una scheda accettata che cambia gli strumenti riparte dalla selezione nuova
+        key={`tools-${agent.data.id}-${[...agent.data.toolIds].sort((a, b) => a - b).join(",")}`}
+        agent={agent.data}
+        dirtyRef={toolsDirtyRef}
+      />
       <AgentSkillsSection key={`skills-${agent.data.id}`} agent={agent.data} />
 
       <ConfirmDialog

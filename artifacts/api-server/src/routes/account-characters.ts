@@ -5,7 +5,7 @@ import {
   UpdateCharacterSettingsResponse,
 } from "@workspace/api-zod";
 import { currentUserId, sessionOnly } from "../lib/auth";
-import { getCharacterSettings, setCharacterSettings } from "../lib/characters/settings";
+import { getCharacterSettingsView, setCharacterSettings } from "../lib/characters/settings";
 import { CharacterError } from "../lib/characters/types";
 import { parseRequest } from "../middlewares/error-handler";
 
@@ -15,7 +15,7 @@ export function createAccountCharactersRouter(): IRouter {
   const router: IRouter = Router();
 
   router.get("/account/characters", sessionOnly, async (req, res) => {
-    res.json(GetCharacterSettingsResponse.parse(await getCharacterSettings(currentUserId(req))));
+    res.json(GetCharacterSettingsResponse.parse(await getCharacterSettingsView(currentUserId(req))));
   });
 
   router.put("/account/characters", sessionOnly, async (req, res) => {
@@ -28,7 +28,7 @@ export function createAccountCharactersRouter(): IRouter {
       res.status(err.status).json({ error: err.message });
       return;
     }
-    res.json(UpdateCharacterSettingsResponse.parse(await getCharacterSettings(userId)));
+    res.json(UpdateCharacterSettingsResponse.parse(await getCharacterSettingsView(userId)));
   });
 
   return router;

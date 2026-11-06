@@ -475,23 +475,36 @@ export const SetCentralinoModelResponse = zod.object({
 
 
 /**
- * Modello della chat e tetto mensile di Alfred, modello e tetto mensile di Lucius. Null = modello predefinito / nessun tetto. Solo con il login: con un token risponde 403.
+ * Modello della chat e tetto mensile di Alfred, modello e tetto mensile di Lucius. Con la spesa del mese di ciascun personaggio e il numero di esecuzioni senza prezzo. Null = modello predefinito / nessun tetto. Solo con il login: con un token risponde 403.
  * @summary Modelli e tetti di Alfred e Lucius nelle aree
  */
-export const getCharacterSettingsResponseAlfredMonthlyBudgetUsdMin = 0;
-export const getCharacterSettingsResponseAlfredMonthlyBudgetUsdMax = 1000000;
+export const getCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMin = 0;
+export const getCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax = 1000000;
 
-export const getCharacterSettingsResponseLuciusMonthlyBudgetUsdMin = 0;
-export const getCharacterSettingsResponseLuciusMonthlyBudgetUsdMax = 1000000;
+export const getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin = 0;
+export const getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax = 1000000;
+
+export const getCharacterSettingsResponseTwoAlfredSpentUsdMin = 0;
+
+export const getCharacterSettingsResponseTwoLuciusSpentUsdMin = 0;
+
+export const getCharacterSettingsResponseTwoAlfredUnpricedCountMin = 0;
+
+export const getCharacterSettingsResponseTwoLuciusUnpricedCountMin = 0;
 
 
 
 export const GetCharacterSettingsResponse = zod.object({
   "alfredChatAiModelId": zod.number().nullable(),
   "luciusAiModelId": zod.number().nullable(),
-  "alfredMonthlyBudgetUsd": zod.number().min(getCharacterSettingsResponseAlfredMonthlyBudgetUsdMin).max(getCharacterSettingsResponseAlfredMonthlyBudgetUsdMax).nullable(),
-  "luciusMonthlyBudgetUsd": zod.number().min(getCharacterSettingsResponseLuciusMonthlyBudgetUsdMin).max(getCharacterSettingsResponseLuciusMonthlyBudgetUsdMax).nullable()
-})
+  "alfredMonthlyBudgetUsd": zod.number().min(getCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMin).max(getCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax).nullable(),
+  "luciusMonthlyBudgetUsd": zod.number().min(getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin).max(getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax).nullable()
+}).and(zod.object({
+  "alfredSpentUsd": zod.number().min(getCharacterSettingsResponseTwoAlfredSpentUsdMin),
+  "luciusSpentUsd": zod.number().min(getCharacterSettingsResponseTwoLuciusSpentUsdMin),
+  "alfredUnpricedCount": zod.number().min(getCharacterSettingsResponseTwoAlfredUnpricedCountMin),
+  "luciusUnpricedCount": zod.number().min(getCharacterSettingsResponseTwoLuciusUnpricedCountMin)
+})).describe('Impostazioni dei personaggi più la spesa del mese (mese di calendario, ora italiana).')
 
 
 /**
@@ -513,20 +526,33 @@ export const UpdateCharacterSettingsBody = zod.object({
   "luciusMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMin).max(updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMax).nullable()
 })
 
-export const updateCharacterSettingsResponseAlfredMonthlyBudgetUsdMin = 0;
-export const updateCharacterSettingsResponseAlfredMonthlyBudgetUsdMax = 1000000;
+export const updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMin = 0;
+export const updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax = 1000000;
 
-export const updateCharacterSettingsResponseLuciusMonthlyBudgetUsdMin = 0;
-export const updateCharacterSettingsResponseLuciusMonthlyBudgetUsdMax = 1000000;
+export const updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin = 0;
+export const updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax = 1000000;
+
+export const updateCharacterSettingsResponseTwoAlfredSpentUsdMin = 0;
+
+export const updateCharacterSettingsResponseTwoLuciusSpentUsdMin = 0;
+
+export const updateCharacterSettingsResponseTwoAlfredUnpricedCountMin = 0;
+
+export const updateCharacterSettingsResponseTwoLuciusUnpricedCountMin = 0;
 
 
 
 export const UpdateCharacterSettingsResponse = zod.object({
   "alfredChatAiModelId": zod.number().nullable(),
   "luciusAiModelId": zod.number().nullable(),
-  "alfredMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsResponseAlfredMonthlyBudgetUsdMin).max(updateCharacterSettingsResponseAlfredMonthlyBudgetUsdMax).nullable(),
-  "luciusMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsResponseLuciusMonthlyBudgetUsdMin).max(updateCharacterSettingsResponseLuciusMonthlyBudgetUsdMax).nullable()
-})
+  "alfredMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMin).max(updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax).nullable(),
+  "luciusMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin).max(updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax).nullable()
+}).and(zod.object({
+  "alfredSpentUsd": zod.number().min(updateCharacterSettingsResponseTwoAlfredSpentUsdMin),
+  "luciusSpentUsd": zod.number().min(updateCharacterSettingsResponseTwoLuciusSpentUsdMin),
+  "alfredUnpricedCount": zod.number().min(updateCharacterSettingsResponseTwoAlfredUnpricedCountMin),
+  "luciusUnpricedCount": zod.number().min(updateCharacterSettingsResponseTwoLuciusUnpricedCountMin)
+})).describe('Impostazioni dei personaggi più la spesa del mese (mese di calendario, ora italiana).')
 
 
 /**
@@ -4818,6 +4844,7 @@ export const DownloadRolesExportResponse = zod.unknown()
 
 
 /**
+ * Restituisce il filo aperto di Alfred; crea il filo se non esiste (la GET può quindi scrivere).
  * @summary Il filo aperto di Alfred scritto (lo crea se manca)
  */
 export const getAlfredThreadResponseTwoMessagesItemPageContextOnePageMax = 40;

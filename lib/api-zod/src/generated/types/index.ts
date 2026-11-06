@@ -127,6 +127,7 @@ export * from './characterProposalPayload';
 export * from './characterProposalStatus';
 export * from './characterQueryParameter';
 export * from './characterSettings';
+export * from './characterSettingsView';
 export * from './characterSubjectType';
 export * from './conflictResponse';
 export * from './costEstimate';

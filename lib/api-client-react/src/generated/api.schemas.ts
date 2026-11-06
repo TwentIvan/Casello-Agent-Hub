@@ -222,6 +222,20 @@ export interface CharacterSettings {
   luciusMonthlyBudgetUsd: number | null;
 }
 
+/**
+ * Impostazioni dei personaggi più la spesa del mese (mese di calendario, ora italiana).
+ */
+export type CharacterSettingsView = CharacterSettings & {
+  /** @minimum 0 */
+  alfredSpentUsd: number;
+  /** @minimum 0 */
+  luciusSpentUsd: number;
+  /** @minimum 0 */
+  alfredUnpricedCount: number;
+  /** @minimum 0 */
+  luciusUnpricedCount: number;
+};
+
 export type AlfredSettingsModelsItem = {
   id: number;
   name: string;

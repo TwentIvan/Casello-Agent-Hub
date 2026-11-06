@@ -1,24 +1,24 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   db,
   pool,
-  agentsTable,
   aiAccountsTable,
   aiModelsTable,
-  analysesTable,
-  analysisItemsTable,
+  alfredSessionsTable,
+  characterHistoryTable,
   usersTable,
 } from "@workspace/db";
 import { encryptSecret } from "../lib/secrets";
 
-// Modello del centralino dell'utente, sull'app completa senza login (AUTH_DISABLED=true: l'utente corrente è dev@localhost). Account e
+// Modelli e tetti dei personaggi, sull'app completa senza login (AUTH_DISABLED=true: l'utente corrente è dev@localhost). Account e
 // modelli si inseriscono a mano; nessuna chiamata ai provider (indirizzi https finti, mai contattati).
 
 const ENV_KEYS = ["AUTH_DISABLED", "ALLOWED_EMAILS", "CASELLO_SECRET_KEY"] as const;
 const saved: Record<string, string | undefined> = {};
+const NO_SPEND = { alfredSpentUsd: 0, luciusSpentUsd: 0, alfredUnpricedCount: 0, luciusUnpricedCount: 0 };
 const UNAVAILABLE = { error: "modello non disponibile" };
 
 let base: string;
@@ -102,12 +102,23 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-
 describe("modelli e tetti dei personaggi", () => {
   it("get_returns_nulls", async () => {
     const r = await api("GET", "/account/characters");
     expect(r.status).toBe(200);
-    expect(r.json).toEqual({ alfredChatAiModelId: null, luciusAiModelId: null, alfredMonthlyBudgetUsd: null, luciusMonthlyBudgetUsd: null });
+    expect(r.json).toEqual({ ...NO_SPEND, alfredChatAiModelId: null, luciusAiModelId: null, alfredMonthlyBudgetUsd: null, luciusMonthlyBudgetUsd: null });
+  });
+
+  it("get_and_put_report_month_spend: spesa e senza prezzo di ciascun personaggio", async () => {
+    const dev = await devUserId();
+    await db.insert(alfredSessionsTable).values({ userId: dev, status: "closed", costUsd: "1.25" });
+    await db.insert(characterHistoryTable).values({ userId: dev, character: "lucius", kind: "team_chat", refId: 1, title: "t", summary: "s", costUsd: "0.5" });
+    await db.insert(characterHistoryTable).values({ userId: dev, character: "lucius", kind: "team_chat", refId: 2, title: "t", summary: "s", costUsd: null, tokensUsed: 10 });
+    const expected = { alfredSpentUsd: 1.25, luciusSpentUsd: 0.5, alfredUnpricedCount: 0, luciusUnpricedCount: 1 };
+    expect((await api("GET", "/account/characters")).json).toMatchObject(expected);
+    const put = await api("PUT", "/account/characters", { alfredChatAiModelId: null, luciusAiModelId: null, alfredMonthlyBudgetUsd: 2, luciusMonthlyBudgetUsd: null });
+    expect(put.status, put.text).toBe(200);
+    expect(put.json).toMatchObject(expected);
   });
 
   it("put_saves_and_reads_back", async () => {
@@ -117,10 +128,10 @@ describe("modelli e tetti dei personaggi", () => {
     const body = { alfredChatAiModelId: a, luciusAiModelId: l, alfredMonthlyBudgetUsd: 5, luciusMonthlyBudgetUsd: 2.5 };
     const put = await api("PUT", "/account/characters", body);
     expect(put.status, put.text).toBe(200);
-    expect(put.json).toEqual(body);
-    expect((await api("GET", "/account/characters")).json).toEqual(body);
+    expect(put.json).toEqual({ ...NO_SPEND, ...body });
+    expect((await api("GET", "/account/characters")).json).toEqual({ ...NO_SPEND, ...body });
     const cleared = { alfredChatAiModelId: null, luciusAiModelId: null, alfredMonthlyBudgetUsd: null, luciusMonthlyBudgetUsd: null };
-    expect((await api("PUT", "/account/characters", cleared)).json).toEqual(cleared);
+    expect((await api("PUT", "/account/characters", cleared)).json).toEqual({ ...NO_SPEND, ...cleared });
   });
 
   it("put_foreign_model_400", async () => {

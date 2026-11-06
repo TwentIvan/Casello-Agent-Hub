@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
-import { budgetColumn } from "../budget";
+import { budgetColumn, characterSpend } from "../budget";
 import { getDefaultModel, ownModel } from "../ai/default-model";
 import type { Character } from "../memory/types";
 import { CHARACTER_MESSAGES, CharacterError } from "./types";
@@ -10,6 +10,14 @@ export interface CharacterSettings {
   luciusAiModelId: number | null;
   alfredMonthlyBudgetUsd: number | null;
   luciusMonthlyBudgetUsd: number | null;
+}
+
+/** Impostazioni più la spesa del mese di ciascun personaggio (`characterSpend`) e le esecuzioni senza prezzo. */
+export interface CharacterSettingsView extends CharacterSettings {
+  alfredSpentUsd: number;
+  luciusSpentUsd: number;
+  alfredUnpricedCount: number;
+  luciusUnpricedCount: number;
 }
 
 const num = (v: string | null) => (v === null ? null : Number(v));
@@ -30,6 +38,21 @@ export async function getCharacterSettings(userId: number): Promise<CharacterSet
     luciusAiModelId: row?.luciusAiModelId ?? null,
     alfredMonthlyBudgetUsd: num(row?.alfredMonthlyBudgetUsd ?? null),
     luciusMonthlyBudgetUsd: num(row?.luciusMonthlyBudgetUsd ?? null),
+  };
+}
+
+export async function getCharacterSettingsView(userId: number): Promise<CharacterSettingsView> {
+  const [settings, alfred, lucius] = await Promise.all([
+    getCharacterSettings(userId),
+    characterSpend(userId, "alfred"),
+    characterSpend(userId, "lucius"),
+  ]);
+  return {
+    ...settings,
+    alfredSpentUsd: alfred.spentUsd,
+    luciusSpentUsd: lucius.spentUsd,
+    alfredUnpricedCount: alfred.unpricedCount,
+    luciusUnpricedCount: lucius.unpricedCount,
   };
 }
 

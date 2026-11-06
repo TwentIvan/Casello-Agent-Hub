@@ -84,6 +84,7 @@ import type {
   CharacterProposal,
   CharacterProposalDecision,
   CharacterSettings,
+  CharacterSettingsView,
   ConflictResponse,
   CostEstimate,
   CurrentUser,
@@ -2070,12 +2071,12 @@ export const getGetCharacterSettingsUrl = () => {
 }
 
 /**
- * Modello della chat e tetto mensile di Alfred, modello e tetto mensile di Lucius. Null = modello predefinito / nessun tetto. Solo con il login: con un token risponde 403.
+ * Modello della chat e tetto mensile di Alfred, modello e tetto mensile di Lucius. Con la spesa del mese di ciascun personaggio e il numero di esecuzioni senza prezzo. Null = modello predefinito / nessun tetto. Solo con il login: con un token risponde 403.
  * @summary Modelli e tetti di Alfred e Lucius nelle aree
  */
-export const getCharacterSettings = async ( options?: RequestInit): Promise<CharacterSettings> => {
+export const getCharacterSettings = async ( options?: RequestInit): Promise<CharacterSettingsView> => {
 
-  return customFetch<CharacterSettings>(getGetCharacterSettingsUrl(),
+  return customFetch<CharacterSettingsView>(getGetCharacterSettingsUrl(),
   {
     ...options,
     method: 'GET'
@@ -2151,9 +2152,9 @@ export const getUpdateCharacterSettingsUrl = () => {
  * Sostituisce tutti e quattro i campi. I modelli devono essere di un account AI dell'utente (400 "modello non disponibile"); i tetti sono numeri >= 0 (400 altrimenti). Solo con il login.
  * @summary Imposta modelli e tetti di Alfred e Lucius
  */
-export const updateCharacterSettings = async (characterSettings: CharacterSettings, options?: RequestInit): Promise<CharacterSettings> => {
+export const updateCharacterSettings = async (characterSettings: CharacterSettings, options?: RequestInit): Promise<CharacterSettingsView> => {
 
-  return customFetch<CharacterSettings>(getUpdateCharacterSettingsUrl(),
+  return customFetch<CharacterSettingsView>(getUpdateCharacterSettingsUrl(),
   {
     ...options,
     method: 'PUT',
@@ -11074,6 +11075,7 @@ export const getGetAlfredThreadUrl = () => {
 }
 
 /**
+ * Restituisce il filo aperto di Alfred; crea il filo se non esiste (la GET può quindi scrivere).
  * @summary Il filo aperto di Alfred scritto (lo crea se manca)
  */
 export const getAlfredThread = async ( options?: RequestInit): Promise<CharacterConversationDetail> => {

@@ -622,15 +622,15 @@ paths:
       tags: [alfred]
       summary: Modelli e tetti di Alfred e Lucius nelle aree
       description: >-
-        Modello della chat e tetto mensile di Alfred, modello e tetto mensile di Lucius. Null = modello
-        predefinito / nessun tetto. Solo con il login: con un token risponde 403.
+        Modello della chat e tetto mensile di Alfred, modello e tetto mensile di Lucius. Con la spesa del
+        mese di ciascun personaggio e il numero di esecuzioni senza prezzo. Null = modello predefinito / nessun tetto. Solo con il login: con un token risponde 403.
       responses:
         "200":
           description: Impostazioni dei personaggi
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CharacterSettings"
+                $ref: "#/components/schemas/CharacterSettingsView"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -654,7 +654,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CharacterSettings"
+                $ref: "#/components/schemas/CharacterSettingsView"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -3636,6 +3636,8 @@ paths:
       operationId: getAlfredThread
       tags: [characters]
       summary: Il filo aperto di Alfred scritto (lo crea se manca)
+      description: >-
+        Restituisce il filo aperto di Alfred; crea il filo se non esiste (la GET può quindi scrivere).
       responses:
         "200":
           description: Filo con messaggi e schede
@@ -4429,6 +4431,26 @@ components:
           type: ["number", "null"]
           minimum: 0
           maximum: 1000000
+
+    CharacterSettingsView:
+      description: Impostazioni dei personaggi più la spesa del mese (mese di calendario, ora italiana).
+      allOf:
+        - $ref: "#/components/schemas/CharacterSettings"
+        - type: object
+          required: [alfredSpentUsd, luciusSpentUsd, alfredUnpricedCount, luciusUnpricedCount]
+          properties:
+            alfredSpentUsd:
+              type: number
+              minimum: 0
+            luciusSpentUsd:
+              type: number
+              minimum: 0
+            alfredUnpricedCount:
+              type: integer
+              minimum: 0
+            luciusUnpricedCount:
+              type: integer
+              minimum: 0
 
     AlfredSettings:
       type: object

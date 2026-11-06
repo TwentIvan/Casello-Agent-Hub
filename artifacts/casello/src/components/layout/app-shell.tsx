@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, Sparkles, LayoutTemplate, Users, Mic, type LucideIcon } from "lucide-react";
 import {
@@ -12,7 +12,6 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -25,7 +24,8 @@ import {
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { BudgetGuard } from "@/components/budget/budget";
-import { AlfredMark, BotcaveLogo, BotcaveMark, LuciusMark } from "@/components/brand/marks";
+import { BotcaveLogo, BotcaveMark } from "@/components/brand/marks";
+import { CaveDivider, CaveHeaderVault } from "@/components/brand/cave";
 import { UserMenu } from "./user-menu";
 
 interface NavItem {
@@ -35,15 +35,14 @@ interface NavItem {
 }
 
 /*
- * Due aree con i due personaggi di Botcave:
- * - Quartier generale (Alfred): dirigere il lavoro delle squadre e decidere;
- * - Officina (Lucius): analizzare e migliorare le applicazioni e costruire agenti, skill e squadre.
+ * Due aree, separate nel menu solo da un elemento grafico (le stalattiti), senza titoli:
+ * - quartier generale: dirigere il lavoro delle squadre e decidere (il regno di Alfred);
+ * - officina: analizzare e migliorare le applicazioni e costruire agenti, skill e squadre (il laboratorio di Lucius).
+ * I nomi restano per i lettori di schermo.
  */
 interface NavArea {
   key: "hq" | "workshop";
   title: string;
-  character: string;
-  mark: ReactNode;
   items: NavItem[];
 }
 
@@ -51,8 +50,6 @@ const NAV_AREAS: NavArea[] = [
   {
     key: "hq",
     title: "Quartier generale",
-    character: "Alfred",
-    mark: <AlfredMark size={13} />,
     items: [
       { href: "/", label: "Dashboard", icon: LayoutDashboard },
       { href: "/teams", label: "Squadre", icon: Users },
@@ -64,8 +61,6 @@ const NAV_AREAS: NavArea[] = [
   {
     key: "workshop",
     title: "Officina",
-    character: "Lucius",
-    mark: <LuciusMark size={13} />,
     items: [
       { href: "/apps", label: "App", icon: Boxes },
       { href: "/agents", label: "Agenti", icon: Bot },
@@ -141,29 +136,28 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
         </SidebarHeader>
         <SidebarContent>
-          {NAV_AREAS.map((area) => (
-            <SidebarGroup key={area.key} aria-label={`${area.title} · ${area.character}`}>
-              <SidebarGroupLabel className="h-7 gap-2 text-label text-ink-muted">
-                <span className="flex w-6 justify-center">{area.mark}</span>
-                <span className="truncate">
-                  {area.title} · {area.character}
-                </span>
-              </SidebarGroupLabel>
-              <SidebarGroupContent>
-                <NavMenu location={location} items={area.items} />
-              </SidebarGroupContent>
-            </SidebarGroup>
+          {NAV_AREAS.map((area, index) => (
+            <Fragment key={area.key}>
+              {index > 0 && <CaveDivider />}
+              <SidebarGroup aria-label={area.title}>
+                <SidebarGroupContent>
+                  <NavMenu location={location} items={area.items} />
+                </SidebarGroupContent>
+              </SidebarGroup>
+            </Fragment>
           ))}
         </SidebarContent>
       </Sidebar>
       <SidebarInset className="min-w-0">
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b pl-4">
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-2 h-4" />
           <h1 className="text-label">{current?.label ?? "Botcave"}</h1>
-          <div className="ml-auto">
+          <div className="ml-auto pr-4 sm:pr-3">
             <UserMenu />
           </div>
+          {/* La volta della caverna: decorativa, sparisce sugli schermi stretti */}
+          <CaveHeaderVault className="hidden w-40 self-stretch sm:block lg:w-64" />
         </header>
         <main className="flex-1 p-4 md:p-6">{children}</main>
         <BudgetGuard />

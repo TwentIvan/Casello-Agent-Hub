@@ -252,6 +252,8 @@ describe("compiti dei ruoli cloud", () => {
     const first = chatRequests()[0];
     expect(first.messages[0].role).toBe("system");
     expect(first.messages[0].content).toContain("Analizza i work item.");
+    expect(first.messages[0].content).toContain("Identità del ruolo:");
+    expect(first.messages[0].content).not.toContain("Istruzioni del ruolo:");
     expect(first.messages[1].role).toBe("user");
     expect(first.messages[1].content).toContain("Istruzioni di t1");
     expect(first.messages[1].content).toContain("Chiudere il WI");

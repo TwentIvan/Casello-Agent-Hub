@@ -123,13 +123,14 @@ function RoleCard({
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor={`${id}-task`}>Compito</Label>
+          <Label htmlFor={`${id}-task`}>Identità</Label>
           <Textarea
             id={`${id}-task`}
             value={role.task}
             onChange={(e) => onChange({ task: e.target.value })}
             rows={3}
             maxLength={8000}
+            placeholder="Chi è il ruolo e qual è il suo mandato, in poche righe"
             disabled={readOnly}
           />
         </div>

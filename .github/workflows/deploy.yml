@@ -69,6 +69,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Prova dell'immagine web (nginx): /embed incorporabile solo dalle origini ammesse, console mai in iframe.
+      # Parte prima del push: se fallisce, nessuna immagine viene pubblicata.
+      - name: Prova dell'immagine web (frame-ancestors)
+        if: matrix.app == 'web'
+        run: |
+          set -euo pipefail
+          docker build -f docker/web.Dockerfile -t web-smoke .
+          check() { # <origini>
+            docker rm -f web-smoke-run >/dev/null 2>&1 || true
+            docker run -d --name web-smoke-run -e EMBED_ALLOWED_ORIGINS="$1" -p 8088:80 web-smoke >/dev/null
+            for _ in $(seq 1 30); do curl -fs localhost:8088/health >/dev/null && break; sleep 1; done
+          }
+          expect() { # <path> <header grep>
+            local out; out=$(curl -sI "localhost:8088$1")
+            if ! grep -qiF -- "$2" <<<"$out"; then echo "::error::$1: manca '$2'"; echo "$out"; exit 1; fi
+          }
+          check https://hubup.fantamister.cloud
+          expect /embed "frame-ancestors https://hubup.fantamister.cloud"
+          expect / "frame-ancestors 'none'"
+          expect /embed/v1/botcave.js "200 OK"
+          check ""
+          expect /embed "frame-ancestors 'none'"
+          docker rm -f web-smoke-run >/dev/null
+
       - name: Build & push ${{ matrix.app }}
         uses: docker/build-push-action@v6
         with:

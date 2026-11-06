@@ -10,7 +10,7 @@ WORKDIR /repo
 # vite.config.ts esige PORT e BASE_PATH anche solo per buildare (PORT non viene usata nel bundle)
 ENV PORT=5173
 ENV BASE_PATH=/
-# Casello chiama /api con URL relativi: nginx fa da proxy verso il container API (vedi nginx.conf)
+# Casello chiama /api con URL relativi: nginx fa da proxy verso il container API (vedi nginx.conf.template)
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc tsconfig.base.json tsconfig.json ./
 COPY artifacts/casello/package.json artifacts/casello/
@@ -26,6 +26,11 @@ RUN pnpm --filter @workspace/casello run build
 
 # ---------- stage 2: runtime ----------
 FROM nginx:alpine AS runtime
-COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+# Il template lo elabora l'entrypoint di nginx (envsubst sulle variabili definite: $uri e simili restano intatti).
+# 15-embed-origins.envsh gira prima di 20-envsubst-on-templates.sh e calcola EMBED_ALLOWED_ORIGINS_CSP.
+COPY docker/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY --chmod=755 docker/15-embed-origins.envsh /docker-entrypoint.d/15-embed-origins.envsh
+# Origini (separate da virgola) che possono incorporare /embed; vuota = nessuna
+ENV EMBED_ALLOWED_ORIGINS=""
 COPY --from=build /repo/artifacts/casello/dist/public /usr/share/nginx/html
 EXPOSE 80

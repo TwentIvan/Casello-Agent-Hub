@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Prova del pannello Botcave</title>
+<!--
+  Pagina di prova per lo sviluppo: simula un'app ospite (stile The Hub Up). NON è un input di Vite
+  e non finisce nell'immagine web.
+
+  Come provarla in locale:
+  1. API: AUTH_DISABLED=true EMBED_ALLOWED_ORIGINS=http://localhost:5174 ALLOWED_EMAILS=dev@localhost pnpm run dev:api
+     (serve DATABASE_URL; l'origine 5174 è quella da cui servi questa pagina).
+  2. Frontend: pnpm run dev:web (porta 5173, serve /embed e /embed/v1/botcave.js).
+  3. Da questa cartella: python3 -m http.server 5174
+  4. Apri http://localhost:5174/embed-demo.html, premi il pulsante Botcave, «Collega con Botcave».
+  Aprendo la pagina da un'origine non elencata in EMBED_ALLOWED_ORIGINS compare «Questa app non è abilitata a Botcave».
+  Il valore di data-app va allineato all'identificativo dell'app ospite configurato in Botcave.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --primary: 213 100% 47%;
+    --primary-foreground: 0 0% 100%;
+    --muted: 210 40% 96%;
+    --border: 214 32% 91%;
+    --radius: 0.375rem;
+    --font-sans: Roboto, sans-serif;
+  }
+  :root.dark {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 98%;
+    --primary: 213 100% 60%;
+    --primary-foreground: 222 47% 8%;
+    --muted: 217 33% 17%;
+    --border: 217 33% 22%;
+    color-scheme: dark;
+  }
+  body {
+    margin: 0;
+    padding: 24px;
+    font-family: Roboto, sans-serif;
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+  .card {
+    max-width: 560px;
+    padding: 16px;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    background: hsl(var(--muted));
+  }
+  button {
+    font: inherit;
+    padding: 8px 14px;
+    border: 0;
+    border-radius: var(--radius);
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+  <h1>Work item 1174</h1>
+  <div class="card">
+    <p>Fix ordini: pagina di prova dell'app ospite.</p>
+    <button id="theme" type="button">Tema scuro</button>
+  </div>
+  <script>
+    var btn = document.getElementById("theme");
+    btn.addEventListener("click", function () {
+      var dark = document.documentElement.classList.toggle("dark");
+      btn.textContent = dark ? "Tema chiaro" : "Tema scuro";
+    });
+  </script>
+  <script src="http://localhost:5173/embed/v1/botcave.js" data-app="hubup"></script>
+  <script>
+    Botcave.setContext({ page: "workitem", id: "1174", title: "Fix ordini" });
+  </script>
+</body>
+</html>

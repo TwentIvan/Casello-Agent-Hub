@@ -1,0 +1,10 @@
+# Letto (sourced) dall'entrypoint di nginx prima di 20-envsubst-on-templates.sh.
+# EMBED_ALLOWED_ORIGINS: origini separate da virgola → EMBED_ALLOWED_ORIGINS_CSP: separate da spazio,
+# per `frame-ancestors`; vuota → 'none'. Niente bash: l'immagine alpine ha solo sh.
+_origins=$(printf '%s' "${EMBED_ALLOWED_ORIGINS:-}" | tr ',' ' ' | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')
+if [ -z "$_origins" ]; then
+  _origins="'none'"
+fi
+EMBED_ALLOWED_ORIGINS_CSP=$_origins
+export EMBED_ALLOWED_ORIGINS_CSP
+unset _origins

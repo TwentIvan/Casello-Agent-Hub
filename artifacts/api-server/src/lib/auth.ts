@@ -14,6 +14,7 @@ import { githubAuthRouter } from "./github/oauth-routes";
 import { logger } from "./logger";
 import { tokenRateLimit } from "../middlewares/rate-limit";
 import { TOKEN_MESSAGES, authenticateApiToken, bearerToken, type TokenScope } from "./api-tokens";
+import { verifyPluginAccessToken } from "./oauth/tokens";
 import { IdentityConflictError, ensureUserByEmail, isAllowed, listIdentities, resolveLogin } from "./users";
 
 export interface SessionUser {
@@ -55,7 +56,10 @@ declare global {
       /** Impostato da requireAuth. */
       userId?: number;
       /** Come è autenticata la richiesta: impostato da requireAuth. */
-      auth?: { kind: "session" } | { kind: "token"; tokenId: number; scopes: TokenScope[] };
+      auth?:
+        | { kind: "session" }
+        | { kind: "token"; tokenId: number; scopes: TokenScope[] }
+        | { kind: "oauth"; grantId: number; scopes: TokenScope[] };
     }
   }
 }
@@ -211,6 +215,31 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
   try {
     if (req.headers.authorization !== undefined) {
       const raw = bearerToken(req);
+      if (raw !== null && raw.startsWith("cap_")) {
+        // Token di un plugin (es. The Hub Up): ambiti api:read/api:write del collegamento
+        let plugin: Awaited<ReturnType<typeof verifyPluginAccessToken>>;
+        try {
+          plugin = await verifyPluginAccessToken(raw);
+        } catch (err) {
+          logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Verifica del token del plugin non riuscita");
+          res.status(500).json({ error: "errore interno" });
+          return;
+        }
+        if (!plugin) {
+          res.status(401).json({ error: TOKEN_MESSAGES.invalid });
+          return;
+        }
+        req.userId = plugin.userId;
+        req.auth = { kind: "oauth", grantId: plugin.grantId, scopes: plugin.scopes };
+        tokenRateLimit(req, res, () => {
+          if (!hasScopeFor(req.method, plugin.scopes)) {
+            res.status(403).json({ error: TOKEN_MESSAGES.scope });
+            return;
+          }
+          next();
+        });
+        return;
+      }
       let found: Awaited<ReturnType<typeof authenticateApiToken>>;
       try {
         found = raw === null ? null : await authenticateApiToken(raw);
@@ -256,7 +285,7 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
 
 /** Operazioni solo con il login (chiavi, tetti, token, account collegati): con un token → 403. */
 export const sessionOnly: RequestHandler = (req, res, next) => {
-  if (req.auth?.kind === "token") {
+  if (req.auth !== undefined && req.auth.kind !== "session") {
     res.status(403).json({ error: TOKEN_MESSAGES.sessionOnly });
     return;
   }
@@ -287,7 +316,7 @@ export function authRouter(): IRouter {
         picture: user.picture,
         identities: await listIdentities(user.id),
         githubEnabled: githubConfig() !== null,
-        auth: req.auth?.kind === "token" ? { kind: "token", scopes: req.auth.scopes } : { kind: "session" },
+        auth: req.auth?.kind === "token" || req.auth?.kind === "oauth" ? { kind: "token", scopes: req.auth.scopes } : { kind: "session" },
       }),
     );
   });

@@ -156,6 +156,7 @@ export async function startCharacterTurn(conversationId: number, content: string
   if (content.length > CHARACTER_MESSAGE_MAX_CHARS) throw new CharacterError(400, CHARACTER_MESSAGES.tooLong);
   const [found] = await db.select().from(characterConversationsTable).where(eq(characterConversationsTable.id, conversationId));
   if (!found) throw new CharacterError(404, CHARACTER_MESSAGES.notFound);
+  if (found.archivedAt !== null) throw new CharacterError(409, CHARACTER_MESSAGES.archived);
   const handler = findSubject(found.subjectType);
   if (!handler || handler.character !== found.character || !(await handler.resolve(found.userId, found.subjectId))) {
     throw new CharacterError(409, CHARACTER_MESSAGES.subjectGone);

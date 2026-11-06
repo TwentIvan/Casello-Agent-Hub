@@ -73,6 +73,7 @@ export const CHARACTER_MESSAGES = {
   tooManyProposals: "troppe schede in questo turno",
   rationaleTooLong: `la motivazione supera ${RATIONALE_MAX} caratteri`,
   noModel: "Scegli un modello per la conversazione.",
+  archived: "conversazione archiviata",
 } as const;
 
 // Errore con stato HTTP: le route lo traducono direttamente

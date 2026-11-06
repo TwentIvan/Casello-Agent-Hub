@@ -91,6 +91,16 @@ describe("istanze di squadra", () => {
     expect((await getInstance(view.id)).roles[0]!.skills[0]!.version).toBe(2);
   });
 
+  it("ref.url: template dell'app con tipo task, codificando l'id; altrimenti null", async () => {
+    await db.update(appsTable).set({ pluginUrlTemplate: "https://hub.example/tasks/{refId}/edit" }).where(eq(appsTable.id, appId));
+    const task = await createInstance(userId, { name: "T", ref: ref({ type: "task", id: "12/a?b#c" }), roles: [irole()] });
+    expect(task.ref.url).toBe("https://hub.example/tasks/12%2Fa%3Fb%23c/edit");
+    const wi = await createInstance(userId, { name: "W", ref: ref({ type: "wi" }), roles: [irole()] });
+    expect(wi.ref.url).toBeNull();
+    await db.update(appsTable).set({ pluginUrlTemplate: null }).where(eq(appsTable.id, appId));
+    expect((await getInstance(task.id)).ref.url).toBeNull();
+  });
+
   it("modello archiviato → 409, modello inesistente → 404, app inesistente → 400", async () => {
     const template = await createTemplate(userId, { name: "Sviluppo", roles: [trole()] });
     await createInstance(userId, { templateId: template.id, name: "A", ref: ref() });

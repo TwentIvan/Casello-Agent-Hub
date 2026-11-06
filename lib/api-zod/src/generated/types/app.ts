@@ -26,6 +26,11 @@ export interface App {
      * @nullable
      */
   mcpUrl?: string | null;
+  /**
+     * Indirizzo della pagina del lavoro nel servizio, con {refId} al posto dell'identificativo (https, {refId} una sola volta, al massimo 500 caratteri); stringa vuota = nessuno
+     * @nullable
+     */
+  pluginUrlTemplate?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
   /** Indica se il segreto di servizio è impostato (il valore non è mai esposto) */

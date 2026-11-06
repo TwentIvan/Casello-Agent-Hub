@@ -159,6 +159,11 @@ export interface App {
      * @nullable
      */
   mcpUrl?: string | null;
+  /**
+     * Indirizzo della pagina del lavoro nel servizio, con {refId} al posto dell'identificativo (https, {refId} una sola volta, al massimo 500 caratteri); stringa vuota = nessuno
+     * @nullable
+     */
+  pluginUrlTemplate?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
   /** Indica se il segreto di servizio è impostato (il valore non è mai esposto) */
@@ -273,6 +278,11 @@ export interface AppInput {
      * @nullable
      */
   mcpUrl?: string | null;
+  /**
+     * Indirizzo della pagina del lavoro nel servizio, con {refId} al posto dell'identificativo (https, {refId} una sola volta, al massimo 500 caratteri); stringa vuota = nessuno
+     * @nullable
+     */
+  pluginUrlTemplate?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
   /** Segreto di servizio (solo scrittura, salvato cifrato) */
@@ -315,6 +325,11 @@ export interface AppUpdate {
      * @nullable
      */
   mcpUrl?: string | null;
+  /**
+     * Indirizzo della pagina del lavoro nel servizio, con {refId} al posto dell'identificativo (https, {refId} una sola volta, al massimo 500 caratteri); stringa vuota = nessuno
+     * @nullable
+     */
+  pluginUrlTemplate?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
   /**
@@ -2820,6 +2835,11 @@ export type TeamInstanceRef = {
   type: string;
   id: string;
   title: string;
+  /**
+     * Pagina del lavoro nel servizio (solo se l'app ha il template e il tipo è task)
+     * @nullable
+     */
+  url: string | null;
 };
 
 export type TeamInstanceLocalSkillsItem = {

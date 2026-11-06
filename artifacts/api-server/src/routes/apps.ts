@@ -33,6 +33,7 @@ interface ConnectionFields {
   baseUrl?: string;
   internalBaseUrl?: string | null;
   mcpUrl?: string | null;
+  pluginUrlTemplate?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
 }
@@ -55,7 +56,41 @@ function connectionError(body: ConnectionFields): string | null {
     const error = checkAuthHeaderName(config.header);
     if (error) return `${field}.header: ${error}`;
   }
+  if (body.pluginUrlTemplate != null) {
+    const error = pluginUrlTemplateError(body.pluginUrlTemplate);
+    if (error) return `pluginUrlTemplate: ${error}`;
+  }
   return null;
+}
+
+const PLUGIN_URL_MAX = 500;
+const PLUGIN_URL_MESSAGE = "indirizzo non valido: serve https e {refId} una sola volta";
+
+/**
+ * Template dell'indirizzo del lavoro nel servizio: 1..500 caratteri, `{refId}` una sola volta e,
+ * sostituito, un URL https senza credenziali (http solo verso localhost o 127.0.0.1 fuori produzione).
+ * Restituisce il motivo o null.
+ */
+export function pluginUrlTemplateError(value: string): string | null {
+  if (value.length < 1 || value.length > PLUGIN_URL_MAX) return PLUGIN_URL_MESSAGE;
+  if (value.split("{refId}").length !== 2) return PLUGIN_URL_MESSAGE;
+  let url: URL;
+  try {
+    url = new URL(value.replace("{refId}", "1"));
+  } catch {
+    return PLUGIN_URL_MESSAGE;
+  }
+  if (url.username || url.password) return PLUGIN_URL_MESSAGE;
+  if (url.protocol === "https:") return null;
+  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  if (url.protocol === "http:" && local && process.env["NODE_ENV"] !== "production") return null;
+  return PLUGIN_URL_MESSAGE;
+}
+
+/** Template vuoto → null; assente resta assente. */
+function normalizePluginUrl<T extends ConnectionFields>(body: T): T {
+  if (body.pluginUrlTemplate === undefined || body.pluginUrlTemplate === null) return body;
+  return { ...body, pluginUrlTemplate: body.pluginUrlTemplate.trim() === "" ? null : body.pluginUrlTemplate.trim() };
 }
 
 // ── Sorgenti dell'architetto ────────────────────────────────────────────────
@@ -184,7 +219,7 @@ router.get("/apps", async (_req, res) => {
 // la transazione fallisce sulla unique e si riprova da capo (withSlugRetry).
 router.post("/apps", async (req, res) => {
   const { serviceSecret, sourceToken, generalAgentAiModelId, ...parsed } = parseRequest(CreateAppBody, req.body);
-  const body = normalizeSources(parsed);
+  const body = normalizePluginUrl(normalizeSources(parsed));
   const invalid = connectionError(body) ?? sourceError(body);
   if (invalid) {
     res.status(400).json({ error: invalid });
@@ -253,7 +288,7 @@ router.get("/apps/:id", async (req, res) => {
 router.patch("/apps/:id", async (req, res) => {
   const { id } = parseRequest(UpdateAppParams, req.params);
   const { serviceSecret, sourceToken, ...parsed } = parseRequest(UpdateAppBody, req.body);
-  const body = normalizeSources(parsed);
+  const body = normalizePluginUrl(normalizeSources(parsed));
   const [current] = await db
     .select({
       sourceType: appsTable.sourceType,

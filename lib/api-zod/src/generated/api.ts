@@ -617,6 +617,7 @@ export const ListAppsResponseItem = zod.object({
   "baseUrl": zod.string(),
   "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
   "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
+  "pluginUrlTemplate": zod.string().nullish().describe('Indirizzo della pagina del lavoro nel servizio, con {refId} al posto dell\'identificativo (https, {refId} una sola volta, al massimo 500 caratteri); stringa vuota = nessuno'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -655,6 +656,7 @@ export const CreateAppBody = zod.object({
   "baseUrl": zod.string().min(1),
   "internalBaseUrl": zod.string().nullish(),
   "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
+  "pluginUrlTemplate": zod.string().nullish().describe('Indirizzo della pagina del lavoro nel servizio, con {refId} al posto dell\'identificativo (https, {refId} una sola volta, al massimo 500 caratteri); stringa vuota = nessuno'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -687,6 +689,7 @@ export const CreateAppResponse = zod.object({
   "baseUrl": zod.string(),
   "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
   "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
+  "pluginUrlTemplate": zod.string().nullish().describe('Indirizzo della pagina del lavoro nel servizio, con {refId} al posto dell\'identificativo (https, {refId} una sola volta, al massimo 500 caratteri); stringa vuota = nessuno'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -728,6 +731,7 @@ export const GetAppResponse = zod.object({
   "baseUrl": zod.string(),
   "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
   "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
+  "pluginUrlTemplate": zod.string().nullish().describe('Indirizzo della pagina del lavoro nel servizio, con {refId} al posto dell\'identificativo (https, {refId} una sola volta, al massimo 500 caratteri); stringa vuota = nessuno'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -769,6 +773,7 @@ export const UpdateAppBody = zod.object({
   "baseUrl": zod.string().min(1).optional(),
   "internalBaseUrl": zod.string().nullish(),
   "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
+  "pluginUrlTemplate": zod.string().nullish().describe('Indirizzo della pagina del lavoro nel servizio, con {refId} al posto dell\'identificativo (https, {refId} una sola volta, al massimo 500 caratteri); stringa vuota = nessuno'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -800,6 +805,7 @@ export const UpdateAppResponse = zod.object({
   "baseUrl": zod.string(),
   "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
   "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
+  "pluginUrlTemplate": zod.string().nullish().describe('Indirizzo della pagina del lavoro nel servizio, con {refId} al posto dell\'identificativo (https, {refId} una sola volta, al massimo 500 caratteri); stringa vuota = nessuno'),
   "userAuth": zod.union([zod.object({
   "header": zod.string().min(1),
   "scheme": zod.string().nullable()
@@ -2329,7 +2335,8 @@ export const ListTeamInstancesResponseItem = zod.object({
   "appName": zod.string(),
   "type": zod.string(),
   "id": zod.string(),
-  "title": zod.string()
+  "title": zod.string(),
+  "url": zod.string().nullable().describe('Pagina del lavoro nel servizio (solo se l\'app ha il template e il tipo è task)')
 }),
   "roles": zod.array(zod.object({
   "key": zod.string(),
@@ -2436,7 +2443,8 @@ export const CreateTeamInstanceResponse = zod.object({
   "appName": zod.string(),
   "type": zod.string(),
   "id": zod.string(),
-  "title": zod.string()
+  "title": zod.string(),
+  "url": zod.string().nullable().describe('Pagina del lavoro nel servizio (solo se l\'app ha il template e il tipo è task)')
 }),
   "roles": zod.array(zod.object({
   "key": zod.string(),
@@ -2503,7 +2511,8 @@ export const GetTeamInstanceResponse = zod.object({
   "appName": zod.string(),
   "type": zod.string(),
   "id": zod.string(),
-  "title": zod.string()
+  "title": zod.string(),
+  "url": zod.string().nullable().describe('Pagina del lavoro nel servizio (solo se l\'app ha il template e il tipo è task)')
 }),
   "roles": zod.array(zod.object({
   "key": zod.string(),
@@ -2618,7 +2627,8 @@ export const SaveTeamInstanceResponse = zod.object({
   "appName": zod.string(),
   "type": zod.string(),
   "id": zod.string(),
-  "title": zod.string()
+  "title": zod.string(),
+  "url": zod.string().nullable().describe('Pagina del lavoro nel servizio (solo se l\'app ha il template e il tipo è task)')
 }),
   "roles": zod.array(zod.object({
   "key": zod.string(),
@@ -2749,7 +2759,8 @@ export const CloseTeamInstanceResponse = zod.object({
   "appName": zod.string(),
   "type": zod.string(),
   "id": zod.string(),
-  "title": zod.string()
+  "title": zod.string(),
+  "url": zod.string().nullable().describe('Pagina del lavoro nel servizio (solo se l\'app ha il template e il tipo è task)')
 }),
   "roles": zod.array(zod.object({
   "key": zod.string(),
@@ -2851,7 +2862,8 @@ export const ApplyTeamInstanceUpdatesResponse = zod.object({
   "appName": zod.string(),
   "type": zod.string(),
   "id": zod.string(),
-  "title": zod.string()
+  "title": zod.string(),
+  "url": zod.string().nullable().describe('Pagina del lavoro nel servizio (solo se l\'app ha il template e il tipo è task)')
 }),
   "roles": zod.array(zod.object({
   "key": zod.string(),
@@ -3185,7 +3197,8 @@ export const ActivateTeamInstanceResponse = zod.object({
   "appName": zod.string(),
   "type": zod.string(),
   "id": zod.string(),
-  "title": zod.string()
+  "title": zod.string(),
+  "url": zod.string().nullable().describe('Pagina del lavoro nel servizio (solo se l\'app ha il template e il tipo è task)')
 }),
   "roles": zod.array(zod.object({
   "key": zod.string(),
@@ -3283,7 +3296,8 @@ export const SetTeamBudgetResponse = zod.object({
   "appName": zod.string(),
   "type": zod.string(),
   "id": zod.string(),
-  "title": zod.string()
+  "title": zod.string(),
+  "url": zod.string().nullable().describe('Pagina del lavoro nel servizio (solo se l\'app ha il template e il tipo è task)')
 }),
   "roles": zod.array(zod.object({
   "key": zod.string(),

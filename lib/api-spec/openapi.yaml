@@ -4103,6 +4103,11 @@ components:
         mcpUrl:
           type: ["string", "null"]
           description: Indirizzo del server MCP dell'app
+        pluginUrlTemplate:
+          type: ["string", "null"]
+          description: >-
+            Indirizzo della pagina del lavoro nel servizio, con {refId} al posto dell'identificativo
+            (https, {refId} una sola volta, al massimo 500 caratteri); stringa vuota = nessuno
         userAuth:
           oneOf:
             - $ref: "#/components/schemas/AuthConfig"
@@ -4261,6 +4266,11 @@ components:
         mcpUrl:
           type: ["string", "null"]
           description: Indirizzo del server MCP dell'app
+        pluginUrlTemplate:
+          type: ["string", "null"]
+          description: >-
+            Indirizzo della pagina del lavoro nel servizio, con {refId} al posto dell'identificativo
+            (https, {refId} una sola volta, al massimo 500 caratteri); stringa vuota = nessuno
         userAuth:
           oneOf:
             - $ref: "#/components/schemas/AuthConfig"
@@ -4315,6 +4325,11 @@ components:
         mcpUrl:
           type: ["string", "null"]
           description: Indirizzo del server MCP dell'app
+        pluginUrlTemplate:
+          type: ["string", "null"]
+          description: >-
+            Indirizzo della pagina del lavoro nel servizio, con {refId} al posto dell'identificativo
+            (https, {refId} una sola volta, al massimo 500 caratteri); stringa vuota = nessuno
         userAuth:
           oneOf:
             - $ref: "#/components/schemas/AuthConfig"
@@ -7227,7 +7242,7 @@ components:
               type: integer
         ref:
           type: object
-          required: [appId, appName, type, id, title]
+          required: [appId, appName, type, id, title, url]
           properties:
             appId:
               type: integer
@@ -7239,6 +7254,9 @@ components:
               type: string
             title:
               type: string
+            url:
+              type: ["string", "null"]
+              description: Pagina del lavoro nel servizio (solo se l'app ha il template e il tipo è task)
         roles:
           type: array
           items:

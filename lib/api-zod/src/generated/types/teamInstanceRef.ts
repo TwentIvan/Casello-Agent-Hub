@@ -12,4 +12,9 @@ export type TeamInstanceRef = {
   type: string;
   id: string;
   title: string;
+  /**
+     * Pagina del lavoro nel servizio (solo se l'app ha il template e il tipo è task)
+     * @nullable
+     */
+  url: string | null;
 };

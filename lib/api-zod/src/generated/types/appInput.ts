@@ -22,6 +22,11 @@ export interface AppInput {
      * @nullable
      */
   mcpUrl?: string | null;
+  /**
+     * Indirizzo della pagina del lavoro nel servizio, con {refId} al posto dell'identificativo (https, {refId} una sola volta, al massimo 500 caratteri); stringa vuota = nessuno
+     * @nullable
+     */
+  pluginUrlTemplate?: string | null;
   userAuth?: AuthConfig | null;
   serviceAuth?: AuthConfig | null;
   /** Segreto di servizio (solo scrittura, salvato cifrato) */

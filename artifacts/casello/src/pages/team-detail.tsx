@@ -289,6 +289,16 @@ function TeamEditor({
               <Link href={`/apps/${team.ref.appId}`} className="font-medium hover:underline">
                 {team.ref.appName}
               </Link>
+              {team.ref.url ? (
+                <a
+                  href={team.ref.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-2 text-accent-text hover:underline"
+                >
+                  Apri in {team.ref.appName.split(" · ")[0]}
+                </a>
+              ) : null}
             </dd>
             <dt className="text-muted-foreground">Lavoro</dt>
             <dd className="min-w-0 break-all font-mono text-xs leading-5">

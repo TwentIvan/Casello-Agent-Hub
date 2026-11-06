@@ -38,6 +38,7 @@ const appFormSchema = z.object({
   status: z.enum(["active", "inactive"]),
   internalBaseUrl: z.string().trim().refine((v) => v === "" || URL.canParse(v), "Inserisci un URL completo, es. http://mister:3000."),
   mcpUrl: z.string().trim().refine((v) => v === "" || URL.canParse(v), "Inserisci un URL completo, es. https://mister.example.com/mcp."),
+  pluginUrlTemplate: z.string().trim().refine((v) => v === "" || v.split("{refId}").length === 2, "Serve {refId} una sola volta."),
   userAuthEnabled: z.boolean(),
   userAuthHeader: z.string().trim(),
   userAuthScheme: z.string().trim(),
@@ -159,6 +160,7 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
       status: app?.status ?? "active",
       internalBaseUrl: app?.internalBaseUrl ?? "",
       mcpUrl: app?.mcpUrl ?? "",
+      pluginUrlTemplate: app?.pluginUrlTemplate ?? "",
       userAuthEnabled: app ? Boolean(app.userAuth) : true,
       userAuthHeader: app?.userAuth?.header ?? "Authorization",
       userAuthScheme: app ? (app.userAuth?.scheme ?? "") : "Bearer",
@@ -190,6 +192,7 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
       status: rest.status,
       internalBaseUrl: rest.internalBaseUrl || null,
       mcpUrl: rest.mcpUrl || null,
+      pluginUrlTemplate: rest.pluginUrlTemplate || null,
       userAuth: userAuthEnabled ? { header: userAuthHeader, scheme: userAuthScheme || null } : null,
       serviceAuth: serviceAuthEnabled ? { header: serviceAuthHeader, scheme: serviceAuthScheme || null } : null,
     };
@@ -326,6 +329,22 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
                     </FormControl>
                     <FormDescription>
                       Se presente, «Aggiorna strumenti» nel catalogo legge da qui gli strumenti dell'app.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="pluginUrlTemplate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Link alle squadre nel servizio</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Facoltativo" inputMode="url" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      {"Indirizzo della pagina del lavoro nel servizio, con {refId} al posto dell'identificativo. Esempio: https://hub.example/tasks/{refId}/edit"}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

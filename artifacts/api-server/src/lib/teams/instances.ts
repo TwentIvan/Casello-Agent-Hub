@@ -58,7 +58,7 @@ export type InstanceView = {
   name: string;
   status: "draft" | "active" | "closed";
   template: { id: number; name: string; version: number } | null;
-  ref: { appId: number; appName: string; type: string; id: string; title: string };
+  ref: { appId: number; appName: string; type: string; id: string; title: string; url: string | null };
   roles: RoleView[];
   localSkills: LocalSkillView[];
   createdAt: Date;
@@ -89,9 +89,15 @@ export type SaveInstanceInput = {
 
 export type InstanceFilter = { status?: "draft" | "active" | "closed"; appId?: number; refType?: string; refId?: string };
 
+/** Pagina del lavoro nel servizio: solo per i lavori di tipo task di un'app con il template. */
+function refUrl(template: string | null | undefined, type: string, id: string): string | null {
+  if (!template || type !== "task") return null;
+  return template.replace("{refId}", () => encodeURIComponent(id));
+}
+
 async function toView(row: TeamInstanceRow): Promise<InstanceView> {
   const roles = InstanceRoleSchema.array().parse(row.roles);
-  const [app] = await db.select({ name: appsTable.name }).from(appsTable).where(eq(appsTable.id, row.refAppId)).limit(1);
+  const [app] = await db.select({ name: appsTable.name, pluginUrlTemplate: appsTable.pluginUrlTemplate }).from(appsTable).where(eq(appsTable.id, row.refAppId)).limit(1);
   const [template] =
     row.templateId === null
       ? []
@@ -107,7 +113,7 @@ async function toView(row: TeamInstanceRow): Promise<InstanceView> {
     name: row.name,
     status: row.status,
     template: row.templateId !== null && template && row.templateVersion !== null ? { id: row.templateId, name: template.name, version: row.templateVersion } : null,
-    ref: { appId: row.refAppId, appName: app?.name ?? "", type: row.refType, id: row.refId, title: row.refTitle },
+    ref: { appId: row.refAppId, appName: app?.name ?? "", type: row.refType, id: row.refId, title: row.refTitle, url: refUrl(app?.pluginUrlTemplate, row.refType, row.refId) },
     roles: await describeRoles(roles, info),
     localSkills: local.map((s) => ({ code: s.code, name: s.name, kind: s.kind, content: s.content, toolHints: s.toolHints })),
     createdAt: row.createdAt,

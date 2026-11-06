@@ -1,3 +1,4 @@
+import { CharacterButton } from "@/components/characters/character-button";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -51,6 +52,8 @@ export default function PendingActionsPage() {
             approvi.
           </p>
         </div>
+        <div className="flex flex-wrap gap-2">
+        <CharacterButton target={{ kind: "alfred", page: { page: "pending_actions" } }} />
         <Select value={status} onValueChange={(v) => setStatus(v as ListPendingActionsStatus)}>
           <SelectTrigger className="w-44" aria-label="Filtra per stato">
             <SelectValue />
@@ -63,6 +66,7 @@ export default function PendingActionsPage() {
             ))}
           </SelectContent>
         </Select>
+        </div>
       </div>
       {status === "pending" && !list.isError && !list.isLoading && actions.length > 0 ? (
         <div className="space-y-3">

@@ -1,3 +1,4 @@
+import { CharacterButton } from "@/components/characters/character-button";
 import { useMemo } from "react";
 import { Link } from "wouter";
 import type { LucideIcon } from "lucide-react";
@@ -129,9 +130,12 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-screen-2xl space-y-6">
-      <div>
-        <h2 className="text-h2">Dashboard</h2>
-        <p className="text-sm text-muted-foreground">Panoramica delle app, degli agenti e delle esecuzioni.</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-h2">Dashboard</h2>
+          <p className="text-sm text-muted-foreground">Panoramica delle app, degli agenti e delle esecuzioni.</p>
+        </div>
+        <CharacterButton target={{ kind: "alfred", page: { page: "dashboard" } }} />
       </div>
 
       <BudgetAlerts />

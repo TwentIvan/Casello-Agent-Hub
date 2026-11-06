@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { CharacterButton } from "@/components/characters/character-button";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, ArrowLeft } from "lucide-react";
@@ -416,6 +417,9 @@ export default function AnalysisDetailPage() {
           <h2 className="text-h2">Analisi #{a.id}</h2>
           <Led state={ANALYSIS_STATUS_LED[a.status]} label={ANALYSIS_STATUS_LABELS[a.status]} />
           {active && <Spinner className="size-4" />}
+          <div className="ml-auto">
+            <CharacterButton target={{ kind: "plan", appId: a.appId }} />
+          </div>
         </div>
         <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <div>

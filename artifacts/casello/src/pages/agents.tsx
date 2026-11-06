@@ -1,3 +1,4 @@
+import { CharacterButton } from "@/components/characters/character-button";
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { Plus } from "lucide-react";
@@ -60,10 +61,13 @@ export default function AgentsPage() {
           <h2 className="text-h2">Agenti</h2>
           <p className="text-sm text-muted-foreground">Gli agenti configurati sulle app, con istruzioni e strumenti.</p>
         </div>
-        <Button onClick={openCreate} disabled={!hasApps} title={hasApps ? undefined : "Registra prima un'app"}>
-          <Plus />
-          Nuovo agente
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <CharacterButton target={{ kind: "character", subjectType: "area_agents", subjectId: null, title: "Area Agenti" }} />
+          <Button onClick={openCreate} disabled={!hasApps} title={hasApps ? undefined : "Registra prima un'app"}>
+            <Plus />
+            Nuovo agente
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">

@@ -1,3 +1,4 @@
+import { CharacterButton } from "@/components/characters/character-button";
 import { useMemo, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import {
@@ -74,9 +75,12 @@ export default function RunsPage() {
 
   return (
     <div className="mx-auto max-w-screen-2xl space-y-6">
-      <div>
-        <h2 className="text-h2">Run</h2>
-        <p className="text-sm text-muted-foreground">Le esecuzioni degli agenti, dalla più recente.</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-h2">Run</h2>
+          <p className="text-sm text-muted-foreground">Le esecuzioni degli agenti, dalla più recente.</p>
+        </div>
+        <CharacterButton target={{ kind: "alfred", page: { page: "runs" } }} />
       </div>
 
       <div className="flex flex-wrap gap-3">

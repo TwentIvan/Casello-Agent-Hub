@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type MutableRefObject } from "react";
 import { Link, useLocation, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
@@ -13,6 +13,7 @@ import {
   useGetTeamTemplate,
   useSaveTeamTemplate,
 } from "@workspace/api-client-react";
+import { CharacterButton } from "@/components/characters/character-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,7 +33,7 @@ function toInput(name: string, description: string, roles: RoleDraft[]): TeamTem
 }
 
 /** Editor del modello: nuovo (senza `template`) o versione successiva di uno esistente. */
-function TemplateEditor({ template }: { template?: TeamTemplate }) {
+function TemplateEditor({ template, dirtyRef }: { template?: TeamTemplate; dirtyRef?: MutableRefObject<boolean> }) {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -48,6 +49,7 @@ function TemplateEditor({ template }: { template?: TeamTemplate }) {
     [template],
   );
   const dirty = savedInput !== JSON.stringify(toInput(name, description, roles));
+  if (dirtyRef) dirtyRef.current = dirty;
 
   const onSaved = (saved: TeamTemplate, created: boolean) => {
     queryClient.setQueryData(getGetTeamTemplateQueryKey(saved.id), saved);
@@ -101,6 +103,17 @@ function TemplateEditor({ template }: { template?: TeamTemplate }) {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          {template && (
+            <CharacterButton
+              target={{
+                kind: "character",
+                subjectType: "team_template",
+                subjectId: String(template.id),
+                title: `Modello di squadra · ${template.name}`,
+              }}
+              hasUnsavedChanges={() => dirtyRef?.current ?? false}
+            />
+          )}
           {!readOnly && (
             <Button onClick={submit} disabled={pending || (template !== undefined && !dirty) || name.trim() === ""}>
               {pending ? "Salvataggio…" : template ? "Salva (nuova versione)" : "Crea modello"}
@@ -187,6 +200,7 @@ export default function TeamTemplateDetailPage() {
     query: { queryKey: getGetTeamTemplateQueryKey(id), enabled: !isNew && Number.isInteger(id) },
   });
   const t = template.data;
+  const dirtyRef = useRef(false);
   const notFound = (!isNew && !Number.isInteger(id)) || (template.error instanceof ApiError && template.error.status === 404);
 
   return (
@@ -207,7 +221,7 @@ export default function TeamTemplateDetailPage() {
         <Skeleton className="h-48 w-full" />
       ) : (
         // Rimontato a ogni versione o archiviazione: l'editor riparte dallo stato salvato
-        <TemplateEditor key={`${t.id}-${t.version}-${t.archived}`} template={t} />
+        <TemplateEditor key={`${t.id}-${t.version}-${t.archived}`} template={t} dirtyRef={dirtyRef} />
       )}
     </div>
   );

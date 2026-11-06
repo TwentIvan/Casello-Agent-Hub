@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState, type MutableRefObject } from "react";
 import { Link, useLocation, useParams } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
+import { CharacterButton } from "@/components/characters/character-button";
 import { AlertTriangle, ArrowLeft, Trash2 } from "lucide-react";
 import {
   type Agent,
@@ -62,7 +63,7 @@ function toValues(agent: Agent): AgentValues {
   };
 }
 
-function AgentConfigForm({ agent }: { agent: Agent }) {
+function AgentConfigForm({ agent, dirtyRef }: { agent: Agent; dirtyRef: MutableRefObject<boolean> }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const form = useForm<AgentValues>({ resolver: zodResolver(agentSchema), defaultValues: toValues(agent) });
@@ -80,6 +81,8 @@ function AgentConfigForm({ agent }: { agent: Agent }) {
         toast({ variant: "destructive", title: "Salvataggio non riuscito", description: apiErrorMessage(error) }),
     },
   });
+
+  dirtyRef.current = form.formState.isDirty;
 
   const isGeneral = agent.role === "general";
   const onSubmit = ({ area, aiModelId, ...values }: AgentValues) =>
@@ -261,6 +264,7 @@ export default function AgentDetailPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const dirtyRef = useRef(false);
 
   const agent = useGetAgent(agentId, {
     query: { queryKey: getGetAgentQueryKey(agentId), enabled: Number.isInteger(agentId) },
@@ -335,12 +339,18 @@ export default function AgentDetailPage() {
               {app.data && <span className="ml-2 font-mono text-xs">{app.data.baseUrl}</span>}
             </p>
           </div>
-          {agent.data.role !== "general" && (
-            <Button variant="outline" className="text-destructive" onClick={() => setConfirmDelete(true)}>
-              <Trash2 />
-              Elimina agente
-            </Button>
-          )}
+          <div className="flex flex-wrap gap-2">
+            <CharacterButton
+              target={{ kind: "character", subjectType: "agent", subjectId: String(agent.data.id), title: `Agente · ${agent.data.name}` }}
+              hasUnsavedChanges={() => dirtyRef.current}
+            />
+            {agent.data.role !== "general" && (
+              <Button variant="outline" className="text-destructive" onClick={() => setConfirmDelete(true)}>
+                <Trash2 />
+                Elimina agente
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -351,7 +361,7 @@ export default function AgentDetailPage() {
         </Alert>
       )}
       <RunPanel key={`run-${agent.data.id}`} agent={agent.data} />
-      <AgentConfigForm key={`config-${agent.data.id}`} agent={agent.data} />
+      <AgentConfigForm key={`config-${agent.data.id}-${agent.data.updatedAt}`} agent={agent.data} dirtyRef={dirtyRef} />
       <AgentBudgetCard key={`budget-${agent.data.id}`} agent={agent.data} />
       <AgentToolsSection key={`tools-${agent.data.id}`} agent={agent.data} />
       <AgentSkillsSection key={`skills-${agent.data.id}`} agent={agent.data} />

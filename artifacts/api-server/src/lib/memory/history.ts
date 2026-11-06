@@ -77,8 +77,13 @@ export async function addHistory(entry: HistoryEntryInput): Promise<void> {
           title: values.title,
           summary: values.summary,
           aiModelId: values.aiModelId,
-          tokensUsed: values.tokensUsed,
-          costUsd: values.costUsd,
+          // Ogni riassunto costa: token e costo si accumulano (la spesa somma questa tabella).
+          // Costo nullo = prezzo mancante: resta nullo se c'erano token già spesi senza prezzo
+          tokensUsed: sql`${characterHistoryTable.tokensUsed} + ${values.tokensUsed}`,
+          costUsd:
+            values.costUsd === null
+              ? sql`null`
+              : sql`case when ${characterHistoryTable.costUsd} is not null then ${characterHistoryTable.costUsd} + ${values.costUsd}::numeric when ${characterHistoryTable.tokensUsed} = 0 then ${values.costUsd}::numeric else null end`,
           createdAt: new Date(),
         },
       });

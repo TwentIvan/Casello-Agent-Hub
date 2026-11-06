@@ -161,10 +161,17 @@ export async function sweepSummaries(now: Date = new Date()): Promise<number> {
 
 /** Controllo ogni 10 minuti; un errore si registra col solo nome. */
 export function startMemorySweeper(): () => void {
+  let inFlight = false;
   const timer = setInterval(() => {
-    void sweepSummaries().catch((err: unknown) =>
-      logger.error({ errName: err instanceof Error ? err.name : "Error" }, "Riassunti della memoria non riusciti"),
-    );
+    if (inFlight) return;
+    inFlight = true;
+    void sweepSummaries()
+      .catch((err: unknown) =>
+        logger.error({ errName: err instanceof Error ? err.name : "Error" }, "Riassunti della memoria non riusciti"),
+      )
+      .finally(() => {
+        inFlight = false;
+      });
   }, SWEEP_INTERVAL_MS);
   timer.unref();
   return () => clearInterval(timer);

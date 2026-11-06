@@ -19,6 +19,7 @@ import { encryptSecret } from "../secrets";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
 import { summarizeConversation, sweepSummaries } from "./summaries";
 import { MEMORY_MESSAGES } from "./types";
+import { userSpend } from "../budget";
 import { MEMORY_TOOLS, runMemoryTool } from "./tools";
 
 const KEY = "sk-CHIAVE-RIASSUNTI";
@@ -196,6 +197,28 @@ describe("summarizeConversation", () => {
     await summarizeConversation(input());
     const body = fake.requests.find((r) => r.path.endsWith("/chat/completions"))!.body as { max_tokens?: number };
     expect(body.max_tokens).toBe(1000);
+  });
+});
+
+describe("costi dei riassunti", () => {
+  const chatCost = (cost: number | null) =>
+    vi.fn().mockResolvedValue({ content: "r", toolCalls: [], promptTokens: 10, completionTokens: 5, cachedPromptTokens: 0, costUsd: cost });
+  const input = { userId: 0, character: "lucius" as const, kind: "plan_conversation" as const, refId: 9, title: "T", transcript: "Utente: x" };
+
+  it("due riassunti della stessa conversazione: una riga, costo e token sommati, spesa 0,03", async () => {
+    await summarizeConversation({ ...input, userId }, { chat: chatCost(0.01) });
+    await summarizeConversation({ ...input, userId }, { chat: chatCost(0.02) });
+    const rows = await history();
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]!.costUsd)).toBeCloseTo(0.03, 6);
+    expect(rows[0]!.tokensUsed).toBe(30);
+    expect((await userSpend(userId)).spentUsd).toBeCloseTo(0.03, 6);
+  });
+
+  it("prezzo mancante in uno dei due: costo nullo", async () => {
+    await summarizeConversation({ ...input, userId }, { chat: chatCost(0.01) });
+    await summarizeConversation({ ...input, userId }, { chat: chatCost(null) });
+    expect((await history())[0]!.costUsd).toBeNull();
   });
 });
 

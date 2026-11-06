@@ -3,6 +3,7 @@ import { and, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import { db, oauthClientsTable, oauthCodesTable, oauthGrantsTable, oauthTokensTable, usersTable } from "@workspace/db";
 import type { TokenScope } from "../api-tokens";
 import { isAllowed } from "../users";
+import { originOfEmbedClient, embedAllowedOrigins } from "../embed/origins";
 import { sha256Hex } from "./authorize";
 import { sameResource } from "./config";
 import { OAuthError } from "./errors";
@@ -19,7 +20,7 @@ export type TokenResponse = {
   token_type: "Bearer";
   expires_in: 3600;
   refresh_token: string;
-  scope: "mcp";
+  scope: "mcp" | "embed";
 };
 
 const invalidGrant = () => new OAuthError("invalid_grant", "codice o token non valido, scaduto o già usato");
@@ -40,16 +41,29 @@ function checkResource(form: Record<string, unknown>): void {
   }
 }
 
-async function findClientRowId(clientId: string): Promise<number> {
-  const [row] = await db.select({ id: oauthClientsTable.id }).from(oauthClientsTable).where(eq(oauthClientsTable.clientId, clientId));
+/** Un client `embed` vale solo finché la sua origine è in `EMBED_ALLOWED_ORIGINS`: poi `invalid_client` e collegamenti revocati. */
+async function findClient(clientId: string): Promise<{ id: number; scope: "mcp" | "embed" }> {
+  const [row] = await db
+    .select({ id: oauthClientsTable.id, kind: oauthClientsTable.kind })
+    .from(oauthClientsTable)
+    .where(eq(oauthClientsTable.clientId, clientId));
   if (!row) throw new OAuthError("invalid_client", "applicazione non riconosciuta", 401);
-  return row.id;
+  if (row.kind !== "embed") return { id: row.id, scope: "mcp" };
+  const origin = originOfEmbedClient(clientId);
+  if (origin === null || !embedAllowedOrigins().includes(origin)) {
+    await db
+      .update(oauthGrantsTable)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(oauthGrantsTable.clientRowId, row.id), isNull(oauthGrantsTable.revokedAt)));
+    throw new OAuthError("invalid_client", "applicazione non più ammessa");
+  }
+  return { id: row.id, scope: "embed" };
 }
 
 type TokenTx = Pick<typeof db, "insert">;
 
 /** Inserisce la coppia di token (solo gli hash nel DB) e restituisce la risposta con i valori in chiaro. */
-async function issuePair(tx: TokenTx, grantId: number): Promise<TokenResponse> {
+async function issuePair(tx: TokenTx, grantId: number, scope: "mcp" | "embed"): Promise<TokenResponse> {
   const access = `cao_${randomBytes(32).toString("base64url")}`;
   const refresh = `car_${randomBytes(32).toString("base64url")}`;
   const now = Date.now();
@@ -57,7 +71,7 @@ async function issuePair(tx: TokenTx, grantId: number): Promise<TokenResponse> {
     { tokenHash: sha256Hex(access), grantId, kind: "access", expiresAt: new Date(now + ACCESS_TTL_MS) },
     { tokenHash: sha256Hex(refresh), grantId, kind: "refresh", expiresAt: new Date(now + REFRESH_TTL_MS) },
   ]);
-  return { access_token: access, token_type: "Bearer", expires_in: 3600, refresh_token: refresh, scope: "mcp" };
+  return { access_token: access, token_type: "Bearer", expires_in: 3600, refresh_token: refresh, scope };
 }
 
 /** Scambio del codice d'autorizzazione (PKCE S256, client pubblico). */
@@ -68,7 +82,7 @@ export async function exchangeCode(form: Record<string, unknown>): Promise<Token
   const verifier = required(form, "code_verifier");
   if (!VERIFIER_RE.test(verifier)) throw new OAuthError("invalid_request", "code_verifier non valido");
   checkResource(form);
-  const clientRowId = await findClientRowId(clientId);
+  const { id: clientRowId, scope } = await findClient(clientId);
 
   const [row] = await db
     .select({
@@ -104,7 +118,7 @@ export async function exchangeCode(form: Record<string, unknown>): Promise<Token
       .where(and(eq(oauthCodesTable.id, row.id), isNull(oauthCodesTable.usedAt), gt(oauthCodesTable.expiresAt, new Date())))
       .returning({ id: oauthCodesTable.id });
     if (won.length === 0) return null;
-    return issuePair(tx, row.grantId);
+    return issuePair(tx, row.grantId, scope);
   });
   if (!out) throw invalidGrant();
   return out;
@@ -143,7 +157,7 @@ export async function resolveLostRefresh(tokenId: number, grantId: number): Prom
 export async function refreshTokens(form: Record<string, unknown>): Promise<TokenResponse> {
   const refresh = required(form, "refresh_token");
   const clientId = required(form, "client_id");
-  const clientRowId = await findClientRowId(clientId);
+  const { id: clientRowId, scope } = await findClient(clientId);
 
   const [row] = await db
     .select({
@@ -172,7 +186,7 @@ export async function refreshTokens(form: Record<string, unknown>): Promise<Toke
       .where(and(eq(oauthTokensTable.id, row.id), isNull(oauthTokensTable.usedAt), gt(oauthTokensTable.expiresAt, new Date())))
       .returning({ id: oauthTokensTable.id });
     if (won.length === 0) return null;
-    return issuePair(tx, row.grantId);
+    return issuePair(tx, row.grantId, scope);
   });
   // Perso la corsa: si rilegge la riga per capire perché
   if (!out) return resolveLostRefresh(row.id, row.grantId);

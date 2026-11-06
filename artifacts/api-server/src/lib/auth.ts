@@ -37,6 +37,8 @@ declare module "express-session" {
         clientId: string;
         clientRowId: number;
         clientName: string;
+        clientKind: "dcr" | "metadata" | "embed";
+        displayHost: string;
         redirectUri: string;
         codeChallenge: string;
         state: string | null;

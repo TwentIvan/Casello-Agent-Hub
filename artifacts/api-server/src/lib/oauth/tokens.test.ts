@@ -40,7 +40,7 @@ beforeEach(async () => {
 });
 
 function params(over: Partial<AuthorizeParams> = {}): AuthorizeParams {
-  return { clientId, clientRowId, clientName: "Claude", redirectUri: CB, codeChallenge: CHALLENGE, state: "s", ...over };
+  return { clientId, clientRowId, clientName: "Claude", clientKind: "dcr", displayHost: "claude.ai", redirectUri: CB, codeChallenge: CHALLENGE, state: "s", ...over };
 }
 async function getCode(): Promise<string> {
   const url = new URL(await approve(userId, params()));

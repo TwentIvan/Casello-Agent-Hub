@@ -60,6 +60,8 @@ describe("POST /oauth/token", () => {
       await approve(u!.id, {
         clientId,
         clientRowId: rows[0]!.id,
+        clientKind: "dcr",
+        displayHost: "claude.ai",
         clientName: "Claude",
         redirectUri: CB,
         codeChallenge: createHash("sha256").update(VERIFIER).digest("base64url"),

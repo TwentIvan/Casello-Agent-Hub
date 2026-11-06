@@ -62,6 +62,8 @@ export async function setAgentTools(agentId: number, toolIds: number[], executor
     if (owned.length !== ids.length) throw new AgentError(400, AGENT_MESSAGES.toolsNotOwned);
   }
   return executor.transaction(async (tx) => {
+    // Prima il lock dell'agente, poi agent_tools: stesso ordine dell'accettazione delle schede (niente stalli)
+    await tx.select({ id: agentsTable.id }).from(agentsTable).where(eq(agentsTable.id, agentId)).limit(1).for("update");
     await tx.delete(agentToolsTable).where(eq(agentToolsTable.agentId, agentId));
     if (ids.length) await tx.insert(agentToolsTable).values(ids.map((toolId) => ({ agentId, toolId })));
     const [row] = await tx.update(agentsTable).set({ updatedAt: new Date() }).where(eq(agentsTable.id, agentId)).returning();

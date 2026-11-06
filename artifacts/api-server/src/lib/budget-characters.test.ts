@@ -69,6 +69,8 @@ const hist = (userId: number, modelId: number, character: "alfred" | "lucius", c
   });
 
 afterAll(async () => {
+  // Niente righe lasciate agli altri file (es. db-smoke, o apps bloccata da team_instances.ref_app_id RESTRICT)
+  await pool.query("TRUNCATE apps, ai_accounts, users RESTART IDENTITY CASCADE");
   await pool.end();
 });
 

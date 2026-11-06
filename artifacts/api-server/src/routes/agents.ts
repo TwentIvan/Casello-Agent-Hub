@@ -72,7 +72,14 @@ router.post("/agents", async (req, res) => {
     res.status(400).json({ error: err.message });
     return;
   }
-  const agent = await createAreaAgent(body, choice);
+  let agent;
+  try {
+    agent = await createAreaAgent(body, choice);
+  } catch (err) {
+    if (!(err instanceof AgentError)) throw err;
+    res.status(err.status).json({ error: err.message });
+    return;
+  }
   res.status(201).json(CreateAgentResponse.parse(await withToolIdsOne(agent)));
 });
 

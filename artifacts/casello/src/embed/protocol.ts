@@ -84,6 +84,12 @@ export function parseToFrame(data: unknown): ToFrame | null {
   }
 }
 
+/** Messaggio `context` per `Botcave.setContext` del caricatore, validato come lo valida l'iframe; null se non valido. */
+export function contextMessage(c: unknown): Extract<ToFrame, { type: "context" }> | null {
+  const payload = parseContext(c);
+  return payload ? { botcave: 1, type: "context", payload } : null;
+}
+
 export function parseFromFrame(data: unknown): FromFrame | null {
   if (!isRecord(data) || data.botcave !== 1) return null;
   switch (data.type) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseFromFrame, parseToFrame } from "./protocol";
+import { contextMessage, parseFromFrame, parseToFrame } from "./protocol";
 
 describe("parseToFrame", () => {
   it("scarta i campi in più del contesto", () => {
@@ -88,5 +88,22 @@ describe("parseFromFrame", () => {
     ).toEqual({ botcave: 1, type: "error", payload: { code: "unreachable" } });
     expect(parseFromFrame({ botcave: 1, type: "error", payload: { code: "boh" } })).toBeNull();
     expect(parseFromFrame({ botcave: 1, type: "nope" })).toBeNull();
+  });
+});
+
+describe("contextMessage (Botcave.setContext del caricatore)", () => {
+  it("contesto valido: messaggio context con i soli campi ammessi", () => {
+    expect(contextMessage({ page: "workitem", id: "1174", title: "Fix ordini", extra: 1 })).toEqual({
+      botcave: 1,
+      type: "context",
+      payload: { page: "workitem", id: "1174", title: "Fix ordini" },
+    });
+  });
+
+  it("contesto non valido: null (il caricatore avvisa in console e non lo manda)", () => {
+    expect(contextMessage(null)).toBeNull();
+    expect(contextMessage({})).toBeNull();
+    expect(contextMessage({ page: "con spazi" })).toBeNull();
+    expect(contextMessage("workitem")).toBeNull();
   });
 });

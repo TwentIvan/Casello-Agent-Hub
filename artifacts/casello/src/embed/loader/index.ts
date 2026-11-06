@@ -1,5 +1,5 @@
 // Caricatore del pannello Botcave incorporabile: un solo file, nessuna dipendenza.
-import { parseFromFrame, type EmbedTab, type HostContextMsg, type ToFrame } from "../protocol";
+import { contextMessage, parseFromFrame, type EmbedTab, type HostContextMsg, type ToFrame } from "../protocol";
 import { createOutbox } from "./queue";
 import { readHostTheme } from "./read-theme";
 import { themeToCss } from "../theme";
@@ -35,7 +35,16 @@ function start(): void {
   let impl: { setContext(c: HostContextMsg): void; open(t?: EmbedTab): void; close(): void } | null = null;
   // L'oggetto globale esiste subito; le chiamate prima del montaggio si accodano.
   (window as unknown as { Botcave: unknown }).Botcave = {
-    setContext: (c: HostContextMsg) => (impl ? impl.setContext(c) : queue.push(() => impl?.setContext(c))),
+    // Contesto validato subito, come lo valida l'iframe: uno non valido non si manda e si avvisa in console
+    setContext: (c: HostContextMsg) => {
+      const msg = contextMessage(c);
+      if (!msg) {
+        console.warn("Botcave: setContext ignorato, contesto non valido (page obbligatoria; page e id [A-Za-z0-9._:-] fino a 40 caratteri, title fino a 200 su una riga)");
+        return;
+      }
+      if (impl) impl.setContext(msg.payload);
+      else queue.push(() => impl?.setContext(msg.payload));
+    },
     open: (t?: EmbedTab) => (impl ? impl.open(t) : queue.push(() => impl?.open(t))),
     close: () => (impl ? impl.close() : queue.push(() => impl?.close())),
   };

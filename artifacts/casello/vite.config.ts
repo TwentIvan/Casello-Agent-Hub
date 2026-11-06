@@ -63,7 +63,7 @@ const base = basePath.endsWith("/") ? basePath : `${basePath}/`;
 
 /** In sviluppo /embed e /embed/callback servono embed.html (in produzione lo fa nginx). */
 function embedPages(): Plugin {
-  const pages = new Set([`${base}embed`, `${base}embed/`, `${base}embed/callback`, `${base}embed/callback/`]);
+  const pages = new Set([`${base}embed`, `${base}embed/callback`]);
   return {
     name: "botcave-embed-pages",
     configureServer(server) {

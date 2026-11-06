@@ -70,15 +70,16 @@ server {
     # Pannello incorporabile: si può inserire in un iframe solo dalle origini di EMBED_ALLOWED_ORIGINS
     # (EMBED_ALLOWED_ORIGINS_CSP è calcolata all'avvio da docker/15-embed-origins.envsh; vuota → 'none').
     # Ogni location con add_header propri perde quelli ereditati: la CSP si ripete dove serve.
+    # Tenere allineate le due CSP (/embed e /embed/callback). script-src blob: serve all'AudioWorklet di Alfred.
     location = /embed {
         try_files /embed.html =404;
-        add_header Content-Security-Policy "frame-ancestors ${EMBED_ALLOWED_ORIGINS_CSP}; default-src 'self'; connect-src 'self' wss://generativelanguage.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:" always;
+        add_header Content-Security-Policy "frame-ancestors ${EMBED_ALLOWED_ORIGINS_CSP}; default-src 'self'; script-src 'self' blob:; connect-src 'self' wss://generativelanguage.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:" always;
         add_header Cache-Control "no-cache" always;
     }
 
     location = /embed/callback {
         try_files /embed.html =404;
-        add_header Content-Security-Policy "frame-ancestors ${EMBED_ALLOWED_ORIGINS_CSP}; default-src 'self'; connect-src 'self' wss://generativelanguage.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:" always;
+        add_header Content-Security-Policy "frame-ancestors ${EMBED_ALLOWED_ORIGINS_CSP}; default-src 'self'; script-src 'self' blob:; connect-src 'self' wss://generativelanguage.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:" always;
         add_header Cache-Control "no-cache" always;
     }
 

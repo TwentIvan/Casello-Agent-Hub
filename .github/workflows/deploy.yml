@@ -70,26 +70,43 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # Prova dell'immagine web (nginx): /embed incorporabile solo dalle origini ammesse, console mai in iframe.
-      # Parte prima del push: se fallisce, nessuna immagine viene pubblicata.
+      # Parte prima del push: se fallisce, nessuna immagine viene pubblicata. La build qui riempie la cache gha.
+      - name: Build dell'immagine web per la prova
+        if: matrix.app == 'web'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          load: true
+          push: false
+          tags: web-smoke
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,scope=${{ matrix.app }},mode=max
+
       - name: Prova dell'immagine web (frame-ancestors)
         if: matrix.app == 'web'
         run: |
           set -euo pipefail
-          docker build -f docker/web.Dockerfile -t web-smoke .
-          check() { # <origini>
+          run_web() { # <origini ammesse>
             docker rm -f web-smoke-run >/dev/null 2>&1 || true
             docker run -d --name web-smoke-run -e EMBED_ALLOWED_ORIGINS="$1" -p 8088:80 web-smoke >/dev/null
-            for _ in $(seq 1 30); do curl -fs localhost:8088/health >/dev/null && break; sleep 1; done
+            for _ in $(seq 1 30); do
+              curl -fs localhost:8088/health >/dev/null && return 0
+              sleep 1
+            done
+            echo "::error::il container web non risponde"; docker logs web-smoke-run; exit 1
           }
-          expect() { # <path> <header grep>
+          expect() { # <path> <testo atteso nelle intestazioni>
             local out; out=$(curl -sI "localhost:8088$1")
-            if ! grep -qiF -- "$2" <<<"$out"; then echo "::error::$1: manca '$2'"; echo "$out"; exit 1; fi
+            if ! grep -qiF -- "$2" <<<"$out"; then
+              echo "::error::$1: manca '$2'"; echo "$out"; docker logs web-smoke-run; exit 1
+            fi
           }
-          check https://hubup.fantamister.cloud
+          run_web https://hubup.fantamister.cloud
           expect /embed "frame-ancestors https://hubup.fantamister.cloud"
           expect / "frame-ancestors 'none'"
           expect /embed/v1/botcave.js "200 OK"
-          check ""
+          run_web ""
           expect /embed "frame-ancestors 'none'"
           docker rm -f web-smoke-run >/dev/null
 

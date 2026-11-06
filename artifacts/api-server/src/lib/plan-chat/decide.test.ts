@@ -16,6 +16,7 @@ import { ProposalConflictError, ProposalNotFoundError, decideProposal, itemHash 
 // Decisione sulle proposte della chat, sul Postgres di prova (PGlite del global setup)
 
 afterAll(async () => {
+  await pool.query("TRUNCATE users, apps RESTART IDENTITY CASCADE");
   await pool.end();
 });
 

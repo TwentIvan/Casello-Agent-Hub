@@ -16,6 +16,8 @@ import {
   usersTable,
   type InsertAppTool,
 } from "@workspace/db";
+import { encryptSecret } from "../../secrets";
+import { allowTestLoopback, startFakeProvider } from "../../../../test/fake-provider";
 import { enqueueAction } from "../../actions/queue";
 import { createTurnContext } from "../proposals";
 import { startCharacterTurn } from "../run-turn";
@@ -117,6 +119,24 @@ describe("filo di Alfred", () => {
     expect(noPage).not.toContain("Pagina:");
   });
 
+  it("context_no_model_calls: 6 squadre attive, tutte elencate e nessuna chiamata al provider", async () => {
+    const fake = await startFakeProvider({ apiKey: "sk-X" });
+    const restore = allowTestLoopback();
+    try {
+      const [acc] = await db.insert(aiAccountsTable).values({ userId, name: "F", provider: "custom", baseUrl: fake.baseUrl, allowPrivateNetwork: true, apiKeyEnc: encryptSecret("sk-X"), status: "ok" }).returning();
+      const [m] = await db.insert(aiModelsTable).values({ accountId: acc!.id, modelId: "fake-model", displayName: "F" }).returning();
+      await db.update(usersTable).set({ centralinoAiModelId: m!.id }).where(eq(usersTable.id, userId));
+      for (let i = 1; i <= 6; i++) await makeTeam(`Squadra${i}`, userId);
+      const [text] = await handler().context(userId, null, null);
+      for (let i = 1; i <= 6; i++) expect(text).toContain(`Squadra${i} · Lavoro`);
+      expect(text).toContain("Squadre attive: 6.");
+      expect(fake.requests).toHaveLength(0);
+    } finally {
+      restore();
+      await fake.close();
+    }
+  });
+
   it("leggi_run_own_only: solo le run dell'utente", async () => {
     const [agent] = await db.insert(agentsTable).values({ appId, name: "Gen", role: "general" }).returning();
     const [mine] = await db.insert(runsTable).values({ agentId: agent!.id, aiModelId: modelId, status: "failed", input: "SEGRETO-INPUT", errorMessage: "Errore durante l'esecuzione: boom", durationMs: 1200 }).returning();
@@ -183,12 +203,10 @@ describe("proponi_decisione", () => {
 
 describe("scrivi_al_capo", () => {
   it("scrivi_al_capo_rate_limit: l'11° messaggio nel minuto è rifiutato", async () => {
-    const team = await makeTeam("Alfa", userId);
     const ctx = await newCtx();
     // Il contatore è in memoria e per utente: si usa un utente nuovo con la sua squadra
     const [u] = await db.insert(usersTable).values({ email: "c@x.it" }).returning();
     const own = await makeTeam("Gamma", u!.id);
-    void team;
     const ctx2 = createTurnContext({ ...ctx, userId: u!.id });
     for (let i = 0; i < 10; i++) expect(await call(ctx2, "scrivi_al_capo", { id: own.id, testo: `m${i}` })).toEqual({ ok: true, result: { queued: true } });
     expect(await call(ctx2, "scrivi_al_capo", { id: own.id, testo: "undicesimo" })).toEqual({ ok: false, error: "Troppe richieste: riprova tra poco" });

@@ -8,13 +8,14 @@ import { z } from "zod";
 import type { ChatCompletionFunctionTool } from "openai/resources/chat/completions";
 import { db, aiAccountsTable, aiModelsTable, characterConversationsTable, runsTable, type CharacterConversation } from "@workspace/db";
 import type { ChatToolCall } from "../../ai/chat-types";
-import { InstanceError, getInstance } from "../../teams/instances";
+import { InstanceError, getInstance, listInstances } from "../../teams/instances";
 import { CentralinoError, messageToLead, pendingQueue, readBulletin, teamDetail, teamsStatus } from "../../teams/centralino";
 import { unreadBulletin } from "../../teams/events";
 import { recordProposal } from "../proposals";
 import { characterModelFor } from "../settings";
 import { toolFail, toolOk, type PageContext, type SubjectHandler, type TurnContext } from "../types";
 
+const MAX_CONTEXT_TEAMS = 30;
 const MAX_TASKS = 5;
 const MAX_EVENTS = 5;
 const MAX_OUTCOME = 200;
@@ -251,12 +252,14 @@ async function runTool(call: ChatToolCall, ctx: TurnContext): Promise<string> {
 // --- Contesto ------------------------------------------------------------------------------------
 
 async function buildContext(userId: number, page: PageContext | null): Promise<string[]> {
-  const status = await teamsStatus(userId);
+  // Elenco senza `teamsStatus`: il contesto si costruisce a ogni turno e non deve chiamare modelli
+  const teams = (await listInstances({ status: "active" })).filter((i) => i.activatedBy === userId);
   const queue = await pendingQueue(userId);
   const unread = (await unreadBulletin(userId)).length;
   const lines = [
-    status.teams === 0 ? "Squadre attive: nessuna." : `Squadre attive: ${status.teams}.`,
-    ...status.lines,
+    teams.length === 0 ? "Squadre attive: nessuna." : `Squadre attive: ${teams.length}.`,
+    ...teams.slice(0, MAX_CONTEXT_TEAMS).map((t) => `#${t.id} ${t.name} · ${t.ref.title}`),
+    ...(teams.length > MAX_CONTEXT_TEAMS ? [`…e altre ${teams.length - MAX_CONTEXT_TEAMS}`] : []),
     `Voci da confermare: ${queue.actions.length}.`,
     `Eventi non letti nel bollettino: ${unread}.`,
   ];

@@ -74,6 +74,7 @@ export const CHARACTER_MESSAGES = {
   rationaleTooLong: `la motivazione supera ${RATIONALE_MAX} caratteri`,
   noModel: "Scegli un modello per la conversazione.",
   archived: "conversazione archiviata",
+  threadKeep: "il filo di Alfred si ricomincia, non si elimina",
   proposalNotFound: "scheda non trovata",
   alreadyDecided: "scheda già decisa",
   invalidProposal: "scheda non valida",

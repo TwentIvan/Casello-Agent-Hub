@@ -75,6 +75,14 @@ import type {
   CatalogSkillVersion,
   CatalogStatus,
   CentralinoModel,
+  CharacterConversation,
+  CharacterConversationCreate,
+  CharacterConversationDetail,
+  CharacterConversationUpdate,
+  CharacterMessage,
+  CharacterMessageCreate,
+  CharacterProposal,
+  CharacterProposalDecision,
   CharacterSettings,
   ConflictResponse,
   CostEstimate,
@@ -95,6 +103,7 @@ import type {
   ListAgentsParams,
   ListCatalogModelsParams,
   ListCatalogProvidersParams,
+  ListCharacterConversationsParams,
   ListMemoryHistoryParams,
   ListMemoryNotesParams,
   ListPendingActionsParams,
@@ -11055,6 +11064,672 @@ export function useDownloadRolesExport<TData = Awaited<ReturnType<typeof downloa
 
 
 
+
+export const getGetAlfredThreadUrl = () => {
+
+
+
+
+  return `/api/characters/alfred/thread`
+}
+
+/**
+ * @summary Il filo aperto di Alfred scritto (lo crea se manca)
+ */
+export const getAlfredThread = async ( options?: RequestInit): Promise<CharacterConversationDetail> => {
+
+  return customFetch<CharacterConversationDetail>(getGetAlfredThreadUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAlfredThreadQueryKey = () => {
+    return [
+    `/api/characters/alfred/thread`
+    ] as const;
+    }
+
+
+export const getGetAlfredThreadQueryOptions = <TData = Awaited<ReturnType<typeof getAlfredThread>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAlfredThread>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAlfredThreadQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAlfredThread>>> = ({ signal }) => getAlfredThread({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAlfredThread>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAlfredThreadQueryResult = NonNullable<Awaited<ReturnType<typeof getAlfredThread>>>
+export type GetAlfredThreadQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Il filo aperto di Alfred scritto (lo crea se manca)
+ */
+
+export function useGetAlfredThread<TData = Awaited<ReturnType<typeof getAlfredThread>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAlfredThread>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAlfredThreadQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRestartAlfredThreadUrl = () => {
+
+
+
+
+  return `/api/characters/alfred/thread/restart`
+}
+
+/**
+ * @summary Archivia il filo di Alfred e ne apre uno nuovo
+ */
+export const restartAlfredThread = async ( options?: RequestInit): Promise<CharacterConversationDetail> => {
+
+  return customFetch<CharacterConversationDetail>(getRestartAlfredThreadUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRestartAlfredThreadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restartAlfredThread>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof restartAlfredThread>>, TError,void, TContext> => {
+
+const mutationKey = ['restartAlfredThread'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof restartAlfredThread>>, void> = () => {
+
+
+          return  restartAlfredThread(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RestartAlfredThreadMutationResult = NonNullable<Awaited<ReturnType<typeof restartAlfredThread>>>
+
+    export type RestartAlfredThreadMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Archivia il filo di Alfred e ne apre uno nuovo
+ */
+export const useRestartAlfredThread = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restartAlfredThread>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof restartAlfredThread>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRestartAlfredThreadMutationOptions(options));
+    }
+
+export const getListCharacterConversationsUrl = (params: ListCharacterConversationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/character-conversations?${stringifiedParams}` : `/api/character-conversations`
+}
+
+/**
+ * Dalla più recente (`updatedAt`), al massimo 100. Non comprende il filo di Alfred (si legge da `/characters/alfred/thread`).
+ * @summary Conversazioni dell'utente con un personaggio
+ */
+export const listCharacterConversations = async (params: ListCharacterConversationsParams, options?: RequestInit): Promise<CharacterConversation[]> => {
+
+  return customFetch<CharacterConversation[]>(getListCharacterConversationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCharacterConversationsQueryKey = (params?: ListCharacterConversationsParams,) => {
+    return [
+    `/api/character-conversations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCharacterConversationsQueryOptions = <TData = Awaited<ReturnType<typeof listCharacterConversations>>, TError = ErrorType<BadRequestResponse>>(params: ListCharacterConversationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCharacterConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCharacterConversationsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCharacterConversations>>> = ({ signal }) => listCharacterConversations(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCharacterConversations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCharacterConversationsQueryResult = NonNullable<Awaited<ReturnType<typeof listCharacterConversations>>>
+export type ListCharacterConversationsQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Conversazioni dell'utente con un personaggio
+ */
+
+export function useListCharacterConversations<TData = Awaited<ReturnType<typeof listCharacterConversations>>, TError = ErrorType<BadRequestResponse>>(
+ params: ListCharacterConversationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCharacterConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCharacterConversationsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateCharacterConversationUrl = () => {
+
+
+
+
+  return `/api/character-conversations`
+}
+
+/**
+ * Verifica l'argomento (404 «argomento non trovato» se manca o non è di quel personaggio). Il filo di Alfred non si crea qui. Il modello iniziale è quello del personaggio, poi il predefinito.
+ * @summary Apre una conversazione con un personaggio su un argomento
+ */
+export const createCharacterConversation = async (characterConversationCreate: CharacterConversationCreate, options?: RequestInit): Promise<CharacterConversation> => {
+
+  return customFetch<CharacterConversation>(getCreateCharacterConversationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(characterConversationCreate)
+  }
+);}
+
+
+
+
+export const getCreateCharacterConversationMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCharacterConversation>>, TError,{data: BodyType<CharacterConversationCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCharacterConversation>>, TError,{data: BodyType<CharacterConversationCreate>}, TContext> => {
+
+const mutationKey = ['createCharacterConversation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCharacterConversation>>, {data: BodyType<CharacterConversationCreate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCharacterConversation(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCharacterConversationMutationResult = NonNullable<Awaited<ReturnType<typeof createCharacterConversation>>>
+    export type CreateCharacterConversationMutationBody = BodyType<CharacterConversationCreate>
+    export type CreateCharacterConversationMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Apre una conversazione con un personaggio su un argomento
+ */
+export const useCreateCharacterConversation = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCharacterConversation>>, TError,{data: BodyType<CharacterConversationCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCharacterConversation>>,
+        TError,
+        {data: BodyType<CharacterConversationCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateCharacterConversationMutationOptions(options));
+    }
+
+export const getGetCharacterConversationUrl = (id: number,) => {
+
+
+
+
+  return `/api/character-conversations/${id}`
+}
+
+/**
+ * @summary Conversazione con messaggi e schede
+ */
+export const getCharacterConversation = async (id: number, options?: RequestInit): Promise<CharacterConversationDetail> => {
+
+  return customFetch<CharacterConversationDetail>(getGetCharacterConversationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCharacterConversationQueryKey = (id: number,) => {
+    return [
+    `/api/character-conversations/${id}`
+    ] as const;
+    }
+
+
+export const getGetCharacterConversationQueryOptions = <TData = Awaited<ReturnType<typeof getCharacterConversation>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCharacterConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCharacterConversationQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCharacterConversation>>> = ({ signal }) => getCharacterConversation(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCharacterConversation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCharacterConversationQueryResult = NonNullable<Awaited<ReturnType<typeof getCharacterConversation>>>
+export type GetCharacterConversationQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Conversazione con messaggi e schede
+ */
+
+export function useGetCharacterConversation<TData = Awaited<ReturnType<typeof getCharacterConversation>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCharacterConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCharacterConversationQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateCharacterConversationUrl = (id: number,) => {
+
+
+
+
+  return `/api/character-conversations/${id}`
+}
+
+/**
+ * @summary Cambia il modello o il titolo della conversazione
+ */
+export const updateCharacterConversation = async (id: number,
+    characterConversationUpdate: CharacterConversationUpdate, options?: RequestInit): Promise<CharacterConversation> => {
+
+  return customFetch<CharacterConversation>(getUpdateCharacterConversationUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(characterConversationUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateCharacterConversationMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCharacterConversation>>, TError,{id: number;data: BodyType<CharacterConversationUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCharacterConversation>>, TError,{id: number;data: BodyType<CharacterConversationUpdate>}, TContext> => {
+
+const mutationKey = ['updateCharacterConversation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCharacterConversation>>, {id: number;data: BodyType<CharacterConversationUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateCharacterConversation(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCharacterConversationMutationResult = NonNullable<Awaited<ReturnType<typeof updateCharacterConversation>>>
+    export type UpdateCharacterConversationMutationBody = BodyType<CharacterConversationUpdate>
+    export type UpdateCharacterConversationMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Cambia il modello o il titolo della conversazione
+ */
+export const useUpdateCharacterConversation = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCharacterConversation>>, TError,{id: number;data: BodyType<CharacterConversationUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCharacterConversation>>,
+        TError,
+        {id: number;data: BodyType<CharacterConversationUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateCharacterConversationMutationOptions(options));
+    }
+
+export const getDeleteCharacterConversationUrl = (id: number,) => {
+
+
+
+
+  return `/api/character-conversations/${id}`
+}
+
+/**
+ * Il filo di Alfred aperto non si elimina (409): si ricomincia.
+ * @summary Elimina la conversazione
+ */
+export const deleteCharacterConversation = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteCharacterConversationUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteCharacterConversationMutationOptions = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCharacterConversation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCharacterConversation>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteCharacterConversation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCharacterConversation>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteCharacterConversation(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCharacterConversationMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCharacterConversation>>>
+
+    export type DeleteCharacterConversationMutationError = ErrorType<NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Elimina la conversazione
+ */
+export const useDeleteCharacterConversation = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCharacterConversation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCharacterConversation>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteCharacterConversationMutationOptions(options));
+    }
+
+export const getSendCharacterMessageUrl = (id: number,) => {
+
+
+
+
+  return `/api/character-conversations/${id}/messages`
+}
+
+/**
+ * Risponde subito col messaggio dell'utente; il personaggio risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se l'argomento non esiste più, se la conversazione è archiviata o se è raggiunto il tetto di spesa. Massimo 10 messaggi al minuto per utente e personaggio.
+ * @summary Invia un messaggio e avvia il turno del personaggio
+ */
+export const sendCharacterMessage = async (id: number,
+    characterMessageCreate: CharacterMessageCreate, options?: RequestInit): Promise<CharacterMessage> => {
+
+  return customFetch<CharacterMessage>(getSendCharacterMessageUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(characterMessageCreate)
+  }
+);}
+
+
+
+
+export const getSendCharacterMessageMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendCharacterMessage>>, TError,{id: number;data: BodyType<CharacterMessageCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendCharacterMessage>>, TError,{id: number;data: BodyType<CharacterMessageCreate>}, TContext> => {
+
+const mutationKey = ['sendCharacterMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendCharacterMessage>>, {id: number;data: BodyType<CharacterMessageCreate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  sendCharacterMessage(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendCharacterMessageMutationResult = NonNullable<Awaited<ReturnType<typeof sendCharacterMessage>>>
+    export type SendCharacterMessageMutationBody = BodyType<CharacterMessageCreate>
+    export type SendCharacterMessageMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Invia un messaggio e avvia il turno del personaggio
+ */
+export const useSendCharacterMessage = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendCharacterMessage>>, TError,{id: number;data: BodyType<CharacterMessageCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof sendCharacterMessage>>,
+        TError,
+        {id: number;data: BodyType<CharacterMessageCreate>},
+        TContext
+      > => {
+      return useMutation(getSendCharacterMessageMutationOptions(options));
+    }
+
+export const getDecideCharacterProposalUrl = (id: number,) => {
+
+
+
+
+  return `/api/character-proposals/${id}/decision`
+}
+
+/**
+ * Accettando la modifica si applica con le regole del salvataggio dell'oggetto; una scheda `decision` di Alfred approva o rifiuta la voce in coda. 409 se la scheda è già decisa o non più attuale (stale).
+ * @summary Accetta o rifiuta una scheda di un personaggio
+ */
+export const decideCharacterProposal = async (id: number,
+    characterProposalDecision: CharacterProposalDecision, options?: RequestInit): Promise<CharacterProposal> => {
+
+  return customFetch<CharacterProposal>(getDecideCharacterProposalUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(characterProposalDecision)
+  }
+);}
+
+
+
+
+export const getDecideCharacterProposalMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decideCharacterProposal>>, TError,{id: number;data: BodyType<CharacterProposalDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof decideCharacterProposal>>, TError,{id: number;data: BodyType<CharacterProposalDecision>}, TContext> => {
+
+const mutationKey = ['decideCharacterProposal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof decideCharacterProposal>>, {id: number;data: BodyType<CharacterProposalDecision>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  decideCharacterProposal(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DecideCharacterProposalMutationResult = NonNullable<Awaited<ReturnType<typeof decideCharacterProposal>>>
+    export type DecideCharacterProposalMutationBody = BodyType<CharacterProposalDecision>
+    export type DecideCharacterProposalMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Accetta o rifiuta una scheda di un personaggio
+ */
+export const useDecideCharacterProposal = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decideCharacterProposal>>, TError,{id: number;data: BodyType<CharacterProposalDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof decideCharacterProposal>>,
+        TError,
+        {id: number;data: BodyType<CharacterProposalDecision>},
+        TContext
+      > => {
+      return useMutation(getDecideCharacterProposalMutationOptions(options));
+    }
 
 export const getListMemoryNotesUrl = (params: ListMemoryNotesParams,) => {
   const normalizedParams = new URLSearchParams();

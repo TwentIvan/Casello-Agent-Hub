@@ -44,6 +44,8 @@ tags:
     description: Modelli di squadra di agenti e le loro istanze
   - name: team-chat
     description: Chat di Lucius sulla definizione di una squadra (conversazioni, messaggi, schede) e scarico delle istruzioni dei ruoli
+  - name: characters
+    description: Conversazioni scritte con Alfred e Lucius (filo di Alfred, argomenti, messaggi, schede)
   - name: memories
     description: Memoria dei personaggi (Alfred, Lucius) - appunti e storico delle conversazioni
 
@@ -3629,6 +3631,213 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /characters/alfred/thread:
+    get:
+      operationId: getAlfredThread
+      tags: [characters]
+      summary: Il filo aperto di Alfred scritto (lo crea se manca)
+      responses:
+        "200":
+          description: Filo con messaggi e schede
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterConversationDetail"
+
+  /characters/alfred/thread/restart:
+    post:
+      operationId: restartAlfredThread
+      tags: [characters]
+      summary: Archivia il filo di Alfred e ne apre uno nuovo
+      responses:
+        "200":
+          description: Filo nuovo, vuoto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterConversationDetail"
+
+  /character-conversations:
+    get:
+      operationId: listCharacterConversations
+      tags: [characters]
+      summary: Conversazioni dell'utente con un personaggio
+      description: >-
+        Dalla più recente (`updatedAt`), al massimo 100. Non comprende il filo di Alfred
+        (si legge da `/characters/alfred/thread`).
+      parameters:
+        - name: character
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/MemoryCharacter"
+        - name: subjectType
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/CharacterSubjectType"
+        - name: subjectId
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+      responses:
+        "200":
+          description: Conversazioni
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CharacterConversation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      operationId: createCharacterConversation
+      tags: [characters]
+      summary: Apre una conversazione con un personaggio su un argomento
+      description: >-
+        Verifica l'argomento (404 «argomento non trovato» se manca o non è di quel personaggio). Il filo di Alfred
+        non si crea qui. Il modello iniziale è quello del personaggio, poi il predefinito.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CharacterConversationCreate"
+      responses:
+        "201":
+          description: Conversazione creata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterConversation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /character-conversations/{id}:
+    get:
+      operationId: getCharacterConversation
+      tags: [characters]
+      summary: Conversazione con messaggi e schede
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Conversazione trovata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterConversationDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateCharacterConversation
+      tags: [characters]
+      summary: Cambia il modello o il titolo della conversazione
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CharacterConversationUpdate"
+      responses:
+        "200":
+          description: Conversazione aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterConversation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteCharacterConversation
+      tags: [characters]
+      summary: Elimina la conversazione
+      description: "Il filo di Alfred aperto non si elimina (409): si ricomincia."
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Conversazione eliminata
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /character-conversations/{id}/messages:
+    post:
+      operationId: sendCharacterMessage
+      tags: [characters]
+      summary: Invia un messaggio e avvia il turno del personaggio
+      description: >-
+        Risponde subito col messaggio dell'utente; il personaggio risponde in background (turnStatus running, poi idle).
+        409 se un turno è già in corso, se l'argomento non esiste più, se la conversazione è archiviata o se è raggiunto
+        il tetto di spesa. Massimo 10 messaggi al minuto per utente e personaggio.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CharacterMessageCreate"
+      responses:
+        "202":
+          description: Messaggio accettato, turno avviato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterMessage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /character-proposals/{id}/decision:
+    post:
+      operationId: decideCharacterProposal
+      tags: [characters]
+      summary: Accetta o rifiuta una scheda di un personaggio
+      description: >-
+        Accettando la modifica si applica con le regole del salvataggio dell'oggetto; una scheda `decision` di Alfred
+        approva o rifiuta la voce in coda. 409 se la scheda è già decisa o non più attuale (stale).
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CharacterProposalDecision"
+      responses:
+        "200":
+          description: Scheda aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterProposal"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   /memories/notes:
     get:
       operationId: listMemoryNotes
@@ -5580,6 +5789,173 @@ components:
           maxLength: 8000
 
     TeamChatProposalDecision:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [accept, reject]
+
+    CharacterSubjectType:
+      type: string
+      enum: [alfred_thread, agent, skill, team_template, area_agents, area_skills, area_team_templates]
+
+    CharacterProposalKind:
+      type: string
+      enum: [agent_prompt, agent_tools, skill_content, template_roles, agent_create, skill_create, template_create, decision, handoff]
+
+    CharacterConversation:
+      type: object
+      required: [id, character, subjectType, subjectId, subjectTitle, aiModelId, title, tokensUsed, costUsd, turnStatus, archivedAt, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        character:
+          $ref: "#/components/schemas/MemoryCharacter"
+        subjectType:
+          $ref: "#/components/schemas/CharacterSubjectType"
+        subjectId:
+          type: ["string", "null"]
+        subjectTitle:
+          type: ["string", "null"]
+          description: Titolo dell'oggetto alla creazione
+        subjectGone:
+          type: boolean
+          description: L'argomento non esiste più; calcolato solo nel dettaglio
+        aiModelId:
+          type: ["integer", "null"]
+        title:
+          type: string
+        tokensUsed:
+          type: integer
+        costUsd:
+          type: ["number", "null"]
+          description: null = costo parziale (prezzo mancante)
+        turnStatus:
+          $ref: "#/components/schemas/PlanTurnStatus"
+        archivedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CharacterPageContext:
+      type: object
+      required: [page]
+      properties:
+        page:
+          type: string
+          minLength: 1
+          maxLength: 40
+          pattern: "^[a-z_]+$"
+        id:
+          type: string
+          minLength: 1
+          maxLength: 100
+
+    CharacterMessage:
+      type: object
+      required: [id, role, content, error, pageContext, createdAt]
+      properties:
+        id:
+          type: integer
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+          description: Markdown
+        error:
+          type: boolean
+        pageContext:
+          oneOf:
+            - $ref: "#/components/schemas/CharacterPageContext"
+            - type: "null"
+        createdAt:
+          type: string
+          format: date-time
+
+    CharacterProposal:
+      type: object
+      required: [id, messageId, kind, payload, rationale, status, decidedAt, createdAt]
+      properties:
+        id:
+          type: integer
+        messageId:
+          type: integer
+        kind:
+          $ref: "#/components/schemas/CharacterProposalKind"
+        payload:
+          type: ["object", "null"]
+          additionalProperties: true
+        rationale:
+          type: string
+        status:
+          type: string
+          enum: [pending, accepted, rejected, stale]
+        decidedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    CharacterConversationDetail:
+      allOf:
+        - $ref: "#/components/schemas/CharacterConversation"
+        - type: object
+          required: [messages, proposals]
+          properties:
+            messages:
+              type: array
+              items:
+                $ref: "#/components/schemas/CharacterMessage"
+            proposals:
+              type: array
+              items:
+                $ref: "#/components/schemas/CharacterProposal"
+
+    CharacterConversationCreate:
+      type: object
+      required: [character, subjectType]
+      properties:
+        character:
+          $ref: "#/components/schemas/MemoryCharacter"
+        subjectType:
+          type: string
+          enum: [agent, skill, team_template, area_agents, area_skills, area_team_templates]
+        subjectId:
+          type: ["string", "null"]
+          minLength: 1
+          maxLength: 100
+
+    CharacterConversationUpdate:
+      type: object
+      properties:
+        aiModelId:
+          type: ["integer", "null"]
+          description: Modello di un account AI dell'utente
+        title:
+          type: string
+          minLength: 1
+          maxLength: 80
+
+    CharacterMessageCreate:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        pageContext:
+          $ref: "#/components/schemas/CharacterPageContext"
+
+    CharacterProposalDecision:
       type: object
       required: [action]
       properties:

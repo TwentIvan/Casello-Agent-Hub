@@ -2,6 +2,7 @@
 // Accesso con il token `embed` (auth.ts), mai con il cookie di sessione; dialogo con l'ospite in use-host.ts.
 import { useCallback, useEffect, useState } from "react";
 import { QueryCache, QueryClient, QueryClientProvider, MutationCache } from "@tanstack/react-query";
+import { Router } from "wouter";
 import { getCurrentUser, setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
 import { HandoffProvider } from "@/components/characters/handoff-context";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,8 @@ import { clearTokens, completeConnect, connectMessage, getAccessToken, loadToken
 import { useHost } from "./use-host";
 import { TAB_LABELS, TAB_ORDER, TabContent } from "./tab-content";
 import { useBadge, usePanelOpen } from "./use-badge";
+import { embedHrefs, useEmbedLocation } from "./embed-location";
+import { useAlfredVoice } from "@/components/alfred/use-alfred-voice";
 import type { EmbedTab } from "./protocol";
 
 setBaseUrl(null);
@@ -109,6 +112,9 @@ function Shell({
   const { openRequest } = host;
   const open = usePanelOpen(openRequest);
   useBadge(open, host.post);
+  // La voce di Alfred vive nella Shell: cambiare scheda o chiudere il pannello non la ferma; solo «Basta così» o
+  // lasciare la pagina ospite (o scollegarsi)
+  const voice = useAlfredVoice();
 
   useEffect(() => {
     if (openRequest?.tab) setTab(openRequest.tab);
@@ -140,7 +146,7 @@ function Shell({
         </Button>
       </header>
       <main role="tabpanel" className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
-        <TabContent tab={tab} appSlug={host.appSlug} appName={host.appName} hostContext={host.context} />
+        <TabContent tab={tab} appSlug={host.appSlug} appName={host.appName} hostContext={host.context} voice={voice} />
       </main>
     </div>
   );
@@ -198,10 +204,13 @@ function EmbedRoot() {
 export function EmbedApp() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <EmbedRoot />
-        <Toaster />
-      </TooltipProvider>
+      {/* I <Link> dei componenti della console aprono Botcave in una nuova scheda: l'iframe non naviga */}
+      <Router hook={useEmbedLocation} hrefs={embedHrefs}>
+        <TooltipProvider>
+          <EmbedRoot />
+          <Toaster />
+        </TooltipProvider>
+      </Router>
     </QueryClientProvider>
   );
 }

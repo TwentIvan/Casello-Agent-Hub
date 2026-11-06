@@ -37,11 +37,15 @@ export function PendingActionItem({
   consoleHref,
 }: {
   action: QueuedAction;
-  onOpenDetails?: () => void;
   onDecided: () => void;
-  /** Indirizzo della pagina «Da confermare» della console (pannello incorporato). */
-  consoleHref?: string;
-}) {
+} & (
+  | { onOpenDetails: () => void; consoleHref?: undefined }
+  | {
+      onOpenDetails?: undefined;
+      /** Indirizzo della pagina «Da confermare» della console (pannello incorporato). */
+      consoleHref: string;
+    }
+)) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [note, setNote] = useState("");

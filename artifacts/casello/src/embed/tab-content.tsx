@@ -1,4 +1,5 @@
 // Contenuto delle quattro schede del pannello incorporato: Alfred, Da confermare, Bollettino, Lucius (in tabs/).
+import type { AlfredVoice } from "@/components/alfred/use-alfred-voice";
 import type { EmbedTab, HostContextMsg } from "./protocol";
 import { AlfredTab } from "./tabs/alfred-tab";
 import { BulletinTab } from "./tabs/bulletin-tab";
@@ -22,12 +23,14 @@ export type TabContentProps = {
   appName: string | null;
   /** Contesto della pagina ospite (`Botcave.setContext`). */
   hostContext: HostContextMsg | null;
+  /** Voce di Alfred, tenuta dalla Shell: resta attiva cambiando scheda. */
+  voice: AlfredVoice;
 };
 
-export function TabContent({ tab, appSlug, appName, hostContext }: TabContentProps) {
+export function TabContent({ tab, appSlug, appName, hostContext, voice }: TabContentProps) {
   switch (tab) {
     case "alfred":
-      return <AlfredTab appSlug={appSlug} hostContext={hostContext} />;
+      return <AlfredTab appSlug={appSlug} hostContext={hostContext} voice={voice} />;
     case "pending":
       return <PendingTab />;
     case "bulletin":

@@ -1,9 +1,10 @@
 // Scheda «Alfred» del pannello: il filo scritto di Alfred (lo stesso della console) con il contesto della pagina ospite,
-// e il microfono per parlargli a voce dentro il pannello (use-alfred-voice.ts, una sessione attiva per utente).
+// e il microfono per parlargli a voce dentro il pannello (use-alfred-voice.ts, una sessione attiva per utente). La voce
+// la tiene la Shell (`voice`): la scheda la mostra soltanto, così cambiare scheda non chiude la sessione.
 import { useMemo } from "react";
 import { Mic, Square } from "lucide-react";
 import { AlfredTranscript } from "@/components/alfred/alfred-transcript";
-import { type AlfredStatus, useAlfredVoice } from "@/components/alfred/use-alfred-voice";
+import type { AlfredStatus, AlfredVoice } from "@/components/alfred/use-alfred-voice";
 import { Led, type LedState } from "@/components/brand/led";
 import { CharacterChat } from "@/components/characters/character-chat";
 import { Button } from "@/components/ui/button";
@@ -17,8 +18,8 @@ const STATUS: Record<AlfredStatus, [string, LedState]> = {
   speaking: ["Alfred parla", "work"],
 };
 
-function AlfredVoiceBar() {
-  const { status, error, lines, start, stop } = useAlfredVoice();
+function AlfredVoiceBar({ voice }: { voice: AlfredVoice }) {
+  const { status, error, lines, start, stop } = voice;
   const running = status !== "stopped";
   return (
     <div className="min-w-0 space-y-2 border-b border-border px-3 py-2">
@@ -63,11 +64,19 @@ function AlfredVoiceBar() {
   );
 }
 
-export function AlfredTab({ appSlug, hostContext }: { appSlug: string; hostContext: HostContextMsg | null }) {
+export function AlfredTab({
+  appSlug,
+  hostContext,
+  voice,
+}: {
+  appSlug: string;
+  hostContext: HostContextMsg | null;
+  voice: AlfredVoice;
+}) {
   const page = useMemo(() => alfredPageContext(appSlug, hostContext), [appSlug, hostContext]);
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <AlfredVoiceBar />
+      <AlfredVoiceBar voice={voice} />
       <div className="min-h-0 flex-1">
         <CharacterChat target={{ kind: "alfred", page }} layout="sheet" />
       </div>

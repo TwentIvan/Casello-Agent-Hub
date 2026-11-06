@@ -47,9 +47,12 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (logo, segno, Alfred, Lucius dai file di `design/assets/`, versione chiara o scura secondo il tema). `Button` è `ui/button.tsx`
   (principale = `default`, secondario = `secondary`/`outline`, discreto = `ghost`/`link`). Gli stati si mostrano con i LED, non con
   badge colorati.
-- Due personaggi e due aree del menu: **Quartier generale · Alfred** (Dashboard, Squadre, Da confermare, Run, Parla con Alfred) e
-  **Officina · Lucius** (App, Agenti, Skill, Modelli di squadra, Modelli AI). Lucius è l'architetto (analisi, proposte, chat del piano:
-  nei prompt di `architect/prompts.ts` e `plan-chat/context.ts`); Alfred il maggiordomo vocale. Nessun riferimento a Batman.
+- Due aree del menu, separate solo da una fila di stalattiti in pixel (`CaveDivider`), senza titoli: quartier generale (Dashboard,
+  Squadre, Da confermare, Run, Parla con Alfred) e officina (App, Agenti, Skill, Modelli di squadra, Modelli AI). La caverna:
+  `components/brand/cave.tsx` (`CaveCover` in cima alla dashboard, ricostruita dalla copertina del manuale; `CaveHeaderVault` nella
+  barra in alto). I due personaggi si mostrano dentro le loro funzioni, con i loro segni: Alfred il maggiordomo (voce, `/alfred`),
+  Lucius l'ingegnere del laboratorio (analisi, proposte, chat del piano: nei prompt di `architect/prompts.ts` e `plan-chat/context.ts`).
+  Nessun riferimento a Batman.
 - Icone e favicon: `design/icons/` servite alla radice dal plugin `botcaveIcons` di `vite.config.ts` (niente copie in `public/`); il
   manifest di Alfred usa `icon-192/512` e `icon-maskable-512`, colori `#151A21`. I Dockerfile copiano `design/` (web) e
   `design/tokens.json` (API: colori della pagina di consenso OAuth, `lib/oauth/pages.ts`).

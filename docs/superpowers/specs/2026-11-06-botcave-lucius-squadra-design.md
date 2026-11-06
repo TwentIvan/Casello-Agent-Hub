@@ -113,7 +113,7 @@ con `ricorda` (`testo`), li corregge con `aggiorna_appunto` (`id`, `testo`) e li
 automatico con un modello.
 
 **Storico** (`character_history`: `user_id`, `character`, `kind` `alfred_session|plan_conversation|team_chat`, `ref_id`,
-`title` ≤ 120, `summary` ≤ 1 500, `created_at`): un riassunto per conversazione, mai i messaggi interi. Nel contesto entrano
+`title` ≤ 120, `summary` ≤ 1 500, `ai_model_id`, `tokens_used`, `cost_usd`, `created_at`): un riassunto per conversazione, mai i messaggi interi. Nel contesto entrano
 solo i titoli degli ultimi 3; il resto si cerca a richiesta con `cerca_nello_storico` (`testo`: ricerca `ILIKE` su titolo e
 riassunto, al più 5 risultati). Al più 500 voci per personaggio: oltre, si tolgono le più vecchie.
 
@@ -138,8 +138,9 @@ aggiungi a mano) e storico (riassunti, elimina). Route `GET /api/memories/notes?
 
 - Testi dell'utente e della squadra arrivano al modello come dati (`user`), mai nel prompt di sistema; il modello non vede
   segreti, token, indirizzi delle app.
-- Memoria: niente segreti negli appunti (il prompt lo vieta; `ricorda` rifiuta testi che assomigliano a chiavi con lo stesso
-  controllo di `text-check.ts`: «non salvo credenziali in memoria»).
+- Memoria: niente segreti negli appunti (il prompt lo vieta; `ricorda`, e anche l'inserimento dalla console, rifiuta testi che
+  assomigliano a chiavi, con un controllo nuovo `looksLikeCredential` (prefissi noti e stringhe lunghe senza spazi): «non salvo
+  credenziali in memoria»).
 - Messaggi d'errore fissi in italiano; mai il testo del DB o del provider.
 
 ## 5. Test

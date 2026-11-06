@@ -65,7 +65,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmRestart, setConfirmRestart] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const modelFieldId = useId();
 
   const running = data?.turnStatus === "running";
@@ -75,8 +75,10 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   const name = adapter.character === "alfred" ? "Alfred" : "Lucius";
   const Mark = adapter.character === "alfred" ? AlfredMark : LuciusMark;
 
+  // Scorre solo il contenitore dei messaggi: `scrollIntoView` farebbe scorrere anche la pagina (es. il piano all'apertura)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [data?.messages.length, data?.proposals.length, running]);
 
   const fail = (title: string, error: unknown) => {
@@ -246,6 +248,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
         {data?.notice}
 
         <div
+          ref={scrollRef}
           className={cn(
             "min-w-0 space-y-3 overflow-y-auto rounded-md border p-3",
             sheet ? "min-h-0 flex-1" : "max-h-[32rem]",
@@ -276,7 +279,6 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
               <Led state="work" label={`${name} sta pensando…`} />
             </p>
           )}
-          <div ref={bottomRef} />
         </div>
 
         {readOnly ? (

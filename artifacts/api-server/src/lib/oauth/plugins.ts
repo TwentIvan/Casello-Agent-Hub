@@ -1,6 +1,5 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { db, oauthClientsTable, type OAuthClient } from "@workspace/db";
-import { sha256Hex } from "./authorize";
 
 // Client OAuth di prima parte (es. The Hub Up), dichiarati nella variabile OAUTH_PLUGIN_CLIENTS.
 export type PluginClient = { clientId: string; name: string; redirectUri: string; secretSha256: string };
@@ -68,7 +67,7 @@ export function pluginClient(clientId: string): PluginClient | null {
 
 export function pluginSecretMatches(client: PluginClient, secret: string): boolean {
   // Confronto tra hash di pari lunghezza, a tempo costante
-  const a = Buffer.from(sha256Hex(secret), "hex");
+  const a = createHash("sha256").update(secret).digest();
   const b = Buffer.from(client.secretSha256, "hex");
   return a.length === b.length && timingSafeEqual(a, b);
 }

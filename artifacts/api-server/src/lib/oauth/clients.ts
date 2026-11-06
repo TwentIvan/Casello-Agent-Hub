@@ -7,6 +7,7 @@ import { db, oauthClientsTable, type OAuthClient } from "@workspace/db";
 import { isPublicIp, validateBaseUrl } from "../ai/providers";
 import { logger } from "../logger";
 import { OAuthError } from "./errors";
+import { ensurePluginClientRow, pluginClient } from "./plugins";
 
 const FIXED_REDIRECTS = new Set(["https://claude.ai/api/mcp/auth_callback", "https://claude.com/api/mcp/auth_callback"]);
 const LOOPBACK = /^http:\/\/(localhost|127\.0\.0\.1):(\d{1,5})\/callback$/;
@@ -214,7 +215,11 @@ async function fetchClientDocument(
 /** Trova il client: riga `dcr`, oppure documento del client per un `client_id` https (salvato e riscaricato dopo 24 ore). */
 export async function resolveClient(clientId: string, download: DocumentDownloader = downloadClientDocument): Promise<OAuthClient | null> {
   try {
+    // Client plugin dalla configurazione: se non è più configurato, la riga rimasta non vale
+    const plugin = pluginClient(clientId);
+    if (plugin) return await ensurePluginClientRow(plugin);
     const [row] = await db.select().from(oauthClientsTable).where(eq(oauthClientsTable.clientId, clientId));
+    if (row?.kind === "plugin") return null;
     if (row?.kind === "dcr") return row;
     if (!clientId.startsWith("https://")) return null;
     if (row?.metadataFetchedAt && Date.now() - row.metadataFetchedAt.getTime() < DOC_TTL_MS) return row;

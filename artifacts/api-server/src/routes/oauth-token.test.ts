@@ -64,6 +64,7 @@ describe("POST /oauth/token", () => {
         redirectUri: CB,
         codeChallenge: createHash("sha256").update(VERIFIER).digest("base64url"),
         state: null,
+        kind: "connector",
       }),
     );
     const a = await token({ grant_type: "authorization_code", code: url.searchParams.get("code")!, redirect_uri: CB, client_id: clientId, code_verifier: VERIFIER });

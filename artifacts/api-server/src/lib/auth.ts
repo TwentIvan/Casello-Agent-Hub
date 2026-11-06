@@ -40,6 +40,7 @@ declare module "express-session" {
         redirectUri: string;
         codeChallenge: string;
         state: string | null;
+        kind: "connector" | "plugin";
       };
       csrf: string;
     };

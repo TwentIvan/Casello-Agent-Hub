@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { pluginClients } from "./plugins";
 import brandTokens from "../../../../../design/tokens.json";
 
 /** Escape per il testo e per gli attributi HTML. */
@@ -51,11 +52,16 @@ function layout(title: string, body: string): string {
 }
 
 /** Pagina di consenso: chi chiede (nome e host del ritorno), cosa potrà fare, con quale account. */
-export function consentPage(p: { clientName: string; redirectHost: string; userEmail: string; csrf: string }): string {
+export function consentPage(p: { clientName: string; redirectHost: string; userEmail: string; csrf: string; kind: "connector" | "plugin" }): string {
+  const intro =
+    p.kind === "plugin"
+      ? `<h1>Collegare ${esc(p.clientName)} a Botcave?</h1>
+<p>${esc(p.clientName)} potrà usare Botcave per tuo conto: vedere e gestire app, squadre, modelli e skill, scrivere ai capi, approvare e rifiutare le voci da confermare. Non potrà cambiare chiavi, tetti di spesa, token né account collegati.</p>`
+      : `<h1>Collegare ${esc(p.clientName)} · ${esc(p.redirectHost)} a Botcave?</h1>
+<p>Potrà vedere le tue squadre e il bollettino, scrivere ai capi, approvare e rifiutare le voci da confermare ed eseguire le analisi di Lucius.</p>`;
   return layout(
     "Collega Botcave",
-    `<h1>Collegare ${esc(p.clientName)} · ${esc(p.redirectHost)} a Botcave?</h1>
-<p>Potrà vedere le tue squadre e il bollettino, scrivere ai capi, approvare e rifiutare le voci da confermare ed eseguire le analisi di Lucius.</p>
+    `${intro}
 <p class="muted">Account: ${esc(p.userEmail)}</p>
 <form method="post" action="/oauth/authorize">
 <input type="hidden" name="csrf" value="${esc(p.csrf)}">
@@ -74,9 +80,16 @@ export function errorPage(message: string): string {
  */
 export function sendPage(res: Response, status: number, html: string): void {
   res.status(status);
+  // I ritorni dei client plugin configurati: Chrome controlla anche i redirect che seguono l'invio del form
+  let pluginOrigins = "";
+  try {
+    pluginOrigins = [...new Set(pluginClients().map((c) => new URL(c.redirectUri).origin))].map((o) => ` ${o}`).join("");
+  } catch {
+    // configurazione non valida: nessun ritorno in più
+  }
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://claude.ai https://claude.com http://localhost:* http://127.0.0.1:*",
+    `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://claude.ai https://claude.com http://localhost:* http://127.0.0.1:*${pluginOrigins}`,
   );
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Cache-Control", "no-store");

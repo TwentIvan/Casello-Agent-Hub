@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { db, oauthCodesTable, oauthGrantsTable } from "@workspace/db";
-import { sameResource, scopeAllowed } from "./config";
+import { pluginScopeAllowed, sameApiResource, sameResource, scopeAllowed } from "./config";
+import { PLUGIN_SCOPES, pluginClient } from "./plugins";
 import { redirectMatches, resolveClient } from "./clients";
 
 export const CODE_TTL_MS = 10 * 60 * 1000;
@@ -16,6 +17,7 @@ export type AuthorizeParams = {
   redirectUri: string;
   codeChallenge: string;
   state: string | null;
+  kind: "connector" | "plugin";
 };
 
 /** Client sconosciuto o ritorno non valido: si mostra una pagina, mai un redirect. */
@@ -60,7 +62,11 @@ export async function validateAuthorizeRequest(query: Record<string, unknown>): 
   if (!clientId) throw new AuthorizePageError("Applicazione non riconosciuta.");
   const client = await resolveClient(clientId);
   if (!client) throw new AuthorizePageError("Applicazione non riconosciuta.");
-  if (!redirectUri || !redirectMatches(client.redirectUris, redirectUri)) {
+  const plugin = client.kind === "plugin" ? pluginClient(clientId) : null;
+  const redirectOk = plugin
+    ? redirectUri === plugin.redirectUri
+    : !!redirectUri && redirectMatches(client.redirectUris, redirectUri);
+  if (!redirectUri || !redirectOk) {
     throw new AuthorizePageError("Indirizzo di ritorno non valido.");
   }
 
@@ -73,9 +79,9 @@ export async function validateAuthorizeRequest(query: Record<string, unknown>): 
   if (rawState !== undefined && rawState.length > MAX_STATE) fail("invalid_request");
   if (str(query["response_type"]) !== "code") fail("unsupported_response_type");
   const scope = query["scope"];
-  if (scope !== undefined && !scopeAllowed(scope)) fail("invalid_scope");
+  if (scope !== undefined && !(plugin ? pluginScopeAllowed(scope) : scopeAllowed(scope))) fail("invalid_scope");
   const resource = query["resource"];
-  if (resource !== undefined && !sameResource(resource)) fail("invalid_target");
+  if (resource !== undefined && !(plugin ? sameApiResource(resource) : sameResource(resource))) fail("invalid_target");
   const challenge = str(query["code_challenge"]);
   if (!challenge || !CHALLENGE_RE.test(challenge)) fail("invalid_request");
   if (query["code_challenge_method"] !== "S256") fail("invalid_request");
@@ -87,6 +93,7 @@ export async function validateAuthorizeRequest(query: Record<string, unknown>): 
     redirectUri,
     codeChallenge: challenge!,
     state,
+    kind: plugin ? "plugin" : "connector",
   };
 }
 
@@ -103,7 +110,7 @@ export async function approve(userId: number, p: AuthorizeParams): Promise<strin
       .where(and(eq(oauthGrantsTable.userId, userId), eq(oauthGrantsTable.clientRowId, p.clientRowId), isNull(oauthGrantsTable.revokedAt)));
     const [grant] = await tx
       .insert(oauthGrantsTable)
-      .values({ userId, clientRowId: p.clientRowId, scopes: CONNECTOR_SCOPES })
+      .values({ userId, clientRowId: p.clientRowId, scopes: p.kind === "plugin" ? [...PLUGIN_SCOPES] : CONNECTOR_SCOPES })
       .returning({ id: oauthGrantsTable.id });
     await tx.insert(oauthCodesTable).values({
       codeHash: sha256Hex(code),

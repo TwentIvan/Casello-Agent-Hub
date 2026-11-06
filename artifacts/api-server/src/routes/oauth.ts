@@ -114,7 +114,7 @@ export function oauthRouter(): IRouter {
       const csrf = randomBytes(32).toString("base64url");
       req.session.oauthPending = { params, csrf };
       await saveSession(req);
-      sendPage(res, 200, consentPage({ clientName: params.clientName, redirectHost: new URL(params.redirectUri).host, userEmail: user?.email ?? "", csrf }));
+      sendPage(res, 200, consentPage({ clientName: params.clientName, redirectHost: new URL(params.redirectUri).host, userEmail: user?.email ?? "", csrf, kind: params.kind }));
     } catch (err) {
       if (!handleAuthorizeError(err, res)) sendInternalError(res, err);
     }

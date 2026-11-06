@@ -42,10 +42,13 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="rounded-full" aria-label="Menu utente">
-          <Avatar className="size-8">
+        {/* Sta nella barra buia della caverna: quadrato a spigoli vivi come i pixel, roccia in ombra e carta */}
+        <Button variant="ghost" size="icon" className="rounded-none hover:bg-ardesia" aria-label="Menu utente">
+          <Avatar className="size-8 rounded-none">
             {user.picture && <AvatarImage src={user.picture} alt="" referrerPolicy="no-referrer" />}
-            <AvatarFallback className="text-xs">{initials(user.name, user.email)}</AvatarFallback>
+            <AvatarFallback className="rounded-none bg-ardesia font-mono text-xs font-medium text-nebbia">
+              {initials(user.name, user.email)}
+            </AvatarFallback>
           </Avatar>
         </Button>
       </DropdownMenuTrigger>

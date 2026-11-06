@@ -22,10 +22,9 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
 import { BudgetGuard } from "@/components/budget/budget";
-import { BotcaveLogo, BotcaveMark } from "@/components/brand/marks";
-import { CaveDivider, CaveHeaderVault } from "@/components/brand/cave";
+import { AlfredMark, BotcaveLogo, BotcaveMark, LuciusMark } from "@/components/brand/marks";
+import { CaveDivider, CaveVault } from "@/components/brand/cave";
 import { UserMenu } from "./user-menu";
 
 interface NavItem {
@@ -71,8 +70,6 @@ const NAV_AREAS: NavArea[] = [
   },
 ];
 
-const NAV_ITEMS: NavItem[] = NAV_AREAS.flatMap((area) => area.items);
-
 function isActive(href: string, location: string): boolean {
   return href === "/" ? location === "/" : location === href || location.startsWith(`${href}/`);
 }
@@ -117,9 +114,53 @@ function NavMenu({ location, items }: { location: string; items: NavItem[] }) {
   );
 }
 
+/*
+ * Chi abita l'area aperta: Alfred nel quartier generale, Lucius nell'officina. Le pagine fuori dal menu (Account)
+ * non hanno un padrone di casa.
+ */
+const AREA_HOSTS: Record<NavArea["key"], { name: string; area: string }> = {
+  hq: { name: "Alfred", area: "quartier generale" },
+  workshop: { name: "Lucius", area: "officina" },
+};
+
+function currentArea(location: string): NavArea["key"] | null {
+  return NAV_AREAS.find((area) => area.items.some((item) => isActive(item.href, location)))?.key ?? null;
+}
+
+/*
+ * Barra in alto: la volta della caverna (stalattiti sul buio e LED ambra), sotto il padrone di casa dell'area con il
+ * suo segno, a destra l'account. È buia in entrambi i temi, come la copertina del manuale.
+ */
+function CaveHeader({ location }: { location: string }) {
+  const area = currentArea(location);
+  const host = area ? AREA_HOSTS[area] : null;
+  return (
+    <header className="relative flex h-28 shrink-0 flex-col overflow-hidden bg-notte">
+      <div aria-hidden="true" className="h-16 shrink-0">
+        <CaveVault />
+      </div>
+      <div className="flex min-h-0 flex-1 items-center gap-3 pl-4 pr-4 sm:pr-6">
+        <SidebarTrigger className="-ml-1 text-nebbia hover:bg-ardesia hover:text-nebbia" />
+        {host && (
+          <p className="flex items-center gap-2 text-label uppercase text-roccia" title={`${host.name}, ${host.area}`}>
+            {area === "hq" ? <AlfredMark size={16} tone="dark" /> : <LuciusMark size={16} tone="dark" />}
+            <span className="text-nebbia">{host.name}</span>
+            <span aria-hidden="true">·</span>
+            <span>{host.area}</span>
+          </p>
+        )}
+        <div className="ml-auto">
+          <UserMenu />
+        </div>
+      </div>
+      {/* Il pavimento di roccia */}
+      <div aria-hidden="true" className="h-1.5 shrink-0 bg-ardesia" />
+    </header>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
-  const current = NAV_ITEMS.find((item) => isActive(item.href, location));
 
   return (
     <SidebarProvider>
@@ -149,16 +190,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </SidebarContent>
       </Sidebar>
       <SidebarInset className="min-w-0">
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b pl-4">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-2 h-4" />
-          <h1 className="text-label">{current?.label ?? "Botcave"}</h1>
-          <div className="ml-auto pr-4 sm:pr-3">
-            <UserMenu />
-          </div>
-          {/* La volta della caverna: decorativa, sparisce sugli schermi stretti */}
-          <CaveHeaderVault className="hidden w-40 self-stretch sm:block lg:w-64" />
-        </header>
+        <CaveHeader location={location} />
         <main className="flex-1 p-4 md:p-6">{children}</main>
         <BudgetGuard />
       </SidebarInset>

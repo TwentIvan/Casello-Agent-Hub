@@ -86,12 +86,12 @@ La palette viene dal logo: il buio della caverna, la roccia in due luci, la cart
 | Token | Valore | Ruolo |
 |---|---|---|
 | `notte` | #151A21 | Il buio: testo su chiaro, fondo del tema scuro |
-| `nebbia` | #ECE8E1 | La carta: fondo del tema chiaro, testo su scuro |
+| `nebbia` | #ECE8E1 | La carta: pipistrello e scritta su scuro, testo sul buio della barra in alto |
 | `ardesia` | #5B6675 | Roccia in ombra, testo secondario su chiaro |
 | `roccia` | #A7AEB7 | Roccia in luce, testo secondario su scuro |
 | `ambra` | #F2A93B | Il LED: ciò che è acceso o chiede attenzione |
 
-Nell'interfaccia si usano i token semantici: `surface-0`, `surface-1`, `surface-2` per i fondi; `ink` e `ink-muted` per il testo; `border` e `border-strong` per i bordi; `accent` e `on-accent` per il pulsante principale; `accent-text` per link e testo in evidenza; `success`, `danger` e `led-idle` per gli stati.
+Nell'interfaccia si usano i token semantici: `surface-0`, `surface-1`, `surface-2` per i fondi, in grigi neutri senza dominanti calde o fredde (la marca resta nel logo e nella caverna); `ink` e `ink-muted` per il testo; `border` e `border-strong` per i bordi; `accent` e `on-accent` per il pulsante principale; `accent-text` per link e testo in evidenza; `success`, `danger` e `led-idle` per gli stati.
 
 **Regole.** L'ambra non si usa mai come testo su fondi chiari, dove non ha contrasto sufficiente: lì si usa `accent-text`. In una schermata l'ambra compare poco: un pulsante principale, i LED accesi, il numero delle voci da confermare. Se tutto è ambra, niente lo è.
 

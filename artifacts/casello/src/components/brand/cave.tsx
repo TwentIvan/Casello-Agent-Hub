@@ -69,44 +69,11 @@ export function CaveStalactites({ columns = 32, rows = 6, led = true, tone = "va
 }
 
 /**
- * Copertina della dashboard: a sinistra la scritta «bot·cave» con il motto, a destra la volta buia con le stalattiti
- * e la fascia di roccia. Sotto i 768 px la volta diventa una striscia sopra la scritta.
+ * La volta della caverna nella barra in alto di ogni pagina: stalattiti sul buio, con il LED ambra. Riempie in larghezza
+ * il contenitore (il motivo si ripete e l'SVG taglia a destra); l'altezza la decide il contenitore.
  */
-export function CaveCover({ className }: { className?: string }) {
-  return (
-    <section
-      aria-label="Botcave"
-      className={cn("overflow-hidden rounded-lg border bg-surface-1 md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,40%)]", className)}
-    >
-      <div className="order-2 flex flex-col justify-end gap-3 p-6 md:order-1 md:min-h-56 md:p-8">
-        <div className="flex items-end gap-6">
-          <p className="font-mono text-5xl font-medium leading-none tracking-tight text-ink md:text-6xl" aria-label="Botcave">
-            bot
-            <span
-              aria-hidden="true"
-              className="mx-[0.06em] inline-block size-[0.2em] bg-brand align-baseline"
-            />
-            cave
-          </p>
-          <span aria-hidden="true" className="mb-1 hidden size-9 shrink-0 bg-brand lg:block" />
-        </div>
-        <p className="text-body-sm text-ink-muted">Squadre di agenti al lavoro. Tu dirigi, Alfred ti tiene aggiornato.</p>
-      </div>
-      <div className="order-1 flex flex-col md:order-2" style={{ background: "var(--notte)" }}>
-        <CaveStalactites className="h-24 w-full flex-1 md:h-auto md:min-h-44" rows={8} columns={40} />
-        <div className="h-3 md:h-9" style={{ background: "var(--mark-rock)" }} />
-      </div>
-    </section>
-  );
-}
-
-/** Volta stretta per la barra in alto di ogni pagina: tre righe di stalattiti sul buio. */
-export function CaveHeaderVault({ className }: { className?: string }) {
-  return (
-    <div aria-hidden="true" className={cn("h-full overflow-hidden", className)} style={{ background: "var(--notte)" }}>
-      <CaveStalactites className="h-full w-full" rows={3} columns={20} />
-    </div>
-  );
+export function CaveVault({ className }: { className?: string }) {
+  return <CaveStalactites className={cn("h-full w-full", className)} rows={5} columns={160} />;
 }
 
 /** Separatore tra le due aree del menu: una fila corta di stalattiti, senza LED. */

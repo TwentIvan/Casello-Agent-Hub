@@ -146,7 +146,7 @@ function systemPrompt(
     "Ruoli della squadra (roleKey · nome · dove gira):",
     ...roles.map((r) => `- ${r.key} · ${r.name} · ${r.runsOn === "node" ? "nodo locale" : "cloud"}${r.isLead ? " (capo)" : ""}`),
     "",
-    "Istruzioni del capo:",
+    "Identità del capo:",
     lead.task || "(nessuna istruzione specifica)",
   ];
   for (const skill of skills) parts.push("", `Skill ${skill.code} · ${skill.label}:`, skill.content);

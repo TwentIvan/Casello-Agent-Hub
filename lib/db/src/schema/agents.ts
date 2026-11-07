@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, uniqueIndex, numeric } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, uniqueIndex, numeric, boolean } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -26,6 +26,8 @@ export const agentsTable = pgTable("agents", {
   defaultIdentity: toolIdentityEnum("default_identity").notNull().default("user"),
   // Tetto di spesa mensile in USD delle run dell'agente; null = nessun limite
   monthlyBudgetUsd: numeric("monthly_budget_usd", { precision: 12, scale: 2 }),
+  // Le scritture dell'agente passano dalla coda «Da confermare»
+  confirmWrites: boolean("confirm_writes").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => [

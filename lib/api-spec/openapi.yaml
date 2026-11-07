@@ -6668,8 +6668,8 @@ components:
 
     ApiTokenScope:
       type: string
-      enum: [mcp, api:read, api:write]
-      description: mcp = server MCP; api:read = solo lettura su /api; api:write = lettura e scrittura su /api
+      enum: [mcp, api:read, api:write, runs]
+      description: "mcp = server MCP; api:read = solo lettura su /api; api:write = lettura e scrittura su /api; runs = solo avvio e lettura delle run (POST /agents/{id}/runs, GET /runs/{id} e /runs/{id}/steps)"
 
     ApiTokenCreate:
       type: object

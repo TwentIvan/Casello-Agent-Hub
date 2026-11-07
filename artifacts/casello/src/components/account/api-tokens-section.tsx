@@ -37,8 +37,9 @@ const SCOPE_LABELS: Record<ApiTokenScope, string> = {
   mcp: "Agente locale (MCP)",
   "api:read": "API: lettura",
   "api:write": "API: scrittura",
+  runs: "Avvio delle run (app ospiti)",
 };
-const SCOPE_ORDER: ApiTokenScope[] = ["mcp", "api:read", "api:write"];
+const SCOPE_ORDER: ApiTokenScope[] = ["mcp", "api:read", "api:write", "runs"];
 
 const formatDate = (value: string) => new Date(value).toLocaleDateString("it-IT", { dateStyle: "short" });
 

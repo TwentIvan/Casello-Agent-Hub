@@ -14,10 +14,10 @@ const TOKEN_PREFIX = "cas_";
  * node = protocollo del nodo locale (solo /api/node, solo token legati a un nodo); embed = pannello incorporato
  * (solo collegamenti OAuth `cao_…` dei client `embed`, mai un token personale).
  */
-export const TOKEN_SCOPES = ["mcp", "api:read", "api:write", "node", "embed"] as const;
+export const TOKEN_SCOPES = ["mcp", "api:read", "api:write", "runs", "node", "embed"] as const;
 export type TokenScope = (typeof TOKEN_SCOPES)[number];
 /** Ambiti che l'utente può scegliere per un token personale: `node` nasce solo con un nodo (createNodeToken). */
-export const PERSONAL_TOKEN_SCOPES = ["mcp", "api:read", "api:write"] as const;
+export const PERSONAL_TOKEN_SCOPES = ["mcp", "api:read", "api:write", "runs"] as const;
 /** Durata dei token dei nodi. */
 const NODE_TOKEN_DAYS = 365;
 

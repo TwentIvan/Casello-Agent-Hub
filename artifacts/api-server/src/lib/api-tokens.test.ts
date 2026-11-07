@@ -42,10 +42,16 @@ describe("createApiToken", () => {
     expect(row.scopes).toEqual(["mcp", "api:write"]);
   });
 
+  it("ambito runs accettato; node ancora rifiutato", async () => {
+    const { row } = await createApiToken(userId, "Hub", 30, ["runs"]);
+    expect(row.scopes).toEqual(["runs"]);
+    await expect(createApiToken(userId, "x", 30, ["node"] as TokenScope[])).rejects.toBeInstanceOf(ApiTokenInputError);
+  });
+
   it("vuoto, ripetuto o sconosciuto → ApiTokenInputError", async () => {
     for (const scopes of [[], ["mcp", "mcp"], ["admin"]]) {
       await expect(createApiToken(userId, "x", 30, scopes as TokenScope[])).rejects.toThrow(
-        new ApiTokenInputError("ambiti non validi: scegline almeno uno tra mcp, api:read, api:write"),
+        new ApiTokenInputError("ambiti non validi: scegline almeno uno tra mcp, api:read, api:write, runs"),
       );
     }
   });

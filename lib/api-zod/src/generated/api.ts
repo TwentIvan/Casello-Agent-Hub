@@ -50,7 +50,7 @@ export const GetCurrentUserResponse = zod.object({
   "kind": zod.enum(['session'])
 }),zod.object({
   "kind": zod.enum(['token']),
-  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api'))
+  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write', 'runs']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api; runs = solo avvio e lettura delle run (POST \/agents\/{id}\/runs, GET \/runs\/{id} e \/runs\/{id}\/steps)'))
 })]).describe('Come è autenticata la richiesta (sessione del login o token personale)')
 })
 
@@ -89,7 +89,7 @@ export const ListApiTokensResponseItem = zod.object({
   "expiresAt": zod.coerce.date(),
   "lastUsedAt": zod.coerce.date().nullable(),
   "revokedAt": zod.coerce.date().nullable(),
-  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api'))
+  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write', 'runs']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api; runs = solo avvio e lettura delle run (POST \/agents\/{id}\/runs, GET \/runs\/{id} e \/runs\/{id}\/steps)'))
 })
 export const ListApiTokensResponse = zod.array(ListApiTokensResponseItem)
 
@@ -107,7 +107,7 @@ export const createApiTokenBodyExpiresInDaysMax = 90;
 export const CreateApiTokenBody = zod.object({
   "name": zod.string().min(1).max(createApiTokenBodyNameMax),
   "expiresInDays": zod.number().min(1).max(createApiTokenBodyExpiresInDaysMax),
-  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api')).optional().describe('Almeno uno, senza ripetizioni; se omesso vale solo mcp')
+  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write', 'runs']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api; runs = solo avvio e lettura delle run (POST \/agents\/{id}\/runs, GET \/runs\/{id} e \/runs\/{id}\/steps)')).optional().describe('Almeno uno, senza ripetizioni; se omesso vale solo mcp')
 })
 
 export const CreateApiTokenResponse = zod.object({
@@ -119,7 +119,7 @@ export const CreateApiTokenResponse = zod.object({
   "expiresAt": zod.coerce.date(),
   "lastUsedAt": zod.coerce.date().nullable(),
   "revokedAt": zod.coerce.date().nullable(),
-  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api'))
+  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write', 'runs']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api; runs = solo avvio e lettura delle run (POST \/agents\/{id}\/runs, GET \/runs\/{id} e \/runs\/{id}\/steps)'))
 })
 })
 

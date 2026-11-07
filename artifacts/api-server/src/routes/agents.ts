@@ -6,7 +6,7 @@ import {
   agentsTable,
   appsTable,
 } from "@workspace/db";
-import { runRateLimit } from "../middlewares/rate-limit";
+import { runTriggerRateLimit } from "../middlewares/rate-limit";
 import {
   ListAgentsQueryParams,
   ListAgentsResponse,
@@ -258,7 +258,7 @@ router.delete("/agents/:id/skills/:skillId", async (req, res) => {
 
 // ── Run (avviate su un agente) ──────────────────────────────────────────────
 
-router.post("/agents/:id/runs", runRateLimit, async (req, res) => {
+router.post("/agents/:id/runs", runTriggerRateLimit, async (req, res) => {
   const { id } = parseRequest(TriggerRunParams, req.params);
   const body = parseRequest(TriggerRunBody, req.body);
   const userToken = userTokenFrom(req);

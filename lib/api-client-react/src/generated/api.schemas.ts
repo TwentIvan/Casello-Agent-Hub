@@ -82,7 +82,7 @@ export const CurrentUserTokenAuthKind = {
 } as const;
 
 /**
- * mcp = server MCP; api:read = solo lettura su /api; api:write = lettura e scrittura su /api
+ * mcp = server MCP; api:read = solo lettura su /api; api:write = lettura e scrittura su /api; runs = solo avvio e lettura delle run (POST /agents/{id}/runs, GET /runs/{id} e /runs/{id}/steps)
  */
 export type ApiTokenScope = typeof ApiTokenScope[keyof typeof ApiTokenScope];
 
@@ -91,6 +91,7 @@ export const ApiTokenScope = {
   mcp: 'mcp',
   'api:read': 'api:read',
   'api:write': 'api:write',
+  runs: 'runs',
 } as const;
 
 export interface CurrentUserTokenAuth {

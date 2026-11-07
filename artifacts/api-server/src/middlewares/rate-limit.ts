@@ -63,6 +63,14 @@ export function rateLimit({
 // con un solo contatore condiviso da POST /agents/:id/runs e POST /runs/:id/resume.
 export const runRateLimit = rateLimit({ limit: 10, windowMs: 60_000 });
 
+// Avvio delle run con un token personale: 60 al minuto per token (id del token) al posto del limite per IP; con la
+// sessione (o il pannello incorporato, senza id di token) vale ancora `runRateLimit`. Le analisi restano su `runRateLimit`.
+const tokenRunCounter = rateLimit({ limit: 60, windowMs: 60_000, key: (req) => `token:${req.auth?.kind === "token" ? req.auth.tokenId : ""}` });
+export const runTriggerRateLimit: RequestHandler = (req, res, next) => {
+  if (req.auth?.kind === "token" && req.auth.tokenId !== null) tokenRunCounter(req, res, next);
+  else runRateLimit(req, res, next);
+};
+
 // L'annullamento di una run non consuma token: ha un contatore proprio, più largo, così non
 // compete con avvio e ripresa.
 export const cancelRateLimit = rateLimit({ limit: 30, windowMs: 60_000 });

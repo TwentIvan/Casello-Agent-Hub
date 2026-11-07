@@ -3,7 +3,8 @@ import type { AddressInfo } from "node:net";
 import { createHash } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { apiTokensTable, db, pool, usersTable } from "@workspace/db";
+import { agentsTable, aiAccountsTable, aiModelsTable, apiTokensTable, appsTable, db, pool, usersTable } from "@workspace/db";
+import { encryptSecret } from "../lib/secrets";
 import { startFakeGithub, type FakeGithub } from "../../test/fake-github";
 import type { TokenScope } from "../lib/api-tokens";
 
@@ -120,6 +121,74 @@ beforeEach(async () => {
   await pool.query("TRUNCATE users CASCADE");
   const [user] = await db.insert(usersTable).values({ email: TOKEN_EMAIL, name: "Token" }).returning();
   userId = user!.id;
+});
+
+/** Agente attivo con un modello dell'utente dei token (le run partono in background e falliscono: nessun provider raggiungibile). */
+async function runnableAgent(): Promise<number> {
+  const [app] = await db.insert(appsTable).values({ name: "Hub", slug: `hub-${Math.random().toString(36).slice(2, 8)}`, baseUrl: "http://app.example.com" }).returning();
+  const [account] = await db
+    .insert(aiAccountsTable)
+    .values({ userId, name: "Conto", provider: "custom", baseUrl: "https://provider.invalid", apiKeyEnc: encryptSecret("sk-test"), status: "ok" })
+    .returning();
+  const [model] = await db
+    .insert(aiModelsTable)
+    .values({ accountId: account!.id, modelId: "m", displayName: "m", priceInputPerMtok: "1", priceOutputPerMtok: "2" })
+    .returning();
+  const [agent] = await db.insert(agentsTable).values({ appId: app!.id, name: "Area", aiModelId: model!.id, status: "active" }).returning();
+  return agent!.id;
+}
+
+describe("ambito runs e limite delle run per token", () => {
+  it("solo runs: POST /agents/:id/runs 202, GET /runs/:id 200, GET /runs/:id/steps 200", async () => {
+    const token = await tokenWith(["runs"]);
+    const agentId = await runnableAgent();
+    const post = await api("POST", `/agents/${agentId}/runs`, { token, body: { input: "ciao" } });
+    expect(post.status, post.text).toBe(202);
+    expect((await api("GET", `/runs/${post.json.id}`, { token })).status).toBe(200);
+    expect((await api("GET", `/runs/${post.json.id}/steps`, { token })).status).toBe(200);
+  });
+
+  it("solo runs: GET /runs, GET /apps, POST /runs/:id/cancel → 403 scope", async () => {
+    const token = await tokenWith(["runs"]);
+    for (const [method, path] of [["GET", "/runs"], ["GET", "/apps"], ["POST", "/runs/1/cancel"]] as const) {
+      const res = await api(method, path, { token });
+      expect(res.status, `${method} ${path}`).toBe(403);
+      expect(res.json).toEqual({ error: MESSAGES.scope });
+    }
+  });
+
+  it("runs + api:read: GET /apps 200", async () => {
+    const token = await tokenWith(["runs", "api:read"]);
+    expect((await api("GET", "/apps", { token })).status).toBe(200);
+  });
+
+  it("solo runs su /mcp → 401", async () => {
+    const token = await tokenWith(["runs"]);
+    const res = await fetch(`${base}/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: MESSAGES.invalid });
+  });
+
+  it("61ª run nel minuto con lo stesso token → 429, un altro token no; con la sessione vale ancora 10/min per IP", async () => {
+    const agentId = await runnableAgent();
+    const first = await tokenWith(["runs"]);
+    const second = await tokenWith(["runs"]);
+    for (let i = 0; i < 60; i++) {
+      const res = await api("POST", `/agents/${agentId}/runs`, { token: first, body: { input: "x" } });
+      expect(res.status, `run ${i + 1}: ${res.text}`).toBe(202);
+    }
+    expect((await api("POST", `/agents/${agentId}/runs`, { token: first, body: { input: "x" } })).status).toBe(429);
+    expect((await api("POST", `/agents/${agentId}/runs`, { token: second, body: { input: "x" } })).status).toBe(202);
+    // Sessione di sviluppo (senza header): contatore per IP da 10
+    const statuses: number[] = [];
+    for (let i = 0; i < 11; i++) statuses.push((await api("POST", `/agents/${agentId}/runs`, { body: { input: "x" } })).status);
+    expect(statuses.slice(0, 10).every((s) => s !== 429)).toBe(true);
+    expect(statuses[10]).toBe(429);
+  });
 });
 
 describe("token personali su /api", () => {

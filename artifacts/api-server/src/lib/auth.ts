@@ -199,10 +199,21 @@ export async function sessionUserId(req: Request): Promise<number | null> {
 /** Risposte fisse per le richieste con un token personale (definite in api-tokens, usate anche dal server MCP). */
 export { TOKEN_MESSAGES };
 
-/** GET e HEAD leggono (api:read o api:write); gli altri metodi scrivono (solo api:write). */
-function hasScopeFor(method: string, scopes: TokenScope[]): boolean {
-  if (method === "GET" || method === "HEAD") return scopes.includes("api:read") || scopes.includes("api:write");
-  return scopes.includes("api:write");
+/**
+ * Route di /api aperte all'ambito `runs` (avvio e lettura delle run per le app ospiti), come metodo + percorso rispetto al
+ * punto di montaggio di `requireAuth` (`req.path`, senza il prefisso /api). L'ambito è chiuso a queste tre route.
+ */
+export const RUNS_SCOPE_ROUTES: ReadonlyArray<{ method: "GET" | "POST"; path: RegExp }> = [
+  { method: "POST", path: /^\/agents\/\d+\/runs$/ },
+  { method: "GET", path: /^\/runs\/\d+$/ },
+  { method: "GET", path: /^\/runs\/\d+\/steps$/ },
+];
+
+/** GET e HEAD leggono (api:read o api:write); gli altri metodi scrivono (solo api:write); `runs` solo sulle route di RUNS_SCOPE_ROUTES. */
+export function hasScopeFor(method: string, path: string, scopes: TokenScope[]): boolean {
+  const base = method === "GET" || method === "HEAD" ? scopes.includes("api:read") || scopes.includes("api:write") : scopes.includes("api:write");
+  if (base) return true;
+  return scopes.includes("runs") && RUNS_SCOPE_ROUTES.some((r) => r.method === method && r.path.test(path));
 }
 
 /**
@@ -260,7 +271,7 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
       req.auth = { kind: "token", tokenId: found.tokenId, scopes: found.scopes };
       // Il limite conta ogni richiesta autenticata con il token, anche quelle senza l'ambito
       tokenRateLimit(req, res, () => {
-        if (!hasScopeFor(req.method, found.scopes)) {
+        if (!hasScopeFor(req.method, req.path, found.scopes)) {
           res.status(403).json({ error: TOKEN_MESSAGES.scope });
           return;
         }

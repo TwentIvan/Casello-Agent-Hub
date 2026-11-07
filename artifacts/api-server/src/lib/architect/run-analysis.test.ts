@@ -464,6 +464,10 @@ describe("startAnalysis", () => {
     expect(a.architectureMap).toEqual({ ...(RESULTS.map as object), repoMap: expect.stringContaining("src/") });
     // ...ed è nel messaggio utente di ogni fase
     expect(llmRequests.every((r) => String(r.messages[1].content).includes("Mappa del repository calcolata da Botcave"))).toBe(true);
+    // Solo la fase catalog riceve i tool esistenti (anche quello non più proposto, che risulterà rimosso)
+    const withExisting = llmRequests.filter((r) => String(r.messages[1].content).includes("Tool già nel catalogo dell'app (2): list_teams, old_tool"));
+    expect(withExisting.length).toBeGreaterThan(0);
+    expect(withExisting.every((r) => String(r.messages[1].content).includes("FASE 3, CATALOGO"))).toBe(true);
     // 12 chiamate da 120 token
     expect(a.tokensUsed).toBe(12 * 120);
     expect(llmRequests).toHaveLength(12);

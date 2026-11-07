@@ -750,6 +750,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Sei fasi (map, capabilities, catalog, agents, completion, evolution): ogni esito è validato con Zod
   (`schemas.ts`, esempi in `prompts.ts` verificati dai test). Gli elementi (`analysis_items`) sono
   confrontati con lo stato attuale dell'app (`diff`: new/changed/unchanged/removed).
+- La fase catalog riceve nel prompt i tool esistenti non disattivati dell'app (`existingToolsForPrompt` in `phase-record.ts`: nome,
+  descrizione, kind, identità, livello effettivo, definizione e schema; dettagli fino a 40 000 caratteri, poi solo i nomi), sia
+  nell'esecutore cloud sia in `get_phase_instructions` dell'esecutore locale: un tool esistente non riproposto risulta `removed`.
 - Revisione: approvare un tool/agente/skill lo applica in una transazione e lo rende `active` (un tool
   `removed` diventa `disabled`, mai cancellato); endpoint/completamento/evoluzione si esportano come issue.
   Un'analisi alla volta per app; all'avvio le analisi rimaste aperte diventano `interrupted`.

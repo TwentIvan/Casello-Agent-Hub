@@ -34,6 +34,8 @@ export interface Agent {
      * @nullable
      */
   monthlyBudgetUsd: number | null;
+  /** Tutte le scritture (livello L1) vanno in "Da confermare". Per l'agente generale (Responsabile di prodotto) è sempre true */
+  confirmWrites: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

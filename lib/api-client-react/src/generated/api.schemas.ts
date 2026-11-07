@@ -434,6 +434,8 @@ export interface Agent {
      * @nullable
      */
   monthlyBudgetUsd: number | null;
+  /** Tutte le scritture (livello L1) vanno in "Da confermare". Per l'agente generale (Responsabile di prodotto) è sempre true */
+  confirmWrites: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -472,6 +474,8 @@ export interface AgentUpdate {
      * @nullable
      */
   monthlyBudgetUsd?: number | null;
+  /** Tutte le scritture in "Da confermare"; per l'agente generale si ignora (sempre true) */
+  confirmWrites?: boolean;
 }
 
 export type AgentModelAssignmentsAssignmentsItem = {

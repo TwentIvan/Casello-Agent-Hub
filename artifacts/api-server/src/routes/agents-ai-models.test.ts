@@ -284,6 +284,23 @@ describe("agenti con aiModelId", () => {
     expect(res.status).toBe(200);
     expect(res.json[0]).toHaveProperty("aiModelId", null);
   });
+
+  it("PATCH confirmWrites false su general → resta true; su un agente di area si imposta", async () => {
+    const app = await createApp();
+    const list = await api("GET", `/agents?appId=${app.id}`);
+    const general = list.json.find((a: any) => a.role === "general");
+    expect(general.confirmWrites).toBe(true);
+    const patched = await api("PATCH", `/agents/${general.id}`, { confirmWrites: false });
+    expect(patched.status, patched.text).toBe(200);
+    expect(patched.json.confirmWrites).toBe(true);
+    const [row] = await db.select().from(agentsTable).where(eq(agentsTable.id, general.id));
+    expect(row!.confirmWrites).toBe(false); // il valore salvato non cambia: il serializer lo mostra vero
+
+    const area = await api("POST", "/agents", { appId: app.id, name: "Area" });
+    expect(area.json.confirmWrites).toBe(false);
+    const on = await api("PATCH", `/agents/${area.json.id}`, { confirmWrites: true });
+    expect(on.json.confirmWrites).toBe(true);
+  });
 });
 
 describe("avvio delle analisi con aiModelId", () => {

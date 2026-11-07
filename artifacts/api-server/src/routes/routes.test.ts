@@ -600,7 +600,7 @@ describe("run", () => {
 
   it("trigger: legge X-App-User-Token, 202 pending; il token arriva all'app e non è salvato", async () => {
     const app = await createApp();
-    await api("POST", `/apps/${app.id}/tools`, { ...HTTP_TOOL, level: "L1" });
+    await api("POST", `/apps/${app.id}/tools`, { ...HTTP_TOOL, level: "L0" });
     const general = await runnableAgent(app.id);
     llmReplies = [toolCallReply("delete_item", { id: "7" }), textReply("ok")];
     const res = await api("POST", `/agents/${general.id}/runs`, { input: "Elimina 7" }, { "X-App-User-Token": ` ${USER_TOKEN} ` });

@@ -948,6 +948,7 @@ export const ListAgentsResponseItem = zod.object({
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
+  "confirmWrites": zod.boolean().describe('Tutte le scritture (livello L1) vanno in \"Da confermare\". Per l\'agente generale (Responsabile di prodotto) è sempre true'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -981,6 +982,7 @@ export const CreateAgentResponse = zod.object({
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
+  "confirmWrites": zod.boolean().describe('Tutte le scritture (livello L1) vanno in \"Da confermare\". Per l\'agente generale (Responsabile di prodotto) è sempre true'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -1006,6 +1008,7 @@ export const GetAgentResponse = zod.object({
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
+  "confirmWrites": zod.boolean().describe('Tutte le scritture (livello L1) vanno in \"Da confermare\". Per l\'agente generale (Responsabile di prodotto) è sempre true'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -1031,7 +1034,8 @@ export const UpdateAgentBody = zod.object({
   "status": zod.enum(['active', 'inactive', 'draft']).optional(),
   "area": zod.string().nullish(),
   "defaultIdentity": zod.enum(['user', 'service']).optional(),
-  "monthlyBudgetUsd": zod.number().min(updateAgentBodyMonthlyBudgetUsdMin).max(updateAgentBodyMonthlyBudgetUsdMax).nullish().describe('Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite')
+  "monthlyBudgetUsd": zod.number().min(updateAgentBodyMonthlyBudgetUsdMin).max(updateAgentBodyMonthlyBudgetUsdMax).nullish().describe('Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite'),
+  "confirmWrites": zod.boolean().optional().describe('Tutte le scritture in \"Da confermare\"; per l\'agente generale si ignora (sempre true)')
 })
 
 export const UpdateAgentResponse = zod.object({
@@ -1047,6 +1051,7 @@ export const UpdateAgentResponse = zod.object({
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
+  "confirmWrites": zod.boolean().describe('Tutte le scritture (livello L1) vanno in \"Da confermare\". Per l\'agente generale (Responsabile di prodotto) è sempre true'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -1256,6 +1261,7 @@ export const SetAppAgentModelsResponseItem = zod.object({
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
+  "confirmWrites": zod.boolean().describe('Tutte le scritture (livello L1) vanno in \"Da confermare\". Per l\'agente generale (Responsabile di prodotto) è sempre true'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -1287,6 +1293,7 @@ export const SetAgentToolsResponse = zod.object({
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
+  "confirmWrites": zod.boolean().describe('Tutte le scritture (livello L1) vanno in \"Da confermare\". Per l\'agente generale (Responsabile di prodotto) è sempre true'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })

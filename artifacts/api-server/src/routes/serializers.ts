@@ -78,6 +78,7 @@ export async function withToolIds(agents: Agent[]) {
   return agents.map((a) => ({
     ...a,
     monthlyBudgetUsd: toNumberOrNull(a.monthlyBudgetUsd),
+    confirmWrites: a.role === "general" || a.confirmWrites,
     toolIds: ids.get(a.id) ?? [],
   }));
 }

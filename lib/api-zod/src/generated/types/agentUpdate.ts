@@ -29,4 +29,6 @@ export interface AgentUpdate {
      * @nullable
      */
   monthlyBudgetUsd?: number | null;
+  /** Tutte le scritture in "Da confermare"; per l'agente generale si ignora (sempre true) */
+  confirmWrites?: boolean;
 }

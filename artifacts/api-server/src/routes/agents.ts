@@ -110,9 +110,9 @@ async function modelUpdate(
 
 router.patch("/agents/:id", async (req, res) => {
   const { id } = parseRequest(UpdateAgentParams, req.params);
-  const { aiModelId, monthlyBudgetUsd, ...body } = parseRequest(UpdateAgentBody, req.body);
+  const { aiModelId, monthlyBudgetUsd, confirmWrites, ...body } = parseRequest(UpdateAgentBody, req.body);
   const [current] = await db
-    .select({ aiModelId: agentsTable.aiModelId })
+    .select({ aiModelId: agentsTable.aiModelId, role: agentsTable.role })
     .from(agentsTable)
     .where(eq(agentsTable.id, id))
     .limit(1);
@@ -132,6 +132,8 @@ router.patch("/agents/:id", async (req, res) => {
     const agent = await updateAgent(id, {
       ...body,
       ...modelFields,
+      // il Responsabile (general) ha le scritture in coda sempre: il valore si ignora
+      ...(confirmWrites !== undefined && current.role !== "general" && { confirmWrites }),
       ...(monthlyBudgetUsd !== undefined && { monthlyBudgetUsd: budgetColumn(monthlyBudgetUsd) }),
     });
     res.json(UpdateAgentResponse.parse(await withToolIdsOne(agent)));

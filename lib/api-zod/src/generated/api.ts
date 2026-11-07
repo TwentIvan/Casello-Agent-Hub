@@ -18,6 +18,21 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * Dice se l'origine è tra quelle ammesse (EMBED_ALLOWED_ORIGINS) e con quale client OAuth si collega. Origine mancante o non valida: sempre allowed false, mai un errore.
+ * @summary Configurazione del plugin per un'origine ospite (pubblica)
+ */
+export const GetEmbedConfigQueryParams = zod.object({
+  "origin": zod.coerce.string().optional()
+})
+
+export const GetEmbedConfigResponse = zod.object({
+  "allowed": zod.boolean(),
+  "clientId": zod.string().nullable(),
+  "appName": zod.string().nullable()
+})
+
+
+/**
  * Con la sessione del login o con un token personale (api:read o api:write); auth dice quale.
  * @summary Utente della sessione corrente
  */
@@ -130,7 +145,7 @@ export const ListOAuthGrantsResponseItem = zod.object({
   "redirectHost": zod.string().describe('Host dell\'indirizzo di ritorno registrato dal client'),
   "createdAt": zod.coerce.date(),
   "lastUsedAt": zod.coerce.date().nullable(),
-  "canDecide": zod.boolean().describe('Può approvare e rifiutare le azioni in coda (ambito api:write)')
+  "canDecide": zod.boolean().describe('Può approvare e rifiutare le azioni in coda (ambito api:write o embed)')
 })
 export const ListOAuthGrantsResponse = zod.array(ListOAuthGrantsResponseItem)
 
@@ -475,7 +490,7 @@ export const SetCentralinoModelResponse = zod.object({
 
 
 /**
- * Modello della chat e tetto mensile di Alfred, modello e tetto mensile di Lucius. Con la spesa del mese di ciascun personaggio e il numero di esecuzioni senza prezzo. Null = modello predefinito / nessun tetto. Solo con il login: con un token risponde 403.
+ * Modello della chat e tetto mensile di Alfred, modello e tetto mensile di Lucius. Con la spesa del mese di ciascun personaggio e il numero di esecuzioni senza prezzo. Null = modello predefinito / nessun tetto. Con il login o con il token del pannello incorporato; con un altro token risponde 403.
  * @summary Modelli e tetti di Alfred e Lucius nelle aree
  */
 export const getCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMin = 0;
@@ -4853,6 +4868,19 @@ export const getAlfredThreadResponseTwoMessagesItemPageContextOnePageMax = 40;
 export const getAlfredThreadResponseTwoMessagesItemPageContextOnePageRegExp = new RegExp('^[a-z_]+$');
 export const getAlfredThreadResponseTwoMessagesItemPageContextOneIdMax = 100;
 
+export const getAlfredThreadResponseTwoMessagesItemPageContextOneHostAppRegExp = new RegExp('^[a-z0-9][a-z0-9-]{0,63}$');
+export const getAlfredThreadResponseTwoMessagesItemPageContextOneHostPageMax = 40;
+
+
+export const getAlfredThreadResponseTwoMessagesItemPageContextOneHostPageRegExp = new RegExp('^[A-Za-z0-9._:-]+$');
+export const getAlfredThreadResponseTwoMessagesItemPageContextOneHostIdMax = 40;
+
+
+export const getAlfredThreadResponseTwoMessagesItemPageContextOneHostIdRegExp = new RegExp('^[A-Za-z0-9._:-]+$');
+export const getAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleMax = 200;
+
+
+export const getAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleRegExp = new RegExp('^[^\\r\\n]+$');
 
 
 export const GetAlfredThreadResponse = zod.object({
@@ -4878,7 +4906,13 @@ export const GetAlfredThreadResponse = zod.object({
   "error": zod.boolean(),
   "pageContext": zod.union([zod.object({
   "page": zod.string().min(1).max(getAlfredThreadResponseTwoMessagesItemPageContextOnePageMax).regex(getAlfredThreadResponseTwoMessagesItemPageContextOnePageRegExp),
-  "id": zod.string().min(1).max(getAlfredThreadResponseTwoMessagesItemPageContextOneIdMax).optional()
+  "id": zod.string().min(1).max(getAlfredThreadResponseTwoMessagesItemPageContextOneIdMax).optional(),
+  "host": zod.object({
+  "app": zod.string().regex(getAlfredThreadResponseTwoMessagesItemPageContextOneHostAppRegExp),
+  "page": zod.string().min(1).max(getAlfredThreadResponseTwoMessagesItemPageContextOneHostPageMax).regex(getAlfredThreadResponseTwoMessagesItemPageContextOneHostPageRegExp),
+  "id": zod.string().min(1).max(getAlfredThreadResponseTwoMessagesItemPageContextOneHostIdMax).regex(getAlfredThreadResponseTwoMessagesItemPageContextOneHostIdRegExp).optional(),
+  "title": zod.string().min(1).max(getAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleMax).regex(getAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleRegExp).optional()
+}).optional().describe('Pagina dell\'app ospite (pannello incorporato); ammesso solo con page \"host\"')
 }),zod.null()]),
   "createdAt": zod.coerce.date()
 })),
@@ -4904,6 +4938,19 @@ export const restartAlfredThreadResponseTwoMessagesItemPageContextOnePageMax = 4
 export const restartAlfredThreadResponseTwoMessagesItemPageContextOnePageRegExp = new RegExp('^[a-z_]+$');
 export const restartAlfredThreadResponseTwoMessagesItemPageContextOneIdMax = 100;
 
+export const restartAlfredThreadResponseTwoMessagesItemPageContextOneHostAppRegExp = new RegExp('^[a-z0-9][a-z0-9-]{0,63}$');
+export const restartAlfredThreadResponseTwoMessagesItemPageContextOneHostPageMax = 40;
+
+
+export const restartAlfredThreadResponseTwoMessagesItemPageContextOneHostPageRegExp = new RegExp('^[A-Za-z0-9._:-]+$');
+export const restartAlfredThreadResponseTwoMessagesItemPageContextOneHostIdMax = 40;
+
+
+export const restartAlfredThreadResponseTwoMessagesItemPageContextOneHostIdRegExp = new RegExp('^[A-Za-z0-9._:-]+$');
+export const restartAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleMax = 200;
+
+
+export const restartAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleRegExp = new RegExp('^[^\\r\\n]+$');
 
 
 export const RestartAlfredThreadResponse = zod.object({
@@ -4929,7 +4976,13 @@ export const RestartAlfredThreadResponse = zod.object({
   "error": zod.boolean(),
   "pageContext": zod.union([zod.object({
   "page": zod.string().min(1).max(restartAlfredThreadResponseTwoMessagesItemPageContextOnePageMax).regex(restartAlfredThreadResponseTwoMessagesItemPageContextOnePageRegExp),
-  "id": zod.string().min(1).max(restartAlfredThreadResponseTwoMessagesItemPageContextOneIdMax).optional()
+  "id": zod.string().min(1).max(restartAlfredThreadResponseTwoMessagesItemPageContextOneIdMax).optional(),
+  "host": zod.object({
+  "app": zod.string().regex(restartAlfredThreadResponseTwoMessagesItemPageContextOneHostAppRegExp),
+  "page": zod.string().min(1).max(restartAlfredThreadResponseTwoMessagesItemPageContextOneHostPageMax).regex(restartAlfredThreadResponseTwoMessagesItemPageContextOneHostPageRegExp),
+  "id": zod.string().min(1).max(restartAlfredThreadResponseTwoMessagesItemPageContextOneHostIdMax).regex(restartAlfredThreadResponseTwoMessagesItemPageContextOneHostIdRegExp).optional(),
+  "title": zod.string().min(1).max(restartAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleMax).regex(restartAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleRegExp).optional()
+}).optional().describe('Pagina dell\'app ospite (pannello incorporato); ammesso solo con page \"host\"')
 }),zod.null()]),
   "createdAt": zod.coerce.date()
 })),
@@ -5024,6 +5077,19 @@ export const getCharacterConversationResponseTwoMessagesItemPageContextOnePageMa
 export const getCharacterConversationResponseTwoMessagesItemPageContextOnePageRegExp = new RegExp('^[a-z_]+$');
 export const getCharacterConversationResponseTwoMessagesItemPageContextOneIdMax = 100;
 
+export const getCharacterConversationResponseTwoMessagesItemPageContextOneHostAppRegExp = new RegExp('^[a-z0-9][a-z0-9-]{0,63}$');
+export const getCharacterConversationResponseTwoMessagesItemPageContextOneHostPageMax = 40;
+
+
+export const getCharacterConversationResponseTwoMessagesItemPageContextOneHostPageRegExp = new RegExp('^[A-Za-z0-9._:-]+$');
+export const getCharacterConversationResponseTwoMessagesItemPageContextOneHostIdMax = 40;
+
+
+export const getCharacterConversationResponseTwoMessagesItemPageContextOneHostIdRegExp = new RegExp('^[A-Za-z0-9._:-]+$');
+export const getCharacterConversationResponseTwoMessagesItemPageContextOneHostTitleMax = 200;
+
+
+export const getCharacterConversationResponseTwoMessagesItemPageContextOneHostTitleRegExp = new RegExp('^[^\\r\\n]+$');
 
 
 export const GetCharacterConversationResponse = zod.object({
@@ -5049,7 +5115,13 @@ export const GetCharacterConversationResponse = zod.object({
   "error": zod.boolean(),
   "pageContext": zod.union([zod.object({
   "page": zod.string().min(1).max(getCharacterConversationResponseTwoMessagesItemPageContextOnePageMax).regex(getCharacterConversationResponseTwoMessagesItemPageContextOnePageRegExp),
-  "id": zod.string().min(1).max(getCharacterConversationResponseTwoMessagesItemPageContextOneIdMax).optional()
+  "id": zod.string().min(1).max(getCharacterConversationResponseTwoMessagesItemPageContextOneIdMax).optional(),
+  "host": zod.object({
+  "app": zod.string().regex(getCharacterConversationResponseTwoMessagesItemPageContextOneHostAppRegExp),
+  "page": zod.string().min(1).max(getCharacterConversationResponseTwoMessagesItemPageContextOneHostPageMax).regex(getCharacterConversationResponseTwoMessagesItemPageContextOneHostPageRegExp),
+  "id": zod.string().min(1).max(getCharacterConversationResponseTwoMessagesItemPageContextOneHostIdMax).regex(getCharacterConversationResponseTwoMessagesItemPageContextOneHostIdRegExp).optional(),
+  "title": zod.string().min(1).max(getCharacterConversationResponseTwoMessagesItemPageContextOneHostTitleMax).regex(getCharacterConversationResponseTwoMessagesItemPageContextOneHostTitleRegExp).optional()
+}).optional().describe('Pagina dell\'app ospite (pannello incorporato); ammesso solo con page \"host\"')
 }),zod.null()]),
   "createdAt": zod.coerce.date()
 })),
@@ -5127,13 +5199,32 @@ export const sendCharacterMessageBodyPageContextPageMax = 40;
 export const sendCharacterMessageBodyPageContextPageRegExp = new RegExp('^[a-z_]+$');
 export const sendCharacterMessageBodyPageContextIdMax = 100;
 
+export const sendCharacterMessageBodyPageContextHostAppRegExp = new RegExp('^[a-z0-9][a-z0-9-]{0,63}$');
+export const sendCharacterMessageBodyPageContextHostPageMax = 40;
+
+
+export const sendCharacterMessageBodyPageContextHostPageRegExp = new RegExp('^[A-Za-z0-9._:-]+$');
+export const sendCharacterMessageBodyPageContextHostIdMax = 40;
+
+
+export const sendCharacterMessageBodyPageContextHostIdRegExp = new RegExp('^[A-Za-z0-9._:-]+$');
+export const sendCharacterMessageBodyPageContextHostTitleMax = 200;
+
+
+export const sendCharacterMessageBodyPageContextHostTitleRegExp = new RegExp('^[^\\r\\n]+$');
 
 
 export const SendCharacterMessageBody = zod.object({
   "content": zod.string().min(1).max(sendCharacterMessageBodyContentMax),
   "pageContext": zod.object({
   "page": zod.string().min(1).max(sendCharacterMessageBodyPageContextPageMax).regex(sendCharacterMessageBodyPageContextPageRegExp),
-  "id": zod.string().min(1).max(sendCharacterMessageBodyPageContextIdMax).optional()
+  "id": zod.string().min(1).max(sendCharacterMessageBodyPageContextIdMax).optional(),
+  "host": zod.object({
+  "app": zod.string().regex(sendCharacterMessageBodyPageContextHostAppRegExp),
+  "page": zod.string().min(1).max(sendCharacterMessageBodyPageContextHostPageMax).regex(sendCharacterMessageBodyPageContextHostPageRegExp),
+  "id": zod.string().min(1).max(sendCharacterMessageBodyPageContextHostIdMax).regex(sendCharacterMessageBodyPageContextHostIdRegExp).optional(),
+  "title": zod.string().min(1).max(sendCharacterMessageBodyPageContextHostTitleMax).regex(sendCharacterMessageBodyPageContextHostTitleRegExp).optional()
+}).optional().describe('Pagina dell\'app ospite (pannello incorporato); ammesso solo con page \"host\"')
 }).optional()
 })
 
@@ -5143,6 +5234,19 @@ export const sendCharacterMessageResponsePageContextOnePageMax = 40;
 export const sendCharacterMessageResponsePageContextOnePageRegExp = new RegExp('^[a-z_]+$');
 export const sendCharacterMessageResponsePageContextOneIdMax = 100;
 
+export const sendCharacterMessageResponsePageContextOneHostAppRegExp = new RegExp('^[a-z0-9][a-z0-9-]{0,63}$');
+export const sendCharacterMessageResponsePageContextOneHostPageMax = 40;
+
+
+export const sendCharacterMessageResponsePageContextOneHostPageRegExp = new RegExp('^[A-Za-z0-9._:-]+$');
+export const sendCharacterMessageResponsePageContextOneHostIdMax = 40;
+
+
+export const sendCharacterMessageResponsePageContextOneHostIdRegExp = new RegExp('^[A-Za-z0-9._:-]+$');
+export const sendCharacterMessageResponsePageContextOneHostTitleMax = 200;
+
+
+export const sendCharacterMessageResponsePageContextOneHostTitleRegExp = new RegExp('^[^\\r\\n]+$');
 
 
 export const SendCharacterMessageResponse = zod.object({
@@ -5152,7 +5256,13 @@ export const SendCharacterMessageResponse = zod.object({
   "error": zod.boolean(),
   "pageContext": zod.union([zod.object({
   "page": zod.string().min(1).max(sendCharacterMessageResponsePageContextOnePageMax).regex(sendCharacterMessageResponsePageContextOnePageRegExp),
-  "id": zod.string().min(1).max(sendCharacterMessageResponsePageContextOneIdMax).optional()
+  "id": zod.string().min(1).max(sendCharacterMessageResponsePageContextOneIdMax).optional(),
+  "host": zod.object({
+  "app": zod.string().regex(sendCharacterMessageResponsePageContextOneHostAppRegExp),
+  "page": zod.string().min(1).max(sendCharacterMessageResponsePageContextOneHostPageMax).regex(sendCharacterMessageResponsePageContextOneHostPageRegExp),
+  "id": zod.string().min(1).max(sendCharacterMessageResponsePageContextOneHostIdMax).regex(sendCharacterMessageResponsePageContextOneHostIdRegExp).optional(),
+  "title": zod.string().min(1).max(sendCharacterMessageResponsePageContextOneHostTitleMax).regex(sendCharacterMessageResponsePageContextOneHostTitleRegExp).optional()
+}).optional().describe('Pagina dell\'app ospite (pannello incorporato); ammesso solo con page \"host\"')
 }),zod.null()]),
   "createdAt": zod.coerce.date()
 })

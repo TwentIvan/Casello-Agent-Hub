@@ -11,9 +11,10 @@ import { isAllowed } from "./users";
 const TOKEN_PREFIX = "cas_";
 /**
  * Ambiti di un token: mcp = server MCP; api:read = lettura su /api; api:write = lettura e scrittura su /api;
- * node = protocollo del nodo locale (solo /api/node, solo token legati a un nodo).
+ * node = protocollo del nodo locale (solo /api/node, solo token legati a un nodo); embed = pannello incorporato
+ * (solo collegamenti OAuth `cao_…` dei client `embed`, mai un token personale).
  */
-export const TOKEN_SCOPES = ["mcp", "api:read", "api:write", "node"] as const;
+export const TOKEN_SCOPES = ["mcp", "api:read", "api:write", "node", "embed"] as const;
 export type TokenScope = (typeof TOKEN_SCOPES)[number];
 /** Ambiti che l'utente può scegliere per un token personale: `node` nasce solo con un nodo (createNodeToken). */
 export const PERSONAL_TOKEN_SCOPES = ["mcp", "api:read", "api:write"] as const;

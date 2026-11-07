@@ -91,7 +91,8 @@ export function consumeActionDecision(userId: number): boolean {
 export const tokenRateLimit = rateLimit({
   limit: 120,
   windowMs: 60_000,
-  key: (req) => `token:${req.auth?.kind === "token" ? req.auth.tokenId : "?"}`,
+  key: (req) =>
+    req.auth?.kind === "token" ? (req.auth.via === "embed" ? `embed:${req.auth.grantId}` : `token:${req.auth.tokenId}`) : "token:?",
 });
 
 // Messaggi al capo di una squadra (ognuno fa partire un turno che consuma token): 10 al minuto per utente.

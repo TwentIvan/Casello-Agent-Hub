@@ -24,6 +24,7 @@ export function ConfirmItem({
   rejectLabel = "Rifiuta",
   busy = false,
   extraActions,
+  approveSlot,
   children,
   className,
 }: {
@@ -43,6 +44,8 @@ export function ConfirmItem({
   busy?: boolean;
   /** Azioni discrete in più (es. «Dettagli»), a sinistra della nota */
   extraActions?: ReactNode;
+  /** Al posto del pulsante «Approva» (es. il collegamento alla console del pannello incorporato) */
+  approveSlot?: ReactNode;
   /** Contenuto aggiuntivo tra la sintesi e le azioni (es. il piano proposto) */
   children?: ReactNode;
   className?: string;
@@ -79,9 +82,11 @@ export function ConfirmItem({
         <Button variant="secondary" disabled={busy} onClick={onReject}>
           {rejectLabel}
         </Button>
-        <Button disabled={busy} onClick={onApprove}>
-          {approveLabel}
-        </Button>
+        {approveSlot ?? (
+          <Button disabled={busy} onClick={onApprove}>
+            {approveLabel}
+          </Button>
+        )}
       </div>
     </article>
   );

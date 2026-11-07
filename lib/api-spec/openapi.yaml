@@ -12,6 +12,8 @@ tags:
     description: Nodi locali registrati e protocollo del nodo
   - name: health
     description: Health operations
+  - name: embed
+    description: Plugin incorporabile di Botcave (configurazione pubblica per le app ospiti)
   - name: auth
     description: Login (Google, GitHub) e sessione (tutte le altre route richiedono la sessione, tranne /healthz e /auth/providers)
   - name: apps
@@ -63,6 +65,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /embed/config:
+    get:
+      operationId: getEmbedConfig
+      tags: [embed]
+      summary: Configurazione del plugin per un'origine ospite (pubblica)
+      description: >-
+        Dice se l'origine è tra quelle ammesse (EMBED_ALLOWED_ORIGINS) e con quale client OAuth si collega.
+        Origine mancante o non valida: sempre allowed false, mai un errore.
+      parameters:
+        - name: origin
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Configurazione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedConfig"
 
   # ─── Auth ───────────────────────────────────────────────────────────────────
   # /auth/login e /auth/callback sono redirect del flusso OIDC (Google), non chiamate JSON.
@@ -623,7 +647,7 @@ paths:
       summary: Modelli e tetti di Alfred e Lucius nelle aree
       description: >-
         Modello della chat e tetto mensile di Alfred, modello e tetto mensile di Lucius. Con la spesa del
-        mese di ciascun personaggio e il numero di esecuzioni senza prezzo. Null = modello predefinito / nessun tetto. Solo con il login: con un token risponde 403.
+        mese di ciascun personaggio e il numero di esecuzioni senza prezzo. Null = modello predefinito / nessun tetto. Con il login o con il token del pannello incorporato; con un altro token risponde 403.
       responses:
         "200":
           description: Impostazioni dei personaggi
@@ -4188,6 +4212,18 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
+    EmbedConfig:
+      type: object
+      required: [allowed, clientId, appName]
+      properties:
+        allowed:
+          type: boolean
+        clientId:
+          type: string
+          nullable: true
+        appName:
+          type: string
+          nullable: true
     HealthStatus:
       type: object
       properties:
@@ -5877,6 +5913,29 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+        host:
+          type: object
+          description: Pagina dell'app ospite (pannello incorporato); ammesso solo con page "host"
+          required: [app, page]
+          properties:
+            app:
+              type: string
+              pattern: "^[a-z0-9][a-z0-9-]{0,63}$"
+            page:
+              type: string
+              minLength: 1
+              maxLength: 40
+              pattern: "^[A-Za-z0-9._:-]+$"
+            id:
+              type: string
+              minLength: 1
+              maxLength: 40
+              pattern: "^[A-Za-z0-9._:-]+$"
+            title:
+              type: string
+              minLength: 1
+              maxLength: 200
+              pattern: "^[^\\r\\n]+$"
 
     CharacterMessage:
       type: object
@@ -6270,7 +6329,7 @@ components:
           format: date-time
         canDecide:
           type: boolean
-          description: Può approvare e rifiutare le azioni in coda (ambito api:write)
+          description: Può approvare e rifiutare le azioni in coda (ambito api:write o embed)
 
     Node:
       type: object

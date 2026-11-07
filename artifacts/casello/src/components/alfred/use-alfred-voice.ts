@@ -76,6 +76,8 @@ interface Frame {
 }
 
 /** Conversazione vocale con Alfred: microfono, Gemini Live (WebSocket diretto), strumenti, consumi e ripresa. */
+export type AlfredVoice = ReturnType<typeof useAlfredVoice>;
+
 export function useAlfredVoice() {
   const [status, setStatus] = useState<AlfredStatus>("stopped");
   const [error, setError] = useState<AlfredError | null>(null);

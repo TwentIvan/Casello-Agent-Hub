@@ -10,7 +10,12 @@ export function sameResource(value: unknown): boolean {
   return typeof value === "string" && value.replace(/\/+$/, "") === oauthBase().resource;
 }
 
-/** `scope` ammesso: lista separata da spazi che contiene `mcp` (i valori sconosciuti si ignorano). */
-export function scopeAllowed(value: unknown): boolean {
-  return typeof value === "string" && value.split(/\s+/).includes("mcp");
+/**
+ * `scope` ammesso: lista separata da spazi (i valori sconosciuti si ignorano). Per i client `embed` deve contenere
+ * `embed` e non `mcp`; per gli altri `mcp` e non `embed`: i due ambiti non si mescolano.
+ */
+export function scopeAllowed(value: unknown, kind: "dcr" | "metadata" | "embed" = "dcr"): boolean {
+  if (typeof value !== "string") return false;
+  const list = value.split(/\s+/);
+  return kind === "embed" ? list.includes("embed") && !list.includes("mcp") : list.includes("mcp") && !list.includes("embed");
 }

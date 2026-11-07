@@ -794,7 +794,7 @@ CREATE TABLE "team_attachments" (
 CREATE INDEX "team_attachments_instance_idx" ON "team_attachments" USING btree ("instance_id");
 
 -- Connettore OAuth per l'app Claude
-CREATE TYPE "public"."oauth_client_kind" AS ENUM('dcr', 'metadata');
+CREATE TYPE "public"."oauth_client_kind" AS ENUM('dcr', 'metadata', 'embed');
 CREATE TYPE "public"."oauth_token_kind" AS ENUM('access', 'refresh');
 
 CREATE TABLE "oauth_clients" (

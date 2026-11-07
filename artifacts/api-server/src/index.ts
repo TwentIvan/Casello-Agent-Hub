@@ -4,6 +4,7 @@ import { failInterruptedAnalyses } from "./lib/architect/run-analysis";
 import { startLocalLeaseJob } from "./lib/architect/local-executor";
 import { startNodeSweeper, sweepNodeTasks } from "./lib/nodes/lease-sweeper";
 import { startOAuthSweeper } from "./lib/oauth/grants";
+import { ensureEmbedClients } from "./lib/embed/clients";
 import { closeAllActiveSessions, startAlfredSweeper } from "./lib/alfred/sessions";
 import { startMemorySweeper } from "./lib/memory/summaries";
 import { failInterruptedRuns } from "./lib/run-executor";
@@ -127,6 +128,11 @@ startNodeSweeper();
 
 // Connettore OAuth: pulizia di codici, token, collegamenti revocati e client inutilizzati, all'avvio e ogni ora.
 startOAuthSweeper();
+
+// Plugin incorporabile: un client OAuth `embed` per ogni origine di EMBED_ALLOWED_ORIGINS. Un errore non blocca l'avvio.
+ensureEmbedClients().catch((err: unknown) =>
+  logger.error({ errName: err instanceof Error ? err.name : "Error" }, "Allineamento dei client embed non riuscito"),
+);
 
 // Alfred: all'avvio le sessioni rimaste attive si chiudono; poi controllo ogni 5 minuti.
 try {

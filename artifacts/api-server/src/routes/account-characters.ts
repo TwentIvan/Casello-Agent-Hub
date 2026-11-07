@@ -4,17 +4,18 @@ import {
   UpdateCharacterSettingsBody,
   UpdateCharacterSettingsResponse,
 } from "@workspace/api-zod";
-import { currentUserId, sessionOnly } from "../lib/auth";
+import { currentUserId, sessionOnly, sessionOrEmbed } from "../lib/auth";
 import { getCharacterSettingsView, setCharacterSettings } from "../lib/characters/settings";
 import { CharacterError } from "../lib/characters/types";
 import { parseRequest } from "../middlewares/error-handler";
 
-// Modelli e tetti di spesa di Alfred (chat) e Lucius nelle aree: impostazioni dell'account, solo con il login.
+// Modelli e tetti di spesa di Alfred (chat) e Lucius nelle aree: impostazioni dell'account. La lettura vale anche con il
+// token del pannello incorporato (il dialogo «Nuova» preseleziona il modello del personaggio); la modifica solo con il login.
 
 export function createAccountCharactersRouter(): IRouter {
   const router: IRouter = Router();
 
-  router.get("/account/characters", sessionOnly, async (req, res) => {
+  router.get("/account/characters", sessionOrEmbed, async (req, res) => {
     res.json(GetCharacterSettingsResponse.parse(await getCharacterSettingsView(currentUserId(req))));
   });
 

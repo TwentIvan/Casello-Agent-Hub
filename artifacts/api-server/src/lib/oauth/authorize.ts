@@ -2,10 +2,12 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { db, oauthCodesTable, oauthGrantsTable } from "@workspace/db";
 import { sameResource, scopeAllowed } from "./config";
+import { embedCallbackUri, originOfEmbedClient } from "../embed/origins";
 import { redirectMatches, resolveClient } from "./clients";
 
 export const CODE_TTL_MS = 10 * 60 * 1000;
 export const CONNECTOR_SCOPES = ["mcp", "api:write"];
+export const EMBED_SCOPES = ["embed"];
 const MAX_STATE = 500;
 const CHALLENGE_RE = /^[A-Za-z0-9._~-]{43,128}$/;
 
@@ -13,6 +15,9 @@ export type AuthorizeParams = {
   clientId: string;
   clientRowId: number;
   clientName: string;
+  clientKind: "dcr" | "metadata" | "embed";
+  /** Cosa si mostra nel consenso: origine dell'app ospite per `embed`, host del ritorno per gli altri. */
+  displayHost: string;
   redirectUri: string;
   codeChallenge: string;
   state: string | null;
@@ -53,6 +58,20 @@ function str(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function displayHostOf(kind: string, clientId: string, redirectUri: string): string {
+  if (kind === "embed") {
+    const origin = originOfEmbedClient(clientId);
+    if (origin) {
+      try {
+        return new URL(origin).host;
+      } catch {
+        /* ripiego sul ritorno */
+      }
+    }
+  }
+  return new URL(redirectUri).host;
+}
+
 /** Valida la richiesta di autorizzazione (query): client e ritorno prima, poi gli altri parametri. */
 export async function validateAuthorizeRequest(query: Record<string, unknown>): Promise<AuthorizeParams> {
   const clientId = str(query["client_id"]);
@@ -60,7 +79,11 @@ export async function validateAuthorizeRequest(query: Record<string, unknown>): 
   if (!clientId) throw new AuthorizePageError("Applicazione non riconosciuta.");
   const client = await resolveClient(clientId);
   if (!client) throw new AuthorizePageError("Applicazione non riconosciuta.");
-  if (!redirectUri || !redirectMatches(client.redirectUris, redirectUri)) {
+  // Il ritorno dei client `embed` è uno solo, sul nostro dominio: confronto esatto (non è tra quelli ammessi ai connettori)
+  const redirectOk =
+    !!redirectUri &&
+    (client.kind === "embed" ? redirectUri === embedCallbackUri() && client.redirectUris.includes(redirectUri) : redirectMatches(client.redirectUris, redirectUri));
+  if (!redirectOk || !redirectUri) {
     throw new AuthorizePageError("Indirizzo di ritorno non valido.");
   }
 
@@ -73,7 +96,7 @@ export async function validateAuthorizeRequest(query: Record<string, unknown>): 
   if (rawState !== undefined && rawState.length > MAX_STATE) fail("invalid_request");
   if (str(query["response_type"]) !== "code") fail("unsupported_response_type");
   const scope = query["scope"];
-  if (scope !== undefined && !scopeAllowed(scope)) fail("invalid_scope");
+  if (scope !== undefined && !scopeAllowed(scope, client.kind)) fail("invalid_scope");
   const resource = query["resource"];
   if (resource !== undefined && !sameResource(resource)) fail("invalid_target");
   const challenge = str(query["code_challenge"]);
@@ -84,6 +107,8 @@ export async function validateAuthorizeRequest(query: Record<string, unknown>): 
     clientId: client.clientId,
     clientRowId: client.id,
     clientName: client.name,
+    clientKind: client.kind,
+    displayHost: displayHostOf(client.kind, client.clientId, redirectUri),
     redirectUri,
     codeChallenge: challenge!,
     state,
@@ -103,7 +128,7 @@ export async function approve(userId: number, p: AuthorizeParams): Promise<strin
       .where(and(eq(oauthGrantsTable.userId, userId), eq(oauthGrantsTable.clientRowId, p.clientRowId), isNull(oauthGrantsTable.revokedAt)));
     const [grant] = await tx
       .insert(oauthGrantsTable)
-      .values({ userId, clientRowId: p.clientRowId, scopes: CONNECTOR_SCOPES })
+      .values({ userId, clientRowId: p.clientRowId, scopes: p.clientKind === "embed" ? EMBED_SCOPES : CONNECTOR_SCOPES })
       .returning({ id: oauthGrantsTable.id });
     await tx.insert(oauthCodesTable).values({
       codeHash: sha256Hex(code),

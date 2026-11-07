@@ -61,12 +61,28 @@ function botcaveIcons(): Plugin {
 }
 const base = basePath.endsWith("/") ? basePath : `${basePath}/`;
 
+/** In sviluppo /embed e /embed/callback servono embed.html (in produzione lo fa nginx). */
+function embedPages(): Plugin {
+  const pages = new Set([`${base}embed`, `${base}embed/callback`]);
+  return {
+    name: "botcave-embed-pages",
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        const [pathname, query] = (req.url ?? "").split("?", 2) as [string, string | undefined];
+        if (pages.has(pathname)) req.url = `${base}embed.html${query ? `?${query}` : ""}`;
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
   base: basePath,
   plugins: [
     react(),
     tailwindcss(),
     botcaveIcons(),
+    embedPages(),
   ],
   resolve: {
     alias: {
@@ -80,6 +96,12 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        main: path.resolve(import.meta.dirname, "index.html"),
+        embed: path.resolve(import.meta.dirname, "embed.html"),
+      },
+    },
   },
   server: {
     port,
@@ -88,6 +110,11 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/api": {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: true,
+      },
+      // Connettore OAuth (popup di collegamento della pagina /embed)
+      "/oauth/": {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,
       },

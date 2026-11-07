@@ -1,8 +1,9 @@
 // Collegamenti OAuth (app come Claude collegate a /mcp): elenco, revoca e pulizia periodica.
 
-import { and, desc, eq, isNull, lt, notExists, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, ne, notExists, sql } from "drizzle-orm";
 import { db, oauthClientsTable, oauthCodesTable, oauthGrantsTable, oauthTokensTable } from "@workspace/db";
 import { logger } from "../logger";
+import { originOfEmbedClient } from "../embed/origins";
 
 export const OAUTH_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * 3600 * 1000;
@@ -19,8 +20,11 @@ export type OAuthGrantView = {
   canDecide: boolean;
 };
 
-function hostOf(uris: string[]): string {
+/** Host mostrato: per i client `embed` quello dell'app ospite (il ritorno è sempre su Botcave), per gli altri quello del ritorno. */
+function hostOf(uris: string[], clientId: string): string {
   try {
+    const origin = originOfEmbedClient(clientId);
+    if (origin !== null) return new URL(origin).host;
     return new URL(uris[0] ?? "").host;
   } catch {
     return "";
@@ -37,6 +41,7 @@ export async function listGrants(userId: number): Promise<OAuthGrantView[]> {
       lastUsedAt: oauthGrantsTable.lastUsedAt,
       clientName: oauthClientsTable.name,
       redirectUris: oauthClientsTable.redirectUris,
+      clientId: oauthClientsTable.clientId,
     })
     .from(oauthGrantsTable)
     .innerJoin(oauthClientsTable, eq(oauthClientsTable.id, oauthGrantsTable.clientRowId))
@@ -45,10 +50,11 @@ export async function listGrants(userId: number): Promise<OAuthGrantView[]> {
   return rows.map((r) => ({
     id: r.id,
     clientName: r.clientName,
-    redirectHost: hostOf(r.redirectUris),
+    redirectHost: hostOf(r.redirectUris, r.clientId),
     createdAt: r.createdAt,
     lastUsedAt: r.lastUsedAt,
-    canDecide: r.scopes.includes("api:write"),
+    // Il pannello incorporabile (ambito embed) approva e rifiuta come il connettore con api:write
+    canDecide: r.scopes.includes("api:write") || r.scopes.includes("embed"),
   }));
 }
 
@@ -73,6 +79,7 @@ export async function sweepOAuth(now: Date = new Date()): Promise<void> {
     .where(
       and(
         lt(oauthClientsTable.createdAt, dayAgo),
+        ne(oauthClientsTable.kind, "embed"), // i client del plugin li gestisce EMBED_ALLOWED_ORIGINS
         notExists(db.select({ one: sql`1` }).from(oauthGrantsTable).where(eq(oauthGrantsTable.clientRowId, oauthClientsTable.id))),
       ),
     );

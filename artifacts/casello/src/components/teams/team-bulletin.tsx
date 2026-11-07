@@ -1,5 +1,7 @@
+import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  type TeamEvent,
   type TeamEventType,
   getListTeamEventsQueryKey,
   getListUnreadTeamEventsQueryKey,
@@ -25,6 +27,28 @@ const EVENT_LABELS: Record<TeamEventType, string> = {
   lavoro_finito: "Lavoro finito",
   interrotto: "Interrotto",
 };
+
+/** Voce del bollettino: tipo, «Non letto», quando, testo e dettaglio; `footer` sotto il testo (es. la squadra). */
+export function TeamEventItem({ event: e, footer }: { event: TeamEvent; footer?: ReactNode }) {
+  const isUnread = e.readAt === null;
+  return (
+    <li className={cn("rounded-md border p-3", isUnread && "border-brand bg-brand/8")}>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <Badge variant="outline">{EVENT_LABELS[e.type]}</Badge>
+        {isUnread && <Led state="ask" label="Non letto" className="text-caption font-medium text-accent-text" />}
+        <span className="ml-auto">{formatRelative(e.createdAt)}</span>
+      </div>
+      <p className="mt-1.5 break-words text-sm">{e.bulletin}</p>
+      {e.detail && (
+        <details className="mt-1 text-xs">
+          <summary className="cursor-pointer text-muted-foreground">Dettaglio</summary>
+          <p className="mt-1 whitespace-pre-wrap break-words">{e.detail}</p>
+        </details>
+      )}
+      {footer}
+    </li>
+  );
+}
 
 /** Bollettino della squadra: eventi dal più recente, i non letti evidenziati. */
 export function TeamBulletin({ teamId, poll }: { teamId: number; poll: number | false }) {
@@ -70,31 +94,9 @@ export function TeamBulletin({ teamId, poll }: { teamId: number; poll: number | 
           <p className="text-sm text-muted-foreground">Nessuna notizia per ora.</p>
         ) : (
           <ul className="space-y-2">
-            {events.data.map((e) => {
-              const isUnread = e.readAt === null;
-              return (
-                <li
-                  key={e.id}
-                  className={cn(
-                    "rounded-md border p-3",
-                    isUnread && "border-brand bg-brand/8",
-                  )}
-                >
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <Badge variant="outline">{EVENT_LABELS[e.type]}</Badge>
-                    {isUnread && <Led state="ask" label="Non letto" className="text-caption font-medium text-accent-text" />}
-                    <span className="ml-auto">{formatRelative(e.createdAt)}</span>
-                  </div>
-                  <p className="mt-1.5 break-words text-sm">{e.bulletin}</p>
-                  {e.detail && (
-                    <details className="mt-1 text-xs">
-                      <summary className="cursor-pointer text-muted-foreground">Dettaglio</summary>
-                      <p className="mt-1 whitespace-pre-wrap break-words">{e.detail}</p>
-                    </details>
-                  )}
-                </li>
-              );
-            })}
+            {events.data.map((e) => (
+              <TeamEventItem key={e.id} event={e} />
+            ))}
           </ul>
         )}
       </CardContent>

@@ -12,6 +12,7 @@ import { GetAuthProvidersResponse, GetCurrentUserResponse } from "@workspace/api
 import { githubConfig } from "./github/config";
 import { githubAuthRouter } from "./github/oauth-routes";
 import { logger } from "./logger";
+import { verifyAccessToken } from "./oauth/tokens";
 import { tokenRateLimit } from "../middlewares/rate-limit";
 import { TOKEN_MESSAGES, authenticateApiToken, bearerToken, type TokenScope } from "./api-tokens";
 import { IdentityConflictError, ensureUserByEmail, isAllowed, listIdentities, resolveLogin } from "./users";
@@ -37,6 +38,8 @@ declare module "express-session" {
         clientId: string;
         clientRowId: number;
         clientName: string;
+        clientKind: "dcr" | "metadata" | "embed";
+        displayHost: string;
         redirectUri: string;
         codeChallenge: string;
         state: string | null;
@@ -54,7 +57,9 @@ declare global {
       /** Impostato da requireAuth. */
       userId?: number;
       /** Come è autenticata la richiesta: impostato da requireAuth. */
-      auth?: { kind: "session" } | { kind: "token"; tokenId: number; scopes: TokenScope[] };
+      auth?:
+        | { kind: "session" }
+        | { kind: "token"; tokenId: number | null; scopes: TokenScope[]; grantId?: number; via?: "embed" };
     }
   }
 }
@@ -202,14 +207,37 @@ function hasScopeFor(method: string, scopes: TokenScope[]): boolean {
 
 /**
  * Protegge /api (o una singola route): imposta req.userId e req.auth oppure risponde 401/403/429.
- * Con l'header Authorization presente conta solo il token personale (mai il cookie, nemmeno con
- * AUTH_DISABLED): header non `Bearer cas_…`, token sconosciuto, revocato o scaduto → 401; poi il
- * limite per token e l'ambito richiesto dal metodo. Senza header vale la sessione.
+ * Con l'header Authorization presente conta solo il token (mai il cookie, nemmeno con AUTH_DISABLED):
+ * - `Bearer cao_…` vale solo se è il token d'accesso del pannello incorporato (ambito `embed`): lettura e scrittura,
+ *   `req.auth.via = "embed"`, limite per collegamento (`grantId`); un `cao_…` del connettore (`mcp`), scaduto o revocato → 401;
+ * - `Bearer cas_…` (token personale): sconosciuto, revocato o scaduto → 401, token di nodo → 403; poi il limite per
+ *   token e l'ambito richiesto dal metodo;
+ * - qualunque altro header → 401.
+ * Senza header vale la sessione.
  */
 export const requireAuth: RequestHandler = async (req, res, next) => {
   try {
     if (req.headers.authorization !== undefined) {
       const raw = bearerToken(req);
+      // Token d'accesso OAuth `cao_…`: su /api vale solo quello del pannello incorporato (ambito embed), come lettura e scrittura
+      if (raw !== null && raw.startsWith("cao_")) {
+        let access: Awaited<ReturnType<typeof verifyAccessToken>>;
+        try {
+          access = await verifyAccessToken(raw);
+        } catch (err) {
+          logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Verifica del token d'accesso non riuscita");
+          res.status(500).json({ error: "errore interno" });
+          return;
+        }
+        if (!access || !access.scopes.includes("embed")) {
+          res.status(401).json({ error: TOKEN_MESSAGES.invalid });
+          return;
+        }
+        req.userId = access.userId;
+        req.auth = { kind: "token", tokenId: null, grantId: access.grantId, scopes: ["api:read", "api:write"], via: "embed" };
+        tokenRateLimit(req, res, next);
+        return;
+      }
       let found: Awaited<ReturnType<typeof authenticateApiToken>>;
       try {
         found = raw === null ? null : await authenticateApiToken(raw);
@@ -256,6 +284,15 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
 /** Operazioni solo con il login (chiavi, tetti, token, account collegati): con un token → 403. */
 export const sessionOnly: RequestHandler = (req, res, next) => {
   if (req.auth?.kind === "token") {
+    res.status(403).json({ error: TOKEN_MESSAGES.sessionOnly });
+    return;
+  }
+  next();
+};
+
+/** Come `sessionOnly`, ma ammette anche il token del pannello incorporato (sessioni vocali di Alfred): gli altri token → 403. */
+export const sessionOrEmbed: RequestHandler = (req, res, next) => {
+  if (req.auth?.kind === "token" && req.auth.via !== "embed") {
     res.status(403).json({ error: TOKEN_MESSAGES.sessionOnly });
     return;
   }

@@ -17,6 +17,7 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
+let _credentials: RequestCredentials | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -42,6 +43,14 @@ export function setBaseUrl(url: string | null): void {
  */
 export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
+}
+
+/**
+ * Imposta `credentials` di ogni richiesta che non lo indica già (es. `"omit"`: il pannello incorporabile non deve mai
+ * mandare il cookie di sessione). `null` (predefinito, console) lascia il comportamento del browser.
+ */
+export function setRequestCredentials(mode: RequestCredentials | null): void {
+  _credentials = mode;
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -360,7 +369,8 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  const credentials = init.credentials ?? _credentials ?? undefined;
+  const response = await fetch(input, { ...init, method, headers, ...(credentials ? { credentials } : {}) });
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

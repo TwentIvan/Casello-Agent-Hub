@@ -1,0 +1,15 @@
+# Letto (sourced) dall'entrypoint di nginx prima di 20-envsubst-on-templates.sh.
+# EMBED_ALLOWED_ORIGINS: origini separate da virgola → EMBED_ALLOWED_ORIGINS_CSP: separate da spazio,
+# per `frame-ancestors`. Come l'API (embedAllowedOrigins) si tengono solo `https://host[:porta]` e
+# `http://localhost|127.0.0.1:porta` (tolto un `/` finale); il resto si scarta, così nell'intestazione e
+# nella configurazione non entra altro. Nessuna origine valida → 'none'. Niente bash: solo sh.
+_valid=""
+for _o in $(printf '%s' "${EMBED_ALLOWED_ORIGINS:-}" | tr ',' ' '); do
+  _o=${_o%/}
+  if printf '%s' "$_o" | grep -Eq '^(https://[A-Za-z0-9.-]+(:[0-9]+)?|http://(localhost|127\.0\.0\.1):[0-9]+)$'; then
+    _valid="${_valid:+$_valid }$_o"
+  fi
+done
+EMBED_ALLOWED_ORIGINS_CSP=${_valid:-"'none'"}
+export EMBED_ALLOWED_ORIGINS_CSP
+unset _valid _o

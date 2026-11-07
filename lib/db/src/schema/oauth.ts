@@ -2,10 +2,11 @@ import { pgTable, serial, integer, text, timestamp, jsonb, pgEnum, uniqueIndex, 
 import { sql } from "drizzle-orm";
 import { usersTable } from "./users";
 
-export const oauthClientKindEnum = pgEnum("oauth_client_kind", ["dcr", "metadata"]);
+export const oauthClientKindEnum = pgEnum("oauth_client_kind", ["dcr", "metadata", "embed"]);
 export const oauthTokenKindEnum = pgEnum("oauth_token_kind", ["access", "refresh"]);
 
-// Client OAuth del connettore: registrato dinamicamente (dcr) o letto da un documento di metadati (metadata)
+// Client OAuth: del connettore, registrato dinamicamente (dcr) o letto da un documento di metadati (metadata), oppure
+// del pannello incorporato (embed: uno per origine di EMBED_ALLOWED_ORIGINS, `embed:<origine>`)
 export const oauthClientsTable = pgTable("oauth_clients", {
   id: serial("id").primaryKey(),
   clientId: text("client_id").notNull().unique(),

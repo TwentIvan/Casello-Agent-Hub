@@ -330,3 +330,22 @@ Ogni configurazione in console si fa con la conferma di Ivan.
   vecchi. Mitigazioni: intervallo adeguato, cursore, 500 elementi letti per giro; l'innesco non può accorgersene, la prova reale 1 lo
   verifica per The Hub Up.
 - **Tutto in un processo:** se l'API è giù non ci sono giri; alla ripartenza la deduplicazione e il cursore riprendono da dove erano.
+
+## Differenze dal codice
+
+Dove il codice differisce da questa spec vale il codice (vedi «Inneschi» in `CLAUDE.md`).
+
+- **`seen_at` rinfrescato:** ogni giro aggiorna `seen_at` delle chiavi ancora restituite dall'app, così la pulizia dei 30 giorni e delle 10 000 chiavi
+  toglie solo le chiavi che l'app non restituisce più.
+- **Coerenza con le modifiche:** il giro controlla sotto lock che la configurazione dell'innesco (`tool_id`, `args`, `items_path`, `id_field`,
+  `version_field`, `cursor_param`, `cursor_field`, `filter`, `baseline_done`) sia quella di partenza; se è cambiata si ferma senza errore. `PATCH` fonde i
+  campi sulla riga bloccata e, se nel frattempo è cambiata, riprova fino a 3 volte, poi 409 «innesco modificato nel frattempo: ricarica e riprova».
+  Cambiare i campi che rifanno la linea di partenza azzera anche il cursore e cancella le chiavi viste.
+- **Tag nell'input:** la rimozione di `<elemento>`/`<evento>` è un ciclo limitato (20 passate); se la regex trova ancora un tag, chiusura sicura (ogni «<» diventa «‹»).
+- **nginx e log:** la `location ^~ /api/hooks/` ha `access_log off` e `error_log /dev/stderr crit` (l'error_log riporta la richiesta con il segreto); la prova
+  di CI controlla entrambe le direttive. Gli access log di Traefik/Coolify possono ancora registrare l'URI: da controllare su Coolify.
+- **Messaggi fissi in più:** `toolFailed` con « (HTTP n)», `pollFailed`, `queueFull` (attesa, non errore: `last_error` senza contare come errore), `changed`.
+- **Webhook:** `dedup_header` mancante o troppo lungo ricade su `id_field`; è JSON solo `application/json` esattamente; un corpo oltre 256 KB riceve 413 prima del
+  controllo di id e segreto.
+- **Lucius:** l'accettazione crea l'innesco fuori dalla transazione della scheda (nome unico, UPDATE condizionato, cancellazione di compensazione).
+- **Limite di 50 per utente:** morbido tra agenti diversi (la riga bloccata è quella dell'agente).

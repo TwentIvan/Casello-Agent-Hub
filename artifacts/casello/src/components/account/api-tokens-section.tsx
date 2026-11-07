@@ -60,10 +60,11 @@ function CreateTokenDialog({
   const [mcp, setMcp] = useState(true);
   const [read, setRead] = useState(false);
   const [write, setWrite] = useState(false);
+  const [runsScope, setRunsScope] = useState(false);
   const days = Number(daysText);
   const daysValid = Number.isInteger(days) && days >= 1 && days <= MAX_DAYS;
   const scopes = SCOPE_ORDER.filter((scope) =>
-    scope === "mcp" ? mcp : scope === "api:read" ? read || write : write,
+    scope === "mcp" ? mcp : scope === "api:read" ? read || write : scope === "api:write" ? write : runsScope,
   );
   const nameValid = name.trim().length > 0 && name.trim().length <= MAX_NAME;
 
@@ -146,6 +147,10 @@ function CreateTokenDialog({
                 }}
               />
               <Label htmlFor="scope-write" className="font-normal">{SCOPE_LABELS["api:write"]}</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox id="scope-runs" checked={runsScope} onCheckedChange={(v) => setRunsScope(v === true)} />
+              <Label htmlFor="scope-runs" className="font-normal">{SCOPE_LABELS.runs}</Label>
             </div>
             {scopes.length === 0 && <p className="text-xs text-destructive">Scegli almeno un ambito.</p>}
           </fieldset>

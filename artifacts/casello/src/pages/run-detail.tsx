@@ -169,6 +169,33 @@ export default function RunDetailPage() {
               </dd>
             </div>
           )}
+          {r.parentRunId != null && (
+            <div>
+              <dt className="text-muted-foreground">Origine</dt>
+              <dd>
+                Nata dalla run{" "}
+                <Link href={`/runs/${r.parentRunId}`} className="font-mono font-medium hover:underline">
+                  {r.parentRunId}
+                </Link>
+              </dd>
+            </div>
+          )}
+          {(r.childRunIds ?? []).length > 0 && (
+            <div>
+              <dt className="text-muted-foreground">Segnalazioni</dt>
+              <dd>
+                Ha segnalato al responsabile: run{" "}
+                {(r.childRunIds ?? []).map((id, i) => (
+                  <span key={id}>
+                    {i > 0 && ", "}
+                    <Link href={`/runs/${id}`} className="font-mono font-medium hover:underline">
+                      {id}
+                    </Link>
+                  </span>
+                ))}
+              </dd>
+            </div>
+          )}
           {cost && (
             <div>
               <dt className="text-muted-foreground">Costo</dt>
@@ -204,7 +231,7 @@ export default function RunDetailPage() {
         <Card>
           <CardContent className="flex items-center gap-3 py-8 text-sm text-muted-foreground">
             <Spinner className="size-5" />
-            {r.status === "pending" ? "In attesa di partire…" : "L'agente sta lavorando…"}
+            {r.status === "pending" ? "In coda: parte appena c'è posto…" : "L'agente sta lavorando…"}
           </CardContent>
         </Card>
       ) : r.status === "cancelled" ? (

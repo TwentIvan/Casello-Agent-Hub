@@ -5024,6 +5024,16 @@ components:
         costUsd:
           type: ["number", "null"]
           description: Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)
+        parentRunId:
+          type: ["integer", "null"]
+          description: Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run
+        childRunIds:
+          type: array
+          items:
+            type: integer
+          description: >-
+            Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel
+            dettaglio, GET /runs/{id})
 
     RunStep:
       type: object

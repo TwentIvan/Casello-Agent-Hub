@@ -23,6 +23,8 @@ export const INTERNAL_TOOL_NAMES = [
   "leggi_esito",
   "segnala",
   "chiudi_lavoro",
+  // Run degli agenti di area (escalation.ts), non delle squadre
+  "segnala_al_responsabile",
 ] as const;
 
 export type InternalToolName = (typeof INTERNAL_TOOL_NAMES)[number];

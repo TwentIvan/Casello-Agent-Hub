@@ -664,6 +664,13 @@ export interface Run {
      * @nullable
      */
   costUsd?: number | null;
+  /**
+     * Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run
+     * @nullable
+     */
+  parentRunId?: number | null;
+  /** Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET /runs/{id}) */
+  childRunIds?: number[];
 }
 
 /**

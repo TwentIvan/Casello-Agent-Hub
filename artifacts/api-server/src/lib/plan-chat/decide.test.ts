@@ -15,7 +15,9 @@ import { ProposalConflictError, ProposalNotFoundError, decideProposal, itemHash 
 
 // Decisione sulle proposte della chat, sul Postgres di prova (PGlite del global setup)
 
+// Il DB di prova è condiviso tra i file: lo si lascia vuoto (db-smoke controlla che non resti nessuna app)
 afterAll(async () => {
+  await pool.query("TRUNCATE apps, ai_accounts, users RESTART IDENTITY CASCADE");
   await pool.end();
 });
 

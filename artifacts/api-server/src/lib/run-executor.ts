@@ -25,7 +25,9 @@ import {
 import { runBudgetBlock } from "./budget";
 import { logger } from "./logger";
 import { loopModelCallError, modelChatDeps, newUsage, stepWriter, type LoopUsage } from "./loop-wiring";
-import { loadAgentTools, loadAppConnection, toFunctionTools } from "./tools/catalog";
+import { ESCALATION_TOOL_NAME, escalationTool, handleEscalation, productLead } from "./escalation";
+import { isInternalTool, roleFunctionTools } from "./teams/role-tools";
+import { loadAgentTools, loadAppConnection } from "./tools/catalog";
 import { effectiveLevel } from "./tools/levels";
 import { executeTool } from "./tools/executor";
 import type { AppConnection, CatalogTool, ToolResult } from "./tools/types";
@@ -184,8 +186,14 @@ async function loadContext(run: Run): Promise<RunContext & { app: App }> {
   if (!agent) throw new Error(`agente ${run.agentId} non trovato`);
   const [app] = await db.select().from(appsTable).where(eq(appsTable.id, agent.appId)).limit(1);
   if (!app) throw new Error(`app ${agent.appId} non trovata`);
-  const [tools, conn] = await Promise.all([loadAgentTools(agent.id), loadAppConnection(app.id)]);
-  return { run, agent, app, tools: writesNeedConfirmation(agent) ? withConfirmedWrites(tools) : tools, conn };
+  const [loaded, conn] = await Promise.all([loadAgentTools(agent.id), loadAppConnection(app.id)]);
+  let tools = writesNeedConfirmation(agent) ? withConfirmedWrites(loaded) : loaded;
+  // La segnalazione al Responsabile si aggiunge dopo withConfirmedWrites: è interna e non va mai in coda.
+  // Solo agli agenti di area, solo nelle run senza madre (un livello), e vince su un tool dell'app omonimo.
+  if (agent.role === "area" && run.parentRunId === null && (await productLead(app.id)) !== null) {
+    tools = [...tools.filter((t) => t.name !== ESCALATION_TOOL_NAME), escalationTool()];
+  }
+  return { run, agent, app, tools, conn };
 }
 
 async function nextPosition(runId: number): Promise<number> {
@@ -292,7 +300,10 @@ async function driveLoop(
   limits?: Partial<LoopLimits>,
 ): Promise<void> {
   const runId = ctx.run.id;
-  const functionTools = toFunctionTools(ctx.tools);
+  const functionTools = roleFunctionTools(
+    ctx.tools.filter((t) => !isInternalTool(t)),
+    ctx.tools.filter(isInternalTool),
+  );
   const aiModelId = runModelId(ctx);
   // Modello dell'agente (chi configura paga), risolto alla prima chiamata
   const chat = modelChatDeps({
@@ -343,7 +354,8 @@ async function driveLoop(
   const deps: LoopDeps = {
     chat,
     tools: ctx.tools,
-    executeTool: (tool, args) => runTool(ctx, tool, args, abort),
+    executeTool: (tool, args) =>
+      isInternalTool(tool) ? handleEscalation(ctx.run, ctx.agent, args) : runTool(ctx, tool, args, abort),
     queueAction,
     onStep: writeStep,
     limits,

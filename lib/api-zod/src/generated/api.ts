@@ -1328,7 +1328,9 @@ export const ListRunsResponseItem = zod.object({
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
-  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)'),
+  "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
+  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})')
 })
 export const ListRunsResponse = zod.array(ListRunsResponseItem)
 
@@ -1362,7 +1364,9 @@ export const TriggerRunResponse = zod.object({
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
-  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)'),
+  "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
+  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})')
 })
 
 
@@ -1386,7 +1390,9 @@ export const GetRunResponse = zod.object({
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
-  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)'),
+  "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
+  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})')
 })
 
 
@@ -1434,7 +1440,9 @@ export const CancelRunResponse = zod.object({
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
-  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)'),
+  "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
+  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})')
 })
 
 

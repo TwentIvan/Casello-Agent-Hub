@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Link } from "wouter";
 import type { LucideIcon } from "lucide-react";
-import { AlertCircle, Bot, Boxes, CheckCircle2, Clock, Loader, PlayCircle, XCircle } from "lucide-react";
+import { AlertCircle, Bot, Zap, Boxes, CheckCircle2, Clock, Loader, PlayCircle, XCircle } from "lucide-react";
 import {
   getGetDashboardStatsQueryKey,
   getListAgentsQueryKey,
@@ -148,7 +148,7 @@ export default function Dashboard() {
         </Alert>
       )}
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="App" value={s?.totalApps} icon={Boxes} loading={loading} />
         <StatCard
           label="Agenti"
@@ -157,6 +157,15 @@ export default function Dashboard() {
           icon={Bot}
           loading={loading}
         />
+        <Link href="/agents" className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <StatCard
+            label="Inneschi in errore"
+            value={s?.triggersInError}
+            hint={s && s.triggersInError > 0 ? "Apri gli agenti e premi «Riprendi»" : undefined}
+            icon={Zap}
+            loading={loading}
+          />
+        </Link>
         <StatCard
           label="Durata media run"
           value={formatDuration(s?.avgDurationMs)}

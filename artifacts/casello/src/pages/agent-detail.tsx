@@ -33,6 +33,7 @@ import { ModelDeprecationBadge } from "@/components/ai/model-deprecation-badge";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { AgentRoleBadge } from "@/components/agents/agent-role-badge";
 import { AgentToolsSection } from "@/components/agents/agent-tools-section";
+import { AgentTriggersSection } from "@/components/agents/agent-triggers-section";
 import { AgentSkillsSection } from "@/components/agents/agent-skills-section";
 import { RunPanel } from "@/components/runs/run-panel";
 import { AgentBudgetCard } from "@/components/budget/budget";
@@ -411,6 +412,7 @@ export default function AgentDetailPage() {
         agent={agent.data}
         dirtyRef={toolsDirtyRef}
       />
+      <AgentTriggersSection key={`triggers-${agent.data.id}-${agent.data.confirmWrites}-${agent.data.toolIds.join(",")}`} agent={agent.data} />
       <AgentSkillsSection key={`skills-${agent.data.id}`} agent={agent.data} />
 
       <ConfirmDialog

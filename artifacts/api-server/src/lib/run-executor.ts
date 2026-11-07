@@ -453,8 +453,9 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
   const usage = newUsage();
   try {
     const ctx = await loadContext(run);
-    // Il tetto si ricontrolla alla partenza: la run può essere rimasta in coda mentre la spesa cresceva
-    const blocked = await runBudgetBlock(ctx.agent);
+    // Il tetto si ricontrolla alla partenza: la run può essere rimasta in coda mentre la spesa cresceva.
+    // Modello, account e utente sono quelli del modello fissato sulla run (chi paga), non dell'agente attuale.
+    const blocked = await runBudgetBlock({ ...ctx.agent, aiModelId: ctx.run.aiModelId ?? ctx.agent.aiModelId });
     if (blocked) throw new RunBudgetError(blocked);
     const initial: LoopState = {
       messages: [

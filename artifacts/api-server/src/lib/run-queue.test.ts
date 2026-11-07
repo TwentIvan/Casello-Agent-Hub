@@ -315,6 +315,30 @@ describe("coda delle run", () => {
     expect(requests).toHaveLength(0);
   });
 
+  it("tetto del modello della run raggiunto mentre l'agente è passato a un altro modello: failed col tetto del modello della run, nessuna chiamata", async () => {
+    const [agent] = await seedAgents(1);
+    // La run è stata accettata con il modello di allora (chi paga resta quello)
+    const [id] = await insertPending(agent!, 1);
+    const oldModelId = agent!.aiModelId!;
+    const [oldModel] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.id, oldModelId));
+    const [newModel] = await db
+      .insert(aiModelsTable)
+      .values({ accountId: oldModel!.accountId, modelId: "modello-nuovo", displayName: "Nuovo" })
+      .returning();
+    // Poi l'agente cambia modello e il modello della run raggiunge il suo tetto; quello nuovo no
+    await db.update(agentsTable).set({ aiModelId: newModel!.id }).where(eq(agentsTable.id, agent!.id));
+    await db.update(aiModelsTable).set({ monthlyBudgetUsd: "1" }).where(eq(aiModelsTable.id, oldModelId));
+    await db.update(aiModelsTable).set({ monthlyBudgetUsd: "100" }).where(eq(aiModelsTable.id, newModel!.id));
+    await db.insert(runsTable).values({ agentId: agent!.id, aiModelId: oldModelId, status: "succeeded", costUsd: "5", finishedAt: new Date() });
+
+    await scheduleRuns();
+    await waitFor(async () => (await statuses()).get(id!) === "failed");
+
+    const [run] = await db.select().from(runsTable).where(eq(runsTable.id, id!));
+    expect(run!.errorMessage).toMatch(/^Tetto di spesa mensile del modello "Base" raggiunto/);
+    expect(requests).toHaveLength(0);
+  });
+
   it("startRunQueue avvia subito le run in attesa e la funzione restituita ferma il controllo", async () => {
     const [agent] = await seedAgents(1);
     const [id] = await insertPending(agent!, 1);

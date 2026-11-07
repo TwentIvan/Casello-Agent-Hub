@@ -68,6 +68,15 @@ function handle(req: IncomingMessage, res: ServerResponse, body: string): void {
     res.end(`no: ${req.headers.authorization}`);
     return;
   }
+  if (url.startsWith("/echo-escaped")) {
+    // Il token rimandato con gli escape JSON "\/" e "\uXXXX": JSON valido, il testo non contiene il token in chiaro
+    const tok = String(req.headers.authorization ?? "").replace(/^Bearer /, "");
+    const slash = tok.replace(/\//g, "\\/");
+    const unicode = [...tok].map((c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`).join("");
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(`{"a":"${slash}","b":"${unicode}"}`);
+    return;
+  }
   if (url.startsWith("/echo")) {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ auth: req.headers.authorization ?? null, key: req.headers["x-api-key"] ?? null }));
@@ -200,6 +209,17 @@ describe("executeTool", () => {
       expect(res.content).toContain("Rossi");
       expect(res.content).not.toContain("tok-segreto-1");
       expect(res.content).not.toContain("troncata");
+    });
+
+    it("con raw: il token rimandato con escape JSON (\\/ e \\u) è oscurato", async () => {
+      const escTool = tool({ method: "GET", path: "/echo-escaped", paramLocations: {} }, { type: "object", properties: {} });
+      const token = "tok/segreto/12345";
+      const res = await executeTool({ conn: conn(), tool: escTool, args: {}, userToken: token, raw: true });
+      expect(res.ok).toBe(true);
+      const parsed = JSON.parse(res.content) as { a: string; b: string };
+      expect(parsed.a).not.toContain(token);
+      expect(parsed.b).not.toContain(token);
+      expect(res.content).not.toContain(token);
     });
   });
 

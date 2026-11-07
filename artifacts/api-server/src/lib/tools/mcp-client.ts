@@ -9,7 +9,7 @@ import {
   ToolError,
   fail,
   isPlainObject,
-  redact,
+  redactWithJson,
   resolveAuthFor,
   truncate,
 } from "./executor";
@@ -87,11 +87,6 @@ interface WireState {
   status: number | null;
   redirected: boolean;
   tooLarge: boolean;
-}
-
-/** Oscura le credenziali anche nella forma con gli escape JSON (valori dentro un JSON serializzato). */
-function redactWithJson(text: string, secrets: string[]): string {
-  return redact(text, [...secrets, ...secrets.map((v) => JSON.stringify(v).slice(1, -1))]);
 }
 
 function newWireState(): WireState {
@@ -270,10 +265,21 @@ function renderRaw(result: Record<string, unknown>): string {
   if (result["structuredContent"] !== undefined) return JSON.stringify(result["structuredContent"]);
   if (Array.isArray(result["content"])) {
     for (const block of result["content"]) {
-      if (isPlainObject(block) && block["type"] === "text" && typeof block["text"] === "string") return block["text"];
+      if (isPlainObject(block) && block["type"] === "text" && typeof block["text"] === "string") {
+        return normalizeJsonText(block["text"]);
+      }
     }
   }
   return "";
+}
+
+/** Testo JSON riserializzato: toglie gli escape superflui (`\/`, `\uXXXX`) prima dell'oscuramento. */
+function normalizeJsonText(text: string): string {
+  try {
+    return JSON.stringify(JSON.parse(text));
+  } catch {
+    return text;
+  }
 }
 
 export async function callMcpTool(input: {

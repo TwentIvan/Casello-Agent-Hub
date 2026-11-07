@@ -12,6 +12,10 @@ export const TRIGGER_MESSAGES = {
   listNotFound: "elenco non trovato nella risposta",
   unrecognized: "risposta non riconosciuta",
   budgetWait: "in attesa: tetto di spesa raggiunto",
+  // Giro di sorveglianza: chiamata al tool fallita (mai il testo della risposta) o errore interno.
+  toolFailed: "chiamata allo strumento non riuscita",
+  pollFailed: "giro non riuscito: riprova più tardi",
+  queueFull: "in attesa: troppe run in coda per l'agente",
   notActive: "innesco non attivo",
   badSignature: "firma non valida",
   toolInUse: "lo strumento è usato da un innesco: elimina prima l'innesco",

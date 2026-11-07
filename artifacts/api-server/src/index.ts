@@ -9,6 +9,7 @@ import { closeAllActiveSessions, startAlfredSweeper } from "./lib/alfred/session
 import { startMemorySweeper } from "./lib/memory/summaries";
 import { failInterruptedRuns } from "./lib/run-executor";
 import { startRunQueue } from "./lib/run-queue";
+import { startTriggerPoller } from "./lib/triggers/poller";
 import { failInterruptedTeamWork } from "./lib/teams/task-runner";
 import { pumpTurnInBackground, resumeQueuedTurns } from "./lib/teams/turn-runner";
 import { setOnTurnQueued } from "./lib/teams/turn-queue";
@@ -50,7 +51,11 @@ failInterruptedRuns()
     if (cancelled > 0) logger.info({ count: cancelled }, "Run in pausa per conferma annullate: sostituite dalla coda delle azioni");
   })
   .catch((err: unknown) => logger.error({ err }, "Chiusura delle run interrotte non riuscita"))
-  .finally(() => startRunQueue());
+  .finally(() => {
+    startRunQueue();
+    // Sorveglianza degli inneschi: dopo la coda delle run, che riceve le run create dai giri.
+    startTriggerPoller();
+  });
 
 // Ogni motivo accodato fa partire il turno del capo della squadra (se nessun turno è in corso).
 setOnTurnQueued(pumpTurnInBackground);

@@ -217,8 +217,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - **App**: applicazione registrata: nome, `slug`, `base_url`, `internal_base_url` (raggiunto
   dall'esecutore al posto di `base_url`), autenticazione utente/servizio (header + scheme), segreto di
   servizio cifrato (mai esposto: l'API dice solo `serviceSecretSet`), `mcp_url` (server MCP dell'app, facoltativo), stato
-- **Agent**: appartiene a una App; `system_prompt`, `model` (facoltativo: senza modello le run rispondono 409), stato (draft/active/inactive), ruolo:
-  `general` (uno per app, creato con l'app, non eliminabile, usa tutti i tool `active` dell'app) o `area`
+- **Agent**: appartiene a una App; `system_prompt`, `model` (facoltativo: senza modello le run rispondono 409), stato (draft/active/inactive),
+  `confirm_writes` (conferma delle scritture: le L1 vanno in «Da confermare»; sempre vera per il `general`), ruolo:
+  `general` (uno per app, creato con l'app, non eliminabile, usa tutti i tool `active` dell'app; in console è il «Responsabile di prodotto») o `area`
   (usa solo i tool collegati in `agent_tools`)
 - **Tool** (`app_tools`): catalogo per App; `kind` (`http`, `mcp`, `ui`, `composite`: al modello si offrono
   solo `http` e `mcp`; `mcp` ha `definition {mcpName}`), `identity` (`user`: token dell'utente da `X-App-User-Token`; `service`:
@@ -1272,7 +1273,7 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
   `docker/api.Dockerfile` (con `node`, l'immagine slim non ha curl/wget); su Coolify impostarlo anche
   in Health Check (path `/api/healthz`, porta 3000), altrimenti Coolify non lo usa per il deploy.
 - `POST /api/agents/:id/runs` ha un rate limit in memoria (`runTriggerRateLimit`, `middlewares/rate-limit.ts`): 60/min per token con
-  qualunque token personale `cas_…`, 10 run/minuto per IP con sessione o pannello incorporato (le riprese restano sul contatore per IP):
+  qualunque token personale `cas_…`, 10 run/minuto per IP con sessione o pannello incorporato:
   l'IP reale arriva da `trust proxy` = 2 (Traefik di Coolify + nginx di `casello-web`).
 - Schema DB: le modifiche arrivano in produzione SOLO con gli script SQL in `docs/migrations/`, applicati
   al DB Neon con `psql -v ON_ERROR_STOP=1 -f docs/migrations/<file>.sql` (prima del deploy dell'API

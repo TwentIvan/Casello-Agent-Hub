@@ -59,8 +59,8 @@ export function rateLimit({
   return middlewareFor(fixedWindowCounter({ limit, windowMs }), key);
 }
 
-// Ogni run (avvio o ripresa) consuma token sul gateway: massimo 10 al minuto per IP,
-// con un solo contatore condiviso da POST /agents/:id/runs e POST /runs/:id/resume.
+// Ogni avvio consuma token sugli account AI: massimo 10 al minuto per IP, con un solo contatore condiviso
+// da POST /agents/:id/runs (con sessione o pannello incorporato) e dall'avvio delle analisi.
 export const runRateLimit = rateLimit({ limit: 10, windowMs: 60_000 });
 
 // Avvio delle run con un token personale: 60 al minuto per token (id del token) al posto del limite per IP; con la

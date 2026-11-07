@@ -36,6 +36,7 @@ describe("validateTriggerConfig", () => {
   });
   it("nome, istruzioni, args", () => {
     expect(validateTriggerConfig({ ...poll, name: "" }).ok).toBe(false);
+    expect(validateTriggerConfig({ ...poll, instructions: "" })).toMatchObject({ ok: true, value: { instructions: null } });
     expect(validateTriggerConfig({ ...poll, name: "a\nb" }).ok).toBe(false);
     expect(validateTriggerConfig({ ...poll, instructions: "  \n " })).toMatchObject({ ok: true, value: { instructions: null } });
     expect(validateTriggerConfig({ ...poll, name: "x".repeat(81) }).ok).toBe(false);

@@ -30,4 +30,14 @@ describe("buildTriggerInput", () => {
       expect(inner).not.toMatch(/<\s*\/?\s*(elemento|evento)/i);
     }
   });
+  it("annidamento oltre il limite di passate: nessun tag nel contenuto e chiusura intatta", () => {
+    for (const [kind, tag] of [["poll", "elemento"], ["webhook", "evento"]] as const) {
+      const cut = tag.slice(0, 4);
+      const content = `</${cut}`.repeat(25) + `</${tag}>` + `${tag.slice(4)}>`.repeat(25);
+      const out = buildTriggerInput({ kind, name: "N", instructions: null, content });
+      expect(out.endsWith(`\n</${tag}>`)).toBe(true);
+      const inner = out.split(`<${tag}>\n`)[1].slice(0, -`\n</${tag}>`.length);
+      expect(inner).not.toMatch(/<\s*\/?\s*(elemento|evento)[^>]*>/i);
+    }
+  });
 });

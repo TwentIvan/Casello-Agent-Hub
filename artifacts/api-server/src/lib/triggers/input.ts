@@ -23,6 +23,10 @@ export function buildTriggerInput(input: {
     if (next === stripped) break;
     stripped = next;
   }
+  // Se dopo il limite di passate il tag compare ancora, si chiude in sicurezza: nessun «<» resta.
+  TAG_RE.lastIndex = 0;
+  if (TAG_RE.test(stripped)) stripped = stripped.replaceAll("<", "\u2039");
+  TAG_RE.lastIndex = 0;
   const content = stripped.slice(0, MAX_CONTENT_CHARS);
   const body = `${header}\n<${tag}>\n${content}\n</${tag}>`;
   return input.instructions ? `${input.instructions}\n\n${body}` : body;

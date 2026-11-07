@@ -1330,7 +1330,9 @@ export const ListRunsResponseItem = zod.object({
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
   "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)'),
   "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
-  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})')
+  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})'),
+  "triggerId": zod.number().nullish().describe('Innesco che ha avviato la run (null se avviata a mano o innesco eliminato)'),
+  "triggerName": zod.string().nullish().describe('Nome dell\'innesco che ha avviato la run')
 })
 export const ListRunsResponse = zod.array(ListRunsResponseItem)
 
@@ -1366,7 +1368,9 @@ export const TriggerRunResponse = zod.object({
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
   "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)'),
   "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
-  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})')
+  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})'),
+  "triggerId": zod.number().nullish().describe('Innesco che ha avviato la run (null se avviata a mano o innesco eliminato)'),
+  "triggerName": zod.string().nullish().describe('Nome dell\'innesco che ha avviato la run')
 })
 
 
@@ -1392,7 +1396,9 @@ export const GetRunResponse = zod.object({
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
   "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)'),
   "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
-  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})')
+  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})'),
+  "triggerId": zod.number().nullish().describe('Innesco che ha avviato la run (null se avviata a mano o innesco eliminato)'),
+  "triggerName": zod.string().nullish().describe('Nome dell\'innesco che ha avviato la run')
 })
 
 
@@ -1442,8 +1448,455 @@ export const CancelRunResponse = zod.object({
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
   "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)'),
   "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
-  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})')
+  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})'),
+  "triggerId": zod.number().nullish().describe('Innesco che ha avviato la run (null se avviata a mano o innesco eliminato)'),
+  "triggerName": zod.string().nullish().describe('Nome dell\'innesco che ha avviato la run')
 })
+
+
+/**
+ * @summary Elenca gli inneschi di un agente
+ */
+export const ListAgentTriggersParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListAgentTriggersResponseItem = zod.object({
+  "id": zod.number(),
+  "agentId": zod.number(),
+  "kind": zod.enum(['poll', 'webhook']),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'paused', 'error']),
+  "instructions": zod.string().nullable(),
+  "createdBy": zod.number().nullable(),
+  "toolId": zod.number().nullable(),
+  "args": zod.record(zod.string(), zod.unknown()),
+  "itemsPath": zod.string().nullable(),
+  "idField": zod.string().nullable(),
+  "versionField": zod.string().nullable(),
+  "cursorParam": zod.string().nullable(),
+  "cursorField": zod.string().nullable(),
+  "cursorValue": zod.string().nullable().describe('Ultimo valore del cursore'),
+  "filter": zod.union([zod.object({
+  "field": zod.string().describe('Percorso del campo (1..5 segmenti separati da punto)'),
+  "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
+}),zod.null()]),
+  "intervalSeconds": zod.number().nullable(),
+  "nextPollAt": zod.coerce.date().nullable(),
+  "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
+  "dedupHeader": zod.string().nullable(),
+  "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
+  "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
+  "lastError": zod.string().nullable(),
+  "consecutiveErrors": zod.number(),
+  "runsCreated": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListAgentTriggersResponse = zod.array(ListAgentTriggersResponseItem)
+
+
+/**
+ * Sorveglianza (`poll`) su un tool di lettura (L0) dell'app dell'agente con identità di servizio, oppure webhook in entrata. Per il webhook la risposta porta `webhookUrl`, mostrato una sola volta. Al massimo 10 inneschi per agente e 50 per utente.
+ * @summary Crea un innesco (nasce in pausa)
+ */
+export const CreateAgentTriggerParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CreateAgentTriggerBody = zod.object({
+  "kind": zod.enum(['poll', 'webhook']),
+  "name": zod.string().describe('Da 1 a 80 caratteri, unico per agente'),
+  "instructions": zod.string().nullish().describe('Testo che apre l\'input della run, al massimo 2000 caratteri'),
+  "toolId": zod.number().nullish(),
+  "args": zod.record(zod.string(), zod.unknown()).nullish().describe('Argomenti fissi del tool, al massimo 8 KB'),
+  "itemsPath": zod.string().nullish().describe('Percorso dell\'elenco nella risposta; null = la risposta è l\'elenco'),
+  "idField": zod.string().nullish(),
+  "versionField": zod.string().nullish(),
+  "cursorParam": zod.string().nullish(),
+  "cursorField": zod.string().nullish(),
+  "filter": zod.union([zod.object({
+  "field": zod.string().describe('Percorso del campo (1..5 segmenti separati da punto)'),
+  "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
+}),zod.null()]).optional(),
+  "intervalSeconds": zod.number().nullish().describe('Da 60 a 86400 secondi (default 300)'),
+  "dedupHeader": zod.string().nullish()
+}).describe('Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.')
+
+export const CreateAgentTriggerResponse = zod.object({
+  "id": zod.number(),
+  "agentId": zod.number(),
+  "kind": zod.enum(['poll', 'webhook']),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'paused', 'error']),
+  "instructions": zod.string().nullable(),
+  "createdBy": zod.number().nullable(),
+  "toolId": zod.number().nullable(),
+  "args": zod.record(zod.string(), zod.unknown()),
+  "itemsPath": zod.string().nullable(),
+  "idField": zod.string().nullable(),
+  "versionField": zod.string().nullable(),
+  "cursorParam": zod.string().nullable(),
+  "cursorField": zod.string().nullable(),
+  "cursorValue": zod.string().nullable().describe('Ultimo valore del cursore'),
+  "filter": zod.union([zod.object({
+  "field": zod.string().describe('Percorso del campo (1..5 segmenti separati da punto)'),
+  "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
+}),zod.null()]),
+  "intervalSeconds": zod.number().nullable(),
+  "nextPollAt": zod.coerce.date().nullable(),
+  "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
+  "dedupHeader": zod.string().nullable(),
+  "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
+  "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
+  "lastError": zod.string().nullable(),
+  "consecutiveErrors": zod.number(),
+  "runsCreated": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "webhookUrl": zod.string().nullable()
+})).describe('Innesco creato; per il webhook l\'indirizzo con il segreto, mostrato una sola volta.')
+
+
+/**
+ * Chiama il tool e mostra gli elementi che leggerebbe, al più 20, con anteprima di 200 caratteri. Non avvia run, non scrive chiavi né cursore. Solo `poll`; 6 prove al minuto per utente.
+ * @summary Prova una configurazione di sorveglianza, anche non salvata
+ */
+export const TestAgentTriggerConfigParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const TestAgentTriggerConfigBody = zod.object({
+  "kind": zod.enum(['poll', 'webhook']),
+  "name": zod.string().describe('Da 1 a 80 caratteri, unico per agente'),
+  "instructions": zod.string().nullish().describe('Testo che apre l\'input della run, al massimo 2000 caratteri'),
+  "toolId": zod.number().nullish(),
+  "args": zod.record(zod.string(), zod.unknown()).nullish().describe('Argomenti fissi del tool, al massimo 8 KB'),
+  "itemsPath": zod.string().nullish().describe('Percorso dell\'elenco nella risposta; null = la risposta è l\'elenco'),
+  "idField": zod.string().nullish(),
+  "versionField": zod.string().nullish(),
+  "cursorParam": zod.string().nullish(),
+  "cursorField": zod.string().nullish(),
+  "filter": zod.union([zod.object({
+  "field": zod.string().describe('Percorso del campo (1..5 segmenti separati da punto)'),
+  "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
+}),zod.null()]).optional(),
+  "intervalSeconds": zod.number().nullish().describe('Da 60 a 86400 secondi (default 300)'),
+  "dedupHeader": zod.string().nullish()
+}).describe('Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.')
+
+export const TestAgentTriggerConfigResponse = zod.object({
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "isNew": zod.boolean().describe('La chiave non è tra quelle già viste dall\'innesco'),
+  "preview": zod.string().describe('Elemento in JSON, al massimo 200 caratteri')
+})).describe('Al più 20 elementi, nell\'ordine della risposta'),
+  "total": zod.number().describe('Elementi letti (dopo il filtro)'),
+  "newCount": zod.number(),
+  "errors": zod.array(zod.string()).describe('Messaggi fissi (chiamata non riuscita, elenco non trovato, elementi scartati)')
+})
+
+
+/**
+ * @summary Recupera un innesco
+ */
+export const GetTriggerParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetTriggerResponse = zod.object({
+  "id": zod.number(),
+  "agentId": zod.number(),
+  "kind": zod.enum(['poll', 'webhook']),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'paused', 'error']),
+  "instructions": zod.string().nullable(),
+  "createdBy": zod.number().nullable(),
+  "toolId": zod.number().nullable(),
+  "args": zod.record(zod.string(), zod.unknown()),
+  "itemsPath": zod.string().nullable(),
+  "idField": zod.string().nullable(),
+  "versionField": zod.string().nullable(),
+  "cursorParam": zod.string().nullable(),
+  "cursorField": zod.string().nullable(),
+  "cursorValue": zod.string().nullable().describe('Ultimo valore del cursore'),
+  "filter": zod.union([zod.object({
+  "field": zod.string().describe('Percorso del campo (1..5 segmenti separati da punto)'),
+  "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
+}),zod.null()]),
+  "intervalSeconds": zod.number().nullable(),
+  "nextPollAt": zod.coerce.date().nullable(),
+  "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
+  "dedupHeader": zod.string().nullable(),
+  "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
+  "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
+  "lastError": zod.string().nullable(),
+  "consecutiveErrors": zod.number(),
+  "runsCreated": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * Campo assente = invariato, null = tolto. Cambiare tool, `itemsPath`, `idField`, `versionField` o `filter` riporta la linea di partenza: chiavi viste e cursore si azzerano.
+ * @summary Modifica un innesco (il tipo non cambia)
+ */
+export const UpdateTriggerParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateTriggerBody = zod.object({
+  "name": zod.string().optional(),
+  "instructions": zod.string().nullish(),
+  "toolId": zod.number().nullish(),
+  "args": zod.record(zod.string(), zod.unknown()).nullish(),
+  "itemsPath": zod.string().nullish(),
+  "idField": zod.string().nullish(),
+  "versionField": zod.string().nullish(),
+  "cursorParam": zod.string().nullish(),
+  "cursorField": zod.string().nullish(),
+  "filter": zod.union([zod.object({
+  "field": zod.string().describe('Percorso del campo (1..5 segmenti separati da punto)'),
+  "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
+}),zod.null()]).optional(),
+  "intervalSeconds": zod.number().nullish(),
+  "dedupHeader": zod.string().nullish()
+}).describe('Campi da cambiare (assente = invariato, null = tolto); il tipo non cambia.')
+
+export const UpdateTriggerResponse = zod.object({
+  "id": zod.number(),
+  "agentId": zod.number(),
+  "kind": zod.enum(['poll', 'webhook']),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'paused', 'error']),
+  "instructions": zod.string().nullable(),
+  "createdBy": zod.number().nullable(),
+  "toolId": zod.number().nullable(),
+  "args": zod.record(zod.string(), zod.unknown()),
+  "itemsPath": zod.string().nullable(),
+  "idField": zod.string().nullable(),
+  "versionField": zod.string().nullable(),
+  "cursorParam": zod.string().nullable(),
+  "cursorField": zod.string().nullable(),
+  "cursorValue": zod.string().nullable().describe('Ultimo valore del cursore'),
+  "filter": zod.union([zod.object({
+  "field": zod.string().describe('Percorso del campo (1..5 segmenti separati da punto)'),
+  "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
+}),zod.null()]),
+  "intervalSeconds": zod.number().nullable(),
+  "nextPollAt": zod.coerce.date().nullable(),
+  "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
+  "dedupHeader": zod.string().nullable(),
+  "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
+  "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
+  "lastError": zod.string().nullable(),
+  "consecutiveErrors": zod.number(),
+  "runsCreated": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Elimina un innesco (le sue run restano, senza innesco)
+ */
+export const DeleteTriggerParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteTriggerResponse = zod.void()
+
+
+/**
+ * @summary Mette in pausa un innesco
+ */
+export const PauseTriggerParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const PauseTriggerResponse = zod.object({
+  "id": zod.number(),
+  "agentId": zod.number(),
+  "kind": zod.enum(['poll', 'webhook']),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'paused', 'error']),
+  "instructions": zod.string().nullable(),
+  "createdBy": zod.number().nullable(),
+  "toolId": zod.number().nullable(),
+  "args": zod.record(zod.string(), zod.unknown()),
+  "itemsPath": zod.string().nullable(),
+  "idField": zod.string().nullable(),
+  "versionField": zod.string().nullable(),
+  "cursorParam": zod.string().nullable(),
+  "cursorField": zod.string().nullable(),
+  "cursorValue": zod.string().nullable().describe('Ultimo valore del cursore'),
+  "filter": zod.union([zod.object({
+  "field": zod.string().describe('Percorso del campo (1..5 segmenti separati da punto)'),
+  "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
+}),zod.null()]),
+  "intervalSeconds": zod.number().nullable(),
+  "nextPollAt": zod.coerce.date().nullable(),
+  "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
+  "dedupHeader": zod.string().nullable(),
+  "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
+  "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
+  "lastError": zod.string().nullable(),
+  "consecutiveErrors": zod.number(),
+  "runsCreated": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Attiva o riprende un innesco (azzera gli errori, il giro parte subito)
+ */
+export const ResumeTriggerParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ResumeTriggerResponse = zod.object({
+  "id": zod.number(),
+  "agentId": zod.number(),
+  "kind": zod.enum(['poll', 'webhook']),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'paused', 'error']),
+  "instructions": zod.string().nullable(),
+  "createdBy": zod.number().nullable(),
+  "toolId": zod.number().nullable(),
+  "args": zod.record(zod.string(), zod.unknown()),
+  "itemsPath": zod.string().nullable(),
+  "idField": zod.string().nullable(),
+  "versionField": zod.string().nullable(),
+  "cursorParam": zod.string().nullable(),
+  "cursorField": zod.string().nullable(),
+  "cursorValue": zod.string().nullable().describe('Ultimo valore del cursore'),
+  "filter": zod.union([zod.object({
+  "field": zod.string().describe('Percorso del campo (1..5 segmenti separati da punto)'),
+  "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
+}),zod.null()]),
+  "intervalSeconds": zod.number().nullable(),
+  "nextPollAt": zod.coerce.date().nullable(),
+  "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
+  "dedupHeader": zod.string().nullable(),
+  "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
+  "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
+  "lastError": zod.string().nullable(),
+  "consecutiveErrors": zod.number(),
+  "runsCreated": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * Come la prova della configurazione, con gli argomenti e il cursore salvati: `isNew` dice se la chiave non è ancora tra quelle viste. Non avvia run, non scrive chiavi né cursore. Solo `poll`; 6 prove al minuto per utente.
+ * @summary Prova un innesco di sorveglianza salvato
+ */
+export const TestTriggerParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const TestTriggerResponse = zod.object({
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "isNew": zod.boolean().describe('La chiave non è tra quelle già viste dall\'innesco'),
+  "preview": zod.string().describe('Elemento in JSON, al massimo 200 caratteri')
+})).describe('Al più 20 elementi, nell\'ordine della risposta'),
+  "total": zod.number().describe('Elementi letti (dopo il filtro)'),
+  "newCount": zod.number(),
+  "errors": zod.array(zod.string()).describe('Messaggi fissi (chiamata non riuscita, elenco non trovato, elementi scartati)')
+})
+
+
+/**
+ * Il segreto precedente smette di valere; il nuovo indirizzo si mostra una sola volta.
+ * @summary Rigenera il segreto dell'indirizzo del webhook (solo con il login)
+ */
+export const RegenerateTriggerSecretParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RegenerateTriggerSecretResponse = zod.object({
+  "webhookUrl": zod.string().describe('Indirizzo del webhook con il segreto, mostrato una sola volta')
+})
+
+
+/**
+ * Da 16 a 200 caratteri; null lo toglie. Non si legge mai.
+ * @summary Imposta o toglie il segreto di firma del webhook (solo con il login)
+ */
+export const SetTriggerSigningSecretParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SetTriggerSigningSecretBody = zod.object({
+  "secret": zod.string().nullable().describe('Da 16 a 200 caratteri; null toglie il segreto di firma')
+})
+
+export const SetTriggerSigningSecretResponse = zod.object({
+  "id": zod.number(),
+  "agentId": zod.number(),
+  "kind": zod.enum(['poll', 'webhook']),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'paused', 'error']),
+  "instructions": zod.string().nullable(),
+  "createdBy": zod.number().nullable(),
+  "toolId": zod.number().nullable(),
+  "args": zod.record(zod.string(), zod.unknown()),
+  "itemsPath": zod.string().nullable(),
+  "idField": zod.string().nullable(),
+  "versionField": zod.string().nullable(),
+  "cursorParam": zod.string().nullable(),
+  "cursorField": zod.string().nullable(),
+  "cursorValue": zod.string().nullable().describe('Ultimo valore del cursore'),
+  "filter": zod.union([zod.object({
+  "field": zod.string().describe('Percorso del campo (1..5 segmenti separati da punto)'),
+  "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
+}),zod.null()]),
+  "intervalSeconds": zod.number().nullable(),
+  "nextPollAt": zod.coerce.date().nullable(),
+  "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
+  "dedupHeader": zod.string().nullable(),
+  "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
+  "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
+  "lastError": zod.string().nullable(),
+  "consecutiveErrors": zod.number(),
+  "runsCreated": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Ultime 20 run avviate dall'innesco
+ */
+export const ListTriggerRunsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListTriggerRunsResponseItem = zod.object({
+  "id": zod.number(),
+  "agentId": zod.number(),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.'),
+  "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
+  "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
+  "errorMessage": zod.string().nullish(),
+  "durationMs": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullish(),
+  "promptTokens": zod.number().nullish(),
+  "completionTokens": zod.number().nullish(),
+  "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)'),
+  "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
+  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})'),
+  "triggerId": zod.number().nullish().describe('Innesco che ha avviato la run (null se avviata a mano o innesco eliminato)'),
+  "triggerName": zod.string().nullish().describe('Nome dell\'innesco che ha avviato la run')
+})
+export const ListTriggerRunsResponse = zod.array(ListTriggerRunsResponseItem)
 
 
 /**
@@ -1842,6 +2295,7 @@ export const GetDashboardStatsResponse = zod.object({
   "failedRuns": zod.number(),
   "cancelledRuns": zod.number(),
   "pendingActions": zod.number().describe('Azioni dell\'utente corrente in attesa di conferma'),
+  "triggersInError": zod.number().describe('Inneschi fermi in stato error (servono «Riprendi»)'),
   "avgDurationMs": zod.number().nullish()
 })
 

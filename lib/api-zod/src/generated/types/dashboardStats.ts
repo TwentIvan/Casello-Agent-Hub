@@ -16,6 +16,8 @@ export interface DashboardStats {
   cancelledRuns: number;
   /** Azioni dell'utente corrente in attesa di conferma */
   pendingActions: number;
+  /** Inneschi fermi in stato error (servono «Riprendi») */
+  triggersInError: number;
   /** @nullable */
   avgDurationMs?: number | null;
 }

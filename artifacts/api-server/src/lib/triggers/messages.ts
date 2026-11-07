@@ -32,4 +32,10 @@ export const TRIGGER_MESSAGES = {
   invalidJson: "JSON non valido",
   invalidBody: "corpo non valido",
   hookFailed: "errore interno: riprova tra poco",
+  // API di gestione (spec §7).
+  agentNotFound: "agente non trovato",
+  pollOnly: "la prova vale solo per gli inneschi di sorveglianza",
+  webhookOnly: "operazione disponibile solo per i webhook",
+  invalidSigningSecret: "segreto di firma non valido: da 16 a 200 caratteri",
+  itemsSkipped: "elementi scartati senza chiave valida",
 } as const;

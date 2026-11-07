@@ -50,6 +50,8 @@ tags:
     description: Conversazioni scritte con Alfred e Lucius (filo di Alfred, argomenti, messaggi, schede)
   - name: memories
     description: Memoria dei personaggi (Alfred, Lucius) - appunti e storico delle conversazioni
+  - name: triggers
+    description: Inneschi degli agenti (sorveglianza di un tool e webhook in entrata)
 
 paths:
   /healthz:
@@ -1422,6 +1424,273 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  # ─── Inneschi ───────────────────────────────────────────────────────────────
+
+  /agents/{id}/triggers:
+    get:
+      operationId: listAgentTriggers
+      tags: [triggers]
+      summary: Elenca gli inneschi di un agente
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Inneschi dell'agente, in ordine di id
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trigger"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createAgentTrigger
+      tags: [triggers]
+      summary: Crea un innesco (nasce in pausa)
+      description: >-
+        Sorveglianza (`poll`) su un tool di lettura (L0) dell'app dell'agente con identità di servizio, oppure
+        webhook in entrata. Per il webhook la risposta porta `webhookUrl`, mostrato una sola volta. Al massimo 10
+        inneschi per agente e 50 per utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriggerInput"
+      responses:
+        "201":
+          description: Innesco creato, in pausa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriggerCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Troppi inneschi (10 per agente, 50 per utente) o nome già usato sull'agente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /agents/{id}/triggers/test:
+    post:
+      operationId: testAgentTriggerConfig
+      tags: [triggers]
+      summary: Prova una configurazione di sorveglianza, anche non salvata
+      description: >-
+        Chiama il tool e mostra gli elementi che leggerebbe, al più 20, con anteprima di 200 caratteri. Non avvia
+        run, non scrive chiavi né cursore. Solo `poll`; 6 prove al minuto per utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriggerInput"
+      responses:
+        "200":
+          description: Esito della prova
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriggerTestResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /triggers/{id}:
+    get:
+      operationId: getTrigger
+      tags: [triggers]
+      summary: Recupera un innesco
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Innesco
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trigger"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateTrigger
+      tags: [triggers]
+      summary: Modifica un innesco (il tipo non cambia)
+      description: >-
+        Campo assente = invariato, null = tolto. Cambiare tool, `itemsPath`, `idField`, `versionField` o `filter`
+        riporta la linea di partenza: chiavi viste e cursore si azzerano.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriggerPatch"
+      responses:
+        "200":
+          description: Innesco aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trigger"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      operationId: deleteTrigger
+      tags: [triggers]
+      summary: Elimina un innesco (le sue run restano, senza innesco)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Innesco eliminato
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /triggers/{id}/pause:
+    post:
+      operationId: pauseTrigger
+      tags: [triggers]
+      summary: Mette in pausa un innesco
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Innesco in pausa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trigger"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /triggers/{id}/resume:
+    post:
+      operationId: resumeTrigger
+      tags: [triggers]
+      summary: Attiva o riprende un innesco (azzera gli errori, il giro parte subito)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Innesco attivo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trigger"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /triggers/{id}/test:
+    post:
+      operationId: testTrigger
+      tags: [triggers]
+      summary: Prova un innesco di sorveglianza salvato
+      description: >-
+        Come la prova della configurazione, con gli argomenti e il cursore salvati: `isNew` dice se la chiave non è
+        ancora tra quelle viste. Non avvia run, non scrive chiavi né cursore. Solo `poll`; 6 prove al minuto per utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Esito della prova
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriggerTestResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /triggers/{id}/secret:
+    post:
+      operationId: regenerateTriggerSecret
+      tags: [triggers]
+      summary: Rigenera il segreto dell'indirizzo del webhook (solo con il login)
+      description: Il segreto precedente smette di valere; il nuovo indirizzo si mostra una sola volta.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Nuovo indirizzo del webhook
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriggerWebhookUrl"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /triggers/{id}/signing-secret:
+    put:
+      operationId: setTriggerSigningSecret
+      tags: [triggers]
+      summary: Imposta o toglie il segreto di firma del webhook (solo con il login)
+      description: Da 16 a 200 caratteri; null lo toglie. Non si legge mai.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriggerSigningSecret"
+      responses:
+        "200":
+          description: Innesco aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trigger"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /triggers/{id}/runs:
+    get:
+      operationId: listTriggerRuns
+      tags: [triggers]
+      summary: Ultime 20 run avviate dall'innesco
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Run dell'innesco, dalla più recente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Run"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   # ─── Architetto ─────────────────────────────────────────────────────────────
 
@@ -5034,6 +5303,12 @@ components:
           description: >-
             Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel
             dettaglio, GET /runs/{id})
+        triggerId:
+          type: ["integer", "null"]
+          description: Innesco che ha avviato la run (null se avviata a mano o innesco eliminato)
+        triggerName:
+          type: ["string", "null"]
+          description: Nome dell'innesco che ha avviato la run
 
     RunStep:
       type: object
@@ -5075,11 +5350,265 @@ components:
           type: string
           description: Input testuale da passare all'agente
 
+    # ── Inneschi ───────────────────────────────────────────────────────────────
+
+    TriggerKind:
+      type: string
+      enum: [poll, webhook]
+
+    TriggerStatus:
+      type: string
+      enum: [active, paused, error]
+
+    TriggerFilter:
+      type: object
+      required: [field, equals]
+      properties:
+        field:
+          type: string
+          description: Percorso del campo (1..5 segmenti separati da punto)
+        equals:
+          description: Valore atteso, confronto stretto
+          oneOf:
+            - type: string
+            - type: number
+            - type: boolean
+
+    TriggerInput:
+      type: object
+      required: [kind, name]
+      description: >-
+        Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`.
+        Solo `webhook`: `dedupHeader`. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.
+      properties:
+        kind:
+          $ref: "#/components/schemas/TriggerKind"
+        name:
+          type: string
+          description: Da 1 a 80 caratteri, unico per agente
+        instructions:
+          type: ["string", "null"]
+          description: Testo che apre l'input della run, al massimo 2000 caratteri
+        toolId:
+          type: ["integer", "null"]
+        args:
+          type: ["object", "null"]
+          additionalProperties: true
+          description: Argomenti fissi del tool, al massimo 8 KB
+        itemsPath:
+          type: ["string", "null"]
+          description: Percorso dell'elenco nella risposta; null = la risposta è l'elenco
+        idField:
+          type: ["string", "null"]
+        versionField:
+          type: ["string", "null"]
+        cursorParam:
+          type: ["string", "null"]
+        cursorField:
+          type: ["string", "null"]
+        filter:
+          oneOf:
+            - $ref: "#/components/schemas/TriggerFilter"
+            - type: "null"
+        intervalSeconds:
+          type: ["integer", "null"]
+          description: Da 60 a 86400 secondi (default 300)
+        dedupHeader:
+          type: ["string", "null"]
+
+    TriggerPatch:
+      type: object
+      description: Campi da cambiare (assente = invariato, null = tolto); il tipo non cambia.
+      properties:
+        name:
+          type: string
+        instructions:
+          type: ["string", "null"]
+        toolId:
+          type: ["integer", "null"]
+        args:
+          type: ["object", "null"]
+          additionalProperties: true
+        itemsPath:
+          type: ["string", "null"]
+        idField:
+          type: ["string", "null"]
+        versionField:
+          type: ["string", "null"]
+        cursorParam:
+          type: ["string", "null"]
+        cursorField:
+          type: ["string", "null"]
+        filter:
+          oneOf:
+            - $ref: "#/components/schemas/TriggerFilter"
+            - type: "null"
+        intervalSeconds:
+          type: ["integer", "null"]
+        dedupHeader:
+          type: ["string", "null"]
+
+    Trigger:
+      type: object
+      required:
+        - id
+        - agentId
+        - kind
+        - name
+        - status
+        - instructions
+        - createdBy
+        - toolId
+        - args
+        - itemsPath
+        - idField
+        - versionField
+        - cursorParam
+        - cursorField
+        - cursorValue
+        - filter
+        - intervalSeconds
+        - nextPollAt
+        - baselineDone
+        - dedupHeader
+        - signingSecretSet
+        - lastPolledAt
+        - lastError
+        - consecutiveErrors
+        - runsCreated
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+        agentId:
+          type: integer
+        kind:
+          $ref: "#/components/schemas/TriggerKind"
+        name:
+          type: string
+        status:
+          $ref: "#/components/schemas/TriggerStatus"
+        instructions:
+          type: ["string", "null"]
+        createdBy:
+          type: ["integer", "null"]
+        toolId:
+          type: ["integer", "null"]
+        args:
+          type: object
+          additionalProperties: true
+        itemsPath:
+          type: ["string", "null"]
+        idField:
+          type: ["string", "null"]
+        versionField:
+          type: ["string", "null"]
+        cursorParam:
+          type: ["string", "null"]
+        cursorField:
+          type: ["string", "null"]
+        cursorValue:
+          type: ["string", "null"]
+          description: Ultimo valore del cursore
+        filter:
+          oneOf:
+            - $ref: "#/components/schemas/TriggerFilter"
+            - type: "null"
+        intervalSeconds:
+          type: ["integer", "null"]
+        nextPollAt:
+          type: ["string", "null"]
+          format: date-time
+        baselineDone:
+          type: boolean
+          description: Linea di partenza fatta (solo sorveglianza)
+        dedupHeader:
+          type: ["string", "null"]
+        signingSecretSet:
+          type: boolean
+          description: C'è un segreto di firma (il valore non si legge mai)
+        lastPolledAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Ultimo giro o ultimo evento ricevuto
+        lastError:
+          type: ["string", "null"]
+        consecutiveErrors:
+          type: integer
+        runsCreated:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TriggerCreated:
+      description: Innesco creato; per il webhook l'indirizzo con il segreto, mostrato una sola volta.
+      allOf:
+        - $ref: "#/components/schemas/Trigger"
+        - type: object
+          required: [webhookUrl]
+          properties:
+            webhookUrl:
+              type: ["string", "null"]
+
+    TriggerWebhookUrl:
+      type: object
+      required: [webhookUrl]
+      properties:
+        webhookUrl:
+          type: string
+          description: Indirizzo del webhook con il segreto, mostrato una sola volta
+
+    TriggerSigningSecret:
+      type: object
+      required: [secret]
+      properties:
+        secret:
+          type: ["string", "null"]
+          description: Da 16 a 200 caratteri; null toglie il segreto di firma
+
+    TriggerTestItem:
+      type: object
+      required: [key, isNew, preview]
+      properties:
+        key:
+          type: string
+        isNew:
+          type: boolean
+          description: La chiave non è tra quelle già viste dall'innesco
+        preview:
+          type: string
+          description: Elemento in JSON, al massimo 200 caratteri
+
+    TriggerTestResult:
+      type: object
+      required: [items, total, newCount, errors]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TriggerTestItem"
+          description: Al più 20 elementi, nell'ordine della risposta
+        total:
+          type: integer
+          description: Elementi letti (dopo il filtro)
+        newCount:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string
+          description: Messaggi fissi (chiamata non riuscita, elenco non trovato, elementi scartati)
+
     # ── Dashboard ──────────────────────────────────────────────────────────────
 
     DashboardStats:
       type: object
-      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, cancelledRuns, activeAgents, pendingActions]
+      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, cancelledRuns, activeAgents, pendingActions, triggersInError]
       properties:
         totalApps:
           type: integer
@@ -5098,6 +5627,9 @@ components:
         pendingActions:
           type: integer
           description: Azioni dell'utente corrente in attesa di conferma
+        triggersInError:
+          type: integer
+          description: Inneschi fermi in stato error (servono «Riprendi»)
         avgDurationMs:
           type: ["number", "null"]
 

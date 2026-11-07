@@ -671,6 +671,16 @@ export interface Run {
   parentRunId?: number | null;
   /** Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET /runs/{id}) */
   childRunIds?: number[];
+  /**
+     * Innesco che ha avviato la run (null se avviata a mano o innesco eliminato)
+     * @nullable
+     */
+  triggerId?: number | null;
+  /**
+     * Nome dell'innesco che ha avviato la run
+     * @nullable
+     */
+  triggerName?: string | null;
 }
 
 /**
@@ -704,6 +714,204 @@ export interface RunTrigger {
   input?: string;
 }
 
+export type TriggerKind = typeof TriggerKind[keyof typeof TriggerKind];
+
+
+export const TriggerKind = {
+  poll: 'poll',
+  webhook: 'webhook',
+} as const;
+
+export type TriggerStatus = typeof TriggerStatus[keyof typeof TriggerStatus];
+
+
+export const TriggerStatus = {
+  active: 'active',
+  paused: 'paused',
+  error: 'error',
+} as const;
+
+export interface TriggerFilter {
+  /** Percorso del campo (1..5 segmenti separati da punto) */
+  field: string;
+  /** Valore atteso, confronto stretto */
+  equals: string | number | boolean;
+}
+
+/**
+ * Argomenti fissi del tool, al massimo 8 KB
+ * @nullable
+ */
+export type TriggerInputArgs = { [key: string]: unknown } | null;
+
+/**
+ * Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.
+ */
+export interface TriggerInput {
+  kind: TriggerKind;
+  /** Da 1 a 80 caratteri, unico per agente */
+  name: string;
+  /**
+     * Testo che apre l'input della run, al massimo 2000 caratteri
+     * @nullable
+     */
+  instructions?: string | null;
+  /** @nullable */
+  toolId?: number | null;
+  /**
+     * Argomenti fissi del tool, al massimo 8 KB
+     * @nullable
+     */
+  args?: TriggerInputArgs;
+  /**
+     * Percorso dell'elenco nella risposta; null = la risposta è l'elenco
+     * @nullable
+     */
+  itemsPath?: string | null;
+  /** @nullable */
+  idField?: string | null;
+  /** @nullable */
+  versionField?: string | null;
+  /** @nullable */
+  cursorParam?: string | null;
+  /** @nullable */
+  cursorField?: string | null;
+  filter?: TriggerFilter | null;
+  /**
+     * Da 60 a 86400 secondi (default 300)
+     * @nullable
+     */
+  intervalSeconds?: number | null;
+  /** @nullable */
+  dedupHeader?: string | null;
+}
+
+/**
+ * @nullable
+ */
+export type TriggerPatchArgs = { [key: string]: unknown } | null;
+
+/**
+ * Campi da cambiare (assente = invariato, null = tolto); il tipo non cambia.
+ */
+export interface TriggerPatch {
+  name?: string;
+  /** @nullable */
+  instructions?: string | null;
+  /** @nullable */
+  toolId?: number | null;
+  /** @nullable */
+  args?: TriggerPatchArgs;
+  /** @nullable */
+  itemsPath?: string | null;
+  /** @nullable */
+  idField?: string | null;
+  /** @nullable */
+  versionField?: string | null;
+  /** @nullable */
+  cursorParam?: string | null;
+  /** @nullable */
+  cursorField?: string | null;
+  filter?: TriggerFilter | null;
+  /** @nullable */
+  intervalSeconds?: number | null;
+  /** @nullable */
+  dedupHeader?: string | null;
+}
+
+export type TriggerArgs = { [key: string]: unknown };
+
+export interface Trigger {
+  id: number;
+  agentId: number;
+  kind: TriggerKind;
+  name: string;
+  status: TriggerStatus;
+  /** @nullable */
+  instructions: string | null;
+  /** @nullable */
+  createdBy: number | null;
+  /** @nullable */
+  toolId: number | null;
+  args: TriggerArgs;
+  /** @nullable */
+  itemsPath: string | null;
+  /** @nullable */
+  idField: string | null;
+  /** @nullable */
+  versionField: string | null;
+  /** @nullable */
+  cursorParam: string | null;
+  /** @nullable */
+  cursorField: string | null;
+  /**
+     * Ultimo valore del cursore
+     * @nullable
+     */
+  cursorValue: string | null;
+  filter: TriggerFilter | null;
+  /** @nullable */
+  intervalSeconds: number | null;
+  /** @nullable */
+  nextPollAt: string | null;
+  /** Linea di partenza fatta (solo sorveglianza) */
+  baselineDone: boolean;
+  /** @nullable */
+  dedupHeader: string | null;
+  /** C'è un segreto di firma (il valore non si legge mai) */
+  signingSecretSet: boolean;
+  /**
+     * Ultimo giro o ultimo evento ricevuto
+     * @nullable
+     */
+  lastPolledAt: string | null;
+  /** @nullable */
+  lastError: string | null;
+  consecutiveErrors: number;
+  runsCreated: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Innesco creato; per il webhook l'indirizzo con il segreto, mostrato una sola volta.
+ */
+export type TriggerCreated = Trigger & ({
+  /** @nullable */
+  webhookUrl: string | null;
+});
+
+export interface TriggerWebhookUrl {
+  /** Indirizzo del webhook con il segreto, mostrato una sola volta */
+  webhookUrl: string;
+}
+
+export interface TriggerSigningSecret {
+  /**
+     * Da 16 a 200 caratteri; null toglie il segreto di firma
+     * @nullable
+     */
+  secret: string | null;
+}
+
+export interface TriggerTestItem {
+  key: string;
+  /** La chiave non è tra quelle già viste dall'innesco */
+  isNew: boolean;
+  /** Elemento in JSON, al massimo 200 caratteri */
+  preview: string;
+}
+
+export interface TriggerTestResult {
+  /** Al più 20 elementi, nell'ordine della risposta */
+  items: TriggerTestItem[];
+  /** Elementi letti (dopo il filtro) */
+  total: number;
+  newCount: number;
+  /** Messaggi fissi (chiamata non riuscita, elenco non trovato, elementi scartati) */
+  errors: string[];
+}
+
 export interface DashboardStats {
   totalApps: number;
   totalAgents: number;
@@ -714,6 +922,8 @@ export interface DashboardStats {
   cancelledRuns: number;
   /** Azioni dell'utente corrente in attesa di conferma */
   pendingActions: number;
+  /** Inneschi fermi in stato error (servono «Riprendi») */
+  triggersInError: number;
   /** @nullable */
   avgDurationMs?: number | null;
 }

@@ -83,6 +83,8 @@ export const issueRefreshRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key
 
 // Aggiornamento del catalogo dal server MCP di un'app: 6 al minuto per utente.
 export const mcpRefreshRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byUser });
+// «Prova» degli inneschi: chiama il tool dell'app, 6 al minuto per utente (configurazione e innesco salvato insieme).
+export const triggerTestRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byUser });
 
 // Approvazione e rifiuto delle azioni in coda: 20 al minuto per utente. Un solo contatore condiviso dalle route
 // `POST /pending-actions/:number/approve|reject` e dagli strumenti MCP `approva`/`rifiuta` (`consumeActionDecision`).

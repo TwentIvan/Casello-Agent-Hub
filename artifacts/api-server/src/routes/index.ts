@@ -27,6 +27,7 @@ import { createNodesRouter } from "./nodes";
 import { createNodeRouter } from "./node";
 import { createOAuthGrantsRouter } from "./oauth-grants";
 import { createAlfredRouter } from "./alfred";
+import { createTriggersRouter } from "./triggers";
 import { requireNodeToken } from "../lib/nodes/auth";
 import { authRouter, requireAuth } from "../lib/auth";
 
@@ -66,5 +67,6 @@ router.use(createAccountCharactersRouter());
 router.use(createNodesRouter());
 router.use(createOAuthGrantsRouter());
 router.use(createAlfredRouter());
+router.use(createTriggersRouter());
 
 export default router;

@@ -62,7 +62,7 @@ async function recordError(id: number, message: string, stop = false): Promise<P
 }
 
 /** Valore da passare come argomento del cursore: numero se lo schema del parametro lo chiede. */
-function cursorArg(tool: CatalogTool, param: string, value: string): string | number {
+export function cursorArg(tool: CatalogTool, param: string, value: string): string | number {
   const props = tool.paramsSchema["properties"];
   const prop = props && typeof props === "object" ? (props as Record<string, unknown>)[param] : undefined;
   const type = prop && typeof prop === "object" ? (prop as Record<string, unknown>)["type"] : undefined;
@@ -95,8 +95,40 @@ function nextCursor(stored: string | null, processed: ExtractedItem[], left: Ext
   return String(best);
 }
 
+export type TriggerToolCall = { ok: true; response: unknown } | { ok: false; error: string };
+
+/**
+ * Chiamata del tool di un innesco (giro e «Prova»): esecuzione grezza con la connessione dell'app, risposta in JSON.
+ * Errori con messaggio fisso, mai il testo della risposta (può contenere dati o segreti dell'app).
+ */
+export async function callTriggerTool(
+  appId: number,
+  tool: CatalogTool,
+  args: Record<string, unknown>,
+  deps: { fetchImpl?: typeof fetch } = {},
+): Promise<TriggerToolCall> {
+  const conn = await loadAppConnection(appId);
+  const result = await executeTool({
+    conn,
+    tool,
+    args,
+    raw: true,
+    ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
+  });
+  if (!result.ok) {
+    const error = result.status !== undefined ? `${TRIGGER_MESSAGES.toolFailed} (HTTP ${result.status})` : TRIGGER_MESSAGES.toolFailed;
+    return { ok: false, error };
+  }
+  if (result.content === EMPTY_RESULT) return { ok: false, error: TRIGGER_MESSAGES.unrecognized };
+  try {
+    return { ok: true, response: JSON.parse(result.content) };
+  } catch {
+    return { ok: false, error: TRIGGER_MESSAGES.unrecognized };
+  }
+}
+
 /** Elementi senza chiavi ripetute, nell'ordine della risposta. */
-function uniqueByKey(items: ExtractedItem[]): ExtractedItem[] {
+export function uniqueByKey(items: ExtractedItem[]): ExtractedItem[] {
   const seen = new Set<string>();
   return items.filter((i) => (seen.has(i.key) ? false : (seen.add(i.key), true)));
 }
@@ -173,26 +205,9 @@ async function runPass(trigger: AgentTrigger, deps: { fetchImpl?: typeof fetch }
   if (trigger.cursorParam && trigger.cursorValue !== null) {
     args[trigger.cursorParam] = cursorArg(tool, trigger.cursorParam, trigger.cursorValue);
   }
-  const conn = await loadAppConnection(agent.appId);
-  const result = await executeTool({
-    conn,
-    tool,
-    args,
-    raw: true,
-    ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
-  });
-  if (!result.ok) {
-    // Mai il testo della risposta: può contenere dati o segreti dell'app.
-    const message = result.status !== undefined ? `${TRIGGER_MESSAGES.toolFailed} (HTTP ${result.status})` : TRIGGER_MESSAGES.toolFailed;
-    return recordError(id, message);
-  }
-  if (result.content === EMPTY_RESULT) return recordError(id, TRIGGER_MESSAGES.unrecognized);
-  let response: unknown;
-  try {
-    response = JSON.parse(result.content);
-  } catch {
-    return recordError(id, TRIGGER_MESSAGES.unrecognized);
-  }
+  const call = await callTriggerTool(agent.appId, tool, args, deps);
+  if (!call.ok) return recordError(id, call.error);
+  const response = call.response;
 
   // 5. Estrazione.
   const extracted = extractItems(response, {

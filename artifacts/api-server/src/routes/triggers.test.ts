@@ -364,6 +364,21 @@ describe("modifica, pausa e ripresa", () => {
     expect(await seenKeys(id)).toEqual(["1", "2"]);
   });
 
+  it("eliminare l'app di un agente con un innesco di sorveglianza riesce e toglie l'innesco", async () => {
+    // Il vincolo agents → apps ricreato: la sua cascata scatta dopo quella dei tool (l'ordine dei vincoli in produzione
+    // non è garantito), così il tool si cancellerebbe prima dell'innesco che lo usa (`tool_id` RESTRICT).
+    await pool.query(`ALTER TABLE agents DROP CONSTRAINT agents_app_id_apps_id_fk`);
+    await pool.query(
+      `ALTER TABLE agents ADD CONSTRAINT agents_app_id_apps_id_fk FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE cascade ON UPDATE no action`,
+    );
+    const { appId, agentId, toolId } = await seed();
+    const created = await api("POST", `/agents/${agentId}/triggers`, { body: pollInput(toolId) });
+    expect(created.status).toBe(201);
+    const del = await api("DELETE", `/apps/${appId}`);
+    expect(del.status).toBe(204);
+    expect(await db.select().from(agentTriggersTable).where(eq(agentTriggersTable.id, created.json.id as number))).toEqual([]);
+  });
+
   it("PATCH con un nome già usato → 409; con argomenti non validi → 400", async () => {
     const { agentId, toolId } = await seed();
     await api("POST", `/agents/${agentId}/triggers`, { body: { kind: "webhook", name: "Altro" } });

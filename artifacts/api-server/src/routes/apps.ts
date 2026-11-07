@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, asc, count, eq } from "drizzle-orm";
-import { db, appsTable, agentsTable, githubInstallationsTable, pendingActionsTable, teamInstancesTable } from "@workspace/db";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
+import {
+  db,
+  appsTable,
+  agentsTable,
+  agentTriggersTable,
+  githubInstallationsTable,
+  pendingActionsTable,
+  teamInstancesTable,
+} from "@workspace/db";
 import {
   ListAppsResponse,
   CreateAppBody,
@@ -318,12 +326,14 @@ router.delete("/apps/:id", async (req, res) => {
     res.status(409).json({ error: teamsMessage(teams) });
     return;
   }
-  // Lo storico della coda segue l'app: va tolto prima, perché `pending_actions.tool_id` è RESTRICT
-  // e bloccherebbe la cascata dell'app verso i suoi tool
+  // Lo storico della coda e gli inneschi degli agenti seguono l'app: vanno tolti prima, perché `pending_actions.tool_id`
+  // e `agent_triggers.tool_id` sono RESTRICT e, secondo l'ordine delle cascate, bloccherebbero quella dell'app verso i suoi tool
   let app;
   try {
     app = await db.transaction(async (tx) => {
       await tx.delete(pendingActionsTable).where(eq(pendingActionsTable.appId, id));
+      const appAgents = tx.select({ id: agentsTable.id }).from(agentsTable).where(eq(agentsTable.appId, id));
+      await tx.delete(agentTriggersTable).where(inArray(agentTriggersTable.agentId, appAgents));
       const [deleted] = await tx.delete(appsTable).where(eq(appsTable.id, id)).returning();
       return deleted;
     });

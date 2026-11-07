@@ -316,6 +316,8 @@ export async function executeTool(input: {
   timeoutMs?: number;
   /** Annullamento dall'esterno (run annullata): si combina con il timeout */
   signal?: AbortSignal;
+  /** Risposta completa (≤ 1 MiB, oscurata): niente troncamento né proiezione `responseFields` (poller degli inneschi) */
+  raw?: boolean;
 }): Promise<ToolResult> {
   const { conn, tool, userToken } = input;
   const fetchImpl = input.fetchImpl ?? fetch;
@@ -338,6 +340,7 @@ export async function executeTool(input: {
         fetchImpl,
         timeoutMs,
         ...(input.signal ? { signal: input.signal } : {}),
+        ...(input.raw ? { raw: true } : {}),
       });
     }
     if (tool.kind !== "http") return fail(`tipo di tool non supportato: ${String(tool.kind)}`);
@@ -385,12 +388,15 @@ export async function executeTool(input: {
 
     const json = tryParseJson(text);
     const content = json.ok
-      ? JSON.stringify(project(json.value, (parsed.value as HttpDefinition).responseFields))
+      ? input.raw
+        ? text
+        : JSON.stringify(project(json.value, (parsed.value as HttpDefinition).responseFields))
       : text.trim() === ""
         ? "(risposta vuota)"
         : text;
     // Di nuovo dopo JSON.parse/stringify: gli escape JSON possono aver nascosto un valore al primo passaggio
-    return { ok: true, status: res.status, content: truncate(redact(content, secrets)) };
+    const redacted = redact(content, secrets);
+    return { ok: true, status: res.status, content: input.raw ? redacted : truncate(redacted) };
   } catch (err) {
     if (err instanceof ToolError) return fail(err.message);
     // Errore inatteso: nessun dettaglio che possa contenere token o segreti

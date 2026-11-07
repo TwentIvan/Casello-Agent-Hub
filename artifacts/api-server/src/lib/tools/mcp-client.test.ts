@@ -199,6 +199,23 @@ describe("callMcpTool", () => {
     expect(res.content).toBe('ciao\n[contenuto image omesso]\n{"n":1}');
   });
 
+  it("raw: structuredContent serializzato, senza troncare", async () => {
+    const big = { items: ["y".repeat(30_000)] };
+    fake = await startFakeMcp({ tools: [{ name: "big", text: "ignorato", structuredContent: big }] });
+    const res = await callMcpTool({ conn: conn(), tool: mcpTool("big"), args: {}, raw: true });
+    expect(res).toEqual({ ok: true, content: JSON.stringify(big) });
+    const trunc = await callMcpTool({ conn: conn(), tool: mcpTool("big"), args: {} });
+    expect(trunc.content).toContain("troncata");
+  });
+
+  it("raw: senza structuredContent il primo blocco di testo", async () => {
+    fake = await startFakeMcp({
+      tools: [{ name: "t", text: "z".repeat(25_000), extraContent: [{ type: "image", data: "AAAA", mimeType: "image/png" }] }],
+    });
+    const res = await callMcpTool({ conn: conn(), tool: mcpTool("t"), args: {}, raw: true });
+    expect(res).toEqual({ ok: true, content: "z".repeat(25_000) });
+  });
+
   it("isError: ok false", async () => {
     fake = await startFakeMcp({ tools: [{ name: "bad", text: "non si può", isError: true }] });
     const res = await callMcpTool({ conn: conn(), tool: mcpTool("bad"), args: {} });

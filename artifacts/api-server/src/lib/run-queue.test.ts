@@ -9,6 +9,7 @@ import {
   aiModelsTable,
   appsTable,
   agentsTable,
+  agentTriggersTable,
   runsTable,
   runStepsTable,
   usersTable,
@@ -170,6 +171,39 @@ async function statuses(): Promise<Map<number, string>> {
 async function countByStatus(status: string): Promise<number> {
   return [...(await statuses()).values()].filter((s) => s === status).length;
 }
+
+describe("createQueuedRun in transazione", () => {
+  async function seedTrigger(agent: Agent): Promise<number> {
+    const [t] = await db
+      .insert(agentTriggersTable)
+      .values({ agentId: agent.id, kind: "webhook", name: "hook", secretHash: "h" })
+      .returning();
+    return t!.id;
+  }
+
+  it("transazione annullata → nessuna run; con commit → run con triggerId, senza avviare lo scheduler", async () => {
+    const [agent] = await seedAgents(1);
+    const triggerId = await seedTrigger(agent!);
+    const rollback = new Error("annulla");
+    await expect(
+      db.transaction(async (tx) => {
+        const r = await createQueuedRun({ agent: agent!, input: "x", triggerId, tx });
+        expect(r.ok).toBe(true);
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+    expect(await db.select().from(runsTable)).toHaveLength(0);
+
+    stopQueue = startRunQueue();
+    await scheduleRuns(); // il giro iniziale finisce prima della creazione
+    const res = await db.transaction((tx) => createQueuedRun({ agent: agent!, input: "x", triggerId, tx }));
+    expect(res.ok && res.run.triggerId).toBe(triggerId);
+    // scheduleRuns non è stato chiamato: la run resta pending finché non lo fa il chiamante
+    await pause(100);
+    expect((await db.select().from(runsTable))[0]?.status).toBe("pending");
+    expect(held).toHaveLength(0);
+  });
+});
 
 describe("coda delle run", () => {
   beforeEach(() => {

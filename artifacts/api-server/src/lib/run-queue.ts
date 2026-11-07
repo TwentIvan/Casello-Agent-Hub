@@ -1,6 +1,7 @@
 import { db, runsTable, type Agent, type Run } from "@workspace/db";
 import { and, eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
+import type { DbTransaction } from "./tools/types";
 import { USER_TOKEN_LOST, startRun } from "./run-executor";
 import { setUserToken } from "./user-tokens";
 
@@ -27,21 +28,26 @@ export type CreateQueuedRunResult = { ok: true; run: Run } | { ok: false; reason
  * Crea una run `pending` dell'agente con il suo modello (chi paga resta chi pagava alla creazione) e la
  * mette in coda. Il token dell'utente va solo in memoria; `has_user_token` ricorda che c'era, perché al
  * riavvio quella run non può ripartire. Coda piena (MAX_PENDING_PER_AGENT) → nessuna riga inserita.
+ * Con `tx` conteggio e INSERT stanno nella transazione del chiamante (es. chiave di deduplicazione e run di un
+ * innesco, atomiche) e lo scheduler NON si avvia: lo chiama il chiamante dopo il commit con `scheduleRuns()`.
  */
 export async function createQueuedRun(input: {
   agent: Agent;
   input: string | null;
   parentRunId?: number | null;
   userToken?: string;
+  triggerId?: number | null;
+  tx?: DbTransaction;
 }): Promise<CreateQueuedRunResult> {
   const { agent, userToken } = input;
-  const [row] = await db
+  const conn = input.tx ?? db;
+  const [row] = await conn
     .select({ count: sql<number>`count(*)::int` })
     .from(runsTable)
     .where(and(eq(runsTable.agentId, agent.id), eq(runsTable.status, "pending")));
   if (Number(row?.count ?? 0) >= MAX_PENDING_PER_AGENT) return { ok: false, reason: "queue_full" };
 
-  const [run] = await db
+  const [run] = await conn
     .insert(runsTable)
     .values({
       agentId: agent.id,
@@ -49,11 +55,12 @@ export async function createQueuedRun(input: {
       status: "pending",
       input: input.input,
       parentRunId: input.parentRunId ?? null,
+      triggerId: input.triggerId ?? null,
       hasUserToken: Boolean(userToken),
     })
     .returning();
   if (userToken) setUserToken(run!.id, userToken);
-  void scheduleRuns();
+  if (!input.tx) void scheduleRuns();
   return { ok: true, run: run! };
 }
 

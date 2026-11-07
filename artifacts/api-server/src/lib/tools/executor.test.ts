@@ -78,6 +78,11 @@ function handle(req: IncomingMessage, res: ServerResponse, body: string): void {
     res.end(JSON.stringify([{ id: 1, nome: "Rossi", extra: "x" }]));
     return;
   }
+  if (url.startsWith("/jsonlarge")) {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify([{ id: 1, nome: "Rossi", extra: "x".repeat(30_000), token: req.headers.authorization ?? null }]));
+    return;
+  }
   if (url.startsWith("/text")) {
     res.writeHead(200, { "content-type": "text/plain" });
     res.end("y".repeat(30_000));
@@ -177,6 +182,27 @@ describe("buildHttpRequest", () => {
 });
 
 describe("executeTool", () => {
+  describe("raw", () => {
+    const bigTool = tool(
+      { method: "GET", path: "/jsonlarge", paramLocations: {}, responseFields: ["id"] },
+      { type: "object", properties: {} },
+    );
+
+    it("senza raw la risposta è proiettata e troncata", async () => {
+      const res = await executeTool({ conn: conn(), tool: bigTool, args: {}, userToken: "tok-segreto-1" });
+      expect(res.content).toBe('[{"id":1}]');
+    });
+
+    it("con raw: corpo completo, senza proiezione né troncamento, credenziali oscurate", async () => {
+      const res = await executeTool({ conn: conn(), tool: bigTool, args: {}, userToken: "tok-segreto-1", raw: true });
+      expect(res.ok).toBe(true);
+      expect(res.content.length).toBeGreaterThan(20_000);
+      expect(res.content).toContain("Rossi");
+      expect(res.content).not.toContain("tok-segreto-1");
+      expect(res.content).not.toContain("troncata");
+    });
+  });
+
   let previousKey: string | undefined;
   beforeEach(() => {
     previousKey = process.env["CASELLO_SECRET_KEY"];

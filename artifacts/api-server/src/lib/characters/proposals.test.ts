@@ -7,6 +7,7 @@ import {
   agentToolsTable,
   agentsTable,
   appToolsTable,
+  agentTriggersTable,
   appsTable,
   characterConversationsTable,
   characterMessagesTable,
@@ -179,6 +180,21 @@ describe("accettare applica e marca accepted", () => {
     expect(created).toMatchObject({ appId, role: "area", status: "draft", systemPrompt: "Gestisci il magazzino", aiModelId: null });
     const links = await db.select().from(agentToolsTable).where(eq(agentToolsTable.agentId, created!.id));
     expect(links.map((l) => l.toolId)).toEqual([toolA]);
+  });
+
+  it("accept_agent_trigger_create_paused", async () => {
+    const payload = { agentId, name: "Nuove email", toolId: toolA, args: { id: "1" }, itemsPath: "items", idField: "id", intervalSeconds: 300 };
+    const id = await lucius("agent", String(agentId), "agent_trigger_create", payload);
+    expect((await decideCharacterProposal(userId, id, "accept")).status).toBe("accepted");
+    const [t] = await db.select().from(agentTriggersTable).where(eq(agentTriggersTable.agentId, agentId));
+    expect(t).toMatchObject({ kind: "poll", status: "paused", createdBy: userId, name: "Nuove email", toolId: toolA });
+  });
+
+  it("accept_agent_trigger_create_rule_error_keeps_pending", async () => {
+    const id = await lucius("agent", String(agentId), "agent_trigger_create", { agentId, name: "Scrive", toolId: mcpTool.id, itemsPath: "items", idField: "id" });
+    await expect(decideCharacterProposal(userId, id, "accept")).rejects.toMatchObject({ status: 400, message: "lo strumento non può essere usato da un innesco" });
+    expect(await status(id)).toBe("pending");
+    expect(await db.select().from(agentTriggersTable)).toHaveLength(0);
   });
 
   it("accept_skill_create", async () => {

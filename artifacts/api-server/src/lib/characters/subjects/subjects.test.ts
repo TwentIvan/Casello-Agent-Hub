@@ -236,6 +236,21 @@ describe("aree", () => {
     expect(noApp).toEqual({ ok: false, error: "app non trovata" });
   });
 
+  it("propone_innesco_sempre_poll", async () => {
+    const ctx = await newCtx("agent", String(agentId));
+    const out = await call("agent", ctx, "proponi_innesco", {
+      name: "Nuove email", toolId, itemsPath: "items", idField: "id", intervalSeconds: 600, kind: "webhook", motivazione: RATIONALE,
+    });
+    expect(out.ok).toBe(true);
+    const [p] = await db.select().from(characterProposalsTable).where(eq(characterProposalsTable.id, out.result.proposalId));
+    expect(p).toMatchObject({ kind: "agent_trigger_create", targetHash: null });
+    expect(p!.payload).toMatchObject({ agentId, name: "Nuove email", toolId, idField: "id", intervalSeconds: 600 });
+    expect(p!.payload).not.toHaveProperty("kind");
+    expect((await call("agent", ctx, "proponi_innesco", { name: "x", toolId, idField: "id" })).ok).toBe(false);
+    const noTool = await call("agent", await newCtx("agent", String(agentId)), "proponi_innesco", { name: "x", toolId: 9999, idField: "id", motivazione: RATIONALE });
+    expect(noTool.ok).toBe(false);
+  });
+
   it("area_lists_capped_at_50", async () => {
     for (let i = 0; i < 55; i++) await createSkill({ code: `skill-${String(i).padStart(2, "0")}`, name: `S${i}`, kind: "casello", content: "x" });
     const out = await call("area_skills", await newCtx("area_skills", null), "elenca_skill", {});

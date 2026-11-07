@@ -6416,7 +6416,7 @@ components:
 
     CharacterProposalKind:
       type: string
-      enum: [agent_prompt, agent_tools, skill_content, template_roles, agent_create, skill_create, template_create, decision, handoff]
+      enum: [agent_prompt, agent_tools, skill_content, template_roles, agent_create, agent_trigger_create, skill_create, template_create, decision, handoff]
 
     CharacterConversation:
       type: object

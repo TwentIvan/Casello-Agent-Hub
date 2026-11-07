@@ -1644,6 +1644,7 @@ export const CharacterProposalKind = {
   skill_content: 'skill_content',
   template_roles: 'template_roles',
   agent_create: 'agent_create',
+  agent_trigger_create: 'agent_trigger_create',
   skill_create: 'skill_create',
   template_create: 'template_create',
   decision: 'decision',

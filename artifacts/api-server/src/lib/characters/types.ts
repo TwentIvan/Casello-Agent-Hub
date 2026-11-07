@@ -23,6 +23,7 @@ export const PROPOSAL_KINDS = [
   "skill_content",
   "template_roles",
   "agent_create",
+  "agent_trigger_create",
   "skill_create",
   "template_create",
   "decision",

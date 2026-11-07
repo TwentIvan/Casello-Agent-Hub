@@ -5388,7 +5388,7 @@ export const GetAlfredThreadResponse = zod.object({
   "proposals": zod.array(zod.object({
   "id": zod.number(),
   "messageId": zod.number(),
-  "kind": zod.enum(['agent_prompt', 'agent_tools', 'skill_content', 'template_roles', 'agent_create', 'skill_create', 'template_create', 'decision', 'handoff']),
+  "kind": zod.enum(['agent_prompt', 'agent_tools', 'skill_content', 'template_roles', 'agent_create', 'agent_trigger_create', 'skill_create', 'template_create', 'decision', 'handoff']),
   "payload": zod.record(zod.string(), zod.unknown()).nullable(),
   "rationale": zod.string(),
   "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
@@ -5458,7 +5458,7 @@ export const RestartAlfredThreadResponse = zod.object({
   "proposals": zod.array(zod.object({
   "id": zod.number(),
   "messageId": zod.number(),
-  "kind": zod.enum(['agent_prompt', 'agent_tools', 'skill_content', 'template_roles', 'agent_create', 'skill_create', 'template_create', 'decision', 'handoff']),
+  "kind": zod.enum(['agent_prompt', 'agent_tools', 'skill_content', 'template_roles', 'agent_create', 'agent_trigger_create', 'skill_create', 'template_create', 'decision', 'handoff']),
   "payload": zod.record(zod.string(), zod.unknown()).nullable(),
   "rationale": zod.string(),
   "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
@@ -5597,7 +5597,7 @@ export const GetCharacterConversationResponse = zod.object({
   "proposals": zod.array(zod.object({
   "id": zod.number(),
   "messageId": zod.number(),
-  "kind": zod.enum(['agent_prompt', 'agent_tools', 'skill_content', 'template_roles', 'agent_create', 'skill_create', 'template_create', 'decision', 'handoff']),
+  "kind": zod.enum(['agent_prompt', 'agent_tools', 'skill_content', 'template_roles', 'agent_create', 'agent_trigger_create', 'skill_create', 'template_create', 'decision', 'handoff']),
   "payload": zod.record(zod.string(), zod.unknown()).nullable(),
   "rationale": zod.string(),
   "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
@@ -5752,7 +5752,7 @@ export const DecideCharacterProposalBody = zod.object({
 export const DecideCharacterProposalResponse = zod.object({
   "id": zod.number(),
   "messageId": zod.number(),
-  "kind": zod.enum(['agent_prompt', 'agent_tools', 'skill_content', 'template_roles', 'agent_create', 'skill_create', 'template_create', 'decision', 'handoff']),
+  "kind": zod.enum(['agent_prompt', 'agent_tools', 'skill_content', 'template_roles', 'agent_create', 'agent_trigger_create', 'skill_create', 'template_create', 'decision', 'handoff']),
   "payload": zod.record(zod.string(), zod.unknown()).nullable(),
   "rationale": zod.string(),
   "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),

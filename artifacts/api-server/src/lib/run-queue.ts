@@ -13,6 +13,8 @@ export const MAX_RUNNING_RUNS = 6;
 export const MAX_PENDING_PER_AGENT = 200;
 /** Controllo di riserva dello scheduler (oltre a creazione e fine di ogni run). */
 const SCHEDULE_INTERVAL_MS = 30_000;
+/** Dopo un errore di startRun il giro successivo aspetta un poco: la run resta `pending` e verrebbe ripresa subito. */
+const RETRY_AFTER_ERROR_MS = 1_000;
 
 export const RUN_QUEUE_MESSAGES = {
   queueFull: "troppe run in attesa per questo agente",
@@ -62,9 +64,16 @@ const launched = new Map<number, number>();
 // Un giro alla volta: una chiamata durante un giro ne programma esattamente un altro, subito dopo.
 let currentLoop: Promise<void> | null = null;
 let rerunRequested = false;
+// Lo scheduler gira solo dopo startRunQueue: all'avvio prima vanno chiuse le run interrotte dal riavvio
+// (failInterruptedRuns), altrimenti un POST arrivato prima potrebbe avviare run che stanno per essere chiuse.
+let queueStarted = false;
 
-/** Avvia le run in attesa che stanno nei limiti. Non lancia: gli errori finiscono nel log. */
+/**
+ * Avvia le run in attesa che stanno nei limiti. Non lancia: gli errori finiscono nel log. Prima di
+ * startRunQueue (o dopo averlo fermato) non fa nulla: le run create restano `pending`.
+ */
 export function scheduleRuns(): Promise<void> {
+  if (!queueStarted) return Promise.resolve();
   if (currentLoop) {
     rerunRequested = true;
     return currentLoop;
@@ -126,20 +135,30 @@ async function schedulePass(): Promise<void> {
 
 function launch(runId: number, agentId: number): void {
   launched.set(runId, agentId);
+  let failed = false;
   startRun(runId)
-    .catch((err: unknown) =>
-      logger.error({ runId, errName: err instanceof Error ? err.name : typeof err }, "Esecuzione della run fallita"),
-    )
+    .catch((err: unknown) => {
+      failed = true;
+      logger.error({ runId, errName: err instanceof Error ? err.name : typeof err }, "Esecuzione della run fallita");
+    })
     .finally(() => {
       launched.delete(runId);
-      void scheduleRuns();
+      if (failed) setTimeout(() => void scheduleRuns(), RETRY_AFTER_ERROR_MS).unref();
+      else void scheduleRuns();
     });
 }
 
-/** Avvia lo scheduler: un giro subito, poi uno ogni 30 s di riserva. Restituisce la funzione che lo ferma. */
+/**
+ * Avvia lo scheduler: da qui scheduleRuns lavora, un giro subito, poi uno ogni 30 s di riserva.
+ * Restituisce la funzione che lo ferma (scheduleRuns torna a non fare nulla).
+ */
 export function startRunQueue(): () => void {
+  queueStarted = true;
   void scheduleRuns();
   const timer = setInterval(() => void scheduleRuns(), SCHEDULE_INTERVAL_MS);
   timer.unref();
-  return () => clearInterval(timer);
+  return () => {
+    clearInterval(timer);
+    queueStarted = false;
+  };
 }

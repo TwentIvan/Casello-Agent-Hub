@@ -123,16 +123,20 @@ async function settleRuns() {
   throw new Error("run ancora attive dopo il test");
 }
 
+let stopQueue: () => void;
 beforeAll(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   process.env["AUTH_DISABLED"] = "true";
   process.env["CASELLO_SECRET_KEY"] = "d".repeat(64);
   const { default: app } = await import("../app");
+  // Lo scheduler delle run gira come in produzione (index.ts lo avvia con startRunQueue).
+  stopQueue = (await import("../lib/run-queue")).startRunQueue();
   server = http.createServer(app);
   base = `http://127.0.0.1:${await listen(server)}`;
 });
 
 afterAll(async () => {
+  stopQueue();
   server.closeAllConnections?.();
   await new Promise<void>((r) => server.close(() => r()));
   await pool.query("TRUNCATE users, apps, ai_accounts RESTART IDENTITY CASCADE");

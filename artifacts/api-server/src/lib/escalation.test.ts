@@ -18,7 +18,7 @@ import {
   type InsertAppTool,
 } from "@workspace/db";
 import { startRun } from "./run-executor";
-import { scheduleRuns, MAX_PENDING_PER_AGENT } from "./run-queue";
+import { scheduleRuns, startRunQueue, MAX_PENDING_PER_AGENT } from "./run-queue";
 import { ESCALATION_MESSAGES, ESCALATION_ORIGIN_INPUT_MAX, ESCALATION_TOOL_NAME, escalationInput } from "./escalation";
 import { encryptSecret } from "./secrets";
 import { allowTestLoopback } from "../../test/fake-provider";
@@ -83,10 +83,14 @@ async function drain(): Promise<void> {
 }
 
 let restoreLoopback: () => void;
+// Lo scheduler delle run gira come in produzione (index.ts lo avvia con startRunQueue).
+let stopQueue: () => void;
 beforeAll(() => {
   restoreLoopback = allowTestLoopback();
+  stopQueue = startRunQueue();
 });
 afterAll(async () => {
+  stopQueue();
   restoreLoopback();
   await pool.query("TRUNCATE apps, ai_accounts, users RESTART IDENTITY CASCADE");
 });

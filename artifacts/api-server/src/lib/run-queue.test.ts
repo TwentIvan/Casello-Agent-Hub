@@ -62,6 +62,10 @@ async function waitFor(cond: () => boolean | Promise<boolean>, ms = 5_000): Prom
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Lo scheduler parte solo dopo startRunQueue (come in index.ts dopo failInterruptedRuns): i test della coda
+// lo avviano in beforeEach e lo fermano alla fine di afterEach.
+let stopQueue: (() => void) | null = null;
+
 let restoreLoopback: () => void;
 beforeAll(() => {
   restoreLoopback = allowTestLoopback();
@@ -92,6 +96,8 @@ afterEach(async () => {
   release();
   await pause(50);
   await scheduleRuns();
+  stopQueue?.();
+  stopQueue = null;
   vi.restoreAllMocks();
   llm.closeAllConnections();
   await new Promise((r) => llm.close(r));
@@ -166,6 +172,10 @@ async function countByStatus(status: string): Promise<number> {
 }
 
 describe("coda delle run", () => {
+  beforeEach(() => {
+    stopQueue = startRunQueue();
+  });
+
   it("costanti e messaggi fissi", () => {
     expect(MAX_RUNNING_PER_AGENT).toBe(2);
     expect(MAX_RUNNING_RUNS).toBe(6);
@@ -339,16 +349,38 @@ describe("coda delle run", () => {
     expect(requests).toHaveLength(0);
   });
 
+});
+
+describe("avvio dello scheduler", () => {
+  it("prima di startRunQueue una run creata resta pending; dopo l'avvio parte", async () => {
+    const [agent] = await seedAgents(1);
+    const created = await createQueuedRun({ agent: agent!, input: "presto" });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    await scheduleRuns();
+    await pause(100);
+    expect((await statuses()).get(created.run.id)).toBe("pending");
+    expect(held).toHaveLength(0);
+
+    stopQueue = startRunQueue();
+    await waitFor(() => held.length === 1);
+    expect((await statuses()).get(created.run.id)).toBe("running");
+  });
+
   it("startRunQueue avvia subito le run in attesa e la funzione restituita ferma il controllo", async () => {
     const [agent] = await seedAgents(1);
     const [id] = await insertPending(agent!, 1);
 
-    const stop = startRunQueue();
-    try {
-      await waitFor(() => held.length === 1);
-      expect((await statuses()).get(id!)).toBe("running");
-    } finally {
-      stop();
-    }
+    stopQueue = startRunQueue();
+    await waitFor(() => held.length === 1);
+    expect((await statuses()).get(id!)).toBe("running");
+
+    // Fermato lo scheduler, una run nuova resta in attesa
+    stopQueue();
+    stopQueue = null;
+    const [later] = await insertPending(agent!, 1);
+    await scheduleRuns();
+    await pause(100);
+    expect((await statuses()).get(later!)).toBe("pending");
   });
 });

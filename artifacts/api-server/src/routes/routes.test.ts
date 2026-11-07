@@ -115,6 +115,7 @@ async function generalAgentOf(appId: number) {
   return (res.json as { id: number; role: string }[]).find((a) => a.role === "general")!;
 }
 
+let stopQueue: () => void;
 beforeAll(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   process.env["AUTH_DISABLED"] = "true";
@@ -141,11 +142,14 @@ beforeAll(async () => {
   const { default: app } = await import("../app");
   ({ startRun } = await import("../lib/run-executor"));
   ({ setUserToken } = await import("../lib/user-tokens"));
+  // Lo scheduler delle run gira come in produzione (index.ts lo avvia con startRunQueue).
+  stopQueue = (await import("../lib/run-queue")).startRunQueue();
   server = http.createServer(app);
   base = `http://127.0.0.1:${await listen(server)}`;
 });
 
 afterAll(async () => {
+  stopQueue();
   await close(server);
   await close(llm);
   await close(fakeApp);

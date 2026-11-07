@@ -7,7 +7,8 @@ import {
   type Agent,
   type AgentTrigger,
 } from "@workspace/db";
-import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, sql, type SQL } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { logger } from "../logger";
 import { runBudgetBlock } from "../budget";
 import { scheduleRuns } from "../run-queue";
@@ -133,8 +134,34 @@ export function uniqueByKey(items: ExtractedItem[]): ExtractedItem[] {
   return items.filter((i) => (seen.has(i.key) ? false : (seen.add(i.key), true)));
 }
 
-/** Un solo UPDATE per giro, fuori dalle transazioni degli elementi, solo se l'innesco è ancora attivo. */
-async function refreshSeen(id: number, keys: string[]): Promise<void> {
+/**
+ * Configurazione dell'innesco uguale a quella con cui è partito il giro. Una modifica (PATCH) a giro in corso rifà
+ * la linea di partenza: le scritture del giro, calcolate con la configurazione vecchia, non devono annullarla.
+ * Si confrontano i campi, non `updated_at` (che il giro stesso aggiorna).
+ */
+export function sameConfig(snapshot: AgentTrigger): SQL {
+  const t = agentTriggersTable;
+  const same = (column: AnyPgColumn, value: string | number | boolean | null) =>
+    value === null ? isNull(column) : sql`${column} = ${value}`;
+  return and(
+    same(t.toolId, snapshot.toolId),
+    sql`${t.args} = ${JSON.stringify(snapshot.args ?? {})}::jsonb`,
+    same(t.itemsPath, snapshot.itemsPath),
+    same(t.idField, snapshot.idField),
+    same(t.versionField, snapshot.versionField),
+    same(t.cursorParam, snapshot.cursorParam),
+    same(t.cursorField, snapshot.cursorField),
+    snapshot.filter === null ? isNull(t.filter) : sql`${t.filter} = ${JSON.stringify(snapshot.filter)}::jsonb`,
+    eq(t.baselineDone, snapshot.baselineDone),
+  )!;
+}
+
+/** Innesco ancora attivo e con la configurazione del giro. */
+const unchanged = (trigger: AgentTrigger) => and(isActive(trigger.id), sameConfig(trigger));
+
+/** Un solo UPDATE per giro, fuori dalle transazioni degli elementi, solo se l'innesco è ancora attivo e invariato. */
+async function refreshSeen(trigger: AgentTrigger, keys: string[]): Promise<void> {
+  const id = trigger.id;
   if (keys.length === 0) return;
   await db
     .update(triggerSeenItemsTable)
@@ -143,7 +170,7 @@ async function refreshSeen(id: number, keys: string[]): Promise<void> {
       and(
         eq(triggerSeenItemsTable.triggerId, id),
         inArray(triggerSeenItemsTable.itemKey, keys),
-        sql`exists (select 1 from agent_triggers where id = ${id} and status = 'active')`,
+        sql`exists (select 1 from agent_triggers where ${unchanged(trigger)})`,
       ),
     );
 }
@@ -222,13 +249,13 @@ async function runPass(trigger: AgentTrigger, deps: { fetchImpl?: typeof fetch }
 
   // Chiavi già viste e restituite di nuovo: `seen_at` si rinfresca, così la pulizia (30 giorni, 10 000 chiavi)
   // toglie solo le chiavi che l'app non restituisce più e un elemento ancora in elenco non torna «nuovo».
-  await refreshSeen(id, items.map((i) => i.key));
+  await refreshSeen(trigger, items.map((i) => i.key));
 
   // 6. Linea di partenza: tutte le chiavi viste, nessuna run.
   if (!trigger.baselineDone) {
     try {
       await db.transaction(async (tx) => {
-        await lockActive(tx, id);
+        await lockActive(tx, id, sameConfig(trigger));
         if (items.length > 0) {
           await tx
             .insert(triggerSeenItemsTable)
@@ -245,7 +272,7 @@ async function runPass(trigger: AgentTrigger, deps: { fetchImpl?: typeof fetch }
             lastError: null,
             updatedAt: new Date(),
           })
-          .where(isActive(id));
+          .where(unchanged(trigger));
       });
     } catch (err) {
       if (err instanceof NotActive) return "skipped";
@@ -315,7 +342,7 @@ async function runPass(trigger: AgentTrigger, deps: { fetchImpl?: typeof fetch }
       ...(more ? { nextPollAt: sql`now()` } : {}),
       updatedAt: new Date(),
     })
-    .where(isActive(id));
+    .where(unchanged(trigger));
 
   logger.info(
     { triggerId: id, outcome: queueFull ? "queue_full" : "ok", created, left: left.length, skipped: extracted.skipped },
@@ -329,7 +356,7 @@ async function runPass(trigger: AgentTrigger, deps: { fetchImpl?: typeof fetch }
  * nuova, run in coda e contatore. Coda piena → QueueFull annulla tutto, chiave compresa.
  */
 async function createRunForItem(tx: Tx, trigger: AgentTrigger, agent: Agent, item: ExtractedItem): Promise<boolean> {
-  await lockActive(tx, trigger.id);
+  await lockActive(tx, trigger.id, sameConfig(trigger));
   const runId = await queueTriggerRun(tx, {
     trigger,
     agent,

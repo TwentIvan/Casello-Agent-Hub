@@ -17,6 +17,7 @@ import {
   type AgentTrigger,
 } from "@workspace/db";
 import { pollTrigger, sweepSeenItems } from "./poller";
+import { updateTrigger } from "./service";
 import { toolUsableByTrigger } from "./eligibility";
 import { TRIGGER_MESSAGES } from "./messages";
 import { MAX_PENDING_PER_AGENT } from "../run-queue";
@@ -540,5 +541,39 @@ describe("toolUsableByTrigger", () => {
     expect(toolUsableByTrigger({ ...base, status: "draft" }, 1)).toBe(false);
     expect(toolUsableByTrigger({ ...base, levelOverride: "L1" }, 1)).toBe(false);
     expect(toolUsableByTrigger({ ...base, level: "L2" }, 1)).toBe(false);
+  });
+});
+
+describe("modifica a giro in corso", () => {
+  it("una PATCH che rifà la linea di partenza durante il giro di partenza non viene annullata", async () => {
+    const { trigger } = await seed({ trigger: { cursorParam: "since", cursorField: "at" } });
+    appBody = [{ id: 1, at: "2026-11-01" }, { id: 2, at: "2026-11-02" }];
+    beforeReply = async () => {
+      const res = await updateTrigger(trigger.id, { itemsPath: "items" });
+      expect(res.ok).toBe(true);
+    };
+    expect(await pollTrigger(trigger.id)).toBe("skipped");
+    const after = await getTrigger(trigger.id);
+    expect(after.itemsPath).toBe("items");
+    expect(after.baselineDone).toBe(false);
+    expect(after.cursorValue).toBeNull();
+    expect(await keys(trigger.id)).toEqual([]);
+  });
+
+  it("una PATCH durante un giro normale: nessuna run, nessuna chiave dalla configurazione vecchia", async () => {
+    const { trigger } = await seed({ trigger: { baselineDone: true, cursorParam: "since", cursorField: "at", cursorValue: "2026-10-01" } });
+    await db.insert(triggerSeenItemsTable).values({ triggerId: trigger.id, itemKey: "1" });
+    appBody = [{ id: 1, at: "2026-11-01" }, { id: 2, at: "2026-11-02" }, { id: 3, at: "2026-11-03" }];
+    beforeReply = async () => {
+      const res = await updateTrigger(trigger.id, { itemsPath: "items" });
+      expect(res.ok).toBe(true);
+    };
+    await pollTrigger(trigger.id);
+    const after = await getTrigger(trigger.id);
+    expect(after.baselineDone).toBe(false);
+    expect(after.cursorValue).toBeNull();
+    expect(after.runsCreated).toBe(0);
+    expect(await keys(trigger.id)).toEqual([]);
+    expect(await triggerRuns(trigger.id)).toEqual([]);
   });
 });

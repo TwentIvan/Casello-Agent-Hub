@@ -231,48 +231,58 @@ function needsNewBaseline(row: AgentTrigger, cfg: NormalizedTriggerConfig): bool
 }
 
 class TriggerGone extends Error {}
+class TriggerChanged extends Error {}
+const MAX_PATCH_ATTEMPTS = 3;
 
 /**
  * Modifica un innesco. Cambiare tool, `itemsPath`, `idField`, `versionField` o `filter` riporta `baselineDone = false`,
  * azzera il cursore e cancella le chiavi viste nella stessa transazione (riga dell'innesco bloccata).
  */
 export async function updateTrigger(id: number, patch: TriggerPatchInput): Promise<ServiceResult<AgentTrigger>> {
-  const current = await loadTrigger(id);
-  if (!current) return fail(404, TRIGGER_MESSAGES.notFound);
-  const agent = await loadAgent(current.agentId);
-  if (!agent) return fail(404, TRIGGER_MESSAGES.notFound);
+  // La modifica si applica alla configurazione letta sotto il lock: se tra la lettura (validazione fuori dalla
+  // transazione) e il lock un'altra modifica l'ha cambiata, si rilegge e si rivalida, fino a 3 volte.
+  for (let attempt = 0; attempt < MAX_PATCH_ATTEMPTS; attempt++) {
+    const current = await loadTrigger(id);
+    if (!current) return fail(404, TRIGGER_MESSAGES.notFound);
+    const agent = await loadAgent(current.agentId);
+    if (!agent) return fail(404, TRIGGER_MESSAGES.notFound);
 
-  const merged: Record<string, unknown> = { ...currentConfig(current) };
-  for (const key of PATCH_KEYS) {
-    if (patch[key] !== undefined) merged[key] = patch[key];
-  }
-  const checked = await checkConfig(agent, merged as TriggerConfigInput);
-  if (!checked.ok) return checked;
-  const { cfg } = checked.value;
+    const before = currentConfig(current);
+    const merged: Record<string, unknown> = { ...before };
+    for (const key of PATCH_KEYS) {
+      if (patch[key] !== undefined) merged[key] = patch[key];
+    }
+    const checked = await checkConfig(agent, merged as TriggerConfigInput);
+    if (!checked.ok) return checked;
+    const { cfg } = checked.value;
 
-  try {
-    const updated = await db.transaction(async (tx) => {
-      const [locked] = await tx.select().from(agentTriggersTable).where(eq(agentTriggersTable.id, id)).for("update");
-      if (!locked) throw new TriggerGone();
-      const reset = needsNewBaseline(locked, cfg);
-      if (reset) await tx.delete(triggerSeenItemsTable).where(eq(triggerSeenItemsTable.triggerId, id));
-      const [row] = await tx
-        .update(agentTriggersTable)
-        .set({
-          ...configColumns(cfg),
-          ...(reset ? { baselineDone: false, cursorValue: null } : {}),
-          updatedAt: new Date(),
-        })
-        .where(eq(agentTriggersTable.id, id))
-        .returning();
-      return row!;
-    });
-    return ok(updated);
-  } catch (err) {
-    if (err instanceof TriggerGone) return fail(404, TRIGGER_MESSAGES.notFound);
-    if (isUniqueViolation(err, NAME_CONSTRAINT)) return fail(409, TRIGGER_MESSAGES.nameTaken);
-    throw err;
+    try {
+      const updated = await db.transaction(async (tx) => {
+        const [locked] = await tx.select().from(agentTriggersTable).where(eq(agentTriggersTable.id, id)).for("update");
+        if (!locked) throw new TriggerGone();
+        if (JSON.stringify(currentConfig(locked)) !== JSON.stringify(before)) throw new TriggerChanged();
+        const reset = needsNewBaseline(locked, cfg);
+        if (reset) await tx.delete(triggerSeenItemsTable).where(eq(triggerSeenItemsTable.triggerId, id));
+        const [row] = await tx
+          .update(agentTriggersTable)
+          .set({
+            ...configColumns(cfg),
+            ...(reset ? { baselineDone: false, cursorValue: null } : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(agentTriggersTable.id, id))
+          .returning();
+        return row!;
+      });
+      return ok(updated);
+    } catch (err) {
+      if (err instanceof TriggerChanged) continue;
+      if (err instanceof TriggerGone) return fail(404, TRIGGER_MESSAGES.notFound);
+      if (isUniqueViolation(err, NAME_CONSTRAINT)) return fail(409, TRIGGER_MESSAGES.nameTaken);
+      throw err;
+    }
   }
+  return fail(409, TRIGGER_MESSAGES.changed);
 }
 
 export async function deleteTrigger(id: number): Promise<boolean> {

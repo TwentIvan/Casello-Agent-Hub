@@ -38,4 +38,5 @@ export const TRIGGER_MESSAGES = {
   webhookOnly: "operazione disponibile solo per i webhook",
   invalidSigningSecret: "segreto di firma non valido: da 16 a 200 caratteri",
   itemsSkipped: "elementi scartati senza chiave valida",
+  changed: "innesco modificato nel frattempo: ricarica e riprova",
 } as const;

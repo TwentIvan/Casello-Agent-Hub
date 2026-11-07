@@ -234,6 +234,21 @@ describe("creazione e lettura", () => {
     expect(extra.status).toBe(400);
   });
 
+  it("51° innesco dello stesso utente → 409 tooMany", async () => {
+    const { agentId } = await seed();
+    const first = await api("POST", `/agents/${agentId}/triggers`, { body: { kind: "webhook", name: "W0" } });
+    expect(first.status).toBe(201);
+    const userId = first.json.createdBy as number;
+    // Altri 49 inneschi dello stesso utente su un altro agente (inseriti direttamente: il limite per agente non conta qui)
+    const [other] = await db.insert(agentsTable).values({ appId: (await db.select().from(agentsTable).where(eq(agentsTable.id, agentId)))[0]!.appId, name: "Altro", role: "area" }).returning();
+    await db.insert(agentTriggersTable).values(
+      Array.from({ length: 49 }, (_, i) => ({ agentId: other!.id, kind: "webhook" as const, name: `W${i + 1}`, secretHash: "0".repeat(64), createdBy: userId })),
+    );
+    const res = await api("POST", `/agents/${agentId}/triggers`, { body: { kind: "webhook", name: "Troppi" } });
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe(TRIGGER_MESSAGES.tooMany);
+  });
+
   it("11° innesco sull'agente → 409 tooMany; nome ripetuto → 409 nameTaken", async () => {
     const { agentId } = await seed();
     const dup = await api("POST", `/agents/${agentId}/triggers`, { body: { kind: "webhook", name: "W0" } });
@@ -266,6 +281,43 @@ describe("modifica, pausa e ripresa", () => {
     const moved = await api("PATCH", `/triggers/${id}`, { body: { itemsPath: "items" } });
     expect(moved.status).toBe(200);
     expect(moved.json).toMatchObject({ itemsPath: "items", baselineDone: false, cursorValue: null });
+    expect(await seenKeys(id)).toEqual([]);
+  });
+
+  it.each([
+    ["toolId", "tool"],
+    ["idField", { idField: "uid" }],
+    ["versionField", { versionField: "rev" }],
+    ["filter", { filter: { field: "box", equals: "in" } }],
+  ] as const)("PATCH di %s rifà la linea di partenza", async (_field, change) => {
+    const { appId, agentId, toolId } = await seed();
+    const created = await api("POST", `/agents/${agentId}/triggers`, { body: pollInput(toolId) });
+    const id = created.json.id as number;
+    await db.update(agentTriggersTable).set({ baselineDone: true, cursorValue: "c" }).where(eq(agentTriggersTable.id, id));
+    await db.insert(triggerSeenItemsTable).values({ triggerId: id, itemKey: "1" });
+    let body: Record<string, unknown>;
+    if (change === "tool") {
+      const [other] = await db
+        .insert(appToolsTable)
+        .values({
+          appId,
+          name: "elenco_bis",
+          kind: "http",
+          identity: "service",
+          level: "L0",
+          status: "active",
+          description: "Altre email",
+          definition: { method: "GET", path: "/emails", paramLocations: { box: "query" } },
+          paramsSchema: { type: "object", properties: { box: { type: "string" } } },
+        })
+        .returning();
+      body = { toolId: other!.id };
+    } else {
+      body = change;
+    }
+    const res = await api("PATCH", `/triggers/${id}`, { body });
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ baselineDone: false, cursorValue: null });
     expect(await seenKeys(id)).toEqual([]);
   });
 

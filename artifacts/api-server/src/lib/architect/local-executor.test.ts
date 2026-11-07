@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { db, pool, analysesTable, analysisItemsTable, analysisPhaseResultsTable, appsTable } from "@workspace/db";
+import { db, pool, analysesTable, analysisItemsTable, analysisPhaseResultsTable, appToolsTable, appsTable } from "@workspace/db";
 import {
   LOCAL_LEASE_MS,
   LOCAL_MODEL,
@@ -291,6 +291,74 @@ describe("localPhaseInstructions", () => {
     expect(ins.user.indexOf("### map")).toBeLessThan(ins.user.indexOf("### capabilities"));
 
     await expectLocalError(localPhaseInstructions(analysisId, "altro", at(3000)), "lease scaduta: chiedi di nuovo il compito");
+  });
+});
+
+describe("localPhaseInstructions: tool esistenti dell'app", () => {
+  it("la fase catalog riceve i tool esistenti non disattivati, con il livello effettivo; le altre fasi no", async () => {
+    await db.insert(appToolsTable).values([
+      {
+        appId,
+        name: "list_teams",
+        description: "Elenco squadre",
+        kind: "http",
+        identity: "user",
+        level: "L0",
+        levelOverride: "L1",
+        paramsSchema: { type: "object", properties: { q: { type: "string" } } },
+        definition: { method: "GET", path: "/teams", paramLocations: { q: "query" } },
+        status: "active",
+      },
+      {
+        appId,
+        name: "send_mail",
+        description: "Invia una mail",
+        kind: "mcp",
+        identity: "service",
+        level: "L2",
+        paramsSchema: { type: "object", properties: {} },
+        definition: { mcpName: "send_mail" },
+        status: "draft",
+      },
+      {
+        appId,
+        name: "old_tool",
+        description: "Vecchio",
+        kind: "http",
+        identity: "user",
+        level: "L0",
+        paramsSchema: { type: "object", properties: {} },
+        definition: { method: "GET", path: "/old", paramLocations: {} },
+        status: "disabled",
+      },
+    ]);
+    const { leaseToken } = await claimLocalAnalysis(analysisId, "Mac", T0);
+    let ins = await localPhaseInstructions(analysisId, leaseToken, at(1000));
+    expect(ins.user).not.toContain("Tool già nel catalogo dell'app");
+
+    await submitLocalPhase(analysisId, leaseToken, "map", PHASE_EXAMPLES.map, undefined, at(1000));
+    await submitLocalPhase(analysisId, leaseToken, "capabilities", PHASE_EXAMPLES.capabilities, undefined, at(2000));
+    ins = await localPhaseInstructions(analysisId, leaseToken, at(3000));
+    expect(ins.phase).toBe("catalog");
+    expect(ins.user).toContain("Tool già nel catalogo dell'app (2): list_teams, send_mail");
+    // Una riga JSON per tool, con il livello effettivo (la deroga L1); jsonb non conserva l'ordine delle chiavi
+    const line = ins.user.split("\n").find((l) => l.startsWith('{"name":"list_teams"'))!;
+    expect(JSON.parse(line)).toEqual({
+      name: "list_teams",
+      description: "Elenco squadre",
+      kind: "http",
+      identity: "user",
+      level: "L1",
+      definition: { method: "GET", path: "/teams", paramLocations: { q: "query" } },
+      paramsSchema: { type: "object", properties: { q: { type: "string" } } },
+    });
+    expect(ins.user).toContain('"definition":{"mcpName":"send_mail"}');
+    expect(ins.user).not.toContain("old_tool");
+
+    await submitLocalPhase(analysisId, leaseToken, "catalog", PHASE_EXAMPLES.catalog, undefined, at(4000));
+    ins = await localPhaseInstructions(analysisId, leaseToken, at(5000));
+    expect(ins.phase).toBe("agents");
+    expect(ins.user).not.toContain("Tool già nel catalogo dell'app");
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { phasePrompt } from "./prompts";
+import { EXISTING_TOOLS_MAX_CHARS, phasePrompt, type ExistingTool } from "./prompts";
 
 const ctx = {
   appName: "Mister",
@@ -138,5 +138,38 @@ describe("phasePrompt: server MCP e livelli", () => {
   it("il completamento, con il server MCP, cerca gli strumenti mancanti agli agenti proposti", () => {
     expect(phasePrompt("completion", ctx)).not.toContain("list_mcp_tools");
     expect(phasePrompt("completion", { ...ctx, hasMcp: true })).toContain("serve a un agente proposto ma il server non offre");
+  });
+});
+
+describe("phasePrompt: tool esistenti dell'app", () => {
+  const tool = (name: string, description = "x"): ExistingTool => ({
+    name,
+    description,
+    kind: "http",
+    identity: "user",
+    level: "L0",
+    definition: { method: "GET", path: `/${name}`, paramLocations: {} },
+    paramsSchema: { type: "object", properties: {} },
+  });
+
+  it("solo nel catalogo, prima delle voci pianificate e dell'esempio", () => {
+    const existing = [tool("list_teams")];
+    const p = phasePrompt("catalog", { ...ctx, existingTools: existing });
+    const i = p.indexOf("Tool già nel catalogo dell'app (1): list_teams");
+    expect(i).toBeGreaterThan(p.indexOf("FASE 3, CATALOGO"));
+    expect(i).toBeLessThan(p.indexOf("Forma esatta di result"));
+    expect(p).toContain("Riproponi con lo stesso name ogni tool esistente ancora valido");
+    expect(phasePrompt("agents", { ...ctx, existingTools: existing })).not.toContain("Tool già nel catalogo");
+    expect(phasePrompt("catalog", { ...ctx, existingTools: [] })).not.toContain("Tool già nel catalogo");
+  });
+
+  it("oltre lo spazio dei dettagli i nomi restano tutti, i restanti senza dettagli", () => {
+    const big = "d".repeat(EXISTING_TOOLS_MAX_CHARS / 2);
+    const p = phasePrompt("catalog", { ...ctx, existingTools: [tool("a", big), tool("b", big), tool("c")] });
+    expect(p).toContain("Tool già nel catalogo dell'app (3): a, b, c");
+    expect(p).toContain('"name":"a"');
+    expect(p).not.toContain('"name":"b"');
+    expect(p).not.toContain('"name":"c"');
+    expect(p).toContain("[dettagli omessi per spazio: b, c]");
   });
 });

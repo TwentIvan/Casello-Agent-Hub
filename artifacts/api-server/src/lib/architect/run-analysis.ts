@@ -32,7 +32,7 @@ import { loadAppConnection } from "../tools/catalog";
 import type { McpToolInfo } from "../tools/mcp-client";
 import { loadMcpSource } from "./mcp-source";
 import { PHASE_TOKEN_SHARES, runPhase, type PhaseBudget } from "./phase-loop";
-import { recordPhaseResult } from "./phase-record";
+import { existingToolsForPrompt, recordPhaseResult } from "./phase-record";
 import { chatPlannedItems } from "./planned";
 import { phasePrompt, SYSTEM_BASE } from "./prompts";
 import { buildRepoMap } from "./repo-map";
@@ -495,6 +495,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
         repoMap,
         previous,
         alreadyPlanned,
+        existingTools: phase === "catalog" ? await existingToolsForPrompt(app.id) : undefined,
       });
       // Quota morbida della fase: solo il sollecito a consegnare; il tetto rigido resta il totale
       const phaseQuota = Math.floor(PHASE_TOKEN_SHARES[phase] * budget.maxTokens);

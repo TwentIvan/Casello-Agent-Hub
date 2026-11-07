@@ -32,7 +32,7 @@ import type { McpToolInfo } from "../tools/mcp-client";
 import type { AppConnection } from "../tools/types";
 import { loadMcpSource } from "./mcp-source";
 import { formatIssues } from "./phase-loop";
-import { recordPhaseResult } from "./phase-record";
+import { existingToolsForPrompt, recordPhaseResult } from "./phase-record";
 import { chatPlannedItems } from "./planned";
 import { phasePrompt, SYSTEM_BASE } from "./prompts";
 import { appendLog } from "./run-analysis";
@@ -433,6 +433,7 @@ export async function localPhaseInstructions(
     repoMap: "",
     previous,
     alreadyPlanned: await chatPlannedItems(app.id, analysisId),
+    existingTools: phase === "catalog" ? await existingToolsForPrompt(app.id) : undefined,
   });
   return { phase, system: `${LOCAL_PREFACE}\n\n${SYSTEM_BASE}`, user };
 }

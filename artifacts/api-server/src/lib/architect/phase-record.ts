@@ -11,7 +11,9 @@ import {
   analysisItemsTable,
   appToolsTable,
 } from "@workspace/db";
+import { effectiveLevel } from "../tools/levels";
 import { diffAgents, diffAlwaysNew, diffSkills, diffTools, type DiffEntry } from "./diff";
+import type { ExistingTool } from "./prompts";
 import type {
   AgentsResult,
   AnalysisChapter,
@@ -29,6 +31,26 @@ type Executor = Tx | typeof db;
 
 async function currentTools(appId: number, executor: Executor) {
   return executor.select().from(appToolsTable).where(eq(appToolsTable.appId, appId));
+}
+
+/**
+ * Tool dell'app non disattivati, per il prompt della fase catalog (cloud e locale): sono quelli che
+ * `diffTools` segnerebbe `removed` se il modello non li riproponesse. Livello effettivo, in ordine di nome.
+ */
+export async function existingToolsForPrompt(appId: number): Promise<ExistingTool[]> {
+  const tools = await currentTools(appId, db);
+  return tools
+    .filter((t) => t.status !== "disabled")
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map((t) => ({
+      name: t.name,
+      description: t.description,
+      kind: t.kind,
+      identity: t.identity,
+      level: effectiveLevel(t),
+      definition: t.definition,
+      paramsSchema: t.paramsSchema,
+    }));
 }
 
 async function currentAgents(appId: number, executor: Executor) {

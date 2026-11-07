@@ -1266,8 +1266,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   toglie solo chiavi che l'app non restituisce più; ogni scrittura del giro (chiave, cursore, esito) controlla sotto lock che la configurazione dell'innesco
   (`tool_id`, `args`, `items_path`, `id_field`, `version_field`, `cursor_param`, `cursor_field`, `filter`, `baseline_done`) sia quella con cui il giro è partito
   (`sameConfig`) e che l'innesco sia ancora `active`: altrimenti il giro si ferma senza errore. `PATCH` rilegge e rivalida sotto lock della riga: se la
-  configurazione è cambiata nel frattempo riprova (fino a 3 volte), poi 409 «innesco modificato nel frattempo: ricarica e riprova»; cambiare tool, `items_path`,
-  `id_field`, `version_field` o `filter` rifà la linea di partenza (`baseline_done = false`, cursore azzerato e chiavi viste cancellate, nella stessa transazione).
+  configurazione è cambiata nel frattempo riprova (fino a 3 volte), poi 409 «innesco modificato nel frattempo: ricarica e riprova»; cambiare tool, `args`
+  (confrontati con le chiavi ordinate), `items_path`, `id_field`, `version_field`, `cursor_param`, `cursor_field` o `filter` rifà la linea di partenza
+  (`baseline_done = false`, cursore azzerato e chiavi viste cancellate, nella stessa transazione).
 - **Webhook** (`webhook.ts`, `routes/hooks.ts`): `POST /api/hooks/:triggerId/:secret`, pubblico, montato in `app.ts` prima di CORS e dei parser globali, con
   parser grezzo proprio ≤ 256 KB (oltre: 413, **prima** del controllo di id e segreto). Segreto `whs_` + 32 byte base64url, nel DB solo `secret_hash` (SHA-256,
   confronto a tempo costante, con hash fittizio se l'id non esiste: id sconosciuto e segreto sbagliato sono entrambi 404 «non trovato»); l'URL completo

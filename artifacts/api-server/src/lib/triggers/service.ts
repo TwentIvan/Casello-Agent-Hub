@@ -219,10 +219,20 @@ const PATCH_KEYS = [
   "dedupHeader",
 ] as const;
 
-/** Campi che cambiano gli elementi letti o la loro chiave: la linea di partenza si rifà. */
+/** JSON con le chiavi ordinate: jsonb non conserva l'ordine delle chiavi, che non deve contare nel confronto. */
+function sortedJson(value: unknown): string {
+  return JSON.stringify(value, (_k, v: unknown) =>
+    isPlainObject(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v,
+  );
+}
+
+/** Campi che cambiano gli elementi letti, la loro chiave o il cursore: la linea di partenza si rifà. */
 function needsNewBaseline(row: AgentTrigger, cfg: NormalizedTriggerConfig): boolean {
   return (
     row.toolId !== cfg.toolId ||
+    sortedJson(isPlainObject(row.args) ? row.args : {}) !== sortedJson(cfg.args) ||
+    row.cursorParam !== cfg.cursorParam ||
+    row.cursorField !== cfg.cursorField ||
     row.itemsPath !== cfg.itemsPath ||
     row.idField !== cfg.idField ||
     row.versionField !== cfg.versionField ||
@@ -235,7 +245,8 @@ class TriggerChanged extends Error {}
 const MAX_PATCH_ATTEMPTS = 3;
 
 /**
- * Modifica un innesco. Cambiare tool, `itemsPath`, `idField`, `versionField` o `filter` riporta `baselineDone = false`,
+ * Modifica un innesco. Cambiare tool, `args`, `itemsPath`, `idField`, `versionField`, `cursorParam`, `cursorField` o `filter`
+ * riporta `baselineDone = false`,
  * azzera il cursore e cancella le chiavi viste nella stessa transazione (riga dell'innesco bloccata).
  */
 export async function updateTrigger(id: number, patch: TriggerPatchInput): Promise<ServiceResult<AgentTrigger>> {

@@ -341,6 +341,9 @@ Dove il codice differisce da questa spec vale il codice (vedi «Inneschi» in `C
   `version_field`, `cursor_param`, `cursor_field`, `filter`, `baseline_done`) sia quella di partenza; se è cambiata si ferma senza errore. `PATCH` fonde i
   campi sulla riga bloccata e, se nel frattempo è cambiata, riprova fino a 3 volte, poi 409 «innesco modificato nel frattempo: ricarica e riprova».
   Cambiare i campi che rifanno la linea di partenza azzera anche il cursore e cancella le chiavi viste.
+- **Linea di partenza anche per `args`, `cursor_param` e `cursor_field`:** oltre a `tool_id`, `items_path`, `id_field`, `version_field` e `filter` (§7),
+  anche cambiare gli argomenti o il cursore riporta `baseline_done = false` (cursore azzerato, chiavi viste cancellate): cambiano gli elementi restituiti e il
+  cursore salvato non vale più. Gli argomenti si confrontano con le chiavi ordinate (lo stesso oggetto in un altro ordine non conta).
 - **Tag nell'input:** la rimozione di `<elemento>`/`<evento>` è un ciclo limitato (20 passate); se la regex trova ancora un tag, chiusura sicura (ogni «<» diventa «‹»).
 - **nginx e log:** la `location ^~ /api/hooks/` ha `access_log off` e `error_log /dev/stderr crit` (l'error_log riporta la richiesta con il segreto); la prova
   di CI controlla entrambe le direttive. Gli access log di Traefik/Coolify possono ancora registrare l'URI: da controllare su Coolify.

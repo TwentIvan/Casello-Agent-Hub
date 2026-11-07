@@ -321,6 +321,49 @@ describe("modifica, pausa e ripresa", () => {
     expect(await seenKeys(id)).toEqual([]);
   });
 
+  it.each([
+    ["args", {}, { args: { box: "out" } }],
+    ["cursorParam", { cursorField: "id" }, { cursorParam: "since" }],
+    ["cursorField", { cursorParam: "since", cursorField: "id" }, { cursorField: "subject" }],
+  ] as const)("PATCH di %s rifà la linea di partenza e azzera il cursore", async (_field, extra, change) => {
+    const { agentId, toolId } = await seed();
+    const created = await api("POST", `/agents/${agentId}/triggers`, { body: pollInput(toolId, extra) });
+    expect(created.status).toBe(201);
+    const id = created.json.id as number;
+    await db.update(agentTriggersTable).set({ baselineDone: true, cursorValue: "c" }).where(eq(agentTriggersTable.id, id));
+    await db.insert(triggerSeenItemsTable).values({ triggerId: id, itemKey: "1" });
+    const res = await api("PATCH", `/triggers/${id}`, { body: change });
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ baselineDone: false, cursorValue: null });
+    expect(await seenKeys(id)).toEqual([]);
+  });
+
+  it("PATCH degli stessi argomenti in un altro ordine non rifà la linea di partenza", async () => {
+    const { agentId, toolId } = await seed();
+    const created = await api("POST", `/agents/${agentId}/triggers`, { body: pollInput(toolId, { args: { box: "in", since: "a" } }) });
+    const id = created.json.id as number;
+    await db.update(agentTriggersTable).set({ baselineDone: true, cursorValue: "c" }).where(eq(agentTriggersTable.id, id));
+    const res = await api("PATCH", `/triggers/${id}`, { body: { args: { since: "a", box: "in" } } });
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ baselineDone: true, cursorValue: "c" });
+  });
+
+  it("dopo una PATCH degli argomenti il giro successivo è una linea di partenza senza run", async () => {
+    const { pollTrigger } = await import("../lib/triggers/poller");
+    const { agentId, toolId } = await seed();
+    const created = await api("POST", `/agents/${agentId}/triggers`, { body: pollInput(toolId) });
+    const id = created.json.id as number;
+    await db
+      .update(agentTriggersTable)
+      .set({ status: "active", baselineDone: true, nextPollAt: new Date(Date.now() - 1000) })
+      .where(eq(agentTriggersTable.id, id));
+    await db.insert(triggerSeenItemsTable).values({ triggerId: id, itemKey: "1" });
+    expect((await api("PATCH", `/triggers/${id}`, { body: { args: { box: "out" } } })).status).toBe(200);
+    expect(await pollTrigger(id)).toBe("baseline");
+    expect(await db.select().from(runsTable).where(eq(runsTable.triggerId, id))).toEqual([]);
+    expect(await seenKeys(id)).toEqual(["1", "2"]);
+  });
+
   it("PATCH con un nome già usato → 409; con argomenti non validi → 400", async () => {
     const { agentId, toolId } = await seed();
     await api("POST", `/agents/${agentId}/triggers`, { body: { kind: "webhook", name: "Altro" } });

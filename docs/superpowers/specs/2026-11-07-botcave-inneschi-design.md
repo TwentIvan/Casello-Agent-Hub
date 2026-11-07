@@ -314,7 +314,8 @@ Ogni configurazione in console si fa con la conferma di Ivan.
 
 - Branch `feat/botcave-inneschi`, PR verso `main` con migrazione, variabili (nessuna nuova) e la modifica a `nginx.conf.template`.
 - Migrazione `docs/migrations/2026-11-inneschi.sql`, additiva e idempotente, niente `-post`: enum `trigger_kind` e `trigger_status`,
-  tabelle `agent_triggers` e `trigger_seen_items`, colonna `runs.trigger_id` con indice. L'SQL completo va dato in chat e applicato su Neon
+  tabelle `agent_triggers` e `trigger_seen_items`, colonna `runs.trigger_id` con indice, `character_proposals_kind_check` ricreato con
+  `agent_trigger_create`. L'SQL completo va dato in chat e applicato su Neon
   **prima** del merge; riportato in `docs/schema-casello.sql`.
 - `CLAUDE.md`: sezione «Inneschi» e voci in «Dove stanno le cose».
 

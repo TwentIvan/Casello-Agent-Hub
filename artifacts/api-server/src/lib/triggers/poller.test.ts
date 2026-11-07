@@ -472,6 +472,55 @@ describe("sweepSeenItems", () => {
   });
 });
 
+describe("chiavi rivista", () => {
+  const seenAt = async (triggerId: number, key: string) =>
+    (
+      await pool.query(`SELECT seen_at FROM trigger_seen_items WHERE trigger_id = $1 AND item_key = $2`, [triggerId, key])
+    ).rows[0]?.seen_at as Date | undefined;
+
+  it("una chiave rivista in un giro ha seen_at rinfrescato", async () => {
+    const { trigger } = await seed({ trigger: { baselineDone: true } });
+    await pool.query(
+      `INSERT INTO trigger_seen_items (trigger_id, item_key, seen_at) VALUES ($1, '1', now() - interval '2 days'), ($1, '2', now() - interval '2 days')`,
+      [trigger.id],
+    );
+    appBody = items([1]);
+    expect(await pollTrigger(trigger.id)).toEqual({ created: 0, more: false });
+    expect(Date.now() - (await seenAt(trigger.id, "1"))!.getTime()).toBeLessThan(60_000);
+    // Non restituita: resta com'era
+    expect(Date.now() - (await seenAt(trigger.id, "2"))!.getTime()).toBeGreaterThan(86_400_000);
+  });
+
+  it("chiave di oltre 30 giorni ancora restituita: rinfrescata, sopravvive alla pulizia, nessuna run", async () => {
+    const { trigger } = await seed({ trigger: { baselineDone: true } });
+    await pool.query(
+      `INSERT INTO trigger_seen_items (trigger_id, item_key, seen_at) VALUES ($1, '1', now() - interval '31 days')`,
+      [trigger.id],
+    );
+    appBody = items([1]);
+    expect(await pollTrigger(trigger.id)).toEqual({ created: 0, more: false });
+    await sweepSeenItems();
+    expect(await keys(trigger.id)).toEqual(["1"]);
+    await makeDue(trigger.id);
+    expect(await pollTrigger(trigger.id)).toEqual({ created: 0, more: false });
+    expect(await triggerRuns(trigger.id)).toHaveLength(0);
+  });
+
+  it("innesco in pausa a giro in corso: seen_at non rinfrescato", async () => {
+    const { trigger } = await seed({ trigger: { baselineDone: true } });
+    await pool.query(
+      `INSERT INTO trigger_seen_items (trigger_id, item_key, seen_at) VALUES ($1, '1', now() - interval '2 days')`,
+      [trigger.id],
+    );
+    appBody = items([1]);
+    beforeReply = async () => {
+      await db.update(agentTriggersTable).set({ status: "paused" }).where(eq(agentTriggersTable.id, trigger.id));
+    };
+    await pollTrigger(trigger.id);
+    expect(Date.now() - (await seenAt(trigger.id, "1"))!.getTime()).toBeGreaterThan(86_400_000);
+  });
+});
+
 describe("toolUsableByTrigger", () => {
   const base = {
     id: 1,

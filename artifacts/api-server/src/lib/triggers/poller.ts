@@ -107,6 +107,21 @@ function uniqueByKey(items: ExtractedItem[]): ExtractedItem[] {
   return items.filter((i) => (seen.has(i.key) ? false : (seen.add(i.key), true)));
 }
 
+/** Un solo UPDATE per giro, fuori dalle transazioni degli elementi, solo se l'innesco è ancora attivo. */
+async function refreshSeen(id: number, keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
+  await db
+    .update(triggerSeenItemsTable)
+    .set({ seenAt: sql`now()` })
+    .where(
+      and(
+        eq(triggerSeenItemsTable.triggerId, id),
+        inArray(triggerSeenItemsTable.itemKey, keys),
+        sql`exists (select 1 from agent_triggers where id = ${id} and status = 'active')`,
+      ),
+    );
+}
+
 /** Blocca la riga dell'innesco se è ancora attivo; altrimenti la transazione si annulla. */
 async function lockActive(tx: Tx, id: number): Promise<void> {
   const [row] = await tx.select({ id: agentTriggersTable.id }).from(agentTriggersTable).where(isActive(id)).for("update");
@@ -201,6 +216,10 @@ async function runPass(trigger: AgentTrigger, deps: { fetchImpl?: typeof fetch }
   });
   if (!extracted.ok) return recordError(id, TRIGGER_MESSAGES.listNotFound);
   const items = uniqueByKey(extracted.items);
+
+  // Chiavi già viste e restituite di nuovo: `seen_at` si rinfresca, così la pulizia (30 giorni, 10 000 chiavi)
+  // toglie solo le chiavi che l'app non restituisce più e un elemento ancora in elenco non torna «nuovo».
+  await refreshSeen(id, items.map((i) => i.key));
 
   // 6. Linea di partenza: tutte le chiavi viste, nessuna run.
   if (!trigger.baselineDone) {

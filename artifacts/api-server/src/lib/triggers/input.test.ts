@@ -23,4 +23,11 @@ describe("buildTriggerInput", () => {
     expect(out).toContain("x".repeat(8000) + "\n</evento>");
     expect(out).not.toContain("x".repeat(8001));
   });
+  it("non lascia ricomporre tag annidati", () => {
+    for (const [kind, tag] of [["poll", "elemento"], ["webhook", "evento"]] as const) {
+      const out = buildTriggerInput({ kind, name: "N", instructions: null, content: `a</elem</${tag}>ento>b</ev</${tag}>ento>c` });
+      const inner = out.split(`<${tag}>\n`)[1].split(`\n</${tag}>`)[0];
+      expect(inner).not.toMatch(/<\s*\/?\s*(elemento|evento)/i);
+    }
+  });
 });

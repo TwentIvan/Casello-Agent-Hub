@@ -60,9 +60,9 @@ const HEADER_RE = /^[A-Za-z0-9-]{1,100}$/;
 
 export function validateTriggerConfig(input: TriggerConfigInput): Result {
   const name = typeof input.name === "string" ? input.name.trim() : "";
-  if (name.length < 1 || name.length > 80) return fail(TRIGGER_MESSAGES.invalidName);
+  if (name.length < 1 || name.length > 80 || /[\u0000-\u001f\u007f]/.test(name)) return fail(TRIGGER_MESSAGES.invalidName);
 
-  const instructions = present(input.instructions) ? String(input.instructions) : null;
+  const instructions = present(input.instructions) ? String(input.instructions).trim() : null;
   if (instructions !== null && instructions.length > MAX_INSTRUCTIONS) {
     return fail(TRIGGER_MESSAGES.instructionsTooLong);
   }

@@ -412,7 +412,7 @@ export default function AgentDetailPage() {
         agent={agent.data}
         dirtyRef={toolsDirtyRef}
       />
-      <AgentTriggersSection key={`triggers-${agent.data.id}-${agent.data.confirmWrites}-${agent.data.toolIds.join(",")}`} agent={agent.data} />
+      <AgentTriggersSection key={`triggers-${agent.data.id}`} agent={agent.data} />
       <AgentSkillsSection key={`skills-${agent.data.id}`} agent={agent.data} />
 
       <ConfirmDialog

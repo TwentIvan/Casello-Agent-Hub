@@ -1,6 +1,6 @@
 # Botcave · The Hub Up come App ben descritta (sottoprogetto 5b) e proposta per 5c
 
-Data: 7 novembre 2026. Stato: bozza da approvare.
+Data: 7 novembre 2026. Stato: approvata. 5b è concluso: esito nella §6.
 
 Fa seguito al sottoprogetto 5a (`2026-11-06-botcave-plugin-incorporabile-design.md`): The Hub Up incorpora già il pannello di
 Botcave. Con 5b The Hub Up diventa un'App che gli agenti di Botcave possono davvero usare. 5c sostituisce gli agenti AI interni di
@@ -191,10 +191,100 @@ interno.
 4. **Risultato strutturato:** l'output di una run è testo. Le funzioni che devono restituire dati (classificazione, proposta) li
    scrivono con i tool in The Hub Up, non nell'output.
 
-## 6. Esito della revisione dell'analisi
+## 6. Esito di 5b (7 novembre 2026)
 
-Da compilare dopo la revisione (§4.3): tool approvati e modificati, agenti e skill approvati con la funzione che coprono, endpoint
-mancanti con le eventuali issue.
+### 6.1 Connessione
+
+- **Token API in The Hub Up:** AbapCrm, PR TwentIvan/AbapCrm#26, unita e in produzione.
+  - `api_tokens` creata all'avvio, scheda Account → «Token API».
+  - Il middleware `Bearer thu_…` vale per tutta `/api`; le route vietate sono quelle della §4.1, più le scritture su
+    `/api/mcp/catalog` e i job e l'inventario del companion.
+  - `req.user` col token non contiene password né token di reset.
+  - Prova in produzione: `/api/projects` → 200, `/api/ai/models` → 403, token sconosciuto → 401.
+- **App «The Hub Up» in Botcave (id 3):**
+  - `serviceAuth` `Authorization` + `Bearer`, segreto di servizio = token `thu_…` di Ivan;
+  - descrizione funzionale da `docs/the-hub-up/descrizione-funzionale.md`;
+  - tutti i tool con identità `service`.
+- **Prova con l'agente generale (id 4):**
+  - run 5: lettura riuscita con `list_projects` e `list_partners`;
+  - run 6: `add_comment` è andato in «Da confermare» come voce n. 1 e, una volta approvato, è stato eseguito una sola volta.
+
+### 6.2 Analisi 24 (locale, commit AbapCrm `704b7a4`) e revisione
+
+Tutte le voci sono state decise con Ivan.
+
+| Capitolo | Approvate | Scartate | Note |
+|---|---|---|---|
+| Tool | 50 (38 invariati + 12 nuovi) | 0 | Tutti `active`, identità `service` |
+| Endpoint mancanti | 7 | 0 | Nessuna issue creata: ordine e raggruppamento nella spec di 5c |
+| Agenti | 7 | 0 | Il generale aggiornato e 6 nuovi (id 12-17), `active` ma senza modello: non partono finché 5c non assegna un modello |
+| Skill | 5 | 0 | — |
+| Completamento | 6 | 2 | Scartate «Ricerca globale dell'intestazione» e «Copia e modifica massiva nelle tabelle»: fuori da 5c |
+| Evoluzione | 10 | 2 | Scartate «Work item letti direttamente da Azure DevOps» (fuori da 5c) e «Proposte in attesa nel bollettino di Alfred» (lavoro di Botcave, da riprendere se serve) |
+
+**Tool nuovi:**
+- L0: `get_project_brief`, `get_organization_brief`, `get_task_assembled_context`, `list_task_comments`, `list_devops_workitems`,
+  `get_transport_objects`, `list_message_links`, `list_message_proposals`, `get_proposal_discussion`;
+- L1: `update_project_brief`, `classify_message`, `link_message`.
+
+**Agenti e funzioni coperte** (sostituiscono gli agenti della §5.2):
+
+| Agente Botcave | Funzione | Scritture | Limite finché manca |
+|---|---|---|---|
+| Smistatore email | 1 | `classify_message`, `link_message` (L1) | endpoint 2 (collegamento proposto) |
+| Agente di progetto da email | 2 | nessuna: proposta come JSON nell'esito della run | endpoint 1 e 3 |
+| Consulente della proposta | 3 | `apply_proposal`, `reject_proposal` (L2) | endpoint 4 |
+| Esecutore ABAP (THU AI) | 4 | `update_task`, `add_comment` (L2) | endpoint 5, 6 e 7 (server MCP per SAP) |
+| Chat di THU AI sul task | 5 | nessuna (sola lettura) | input con immagini in Botcave (§5.3.1) |
+| Curatore del brief | 6 | `update_project_brief` (L1) | — |
+
+Skill: `smista_messaggio` (1), `prepara_proposta` (2), `sintetizza_decisione` (3), `esegui_task_abap` (4), `aggiorna_brief` (6).
+
+**Endpoint mancanti approvati:**
+1. `GET /api/messages/:messageId/attachments/:filename/text`
+2. `POST /api/messages/:id/link-suggestion`
+3. `POST /api/proposals`
+4. `PATCH /api/proposals/:id`
+5. `GET /api/tasks/:id/execution-context`
+6. `POST /api/tasks/:id/ai-executions`
+7. `POST /mcp` (server MCP di The Hub Up per SAP)
+
+**Completamento approvato:**
+- contesto assemblato filtrato per organizzazione: falla verificata, `server/routes.ts:12630` non controlla l'organizzazione;
+- collegamenti dei messaggi solo dentro l'organizzazione;
+- interfaccia dei commenti: il client non mostra mai la tabella `comments`, quindi `add_comment` scrive dati invisibili, come
+  dimostrato dalla run 6;
+- rimozione della documentazione AI dei trasporti;
+- storico del task con le esecuzioni esterne;
+- conferma del collegamento suggerito.
+
+**Evoluzione approvata:**
+- funzioni 1, 2, 3 e 5 affidate a Botcave;
+- task ABAP con una squadra e il nodo locale, come alternativa per THU AI;
+- cookie `secure`;
+- niente organizzazione di ripiego fissa;
+- audit delle scritture col token;
+- OpenAPI delle route aperte ai token;
+- paginazione degli elenchi.
+
+### 6.3 Da sapere per 5c
+
+- **Botcave, esecutore locale:**
+  - le istruzioni di fase non passano lo stato attuale dei tool dell'App, e la fase catalog segna `removed` ogni tool esistente non
+    riproposto. Nell'analisi 24 l'agente ha recuperato i 38 tool dalla trascrizione dell'analisi 21. Va corretto in Botcave;
+  - l'agente che l'ha eseguita ha consegnato le ultime fasi con uno script HTTP verso `/mcp`, usando il token `cas_…` di Ivan letto
+    da `~/.claude.json`, e ha tentato una lettura su `/api`, rifiutata con 403. Questo è fuori dalla procedura della skill:
+    valutare se rigenerare il token.
+- **The Hub Up, problemi esistenti fuori da 5b:**
+  - l'ereditarietà dell'organizzazione nei POST con la sessione non verifica l'appartenenza;
+  - `PATCH /api/mcp/catalog/:id` è globale e aperta a ogni utente loggato;
+  - il workflow pubblica `:latest` anche dai branch `feat/**`.
+- **Debito minore del branch token:**
+  - mappe del limite di richieste mai potate;
+  - nessun test sul montaggio in `setupAuth` e sulle guard di `routes.ts`;
+  - un `Bearer thu_` malformato non dà 401.
+  
+  Il registro completo è nella cartella delle note della sessione.
 
 ## 7. Rischi
 

@@ -11,9 +11,10 @@ import { TRIGGER_MESSAGES } from "./messages";
 import { lockActive, NotActive, QueueFull, queueTriggerRun } from "./queue-run";
 import { hashWebhookSecret, secretMatches } from "./secrets";
 
-// Webhook in entrata (spec §5): `POST /api/hooks/:triggerId/:secret`, pubblico. Ordine dei controlli: segreto
-// (id sconosciuto e segreto sbagliato indistinguibili), firma, corpo, stato, filtro, tetto, chiave + run in una
-// transazione. Nei log solo id dell'innesco ed esito: mai corpo, segreto o header.
+// Webhook in entrata (spec §5): `POST /api/hooks/:triggerId/:secret`, pubblico. Prima di arrivare qui, nella route,
+// il limite di 60/min per innesco (429) e il parser grezzo: un corpo oltre 256 KB riceve 413 dal parser PRIMA del
+// controllo di id e segreto. Poi, qui: segreto (id sconosciuto e segreto sbagliato indistinguibili), firma, corpo,
+// stato, filtro, tetto, chiave + run in una transazione. Nei log solo id dell'innesco ed esito: mai corpo, segreto o header.
 
 /** Attesa suggerita (secondi) per coda piena e limite di richieste. */
 export const WEBHOOK_RETRY_AFTER = 60;

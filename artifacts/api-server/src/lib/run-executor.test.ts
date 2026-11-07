@@ -24,8 +24,9 @@ import {
   failInterruptedRuns,
   modelCallError,
   startRun,
+  type RunOptions,
 } from "./run-executor";
-import { clearUserToken, getUserToken } from "./user-tokens";
+import { clearUserToken, getUserToken, setUserToken } from "./user-tokens";
 import { decryptSecret } from "./secrets";
 import { logger } from "./logger";
 import { ProviderError } from "./ai/discovery";
@@ -243,6 +244,12 @@ async function seedRun(tool: Partial<InsertAppTool>): Promise<number> {
   return run!.id;
 }
 
+/** Avvio come dopo il POST con `X-App-User-Token`: il token è già in memoria quando la run parte. */
+function startWithToken(id: number, token: string, opts?: RunOptions): Promise<void> {
+  setUserToken(id, token);
+  return startRun(id, opts);
+}
+
 async function getRun(id: number) {
   const [run] = await db.select().from(runsTable).where(eq(runsTable.id, id));
   return run!;
@@ -264,7 +271,7 @@ describe("orchestrazione delle run", () => {
     const id = await seedRun(GET_ITEM);
     llmReplies = [toolCallReply("get_item", { id: "42" }), textReply("Elemento 42: Rosa")];
 
-    await startRun(id, { userToken: "tok-1" });
+    await startWithToken(id, "tok-1");
 
     const run = await getRun(id);
     expect(run.status).toBe("succeeded");
@@ -303,7 +310,7 @@ describe("orchestrazione delle run", () => {
     const id = await seedRun(GET_ITEM);
     llmReplies = [toolCallReply("get_item", { id: "42" }), textReply("fatto")];
 
-    await startRun(id, { userToken: "segreto-utente" });
+    await startWithToken(id, "segreto-utente");
 
     expect(appRequests[0]!.auth).toBe("Bearer segreto-utente");
     const runs = await pool.query("select row_to_json(r)::text as j from runs r");
@@ -332,7 +339,7 @@ describe("orchestrazione delle run", () => {
       textReply("Ho messo in coda l'eliminazione."),
     ];
 
-    await startRun(id, { userToken: "segreto-utente" });
+    await startWithToken(id, "segreto-utente");
 
     const run = await getRun(id);
     expect(run.status).toBe("succeeded");
@@ -387,7 +394,7 @@ describe("orchestrazione delle run", () => {
       textReply("In coda."),
     ];
 
-    await startRun(id, { userToken: "t" });
+    await startWithToken(id, "t");
 
     const [queued] = (await getSteps(id)).filter((s) => s.type === "queued");
     expect(queued!.args).toMatchObject({ numero: 1, argomenti: { id: "42", password: "***" } });
@@ -405,7 +412,7 @@ describe("orchestrazione delle run", () => {
       textReply("Correggo."),
     ];
 
-    await startRun(id, { userToken: "t" });
+    await startWithToken(id, "t");
 
     expect(await db.select().from(pendingActionsTable)).toEqual([]);
     const tool = (await getSteps(id)).find((s) => s.type === "tool")!;
@@ -430,7 +437,7 @@ describe("orchestrazione delle run", () => {
       textReply("Correggo."),
     ];
 
-    await startRun(id, { userToken: "t" });
+    await startWithToken(id, "t");
 
     expect((await getRun(id)).status).toBe("succeeded");
     expect(await db.select().from(pendingActionsTable)).toEqual([]);
@@ -450,21 +457,33 @@ describe("orchestrazione delle run", () => {
     expect(run.errorMessage).toContain("errore nella chiamata al modello");
   });
 
-  it("failInterruptedRuns: pending/running → failed; awaiting_client → cancelled", async () => {
+  it("failInterruptedRuns: running → failed, pending con has_user_token → failed «token utente perso al riavvio: rilancia la run», pending senza token restano pending; awaiting_client → cancelled", async () => {
     const running = await seedRun(GET_ITEM);
     await pool.query(`update runs set status = 'running' where id = $1`, [running]);
-    const [other] = await db.insert(runsTable).values({ agentId: (await getRun(running)).agentId, input: "x" }).returning();
+    const agentId = (await getRun(running)).agentId;
+    const [other] = await db.insert(runsTable).values({ agentId, input: "x" }).returning();
     // Run in pausa del vecchio meccanismo
     await pool.query(`update runs set status = 'awaiting_client' where id = $1`, [other!.id]);
+    const [withToken] = await db.insert(runsTable).values({ agentId, input: "t", hasUserToken: true }).returning();
+    const [queued] = await db.insert(runsTable).values({ agentId, input: "q" }).returning();
 
-    expect(await failInterruptedRuns()).toEqual({ failed: 1, cancelled: 1 });
-    expect((await getRun(running)).status).toBe("failed");
+    expect(await failInterruptedRuns()).toEqual({ failed: 1, cancelled: 1, userTokenLost: 1 });
+    const interrupted = await getRun(running);
+    expect(interrupted.status).toBe("failed");
+    expect(interrupted.errorMessage).toBe("Esecuzione interrotta dal riavvio del server.");
     const paused = await getRun(other!.id);
     expect(paused.status).toBe("cancelled");
     expect(paused.errorMessage).toBe(PAUSE_REPLACED_MESSAGE);
     expect(PAUSE_REPLACED_MESSAGE).toBe("conferma sostituita dalla coda delle azioni");
     expect(paused.finishedAt).not.toBeNull();
-    expect(await failInterruptedRuns()).toEqual({ failed: 0, cancelled: 0 });
+    const lost = await getRun(withToken!.id);
+    expect(lost.status).toBe("failed");
+    expect(lost.errorMessage).toBe("token utente perso al riavvio: rilancia la run");
+    expect(lost.finishedAt).not.toBeNull();
+    const stillQueued = await getRun(queued!.id);
+    expect(stillQueued.status).toBe("pending");
+    expect(stillQueued.finishedAt).toBeNull();
+    expect(await failInterruptedRuns()).toEqual({ failed: 0, cancelled: 0, userTokenLost: 0 });
   });
 
   it("errore inatteso a metà turno: la run failed conserva i token già consumati", async () => {
@@ -472,7 +491,7 @@ describe("orchestrazione delle run", () => {
     // Un carattere NUL negli argomenti non è memorizzabile in jsonb: la scrittura del passo fallisce
     llmReplies = [toolCallReply("get_item", { id: "a\u0000b" })];
 
-    await startRun(id, { userToken: "t" });
+    await startWithToken(id, "t");
 
     const run = await getRun(id);
     expect(run.status).toBe("failed");
@@ -487,7 +506,7 @@ describe("orchestrazione delle run", () => {
     const long = `{non json ${"x".repeat(1000)}`;
     llmReplies = [rawToolCallReply("get_item", "{non json"), rawToolCallReply("get_item", long), textReply("ok")];
 
-    await startRun(id, { userToken: "t" });
+    await startWithToken(id, "t");
 
     expect((await getRun(id)).status).toBe("succeeded");
     const tools = (await getSteps(id)).filter((s) => s.type === "tool");
@@ -499,7 +518,7 @@ describe("orchestrazione delle run", () => {
     const id = await seedRun(GET_ITEM);
     llmReplies = [rawToolCallReply("get_item", "[1,2]"), textReply("ok")];
 
-    await startRun(id, { userToken: "t" });
+    await startWithToken(id, "t");
 
     const tool = (await getSteps(id)).find((s) => s.type === "tool")!;
     expect(tool.args).toEqual({ _raw: "[1,2]" });
@@ -509,7 +528,7 @@ describe("orchestrazione delle run", () => {
     const id = await seedRun(SET_PASSWORD);
     llmReplies = [rawToolCallReply("set_password", '{"password":"segreta-123"'), textReply("ok")];
 
-    await startRun(id, { userToken: "t" });
+    await startWithToken(id, "t");
 
     const tool = (await getSteps(id)).find((s) => s.type === "tool")!;
     expect(tool.args).toEqual({ _raw: "***" });
@@ -521,7 +540,7 @@ describe("orchestrazione delle run", () => {
     const id = await seedRun(GET_ITEM);
     llmReplies = [rawToolCallReply("non_esiste", "{non json"), textReply("ok")];
 
-    await startRun(id, { userToken: "t" });
+    await startWithToken(id, "t");
 
     const tool = (await getSteps(id)).find((s) => s.type === "tool")!;
     expect(tool.args).toBeNull();
@@ -532,7 +551,7 @@ describe("orchestrazione delle run", () => {
     llmHangs = true;
     const t0 = Date.now();
 
-    await startRun(id, { userToken: "t", limits: { maxActiveMs: 300 } });
+    await startWithToken(id, "t", { limits: { maxActiveMs: 300 } });
 
     const run = await getRun(id);
     expect(run.status).toBe("failed");
@@ -555,7 +574,7 @@ describe("annullamento delle run", () => {
   it("run in corso con chiamata al modello in attesa: cancelled, la chiamata viene interrotta e lo stato non cambia", async () => {
     const id = await seedRun(GET_ITEM);
     llmHangs = true;
-    const running = startRun(id, { userToken: "t" });
+    const running = startWithToken(id, "t");
     await waitFor(() => llmRequests.length === 1);
     const t0 = Date.now();
 
@@ -591,7 +610,7 @@ describe("annullamento delle run", () => {
   it("run già conclusa: concluded; run inesistente: not_found", async () => {
     const id = await seedRun(GET_ITEM);
     llmReplies = [textReply("Fatto.")];
-    await startRun(id, { userToken: "t" });
+    await startWithToken(id, "t");
     expect((await getRun(id)).status).toBe("succeeded");
 
     expect((await cancelRun(id)).kind).toBe("concluded");
@@ -603,7 +622,7 @@ describe("annullamento delle run", () => {
     const id = await seedRun(GET_ITEM);
     llmReplies = [toolCallReply("get_item", { id: "1" }), textReply("Mai usata.")];
     appDelayMs = 5_000;
-    const running = startRun(id, { userToken: "t" });
+    const running = startWithToken(id, "t");
     await waitFor(() => appRequests.length === 1);
 
     await cancelRun(id);
@@ -671,7 +690,7 @@ describe("run sugli account AI (chi configura paga)", () => {
     const replies = [fakeToolCall("get_item", { id: "42" }), { content: "Fatto", toolCalls: [], usage: { prompt_tokens: 1000, completion_tokens: 500 } }];
     fake.chatReply = () => replies.shift()!;
 
-    await startRun(id, { userToken: "t" });
+    await startWithToken(id, "t");
 
     const run = await getRun(id);
     expect(run.errorMessage).toBeNull();
@@ -698,7 +717,7 @@ describe("run sugli account AI (chi configura paga)", () => {
     ];
     fake.chatReply = () => replies.shift()!;
 
-    await startRun(id, { userToken: "t" });
+    await startWithToken(id, "t");
 
     expect((await getRun(id)).status).toBe("succeeded");
     const [owner] = await db.select().from(usersTable).where(eq(usersTable.email, `a${id}@example.com`));
@@ -715,7 +734,7 @@ describe("run sugli account AI (chi configura paga)", () => {
     ];
     fake.chatReply = () => replies.shift()!;
 
-    await startRun(id, { userToken: "t" });
+    await startWithToken(id, "t");
     const run = await getRun(id);
     expect(run.status).toBe("succeeded");
     expect(run.promptTokens).toBe(2000);
@@ -875,7 +894,7 @@ describe("annullamento: uso registrato", () => {
     await linkAgent(id);
     fake.chatReply = toolCall;
     appDelayMs = 5_000;
-    const running = startRun(id, { userToken: "t" });
+    const running = startWithToken(id, "t");
     await waitFor(() => appRequests.length === 1);
 
     await cancelRun(id);
@@ -898,7 +917,7 @@ describe("annullamento: uso registrato", () => {
       fake.delayMs = 5_000;
       return replies.shift() ?? toolCall;
     };
-    const running = startRun(id, { userToken: "t" });
+    const running = startWithToken(id, "t");
     await waitFor(() => fake.requests.filter((r) => r.path === "/v1/chat/completions").length === 2);
 
     await cancelRun(id);

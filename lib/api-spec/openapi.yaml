@@ -1336,11 +1336,12 @@ paths:
             schema:
               $ref: "#/components/schemas/RunTrigger"
       description: >-
-        Crea la run e la avvia in background: risponde subito con la run in stato pending.
-        Lo stato (running, poi succeeded o failed) si segue con GET /runs/{id}.
+        Crea la run in stato pending e la mette in coda: risponde subito. La avvia lo scheduler quando c'è
+        posto (al massimo 2 run in corso per agente e 6 in tutto, in ordine di creazione); i tetti di spesa
+        si ricontrollano alla partenza. Lo stato (running, poi succeeded o failed) si segue con GET /runs/{id}.
       responses:
         "202":
-          description: Esecuzione avviata (stato pending)
+          description: Run in coda (stato pending)
           content:
             application/json:
               schema:
@@ -1351,6 +1352,13 @@ paths:
           description: >-
             Agente senza modello ("scegli un modello per l'agente") o tetto di spesa mensile raggiunto
             (dell'agente o dell'utente che paga il modello): la run non viene creata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: >-
+            Troppe run in attesa per questo agente (al massimo 200): la run non viene creata
           content:
             application/json:
               schema:

@@ -4146,7 +4146,7 @@ export const getTriggerRunUrl = (id: number,) => {
 }
 
 /**
- * Crea la run e la avvia in background: risponde subito con la run in stato pending. Lo stato (running, poi succeeded o failed) si segue con GET /runs/{id}.
+ * Crea la run in stato pending e la mette in coda: risponde subito. La avvia lo scheduler quando c'è posto (al massimo 2 run in corso per agente e 6 in tutto, in ordine di creazione); i tetti di spesa si ricontrollano alla partenza. Lo stato (running, poi succeeded o failed) si segue con GET /runs/{id}.
  * @summary Avvia un'esecuzione dell'agente
  */
 export const triggerRun = async (id: number,

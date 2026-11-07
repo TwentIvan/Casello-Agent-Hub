@@ -5,7 +5,6 @@ import {
   agentSkillsTable,
   agentsTable,
   appsTable,
-  runsTable,
 } from "@workspace/db";
 import { runRateLimit } from "../middlewares/rate-limit";
 import {
@@ -32,13 +31,13 @@ import {
   ListAgentSkillsResponse,
   DeleteAgentSkillParams,
 } from "@workspace/api-zod";
-import { AGENT_WITHOUT_MODEL, startRun } from "../lib/run-executor";
+import { AGENT_WITHOUT_MODEL } from "../lib/run-executor";
+import { RUN_QUEUE_MESSAGES, createQueuedRun } from "../lib/run-queue";
 import { AgentError, createAreaAgent, setAgentTools, updateAgent } from "../lib/agents";
 import { budgetColumn, runBudgetBlock } from "../lib/budget";
 import { currentUserId } from "../lib/auth";
 import { ModelChoiceError, NO_MODEL, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
 import { resolveAgentModel } from "../lib/ai/default-model";
-import { logger } from "../lib/logger";
 import { toPublicRun, userTokenFrom, withToolIds, withToolIdsOne } from "./serializers";
 import { parseRequest } from "../middlewares/error-handler";
 
@@ -281,20 +280,17 @@ router.post("/agents/:id/runs", runRateLimit, async (req, res) => {
     return;
   }
 
-  // Il modello si fissa sulla run: la spesa resta di chi pagava alla partenza anche se l'agente cambia modello
-  const [run] = await db
-    .insert(runsTable)
-    .values({ agentId: id, aiModelId: agent.aiModelId, status: "pending", input: body.input ?? null })
-    .returning();
+  // Il modello si fissa sulla run: la spesa resta di chi pagava alla partenza anche se l'agente cambia modello.
+  // La run va in coda: la avvia lo scheduler (run-queue.ts) quando c'è posto, e la UI ne segue lo stato con
+  // GET /runs/:id. Tetti e modello si ricontrollano alla partenza.
+  const queued = await createQueuedRun({ agent, input: body.input ?? null, userToken });
+  if (!queued.ok) {
+    res.status(429).json({ error: RUN_QUEUE_MESSAGES.queueFull });
+    return;
+  }
+  const run = queued.run;
 
-  // La run prosegue in background (da secondi a decine di secondi): si risponde subito con la run
-  // in attesa e la UI ne segue lo stato con GET /runs/:id. startRun registra da sé gli errori del
-  // modello sulla run; qui si intercetta solo l'imprevisto, che altrimenti farebbe cadere il processo.
-  startRun(run!.id, { userToken }).catch((err: unknown) =>
-    logger.error({ err, runId: run!.id }, "Esecuzione della run fallita"),
-  );
-
-  res.status(202).json(TriggerRunResponse.parse(toPublicRun(run!)));
+  res.status(202).json(TriggerRunResponse.parse(toPublicRun(run)));
 });
 
 export default router;

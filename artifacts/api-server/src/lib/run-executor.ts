@@ -22,12 +22,13 @@ import {
   type QueueActionResult,
   type StepRecord,
 } from "./agent-loop";
+import { runBudgetBlock } from "./budget";
 import { logger } from "./logger";
 import { loopModelCallError, modelChatDeps, newUsage, stepWriter, type LoopUsage } from "./loop-wiring";
 import { loadAgentTools, loadAppConnection, toFunctionTools } from "./tools/catalog";
 import { executeTool } from "./tools/executor";
 import type { AppConnection, CatalogTool, ToolResult } from "./tools/types";
-import { clearUserToken, getUserToken, setUserToken } from "./user-tokens";
+import { clearUserToken, getUserToken } from "./user-tokens";
 
 // Orchestrazione delle run: collega il ciclo dell'agente (puro) al DB, all'esecutore dei tool (HTTP e
 // MCP), all'esecutore dei modelli (account AI) e alla coda delle azioni. Ogni passo diventa una riga di
@@ -43,6 +44,8 @@ const TOOL_RESULTS_INSTRUCTION =
 
 export const RUN_CANCELLED_MESSAGE = "Annullata dall'utente.";
 export const AGENT_WITHOUT_MODEL = "scegli un modello per l'agente";
+/** Run in attesa con un token utente (solo in memoria) quando il processo si è fermato: non può più partire. */
+export const USER_TOKEN_LOST = "token utente perso al riavvio: rilancia la run";
 /** Run rimaste in pausa per conferma (meccanismo dismesso): all'avvio si chiudono con questo messaggio. */
 export const PAUSE_REPLACED_MESSAGE = "conferma sostituita dalla coda delle azioni";
 
@@ -51,6 +54,14 @@ class RunWithoutModelError extends Error {
   constructor() {
     super(AGENT_WITHOUT_MODEL);
     this.name = "RunWithoutModelError";
+  }
+}
+
+/** Tetto di spesa raggiunto mentre la run era in coda: si chiude fallita col motivo del tetto, senza chiamate. */
+class RunBudgetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RunBudgetError";
   }
 }
 
@@ -120,9 +131,11 @@ interface RunContext {
   conn: AppConnection;
 }
 
-/** Opzioni di avvio. `limits` sostituisce i limiti del turno (usato dai test). */
+/**
+ * Opzioni di avvio. `limits` sostituisce i limiti del turno (usato dai test). Il token dell'utente non
+ * passa da qui: lo mette in memoria chi crea la run (createQueuedRun) e l'esecutore lo legge con getUserToken.
+ */
 export interface RunOptions {
-  userToken?: string;
   limits?: Partial<LoopLimits>;
 }
 
@@ -381,15 +394,17 @@ async function failRun(
     return;
   }
   const withoutModel = err instanceof RunWithoutModelError;
+  const overBudget = err instanceof RunBudgetError;
   const message = errorMessage(err);
   if (withoutModel) logger.info({ runId }, "Run senza modello: non eseguita");
+  else if (overBudget) logger.info({ runId }, "Run ferma per il tetto di spesa: non eseguita");
   else logger.error({ runId, error: message }, "Run fallita per un errore inatteso");
   try {
     await db
       .update(runsTable)
       .set({
         status: "failed",
-        errorMessage: withoutModel ? message : `Errore durante l'esecuzione: ${message}`,
+        errorMessage: withoutModel || overBudget ? message : `Errore durante l'esecuzione: ${message}`,
         durationMs: (run.durationMs ?? 0) + (Date.now() - segmentStart),
         promptTokens: (run.promptTokens ?? 0) + usage.promptTokens,
         completionTokens: (run.completionTokens ?? 0) + usage.completionTokens,
@@ -434,11 +449,13 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
   }
 
   adoptRun(runId, abort);
-  if (opts.userToken) setUserToken(runId, opts.userToken);
   const segmentStart = Date.now();
   const usage = newUsage();
   try {
     const ctx = await loadContext(run);
+    // Il tetto si ricontrolla alla partenza: la run può essere rimasta in coda mentre la spesa cresceva
+    const blocked = await runBudgetBlock(ctx.agent);
+    if (blocked) throw new RunBudgetError(blocked);
     const initial: LoopState = {
       messages: [
         { role: "system", content: buildSystemPrompt(ctx.agent, ctx.app) },
@@ -472,19 +489,26 @@ async function modelOwner(aiModelId: number): Promise<number | null> {
 /**
  * Le run girano nel processo dell'API: se il processo si riavvia (deploy, crash) quelle in corso non
  * finiranno mai. All'avvio si chiudono come fallite, così la UI non le mostra "in corso" per sempre.
+ * Le run in attesa restano in coda e le riprende lo scheduler (run-queue.ts), tranne quelle partite con un
+ * token utente: il token viveva solo in memoria, quindi falliscono con USER_TOKEN_LOST.
  * Le run rimaste in pausa per conferma (meccanismo dismesso) si chiudono come annullate. Le colonne
  * storiche della pausa non esistono più (le toglie `2026-11-strumenti-mcp-post.sql`): qui non si toccano.
  */
-export async function failInterruptedRuns(): Promise<{ failed: number; cancelled: number }> {
+export async function failInterruptedRuns(): Promise<{ failed: number; cancelled: number; userTokenLost: number }> {
   const failed = await db.execute(sql`
     update runs
        set status = 'failed', error_message = ${"Esecuzione interrotta dal riavvio del server."}, finished_at = now()
-     where status in ('pending', 'running')
+     where status = 'running'
+    returning id`);
+  const userTokenLost = await db.execute(sql`
+    update runs
+       set status = 'failed', error_message = ${USER_TOKEN_LOST}, finished_at = now()
+     where status = 'pending' and has_user_token
     returning id`);
   const cancelled = await db.execute(sql`
     update runs
        set status = 'cancelled', error_message = ${PAUSE_REPLACED_MESSAGE}, finished_at = now()
      where status = 'awaiting_client'
     returning id`);
-  return { failed: failed.rows.length, cancelled: cancelled.rows.length };
+  return { failed: failed.rows.length, cancelled: cancelled.rows.length, userTokenLost: userTokenLost.rows.length };
 }

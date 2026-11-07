@@ -1,6 +1,6 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { and, asc, eq, sql } from "drizzle-orm";
 import {
   db,
@@ -25,6 +25,17 @@ import { encryptSecret } from "../secrets";
 import { allowTestLoopback } from "../../../test/fake-provider";
 import { startFakeMcp, type FakeMcp } from "../../../test/fake-mcp";
 
+// Tetto di spesa: di norma quello vero; un test può sostituirlo per eseguire qualcosa a metà giro.
+const budgetHook = vi.hoisted(() => ({ fn: null as null | (() => Promise<string | null>) }));
+vi.mock("../budget", async () => {
+  const actual = await vi.importActual<typeof import("../budget")>("../budget");
+  return {
+    ...actual,
+    runBudgetBlock: (...args: Parameters<typeof actual.runBudgetBlock>) =>
+      budgetHook.fn ? budgetHook.fn() : actual.runBudgetBlock(...args),
+  };
+});
+
 // Giro di sorveglianza contro una finta app HTTP: la risposta è configurabile per test, le richieste
 // (con la query) si registrano. Lo scheduler delle run non parte: le run create restano `pending`.
 
@@ -43,6 +54,7 @@ beforeAll(() => {
 });
 
 beforeEach(async () => {
+  budgetHook.fn = null;
   appStatus = 200;
   appBody = [];
   appRequests = [];
@@ -575,5 +587,55 @@ describe("modifica a giro in corso", () => {
     expect(after.runsCreated).toBe(0);
     expect(await keys(trigger.id)).toEqual([]);
     expect(await triggerRuns(trigger.id)).toEqual([]);
+  });
+
+  /** Secondo tool idoneo della stessa app dell'innesco. */
+  async function otherTool(): Promise<number> {
+    const [app] = await db.select().from(appsTable).limit(1);
+    const [tool] = await db
+      .insert(appToolsTable)
+      .values({
+        appId: app!.id,
+        name: "elenco_bis",
+        description: "Altre email",
+        kind: "http",
+        identity: "service",
+        level: "L0",
+        status: "active",
+        definition: { method: "GET", path: "/emails", paramLocations: { box: "query" } },
+        paramsSchema: { type: "object", properties: { box: { type: "string" } } },
+      })
+      .returning();
+    return tool!.id;
+  }
+
+  it("una PATCH verso un altro tool a giro in corso non riceve l'errore del giro vecchio", async () => {
+    const { trigger } = await seed({ trigger: { baselineDone: true } });
+    const toolId = await otherTool();
+    appStatus = 500;
+    beforeReply = async () => {
+      const res = await updateTrigger(trigger.id, { toolId });
+      expect(res.ok).toBe(true);
+    };
+    await pollTrigger(trigger.id);
+    const after = await getTrigger(trigger.id);
+    expect(after.toolId).toBe(toolId);
+    expect(after.status).toBe("active");
+    expect(after.consecutiveErrors).toBe(0);
+    expect(after.lastError).toBeNull();
+  });
+
+  it("una PATCH durante il controllo del tetto non riceve l'attesa del giro vecchio", async () => {
+    const { trigger } = await seed({ trigger: { baselineDone: true } });
+    const toolId = await otherTool();
+    budgetHook.fn = async () => {
+      const res = await updateTrigger(trigger.id, { toolId });
+      expect(res.ok).toBe(true);
+      return "tetto raggiunto";
+    };
+    expect(await pollTrigger(trigger.id)).toBe("skipped");
+    const after = await getTrigger(trigger.id);
+    expect(after.toolId).toBe(toolId);
+    expect(after.lastError).toBeNull();
   });
 });

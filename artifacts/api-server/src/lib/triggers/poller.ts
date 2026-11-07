@@ -42,8 +42,12 @@ const EMPTY_RESULT = "(risposta vuota)";
 
 export type PollOutcome = "skipped" | "baseline" | { created: number; more: boolean } | { error: string };
 
-/** Errore del giro: conta, rimanda con backoff e dopo 10 di fila ferma l'innesco. */
-async function recordError(id: number, message: string, stop = false): Promise<PollOutcome> {
+/**
+ * Errore del giro: conta, rimanda con backoff e dopo 10 di fila ferma l'innesco. Solo se l'innesco è ancora attivo e con
+ * la configurazione del giro (`unchanged`): una modifica a giro in corso non riceve l'errore della configurazione vecchia.
+ */
+async function recordError(trigger: AgentTrigger, message: string, stop = false): Promise<PollOutcome> {
+  const id = trigger.id;
   const next = sql`${agentTriggersTable.consecutiveErrors} + 1`;
   await db
     .update(agentTriggersTable)
@@ -57,7 +61,7 @@ async function recordError(id: number, message: string, stop = false): Promise<P
         : sql`case when ${next} >= ${MAX_CONSECUTIVE_ERRORS} then 'error'::trigger_status else ${agentTriggersTable.status} end`,
       updatedAt: new Date(),
     })
-    .where(isActive(id));
+    .where(unchanged(trigger));
   logger.info({ triggerId: id, outcome: "error" }, "Giro dell'innesco non riuscito");
   return { error: message };
 }
@@ -198,7 +202,7 @@ export async function pollTrigger(triggerId: number, deps: { fetchImpl?: typeof 
     return await runPass(trigger, deps);
   } catch (err) {
     logger.error({ triggerId, errName: err instanceof Error ? err.name : typeof err }, "Giro dell'innesco interrotto");
-    return recordError(triggerId, TRIGGER_MESSAGES.pollFailed);
+    return recordError(trigger, TRIGGER_MESSAGES.pollFailed);
   }
 }
 
@@ -214,14 +218,14 @@ async function runPass(trigger: AgentTrigger, deps: { fetchImpl?: typeof fetch }
     ? []
     : await db.select().from(appToolsTable).where(eq(appToolsTable.id, trigger.toolId)).limit(1);
   const tool = toolRow && toolUsableByTrigger(toolRow, agent.appId) ? toCatalogTool(toolRow) : null;
-  if (!tool) return recordError(id, TRIGGER_MESSAGES.toolNoLonger, true);
+  if (!tool) return recordError(trigger, TRIGGER_MESSAGES.toolNoLonger, true);
 
   // 3. Tetti di spesa: il giro salta senza segnare nulla e senza contare come errore.
   if (await runBudgetBlock(agent)) {
     await db
       .update(agentTriggersTable)
       .set({ lastError: TRIGGER_MESSAGES.budgetWait, updatedAt: new Date() })
-      .where(isActive(id));
+      .where(unchanged(trigger));
     logger.info({ triggerId: id, outcome: "budget" }, "Giro dell'innesco rimandato: tetto di spesa");
     return "skipped";
   }
@@ -233,7 +237,7 @@ async function runPass(trigger: AgentTrigger, deps: { fetchImpl?: typeof fetch }
     args[trigger.cursorParam] = cursorArg(tool, trigger.cursorParam, trigger.cursorValue);
   }
   const call = await callTriggerTool(agent.appId, tool, args, deps);
-  if (!call.ok) return recordError(id, call.error);
+  if (!call.ok) return recordError(trigger, call.error);
   const response = call.response;
 
   // 5. Estrazione.
@@ -244,7 +248,7 @@ async function runPass(trigger: AgentTrigger, deps: { fetchImpl?: typeof fetch }
     cursorField: trigger.cursorField,
     filter: (trigger.filter as { field: string; equals: string | number | boolean } | null) ?? null,
   });
-  if (!extracted.ok) return recordError(id, TRIGGER_MESSAGES.listNotFound);
+  if (!extracted.ok) return recordError(trigger, TRIGGER_MESSAGES.listNotFound);
   const items = uniqueByKey(extracted.items);
 
   // Chiavi già viste e restituite di nuovo: `seen_at` si rinfresca, così la pulizia (30 giorni, 10 000 chiavi)

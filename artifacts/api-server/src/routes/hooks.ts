@@ -1,18 +1,18 @@
 import express, { Router, type ErrorRequestHandler, type IRouter } from "express";
 import { logger } from "../lib/logger";
-import { webhookRateLimit } from "../middlewares/rate-limit";
+import { webhookIpRateLimit } from "../middlewares/rate-limit";
 import { handleWebhook } from "../lib/triggers/webhook";
 import { TRIGGER_MESSAGES } from "../lib/triggers/messages";
 
 // Webhook in entrata degli inneschi (spec §5): pubblico, montato in app.ts prima di CORS, dei parser globali e
-// della sessione. Il limite per innesco viene prima della lettura del corpo, che ha un parser grezzo proprio
-// (≤ 256 KB). Nei log solo id ed esito: il percorso con il segreto lo oscura il serializer di app.ts.
+// della sessione. Il limite per IP (120/min) viene prima della lettura del corpo, che ha un parser grezzo proprio
+// (≤ 256 KB); quello per innesco (60/min) lo conta `handleWebhook` dopo segreto e firma. Nei log solo id ed esito: il percorso con il segreto lo oscura il serializer di app.ts.
 
 export function hooksRouter(): IRouter {
   const router: IRouter = Router();
   router.post(
     "/:triggerId/:secret",
-    webhookRateLimit,
+    webhookIpRateLimit,
     express.raw({ type: () => true, limit: "256kb" }),
     async (req, res, next) => {
       try {

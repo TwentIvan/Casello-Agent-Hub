@@ -38,12 +38,18 @@ const saved: Record<string, string | undefined> = {};
 let base: string;
 let server: http.Server;
 let secrets: typeof import("../lib/triggers/secrets");
+// IP del client (X-Forwarded-For, con `trust proxy` come in produzione): uno nuovo per test, così il limite per IP
+// di un test non tocca gli altri.
+let clientIp = "";
+let ipCounter = 0;
+const nextIp = (): string => `10.0.${Math.floor(++ipCounter / 250)}.${ipCounter % 250}`;
 
 beforeAll(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   process.env["AUTH_DISABLED"] = "true";
   process.env["CASELLO_SECRET_KEY"] = "c".repeat(64);
   const { default: app } = await import("../app");
+  app.set("trust proxy", 1);
   secrets = await import("../lib/triggers/secrets");
   server = http.createServer(app);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -61,6 +67,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  clientIp = nextIp();
   logLines.length = 0;
   await pool.query("TRUNCATE apps, ai_accounts, users CASCADE");
 });
@@ -107,7 +114,7 @@ async function hook(
   body: string | Buffer,
   headers: Record<string, string> = { "content-type": "application/json" },
 ) {
-  const res = await fetch(`${base}/api/hooks/${id}/${secret}`, { method: "POST", headers, body });
+  const res = await fetch(`${base}/api/hooks/${id}/${secret}`, { method: "POST", headers: { "x-forwarded-for": clientIp, ...headers }, body });
   const text = await res.text();
   let json: unknown;
   try {
@@ -306,19 +313,45 @@ describe("webhook in entrata", () => {
     expect(await triggerRuns(trigger.id)).toHaveLength(0);
   });
 
-  it("61 richieste in un minuto: 429", async () => {
-    const { trigger } = await seed();
+  it("61 richieste autenticate in un minuto: 429", async () => {
+    const { trigger, secret } = await seed();
     const statuses: number[] = [];
     let last: Awaited<ReturnType<typeof hook>> | undefined;
     for (let i = 0; i < 61; i++) {
-      last = await hook(trigger.id, "whs_sbagliato", "{}");
+      last = await hook(trigger.id, secret, "{}");
       statuses.push(last.status);
     }
-    expect(statuses.slice(0, 60).every((s) => s === 404)).toBe(true);
+    expect(statuses.slice(0, 60).every((s) => s === 202)).toBe(true);
     expect(statuses[60]).toBe(429);
     expect(last!.retryAfter).toBe("60");
-    // Un id non numerico non conta e non è limitato
+    expect(await triggerRuns(trigger.id)).toHaveLength(60);
+    // Un id non numerico non conta nel limite per innesco (da un altro IP: il limite per IP vale per tutti)
+    clientIp = nextIp();
     for (let i = 0; i < 61; i++) expect((await hook("xyz", "whs_sbagliato", "{}")).status).toBe(404);
+  });
+
+  it("61 richieste con il segreto sbagliato non bloccano quella con il segreto giusto", async () => {
+    const { trigger, secret } = await seed();
+    for (let i = 0; i < 61; i++) {
+      clientIp = nextIp();
+      expect((await hook(trigger.id, "whs_sbagliato", "{}")).status).toBe(404);
+    }
+    clientIp = nextIp();
+    expect((await hook(trigger.id, secret, '{"a":1}')).status).toBe(202);
+  });
+
+  it("121 richieste dallo stesso IP: 429 con Retry-After 60", async () => {
+    const statuses: number[] = [];
+    let last: Awaited<ReturnType<typeof hook>> | undefined;
+    for (let i = 0; i < 121; i++) {
+      last = await hook(1_000_000 + i, "whs_sbagliato", "{}");
+      statuses.push(last.status);
+    }
+    expect(statuses.slice(0, 120).every((s) => s === 404)).toBe(true);
+    expect(statuses[120]).toBe(429);
+    expect(last!.retryAfter).toBe("60");
+    clientIp = nextIp();
+    expect((await hook(1_000_000, "whs_sbagliato", "{}")).status).toBe(404);
   });
 
   it("il segreto non compare nei log", async () => {

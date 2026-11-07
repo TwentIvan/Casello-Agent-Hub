@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { db, agentsTable, agentTriggersTable, type AgentTrigger } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { logger } from "../logger";
+import { consumeWebhookTrigger } from "../../middlewares/rate-limit";
 import { runBudgetBlock } from "../budget";
 import { decryptSecret } from "../secrets";
 import { RUN_QUEUE_MESSAGES, scheduleRuns } from "../run-queue";
@@ -12,9 +13,9 @@ import { lockActive, NotActive, QueueFull, queueTriggerRun } from "./queue-run";
 import { hashWebhookSecret, secretMatches } from "./secrets";
 
 // Webhook in entrata (spec §5): `POST /api/hooks/:triggerId/:secret`, pubblico. Prima di arrivare qui, nella route,
-// il limite di 60/min per innesco (429) e il parser grezzo: un corpo oltre 256 KB riceve 413 dal parser PRIMA del
-// controllo di id e segreto. Poi, qui: segreto (id sconosciuto e segreto sbagliato indistinguibili), firma, corpo,
-// stato, filtro, tetto, chiave + run in una transazione. Nei log solo id dell'innesco ed esito: mai corpo, segreto o header.
+// il limite di 120/min per IP (429) e il parser grezzo: un corpo oltre 256 KB riceve 413 dal parser PRIMA del
+// controllo di id e segreto. Poi, qui: segreto (id sconosciuto e segreto sbagliato indistinguibili), firma, limite di
+// 60/min per innesco (contato solo per le richieste autenticate), corpo, stato, filtro, tetto, chiave + run in una transazione. Nei log solo id dell'innesco ed esito: mai corpo, segreto o header.
 
 /** Attesa suggerita (secondi) per coda piena e limite di richieste. */
 export const WEBHOOK_RETRY_AFTER = 60;
@@ -116,6 +117,15 @@ export async function handleWebhook(input: WebhookInput): Promise<WebhookResult>
   // 2. Firma facoltativa, sul corpo grezzo.
   if (trigger.signingSecretEnc && !signatureValid(trigger, input.signature, input.rawBody)) {
     return done(triggerId, "bad_signature", { status: 401, body: { error: TRIGGER_MESSAGES.badSignature } });
+  }
+
+  // Limite per innesco, solo sulle richieste autenticate: niente si segna come visto.
+  if (!consumeWebhookTrigger(trigger.id)) {
+    return done(triggerId, "rate_limited", {
+      status: 429,
+      body: { error: TRIGGER_MESSAGES.rateLimited },
+      retryAfter: WEBHOOK_RETRY_AFTER,
+    });
   }
 
   // Richiesta autenticata: si registra l'arrivo, qualunque sia l'esito.

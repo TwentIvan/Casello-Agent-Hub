@@ -32,6 +32,7 @@ export const TRIGGER_MESSAGES = {
   invalidJson: "JSON non valido",
   invalidBody: "corpo non valido",
   hookFailed: "errore interno: riprova tra poco",
+  rateLimited: "Troppe richieste: riprova tra poco",
   // API di gestione (spec §7).
   agentNotFound: "agente non trovato",
   pollOnly: "la prova vale solo per gli inneschi di sorveglianza",

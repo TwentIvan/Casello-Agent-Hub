@@ -350,5 +350,7 @@ Dove il codice differisce da questa spec vale il codice (vedi «Inneschi» in `C
 - **Messaggi fissi in più:** `toolFailed` con « (HTTP n)», `pollFailed`, `queueFull` (attesa, non errore: `last_error` senza contare come errore), `changed`.
 - **Webhook:** `dedup_header` mancante o troppo lungo ricade su `id_field`; è JSON solo `application/json` esattamente; un corpo oltre 256 KB riceve 413 prima del
   controllo di id e segreto.
+- **Limiti del webhook:** il limite di 60 al minuto per innesco (§5.4) conta solo le richieste con segreto (e firma) validi, dopo il controllo; prima del parser del
+  corpo c'è invece un limite di 120 richieste al minuto per IP (429 con `Retry-After: 60`), così una raffica con il segreto sbagliato non blocca il mittente vero.
 - **Lucius:** l'accettazione crea l'innesco fuori dalla transazione della scheda (nome unico, UPDATE condizionato, cancellazione di compensazione).
 - **Limite di 50 per utente:** morbido tra agenti diversi (la riga bloccata è quella dell'agente).

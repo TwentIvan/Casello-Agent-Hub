@@ -183,16 +183,23 @@ export function consumeAlfredTool(userId: number): boolean {
   return alfredToolCounter.consume(`user:${userId}`).ok;
 }
 
-// Webhook in entrata degli inneschi (pubblici, prima di ogni parser): 60 al minuto per id d'innesco, con
-// `Retry-After: 60`. Un id non numerico non si conta (la richiesta finisce comunque in un 404).
-const webhookCounter = fixedWindowCounter({ limit: 60, windowMs: 60_000 });
-export const webhookRateLimit: RequestHandler = (req, res, next) => {
-  const id = String(req.params["triggerId"] ?? "");
-  if (!/^\d{1,15}$/.test(id)) return next();
-  if (!webhookCounter.consume(`hook:${Number(id)}`).ok) {
-    res.setHeader("Retry-After", 60);
+// Webhook in entrata degli inneschi (pubblici). Due limiti, entrambi con `Retry-After: 60`:
+// - 120 al minuto per IP, prima del parser del corpo (conta anche le richieste non autenticate);
+// - 60 al minuto per innesco, contato da `handleWebhook` solo DOPO il controllo di segreto e firma: chi non conosce il
+//   segreto non può esaurire il limite di un innesco altrui.
+const WEBHOOK_RETRY_AFTER_SEC = 60;
+const webhookIpCounter = fixedWindowCounter({ limit: 120, windowMs: 60_000 });
+export const webhookIpRateLimit: RequestHandler = (req, res, next) => {
+  if (!webhookIpCounter.consume(`ip:${req.ip ?? "unknown"}`).ok) {
+    res.setHeader("Retry-After", WEBHOOK_RETRY_AFTER_SEC);
     res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
     return;
   }
   next();
 };
+
+const webhookTriggerCounter = fixedWindowCounter({ limit: 60, windowMs: 60_000 });
+/** Conta una richiesta autenticata (segreto e firma validi) di un innesco: false oltre 60 al minuto. */
+export function consumeWebhookTrigger(triggerId: number): boolean {
+  return webhookTriggerCounter.consume(`hook:${triggerId}`).ok;
+}

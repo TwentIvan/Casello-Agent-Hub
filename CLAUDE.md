@@ -1278,8 +1278,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   urlencoded (oggetto), `text/*` (resta testo); altro → 415. Degli header non entra nulla nella run. Chiave di dedup: valore di `dedup_header` (1..200;
   mancante o troppo lungo ricade su `id_field`) altrimenti `id_field` (+ `version_field`) sul corpo JSON; senza chiave nessuna dedup. Risposte: 202 `{runId}`, 200
   `{duplicate: true}`, 200 `{ignored: true}` (filtro), 404, 401, 409 «innesco non attivo» (pausa, errore, agente non attivo o senza modello) o col messaggio del tetto,
-  429 con `Retry-After: 60` per coda piena e per più di 60 richieste al minuto per innesco (`webhookRateLimit`, prima della lettura del corpo); negli ultimi casi niente si segna
-  come visto. Ogni richiesta autenticata aggiorna `last_polled_at`. Nessuna linea di partenza. Chiave e run nella stessa transazione, con innesco ancora attivo e
+  429 con `Retry-After: 60` per coda piena, per più di 120 richieste al minuto per IP (`webhookIpRateLimit`, prima della lettura del corpo, conta anche le richieste non
+  autenticate) e per più di 60 richieste autenticate al minuto per innesco (`consumeWebhookTrigger`, contato in `handleWebhook` solo dopo segreto e firma: chi non
+  conosce il segreto non esaurisce il limite di un innesco); negli ultimi casi niente si segna come visto. Ogni richiesta autenticata aggiorna `last_polled_at`. Nessuna linea di partenza. Chiave e run nella stessa transazione, con innesco ancora attivo e
   segreto non rigenerato (`lockActive`).
 - **Segreto fuori dai log**: il serializer di `pino-http` (`app.ts`, `redactHookPath`) scrive `/api/hooks/<id>/***`; in `docker/nginx.conf.template` la `location ^~ /api/hooks/`
   (stessi header e proxy di `/api/`, `client_max_body_size 256k`) ha `access_log off` **e** `error_log /dev/stderr crit` (l'error_log riporta la richiesta per corpi

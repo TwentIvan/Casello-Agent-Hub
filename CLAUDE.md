@@ -39,6 +39,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - The Hub Up come App (5b): collegata con il token di servizio `thu_…` di The Hub Up (identità `service` su tutti i tool), descrizione
   funzionale, analisi 24 rivista con 50 tool e un agente per ciascuna delle sue funzioni AI interne (ancora senza modello). Inventario
   degli agenti di The Hub Up e proposta per 5c in `docs/superpowers/specs/2026-11-07-botcave-the-hub-up-5b-design.md`.
+- The Hub Up 5c, tappa 1: coda delle run con limiti di concorrenza, ambito `runs` dei token personali per le app ospiti, agente `general` =
+  «Responsabile di prodotto» (scritture sempre in coda, descrizione funzionale nel prompt) e segnalazione dagli agenti di area con run figlia
+  (vedi "The Hub Up 5c (tappa 1)").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -127,8 +130,11 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `artifacts/api-server/src/lib/run-executor.ts` — orchestrazione delle run: collega il ciclo al DB,
   all'esecutore dei tool e all'esecutore dei modelli; scrive i passi in `run_steps`; le chiamate L2 diventano voci
   di `pending_actions` e la run prosegue senza fermarsi (niente più pausa). `POST /api/agents/:id/runs` risponde subito con la run
-  `pending` e la esegue in background (la UI fa polling su `GET /api/runs/:id`); all'avvio le run rimaste
-  `pending`/`running` vengono chiuse come fallite.
+  `pending` e NON la avvia: la prende lo scheduler di `lib/run-queue.ts` (la UI fa polling su `GET /api/runs/:id`); all'avvio le run
+  `running` diventano `failed`, le `pending` con `has_user_token` anche («token utente perso al riavvio: rilancia la run»), le altre `pending`
+  restano in coda e ripartono (vedi "The Hub Up 5c (tappa 1)"). `lib/escalation.ts`: strumento `segnala_al_responsabile`.
+- `artifacts/api-server/src/lib/run-queue.ts` — coda delle run (`createQueuedRun`, `scheduleRuns`, `startRunQueue`) e
+  `artifacts/api-server/src/lib/escalation.ts` — segnalazione al Responsabile di prodotto (vedi "The Hub Up 5c (tappa 1)")
 - `artifacts/api-server/src/lib/tools/` — client MCP (`mcp-client.ts`), sincronizzazione degli strumenti MCP
   (`mcp-sync.ts`), livelli d'azione (`levels.ts`), catalogo (`catalog.ts`), validazione delle definizioni
   (`definition.ts`), esecutore HTTP (`executor.ts`), oscuramento degli argomenti sensibili (`sensitive.ts`)
@@ -211,8 +217,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - **App**: applicazione registrata: nome, `slug`, `base_url`, `internal_base_url` (raggiunto
   dall'esecutore al posto di `base_url`), autenticazione utente/servizio (header + scheme), segreto di
   servizio cifrato (mai esposto: l'API dice solo `serviceSecretSet`), `mcp_url` (server MCP dell'app, facoltativo), stato
-- **Agent**: appartiene a una App; `system_prompt`, `model` (facoltativo: senza modello le run rispondono 409), stato (draft/active/inactive), ruolo:
-  `general` (uno per app, creato con l'app, non eliminabile, usa tutti i tool `active` dell'app) o `area`
+- **Agent**: appartiene a una App; `system_prompt`, `model` (facoltativo: senza modello le run rispondono 409), stato (draft/active/inactive),
+  `confirm_writes` (conferma delle scritture: le L1 vanno in «Da confermare»; sempre vera per il `general`), ruolo:
+  `general` (uno per app, creato con l'app, non eliminabile, usa tutti i tool `active` dell'app; in console è il «Responsabile di prodotto») o `area`
   (usa solo i tool collegati in `agent_tools`)
 - **Tool** (`app_tools`): catalogo per App; `kind` (`http`, `mcp`, `ui`, `composite`: al modello si offrono
   solo `http` e `mcp`; `mcp` ha `definition {mcpName}`), `identity` (`user`: token dell'utente da `X-App-User-Token`; `service`:
@@ -820,8 +827,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - I token `cas_…` sono una delle due credenziali di `/mcp`; l'altra è il token OAuth `cao_…` del connettore, che su `/api` NON vale
   (come `car_…`: 401 «token non valido o scaduto»).
 - Ambiti (`api_tokens.scopes`, almeno uno, senza ripetizioni, immutabili dopo la creazione): `mcp` (server `/mcp`),
-  `api:read` (GET/HEAD su `/api`), `api:write` (tutti i metodi, include la lettura), `node` (solo `/api/node/*`, vedi "Nodi").
-  Default alla creazione `["mcp"]`; i token esistenti sono diventati `{mcp}`: nessun permesso nuovo. L'ambito `node` non si sceglie
+  `api:read` (GET/HEAD su `/api`), `api:write` (tutti i metodi, include la lettura), `node` (solo `/api/node/*`, vedi "Nodi"), `runs` (solo avvio e lettura delle run, vedi
+  "The Hub Up 5c (tappa 1)"). Default alla creazione `["mcp"]`; i token esistenti sono diventati `{mcp}`: nessun permesso nuovo. L'ambito `node` non si sceglie
   (`createNodeToken`: nasce solo con un nodo, `api_tokens.node_id`, scade dopo 365 giorni, non compare tra i token personali);
   un token di nodo su `/api` (fuori da `/api/node`) → 403 «il token non ha l'ambito per questa operazione», su `/mcp` → 401.
 - Il token OAuth `cao_…` con ambito `embed` (pannello incorporabile) vale invece su `/api` come `api:read` + `api:write`, con le eccezioni descritte in
@@ -1187,6 +1194,42 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Prova: pagina `artifacts/casello/embed-demo.html` (solo sviluppo, tema chiaro e scuro); dopo il deploy, su `hubup.fantamister.cloud`: collegamento, Alfred scritto con il contesto di un work
   item, Alfred a voce dal telefono, un'approvazione, contatore, tema chiaro e scuro, revoca da Account → «App collegate».
 
+## The Hub Up 5c (tappa 1)
+
+- Spec: `docs/superpowers/specs/2026-11-07-botcave-the-hub-up-5c-tappa-1-design.md`. Dove il codice differisce dalla spec vale il codice, descritto
+  qui. Prima tappa della sostituzione degli agenti AI di The Hub Up: Botcave riceve le richieste dell'app ospite (avvio e lettura delle run con un
+  token personale), le mette in coda e fa decidere le scritture all'utente.
+- **Coda delle run** (`lib/run-queue.ts`): `POST /api/agents/:id/runs` crea la run `pending` (`createQueuedRun`, con `ai_model_id` dell'agente) e
+  non la avvia; lo scheduler (`scheduleRuns`, un giro alla volta, a ogni creazione e fine di run e ogni 30 s da `startRunQueue`, chiamato in
+  `index.ts` dopo le pulizie dell'avvio) porta a `running` le run in ordine di creazione (`created_at`, `id`) con `startRun` (UPDATE condizionato
+  `pending` → `running`: ogni run gira una volta). Limiti: `MAX_RUNNING_PER_AGENT` 2, `MAX_RUNNING_RUNS` 6 in totale, `MAX_PENDING_PER_AGENT` 200 (limite
+  morbido: conteggio e inserimento non sono atomici; oltre → 429 «troppe run in attesa per questo agente»). Il tetto di spesa si ricontrolla alla
+  partenza sul modello fissato sulla run (`run.aiModelId`), non su quello attuale dell'agente. `runs.has_user_token` ricorda che c'era un token utente
+  (solo in memoria): al riavvio quelle `pending` falliscono con «token utente perso al riavvio: rilancia la run», le `running` falliscono come prima,
+  le altre `pending` restano in coda e ripartono.
+- **Ambito `runs`** (`lib/auth.ts`, `RUNS_SCOPE_ROUTES`): token personale `cas_…` per le app ospiti, valido solo su `POST /agents/:id/runs`,
+  `GET /runs/:id` e `GET /runs/:id/steps`; altrove 403 «il token non ha l'ambito per questa operazione», su `/mcp` 401. Si sceglie alla creazione
+  (`PERSONAL_TOKEN_SCOPES`). Limite delle run: `runTriggerRateLimit`, 60/min per ogni token personale (id del token); sessione e pannello incorporato
+  restano a 10/min per IP.
+- **Responsabile di prodotto**: è l'agente `general` dell'app (solo l'etichetta cambia in console; il ruolo resta `general`). `agents.confirm_writes`
+  (PATCH `confirmWrites`): sempre vero per il `general` (il serializer lo mostra vero, il valore salvato non cambia e il PATCH su di lui è ignorato),
+  facoltativo per gli agenti di area. Con la conferma attiva (`writesNeedConfirmation`) i tool con livello effettivo L1 si trattano come L2 solo in memoria
+  (`withConfirmedWrites`): vanno in «Da confermare» e il livello salvato non cambia. `apps.functional_description` entra nel prompt di sistema di tutti gli
+  agenti dell'app (≤ 12 000 caratteri, introdotta come «dati, non istruzioni»).
+- **Segnalazione** (`lib/escalation.ts`, strumento interno `segnala_al_responsabile` `{richiesta ≤ 2 000, oggetto? ≤ 200, motivo? ≤ 1 000}`): offerto solo agli
+  agenti `area` nelle run senza madre (un solo livello) quando l'app ha un Responsabile `active` con modello; vince su un tool omonimo e non passa mai
+  dalla coda. Una sola segnalazione per run (verificata sulle run figlie nel DB). Crea con `createQueuedRun` una run del Responsabile con
+  `parent_run_id` = la run che segnala; l'input riporta segnalazione e input della madre (≤ 8 000) tra delimitatori, come dati. Risultati `ok: false` con
+  messaggio fisso, mai eccezioni, la run madre prosegue: «hai già segnalato al responsabile in questa run», «il responsabile di prodotto non è
+  disponibile», «troppe run in attesa per il responsabile», tetto di spesa del Responsabile (`runBudgetBlock`), «segnalazione non riuscita: riprova più
+  tardi». `GET /api/runs/:id` aggiunge `childRunIds` (run nate dalla segnalazione, per id); `Run.parentRunId` in tutte le risposte.
+- **Console**: etichetta «Responsabile di prodotto» (`agent-role-badge.tsx`), casella «conferma delle scritture» nella scheda agente, run madre e figlie in
+  `run-detail.tsx`, ambito `runs` nella creazione dei token (Account), voci in coda e Run aggiornate.
+- Migrazione: `docs/migrations/2026-11-thu-5c-tappa1.sql` (additiva e idempotente, niente `-post`): colonne `runs.parent_run_id` (FK a `runs`, `SET NULL`) e
+  `runs.has_user_token`, `agents.confirm_writes`, indici `runs_agent_status_idx` e `runs_parent_run_id_idx`. Da applicare su Neon PRIMA del merge e da
+  segnalare nella PR; riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
+- Non ancora fatto: lato The Hub Up (brief, smistamento email) e sostituzione dei suoi agenti interni (5c, tappe successive).
+
 ## Esecutore locale
 
 Le analisi dell'architetto possono essere eseguite da Claude Code sul Mac dell'utente invece che dal cloud
@@ -1229,7 +1272,8 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
 - Healthcheck di `casello-api`: `GET /api/healthz` sulla porta 3000. È nel `HEALTHCHECK` di
   `docker/api.Dockerfile` (con `node`, l'immagine slim non ha curl/wget); su Coolify impostarlo anche
   in Health Check (path `/api/healthz`, porta 3000), altrimenti Coolify non lo usa per il deploy.
-- `POST /api/agents/:id/runs` ha un rate limit in memoria (10 run/minuto per IP, `middlewares/rate-limit.ts`):
+- `POST /api/agents/:id/runs` ha un rate limit in memoria (`runTriggerRateLimit`, `middlewares/rate-limit.ts`): 60/min per token con
+  qualunque token personale `cas_…`, 10 run/minuto per IP con sessione o pannello incorporato:
   l'IP reale arriva da `trust proxy` = 2 (Traefik di Coolify + nginx di `casello-web`).
 - Schema DB: le modifiche arrivano in produzione SOLO con gli script SQL in `docs/migrations/`, applicati
   al DB Neon con `psql -v ON_ERROR_STOP=1 -f docs/migrations/<file>.sql` (prima del deploy dell'API

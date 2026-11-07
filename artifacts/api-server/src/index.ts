@@ -8,6 +8,7 @@ import { ensureEmbedClients } from "./lib/embed/clients";
 import { closeAllActiveSessions, startAlfredSweeper } from "./lib/alfred/sessions";
 import { startMemorySweeper } from "./lib/memory/summaries";
 import { failInterruptedRuns } from "./lib/run-executor";
+import { startRunQueue } from "./lib/run-queue";
 import { failInterruptedTeamWork } from "./lib/teams/task-runner";
 import { pumpTurnInBackground, resumeQueuedTurns } from "./lib/teams/turn-runner";
 import { setOnTurnQueued } from "./lib/teams/turn-queue";
@@ -38,14 +39,18 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-// Una sola istanza dell'API: le run ancora aperte all'avvio sono state interrotte dal riavvio.
-// Le run rimaste in pausa per conferma (meccanismo sostituito dalla coda delle azioni) diventano annullate.
+// Una sola istanza dell'API: le run in corso all'avvio sono state interrotte dal riavvio; quelle in attesa
+// restano in coda, tranne quelle partite con un token utente (solo in memoria, perso). Le run rimaste in
+// pausa per conferma (meccanismo sostituito dalla coda delle azioni) diventano annullate. Poi parte lo
+// scheduler della coda delle run (subito e ogni 30 s di riserva).
 failInterruptedRuns()
-  .then(({ failed, cancelled }) => {
+  .then(({ failed, cancelled, userTokenLost }) => {
     if (failed > 0) logger.warn({ count: failed }, "Run interrotte dal riavvio chiuse come fallite");
+    if (userTokenLost > 0) logger.warn({ count: userTokenLost }, "Run in coda con token utente perso al riavvio chiuse come fallite");
     if (cancelled > 0) logger.info({ count: cancelled }, "Run in pausa per conferma annullate: sostituite dalla coda delle azioni");
   })
-  .catch((err: unknown) => logger.error({ err }, "Chiusura delle run interrotte non riuscita"));
+  .catch((err: unknown) => logger.error({ err }, "Chiusura delle run interrotte non riuscita"))
+  .finally(() => startRunQueue());
 
 // Ogni motivo accodato fa partire il turno del capo della squadra (se nessun turno è in corso).
 setOnTurnQueued(pumpTurnInBackground);

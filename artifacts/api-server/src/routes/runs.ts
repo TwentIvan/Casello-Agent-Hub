@@ -38,7 +38,7 @@ router.get("/runs", async (req, res) => {
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(runsTable.id))
     .limit(limit);
-  res.json(ListRunsResponse.parse(runs.map(toPublicRun)));
+  res.json(ListRunsResponse.parse(runs.map((run) => toPublicRun(run))));
 });
 
 router.get("/runs/:id", async (req, res) => {
@@ -48,7 +48,12 @@ router.get("/runs/:id", async (req, res) => {
     res.status(404).json({ error: "Esecuzione non trovata" });
     return;
   }
-  res.json(GetRunResponse.parse(toPublicRun(run)));
+  const children = await db
+    .select({ id: runsTable.id })
+    .from(runsTable)
+    .where(eq(runsTable.parentRunId, id))
+    .orderBy(asc(runsTable.id));
+  res.json(GetRunResponse.parse(toPublicRun(run, children.map((c) => c.id))));
 });
 
 router.get("/runs/:id/steps", async (req, res) => {

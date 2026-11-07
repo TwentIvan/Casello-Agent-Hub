@@ -50,7 +50,7 @@ export const GetCurrentUserResponse = zod.object({
   "kind": zod.enum(['session'])
 }),zod.object({
   "kind": zod.enum(['token']),
-  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api'))
+  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write', 'runs']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api; runs = solo avvio e lettura delle run (POST \/agents\/{id}\/runs, GET \/runs\/{id} e \/runs\/{id}\/steps)'))
 })]).describe('Come è autenticata la richiesta (sessione del login o token personale)')
 })
 
@@ -89,7 +89,7 @@ export const ListApiTokensResponseItem = zod.object({
   "expiresAt": zod.coerce.date(),
   "lastUsedAt": zod.coerce.date().nullable(),
   "revokedAt": zod.coerce.date().nullable(),
-  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api'))
+  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write', 'runs']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api; runs = solo avvio e lettura delle run (POST \/agents\/{id}\/runs, GET \/runs\/{id} e \/runs\/{id}\/steps)'))
 })
 export const ListApiTokensResponse = zod.array(ListApiTokensResponseItem)
 
@@ -107,7 +107,7 @@ export const createApiTokenBodyExpiresInDaysMax = 90;
 export const CreateApiTokenBody = zod.object({
   "name": zod.string().min(1).max(createApiTokenBodyNameMax),
   "expiresInDays": zod.number().min(1).max(createApiTokenBodyExpiresInDaysMax),
-  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api')).optional().describe('Almeno uno, senza ripetizioni; se omesso vale solo mcp')
+  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write', 'runs']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api; runs = solo avvio e lettura delle run (POST \/agents\/{id}\/runs, GET \/runs\/{id} e \/runs\/{id}\/steps)')).optional().describe('Almeno uno, senza ripetizioni; se omesso vale solo mcp')
 })
 
 export const CreateApiTokenResponse = zod.object({
@@ -119,7 +119,7 @@ export const CreateApiTokenResponse = zod.object({
   "expiresAt": zod.coerce.date(),
   "lastUsedAt": zod.coerce.date().nullable(),
   "revokedAt": zod.coerce.date().nullable(),
-  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api'))
+  "scopes": zod.array(zod.enum(['mcp', 'api:read', 'api:write', 'runs']).describe('mcp = server MCP; api:read = solo lettura su \/api; api:write = lettura e scrittura su \/api; runs = solo avvio e lettura delle run (POST \/agents\/{id}\/runs, GET \/runs\/{id} e \/runs\/{id}\/steps)'))
 })
 })
 
@@ -948,6 +948,7 @@ export const ListAgentsResponseItem = zod.object({
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
+  "confirmWrites": zod.boolean().describe('Tutte le scritture (livello L1) vanno in \"Da confermare\". Per l\'agente generale (Responsabile di prodotto) è sempre true'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -981,6 +982,7 @@ export const CreateAgentResponse = zod.object({
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
+  "confirmWrites": zod.boolean().describe('Tutte le scritture (livello L1) vanno in \"Da confermare\". Per l\'agente generale (Responsabile di prodotto) è sempre true'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -1006,6 +1008,7 @@ export const GetAgentResponse = zod.object({
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
+  "confirmWrites": zod.boolean().describe('Tutte le scritture (livello L1) vanno in \"Da confermare\". Per l\'agente generale (Responsabile di prodotto) è sempre true'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -1031,7 +1034,8 @@ export const UpdateAgentBody = zod.object({
   "status": zod.enum(['active', 'inactive', 'draft']).optional(),
   "area": zod.string().nullish(),
   "defaultIdentity": zod.enum(['user', 'service']).optional(),
-  "monthlyBudgetUsd": zod.number().min(updateAgentBodyMonthlyBudgetUsdMin).max(updateAgentBodyMonthlyBudgetUsdMax).nullish().describe('Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite')
+  "monthlyBudgetUsd": zod.number().min(updateAgentBodyMonthlyBudgetUsdMin).max(updateAgentBodyMonthlyBudgetUsdMax).nullish().describe('Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite'),
+  "confirmWrites": zod.boolean().optional().describe('Tutte le scritture in \"Da confermare\"; per l\'agente generale si ignora (sempre true)')
 })
 
 export const UpdateAgentResponse = zod.object({
@@ -1047,6 +1051,7 @@ export const UpdateAgentResponse = zod.object({
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
+  "confirmWrites": zod.boolean().describe('Tutte le scritture (livello L1) vanno in \"Da confermare\". Per l\'agente generale (Responsabile di prodotto) è sempre true'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -1256,6 +1261,7 @@ export const SetAppAgentModelsResponseItem = zod.object({
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
+  "confirmWrites": zod.boolean().describe('Tutte le scritture (livello L1) vanno in \"Da confermare\". Per l\'agente generale (Responsabile di prodotto) è sempre true'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -1287,6 +1293,7 @@ export const SetAgentToolsResponse = zod.object({
   "defaultIdentity": zod.enum(['user', 'service']),
   "toolIds": zod.array(zod.number()).describe('ID dei tool del catalogo assegnati all\'agente'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto di spesa mensile in USD delle run dell\'agente; null = nessun limite'),
+  "confirmWrites": zod.boolean().describe('Tutte le scritture (livello L1) vanno in \"Da confermare\". Per l\'agente generale (Responsabile di prodotto) è sempre true'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -1321,13 +1328,15 @@ export const ListRunsResponseItem = zod.object({
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
-  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)'),
+  "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
+  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})')
 })
 export const ListRunsResponse = zod.array(ListRunsResponseItem)
 
 
 /**
- * Crea la run e la avvia in background: risponde subito con la run in stato pending. Lo stato (running, poi succeeded o failed) si segue con GET /runs/{id}.
+ * Crea la run in stato pending e la mette in coda: risponde subito. La avvia lo scheduler quando c'è posto (al massimo 2 run in corso per agente e 6 in tutto, in ordine di creazione); i tetti di spesa si ricontrollano alla partenza. Lo stato (running, poi succeeded o failed) si segue con GET /runs/{id}.
  * @summary Avvia un'esecuzione dell'agente
  */
 export const TriggerRunParams = zod.object({
@@ -1355,7 +1364,9 @@ export const TriggerRunResponse = zod.object({
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
-  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)'),
+  "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
+  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})')
 })
 
 
@@ -1379,7 +1390,9 @@ export const GetRunResponse = zod.object({
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
-  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)'),
+  "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
+  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})')
 })
 
 
@@ -1427,7 +1440,9 @@ export const CancelRunResponse = zod.object({
   "promptTokens": zod.number().nullish(),
   "completionTokens": zod.number().nullish(),
   "cachedTokens": zod.number().describe('Quanti dei token di prompt il provider ha letto dalla cache (0 se non lo riporta)'),
-  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)')
+  "costUsd": zod.number().nullish().describe('Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)'),
+  "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
+  "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})')
 })
 
 

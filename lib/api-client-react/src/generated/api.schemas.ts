@@ -82,7 +82,7 @@ export const CurrentUserTokenAuthKind = {
 } as const;
 
 /**
- * mcp = server MCP; api:read = solo lettura su /api; api:write = lettura e scrittura su /api
+ * mcp = server MCP; api:read = solo lettura su /api; api:write = lettura e scrittura su /api; runs = solo avvio e lettura delle run (POST /agents/{id}/runs, GET /runs/{id} e /runs/{id}/steps)
  */
 export type ApiTokenScope = typeof ApiTokenScope[keyof typeof ApiTokenScope];
 
@@ -91,6 +91,7 @@ export const ApiTokenScope = {
   mcp: 'mcp',
   'api:read': 'api:read',
   'api:write': 'api:write',
+  runs: 'runs',
 } as const;
 
 export interface CurrentUserTokenAuth {
@@ -433,6 +434,8 @@ export interface Agent {
      * @nullable
      */
   monthlyBudgetUsd: number | null;
+  /** Tutte le scritture (livello L1) vanno in "Da confermare". Per l'agente generale (Responsabile di prodotto) è sempre true */
+  confirmWrites: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -471,6 +474,8 @@ export interface AgentUpdate {
      * @nullable
      */
   monthlyBudgetUsd?: number | null;
+  /** Tutte le scritture in "Da confermare"; per l'agente generale si ignora (sempre true) */
+  confirmWrites?: boolean;
 }
 
 export type AgentModelAssignmentsAssignmentsItem = {
@@ -659,6 +664,13 @@ export interface Run {
      * @nullable
      */
   costUsd?: number | null;
+  /**
+     * Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run
+     * @nullable
+     */
+  parentRunId?: number | null;
+  /** Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET /runs/{id}) */
+  childRunIds?: number[];
 }
 
 /**

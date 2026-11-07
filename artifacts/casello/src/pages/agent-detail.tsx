@@ -22,6 +22,7 @@ import {
 import { CharacterButton } from "@/components/characters/character-button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,7 @@ const agentSchema = z.object({
   status: z.enum(["active", "inactive", "draft"]),
   area: z.string(),
   defaultIdentity: z.enum(["user", "service"]),
+  confirmWrites: z.boolean(),
 });
 
 type AgentValues = z.infer<typeof agentSchema>;
@@ -60,6 +62,7 @@ function toValues(agent: Agent): AgentValues {
     status: agent.status,
     area: agent.area ?? "",
     defaultIdentity: agent.defaultIdentity,
+    confirmWrites: agent.confirmWrites,
   };
 }
 
@@ -98,7 +101,7 @@ function AgentConfigForm({ agent, dirtyRef }: { agent: Agent; dirtyRef: MutableR
   }, [agent.systemPrompt]);
 
   const isGeneral = agent.role === "general";
-  const onSubmit = ({ area, aiModelId, ...values }: AgentValues) =>
+  const onSubmit = ({ area, aiModelId, confirmWrites, ...values }: AgentValues) =>
     updateAgent.mutate({
       id: agent.id,
       data: {
@@ -108,6 +111,8 @@ function AgentConfigForm({ agent, dirtyRef }: { agent: Agent; dirtyRef: MutableR
         systemPrompt: values.systemPrompt.trim() ? values.systemPrompt : null,
         // L'area è solo degli agenti di area: il generale non la manda.
         ...(isGeneral ? {} : { area: area.trim() ? area.trim() : null }),
+        // Per il Responsabile (ruolo generale) la conferma delle scritture è sempre attiva: non si manda.
+        ...(isGeneral ? {} : { confirmWrites }),
       },
     });
 
@@ -250,6 +255,29 @@ function AgentConfigForm({ agent, dirtyRef }: { agent: Agent; dirtyRef: MutableR
                 )}
               />
             </div>
+            <FormField
+              control={form.control}
+              name="confirmWrites"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start gap-3 space-y-0">
+                  <FormControl>
+                    <Checkbox
+                      checked={isGeneral ? true : field.value}
+                      disabled={isGeneral}
+                      onCheckedChange={(v) => field.onChange(v === true)}
+                    />
+                  </FormControl>
+                  <div className="space-y-1">
+                    <FormLabel className="font-normal">Tutte le scritture in «Da confermare»</FormLabel>
+                    <FormDescription>
+                      {isGeneral
+                        ? "Sempre attiva per il Responsabile di prodotto: ogni scrittura sull'app passa dalla coda."
+                        : "Anche le scritture a basso rischio (L1) passano dalla coda invece di essere eseguite subito."}
+                    </FormDescription>
+                  </div>
+                </FormItem>
+              )}
+            />
             <div className="flex justify-end gap-2">
               <Button
                 type="button"

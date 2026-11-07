@@ -35,9 +35,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /** Run come esce dall'API: costo come numero. Le colonne storiche della pausa non sono più nello schema. */
-export function toPublicRun(run: Run) {
+/** Run per l'API; `childRunIds` (run nate da una segnalazione al Responsabile) solo nel dettaglio. */
+export function toPublicRun(run: Run, childRunIds?: number[]) {
   const { costUsd, ...rest } = run;
-  return { ...rest, costUsd: toNumberOrNull(costUsd) };
+  return { ...rest, costUsd: toNumberOrNull(costUsd), ...(childRunIds ? { childRunIds } : {}) };
 }
 
 /**
@@ -78,6 +79,7 @@ export async function withToolIds(agents: Agent[]) {
   return agents.map((a) => ({
     ...a,
     monthlyBudgetUsd: toNumberOrNull(a.monthlyBudgetUsd),
+    confirmWrites: a.role === "general" || a.confirmWrites,
     toolIds: ids.get(a.id) ?? [],
   }));
 }

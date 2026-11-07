@@ -98,6 +98,7 @@ const existingAgent = (over: Partial<Agent & { toolNames: string[] }> = {}) => (
   area: "Squadre",
   defaultIdentity: "user" as const,
   monthlyBudgetUsd: null,
+  confirmWrites: false,
   createdAt: new Date(),
   updatedAt: new Date(),
   toolNames: ["b", "a"],

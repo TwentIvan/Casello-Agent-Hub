@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, numeric, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, numeric, index, boolean, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { agentsTable } from "./agents";
@@ -35,6 +35,10 @@ export const runsTable = pgTable(
     cachedTokens: integer("cached_tokens").notNull().default(0),
     // Costo in USD, null se un prezzo del modello manca
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
+    // Run madre (segnalazione al Responsabile di prodotto): null se la run non nasce da un'altra
+    parentRunId: integer("parent_run_id").references((): AnyPgColumn => runsTable.id, { onDelete: "set null" }),
+    // La run è partita con un token utente tenuto solo in memoria (si perde al riavvio)
+    hasUserToken: boolean("has_user_token").notNull().default(false),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     finishedAt: timestamp("finished_at"),
   },
@@ -42,6 +46,9 @@ export const runsTable = pgTable(
     // Somme del mese per i tetti di spesa
     index("runs_ai_model_created_idx").on(table.aiModelId, table.createdAt),
     index("runs_agent_created_idx").on(table.agentId, table.createdAt),
+    // Scheduler: conteggio delle run per agente e stato
+    index("runs_agent_status_idx").on(table.agentId, table.status),
+    index("runs_parent_run_id_idx").on(table.parentRunId),
   ],
 );
 

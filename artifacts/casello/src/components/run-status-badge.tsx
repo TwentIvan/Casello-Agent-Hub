@@ -2,7 +2,7 @@ import type { RunStatus } from "@workspace/api-client-react";
 import { Led, type LedState } from "@/components/brand/led";
 
 export const RUN_STATUS_LABELS: Record<RunStatus, string> = {
-  pending: "In attesa",
+  pending: "In coda",
   running: "In corso",
   succeeded: "Riuscita",
   failed: "Fallita",

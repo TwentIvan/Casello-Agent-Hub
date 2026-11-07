@@ -1336,11 +1336,12 @@ paths:
             schema:
               $ref: "#/components/schemas/RunTrigger"
       description: >-
-        Crea la run e la avvia in background: risponde subito con la run in stato pending.
-        Lo stato (running, poi succeeded o failed) si segue con GET /runs/{id}.
+        Crea la run in stato pending e la mette in coda: risponde subito. La avvia lo scheduler quando c'è
+        posto (al massimo 2 run in corso per agente e 6 in tutto, in ordine di creazione); i tetti di spesa
+        si ricontrollano alla partenza. Lo stato (running, poi succeeded o failed) si segue con GET /runs/{id}.
       responses:
         "202":
-          description: Esecuzione avviata (stato pending)
+          description: Run in coda (stato pending)
           content:
             application/json:
               schema:
@@ -1351,6 +1352,13 @@ paths:
           description: >-
             Agente senza modello ("scegli un modello per l'agente") o tetto di spesa mensile raggiunto
             (dell'agente o dell'utente che paga il modello): la run non viene creata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: >-
+            Troppe run in attesa per questo agente (al massimo 200): la run non viene creata
           content:
             application/json:
               schema:
@@ -4689,7 +4697,7 @@ components:
 
     Agent:
       type: object
-      required: [id, appId, name, aiModelId, status, role, defaultIdentity, toolIds, monthlyBudgetUsd, createdAt, updatedAt]
+      required: [id, appId, name, aiModelId, status, role, defaultIdentity, toolIds, monthlyBudgetUsd, confirmWrites, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -4725,6 +4733,10 @@ components:
         monthlyBudgetUsd:
           type: ["number", "null"]
           description: Tetto di spesa mensile in USD delle run dell'agente; null = nessun limite
+        confirmWrites:
+          type: boolean
+          description: >-
+            Tutte le scritture (livello L1) vanno in "Da confermare". Per l'agente generale (Responsabile di prodotto) è sempre true
         createdAt:
           type: string
           format: date-time
@@ -4774,6 +4786,9 @@ components:
           minimum: 0
           maximum: 1000000
           description: Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite
+        confirmWrites:
+          type: boolean
+          description: Tutte le scritture in "Da confermare"; per l'agente generale si ignora (sempre true)
 
     AgentModelAssignments:
       type: object
@@ -5009,6 +5024,16 @@ components:
         costUsd:
           type: ["number", "null"]
           description: Costo in USD; null se un prezzo manca o la run usa il vecchio gateway (costo parziale)
+        parentRunId:
+          type: ["integer", "null"]
+          description: Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run
+        childRunIds:
+          type: array
+          items:
+            type: integer
+          description: >-
+            Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel
+            dettaglio, GET /runs/{id})
 
     RunStep:
       type: object
@@ -6660,8 +6685,8 @@ components:
 
     ApiTokenScope:
       type: string
-      enum: [mcp, api:read, api:write]
-      description: mcp = server MCP; api:read = solo lettura su /api; api:write = lettura e scrittura su /api
+      enum: [mcp, api:read, api:write, runs]
+      description: "mcp = server MCP; api:read = solo lettura su /api; api:write = lettura e scrittura su /api; runs = solo avvio e lettura delle run (POST /agents/{id}/runs, GET /runs/{id} e /runs/{id}/steps)"
 
     ApiTokenCreate:
       type: object

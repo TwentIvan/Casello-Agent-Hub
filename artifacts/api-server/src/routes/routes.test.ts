@@ -21,7 +21,8 @@ let fakeAppBase: string;
 let llmBase: string;
 let llmReplies: unknown[];
 let appRequests: { method: string; url: string; auth: string | undefined }[];
-let startRun: (runId: number, opts?: { userToken?: string }) => Promise<void>;
+let startRun: (runId: number) => Promise<void>;
+let setUserToken: (runId: number, token: string) => void;
 
 const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY"] as const;
 const saved: Record<string, string | undefined> = {};
@@ -114,6 +115,7 @@ async function generalAgentOf(appId: number) {
   return (res.json as { id: number; role: string }[]).find((a) => a.role === "general")!;
 }
 
+let stopQueue: () => void;
 beforeAll(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   process.env["AUTH_DISABLED"] = "true";
@@ -139,11 +141,15 @@ beforeAll(async () => {
 
   const { default: app } = await import("../app");
   ({ startRun } = await import("../lib/run-executor"));
+  ({ setUserToken } = await import("../lib/user-tokens"));
+  // Lo scheduler delle run gira come in produzione (index.ts lo avvia con startRunQueue).
+  stopQueue = (await import("../lib/run-queue")).startRunQueue();
   server = http.createServer(app);
   base = `http://127.0.0.1:${await listen(server)}`;
 });
 
 afterAll(async () => {
+  stopQueue();
   await close(server);
   await close(llm);
   await close(fakeApp);
@@ -580,7 +586,8 @@ describe("run", () => {
     const general = await runnableAgent(app.id);
     const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "Elimina 42" }).returning();
     llmReplies = [toolCallReply("delete_item", { id: "42", ...QUEUE_FIELDS }), textReply("In coda.")];
-    await startRun(run!.id, { userToken: USER_TOKEN });
+    setUserToken(run!.id, USER_TOKEN);
+    await startRun(run!.id);
     expect((await getRun(run!.id)).status).toBe("succeeded");
     return run!.id;
   }
@@ -597,7 +604,7 @@ describe("run", () => {
 
   it("trigger: legge X-App-User-Token, 202 pending; il token arriva all'app e non è salvato", async () => {
     const app = await createApp();
-    await api("POST", `/apps/${app.id}/tools`, { ...HTTP_TOOL, level: "L1" });
+    await api("POST", `/apps/${app.id}/tools`, { ...HTTP_TOOL, level: "L0" });
     const general = await runnableAgent(app.id);
     llmReplies = [toolCallReply("delete_item", { id: "7" }), textReply("ok")];
     const res = await api("POST", `/agents/${general.id}/runs`, { input: "Elimina 7" }, { "X-App-User-Token": ` ${USER_TOKEN} ` });
@@ -609,6 +616,21 @@ describe("run", () => {
     const dump = await pool.query("select (select json_agg(r)::text from runs r) as runs, (select json_agg(s)::text from run_steps s) as steps");
     expect(dump.rows[0].runs).not.toContain(USER_TOKEN);
     expect(dump.rows[0].steps ?? "").not.toContain(USER_TOKEN);
+  });
+
+  it("trigger con 200 run in attesa dell'agente → 429 «troppe run in attesa per questo agente», nessuna run creata", async () => {
+    const app = await createApp();
+    const general = await runnableAgent(app.id);
+    await pool.query(
+      `insert into runs (agent_id, ai_model_id, status, input) select $1, $2, 'pending', 'x' from generate_series(1, 200)`,
+      [general.id, modelId],
+    );
+    const res = await api("POST", `/agents/${general.id}/runs`, { input: "Una di troppo" });
+    // Le run in attesa non devono partire dopo il test
+    await pool.query(`update runs set status = 'cancelled' where status = 'pending'`);
+    expect(res.status).toBe(429);
+    expect(res.json).toEqual({ error: "troppe run in attesa per questo agente" });
+    expect((await db.select().from(runsTable)).length).toBe(200);
   });
 
   it("GET della run: niente azione in sospeso né stato del ciclo", async () => {
@@ -656,7 +678,8 @@ describe("run", () => {
     const general = await runnableAgent(app.id);
     const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "x" }).returning();
     llmReplies = [rawToolCallReply("delete_item", "{non json"), textReply("Non riesco.")];
-    await startRun(run!.id, { userToken: USER_TOKEN });
+    setUserToken(run!.id, USER_TOKEN);
+    await startRun(run!.id);
 
     const res = await api("GET", `/runs/${run!.id}/steps`);
     expect(res.status).toBe(200);
@@ -693,7 +716,8 @@ describe("run", () => {
     const general = await runnableAgent(app.id);
     const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "x" }).returning();
     llmReplies = [toolCallReply("set_password", { id: "42", password: "segreta-123", ...QUEUE_FIELDS }), textReply("In coda.")];
-    await startRun(run!.id, { userToken: USER_TOKEN });
+    setUserToken(run!.id, USER_TOKEN);
+    await startRun(run!.id);
     expect((await getRun(run!.id)).status).toBe("succeeded");
 
     const res = await api("GET", `/runs/${run!.id}/steps`);

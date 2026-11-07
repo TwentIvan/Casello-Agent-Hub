@@ -1,9 +1,9 @@
 import type { Agent } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 
-/** Etichetta del ruolo: «Generale» oppure l'area dell'agente (se impostata). */
+/** Etichetta del ruolo: «Responsabile di prodotto» (ruolo generale) oppure l'area dell'agente (se impostata). */
 export function agentRoleLabel(agent: Pick<Agent, "role" | "area">): string {
-  if (agent.role === "general") return "Generale";
+  if (agent.role === "general") return "Responsabile di prodotto";
   return agent.area?.trim() || "Area";
 }
 

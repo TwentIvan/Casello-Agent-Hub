@@ -25,4 +25,11 @@ export const TRIGGER_MESSAGES = {
   instructionsTooLong: "istruzioni troppo lunghe: al massimo 2000 caratteri",
   argsTooLarge: "argomenti troppo grandi: al massimo 8 KB",
   invalidFilter: "filtro non valido",
+  // Webhook in entrata (spec §5.4): id sconosciuto e segreto sbagliato danno lo stesso messaggio.
+  hookNotFound: "non trovato",
+  bodyTooLarge: "corpo troppo grande: al massimo 256 KB",
+  unsupportedType: "tipo di contenuto non supportato",
+  invalidJson: "JSON non valido",
+  invalidBody: "corpo non valido",
+  hookFailed: "errore interno: riprova tra poco",
 } as const;

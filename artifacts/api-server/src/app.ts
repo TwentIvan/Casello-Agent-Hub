@@ -8,6 +8,8 @@ import { logger } from "./lib/logger";
 import { sessionMiddleware } from "./lib/auth";
 import { oauthErrorHandler, oauthRouter } from "./routes/oauth";
 import { mcpRouter } from "./lib/mcp/server";
+import { hooksRouter } from "./routes/hooks";
+import { redactHookPath } from "./lib/triggers/secrets";
 import { errorHandler } from "./middlewares/error-handler";
 
 const app: Express = express();
@@ -48,7 +50,8 @@ app.use(
         return {
           id: req.id,
           method: req.method,
-          url: req.url?.split("?")[0],
+          // Il percorso di un webhook contiene il segreto: diventa `/api/hooks/<id>/***`.
+          url: req.url === undefined ? undefined : redactHookPath(req.url.split("?")[0]!),
         };
       },
       res(res) {
@@ -63,6 +66,9 @@ app.use(
 // suo, fino a 2 MB per gli esiti di fase) e della sessione. Autenticazione solo con il token
 // personale (Bearer), niente cookie; nessuna origine CORS ammessa: non è chiamato dai browser.
 app.use("/mcp", mcpRouter());
+// Webhook in entrata degli inneschi: pubblici (il segreto è nel percorso), prima di CORS, dei parser globali e
+// della sessione; parser grezzo proprio da 256 KB. Non sono chiamati dai browser.
+app.use("/api/hooks", hooksRouter());
 app.use(cors(corsOptions));
 // Il caricamento di un allegato ha il suo parser grezzo (10 MB) sulla route: i parser globali lo saltano.
 // Il protocollo dei nodi ha un parser JSON da 256 KB al posto di quello globale (100 KB): un report con `detail` di
@@ -72,12 +78,15 @@ const nodeJsonParser = express.json({ limit: "256kb" });
 const NODE_PROTOCOL_PATH = /^\/api\/node(?:\/|$)/i;
 const formParser = express.urlencoded({ extended: true });
 const isAttachmentUpload = (req: express.Request): boolean => req.method === "POST" && ATTACHMENT_UPLOAD_PATH.test(req.originalUrl.split("?")[0]!);
+// I webhook hanno il loro parser: il corpo non passa mai dai parser globali, nemmeno su un percorso non gestito.
+const HOOKS_PATH = /^\/api\/hooks(?:\/|$)/i;
+const skipGlobalParsers = (req: express.Request): boolean => isAttachmentUpload(req) || HOOKS_PATH.test(req.originalUrl.split("?")[0]!);
 app.use((req, res, next) => {
-  if (isAttachmentUpload(req)) return next();
+  if (skipGlobalParsers(req)) return next();
   const parser = NODE_PROTOCOL_PATH.test(req.originalUrl.split("?")[0]!) ? nodeJsonParser : jsonParser;
   return parser(req, res, next);
 });
-app.use((req, res, next) => (isAttachmentUpload(req) ? next() : formParser(req, res, next)));
+app.use((req, res, next) => (skipGlobalParsers(req) ? next() : formParser(req, res, next)));
 app.use(sessionMiddleware());
 // Connettore OAuth (well-known e /oauth/*), alla radice: fuori da /api.
 app.use(oauthRouter());

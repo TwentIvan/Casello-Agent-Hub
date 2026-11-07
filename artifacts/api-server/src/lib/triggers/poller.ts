@@ -10,7 +10,7 @@ import {
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import { logger } from "../logger";
 import { runBudgetBlock } from "../budget";
-import { createQueuedRun, scheduleRuns } from "../run-queue";
+import { scheduleRuns } from "../run-queue";
 import { executeTool } from "../tools/executor";
 import { loadAppConnection, toCatalogTool } from "../tools/catalog";
 import type { CatalogTool, DbTransaction as Tx } from "../tools/types";
@@ -18,6 +18,7 @@ import { toolUsableByTrigger } from "./eligibility";
 import { compareCursor, extractItems, type ExtractedItem } from "./extract";
 import { buildTriggerInput } from "./input";
 import { TRIGGER_MESSAGES } from "./messages";
+import { isActive, lockActive, NotActive, QueueFull, queueTriggerRun } from "./queue-run";
 
 // Sorveglianza (spec §4.3): un giro chiama il tool dell'innesco, estrae gli elementi e crea una run per
 // ogni elemento nuovo. La chiave dell'elemento e la run stanno nella stessa transazione: una chiave vista
@@ -39,13 +40,6 @@ const MAX_SEEN_PER_TRIGGER = 10_000;
 const EMPTY_RESULT = "(risposta vuota)";
 
 export type PollOutcome = "skipped" | "baseline" | { created: number; more: boolean } | { error: string };
-
-/** Sentinella: coda delle run piena, annulla la transazione dell'elemento e ferma il giro. */
-class QueueFull extends Error {}
-/** Sentinella: innesco non più attivo (pausa o eliminazione a giro in corso), annulla e ferma il giro. */
-class NotActive extends Error {}
-
-const isActive = (id: number) => and(eq(agentTriggersTable.id, id), eq(agentTriggersTable.status, "active"));
 
 /** Errore del giro: conta, rimanda con backoff e dopo 10 di fila ferma l'innesco. */
 async function recordError(id: number, message: string, stop = false): Promise<PollOutcome> {
@@ -120,12 +114,6 @@ async function refreshSeen(id: number, keys: string[]): Promise<void> {
         sql`exists (select 1 from agent_triggers where id = ${id} and status = 'active')`,
       ),
     );
-}
-
-/** Blocca la riga dell'innesco se è ancora attivo; altrimenti la transazione si annulla. */
-async function lockActive(tx: Tx, id: number): Promise<void> {
-  const [row] = await tx.select({ id: agentTriggersTable.id }).from(agentTriggersTable).where(isActive(id)).for("update");
-  if (!row) throw new NotActive();
 }
 
 /** Un giro dell'innesco. Non lancia: gli errori diventano l'esito `{error}` sull'innesco. */
@@ -327,24 +315,13 @@ async function runPass(trigger: AgentTrigger, deps: { fetchImpl?: typeof fetch }
  */
 async function createRunForItem(tx: Tx, trigger: AgentTrigger, agent: Agent, item: ExtractedItem): Promise<boolean> {
   await lockActive(tx, trigger.id);
-  const inserted = await tx
-    .insert(triggerSeenItemsTable)
-    .values({ triggerId: trigger.id, itemKey: item.key })
-    .onConflictDoNothing()
-    .returning({ key: triggerSeenItemsTable.itemKey });
-  if (inserted.length === 0) return false;
-  const queued = await createQueuedRun({
+  const runId = await queueTriggerRun(tx, {
+    trigger,
     agent,
-    input: buildTriggerInput({ kind: "poll", name: trigger.name, instructions: trigger.instructions, content: item.value }),
-    triggerId: trigger.id,
-    tx,
+    key: item.key,
+    runInput: buildTriggerInput({ kind: "poll", name: trigger.name, instructions: trigger.instructions, content: item.value }),
   });
-  if (!queued.ok) throw new QueueFull();
-  await tx
-    .update(agentTriggersTable)
-    .set({ runsCreated: sql`${agentTriggersTable.runsCreated} + 1` })
-    .where(eq(agentTriggersTable.id, trigger.id));
-  return true;
+  return runId !== null;
 }
 
 /** Inneschi scaduti, fino a 20, eseguiti con al più 4 giri in parallelo. */

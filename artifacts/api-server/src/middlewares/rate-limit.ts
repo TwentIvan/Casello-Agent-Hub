@@ -180,3 +180,17 @@ const alfredToolCounter = fixedWindowCounter({ limit: 60, windowMs: 60_000 });
 export function consumeAlfredTool(userId: number): boolean {
   return alfredToolCounter.consume(`user:${userId}`).ok;
 }
+
+// Webhook in entrata degli inneschi (pubblici, prima di ogni parser): 60 al minuto per id d'innesco, con
+// `Retry-After: 60`. Un id non numerico non si conta (la richiesta finisce comunque in un 404).
+const webhookCounter = fixedWindowCounter({ limit: 60, windowMs: 60_000 });
+export const webhookRateLimit: RequestHandler = (req, res, next) => {
+  const id = String(req.params["triggerId"] ?? "");
+  if (!/^\d{1,15}$/.test(id)) return next();
+  if (!webhookCounter.consume(`hook:${Number(id)}`).ok) {
+    res.setHeader("Retry-After", 60);
+    res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
+    return;
+  }
+  next();
+};

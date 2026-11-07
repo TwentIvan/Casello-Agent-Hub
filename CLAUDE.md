@@ -36,6 +36,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   consegne tra i due, modello e tetto mensile per personaggio in Account → «Personaggi» (vedi "Alfred e Lucius nelle aree").
 - Botcave incorporabile: una riga `<script>` nell'app ospite (prima prova: The Hub Up) mostra pulsante e pannello laterale con Alfred, Da confermare,
   Bollettino e Lucius, in un iframe `/embed` con accesso OAuth «Collega con Botcave» (vedi "Botcave incorporabile (app ospiti)").
+- The Hub Up come App (5b): collegata con il token di servizio `thu_…` di The Hub Up (identità `service` su tutti i tool), descrizione
+  funzionale, analisi 24 rivista con 50 tool e un agente per ciascuna delle sue funzioni AI interne (ancora senza modello). Inventario
+  degli agenti di The Hub Up e proposta per 5c in `docs/superpowers/specs/2026-11-07-botcave-the-hub-up-5b-design.md`.
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.

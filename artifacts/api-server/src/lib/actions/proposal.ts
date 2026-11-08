@@ -88,7 +88,7 @@ export function parseProposalArgs(
     if (!Array.isArray(refs)) return { ok: false, message: M.badRef(key) };
     const before = new Set(steps.map((p) => p.key));
     if (refs.some((r) => !before.has(r.step))) return { ok: false, message: M.badRef(key) };
-    steps.push({ key, toolName: s.strumento, args: s.argomenti, summary });
+    steps.push({ key, toolName: s.strumento.trim(), args: s.argomenti, summary });
   }
   return { ok: true, value: { title, reason, steps } };
 }

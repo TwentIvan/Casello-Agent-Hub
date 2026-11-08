@@ -13,6 +13,7 @@ import {
 } from "@workspace/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { enqueueAction } from "./actions/queue";
+import { PROPOSE_TOOL_NAME, handlePropose, proposalEligible, proposeTool } from "./actions/propose";
 import {
   QUEUE_FAILED,
   runAgentLoop,
@@ -130,7 +131,10 @@ export async function cancelRun(runId: number): Promise<CancelRunResult> {
 interface RunContext {
   run: Run;
   agent: Agent;
+  app: App;
   tools: CatalogTool[];
+  /** Tool caricati dell'agente, prima di `withConfirmedWrites` e degli strumenti interni (per `proponi`). */
+  baseTools: CatalogTool[];
   conn: AppConnection;
 }
 
@@ -193,7 +197,11 @@ async function loadContext(run: Run): Promise<RunContext & { app: App }> {
   if (agent.role === "area" && run.parentRunId === null && (await productLead(app.id)) !== null) {
     tools = [...tools.filter((t) => t.name !== ESCALATION_TOOL_NAME), escalationTool()];
   }
-  return { run, agent, app, tools, conn };
+  // `proponi`: a ogni agente con almeno un tool utilizzabile in un passo; vince su un tool omonimo
+  if (loaded.some(proposalEligible)) {
+    tools = [...tools.filter((t) => t.name !== PROPOSE_TOOL_NAME), proposeTool()];
+  }
+  return { run, agent, app, tools, baseTools: loaded, conn };
 }
 
 async function nextPosition(runId: number): Promise<number> {
@@ -317,6 +325,16 @@ async function driveLoop(
 
   // Proprietario delle azioni accodate: chi possiede l'account AI del modello della run (chi configura paga)
   let owner: Promise<number | null> | null = null;
+  const ownerOf = async (): Promise<number | null> => {
+    owner ??= modelOwner(aiModelId);
+    try {
+      return await owner;
+    } catch (err) {
+      // Un errore transitorio non resta in memoria: il prossimo accodamento riprova la lettura
+      owner = null;
+      throw err;
+    }
+  };
   const queueAction = async (
     tool: CatalogTool,
     args: Record<string, unknown>,
@@ -324,15 +342,7 @@ async function driveLoop(
     summary: string,
   ): Promise<QueueActionResult> => {
     try {
-      owner ??= modelOwner(aiModelId);
-      let userId: number | null;
-      try {
-        userId = await owner;
-      } catch (err) {
-        // Un errore transitorio non resta in memoria: il prossimo accodamento riprova la lettura
-        owner = null;
-        throw err;
-      }
+      const userId = await ownerOf();
       if (userId === null) return { ok: false, message: QUEUE_FAILED };
       return await enqueueAction({
         userId,
@@ -354,8 +364,16 @@ async function driveLoop(
   const deps: LoopDeps = {
     chat,
     tools: ctx.tools,
-    executeTool: (tool, args) =>
-      isInternalTool(tool) ? handleEscalation(ctx.run, ctx.agent, args) : runTool(ctx, tool, args, abort),
+    executeTool: (tool, args) => {
+      if (!isInternalTool(tool)) return runTool(ctx, tool, args, abort);
+      if (tool.name === PROPOSE_TOOL_NAME) {
+        return handlePropose(
+          { run: ctx.run, agent: ctx.agent, app: ctx.app, tools: ctx.baseTools, owner: ownerOf },
+          args,
+        );
+      }
+      return handleEscalation(ctx.run, ctx.agent, args);
+    },
     queueAction,
     onStep: writeStep,
     limits,

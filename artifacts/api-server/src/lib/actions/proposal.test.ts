@@ -35,6 +35,11 @@ describe("parseProposalArgs", () => {
     });
   });
 
+  it("salva il nome dello strumento senza spazi", () => {
+    const r = parseProposalArgs({ titolo: "t", passi: [step("p1", {}, { strumento: "  crea_voce " })] });
+    expect(r.ok && r.value.steps[0]!.toolName).toBe("crea_voce");
+  });
+
   it("motivo vuoto o assente diventa null", () => {
     for (const motivo of [undefined, "   "]) {
       const r = parseProposalArgs({ titolo: "t", motivo, passi: [step("p1")] });

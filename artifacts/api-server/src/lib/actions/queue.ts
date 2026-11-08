@@ -1,9 +1,10 @@
-import { db, pendingActionsTable } from "@workspace/db";
+import { db, pendingActionStepsTable, pendingActionsTable } from "@workspace/db";
 import { and, count, eq, sql } from "drizzle-orm";
 import { isUniqueViolation } from "../pg-errors";
 import { encryptSecret } from "../secrets";
 import { maskArgsWithSchema } from "../tools/sensitive";
 import type { CatalogTool } from "../tools/types";
+import type { ProposalInput } from "./proposal";
 import { checkQueuedText } from "./text-check";
 
 // Coda delle azioni L2: una chiamata a uno strumento che richiede conferma non si esegue, diventa una
@@ -116,4 +117,51 @@ export async function enqueuePlanItem(input: EnqueuePlanInput, executor: QueueEx
     recipient: input.recipient,
     summary: input.summary,
   }, executor);
+}
+
+export interface EnqueueProposalInput {
+  userId: number;
+  appId: number;
+  agentId: number;
+  runId: number;
+  /** Nome dell'app. */
+  recipient: string;
+  proposal: ProposalInput;
+  /** Proposta con gli argomenti `x-sensitive` oscurati. */
+  publicProposal: Record<string, unknown>;
+  steps: { key: string; position: number; toolId: number; summary: string }[];
+}
+
+/**
+ * Accoda una proposta con più passi: voce `proposal` (stessa coda, limite e numerazione delle azioni) e una riga per
+ * passo, nella stessa transazione. Gli argomenti stanno solo in `args_enc`, cifrati.
+ */
+export async function enqueueProposal(input: EnqueueProposalInput): Promise<EnqueueResult> {
+  return db.transaction(async (tx) => {
+    const queued = await insertQueued(
+      input.userId,
+      {
+        kind: "proposal",
+        appId: input.appId,
+        toolId: null,
+        agentId: input.agentId,
+        runId: input.runId,
+        argsEnc: encryptSecret(JSON.stringify(input.proposal)),
+        argsPublic: input.publicProposal,
+        recipient: input.recipient,
+        summary: input.proposal.title,
+      },
+      tx,
+    );
+    if (!queued.ok) return queued;
+    const [row] = await tx
+      .select({ id: pendingActionsTable.id })
+      .from(pendingActionsTable)
+      .where(and(eq(pendingActionsTable.userId, input.userId), eq(pendingActionsTable.number, queued.number)))
+      .limit(1);
+    await tx.insert(pendingActionStepsTable).values(
+      input.steps.map((s) => ({ pendingActionId: row!.id, key: s.key, position: s.position, toolId: s.toolId, summary: s.summary })),
+    );
+    return queued;
+  });
 }

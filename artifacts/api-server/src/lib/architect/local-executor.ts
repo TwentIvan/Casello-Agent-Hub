@@ -195,6 +195,7 @@ function appConnection(app: App): AppConnection {
     serviceAuth: app.serviceAuth,
     serviceSecretEnc: app.serviceSecretEnc,
     mcpUrl: app.mcpUrl,
+    extraHeaders: app.extraHeaders,
   };
 }
 

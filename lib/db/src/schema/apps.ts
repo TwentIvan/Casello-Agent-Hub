@@ -9,6 +9,9 @@ export const sourceTypeEnum = pgEnum("source_type", ["github", "zip", "none"]);
 
 export type AuthConfig = { header: string; scheme: string | null };
 
+// Header HTTP fisso (non segreto) che l'esecutore manda su ogni chiamata ai tool dell'app
+export type ExtraHeader = { name: string; value: string };
+
 export const appsTable = pgTable("apps", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -21,6 +24,8 @@ export const appsTable = pgTable("apps", {
   serviceAuth: jsonb("service_auth").$type<AuthConfig>(),
   // Segreto di servizio cifrato (AES-256-GCM): mai in chiaro
   serviceSecretEnc: text("service_secret_enc"),
+  // Header fissi (non segreti) su ogni chiamata ai tool, HTTP e MCP, con entrambe le identità
+  extraHeaders: jsonb("extra_headers").$type<ExtraHeader[]>().notNull().default([]),
   // Sorgenti per l'architetto: il token GitHub (sola lettura) è cifrato, mai in chiaro
   sourceType: sourceTypeEnum("source_type").notNull().default("none"),
   sourceRepo: text("source_repo"), // formato owner/nome

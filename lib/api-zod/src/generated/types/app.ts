@@ -7,6 +7,7 @@
  */
 import type { AppStatus } from './appStatus';
 import type { AuthConfig } from './authConfig';
+import type { ExtraHeader } from './extraHeader';
 import type { SourceType } from './sourceType';
 
 export interface App {
@@ -30,6 +31,11 @@ export interface App {
   serviceAuth?: AuthConfig | null;
   /** Indica se il segreto di servizio è impostato (il valore non è mai esposto) */
   serviceSecretSet: boolean;
+  /**
+     * Header fissi (non segreti) mandati su ogni chiamata ai tool dell'app, HTTP e MCP
+     * @maxItems 10
+     */
+  extraHeaders: ExtraHeader[];
   sourceType: SourceType;
   /**
      * Repository GitHub nel formato owner/nome

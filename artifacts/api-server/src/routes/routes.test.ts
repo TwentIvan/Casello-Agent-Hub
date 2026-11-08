@@ -295,6 +295,69 @@ describe("validazione del collegamento all'app", () => {
   });
 });
 
+describe("header fissi dell'app", () => {
+  const ORG = "3f1c2b7a-9d4e-4c1a-8b2f-0a1b2c3d4e5f";
+  const appBase = { name: "Hub", baseUrl: "http://hub.example", serviceAuth: { header: "X-Service-Key", scheme: null } };
+
+  it("POST e GET: salvati senza spazi ai bordi, sempre presenti nella risposta", async () => {
+    const plain = await api("POST", "/apps", { name: "Senza", baseUrl: "http://senza.example" });
+    expect(plain.json.extraHeaders).toEqual([]);
+    const res = await api("POST", "/apps", {
+      ...appBase,
+      extraHeaders: [
+        { name: " X-Organization-Id ", value: ` ${ORG} ` },
+        { name: "X-Organization-Scope", value: "all" },
+      ],
+    });
+    expect(res.status).toBe(201);
+    const expected = [
+      { name: "X-Organization-Id", value: ORG },
+      { name: "X-Organization-Scope", value: "all" },
+    ];
+    expect(res.json.extraHeaders).toEqual(expected);
+    expect((await api("GET", `/apps/${res.json.id}`)).json.extraHeaders).toEqual(expected);
+  });
+
+  it("POST: regole violate → 400 con messaggio fisso e nulla salvato", async () => {
+    const cases: [unknown[], string][] = [
+      [Array.from({ length: 11 }, (_, i) => ({ name: `X-H${i}`, value: "v" })), "extraHeaders: al massimo 10 header fissi"],
+      [[{ name: "Host", value: "v" }], "extraHeaders: l'header \"Host\" è riservato"],
+      [[{ name: "X-Org", value: "a" }, { name: "x-org", value: "b" }], "extraHeaders: nome di header ripetuto: x-org"],
+      [[{ name: "x-service-key", value: "v" }], "extraHeaders: l'header x-service-key è già quello di autenticazione dell'app"],
+      [[{ name: "X-Org", value: "a\r\nX-Evil: 1" }], "extraHeaders: valore dell'header X-Org non valido (1-500 caratteri visibili su una riga)"],
+      [[{ name: "X-Org", value: "   " }], "extraHeaders: valore dell'header X-Org non valido (1-500 caratteri visibili su una riga)"],
+      [[{ name: "X-Org", value: "sk-segreto123" }], "extraHeaders: non salvare credenziali negli header fissi: usa il segreto di servizio"],
+    ];
+    for (const [extraHeaders, error] of cases) {
+      const res = await api("POST", "/apps", { ...appBase, extraHeaders });
+      expect(res.status, error).toBe(400);
+      expect(res.json.error).toBe(error);
+      expect(res.text).not.toContain("segreto123");
+    }
+    expect((await api("GET", "/apps")).json).toEqual([]);
+  });
+
+  it("PATCH: assente invariato, elenco sostituisce, collisione con un nuovo header di autenticazione", async () => {
+    const created = await api("POST", "/apps", { ...appBase, extraHeaders: [{ name: "X-Organization-Id", value: ORG }] });
+    const id = created.json.id;
+    let res = await api("PATCH", `/apps/${id}`, { description: "x" });
+    expect(res.json.extraHeaders).toEqual([{ name: "X-Organization-Id", value: ORG }]);
+    // Il nuovo header di servizio coincide con un header fisso già salvato
+    res = await api("PATCH", `/apps/${id}`, { serviceAuth: { header: "x-organization-id", scheme: null } });
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe("extraHeaders: l'header X-Organization-Id è già quello di autenticazione dell'app");
+    res = await api("PATCH", `/apps/${id}`, { userAuth: { header: "X-ORGANIZATION-ID", scheme: null } });
+    expect(res.status).toBe(400);
+    res = await api("PATCH", `/apps/${id}`, { extraHeaders: [{ name: "x-service-key", value: "v" }] });
+    expect(res.status).toBe(400);
+    res = await api("PATCH", `/apps/${id}`, { extraHeaders: [{ name: "X-Organization-Scope", value: "all" }] });
+    expect(res.status).toBe(200);
+    expect(res.json.extraHeaders).toEqual([{ name: "X-Organization-Scope", value: "all" }]);
+    res = await api("PATCH", `/apps/${id}`, { extraHeaders: [] });
+    expect(res.json.extraHeaders).toEqual([]);
+  });
+});
+
 describe("catalogo dei tool", () => {
   it("tool con definizione valida → 201", async () => {
     const app = await createApp();

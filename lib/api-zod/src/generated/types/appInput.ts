@@ -7,6 +7,7 @@
  */
 import type { AppStatus } from './appStatus';
 import type { AuthConfig } from './authConfig';
+import type { ExtraHeader } from './extraHeader';
 import type { SourceType } from './sourceType';
 
 export interface AppInput {
@@ -26,6 +27,8 @@ export interface AppInput {
   serviceAuth?: AuthConfig | null;
   /** Segreto di servizio (solo scrittura, salvato cifrato) */
   serviceSecret?: string;
+  /** Header fissi (non segreti) su ogni chiamata ai tool dell'app, al più 10 (400 "extraHeaders: ..."): nomi validi, non ripetuti e diversi dagli header di autenticazione; valori di 1..500 caratteri visibili, mai credenziali. */
+  extraHeaders?: ExtraHeader[];
   sourceType?: SourceType;
   /** @nullable */
   sourceRepo?: string | null;

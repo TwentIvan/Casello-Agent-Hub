@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { useForm, type UseFormReturn } from "react-hook-form";
+import { useFieldArray, useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
@@ -45,7 +45,17 @@ const appFormSchema = z.object({
   serviceAuthHeader: z.string().trim(),
   serviceAuthScheme: z.string().trim(),
   serviceSecret: z.string(),
+  extraHeaders: z.array(z.object({ name: z.string().trim(), value: z.string().trim() })),
 }).superRefine((v, ctx) => {
+  // Una riga del tutto vuota si scarta al salvataggio; una riga a metà no
+  v.extraHeaders.forEach((h, i) => {
+    if (!h.name && h.value) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["extraHeaders", i, "name"], message: "Il nome è obbligatorio." });
+    }
+    if (h.name && !h.value) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["extraHeaders", i, "value"], message: "Il valore è obbligatorio." });
+    }
+  });
   if (v.userAuthEnabled && !v.userAuthHeader) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["userAuthHeader"], message: "L'header è obbligatorio." });
   }
@@ -133,6 +143,58 @@ function AuthFields({
   );
 }
 
+/** Header fissi dell'app: righe nome/valore, mandati su ogni chiamata ai tool. */
+function ExtraHeadersFields({ form }: { form: UseFormReturn<AppFormValues> }) {
+  const { fields, append, remove } = useFieldArray({ control: form.control, name: "extraHeaders" });
+  return (
+    <div className="space-y-3 rounded-md border p-3">
+      <div>
+        <p className="text-sm font-medium">Header fissi</p>
+        <p className="text-xs text-muted-foreground">
+          Mandati su ogni chiamata ai tool dell'app (es. X-Organization-Id). Non sono segreti: per le credenziali usa
+          l'autenticazione di servizio.
+        </p>
+      </div>
+      {fields.map((row, index) => (
+        <div key={row.id} className="flex items-start gap-2">
+          <FormField
+            control={form.control}
+            name={`extraHeaders.${index}.name`}
+            render={({ field }) => (
+              <FormItem className="min-w-0 flex-1">
+                <FormControl>
+                  <Input className="font-mono" placeholder="Nome" aria-label={`Nome dell'header ${index + 1}`} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name={`extraHeaders.${index}.value`}
+            render={({ field }) => (
+              <FormItem className="min-w-0 flex-1">
+                <FormControl>
+                  <Input className="font-mono" placeholder="Valore" aria-label={`Valore dell'header ${index + 1}`} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <Button type="button" variant="ghost" size="sm" onClick={() => remove(index)}>
+            Togli
+          </Button>
+        </div>
+      ))}
+      {fields.length < 10 && (
+        <Button type="button" variant="outline" size="sm" onClick={() => append({ name: "", value: "" })}>
+          Aggiungi header
+        </Button>
+      )}
+    </div>
+  );
+}
+
 interface AppFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -166,6 +228,7 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
       serviceAuthHeader: app?.serviceAuth?.header ?? "Authorization",
       serviceAuthScheme: app ? (app.serviceAuth?.scheme ?? "") : "Bearer",
       serviceSecret: "",
+      extraHeaders: (app?.extraHeaders ?? []).map((h) => ({ name: h.name, value: h.value })),
     },
   });
 
@@ -183,7 +246,7 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
   const saving = createApp.isPending || updateApp.isPending;
 
   const onSubmit = (values: AppFormValues) => {
-    const { userAuthEnabled, userAuthHeader, userAuthScheme, serviceAuthEnabled, serviceAuthHeader, serviceAuthScheme, serviceSecret, ...rest } = values;
+    const { userAuthEnabled, userAuthHeader, userAuthScheme, serviceAuthEnabled, serviceAuthHeader, serviceAuthScheme, serviceSecret, extraHeaders, ...rest } = values;
     const common = {
       name: rest.name,
       baseUrl: rest.baseUrl,
@@ -192,6 +255,7 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
       mcpUrl: rest.mcpUrl || null,
       userAuth: userAuthEnabled ? { header: userAuthHeader, scheme: userAuthScheme || null } : null,
       serviceAuth: serviceAuthEnabled ? { header: serviceAuthHeader, scheme: serviceAuthScheme || null } : null,
+      extraHeaders: extraHeaders.filter((h) => h.name || h.value),
     };
     if (app) {
       // Segreto: inviato solo se digitato o rimosso; altrimenti resta quello salvato.
@@ -373,6 +437,7 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
                   )}
                 />
               </AuthFields>
+              <ExtraHeadersFields form={form} />
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

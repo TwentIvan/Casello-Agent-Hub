@@ -86,6 +86,7 @@ describe("catalogo dei tool", () => {
       serviceAuth: null,
       serviceSecretEnc: null,
       mcpUrl: null,
+      extraHeaders: [],
     });
   });
 

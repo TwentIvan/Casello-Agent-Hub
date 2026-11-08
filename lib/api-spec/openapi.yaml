@@ -4648,6 +4648,16 @@ components:
         scheme:
           type: ["string", "null"]
 
+    ExtraHeader:
+      type: object
+      required: [name, value]
+      description: Header HTTP fisso (non segreto) mandato su ogni chiamata ai tool dell'app, HTTP e MCP
+      properties:
+        name:
+          type: string
+        value:
+          type: string
+
     SourceType:
       type: string
       enum: [github, zip, none]
@@ -4655,7 +4665,7 @@ components:
 
     App:
       type: object
-      required: [id, name, slug, baseUrl, status, serviceSecretSet, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, createdAt, updatedAt]
+      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -4684,6 +4694,12 @@ components:
         serviceSecretSet:
           type: boolean
           description: Indica se il segreto di servizio è impostato (il valore non è mai esposto)
+        extraHeaders:
+          type: array
+          maxItems: 10
+          description: Header fissi (non segreti) mandati su ogni chiamata ai tool dell'app, HTTP e MCP
+          items:
+            $ref: "#/components/schemas/ExtraHeader"
         sourceType:
           $ref: "#/components/schemas/SourceType"
         sourceRepo:
@@ -4879,6 +4895,13 @@ components:
         serviceSecret:
           type: string
           description: Segreto di servizio (solo scrittura, salvato cifrato)
+        extraHeaders:
+          type: array
+          description: >-
+            Header fissi (non segreti) su ogni chiamata ai tool dell'app, al più 10 (400 "extraHeaders: ..."): nomi validi,
+            non ripetuti e diversi dagli header di autenticazione; valori di 1..500 caratteri visibili, mai credenziali.
+          items:
+            $ref: "#/components/schemas/ExtraHeader"
         sourceType:
           $ref: "#/components/schemas/SourceType"
         sourceRepo:
@@ -4933,6 +4956,13 @@ components:
         serviceSecret:
           type: ["string", "null"]
           description: Segreto di servizio (solo scrittura); null lo cancella
+        extraHeaders:
+          type: array
+          description: >-
+            Header fissi (non segreti) su ogni chiamata ai tool dell'app, al più 10 (400 "extraHeaders: ..."): nomi validi,
+            non ripetuti e diversi dagli header di autenticazione; valori di 1..500 caratteri visibili, mai credenziali. Assente = invariato; un elenco sostituisce quello salvato.
+          items:
+            $ref: "#/components/schemas/ExtraHeader"
         sourceType:
           $ref: "#/components/schemas/SourceType"
         sourceRepo:

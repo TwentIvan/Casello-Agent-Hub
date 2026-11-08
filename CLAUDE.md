@@ -140,7 +140,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `artifacts/api-server/src/lib/escalation.ts` — segnalazione al Responsabile di prodotto (vedi "The Hub Up 5c (tappa 1)")
 - `artifacts/api-server/src/lib/tools/` — client MCP (`mcp-client.ts`), sincronizzazione degli strumenti MCP
   (`mcp-sync.ts`), livelli d'azione (`levels.ts`), catalogo (`catalog.ts`), validazione delle definizioni
-  (`definition.ts`), esecutore HTTP (`executor.ts`), oscuramento degli argomenti sensibili (`sensitive.ts`)
+  (`definition.ts`), esecutore HTTP (`executor.ts`), regole degli header verso le app (`headers.ts`: autenticazione e header fissi), oscuramento degli argomenti sensibili (`sensitive.ts`)
 - `artifacts/api-server/src/lib/secrets.ts` — cifratura AES-256-GCM dei segreti di servizio (anche il token GitHub)
 - `artifacts/api-server/src/lib/users.ts` — utenti e identità (`isAllowed`, `resolveLogin`, `linkIdentity`, `unlinkIdentity`)
 - `artifacts/api-server/src/lib/github/` — GitHub App: configurazione (`config.ts`), client con JWT e token di
@@ -225,6 +225,11 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - **App**: applicazione registrata: nome, `slug`, `base_url`, `internal_base_url` (raggiunto
   dall'esecutore al posto di `base_url`), autenticazione utente/servizio (header + scheme), segreto di
   servizio cifrato (mai esposto: l'API dice solo `serviceSecretSet`), `mcp_url` (server MCP dell'app, facoltativo), stato
+  e header fissi `extra_headers` (`[{name, value}]`, non segreti, es. `X-Organization-Id`): l'esecutore li manda su ogni chiamata ai tool,
+  HTTP e MCP (anche la lista), con entrambe le identità, prima dell'autenticazione che vince sempre. Regole in `lib/tools/headers.ts`
+  (`checkExtraHeaders`, insieme a `checkAuthHeaderName`): al più 10, nomi validi e non ripetuti, diversi dagli header di autenticazione
+  (ricontrollato anche quando la PATCH cambia `userAuth`/`serviceAuth`), valori di 1..500 caratteri visibili su una riga e mai credenziali
+  (`looksLikeCredential`), altrimenti 400 «extraHeaders: …». Migrazione `docs/migrations/2026-11-header-app.sql` (additiva, PRIMA del merge)
 - **Agent**: appartiene a una App; `system_prompt`, `model` (facoltativo: senza modello le run rispondono 409), stato (draft/active/inactive),
   `confirm_writes` (conferma delle scritture: le L1 vanno in «Da confermare»; sempre vera per il `general`), ruolo:
   `general` (uno per app, creato con l'app, non eliminabile, usa tutti i tool `active` dell'app; in console è il «Responsabile di prodotto») o `area`

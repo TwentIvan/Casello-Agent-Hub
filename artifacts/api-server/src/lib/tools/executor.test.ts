@@ -179,6 +179,37 @@ describe("buildHttpRequest", () => {
     expect(() => buildHttpRequest(conn(), t, { q: "a" }, "tok")).toThrow(/definizione/);
   });
 
+  it("manda gli header fissi dell'app; autenticazione e accept non si sovrascrivono", () => {
+    const c = conn({
+      extraHeaders: [
+        { name: "X-Organization-Id", value: "3f1c2b7a-9d4e-4c1a-8b2f-0a1b2c3d4e5f" },
+        { name: "X-Organization-Scope", value: "all" },
+        { name: "authorization", value: "Bearer intruso" },
+        { name: "Accept", value: "text/html" },
+      ],
+    });
+    const { init, secrets } = buildHttpRequest(c, teamTool, { teamId: "1" }, "tok");
+    const headers = init.headers as Headers;
+    expect(headers.get("x-organization-id")).toBe("3f1c2b7a-9d4e-4c1a-8b2f-0a1b2c3d4e5f");
+    expect(headers.get("x-organization-scope")).toBe("all");
+    expect(headers.get("authorization")).toBe("Bearer tok");
+    expect(headers.get("accept")).toBe("application/json");
+    expect(secrets).not.toContain("all");
+  });
+
+  it("header fissi anche con l'identità di servizio", () => {
+    process.env["CASELLO_SECRET_KEY"] = VALID_KEY;
+    const c = conn({
+      serviceAuth: { header: "X-Api-Key", scheme: null },
+      serviceSecretEnc: encryptSecret("segreto-servizio"),
+      extraHeaders: [{ name: "X-Organization-Id", value: "42" }, { name: "x-api-key", value: "intruso" }],
+    });
+    const { init } = buildHttpRequest(c, tool(teamTool.definition as HttpDefinition, teamTool.paramsSchema, { identity: "service" }), { teamId: "1" });
+    const headers = init.headers as Headers;
+    expect(headers.get("x-organization-id")).toBe("42");
+    expect(headers.get("x-api-key")).toBe("segreto-servizio");
+  });
+
   it("non espone il token nei messaggi di errore", () => {
     try {
       buildHttpRequest(conn(), teamTool, { teamId: "1" }, "tok\r\nX-Evil: segreto-123");

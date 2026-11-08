@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, numeric, pgEnum, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, numeric, pgEnum, index, jsonb } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { aiModelsTable } from "./ai-models";
 
@@ -44,6 +44,8 @@ export const alfredConfirmationsTable = pgTable(
   expiresAt: timestamp("expires_at").notNull(),
   usedAt: timestamp("used_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Id dei passi di una proposta da escludere all'approvazione (null = nessuno)
+  excludeSteps: jsonb("exclude_steps"),
   },
   (table) => [index("alfred_confirmations_session_used_idx").on(table.sessionId, table.usedAt)],
 );

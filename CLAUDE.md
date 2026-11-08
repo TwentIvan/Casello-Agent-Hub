@@ -285,7 +285,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `plan_change` (piano o modifica del PLAN proposti dal capo di una squadra, vedi "Squadre (esecuzione)"); colonne
   `team_instance_id` (squadra, `SET NULL`) e `plan_version`; per `plan`/`plan_change` `tool_id` e `app_id` sono null
   (CHECK: obbligatori solo con `kind = action`) e `args_enc`/`args_public` contengono la proposta; l'approvazione non
-  vuole `userToken`. Terzo tipo `proposal`: proposta multipla di un agente, con i passi in `pending_action_steps` (vedi "Proposte multiple"). Numerazione e limite di 50 valgono per tutti i tipi.
+  vuole `userToken`. Tipo `proposal`: proposta multipla di un agente, con i passi in `pending_action_steps` (vedi "Proposte multiple"). Numerazione e limite di 50 valgono per tutti i tipi.
 - Route (`routes/pending-actions.ts`; il limite di 20/min per utente vale solo per approvare e rifiutare, non per le GET,
   ed è lo stesso contatore degli strumenti MCP `approva`/`rifiuta`, `consumeActionDecision`): `GET /api/pending-actions`, `GET /api/pending-actions/:number`,
   `POST …/approve` (con `userToken` se l'identità del tool è `user`), `POST …/reject` (nota ≤ 500 caratteri). Ambiti

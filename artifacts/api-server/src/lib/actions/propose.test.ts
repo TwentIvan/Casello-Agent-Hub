@@ -245,6 +245,6 @@ describe("handlePropose", () => {
 
   it("agente senza tool idonei: nessuno strumento disponibile", async () => {
     const r = await handlePropose({ run, agent, app, tools: [], owner }, ARGS);
-    expect(r.ok).toBe(false);
+    expect(r).toEqual({ ok: false, content: "strumento create_project non disponibile per le proposte" });
   });
 });

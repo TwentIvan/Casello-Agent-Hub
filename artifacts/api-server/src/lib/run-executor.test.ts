@@ -1066,6 +1066,36 @@ describe("strumento proponi", () => {
     expect(appRequests).toHaveLength(0);
   });
 
+  it("run_steps.args della chiamata a proponi: argomenti x-sensitive dei passi oscurati", async () => {
+    const withSecret: Partial<InsertAppTool> = {
+      ...SERVICE_L2,
+      paramsSchema: {
+        type: "object",
+        properties: { id: { type: "string" }, token: { type: "string", "x-sensitive": true } },
+        required: ["id"],
+      },
+    };
+    const id = await seedRun(withSecret);
+    llmReplies = [
+      toolCallReply("proponi", {
+        titolo: "Crea",
+        passi: [
+          { id: "p1", strumento: "create_item", argomenti: { id: "a", token: "segreto-passo" }, sintesi: "Crea a" },
+          { id: "p2", strumento: "sconosciuto", argomenti: { token: "altro-segreto" }, sintesi: "Crea b" },
+        ],
+      }),
+      textReply("Fine."),
+    ];
+    await startRun(id);
+    const step = (await getSteps(id)).find((s) => s.toolName === "proponi")!;
+    const text = JSON.stringify(step.args);
+    expect(text).not.toContain("segreto-passo");
+    expect(text).not.toContain("altro-segreto");
+    const passi = (step.args as any).passi;
+    expect(passi[0].argomenti).toEqual({ id: "a", token: "***" });
+    expect(passi[1].argomenti).toBe("***");
+  });
+
   it("senza tool idonei (solo tool user) proponi non è offerto", async () => {
     const id = await seedRun(DELETE_ITEM);
     llmReplies = [textReply("Ok.")];

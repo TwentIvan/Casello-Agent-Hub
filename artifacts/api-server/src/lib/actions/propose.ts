@@ -33,7 +33,8 @@ export function proposeTool(): CatalogTool {
     PROPOSE_TOOL_NAME,
     "Proponi all'utente più creazioni o modifiche collegate da approvare insieme. Usalo quando servono più azioni " +
       "in sequenza sull'app: i passi si eseguono in ordine solo dopo l'approvazione dell'utente. Un riferimento " +
-      "{{p1.id}} (come valore intero di un argomento) usa il campo `id` del risultato del passo p1. Scrivi sintesi " +
+      "come {{p1.id}} deve essere l'intero valore stringa di un argomento, senza altro testo attorno, e usa il campo `id` " +
+      "del risultato del passo p1. Scrivi sintesi " +
       "complete in italiano, senza segnaposto. Una sola proposta per run.",
     {
       type: "object",

@@ -191,6 +191,55 @@ describe("handlePropose", () => {
     expect(await db.select().from(pendingActionsTable)).toHaveLength(0);
   });
 
+  it("destinatario e sintesi negli argomenti (campi della coda L2) si tolgono prima di salvare", async () => {
+    const extra = { destinatario: "Ivan", sintesi: "Crea il progetto" };
+    const r = await propose({
+      ...ARGS,
+      passi: [
+        { ...ARGS.passi[0]!, argomenti: { ...ARGS.passi[0]!.argomenti, ...extra } },
+        { ...ARGS.passi[1]!, argomenti: { ...ARGS.passi[1]!.argomenti, ...extra } },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    const [row] = await db.select().from(pendingActionsTable);
+    const saved = JSON.parse(decryptSecret(row!.argsEnc!)) as { steps: { args: Record<string, unknown> }[] };
+    expect(saved.steps.map((s) => s.args)).toEqual([
+      { name: "Alfa", token: "segreto" },
+      { projectId: "{{p1.id}}", title: "Avvio" },
+    ]);
+    expect((row!.argsPublic as any).steps.map((s: any) => s.args)).toEqual([
+      { name: "Alfa", token: "***" },
+      { projectId: "{{p1.id}}", title: "Avvio" },
+    ]);
+  });
+
+  it("destinatario dichiarato dallo schema del tool: resta", async () => {
+    const mail = await insertTool({
+      name: "send_mail",
+      paramsSchema: { type: "object", properties: { destinatario: { type: "string" }, text: { type: "string" } }, required: ["destinatario"] },
+    });
+    tools = [...tools, mail];
+    const r = await propose({
+      titolo: "Mail",
+      passi: [{ id: "p1", strumento: "send_mail", argomenti: { destinatario: "Ivan", sintesi: "x", text: "ciao" }, sintesi: "Manda la mail" }],
+    });
+    expect(r.ok).toBe(true);
+    const [row] = await db.select().from(pendingActionsTable);
+    const saved = JSON.parse(decryptSecret(row!.argsEnc!)) as { steps: { args: Record<string, unknown> }[] };
+    expect(saved.steps[0]!.args).toEqual({ destinatario: "Ivan", text: "ciao" });
+  });
+
+  it("parametri non previsti dallo schema, anche con riferimenti: rifiutati alla proposta", async () => {
+    const r1 = await propose({ ...ARGS, passi: [{ ...ARGS.passi[0]!, argomenti: { name: "Alfa", owner: "x", role: 1 } }] });
+    expect(r1).toEqual({ ok: false, content: "parametri non previsti nel passo p1: owner, role" });
+    const r2 = await propose({
+      ...ARGS,
+      passi: [ARGS.passi[0], { ...ARGS.passi[1]!, argomenti: { projectId: "{{p1.id}}", title: "Avvio", parent: "{{p1.id}}" } }],
+    });
+    expect(r2).toEqual({ ok: false, content: "parametri non previsti nel passo p2: parent" });
+    expect(await db.select().from(pendingActionsTable)).toHaveLength(0);
+  });
+
   it("gli argomenti con riferimenti non si validano alla proposta", async () => {
     const r = await propose({
       ...ARGS,

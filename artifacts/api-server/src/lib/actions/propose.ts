@@ -1,6 +1,6 @@
 import { db, pendingActionsTable, type Agent, type App, type Run } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
-import { QUEUE_FAILED } from "../agent-loop";
+import { QUEUE_FAILED, RECIPIENT_PARAM, SUMMARY_PARAM } from "../agent-loop";
 import { logger } from "../logger";
 import { internalTool } from "../teams/role-tools";
 import { validateArgs } from "../tools/definition";
@@ -74,6 +74,12 @@ export function proposalEligible(tool: CatalogTool): boolean {
   );
 }
 
+/** Nomi delle proprietà dichiarate nello schema dei parametri di un tool. */
+function declaredParams(schema: Record<string, unknown>): Set<string> {
+  const props = schema["properties"];
+  return new Set(props && typeof props === "object" && !Array.isArray(props) ? Object.keys(props) : []);
+}
+
 function proposalRefs(args: Record<string, unknown>): StepRef[] {
   const refs = stepRefs(args);
   return Array.isArray(refs) ? refs.map((r) => ({ param: r.param, step: r.step, field: r.field })) : [];
@@ -100,6 +106,21 @@ export async function handlePropose(ctx: ProposeContext, args: Record<string, un
     const tool = ctx.tools.find((t) => t.name === step.toolName);
     if (!tool || !proposalEligible(tool)) return fail(`strumento ${step.toolName} non disponibile per le proposte`);
     stepTools.push(tool);
+  }
+
+  // Solo i parametri dichiarati dallo schema del tool, come vuole l'esecutore all'approvazione. `destinatario` e
+  // `sintesi` sono i campi che il modello vede sui tool L2 fuori da una proposta: si tolgono (la frase del passo è
+  // già in `sintesi` del passo); ogni altro parametro non previsto rifiuta subito la proposta.
+  for (const [i, step] of proposal.steps.entries()) {
+    const declared = declaredParams(stepTools[i]!.paramsSchema);
+    const args = Object.fromEntries(
+      Object.entries(step.args).filter(
+        ([name]) => declared.has(name) || (name !== RECIPIENT_PARAM && name !== SUMMARY_PARAM),
+      ),
+    );
+    const unexpected = Object.keys(args).filter((name) => !declared.has(name));
+    if (unexpected.length > 0) return fail(`parametri non previsti nel passo ${step.key}: ${unexpected.join(", ")}`);
+    step.args = args;
   }
 
   // Gli argomenti con riferimenti si validano dopo la sostituzione, all'approvazione

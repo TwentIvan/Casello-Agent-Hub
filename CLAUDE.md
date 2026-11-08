@@ -1357,7 +1357,8 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `{titolo 1..200, motivo? ≤ 1 000, passi 1..20: [{id, strumento, argomenti (oggetto), sintesi 1..300}]}`; id `p1`, `p2`… unici e nell'ordine. Nei passi solo tool della stessa app, `active`, `http`/`mcp`,
   livello effettivo ≠ L3, identità `service` (i tool `user` sono esclusi); per un agente `area` solo i suoi tool collegati (si legge dai tool caricati dell'agente, prima di `withConfirmedWrites`).
   **Riferimenti**: una stringa che è esattamente `{{pN.campo}}` (fino a 5 segmenti `^[A-Za-z0-9_-]{1,64}$`, `pN` precedente al passo) vale il campo del risultato JSON del passo; niente interpolazione dentro
-  stringhe più lunghe (una stringa con `{{pN` che non è un riferimento intero → «riferimento non valido nel passo pK», come un riferimento a un passo successivo o inesistente). Gli argomenti senza
+  stringhe più lunghe (una stringa con `{{pN` che non è un riferimento intero → «riferimento non valido nel passo pK», come un riferimento a un passo successivo o inesistente). Negli argomenti solo i parametri dichiarati dallo schema del tool: `destinatario` e `sintesi` (campi della coda
+  L2) non dichiarati si tolgono, ogni altro parametro non previsto → «parametri non previsti nel passo pK: …». Gli argomenti senza
   riferimenti si validano con lo schema del tool già alla proposta («argomenti non validi nel passo pK: …»), gli altri dopo la sostituzione all'approvazione. Controllo del testo (`checkQueuedText`) su titolo,
   motivo, sintesi e argomenti oscurati («testo non pronto: …»). Una sola proposta `pending` per run («hai già proposto in questa run: usa la discussione»). Risultati `ok: false` con messaggio fisso, mai eccezioni
   (errore inatteso: «proposta non riuscita: riprova più tardi»), la run prosegue; esito `{ok: true, numero}`. Proprietario = chi possiede l'account AI del modello della run, come per le L2. Nella timeline

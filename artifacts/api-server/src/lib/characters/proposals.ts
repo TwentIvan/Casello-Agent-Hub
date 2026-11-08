@@ -34,6 +34,8 @@ import {
   getTemplateVersion,
   insertTemplateUnchecked,
 } from "../teams/templates";
+import { createTrigger } from "../triggers/service";
+import { agentTriggersTable } from "@workspace/db";
 import { subjectHash } from "./subjects/hash";
 import {
   CHARACTER_MESSAGES,
@@ -169,6 +171,20 @@ const PAYLOADS = {
   skill_content: z.object({ content: z.string(), toolHints: z.array(z.string()).optional() }),
   template_roles: z.object({ roles: z.array(TemplateRoleSchema) }),
   agent_create: z.object({ appId: positiveId, name: z.string().min(1), systemPrompt: z.string(), toolIds: z.array(positiveId).optional() }),
+  agent_trigger_create: z.object({
+    agentId: positiveId,
+    name: z.string(),
+    instructions: z.string().nullish(),
+    toolId: positiveId,
+    args: z.record(z.string(), z.unknown()).nullish(),
+    itemsPath: z.string().nullish(),
+    idField: z.string(),
+    versionField: z.string().nullish(),
+    cursorParam: z.string().nullish(),
+    cursorField: z.string().nullish(),
+    filter: z.object({ field: z.string(), equals: z.union([z.string(), z.number(), z.boolean()]) }).nullish(),
+    intervalSeconds: z.number().int().nullish(),
+  }),
   skill_create: z.object({ code: z.string(), name: z.string().min(1), description: z.string(), kind: z.enum(["casello", "node"]), content: z.string() }),
   template_create: z.object({ name: z.string().min(1), description: z.string(), roles: z.array(TemplateRoleSchema) }),
   decision: z.object({ number: positiveId, decision: z.enum(["approva", "rifiuta"]), note: z.string().max(500).nullish() }),
@@ -181,6 +197,7 @@ const SUBJECT_OF: Record<Exclude<ProposalKind, "decision" | "handoff">, SubjectT
   skill_content: "skill",
   template_roles: "team_template",
   agent_create: "area_agents",
+  agent_trigger_create: "agent",
   skill_create: "area_skills",
   template_create: "area_team_templates",
 };
@@ -217,6 +234,8 @@ async function acceptLucius(userId: number, proposal: CharacterProposal, conv: C
   const target: Target | null = needsTarget ? { type: SUBJECT_OF[kind] as Target["type"], id: subjectId! } : null;
 
   const stale = (): Promise<never> => markStale(proposal.id, CHARACTER_MESSAGES.staleObject);
+
+  if (kind === "agent_trigger_create") return acceptTriggerCreate(userId, proposal, subjectId);
 
   // Prima verifica dal pool: un oggetto già cambiato non merita le validazioni
   if (target && (await subjectHash(target.type, target.id)) !== proposal.targetHash) await stale();
@@ -297,6 +316,26 @@ async function acceptLucius(userId: number, proposal: CharacterProposal, conv: C
   } catch (err) {
     if (err instanceof StaleProposal) await stale();
     throw asRuleError(err);
+  }
+}
+
+/**
+ * Scheda `agent_trigger_create`: crea l'innesco di sorveglianza in pausa con le validazioni del servizio (che ha le
+ * sue transazioni e legge dal pool, quindi sta fuori da quella della scheda). Errore di regola → scheda `pending`.
+ * Se la scheda è stata decisa nel frattempo, l'innesco appena creato si toglie.
+ */
+async function acceptTriggerCreate(userId: number, proposal: CharacterProposal, subjectId: string | null): Promise<CharacterProposal> {
+  const p = parsePayload(PAYLOADS.agent_trigger_create, proposal.payload);
+  if (subjectId === null || Number(subjectId) !== p.agentId) throw invalid();
+  const [current] = await db.select({ status: characterProposalsTable.status }).from(characterProposalsTable).where(eq(characterProposalsTable.id, proposal.id)).limit(1);
+  if (!current || current.status !== "pending") throw new CharacterError(409, CHARACTER_MESSAGES.alreadyDecided);
+  const created = await createTrigger(p.agentId, userId, { ...p, kind: "poll" });
+  if (!created.ok) throw new CharacterError(created.status, created.error);
+  try {
+    return await db.transaction((tx) => markDecided(tx, proposal.id, "accepted"));
+  } catch (err) {
+    await db.delete(agentTriggersTable).where(eq(agentTriggersTable.id, created.value.trigger.id));
+    throw err;
   }
 }
 

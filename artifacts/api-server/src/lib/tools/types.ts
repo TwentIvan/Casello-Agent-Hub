@@ -40,6 +40,9 @@ export interface ToolResult {
   content: string;
 }
 
+/** Transazione di Drizzle (parametro del callback di `db.transaction`). */
+export type DbTransaction = Parameters<Parameters<typeof import("@workspace/db").db.transaction>[0]>[0];
+
 export interface AuthConfig {
   header: string;
   scheme: string | null;

@@ -2,11 +2,12 @@
 // proposte: il prompt di sistema (`agent_prompt`) e i tool collegati (`agent_tools`, solo agenti di ruolo `area`).
 // Alla proposta si controllano solo forma e limiti; la validazione completa è dell'accettazione. Mai indirizzi né segreti.
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, agentToolsTable, agentsTable, aiModelsTable, appToolsTable, appsTable } from "@workspace/db";
 import type { ChatToolCall } from "../../ai/chat-types";
 import { effectiveLevel } from "../../tools/levels";
+import { validateTriggerConfig } from "../../triggers/config";
 import { recordProposal } from "../proposals";
 import { CHARACTER_MESSAGES, toolFail, toolOk, type SubjectHandler, type TurnContext } from "../types";
 import { subjectHash } from "./hash";
@@ -38,7 +39,46 @@ export const AGENT_TOOLS = [
     { toolIds: { type: "array", items: { type: "integer" }, description: "Id degli strumenti dell'app dell'agente" }, motivazione: RATIONALE_PROP },
     ["toolIds", "motivazione"],
   ),
+  fn(
+    "proponi_innesco",
+    "Propone un innesco di sorveglianza (polling) per l'agente: ogni tanto chiama un tool di lettura dell'app e avvia una run per ogni elemento nuovo. Nasce in pausa: l'utente lo prova e lo attiva. Lo schema del tool si legge con `leggi_strumenti_app`; non viene mai chiamato da te. Non applica nulla: l'utente vede la scheda e decide.",
+    {
+      name: { type: "string", description: "Nome dell'innesco, 1..80 caratteri" },
+      instructions: { type: "string", description: "Istruzioni per l'agente a ogni elemento nuovo, al massimo 2 000 caratteri" },
+      toolId: { type: "integer", description: "Id di un tool di lettura (L0) dell'app" },
+      args: { type: "object", description: "Argomenti fissi del tool, secondo il suo schema" },
+      itemsPath: { type: "string", description: "Percorso con punti dell'elenco di elementi nella risposta (vuoto: la risposta stessa)" },
+      idField: { type: "string", description: "Campo con l'identificatore dell'elemento" },
+      versionField: { type: "string", description: "Campo la cui variazione rende nuovo un elemento già visto" },
+      cursorParam: { type: "string", description: "Parametro del tool in cui passare il cursore" },
+      cursorField: { type: "string", description: "Campo dell'elemento da cui ricavare il cursore" },
+      filter: {
+        type: "object",
+        description: "Considera solo gli elementi in cui `field` è uguale a `equals`",
+        properties: { field: { type: "string" }, equals: { type: ["string", "number", "boolean"] } },
+        required: ["field", "equals"],
+      },
+      intervalSeconds: { type: "integer", description: "Intervallo tra due letture, da 60 a 86400 secondi (default 300)" },
+      motivazione: RATIONALE_PROP,
+    },
+    ["name", "toolId", "idField", "motivazione"],
+  ),
 ];
+
+const TriggerArgs = z.object({
+  name: z.string(),
+  instructions: z.string().nullish(),
+  toolId: positive,
+  args: z.record(z.string(), z.unknown()).nullish(),
+  itemsPath: z.string().nullish(),
+  idField: z.string().min(1),
+  versionField: z.string().nullish(),
+  cursorParam: z.string().nullish(),
+  cursorField: z.string().nullish(),
+  filter: z.object({ field: z.string(), equals: z.union([z.string(), z.number(), z.boolean()]) }).nullish(),
+  intervalSeconds: z.number().int().nullish(),
+  motivazione: z.unknown(),
+});
 
 const SCHEMAS = {
   leggi_agente: z.object({}).passthrough(),
@@ -46,6 +86,7 @@ const SCHEMAS = {
   leggi_skill: ReadSkillArgs,
   proponi_prompt_agente: z.object({ systemPrompt: z.string().min(1), motivazione: z.unknown() }),
   proponi_strumenti_agente: z.object({ toolIds: z.array(positive).max(500), motivazione: z.unknown() }),
+  proponi_innesco: TriggerArgs,
 } as const;
 type ToolName = keyof typeof SCHEMAS;
 const isToolName = (name: string): name is ToolName => Object.hasOwn(SCHEMAS, name);
@@ -116,6 +157,27 @@ async function propose(ctx: TurnContext, id: number, name: "proponi_prompt_agent
   return toolOk({ proposalId: out.id, kind });
 }
 
+// Solo sorveglianza (`poll`, mai `webhook`: l'indirizzo si mostra una volta e si crea dal modulo). Qui si controllano forma
+// e appartenenza del tool all'app; le regole complete (livello, schema degli argomenti, limiti) sono dell'accettazione.
+async function proposeTrigger(ctx: TurnContext, id: number, a: z.infer<typeof TriggerArgs>): Promise<string> {
+  const rationale = rationaleSchema.safeParse(a.motivazione);
+  if (!rationale.success) return toolFail(LUCIUS_MESSAGES.rationale);
+  const row = await loadAgent(id);
+  if (!row) return toolFail(CHARACTER_MESSAGES.subjectGone);
+  const { motivazione: _m, ...config } = a;
+  const shape = validateTriggerConfig({ kind: "poll", ...config });
+  if (!shape.ok) return toolFail(shape.error);
+  const [tool] = await db
+    .select({ id: appToolsTable.id })
+    .from(appToolsTable)
+    .where(and(eq(appToolsTable.id, a.toolId), eq(appToolsTable.appId, row.agent.appId)))
+    .limit(1);
+  if (!tool) return toolFail(AGENT_MESSAGES.toolsNotOfApp);
+  const out = await recordProposal(ctx, "agent_trigger_create", { agentId: id, ...config }, rationale.data, null);
+  if ("error" in out) return toolFail(out.error);
+  return toolOk({ proposalId: out.id, kind: "agent_trigger_create" });
+}
+
 async function runTool(call: ChatToolCall, ctx: TurnContext): Promise<string> {
   if (!isToolName(call.name)) return toolFail(LUCIUS_MESSAGES.unknownTool);
   const id = idFromSubject(ctx.subjectId);
@@ -136,6 +198,8 @@ async function runTool(call: ChatToolCall, ctx: TurnContext): Promise<string> {
       case "proponi_prompt_agente":
       case "proponi_strumenti_agente":
         return await propose(ctx, id, call.name, a);
+      case "proponi_innesco":
+        return await proposeTrigger(ctx, id, parsed.data as z.infer<typeof TriggerArgs>);
     }
   } catch {
     return toolFail(LUCIUS_MESSAGES.internal);

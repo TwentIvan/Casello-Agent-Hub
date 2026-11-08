@@ -1,0 +1,43 @@
+// Messaggi fissi degli inneschi: mai testo delle app o del DB.
+export const TRIGGER_MESSAGES = {
+  notFound: "innesco non trovato",
+  tooMany: "troppi inneschi",
+  nameTaken: "nome già usato",
+  toolNotUsable: "lo strumento non può essere usato da un innesco",
+  toolNoLonger: "lo strumento non è più utilizzabile dall'innesco",
+  invalidPath: "percorso non valido",
+  invalidArgs: "argomenti non validi",
+  cursorFieldRequired: "indica il campo del cursore",
+  wrongKindFields: "campi non ammessi per questo tipo di innesco",
+  listNotFound: "elenco non trovato nella risposta",
+  unrecognized: "risposta non riconosciuta",
+  budgetWait: "in attesa: tetto di spesa raggiunto",
+  // Giro di sorveglianza: chiamata al tool fallita (mai il testo della risposta) o errore interno.
+  toolFailed: "chiamata allo strumento non riuscita",
+  pollFailed: "giro non riuscito: riprova più tardi",
+  queueFull: "in attesa: troppe run in coda per l'agente",
+  notActive: "innesco non attivo",
+  badSignature: "firma non valida",
+  toolInUse: "lo strumento è usato da un innesco: elimina prima l'innesco",
+  // Regole di forma della configurazione (spec §3.1, §3.4).
+  invalidName: "nome obbligatorio, al massimo 80 caratteri",
+  invalidInterval: "intervallo non valido: da 60 a 86400 secondi",
+  instructionsTooLong: "istruzioni troppo lunghe: al massimo 2000 caratteri",
+  argsTooLarge: "argomenti troppo grandi: al massimo 8 KB",
+  invalidFilter: "filtro non valido",
+  // Webhook in entrata (spec §5.4): id sconosciuto e segreto sbagliato danno lo stesso messaggio.
+  hookNotFound: "non trovato",
+  bodyTooLarge: "corpo troppo grande: al massimo 256 KB",
+  unsupportedType: "tipo di contenuto non supportato",
+  invalidJson: "JSON non valido",
+  invalidBody: "corpo non valido",
+  hookFailed: "errore interno: riprova tra poco",
+  rateLimited: "Troppe richieste: riprova tra poco",
+  // API di gestione (spec §7).
+  agentNotFound: "agente non trovato",
+  pollOnly: "la prova vale solo per gli inneschi di sorveglianza",
+  webhookOnly: "operazione disponibile solo per i webhook",
+  invalidSigningSecret: "segreto di firma non valido: da 16 a 200 caratteri",
+  itemsSkipped: "elementi scartati senza chiave valida",
+  changed: "innesco modificato nel frattempo: ricarica e riprova",
+} as const;

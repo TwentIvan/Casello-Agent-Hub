@@ -78,7 +78,7 @@ export const characterProposalsTable = pgTable(
     messageId: integer("message_id")
       .notNull()
       .references(() => characterMessagesTable.id, { onDelete: "cascade" }),
-    // agent_prompt | agent_tools | skill_content | template_roles | agent_create | skill_create | template_create | decision | handoff
+    // agent_prompt | agent_tools | skill_content | template_roles | agent_create | skill_create | template_create | decision | handoff | agent_trigger_create
     kind: text("kind").notNull(),
     payload: jsonb("payload").notNull(),
     rationale: text("rationale").notNull(),
@@ -91,7 +91,7 @@ export const characterProposalsTable = pgTable(
   (table) => [
     check(
       "character_proposals_kind_check",
-      sql`${table.kind} IN ('agent_prompt', 'agent_tools', 'skill_content', 'template_roles', 'agent_create', 'skill_create', 'template_create', 'decision', 'handoff')`,
+      sql`${table.kind} IN ('agent_prompt', 'agent_tools', 'skill_content', 'template_roles', 'agent_create', 'skill_create', 'template_create', 'decision', 'handoff', 'agent_trigger_create')`,
     ),
     index("character_proposals_conversation_idx").on(table.conversationId),
   ],

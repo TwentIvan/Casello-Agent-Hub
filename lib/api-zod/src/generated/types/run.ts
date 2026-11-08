@@ -46,4 +46,14 @@ export interface Run {
   parentRunId?: number | null;
   /** Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET /runs/{id}) */
   childRunIds?: number[];
+  /**
+     * Innesco che ha avviato la run (null se avviata a mano o innesco eliminato)
+     * @nullable
+     */
+  triggerId?: number | null;
+  /**
+     * Nome dell'innesco che ha avviato la run
+     * @nullable
+     */
+  triggerName?: string | null;
 }

@@ -3,6 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { agentsTable } from "./agents";
 import { aiModelsTable } from "./ai-models";
+import { agentTriggersTable } from "./agent-triggers";
 
 export const runStatusEnum = pgEnum("run_status", [
   "pending",
@@ -39,6 +40,8 @@ export const runsTable = pgTable(
     parentRunId: integer("parent_run_id").references((): AnyPgColumn => runsTable.id, { onDelete: "set null" }),
     // La run è partita con un token utente tenuto solo in memoria (si perde al riavvio)
     hasUserToken: boolean("has_user_token").notNull().default(false),
+    // Innesco che ha avviato la run (sorveglianza o webhook): null se avviata a mano o da un'altra run
+    triggerId: integer("trigger_id").references(() => agentTriggersTable.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     finishedAt: timestamp("finished_at"),
   },
@@ -49,6 +52,7 @@ export const runsTable = pgTable(
     // Scheduler: conteggio delle run per agente e stato
     index("runs_agent_status_idx").on(table.agentId, table.status),
     index("runs_parent_run_id_idx").on(table.parentRunId),
+    index("runs_trigger_id_idx").on(table.triggerId),
   ],
 );
 

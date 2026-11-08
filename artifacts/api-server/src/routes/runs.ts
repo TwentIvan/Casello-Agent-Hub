@@ -14,7 +14,7 @@ import {
 } from "@workspace/api-zod";
 import { cancelRateLimit } from "../middlewares/rate-limit";
 import { cancelRun } from "../lib/run-executor";
-import { toPublicRun } from "./serializers";
+import { toPublicRun, toPublicRuns, triggerNamesFor } from "./serializers";
 import { parseRequest } from "../middlewares/error-handler";
 
 // Il codegen non emette .int() per i parametri integer: cursore e limite si restringono qui.
@@ -38,7 +38,7 @@ router.get("/runs", async (req, res) => {
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(runsTable.id))
     .limit(limit);
-  res.json(ListRunsResponse.parse(runs.map((run) => toPublicRun(run))));
+  res.json(ListRunsResponse.parse(await toPublicRuns(runs)));
 });
 
 router.get("/runs/:id", async (req, res) => {
@@ -53,7 +53,9 @@ router.get("/runs/:id", async (req, res) => {
     .from(runsTable)
     .where(eq(runsTable.parentRunId, id))
     .orderBy(asc(runsTable.id));
-  res.json(GetRunResponse.parse(toPublicRun(run, children.map((c) => c.id))));
+  const names = await triggerNamesFor([run]);
+  const triggerName = run.triggerId !== null ? (names.get(run.triggerId) ?? null) : null;
+  res.json(GetRunResponse.parse(toPublicRun(run, { childRunIds: children.map((c) => c.id), triggerName })));
 });
 
 router.get("/runs/:id/steps", async (req, res) => {
@@ -84,7 +86,8 @@ router.post("/runs/:id/cancel", cancelRateLimit, async (req, res) => {
     res.status(409).json({ error: "L'esecuzione è già conclusa: non si può annullare." });
     return;
   }
-  res.json(CancelRunResponse.parse(toPublicRun(result.run)));
+  const [publicRun] = await toPublicRuns([result.run]);
+  res.json(CancelRunResponse.parse(publicRun));
 });
 
 export default router;

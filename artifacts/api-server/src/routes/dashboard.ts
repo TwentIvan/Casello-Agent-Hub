@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { sql, eq, and } from "drizzle-orm";
 import { currentUserId } from "../lib/auth";
-import { db, appsTable, agentsTable, runsTable, pendingActionsTable } from "@workspace/db";
+import { db, appsTable, agentsTable, agentTriggersTable, runsTable, pendingActionsTable } from "@workspace/db";
 import { GetDashboardStatsResponse } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -35,6 +35,12 @@ router.get("/dashboard/stats", async (req, res) => {
     .from(pendingActionsTable)
     .where(and(eq(pendingActionsTable.userId, currentUserId(req)), eq(pendingActionsTable.status, "pending")));
 
+  // Inneschi fermi in errore: agenti e app sono condivisi tra gli utenti ammessi, si contano tutti
+  const [{ count: triggersInError }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(agentTriggersTable)
+    .where(eq(agentTriggersTable.status, "error"));
+
   res.json(
     GetDashboardStatsResponse.parse({
       totalApps,
@@ -45,6 +51,7 @@ router.get("/dashboard/stats", async (req, res) => {
       failedRuns,
       cancelledRuns,
       pendingActions,
+      triggersInError,
       avgDurationMs,
     })
   );

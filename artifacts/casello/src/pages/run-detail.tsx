@@ -169,6 +169,17 @@ export default function RunDetailPage() {
               </dd>
             </div>
           )}
+          {r.triggerId != null && r.triggerName != null && (
+            <div>
+              <dt className="text-muted-foreground">Origine</dt>
+              <dd>
+                Avviata dall'innesco{" "}
+                <Link href={`/agents/${r.agentId}`} className="font-medium hover:underline">
+                  {r.triggerName}
+                </Link>
+              </dd>
+            </div>
+          )}
           {r.parentRunId != null && (
             <div>
               <dt className="text-muted-foreground">Origine</dt>

@@ -303,6 +303,11 @@ export function redact(text: string, secrets: string[]): string {
   return out;
 }
 
+/** Oscura le credenziali anche nella forma con gli escape JSON (valori dentro un JSON serializzato). */
+export function redactWithJson(text: string, secrets: string[]): string {
+  return redact(text, [...secrets, ...secrets.map((v) => JSON.stringify(v).slice(1, -1))]);
+}
+
 export function fail(content: string, status?: number): ToolResult {
   return status === undefined ? { ok: false, content } : { ok: false, status, content };
 }
@@ -316,6 +321,8 @@ export async function executeTool(input: {
   timeoutMs?: number;
   /** Annullamento dall'esterno (run annullata): si combina con il timeout */
   signal?: AbortSignal;
+  /** Risposta completa (≤ 1 MiB, oscurata): niente troncamento né proiezione `responseFields` (poller degli inneschi) */
+  raw?: boolean;
 }): Promise<ToolResult> {
   const { conn, tool, userToken } = input;
   const fetchImpl = input.fetchImpl ?? fetch;
@@ -338,6 +345,7 @@ export async function executeTool(input: {
         fetchImpl,
         timeoutMs,
         ...(input.signal ? { signal: input.signal } : {}),
+        ...(input.raw ? { raw: true } : {}),
       });
     }
     if (tool.kind !== "http") return fail(`tipo di tool non supportato: ${String(tool.kind)}`);
@@ -384,13 +392,16 @@ export async function executeTool(input: {
     }
 
     const json = tryParseJson(text);
+    // Con raw il JSON si riserializza intero (senza proiezione): JSON.stringify toglie gli escape
+    // superflui (`\/`, `\uXXXX`) che nasconderebbero una credenziale al confronto
     const content = json.ok
-      ? JSON.stringify(project(json.value, (parsed.value as HttpDefinition).responseFields))
+      ? JSON.stringify(input.raw ? json.value : project(json.value, (parsed.value as HttpDefinition).responseFields))
       : text.trim() === ""
         ? "(risposta vuota)"
         : text;
     // Di nuovo dopo JSON.parse/stringify: gli escape JSON possono aver nascosto un valore al primo passaggio
-    return { ok: true, status: res.status, content: truncate(redact(content, secrets)) };
+    const redacted = redactWithJson(content, secrets);
+    return { ok: true, status: res.status, content: input.raw ? redacted : truncate(redacted) };
   } catch (err) {
     if (err instanceof ToolError) return fail(err.message);
     // Errore inatteso: nessun dettaglio che possa contenere token o segreti

@@ -52,6 +52,25 @@ function AgentToolNames({ agentId, toolIds }: { agentId: number | null; toolIds:
   return <ToolNames appId={agent.data?.appId ?? null} toolIds={toolIds} />;
 }
 
+function TriggerToolName({ agentId, toolId }: { agentId: number | null; toolId: number | null }) {
+  const agent = useGetAgent(agentId ?? 0, { query: { queryKey: getGetAgentQueryKey(agentId ?? 0), enabled: agentId !== null } });
+  return (
+    <p className="text-sm">
+      <span className="text-label text-ink-muted">Tool</span>{" "}
+      {toolId !== null ? <ToolNames appId={agent.data?.appId ?? null} toolIds={[toolId]} /> : "—"}
+    </p>
+  );
+}
+
+function ConfigLine({ name, value }: { name: string; value: string }) {
+  return (
+    <div className="break-all">
+      <dt className="inline text-ink-muted">{name}: </dt>
+      <dd className="inline">{value}</dd>
+    </div>
+  );
+}
+
 function AppName({ appId }: { appId: number | null }) {
   const app = useGetApp(appId ?? 0, { query: { queryKey: getGetAppQueryKey(appId ?? 0), enabled: appId !== null } });
   return <>{app.data?.name ?? (appId !== null ? `app #${appId}` : "—")}</>;
@@ -92,6 +111,7 @@ export const LUCIUS_KIND_LABELS: Record<string, string> = {
   skill_content: "Contenuto della skill",
   template_roles: "Ruoli del modello",
   agent_create: "Nuovo agente",
+  agent_trigger_create: "Nuovo innesco di sorveglianza",
   skill_create: "Nuova skill",
   template_create: "Nuovo modello di squadra",
 };
@@ -132,6 +152,32 @@ export function LuciusPreview({ kind, payload, subjectId }: { kind: string; payl
               <ToolNames appId={appId} toolIds={ids(payload.toolIds)} />
             </Box>
           )}
+        </div>
+      );
+    }
+    case "agent_trigger_create": {
+      const agentId = typeof payload.agentId === "number" ? payload.agentId : null;
+      const toolId = typeof payload.toolId === "number" ? payload.toolId : null;
+      const minutes = typeof payload.intervalSeconds === "number" ? Math.round(payload.intervalSeconds / 60) : 5;
+      const filter = typeof payload.filter === "object" && payload.filter !== null ? (payload.filter as Record<string, unknown>) : null;
+      const args = typeof payload.args === "object" && payload.args !== null ? JSON.stringify(payload.args) : "";
+      return (
+        <div className="space-y-2">
+          <Field label="Nome" value={str(payload.name)} />
+          {str(payload.instructions) && <Field label="Istruzioni" value={str(payload.instructions)} />}
+          <Box>
+            <TriggerToolName agentId={agentId} toolId={toolId} />
+            <dl className="mt-2 space-y-0.5 font-mono text-xs">
+              {args && <ConfigLine name="argomenti" value={args} />}
+              {str(payload.itemsPath) && <ConfigLine name="elenco" value={str(payload.itemsPath)} />}
+              <ConfigLine name="campo id" value={str(payload.idField)} />
+              {str(payload.versionField) && <ConfigLine name="campo versione" value={str(payload.versionField)} />}
+              {str(payload.cursorParam) && <ConfigLine name="cursore" value={`${str(payload.cursorParam)} ← ${str(payload.cursorField)}`} />}
+              {filter && <ConfigLine name="filtro" value={`${str(filter.field)} = ${JSON.stringify(filter.equals)}`} />}
+              <ConfigLine name="intervallo" value={`ogni ${minutes} min`} />
+            </dl>
+          </Box>
+          <p className="text-sm text-ink-muted">L'innesco nasce in pausa: provalo e attivalo dalla scheda agente.</p>
         </div>
       );
     }

@@ -83,6 +83,8 @@ export const issueRefreshRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key
 
 // Aggiornamento del catalogo dal server MCP di un'app: 6 al minuto per utente.
 export const mcpRefreshRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byUser });
+// «Prova» degli inneschi: chiama il tool dell'app, 6 al minuto per utente (configurazione e innesco salvato insieme).
+export const triggerTestRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byUser });
 
 // Approvazione e rifiuto delle azioni in coda: 20 al minuto per utente. Un solo contatore condiviso dalle route
 // `POST /pending-actions/:number/approve|reject` e dagli strumenti MCP `approva`/`rifiuta` (`consumeActionDecision`).
@@ -179,4 +181,25 @@ const alfredToolCounter = fixedWindowCounter({ limit: 60, windowMs: 60_000 });
 /** Conta una chiamata di strumento di Alfred dell'utente: false se il limite è raggiunto. */
 export function consumeAlfredTool(userId: number): boolean {
   return alfredToolCounter.consume(`user:${userId}`).ok;
+}
+
+// Webhook in entrata degli inneschi (pubblici). Due limiti, entrambi con `Retry-After: 60`:
+// - 120 al minuto per IP, prima del parser del corpo (conta anche le richieste non autenticate);
+// - 60 al minuto per innesco, contato da `handleWebhook` solo DOPO il controllo di segreto e firma: chi non conosce il
+//   segreto non può esaurire il limite di un innesco altrui.
+const WEBHOOK_RETRY_AFTER_SEC = 60;
+const webhookIpCounter = fixedWindowCounter({ limit: 120, windowMs: 60_000 });
+export const webhookIpRateLimit: RequestHandler = (req, res, next) => {
+  if (!webhookIpCounter.consume(`ip:${req.ip ?? "unknown"}`).ok) {
+    res.setHeader("Retry-After", WEBHOOK_RETRY_AFTER_SEC);
+    res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
+    return;
+  }
+  next();
+};
+
+const webhookTriggerCounter = fixedWindowCounter({ limit: 60, windowMs: 60_000 });
+/** Conta una richiesta autenticata (segreto e firma validi) di un innesco: false oltre 60 al minuto. */
+export function consumeWebhookTrigger(triggerId: number): boolean {
+  return webhookTriggerCounter.consume(`hook:${triggerId}`).ok;
 }

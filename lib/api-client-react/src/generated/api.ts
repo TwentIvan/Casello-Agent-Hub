@@ -182,6 +182,13 @@ import type {
   TeamTurn,
   TeamUpdateApply,
   TooManyRequestsResponse,
+  Trigger,
+  TriggerCreated,
+  TriggerInput,
+  TriggerPatch,
+  TriggerSigningSecret,
+  TriggerTestResult,
+  TriggerWebhookUrl,
   UnauthorizedResponse,
   UpdateMemoryNoteParams
 } from './api.schemas';
@@ -4433,6 +4440,877 @@ export const useCancelRun = <TError = ErrorType<NotFoundResponse | ConflictRespo
       > => {
       return useMutation(getCancelRunMutationOptions(options));
     }
+
+export const getListAgentTriggersUrl = (id: number,) => {
+
+
+
+
+  return `/api/agents/${id}/triggers`
+}
+
+/**
+ * @summary Elenca gli inneschi di un agente
+ */
+export const listAgentTriggers = async (id: number, options?: RequestInit): Promise<Trigger[]> => {
+
+  return customFetch<Trigger[]>(getListAgentTriggersUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAgentTriggersQueryKey = (id: number,) => {
+    return [
+    `/api/agents/${id}/triggers`
+    ] as const;
+    }
+
+
+export const getListAgentTriggersQueryOptions = <TData = Awaited<ReturnType<typeof listAgentTriggers>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentTriggers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAgentTriggersQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAgentTriggers>>> = ({ signal }) => listAgentTriggers(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAgentTriggers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAgentTriggersQueryResult = NonNullable<Awaited<ReturnType<typeof listAgentTriggers>>>
+export type ListAgentTriggersQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Elenca gli inneschi di un agente
+ */
+
+export function useListAgentTriggers<TData = Awaited<ReturnType<typeof listAgentTriggers>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentTriggers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAgentTriggersQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateAgentTriggerUrl = (id: number,) => {
+
+
+
+
+  return `/api/agents/${id}/triggers`
+}
+
+/**
+ * Sorveglianza (`poll`) su un tool di lettura (L0) dell'app dell'agente con identità di servizio, oppure webhook in entrata. Per il webhook la risposta porta `webhookUrl`, mostrato una sola volta. Al massimo 10 inneschi per agente e 50 per utente.
+ * @summary Crea un innesco (nasce in pausa)
+ */
+export const createAgentTrigger = async (id: number,
+    triggerInput: TriggerInput, options?: RequestInit): Promise<TriggerCreated> => {
+
+  return customFetch<TriggerCreated>(getCreateAgentTriggerUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(triggerInput)
+  }
+);}
+
+
+
+
+export const getCreateAgentTriggerMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAgentTrigger>>, TError,{id: number;data: BodyType<TriggerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createAgentTrigger>>, TError,{id: number;data: BodyType<TriggerInput>}, TContext> => {
+
+const mutationKey = ['createAgentTrigger'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAgentTrigger>>, {id: number;data: BodyType<TriggerInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createAgentTrigger(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAgentTriggerMutationResult = NonNullable<Awaited<ReturnType<typeof createAgentTrigger>>>
+    export type CreateAgentTriggerMutationBody = BodyType<TriggerInput>
+    export type CreateAgentTriggerMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>
+
+    /**
+ * @summary Crea un innesco (nasce in pausa)
+ */
+export const useCreateAgentTrigger = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAgentTrigger>>, TError,{id: number;data: BodyType<TriggerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createAgentTrigger>>,
+        TError,
+        {id: number;data: BodyType<TriggerInput>},
+        TContext
+      > => {
+      return useMutation(getCreateAgentTriggerMutationOptions(options));
+    }
+
+export const getTestAgentTriggerConfigUrl = (id: number,) => {
+
+
+
+
+  return `/api/agents/${id}/triggers/test`
+}
+
+/**
+ * Chiama il tool e mostra gli elementi che leggerebbe, al più 20, con anteprima di 200 caratteri. Non avvia run, non scrive chiavi né cursore. Solo `poll`; 6 prove al minuto per utente.
+ * @summary Prova una configurazione di sorveglianza, anche non salvata
+ */
+export const testAgentTriggerConfig = async (id: number,
+    triggerInput: TriggerInput, options?: RequestInit): Promise<TriggerTestResult> => {
+
+  return customFetch<TriggerTestResult>(getTestAgentTriggerConfigUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(triggerInput)
+  }
+);}
+
+
+
+
+export const getTestAgentTriggerConfigMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testAgentTriggerConfig>>, TError,{id: number;data: BodyType<TriggerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof testAgentTriggerConfig>>, TError,{id: number;data: BodyType<TriggerInput>}, TContext> => {
+
+const mutationKey = ['testAgentTriggerConfig'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof testAgentTriggerConfig>>, {id: number;data: BodyType<TriggerInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  testAgentTriggerConfig(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TestAgentTriggerConfigMutationResult = NonNullable<Awaited<ReturnType<typeof testAgentTriggerConfig>>>
+    export type TestAgentTriggerConfigMutationBody = BodyType<TriggerInput>
+    export type TestAgentTriggerConfigMutationError = ErrorType<BadRequestResponse | NotFoundResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Prova una configurazione di sorveglianza, anche non salvata
+ */
+export const useTestAgentTriggerConfig = <TError = ErrorType<BadRequestResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testAgentTriggerConfig>>, TError,{id: number;data: BodyType<TriggerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof testAgentTriggerConfig>>,
+        TError,
+        {id: number;data: BodyType<TriggerInput>},
+        TContext
+      > => {
+      return useMutation(getTestAgentTriggerConfigMutationOptions(options));
+    }
+
+export const getGetTriggerUrl = (id: number,) => {
+
+
+
+
+  return `/api/triggers/${id}`
+}
+
+/**
+ * @summary Recupera un innesco
+ */
+export const getTrigger = async (id: number, options?: RequestInit): Promise<Trigger> => {
+
+  return customFetch<Trigger>(getGetTriggerUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTriggerQueryKey = (id: number,) => {
+    return [
+    `/api/triggers/${id}`
+    ] as const;
+    }
+
+
+export const getGetTriggerQueryOptions = <TData = Awaited<ReturnType<typeof getTrigger>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTrigger>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTriggerQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTrigger>>> = ({ signal }) => getTrigger(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTrigger>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTriggerQueryResult = NonNullable<Awaited<ReturnType<typeof getTrigger>>>
+export type GetTriggerQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Recupera un innesco
+ */
+
+export function useGetTrigger<TData = Awaited<ReturnType<typeof getTrigger>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTrigger>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTriggerQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateTriggerUrl = (id: number,) => {
+
+
+
+
+  return `/api/triggers/${id}`
+}
+
+/**
+ * Campo assente = invariato, null = tolto. Cambiare tool, `itemsPath`, `idField`, `versionField` o `filter` riporta la linea di partenza: chiavi viste e cursore si azzerano.
+ * @summary Modifica un innesco (il tipo non cambia)
+ */
+export const updateTrigger = async (id: number,
+    triggerPatch: TriggerPatch, options?: RequestInit): Promise<Trigger> => {
+
+  return customFetch<Trigger>(getUpdateTriggerUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(triggerPatch)
+  }
+);}
+
+
+
+
+export const getUpdateTriggerMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTrigger>>, TError,{id: number;data: BodyType<TriggerPatch>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTrigger>>, TError,{id: number;data: BodyType<TriggerPatch>}, TContext> => {
+
+const mutationKey = ['updateTrigger'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTrigger>>, {id: number;data: BodyType<TriggerPatch>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateTrigger(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTriggerMutationResult = NonNullable<Awaited<ReturnType<typeof updateTrigger>>>
+    export type UpdateTriggerMutationBody = BodyType<TriggerPatch>
+    export type UpdateTriggerMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Modifica un innesco (il tipo non cambia)
+ */
+export const useUpdateTrigger = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTrigger>>, TError,{id: number;data: BodyType<TriggerPatch>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateTrigger>>,
+        TError,
+        {id: number;data: BodyType<TriggerPatch>},
+        TContext
+      > => {
+      return useMutation(getUpdateTriggerMutationOptions(options));
+    }
+
+export const getDeleteTriggerUrl = (id: number,) => {
+
+
+
+
+  return `/api/triggers/${id}`
+}
+
+/**
+ * @summary Elimina un innesco (le sue run restano, senza innesco)
+ */
+export const deleteTrigger = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteTriggerUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteTriggerMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTrigger>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteTrigger>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteTrigger'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTrigger>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteTrigger(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteTriggerMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTrigger>>>
+
+    export type DeleteTriggerMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Elimina un innesco (le sue run restano, senza innesco)
+ */
+export const useDeleteTrigger = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTrigger>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteTrigger>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteTriggerMutationOptions(options));
+    }
+
+export const getPauseTriggerUrl = (id: number,) => {
+
+
+
+
+  return `/api/triggers/${id}/pause`
+}
+
+/**
+ * @summary Mette in pausa un innesco
+ */
+export const pauseTrigger = async (id: number, options?: RequestInit): Promise<Trigger> => {
+
+  return customFetch<Trigger>(getPauseTriggerUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getPauseTriggerMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseTrigger>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pauseTrigger>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['pauseTrigger'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pauseTrigger>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  pauseTrigger(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PauseTriggerMutationResult = NonNullable<Awaited<ReturnType<typeof pauseTrigger>>>
+
+    export type PauseTriggerMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Mette in pausa un innesco
+ */
+export const usePauseTrigger = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseTrigger>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pauseTrigger>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getPauseTriggerMutationOptions(options));
+    }
+
+export const getResumeTriggerUrl = (id: number,) => {
+
+
+
+
+  return `/api/triggers/${id}/resume`
+}
+
+/**
+ * @summary Attiva o riprende un innesco (azzera gli errori, il giro parte subito)
+ */
+export const resumeTrigger = async (id: number, options?: RequestInit): Promise<Trigger> => {
+
+  return customFetch<Trigger>(getResumeTriggerUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getResumeTriggerMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeTrigger>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resumeTrigger>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['resumeTrigger'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resumeTrigger>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  resumeTrigger(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResumeTriggerMutationResult = NonNullable<Awaited<ReturnType<typeof resumeTrigger>>>
+
+    export type ResumeTriggerMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Attiva o riprende un innesco (azzera gli errori, il giro parte subito)
+ */
+export const useResumeTrigger = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeTrigger>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resumeTrigger>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getResumeTriggerMutationOptions(options));
+    }
+
+export const getTestTriggerUrl = (id: number,) => {
+
+
+
+
+  return `/api/triggers/${id}/test`
+}
+
+/**
+ * Come la prova della configurazione, con gli argomenti e il cursore salvati: `isNew` dice se la chiave non è ancora tra quelle viste. Non avvia run, non scrive chiavi né cursore. Solo `poll`; 6 prove al minuto per utente.
+ * @summary Prova un innesco di sorveglianza salvato
+ */
+export const testTrigger = async (id: number, options?: RequestInit): Promise<TriggerTestResult> => {
+
+  return customFetch<TriggerTestResult>(getTestTriggerUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getTestTriggerMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testTrigger>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof testTrigger>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['testTrigger'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof testTrigger>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  testTrigger(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TestTriggerMutationResult = NonNullable<Awaited<ReturnType<typeof testTrigger>>>
+
+    export type TestTriggerMutationError = ErrorType<BadRequestResponse | NotFoundResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Prova un innesco di sorveglianza salvato
+ */
+export const useTestTrigger = <TError = ErrorType<BadRequestResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testTrigger>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof testTrigger>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getTestTriggerMutationOptions(options));
+    }
+
+export const getRegenerateTriggerSecretUrl = (id: number,) => {
+
+
+
+
+  return `/api/triggers/${id}/secret`
+}
+
+/**
+ * Il segreto precedente smette di valere; il nuovo indirizzo si mostra una sola volta.
+ * @summary Rigenera il segreto dell'indirizzo del webhook (solo con il login)
+ */
+export const regenerateTriggerSecret = async (id: number, options?: RequestInit): Promise<TriggerWebhookUrl> => {
+
+  return customFetch<TriggerWebhookUrl>(getRegenerateTriggerSecretUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRegenerateTriggerSecretMutationOptions = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateTriggerSecret>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof regenerateTriggerSecret>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['regenerateTriggerSecret'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof regenerateTriggerSecret>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  regenerateTriggerSecret(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegenerateTriggerSecretMutationResult = NonNullable<Awaited<ReturnType<typeof regenerateTriggerSecret>>>
+
+    export type RegenerateTriggerSecretMutationError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Rigenera il segreto dell'indirizzo del webhook (solo con il login)
+ */
+export const useRegenerateTriggerSecret = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateTriggerSecret>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof regenerateTriggerSecret>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRegenerateTriggerSecretMutationOptions(options));
+    }
+
+export const getSetTriggerSigningSecretUrl = (id: number,) => {
+
+
+
+
+  return `/api/triggers/${id}/signing-secret`
+}
+
+/**
+ * Da 16 a 200 caratteri; null lo toglie. Non si legge mai.
+ * @summary Imposta o toglie il segreto di firma del webhook (solo con il login)
+ */
+export const setTriggerSigningSecret = async (id: number,
+    triggerSigningSecret: TriggerSigningSecret, options?: RequestInit): Promise<Trigger> => {
+
+  return customFetch<Trigger>(getSetTriggerSigningSecretUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(triggerSigningSecret)
+  }
+);}
+
+
+
+
+export const getSetTriggerSigningSecretMutationOptions = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setTriggerSigningSecret>>, TError,{id: number;data: BodyType<TriggerSigningSecret>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setTriggerSigningSecret>>, TError,{id: number;data: BodyType<TriggerSigningSecret>}, TContext> => {
+
+const mutationKey = ['setTriggerSigningSecret'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setTriggerSigningSecret>>, {id: number;data: BodyType<TriggerSigningSecret>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  setTriggerSigningSecret(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetTriggerSigningSecretMutationResult = NonNullable<Awaited<ReturnType<typeof setTriggerSigningSecret>>>
+    export type SetTriggerSigningSecretMutationBody = BodyType<TriggerSigningSecret>
+    export type SetTriggerSigningSecretMutationError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Imposta o toglie il segreto di firma del webhook (solo con il login)
+ */
+export const useSetTriggerSigningSecret = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setTriggerSigningSecret>>, TError,{id: number;data: BodyType<TriggerSigningSecret>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setTriggerSigningSecret>>,
+        TError,
+        {id: number;data: BodyType<TriggerSigningSecret>},
+        TContext
+      > => {
+      return useMutation(getSetTriggerSigningSecretMutationOptions(options));
+    }
+
+export const getListTriggerRunsUrl = (id: number,) => {
+
+
+
+
+  return `/api/triggers/${id}/runs`
+}
+
+/**
+ * @summary Ultime 20 run avviate dall'innesco
+ */
+export const listTriggerRuns = async (id: number, options?: RequestInit): Promise<Run[]> => {
+
+  return customFetch<Run[]>(getListTriggerRunsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTriggerRunsQueryKey = (id: number,) => {
+    return [
+    `/api/triggers/${id}/runs`
+    ] as const;
+    }
+
+
+export const getListTriggerRunsQueryOptions = <TData = Awaited<ReturnType<typeof listTriggerRuns>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTriggerRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTriggerRunsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTriggerRuns>>> = ({ signal }) => listTriggerRuns(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTriggerRuns>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTriggerRunsQueryResult = NonNullable<Awaited<ReturnType<typeof listTriggerRuns>>>
+export type ListTriggerRunsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Ultime 20 run avviate dall'innesco
+ */
+
+export function useListTriggerRuns<TData = Awaited<ReturnType<typeof listTriggerRuns>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTriggerRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTriggerRunsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListAnalysesUrl = (id: number,) => {
 

@@ -35,3 +35,4 @@ export * from "./alfred";
 export * from "./team-chat";
 export * from "./character-memory";
 export * from "./characters";
+export * from "./agent-triggers";

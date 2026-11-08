@@ -68,6 +68,15 @@ function handle(req: IncomingMessage, res: ServerResponse, body: string): void {
     res.end(`no: ${req.headers.authorization}`);
     return;
   }
+  if (url.startsWith("/echo-escaped")) {
+    // Il token rimandato con gli escape JSON "\/" e "\uXXXX": JSON valido, il testo non contiene il token in chiaro
+    const tok = String(req.headers.authorization ?? "").replace(/^Bearer /, "");
+    const slash = tok.replace(/\//g, "\\/");
+    const unicode = [...tok].map((c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`).join("");
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(`{"a":"${slash}","b":"${unicode}"}`);
+    return;
+  }
   if (url.startsWith("/echo")) {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ auth: req.headers.authorization ?? null, key: req.headers["x-api-key"] ?? null }));
@@ -76,6 +85,11 @@ function handle(req: IncomingMessage, res: ServerResponse, body: string): void {
   if (url.startsWith("/players")) {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify([{ id: 1, nome: "Rossi", extra: "x" }]));
+    return;
+  }
+  if (url.startsWith("/jsonlarge")) {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify([{ id: 1, nome: "Rossi", extra: "x".repeat(30_000), token: req.headers.authorization ?? null }]));
     return;
   }
   if (url.startsWith("/text")) {
@@ -177,6 +191,38 @@ describe("buildHttpRequest", () => {
 });
 
 describe("executeTool", () => {
+  describe("raw", () => {
+    const bigTool = tool(
+      { method: "GET", path: "/jsonlarge", paramLocations: {}, responseFields: ["id"] },
+      { type: "object", properties: {} },
+    );
+
+    it("senza raw la risposta è proiettata e troncata", async () => {
+      const res = await executeTool({ conn: conn(), tool: bigTool, args: {}, userToken: "tok-segreto-1" });
+      expect(res.content).toBe('[{"id":1}]');
+    });
+
+    it("con raw: corpo completo, senza proiezione né troncamento, credenziali oscurate", async () => {
+      const res = await executeTool({ conn: conn(), tool: bigTool, args: {}, userToken: "tok-segreto-1", raw: true });
+      expect(res.ok).toBe(true);
+      expect(res.content.length).toBeGreaterThan(20_000);
+      expect(res.content).toContain("Rossi");
+      expect(res.content).not.toContain("tok-segreto-1");
+      expect(res.content).not.toContain("troncata");
+    });
+
+    it("con raw: il token rimandato con escape JSON (\\/ e \\u) è oscurato", async () => {
+      const escTool = tool({ method: "GET", path: "/echo-escaped", paramLocations: {} }, { type: "object", properties: {} });
+      const token = "tok/segreto/12345";
+      const res = await executeTool({ conn: conn(), tool: escTool, args: {}, userToken: token, raw: true });
+      expect(res.ok).toBe(true);
+      const parsed = JSON.parse(res.content) as { a: string; b: string };
+      expect(parsed.a).not.toContain(token);
+      expect(parsed.b).not.toContain(token);
+      expect(res.content).not.toContain(token);
+    });
+  });
+
   let previousKey: string | undefined;
   beforeEach(() => {
     previousKey = process.env["CASELLO_SECRET_KEY"];

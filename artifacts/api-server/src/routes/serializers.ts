@@ -3,6 +3,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   db,
   agentToolsTable,
+  agentTriggersTable,
   appToolsTable,
   type Agent,
   type Analysis,
@@ -34,11 +35,35 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Run come esce dall'API: costo come numero. Le colonne storiche della pausa non sono più nello schema. */
-/** Run per l'API; `childRunIds` (run nate da una segnalazione al Responsabile) solo nel dettaglio. */
-export function toPublicRun(run: Run, childRunIds?: number[]) {
+/**
+ * Run per l'API: costo come numero e nome dell'innesco che l'ha avviata (`triggerName`, null senza innesco);
+ * `childRunIds` (run nate da una segnalazione al Responsabile) solo nel dettaglio.
+ */
+export function toPublicRun(run: Run, opts: { childRunIds?: number[]; triggerName?: string | null } = {}) {
   const { costUsd, ...rest } = run;
-  return { ...rest, costUsd: toNumberOrNull(costUsd), ...(childRunIds ? { childRunIds } : {}) };
+  return {
+    ...rest,
+    costUsd: toNumberOrNull(costUsd),
+    triggerName: opts.triggerName ?? null,
+    ...(opts.childRunIds ? { childRunIds: opts.childRunIds } : {}),
+  };
+}
+
+/** Nomi degli inneschi delle run, letti in una query sola. */
+export async function triggerNamesFor(runs: Run[]): Promise<Map<number, string>> {
+  const ids = [...new Set(runs.map((r) => r.triggerId).filter((id): id is number => id !== null))];
+  if (ids.length === 0) return new Map();
+  const rows = await db
+    .select({ id: agentTriggersTable.id, name: agentTriggersTable.name })
+    .from(agentTriggersTable)
+    .where(inArray(agentTriggersTable.id, ids));
+  return new Map(rows.map((r) => [r.id, r.name]));
+}
+
+/** Più run per l'API, con il nome del loro innesco. */
+export async function toPublicRuns(runs: Run[]) {
+  const names = await triggerNamesFor(runs);
+  return runs.map((run) => toPublicRun(run, { triggerName: run.triggerId !== null ? (names.get(run.triggerId) ?? null) : null }));
 }
 
 /**

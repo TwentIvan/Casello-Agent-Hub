@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Response } from "express";
 import { and, asc, eq } from "drizzle-orm";
-import { db, appsTable, appToolsTable, pendingActionsTable } from "@workspace/db";
+import { db, agentTriggersTable, appsTable, appToolsTable, pendingActionsTable } from "@workspace/db";
 import {
   ListAppToolsParams,
   ListAppToolsResponse,
@@ -23,11 +23,13 @@ import { McpError, listMcpTools } from "../lib/tools/mcp-client";
 import { syncMcpTools } from "../lib/tools/mcp-sync";
 import { mcpRefreshRateLimit } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
+import { TRIGGER_MESSAGES } from "../lib/triggers/messages";
 
 // Catalogo dei tool di un'app: i tool appartengono all'app e si assegnano agli agenti con
 // PUT /agents/:id/tools.
 
 const TOOL_HAS_ACTIONS = "il tool ha azioni in coda o già decise: disattivalo invece di eliminarlo";
+const TRIGGER_TOOL_FK = "agent_triggers_tool_id_app_tools_id_fk";
 
 const router: IRouter = Router();
 
@@ -188,6 +190,16 @@ router.delete("/apps/:id/tools/:toolId", async (req, res) => {
     res.status(409).json({ error: TOOL_HAS_ACTIONS });
     return;
   }
+  // Un innesco di sorveglianza lo chiama a ogni giro (FK RESTRICT): si elimina prima l'innesco
+  const [usedBy] = await db
+    .select({ id: agentTriggersTable.id })
+    .from(agentTriggersTable)
+    .where(eq(agentTriggersTable.toolId, toolId))
+    .limit(1);
+  if (usedBy) {
+    res.status(409).json({ error: TRIGGER_MESSAGES.toolInUse });
+    return;
+  }
   let tool;
   try {
     [tool] = await db
@@ -195,9 +207,9 @@ router.delete("/apps/:id/tools/:toolId", async (req, res) => {
       .where(and(eq(appToolsTable.id, toolId), eq(appToolsTable.appId, id)))
       .returning();
   } catch (err) {
-    // Un'azione è entrata in coda tra il controllo e la cancellazione (FK RESTRICT)
+    // Un'azione o un innesco sono arrivati tra il controllo e la cancellazione (FK RESTRICT)
     if (!isForeignKeyViolation(err)) throw err;
-    res.status(409).json({ error: TOOL_HAS_ACTIONS });
+    res.status(409).json({ error: isForeignKeyViolation(err, TRIGGER_TOOL_FK) ? TRIGGER_MESSAGES.toolInUse : TOOL_HAS_ACTIONS });
     return;
   }
   if (!tool) {

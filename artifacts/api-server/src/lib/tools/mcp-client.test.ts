@@ -199,6 +199,40 @@ describe("callMcpTool", () => {
     expect(res.content).toBe('ciao\n[contenuto image omesso]\n{"n":1}');
   });
 
+  it("raw: structuredContent serializzato, senza troncare", async () => {
+    const big = { items: ["y".repeat(30_000)] };
+    fake = await startFakeMcp({ tools: [{ name: "big", text: "ignorato", structuredContent: big }] });
+    const res = await callMcpTool({ conn: conn(), tool: mcpTool("big"), args: {}, raw: true });
+    expect(res).toEqual({ ok: true, content: JSON.stringify(big) });
+    const trunc = await callMcpTool({ conn: conn(), tool: mcpTool("big"), args: {} });
+    expect(trunc.content).toContain("troncata");
+  });
+
+  it("raw: senza structuredContent il primo blocco di testo", async () => {
+    fake = await startFakeMcp({
+      tools: [{ name: "t", text: "z".repeat(25_000), extraContent: [{ type: "image", data: "AAAA", mimeType: "image/png" }] }],
+    });
+    const res = await callMcpTool({ conn: conn(), tool: mcpTool("t"), args: {}, raw: true });
+    expect(res).toEqual({ ok: true, content: "z".repeat(25_000) });
+  });
+
+  it("raw: credenziale rimandata con escape JSON (\\/ e \\u) nel testo è oscurata", async () => {
+    const secret = "seg/reto/servizio";
+    const unicode = [...secret].map((c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`).join("");
+    const text = `{"a":"${secret.replace(/\//g, "\\/")}","b":"${unicode}"}`;
+    fake = await startFakeMcp({ tools: [{ name: "esc", text }] });
+    const res = await callMcpTool({
+      conn: conn({ serviceSecretEnc: encryptSecret(secret) }),
+      tool: mcpTool("esc"),
+      args: {},
+      raw: true,
+    });
+    expect(res.ok).toBe(true);
+    const parsed = JSON.parse(res.content) as { a: string; b: string };
+    expect(parsed.a).not.toContain(secret);
+    expect(parsed.b).not.toContain(secret);
+  });
+
   it("isError: ok false", async () => {
     fake = await startFakeMcp({ tools: [{ name: "bad", text: "non si può", isError: true }] });
     const res = await callMcpTool({ conn: conn(), tool: mcpTool("bad"), args: {} });

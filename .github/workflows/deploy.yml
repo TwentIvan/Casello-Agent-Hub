@@ -108,6 +108,14 @@ jobs:
           expect /embed "frame-ancestors https://hubup.fantamister.cloud"
           expect / "frame-ancestors 'none'"
           expect /embed/v1/botcave.js "200 OK"
+          # Webhook degli inneschi: il segreto e' nel percorso, la location non deve scriverlo ne' nell'access log ne' nell'error log
+          conf=$(docker exec web-smoke-run nginx -T 2>/dev/null)
+          hooks=$(awk '/location \^~ \/api\/hooks\//{f=1} f{print} f&&/^    }/{exit}' <<<"$conf")
+          for directive in "access_log off;" "error_log /dev/stderr crit;"; do
+            if ! grep -qF -- "$directive" <<<"$hooks"; then
+              echo "::error::location /api/hooks/: manca '$directive'"; echo "$hooks"; exit 1
+            fi
+          done
           run_web ""
           expect /embed "frame-ancestors 'none'"
           docker rm -f web-smoke-run >/dev/null

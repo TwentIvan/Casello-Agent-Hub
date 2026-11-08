@@ -11,7 +11,9 @@ import {
   CHAT_MAX_RETRIES,
   CHAT_REQUEST_TIMEOUT_MS,
   applyTools,
+  extractContent,
   extractToolCalls,
+  isTruncated,
   readUsage,
   type ChatResult,
 } from "./chat-types";
@@ -292,6 +294,9 @@ export async function modelChat(resolved: ResolvedModel, opts: ChatOptions): Pro
   const params = buildParams(resolved, opts);
   const startMs = Date.now();
   let result: ModelChatResult;
+  // Per i log: quante scelte e perché si sono fermate (mai il contenuto)
+  let choices = 0;
+  let finishReasons: Array<string | null> = [];
   try {
     const response = await client.chat.completions.create(params, {
       signal: opts.signal,
@@ -301,13 +306,15 @@ export async function modelChat(resolved: ResolvedModel, opts: ChatOptions): Pro
     // Risposta 2xx malformata (senza `choices`): errore del provider, mai un TypeError grezzo
     if (!Array.isArray(response?.choices) || response.choices.length === 0) throw new ProviderError("unreachable");
     const usage = readUsage(response);
-    const content = response.choices[0]?.message?.content;
+    choices = response.choices.length;
+    finishReasons = response.choices.map((c) => c?.finish_reason ?? null);
     result = {
-      content: typeof content === "string" ? content : null,
+      content: extractContent(response),
       toolCalls: extractToolCalls(response),
       promptTokens: usage.promptTokens,
       completionTokens: usage.completionTokens,
       cachedPromptTokens: usage.cachedTokens,
+      ...(isTruncated(response) ? { truncated: true } : {}),
       costUsd: response.usage
         ? computeCost(
             usage.promptTokens,
@@ -342,6 +349,8 @@ export async function modelChat(resolved: ResolvedModel, opts: ChatOptions): Pro
       promptTokens: result.promptTokens,
       completionTokens: result.completionTokens,
       cachedTokens: result.cachedPromptTokens,
+      choices,
+      finishReasons,
       durationMs,
     },
     "Chiamata al modello",

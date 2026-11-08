@@ -17,6 +17,9 @@ export interface LoopLimits {
 
 // Confronto con `>=`: il limite è raggiunto al valore indicato
 // (es. con maxRounds 8 la nona chiamata al modello non parte; con 60 000 token esatti il turno si ferma)
+/** Errore della run quando il modello si ferma per il limite di token di uscita senza chiamare strumenti. */
+export const TRUNCATED_REPLY_ERROR = "risposta del modello troncata: limite di token di uscita raggiunto";
+
 export const DEFAULT_LIMITS: LoopLimits = { maxRounds: 8, maxActiveMs: 120_000, maxTokens: 60_000 };
 
 export interface ToolCall {
@@ -345,6 +348,10 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
     await deps.onStep({ type: "model", ok: true, durationMs: now() - t0 });
 
     if (reply.toolCalls.length === 0) {
+      // Risposta interrotta dal limite di token di uscita: il testo è un frammento, non un esito
+      if (reply.truncated) {
+        return finish({ type: "failed", error: TRUNCATED_REPLY_ERROR, state });
+      }
       const content = reply.content ?? "";
       state.messages.push({ role: "assistant", content });
       return finish({ type: "finished", content, state });

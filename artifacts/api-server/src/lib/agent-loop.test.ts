@@ -4,6 +4,7 @@ import type { ChatResult } from "./ai/chat-types";
 import {
   DEFAULT_LIMITS,
   runAgentLoop,
+  TRUNCATED_REPLY_ERROR,
   type LoopDeps,
   type LoopState,
   type QueueActionResult,
@@ -145,6 +146,23 @@ describe("runAgentLoop", () => {
     const { deps } = makeDeps([{ content: null, toolCalls: [], promptTokens: 1, completionTokens: 1, cachedPromptTokens: 0 }]);
     const out = await runAgentLoop(initialState(), deps);
     expect(out).toMatchObject({ type: "finished", content: "" });
+  });
+
+  it("risposta troncata dal limite di token senza tool call → run fallita, non un esito", async () => {
+    const { deps, steps } = makeDeps([{ ...reply("a metà frase senza chiamata"), truncated: true }]);
+    const out = await runAgentLoop(initialState(), deps);
+    expect(out).toMatchObject({ type: "failed", error: TRUNCATED_REPLY_ERROR });
+    expect(steps.map((s) => s.type)).toEqual(["model"]);
+  });
+
+  it("risposta troncata ma con tool call complete → le chiamate si eseguono", async () => {
+    const { deps, executeTool } = makeDeps([
+      { ...callTools([{ id: "c1", name: "leggi_rosa", args: "{}" }]), truncated: true },
+      reply("fatto"),
+    ]);
+    const out = await runAgentLoop(initialState(), deps);
+    expect(out).toMatchObject({ type: "finished", content: "fatto" });
+    expect(executeTool).toHaveBeenCalledTimes(1);
   });
 
   it("un giro di tool", async () => {

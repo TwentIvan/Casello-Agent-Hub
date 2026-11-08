@@ -145,6 +145,7 @@ export * from './embedConfig';
 export * from './errorResponse';
 export * from './estimateAnalysisCostParams';
 export * from './exportAnalysisIssuesParams';
+export * from './extraHeader';
 export * from './forbiddenResponse';
 export * from './getEmbedConfigParams';
 export * from './getTeamInstanceUpdates200';

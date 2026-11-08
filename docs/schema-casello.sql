@@ -1141,3 +1141,6 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "runs_trigger_id_idx" ON "runs" USING btree ("trigger_id");
 
+
+-- Header fissi per app (2026-11-header-app)
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "extra_headers" jsonb DEFAULT '[]'::jsonb NOT NULL;

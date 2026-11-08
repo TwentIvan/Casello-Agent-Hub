@@ -138,6 +138,14 @@ export interface AuthConfig {
 }
 
 /**
+ * Header HTTP fisso (non segreto) mandato su ogni chiamata ai tool dell'app, HTTP e MCP
+ */
+export interface ExtraHeader {
+  name: string;
+  value: string;
+}
+
+/**
  * Da dove l'architetto legge il codice dell'app
  */
 export type SourceType = typeof SourceType[keyof typeof SourceType];
@@ -170,6 +178,11 @@ export interface App {
   serviceAuth?: AuthConfig | null;
   /** Indica se il segreto di servizio è impostato (il valore non è mai esposto) */
   serviceSecretSet: boolean;
+  /**
+     * Header fissi (non segreti) mandati su ogni chiamata ai tool dell'app, HTTP e MCP
+     * @maxItems 10
+     */
+  extraHeaders: ExtraHeader[];
   sourceType: SourceType;
   /**
      * Repository GitHub nel formato owner/nome
@@ -317,6 +330,8 @@ export interface AppInput {
   serviceAuth?: AuthConfig | null;
   /** Segreto di servizio (solo scrittura, salvato cifrato) */
   serviceSecret?: string;
+  /** Header fissi (non segreti) su ogni chiamata ai tool dell'app, al più 10 (400 "extraHeaders: ..."): nomi validi, non ripetuti e diversi dagli header di autenticazione; valori di 1..500 caratteri visibili, mai credenziali. */
+  extraHeaders?: ExtraHeader[];
   sourceType?: SourceType;
   /** @nullable */
   sourceRepo?: string | null;
@@ -362,6 +377,8 @@ export interface AppUpdate {
      * @nullable
      */
   serviceSecret?: string | null;
+  /** Header fissi (non segreti) su ogni chiamata ai tool dell'app, al più 10 (400 "extraHeaders: ..."): nomi validi, non ripetuti e diversi dagli header di autenticazione; valori di 1..500 caratteri visibili, mai credenziali. Assente = invariato; un elenco sostituisce quello salvato. */
+  extraHeaders?: ExtraHeader[];
   sourceType?: SourceType;
   /** @nullable */
   sourceRepo?: string | null;

@@ -1,7 +1,10 @@
 import { BodyTooLarge, readBytesLimited } from "../http-read";
 import { decryptSecret } from "../secrets";
 import { checkHttpPath, parseDefinition, validateArgs } from "./definition";
+import { checkAuthHeaderName, extraHeadersFor } from "./headers";
 import { callMcpTool } from "./mcp-client";
+
+export { checkAuthHeaderName };
 import type { AppConnection, AuthConfig, CatalogTool, HttpDefinition, ToolResult } from "./types";
 
 // Esecutore HTTP dei tool: l'unico punto in cui una chiamata del modello diventa una
@@ -17,18 +20,6 @@ const ERROR_SNIPPET_CHARS = 200;
 // Valori più corti non vengono oscurati: si maschererebbero caratteri banali della risposta
 const MIN_REDACT_CHARS = 4;
 const BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);
-// Token HTTP (RFC 9110) per i nomi di header
-const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-// Header che la configurazione di autenticazione non può sovrascrivere
-const RESERVED_HEADERS = new Set([
-  "host",
-  "content-length",
-  "content-type",
-  "transfer-encoding",
-  "connection",
-  "accept",
-]);
-
 /** Errore previsto dell'esecutore: il messaggio (in italiano) va restituito al modello. */
 export class ToolError extends Error {
   constructor(message: string) {
@@ -61,13 +52,6 @@ export function parseAppBaseUrl(raw: string): { ok: true; url: URL } | { ok: fal
     return { ok: false, error: "indirizzo dell'app non valido: niente credenziali, query o frammento" };
   }
   return { ok: true, url: base };
-}
-
-/** Motivo (in italiano) per cui un nome di header di autenticazione non è ammesso, o null. */
-export function checkAuthHeaderName(header: string): string | null {
-  if (!HEADER_NAME.test(header)) return "nome di header non valido";
-  if (RESERVED_HEADERS.has(header.toLowerCase())) return `l'header "${header}" è riservato`;
-  return null;
 }
 
 /** Base dell'app, già verificata (http/https, niente credenziali, query o frammento). */
@@ -231,7 +215,10 @@ export function buildHttpRequest(
     }
   }
 
-  const headers = new Headers({ accept: "application/json" });
+  const headers = new Headers();
+  // Header fissi dell'app prima di tutto: accept, content-type e autenticazione si impostano dopo e vincono
+  for (const [name, value] of extraHeadersFor(conn)) headers.set(name, value);
+  headers.set("accept", "application/json");
   const auth = resolveAuth(conn, tool, userToken);
   headers.set(auth.header[0], auth.header[1]);
 

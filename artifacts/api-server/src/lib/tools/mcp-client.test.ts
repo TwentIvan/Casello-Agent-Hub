@@ -145,6 +145,23 @@ describe("listMcpTools", () => {
     expect(await listMcpTools(conn())).toHaveLength(1);
   });
 
+  it("manda gli header fissi, anche nella lista anonima senza segreto", async () => {
+    fake = await startFakeMcp({ tools: [{ name: "a" }] });
+    const seen: Headers[] = [];
+    const spy = ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      seen.push(new Headers(init?.headers));
+      return fetch(input, init);
+    }) as typeof fetch;
+    const extraHeaders = [{ name: "X-Organization-Id", value: "org-7" }];
+    await listMcpTools(conn({ extraHeaders }), { fetchImpl: spy });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((h) => h.get("x-organization-id") === "org-7" && h.get("x-service-key") === SERVICE_SECRET)).toBe(true);
+    seen.length = 0;
+    await listMcpTools(conn({ extraHeaders, serviceSecretEnc: null }), { fetchImpl: spy });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((h) => h.get("x-organization-id") === "org-7" && !h.has("x-service-key"))).toBe(true);
+  });
+
   it("porta chiusa: server non raggiungibile", async () => {
     await expect(listMcpTools(conn({ mcpUrl: "http://127.0.0.1:1/mcp" }))).rejects.toMatchObject({
       message: MCP_MESSAGES.unreachable,
@@ -175,6 +192,22 @@ describe("callMcpTool", () => {
     expect(res).toEqual({ ok: true, content: "pong" });
     expect(fake.calls[0]?.args).toEqual({ q: "x" });
     expect(fake.calls[0]?.headers["x-service-key"]).toBe(SERVICE_SECRET);
+  });
+
+  it("manda gli header fissi dell'app con entrambe le identità; l'autenticazione vince", async () => {
+    fake = await startFakeMcp({ tools: [{ name: "ping", text: "pong" }] });
+    const c = conn({
+      extraHeaders: [
+        { name: "X-Organization-Id", value: "org-7" },
+        { name: "x-service-key", value: "intruso" },
+      ],
+    });
+    await callMcpTool({ conn: c, tool: mcpTool("ping"), args: {} });
+    await callMcpTool({ conn: c, tool: mcpTool("ping", "user"), args: {}, userToken: "tok-utente" });
+    expect(fake.calls[0]?.headers["x-organization-id"]).toBe("org-7");
+    expect(fake.calls[0]?.headers["x-service-key"]).toBe(SERVICE_SECRET);
+    expect(fake.calls[1]?.headers["x-organization-id"]).toBe("org-7");
+    expect(fake.calls[1]?.headers["authorization"]).toBe("Bearer tok-utente");
   });
 
   it("identità user: manda il token dell'utente", async () => {

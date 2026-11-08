@@ -22,8 +22,9 @@ import {
   DeleteAppParams,
 } from "@workspace/api-zod";
 import { encryptSecret } from "../lib/secrets";
-import { checkAuthHeaderName, parseAppBaseUrl } from "../lib/tools/executor";
-import type { AuthConfig } from "../lib/tools/types";
+import { parseAppBaseUrl } from "../lib/tools/executor";
+import { checkAuthHeaderName, checkExtraHeaders, normalizeExtraHeaders } from "../lib/tools/headers";
+import type { AuthConfig, ExtraHeader } from "../lib/tools/types";
 import { uniqueSlug, withSlugRetry } from "../lib/slug";
 import { isValidGithubRepo } from "../lib/architect/sources";
 import { currentUserId } from "../lib/auth";
@@ -64,6 +65,30 @@ function connectionError(body: ConnectionFields): string | null {
     if (error) return `${field}.header: ${error}`;
   }
   return null;
+}
+
+/**
+ * Header fissi nello stato risultante (`current` = valori già salvati, per la PATCH): si ricontrollano anche quando
+ * cambia solo un header di autenticazione, che non deve coincidere con un header fisso. "extraHeaders: <motivo>" o null.
+ */
+function extraHeadersError(
+  body: { extraHeaders?: ExtraHeader[]; userAuth?: AuthConfig | null; serviceAuth?: AuthConfig | null },
+  current?: { extraHeaders: ExtraHeader[]; userAuth: AuthConfig | null; serviceAuth: AuthConfig | null },
+): string | null {
+  if (body.extraHeaders === undefined && body.userAuth === undefined && body.serviceAuth === undefined) return null;
+  const headers = body.extraHeaders ?? current?.extraHeaders ?? [];
+  const userAuth = body.userAuth !== undefined ? body.userAuth : (current?.userAuth ?? null);
+  const serviceAuth = body.serviceAuth !== undefined ? body.serviceAuth : (current?.serviceAuth ?? null);
+  const error = checkExtraHeaders(headers, {
+    userAuthHeader: userAuth?.header ?? null,
+    serviceAuthHeader: serviceAuth?.header ?? null,
+  });
+  return error ? `extraHeaders: ${error}` : null;
+}
+
+/** Header fissi senza spazi ai bordi; assenti restano assenti (nella PATCH = invariati). */
+function normalizeHeaders<T extends { extraHeaders?: ExtraHeader[] }>(body: T): T {
+  return body.extraHeaders === undefined ? body : { ...body, extraHeaders: normalizeExtraHeaders(body.extraHeaders) };
 }
 
 // ── Sorgenti dell'architetto ────────────────────────────────────────────────
@@ -192,8 +217,8 @@ router.get("/apps", async (_req, res) => {
 // la transazione fallisce sulla unique e si riprova da capo (withSlugRetry).
 router.post("/apps", async (req, res) => {
   const { serviceSecret, sourceToken, generalAgentAiModelId, ...parsed } = parseRequest(CreateAppBody, req.body);
-  const body = normalizeSources(parsed);
-  const invalid = connectionError(body) ?? sourceError(body);
+  const body = normalizeHeaders(normalizeSources(parsed));
+  const invalid = connectionError(body) ?? extraHeadersError(body) ?? sourceError(body);
   if (invalid) {
     res.status(400).json({ error: invalid });
     return;
@@ -261,9 +286,12 @@ router.get("/apps/:id", async (req, res) => {
 router.patch("/apps/:id", async (req, res) => {
   const { id } = parseRequest(UpdateAppParams, req.params);
   const { serviceSecret, sourceToken, ...parsed } = parseRequest(UpdateAppBody, req.body);
-  const body = normalizeSources(parsed);
+  const body = normalizeHeaders(normalizeSources(parsed));
   const [current] = await db
     .select({
+      extraHeaders: appsTable.extraHeaders,
+      userAuth: appsTable.userAuth,
+      serviceAuth: appsTable.serviceAuth,
       sourceType: appsTable.sourceType,
       sourceRepo: appsTable.sourceRepo,
       sourceInstallationId: appsTable.sourceInstallationId,
@@ -275,7 +303,7 @@ router.patch("/apps/:id", async (req, res) => {
     res.status(404).json({ error: "App non trovata" });
     return;
   }
-  const invalid = connectionError(body) ?? sourceError(body, current);
+  const invalid = connectionError(body) ?? extraHeadersError(body, current) ?? sourceError(body, current);
   if (invalid) {
     res.status(400).json({ error: invalid });
     return;

@@ -13,6 +13,7 @@ import {
   resolveAuthFor,
   truncate,
 } from "./executor";
+import { extraHeadersFor } from "./headers";
 import { declaredLevelFromMcp, hasMcpLevelMeta, type ToolLevel } from "./levels";
 import type { AppConnection, CatalogTool, McpDefinition, ToolResult } from "./types";
 
@@ -72,14 +73,19 @@ export function resolveMcpEndpoint(conn: AppConnection): URL | null {
   return new URL(`${url.pathname}${url.search}`, internal.origin);
 }
 
-/** Header di autenticazione e credenziali da oscurare, con le stesse regole dei tool HTTP. */
+/** Header fissi dell'app (non segreti), come per i tool HTTP. */
+function mcpExtraHeaders(conn: AppConnection): Record<string, string> {
+  return Object.fromEntries(extraHeadersFor(conn));
+}
+
+/** Header fissi più quello di autenticazione e credenziali da oscurare, con le stesse regole dei tool HTTP. */
 export function mcpAuthHeaders(
   conn: AppConnection,
   identity: "user" | "service",
   userToken?: string,
 ): { headers: Record<string, string>; secrets: string[] } {
   const auth = resolveAuthFor(conn, identity, userToken);
-  return { headers: { [auth.header[0]]: auth.header[1] }, secrets: auth.secrets };
+  return { headers: { ...mcpExtraHeaders(conn), [auth.header[0]]: auth.header[1] }, secrets: auth.secrets };
 }
 
 /** Cosa è successo sul filo, per classificare gli errori dell'SDK senza leggere il testo del servizio. */
@@ -194,7 +200,8 @@ export async function listMcpTools(
 ): Promise<McpToolInfo[]> {
   const endpoint = resolveMcpEndpoint(conn);
   if (!endpoint) throw new McpError(MCP_MESSAGES.unreachable);
-  let headers: Record<string, string> = {};
+  // Senza segreto la lista è anonima, ma porta comunque gli header fissi dell'app
+  let headers: Record<string, string> = mcpExtraHeaders(conn);
   let secrets: string[] = [];
   if (conn.serviceAuth && conn.serviceSecretEnc) {
     try {

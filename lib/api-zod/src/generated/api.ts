@@ -703,6 +703,8 @@ export const RunAlfredToolResponse = zod.object({
  */
 
 
+export const listAppsResponseExtraHeadersMax = 10;
+
 
 
 export const ListAppsResponseItem = zod.object({
@@ -722,6 +724,10 @@ export const ListAppsResponseItem = zod.object({
   "scheme": zod.string().nullable()
 }).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
   "serviceSecretSet": zod.boolean().describe('Indica se il segreto di servizio è impostato (il valore non è mai esposto)'),
+  "extraHeaders": zod.array(zod.object({
+  "name": zod.string(),
+  "value": zod.string()
+}).describe('Header HTTP fisso (non segreto) mandato su ogni chiamata ai tool dell\'app, HTTP e MCP')).max(listAppsResponseExtraHeadersMax).describe('Header fissi (non segreti) mandati su ogni chiamata ai tool dell\'app, HTTP e MCP'),
   "sourceType": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "sourceRepo": zod.string().nullable().describe('Repository GitHub nel formato owner\/nome'),
   "sourceBranch": zod.string().nullable(),
@@ -760,6 +766,10 @@ export const CreateAppBody = zod.object({
   "scheme": zod.string().nullable()
 }).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
   "serviceSecret": zod.string().optional().describe('Segreto di servizio (solo scrittura, salvato cifrato)'),
+  "extraHeaders": zod.array(zod.object({
+  "name": zod.string(),
+  "value": zod.string()
+}).describe('Header HTTP fisso (non segreto) mandato su ogni chiamata ai tool dell\'app, HTTP e MCP')).optional().describe('Header fissi (non segreti) su ogni chiamata ai tool dell\'app, al più 10 (400 \"extraHeaders: ...\"): nomi validi, non ripetuti e diversi dagli header di autenticazione; valori di 1..500 caratteri visibili, mai credenziali.'),
   "sourceType": zod.enum(['github', 'zip', 'none']).optional().describe('Da dove l\'architetto legge il codice dell\'app'),
   "sourceRepo": zod.string().nullish(),
   "sourceBranch": zod.string().nullish(),
@@ -772,6 +782,8 @@ export const CreateAppBody = zod.object({
 })
 
 
+
+export const createAppResponseExtraHeadersMax = 10;
 
 
 
@@ -792,6 +804,10 @@ export const CreateAppResponse = zod.object({
   "scheme": zod.string().nullable()
 }).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
   "serviceSecretSet": zod.boolean().describe('Indica se il segreto di servizio è impostato (il valore non è mai esposto)'),
+  "extraHeaders": zod.array(zod.object({
+  "name": zod.string(),
+  "value": zod.string()
+}).describe('Header HTTP fisso (non segreto) mandato su ogni chiamata ai tool dell\'app, HTTP e MCP')).max(createAppResponseExtraHeadersMax).describe('Header fissi (non segreti) mandati su ogni chiamata ai tool dell\'app, HTTP e MCP'),
   "sourceType": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "sourceRepo": zod.string().nullable().describe('Repository GitHub nel formato owner\/nome'),
   "sourceBranch": zod.string().nullable(),
@@ -814,6 +830,8 @@ export const GetAppParams = zod.object({
 
 
 
+export const getAppResponseExtraHeadersMax = 10;
+
 
 
 export const GetAppResponse = zod.object({
@@ -833,6 +851,10 @@ export const GetAppResponse = zod.object({
   "scheme": zod.string().nullable()
 }).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
   "serviceSecretSet": zod.boolean().describe('Indica se il segreto di servizio è impostato (il valore non è mai esposto)'),
+  "extraHeaders": zod.array(zod.object({
+  "name": zod.string(),
+  "value": zod.string()
+}).describe('Header HTTP fisso (non segreto) mandato su ogni chiamata ai tool dell\'app, HTTP e MCP')).max(getAppResponseExtraHeadersMax).describe('Header fissi (non segreti) mandati su ogni chiamata ai tool dell\'app, HTTP e MCP'),
   "sourceType": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "sourceRepo": zod.string().nullable().describe('Repository GitHub nel formato owner\/nome'),
   "sourceBranch": zod.string().nullable(),
@@ -874,6 +896,10 @@ export const UpdateAppBody = zod.object({
   "scheme": zod.string().nullable()
 }).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
   "serviceSecret": zod.string().nullish().describe('Segreto di servizio (solo scrittura); null lo cancella'),
+  "extraHeaders": zod.array(zod.object({
+  "name": zod.string(),
+  "value": zod.string()
+}).describe('Header HTTP fisso (non segreto) mandato su ogni chiamata ai tool dell\'app, HTTP e MCP')).optional().describe('Header fissi (non segreti) su ogni chiamata ai tool dell\'app, al più 10 (400 \"extraHeaders: ...\"): nomi validi, non ripetuti e diversi dagli header di autenticazione; valori di 1..500 caratteri visibili, mai credenziali. Assente = invariato; un elenco sostituisce quello salvato.'),
   "sourceType": zod.enum(['github', 'zip', 'none']).optional().describe('Da dove l\'architetto legge il codice dell\'app'),
   "sourceRepo": zod.string().nullish(),
   "sourceBranch": zod.string().nullish(),
@@ -885,6 +911,8 @@ export const UpdateAppBody = zod.object({
 })
 
 
+
+export const updateAppResponseExtraHeadersMax = 10;
 
 
 
@@ -905,6 +933,10 @@ export const UpdateAppResponse = zod.object({
   "scheme": zod.string().nullable()
 }).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
   "serviceSecretSet": zod.boolean().describe('Indica se il segreto di servizio è impostato (il valore non è mai esposto)'),
+  "extraHeaders": zod.array(zod.object({
+  "name": zod.string(),
+  "value": zod.string()
+}).describe('Header HTTP fisso (non segreto) mandato su ogni chiamata ai tool dell\'app, HTTP e MCP')).max(updateAppResponseExtraHeadersMax).describe('Header fissi (non segreti) mandati su ogni chiamata ai tool dell\'app, HTTP e MCP'),
   "sourceType": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
   "sourceRepo": zod.string().nullable().describe('Repository GitHub nel formato owner\/nome'),
   "sourceBranch": zod.string().nullable(),

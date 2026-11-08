@@ -48,6 +48,12 @@ export interface AuthConfig {
   scheme: string | null;
 }
 
+/** Header HTTP fisso (non segreto) dell'app. */
+export interface ExtraHeader {
+  name: string;
+  value: string;
+}
+
 export interface AppConnection {
   baseUrl: string;
   internalBaseUrl: string | null;
@@ -56,4 +62,6 @@ export interface AppConnection {
   serviceSecretEnc: string | null;
   /** Indirizzo del server MCP dell'app (null se non ne espone uno) */
   mcpUrl: string | null;
+  /** Header fissi mandati su ogni chiamata ai tool, HTTP e MCP (assenti = nessuno) */
+  extraHeaders?: ExtraHeader[];
 }

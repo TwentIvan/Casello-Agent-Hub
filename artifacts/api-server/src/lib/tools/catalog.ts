@@ -143,5 +143,6 @@ export async function loadAppConnection(appId: number): Promise<AppConnection> {
     serviceAuth: app.serviceAuth,
     serviceSecretEnc: app.serviceSecretEnc,
     mcpUrl: app.mcpUrl,
+    extraHeaders: app.extraHeaders,
   };
 }

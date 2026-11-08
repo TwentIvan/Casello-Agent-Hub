@@ -16,6 +16,7 @@ import {
   STEP_SUMMARY_MAX,
   parseProposalArgs,
   stepRefs,
+  type StepRef,
 } from "./proposal";
 import { checkQueuedText } from "./text-check";
 
@@ -73,6 +74,11 @@ export function proposalEligible(tool: CatalogTool): boolean {
   );
 }
 
+function proposalRefs(args: Record<string, unknown>): StepRef[] {
+  const refs = stepRefs(args);
+  return Array.isArray(refs) ? refs.map((r) => ({ param: r.param, step: r.step, field: r.field })) : [];
+}
+
 export interface ProposeContext {
   run: Run;
   agent: Agent;
@@ -109,12 +115,15 @@ export async function handlePropose(ctx: ProposeContext, args: Record<string, un
     key: step.key,
     toolName: step.toolName,
     args: maskArgsWithSchema(stepTools[i]!.paramsSchema, step.args),
+    // Riferimenti dagli argomenti veri (solo parametro, passo e campo, nessun valore): un riferimento dentro
+    // un parametro `x-sensitive` sparirebbe dagli argomenti oscurati, ma serve all'anteprima delle esclusioni
+    refs: proposalRefs(step.args),
     summary: step.summary,
   }));
   const problems = checkQueuedText({
     recipient: ctx.app.name,
     summary: proposal.title,
-    args: { summaries: maskedSteps.map((s) => s.summary), steps: maskedSteps.map((s) => s.args) },
+    args: { ...(proposal.reason ? { reason: proposal.reason } : {}), summaries: maskedSteps.map((s) => s.summary), steps: maskedSteps.map((s) => s.args) },
   });
   if (problems.length > 0) return fail(`testo non pronto: ${problems.join("; ")}`);
 

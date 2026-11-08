@@ -21,6 +21,9 @@ import type { CatalogTool } from "../tools/types";
 import { MAX_PENDING_PER_USER, TOO_MANY_PENDING_MESSAGE } from "./queue";
 import { PROPOSE_TOOL_NAME, handlePropose, proposalEligible, proposeTool } from "./propose";
 import { PROPOSAL_MESSAGES } from "./proposal";
+import { loadProposalSteps } from "./proposal-exec";
+import { toProposalView } from "./proposal-view";
+import { previewExclusion } from "../teams/centralino";
 
 const saved = process.env["CASELLO_SECRET_KEY"];
 
@@ -86,6 +89,8 @@ const owner = async (): Promise<number | null> => userId;
 const propose = (args: Record<string, unknown>, o: () => Promise<number | null> = owner) =>
   handlePropose({ run, agent, app, tools, owner: o }, args);
 
+const P3 = { id: "p3", strumento: "create_task", argomenti: { projectId: 5, title: "Altro" }, sintesi: "Crea il compito Altro" };
+
 const ARGS = {
   titolo: "Crea progetto e compito",
   motivo: "dalla mail",
@@ -140,9 +145,11 @@ describe("handlePropose", () => {
       key: "p1",
       toolName: "create_project",
       args: { name: "Alfa", token: "***" },
+      refs: [],
       summary: "Crea il progetto Alfa",
     });
     expect(pub.steps[1].args).toEqual({ projectId: "{{p1.id}}", title: "Avvio" });
+    expect(pub.steps[1].refs).toEqual([{ param: "projectId", step: "p1", field: ["id"] }]);
     expect(JSON.stringify(row!.argsPublic)).not.toContain("segreto");
 
     expect(JSON.parse(decryptSecret(row!.argsEnc!))).toEqual({
@@ -197,6 +204,43 @@ describe("handlePropose", () => {
     expect(r.ok).toBe(false);
     expect(r.content).toMatch(/^testo non pronto: /);
     expect(await db.select().from(pendingActionsTable)).toHaveLength(0);
+  });
+
+  it("segnaposto nel motivo → testo non pronto", async () => {
+    const r = await propose({ ...ARGS, motivo: "Richiesta di [cliente]" });
+    expect(r.ok).toBe(false);
+    expect(r.content).toMatch(/^testo non pronto: /);
+    expect(await db.select().from(pendingActionsTable)).toHaveLength(0);
+  });
+
+  it("riferimento dentro un parametro x-sensitive: refs salvati senza valori, vista e anteprima di Alfred li usano", async () => {
+    const r = await propose({
+      ...ARGS,
+      passi: [ARGS.passi[0], { id: "p2", strumento: "create_project", argomenti: { name: "Beta", token: "{{p1.id}}" }, sintesi: "Crea il progetto Beta" }, P3],
+    });
+    expect(r.ok).toBe(true);
+    const [row] = await db.select().from(pendingActionsTable);
+    const pub = row!.argsPublic as { steps: { args: unknown; refs: unknown }[] };
+    expect(pub.steps[1]!.args).toEqual({ name: "Beta", token: "***" });
+    expect(pub.steps[0]!.refs).toEqual([]);
+    expect(pub.steps[1]!.refs).toEqual([{ param: "token", step: "p1", field: ["id"] }]);
+
+    const steps = (await loadProposalSteps([row!.id])).get(row!.id)!;
+    const view = toProposalView(row!, steps, new Map());
+    expect(view!.steps[1]!.refs).toEqual([{ param: "token", step: "p1", field: ["id"] }]);
+    expect(await previewExclusion(userId, row!.number, ["p1"])).toEqual({ excluded: ["p1"], skipped: ["p2"] });
+  });
+
+  it("voce vecchia senza refs salvati: i riferimenti si ricalcolano dagli argomenti pubblici", async () => {
+    expect((await propose({ ...ARGS, passi: [...ARGS.passi, P3] })).ok).toBe(true);
+    const [row] = await db.select().from(pendingActionsTable);
+    const pub = row!.argsPublic as { steps: Record<string, unknown>[] };
+    const old = { ...pub, steps: pub.steps.map(({ refs: _refs, ...rest }) => rest) };
+    await db.update(pendingActionsTable).set({ argsPublic: old }).where(eq(pendingActionsTable.id, row!.id));
+    const [again] = await db.select().from(pendingActionsTable);
+    const steps = (await loadProposalSteps([row!.id])).get(row!.id)!;
+    expect(toProposalView(again!, steps, new Map())!.steps[1]!.refs).toEqual([{ param: "projectId", step: "p1", field: ["id"] }]);
+    expect(await previewExclusion(userId, row!.number, ["p1"])).toEqual({ excluded: ["p1"], skipped: ["p2"] });
   });
 
   it("seconda proposta nella stessa run con la prima pending", async () => {

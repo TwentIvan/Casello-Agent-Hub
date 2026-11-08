@@ -1,7 +1,8 @@
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, appToolsTable, pendingActionsTable, teamEventsTable, teamInstancesTable, teamTasksTable } from "@workspace/db";
 import { ACTION_MESSAGES, approveAction, rejectAction } from "../actions/decide";
-import { PROPOSAL_MESSAGES, PROPOSAL_STEPS_MAX, planExclusion, stepRefs } from "../actions/proposal";
+import { PROPOSAL_MESSAGES, PROPOSAL_STEPS_MAX, planExclusion } from "../actions/proposal";
+import { publicStepRefs, publicStepsByKey } from "../actions/proposal-view";
 import { loadProposalSteps } from "../actions/proposal-exec";
 import { centralinoModelFor } from "../ai/default-model";
 import { modelChat, resolveModel } from "../ai/executor";
@@ -307,7 +308,7 @@ export async function readProposal(userId: number, number: number) {
 
 /**
  * Controllo anticipato delle esclusioni per Alfred (prima della conferma): sulla voce dell'utente, con i riferimenti
- * dei passi letti dagli argomenti pubblici. Esclusioni su una voce non proposta → «passi da escludere non validi».
+ * dei passi salvati alla proposta (o ricalcolati dagli argomenti pubblici per le voci più vecchie). Esclusioni su una voce non proposta → «passi da escludere non validi».
  * Per una proposta restituisce i passi esclusi e quelli saltati a catena, nell'ordine; per le altre voci null.
  */
 export async function previewExclusion(
@@ -320,13 +321,8 @@ export async function previewExclusion(
     if (exclude.length > 0) throw new CentralinoError(PROPOSAL_MESSAGES.badExclude);
     return null;
   }
-  const pub = isObject(found.action.argsPublic) ? found.action.argsPublic : {};
-  const publicSteps = Array.isArray(pub.steps) ? pub.steps.filter(isObject) : [];
-  const argsByKey = new Map<string, unknown>(publicSteps.map((s) => [String(s.key), s.args]));
-  const steps = found.steps.map((s) => {
-    const refs = stepRefs(argsByKey.get(s.key) ?? {});
-    return { key: s.key, refs: Array.isArray(refs) ? refs : [] };
-  });
+  const byKey = publicStepsByKey(found.action.argsPublic);
+  const steps = found.steps.map((s) => ({ key: s.key, refs: publicStepRefs(byKey.get(s.key)) }));
   const plan = planExclusion(steps, exclude);
   if (!plan.ok) throw new CentralinoError(plan.message);
   return {

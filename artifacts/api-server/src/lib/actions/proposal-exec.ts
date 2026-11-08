@@ -133,38 +133,49 @@ export async function approveProposal(userId: number, action: PendingActionRow, 
   const toRun = planned.filter((p) => !plan.excluded.has(p.row.key) && !plan.skipped.has(p.row.key));
   const total = toRun.length;
   const results = new Map<string, unknown>();
+  // Valori sensibili di tutti i passi eseguiti finora: un passo successivo può rimandarli nella risposta
+  const secrets: string[] = [];
   let done = 0;
   let current: PlannedStep | null = null;
   // Vero appena parte la chiamata del passo corrente: da lì un errore non prova che l'azione non sia avvenuta
   let called = false;
+  // Vero quando l'esito del passo corrente è già registrato (errore certo): il catch non lo sovrascrive
+  let currentClosed = false;
   let conn: AppConnection | null = null;
 
   try {
     for (const step of toRun) {
       current = step;
       called = false;
+      currentClosed = false;
       const tool = await loadStepTool(step.row.toolId, appId);
       if (!tool) {
         await closeStep(step.row.id, { status: "failed", errorMessage: PROPOSAL_MESSAGES.toolUnusable });
+        currentClosed = true;
         break;
       }
       const resolved = resolveRefs(step.args, results);
       if (!resolved.ok) {
         await closeStep(step.row.id, { status: "failed", errorMessage: PROPOSAL_MESSAGES.unresolved });
+        currentClosed = true;
         break;
       }
       conn ??= await loadAppConnection(appId);
+      secrets.push(...sensitiveValues(tool.paramsSchema, resolved.args));
       called = true;
       // Risposta completa: i riferimenti dei passi successivi si risolvono anche oltre i 20 000 caratteri salvati
       const out = await executeTool({ conn, tool, args: resolved.args, raw: true });
-      const saved = truncate(redactWithJson(out.content, sensitiveValues(tool.paramsSchema, resolved.args)));
+      const saved = truncate(redactWithJson(out.content, secrets));
       if (!out.ok) {
         await closeStep(step.row.id, { status: "failed", errorMessage: saved });
+        called = false;
+        currentClosed = true;
         break;
       }
       const json = parseJson(out.content);
       if (json !== undefined) results.set(step.row.key, json);
       await closeStep(step.row.id, { status: "done", result: saved });
+      called = false;
       done += 1;
       current = null;
     }
@@ -179,12 +190,18 @@ export async function approveProposal(userId: number, action: PendingActionRow, 
     // Solo il nome dell'errore: il messaggio potrebbe contenere argomenti o credenziali
     logger.error({ actionId: action.id, errName: err instanceof Error ? err.name : "unknown" }, "Esecuzione della proposta non riuscita");
     try {
-      const message = called ? ACTION_MESSAGES.uncertain : ACTION_MESSAGES.internal;
-      if (current) await closeStep(current.row.id, { status: "failed", errorMessage: message });
+      // «Esito incerto» solo per il passo la cui chiamata è partita senza esito registrato
+      if (current && !currentClosed) {
+        await closeStep(current.row.id, {
+          status: "failed",
+          errorMessage: called ? ACTION_MESSAGES.uncertain : ACTION_MESSAGES.internal,
+        });
+      }
       await markNotRun(action.id);
+      // Senza passo corrente tutti i passi da eseguire sono `done`: è mancata solo la scrittura finale
       return await finishAction(action.id, {
         status: "failed",
-        errorMessage: current ? PROPOSAL_MESSAGES.stoppedAt(done, total, current.row.key) : message,
+        errorMessage: current ? PROPOSAL_MESSAGES.stoppedAt(done, total, current.row.key) : ACTION_MESSAGES.internalFinish,
       });
     } catch (finishErr) {
       // La voce resta `executing`: all'avvio diventa «incerta» (failInterruptedActions)

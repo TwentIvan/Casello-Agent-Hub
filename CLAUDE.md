@@ -1359,20 +1359,26 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   **Riferimenti**: una stringa che è esattamente `{{pN.campo}}` (fino a 5 segmenti `^[A-Za-z0-9_-]{1,64}$`, `pN` precedente al passo) vale il campo del risultato JSON del passo; niente interpolazione dentro
   stringhe più lunghe (una stringa con `{{pN` che non è un riferimento intero → «riferimento non valido nel passo pK», come un riferimento a un passo successivo o inesistente). Gli argomenti senza
   riferimenti si validano con lo schema del tool già alla proposta («argomenti non validi nel passo pK: …»), gli altri dopo la sostituzione all'approvazione. Controllo del testo (`checkQueuedText`) su titolo,
-  sintesi e argomenti oscurati («testo non pronto: …»). Una sola proposta `pending` per run («hai già proposto in questa run: usa la discussione»). Risultati `ok: false` con messaggio fisso, mai eccezioni
+  motivo, sintesi e argomenti oscurati («testo non pronto: …»). Una sola proposta `pending` per run («hai già proposto in questa run: usa la discussione»). Risultati `ok: false` con messaggio fisso, mai eccezioni
   (errore inatteso: «proposta non riuscita: riprova più tardi»), la run prosegue; esito `{ok: true, numero}`. Proprietario = chi possiede l'account AI del modello della run, come per le L2. Nella timeline
-  della run gli argomenti di ogni passo sono oscurati con lo schema del tool del passo (`maskProposeArgs`; tool sconosciuto → «***»).
+  della run gli argomenti di ogni passo sono oscurati con lo schema del tool del passo (`maskProposeArgs`; tool sconosciuto → «***»). In `args_public.steps` ogni passo porta anche
+  `refs` (`[{param, step, field}]`, calcolati sugli argomenti veri, nessun valore): un riferimento dentro un parametro `x-sensitive` non si perde con l'oscuramento; vista della coda e `previewExclusion`
+  li leggono da lì (`publicStepRefs` in `proposal-view.ts`) e li ricalcolano dagli argomenti pubblici solo per le voci più vecchie, senza `refs`.
 - **Decisione ed esecuzione** (`lib/actions/proposal-exec.ts`, `approveProposal`, chiamata da `approveAction` per `kind = proposal`): `POST /api/pending-actions/:number/approve` accetta `{escludi?: string[]}`;
   id ripetuti o sconosciuti, o `escludi` su una voce non `proposal` → 400 «passi da escludere non validi»; se non resta nessun passo da eseguire (anche solo per catena) → 400 «nessun passo da eseguire: rifiuta la
   proposta»; i 400 arrivano prima della prenotazione e lasciano la voce `pending`. I passi esclusi diventano `excluded`, quelli che ne usano (a catena) il risultato `skipped` (`planExclusion`, stessa regola in
   console con `lib/proposal-steps.ts`). Prenotazione `pending` → `executing` con UPDATE condizionato (una volta sola; già decisa → 409) nella stessa transazione degli stati `excluded`/`skipped`; poi i passi
   **in ordine**: tool riletto dal DB a ogni passo (non più della stessa app o non più idoneo → passo `failed` «strumento non più utilizzabile»), riferimenti risolti dal risultato JSON **completo** dei passi
   precedenti (valore mancante o risultato non JSON → `failed` «riferimento non risolto»; il valore resta del suo tipo: `{{p1.id}}` con `id: 7` arriva come numero), `executeTool` con `raw: true` (non
-  perde i campi tagliati da `responseFields` né oltre i 20 000 caratteri); in `result` si salva solo la risposta oscurata dei valori sensibili e troncata. **Al primo errore ci si ferma**: i passi `pending`
+  perde i campi tagliati da `responseFields` né oltre i 20 000 caratteri); in `result` (ed `error_message`) si salva solo la risposta troncata e oscurata dei valori sensibili di quel passo **e di tutti i passi già eseguiti** (un
+  passo successivo può rimandare un segreto di uno precedente). **Al primo errore ci si ferma**: i passi `pending`
   rimasti diventano `not_run`, nessun annullamento automatico dei passi già eseguiti. Esito della voce: `done` con `result` «eseguiti n passi su m», altrimenti `failed` con «eseguiti n passi su m: si è
-  fermata al passo pK»; se la chiamata di un passo cade per un'eccezione dopo l'avvio il passo ha «esito incerto: verifica sul servizio». All'avvio `failInterruptedActions` fa passare a `failed` («esito incerto…») le
-  voci `executing`, proposte comprese, e i loro passi `pending` a `not_run`. `POST …/reject` è un UPDATE semplice (nota ≤ 500): `rejectAction` e `approveAction` mandano a `decidePlanItem` solo `plan`/`plan_change`,
-  mai una proposta. Eliminare un tool citato da un passo, in coda o già deciso, è rifiutato (409, stesso messaggio dei tool con azioni in coda: si disattiva); `pending_action_steps.tool_id` è `RESTRICT`.
+  fermata al passo pK»; se la chiamata di un passo cade per un'eccezione dopo l'avvio il passo ha «esito incerto: verifica sul servizio», se l'eccezione arriva prima della chiamata (es. DB) ha
+  «errore interno nell'esecuzione dell'azione»; un errore certo già registrato del passo non si sovrascrive; se tutti i passi sono `done` e manca solo la scrittura finale la voce chiude `failed` «errore interno:
+  esito dell'azione non registrato» (nessun «esito incerto» sui passi), e se nemmeno quella riesce la risposta è 500 con la voce ancora `executing`. All'avvio `failInterruptedActions` fa passare a `failed` («esito
+  incerto…») le voci `executing`, proposte comprese; nelle proposte il primo passo `pending` per posizione diventa `failed` «esito incerto: verifica sul servizio» (con `finished_at`: può essere stato eseguito, non va
+  riproposto alla cieca) e gli altri `pending` `not_run`. `POST …/reject` (nota ≤ 500) rifiuta la voce e, per una proposta, nella stessa transazione porta i passi `pending` a `not_run`: `rejectAction` e
+  `approveAction` mandano a `decidePlanItem` solo `plan`/`plan_change`, mai una proposta. Eliminare un tool citato da un passo, in coda o già deciso, è rifiutato (409, stesso messaggio dei tool con azioni in coda: si disattiva); `pending_action_steps.tool_id` è `RESTRICT`.
   Limiti invariati: 20 decisioni/min per utente, ambito `api:write` per i token.
 - **API** (`routes/pending-actions.ts`, vista in `lib/actions/proposal-view.ts`): `QueuedAction.proposal` in elenco e dettaglio (solo per `proposal`, altrimenti null): `{title, reason, steps: [{key, position, toolName,
   summary, argsPublic, refs: [{param, step, field}], status, result, errorMessage}]}`, passi e nomi dei tool letti una volta per tutte le voci; `ApproveActionRequest.escludi`. Il contatore di `/api/dashboard/stats`

@@ -20,11 +20,23 @@ import { loadProposalSteps } from "./proposal-exec";
 import type { ProposalStepInput } from "./proposal";
 import { enqueueProposal } from "./queue";
 import * as planDecisions from "../teams/plan-decisions";
+import * as executor from "../tools/executor";
+import * as catalog from "../tools/catalog";
 
 vi.mock("../teams/plan-decisions", async (orig) => {
   const actual = await orig<typeof import("../teams/plan-decisions")>();
   return { ...actual, decidePlanItem: vi.fn(actual.decidePlanItem) };
 });
+vi.mock("../tools/executor", async (orig) => {
+  const actual = await orig<typeof import("../tools/executor")>();
+  return { ...actual, executeTool: vi.fn(actual.executeTool) };
+});
+vi.mock("../tools/catalog", async (orig) => {
+  const actual = await orig<typeof import("../tools/catalog")>();
+  return { ...actual, loadAppConnection: vi.fn(actual.loadAppConnection) };
+});
+const actualExecutor = await vi.importActual<typeof import("../tools/executor")>("../tools/executor");
+const actualCatalog = await vi.importActual<typeof import("../tools/catalog")>("../tools/catalog");
 
 const PROJECT_SCHEMA = {
   type: "object",
@@ -137,6 +149,8 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.mocked(executor.executeTool).mockReset().mockImplementation(actualExecutor.executeTool);
+  vi.mocked(catalog.loadAppConnection).mockReset().mockImplementation(actualCatalog.loadAppConnection);
   restoreLoopback();
   await fake?.close();
   if (saved === undefined) delete process.env["CASELLO_SECRET_KEY"];
@@ -268,6 +282,21 @@ describe("approvazione di una proposta", () => {
     expect(fake!.calls[0]!.args).toEqual({ name: "Alfa", token: "segreto-123" });
   });
 
+  it("valore x-sensitive di un passo precedente rimandato da un passo successivo: oscurato anche lì", async () => {
+    await setup([
+      DEFAULT_TOOLS[0]!,
+      { name: "create_task", text: '{"id":11,"echo":"segreto-123"}' },
+      { name: "add_note", text: "errore: segreto-123", isError: true },
+    ]);
+    const n = await propose(THREE);
+
+    await approveAction(userId, n);
+
+    const steps = await stepsOf(n);
+    expect(steps[1]!.result).toBe('{"id":11,"echo":"***"}');
+    expect(steps[2]!.errorMessage).toBe("errore: ***");
+  });
+
   it("risultato oltre 20 000 caratteri: il riferimento si risolve, il result salvato è troncato", async () => {
     const long = JSON.stringify({ id: 7, pad: "x".repeat(30_000) });
     await setup([{ name: "create_project", text: long }, ...DEFAULT_TOOLS.slice(1)]);
@@ -305,7 +334,7 @@ describe("approvazione di una proposta", () => {
 });
 
 describe("rifiuto di una proposta", () => {
-  it("rejected con la nota, passi invariati, decidePlanItem mai chiamato", async () => {
+  it("rejected con la nota, passi not_run, decidePlanItem mai chiamato", async () => {
     await setup();
     const n = await propose(THREE);
 
@@ -313,16 +342,16 @@ describe("rifiuto di una proposta", () => {
 
     expect(out.ok).toBe(true);
     expect(await rowOf(n)).toMatchObject({ status: "rejected", decisionNote: "non ora", decidedBy: userId });
-    expect((await stepsOf(n)).every((s) => s.status === "pending")).toBe(true);
+    expect((await stepsOf(n)).map((s) => s.status)).toEqual(["not_run", "not_run", "not_run"]);
     expect(planDecisions.decidePlanItem).not.toHaveBeenCalled();
     expect(fake!.calls).toHaveLength(0);
   });
 });
 
 describe("failInterruptedActions con le proposte", () => {
-  it("proposta executing: voce failed incerta, passo done invariato, passo pending → not_run", async () => {
+  it("proposta executing: voce failed incerta, passo done invariato, primo pending incerto, gli altri not_run", async () => {
     await setup();
-    const n = await propose(THREE.slice(0, 2));
+    const n = await propose(THREE);
     const row = await rowOf(n);
     await db.update(pendingActionsTable).set({ status: "executing" }).where(eq(pendingActionsTable.id, row.id));
     const [p1] = await stepsOf(n);
@@ -335,7 +364,121 @@ describe("failInterruptedActions con le proposte", () => {
 
     expect(await rowOf(n)).toMatchObject({ status: "failed", errorMessage: "esito incerto: verifica sul servizio" });
     const steps = await stepsOf(n);
-    expect(steps.map((s) => s.status)).toEqual(["done", "not_run"]);
+    expect(steps.map((s) => s.status)).toEqual(["done", "failed", "not_run"]);
     expect(steps[0]!.result).toBe('{"id":7}');
+    expect(steps[1]).toMatchObject({ errorMessage: "esito incerto: verifica sul servizio" });
+    expect(steps[1]!.finishedAt).not.toBeNull();
+    expect(steps[2]!.finishedAt).toBeNull();
+  });
+
+  it("proposta executing con passi esclusi: il primo pending (non il primo in assoluto) è incerto", async () => {
+    await setup();
+    const n = await propose(THREE);
+    const row = await rowOf(n);
+    await db.update(pendingActionsTable).set({ status: "executing" }).where(eq(pendingActionsTable.id, row.id));
+    const [p1] = await stepsOf(n);
+    await db.update(pendingActionStepsTable).set({ status: "excluded" }).where(eq(pendingActionStepsTable.id, p1!.id));
+
+    await failInterruptedActions();
+
+    expect((await stepsOf(n)).map((s) => s.status)).toEqual(["excluded", "failed", "not_run"]);
+  });
+});
+
+describe("eccezioni durante l'esecuzione di una proposta", () => {
+  it("executeTool lancia dopo l'avvio: passo incerto, successivi not_run, voce ferma al passo", async () => {
+    await setup();
+    vi.mocked(executor.executeTool).mockImplementation(async (opts) => {
+      if (opts.tool.name === "create_task") throw new Error("rete");
+      return actualExecutor.executeTool(opts);
+    });
+    const n = await propose(THREE);
+
+    const out = await approveAction(userId, n);
+
+    expect(out.ok && out.action).toMatchObject({
+      status: "failed",
+      errorMessage: "eseguiti 1 passi su 3: si è fermata al passo p2",
+    });
+    const steps = await stepsOf(n);
+    expect(steps.map((s) => s.status)).toEqual(["done", "failed", "not_run"]);
+    expect(steps[1]!.errorMessage).toBe("esito incerto: verifica sul servizio");
+  });
+
+  it("errore del DB prima della chiamata: passo con errore interno, non incerto", async () => {
+    await setup();
+    vi.mocked(catalog.loadAppConnection).mockRejectedValueOnce(new Error("db giù"));
+    const n = await propose(THREE);
+
+    const out = await approveAction(userId, n);
+
+    expect(out.ok && out.action).toMatchObject({
+      status: "failed",
+      errorMessage: "eseguiti 0 passi su 3: si è fermata al passo p1",
+    });
+    const steps = await stepsOf(n);
+    expect(steps.map((s) => s.status)).toEqual(["failed", "not_run", "not_run"]);
+    expect(steps[0]!.errorMessage).toBe("errore interno nell'esecuzione dell'azione");
+    expect(fake!.calls).toHaveLength(0);
+  });
+
+  it("errore certo di un passo e poi errore nella scrittura finale: l'errore del passo resta", async () => {
+    await setup([DEFAULT_TOOLS[0]!, { name: "create_task", text: "progetto chiuso", isError: true }, DEFAULT_TOOLS[2]!]);
+    const n = await propose(THREE);
+    const orig = db.update.bind(db);
+    let failures = 1;
+    const spy = vi.spyOn(db, "update").mockImplementation(((table: unknown) => {
+      if (table === pendingActionsTable && failures-- > 0) throw new Error("db giù");
+      return orig(table as typeof pendingActionsTable);
+    }) as typeof db.update);
+    try {
+      const out = await approveAction(userId, n);
+      expect(out.ok && out.action).toMatchObject({ status: "failed", errorMessage: "eseguiti 1 passi su 3: si è fermata al passo p2" });
+    } finally {
+      spy.mockRestore();
+    }
+    const steps = await stepsOf(n);
+    expect(steps.map((s) => s.status)).toEqual(["done", "failed", "not_run"]);
+    expect(steps[1]!.errorMessage).toBe("progetto chiuso");
+  });
+
+  it("scrittura finale che non riesce mai: 500 e voce ancora executing", async () => {
+    await setup();
+    const n = await propose(THREE.slice(0, 2));
+    const orig = db.update.bind(db);
+    const spy = vi.spyOn(db, "update").mockImplementation(((table: unknown) => {
+      if (table === pendingActionsTable) throw new Error("db giù");
+      return orig(table as typeof pendingActionsTable);
+    }) as typeof db.update);
+    let out;
+    try {
+      out = await approveAction(userId, n);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(out).toEqual({ ok: false, status: 500, message: "errore interno: esito dell'azione non registrato" });
+    expect((await rowOf(n)).status).toBe("executing");
+    expect((await stepsOf(n)).map((s) => s.status)).toEqual(["done", "done"]);
+  });
+
+  it("tutti i passi done e poi errore nella scrittura finale: nessun «esito incerto» sui passi", async () => {
+    await setup();
+    const n = await propose(THREE.slice(0, 2));
+    const orig = db.update.bind(db);
+    let failures = 1;
+    const spy = vi.spyOn(db, "update").mockImplementation(((table: unknown) => {
+      if (table === pendingActionsTable && failures-- > 0) throw new Error("db giù");
+      return orig(table as typeof pendingActionsTable);
+    }) as typeof db.update);
+    let out;
+    try {
+      out = await approveAction(userId, n);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(out!.ok && out!.action).toMatchObject({ status: "failed", errorMessage: "errore interno: esito dell'azione non registrato" });
+    const steps = await stepsOf(n);
+    expect(steps.map((s) => s.status)).toEqual(["done", "done"]);
+    expect(steps.every((s) => s.errorMessage === null)).toBe(true);
   });
 });

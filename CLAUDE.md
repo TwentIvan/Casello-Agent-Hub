@@ -45,6 +45,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Inneschi: un agente parte da solo su un evento dell'app, senza modificare il server dell'app: sorveglianza (Botcave interroga a intervalli un
   tool L0, dedup, una run per elemento nuovo) e webhook in entrata con segreto nell'URL; carta «Inneschi» nella scheda agente, Lucius propone
   inneschi di sorveglianza (vedi "Inneschi").
+- Proposte multiple (4a): un agente propone più creazioni o modifiche collegate con lo strumento interno `proponi`; in «Da confermare» compare una sola voce «Proposta» con i passi,
+  approvabile in parte (caselle per passo), con riferimenti agli id creati dai passi precedenti; Alfred la legge passo per passo e la decide (vedi "Proposte multiple").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -107,7 +109,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
   ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals,
   skills, skill_versions, team_templates, team_template_versions, team_instances, team_instance_skills,
-  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, team_chat_conversations, team_chat_messages, team_chat_proposals, character_notes, character_history, character_conversations, character_messages, character_proposals, nodes, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens, agent_triggers, trigger_seen_items)
+  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, team_chat_conversations, team_chat_messages, team_chat_proposals, character_notes, character_history, character_conversations, character_messages, character_proposals, nodes, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens, agent_triggers, trigger_seen_items, pending_action_steps)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -215,6 +217,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (`/api/hooks/*`, pubblico); schema `lib/db/src/schema/agent-triggers.ts`; console `artifacts/casello/src/components/agents/` (`agent-triggers-section.tsx`,
   `trigger-dialog.tsx`, `trigger-test-table.tsx`, `webhook-url-dialog.tsx`); Lucius in `lib/characters/subjects/agent.ts` e `proposals.ts`. Spec:
   `docs/superpowers/specs/2026-11-07-botcave-inneschi-design.md`
+- Proposte multiple (vedi "Proposte multiple"): `artifacts/api-server/src/lib/actions/` (`proposal.ts`, `propose.ts`, `proposal-exec.ts`, `proposal-view.ts`, con `queue.ts` e `decide.ts`), `lib/run-executor.ts`
+  (offerta di `proponi`, oscuramento nella timeline), `routes/pending-actions.ts`, `routes/app-tools.ts`, `lib/teams/centralino.ts`, `lib/mcp/server.ts`, `lib/alfred/` e `lib/characters/` (`leggi_proposta`, `escludi`); schema
+  `lib/db/src/schema/pending-action-steps.ts`; console `artifacts/casello/src/components/actions/` (`proposal-steps.tsx`, `use-proposal-selection.ts`) e `src/lib/proposal-steps.ts`. Spec:
+  `docs/superpowers/specs/2026-11-08-botcave-proposte-multiple-design.md`
 - `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
 - `artifacts/mockup-sandbox/` — sandbox di mockup: NON va in produzione, non toccare
 - `gateway/` — config LiteLLM storica (gateway dismesso, vedi "Modelli AI"); non è più usata dal codice
@@ -279,7 +285,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `plan_change` (piano o modifica del PLAN proposti dal capo di una squadra, vedi "Squadre (esecuzione)"); colonne
   `team_instance_id` (squadra, `SET NULL`) e `plan_version`; per `plan`/`plan_change` `tool_id` e `app_id` sono null
   (CHECK: obbligatori solo con `kind = action`) e `args_enc`/`args_public` contengono la proposta; l'approvazione non
-  vuole `userToken`. Numerazione e limite di 50 valgono per tutti i tipi.
+  vuole `userToken`. Terzo tipo `proposal`: proposta multipla di un agente, con i passi in `pending_action_steps` (vedi "Proposte multiple"). Numerazione e limite di 50 valgono per tutti i tipi.
 - Route (`routes/pending-actions.ts`; il limite di 20/min per utente vale solo per approvare e rifiutare, non per le GET,
   ed è lo stesso contatore degli strumenti MCP `approva`/`rifiuta`, `consumeActionDecision`): `GET /api/pending-actions`, `GET /api/pending-actions/:number`,
   `POST …/approve` (con `userToken` se l'identità del tool è `user`), `POST …/reject` (nota ≤ 500 caratteri). Ambiti
@@ -1335,6 +1341,59 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   PR; riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
 - The Hub Up: i passi della §10 della spec (innesco per email e per brief, un agente alla volta, tolte le variabili `BOTCAVE_AGENT_*` da Coolify) si fanno dopo il deploy, ognuno con la
   conferma di Ivan.
+
+## Proposte multiple
+
+- Spec: `docs/superpowers/specs/2026-11-08-botcave-proposte-multiple-design.md` (sottoprogetto 4a; piano `docs/superpowers/plans/2026-11-08-botcave-proposte-multiple-4a.md`). Dove il codice
+  differisce dalla spec vale il codice, descritto qui. Un agente propone più creazioni o modifiche collegate (partner → progetto → task) come **una** voce «Proposta» in «Da confermare»: l'utente
+  le approva tutte o in parte, o le rifiuta; i passi si eseguono in ordine solo dopo l'approvazione e un passo può usare l'id creato da uno precedente. Generico per ogni app.
+- **Dati**: `pending_actions.kind = 'proposal'` (enum `pending_action_kind`): `app_id` = app dell'agente, `tool_id` null, `run_id` e `agent_id` della run che ha proposto; `args_enc` = proposta cifrata
+  `{title, reason, steps}`, `args_public` = la stessa con i valori `x-sensitive` oscurati, `summary` = titolo (≤ 300), `recipient` = nome dell'app. Tabella `pending_action_steps` (una riga per passo, per
+  l'esito; `pending_action_id` `CASCADE`, `tool_id` `RESTRICT`, `UNIQUE(pending_action_id, key)`): `key` (`p1`…), `position`, `summary` (≤ 300), `status` (`pending|excluded|skipped|done|failed|not_run`,
+  enum `pending_action_step_status`), `result` (oscurato, troncato), `error_message`, `finished_at`; gli argomenti restano solo in `args_enc`. `alfred_confirmations.exclude_steps` (jsonb) tiene i passi
+  esclusi della conferma a voce. Numerazione per utente, limite di 50 voci `pending` e ordine dei lock sono quelli di `pending_actions` (`enqueueProposal` in `lib/actions/queue.ts`: voce e passi nella stessa transazione).
+- **Strumento interno `proponi`** (`lib/actions/propose.ts`, forma e riferimenti puri in `lib/actions/proposal.ts`): offerto in `run-executor.ts` a ogni agente che ha almeno un tool utilizzabile in un
+  passo (`proposalEligible`), nelle run senza squadra; interno come `segnala_al_responsabile` (vince su un tool omonimo, non passa dalla coda né da `executeTool`; nome riservato in `teams/role-tools.ts`).
+  `{titolo 1..200, motivo? ≤ 1 000, passi 1..20: [{id, strumento, argomenti (oggetto), sintesi 1..300}]}`; id `p1`, `p2`… unici e nell'ordine. Nei passi solo tool della stessa app, `active`, `http`/`mcp`,
+  livello effettivo ≠ L3, identità `service` (i tool `user` sono esclusi); per un agente `area` solo i suoi tool collegati (si legge dai tool caricati dell'agente, prima di `withConfirmedWrites`).
+  **Riferimenti**: una stringa che è esattamente `{{pN.campo}}` (fino a 5 segmenti `^[A-Za-z0-9_-]{1,64}$`, `pN` precedente al passo) vale il campo del risultato JSON del passo; niente interpolazione dentro
+  stringhe più lunghe (una stringa con `{{pN` che non è un riferimento intero → «riferimento non valido nel passo pK», come un riferimento a un passo successivo o inesistente). Gli argomenti senza
+  riferimenti si validano con lo schema del tool già alla proposta («argomenti non validi nel passo pK: …»), gli altri dopo la sostituzione all'approvazione. Controllo del testo (`checkQueuedText`) su titolo,
+  sintesi e argomenti oscurati («testo non pronto: …»). Una sola proposta `pending` per run («hai già proposto in questa run: usa la discussione»). Risultati `ok: false` con messaggio fisso, mai eccezioni
+  (errore inatteso: «proposta non riuscita: riprova più tardi»), la run prosegue; esito `{ok: true, numero}`. Proprietario = chi possiede l'account AI del modello della run, come per le L2. Nella timeline
+  della run gli argomenti di ogni passo sono oscurati con lo schema del tool del passo (`maskProposeArgs`; tool sconosciuto → «***»).
+- **Decisione ed esecuzione** (`lib/actions/proposal-exec.ts`, `approveProposal`, chiamata da `approveAction` per `kind = proposal`): `POST /api/pending-actions/:number/approve` accetta `{escludi?: string[]}`;
+  id ripetuti o sconosciuti, o `escludi` su una voce non `proposal` → 400 «passi da escludere non validi»; se non resta nessun passo da eseguire (anche solo per catena) → 400 «nessun passo da eseguire: rifiuta la
+  proposta»; i 400 arrivano prima della prenotazione e lasciano la voce `pending`. I passi esclusi diventano `excluded`, quelli che ne usano (a catena) il risultato `skipped` (`planExclusion`, stessa regola in
+  console con `lib/proposal-steps.ts`). Prenotazione `pending` → `executing` con UPDATE condizionato (una volta sola; già decisa → 409) nella stessa transazione degli stati `excluded`/`skipped`; poi i passi
+  **in ordine**: tool riletto dal DB a ogni passo (non più della stessa app o non più idoneo → passo `failed` «strumento non più utilizzabile»), riferimenti risolti dal risultato JSON **completo** dei passi
+  precedenti (valore mancante o risultato non JSON → `failed` «riferimento non risolto»; il valore resta del suo tipo: `{{p1.id}}` con `id: 7` arriva come numero), `executeTool` con `raw: true` (non
+  perde i campi tagliati da `responseFields` né oltre i 20 000 caratteri); in `result` si salva solo la risposta oscurata dei valori sensibili e troncata. **Al primo errore ci si ferma**: i passi `pending`
+  rimasti diventano `not_run`, nessun annullamento automatico dei passi già eseguiti. Esito della voce: `done` con `result` «eseguiti n passi su m», altrimenti `failed` con «eseguiti n passi su m: si è
+  fermata al passo pK»; se la chiamata di un passo cade per un'eccezione dopo l'avvio il passo ha «esito incerto: verifica sul servizio». All'avvio `failInterruptedActions` fa passare a `failed` («esito incerto…») le
+  voci `executing`, proposte comprese, e i loro passi `pending` a `not_run`. `POST …/reject` è un UPDATE semplice (nota ≤ 500): `rejectAction` e `approveAction` mandano a `decidePlanItem` solo `plan`/`plan_change`,
+  mai una proposta. Eliminare un tool citato da un passo, in coda o già deciso, è rifiutato (409, stesso messaggio dei tool con azioni in coda: si disattiva); `pending_action_steps.tool_id` è `RESTRICT`.
+  Limiti invariati: 20 decisioni/min per utente, ambito `api:write` per i token.
+- **API** (`routes/pending-actions.ts`, vista in `lib/actions/proposal-view.ts`): `QueuedAction.proposal` in elenco e dettaglio (solo per `proposal`, altrimenti null): `{title, reason, steps: [{key, position, toolName,
+  summary, argsPublic, refs: [{param, step, field}], status, result, errorMessage}]}`, passi e nomi dei tool letti una volta per tutte le voci; `ApproveActionRequest.escludi`. Il contatore di `/api/dashboard/stats`
+  conta anche le proposte.
+- **Console e pannello** (`artifacts/casello/src/components/actions/`: `proposal-steps.tsx`, `use-proposal-selection.ts`, `pending-action-item.tsx`, `action-dialog.tsx`; `src/lib/proposal-steps.ts`): tipo
+  «Proposta» nella colonna tipo; nell'elemento della coda e nella scheda di dettaglio titolo, motivo, passi con sintesi, nome del tool, riferimenti («id creato al passo p2») e argomenti pubblici, una casella per
+  passo (spuntato = si esegue; un passo che ne usa uno escluso è disattivato e segnato come saltato); con esclusioni il pulsante diventa «Approva i passi scelti», disattivato se non resta nulla; dopo
+  l'esecuzione stato per passo con i LED (`Led`), esito ed errore (anche nel toast). Nel pannello incorporato (`embed/tabs/pending-tab.tsx`) la proposta si decide dal pannello: niente «Apri in Botcave»
+  (sono tool di servizio, senza token utente). La scheda `decision` di Alfred (`proposal-cards.tsx`) mostra «Senza i passi …».
+- **Alfred e centralino**: `coda_da_confermare` riporta per le proposte `steps` (numero di passi) e `args` con titolo, motivo e passi; nuovo strumento `leggi_proposta {numero}` (centralino, voce a voce e
+  chat: `readProposal` in `lib/teams/centralino.ts`: titolo, motivo, stato e per ogni passo `passo`, `numero`, `sintesi`, `stato`; voce altrui o non proposta → «proposta non trovata»; dichiarato anche per Gemini
+  Live in `tool-declarations.ts`, le istruzioni di Alfred dicono di leggere i passi prima di preparare la decisione). `prepara_decisione` (voce) e `proponi_decisione` (chat, scheda `decision`) accettano `escludi`
+  (`"p3"` o `3`, normalizzati da `normalizeExclude`, solo con `approva`, altrimenti «i passi da escludere valgono solo con approva»); le esclusioni si controllano subito (`previewExclusion`) così Alfred non
+  chiede un sì su una decisione che fallirebbe, e il risultato riporta `passiEsclusi` e `passiSaltati` (da ripetere all'utente); `alfred_confirmations.exclude_steps` le conserva e `conferma_decisione` le passa
+  ad `approvePending`. Ogni `prepara_decisione` invalida le conferme aperte della sessione, anche se fallisce o ha argomenti non validi (`invalidateOpenConfirmations`). Strumenti MCP `/mcp`: `coda_da_confermare`
+  con `steps`, `approva` con `escludi` (stesso ambito `api:write`); `rifiuta` invariato.
+- Migrazione: `docs/migrations/2026-11-proposte-multiple.sql` (additiva e idempotente, niente `-post`): `ALTER TYPE pending_action_kind ADD VALUE IF NOT EXISTS 'proposal'` (fuori da una transazione
+  esplicita: non avvolgerla in BEGIN/COMMIT), enum `pending_action_step_status`, tabella `pending_action_steps`, colonna `alfred_confirmations.exclude_steps`. Da applicare su Neon PRIMA del merge (SQL completo in chat)
+  e da segnalare nella PR; riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
+- Fuori ambito: 4b (discussione con l'agente che ha proposto e versioni della proposta), 4c (The Hub Up: tool mancanti, istruzioni di Smistatore e Responsabile, prova reale), tool con identità `user` nei passi,
+  annullamento automatico dei passi già eseguiti, proposte delle squadre (il capo resta sul PLAN).
 
 ## Esecutore locale
 

@@ -20,6 +20,7 @@ import { ActionStatusBadge } from "./action-status";
 import { decidedTitle } from "./pending-action-item";
 import { ACTION_KIND_LABELS, PlanProposalDetail, isPlanItem } from "./plan-proposal";
 import { ProposalSteps } from "./proposal-steps";
+import { useProposalSelection } from "./use-proposal-selection";
 
 function formatDateTime(value: string): string {
   return new Date(value).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "medium" });
@@ -49,6 +50,7 @@ export function ActionDialog({
   const { toast } = useToast();
   const [userToken, setUserToken] = useState("");
   const [note, setNote] = useState("");
+  const selection = useProposalSelection(action);
 
   const afterDecision = (saved: QueuedAction | null) => {
     if (saved) queryClient.setQueryData(getGetPendingActionQueryKey(saved.number), saved);
@@ -60,7 +62,7 @@ export function ActionDialog({
       // Il token dell'utente passa nelle variabili: non deve restare nella cache delle mutazioni
       gcTime: 0,
       onSuccess: (saved) => {
-        toast({ title: decidedTitle(saved, true), description: saved.result ?? undefined });
+        toast({ title: decidedTitle(saved, true), description: saved.result ?? saved.errorMessage ?? undefined });
         afterDecision(saved);
         onOpenChange(false);
       },
@@ -155,7 +157,10 @@ export function ActionDialog({
                 {action.proposal.reason && (
                   <p className="whitespace-pre-wrap break-words text-sm">{action.proposal.reason}</p>
                 )}
-                <ProposalSteps proposal={action.proposal} />
+                <ProposalSteps
+                  proposal={action.proposal}
+                  {...(action.status === "pending" ? { excluded: selection.excluded, onToggle: selection.toggle } : {})}
+                />
               </div>
             ) : plan ? (
               <div className="rounded-md border p-3">
@@ -182,11 +187,6 @@ export function ActionDialog({
               <Row label="Nota del rifiuto">
                 <span className="whitespace-pre-wrap">{action.decisionNote}</span>
               </Row>
-            )}
-            {action.status === "pending" && action.kind === "proposal" && (
-              <p className="text-xs text-muted-foreground">
-                Per scegliere i passi da eseguire approva dall'elenco «Da confermare».
-              </p>
             )}
             {action.status === "pending" && (
               <div className="space-y-3 border-t pt-4">
@@ -223,17 +223,17 @@ export function ActionDialog({
                     {reject.isPending ? "Rifiuto…" : "Rifiuta"}
                   </Button>
                   <Button
-                    disabled={busy}
+                    disabled={busy || selection.nothingLeft}
                     onClick={() => {
                       approve.mutate({
                         number: action.number,
-                        data: needsToken && userToken ? { userToken } : {},
+                        data: needsToken && userToken ? { userToken } : selection.approveData(),
                       });
                       // Il token non resta nello stato dopo l'invio (nemmeno se l'approvazione fallisce).
                       setUserToken("");
                     }}
                   >
-                    {approve.isPending ? (plan ? "Approvazione…" : "Esecuzione…") : plan ? "Approva" : "Approva ed esegui"}
+                    {approve.isPending ? (plan ? "Approvazione…" : "Esecuzione…") : plan ? "Approva" : action.kind === "proposal" ? selection.approveLabel : "Approva ed esegui"}
                   </Button>
                 </DialogFooter>
               </div>

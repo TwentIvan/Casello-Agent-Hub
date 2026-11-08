@@ -1,4 +1,5 @@
 import type { QueuedProposal, QueuedProposalStep, QueuedProposalStepStatus } from "@workspace/api-client-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Led, type LedState } from "@/components/brand/led";
 import { dependentsOf } from "@/lib/proposal-steps";
 
@@ -23,11 +24,18 @@ function refLabel(ref: QueuedProposalStep["refs"][number]): string {
   return `${ref.param}: ${field === "id" ? "id" : field} creato al passo ${ref.step}`;
 }
 
-function StepBody({ step }: { step: QueuedProposalStep }) {
+function StepTitle({ step }: { step: QueuedProposalStep }) {
   return (
     <>
       <span className="break-words text-body-sm">{step.summary}</span>
       <span className="block break-words font-mono text-caption text-ink-muted">{step.toolName ?? "strumento eliminato"}</span>
+    </>
+  );
+}
+
+function StepDetails({ step }: { step: QueuedProposalStep }) {
+  return (
+    <>
       {step.refs.length > 0 && (
         <ul className="mt-0.5 space-y-0.5">
           {step.refs.map((r, i) => (
@@ -76,24 +84,28 @@ export function ProposalSteps({
             <span className="w-6 shrink-0 font-mono text-caption leading-5 text-ink-muted">{step.key}</span>
             <div className="min-w-0 flex-1">
               {interactive ? (
-                <div className="flex min-w-0 items-start gap-2">
-                  <input
-                    id={inputId}
-                    type="checkbox"
-                    className="mt-1 size-4 shrink-0 accent-brand"
-                    checked={!isExcluded && !isSkipped}
-                    disabled={isSkipped}
-                    onChange={() => onToggle(step.key)}
-                  />
-                  <label htmlFor={inputId} className="min-w-0 flex-1">
-                    <StepBody step={step} />
-                    {isSkipped && <span className="block text-caption text-ink-muted">salta: usa un passo escluso</span>}
-                  </label>
-                </div>
+                <>
+                  <div className="flex min-w-0 items-start gap-2">
+                    <Checkbox
+                      id={inputId}
+                      className="mt-0.5"
+                      checked={!isExcluded && !isSkipped}
+                      disabled={isSkipped}
+                      onCheckedChange={() => onToggle(step.key)}
+                    />
+                    <label htmlFor={inputId} className="min-w-0 flex-1">
+                      <span className="font-mono text-caption text-ink-muted">{step.key} </span>
+                      <StepTitle step={step} />
+                      {isSkipped && <span className="block text-caption text-ink-muted">salta: usa un passo escluso</span>}
+                    </label>
+                  </div>
+                  <StepDetails step={step} />
+                </>
               ) : (
                 <>
                   <Led state={led.state} label={led.label} />
-                  <StepBody step={step} />
+                  <StepTitle step={step} />
+                  <StepDetails step={step} />
                   {outcome && (
                     <p className={`mt-1 break-words text-caption ${step.errorMessage ? "text-danger" : "text-ink-muted"}`}>
                       {truncate(outcome)}

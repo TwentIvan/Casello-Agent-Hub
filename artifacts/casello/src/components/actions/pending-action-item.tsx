@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   type QueuedAction,
@@ -11,9 +11,9 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
-import { dependentsOf } from "@/lib/proposal-steps";
 import { ACTION_KIND_LABELS, isPlanItem } from "./plan-proposal";
 import { ProposalSteps } from "./proposal-steps";
+import { useProposalSelection } from "./use-proposal-selection";
 
 /** «Azione n. 3 approvata», «Piano n. 4 rifiutato», «Modifica del piano n. 5 approvata». */
 export function decidedTitle(action: QueuedAction, approved: boolean): string {
@@ -52,20 +52,8 @@ export function PendingActionItem({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [note, setNote] = useState("");
-  const [excluded, setExcluded] = useState<Set<string>>(new Set());
-  const proposal = action.kind === "proposal" ? action.proposal : null;
-  const skipped = useMemo(
-    () => (proposal ? dependentsOf(proposal.steps, excluded) : new Set<string>()),
-    [proposal, excluded],
-  );
-  const nothingLeft = proposal !== null && proposal.steps.every((s) => excluded.has(s.key) || skipped.has(s.key));
-  const toggle = (key: string) =>
-    setExcluded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  const selection = useProposalSelection(action);
+  const { proposal, excluded, toggle, nothingLeft } = selection;
   const after = () => {
     void queryClient.invalidateQueries({ queryKey: getGetDashboardStatsQueryKey() });
     onDecided();
@@ -137,15 +125,12 @@ export function PendingActionItem({
           ? "Leggi e approva"
           : approve.isPending
             ? "Esecuzione…"
-            : excluded.size > 0
-              ? "Approva i passi scelti"
-              : "Approva"
+            : selection.approveLabel
       }
       rejectLabel={reject.isPending ? "Rifiuto…" : "Rifiuta"}
       onApprove={() => {
         if (needsDialogToApprove(action)) return onOpenDetails?.();
-        const escludi = [...excluded];
-        approve.mutate({ number: action.number, data: escludi.length ? { escludi } : {} });
+        approve.mutate({ number: action.number, data: selection.approveData() });
       }}
       onReject={() => reject.mutate({ number: action.number, data: note.trim() ? { note: note.trim() } : {} })}
       approveSlot={

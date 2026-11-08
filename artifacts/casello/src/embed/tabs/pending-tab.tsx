@@ -1,5 +1,6 @@
 // Scheda «Da confermare» del pannello: le voci `pending` con la stessa voce della console (PendingActionItem).
-// Le voci che vanno lette per intero (piani) o che chiedono il token dell'utente si aprono nella console.
+// Le voci che vanno lette per intero (piani) o che chiedono il token dell'utente si aprono nella console; le proposte
+// (passi con caselle) si decidono qui, senza «Apri in Botcave».
 import { useQueryClient } from "@tanstack/react-query";
 import { getListPendingActionsQueryKey, useListPendingActions } from "@workspace/api-client-react";
 import { PendingActionItem } from "@/components/actions/pending-action-item";

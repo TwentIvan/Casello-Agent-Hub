@@ -13346,7 +13346,7 @@ export const getApprovePendingActionUrl = (number: number,) => {
 }
 
 /**
- * Esegue una sola volta la chiamata memorizzata, senza il modello. Con identità `user` serve il token dell'utente dell'app (vive solo per la durata della chiamata). Una richiesta già decisa dà 409. Se l'esecuzione fallisce la risposta è 200 con l'azione in stato `failed`. Massimo 20 decisioni al minuto per utente.
+ * Esegue una sola volta la chiamata memorizzata, senza il modello. Con identità `user` serve il token dell'utente dell'app (vive solo per la durata della chiamata). Una richiesta già decisa dà 409. Se l'esecuzione fallisce la risposta è 200 con l'azione in stato `failed`. Massimo 20 decisioni al minuto per utente. Per una proposta con più passi `escludi` elenca i passi da non eseguire (anche quelli che dipendono da un passo escluso restano fuori); gli altri girano in ordine e ci si ferma al primo errore: la risposta è 200 con lo stato di ogni passo.
  * @summary Approva ed esegue un'azione in coda
  */
 export const approvePendingAction = async (number: number,

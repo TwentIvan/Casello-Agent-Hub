@@ -152,6 +152,85 @@ describe("tool e app con azioni in coda", () => {
   });
 });
 
+async function enqueueTwoStepProposal() {
+  const [agent] = await db.insert(agentsTable).values({ appId, name: "Resp", role: "general", status: "active" }).returning();
+  const [run] = await db.insert(runsTable).values({ agentId: agent!.id, input: "x" }).returning();
+  const out = await enqueueProposal({
+    userId,
+    appId,
+    agentId: agent!.id,
+    runId: run!.id,
+    recipient: "Mister",
+    proposal: {
+      title: "Crea e imposta",
+      reason: "serve a Rosa",
+      steps: [
+        { key: "p1", toolName: "set_password", args: { id: "1", password: "segreta-123" }, summary: "Crea" },
+        { key: "p2", toolName: "set_password", args: { id: "{{p1.id}}" }, summary: "Imposta" },
+      ],
+    },
+    publicProposal: {
+      title: "Crea e imposta",
+      reason: "serve a Rosa",
+      steps: [
+        { key: "p1", toolName: "set_password", args: { id: "1", password: "***" }, summary: "Crea" },
+        { key: "p2", toolName: "set_password", args: { projectId: "{{p1.id}}" }, summary: "Imposta" },
+      ],
+    },
+    steps: [
+      { key: "p1", position: 0, toolId: tool.id, summary: "Crea" },
+      { key: "p2", position: 1, toolId: tool.id, summary: "Imposta" },
+    ],
+  });
+  if (!out.ok) throw new Error(out.message);
+  return out.number;
+}
+
+describe("proposte multiple nella coda", () => {
+  it("elenco e dettaglio portano la proposta con passi, riferimenti e argomenti oscurati; le azioni hanno proposal null", async () => {
+    const a = await enqueue();
+    const n = await enqueueTwoStepProposal();
+    const list = await api("GET", "/pending-actions");
+    expect(list.status).toBe(200);
+    const byNumber = (num: number) => list.json.actions.find((x: { number: number }) => x.number === num);
+    expect(byNumber(a).proposal).toBeNull();
+    expect(byNumber(n).kind).toBe("proposal");
+    const detail = await api("GET", `/pending-actions/${n}`);
+    expect(detail.status).toBe(200);
+    expect(detail.json.proposal).toMatchObject({
+      title: "Crea e imposta",
+      reason: "serve a Rosa",
+      steps: [
+        { key: "p1", position: 0, toolName: "set_password", summary: "Crea", argsPublic: { id: "1", password: "***" }, refs: [], status: "pending", result: null, errorMessage: null },
+        { key: "p2", position: 1, toolName: "set_password", refs: [{ param: "projectId", step: "p1", field: ["id"] }], status: "pending" },
+      ],
+    });
+    expect(detail.text).not.toContain("segreta-123");
+    expect((await api("GET", `/pending-actions/${a}`)).json.proposal).toBeNull();
+  });
+
+  it("approve con escludi: 200 con gli stati per passo; più di 20 voci → 400; api:read → 403", async () => {
+    const n = await enqueueTwoStepProposal();
+    const tooMany = await api("POST", `/pending-actions/${n}/approve`, { body: { escludi: Array.from({ length: 21 }, (_, i) => `p${i}`) } });
+    expect(tooMany.status).toBe(400);
+    const read = await tokenWith(["api:read"]);
+    expect((await api("POST", `/pending-actions/${n}/approve`, { token: read, body: { escludi: ["p2"] } })).status).toBe(403);
+    const res = await api("POST", `/pending-actions/${n}/approve`, { body: { escludi: ["p2"] } });
+    expect(res.status).toBe(200);
+    expect(res.json.proposal.steps.map((s: { key: string; status: string }) => [s.key, s.status])).toEqual([
+      ["p1", "done"],
+      ["p2", "excluded"],
+    ]);
+  });
+
+  it("DELETE dell'app con una proposta in coda elimina voce e passi", async () => {
+    await enqueueTwoStepProposal();
+    expect((await api("DELETE", `/apps/${appId}`)).status).toBe(204);
+    expect((await pool.query("SELECT 1 FROM pending_actions")).rowCount).toBe(0);
+    expect((await pool.query("SELECT 1 FROM pending_action_steps")).rowCount).toBe(0);
+  });
+});
+
 describe("GET /pending-actions", () => {
   it("elenca per default le pending, numero decrescente; filtro per stato; degli altri utenti niente", async () => {
     const n1 = await enqueue();

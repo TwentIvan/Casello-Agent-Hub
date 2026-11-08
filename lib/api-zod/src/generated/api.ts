@@ -5925,7 +5925,26 @@ export const ListPendingActionsResponse = zod.object({
   "actions": zod.array(zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente'),
+  "proposal": zod.union([zod.object({
+  "title": zod.string(),
+  "reason": zod.string().nullable(),
+  "steps": zod.array(zod.object({
+  "key": zod.string().describe('Identificativo del passo (p1, p2…)'),
+  "position": zod.number(),
+  "toolName": zod.string().nullable().describe('Nome attuale dello strumento; null se non esiste più'),
+  "summary": zod.string(),
+  "argsPublic": zod.unknown().describe('Argomenti con i parametri sensibili oscurati'),
+  "refs": zod.array(zod.object({
+  "param": zod.string(),
+  "step": zod.string(),
+  "field": zod.array(zod.string())
+})).describe('Valori presi dal risultato di un passo precedente'),
+  "status": zod.enum(['pending', 'excluded', 'skipped', 'done', 'failed', 'not_run']),
+  "result": zod.string().nullable(),
+  "errorMessage": zod.string().nullable()
+}))
+}),zod.null()]).describe('Passi della proposta; null per le voci che non sono una proposta'),
   "team": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -5964,7 +5983,26 @@ export const GetPendingActionParams = zod.object({
 export const GetPendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente'),
+  "proposal": zod.union([zod.object({
+  "title": zod.string(),
+  "reason": zod.string().nullable(),
+  "steps": zod.array(zod.object({
+  "key": zod.string().describe('Identificativo del passo (p1, p2…)'),
+  "position": zod.number(),
+  "toolName": zod.string().nullable().describe('Nome attuale dello strumento; null se non esiste più'),
+  "summary": zod.string(),
+  "argsPublic": zod.unknown().describe('Argomenti con i parametri sensibili oscurati'),
+  "refs": zod.array(zod.object({
+  "param": zod.string(),
+  "step": zod.string(),
+  "field": zod.array(zod.string())
+})).describe('Valori presi dal risultato di un passo precedente'),
+  "status": zod.enum(['pending', 'excluded', 'skipped', 'done', 'failed', 'not_run']),
+  "result": zod.string().nullable(),
+  "errorMessage": zod.string().nullable()
+}))
+}),zod.null()]).describe('Passi della proposta; null per le voci che non sono una proposta'),
   "team": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -5993,7 +6031,7 @@ export const GetPendingActionResponse = zod.object({
 
 
 /**
- * Esegue una sola volta la chiamata memorizzata, senza il modello. Con identità `user` serve il token dell'utente dell'app (vive solo per la durata della chiamata). Una richiesta già decisa dà 409. Se l'esecuzione fallisce la risposta è 200 con l'azione in stato `failed`. Massimo 20 decisioni al minuto per utente.
+ * Esegue una sola volta la chiamata memorizzata, senza il modello. Con identità `user` serve il token dell'utente dell'app (vive solo per la durata della chiamata). Una richiesta già decisa dà 409. Se l'esecuzione fallisce la risposta è 200 con l'azione in stato `failed`. Massimo 20 decisioni al minuto per utente. Per una proposta con più passi `escludi` elenca i passi da non eseguire (anche quelli che dipendono da un passo escluso restano fuori); gli altri girano in ordine e ci si ferma al primo errore: la risposta è 200 con lo stato di ogni passo.
  * @summary Approva ed esegue un'azione in coda
  */
 export const ApprovePendingActionParams = zod.object({
@@ -6002,16 +6040,40 @@ export const ApprovePendingActionParams = zod.object({
 
 export const approvePendingActionBodyUserTokenMax = 4096;
 
+export const approvePendingActionBodyEscludiItemMax = 10;
+
+export const approvePendingActionBodyEscludiMax = 20;
+
 
 
 export const ApprovePendingActionBody = zod.object({
-  "userToken": zod.string().min(1).max(approvePendingActionBodyUserTokenMax).optional().describe('Token dell\'utente dell\'app, per gli strumenti con identità utente')
+  "userToken": zod.string().min(1).max(approvePendingActionBodyUserTokenMax).optional().describe('Token dell\'utente dell\'app, per gli strumenti con identità utente'),
+  "escludi": zod.array(zod.string().max(approvePendingActionBodyEscludiItemMax)).max(approvePendingActionBodyEscludiMax).optional().describe('Solo per le proposte, chiavi dei passi da non eseguire (p1, p2…)')
 })
 
 export const ApprovePendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente'),
+  "proposal": zod.union([zod.object({
+  "title": zod.string(),
+  "reason": zod.string().nullable(),
+  "steps": zod.array(zod.object({
+  "key": zod.string().describe('Identificativo del passo (p1, p2…)'),
+  "position": zod.number(),
+  "toolName": zod.string().nullable().describe('Nome attuale dello strumento; null se non esiste più'),
+  "summary": zod.string(),
+  "argsPublic": zod.unknown().describe('Argomenti con i parametri sensibili oscurati'),
+  "refs": zod.array(zod.object({
+  "param": zod.string(),
+  "step": zod.string(),
+  "field": zod.array(zod.string())
+})).describe('Valori presi dal risultato di un passo precedente'),
+  "status": zod.enum(['pending', 'excluded', 'skipped', 'done', 'failed', 'not_run']),
+  "result": zod.string().nullable(),
+  "errorMessage": zod.string().nullable()
+}))
+}),zod.null()]).describe('Passi della proposta; null per le voci che non sono una proposta'),
   "team": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -6057,7 +6119,26 @@ export const RejectPendingActionBody = zod.object({
 export const RejectPendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente'),
+  "proposal": zod.union([zod.object({
+  "title": zod.string(),
+  "reason": zod.string().nullable(),
+  "steps": zod.array(zod.object({
+  "key": zod.string().describe('Identificativo del passo (p1, p2…)'),
+  "position": zod.number(),
+  "toolName": zod.string().nullable().describe('Nome attuale dello strumento; null se non esiste più'),
+  "summary": zod.string(),
+  "argsPublic": zod.unknown().describe('Argomenti con i parametri sensibili oscurati'),
+  "refs": zod.array(zod.object({
+  "param": zod.string(),
+  "step": zod.string(),
+  "field": zod.array(zod.string())
+})).describe('Valori presi dal risultato di un passo precedente'),
+  "status": zod.enum(['pending', 'excluded', 'skipped', 'done', 'failed', 'not_run']),
+  "result": zod.string().nullable(),
+  "errorMessage": zod.string().nullable()
+}))
+}),zod.null()]).describe('Passi della proposta; null per le voci che non sono una proposta'),
   "team": zod.object({
   "id": zod.number(),
   "name": zod.string()

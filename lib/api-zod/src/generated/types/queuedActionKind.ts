@@ -7,7 +7,7 @@
  */
 
 /**
- * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra
+ * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente
  */
 export type QueuedActionKind = typeof QueuedActionKind[keyof typeof QueuedActionKind];
 
@@ -16,4 +16,5 @@ export const QueuedActionKind = {
   action: 'action',
   plan: 'plan',
   plan_change: 'plan_change',
+  proposal: 'proposal',
 } as const;

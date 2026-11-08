@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Response } from "express";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   ApprovePendingActionBody,
   ApprovePendingActionParams,
@@ -13,6 +13,8 @@ import {
   RejectPendingActionResponse,
 } from "@workspace/api-zod";
 import { db, appToolsTable, appsTable, pendingActionsTable, teamInstancesTable } from "@workspace/db";
+import { loadProposalSteps } from "../lib/actions/proposal-exec";
+import { toProposalView } from "../lib/actions/proposal-view";
 import { ACTION_MESSAGES, approveAction, rejectAction, type DecideResult } from "../lib/actions/decide";
 import { currentUserId } from "../lib/auth";
 import { actionDecideRateLimit } from "../middlewares/rate-limit";
@@ -40,11 +42,31 @@ const selectQueued = () =>
 
 type QueuedRow = Awaited<ReturnType<typeof selectQueued>>[number];
 
-function toQueuedAction({ action, appName, toolName, toolIdentity, teamName }: QueuedRow) {
+type StepsMap = Awaited<ReturnType<typeof loadProposalSteps>>;
+type ToolNames = Map<number, string>;
+
+// Passi e nomi dei tool delle sole proposte, con una lettura per ciascuno per tutte le voci
+async function loadProposalData(rows: QueuedRow[]): Promise<{ steps: StepsMap; toolNames: ToolNames }> {
+  const ids = rows.filter((r) => r.action.kind === "proposal").map((r) => r.action.id);
+  const steps = await loadProposalSteps(ids);
+  const toolIds = [...new Set([...steps.values()].flat().map((s) => s.toolId))];
+  const toolNames: ToolNames = new Map();
+  if (toolIds.length > 0) {
+    const tools = await db.select({ id: appToolsTable.id, name: appToolsTable.name }).from(appToolsTable).where(inArray(appToolsTable.id, toolIds));
+    for (const t of tools) toolNames.set(t.id, t.name);
+  }
+  return { steps, toolNames };
+}
+
+function toQueuedAction(
+  { action, appName, toolName, toolIdentity, teamName }: QueuedRow,
+  data: { steps: StepsMap; toolNames: ToolNames },
+) {
   return {
     number: action.number,
     status: action.status,
     kind: action.kind,
+    proposal: toProposalView(action, data.steps.get(action.id) ?? [], data.toolNames),
     team: action.teamInstanceId !== null && teamName !== null ? { id: action.teamInstanceId, name: teamName } : null,
     app: action.appId !== null && appName !== null ? { id: action.appId, name: appName } : null,
     tool:
@@ -86,7 +108,8 @@ export function createPendingActionsRouter(): IRouter {
       )
       .orderBy(desc(pendingActionsTable.number))
       .limit(MAX_LIST);
-    res.json(ListPendingActionsResponse.parse({ actions: rows.map(toQueuedAction) }));
+    const data = await loadProposalData(rows);
+    res.json(ListPendingActionsResponse.parse({ actions: rows.map((r) => toQueuedAction(r, data)) }));
   });
 
   router.get("/pending-actions/:number", async (req, res) => {
@@ -96,7 +119,7 @@ export function createPendingActionsRouter(): IRouter {
       res.status(404).json({ error: ACTION_MESSAGES.notFound });
       return;
     }
-    res.json(GetPendingActionResponse.parse(toQueuedAction(row)));
+    res.json(GetPendingActionResponse.parse(toQueuedAction(row, await loadProposalData([row]))));
   });
 
   // Dopo la decisione la risposta è la voce completa; `decided.ok = false` porta lo stato HTTP dell'errore
@@ -110,14 +133,17 @@ export function createPendingActionsRouter(): IRouter {
       res.status(404).json({ error: ACTION_MESSAGES.notFound });
       return;
     }
-    res.json(parse(toQueuedAction(row)));
+    res.json(parse(toQueuedAction(row, await loadProposalData([row]))));
   }
 
   router.post("/pending-actions/:number/approve", actionDecideRateLimit, async (req, res) => {
     const { number } = parseRequest(ApprovePendingActionParams, req.params);
     const body = parseRequest(ApprovePendingActionBody, req.body ?? {});
     const userId = currentUserId(req);
-    const decided = await approveAction(userId, number, body.userToken !== undefined ? { userToken: body.userToken } : {});
+    const decided = await approveAction(userId, number, {
+      ...(body.userToken !== undefined ? { userToken: body.userToken } : {}),
+      ...(body.escludi !== undefined ? { exclude: body.escludi } : {}),
+    });
     await respond(res, userId, decided, (v) => ApprovePendingActionResponse.parse(v));
   });
 

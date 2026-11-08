@@ -957,7 +957,7 @@ export const QueuedActionStatus = {
 } as const;
 
 /**
- * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra
+ * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente
  */
 export type QueuedActionKind = typeof QueuedActionKind[keyof typeof QueuedActionKind];
 
@@ -966,6 +966,7 @@ export const QueuedActionKind = {
   action: 'action',
   plan: 'plan',
   plan_change: 'plan_change',
+  proposal: 'proposal',
 } as const;
 
 /**
@@ -1001,11 +1002,59 @@ export type QueuedActionTool = {
   identity: QueuedActionToolIdentity;
 } | null;
 
+export type QueuedProposalStepStatus = typeof QueuedProposalStepStatus[keyof typeof QueuedProposalStepStatus];
+
+
+export const QueuedProposalStepStatus = {
+  pending: 'pending',
+  excluded: 'excluded',
+  skipped: 'skipped',
+  done: 'done',
+  failed: 'failed',
+  not_run: 'not_run',
+} as const;
+
+export type QueuedProposalStepRefsItem = {
+  param: string;
+  step: string;
+  field: string[];
+};
+
+export interface QueuedProposalStep {
+  /** Identificativo del passo (p1, p2…) */
+  key: string;
+  position: number;
+  /**
+     * Nome attuale dello strumento; null se non esiste più
+     * @nullable
+     */
+  toolName: string | null;
+  summary: string;
+  /** Argomenti con i parametri sensibili oscurati */
+  argsPublic: unknown;
+  /** Valori presi dal risultato di un passo precedente */
+  refs: QueuedProposalStepRefsItem[];
+  status: QueuedProposalStepStatus;
+  /** @nullable */
+  result: string | null;
+  /** @nullable */
+  errorMessage: string | null;
+}
+
+export interface QueuedProposal {
+  title: string;
+  /** @nullable */
+  reason: string | null;
+  steps: QueuedProposalStep[];
+}
+
 export interface QueuedAction {
   number: number;
   status: QueuedActionStatus;
-  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra */
+  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente */
   kind: QueuedActionKind;
+  /** Passi della proposta; null per le voci che non sono una proposta */
+  proposal: QueuedProposal | null;
   /** @nullable */
   team: QueuedActionTeam;
   /** @nullable */
@@ -1044,6 +1093,12 @@ export interface ApproveActionRequest {
      * @maxLength 4096
      */
   userToken?: string;
+  /**
+     * Solo per le proposte, chiavi dei passi da non eseguire (p1, p2…)
+     * @maxItems 20
+     * @items.maxLength 10
+     */
+  escludi?: string[];
 }
 
 export interface RejectActionRequest {

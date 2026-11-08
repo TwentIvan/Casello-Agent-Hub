@@ -13,4 +13,10 @@ export interface ApproveActionRequest {
      * @maxLength 4096
      */
   userToken?: string;
+  /**
+     * Solo per le proposte, chiavi dei passi da non eseguire (p1, p2…)
+     * @maxItems 20
+     * @items.maxLength 10
+     */
+  escludi?: string[];
 }

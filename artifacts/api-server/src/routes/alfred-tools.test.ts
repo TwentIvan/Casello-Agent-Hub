@@ -417,7 +417,7 @@ describe("proposte multiple", () => {
     const res = await run("coda_da_confermare");
     const byNumber = new Map(res.json.result.actions.map((x: { numero: number }) => [x.numero, x]));
     expect(byNumber.get(p)).toMatchObject({ numero: p, tipo: "proposal", sintesi: "Nuovo progetto", passi: 3 });
-    expect((byNumber.get(a) as { passi?: unknown }).passi ?? null).toBeNull();
+    expect(byNumber.get(a)).not.toHaveProperty("passi");
   });
 
   it("leggi_proposta: titolo, motivo e passi con numero e sintesi; voce non proposta → proposta non trovata", async () => {
@@ -459,6 +459,10 @@ describe("proposte multiple", () => {
   it("prepara_decisione: escludi con rifiuta, non valido, tutti i passi, su una voce non proposta", async () => {
     const p = await proposal();
     const a = await queueAction();
+    // Parte da una conferma davvero aperta: ogni preparazione fallita la deve chiudere
+    expect((await run("prepara_decisione", { numero: a, decisione: "rifiuta" })).json.ok).toBe(true);
+    const open = await db.select().from(alfredConfirmationsTable).where(eq(alfredConfirmationsTable.sessionId, sessionId));
+    expect(open.filter((r) => r.usedAt === null)).toHaveLength(1);
     expect((await run("prepara_decisione", { numero: p, decisione: "rifiuta", escludi: ["p3"] })).json).toEqual({ ok: false, error: "i passi da escludere valgono solo con approva" });
     expect((await run("prepara_decisione", { numero: p, decisione: "approva", escludi: ["p9"] })).json).toEqual({ ok: false, error: "passi da escludere non validi" });
     expect((await run("prepara_decisione", { numero: p, decisione: "approva", escludi: ["x"] })).json).toEqual({ ok: false, error: "passi da escludere non validi" });
@@ -468,6 +472,18 @@ describe("proposte multiple", () => {
     expect(await db.select().from(alfredConfirmationsTable).where(eq(alfredConfirmationsTable.sessionId, sessionId))).toSatisfy(
       (rows: { usedAt: Date | null }[]) => rows.every((r) => r.usedAt !== null),
     );
+  });
+
+  it("una preparazione con escludi non valido invalida il codice precedente", async () => {
+    const p = await proposal();
+    for (const escludi of [["x"], [3, "p3"], "p3"]) {
+      const code = (await run("prepara_decisione", { numero: p, decisione: "approva" })).json.result.codice;
+      const bad = await run("prepara_decisione", { numero: p, decisione: "approva", escludi });
+      expect(bad.json.ok).toBe(false);
+      expect((await confirm({ codice: code })).json.error).toBe("conferma scaduta: ripeti la richiesta");
+    }
+    expect((await statusOf(p)).status).toBe("pending");
+    expect(mcpApp.calls).toHaveLength(0);
   });
 
   it("conferma_decisione esegue la proposta escludendo i passi preparati", async () => {

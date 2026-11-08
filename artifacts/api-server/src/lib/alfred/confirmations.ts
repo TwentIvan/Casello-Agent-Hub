@@ -1,7 +1,8 @@
 import { createHash, randomInt } from "node:crypto";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { db, alfredConfirmationsTable, alfredSessionsTable, appToolsTable, pendingActionsTable, teamInstancesTable } from "@workspace/db";
-import { CENTRALINO_MESSAGES, CentralinoError, approvePending, needsUserToken, previewExclusion, rejectPending } from "../teams/centralino";
+import { CENTRALINO_MESSAGES, CentralinoError, approvePending, needsUserToken, normalizeExclude, previewExclusion, rejectPending } from "../teams/centralino";
+import { PROPOSAL_MESSAGES } from "../actions/proposal";
 import { logger } from "../logger";
 import { AlfredError } from "./gemini";
 
@@ -58,6 +59,11 @@ async function closeOpenConfirmations(sessionId: number, executor?: Executor): P
   else await db.transaction(run);
 }
 
+/** Invalida le conferme aperte della sessione: anche una preparazione con argomenti non validi vale come nuova richiesta. */
+export async function invalidateOpenConfirmations(sessionId: number): Promise<void> {
+  await guardDb(() => closeOpenConfirmations(sessionId));
+}
+
 export interface PreparedDecision {
   codice: string;
   numero: number;
@@ -73,15 +79,16 @@ export interface PreparedDecision {
 export async function prepareDecision(
   userId: number,
   sessionId: number,
-  input: { numero: number; decisione: "approva" | "rifiuta"; nota?: string | undefined; escludi?: string[] | undefined },
+  input: { numero: number; decisione: "approva" | "rifiuta"; nota?: string | undefined; escludi?: readonly unknown[] | undefined },
 ): Promise<PreparedDecision> {
   const note = input.nota?.trim() ? input.nota.trim() : null;
-  // Già normalizzati dallo strumento (`"p3"`)
-  const exclude = input.escludi ?? [];
 
   // Ogni preparazione, anche se fallisce, chiude le conferme aperte: un codice vecchio non vale dopo un nuovo «sì»
   await guardDb(() => closeOpenConfirmations(sessionId));
   if (note !== null && input.decisione === "approva") throw new ConfirmationError(CONFIRM_MESSAGES.noteWithApprove);
+  // Passi da escludere detti a voce ("p3" o 3), normalizzati dopo la chiusura delle conferme aperte
+  const exclude = normalizeExclude(input.escludi);
+  if (exclude === null) throw new CentralinoError(PROPOSAL_MESSAGES.badExclude);
   if (exclude.length > 0 && input.decisione !== "approva") throw new CentralinoError(CENTRALINO_MESSAGES.excludeOnlyWithApprove);
 
   const [row] = await db
@@ -103,7 +110,11 @@ export async function prepareDecision(
     throw new ConfirmationError(CONFIRM_MESSAGES.needsToken);
   }
   // Esclusioni controllate subito, così Alfred non chiede un sì su una decisione che fallirebbe
-  const preview = input.decisione === "approva" ? await previewExclusion(userId, input.numero, exclude) : null;
+  // Solo per le proposte (o con esclusioni da rifiutare su un'altra voce): nessuna query in più per le altre approvazioni
+  const preview =
+    input.decisione === "approva" && (row.kind === "proposal" || exclude.length > 0)
+      ? await previewExclusion(userId, input.numero, exclude)
+      : null;
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
   await guardDb(() => db.transaction(async (tx) => {

@@ -305,6 +305,7 @@ describe("centralino su /mcp", () => {
     const queue = await call(client, "coda_da_confermare");
     expect(queue.json.actions.map((a: { number: number }) => a.number)).toEqual([action.number, planItem.number]);
     expect(queue.json.actions[0]).toMatchObject({ kind: "action", tool: "set_pw", recipient: "Rosa", needsUserToken: false });
+    expect(queue.json.actions[0]).not.toHaveProperty("steps");
     expect(queue.json.actions[1]).toMatchObject({ kind: "plan", team: { id: team, name: "Mia" } });
     expect(JSON.stringify(queue.json)).not.toContain("Altrui");
 

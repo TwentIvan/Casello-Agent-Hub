@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { InstanceError } from "../teams/instances";
-import { CentralinoError, messageToLead, normalizeExclude, pendingQueue, readBulletin, readProposal, teamDetail, teamsStatus } from "../teams/centralino";
-import { PROPOSAL_MESSAGES } from "../actions/proposal";
-import { confirmDecision, prepareDecision, ConfirmationError } from "./confirmations";
+import { CentralinoError, messageToLead, pendingQueue, readBulletin, readProposal, teamDetail, teamsStatus } from "../teams/centralino";
+import { confirmDecision, invalidateOpenConfirmations, prepareDecision, ConfirmationError } from "./confirmations";
 import { requireActiveSession } from "./sessions";
 import { AlfredError } from "./gemini";
 import { MEMORY_TOOL_NAMES, runMemoryTool } from "../memory/tools";
@@ -88,9 +87,9 @@ async function voiceQueue(userId: number) {
       squadra: a.team?.name ?? null,
       destinatario: a.recipient,
       sintesi: a.summary,
-      // Numero di passi, solo per le proposte
-      passi: a.steps,
       serveTokenApp: a.needsUserToken,
+      // Numero di passi, solo per le proposte
+      ...(a.steps !== undefined ? { passi: a.steps } : {}),
     })),
   };
 }
@@ -109,7 +108,11 @@ export async function runAlfredTool(userId: number, sessionId: number, name: str
   if (!isAlfredTool(name)) throw new AlfredError(ALFRED_TOOL_MESSAGES.unknownTool, 404);
   await requireActiveSession(userId, sessionId);
   const parsed = SCHEMAS[name].safeParse(args ?? {});
-  if (!parsed.success) return { ok: false, error: ALFRED_TOOL_MESSAGES.badArgs };
+  if (!parsed.success) {
+    // Anche una preparazione con argomenti non validi invalida il codice precedente della sessione
+    if (name === "prepara_decisione") await invalidateOpenConfirmations(sessionId);
+    return { ok: false, error: ALFRED_TOOL_MESSAGES.badArgs };
+  }
   const a = parsed.data as Record<string, unknown>;
   try {
     switch (name) {
@@ -125,11 +128,9 @@ export async function runAlfredTool(userId: number, sessionId: number, name: str
         return { ok: true, result: await messageToLead(userId, a["id"] as number, a["testo"] as string) };
       case "leggi_proposta":
         return { ok: true, result: await readProposal(userId, a["numero"] as number) };
-      case "prepara_decisione": {
-        const escludi = normalizeExclude(a["escludi"] as unknown[] | undefined);
-        if (escludi === null) return { ok: false, error: PROPOSAL_MESSAGES.badExclude };
-        return { ok: true, result: await prepareDecision(userId, sessionId, { ...(a as Parameters<typeof prepareDecision>[2]), escludi }) };
-      }
+      case "prepara_decisione":
+        // `escludi` arriva grezzo: lo normalizza `prepareDecision` dopo aver chiuso le conferme aperte
+        return { ok: true, result: await prepareDecision(userId, sessionId, a as Parameters<typeof prepareDecision>[2]) };
       case "conferma_decisione":
         return { ok: true, result: await confirmDecision(userId, sessionId, a["codice"] as string) };
     }

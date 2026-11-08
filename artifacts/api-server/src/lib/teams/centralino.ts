@@ -207,7 +207,7 @@ export async function pendingQueue(userId: number) {
       number: action.number,
       kind: action.kind,
       // Numero di passi, solo per le proposte multiple
-      steps: action.kind === "proposal" ? (steps.get(action.id)?.length ?? 0) : null,
+      ...(action.kind === "proposal" ? { steps: steps.get(action.id)?.length ?? 0 } : {}),
       team: action.teamInstanceId !== null && teamName !== null ? { id: action.teamInstanceId, name: teamName } : null,
       tool: toolName,
       recipient: action.recipient,

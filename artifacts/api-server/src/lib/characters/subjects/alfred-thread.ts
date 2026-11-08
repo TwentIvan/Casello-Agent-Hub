@@ -190,9 +190,9 @@ async function queueView(userId: number) {
       squadra: a.team?.name ?? null,
       destinatario: a.recipient,
       sintesi: a.summary,
-      // Numero di passi, solo per le proposte
-      passi: a.steps,
       serveTokenApp: a.needsUserToken,
+      // Numero di passi, solo per le proposte
+      ...(a.steps !== undefined ? { passi: a.steps } : {}),
     })),
   };
 }

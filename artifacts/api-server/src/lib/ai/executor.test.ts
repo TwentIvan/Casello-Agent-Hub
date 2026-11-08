@@ -331,6 +331,63 @@ describe("modelChat", () => {
     expect(out.toolCalls).toEqual([{ id: "call_1", name: "get_user", arguments: "{}", extra }]);
   });
 
+  it("Gemini: testo e tool call divisi su più choices → uniti, con la firma del ragionamento", async () => {
+    const signature = { extra_content: { google: { thought_signature: "firma-xyz" } } };
+    fake.chatRawBody = JSON.stringify({
+      id: "x",
+      object: "chat.completion",
+      created: 1,
+      model: "gemini-3.5-flash",
+      choices: [
+        { index: 0, message: { role: "assistant", content: "Preparo la proposta" }, finish_reason: "stop" },
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content: " con tre passi.",
+            tool_calls: [
+              { id: "call_a", type: "function", function: { name: "get_user", arguments: '{"id":"1"}' }, ...signature },
+            ],
+          },
+          finish_reason: "tool_calls",
+        },
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              { id: "call_b", type: "function", function: { name: "get_user", arguments: '{"id":"2"}' } },
+              // stessa chiamata ripetuta in un'altra scelta: una volta sola
+              { id: "call_a", type: "function", function: { name: "get_user", arguments: '{"id":"1"}' }, ...signature },
+            ],
+          },
+          finish_reason: "tool_calls",
+        },
+      ],
+      usage: { prompt_tokens: 100, completion_tokens: 165, total_tokens: 265 },
+    });
+    const info = vi.spyOn(logger, "info");
+    const out = await modelChat(await resolved(), { messages: MESSAGES, tools: TOOLS, caller: "test" });
+    expect(out.content).toBe("Preparo la proposta con tre passi.");
+    expect(out.toolCalls).toEqual([
+      { id: "call_a", name: "get_user", arguments: '{"id":"1"}', extra: signature },
+      { id: "call_b", name: "get_user", arguments: '{"id":"2"}' },
+    ]);
+    expect(out.truncated).toBeUndefined();
+    // Nel log quante scelte e perché si sono fermate, mai il testo
+    const logged = JSON.stringify(info.mock.calls);
+    expect(logged).toContain('"choices":3');
+    expect(logged).toContain('"finishReasons":["stop","tool_calls","tool_calls"]');
+    expect(logged).not.toContain("Preparo la proposta");
+  });
+
+  it("finish_reason length → risposta segnata come troncata", async () => {
+    fake.chatReply = { content: "a metà", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 }, finishReason: "length" };
+    const out = await modelChat(await resolved(), { messages: MESSAGES, tools: TOOLS, caller: "test" });
+    expect(out).toMatchObject({ content: "a metà", toolCalls: [], truncated: true });
+  });
+
   it("altri provider: l'id del modello va al provider così com'è", async () => {
     const { aiModelId } = await seed();
     await db.update(aiModelsTable).set({ modelId: "models/x" }).where(eq(aiModelsTable.id, aiModelId));

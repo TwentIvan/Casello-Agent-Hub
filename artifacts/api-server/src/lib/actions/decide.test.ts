@@ -246,6 +246,17 @@ describe("approveAction", () => {
     expect(await rowOf(userA, n)).toMatchObject({ status: "failed", errorMessage: "esito incerto: verifica sul servizio" });
   });
 
+  it("escludi non vuoto su una voce action: 400 e voce ancora pending", async () => {
+    const mcp = await startFake();
+    await seedApp(mcp.url);
+    const n = await enqueue(await seedTool("service"));
+
+    expect(await approveAction(userA, n, { exclude: ["p1"] })).toEqual({ ok: false, status: 400, message: "passi da escludere non validi" });
+    expect((await rowOf(userA, n)).status).toBe("pending");
+    expect(mcp.calls).toHaveLength(0);
+    expect((await approveAction(userA, n, { exclude: [] })).ok).toBe(true);
+  });
+
   it("voce di un altro utente o inesistente: 404; già decisa: 409", async () => {
     const mcp = await startFake();
     await seedApp(mcp.url);

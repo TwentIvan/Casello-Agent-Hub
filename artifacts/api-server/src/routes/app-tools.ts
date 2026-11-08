@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Response } from "express";
 import { and, asc, eq } from "drizzle-orm";
-import { db, agentTriggersTable, appsTable, appToolsTable, pendingActionsTable } from "@workspace/db";
+import { db, agentTriggersTable, appsTable, appToolsTable, pendingActionStepsTable, pendingActionsTable } from "@workspace/db";
 import {
   ListAppToolsParams,
   ListAppToolsResponse,
@@ -186,7 +186,13 @@ router.delete("/apps/:id/tools/:toolId", async (req, res) => {
     .from(pendingActionsTable)
     .where(eq(pendingActionsTable.toolId, toolId))
     .limit(1);
-  if (queued) {
+  // Vale anche per un passo di una proposta, in coda o già decisa (FK RESTRICT)
+  const [inStep] = await db
+    .select({ id: pendingActionStepsTable.id })
+    .from(pendingActionStepsTable)
+    .where(eq(pendingActionStepsTable.toolId, toolId))
+    .limit(1);
+  if (queued || inStep) {
     res.status(409).json({ error: TOOL_HAS_ACTIONS });
     return;
   }

@@ -1,11 +1,11 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { db, pool, appsTable, appToolsTable, usersTable, type InsertAppTool } from "@workspace/db";
+import { db, pool, agentsTable, appsTable, appToolsTable, runsTable, usersTable, type InsertAppTool } from "@workspace/db";
 import { encryptSecret } from "../lib/secrets";
 import type { CatalogTool } from "../lib/tools/types";
 import type { TokenScope } from "../lib/api-tokens";
-import { enqueueAction } from "../lib/actions/queue";
+import { enqueueAction, enqueueProposal } from "../lib/actions/queue";
 import { startFakeMcp, type FakeMcp } from "../../test/fake-mcp";
 import { allowTestLoopback } from "../../test/fake-provider";
 
@@ -121,6 +121,27 @@ describe("tool e app con azioni in coda", () => {
 
     await pool.query("DELETE FROM pending_actions");
     expect((await api("DELETE", `/apps/${appId}/tools/${tool.id}`)).status).toBe(204);
+  });
+
+  it("DELETE di un tool usato solo da un passo di una proposta → 409", async () => {
+    const [agent] = await db.insert(agentsTable).values({ appId, name: "Resp", role: "general", status: "active" }).returning();
+    const [run] = await db.insert(runsTable).values({ agentId: agent!.id, input: "x" }).returning();
+    const out = await enqueueProposal({
+      userId,
+      appId,
+      agentId: agent!.id,
+      runId: run!.id,
+      recipient: "Mister",
+      proposal: { title: "Cambia password", reason: null, steps: [{ key: "p1", toolName: "set_password", args: { id: "42" }, summary: "Cambia la password" }] },
+      publicProposal: { title: "Cambia password" },
+      steps: [{ key: "p1", position: 0, toolId: tool.id, summary: "Cambia la password" }],
+    });
+    expect(out.ok).toBe(true);
+
+    const res = await api("DELETE", `/apps/${appId}/tools/${tool.id}`);
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("il tool ha azioni in coda o già decise: disattivalo invece di eliminarlo");
+    expect((await db.select().from(appToolsTable)).length).toBe(1);
   });
 
   it("DELETE dell'app porta con sé lo storico della coda", async () => {

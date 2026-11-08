@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { InstanceError } from "../teams/instances";
-import { CentralinoError, messageToLead, pendingQueue, readBulletin, teamDetail, teamsStatus } from "../teams/centralino";
+import { CentralinoError, messageToLead, normalizeExclude, pendingQueue, readBulletin, readProposal, teamDetail, teamsStatus } from "../teams/centralino";
+import { PROPOSAL_MESSAGES } from "../actions/proposal";
 import { confirmDecision, prepareDecision, ConfirmationError } from "./confirmations";
 import { requireActiveSession } from "./sessions";
 import { AlfredError } from "./gemini";
@@ -26,11 +27,14 @@ const SCHEMAS = {
   squadra_dettaglio: z.object({ id: teamId }),
   bollettino: z.object({}).passthrough(),
   coda_da_confermare: z.object({}).passthrough(),
+  leggi_proposta: z.object({ numero: z.number().int().positive() }),
   scrivi_al_capo: z.object({ id: teamId, testo: z.string().min(1).max(4000) }),
   prepara_decisione: z.object({
     numero: z.number().int().positive(),
     decisione: z.enum(["approva", "rifiuta"]),
     nota: z.string().max(500).optional(),
+    // Passi della proposta da non eseguire: "p3" o 3; normalizzati e controllati da `normalizeExclude`
+    escludi: z.array(z.union([z.string().max(10), z.number()])).max(20).optional(),
   }),
   // Il modello può passare il codice come numero: gli zeri iniziali si ripristinano
   conferma_decisione: z.object({
@@ -84,6 +88,8 @@ async function voiceQueue(userId: number) {
       squadra: a.team?.name ?? null,
       destinatario: a.recipient,
       sintesi: a.summary,
+      // Numero di passi, solo per le proposte
+      passi: a.steps,
       serveTokenApp: a.needsUserToken,
     })),
   };
@@ -117,8 +123,13 @@ export async function runAlfredTool(userId: number, sessionId: number, name: str
         return { ok: true, result: await voiceQueue(userId) };
       case "scrivi_al_capo":
         return { ok: true, result: await messageToLead(userId, a["id"] as number, a["testo"] as string) };
-      case "prepara_decisione":
-        return { ok: true, result: await prepareDecision(userId, sessionId, a as Parameters<typeof prepareDecision>[2]) };
+      case "leggi_proposta":
+        return { ok: true, result: await readProposal(userId, a["numero"] as number) };
+      case "prepara_decisione": {
+        const escludi = normalizeExclude(a["escludi"] as unknown[] | undefined);
+        if (escludi === null) return { ok: false, error: PROPOSAL_MESSAGES.badExclude };
+        return { ok: true, result: await prepareDecision(userId, sessionId, { ...(a as Parameters<typeof prepareDecision>[2]), escludi }) };
+      }
       case "conferma_decisione":
         return { ok: true, result: await confirmDecision(userId, sessionId, a["codice"] as string) };
     }

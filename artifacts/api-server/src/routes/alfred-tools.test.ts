@@ -15,12 +15,14 @@ import {
   teamEventsTable,
   teamTasksTable,
   teamTurnsTable,
+  pendingActionStepsTable,
   usersTable,
   type InsertAppTool,
 } from "@workspace/db";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 import { startFakeMcp, type FakeMcp } from "../../test/fake-mcp";
 import { enqueueAction, enqueuePlanItem } from "../lib/actions/queue";
+import { queueTestProposal } from "../../test/proposal-fixture";
 import { encryptSecret } from "../lib/secrets";
 import type { CatalogTool } from "../lib/tools/types";
 import { emitEvent } from "../lib/teams/events";
@@ -398,5 +400,83 @@ describe("indurimento della conferma", () => {
     const res = await run("squadre_stato");
     expect(res.status).toBe(429);
     expect(res.json).toEqual({ error: "Troppe richieste: riprova tra poco" });
+  });
+});
+
+describe("proposte multiple", () => {
+  const proposal = () => queueTestProposal({ userId: dev, appId, toolId: tool.id, toolName: "set_pw" });
+  const stepStates = async (n: number) => {
+    const row = await statusOf(n);
+    const steps = await db.select().from(pendingActionStepsTable).where(eq(pendingActionStepsTable.pendingActionId, row.id));
+    return Object.fromEntries(steps.map((s) => [s.key, s.status]));
+  };
+
+  it("coda_da_confermare riporta il numero di passi solo per le proposte", async () => {
+    const a = await queueAction();
+    const p = await proposal();
+    const res = await run("coda_da_confermare");
+    const byNumber = new Map(res.json.result.actions.map((x: { numero: number }) => [x.numero, x]));
+    expect(byNumber.get(p)).toMatchObject({ numero: p, tipo: "proposal", sintesi: "Nuovo progetto", passi: 3 });
+    expect((byNumber.get(a) as { passi?: unknown }).passi ?? null).toBeNull();
+  });
+
+  it("leggi_proposta: titolo, motivo e passi con numero e sintesi; voce non proposta → proposta non trovata", async () => {
+    const a = await queueAction();
+    const p = await proposal();
+    const res = await run("leggi_proposta", { numero: p });
+    expect(res.json).toEqual({
+      ok: true,
+      result: {
+        numero: p,
+        titolo: "Nuovo progetto",
+        motivo: "Richiesta del cliente",
+        stato: "pending",
+        passi: [
+          { passo: "p1", numero: 1, sintesi: "Crea il progetto", stato: "pending" },
+          { passo: "p2", numero: 2, sintesi: "Crea il compito", stato: "pending" },
+          { passo: "p3", numero: 3, sintesi: "Commenta il compito", stato: "pending" },
+        ],
+      },
+    });
+    expect((await run("leggi_proposta", { numero: a })).json).toEqual({ ok: false, error: "proposta non trovata" });
+    expect((await run("leggi_proposta", { numero: 999 })).json).toEqual({ ok: false, error: "proposta non trovata" });
+    const theirs = await queueTestProposal({ userId: other, appId, toolId: tool.id, toolName: "set_pw" });
+    expect((await run("leggi_proposta", { numero: theirs })).json).toEqual({ ok: false, error: "proposta non trovata" });
+  });
+
+  it("prepara_decisione con escludi: passi esclusi e saltati a catena, salvati nella conferma", async () => {
+    const p = await proposal();
+    const res = await run("prepara_decisione", { numero: p, decisione: "approva", escludi: [2] });
+    expect(res.json.ok).toBe(true);
+    expect(res.json.result).toMatchObject({ numero: p, tipo: "proposta", sintesi: "Nuovo progetto", passiEsclusi: ["p2"], passiSaltati: ["p3"] });
+    const [row] = await db.select().from(alfredConfirmationsTable);
+    expect(row!.excludeSteps).toEqual(["p2"]);
+    // senza esclusioni: liste vuote
+    const plain = await run("prepara_decisione", { numero: p, decisione: "approva" });
+    expect(plain.json.result).toMatchObject({ passiEsclusi: [], passiSaltati: [] });
+  });
+
+  it("prepara_decisione: escludi con rifiuta, non valido, tutti i passi, su una voce non proposta", async () => {
+    const p = await proposal();
+    const a = await queueAction();
+    expect((await run("prepara_decisione", { numero: p, decisione: "rifiuta", escludi: ["p3"] })).json).toEqual({ ok: false, error: "i passi da escludere valgono solo con approva" });
+    expect((await run("prepara_decisione", { numero: p, decisione: "approva", escludi: ["p9"] })).json).toEqual({ ok: false, error: "passi da escludere non validi" });
+    expect((await run("prepara_decisione", { numero: p, decisione: "approva", escludi: ["x"] })).json).toEqual({ ok: false, error: "passi da escludere non validi" });
+    expect((await run("prepara_decisione", { numero: p, decisione: "approva", escludi: [3, "p3"] })).json).toEqual({ ok: false, error: "passi da escludere non validi" });
+    expect((await run("prepara_decisione", { numero: p, decisione: "approva", escludi: [1, 2] })).json).toEqual({ ok: false, error: "nessun passo da eseguire: rifiuta la proposta" });
+    expect((await run("prepara_decisione", { numero: a, decisione: "approva", escludi: [1] })).json).toEqual({ ok: false, error: "passi da escludere non validi" });
+    expect(await db.select().from(alfredConfirmationsTable).where(eq(alfredConfirmationsTable.sessionId, sessionId))).toSatisfy(
+      (rows: { usedAt: Date | null }[]) => rows.every((r) => r.usedAt !== null),
+    );
+  });
+
+  it("conferma_decisione esegue la proposta escludendo i passi preparati", async () => {
+    const p = await proposal();
+    const code = (await run("prepara_decisione", { numero: p, decisione: "approva", escludi: ["p3"] })).json.result.codice;
+    const done = await confirm({ codice: code });
+    expect(done.json).toMatchObject({ ok: true, result: { numero: p, esito: "approvata" } });
+    expect(await stepStates(p)).toEqual({ p1: "done", p2: "done", p3: "excluded" });
+    expect(mcpApp.calls).toHaveLength(2);
+    expect((await statusOf(p)).status).toBe("done");
   });
 });

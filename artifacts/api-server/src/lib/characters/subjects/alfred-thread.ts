@@ -9,7 +9,19 @@ import type { ChatCompletionFunctionTool } from "openai/resources/chat/completio
 import { db, aiAccountsTable, aiModelsTable, characterConversationsTable, runsTable, type CharacterConversation } from "@workspace/db";
 import type { ChatToolCall } from "../../ai/chat-types";
 import { InstanceError, getInstance, listInstances } from "../../teams/instances";
-import { CentralinoError, messageToLead, pendingQueue, readBulletin, teamDetail, teamsStatus } from "../../teams/centralino";
+import {
+  CENTRALINO_MESSAGES,
+  CentralinoError,
+  messageToLead,
+  normalizeExclude,
+  pendingQueue,
+  previewExclusion,
+  readBulletin,
+  readProposal,
+  teamDetail,
+  teamsStatus,
+} from "../../teams/centralino";
+import { PROPOSAL_MESSAGES } from "../../actions/proposal";
 import { unreadBulletin } from "../../teams/events";
 import { recordProposal } from "../proposals";
 import { characterModelFor } from "../settings";
@@ -102,7 +114,13 @@ export const ALFRED_THREAD_TOOLS: ChatCompletionFunctionTool[] = [
   fn("squadre_stato", "Una riga per ogni squadra attiva dell'utente: piano, compiti, eventi non letti.", {}),
   fn("squadra_dettaglio", "Dettaglio di una squadra: obiettivo, stato del piano, ultimi compiti ed eventi.", { id: { type: "integer", description: "Id della squadra" } }, ["id"]),
   fn("bollettino", "Novità non lette delle squadre; le restituite si segnano come lette.", {}),
-  fn("coda_da_confermare", "Le voci in attesa di conferma dell'utente, con numero, tipo, squadra e sintesi.", {}),
+  fn("coda_da_confermare", "Le voci in attesa di conferma dell'utente, con numero, tipo, squadra e sintesi; per le proposte il numero di passi.", {}),
+  fn(
+    "leggi_proposta",
+    "Legge una proposta della coda: titolo, motivo e passi con numero e sintesi. Usalo prima di proporre la decisione su una proposta.",
+    { numero: { type: "integer", description: "Numero della voce in coda" } },
+    ["numero"],
+  ),
   fn(
     "scrivi_al_capo",
     "Manda un messaggio al capo di una squadra attiva; parte un suo turno. Scrivi solo ciò che l'utente ha chiesto.",
@@ -117,6 +135,11 @@ export const ALFRED_THREAD_TOOLS: ChatCompletionFunctionTool[] = [
       numero: { type: "integer", description: "Numero della voce in coda" },
       decisione: { type: "string", enum: ["approva", "rifiuta"] },
       nota: { type: "string", description: "Motivo del rifiuto (solo con rifiuta, al massimo 500 caratteri)" },
+      escludi: {
+        type: "array",
+        items: { type: "string" },
+        description: "Solo per le proposte e con approva: id dei passi da non eseguire, es. p3",
+      },
     },
     ["numero", "decisione"],
   ),
@@ -128,9 +151,15 @@ const SCHEMAS = {
   squadra_dettaglio: z.object({ id: positive }),
   bollettino: z.object({}).passthrough(),
   coda_da_confermare: z.object({}).passthrough(),
+  leggi_proposta: z.object({ numero: positive }),
   scrivi_al_capo: z.object({ id: positive, testo: z.string().min(1).max(4000) }),
   leggi_run: z.object({ id: positive }),
-  proponi_decisione: z.object({ numero: positive, decisione: z.enum(["approva", "rifiuta"]), nota: z.string().max(500).optional() }),
+  proponi_decisione: z.object({
+    numero: positive,
+    decisione: z.enum(["approva", "rifiuta"]),
+    nota: z.string().max(500).optional(),
+    escludi: z.array(z.union([z.string().max(10), z.number()])).max(20).optional(),
+  }),
 } as const;
 
 type ToolName = keyof typeof SCHEMAS;
@@ -161,6 +190,8 @@ async function queueView(userId: number) {
       squadra: a.team?.name ?? null,
       destinatario: a.recipient,
       sintesi: a.summary,
+      // Numero di passi, solo per le proposte
+      passi: a.steps,
       serveTokenApp: a.needsUserToken,
     })),
   };
@@ -191,9 +222,14 @@ const sha256 = (text: string): string => createHash("sha256").update(text).diges
 
 async function proposeDecision(ctx: TurnContext, a: z.infer<typeof SCHEMAS.proponi_decisione>): Promise<string> {
   if (a.nota !== undefined && a.decisione !== "rifiuta") return toolFail(ALFRED_THREAD_MESSAGES.noteOnlyWithReject);
+  const exclude = normalizeExclude(a.escludi);
+  if (exclude === null) return toolFail(PROPOSAL_MESSAGES.badExclude);
+  if (exclude.length > 0 && a.decisione !== "approva") return toolFail(CENTRALINO_MESSAGES.excludeOnlyWithApprove);
   const q = await pendingQueue(ctx.userId);
   const item = q.actions.find((x) => x.number === a.numero);
   if (!item) return toolFail(ALFRED_THREAD_MESSAGES.actionNotFound);
+  // Esclusioni controllate subito sui passi della voce (CentralinoError → messaggio fisso)
+  const preview = a.decisione === "approva" ? await previewExclusion(ctx.userId, item.number, exclude) : null;
   const payload = {
     number: item.number,
     decision: a.decisione,
@@ -202,10 +238,17 @@ async function proposeDecision(ctx: TurnContext, a: z.infer<typeof SCHEMAS.propo
     teamName: item.team?.name ?? null,
     summary: item.summary,
     needsUserToken: item.needsUserToken,
+    exclude: exclude.length > 0 ? exclude : null,
   };
   const out = await recordProposal(ctx, "decision", payload, "", sha256(`pending\n${item.summary}`));
   if ("error" in out) return toolFail(out.error);
-  return toolOk({ proposalId: out.id, numero: item.number, decisione: a.decisione, sintesi: item.summary });
+  return toolOk({
+    proposalId: out.id,
+    numero: item.number,
+    decisione: a.decisione,
+    sintesi: item.summary,
+    ...(item.kind === "proposal" ? { passiEsclusi: preview?.excluded ?? [], passiSaltati: preview?.skipped ?? [] } : {}),
+  });
 }
 
 function parseArgs(raw: string): unknown {
@@ -235,6 +278,8 @@ async function runTool(call: ChatToolCall, ctx: TurnContext): Promise<string> {
       }
       case "coda_da_confermare":
         return toolOk(await queueView(userId));
+      case "leggi_proposta":
+        return toolOk(await readProposal(userId, a["numero"] as number));
       case "scrivi_al_capo":
         return toolOk(await messageToLead(userId, a["id"] as number, a["testo"] as string));
       case "leggi_run": {

@@ -1,6 +1,8 @@
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, appToolsTable, pendingActionsTable, teamEventsTable, teamInstancesTable, teamTasksTable } from "@workspace/db";
 import { ACTION_MESSAGES, approveAction, rejectAction } from "../actions/decide";
+import { PROPOSAL_MESSAGES, PROPOSAL_STEPS_MAX, planExclusion, stepRefs } from "../actions/proposal";
+import { loadProposalSteps } from "../actions/proposal-exec";
 import { centralinoModelFor } from "../ai/default-model";
 import { modelChat, resolveModel } from "../ai/executor";
 import { logger } from "../logger";
@@ -17,6 +19,8 @@ import { sendToLead } from "./turn-runner";
 export const CENTRALINO_MESSAGES = {
   tooManyMessages: "Troppe richieste: riprova tra poco",
   emptyMessage: "messaggio vuoto",
+  proposalNotFound: "proposta non trovata",
+  excludeOnlyWithApprove: "i passi da escludere valgono solo con approva",
 } as const;
 
 /** Errore da restituire allo strumento con il suo messaggio (già in italiano e sicuro). */
@@ -197,10 +201,13 @@ export async function pendingQueue(userId: number) {
     .where(and(eq(pendingActionsTable.userId, userId), eq(pendingActionsTable.status, "pending")))
     .orderBy(pendingActionsTable.number)
     .limit(MAX_QUEUE);
+  const steps = await loadProposalSteps(rows.filter((r) => r.action.kind === "proposal").map((r) => r.action.id));
   return {
     actions: rows.map(({ action, toolName, toolIdentity, teamName }) => ({
       number: action.number,
       kind: action.kind,
+      // Numero di passi, solo per le proposte multiple
+      steps: action.kind === "proposal" ? (steps.get(action.id)?.length ?? 0) : null,
       team: action.teamInstanceId !== null && teamName !== null ? { id: action.teamInstanceId, name: teamName } : null,
       tool: toolName,
       recipient: action.recipient,
@@ -219,7 +226,7 @@ function decided(out: Awaited<ReturnType<typeof approveAction>>) {
   return { number: a.number, status: a.status, result: a.result, error: a.errorMessage };
 }
 
-export async function approvePending(userId: number, number: number, userToken?: string) {
+export async function approvePending(userId: number, number: number, userToken?: string, exclude?: string[]) {
   // Lo stesso budget di `POST /pending-actions/:number/approve|reject` (20/min per utente)
   if (!consumeActionDecision(userId)) throw new CentralinoError(CENTRALINO_MESSAGES.tooManyMessages);
   // Il token dell'utente serve (e viene passato) solo alle azioni il cui strumento ha identità `user`
@@ -231,10 +238,99 @@ export async function approvePending(userId: number, number: number, userToken?:
     .limit(1);
   if (!row) throw new CentralinoError(ACTION_MESSAGES.notFound);
   const pass = needsUserToken(row.kind, row.identity) && userToken !== undefined;
-  return decided(await approveAction(userId, number, pass ? { userToken } : {}));
+  return decided(
+    await approveAction(userId, number, {
+      ...(pass ? { userToken } : {}),
+      ...(exclude && exclude.length > 0 ? { exclude } : {}),
+    }),
+  );
 }
 
 export async function rejectPending(userId: number, number: number, note?: string) {
   if (!consumeActionDecision(userId)) throw new CentralinoError(CENTRALINO_MESSAGES.tooManyMessages);
   return decided(await rejectAction(userId, number, note ?? null));
+}
+
+// --- Proposte multiple -------------------------------------------------------------------------------
+
+/**
+ * Passi da escludere detti a voce o scritti: `"p3"` o il numero `3` (1..20), al più 20, senza ripetizioni.
+ * Restituisce gli id normalizzati (`"p3"`), oppure null se l'elenco non è valido.
+ */
+export function normalizeExclude(raw: readonly unknown[] | undefined): string[] | null {
+  if (raw === undefined) return [];
+  if (raw.length > PROPOSAL_STEPS_MAX) return null;
+  const out: string[] = [];
+  for (const item of raw) {
+    let n: number | null = null;
+    if (typeof item === "number" && Number.isInteger(item)) n = item;
+    else if (typeof item === "string") {
+      const m = /^\s*[pP]?(\d{1,2})\s*$/.exec(item);
+      if (m) n = Number(m[1]);
+    }
+    if (n === null || n < 1 || n > PROPOSAL_STEPS_MAX) return null;
+    const key = `p${n}`;
+    if (out.includes(key)) return null;
+    out.push(key);
+  }
+  return out;
+}
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+async function findProposal(userId: number, number: number) {
+  const [action] = await db
+    .select()
+    .from(pendingActionsTable)
+    .where(and(eq(pendingActionsTable.userId, userId), eq(pendingActionsTable.number, number), eq(pendingActionsTable.kind, "proposal")))
+    .limit(1);
+  if (!action) return null;
+  const steps = (await loadProposalSteps([action.id])).get(action.id) ?? [];
+  return { action, steps };
+}
+
+/** Proposta da leggere all'utente: titolo, motivo e passi con numero e sintesi. Voce altrui o non proposta → «proposta non trovata». */
+export async function readProposal(userId: number, number: number) {
+  const found = await findProposal(userId, number);
+  if (!found) throw new CentralinoError(CENTRALINO_MESSAGES.proposalNotFound);
+  const pub = isObject(found.action.argsPublic) ? found.action.argsPublic : {};
+  return {
+    numero: found.action.number,
+    titolo: typeof pub.title === "string" ? pub.title : found.action.summary,
+    motivo: typeof pub.reason === "string" ? pub.reason : null,
+    stato: found.action.status as string,
+    passi: found.steps.map((s) => ({ passo: s.key, numero: s.position + 1, sintesi: s.summary, stato: s.status as string })),
+  };
+}
+
+/**
+ * Controllo anticipato delle esclusioni per Alfred (prima della conferma): sulla voce dell'utente, con i riferimenti
+ * dei passi letti dagli argomenti pubblici. Esclusioni su una voce non proposta → «passi da escludere non validi».
+ * Per una proposta restituisce i passi esclusi e quelli saltati a catena, nell'ordine; per le altre voci null.
+ */
+export async function previewExclusion(
+  userId: number,
+  number: number,
+  exclude: string[],
+): Promise<{ excluded: string[]; skipped: string[] } | null> {
+  const found = await findProposal(userId, number);
+  if (!found) {
+    if (exclude.length > 0) throw new CentralinoError(PROPOSAL_MESSAGES.badExclude);
+    return null;
+  }
+  const pub = isObject(found.action.argsPublic) ? found.action.argsPublic : {};
+  const publicSteps = Array.isArray(pub.steps) ? pub.steps.filter(isObject) : [];
+  const argsByKey = new Map<string, unknown>(publicSteps.map((s) => [String(s.key), s.args]));
+  const steps = found.steps.map((s) => {
+    const refs = stepRefs(argsByKey.get(s.key) ?? {});
+    return { key: s.key, refs: Array.isArray(refs) ? refs : [] };
+  });
+  const plan = planExclusion(steps, exclude);
+  if (!plan.ok) throw new CentralinoError(plan.message);
+  return {
+    excluded: steps.filter((s) => plan.excluded.has(s.key)).map((s) => s.key),
+    skipped: steps.filter((s) => plan.skipped.has(s.key)).map((s) => s.key),
+  };
 }

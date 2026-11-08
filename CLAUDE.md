@@ -230,6 +230,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (`checkExtraHeaders`, insieme a `checkAuthHeaderName`): al più 10, nomi validi e non ripetuti, diversi dagli header di autenticazione
   (ricontrollato anche quando la PATCH cambia `userAuth`/`serviceAuth`), valori di 1..500 caratteri visibili su una riga e mai credenziali
   (`looksLikeCredential`), altrimenti 400 «extraHeaders: …». Migrazione `docs/migrations/2026-11-header-app.sql` (additiva, PRIMA del merge)
+  Organizzazioni: vedi "App con organizzazioni".
 - **Agent**: appartiene a una App; `system_prompt`, `model` (facoltativo: senza modello le run rispondono 409), stato (draft/active/inactive),
   `confirm_writes` (conferma delle scritture: le L1 vanno in «Da confermare»; sempre vera per il `general`), ruolo:
   `general` (uno per app, creato con l'app, non eliminabile, usa tutti i tool `active` dell'app; in console è il «Responsabile di prodotto») o `area`
@@ -240,6 +241,23 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (metodo, path, posizione dei parametri) e `params_schema` JSON (`"x-sensitive": true` oscura un parametro)
 - **Run**: esecuzione di un Agent: input, output, errore, durata, token, stato
   (pending/running/awaiting_client/succeeded/failed/cancelled; `awaiting_client` è solo storico); i passi in `run_steps`
+
+## App con organizzazioni
+
+Convenzione per ogni app collegata a Botcave che separa i dati per organizzazione (The Hub Up per prima; poi Mister, ReMove, Vimini,
+TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli header fissi dell'app (`extra_headers`, es.
+`X-Organization-Id` e `X-Organization-Scope` per The Hub Up), mandati su ogni chiamata ai tool.
+
+- Il token di servizio che l'app dà a Botcave è legato a un utente dell'app e ha un ambito di organizzazione scelto alla creazione:
+  **una organizzazione** (l'app la impone e ignora gli header della richiesta) oppure **tutte le organizzazioni dell'utente** (l'organizzazione
+  la sceglie la richiesta con i suoi header; l'app verifica che l'utente ne sia membro, altrimenti 403; senza header vale il comportamento
+  predefinito della sua interfaccia).
+- Il perimetro resta l'utente del token: con «tutte» Botcave non vede mai più di quanto quell'utente vede dall'interfaccia. I token esistenti
+  a una organizzazione restano tali: nessun permesso in più senza un token nuovo.
+- In Botcave: segreto di servizio = token «tutte», header fissi = organizzazione su cui devono lavorare gli agenti dell'app. Gli header valgono
+  per tutta l'app (non per agente o per innesco).
+- The Hub Up: token `thu_…` con «Tutte le mie organizzazioni», header `X-Organization-Id` = id dell'organizzazione «Personal» e
+  `X-Organization-Scope: all` (Personal più tutte le organizzazioni dell'utente).
 
 ## Strumenti MCP e coda delle conferme
 

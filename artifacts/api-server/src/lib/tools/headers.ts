@@ -17,6 +17,8 @@ const RESERVED_HEADERS = new Set([
 ]);
 // Header del protocollo MCP (Streamable HTTP), gestiti dal client: un header fisso non li tocca
 const MCP_PROTOCOL_HEADERS = new Set(["mcp-session-id", "mcp-protocol-version", "last-event-id"]);
+// Header che portano credenziali: un header fisso è in chiaro, le credenziali vanno nel segreto di servizio
+const CREDENTIAL_HEADERS = new Set(["authorization", "proxy-authorization", "cookie"]);
 // Valore di un header: solo caratteri visibili ASCII, spazio e tab (niente CR/LF o byte di controllo)
 const HEADER_VALUE = /^[\t\x20-\x7e]+$/;
 
@@ -69,6 +71,7 @@ export function checkExtraHeaders(
     if (seen.has(key)) return `nome di header ripetuto: ${name}`;
     seen.add(key);
     if (authNames.includes(key)) return `l'header ${name} è già quello di autenticazione dell'app`;
+    if (CREDENTIAL_HEADERS.has(key)) return "non salvare credenziali negli header fissi: usa il segreto di servizio";
     if (value.length < 1 || value.length > MAX_EXTRA_HEADER_VALUE || value !== value.trim() || !isValidHeaderValue(value)) {
       return `valore dell'header ${name} non valido (1-${MAX_EXTRA_HEADER_VALUE} caratteri visibili su una riga)`;
     }
@@ -91,7 +94,7 @@ export function extraHeadersFor(conn: AppConnection): [string, string][] {
   for (const h of conn.extraHeaders ?? []) {
     if (typeof h?.name !== "string" || typeof h.value !== "string") continue;
     const key = h.name.toLowerCase();
-    if (checkExtraHeaderName(h.name) !== null || authNames.has(key) || seen.has(key)) continue;
+    if (checkExtraHeaderName(h.name) !== null || authNames.has(key) || CREDENTIAL_HEADERS.has(key) || seen.has(key)) continue;
     if (!isValidHeaderValue(h.value)) continue;
     seen.add(key);
     result.push([h.name, h.value]);

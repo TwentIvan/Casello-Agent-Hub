@@ -68,6 +68,13 @@ describe("checkExtraHeaders", () => {
       expect(error).not.toContain(value);
     }
   });
+
+  it("header di credenziali rifiutati per nome anche senza autenticazione configurata", () => {
+    const msg = "non salvare credenziali negli header fissi: usa il segreto di servizio";
+    for (const name of ["Authorization", "proxy-authorization", "Cookie"]) {
+      expect(checkExtraHeaders([{ name, value: "abc" }], {})).toBe(msg);
+    }
+  });
 });
 
 describe("normalizeExtraHeaders", () => {

@@ -13,6 +13,7 @@ import {
   characterMessagesTable,
   characterProposalsTable,
   pendingActionsTable,
+  pendingActionStepsTable,
   skillVersionsTable,
   skillsTable,
   teamTemplateVersionsTable,
@@ -22,6 +23,7 @@ import {
 } from "@workspace/db";
 import { encryptSecret } from "../secrets";
 import { enqueueAction } from "../actions/queue";
+import { queueTestProposal } from "../../../test/proposal-fixture";
 import { rejectAction } from "../actions/decide";
 import { consumeActionDecision } from "../../middlewares/rate-limit";
 import { createSkill, getSkill, updateSkill } from "../teams/skills";
@@ -76,10 +78,10 @@ async function lucius(subjectType: SubjectType, subjectId: string | null, kind: 
 const sha256 = (t: string) => createHash("sha256").update(t).digest("hex");
 
 /** Scheda `decision` di Alfred su una voce della coda, come la crea `proponi_decisione`. */
-async function alfredDecision(number: number, decision: "approva" | "rifiuta", note: string | null = null): Promise<number> {
+async function alfredDecision(number: number, decision: "approva" | "rifiuta", note: string | null = null, exclude: string[] | null = null): Promise<number> {
   const [item] = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.number, number));
   const { conversationId, messageId } = await conversation("alfred", "alfred_thread", null);
-  const payload = { number, decision, note, kind: item!.kind, teamName: null, summary: item!.summary, needsUserToken: false };
+  const payload = { number, decision, note, kind: item!.kind, teamName: null, summary: item!.summary, needsUserToken: false, exclude };
   const [row] = await db
     .insert(characterProposalsTable)
     .values({ conversationId, messageId, kind: "decision", payload, rationale: "", targetHash: sha256(`pending\n${item!.summary}`) })
@@ -341,6 +343,17 @@ describe("scheda decision di Alfred", () => {
     await expect(decideCharacterProposal(userId, id, "accept")).rejects.toMatchObject({ status: 409, message: "questa voce si approva dalla pagina Da confermare" });
     expect(await status(id)).toBe("pending");
     expect((await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.number, n)))[0]!.status).toBe("pending");
+  });
+
+  it("decision_proposal_with_exclude: accettare approva la proposta escludendo i passi della scheda", async () => {
+    const n = await queueTestProposal({ userId, appId, toolId: mcpTool.id, toolName: "aggiorna" });
+    const id = await alfredDecision(n, "approva", null, ["p3"]);
+    expect((await decideCharacterProposal(userId, id, "accept")).status).toBe("accepted");
+    const [item] = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.number, n));
+    expect(item!.status).toBe("done");
+    const steps = await db.select().from(pendingActionStepsTable).where(eq(pendingActionStepsTable.pendingActionId, item!.id));
+    expect(Object.fromEntries(steps.map((s) => [s.key, s.status]))).toEqual({ p1: "done", p2: "done", p3: "excluded" });
+    expect(mcp.calls).toHaveLength(2);
   });
 
   it("decision_rate_limited", async () => {

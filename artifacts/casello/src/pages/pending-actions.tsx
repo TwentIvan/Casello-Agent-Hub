@@ -119,7 +119,7 @@ export default function PendingActionsPage() {
                       {a.app && a.team && <div className="truncate text-xs text-muted-foreground">{a.team.name}</div>}
                     </TableCell>
                     <TableCell className="truncate font-mono text-xs" title={a.tool?.name}>
-                      {a.tool?.name ?? "—"}
+                      {a.kind === "proposal" && a.proposal ? `${a.proposal.steps.length} ${a.proposal.steps.length === 1 ? "passo" : "passi"}` : (a.tool?.name ?? "—")}
                     </TableCell>
                     <TableCell className="hidden truncate 2xl:table-cell" title={a.recipient}>
                       {a.recipient}

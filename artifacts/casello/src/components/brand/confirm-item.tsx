@@ -23,6 +23,7 @@ export function ConfirmItem({
   approveLabel = "Approva",
   rejectLabel = "Rifiuta",
   busy = false,
+  approveDisabled = false,
   extraActions,
   approveSlot,
   children,
@@ -42,6 +43,8 @@ export function ConfirmItem({
   approveLabel?: string;
   rejectLabel?: string;
   busy?: boolean;
+  /** Disattiva solo «Approva» (es. nessun passo rimasto da eseguire) */
+  approveDisabled?: boolean;
   /** Azioni discrete in più (es. «Dettagli»), a sinistra della nota */
   extraActions?: ReactNode;
   /** Al posto del pulsante «Approva» (es. il collegamento alla console del pannello incorporato) */
@@ -83,7 +86,7 @@ export function ConfirmItem({
           {rejectLabel}
         </Button>
         {approveSlot ?? (
-          <Button disabled={busy} onClick={onApprove}>
+          <Button disabled={busy || approveDisabled} onClick={onApprove}>
             {approveLabel}
           </Button>
         )}

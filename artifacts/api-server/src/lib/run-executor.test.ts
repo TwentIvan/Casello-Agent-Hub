@@ -12,6 +12,7 @@ import {
   agentToolsTable,
   appToolsTable,
   pendingActionsTable,
+  pendingActionStepsTable,
   runsTable,
   runStepsTable,
   usersTable,
@@ -1038,5 +1039,67 @@ describe("modelCallError", () => {
     const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
     expect(modelCallError(7, new ProviderError("auth")).message).toBe("chiave non valida o senza permessi");
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("strumento proponi", () => {
+  const SERVICE_L2: Partial<InsertAppTool> = { ...DELETE_ITEM, name: "create_item", identity: "service" };
+  const PROPOSAL = {
+    titolo: "Crea due elementi",
+    passi: [
+      { id: "p1", strumento: "create_item", argomenti: { id: "a" }, sintesi: "Crea l'elemento a" },
+      { id: "p2", strumento: "create_item", argomenti: { id: "{{p1.id}}" }, sintesi: "Crea l'elemento collegato" },
+    ],
+  };
+
+  it("l'agente general con tool idonei riceve proponi e la chiamata crea la voce proposal", async () => {
+    const id = await seedRun(SERVICE_L2);
+    llmReplies = [toolCallReply("proponi", PROPOSAL), textReply("Proposta inviata.")];
+    await startRun(id);
+
+    expect((await getRun(id)).status).toBe("succeeded");
+    expect(llmRequests[0].tools.map((t: any) => t.function.name).sort()).toEqual(["create_item", "proponi"]);
+    expect(JSON.parse(llmRequests[1].messages.at(-1).content)).toEqual({ ok: true, numero: 1 });
+    const [row] = await db.select().from(pendingActionsTable);
+    expect(row).toMatchObject({ kind: "proposal", toolId: null, runId: id, status: "pending", summary: "Crea due elementi" });
+    expect(await db.select().from(pendingActionStepsTable)).toHaveLength(2);
+    expect(appRequests).toHaveLength(0);
+  });
+
+  it("run_steps.args della chiamata a proponi: argomenti x-sensitive dei passi oscurati", async () => {
+    const withSecret: Partial<InsertAppTool> = {
+      ...SERVICE_L2,
+      paramsSchema: {
+        type: "object",
+        properties: { id: { type: "string" }, token: { type: "string", "x-sensitive": true } },
+        required: ["id"],
+      },
+    };
+    const id = await seedRun(withSecret);
+    llmReplies = [
+      toolCallReply("proponi", {
+        titolo: "Crea",
+        passi: [
+          { id: "p1", strumento: "create_item", argomenti: { id: "a", token: "segreto-passo" }, sintesi: "Crea a" },
+          { id: "p2", strumento: "sconosciuto", argomenti: { token: "altro-segreto" }, sintesi: "Crea b" },
+        ],
+      }),
+      textReply("Fine."),
+    ];
+    await startRun(id);
+    const step = (await getSteps(id)).find((s) => s.toolName === "proponi")!;
+    const text = JSON.stringify(step.args);
+    expect(text).not.toContain("segreto-passo");
+    expect(text).not.toContain("altro-segreto");
+    const passi = (step.args as any).passi;
+    expect(passi[0].argomenti).toEqual({ id: "a", token: "***" });
+    expect(passi[1].argomenti).toBe("***");
+  });
+
+  it("senza tool idonei (solo tool user) proponi non è offerto", async () => {
+    const id = await seedRun(DELETE_ITEM);
+    llmReplies = [textReply("Ok.")];
+    await startRun(id);
+    expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["delete_item"]);
   });
 });

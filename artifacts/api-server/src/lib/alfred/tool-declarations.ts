@@ -1,5 +1,5 @@
 /**
- * Dichiarazioni Gemini dei sette strumenti del centralino e dei quattro di memoria di Alfred (spec §4). Tipi dello schema di Gemini
+ * Dichiarazioni Gemini degli otto strumenti del centralino e dei quattro di memoria di Alfred (spec §4). Tipi dello schema di Gemini
  * (`OBJECT`, `INTEGER`, `STRING`); finiscono nel token temporaneo, il browser non può cambiarle.
  */
 export const ALFRED_TOOL_DECLARATIONS: Record<string, unknown>[] = [
@@ -22,7 +22,16 @@ export const ALFRED_TOOL_DECLARATIONS: Record<string, unknown>[] = [
   },
   {
     name: "coda_da_confermare",
-    description: "Voci in attesa di una decisione dell'utente (azioni, piani, modifiche del piano).",
+    description: "Voci in attesa di una decisione dell'utente (azioni, piani, modifiche del piano, proposte con più passi).",
+  },
+  {
+    name: "leggi_proposta",
+    description: "Legge una proposta della coda: titolo, motivo e passi con numero e sintesi, da leggere uno per uno.",
+    parameters: {
+      type: "OBJECT",
+      properties: { numero: { type: "INTEGER", description: "Numero della voce in coda" } },
+      required: ["numero"],
+    },
   },
   {
     name: "scrivi_al_capo",
@@ -46,6 +55,11 @@ export const ALFRED_TOOL_DECLARATIONS: Record<string, unknown>[] = [
         numero: { type: "INTEGER", description: "Numero della voce in coda" },
         decisione: { type: "STRING", enum: ["approva", "rifiuta"], description: "Decisione proposta" },
         nota: { type: "STRING", description: "Nota del rifiuto, al massimo 500 caratteri; solo con rifiuta" },
+        escludi: {
+          type: "ARRAY",
+          items: { type: "STRING" },
+          description: "id dei passi da non eseguire, es. p3; solo per le proposte e con approva",
+        },
       },
       required: ["numero", "decisione"],
     },

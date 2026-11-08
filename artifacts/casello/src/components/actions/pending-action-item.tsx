@@ -12,10 +12,13 @@ import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
 import { ACTION_KIND_LABELS, isPlanItem } from "./plan-proposal";
+import { ProposalSteps } from "./proposal-steps";
+import { useProposalSelection } from "./use-proposal-selection";
 
 /** «Azione n. 3 approvata», «Piano n. 4 rifiutato», «Modifica del piano n. 5 approvata». */
 export function decidedTitle(action: QueuedAction, approved: boolean): string {
-  const ending = action.kind === "plan" ? (approved ? "approvato" : "rifiutato") : approved ? "approvata" : "rifiutata";
+  const masculine = action.kind === "plan";
+  const ending = masculine ? (approved ? "approvato" : "rifiutato") : approved ? "approvata" : "rifiutata";
   return `${ACTION_KIND_LABELS[action.kind]} n. ${action.number} ${ending}`;
 }
 
@@ -49,6 +52,8 @@ export function PendingActionItem({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [note, setNote] = useState("");
+  const selection = useProposalSelection(action);
+  const { proposal, excluded, toggle, nothingLeft } = selection;
   const after = () => {
     void queryClient.invalidateQueries({ queryKey: getGetDashboardStatsQueryKey() });
     onDecided();
@@ -56,7 +61,7 @@ export function PendingActionItem({
   const approve = useApprovePendingAction({
     mutation: {
       onSuccess: (saved) => {
-        toast({ title: decidedTitle(saved, true), description: saved.result ?? undefined });
+        toast({ title: decidedTitle(saved, true), description: saved.result ?? saved.errorMessage ?? undefined });
         after();
       },
       onError: (error) => {
@@ -87,10 +92,15 @@ export function PendingActionItem({
   return (
     <ConfirmItem
       number={action.number}
-      title={action.summary}
+      title={proposal ? proposal.title : action.summary}
       meta={meta}
       summary={
-        plan ? (
+        proposal ? (
+          <>
+            {proposal.reason && <span className="block whitespace-pre-wrap">{proposal.reason}</span>}
+            <span className="block">Destinatario: {action.recipient}</span>
+          </>
+        ) : plan ? (
           <>
             {ACTION_KIND_LABELS[action.kind]} proposto dal capo della squadra:{" "}
             {consoleHref !== undefined ? "aprilo in Botcave" : "apri i dettagli"} per leggerlo prima di decidere.
@@ -109,11 +119,19 @@ export function PendingActionItem({
       note={note}
       onNoteChange={setNote}
       busy={busy}
-      approveLabel={plan ? "Leggi e approva" : approve.isPending ? "Esecuzione…" : "Approva"}
-      rejectLabel={reject.isPending ? "Rifiuto…" : "Rifiuta"}
-      onApprove={() =>
-        needsDialogToApprove(action) ? onOpenDetails?.() : approve.mutate({ number: action.number, data: {} })
+      approveDisabled={nothingLeft}
+      approveLabel={
+        plan
+          ? "Leggi e approva"
+          : approve.isPending
+            ? "Esecuzione…"
+            : selection.approveLabel
       }
+      rejectLabel={reject.isPending ? "Rifiuto…" : "Rifiuta"}
+      onApprove={() => {
+        if (needsDialogToApprove(action)) return onOpenDetails?.();
+        approve.mutate({ number: action.number, data: selection.approveData() });
+      }}
       onReject={() => reject.mutate({ number: action.number, data: note.trim() ? { note: note.trim() } : {} })}
       approveSlot={
         toConsole ? (
@@ -131,6 +149,8 @@ export function PendingActionItem({
           </Button>
         ) : undefined
       }
-    />
+    >
+      {proposal && <ProposalSteps proposal={proposal} excluded={excluded} onToggle={toggle} />}
+    </ConfirmItem>
   );
 }

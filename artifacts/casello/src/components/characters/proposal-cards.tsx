@@ -29,6 +29,7 @@ const QUEUE_KIND_LABELS: Record<string, string> = {
   action: "Azione",
   plan: "Piano",
   plan_change: "Modifica del piano",
+  proposal: "Proposta",
 };
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -82,6 +83,8 @@ function DecisionCard({ proposal, deciding, readOnly, onDecide }: CardProps) {
   const pending = proposal.status === "pending";
   const disabled = deciding || readOnly;
   const meta = [QUEUE_KIND_LABELS[str(p.kind)] ?? str(p.kind), str(p.teamName)].filter(Boolean).join(" · ");
+  // Passi di una proposta da non eseguire, scelti nella chat
+  const excluded = Array.isArray(p.exclude) ? p.exclude.filter((x): x is string => typeof x === "string") : [];
 
   return (
     <Shell
@@ -109,6 +112,9 @@ function DecisionCard({ proposal, deciding, readOnly, onDecide }: CardProps) {
       <div className="min-w-0 space-y-1 rounded-md border p-3">
         {meta && <p className="text-label text-ink-muted">{meta}</p>}
         <p className="whitespace-pre-wrap break-words text-sm">{str(p.summary)}</p>
+        {approve && excluded.length > 0 && (
+          <p className="break-words text-sm text-ink-muted">Senza i passi {excluded.join(", ")}</p>
+        )}
         {!approve && str(p.note) && (
           <p className="whitespace-pre-wrap break-words text-sm text-ink-muted">Nota: {str(p.note)}</p>
         )}

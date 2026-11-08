@@ -10,12 +10,15 @@ import type { QueuedActionKind } from './queuedActionKind';
 import type { QueuedActionStatus } from './queuedActionStatus';
 import type { QueuedActionTeam } from './queuedActionTeam';
 import type { QueuedActionTool } from './queuedActionTool';
+import type { QueuedProposal } from './queuedProposal';
 
 export interface QueuedAction {
   number: number;
   status: QueuedActionStatus;
-  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra */
+  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente */
   kind: QueuedActionKind;
+  /** Passi della proposta; null per le voci che non sono una proposta */
+  proposal: QueuedProposal | null;
   /** @nullable */
   team: QueuedActionTeam;
   /** @nullable */

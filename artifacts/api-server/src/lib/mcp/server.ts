@@ -39,12 +39,14 @@ import {
   CentralinoError,
   approvePending,
   messageToLead,
+  normalizeExclude,
   pendingQueue,
   readBulletin,
   rejectPending,
   teamDetail,
   teamsStatus,
 } from "../teams/centralino";
+import { PROPOSAL_MESSAGES, PROPOSAL_STEPS_MAX } from "../actions/proposal";
 import { TOKEN_MESSAGES, type TokenScope } from "../api-tokens";
 import { requireApiToken } from "./auth";
 
@@ -310,7 +312,7 @@ function registerCentralinoTools(server: McpServer, userId: number, scopes: read
     "coda_da_confermare",
     {
       description:
-        "Voci in attesa nella coda delle conferme dell'utente: azioni su app, piani e modifiche del piano, con destinatario e sintesi. `needsUserToken` indica se per approvarla serve `userToken`.",
+        "Voci in attesa nella coda delle conferme dell'utente: azioni su app, piani, modifiche del piano e proposte con più passi, con destinatario e sintesi. Per le proposte `steps` è il numero di passi e `args` ne riporta titolo, motivo e passi. `needsUserToken` indica se per approvarla serve `userToken`.",
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
@@ -321,11 +323,26 @@ function registerCentralinoTools(server: McpServer, userId: number, scopes: read
     "approva",
     {
       description:
-        "Approva una voce della coda (un'azione la esegue subito, un piano lo approva). `userToken` è il token dell'utente sull'app, solo per le azioni con `needsUserToken`. Serve un token con l'ambito api:write. Prima di chiamarlo ripeti all'utente numero e sintesi della voce e chiedi conferma.",
-      inputSchema: { numero: number, userToken: z.string().min(1).max(4_000).optional().describe("Token dell'utente sull'app") },
+        "Approva una voce della coda (un'azione la esegue subito, un piano lo approva, una proposta ne esegue i passi in ordine). `userToken` è il token dell'utente sull'app, solo per le azioni con `needsUserToken`. `escludi` vale solo per le proposte: passi da non eseguire (es. \"p3\" o 3); i passi che usano il risultato di un passo escluso si saltano. Serve un token con l'ambito api:write. Per una proposta ripeti all'utente anche i passi esclusi. Prima di chiamarlo ripeti all'utente numero e sintesi della voce e chiedi conferma.",
+      inputSchema: {
+        numero: number,
+        userToken: z.string().min(1).max(4_000).optional().describe("Token dell'utente sull'app"),
+        escludi: z
+          .array(z.union([z.string().max(10), z.number()]))
+          .max(PROPOSAL_STEPS_MAX)
+          .optional()
+          .describe("Solo per le proposte: id dei passi da non eseguire, es. p3"),
+      },
       annotations: { destructiveHint: true },
     },
-    ({ numero, userToken }) => (canDecide ? run("approva", () => approvePending(userId, numero, userToken)) : scopeError()),
+    ({ numero, userToken, escludi }) => {
+      if (!canDecide) return scopeError();
+      return run("approva", async () => {
+        const exclude = normalizeExclude(escludi);
+        if (exclude === null) throw new CentralinoError(PROPOSAL_MESSAGES.badExclude);
+        return approvePending(userId, numero, userToken, exclude);
+      });
+    },
   );
 
   server.registerTool(

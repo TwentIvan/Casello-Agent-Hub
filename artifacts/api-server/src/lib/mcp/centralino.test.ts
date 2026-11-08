@@ -11,6 +11,7 @@ import {
   appToolsTable,
   appsTable,
   pendingActionsTable,
+  pendingActionStepsTable,
   teamEventsTable,
   teamTasksTable,
   teamTurnsTable,
@@ -22,6 +23,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { startFakeMcp, type FakeMcp } from "../../../test/fake-mcp";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
 import { enqueueAction, enqueuePlanItem } from "../actions/queue";
+import { queueTestProposal } from "../../../test/proposal-fixture";
 import { TOKEN_MESSAGES, createApiToken } from "../api-tokens";
 import { encryptSecret } from "../secrets";
 import type { CatalogTool } from "../tools/types";
@@ -303,6 +305,7 @@ describe("centralino su /mcp", () => {
     const queue = await call(client, "coda_da_confermare");
     expect(queue.json.actions.map((a: { number: number }) => a.number)).toEqual([action.number, planItem.number]);
     expect(queue.json.actions[0]).toMatchObject({ kind: "action", tool: "set_pw", recipient: "Rosa", needsUserToken: false });
+    expect(queue.json.actions[0]).not.toHaveProperty("steps");
     expect(queue.json.actions[1]).toMatchObject({ kind: "plan", team: { id: team, name: "Mia" } });
     expect(JSON.stringify(queue.json)).not.toContain("Altrui");
 
@@ -322,6 +325,23 @@ describe("centralino su /mcp", () => {
     const foreign = await call(client, "approva", { numero: otherItem.number });
     expect(foreign.isError).toBe(true);
     expect((await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.userId, otherId)))[0]!.status).toBe("pending");
+    await client.close();
+  });
+
+  it("proposta: coda con il numero di passi, approva con escludi esegue senza i passi esclusi", async () => {
+    const n = await queueTestProposal({ userId, appId, toolId: tool.id, toolName: "set_pw" });
+    const client = await connect(token);
+    const queue = await call(client, "coda_da_confermare");
+    expect(queue.json.actions[0]).toMatchObject({ number: n, kind: "proposal", steps: 3 });
+    const bad = await call(client, "approva", { numero: n, escludi: ["p8"] });
+    expect(bad).toMatchObject({ isError: true, json: { error: "passi da escludere non validi" } });
+    const done = await call(client, "approva", { numero: n, escludi: [2] });
+    expect(done.isError).toBe(false);
+    expect(done.json).toMatchObject({ number: n, status: "done" });
+    const [item] = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.number, n));
+    const steps = await db.select().from(pendingActionStepsTable).where(eq(pendingActionStepsTable.pendingActionId, item!.id));
+    expect(Object.fromEntries(steps.map((s) => [s.key, s.status]))).toEqual({ p1: "done", p2: "excluded", p3: "skipped" });
+    expect(mcpApp.calls).toHaveLength(1);
     await client.close();
   });
 

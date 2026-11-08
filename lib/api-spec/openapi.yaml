@@ -4325,7 +4325,9 @@ paths:
         Esegue una sola volta la chiamata memorizzata, senza il modello. Con identità `user` serve il token
         dell'utente dell'app (vive solo per la durata della chiamata). Una richiesta già decisa dà 409.
         Se l'esecuzione fallisce la risposta è 200 con l'azione in stato `failed`. Massimo 20 decisioni al
-        minuto per utente.
+        minuto per utente. Per una proposta con più passi `escludi` elenca i passi da non eseguire (anche quelli
+        che dipendono da un passo escluso restano fuori); gli altri girano in ordine e ci si ferma al primo errore:
+        la risposta è 200 con lo stato di ogni passo.
       parameters:
         - $ref: "#/components/parameters/ActionNumberParam"
       requestBody:
@@ -5667,7 +5669,7 @@ components:
 
     QueuedAction:
       type: object
-      required: [number, status, kind, team, app, tool, agentId, runId, recipient, summary, args, result, errorMessage, decisionNote, createdAt, decidedAt, finishedAt]
+      required: [number, status, kind, proposal, team, app, tool, agentId, runId, recipient, summary, args, result, errorMessage, decisionNote, createdAt, decidedAt, finishedAt]
       properties:
         number:
           type: integer
@@ -5676,8 +5678,15 @@ components:
           enum: [pending, executing, done, failed, rejected]
         kind:
           type: string
-          enum: [action, plan, plan_change]
-          description: Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra
+          enum: [action, plan, plan_change, proposal]
+          description: >-
+            Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure
+            proposta con più passi di un agente
+        proposal:
+          description: Passi della proposta; null per le voci che non sono una proposta
+          oneOf:
+            - $ref: "#/components/schemas/QueuedProposal"
+            - type: "null"
         team:
           type: ["object", "null"]
           required: [id, name]
@@ -5731,6 +5740,58 @@ components:
           type: ["string", "null"]
           format: date-time
 
+    QueuedProposal:
+      type: object
+      required: [title, reason, steps]
+      properties:
+        title:
+          type: string
+        reason:
+          type: ["string", "null"]
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueuedProposalStep"
+
+    QueuedProposalStep:
+      type: object
+      required: [key, position, toolName, summary, argsPublic, refs, status, result, errorMessage]
+      properties:
+        key:
+          type: string
+          description: Identificativo del passo (p1, p2…)
+        position:
+          type: integer
+        toolName:
+          type: ["string", "null"]
+          description: Nome attuale dello strumento; null se non esiste più
+        summary:
+          type: string
+        argsPublic:
+          description: Argomenti con i parametri sensibili oscurati
+        refs:
+          type: array
+          description: Valori presi dal risultato di un passo precedente
+          items:
+            type: object
+            required: [param, step, field]
+            properties:
+              param:
+                type: string
+              step:
+                type: string
+              field:
+                type: array
+                items:
+                  type: string
+        status:
+          type: string
+          enum: [pending, excluded, skipped, done, failed, not_run]
+        result:
+          type: ["string", "null"]
+        errorMessage:
+          type: ["string", "null"]
+
     QueuedActionList:
       type: object
       required: [actions]
@@ -5748,6 +5809,13 @@ components:
           description: Token dell'utente dell'app, per gli strumenti con identità utente
           minLength: 1
           maxLength: 4096
+        escludi:
+          type: array
+          description: Solo per le proposte, chiavi dei passi da non eseguire (p1, p2…)
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 10
 
     RejectActionRequest:
       type: object

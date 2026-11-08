@@ -625,7 +625,7 @@ DO $$ BEGIN
     CREATE TYPE "public"."team_event_type" AS ENUM('piano_proposto', 'compito_finito', 'bloccato', 'decisione_richiesta', 'azione_manuale_richiesta', 'lavoro_finito', 'interrotto');
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'pending_action_kind') THEN
-    CREATE TYPE "public"."pending_action_kind" AS ENUM('action', 'plan', 'plan_change');
+    CREATE TYPE "public"."pending_action_kind" AS ENUM('action', 'plan', 'plan_change', 'proposal');
   END IF;
 END $$;
 
@@ -888,6 +888,7 @@ CREATE TABLE IF NOT EXISTS "alfred_confirmations" (
 	"expires_at" timestamp NOT NULL,
 	"used_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
+	"exclude_steps" jsonb,
 	CONSTRAINT "alfred_confirmations_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action,
 	CONSTRAINT "alfred_confirmations_session_id_alfred_sessions_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."alfred_sessions"("id") ON DELETE cascade ON UPDATE no action
 );
@@ -1144,3 +1145,27 @@ CREATE INDEX IF NOT EXISTS "runs_trigger_id_idx" ON "runs" USING btree ("trigger
 
 -- Header fissi per app (2026-11-header-app)
 ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "extra_headers" jsonb DEFAULT '[]'::jsonb NOT NULL;
+
+
+-- Proposte multiple (2026-11-proposte-multiple)
+DO $$ BEGIN
+  CREATE TYPE "public"."pending_action_step_status" AS ENUM('pending', 'excluded', 'skipped', 'done', 'failed', 'not_run');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS "pending_action_steps" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"pending_action_id" integer NOT NULL,
+	"key" text NOT NULL,
+	"position" integer NOT NULL,
+	"tool_id" integer NOT NULL,
+	"summary" text NOT NULL,
+	"status" "pending_action_step_status" DEFAULT 'pending' NOT NULL,
+	"result" text,
+	"error_message" text,
+	"finished_at" timestamp,
+	CONSTRAINT "pending_action_steps_pending_action_id_pending_actions_id_fk" FOREIGN KEY ("pending_action_id") REFERENCES "public"."pending_actions"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "pending_action_steps_tool_id_app_tools_id_fk" FOREIGN KEY ("tool_id") REFERENCES "public"."app_tools"("id") ON DELETE restrict ON UPDATE no action,
+	CONSTRAINT "pending_action_steps_action_key_unique" UNIQUE ("pending_action_id", "key")
+);
+CREATE INDEX IF NOT EXISTS "pending_action_steps_tool_id_idx" ON "pending_action_steps" USING btree ("tool_id");

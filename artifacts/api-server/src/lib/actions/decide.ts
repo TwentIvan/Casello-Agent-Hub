@@ -1,11 +1,13 @@
-import { and, eq, ne, sql } from "drizzle-orm";
-import { db, appToolsTable, pendingActionsTable, type PendingActionRow } from "@workspace/db";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { db, appToolsTable, pendingActionStepsTable, pendingActionsTable, type PendingActionRow } from "@workspace/db";
 import { logger } from "../logger";
 import { decryptSecret } from "../secrets";
 import { loadAppConnection, toCatalogTool } from "../tools/catalog";
 import { executeTool, redact } from "../tools/executor";
 import { effectiveLevel } from "../tools/levels";
 import { decidePlanItem } from "../teams/plan-decisions";
+import { PROPOSAL_MESSAGES } from "./proposal";
+import { approveProposal } from "./proposal-exec";
 
 // Decisione sulle azioni in coda: approvare esegue UNA volta la chiamata memorizzata (argomenti
 // originali, senza il modello), rifiutare la chiude. Ogni transizione è un UPDATE condizionato sullo
@@ -63,7 +65,7 @@ async function finish(id: number, set: { status: "done" | "failed"; result?: str
 export async function approveAction(
   userId: number,
   number: number,
-  opts: { userToken?: string } = {},
+  opts: { userToken?: string; exclude?: string[] } = {},
 ): Promise<DecideResult> {
   const [action] = await db
     .select()
@@ -73,8 +75,12 @@ export async function approveAction(
   if (!action) return fail(404, ACTION_MESSAGES.notFound);
   if (action.status !== "pending") return fail(409, ACTION_MESSAGES.alreadyDecided);
 
+  const exclude = opts.exclude ?? [];
+  // Le esclusioni valgono solo per i passi di una proposta
+  if (action.kind !== "proposal" && exclude.length > 0) return fail(400, PROPOSAL_MESSAGES.badExclude);
   // Piani e modifiche del piano non hanno tool né app: si decidono sul PLAN della squadra (nessun token utente)
-  if (action.kind !== "action") return decidePlanItem(action, true, null);
+  if (action.kind === "plan" || action.kind === "plan_change") return decidePlanItem(action, true, null);
+  if (action.kind === "proposal") return approveProposal(userId, action, exclude);
   const { toolId, appId } = action;
   if (toolId === null || appId === null) return fail(409, ACTION_MESSAGES.notExecutable);
 
@@ -142,20 +148,30 @@ export async function rejectAction(userId: number, number: number, note: string 
   const [planItem] = await db
     .select()
     .from(pendingActionsTable)
-    .where(and(eq(pendingActionsTable.userId, userId), eq(pendingActionsTable.number, number), ne(pendingActionsTable.kind, "action")))
+    .where(and(eq(pendingActionsTable.userId, userId), eq(pendingActionsTable.number, number), inArray(pendingActionsTable.kind, ["plan", "plan_change"])))
     .limit(1);
   if (planItem) return decidePlanItem(planItem, false, note);
-  const [row] = await db
-    .update(pendingActionsTable)
-    .set({ status: "rejected", decidedBy: userId, decidedAt: new Date(), decisionNote: note })
-    .where(
-      and(
-        eq(pendingActionsTable.userId, userId),
-        eq(pendingActionsTable.number, number),
-        eq(pendingActionsTable.status, "pending"),
-      ),
-    )
-    .returning();
+  const row = await db.transaction(async (tx) => {
+    const [rejected] = await tx
+      .update(pendingActionsTable)
+      .set({ status: "rejected", decidedBy: userId, decidedAt: new Date(), decisionNote: note })
+      .where(
+        and(
+          eq(pendingActionsTable.userId, userId),
+          eq(pendingActionsTable.number, number),
+          eq(pendingActionsTable.status, "pending"),
+        ),
+      )
+      .returning();
+    // Proposta rifiutata: nessun passo verrà eseguito (console e `leggi_proposta` non mostrano «da eseguire»)
+    if (rejected?.kind === "proposal") {
+      await tx
+        .update(pendingActionStepsTable)
+        .set({ status: "not_run" })
+        .where(and(eq(pendingActionStepsTable.pendingActionId, rejected.id), eq(pendingActionStepsTable.status, "pending")));
+    }
+    return rejected;
+  });
   if (row) return { ok: true, action: row };
   // Nessuna riga: non esiste (404) o non è più in attesa (409)
   const [existing] = await db
@@ -166,12 +182,36 @@ export async function rejectAction(userId: number, number: number, note: string 
   return existing ? fail(409, ACTION_MESSAGES.alreadyDecided) : fail(404, ACTION_MESSAGES.notFound);
 }
 
-/** All'avvio: le azioni rimaste in esecuzione hanno un esito incerto (il servizio può averle eseguite). */
+/**
+ * All'avvio: le azioni rimaste in esecuzione hanno un esito incerto (il servizio può averle eseguite). Nelle proposte
+ * interrotte il primo passo ancora `pending` (per posizione) può essere stato eseguito: diventa `failed` «esito
+ * incerto», così non lo si ripropone alla cieca; gli altri `pending` diventano `not_run`.
+ */
 export async function failInterruptedActions(): Promise<number> {
   const rows = await db
     .update(pendingActionsTable)
     .set({ status: "failed", errorMessage: ACTION_MESSAGES.uncertain, finishedAt: sql`now()` })
     .where(eq(pendingActionsTable.status, "executing"))
     .returning({ id: pendingActionsTable.id });
+  if (rows.length > 0) {
+    const ids = rows.map((r) => r.id);
+    const pending = await db
+      .select({ id: pendingActionStepsTable.id, actionId: pendingActionStepsTable.pendingActionId })
+      .from(pendingActionStepsTable)
+      .where(and(inArray(pendingActionStepsTable.pendingActionId, ids), eq(pendingActionStepsTable.status, "pending")))
+      .orderBy(asc(pendingActionStepsTable.pendingActionId), asc(pendingActionStepsTable.position));
+    const firstByAction = new Map<number, number>();
+    for (const step of pending) if (!firstByAction.has(step.actionId)) firstByAction.set(step.actionId, step.id);
+    if (firstByAction.size > 0) {
+      await db
+        .update(pendingActionStepsTable)
+        .set({ status: "failed", errorMessage: ACTION_MESSAGES.uncertain, finishedAt: sql`now()` })
+        .where(inArray(pendingActionStepsTable.id, [...firstByAction.values()]));
+    }
+    await db
+      .update(pendingActionStepsTable)
+      .set({ status: "not_run" })
+      .where(and(inArray(pendingActionStepsTable.pendingActionId, ids), eq(pendingActionStepsTable.status, "pending")));
+  }
   return rows.length;
 }

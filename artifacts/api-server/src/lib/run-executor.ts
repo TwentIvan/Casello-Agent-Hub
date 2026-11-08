@@ -13,6 +13,7 @@ import {
 } from "@workspace/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { enqueueAction } from "./actions/queue";
+import { PROPOSE_TOOL_NAME, handlePropose, proposalEligible, proposeTool } from "./actions/propose";
 import {
   QUEUE_FAILED,
   runAgentLoop,
@@ -29,6 +30,7 @@ import { ESCALATION_TOOL_NAME, escalationTool, handleEscalation, productLead } f
 import { isInternalTool, roleFunctionTools } from "./teams/role-tools";
 import { loadAgentTools, loadAppConnection } from "./tools/catalog";
 import { effectiveLevel } from "./tools/levels";
+import { maskArgsWithSchema } from "./tools/sensitive";
 import { executeTool } from "./tools/executor";
 import type { AppConnection, CatalogTool, ToolResult } from "./tools/types";
 import { clearUserToken, getUserToken } from "./user-tokens";
@@ -130,7 +132,10 @@ export async function cancelRun(runId: number): Promise<CancelRunResult> {
 interface RunContext {
   run: Run;
   agent: Agent;
+  app: App;
   tools: CatalogTool[];
+  /** Tool caricati dell'agente, prima di `withConfirmedWrites` e degli strumenti interni (per `proponi`). */
+  baseTools: CatalogTool[];
   conn: AppConnection;
 }
 
@@ -193,7 +198,11 @@ async function loadContext(run: Run): Promise<RunContext & { app: App }> {
   if (agent.role === "area" && run.parentRunId === null && (await productLead(app.id)) !== null) {
     tools = [...tools.filter((t) => t.name !== ESCALATION_TOOL_NAME), escalationTool()];
   }
-  return { run, agent, app, tools, conn };
+  // `proponi`: a ogni agente con almeno un tool utilizzabile in un passo; vince su un tool omonimo
+  if (loaded.some(proposalEligible)) {
+    tools = [...tools.filter((t) => t.name !== PROPOSE_TOOL_NAME), proposeTool()];
+  }
+  return { run, agent, app, tools, baseTools: loaded, conn };
 }
 
 async function nextPosition(runId: number): Promise<number> {
@@ -220,13 +229,36 @@ async function stepSchema(appId: number, tools: CatalogTool[], toolName: string)
   return row ? row.paramsSchema : null;
 }
 
+/**
+ * Argomenti di una chiamata a `proponi` con ogni `passi[i].argomenti` oscurato secondo lo schema del tool del passo
+ * (tra i tool caricati dell'agente); tool sconosciuto o passo non valido → "***". Il resto (titolo, motivo, id,
+ * strumento, sintesi) resta com'è.
+ */
+export function maskProposeArgs(args: unknown, tools: CatalogTool[]): unknown {
+  const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+  if (!isObj(args)) return "***";
+  if (!Array.isArray(args["passi"])) return args;
+  const passi = args["passi"].map((p: unknown) => {
+    if (!isObj(p)) return "***";
+    const tool = typeof p["strumento"] === "string" ? tools.find((t) => t.name === (p["strumento"] as string).trim()) : undefined;
+    return { ...p, argomenti: tool ? maskArgsWithSchema(tool.paramsSchema, p["argomenti"]) : "***" };
+  });
+  return { ...args, passi };
+}
+
 /** Scrive i passi della run con posizioni crescenti, oscurando gli argomenti sensibili. */
-function runStepWriter(runId: number, appId: number, startPosition: number, tools: CatalogTool[]) {
-  return stepWriter(
+function runStepWriter(runId: number, appId: number, startPosition: number, tools: CatalogTool[], baseTools: CatalogTool[]) {
+  const write = stepWriter(
     (row) => db.insert(runStepsTable).values({ runId, ...row }),
     (toolName) => stepSchema(appId, tools, toolName),
     startPosition,
   );
+  return (step: StepRecord) =>
+    write(
+      step.toolName === PROPOSE_TOOL_NAME && step.args !== undefined
+        ? { ...step, args: maskProposeArgs(step.args, baseTools) as StepRecord["args"] }
+        : step,
+    );
 }
 
 function runTool(
@@ -317,6 +349,16 @@ async function driveLoop(
 
   // Proprietario delle azioni accodate: chi possiede l'account AI del modello della run (chi configura paga)
   let owner: Promise<number | null> | null = null;
+  const ownerOf = async (): Promise<number | null> => {
+    owner ??= modelOwner(aiModelId);
+    try {
+      return await owner;
+    } catch (err) {
+      // Un errore transitorio non resta in memoria: il prossimo accodamento riprova la lettura
+      owner = null;
+      throw err;
+    }
+  };
   const queueAction = async (
     tool: CatalogTool,
     args: Record<string, unknown>,
@@ -324,15 +366,7 @@ async function driveLoop(
     summary: string,
   ): Promise<QueueActionResult> => {
     try {
-      owner ??= modelOwner(aiModelId);
-      let userId: number | null;
-      try {
-        userId = await owner;
-      } catch (err) {
-        // Un errore transitorio non resta in memoria: il prossimo accodamento riprova la lettura
-        owner = null;
-        throw err;
-      }
+      const userId = await ownerOf();
       if (userId === null) return { ok: false, message: QUEUE_FAILED };
       return await enqueueAction({
         userId,
@@ -354,8 +388,16 @@ async function driveLoop(
   const deps: LoopDeps = {
     chat,
     tools: ctx.tools,
-    executeTool: (tool, args) =>
-      isInternalTool(tool) ? handleEscalation(ctx.run, ctx.agent, args) : runTool(ctx, tool, args, abort),
+    executeTool: (tool, args) => {
+      if (!isInternalTool(tool)) return runTool(ctx, tool, args, abort);
+      if (tool.name === PROPOSE_TOOL_NAME) {
+        return handlePropose(
+          { run: ctx.run, agent: ctx.agent, app: ctx.app, tools: ctx.baseTools, owner: ownerOf },
+          args,
+        );
+      }
+      return handleEscalation(ctx.run, ctx.agent, args);
+    },
     queueAction,
     onStep: writeStep,
     limits,
@@ -497,7 +539,7 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
       tokens: 0,
       activeMs: 0,
     };
-    const writeStep = runStepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools);
+    const writeStep = runStepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools, ctx.baseTools);
     await driveLoop(ctx, initial, segmentStart, writeStep, usage, abort.signal, opts.limits);
   } catch (err) {
     await failRun(run, err, segmentStart, usage, abort.signal.aborted);

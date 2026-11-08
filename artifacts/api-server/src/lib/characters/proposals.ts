@@ -187,7 +187,13 @@ const PAYLOADS = {
   }),
   skill_create: z.object({ code: z.string(), name: z.string().min(1), description: z.string(), kind: z.enum(["casello", "node"]), content: z.string() }),
   template_create: z.object({ name: z.string().min(1), description: z.string(), roles: z.array(TemplateRoleSchema) }),
-  decision: z.object({ number: positiveId, decision: z.enum(["approva", "rifiuta"]), note: z.string().max(500).nullish() }),
+  decision: z.object({
+    number: positiveId,
+    decision: z.enum(["approva", "rifiuta"]),
+    note: z.string().max(500).nullish(),
+    // Passi di una proposta da non eseguire (`p3`), solo con approva
+    exclude: z.array(z.string().regex(/^p\d{1,2}$/)).max(20).nullish(),
+  }),
 } as const;
 
 /** Argomento su cui deve essere nata ogni scheda di Lucius. */
@@ -372,7 +378,9 @@ async function acceptDecision(userId: number, proposal: CharacterProposal, conv:
   }
   let out: Awaited<ReturnType<typeof approveAction>>;
   try {
-    out = p.decision === "approva" ? await approveAction(userId, p.number) : await rejectAction(userId, p.number, p.note ?? null);
+    out = p.decision === "approva"
+        ? await approveAction(userId, p.number, p.exclude && p.exclude.length > 0 ? { exclude: p.exclude } : {})
+        : await rejectAction(userId, p.number, p.note ?? null);
   } catch (err) {
     // Le guardie della coda impediscono comunque una seconda decisione: la scheda si può riprovare
     await releaseClaim(proposal.id);

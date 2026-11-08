@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { InstanceError } from "../teams/instances";
-import { CentralinoError, messageToLead, pendingQueue, readBulletin, teamDetail, teamsStatus } from "../teams/centralino";
-import { confirmDecision, prepareDecision, ConfirmationError } from "./confirmations";
+import { CentralinoError, messageToLead, pendingQueue, readBulletin, readProposal, teamDetail, teamsStatus } from "../teams/centralino";
+import { confirmDecision, invalidateOpenConfirmations, prepareDecision, ConfirmationError } from "./confirmations";
 import { requireActiveSession } from "./sessions";
 import { AlfredError } from "./gemini";
 import { MEMORY_TOOL_NAMES, runMemoryTool } from "../memory/tools";
@@ -26,11 +26,14 @@ const SCHEMAS = {
   squadra_dettaglio: z.object({ id: teamId }),
   bollettino: z.object({}).passthrough(),
   coda_da_confermare: z.object({}).passthrough(),
+  leggi_proposta: z.object({ numero: z.number().int().positive() }),
   scrivi_al_capo: z.object({ id: teamId, testo: z.string().min(1).max(4000) }),
   prepara_decisione: z.object({
     numero: z.number().int().positive(),
     decisione: z.enum(["approva", "rifiuta"]),
     nota: z.string().max(500).optional(),
+    // Passi della proposta da non eseguire: "p3" o 3; normalizzati e controllati da `normalizeExclude`
+    escludi: z.array(z.union([z.string().max(10), z.number()])).max(20).optional(),
   }),
   // Il modello può passare il codice come numero: gli zeri iniziali si ripristinano
   conferma_decisione: z.object({
@@ -85,6 +88,8 @@ async function voiceQueue(userId: number) {
       destinatario: a.recipient,
       sintesi: a.summary,
       serveTokenApp: a.needsUserToken,
+      // Numero di passi, solo per le proposte
+      ...(a.steps !== undefined ? { passi: a.steps } : {}),
     })),
   };
 }
@@ -103,7 +108,11 @@ export async function runAlfredTool(userId: number, sessionId: number, name: str
   if (!isAlfredTool(name)) throw new AlfredError(ALFRED_TOOL_MESSAGES.unknownTool, 404);
   await requireActiveSession(userId, sessionId);
   const parsed = SCHEMAS[name].safeParse(args ?? {});
-  if (!parsed.success) return { ok: false, error: ALFRED_TOOL_MESSAGES.badArgs };
+  if (!parsed.success) {
+    // Anche una preparazione con argomenti non validi invalida il codice precedente della sessione
+    if (name === "prepara_decisione") await invalidateOpenConfirmations(sessionId);
+    return { ok: false, error: ALFRED_TOOL_MESSAGES.badArgs };
+  }
   const a = parsed.data as Record<string, unknown>;
   try {
     switch (name) {
@@ -117,7 +126,10 @@ export async function runAlfredTool(userId: number, sessionId: number, name: str
         return { ok: true, result: await voiceQueue(userId) };
       case "scrivi_al_capo":
         return { ok: true, result: await messageToLead(userId, a["id"] as number, a["testo"] as string) };
+      case "leggi_proposta":
+        return { ok: true, result: await readProposal(userId, a["numero"] as number) };
       case "prepara_decisione":
+        // `escludi` arriva grezzo: lo normalizza `prepareDecision` dopo aver chiuso le conferme aperte
         return { ok: true, result: await prepareDecision(userId, sessionId, a as Parameters<typeof prepareDecision>[2]) };
       case "conferma_decisione":
         return { ok: true, result: await confirmDecision(userId, sessionId, a["codice"] as string) };

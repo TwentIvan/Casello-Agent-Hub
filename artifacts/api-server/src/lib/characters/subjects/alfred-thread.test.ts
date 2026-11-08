@@ -19,6 +19,7 @@ import {
 import { encryptSecret } from "../../secrets";
 import { allowTestLoopback, startFakeProvider } from "../../../../test/fake-provider";
 import { enqueueAction } from "../../actions/queue";
+import { queueTestProposal } from "../../../../test/proposal-fixture";
 import { createTurnContext } from "../proposals";
 import { startCharacterTurn } from "../run-turn";
 import { CHARACTER_MESSAGES, type TurnContext } from "../types";
@@ -180,7 +181,7 @@ describe("proponi_decisione", () => {
     expect(out.ok).toBe(true);
     const [card] = await db.select().from(characterProposalsTable).where(eq(characterProposalsTable.messageId, ctx.messageId));
     expect(card).toMatchObject({ kind: "decision", status: "pending", rationale: "" });
-    expect(card!.payload).toEqual({ number: 7, decision: "rifiuta", note: "Troppo vago", kind: "plan", teamName: "Alfa", summary: "Piano da approvare", needsUserToken: false });
+    expect(card!.payload).toEqual({ number: 7, decision: "rifiuta", note: "Troppo vago", kind: "plan", teamName: "Alfa", summary: "Piano da approvare", needsUserToken: false, exclude: null });
     const { createHash } = await import("node:crypto");
     expect(card!.targetHash).toBe(createHash("sha256").update("pending\nPiano da approvare").digest("hex"));
     // Voce inesistente
@@ -235,7 +236,45 @@ describe("scrivi_al_capo", () => {
 
   it("gli strumenti sono quelli attesi, senza prepara/conferma", () => {
     expect(ALFRED_THREAD_TOOLS.map((t) => t.function.name)).toEqual([
-      "squadre_stato", "squadra_dettaglio", "bollettino", "coda_da_confermare", "scrivi_al_capo", "leggi_run", "proponi_decisione",
+      "squadre_stato", "squadra_dettaglio", "bollettino", "coda_da_confermare", "leggi_proposta", "scrivi_al_capo", "leggi_run", "proponi_decisione",
     ]);
+  });
+});
+
+describe("proposte multiple nella chat", () => {
+  async function proposalTool() {
+    const [tool] = await db
+      .insert(appToolsTable)
+      .values({ appId, name: "crea", kind: "mcp", identity: "service", level: "L2", status: "active", paramsSchema: { type: "object", properties: {} }, definition: { mcpName: "crea" } } as InsertAppTool)
+      .returning();
+    return queueTestProposal({ userId, appId, toolId: tool!.id, toolName: "crea" });
+  }
+
+  it("coda_da_confermare e leggi_proposta: numero di passi e passi da leggere", async () => {
+    const n = await proposalTool();
+    const ctx = await newCtx();
+    const queue = await call(ctx, "coda_da_confermare", {});
+    expect(queue.result.actions[0]).toMatchObject({ numero: n, tipo: "proposal", sintesi: "Nuovo progetto", passi: 3 });
+    const read = await call(ctx, "leggi_proposta", { numero: n });
+    expect(read).toMatchObject({ ok: true, result: { numero: n, titolo: "Nuovo progetto", motivo: "Richiesta del cliente", stato: "pending" } });
+    expect(read.result.passi.map((p: { passo: string; numero: number }) => `${p.passo}:${p.numero}`)).toEqual(["p1:1", "p2:2", "p3:3"]);
+    expect(await call(ctx, "leggi_proposta", { numero: 99 })).toEqual({ ok: false, error: "proposta non trovata" });
+  });
+
+  it("proponi_decisione con escludi: scheda con exclude normalizzato; errori senza scheda", async () => {
+    const n = await proposalTool();
+    const ctx = await newCtx();
+    const out = await call(ctx, "proponi_decisione", { numero: n, decisione: "approva", escludi: [2] });
+    expect(out).toMatchObject({ ok: true, result: { numero: n, passiEsclusi: ["p2"], passiSaltati: ["p3"] } });
+    const [card] = await db.select().from(characterProposalsTable).where(eq(characterProposalsTable.messageId, ctx.messageId));
+    expect(card!.payload).toMatchObject({ number: n, decision: "approva", kind: "proposal", exclude: ["p2"] });
+
+    const ctx2 = await newCtx();
+    expect(await call(ctx2, "proponi_decisione", { numero: n, decisione: "rifiuta", escludi: ["p2"] })).toEqual({ ok: false, error: "i passi da escludere valgono solo con approva" });
+    expect(await call(ctx2, "proponi_decisione", { numero: n, decisione: "approva", escludi: ["p7"] })).toEqual({ ok: false, error: "passi da escludere non validi" });
+    expect(await call(ctx2, "proponi_decisione", { numero: n, decisione: "approva", escludi: ["p1", "p2"] })).toEqual({ ok: false, error: "nessun passo da eseguire: rifiuta la proposta" });
+    const [plan] = await db.insert(pendingActionsTable).values({ userId, number: 50, kind: "plan", argsEnc: "x", argsPublic: {}, recipient: "r", summary: "Piano" }).returning();
+    expect(await call(ctx2, "proponi_decisione", { numero: plan!.number, decisione: "approva", escludi: [1] })).toEqual({ ok: false, error: "passi da escludere non validi" });
+    expect(await db.select().from(characterProposalsTable).where(eq(characterProposalsTable.messageId, ctx2.messageId))).toHaveLength(0);
   });
 });

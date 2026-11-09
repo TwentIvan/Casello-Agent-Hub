@@ -150,6 +150,33 @@ describe("catalogo dei tool di Botcave come App di sé stesso", () => {
     expect(props.some((p) => /token/i.test(p))).toBe(false);
   });
 
+  it("create_trigger crea solo inneschi di sorveglianza e non riporta l'indirizzo del webhook", () => {
+    const create = catalog.find((t) => t.name === "create_trigger")!;
+    const props = (create.paramsSchema as { properties: Record<string, { enum?: unknown[] }> }).properties;
+    expect(props.kind.enum).toEqual(["poll"]);
+    expect(Object.keys(props)).not.toContain("dedupHeader");
+    expect(create.definition.responseFields?.length).toBeGreaterThan(0);
+    expect(create.definition.responseFields).not.toContain("webhookUrl");
+  });
+
+  it("nessun tool riporta il segreto di un webhook (webhookUrl)", () => {
+    // Route la cui risposta contiene webhookUrl, lette da openapi.yaml (schema TriggerCreated)
+    const returnsWebhookUrl = new Set(
+      Object.entries(openapi.paths).flatMap(([path, ops]) =>
+        Object.entries(ops)
+          .filter(([m, op]) => METHODS.includes(m) && /TriggerCreated|webhookUrl/.test(JSON.stringify((op as { responses?: unknown }).responses ?? {})))
+          .map(([m]) => `${m.toUpperCase()} ${normalize(path)}`),
+      ),
+    );
+    expect(returnsWebhookUrl.size).toBeGreaterThan(0);
+    for (const t of catalog) {
+      expect(t.definition.responseFields ?? [], t.name).not.toContain("webhookUrl");
+      if (returnsWebhookUrl.has(`${t.definition.method} ${normalize(apiPath(t))}`)) {
+        expect(t.definition.responseFields?.length ?? 0, t.name).toBeGreaterThan(0);
+      }
+    }
+  });
+
   it("il controllo delle esclusioni riconosce le route vietate", () => {
     expect(excludedReason("POST", "/apps")).not.toBeNull();
     expect(excludedReason("PATCH", "/apps/{id}")).not.toBeNull();

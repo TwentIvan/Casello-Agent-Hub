@@ -1759,7 +1759,7 @@
   },
   {
     "name": "create_trigger",
-    "description": "Crea un innesco di un agente: nasce in pausa e non parte finché l'utente non lo attiva. Prima provalo con test_trigger.",
+    "description": "Crea un innesco di sorveglianza di un agente (solo sorveglianza: i webhook si creano dalla console): nasce in pausa e non parte finché l'utente non lo attiva. Dopo la creazione provalo con test_trigger.",
     "kind": "http",
     "identity": "service",
     "level": "L1",
@@ -1774,10 +1774,9 @@
         "kind": {
           "type": "string",
           "enum": [
-            "poll",
-            "webhook"
+            "poll"
           ],
-          "description": "poll = sorveglianza di un tool L0, webhook = indirizzo in entrata"
+          "description": "Sempre poll: sorveglianza di un tool L0 di servizio dell'app"
         },
         "name": {
           "type": "string",
@@ -1798,7 +1797,7 @@
             "integer",
             "null"
           ],
-          "description": "Solo poll: tool L0 di servizio dell'app da interrogare"
+          "description": "Tool L0 di servizio dell'app da interrogare"
         },
         "args": {
           "type": [
@@ -1806,7 +1805,7 @@
             "null"
           ],
           "additionalProperties": true,
-          "description": "Solo poll: argomenti fissi del tool (max 8 KB)"
+          "description": "Argomenti fissi del tool (max 8 KB)"
         },
         "itemsPath": {
           "type": [
@@ -1834,14 +1833,14 @@
             "string",
             "null"
           ],
-          "description": "Solo poll: parametro del tool per il cursore"
+          "description": "Parametro del tool per il cursore"
         },
         "cursorField": {
           "type": [
             "string",
             "null"
           ],
-          "description": "Solo poll: campo degli elementi che fa da cursore"
+          "description": "Campo degli elementi che fa da cursore"
         },
         "filter": {
           "type": [
@@ -1871,14 +1870,7 @@
             "integer",
             "null"
           ],
-          "description": "Solo poll: intervallo in secondi (60..86400, default 300)"
-        },
-        "dedupHeader": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "description": "Solo webhook: header con la chiave di deduplicazione"
+          "description": "Intervallo in secondi (60..86400, default 300)"
         }
       },
       "required": [
@@ -1903,9 +1895,27 @@
         "cursorParam": "body",
         "cursorField": "body",
         "filter": "body",
-        "intervalSeconds": "body",
-        "dedupHeader": "body"
-      }
+        "intervalSeconds": "body"
+      },
+      "responseFields": [
+        "id",
+        "agentId",
+        "kind",
+        "name",
+        "status",
+        "toolId",
+        "args",
+        "itemsPath",
+        "idField",
+        "versionField",
+        "cursorParam",
+        "cursorField",
+        "filter",
+        "intervalSeconds",
+        "nextPollAt",
+        "baselineDone",
+        "createdAt"
+      ]
     }
   },
   {

@@ -28,6 +28,7 @@ const OUTPUT_MAX = 2_000;
 const ERROR_MAX = 300;
 const DESCRIPTION_MAX = 200;
 const QUEUE_ITEMS_MAX = 10;
+const LEAD_APPS_MAX = 30;
 
 export const PRODUCT_LEAD_MESSAGES = {
   appNotFound: (app: string) => `App ${app} non trovata: chiedi a elenca_app`,
@@ -79,7 +80,8 @@ export async function listLeadApps(userId: number): Promise<{ app: string; nome:
     .innerJoin(aiModelsTable, eq(aiModelsTable.id, agentsTable.aiModelId))
     .innerJoin(aiAccountsTable, eq(aiAccountsTable.id, aiModelsTable.accountId))
     .where(and(eq(appsTable.status, "active"), eq(aiAccountsTable.userId, userId)))
-    .orderBy(asc(appsTable.name), asc(appsTable.id));
+    .orderBy(asc(appsTable.name), asc(appsTable.id))
+    .limit(LEAD_APPS_MAX);
   return rows.map(({ app }) => {
     const functional = app.functionalDescription?.trim();
     const source = functional ? functional : (app.description ?? "");

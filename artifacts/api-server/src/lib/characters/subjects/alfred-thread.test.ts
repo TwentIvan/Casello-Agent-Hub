@@ -33,6 +33,12 @@ vi.mock("../../teams/turn-runner", async (importOriginal) => ({
   sendToLead: vi.fn(async () => {}),
 }));
 
+// Nei test la richiesta al Responsabile non attende l'esito (25 s)
+vi.mock("../../product-leads", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../product-leads")>();
+  return { ...actual, askProductLead: (u: number, a: Parameters<typeof actual.askProductLead>[1], o?: object) => actual.askProductLead(u, a, { ...o, waitMs: 0 }) };
+});
+
 const saved = process.env["CASELLO_SECRET_KEY"];
 process.env["CASELLO_SECRET_KEY"] = "a".repeat(64);
 
@@ -44,11 +50,11 @@ let modelId: number;
 const handler = () => findSubject("alfred_thread")!;
 const call = (ctx: TurnContext, name: string, args: unknown) => handler().runTool({ id: "c", name, arguments: JSON.stringify(args) }, ctx).then((s) => JSON.parse(s));
 
-async function newCtx(uid = userId): Promise<TurnContext> {
+async function newCtx(uid = userId, page?: TurnContext["page"]): Promise<TurnContext> {
   const conv = await getAlfredThread(uid);
   const { characterMessagesTable } = await import("@workspace/db");
   const [m] = await db.insert(characterMessagesTable).values({ conversationId: conv.id, role: "assistant", content: "" }).returning();
-  return createTurnContext({ userId: uid, conversationId: conv.id, messageId: m!.id, subjectId: null });
+  return createTurnContext({ userId: uid, conversationId: conv.id, messageId: m!.id, subjectId: null, ...(page ? { page } : {}) });
 }
 
 async function makeTeam(name: string, owner: number) {
@@ -169,6 +175,25 @@ describe("filo di Alfred", () => {
     expect(JSON.stringify(own)).not.toContain("SEGRETO-INPUT");
     expect(await call(ctx, "leggi_run", { id: theirs!.id })).toEqual({ ok: false, error: "run non trovata" });
     expect(await call(ctx, "leggi_run", { id: 99999 })).toEqual({ ok: false, error: "run non trovata" });
+    expect(own.result.voci).toEqual([]);
+  });
+
+  it("chiedi_al_responsabile: senza app usa quella della pagina ospite; app troppo lunga → argomenti non validi", async () => {
+    const [hub] = await db.insert(appsTable).values({ name: "Hub", slug: "hubup", baseUrl: "http://hub.example" }).returning();
+    const [lead] = await db.insert(agentsTable).values({ appId: hub!.id, name: "Resp", role: "general", status: "active", aiModelId: modelId }).returning();
+    const ctx = await newCtx(userId, { page: "host", host: { app: "hubup", page: "x" } });
+    const out = await call(ctx, "chiedi_al_responsabile", { richiesta: "Fai il punto" });
+    expect(out.ok).toBe(true);
+    const runs = await db.select().from(runsTable).where(eq(runsTable.agentId, lead!.id));
+    expect(runs).toHaveLength(1);
+    expect(await call(ctx, "chiedi_al_responsabile", { richiesta: "x", app: "a".repeat(101) })).toEqual({ ok: false, error: "argomenti non validi" });
+  });
+
+  it("elenca_app: App con Responsabile dell'utente", async () => {
+    const [hub] = await db.insert(appsTable).values({ name: "Hub", slug: "hubup", baseUrl: "http://hub.example" }).returning();
+    await db.insert(agentsTable).values({ appId: hub!.id, name: "Resp", role: "general", status: "active", aiModelId: modelId });
+    const out = await call(await newCtx(), "elenca_app", {});
+    expect(out.result.map((a: { app: string }) => a.app)).toEqual(["hubup"]);
   });
 });
 
@@ -236,7 +261,7 @@ describe("scrivi_al_capo", () => {
 
   it("gli strumenti sono quelli attesi, senza prepara/conferma", () => {
     expect(ALFRED_THREAD_TOOLS.map((t) => t.function.name)).toEqual([
-      "squadre_stato", "squadra_dettaglio", "bollettino", "coda_da_confermare", "leggi_proposta", "scrivi_al_capo", "leggi_run", "proponi_decisione",
+      "squadre_stato", "squadra_dettaglio", "bollettino", "coda_da_confermare", "leggi_proposta", "scrivi_al_capo", "elenca_app", "chiedi_al_responsabile", "leggi_run", "proponi_decisione",
     ]);
   });
 });

@@ -46,6 +46,32 @@ export const ALFRED_TOOL_DECLARATIONS: Record<string, unknown>[] = [
     },
   },
   {
+    name: "elenca_app",
+    description: "App con un Responsabile di prodotto che puoi interpellare: slug, nome e una riga di descrizione.",
+  },
+  {
+    name: "chiedi_al_responsabile",
+    description:
+      "Passa una richiesta completa al Responsabile di prodotto di un'App e attende fino a 25 secondi l'esito: risposta, errore e voci create in «Da confermare». Le sue scritture restano in coda.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        richiesta: { type: "STRING", description: "La richiesta completa, al massimo 4000 caratteri" },
+        app: { type: "STRING", description: "Slug o nome dell'App (da elenca_app); se manca vale Botcave" },
+      },
+      required: ["richiesta"],
+    },
+  },
+  {
+    name: "leggi_run",
+    description: "Stato, esito, errore, costo e voci create di una run dell'utente.",
+    parameters: {
+      type: "OBJECT",
+      properties: { id: { type: "INTEGER", description: "Id della run" } },
+      required: ["id"],
+    },
+  },
+  {
     name: "prepara_decisione",
     description:
       "Prepara l'approvazione o il rifiuto di una voce in coda e restituisce numero e sintesi da leggere all'utente. Non decide nulla: serve poi conferma_decisione.",

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { InstanceError } from "../teams/instances";
 import { CentralinoError, messageToLead, pendingQueue, readBulletin, readProposal, teamDetail, teamsStatus } from "../teams/centralino";
+import { LEAD_REQUEST_MAX, askProductLead, listLeadApps, readLeadRun } from "../product-leads";
 import { confirmDecision, invalidateOpenConfirmations, prepareDecision, ConfirmationError } from "./confirmations";
 import { requireActiveSession } from "./sessions";
 import { AlfredError } from "./gemini";
@@ -28,6 +29,9 @@ const SCHEMAS = {
   coda_da_confermare: z.object({}).passthrough(),
   leggi_proposta: z.object({ numero: z.number().int().positive() }),
   scrivi_al_capo: z.object({ id: teamId, testo: z.string().min(1).max(4000) }),
+  elenca_app: z.object({}).passthrough(),
+  chiedi_al_responsabile: z.object({ richiesta: z.string().min(1).max(LEAD_REQUEST_MAX), app: z.string().min(1).max(100).optional() }),
+  leggi_run: z.object({ id: z.number().int().positive() }),
   prepara_decisione: z.object({
     numero: z.number().int().positive(),
     decisione: z.enum(["approva", "rifiuta"]),
@@ -128,6 +132,14 @@ export async function runAlfredTool(userId: number, sessionId: number, name: str
         return { ok: true, result: await messageToLead(userId, a["id"] as number, a["testo"] as string) };
       case "leggi_proposta":
         return { ok: true, result: await readProposal(userId, a["numero"] as number) };
+      case "elenca_app":
+        return { ok: true, result: await listLeadApps(userId) };
+      case "chiedi_al_responsabile":
+        return { ok: true, result: await askProductLead(userId, { richiesta: a["richiesta"] as string, app: a["app"] as string | undefined }) };
+      case "leggi_run": {
+        const run = await readLeadRun(userId, a["id"] as number);
+        return run ? { ok: true, result: run } : { ok: false, error: "run non trovata" };
+      }
       case "prepara_decisione":
         // `escludi` arriva grezzo: lo normalizza `prepareDecision` dopo aver chiuso le conferme aperte
         return { ok: true, result: await prepareDecision(userId, sessionId, a as Parameters<typeof prepareDecision>[2]) };

@@ -311,7 +311,7 @@ export async function executeCharacterTurn(conversationId: number, assistantMess
         ]);
         const messages = buildCharacterMessages({ character, subjectData, memory, page, history, userMessage });
         const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
-        const ctx = createTurnContext({ userId: conv.userId, conversationId, messageId: assistantMessageId, subjectId: conv.subjectId });
+        const ctx = createTurnContext({ userId: conv.userId, conversationId, messageId: assistantMessageId, subjectId: conv.subjectId, page });
         const outcome = await runPlanTurn(
           messages,
           {

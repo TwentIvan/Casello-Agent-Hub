@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import type { ChatCompletionFunctionTool } from "openai/resources/chat/completions";
-import { db, aiAccountsTable, aiModelsTable, characterConversationsTable, runsTable, type CharacterConversation } from "@workspace/db";
+import { db, characterConversationsTable, type CharacterConversation } from "@workspace/db";
 import type { ChatToolCall } from "../../ai/chat-types";
 import { InstanceError, getInstance, listInstances } from "../../teams/instances";
 import {
@@ -21,6 +21,7 @@ import {
   teamDetail,
   teamsStatus,
 } from "../../teams/centralino";
+import { LEAD_REQUEST_MAX, askProductLead, listLeadApps, readLeadRun } from "../../product-leads";
 import { PROPOSAL_MESSAGES } from "../../actions/proposal";
 import { unreadBulletin } from "../../teams/events";
 import { recordProposal } from "../proposals";
@@ -31,8 +32,6 @@ const MAX_CONTEXT_TEAMS = 30;
 const MAX_TASKS = 5;
 const MAX_EVENTS = 5;
 const MAX_OUTCOME = 200;
-const RUN_TEXT_MAX = 2_000;
-const RUN_ERROR_MAX = 500;
 
 export const ALFRED_THREAD_MESSAGES = {
   badArgs: "argomenti non validi",
@@ -127,7 +126,17 @@ export const ALFRED_THREAD_TOOLS: ChatCompletionFunctionTool[] = [
     { id: { type: "integer", description: "Id della squadra" }, testo: { type: "string", description: "Il messaggio per il capo" } },
     ["id", "testo"],
   ),
-  fn("leggi_run", "Stato, esito, errore, durata e costo di una run dell'utente.", { id: { type: "integer", description: "Id della run" } }, ["id"]),
+  fn("elenca_app", "App con un Responsabile di prodotto che puoi interpellare: slug, nome e una riga di descrizione.", {}),
+  fn(
+    "chiedi_al_responsabile",
+    "Passa una richiesta completa al Responsabile di prodotto di un'App e attende fino a 25 secondi l'esito: risposta, errore e voci create in «Da confermare». Le sue scritture restano in coda.",
+    {
+      richiesta: { type: "string", description: "La richiesta completa, al massimo 4 000 caratteri" },
+      app: { type: "string", description: "Slug o nome dell'App (da elenca_app); se manca vale l'App della pagina ospite o Botcave" },
+    },
+    ["richiesta"],
+  ),
+  fn("leggi_run", "Stato, esito, errore, costo e voci create di una run dell'utente.", { id: { type: "integer", description: "Id della run" } }, ["id"]),
   fn(
     "proponi_decisione",
     "Prepara una scheda con cui l'utente approva o rifiuta una voce della coda: non decide nulla da sola, l'utente conferma in console. Leggi prima la voce e riportane numero e sintesi.",
@@ -153,6 +162,8 @@ const SCHEMAS = {
   coda_da_confermare: z.object({}).passthrough(),
   leggi_proposta: z.object({ numero: positive }),
   scrivi_al_capo: z.object({ id: positive, testo: z.string().min(1).max(4000) }),
+  elenca_app: z.object({}).passthrough(),
+  chiedi_al_responsabile: z.object({ richiesta: z.string().min(1).max(LEAD_REQUEST_MAX), app: z.string().min(1).max(100).optional() }),
   leggi_run: z.object({ id: positive }),
   proponi_decisione: z.object({
     numero: positive,
@@ -194,27 +205,6 @@ async function queueView(userId: number) {
       // Numero di passi, solo per le proposte
       ...(a.steps !== undefined ? { passi: a.steps } : {}),
     })),
-  };
-}
-
-/** Run dell'utente: proprietario = chi possiede l'account AI del modello con cui è partita. Nessun passo né argomento. */
-async function readRun(userId: number, id: number) {
-  const [row] = await db
-    .select({ run: runsTable })
-    .from(runsTable)
-    .innerJoin(aiModelsTable, eq(aiModelsTable.id, runsTable.aiModelId))
-    .innerJoin(aiAccountsTable, eq(aiAccountsTable.id, aiModelsTable.accountId))
-    .where(and(eq(runsTable.id, id), eq(aiAccountsTable.userId, userId)))
-    .limit(1);
-  if (!row) return null;
-  const r = row.run;
-  return {
-    id: r.id,
-    status: r.status,
-    output: r.output === null ? null : r.output.slice(0, RUN_TEXT_MAX),
-    error: r.errorMessage === null ? null : r.errorMessage.slice(0, RUN_ERROR_MAX),
-    durationMs: r.durationMs,
-    costUsd: r.costUsd,
   };
 }
 
@@ -282,8 +272,14 @@ async function runTool(call: ChatToolCall, ctx: TurnContext): Promise<string> {
         return toolOk(await readProposal(userId, a["numero"] as number));
       case "scrivi_al_capo":
         return toolOk(await messageToLead(userId, a["id"] as number, a["testo"] as string));
+      case "elenca_app":
+        return toolOk(await listLeadApps(userId));
+      case "chiedi_al_responsabile": {
+        const hostApp = ctx.page?.page === "host" ? ctx.page.host?.app : undefined;
+        return toolOk(await askProductLead(userId, { richiesta: a["richiesta"] as string, app: a["app"] as string | undefined, hostApp }));
+      }
       case "leggi_run": {
-        const run = await readRun(userId, a["id"] as number);
+        const run = await readLeadRun(userId, a["id"] as number);
         return run ? toolOk(run) : toolFail(ALFRED_THREAD_MESSAGES.runNotFound);
       }
       case "proponi_decisione":

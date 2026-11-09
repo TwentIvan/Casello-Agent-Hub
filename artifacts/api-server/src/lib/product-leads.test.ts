@@ -190,6 +190,14 @@ describe("listLeadApps", () => {
     expect(list[1]!.descrizione).toBe("Prima riga");
     expect(list[2]!.descrizione).toHaveLength(200);
   });
+
+  it("al più 30 App", async () => {
+    const me = await freshUser();
+    for (let i = 0; i < 32; i++) await seedApp(`App ${String(i).padStart(2, "0")}`, `app-${i}`, me.modelId);
+    const list = await listLeadApps(me.userId);
+    expect(list).toHaveLength(30);
+    expect(list[0]!.app).toBe("app-0");
+  });
 });
 
 describe("askProductLead: risoluzione dell'App", () => {

@@ -10,7 +10,9 @@ import {
   alfredConfirmationsTable,
   alfredSessionsTable,
   appToolsTable,
+  agentsTable,
   appsTable,
+  runsTable,
   pendingActionsTable,
   teamEventsTable,
   teamTasksTable,
@@ -31,6 +33,7 @@ import { writePlanVersion } from "../lib/teams/plan";
 import { activateInstance } from "../lib/teams/turn-runner";
 import { createHash } from "node:crypto";
 import { logger } from "../lib/logger";
+import { ALFRED_TOOL_DECLARATIONS } from "../lib/alfred/tool-declarations";
 import { confirmDecision } from "../lib/alfred/confirmations";
 import { consumeActionDecision, consumeAlfredTool, consumeTeamMessage } from "../middlewares/rate-limit";
 
@@ -196,6 +199,21 @@ describe("strumenti di lettura", () => {
     const res = await run("coda_da_confermare");
     expect(res.json.result.actions).toHaveLength(1);
     expect(res.json.result.actions[0]).toMatchObject({ numero: n, sintesi: "Imposta la password", serveTokenApp: false });
+  });
+});
+
+describe("Responsabili di prodotto", () => {
+  it("elenca_app ok; chiedi_al_responsabile con app inesistente e leggi_run altrui hanno messaggi fissi; dichiarazioni presenti", async () => {
+    expect((await run("elenca_app")).json).toMatchObject({ ok: true });
+    expect((await run("chiedi_al_responsabile", { richiesta: "ciao", app: "x" })).json).toEqual({ ok: false, error: "App x non trovata: chiedi a elenca_app" });
+    const [agentApp] = await db.select().from(appsTable).limit(1);
+    const [ag] = await db.insert(agentsTable).values({ appId: agentApp!.id, name: "G", role: "general" }).returning();
+    const [otherAcc] = await db.insert(aiAccountsTable).values({ userId: other, name: "B", provider: "custom", baseUrl: "http://y.example", apiKeyEnc: "x", status: "ok" }).returning();
+    const [om] = await db.insert(aiModelsTable).values({ accountId: otherAcc!.id, modelId: "mo", displayName: "MO" }).returning();
+    const [theirs] = await db.insert(runsTable).values({ agentId: ag!.id, aiModelId: om!.id, status: "succeeded", output: "ok" }).returning();
+    expect((await run("leggi_run", { id: theirs!.id })).json).toEqual({ ok: false, error: "run non trovata" });
+    const names = ALFRED_TOOL_DECLARATIONS.map((d) => d["name"]);
+    expect(names).toEqual(expect.arrayContaining(["elenca_app", "chiedi_al_responsabile", "leggi_run"]));
   });
 });
 

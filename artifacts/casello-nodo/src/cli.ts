@@ -44,7 +44,7 @@ const USAGE = `uso: casello-nodo <comando>
 
   install     installa il servizio su launchd (--url, --token, --workspace-root)
   uninstall   rimuove il servizio (config e log restano)
-  status      stato del servizio, ultimo heartbeat e compiti in corso
+  status      stato del servizio, ultimo heartbeat e compiti e turni in corso
   run         avvia il nodo in primo piano
 `;
 
@@ -221,6 +221,11 @@ async function status(d: CliDeps): Promise<number> {
     state.tasks.length === 0
       ? "Compiti in corso: nessuno\n"
       : `Compiti in corso: ${state.tasks.map((t) => `#${t.taskId} (dal ${t.startedAt})`).join(", ")}\n`,
+  );
+  d.out(
+    !state.turns || state.turns.length === 0
+      ? "Turni in corso: nessuno\n"
+      : `Turni in corso: ${state.turns.map((t) => `#${t.turnId} (dal ${t.startedAt})`).join(", ")}\n`,
   );
   if (state.lastError) d.out(`Ultimo errore: ${state.lastError}\n`);
   d.out(`Stato aggiornato il ${state.updatedAt}\n`);

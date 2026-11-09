@@ -52,8 +52,10 @@ const OutcomeFile = z.object({
 });
 
 /** Risultato JSON di `claude -p --output-format json` (solo i campi usati). */
-const CliResult = z.object({
+export const CliResult = z.object({
   is_error: z.boolean().optional(),
+  subtype: z.string().optional(),
+  session_id: z.string().optional(),
   result: z.string().optional(),
   total_cost_usd: z.number().optional(),
   usage: z
@@ -66,7 +68,7 @@ const CliResult = z.object({
     .partial()
     .optional(),
 });
-type CliResult = z.infer<typeof CliResult>;
+export type CliResult = z.infer<typeof CliResult>;
 
 const MAX_STDOUT_BYTES = 5 * 1024 * 1024;
 const TOKENS_MAX = 2_000_000_000;
@@ -81,7 +83,7 @@ function permissionArgs(mode: string): string[] {
 }
 
 /** Ambiente del processo figlio senza le variabili `CASELLO_*` (il token del nodo non passa all'operaio). */
-function childEnv(): NodeJS.ProcessEnv {
+export function childEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) if (!k.startsWith("CASELLO_")) env[k] = v;
   return env;
@@ -129,16 +131,18 @@ async function fetchAttachments(pkg: TaskPackage, workspace: string, client: Cas
   }
 }
 
-interface ChildResult {
+export interface ChildResult {
   timedOut: boolean;
   aborted: boolean;
   exitCode: number | null;
   spawnFailed: boolean;
   stdout: string;
+  /** Primi byte di stderr (solo se richiesto con `captureStderr`), per classificare gli errori. */
+  stderr: string;
 }
 
 /** Segnale al gruppo di processi di `claude` (figli e nipoti compresi); in ripiego al solo figlio. */
-function killGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+export function killGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   if (child.pid === undefined) return;
   try {
     process.kill(-child.pid, signal);
@@ -152,7 +156,7 @@ function killGroup(child: ChildProcess, signal: NodeJS.Signals): void {
 }
 
 /** Processi `claude` in corso in questo processo del nodo (per `killAllTaskGroups`). */
-const activeChildren = new Set<ChildProcess>();
+export const activeChildren = new Set<ChildProcess>();
 
 /**
  * Uscita forzata del nodo (eccezione non gestita): SIGKILL subito, in modo sincrono, a tutti i gruppi di `claude` in
@@ -165,29 +169,48 @@ export function killAllTaskGroups(): number {
   return children.length;
 }
 
-async function runClaude(
-  workspace: string,
-  sessionId: string,
-  ctx: RunContext,
-  signal: AbortSignal,
-): Promise<ChildResult> {
-  const spawn = ctx.spawn ?? nodeSpawn;
-  const args = [
-    "-p",
-    "--output-format",
-    "json",
-    "--session-id",
-    sessionId,
-    ...permissionArgs(ctx.config.permissionMode),
-    PROMPT,
-  ];
-  const killGraceMs = ctx.killGraceMs ?? 10_000;
-  const drainMs = ctx.drainMs ?? 3_000;
+export interface SpawnGroupOptions {
+  command: string;
+  args: readonly string[];
+  cwd: string;
+  env?: NodeJS.ProcessEnv;
+  /** Testo scritto su stdin (poi chiuso); senza, stdin è ignorato. */
+  stdin?: string;
+  /** Tiene i primi 64 KB di stderr in `stderr` invece di scartarli. */
+  captureStderr?: boolean;
+  timeoutMs: number;
+  killGraceMs?: number;
+  drainMs?: number;
+  spawn?: SpawnFn;
+  logger?: Logger;
+  signal: AbortSignal;
+}
+
+const MAX_STDERR_BYTES = 64 * 1024;
+
+/**
+ * Lancia un processo in un gruppo proprio: al timeout o allo stop il gruppo riceve SIGTERM e, dopo l'attesa, SIGKILL.
+ * Condiviso da compiti e turni.
+ */
+export function spawnGroup(o: SpawnGroupOptions): Promise<ChildResult> {
+  const spawn = o.spawn ?? nodeSpawn;
+  const killGraceMs = o.killGraceMs ?? 10_000;
+  const drainMs = o.drainMs ?? 3_000;
+  const signal = o.signal;
 
   return new Promise<ChildResult>((resolve) => {
-    const result: ChildResult = { timedOut: false, aborted: false, exitCode: null, spawnFailed: false, stdout: "" };
+    const result: ChildResult = {
+      timedOut: false,
+      aborted: false,
+      exitCode: null,
+      spawnFailed: false,
+      stdout: "",
+      stderr: "",
+    };
     const chunks: Buffer[] = [];
+    const errChunks: Buffer[] = [];
     let size = 0;
+    let errSize = 0;
     let settled = false;
     let started = false;
     let terminating = false;
@@ -196,10 +219,10 @@ async function runClaude(
     let child: ChildProcess;
     try {
       // Gruppo di processi proprio: al timeout o allo stop si termina anche ciò che `claude` ha lanciato
-      child = spawn(ctx.config.claudeBin, args, {
-        cwd: workspace,
-        env: childEnv(),
-        stdio: ["ignore", "pipe", "pipe"],
+      child = spawn(o.command, o.args, {
+        cwd: o.cwd,
+        env: o.env ?? childEnv(),
+        stdio: [o.stdin !== undefined ? "pipe" : "ignore", "pipe", "pipe"],
         detached: true,
       });
     } catch {
@@ -220,7 +243,7 @@ async function runClaude(
     const timeout = setTimeout(() => {
       result.timedOut = true;
       terminateGroup();
-    }, ctx.config.taskTimeoutMinutes * 60_000);
+    }, o.timeoutMs);
 
     const onAbort = () => {
       result.aborted = true;
@@ -237,6 +260,7 @@ async function runClaude(
       if (drainTimer) clearTimeout(drainTimer);
       signal.removeEventListener("abort", onAbort);
       result.stdout = Buffer.concat(chunks).toString("utf8");
+      result.stderr = Buffer.concat(errChunks).toString("utf8");
       resolve(result);
     };
 
@@ -245,7 +269,20 @@ async function runClaude(
       size += c.length;
       chunks.push(c);
     });
-    child.stderr?.resume();
+    if (o.captureStderr) {
+      child.stderr?.on("data", (c: Buffer) => {
+        if (errSize >= MAX_STDERR_BYTES) return;
+        errSize += c.length;
+        errChunks.push(c);
+      });
+    } else {
+      child.stderr?.resume();
+    }
+    if (o.stdin !== undefined && child.stdin) {
+      // Un EPIPE (processo già uscito) non deve fermare il nodo
+      child.stdin.on("error", () => {});
+      child.stdin.end(o.stdin);
+    }
     child.on("spawn", () => {
       started = true;
     });
@@ -257,7 +294,7 @@ async function runClaude(
         return;
       }
       // Dopo l'avvio (es. kill non riuscito) decide l'uscita del processo
-      ctx.logger?.warn(`Claude Code: errore del processo (${err.message})`);
+      o.logger?.warn(`Claude Code: errore del processo (${err.message})`);
     });
     child.on("exit", (code) => {
       result.exitCode = code;
@@ -274,7 +311,26 @@ async function runClaude(
   });
 }
 
-function parseCli(stdout: string): CliResult | null {
+async function runClaude(
+  workspace: string,
+  sessionId: string,
+  ctx: RunContext,
+  signal: AbortSignal,
+): Promise<ChildResult> {
+  return spawnGroup({
+    command: ctx.config.claudeBin,
+    args: ["-p", "--output-format", "json", "--session-id", sessionId, ...permissionArgs(ctx.config.permissionMode), PROMPT],
+    cwd: workspace,
+    timeoutMs: ctx.config.taskTimeoutMinutes * 60_000,
+    killGraceMs: ctx.killGraceMs,
+    drainMs: ctx.drainMs,
+    spawn: ctx.spawn,
+    logger: ctx.logger,
+    signal,
+  });
+}
+
+export function parseCli(stdout: string): CliResult | null {
   const text = stdout.trim();
   if (!text) return null;
   try {
@@ -294,7 +350,7 @@ async function readOutcomeFile(workspace: string): Promise<z.infer<typeof Outcom
   }
 }
 
-function usageFields(cli: CliResult | null): Pick<TaskReport, "costUsd" | "promptTokens" | "completionTokens"> {
+export function usageFields(cli: CliResult | null): Pick<TaskReport, "costUsd" | "promptTokens" | "completionTokens"> {
   const out: Pick<TaskReport, "costUsd" | "promptTokens" | "completionTokens"> = {};
   if (!cli) return out;
   const cost = cli.total_cost_usd;

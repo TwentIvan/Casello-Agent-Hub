@@ -243,9 +243,11 @@ describe("status", () => {
       updatedAt: "2026-11-04T10:00:00.000Z",
       lastHeartbeatAt: "2026-11-04T09:59:30.000Z",
       tasks: [{ taskId: 42, startedAt: "2026-11-04T09:50:00.000Z" }],
+      turns: [{ turnId: 9, startedAt: "2026-11-04T09:58:00.000Z" }],
       lastError: null,
     });
     expect(await runCli(["status"], deps())).toBe(0);
+    expect(out).toContain("Turni in corso: #9");
     expect(out).toContain("in esecuzione (pid 777)");
     expect(out).toContain("2026-11-04T09:59:30.000Z");
     expect(out).toContain("#42");

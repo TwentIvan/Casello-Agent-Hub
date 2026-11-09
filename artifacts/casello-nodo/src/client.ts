@@ -4,12 +4,17 @@ import {
   NodeHeartbeatResponse,
   NodePingResponse,
   NodeReportBody,
+  NodeTurnClaimResponse,
+  NodeTurnReportBody,
 } from "@workspace/api-zod";
 import type { z } from "zod";
 
 /** Pacchetto di un compito preso in carico, come validato dallo schema del contratto. */
 export type TaskPackage = z.infer<typeof NodeClaimResponse>;
 export type TaskReport = z.input<typeof NodeReportBody>;
+/** Pacchetto di un turno delegato al nodo. */
+export type TurnPackage = z.infer<typeof NodeTurnClaimResponse>;
+export type TurnReport = z.input<typeof NodeTurnReportBody>;
 export type Capabilities = z.input<typeof NodeHeartbeatBody>;
 
 export const LEASE_LOST = "lease non valida o scaduta";
@@ -64,8 +69,20 @@ export interface ClientOptions {
   maxRetryMs?: number;
 }
 
+/** Il claim dei turni attende fino a ~50 s lato server: il timeout del client è più largo. */
+const TURN_CLAIM_TIMEOUT_MS = 70_000;
 const FIRST_DELAY_MS = 1_000;
 const MAX_DELAY_MS = 60_000;
+
+interface RequestOptions {
+  json?: unknown;
+  headers?: Record<string, string>;
+  readBody?: boolean;
+  /** Un solo tentativo: gli errori temporanei passano a chi chiama. */
+  noRetry?: boolean;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
 
 class RetryableError extends Error {
   constructor(
@@ -116,6 +133,34 @@ export class CaselloClient {
     await this.request("POST", `/node/tasks/${taskId}/report`, { json: body });
   }
 
+  /**
+   * Prende un turno delegato (long-poll: Casello attende fino a ~50 s); null se non c'è niente (204). Un solo tentativo:
+   * gli errori li gestisce il ciclo dei turni. `signal` interrompe l'attesa.
+   */
+  async claimTurn(signal?: AbortSignal): Promise<TurnPackage | null> {
+    const res = await this.request("POST", "/node/turns/claim", {
+      json: {},
+      noRetry: true,
+      timeoutMs: TURN_CLAIM_TIMEOUT_MS,
+      signal,
+    });
+    if (res.status === 204) return null;
+    const parsed = NodeTurnClaimResponse.safeParse(await res.json().catch(() => null));
+    if (!parsed.success) throw new Error("pacchetto del turno non valido");
+    return parsed.data;
+  }
+
+  /** Rinnova la lease del turno; restituisce la nuova scadenza. */
+  async pingTurn(turnId: number, leaseToken: string): Promise<Date> {
+    const res = await this.request("POST", `/node/turns/${turnId}/ping`, { json: { leaseToken } });
+    return NodePingResponse.parse(await res.json()).leaseExpiresAt;
+  }
+
+  async reportTurn(turnId: number, report: TurnReport): Promise<void> {
+    const body = NodeTurnReportBody.parse(report);
+    await this.request("POST", `/node/turns/${turnId}/report`, { json: body });
+  }
+
   async downloadAttachment(taskId: number, attachmentId: number, leaseToken: string): Promise<Buffer> {
     const res = await this.request("GET", `/node/tasks/${taskId}/attachments/${attachmentId}`, {
       headers: { "X-Lease-Token": leaseToken },
@@ -127,7 +172,7 @@ export class CaselloClient {
   private async request(
     method: string,
     pathname: string,
-    opts: { json?: unknown; headers?: Record<string, string>; readBody?: boolean },
+    opts: RequestOptions,
   ): Promise<Response> {
     let waited = 0;
     let delay = FIRST_DELAY_MS;
@@ -136,6 +181,7 @@ export class CaselloClient {
         return await this.attempt(method, pathname, opts);
       } catch (err) {
         if (!(err instanceof RetryableError)) throw err;
+        if (opts.noRetry) throw err.cause;
         const wait = Math.min(err.retryAfterMs ?? delay, MAX_DELAY_MS);
         if (waited + wait > this.maxRetryMs) throw err.cause;
         await this.sleep(wait);
@@ -148,12 +194,13 @@ export class CaselloClient {
   private async attempt(
     method: string,
     pathname: string,
-    opts: { json?: unknown; headers?: Record<string, string>; readBody?: boolean },
+    opts: RequestOptions,
   ): Promise<Response> {
     const headers: Record<string, string> = { Authorization: `Bearer ${this.opts.token}`, ...opts.headers };
     if (opts.json !== undefined) headers["Content-Type"] = "application/json";
     let res: Response;
-    const signal = AbortSignal.timeout(this.timeoutMs);
+    const timeout = AbortSignal.timeout(opts.timeoutMs ?? this.timeoutMs);
+    const signal = opts.signal ? AbortSignal.any([timeout, opts.signal]) : timeout;
     try {
       res = await this.fetchImpl(`${this.opts.baseUrl}/api${pathname}`, {
         method,

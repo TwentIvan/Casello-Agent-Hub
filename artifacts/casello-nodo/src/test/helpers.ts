@@ -23,6 +23,7 @@ export function testConfig(over: Partial<Config> = {}): Config {
     permissionMode: "bypassPermissions",
     skillsDirs: [],
     maxConcurrent: 1,
+    maxConcurrentTurns: 2,
     taskTimeoutMinutes: 60,
     ...over,
   };

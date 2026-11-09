@@ -23,7 +23,7 @@ Costruisci l'eseguibile (`pnpm --filter @workspace/casello-nodo run build`, prod
   `~/.casello-nodo/bin/casello-nodo.mjs` ed è quella copia che lancia il servizio: dopo l'installazione il repository si
   può spostare o cancellare. Rieseguirlo (dopo una build nuova) aggiorna programma, config e servizio.
 - `casello-nodo uninstall` ferma e rimuove il servizio e la copia del programma; config e log restano.
-- `casello-nodo status` mostra se launchd ha il servizio, l'ultimo heartbeat riuscito e i compiti in corso.
+- `casello-nodo status` mostra se launchd ha il servizio, l'ultimo heartbeat riuscito, i compiti e i turni in corso.
 - `casello-nodo run` avvia il nodo in primo piano (è quello che lancia launchd). `Ctrl+C` o SIGTERM lo fermano:
   i compiti in corso risultano falliti («esecuzione interrotta: nodo fermato»); un secondo segnale forza l'uscita.
 
@@ -34,6 +34,7 @@ Costruisci l'eseguibile (`pnpm --filter @workspace/casello-nodo run build`, prod
 - Log: `~/.casello-nodo/logs/` (`casello-nodo.log` con rotazione, `launchd.out.log`, `launchd.err.log`).
   Non contengono token, allegati né istruzioni dei compiti.
 - Stato: `~/.casello-nodo/state.json` (letto da `status`, senza segreti).
+- Turni: `~/.casello-nodo/turns/` (cartelle temporanee, vuote a riposo).
 
 ## Spazio di lavoro della squadra
 
@@ -45,6 +46,34 @@ legge l'esito da `casello-esito.json`. A fine compito i file di servizio vengono
 Per scegliere la cartella dalla console («Sfoglia» nella scheda della squadra) il nodo manda con ogni heartbeat i nomi
 delle sottocartelle della radice: solo cartelle (mai file né contenuti), fino a 3 livelli e 2 000 voci, senza cartelle
 nascoste, `node_modules` e link simbolici. Una cartella appena creata compare in console entro 30 secondi.
+
+## Turni delegati (account «Claude Code (nodo)»)
+
+Oltre ai compiti, il nodo esegue i turni di chat e le run che Botcave delega a un account AI di tipo «Claude Code (nodo)»:
+usa l'accesso a Claude del tuo utente sul Mac (il login già fatto con `claude`), quindi i consumi contano sul tuo posto
+Claude e valgono i suoi limiti d'uso. Se il posto raggiunge il limite o il login scade, il turno fallisce con un codice
+(`usage_limit`, `not_logged_in`) e Botcave ripiega sul modello di riserva dell'account, se c'è.
+
+- Ciclo separato da quello dei compiti: tiene un claim in attesa (long-poll) finché ha un posto libero, fino a
+  `maxConcurrentTurns` turni insieme (config, 1..4, default 2). Errore di rete: riprova dopo 5 s; nodo disattivato: ogni 30 s.
+- Per ogni turno crea una cartella vuota in `~/.casello-nodo/turns/` (700) con `mcp.json` (600, contiene il token del turno,
+  valido solo per quel turno) e lancia, con il prompt su stdin e in un gruppo di processi proprio:
+
+  ```
+  claude -p --output-format json --model <modello> --system-prompt <istruzioni> --tools "" \
+    --strict-mcp-config --mcp-config <cartella>/mcp.json --allowedTools "mcp__botcave__*" \
+    --max-turns <n> --permission-mode dontAsk
+  ```
+
+  `claude` non ha strumenti propri né altri server MCP: può solo chiamare gli strumenti del turno su Botcave. La modalità
+  `dontAsk` è fissa e non dipende da `permissionMode` (che vale solo per i compiti). La cartella si cancella a fine turno,
+  anche in caso di errore.
+- Ping della lease ogni 30 s; al timeout del turno `claude` riceve SIGTERM e dopo 10 s SIGKILL. Una lease persa (409, 401,
+  403) termina `claude` senza report. Allo stop del nodo i turni in corso riferiscono `stopped`.
+- Il testo dell'errore di `claude` serve solo a scegliere il codice e non viene mai inviato; la risposta si invia troncata a
+  20 000 caratteri. Nei log: id del turno, modello, durata ed esito; mai prompt, risposta né token del turno.
+- Limiti del posto: i turni delegati e i compiti condividono il tuo abbonamento Claude; più turni in parallelo consumano
+  il limite d'uso più in fretta. Abbassa `maxConcurrentTurns` se lo raggiungi spesso.
 
 ## Sicurezza
 

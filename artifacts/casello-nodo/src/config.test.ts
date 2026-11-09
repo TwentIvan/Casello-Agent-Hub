@@ -31,6 +31,7 @@ describe("loadConfig", () => {
       permissionMode: "bypassPermissions",
       skillsDirs: ["/Users/prova/.claude/skills", "/Users/prova/.claude/plugins/cache"],
       maxConcurrent: 1,
+      maxConcurrentTurns: 2,
       taskTimeoutMinutes: 60,
     });
   });
@@ -62,6 +63,15 @@ describe("loadConfig", () => {
       maxConcurrent: 4,
     });
     expect(() => loadConfig(file)).toThrow(ConfigError);
+  });
+
+  it("maxConcurrentTurns: 1..4", async () => {
+    const ok = await writeConfig({ caselloUrl: "https://c", token: "cas_x", workspaceRoot: "/tmp", maxConcurrentTurns: 4 });
+    expect(loadConfig(ok).maxConcurrentTurns).toBe(4);
+    for (const bad of [0, 5]) {
+      const file = await writeConfig({ caselloUrl: "https://c", token: "cas_x", workspaceRoot: "/tmp", maxConcurrentTurns: bad });
+      expect(() => loadConfig(file)).toThrow(ConfigError);
+    }
   });
 
   it("non riporta il token nel messaggio d'errore", async () => {
@@ -100,6 +110,7 @@ describe("loadConfig", () => {
       logsDir: "/Users/prova/.casello-nodo/logs",
       programPath: "/Users/prova/.casello-nodo/bin/casello-nodo.mjs",
       statePath: "/Users/prova/.casello-nodo/state.json",
+      turnsDir: "/Users/prova/.casello-nodo/turns",
     });
   });
 });

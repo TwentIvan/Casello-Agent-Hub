@@ -7,6 +7,8 @@ export interface NodeState {
   updatedAt: string;
   lastHeartbeatAt: string | null;
   tasks: Array<{ taskId: number; startedAt: string }>;
+  /** Turni delegati in corso (assente nei file scritti da versioni precedenti). */
+  turns?: Array<{ turnId: number; startedAt: string }>;
   lastError: string | null;
 }
 

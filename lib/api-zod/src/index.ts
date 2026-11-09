@@ -8,4 +8,5 @@ export {
   UpdateMemoryNoteParams,
   DeleteMemoryNoteParams,
   DeleteMemoryHistoryEntryParams,
+  GetAlfredNotificationsParams,
 } from "./generated/api";

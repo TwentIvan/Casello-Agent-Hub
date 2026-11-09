@@ -834,6 +834,41 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /alfred/sessions/{id}/notifications:
+    get:
+      operationId: getAlfredNotifications
+      tags: [alfred]
+      summary: Novità per la sessione vocale di Alfred
+      description: >-
+        Sola lettura: run di Responsabili richieste tramite Alfred finite e nuove voci in «Da confermare»
+        dell'utente, dopo il cursore `after` (data ISO restituita dalla chiamata precedente) e nell'ultima ora,
+        al più 10 per chiamata in ordine di tempo. Senza `after` risponde solo con il cursore iniziale.
+        Non aggiorna l'attività della sessione. Limite: 30 al minuto per utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Novità
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlfredNotifications"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   /alfred/sessions/{id}/close:
     post:
       operationId: closeAlfredSession
@@ -4868,6 +4903,60 @@ components:
         result: {}
         error:
           type: string
+
+    AlfredNotificationItem:
+      type: object
+      required: [numero, tipo, sintesi]
+      properties:
+        numero:
+          type: integer
+        tipo:
+          type: string
+        sintesi:
+          type: string
+
+    AlfredNotification:
+      type: object
+      required: [kind, at]
+      properties:
+        kind:
+          type: string
+          enum: [lead_run, queue_item]
+        at:
+          type: string
+        run:
+          type: integer
+        app:
+          type: ["string", "null"]
+        status:
+          type: string
+        output:
+          type: ["string", "null"]
+        error:
+          type: ["string", "null"]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlfredNotificationItem"
+        numero:
+          type: integer
+        tipo:
+          type: string
+        squadra:
+          type: ["string", "null"]
+        sintesi:
+          type: string
+
+    AlfredNotifications:
+      type: object
+      required: [cursor, events]
+      properties:
+        cursor:
+          type: string
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlfredNotification"
 
     AppInput:
       type: object

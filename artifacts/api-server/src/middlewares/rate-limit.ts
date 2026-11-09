@@ -183,6 +183,14 @@ export function consumeAlfredTool(userId: number): boolean {
   return alfredToolCounter.consume(`user:${userId}`).ok;
 }
 
+// Novità di Alfred a voce (sondaggio periodico del browser): 30 al minuto per utente.
+const alfredNotificationsCounter = fixedWindowCounter({ limit: 30, windowMs: 60_000 });
+
+/** Conta una lettura delle novità di Alfred dell'utente: false se il limite è raggiunto. */
+export function consumeAlfredNotifications(userId: number): boolean {
+  return alfredNotificationsCounter.consume(`user:${userId}`).ok;
+}
+
 // Richieste di Alfred ai Responsabili di prodotto: 6 al minuto per utente (ogni richiesta avvia una run con un modello).
 const leadRequestCounter = fixedWindowCounter({ limit: 6, windowMs: 60_000 });
 

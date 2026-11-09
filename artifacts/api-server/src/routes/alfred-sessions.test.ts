@@ -13,10 +13,12 @@ import { startFakeGemini, type FakeGemini } from "../../test/fake-gemini";
 // Sessioni di Alfred sull'app completa senza login (utente dev@localhost). Gemini è finto. Il limite di 10 avvii
 // al minuto è disattivato salvo nella prova che lo verifica.
 
-const limit = vi.hoisted(() => ({ real: false }));
+const limit = vi.hoisted(() => ({ real: false, notif: false }));
 vi.mock("../middlewares/rate-limit", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../middlewares/rate-limit")>();
-  return { ...orig, consumeAlfredSession: (userId: number) => (limit.real ? orig.consumeAlfredSession(userId) : true) };
+  return { ...orig, consumeAlfredSession: (userId: number) => (limit.real ? orig.consumeAlfredSession(userId) : true),
+    consumeAlfredNotifications: (userId: number) => (limit.notif ? orig.consumeAlfredNotifications(userId) : true),
+  };
 });
 
 const ENV_KEYS = ["AUTH_DISABLED", "ALLOWED_EMAILS", "CASELLO_SECRET_KEY", "GEMINI_NATIVE_BASE"] as const;
@@ -117,7 +119,7 @@ describe("buildLiveConfig", () => {
     expect(text).toContain("Ivan");
     expect(text).toContain("italiano");
     const none = buildLiveConfig({ voice: "Kore", userName: null }) as { systemInstruction: { parts: { text: string }[] } };
-    expect(none.systemInstruction.parts[0]!.text).not.toContain("null");
+    expect(none.systemInstruction.parts[0]!.text).not.toMatch(/\bnull\b/);
     expect(none.systemInstruction.parts[0]!.text).not.toContain("undefined");
     expect(ALFRED_TOOL_DECLARATIONS).toHaveLength(15);
     expect(none.systemInstruction.parts[0]!.text).toContain("leggi_proposta");
@@ -439,5 +441,59 @@ describe("sweepAlfred", () => {
     expect((await sessionRow(old!.id)).status).toBe("closed");
     expect((await sessionRow(recent!.id)).status).toBe("active");
     expect(await db.select().from(alfredConfirmationsTable)).toHaveLength(1);
+  });
+});
+
+describe("GET /alfred/sessions/:id/notifications", () => {
+  async function openSession() {
+    const { dev, model } = await setup();
+    const [s] = await db.insert(alfredSessionsTable).values({ userId: dev, aiModelId: model }).returning();
+    return { dev, id: s!.id };
+  }
+
+  it("200 con il cursore iniziale e senza toccare last_activity_at", async () => {
+    const { id } = await openSession();
+    const old = new Date(Date.now() - 10 * 60_000);
+    await db.update(alfredSessionsTable).set({ lastActivityAt: old }).where(eq(alfredSessionsTable.id, id));
+    const res = await api("GET", `/alfred/sessions/${id}/notifications`);
+    expect(res.status).toBe(200);
+    expect(res.json.events).toEqual([]);
+    expect(Number.isNaN(new Date(res.json.cursor).getTime())).toBe(false);
+    const again = await api("GET", `/alfred/sessions/${id}/notifications?after=${encodeURIComponent(res.json.cursor)}`);
+    expect(again.status).toBe(200);
+    expect((await sessionRow(id)).lastActivityAt.getTime()).toBe(old.getTime());
+  });
+
+  it("sessione chiusa o altrui → 404", async () => {
+    const { dev, id } = await openSession();
+    await db.update(alfredSessionsTable).set({ status: "closed" }).where(eq(alfredSessionsTable.id, id));
+    const closed = await api("GET", `/alfred/sessions/${id}/notifications`);
+    expect(closed.status).toBe(404);
+    expect(closed.json.error).toBe("sessione non trovata");
+    const other = await otherUserId();
+    const [s] = await db.insert(alfredSessionsTable).values({ userId: other, aiModelId: await modelOf(other, "models/gemini-3.8-live") }).returning();
+    expect(dev).not.toBe(other);
+    expect((await api("GET", `/alfred/sessions/${s!.id}/notifications`)).status).toBe(404);
+  });
+
+  it("cursore non valido o nel futuro → 400", async () => {
+    const { id } = await openSession();
+    const bad = await api("GET", `/alfred/sessions/${id}/notifications?after=abc`);
+    expect(bad.status).toBe(400);
+    expect(bad.json.error).toBe("cursore non valido");
+    const future = await api("GET", `/alfred/sessions/${id}/notifications?after=${encodeURIComponent(new Date(Date.now() + 3_600_000).toISOString())}`);
+    expect(future.status).toBe(400);
+    expect(future.json.error).toBe("cursore non valido");
+  });
+
+  it("la trentunesima richiesta del minuto → 429", async () => {
+    const { id } = await openSession();
+    limit.notif = true;
+    try {
+      for (let i = 0; i < 30; i++) expect((await api("GET", `/alfred/sessions/${id}/notifications`)).status).toBe(200);
+      expect((await api("GET", `/alfred/sessions/${id}/notifications`)).status).toBe(429);
+    } finally {
+      limit.notif = false;
+    }
   });
 });

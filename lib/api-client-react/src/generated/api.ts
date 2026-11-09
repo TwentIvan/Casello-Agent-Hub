@@ -38,6 +38,7 @@ import type {
   AiProviderInfo,
   AlfredChoice,
   AlfredCloseBody,
+  AlfredNotifications,
   AlfredRenewBody,
   AlfredSession,
   AlfredSettings,
@@ -97,6 +98,7 @@ import type {
   EstimateAnalysisCostParams,
   ExportAnalysisIssuesParams,
   ForbiddenResponse,
+  GetAlfredNotificationsParams,
   GetEmbedConfigParams,
   GetTeamInstanceUpdates200,
   GithubInstallations,
@@ -2668,6 +2670,96 @@ export const useRecordAlfredUsage = <TError = ErrorType<BadRequestResponse | Una
       > => {
       return useMutation(getRecordAlfredUsageMutationOptions(options));
     }
+
+export const getGetAlfredNotificationsUrl = (id: number,
+    params?: GetAlfredNotificationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/alfred/sessions/${id}/notifications?${stringifiedParams}` : `/api/alfred/sessions/${id}/notifications`
+}
+
+/**
+ * Sola lettura: run di Responsabili richieste tramite Alfred finite e nuove voci in «Da confermare» dell'utente, dopo il cursore `after` (data ISO restituita dalla chiamata precedente) e nell'ultima ora, al più 10 per chiamata in ordine di tempo. Senza `after` risponde solo con il cursore iniziale. Non aggiorna l'attività della sessione. Limite: 30 al minuto per utente.
+ * @summary Novità per la sessione vocale di Alfred
+ */
+export const getAlfredNotifications = async (id: number,
+    params?: GetAlfredNotificationsParams, options?: RequestInit): Promise<AlfredNotifications> => {
+
+  return customFetch<AlfredNotifications>(getGetAlfredNotificationsUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAlfredNotificationsQueryKey = (id: number,
+    params?: GetAlfredNotificationsParams,) => {
+    return [
+    `/api/alfred/sessions/${id}/notifications`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAlfredNotificationsQueryOptions = <TData = Awaited<ReturnType<typeof getAlfredNotifications>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>>(id: number,
+    params?: GetAlfredNotificationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAlfredNotifications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAlfredNotificationsQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAlfredNotifications>>> = ({ signal }) => getAlfredNotifications(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAlfredNotifications>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAlfredNotificationsQueryResult = NonNullable<Awaited<ReturnType<typeof getAlfredNotifications>>>
+export type GetAlfredNotificationsQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>
+
+
+/**
+ * @summary Novità per la sessione vocale di Alfred
+ */
+
+export function useGetAlfredNotifications<TData = Awaited<ReturnType<typeof getAlfredNotifications>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>>(
+ id: number,
+    params?: GetAlfredNotificationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAlfredNotifications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAlfredNotificationsQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getCloseAlfredSessionUrl = (id: number,) => {
 

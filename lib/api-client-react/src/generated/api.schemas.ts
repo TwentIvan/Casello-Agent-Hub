@@ -314,6 +314,44 @@ export interface AlfredToolResult {
   error?: string;
 }
 
+export interface AlfredNotificationItem {
+  numero: number;
+  tipo: string;
+  sintesi: string;
+}
+
+export type AlfredNotificationKind = typeof AlfredNotificationKind[keyof typeof AlfredNotificationKind];
+
+
+export const AlfredNotificationKind = {
+  lead_run: 'lead_run',
+  queue_item: 'queue_item',
+} as const;
+
+export interface AlfredNotification {
+  kind: AlfredNotificationKind;
+  at: string;
+  run?: number;
+  /** @nullable */
+  app?: string | null;
+  status?: string;
+  /** @nullable */
+  output?: string | null;
+  /** @nullable */
+  error?: string | null;
+  items?: AlfredNotificationItem[];
+  numero?: number;
+  tipo?: string;
+  /** @nullable */
+  squadra?: string | null;
+  sintesi?: string;
+}
+
+export interface AlfredNotifications {
+  cursor: string;
+  events: AlfredNotification[];
+}
+
 export interface AppInput {
   /** @minLength 1 */
   name: string;
@@ -3639,6 +3677,10 @@ export type CharacterQueryParameter = MemoryCharacter;
 
 export type GetEmbedConfigParams = {
 origin?: string;
+};
+
+export type GetAlfredNotificationsParams = {
+after?: string;
 };
 
 export type ListAgentsParams = {

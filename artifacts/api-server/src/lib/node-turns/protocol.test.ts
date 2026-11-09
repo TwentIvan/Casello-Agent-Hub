@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, nodesTable, nodeTurnsTable, pool } from "@workspace/db";
 import { queueSample, seedNodeTurnSetup, type NodeTurnSetup } from "../../../test/node-turn-fixture";
-import { claimTurn, pingTurn, reportTurn } from "./protocol";
+import { claimTurn, pingTurn, reportTurn, turnPollSettings } from "./protocol";
 import { cancelTurn, turnByToken, waitTurn } from "./queue";
 
 // Protocollo del nodo per i turni: presa con attesa, rinnovo della lease e report.
@@ -69,6 +69,21 @@ describe("claimTurn", () => {
     const { turnId } = await queueSample(setup);
     expect((await claiming)?.id).toBe(turnId);
     expect(Date.now() - start).toBeLessThan(4_000);
+  });
+
+  it("un turno accodato tra la prima ricerca e l'attesa non si perde", async () => {
+    let queued: number | undefined;
+    turnPollSettings.afterFirstAttempt = async () => {
+      queued = (await queueSample(setup)).turnId;
+    };
+    try {
+      const start = Date.now();
+      const pkg = await claimTurn(setup.nodeId, 3_000);
+      expect(pkg?.id).toBe(queued);
+      expect(Date.now() - start).toBeLessThan(1_000);
+    } finally {
+      delete turnPollSettings.afterFirstAttempt;
+    }
   });
 
   it("un signal annullato interrompe l'attesa", async () => {

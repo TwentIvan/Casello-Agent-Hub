@@ -103,25 +103,47 @@ export function forgetPendingToken(turnId: number, tokenHash?: string): void {
   pendingHashes.delete(turnId);
 }
 
-/** Attende un avviso per il nodo (turno accodato) fino a `ms`; false se scaduto o annullato. */
-export function waitForNodeSignal(nodeId: number, ms: number, signal?: AbortSignal): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (signal?.aborted || ms <= 0) {
-      resolve(false);
-      return;
-    }
-    const done = (woken: boolean) => {
-      clearTimeout(timer);
+export interface NodeSignalSubscription {
+  /** Attende fino a `ms` un avviso (subito vero se è già arrivato dopo l'iscrizione); false se scaduto o annullato. */
+  wait(ms: number, signal?: AbortSignal): Promise<boolean>;
+  /** Toglie l'iscrizione (da chiamare in ogni caso). */
+  close(): void;
+}
+
+/**
+ * Iscrizione agli avvisi del nodo (turno accodato), da fare PRIMA di cercare un turno: un turno accodato tra la ricerca
+ * e l'attesa non va perso.
+ */
+export function subscribeNodeSignal(nodeId: number): NodeSignalSubscription {
+  let fired = false;
+  let wake: (() => void) | null = null;
+  const onEvent = () => {
+    fired = true;
+    wake?.();
+  };
+  events.on(nodeEvent(nodeId), onEvent);
+  return {
+    wait(ms, signal) {
+      return new Promise((resolve) => {
+        if (fired) return resolve(true);
+        if (signal?.aborted || ms <= 0) return resolve(false);
+        const done = (woken: boolean) => {
+          clearTimeout(timer);
+          wake = null;
+          signal?.removeEventListener("abort", onAbort);
+          resolve(woken);
+        };
+        const onAbort = () => done(false);
+        const timer = setTimeout(() => done(false), ms);
+        wake = () => done(true);
+        signal?.addEventListener("abort", onAbort, { once: true });
+      });
+    },
+    close() {
       events.off(nodeEvent(nodeId), onEvent);
-      signal?.removeEventListener("abort", onAbort);
-      resolve(woken);
-    };
-    const onEvent = () => done(true);
-    const onAbort = () => done(false);
-    const timer = setTimeout(() => done(false), ms);
-    events.once(nodeEvent(nodeId), onEvent);
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
+      wake = null;
+    },
+  };
 }
 
 /** Dopo il commit di una chiusura: risolve le attese e dimentica i token mai consegnati. */

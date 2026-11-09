@@ -8,7 +8,7 @@ import { db, nodesTable, nodeTurnsTable, type NodeTurn } from "@workspace/db";
 import { NODE_PROTOCOL_MESSAGES, NodeError } from "../nodes/protocol";
 import { oauthBase } from "../oauth/config";
 import { normalizeErrorCode } from "./messages";
-import { forgetPendingToken, notifyTurnsClosed, pendingToken, waitForNodeSignal, type TurnPackageBody } from "./queue";
+import { forgetPendingToken, notifyTurnsClosed, pendingToken, subscribeNodeSignal, type TurnPackageBody } from "./queue";
 
 /** Attesa massima della presa senza turni in coda. */
 export const TURN_POLL_WAIT_MS = 25_000;
@@ -17,8 +17,11 @@ export const TURN_LEASE_MS = 2 * 60_000;
 /** Lunghezza massima della risposta riferita (oltre si tronca). */
 export const MAX_TURN_CONTENT = 20_000;
 
-/** Attesa della presa usata dalla route (i test la accorciano). */
-export const turnPollSettings = { waitMs: TURN_POLL_WAIT_MS };
+/**
+ * Attesa della presa usata dalla route (i test la accorciano). `afterFirstAttempt`, solo per i test, gira tra la prima
+ * ricerca andata a vuoto e l'attesa.
+ */
+export const turnPollSettings: { waitMs: number; afterFirstAttempt?: () => Promise<void> } = { waitMs: TURN_POLL_WAIT_MS };
 
 export interface TurnPackage extends TurnPackageBody {
   id: number;
@@ -120,11 +123,18 @@ export async function claimTurn(nodeId: number, waitMs: number = TURN_POLL_WAIT_
     .returning({ id: nodesTable.id });
   if (!node) throw new NodeError(403, NODE_PROTOCOL_MESSAGES.disabled);
   if (signal?.aborted) return null;
-  const first = await claimOnce(nodeId);
-  if (first || waitMs <= 0) return first;
-  await waitForNodeSignal(nodeId, waitMs, signal);
-  if (signal?.aborted) return null;
-  return claimOnce(nodeId);
+  // Iscrizione prima della ricerca: un turno accodato tra la ricerca e l'attesa sveglia subito la presa
+  const subscription = subscribeNodeSignal(nodeId);
+  try {
+    const first = await claimOnce(nodeId);
+    if (first || waitMs <= 0) return first;
+    await turnPollSettings.afterFirstAttempt?.();
+    await subscription.wait(waitMs, signal);
+    if (signal?.aborted) return null;
+    return await claimOnce(nodeId);
+  } finally {
+    subscription.close();
+  }
 }
 
 /** Rinnova di TURN_LEASE_MS la lease del turno; turno chiuso, annullato, lease diversa o scaduta → 409. */

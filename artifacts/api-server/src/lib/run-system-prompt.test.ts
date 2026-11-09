@@ -19,3 +19,12 @@ describe("buildSystemPrompt", () => {
     expect(text).toContain("Oggi è martedì 10 novembre 2026, ore 00:30 (ora italiana).");
   });
 });
+
+describe("runLimitsFor", () => {
+  it("il Responsabile (general) ha limiti più ampi, gli agenti di area quelli di sempre", async () => {
+    const { runLimitsFor, PRODUCT_LEAD_LIMITS } = await import("./run-executor");
+    expect(runLimitsFor({ role: "general" })).toEqual({ maxRounds: 12, maxActiveMs: 180_000, maxTokens: 200_000 });
+    expect(PRODUCT_LEAD_LIMITS.maxTokens).toBe(200_000);
+    expect(runLimitsFor({ role: "area" })).toEqual({});
+  });
+});

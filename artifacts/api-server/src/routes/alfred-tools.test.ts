@@ -522,5 +522,6 @@ describe("istruzioni di Alfred a voce", () => {
     expect(t).toContain("chiedi_al_responsabile");
     expect(t).toContain("elenca_app");
     expect(t).toContain("non ricorda le richieste precedenti");
+    expect(t).toContain("Ogni Responsabile agisce solo sulla sua App");
   });
 });

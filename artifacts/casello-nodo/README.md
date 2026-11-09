@@ -58,18 +58,23 @@ chiamato strumenti nel turno (altrimenti il turno fallisce: rifarlo duplicherebb
 - Ciclo separato da quello dei compiti: tiene un claim in attesa (long-poll) finché ha un posto libero, fino a
   `maxConcurrentTurns` turni insieme (config, 1..4, default 2). Errore di rete: riprova dopo 5 s; nodo disattivato: ogni 30 s.
 - Per ogni turno crea una cartella vuota in `~/.casello-nodo/turns/` (700) con `mcp.json` (600, contiene il token del turno,
-  valido solo per quel turno) e lancia, con il prompt su stdin e in un gruppo di processi proprio:
+  valido solo per quel turno) e `system-prompt.md` (600, le istruzioni del turno) e lancia, con il prompt su stdin, la
+  cartella come cwd e in un gruppo di processi proprio:
 
   ```
-  claude -p --output-format json --model <modello> --system-prompt <istruzioni> --tools "" \
-    --strict-mcp-config --mcp-config <cartella>/mcp.json --allowedTools "mcp__botcave__*" \
-    --max-turns <n> --permission-mode dontAsk
+  claude -p --output-format json --model <modello> --system-prompt-file <cartella>/system-prompt.md \
+    --setting-sources project --tools "" --strict-mcp-config --mcp-config <cartella>/mcp.json \
+    --allowedTools "mcp__botcave__*" --max-turns <n> --permission-mode dontAsk
   ```
 
-  `claude` non ha strumenti propri né altri server MCP: può solo chiamare gli strumenti del turno su Botcave. La modalità
-  `dontAsk` è fissa e non dipende da `permissionMode` (che vale solo per i compiti). La cartella si cancella a fine turno,
-  anche in caso di errore.
-- Ping della lease ogni 30 s; al timeout del turno `claude` riceve SIGTERM e dopo 10 s SIGKILL. Una lease persa (409, 401,
+  `claude` non ha strumenti propri né altri server MCP: può solo chiamare gli strumenti del turno su Botcave. Con
+  `--setting-sources project` e la cartella vuota come cwd le tue impostazioni personali di Claude Code (hook, permessi,
+  plugin) non entrano nel turno; il login resta quello del Mac. Le istruzioni passano da un file, non dagli argomenti
+  (visibili con `ps`). La modalità `dontAsk` è fissa e non dipende da `permissionMode` (che vale solo per i compiti). La
+  cartella si cancella a fine turno, anche in caso di errore; all'avvio il nodo toglie tutta `~/.casello-nodo/turns/`
+  (resti di un arresto improvviso).
+- Ping della lease ogni 30 s (tengono il nodo «pronto per i turni» anche quando tutti i posti sono occupati e non fa
+  claim); al timeout del turno `claude` riceve SIGTERM e dopo 10 s SIGKILL. Una lease persa (409, 401,
   403) termina `claude` senza report. Allo stop del nodo i turni in corso riferiscono `stopped`.
 - Il testo dell'errore di `claude` serve solo a scegliere il codice e non viene mai inviato; la risposta si invia troncata a
   20 000 caratteri. Nei log: id del turno, modello, durata ed esito; mai prompt, risposta né token del turno.

@@ -43,17 +43,21 @@ export interface TurnContext {
 
 /**
  * Argomenti di `claude` per un turno: nessuno strumento proprio, solo il server MCP del turno, modalità `dontAsk`
- * fissa (la `permissionMode` della config vale solo per i compiti). Il prompt arriva su stdin.
+ * fissa (la `permissionMode` della config vale solo per i compiti). Il prompt arriva su stdin, il prompt di sistema da
+ * un file (fuori dagli argomenti, visibili con `ps`). `--setting-sources project` con la cartella vuota del turno come
+ * cwd: le impostazioni personali di Claude Code dell'utente del Mac (hook, permessi, plugin) non entrano nel turno.
  */
-export function turnArgs(pkg: TurnPackage, mcpConfigPath: string): string[] {
+export function turnArgs(pkg: TurnPackage, mcpConfigPath: string, systemPromptPath: string): string[] {
   return [
     "-p",
     "--output-format",
     "json",
     "--model",
     pkg.model,
-    "--system-prompt",
-    pkg.systemPrompt,
+    "--system-prompt-file",
+    systemPromptPath,
+    "--setting-sources",
+    "project",
     "--tools",
     "",
     "--strict-mcp-config",
@@ -177,10 +181,12 @@ export async function runTurn(pkg: TurnPackage, ctx: TurnContext): Promise<void>
     dir = await mkdtemp(path.join(ctx.turnsDir, "turno-"));
     const mcpPath = path.join(dir, "mcp.json");
     await writeFile(mcpPath, mcpConfig(pkg), { mode: 0o600 });
+    const systemPromptPath = path.join(dir, "system-prompt.md");
+    await writeFile(systemPromptPath, pkg.systemPrompt, { mode: 0o600 });
 
     const child = await spawnGroup({
       command: ctx.config.claudeBin,
-      args: turnArgs(pkg, mcpPath),
+      args: turnArgs(pkg, mcpPath, systemPromptPath),
       cwd: dir,
       env: childEnv(),
       stdin: pkg.prompt,

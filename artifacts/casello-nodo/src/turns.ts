@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import { HttpError, type CaselloClient, type TurnPackage } from "./client";
 import type { Config } from "./config";
 import type { Logger } from "./log";
@@ -42,7 +43,7 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
- * Ciclo dei turni delegati, indipendente da quello dei compiti: finché c'è un posto libero (`maxConcurrentTurns`) tiene
+ * Ciclo dei turni delegati, indipendente da quello dei compiti: all'avvio toglie la cartella dei turni; finché c'è un posto libero (`maxConcurrentTurns`) tiene
  * esattamente un claim in attesa (long-poll); 204 → subito un altro claim; errore di rete o 5xx → attesa di 5 s;
  * 403 (nodo disattivato) → attesa di 30 s, registrata una volta sola.
  */
@@ -92,6 +93,10 @@ export function startTurnLoop(opts: TurnLoopOptions): TurnLoop {
   }
 
   async function main(): Promise<void> {
+    // Cartelle rimaste da un arresto improvviso (mcp.json con il token di un turno ormai chiuso): via prima del primo claim
+    await rm(opts.turnsDir, { recursive: true, force: true }).catch((err: unknown) =>
+      logger.warn(`turni: cartella dei turni non pulita (${(err as Error).message})`),
+    );
     while (!stopCtl.signal.aborted) {
       if (active.size >= config.maxConcurrentTurns) {
         await freeSlot();

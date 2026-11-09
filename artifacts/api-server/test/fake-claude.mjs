@@ -6,6 +6,7 @@
 //
 // FAKE_CLAUDE_PLAN: {"tool": "<nome>", "arguments": {…}, "result": "<testo finale>"}
 // FAKE_CLAUDE_RECORD (facoltativo): file in cui scrivere ciò che il finto ha visto, per le verifiche del test.
+// FAKE_CLAUDE_DELAY_MS (facoltativo): attesa prima della risposta finale (un turno lungo che tiene occupato il posto).
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -31,6 +32,9 @@ await client.connect(new StreamableHTTPClientTransport(new URL(mcp.url), { reque
 const { tools } = await client.listTools();
 const call = await client.callTool({ name: plan.tool, arguments: plan.arguments ?? {} });
 await client.close();
+const systemPromptFile = flag("--system-prompt-file");
+const systemPrompt = systemPromptFile ? readFileSync(systemPromptFile, "utf8") : null;
+if (process.env.FAKE_CLAUDE_DELAY_MS) await new Promise((r) => setTimeout(r, Number(process.env.FAKE_CLAUDE_DELAY_MS)));
 
 if (process.env.FAKE_CLAUDE_RECORD) {
   writeFileSync(
@@ -38,6 +42,7 @@ if (process.env.FAKE_CLAUDE_RECORD) {
     JSON.stringify({
       args: process.argv.slice(2),
       stdin,
+      systemPrompt,
       mcpType: mcp.type,
       mcpUrl: mcp.url,
       bearerIsTurnToken: /^Bearer cat_/.test(mcp.headers.Authorization ?? ""),

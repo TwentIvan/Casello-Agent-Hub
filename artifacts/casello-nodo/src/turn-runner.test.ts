@@ -67,14 +67,16 @@ const reports = () => casello.calls("POST", "/api/node/turns/5/report").map((r) 
 
 describe("turnArgs", () => {
   it("argomenti fissi, permission-mode dontAsk, prompt non tra gli argomenti", () => {
-    expect(turnArgs(pkg(), "/tmp/x/mcp.json")).toEqual([
+    expect(turnArgs(pkg(), "/tmp/x/mcp.json", "/tmp/x/system-prompt.md")).toEqual([
       "-p",
       "--output-format",
       "json",
       "--model",
       "sonnet",
-      "--system-prompt",
-      "Sei Alfred",
+      "--system-prompt-file",
+      "/tmp/x/system-prompt.md",
+      "--setting-sources",
+      "project",
       "--tools",
       "",
       "--strict-mcp-config",
@@ -122,12 +124,17 @@ describe("runTurn", () => {
     const calls: SpawnCall[] = [];
     let mcp = "";
     let mode = 0;
+    let systemPrompt = "";
+    let systemMode = 0;
     const inner = fakeSpawn("turn", calls);
     const c = ctx("turn", calls, {
       spawn: (cmd: string, args: readonly string[], opts: SpawnOptions): ChildProcess => {
         const file = args[args.indexOf("--mcp-config") + 1];
         mcp = readFileSync(file, "utf8");
         mode = statSync(file).mode & 0o777;
+        const promptFile = args[args.indexOf("--system-prompt-file") + 1];
+        systemPrompt = readFileSync(promptFile, "utf8");
+        systemMode = statSync(promptFile).mode & 0o777;
         expect(statSync(path.dirname(file)).mode & 0o777).toBe(0o700);
         return inner(cmd, args, opts);
       },
@@ -139,6 +146,9 @@ describe("runTurn", () => {
       },
     });
     expect(mode).toBe(0o600);
+    expect(systemPrompt).toBe("Sei Alfred");
+    expect(systemMode).toBe(0o600);
+    expect(calls[0].args).not.toContain("Sei Alfred");
     expect(calls[0].args).not.toContain("[utente] ciao");
     expect(calls[0].args).toContain("dontAsk");
     expect(reports()).toEqual([

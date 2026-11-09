@@ -1,4 +1,5 @@
-import { readdir } from "node:fs/promises";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CaselloClient, type TurnPackage } from "./client";
@@ -68,6 +69,22 @@ const claims = () => casello.calls("POST", "/api/node/turns/claim");
 const reports = () => casello.requests.filter((r) => r.method === "POST" && r.path.endsWith("/report"));
 
 describe("startTurnLoop", () => {
+  it("all'avvio toglie la cartella dei turni rimasta da un arresto improvviso, prima del primo claim", async () => {
+    const leftover = path.join(base, "turns", "turno-vecchio");
+    await mkdir(leftover, { recursive: true });
+    await writeFile(path.join(leftover, "mcp.json"), "{\"token\":\"cat_vecchio\"}");
+    let dirAtClaim: boolean | null = null;
+    casello.on("POST", "/api/node/turns/claim", async (_req, res) => {
+      dirAtClaim ??= existsSync(leftover);
+      await new Promise((r) => setTimeout(r, 50));
+      json(res, 204);
+    });
+    start("turn");
+    await waitFor(() => claims().length > 0);
+    expect(dirAtClaim).toBe(false);
+    expect(existsSync(path.join(base, "turns"))).toBe(false);
+  });
+
   it("con maxConcurrentTurns 2 e tre turni disponibili ne esegue al più due insieme", async () => {
     const queue = [pkg(1), pkg(2), pkg(3)];
     casello.on("POST", "/api/node/turns/claim", async (_req, res) => {

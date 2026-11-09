@@ -29,12 +29,13 @@ import { startTurnLoop, type TurnLoop } from "../../casello-nodo/src/turns";
 import { encryptSecret } from "../src/lib/secrets";
 import { logger as apiLogger } from "../src/lib/logger";
 import { seedNodeTurnSetup, type NodeTurnSetup } from "./node-turn-fixture";
+import { sweepNodeTurns } from "../src/lib/node-turns/sweeper";
 
 // Prova di flusso dei turni delegati (spec §11 «Flusso»): API vera in memoria (PGlite) su una porta locale e il ciclo
 // dei turni VERO di casello-nodo, con `claudeBin` = fake-claude.mjs che si collega davvero a /mcp/turn con il client MCP.
 // Il caso con il `claude` vero (modello haiku, account del Mac) parte solo con CASELLO_REAL_CLAUDE=1.
 
-const ENV_KEYS = ["AUTH_DISABLED", "ALLOWED_EMAILS", "CASELLO_SECRET_KEY", "PUBLIC_APP_URL", "FAKE_CLAUDE_PLAN", "FAKE_CLAUDE_RECORD"];
+const ENV_KEYS = ["AUTH_DISABLED", "ALLOWED_EMAILS", "CASELLO_SECRET_KEY", "PUBLIC_APP_URL", "FAKE_CLAUDE_PLAN", "FAKE_CLAUDE_RECORD", "FAKE_CLAUDE_DELAY_MS"];
 const saved: Record<string, string | undefined> = {};
 const FAKE_CLAUDE = fileURLToPath(new URL("./fake-claude.mjs", import.meta.url));
 const REAL_CLAUDE = process.env["CASELLO_REAL_CLAUDE"] === "1";
@@ -70,7 +71,7 @@ async function until<T>(what: string, fn: () => Promise<T | null | undefined | f
 }
 
 /** Avvia il ciclo dei turni di casello-nodo e attende che il nodo risulti pronto (un claim in corso). */
-async function startNode(claudeBin: string): Promise<void> {
+async function startNode(claudeBin: string, opts: { maxConcurrentTurns?: number; pingIntervalMs?: number } = {}): Promise<void> {
   const collect = (level: string) => (m: string) => nodeLog.push(`${level} ${m}`);
   const logger: Logger = { info: collect("info"), warn: collect("warn"), error: collect("error") };
   const config: Config = {
@@ -81,11 +82,11 @@ async function startNode(claudeBin: string): Promise<void> {
     permissionMode: "bypassPermissions",
     skillsDirs: [],
     maxConcurrent: 1,
-    maxConcurrentTurns: 2,
+    maxConcurrentTurns: opts.maxConcurrentTurns ?? 2,
     taskTimeoutMinutes: 60,
   };
   const client = new CaselloClient({ baseUrl: base, token: setup.nodeToken });
-  loop = startTurnLoop({ config, client, logger, turnsDir: path.join(tmp, "turns"), errorWaitMs: 200 });
+  loop = startTurnLoop({ config, client, logger, turnsDir: path.join(tmp, "turns"), errorWaitMs: 200, pingIntervalMs: opts.pingIntervalMs });
   await until("nodo pronto per i turni", async () => {
     const [n] = await db.select({ at: nodesTable.lastTurnPollAt }).from(nodesTable).where(eq(nodesTable.id, setup.nodeId));
     return n?.at ?? null;
@@ -95,6 +96,7 @@ async function startNode(claudeBin: string): Promise<void> {
 async function readRecord(): Promise<{
   args: string[];
   stdin: string;
+  systemPrompt: string | null;
   mcpType: string;
   mcpUrl: string;
   bearerIsTurnToken: boolean;
@@ -168,6 +170,7 @@ beforeEach(async () => {
   setup = await seedNodeTurnSetup("dev@localhost", "Mac di Ivan");
   tmp = await mkdtemp(path.join(tmpdir(), "casello-flusso-"));
   process.env["FAKE_CLAUDE_RECORD"] = path.join(tmp, "record.json");
+  delete process.env["FAKE_CLAUDE_DELAY_MS"];
   nodeLog = [];
   turnToolCalls = [];
   // /mcp/turn registra nome dello strumento ed esito (mai argomenti né token): basta per sapere cosa ha chiamato Claude
@@ -221,7 +224,10 @@ describe("turni delegati al nodo: flusso completo con il ciclo di casello-nodo",
     expect(rec.stdin).toContain("[utente]\nMigliora il prompt dell'agente");
     expect(argAfter(rec.args, "--model")).toBe("sonnet");
     expect(argAfter(rec.args, "--max-turns")).toBe("7");
-    expect(argAfter(rec.args, "--system-prompt")).toContain("mcp__botcave__");
+    // Prompt di sistema da file (fuori dagli argomenti) e nessuna impostazione personale di Claude Code
+    expect(rec.systemPrompt).toContain("mcp__botcave__");
+    expect(rec.args).not.toContain("--system-prompt");
+    expect(argAfter(rec.args, "--setting-sources")).toBe("project");
     expect(turnToolCalls).toEqual(["proponi_prompt_agente"]);
 
     const [turn] = await db.select().from(nodeTurnsTable);
@@ -261,6 +267,50 @@ describe("turni delegati al nodo: flusso completo con il ciclo di casello-nodo",
     expect(steps.find((s) => s.type === "model")?.note).toBe("Claude Code sul nodo «Mac di Ivan»");
     const [turn] = await db.select().from(nodeTurnsTable).where(and(eq(nodeTurnsTable.consumer, "run"), eq(nodeTurnsTable.refId, started.json.id)));
     expect(turn).toMatchObject({ status: "done", package: null });
+  });
+
+  it("nodo con un posto occupato: il secondo turno attende in coda oltre 20 s, il nodo resta pronto con i ping e poi lo esegue", async () => {
+    const { agentId } = await seedApp([]);
+    await db.update(usersTable).set({ luciusAiModelId: setup.aiModelId }).where(eq(usersTable.id, setup.userId));
+    process.env["FAKE_CLAUDE_PLAN"] = JSON.stringify({ tool: "leggi_agente", arguments: {}, result: "Ho letto l'agente." });
+    process.env["FAKE_CLAUDE_DELAY_MS"] = "1500";
+    await startNode(FAKE_CLAUDE, { maxConcurrentTurns: 1, pingIntervalMs: 200 });
+
+    const convs: number[] = [];
+    for (let i = 0; i < 2; i++) {
+      const conv = await api("POST", "/character-conversations", { character: "lucius", subjectType: "agent", subjectId: String(agentId) });
+      expect(conv.status, conv.text).toBe(201);
+      convs.push(conv.json.id);
+    }
+    for (const id of convs) {
+      const sent = await api("POST", `/character-conversations/${id}/messages`, { content: "Leggi l'agente" });
+      expect(sent.status, sent.text).toBe(202);
+    }
+    await until("un turno in corso e uno in coda", async () => {
+      const rows = await db.select({ status: nodeTurnsTable.status }).from(nodeTurnsTable);
+      const statuses = rows.map((r) => r.status).sort();
+      return statuses.join() === "queued,running";
+    });
+    // Senza claim (posto pieno) il nodo resta pronto grazie ai ping del turno in corso
+    const stale = new Date(Date.now() - 5 * 60_000);
+    await db.update(nodesTable).set({ lastTurnPollAt: stale }).where(eq(nodesTable.id, setup.nodeId));
+    await until("presenza aggiornata dal ping", async () => {
+      const [n] = await db.select({ at: nodesTable.lastTurnPollAt }).from(nodesTable).where(eq(nodesTable.id, setup.nodeId));
+      return n!.at!.getTime() > stale.getTime() + 60_000;
+    });
+    // Oltre 20 s dall'accodamento: su un nodo occupato il turno in coda non scade
+    await sweepNodeTurns(new Date(Date.now() + 21_000), { purge: false });
+    expect((await db.select().from(nodeTurnsTable)).map((t) => t.status).sort()).toEqual(["queued", "running"]);
+
+    for (const id of convs) {
+      await until("turno chiuso", async () => {
+        const r = await api("GET", `/character-conversations/${id}`);
+        return r.json?.turnStatus === "idle" ? r.json : null;
+      });
+      const messages = await db.select().from(characterMessagesTable).where(eq(characterMessagesTable.conversationId, id)).orderBy(characterMessagesTable.id);
+      expect(messages.at(-1)).toMatchObject({ role: "assistant", error: false, content: "Ho letto l'agente." });
+    }
+    expect((await db.select().from(nodeTurnsTable)).map((t) => t.status)).toEqual(["done", "done"]);
   });
 
   it.runIf(REAL_CLAUDE)(

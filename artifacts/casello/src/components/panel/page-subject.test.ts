@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { handoffTarget, pageFromPath } from "./page-subject";
+import { handoffTarget, pageFromPath, targetLabel } from "./page-subject";
 
 describe("pageFromPath", () => {
   it("mappa le pagine note", () => {
@@ -42,5 +42,20 @@ describe("handoffTarget", () => {
   it("destinatario sconosciuto o payload nullo", () => {
     expect(handoffTarget({ to: "bob" }, page)).toBeNull();
     expect(handoffTarget(null, page)).toBeNull();
+  });
+});
+
+describe("targetLabel", () => {
+  it("piano e squadra", () => {
+    expect(targetLabel({ kind: "plan", appId: 1 })).toBe("piano dell'app");
+    expect(targetLabel({ kind: "team", instanceId: 2, closed: false })).toBe("chat della squadra");
+  });
+  it("argomento di Lucius con e senza titolo", () => {
+    expect(targetLabel({ kind: "character", subjectType: "area_skills", subjectId: null, title: "" })).toBe("Area Skill");
+    expect(targetLabel({ kind: "character", subjectType: "agent", subjectId: "9", title: "Smistatore" })).toBe("Agente · Smistatore");
+    // Il titolo della pagina ha già il prefisso: non si ripete
+    expect(targetLabel({ kind: "character", subjectType: "agent", subjectId: "9", title: "Agente · Smistatore" })).toBe(
+      "Agente · Smistatore",
+    );
   });
 });

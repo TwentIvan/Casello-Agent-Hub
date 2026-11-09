@@ -1,15 +1,15 @@
-// Scheda «Alfred» del pannello: il filo scritto di Alfred (lo stesso della console) con il contesto della pagina ospite,
-// e il microfono per parlargli a voce dentro il pannello (use-alfred-voice.ts, una sessione attiva per utente). La voce
-// la tiene la Shell (`voice`): la scheda la mostra soltanto, così cambiare scheda non chiude la sessione.
-import { useMemo } from "react";
+// Scheda «Alfred» del pannello: il filo scritto di Alfred con il contesto della pagina (console o app ospite) e il
+// microfono per parlargli a voce (use-alfred-voice.ts, una sessione attiva per utente). La voce la tiene
+// AlfredVoiceProvider: la scheda la mostra soltanto, così cambiare scheda o chiudere il pannello non la ferma.
 import { Mic, Square } from "lucide-react";
 import { AlfredTranscript } from "@/components/alfred/alfred-transcript";
 import type { AlfredStatus, AlfredVoice } from "@/components/alfred/use-alfred-voice";
 import { Led, type LedState } from "@/components/brand/led";
 import { CharacterChat } from "@/components/characters/character-chat";
 import { Button } from "@/components/ui/button";
-import type { HostContextMsg } from "../protocol";
-import { alfredPageContext, consoleUrl } from "../panel-helpers";
+import { usePanel } from "../panel-context";
+import { PanelLink } from "../panel-link";
+import { useSharedAlfredVoice } from "../voice-context";
 
 const STATUS: Record<AlfredStatus, [string, LedState]> = {
   stopped: ["Voce ferma", "idle"],
@@ -18,7 +18,7 @@ const STATUS: Record<AlfredStatus, [string, LedState]> = {
   speaking: ["Alfred parla", "work"],
 };
 
-function AlfredVoiceBar({ voice }: { voice: AlfredVoice }) {
+function AlfredVoiceBar({ voice, fullScreenLink }: { voice: AlfredVoice; fullScreenLink: boolean }) {
   const { status, error, lines, start, stop } = voice;
   const running = status !== "stopped";
   return (
@@ -33,6 +33,11 @@ function AlfredVoiceBar({ voice }: { voice: AlfredVoice }) {
           {running ? <Square /> : <Mic />}
           {running ? "Basta così" : "Parla con Alfred"}
         </Button>
+        {fullScreenLink && (
+          <PanelLink path="/alfred" className="shrink-0 text-body-sm text-accent-text underline underline-offset-2">
+            A tutto schermo
+          </PanelLink>
+        )}
         <span aria-live="polite" className="min-w-0 truncate">
           <Led state={STATUS[status][1]} label={STATUS[status][0]} />
         </span>
@@ -43,14 +48,9 @@ function AlfredVoiceBar({ voice }: { voice: AlfredVoice }) {
           {error.kind === "model" && (
             <>
               {" "}
-              <a
-                href={consoleUrl(window.location.origin, "/account")}
-                target="_blank"
-                rel="noopener"
-                className="text-accent-text underline underline-offset-2"
-              >
+              <PanelLink path="/account" className="text-accent-text underline underline-offset-2">
                 Apri Account in Botcave
-              </a>
+              </PanelLink>
             </>
           )}
         </p>
@@ -64,21 +64,22 @@ function AlfredVoiceBar({ voice }: { voice: AlfredVoice }) {
   );
 }
 
-export function AlfredTab({
-  appSlug,
-  hostContext,
-  voice,
-}: {
-  appSlug: string;
-  hostContext: HostContextMsg | null;
-  voice: AlfredVoice;
-}) {
-  const page = useMemo(() => alfredPageContext(appSlug, hostContext), [appSlug, hostContext]);
+export function AlfredTab() {
+  const { state, env, alfredPage, hasUnsavedChanges } = usePanel();
+  const voice = useSharedAlfredVoice();
+  const draft = state.draft?.tab === "alfred" ? state.draft.text : undefined;
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <AlfredVoiceBar voice={voice} />
+      {/* Nell'iframe /alfred si aprirebbe in un'altra scheda, senza la voce in corso: solo nella console */}
+      <AlfredVoiceBar voice={voice} fullScreenLink={env.surface === "console"} />
       <div className="min-h-0 flex-1">
-        <CharacterChat target={{ kind: "alfred", page }} layout="sheet" />
+        <CharacterChat
+          key={state.nonce}
+          target={{ kind: "alfred", page: alfredPage }}
+          draft={draft}
+          hasUnsavedChanges={hasUnsavedChanges}
+          layout="sheet"
+        />
       </div>
     </div>
   );

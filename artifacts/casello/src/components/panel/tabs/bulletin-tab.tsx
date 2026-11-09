@@ -1,5 +1,5 @@
 // Scheda «Bollettino» del pannello: eventi non letti delle squadre dell'utente, con la voce della console
-// (TeamEventItem), «Segna come letti» e il collegamento alla scheda squadra nella console (nuova scheda).
+// (TeamEventItem), «Segna come letti» e il collegamento alla scheda squadra (PanelLink: nell'iframe in una nuova scheda).
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getListTeamInstancesQueryKey,
@@ -14,12 +14,16 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { consoleUrl } from "../panel-helpers";
+import { usePanel } from "../panel-context";
+import { PanelLink } from "../panel-link";
 
 const PARAMS = { unread: true } as const;
 const REFRESH_MS = 30_000;
 
 export function BulletinTab() {
+  const { env } = usePanel();
+  // Nella console il collegamento resta nella stessa scheda del browser
+  const linkSuffix = env.surface === "console" ? "Apri la squadra" : "Apri in Botcave";
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const events = useListUnreadTeamEvents(PARAMS, {
@@ -36,7 +40,6 @@ export function BulletinTab() {
         toast({ variant: "destructive", title: "Eventi non segnati", description: apiErrorMessage(error) }),
     },
   });
-  const origin = window.location.origin;
 
   return (
     <div className="min-w-0 space-y-3 p-3">
@@ -66,14 +69,12 @@ export function BulletinTab() {
               key={e.id}
               event={e}
               footer={
-                <a
-                  href={consoleUrl(origin, `/teams/${e.instanceId}`)}
-                  target="_blank"
-                  rel="noopener"
+                <PanelLink
+                  path={`/teams/${e.instanceId}`}
                   className="mt-1.5 inline-block max-w-full truncate text-caption text-accent-text underline underline-offset-2"
                 >
-                  {teamName.get(e.instanceId) ?? `Squadra ${e.instanceId}`} · Apri in Botcave
-                </a>
+                  {teamName.get(e.instanceId) ?? `Squadra ${e.instanceId}`} · {linkSuffix}
+                </PanelLink>
               }
             />
           ))}

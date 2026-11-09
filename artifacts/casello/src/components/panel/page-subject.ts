@@ -45,3 +45,22 @@ export function handoffTarget(payload: Record<string, unknown> | null, currentPa
   }
   return null;
 }
+
+/** Etichetta di un argomento di Lucius per «Torna a…». */
+export function targetLabel(target: ChatTarget): string {
+  switch (target.kind) {
+    case "alfred":
+      return "Alfred";
+    case "plan":
+      return "piano dell'app";
+    case "team":
+      return "chat della squadra";
+    case "character": {
+      const label = SUBJECT_LABELS[target.subjectType];
+      const title = target.title.trim();
+      if (!title) return label;
+      // Il titolo dato dalle pagine ha già il prefisso (es. «Agente · Nome»)
+      return title.startsWith(label) ? title : `${label} · ${title}`;
+    }
+  }
+}

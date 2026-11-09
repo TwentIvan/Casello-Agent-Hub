@@ -1,19 +1,13 @@
-// Contenuto delle quattro schede del pannello incorporato: Alfred, Da confermare, Bollettino, Lucius (in tabs/).
+// Contenuto delle quattro schede del pannello incorporato. Temporaneo: le schede stanno in components/panel/tabs/ e
+// leggono tutto da usePanel(); il PanelProvider lo monta il Task 4, che elimina questo file.
 import type { AlfredVoice } from "@/components/alfred/use-alfred-voice";
+import { AlfredTab } from "@/components/panel/tabs/alfred-tab";
+import { BulletinTab } from "@/components/panel/tabs/bulletin-tab";
+import { LuciusTab } from "@/components/panel/tabs/lucius-tab";
+import { PendingTab } from "@/components/panel/tabs/pending-tab";
 import type { EmbedTab, HostContextMsg } from "./protocol";
-import { AlfredTab } from "./tabs/alfred-tab";
-import { BulletinTab } from "./tabs/bulletin-tab";
-import { LuciusTab } from "./tabs/lucius-tab";
-import { PendingTab } from "./tabs/pending-tab";
 
-export const TAB_LABELS: Record<EmbedTab, string> = {
-  alfred: "Alfred",
-  pending: "Da confermare",
-  bulletin: "Bollettino",
-  lucius: "Lucius",
-};
-
-export const TAB_ORDER: readonly EmbedTab[] = ["alfred", "pending", "bulletin", "lucius"];
+export { TAB_LABELS, TAB_ORDER } from "@/components/panel/tabs";
 
 export type TabContentProps = {
   tab: EmbedTab;
@@ -27,15 +21,15 @@ export type TabContentProps = {
   voice: AlfredVoice;
 };
 
-export function TabContent({ tab, appSlug, appName, hostContext, voice }: TabContentProps) {
+export function TabContent({ tab }: TabContentProps) {
   switch (tab) {
     case "alfred":
-      return <AlfredTab appSlug={appSlug} hostContext={hostContext} voice={voice} />;
+      return <AlfredTab />;
     case "pending":
       return <PendingTab />;
     case "bulletin":
       return <BulletinTab />;
     case "lucius":
-      return <LuciusTab appSlug={appSlug} appName={appName} />;
+      return <LuciusTab />;
   }
 }

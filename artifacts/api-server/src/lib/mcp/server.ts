@@ -14,6 +14,7 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { LEAD_REQUEST_MAX, askProductLead, listLeadApps, readLeadRun } from "../product-leads";
 import { logger } from "../logger";
 import { rateLimit } from "../../middlewares/rate-limit";
 import {
@@ -317,6 +318,45 @@ function registerCentralinoTools(server: McpServer, userId: number, scopes: read
       annotations: { readOnlyHint: true },
     },
     () => run("coda_da_confermare", () => pendingQueue(userId)),
+  );
+
+  server.registerTool(
+    "elenca_app",
+    {
+      description: "App con un Responsabile di prodotto che puoi interpellare: slug, nome e una riga di descrizione.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    () => run("elenca_app", () => listLeadApps(userId)),
+  );
+
+  server.registerTool(
+    "chiedi_al_responsabile",
+    {
+      description:
+        "Passa una richiesta completa al Responsabile di prodotto di un'App e attende fino a 25 secondi l'esito: risposta, errore e voci create in «Da confermare». Le sue scritture restano in coda. Serve un token con l'ambito api:write.",
+      inputSchema: {
+        richiesta: z.string().min(1).max(LEAD_REQUEST_MAX).describe("La richiesta completa, al massimo 4 000 caratteri"),
+        app: z.string().min(1).max(100).optional().describe("Slug o nome dell'App (da elenca_app); se manca vale Botcave"),
+      },
+    },
+    ({ richiesta, app }) =>
+      canDecide ? run("chiedi_al_responsabile", () => askProductLead(userId, { richiesta, app })) : scopeError(),
+  );
+
+  server.registerTool(
+    "leggi_run",
+    {
+      description: "Stato, esito, errore, costo e voci create di una run dell'utente; senza id, l'ultima richiesta passata a un Responsabile.",
+      inputSchema: { id: z.number().int().positive().optional().describe("Id della run; se manca, l'ultima richiesta a un Responsabile") },
+      annotations: { readOnlyHint: true },
+    },
+    ({ id }) =>
+      run("leggi_run", async () => {
+        const view = await readLeadRun(userId, id);
+        if (!view) throw new CentralinoError("run non trovata");
+        return view;
+      }),
   );
 
   server.registerTool(

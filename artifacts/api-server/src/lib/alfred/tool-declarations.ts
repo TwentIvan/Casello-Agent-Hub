@@ -1,5 +1,5 @@
 /**
- * Dichiarazioni Gemini degli otto strumenti del centralino e dei quattro di memoria di Alfred (spec §4). Tipi dello schema di Gemini
+ * Dichiarazioni Gemini degli strumenti di Alfred a voce (centralino, Responsabili di prodotto, memoria) (spec §4). Tipi dello schema di Gemini
  * (`OBJECT`, `INTEGER`, `STRING`); finiscono nel token temporaneo, il browser non può cambiarle.
  */
 export const ALFRED_TOOL_DECLARATIONS: Record<string, unknown>[] = [
@@ -43,6 +43,31 @@ export const ALFRED_TOOL_DECLARATIONS: Record<string, unknown>[] = [
         testo: { type: "STRING", description: "Testo del messaggio, al massimo 4000 caratteri" },
       },
       required: ["id", "testo"],
+    },
+  },
+  {
+    name: "elenca_app",
+    description: "App con un Responsabile di prodotto che puoi interpellare: slug, nome e una riga di descrizione.",
+  },
+  {
+    name: "chiedi_al_responsabile",
+    description:
+      "Passa una richiesta completa al Responsabile di prodotto di un'App e attende fino a 25 secondi l'esito: risposta, errore e voci create in «Da confermare». Le sue scritture restano in coda.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        richiesta: { type: "STRING", description: "La richiesta completa, al massimo 4000 caratteri" },
+        app: { type: "STRING", description: "Slug o nome dell'App (da elenca_app); se manca vale Botcave" },
+      },
+      required: ["richiesta"],
+    },
+  },
+  {
+    name: "leggi_run",
+    description: "Stato, esito, errore, costo e voci create di una run dell'utente; senza id, l'ultima richiesta passata a un Responsabile.",
+    parameters: {
+      type: "OBJECT",
+      properties: { id: { type: "INTEGER", description: "Id della run (facoltativo)" } },
     },
   },
   {

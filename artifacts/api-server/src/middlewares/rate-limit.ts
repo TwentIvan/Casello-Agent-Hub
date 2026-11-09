@@ -183,6 +183,14 @@ export function consumeAlfredTool(userId: number): boolean {
   return alfredToolCounter.consume(`user:${userId}`).ok;
 }
 
+// Richieste di Alfred ai Responsabili di prodotto: 6 al minuto per utente (ogni richiesta avvia una run con un modello).
+const leadRequestCounter = fixedWindowCounter({ limit: 6, windowMs: 60_000 });
+
+/** Conta una richiesta di Alfred a un Responsabile di prodotto: false se il limite è raggiunto. */
+export function consumeLeadRequest(userId: number): boolean {
+  return leadRequestCounter.consume(`user:${userId}`).ok;
+}
+
 // Webhook in entrata degli inneschi (pubblici). Due limiti, entrambi con `Retry-After: 60`:
 // - 120 al minuto per IP, prima del parser del corpo (conta anche le richieste non autenticate);
 // - 60 al minuto per innesco, contato da `handleWebhook` solo DOPO il controllo di segreto e firma: chi non conosce il

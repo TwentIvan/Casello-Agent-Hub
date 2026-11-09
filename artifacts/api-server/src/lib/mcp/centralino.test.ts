@@ -12,6 +12,7 @@ import {
   appsTable,
   pendingActionsTable,
   pendingActionStepsTable,
+  runsTable,
   teamEventsTable,
   teamTasksTable,
   teamTurnsTable,
@@ -144,10 +145,10 @@ afterEach(async () => {
 });
 
 describe("centralino su /mcp", () => {
-  it("elenca i sette strumenti del centralino", async () => {
+  it("elenca i dieci strumenti del centralino", async () => {
     const client = await connect(token);
     const names = (await client.listTools()).tools.map((t) => t.name);
-    expect(names).toEqual(expect.arrayContaining(["squadre_stato", "bollettino", "squadra_dettaglio", "invia_al_capo", "coda_da_confermare", "approva", "rifiuta"]));
+    expect(names).toEqual(expect.arrayContaining(["squadre_stato", "bollettino", "squadra_dettaglio", "invia_al_capo", "coda_da_confermare", "approva", "rifiuta", "elenca_app", "chiedi_al_responsabile", "leggi_run"]));
     await client.close();
   });
 
@@ -155,8 +156,38 @@ describe("centralino su /mcp", () => {
     const client = await connect(token);
     const byName = new Map((await client.listTools()).tools.map((t) => [t.name, t.annotations ?? {}]));
     for (const name of ["approva", "rifiuta"]) expect(byName.get(name)).toMatchObject({ destructiveHint: true });
-    for (const name of ["squadre_stato", "squadra_dettaglio", "coda_da_confermare"]) expect(byName.get(name)).toMatchObject({ readOnlyHint: true });
+    for (const name of ["squadre_stato", "squadra_dettaglio", "coda_da_confermare", "elenca_app", "leggi_run"]) expect(byName.get(name)).toMatchObject({ readOnlyHint: true });
     expect(byName.get("bollettino")?.readOnlyHint).not.toBe(true);
+    expect(byName.get("chiedi_al_responsabile")?.readOnlyHint).not.toBe(true);
+    await client.close();
+  });
+
+  it("chiedi_al_responsabile con App inesistente: isError e messaggio fisso", async () => {
+    const client = await connect(token);
+    const res = await call(client, "chiedi_al_responsabile", { richiesta: "ciao", app: "nessuna" });
+    expect(res.isError).toBe(true);
+    expect(res.json.error).toBe("App nessuna non trovata: chiedi a elenca_app");
+    await client.close();
+  });
+
+  it("chiedi_al_responsabile vuole api:write: con il solo mcp errore d'ambito e nessuna run; con api:write passa ai controlli", async () => {
+    const before = (await db.select().from(runsTable)).length;
+    const weak = await connect(mcpOnlyToken);
+    const denied = await call(weak, "chiedi_al_responsabile", { richiesta: "ciao", app: "nessuna" });
+    expect(denied.isError).toBe(true);
+    expect(denied.json.error).toBe(TOKEN_MESSAGES.scope);
+    expect((await db.select().from(runsTable)).length).toBe(before);
+    await weak.close();
+    const strong = await connect(token);
+    const ok = await call(strong, "chiedi_al_responsabile", { richiesta: "ciao", app: "nessuna" });
+    expect(ok.json.error).toBe("App nessuna non trovata: chiedi a elenca_app");
+    await strong.close();
+  });
+
+  it("leggi_run senza id: run non trovata se non ce ne sono", async () => {
+    const client = await connect(mcpOnlyToken);
+    const res = await call(client, "leggi_run", {});
+    expect(res.json.error).toBe("run non trovata");
     await client.close();
   });
 

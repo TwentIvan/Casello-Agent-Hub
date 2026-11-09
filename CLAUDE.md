@@ -45,6 +45,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Inneschi: un agente parte da solo su un evento dell'app, senza modificare il server dell'app: sorveglianza (Botcave interroga a intervalli un
   tool L0, dedup, una run per elemento nuovo) e webhook in entrata con segreto nell'URL; carta «Inneschi» nella scheda agente, Lucius propone
   inneschi di sorveglianza (vedi "Inneschi").
+- Alfred e i Responsabili: Alfred (voce, scritto e centralino `/mcp`) interpella il Responsabile di prodotto di ogni App con `chiedi_al_responsabile`, legge le App con `elenca_app` e l'esito con `leggi_run`; le scritture restano voci in «Da confermare» (vedi "Alfred (maggiordomo vocale)").
 - Proposte multiple (4a): un agente propone più creazioni o modifiche collegate con lo strumento interno `proponi`; in «Da confermare» compare una sola voce «Proposta» con i passi,
   approvabile in parte (caselle per passo), con riferimenti agli id creati dai passi precedenti; Alfred la legge passo per passo e la decide (vedi "Proposte multiple").
 - Responsabile di Botcave stesso: l'App 4 (Botcave come app di sé stessa) con token di servizio d'ambito `agent`, che legge e scrive ma non decide mai al posto dell'utente (vedi "Token personali su `/api`").
@@ -139,6 +140,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `pending` e NON la avvia: la prende lo scheduler di `lib/run-queue.ts` (la UI fa polling su `GET /api/runs/:id`); all'avvio le run
   `running` diventano `failed`, le `pending` con `has_user_token` anche («token utente perso al riavvio: rilancia la run»), le altre `pending`
   restano in coda e ripartono (vedi "The Hub Up 5c (tappa 1)"). `lib/escalation.ts`: strumento `segnala_al_responsabile`.
+- `artifacts/api-server/src/lib/product-leads.ts` — Responsabili di prodotto per Alfred: elenco delle App dell'utente, richiesta al Responsabile con attesa dell'esito e lettura delle run (vedi "Alfred (maggiordomo vocale)")
 - `artifacts/api-server/src/lib/run-queue.ts` — coda delle run (`createQueuedRun`, `scheduleRuns`, `startRunQueue`) e
   `artifacts/api-server/src/lib/escalation.ts` — segnalazione al Responsabile di prodotto (vedi "The Hub Up 5c (tappa 1)")
 - `artifacts/api-server/src/lib/tools/` — client MCP (`mcp-client.ts`), sincronizzazione degli strumenti MCP
@@ -891,7 +893,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - `GET /api/auth/me` accetta anche il token e risponde con l'utente più `auth` (`{kind:"session"}` o
   `{kind:"token", scopes}`).
 - Limite: 120 richieste/min per token (`tokenRateLimit`, chiave: id del token), oltre ai limiti per utente/IP → 429.
-- Su `/mcp` gli strumenti `approva` e `rifiuta` del centralino vogliono un token con `mcp` **e** `api:write` (solo `mcp` →
+- Su `/mcp` gli strumenti `approva`, `rifiuta` e `chiedi_al_responsabile` del centralino vogliono un token con `mcp` **e** `api:write` (solo `mcp` →
   errore «il token non ha l'ambito per questa operazione», `TOKEN_MESSAGES.scope`); gli altri strumenti bastano con `mcp`.
 - Log: mai header `Authorization`, token o hash. Un errore del DB nella verifica del token risponde 500 fisso
   («errore interno») e registra solo il nome dell'errore (i parametri della query conterrebbero l'hash).
@@ -1000,6 +1002,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   approva da Alfred; una nuova preparazione invalida le conferme aperte della stessa sessione (vale solo l'ultima, anche se la
   preparazione fallisce). `conferma_decisione` `{codice}` consuma la conferma con UPDATE condizionato e poi approva o rifiuta con lo
   stesso limite di 20/min di `consumeActionDecision`. Le istruzioni impongono di leggere numero e sintesi e chiedere un sì esplicito.
+- **Responsabili di prodotto** (spec `docs/superpowers/specs/2026-11-09-botcave-alfred-responsabile-design.md`, logica in `lib/product-leads.ts`): tre strumenti uguali nei tre canali (voce, chat scritta e centralino `/mcp`): `elenca_app`, `chiedi_al_responsabile` (richiesta completa a un'App, una chiamata per App) e `leggi_run` (`id` facoltativo: senza, l'ultima richiesta passata a un Responsabile nelle ultime 24 ore). Su `/mcp` `chiedi_al_responsabile` vuole anche `api:write` (come `approva`/`rifiuta`); `elenca_app` e `leggi_run` bastano con `mcp`. `chiedi_al_responsabile` accoda una run del Responsabile e attende l'esito fino a 25 s, poi risponde «in corso» e si ricontrolla con `leggi_run`; limite 6/min per utente, consumato dopo la risoluzione di App e Responsabile (una richiesta con App sbagliata non lo consuma); se l'attesa o la vista falliscono dopo la creazione della run, risponde «in corso» con l'id. Il Responsabile è usabile solo se il suo modello è su uno degli account AI dell'utente. Senza `app` vale l'App di default: slug `casello` (a voce e nel centralino) o l'App ospite nella chat incorporata. Le scritture sono voci in coda, decise solo dall'utente.
 - **Spesa**: le sessioni contano nella spesa dell'utente, del modello e dell'account del loro `ai_model_id` (`lib/budget.ts`), con i
   prezzi del modello: è una stima, l'audio di Gemini ha prezzi propri (si possono inserire a mano).
 - **Console**: Account → carta «Personaggi» (per Alfred: modello vocale, voce, «Apri Alfred», più modello scritto e tetto, vedi "Alfred e Lucius nelle aree"); voce di menu «Alfred» e pagina `/alfred` (`use-alfred-voice.ts`:

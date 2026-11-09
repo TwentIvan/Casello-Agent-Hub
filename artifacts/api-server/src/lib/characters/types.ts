@@ -44,6 +44,8 @@ export interface TurnContext {
   /** Messaggio dell'assistente del turno corrente: le schede si legano a questo */
   messageId: number;
   subjectId: string | null;
+  /** Pagina da cui scrive l'utente nel messaggio del turno, se nota */
+  page?: PageContext | null;
   /** Schede che si possono ancora proporre in questo turno */
   proposalsLeft: () => number;
 }

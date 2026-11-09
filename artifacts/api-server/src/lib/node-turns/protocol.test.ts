@@ -120,6 +120,22 @@ describe("pingTurn", () => {
     await cancelTurn(turnId);
     await expect(pingTurn(setup.nodeId, turnId, pkg.leaseToken)).rejects.toMatchObject({ status: 409 });
   });
+
+  it("un nodo che rinnova la lease di un turno resta pronto (last_turn_poll_at aggiornato)", async () => {
+    const { turnId } = await queueSample(setup);
+    const pkg = (await claimTurn(setup.nodeId, 0))!;
+    const old = new Date(Date.now() - 5 * 60 * SEC);
+    await db.update(nodesTable).set({ lastTurnPollAt: old }).where(eq(nodesTable.id, setup.nodeId));
+    const before = Date.now();
+    await pingTurn(setup.nodeId, turnId, pkg.leaseToken);
+    const [node] = await db.select().from(nodesTable).where(eq(nodesTable.id, setup.nodeId));
+    expect(node!.lastTurnPollAt!.getTime()).toBeGreaterThanOrEqual(before - SEC);
+    // Un ping rifiutato non aggiorna la presenza
+    await db.update(nodesTable).set({ lastTurnPollAt: old }).where(eq(nodesTable.id, setup.nodeId));
+    await expect(pingTurn(setup.nodeId, turnId, "sbagliata")).rejects.toMatchObject({ status: 409 });
+    const [after] = await db.select().from(nodesTable).where(eq(nodesTable.id, setup.nodeId));
+    expect(after!.lastTurnPollAt!.getTime()).toBe(old.getTime());
+  });
 });
 
 describe("reportTurn", () => {

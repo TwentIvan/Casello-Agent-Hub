@@ -1,9 +1,10 @@
 // Scadenze e pulizie dei turni delegati al nodo (spec §2-§3): ogni 5 s i turni `queued` non presi entro 20 s diventano
-// `expired` e quelli `running` con lease scaduta `failed` `lease_lost`; ogni ora si cancellano le righe chiuse da oltre
-// 30 giorni. All'avvio i turni aperti falliscono `restart`; disattivare, eliminare o rigenerare il token del nodo li
+// `expired` (entro 10 minuti se il nodo è occupato con un turno `running`), quelli `running` con lease scaduta `failed`
+// `lease_lost` e quelli `running` oltre il tempo del pacchetto più 60 s `failed` `timeout`; ogni ora si cancellano le
+// righe chiuse da oltre 30 giorni. All'avvio i turni aperti falliscono `restart`; disattivare, eliminare o rigenerare il token del nodo li
 // chiude `failed` `node_disabled` nella transazione del nodo. Ogni chiusura risolve l'attesa di chi ha delegato.
 
-import { and, eq, inArray, isNotNull, lte, notInArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { db, nodeTurnsTable } from "@workspace/db";
 import { logger } from "../logger";
 import { notifyTurnsClosed, OPEN_TURN_STATUSES } from "./queue";
@@ -12,19 +13,58 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /** Un turno in coda non preso entro questo tempo scade (il chiamante ripiega). */
 export const TURN_CLAIM_TIMEOUT_MS = 20_000;
+/** Su un nodo occupato (un turno `running` con lease viva) un turno in coda attende un posto libero fino a 10 minuti. */
+export const TURN_BUSY_QUEUE_TIMEOUT_MS = 600_000;
+/** Margine oltre `timeoutMs` del pacchetto prima che l'API chiuda un turno `running` senza report. */
+export const TURN_RUNNING_GRACE_MS = 60_000;
 export const TURN_SWEEP_INTERVAL_MS = 5_000;
 /** Righe chiuse conservate per la traccia tecnica. */
 export const TURN_RETENTION_MS = 30 * 24 * 3600_000;
 const PURGE_EVERY_MS = 3600_000;
 
 const errName = (err: unknown) => (err instanceof Error ? err.name : "unknown");
+/** Data per l'SQL grezzo come la scrive drizzle nelle colonne `timestamp` senza fuso (UTC). */
+const sqlTimestamp = (d: Date) => sql`${d.toISOString().replace("T", " ").replace("Z", "")}::timestamp`;
 
-/** Turni in coda da oltre 20 s → `expired`; restituisce gli id chiusi. */
+/**
+ * Turni in coda da oltre 20 s il cui nodo non ha turni `running` con lease viva, o in coda da oltre 10 minuti in ogni
+ * caso → `expired`; restituisce gli id chiusi. Un nodo occupato non fa la presa finché non si libera un posto.
+ */
 async function expireQueued(now: Date): Promise<number[]> {
+  // Nome della tabella esplicito: nella sottoquery una colonna senza tabella si legherebbe alla riga interna
+  const nodeBusy = sql`EXISTS (SELECT 1 FROM node_turns busy WHERE busy.node_id = "node_turns"."node_id" AND busy.status = 'running' AND busy.lease_expires_at > ${sqlTimestamp(now)})`;
   const rows = await db
     .update(nodeTurnsTable)
     .set({ status: "expired", package: null, finishedAt: now })
-    .where(and(eq(nodeTurnsTable.status, "queued"), lte(nodeTurnsTable.createdAt, new Date(now.getTime() - TURN_CLAIM_TIMEOUT_MS))))
+    .where(
+      and(
+        eq(nodeTurnsTable.status, "queued"),
+        or(
+          lte(nodeTurnsTable.createdAt, new Date(now.getTime() - TURN_BUSY_QUEUE_TIMEOUT_MS)),
+          and(lte(nodeTurnsTable.createdAt, new Date(now.getTime() - TURN_CLAIM_TIMEOUT_MS)), sql`NOT ${nodeBusy}`),
+        ),
+      ),
+    )
+    .returning({ id: nodeTurnsTable.id });
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Turni `running` oltre `claimed_at + timeoutMs + 60 s` → `failed` `timeout`: un nodo che rinnova la lease senza mai
+ * riferire non tiene aperto il turno per sempre (il nodo stesso ferma `claude` a `timeoutMs`).
+ */
+async function failOverdue(now: Date): Promise<number[]> {
+  const rows = await db
+    .update(nodeTurnsTable)
+    .set({ status: "failed", errorCode: "timeout", package: null, finishedAt: now })
+    .where(
+      and(
+        eq(nodeTurnsTable.status, "running"),
+        isNotNull(nodeTurnsTable.claimedAt),
+        isNotNull(nodeTurnsTable.package),
+        sql`${nodeTurnsTable.claimedAt} + (((${nodeTurnsTable.package}->>'timeoutMs')::bigint + ${TURN_RUNNING_GRACE_MS}) * interval '1 millisecond') <= ${sqlTimestamp(now)}`,
+      ),
+    )
     .returning({ id: nodeTurnsTable.id });
   return rows.map((r) => r.id);
 }
@@ -65,6 +105,13 @@ export async function sweepNodeTurns(now: Date = new Date(), opts: { purge?: boo
     if (expired.length > 0) logger.warn({ count: expired.length }, "Turni del nodo non presi in tempo: scaduti");
   } catch (err) {
     logger.error({ errName: errName(err) }, "Scadenza dei turni del nodo non riuscita");
+  }
+  try {
+    const overdue = await failOverdue(now);
+    notifyTurnsClosed(overdue);
+    if (overdue.length > 0) logger.warn({ count: overdue.length }, "Turni del nodo oltre il tempo massimo: chiusi");
+  } catch (err) {
+    logger.error({ errName: errName(err) }, "Controllo del tempo dei turni del nodo non riuscito");
   }
   try {
     const lost = await failLostLeases(now);

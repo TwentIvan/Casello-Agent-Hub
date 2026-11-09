@@ -137,7 +137,10 @@ export async function claimTurn(nodeId: number, waitMs: number = TURN_POLL_WAIT_
   }
 }
 
-/** Rinnova di TURN_LEASE_MS la lease del turno; turno chiuso, annullato, lease diversa o scaduta → 409. */
+/**
+ * Rinnova di TURN_LEASE_MS la lease del turno e registra la presenza del nodo (`last_turn_poll_at`, come la presa);
+ * turno chiuso, annullato, lease diversa o scaduta → 409.
+ */
 export async function pingTurn(nodeId: number, turnId: number, leaseToken: string): Promise<{ leaseExpiresAt: Date }> {
   const now = new Date();
   const [row] = await db
@@ -154,6 +157,8 @@ export async function pingTurn(nodeId: number, turnId: number, leaseToken: strin
     )
     .returning({ leaseExpiresAt: nodeTurnsTable.leaseExpiresAt });
   if (!row?.leaseExpiresAt) throw new NodeError(409, NODE_PROTOCOL_MESSAGES.lease);
+  // Un nodo occupato non fa la presa (tutti i posti pieni) ma rinnova la lease: è vivo e resta pronto per i turni
+  await db.update(nodesTable).set({ lastTurnPollAt: now }).where(and(eq(nodesTable.id, nodeId), eq(nodesTable.status, "active")));
   return { leaseExpiresAt: row.leaseExpiresAt };
 }
 

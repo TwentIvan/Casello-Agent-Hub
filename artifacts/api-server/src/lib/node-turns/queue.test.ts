@@ -84,6 +84,43 @@ describe("sweepNodeTurns", () => {
     expect((await waiting).status).toBe("expired");
   });
 
+  it("nodo occupato (turno running con lease viva): il turno in coda attende fino a 10 minuti", async () => {
+    // Tempo massimo lungo: il turno in corso non chiude per timeout durante la prova
+    const busy = await queueSample(setup, { timeoutMs: 3_600_000 });
+    expect((await claimTurn(setup.nodeId, 0))?.id).toBe(busy.turnId);
+    // Lease rinnovata dai ping per tutta la durata della prova
+    await db.update(nodeTurnsTable).set({ leaseExpiresAt: new Date(Date.now() + DAY) }).where(eq(nodeTurnsTable.id, busy.turnId));
+    const { turnId } = await queueSample(setup);
+    await sweepNodeTurns(new Date(Date.now() + 21 * SEC));
+    expect((await turnRow(turnId)).status).toBe("queued");
+    await sweepNodeTurns(new Date(Date.now() + 9 * 60 * SEC));
+    expect((await turnRow(turnId)).status).toBe("queued");
+    await sweepNodeTurns(new Date(Date.now() + 10 * 60 * SEC + SEC));
+    expect(await turnRow(turnId)).toMatchObject({ status: "expired", package: null });
+    expect((await turnRow(busy.turnId)).status).toBe("running");
+  });
+
+  it("un turno running di un altro nodo non tiene in coda quelli di questo nodo", async () => {
+    const other = await seedNodeTurnSetup("altro@example.com", "Altro Mac");
+    await queueSample(other);
+    await claimTurn(other.nodeId, 0);
+    const { turnId } = await queueSample(setup);
+    await sweepNodeTurns(new Date(Date.now() + 21 * SEC));
+    expect((await turnRow(turnId)).status).toBe("expired");
+  });
+
+  it("running oltre timeoutMs + 60 s senza report → failed timeout, anche se il nodo rinnova la lease", async () => {
+    const { turnId } = await queueSample(setup, { timeoutMs: 300_000 });
+    await claimTurn(setup.nodeId, 0);
+    await db.update(nodeTurnsTable).set({ leaseExpiresAt: new Date(Date.now() + DAY) }).where(eq(nodeTurnsTable.id, turnId));
+    const waiting = waitTurn(turnId);
+    await sweepNodeTurns(new Date(Date.now() + 355 * SEC));
+    expect((await turnRow(turnId)).status).toBe("running");
+    await sweepNodeTurns(new Date(Date.now() + 361 * SEC));
+    expect(await turnRow(turnId)).toMatchObject({ status: "failed", errorCode: "timeout", package: null });
+    expect(await waiting).toMatchObject({ status: "failed", errorCode: "timeout" });
+  });
+
   it("running con lease scaduta → failed lease_lost", async () => {
     const { turnId } = await queueSample(setup);
     const pkg = await claimTurn(setup.nodeId, 0);

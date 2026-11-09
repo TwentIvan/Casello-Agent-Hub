@@ -557,7 +557,8 @@ async function usableRunFallback(ctx: RunContext, node: ResolvedModel): Promise<
   let fallback: ResolvedModel;
   try {
     fallback = await resolveModel(id, { userId: node.ownerUserId, mustOwn: true });
-  } catch {
+  } catch (err) {
+    logger.warn({ fallbackAiModelId: id, errName: err instanceof Error ? err.name : "unknown" }, "Modello di ripiego non usabile");
     return null;
   }
   if (fallback.kind !== "openai_compatible") return null;

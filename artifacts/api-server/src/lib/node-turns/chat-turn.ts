@@ -54,7 +54,8 @@ async function usableFallback(input: ChatTurnInput): Promise<ResolvedModel | nul
   let fallback: ResolvedModel;
   try {
     fallback = await resolveModel(id, { userId: input.userId, mustOwn: true });
-  } catch {
+  } catch (err) {
+    logger.warn({ fallbackAiModelId: id, errName: err instanceof Error ? err.name : "unknown" }, "Modello di ripiego non usabile");
     return null;
   }
   if (fallback.kind !== "openai_compatible") return null;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
+  getAlfredNotifications,
   useCloseAlfredSession,
   useRecordAlfredUsage,
   useRenewAlfredSession,
@@ -9,6 +10,7 @@ import {
 } from "@workspace/api-client-react";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { MIC_WORKLET_SOURCE } from "./mic-worklet";
+import { NOTIFICATIONS_POLL_MS, NotificationQueue } from "./notification-queue";
 
 export type AlfredStatus = "stopped" | "connecting" | "listening" | "speaking";
 export type AlfredErrorKind = "mic" | "model" | "closed" | "other";
@@ -125,6 +127,15 @@ export function useAlfredVoice() {
     usageTimer: null as ReturnType<typeof setTimeout> | null,
     // Trascrizione intera della conversazione (le sole battute mostrate sono 50): va a «chiudi» solo con «Basta così»
     transcript: "",
+    // Novità (run dei Responsabili, nuove voci in coda): cursore e coda sopravvivono ai ricollegamenti, non a un avvio nuovo
+    cursor: null as string | null,
+    queue: new NotificationQueue(),
+    pollTimer: null as ReturnType<typeof setInterval> | null,
+    pollInFlight: false,
+    // Il modello sta rispondendo (audio in arrivo fino a turnComplete) o uno strumento è in corso
+    modelTurn: false,
+    toolRunning: 0,
+    lastUserSpeechAt: null as number | null,
   });
 
   const pushLines = useCallback((entries: Omit<AlfredLine, "id">[]) => {
@@ -143,6 +154,20 @@ export function useAlfredVoice() {
     pushLines(entries);
   }, [pushLines]);
 
+  /** Se c'è silenzio consegna le novità in coda ad Alfred come messaggio di testo. */
+  const deliverNotifications = useCallback(() => {
+    const s = r.current;
+    const ws = s.ws;
+    if (!s.active || !s.ready || !ws || ws.readyState !== WebSocket.OPEN) return;
+    const text = s.queue.takeMessage({
+      modelSpeaking: s.modelTurn || s.sources.length > 0,
+      toolRunning: s.toolRunning > 0,
+      lastUserSpeechAt: s.lastUserSpeechAt,
+      now: Date.now(),
+    });
+    if (text) ws.send(JSON.stringify({ realtimeInput: { text } }));
+  }, []);
+
   const stopPlayback = useCallback(() => {
     const s = r.current;
     for (const src of s.sources) {
@@ -156,6 +181,9 @@ export function useAlfredVoice() {
     s.sources = [];
     s.playHead = 0;
   }, []);
+
+  const deliverRef = useRef(deliverNotifications);
+  deliverRef.current = deliverNotifications;
 
   const playPcm = useCallback((b64: string) => {
     const s = r.current;
@@ -172,10 +200,14 @@ export function useAlfredVoice() {
     s.playHead = Math.max(s.playHead, ctx.currentTime + 0.03);
     src.start(s.playHead);
     s.playHead += buf.duration;
+    s.modelTurn = true;
     s.sources.push(src);
     src.onended = () => {
       s.sources = s.sources.filter((x) => x !== src);
-      if (s.sources.length === 0 && s.active) setStatus("listening");
+      if (s.sources.length === 0 && s.active) {
+        setStatus("listening");
+        deliverRef.current();
+      }
     };
     setStatus("speaking");
   }, []);
@@ -189,6 +221,10 @@ export function useAlfredVoice() {
     s.deferred = false;
     if (s.usageTimer) clearTimeout(s.usageTimer);
     s.usageTimer = null;
+    if (s.pollTimer) clearInterval(s.pollTimer);
+    s.pollTimer = null;
+    s.modelTurn = false;
+    s.toolRunning = 0;
     const ws = s.ws;
     s.ws = null;
     if (ws) {
@@ -267,39 +303,70 @@ export function useAlfredVoice() {
   const scheduleUsageRef = useRef(scheduleUsage);
   scheduleUsageRef.current = scheduleUsage;
 
+  /** Un giro di polling delle novità: errori ignorati (si riprova), 404 come per gli strumenti. */
+  const pollNotifications = useCallback(async () => {
+    const s = r.current;
+    if (!s.active || !s.ready || !s.sessionId || document.hidden || s.pollInFlight) return;
+    const id = s.sessionId;
+    const gen = s.gen;
+    s.pollInFlight = true;
+    try {
+      const res = await getAlfredNotifications(id, s.cursor ? { after: s.cursor } : undefined);
+      if (!s.active || s.sessionId !== id) return;
+      s.cursor = res.cursor;
+      s.queue.add(res.events);
+      deliverRef.current();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404 && s.active && s.sessionId === id && s.gen >= gen) sessionClosedRef.current();
+    } finally {
+      s.pollInFlight = false;
+    }
+  }, []);
+  const sessionClosedRef = useRef(sessionClosed);
+  sessionClosedRef.current = sessionClosed;
+
   /** Chiamate degli strumenti: fuori dal ciclo dei frame, così l'audio non si riordina. */
   const runToolCalls = useCallback(
     async (gen: number, ws: WebSocket, calls: { id: string; name: string; args?: Record<string, unknown> }[]) => {
       const s = r.current;
-      const responses: { id: string; name: string; response: unknown }[] = [];
-      for (const fc of calls) {
-        // Conferma a voce: si inoltra solo se dopo la preparazione l'utente ha detto qualcosa
-        if (fc.name === "conferma_decisione" && !s.heard) {
-          responses.push({ id: fc.id, name: fc.name, response: { ok: false, error: CONFIRM_NOT_HEARD } });
-          continue;
-        }
-        try {
-          const result = await api.current.runTool.mutateAsync({ id: s.sessionId, name: fc.name, data: { args: fc.args ?? {} } });
-          responses.push({ id: fc.id, name: fc.name, response: result });
-          if (fc.name === "prepara_decisione") {
-            s.heard = false;
-            s.awaitingHeard = true;
+      // Durante gli strumenti le novità non si consegnano; a fine strumenti si riprova
+      s.toolRunning++;
+      try {
+        const responses: { id: string; name: string; response: unknown }[] = [];
+        for (const fc of calls) {
+          // Conferma a voce: si inoltra solo se dopo la preparazione l'utente ha detto qualcosa
+          if (fc.name === "conferma_decisione" && !s.heard) {
+            responses.push({ id: fc.id, name: fc.name, response: { ok: false, error: CONFIRM_NOT_HEARD } });
+            continue;
           }
-        } catch (e) {
-          if (e instanceof ApiError && e.status === 404) {
-            if (s.gen === gen) sessionClosed();
-            return;
+          try {
+            const result = await api.current.runTool.mutateAsync({ id: s.sessionId, name: fc.name, data: { args: fc.args ?? {} } });
+            responses.push({ id: fc.id, name: fc.name, response: result });
+            if (fc.name === "prepara_decisione") {
+              s.heard = false;
+              s.awaitingHeard = true;
+            }
+          } catch (e) {
+            if (e instanceof ApiError && e.status === 404) {
+              if (s.gen === gen) sessionClosed();
+              return;
+            }
+            responses.push({ id: fc.id, name: fc.name, response: { ok: false, error: apiErrorMessage(e) } });
           }
-          responses.push({ id: fc.id, name: fc.name, response: { ok: false, error: apiErrorMessage(e) } });
+          if (s.gen !== gen) return;
         }
-        if (s.gen !== gen) return;
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ toolResponse: { functionResponses: responses } }));
+      } finally {
+        s.toolRunning = Math.max(0, s.toolRunning - 1);
       }
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ toolResponse: { functionResponses: responses } }));
     },
     [sessionClosed],
   );
 
   const reconnectRef = useRef<(fromGen: number) => Promise<void>>(async () => undefined);
+
+  const pollRef = useRef(pollNotifications);
+  pollRef.current = pollNotifications;
 
   const handleFrame = useCallback(
     (gen: number, ws: WebSocket, msg: Frame) => {
@@ -310,6 +377,11 @@ export function useAlfredVoice() {
         setStatus("listening");
         // Solo alla prima apertura: dopo una ripresa la conversazione continua da sola
         if (!s.resumed) ws.send(JSON.stringify({ realtimeInput: { text: "[apertura]" } }));
+        // Novità: prima chiamata senza cursore (lo fissa), poi un giro ogni 5 s finché la sessione è attiva
+        if (!s.pollTimer) {
+          s.pollTimer = setInterval(() => void pollRef.current(), NOTIFICATIONS_POLL_MS);
+          void pollRef.current();
+        }
         return;
       }
       if (msg.sessionResumptionUpdate?.newHandle) s.handle = msg.sessionResumptionUpdate.newHandle;
@@ -331,16 +403,22 @@ export function useAlfredVoice() {
       if (!sc) return;
       if (sc.interrupted) {
         stopPlayback();
+        s.modelTurn = false;
         flushTurn();
         setStatus("listening");
       }
       if (sc.inputTranscription?.text) {
         s.inText += sc.inputTranscription.text;
+        s.lastUserSpeechAt = Date.now();
         if (s.awaitingHeard) s.heard = true;
       }
       if (sc.outputTranscription?.text) s.outText += sc.outputTranscription.text;
       for (const part of sc.modelTurn?.parts ?? []) if (part.inlineData?.data) playPcm(part.inlineData.data);
-      if (sc.turnComplete) flushTurn();
+      if (sc.turnComplete) {
+        s.modelTurn = false;
+        flushTurn();
+        deliverRef.current();
+      }
     },
     [flushTurn, playPcm, runToolCalls, scheduleUsage, stopPlayback],
   );
@@ -458,6 +536,12 @@ export function useAlfredVoice() {
     s.lastUsageAt = 0;
     s.awaitingHeard = s.heard = false;
     s.inText = s.outText = "";
+    s.cursor = null;
+    s.queue = new NotificationQueue();
+    s.pollInFlight = false;
+    s.modelTurn = false;
+    s.toolRunning = 0;
+    s.lastUserSpeechAt = null;
     const cancelled = () => !s.active || s.gen !== gen;
 
     // L'audio si sblocca dentro il gesto dell'utente (iOS): contesto creato e ripreso prima di ogni attesa

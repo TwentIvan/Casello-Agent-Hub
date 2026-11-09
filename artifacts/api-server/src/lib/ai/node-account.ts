@@ -1,5 +1,5 @@
 import { and, asc, eq, ne } from "drizzle-orm";
-import { db, modelOffersTable } from "@workspace/db";
+import { db, aiAccountsTable, aiModelsTable, modelOffersTable } from "@workspace/db";
 import type { DiscoveredModel } from "./discovery";
 
 /**
@@ -36,4 +36,32 @@ export async function nodeAccountModels(): Promise<DiscoveredModel[]> {
     ...NODE_MODEL_ALIASES.map((a) => unpriced(a, `${a} (ultimo)`)),
     ...offers.filter((o) => !aliases.has(o.providerModelId)).map((o) => unpriced(o.providerModelId, o.providerModelId)),
   ];
+}
+
+/** Errore di regola con il suo stato HTTP (le route lo traducono in `{error}`). */
+export class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "HttpError";
+  }
+}
+
+export const FALLBACK_INVALID = "modello di ripiego non valido";
+
+/**
+ * Il modello di ripiego di un account nodo deve essere di un account dell'utente che non sia a sua volta un
+ * account nodo (altrimenti il ripiego tornerebbe al nodo). `null` = nessun ripiego. Altrimenti `HttpError` 400.
+ */
+export async function validateFallback(userId: number, aiModelId: number | null): Promise<void> {
+  if (aiModelId === null) return;
+  const [row] = await db
+    .select({ id: aiModelsTable.id })
+    .from(aiModelsTable)
+    .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
+    .where(and(eq(aiModelsTable.id, aiModelId), eq(aiAccountsTable.userId, userId), ne(aiAccountsTable.provider, NODE_PROVIDER)))
+    .limit(1);
+  if (!row) throw new HttpError(400, FALLBACK_INVALID);
 }

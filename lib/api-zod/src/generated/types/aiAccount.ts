@@ -12,6 +12,23 @@ export interface AiAccount {
   id: number;
   name: string;
   provider: AiProvider;
+  /**
+     * Nodo che esegue i turni (solo account claude_code_node); null per gli account cloud
+     * @nullable
+     */
+  nodeId: number | null;
+  /**
+     * Nome del nodo (null se non è un account nodo o il nodo è stato eliminato)
+     * @nullable
+     */
+  nodeName: string | null;
+  /** Il nodo è attivo e sta sondando i turni (ultimi 60 s); sempre false per gli account cloud */
+  nodeTurnReady: boolean;
+  /**
+     * Modello di un account cloud dell'utente a cui vanno i turni se il nodo non risponde; null per i cloud
+     * @nullable
+     */
+  fallbackAiModelId: number | null;
   baseUrl: string;
   /** Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati */
   allowPrivateNetwork: boolean;

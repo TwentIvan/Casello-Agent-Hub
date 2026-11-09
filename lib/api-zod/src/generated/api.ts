@@ -4148,6 +4148,10 @@ export const ListAiAccountsResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "provider": zod.string().regex(listAiAccountsResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
+  "nodeId": zod.number().nullable().describe('Nodo che esegue i turni (solo account claude_code_node); null per gli account cloud'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se non è un account nodo o il nodo è stato eliminato)'),
+  "nodeTurnReady": zod.boolean().describe('Il nodo è attivo e sta sondando i turni (ultimi 60 s); sempre false per gli account cloud'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di un account cloud dell\'utente a cui vanno i turni se il nodo non risponde; null per i cloud'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -4179,7 +4183,9 @@ export const CreateAiAccountBody = zod.object({
   "provider": zod.string().regex(createAiAccountBodyProviderRegExp).describe('Slug di un provider della tabella providers'),
   "apiKey": zod.string().max(createAiAccountBodyApiKeyMax).nullish().describe('Chiave del provider (solo scrittura, salvata cifrata); vuota solo per custom'),
   "baseUrl": zod.string().max(createAiAccountBodyBaseUrlMax).nullish().describe('Obbligatorio per custom, provider non gestiti e gestiti senza indirizzo predefinito; gli altri usano il base URL predefinito'),
-  "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom e provider non gestiti')
+  "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom e provider non gestiti'),
+  "nodeId": zod.number().optional().describe('Obbligatorio per claude_code_node (un nodo attivo dell\'utente, senza altro account); vietato per gli altri provider'),
+  "fallbackAiModelId": zod.number().nullish().describe('Solo per claude_code_node, modello di ripiego, di un account non nodo dell\'utente')
 })
 
 export const createAiAccountResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
@@ -4189,6 +4195,10 @@ export const CreateAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "provider": zod.string().regex(createAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
+  "nodeId": zod.number().nullable().describe('Nodo che esegue i turni (solo account claude_code_node); null per gli account cloud'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se non è un account nodo o il nodo è stato eliminato)'),
+  "nodeTurnReady": zod.boolean().describe('Il nodo è attivo e sta sondando i turni (ultimi 60 s); sempre false per gli account cloud'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di un account cloud dell\'utente a cui vanno i turni se il nodo non risponde; null per i cloud'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -4225,7 +4235,8 @@ export const UpdateAiAccountBody = zod.object({
   "apiKey": zod.string().max(updateAiAccountBodyApiKeyMax).nullish().describe('Assente o \"\" = invariata; null la rimuove (solo custom); un valore la sostituisce'),
   "baseUrl": zod.string().min(1).max(updateAiAccountBodyBaseUrlMax).optional().describe('Solo se il provider ha l\'indirizzo modificabile (vedi AiProviderInfo.editableBaseUrl)'),
   "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom e provider non gestiti'),
-  "monthlyBudgetUsd": zod.number().min(updateAiAccountBodyMonthlyBudgetUsdMin).max(updateAiAccountBodyMonthlyBudgetUsdMax).nullish().describe('Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite')
+  "monthlyBudgetUsd": zod.number().min(updateAiAccountBodyMonthlyBudgetUsdMin).max(updateAiAccountBodyMonthlyBudgetUsdMax).nullish().describe('Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite'),
+  "fallbackAiModelId": zod.number().nullish().describe('Solo account claude_code_node; null toglie il ripiego')
 })
 
 export const updateAiAccountResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
@@ -4235,6 +4246,10 @@ export const UpdateAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "provider": zod.string().regex(updateAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
+  "nodeId": zod.number().nullable().describe('Nodo che esegue i turni (solo account claude_code_node); null per gli account cloud'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se non è un account nodo o il nodo è stato eliminato)'),
+  "nodeTurnReady": zod.boolean().describe('Il nodo è attivo e sta sondando i turni (ultimi 60 s); sempre false per gli account cloud'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di un account cloud dell\'utente a cui vanno i turni se il nodo non risponde; null per i cloud'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -4273,6 +4288,10 @@ export const VerifyAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "provider": zod.string().regex(verifyAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
+  "nodeId": zod.number().nullable().describe('Nodo che esegue i turni (solo account claude_code_node); null per gli account cloud'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se non è un account nodo o il nodo è stato eliminato)'),
+  "nodeTurnReady": zod.boolean().describe('Il nodo è attivo e sta sondando i turni (ultimi 60 s); sempre false per gli account cloud'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di un account cloud dell\'utente a cui vanno i turni se il nodo non risponde; null per i cloud'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -4299,6 +4318,10 @@ export const SetDefaultAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "provider": zod.string().regex(setDefaultAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
+  "nodeId": zod.number().nullable().describe('Nodo che esegue i turni (solo account claude_code_node); null per gli account cloud'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se non è un account nodo o il nodo è stato eliminato)'),
+  "nodeTurnReady": zod.boolean().describe('Il nodo è attivo e sta sondando i turni (ultimi 60 s); sempre false per gli account cloud'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di un account cloud dell\'utente a cui vanno i turni se il nodo non risponde; null per i cloud'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -4494,6 +4517,10 @@ export const ListAiModelsResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "provider": zod.string().regex(listAiModelsResponseAccountProviderRegExp).describe('Slug di un provider della tabella providers'),
+  "nodeId": zod.number().nullable().describe('Nodo che esegue i turni (solo account claude_code_node); null per gli account cloud'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se non è un account nodo o il nodo è stato eliminato)'),
+  "nodeTurnReady": zod.boolean().describe('Il nodo è attivo e sta sondando i turni (ultimi 60 s); sempre false per gli account cloud'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di un account cloud dell\'utente a cui vanno i turni se il nodo non risponde; null per i cloud'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),

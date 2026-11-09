@@ -8,6 +8,7 @@ import {
   analysesTable,
   modelOffersTable,
   modelsTable,
+  nodesTable,
   providersTable,
   usersTable,
   type AiAccount,
@@ -47,6 +48,7 @@ import { ANALYSIS_DEFAULT_MAX_TOKENS } from "../lib/architect/run-analysis";
 import { discoverModels, ProviderError, type DiscoveredModel } from "../lib/ai/discovery";
 import { upsertDiscovered, verifyAccount, type Tx } from "../lib/ai/accounts";
 import { ModelAccessError } from "../lib/ai/executor";
+import { HttpError, NODE_PROVIDER, nodeTurnReady, validateFallback } from "../lib/ai/node-account";
 import { effectiveStatus, isSelectable, pickRecommended } from "../lib/ai/model-status";
 import { probeModel } from "../lib/ai/probe";
 import {
@@ -77,6 +79,11 @@ const UNMANAGED_BASE_URL_REQUIRED = "provider non gestito: inserisci l'indirizzo
 const NAME_REQUIRED = "nome obbligatorio, senza caratteri di controllo";
 const BAD_MODEL_ID = "id del modello non valido";
 const MODEL_EXISTS = "modello già presente nell'account";
+const NODE_UNAVAILABLE = "nodo non disponibile";
+const NODE_HAS_ACCOUNT = "il nodo ha già un account Claude Code";
+const NODE_NO_CONNECTION = "l'account Claude Code non ha chiave né indirizzo";
+const NODE_ONLY_NODE_PROVIDER = "il nodo vale solo per gli account Claude Code";
+const FALLBACK_ONLY_NODE_PROVIDER = "il modello di ripiego vale solo per gli account Claude Code";
 const USED_BY_MAX_NAMES = 10;
 
 // Caratteri di controllo C0, DEL e C1
@@ -97,7 +104,9 @@ function toPrice(v: number | null | undefined): string | null {
  * Forma pubblica di un account: mai `apiKeyEnc` né `userId`. `allowPrivateNetwork` è il consenso effettivo:
  * quello salvato, solo se lo stato attuale del provider (`providerStatus`) ammette ancora la rete privata.
  */
-function toPublicAccount(a: AiAccount, modelCount: number, providerStatus: string | undefined) {
+type NodeInfo = { name: string; status: string; lastTurnPollAt: Date | null };
+
+function toPublicAccount(a: AiAccount, modelCount: number, providerStatus: string | undefined, node: NodeInfo | undefined) {
   return {
     id: a.id,
     name: a.name,
@@ -111,6 +120,10 @@ function toPublicAccount(a: AiAccount, modelCount: number, providerStatus: strin
     keySet: a.apiKeyEnc !== null,
     modelCount,
     monthlyBudgetUsd: toNumber(a.monthlyBudgetUsd),
+    nodeId: a.nodeId,
+    nodeName: node?.name ?? null,
+    nodeTurnReady: node !== undefined && nodeTurnReady(node),
+    fallbackAiModelId: a.fallbackAiModelId,
   };
 }
 
@@ -220,12 +233,23 @@ async function providerStatuses(accounts: AiAccount[]): Promise<Map<string, stri
   return new Map(rows.map((r) => [r.slug, r.status]));
 }
 
+/** Nodi degli account (per id), per nome e prontezza. */
+async function nodesOf(accounts: AiAccount[]): Promise<Map<number, NodeInfo>> {
+  const ids = [...new Set(accounts.map((a) => a.nodeId).filter((n): n is number => n !== null))];
+  if (!ids.length) return new Map();
+  const rows = await db
+    .select({ id: nodesTable.id, name: nodesTable.name, status: nodesTable.status, lastTurnPollAt: nodesTable.lastTurnPollAt })
+    .from(nodesTable)
+    .where(inArray(nodesTable.id, ids));
+  return new Map(rows.map((r) => [r.id, r]));
+}
+
 /** Forma pubblica riletta dal DB; undefined se l'account è sparito nel frattempo. */
 async function publicAccount(id: number) {
   const [account] = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.id, id));
   if (!account) return undefined;
-  const [counts, statuses] = await Promise.all([modelCounts([id]), providerStatuses([account])]);
-  return toPublicAccount(account, counts.get(id) ?? 0, statuses.get(account.provider));
+  const [counts, statuses, nodes] = await Promise.all([modelCounts([id]), providerStatuses([account]), nodesOf([account])]);
+  return toPublicAccount(account, counts.get(id) ?? 0, statuses.get(account.provider), account.nodeId === null ? undefined : nodes.get(account.nodeId));
 }
 
 /** Risponde con l'account riletto, o 404 se è stato eliminato durante la richiesta. */
@@ -257,6 +281,8 @@ function providerRules(p: ProviderRow): { editableBaseUrl: boolean; privateNetwo
   const isCustom = p.slug === "custom";
   const unmanaged = p.status === "unmanaged";
   const managedNoDefault = p.status === "managed" && p.defaultBaseUrl === null;
+  // L'account nodo non ha indirizzo: si sceglie il nodo
+  if (p.slug === NODE_PROVIDER) return { editableBaseUrl: false, privateNetwork: false };
   return { editableBaseUrl: isCustom || unmanaged || managedNoDefault, privateNetwork: privateNetworkAllowed(p) };
 }
 
@@ -331,6 +357,112 @@ function roundUsd(n: number): number {
   return n > 0 && rounded === 0 ? 1e-6 : rounded;
 }
 
+type CreateBody = ReturnType<typeof CreateAiAccountBody.parse>;
+type UpdateBody = ReturnType<typeof UpdateAiAccountBody.parse>;
+
+/**
+ * Creazione di un account nodo: nessuna chiave né indirizzo, nessuna chiamata di rete. Il nodo dev'essere un
+ * nodo attivo dell'utente e senza altro account; i modelli li scrive il ramo nodo della verifica.
+ */
+async function createNodeAccount(userId: number, body: CreateBody, res: Response): Promise<void> {
+  const name = cleanName(body.name);
+  if (!name) {
+    res.status(400).json({ error: NAME_REQUIRED });
+    return;
+  }
+  if (body.apiKey != null || body.baseUrl != null || body.allowPrivateNetwork === true) {
+    res.status(400).json({ error: NODE_NO_CONNECTION });
+    return;
+  }
+  const [node] =
+    body.nodeId === undefined
+      ? []
+      : await db
+          .select({ id: nodesTable.id })
+          .from(nodesTable)
+          .where(and(eq(nodesTable.id, body.nodeId), eq(nodesTable.userId, userId), eq(nodesTable.status, "active")))
+          .limit(1);
+  if (!node) {
+    res.status(400).json({ error: NODE_UNAVAILABLE });
+    return;
+  }
+  const fallback = body.fallbackAiModelId ?? null;
+  try {
+    await validateFallback(userId, fallback);
+  } catch (err) {
+    if (!(err instanceof HttpError)) throw err;
+    res.status(err.status).json({ error: err.message });
+    return;
+  }
+  let created: AiAccount;
+  try {
+    created = await db.transaction(async (tx) => {
+      await lockUser(tx, userId);
+      const [current] = await tx
+        .select({ id: aiAccountsTable.id })
+        .from(aiAccountsTable)
+        .where(and(eq(aiAccountsTable.userId, userId), eq(aiAccountsTable.isDefault, true)))
+        .limit(1);
+      const [row] = await tx
+        .insert(aiAccountsTable)
+        .values({
+          userId,
+          name,
+          provider: NODE_PROVIDER,
+          baseUrl: "",
+          apiKeyEnc: null,
+          allowPrivateNetwork: false,
+          isDefault: !current,
+          status: "unverified",
+          nodeId: node.id,
+          fallbackAiModelId: fallback,
+        })
+        .returning();
+      return row!;
+    });
+  } catch (err) {
+    // Indice unico: un solo account per nodo (anche per due richieste insieme)
+    if (!isUniqueViolation(err)) throw err;
+    res.status(409).json({ error: NODE_HAS_ACCOUNT });
+    return;
+  }
+  // Ramo nodo della verifica: scrive modelli e stato senza rete
+  await verifyAccount(created);
+  await sendAccount(res, created.id, CreateAiAccountResponse, 201);
+}
+
+/** Modifica di un account nodo: nome, tetto e ripiego; chiave, indirizzo e rete privata non esistono. */
+async function updateNodeAccount(account: AiAccount, body: UpdateBody, res: Response): Promise<void> {
+  if (body.apiKey !== undefined || body.baseUrl !== undefined || body.allowPrivateNetwork !== undefined) {
+    res.status(400).json({ error: NODE_NO_CONNECTION });
+    return;
+  }
+  const set: Partial<typeof aiAccountsTable.$inferInsert> = {};
+  if (body.name !== undefined) {
+    const name = cleanName(body.name);
+    if (!name) {
+      res.status(400).json({ error: NAME_REQUIRED });
+      return;
+    }
+    set.name = name;
+  }
+  if (body.monthlyBudgetUsd !== undefined) set.monthlyBudgetUsd = budgetColumn(body.monthlyBudgetUsd);
+  if (body.fallbackAiModelId !== undefined) {
+    try {
+      await validateFallback(account.userId!, body.fallbackAiModelId);
+    } catch (err) {
+      if (!(err instanceof HttpError)) throw err;
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    set.fallbackAiModelId = body.fallbackAiModelId;
+  }
+  if (Object.keys(set).length) {
+    await db.update(aiAccountsTable).set({ ...set, updatedAt: new Date() }).where(eq(aiAccountsTable.id, account.id));
+  }
+  await sendAccount(res, account.id, UpdateAiAccountResponse);
+}
+
 export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probeRateLimit?: RequestHandler } = {}): IRouter {
   const router: IRouter = Router();
   // Le route che chiamano un provider esterno (creazione, verifica, modifica) hanno un limite per IP,
@@ -341,8 +473,12 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
 
   router.get("/ai/accounts", async (req, res) => {
     const accounts = await visibleAccountsSorted(currentUserId(req));
-    const [counts, statuses] = await Promise.all([modelCounts(accounts.map((a) => a.id)), providerStatuses(accounts)]);
-    res.json(ListAiAccountsResponse.parse(accounts.map((a) => toPublicAccount(a, counts.get(a.id) ?? 0, statuses.get(a.provider)))));
+    const [counts, statuses, nodes] = await Promise.all([modelCounts(accounts.map((a) => a.id)), providerStatuses(accounts), nodesOf(accounts)]);
+    res.json(
+      ListAiAccountsResponse.parse(
+        accounts.map((a) => toPublicAccount(a, counts.get(a.id) ?? 0, statuses.get(a.provider), a.nodeId === null ? undefined : nodes.get(a.nodeId))),
+      ),
+    );
   });
 
   // Registro per la creazione degli account: gestiti per nome, poi in arrivo, poi non gestiti
@@ -376,6 +512,19 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     }
     if (info.status === "coming") {
       res.status(400).json({ error: PROVIDER_COMING });
+      return;
+    }
+    const isNode = provider === NODE_PROVIDER;
+    if (!isNode && body.nodeId !== undefined) {
+      res.status(400).json({ error: NODE_ONLY_NODE_PROVIDER });
+      return;
+    }
+    if (!isNode && body.fallbackAiModelId !== undefined) {
+      res.status(400).json({ error: FALLBACK_ONLY_NODE_PROVIDER });
+      return;
+    }
+    if (isNode) {
+      await createNodeAccount(userId, body, res);
       return;
     }
     const isCustom = provider === "custom";
@@ -472,6 +621,14 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     const body = parseRequest(UpdateAiAccountBody, req.body);
     const account = await findWritableAccount(id, userId, res);
     if (!account) return;
+    if (account.provider === NODE_PROVIDER) {
+      await updateNodeAccount(account, body, res);
+      return;
+    }
+    if (body.fallbackAiModelId !== undefined) {
+      res.status(400).json({ error: FALLBACK_ONLY_NODE_PROVIDER });
+      return;
+    }
     const isCustom = account.provider === "custom";
     const info = await findProvider(account.provider);
     const rules = info ? providerRules(info) : { editableBaseUrl: false, privateNetwork: false };
@@ -776,7 +933,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
           .where(and(inArray(aiModelsTable.accountId, ids), eq(aiModelsTable.hidden, false)))
           .orderBy(sql`lower(${aiModelsTable.displayName})`, asc(aiModelsTable.id))
       : [];
-    const [counts, statuses] = await Promise.all([modelCounts(ids), providerStatuses(accounts)]);
+    const [counts, statuses, nodes] = await Promise.all([modelCounts(ids), providerStatuses(accounts), nodesOf(accounts)]);
     const now = new Date();
     const models = rows.map((r) => toPublicModel(r.model, linkedOffer(r), now));
     // I non selezionabili restano (con selectable: false): li filtra la console. Un consigliato per gruppo
@@ -784,7 +941,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       const own = models.filter((m) => m.accountId === a.id);
       const recommended = pickRecommended(own);
       return {
-        account: toPublicAccount(a, counts.get(a.id) ?? 0, statuses.get(a.provider)),
+        account: toPublicAccount(a, counts.get(a.id) ?? 0, statuses.get(a.provider), a.nodeId === null ? undefined : nodes.get(a.nodeId)),
         models: own.map((m) => ({ ...m, recommended: m.id === recommended })),
       };
     });

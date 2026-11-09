@@ -524,4 +524,10 @@ describe("istruzioni di Alfred a voce", () => {
     expect(t).toContain("non ricorda le richieste precedenti");
     expect(t).toContain("Ogni Responsabile agisce solo sulla sua App");
   });
+
+  it("istruzioni_novita: il messaggio [novità] non viene dall'utente", () => {
+    const t = alfredInstructions("Ivan");
+    expect(t).toContain("[novità]");
+    expect(t).toContain("non viene dall'utente");
+  });
 });

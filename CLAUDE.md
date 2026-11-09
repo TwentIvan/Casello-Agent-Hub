@@ -49,6 +49,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Alfred e i Responsabili: Alfred (voce, scritto e centralino `/mcp`) interpella il Responsabile di prodotto di ogni App con `chiedi_al_responsabile`, legge le App con `elenca_app` e l'esito con `leggi_run`; le scritture restano voci in «Da confermare» (vedi "Alfred (maggiordomo vocale)").
 - Proposte multiple (4a): un agente propone più creazioni o modifiche collegate con lo strumento interno `proponi`; in «Da confermare» compare una sola voce «Proposta» con i passi,
   approvabile in parte (caselle per passo), con riferimenti agli id creati dai passi precedenti; Alfred la legge passo per passo e la decide (vedi "Proposte multiple").
+- Esecutore «Claude Code (nodo)»: un account AI legato a un nodo fa eseguire a `casello-nodo` con `claude -p` (posto Claude Team dell'utente) i turni di Alfred scritto, Lucius,
+  chat del piano e di squadra e le run degli agenti; strumenti su `/mcp/turn` con un token per turno, ripiego facoltativo su un modello cloud (vedi "Esecutore Claude Code (nodo)").
 - Responsabile di Botcave stesso: l'App 4 (Botcave come app di sé stessa) con token di servizio d'ambito `agent`, che legge e scrive ma non decide mai al posto dell'utente (vedi "Token personali su `/api`").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
@@ -112,7 +114,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
   ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals,
   skills, skill_versions, team_templates, team_template_versions, team_instances, team_instance_skills,
-  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, team_chat_conversations, team_chat_messages, team_chat_proposals, character_notes, character_history, character_conversations, character_messages, character_proposals, nodes, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens, agent_triggers, trigger_seen_items, pending_action_steps)
+  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, team_chat_conversations, team_chat_messages, team_chat_proposals, character_notes, character_history, character_conversations, character_messages, character_proposals, nodes, node_turns, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens, agent_triggers, trigger_seen_items, pending_action_steps)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -227,6 +229,12 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (offerta di `proponi`, oscuramento nella timeline), `routes/pending-actions.ts`, `routes/app-tools.ts`, `lib/teams/centralino.ts`, `lib/mcp/server.ts`, `lib/alfred/` e `lib/characters/` (`leggi_proposta`, `escludi`); schema
   `lib/db/src/schema/pending-action-steps.ts`; console `artifacts/casello/src/components/actions/` (`proposal-steps.tsx`, `use-proposal-selection.ts`) e `src/lib/proposal-steps.ts`. Spec:
   `docs/superpowers/specs/2026-11-08-botcave-proposte-multiple-design.md`
+- Esecutore Claude Code (vedi "Esecutore Claude Code (nodo)"): account nodo in `artifacts/api-server/src/lib/ai/node-account.ts` (con `accounts.ts`, `executor.ts`,
+  `routes/ai.ts`); coda e protocollo dei turni in `lib/node-turns/` (`queue.ts`, `protocol.ts`, `sweeper.ts`, `registry.ts`, `prompt.ts`, `delegate.ts`, `chat-turn.ts`,
+  `messages.ts`); server MCP del turno `lib/mcp/turn-server.ts` (`/mcp/turn`); smistamento delle tool call delle run `lib/agent-dispatch.ts`; route in `src/routes/node.ts`
+  (`/api/node/turns/*`); schema `lib/db/src/schema/node-turns.ts`; nodo `artifacts/casello-nodo/src/turns.ts` e `turn-runner.ts`; console
+  `components/account/ai-account-dialog.tsx`, `node-account-fields.tsx`, `ai-accounts-section.tsx`, `nodes-section.tsx`, `components/runs/run-steps.tsx`. Prova di flusso
+  `artifacts/api-server/test/node-turn-flow.test.ts` con `test/fake-claude.mjs`. Spec: `docs/superpowers/specs/2026-11-09-botcave-esecutore-claude-code-nodo-design.md`
 - `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
 - `artifacts/mockup-sandbox/` — sandbox di mockup: NON va in produzione, non toccare
 - `gateway/` — config LiteLLM storica (gateway dismesso, vedi "Modelli AI"); non è più usata dal codice
@@ -1422,6 +1430,72 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   e da segnalare nella PR; riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
 - Fuori ambito: 4b (discussione con l'agente che ha proposto e versioni della proposta), 4c (The Hub Up: tool mancanti, istruzioni di Smistatore e Responsabile, prova reale), tool con identità `user` nei passi,
   annullamento automatico dei passi già eseguiti, proposte delle squadre (il capo resta sul PLAN).
+
+## Esecutore Claude Code (nodo)
+
+- Spec: `docs/superpowers/specs/2026-11-09-botcave-esecutore-claude-code-nodo-design.md`; piano `docs/superpowers/plans/2026-11-09-botcave-esecutore-claude-code-nodo.md`.
+  Dove il codice differisce dalla spec vale il codice, descritto qui. «Claude Code (nodo)» si sceglie come un modello: i turni li esegue `casello-nodo` sul
+  Mac dell'utente con `claude -p` e il suo login (posto Claude Team), con le regole di sempre (L2 in «Da confermare», schede da accettare, nessun segreto sul Mac).
+  Consumatori: conversazioni dei personaggi (Alfred scritto, Lucius), chat del piano, chat di squadra e run degli agenti (inneschi compresi). Fuori: voce di
+  Alfred, turni del capo e compiti `cloud` delle squadre, analisi dell'architetto.
+- **Account nodo** (`lib/ai/node-account.ts`): provider `claude_code_node` del registro (protocollo `claude_code_node`, `managed`, senza indirizzo; `GET
+  /api/ai/providers` lo segna `requiresNode: true`), `ExecutorKind` `openai_compatible | node`. Colonne `ai_accounts.node_id` (`SET NULL`, indice unico
+  parziale: un account per nodo) e `fallback_ai_model_id` (`SET NULL`). `POST /api/ai/accounts` con `provider: "claude_code_node"` vuole `nodeId` di un nodo
+  `active` dell'utente (altrimenti 400 «nodo non disponibile»; già legato → 409 «il nodo ha già un account Claude Code»), niente chiave, indirizzo né rete
+  privata (400); `nodeId`/`fallbackAiModelId` su altri provider → 400. Ripiego facoltativo (POST e PATCH, solo login): modello di un account **non nodo**
+  dell'utente, altrimenti 400 «modello di ripiego non valido». La risposta espone `nodeId`, `nodeName`, `nodeTurnReady`, `fallbackAiModelId`. «Verifica»
+  non fa chiamate di rete: riallinea i modelli e mette lo stato `ok` (nodo pronto) o `error` «nodo offline» / «nodo eliminato». `resolveModel` su un account
+  nodo restituisce `kind: "node"`, `nodeId`, `fallbackAiModelId` e il nome del modello, senza chiavi; `modelChat` su `kind: "node"` è un errore di programmazione.
+- **Modelli dell'account**: alias `fable`, `opus`, `sonnet`, `haiku` («<alias> (ultimo)») più le offerte `anthropic` non ritirate di `model_offers` (id del
+  catalogo passato così com'è a `--model`), riallineati a ogni «Verifica» e aggiornamento del catalogo (spariti → `unavailable`, mai cancellati); prezzi nulli
+  (il costo lo riferisce il nodo: `total_cost_usd`, conta in tutti i tetti come quello di ogni modello, `lib/budget.ts` non cambia), `supports_tools = true`;
+  `available` dopo un turno riuscito, `unavailable` su `model_unavailable`.
+- **Coda dei turni** (`node_turns`, `lib/node-turns/queue.ts`): `consumer` `character|plan_chat|team_chat|run`, `ref_id` (conversazione o run), `message_id`,
+  stato `queued|running|done|failed|cancelled|expired`, `package` jsonb (svuotato alla chiusura), solo l'hash del token del turno, lease, `content` ≤ 20 000,
+  `error_code` chiuso, token, costo, `session_id`. È la traccia tecnica: il risultato sta nel messaggio o nella run. **Protocollo** (`protocol.ts`, `routes/node.ts`,
+  token d'ambito `node`): `POST /api/node/turns/claim` aggiorna `nodes.last_turn_poll_at`, prende il più vecchio `queued` del nodo (`SKIP LOCKED`, lease di
+  2 minuti) o attende fino a 25 s un avviso in memoria e ritenta una volta, poi 204 (40/min per nodo, contatore separato); `POST …/:id/ping` `{leaseToken}`
+  (6/min per turno) e `POST …/:id/report` (una volta sola; codice fuori elenco → `claude_failed`; numeri interi ≥ 0 altrimenti 400); lease non valida → 409
+  «lease non valida o scaduta». **Pronto per i turni** = nodo `active` con un claim negli ultimi 60 s (un nodo di versione precedente non lo è mai). Controllo
+  ogni 5 s (`startNodeTurnSweeper`): `queued` da oltre 20 s → `expired`, lease scaduta → `failed` `lease_lost`; pulizia oraria delle righe chiuse da oltre 30
+  giorni. All'avvio `queued`/`running` → `failed` `restart`. Disattivare, eliminare o rigenerare il token del nodo chiude i suoi turni `failed` `node_disabled`
+  nella stessa transazione.
+- **Pacchetto**: `model`, `systemPrompt` (messaggio `system` più «Gli strumenti di Botcave si chiamano mcp__botcave__<nome>: usa solo quelli.»), `prompt` (gli
+  altri messaggi con le etichette `[utente]`/`[assistente]`, su stdin), `mcpUrl` = `<PUBLIC_APP_URL>/mcp/turn`, `turnToken` `cat_…`, `maxTurns` = giri di oggi + 1
+  (chat 7, run 9, Responsabile 13), `timeoutMs` 300 000 (Responsabile 600 000). Il limite di token non si impone a Claude Code: si registra.
+- **`/mcp/turn`** (`lib/mcp/turn-server.ts`, montato prima di `/mcp`, nessuna modifica a nginx): Streamable HTTP stateless con `Server` di basso livello,
+  solo `Bearer cat_…` di un turno `running` con lease valida e voce nel registro (altrimenti 401; `cat_` su `/mcp` o `/api` è sconosciuto, `cas_`/`cao_` qui 401).
+  Token: 32 byte base64url, nel DB solo l'hash, in chiaro solo in memoria fino al claim. Registro in memoria (`registry.ts`): strumenti del turno e dispatcher,
+  scritti da `delegateTurn` e tolti alla chiusura; `tools/call` → dispatcher, `isError` se il testo è JSON con `ok: false`; strumento sconosciuto → errore; 60
+  chiamate/min e al massimo 4 × `maxTurns` per turno; corpo ≤ 2 MB. Log: id del turno, strumento, esito.
+- **Consumatori**: le chat chiamano `runChatTurn` (`chat-turn.ts`) al posto di `runPlanTurn`: cloud → `runPlanTurn`, nodo → `delegateTurn` con gli stessi
+  strumenti e `runTool` come dispatcher (schede, memoria e `passa_a` funzionano da soli). Le run (`run-executor.ts`): `delegateTurn` con i messaggi iniziali di
+  sempre, gli strumenti dell'agente (`proponi` e `segnala_al_responsabile` compresi) e come dispatcher `dispatchAgentCall` (`lib/agent-dispatch.ts`, condivisa con
+  `runAgentLoop`: L2 in coda, conferma delle scritture compresa); i passi `tool`/`queued` compaiono mentre Claude lavora, a fine turno un passo `model` con la
+  durata e la nota «Claude Code sul nodo «<nome>»» (colonna nuova `run_steps.note`, testo informativo dei passi); `cancelRun` chiude il turno `cancelled` (il
+  ping dopo riceve 409 e il nodo termina `claude`).
+- **Ripiego** (`delegate.ts`): si ripiega sul `fallback_ai_model_id` dell'account nodo se il nodo non è pronto, disattivato o eliminato (deciso prima di
+  accodare), se il turno scade `expired` o se il nodo riferisce `usage_limit`/`not_logged_in` **e** il turno non ha registrato chiamate agli strumenti
+  (`calls` del registro = 0); mai su `timeout`, `claude_failed`, `stopped`, `lease_lost`, `model_unavailable` né dopo una chiamata (Claude può aver già agito).
+  Prima si controllano usabilità (`resolveModel`) e tetti (`runBudgetBlock`, `characterBudgetBlock`, utente per piano e squadra); modello di ripiego non usabile
+  o al tetto → il messaggio fisso del nodo. Chat: risposta con in fondo «_(Claude Code non disponibile: risposta del modello di ripiego)_» (limite noto: la spesa
+  resta sul modello della conversazione); run: `runs.ai_model_id` diventa il ripiego e il passo dice «Claude Code non disponibile: eseguita con <nome>».
+  Senza ripiego, messaggi fissi `NODE_TURN_MESSAGES` (`messages.ts`): nodo offline, nodo eliminato, limite d'uso, accesso mancante, modello non disponibile,
+  tempo scaduto, nodo non raggiungibile, esecuzione interrotta, riavvio, errore generico; chat: messaggio d'errore dell'assistente, run `failed`.
+- **`casello-nodo`** (`turns.ts`, `turn-runner.ts`, README): ciclo dei turni accanto a quello dei compiti, un claim in attesa per posto libero
+  (`maxConcurrentTurns` 1..4, default 2); per turno cartella vuota in `~/.casello-nodo/turns/` con `mcp.json` (600) e `claude -p --output-format json --model …
+  --system-prompt … --tools "" --strict-mcp-config --mcp-config … --allowedTools "mcp__botcave__*" --max-turns … --permission-mode dontAsk`, prompt su
+  stdin, gruppo di processi proprio, ping ogni 30 s, timeout con SIGTERM e SIGKILL dopo 10 s; codice d'errore scelto da frasi precise del testo (mai inoltrato);
+  409/401/403 su ping o report = turno perso, nessun report. Log senza prompt, risposta né token. Dopo il deploy il nodo va aggiornato (`casello-nodo install`).
+- Console: Account → Account AI «Aggiungi Claude Code (nodo)» (nodo tra i propri attivi, ripiego tra i modelli cloud), LED di prontezza e «Modifica» del
+  ripiego; Account → Nodi: «pronto per i turni» e versione; i modelli dell'account nodo compaiono nelle tendine come gli altri; timeline delle run con la nota.
+- Prova: `test/node-turn-flow.test.ts` (API in memoria e ciclo vero di `casello-nodo` con `fake-claude.mjs` che chiama `/mcp/turn` con il client MCP: scheda di
+  Lucius, azione L2 di una run); con `CASELLO_REAL_CLAUDE=1` anche un turno di Alfred scritto con il `claude` vero (`haiku`, `squadre_stato`).
+- Migrazione: `docs/migrations/2026-11-esecutore-nodo.sql` (additiva e idempotente, niente `-post`): valore `claude_code_node` di `provider_protocol` (`ALTER
+  TYPE … ADD VALUE IF NOT EXISTS`, fuori da una transazione esplicita; la riga del provider la scrive `ensureProviderRegistry` all'avvio), colonne
+  `ai_accounts.node_id`/`fallback_ai_model_id` con indice unico parziale, `nodes.last_turn_poll_at`, enum `node_turn_consumer` e `node_turn_status`, tabella
+  `node_turns` con indici, `run_steps.note`. Da applicare su Neon PRIMA del merge (SQL completo in chat) e da segnalare nella PR; riportata in
+  `docs/schema-casello.sql`. Nessuna variabile nuova.
 
 ## Esecutore locale
 

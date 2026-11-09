@@ -52,7 +52,8 @@ nascoste, `node_modules` e link simbolici. Una cartella appena creata compare in
 Oltre ai compiti, il nodo esegue i turni di chat e le run che Botcave delega a un account AI di tipo «Claude Code (nodo)»:
 usa l'accesso a Claude del tuo utente sul Mac (il login già fatto con `claude`), quindi i consumi contano sul tuo posto
 Claude e valgono i suoi limiti d'uso. Se il posto raggiunge il limite o il login scade, il turno fallisce con un codice
-(`usage_limit`, `not_logged_in`) e Botcave ripiega sul modello di riserva dell'account, se c'è.
+(`usage_limit`, `not_logged_in`) e Botcave ripiega sul modello di riserva dell'account, se c'è e se Claude non ha ancora
+chiamato strumenti nel turno (altrimenti il turno fallisce: rifarlo duplicherebbe azioni già in coda).
 
 - Ciclo separato da quello dei compiti: tiene un claim in attesa (long-poll) finché ha un posto libero, fino a
   `maxConcurrentTurns` turni insieme (config, 1..4, default 2). Errore di rete: riprova dopo 5 s; nodo disattivato: ogni 30 s.

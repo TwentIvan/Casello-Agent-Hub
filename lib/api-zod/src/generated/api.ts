@@ -660,6 +660,41 @@ export const RecordAlfredUsageResponse = zod.void()
 
 
 /**
+ * Sola lettura: run di Responsabili richieste tramite Alfred finite e nuove voci in «Da confermare» dell'utente, dopo il cursore `after` (data ISO restituita dalla chiamata precedente) e nell'ultima ora, al più 10 per chiamata in ordine di tempo. Senza `after` risponde solo con il cursore iniziale. Non aggiorna l'attività della sessione. Limite: 30 al minuto per utente.
+ * @summary Novità per la sessione vocale di Alfred
+ */
+export const GetAlfredNotificationsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetAlfredNotificationsQueryParams = zod.object({
+  "after": zod.coerce.string().optional()
+})
+
+export const GetAlfredNotificationsResponse = zod.object({
+  "cursor": zod.string(),
+  "events": zod.array(zod.object({
+  "kind": zod.enum(['lead_run', 'queue_item']),
+  "at": zod.string(),
+  "run": zod.number().optional(),
+  "app": zod.string().nullish(),
+  "status": zod.string().optional(),
+  "output": zod.string().nullish(),
+  "error": zod.string().nullish(),
+  "items": zod.array(zod.object({
+  "numero": zod.number(),
+  "tipo": zod.string(),
+  "sintesi": zod.string()
+})).optional(),
+  "numero": zod.number().optional(),
+  "tipo": zod.string().optional(),
+  "squadra": zod.string().nullish(),
+  "sintesi": zod.string().optional()
+}))
+})
+
+
+/**
  * Con `transcript` (facoltativo, al massimo 20 000 caratteri) Botcave ne ricava, in background, un riassunto per lo storico di Alfred; la trascrizione non si salva mai. Oltre il limite: 400.
  * @summary Chiude una sessione di Alfred
  */

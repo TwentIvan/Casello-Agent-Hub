@@ -2,6 +2,9 @@ import { Router, type IRouter } from "express";
 import {
   CloseAlfredSessionBody,
   CloseAlfredSessionParams,
+  GetAlfredNotificationsParams,
+  GetAlfredNotificationsQueryParams,
+  GetAlfredNotificationsResponse,
   GetAlfredSettingsResponse,
   RecordAlfredUsageBody,
   RecordAlfredUsageParams,
@@ -20,9 +23,10 @@ import { ModelChoiceError } from "../lib/ai/choice";
 import { AlfredError } from "../lib/alfred/gemini";
 import { getAlfredSettings, setAlfredSettings } from "../lib/alfred/settings";
 import { runAlfredTool } from "../lib/alfred/tools";
-import { closeSession, recordUsage, renewSession, startSession } from "../lib/alfred/sessions";
+import { closeSession, recordUsage, renewSession, requireActiveSession, startSession } from "../lib/alfred/sessions";
+import { NOTIFICATION_MESSAGES, alfredNotifications } from "../lib/alfred/notifications";
 import { parseRequest } from "../middlewares/error-handler";
-import { consumeAlfredSession, consumeAlfredTool } from "../middlewares/rate-limit";
+import { consumeAlfredNotifications, consumeAlfredSession, consumeAlfredTool } from "../middlewares/rate-limit";
 
 /** Errori di Alfred con messaggio fisso e stato; gli altri passano al gestore generale. */
 function replyAlfredError(res: import("express").Response, err: unknown): boolean {
@@ -104,6 +108,30 @@ export function createAlfredRouter(): IRouter {
     }
     try {
       res.json(RunAlfredToolResponse.parse(await runAlfredTool(currentUserId(req), id, name, args)));
+    } catch (err) {
+      if (!replyAlfredError(res, err)) throw err;
+    }
+  });
+
+  // Novità per la voce: sola lettura, non conta come attività della sessione
+  router.get("/alfred/sessions/:id/notifications", sessionOrEmbed, async (req, res) => {
+    const { id } = parseRequest(GetAlfredNotificationsParams, req.params);
+    const { after } = parseRequest(GetAlfredNotificationsQueryParams, req.query);
+    const userId = currentUserId(req);
+    if (!consumeAlfredNotifications(userId)) {
+      res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
+      return;
+    }
+    try {
+      await requireActiveSession(userId, id, { touch: false });
+      let cursor: Date | null = null;
+      if (after !== undefined) {
+        // Solo date ISO come quelle restituite dal server
+        const parsed = new Date(after);
+        if (Number.isNaN(parsed.getTime()) || parsed.toISOString() !== after) throw new AlfredError(NOTIFICATION_MESSAGES.badCursor, 400);
+        cursor = parsed;
+      }
+      res.json(GetAlfredNotificationsResponse.parse(await alfredNotifications(userId, cursor, new Date())));
     } catch (err) {
       if (!replyAlfredError(res, err)) throw err;
     }

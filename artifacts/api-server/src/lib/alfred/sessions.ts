@@ -89,13 +89,13 @@ export async function startSession(userId: number): Promise<AlfredSessionStart> 
   return { sessionId, token, model: bareModelName(resolved.modelId), voice, expiresAt };
 }
 
-/** Sessione `active` dell'utente (altrimenti 404); aggiorna `last_activity_at`. */
-export async function requireActiveSession(userId: number, id: number): Promise<AlfredSessionRow> {
-  const [row] = await db
-    .update(alfredSessionsTable)
-    .set({ lastActivityAt: new Date() })
-    .where(and(eq(alfredSessionsTable.id, id), eq(alfredSessionsTable.userId, userId), eq(alfredSessionsTable.status, "active")))
-    .returning();
+/** Sessione `active` dell'utente (altrimenti 404); aggiorna `last_activity_at`, salvo `touch: false` (letture di sola osservazione). */
+export async function requireActiveSession(userId: number, id: number, opts: { touch?: boolean } = {}): Promise<AlfredSessionRow> {
+  const where = and(eq(alfredSessionsTable.id, id), eq(alfredSessionsTable.userId, userId), eq(alfredSessionsTable.status, "active"));
+  const [row] =
+    opts.touch === false
+      ? await db.select().from(alfredSessionsTable).where(where).limit(1)
+      : await db.update(alfredSessionsTable).set({ lastActivityAt: new Date() }).where(where).returning();
   if (!row) throw new AlfredError(ALFRED_SESSION_MESSAGES.notFound, 404);
   return row;
 }

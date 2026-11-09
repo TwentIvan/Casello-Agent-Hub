@@ -6,7 +6,7 @@ import { usePanel } from "@/components/panel/panel-context";
 export function LuciusButton() {
   const { openPanel } = usePanel();
   return (
-    <Button variant="outline" size="sm" onClick={() => openPanel("lucius")}>
+    <Button variant="outline" size="sm" onClick={() => openPanel("lucius", { clearOverride: true })}>
       <LuciusMark size={12} />
       Chiedi a Lucius
     </Button>

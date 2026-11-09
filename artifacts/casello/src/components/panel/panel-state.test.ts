@@ -41,6 +41,22 @@ describe("panelReducer", () => {
     const s = panelReducer(base({ pageLucius: plan, override: agent }), { type: "handoff", target: { kind: "plan", appId: 1 }, draft: "x" });
     expect(s.override).toBeNull();
     expect(s.tab).toBe("lucius");
+    expect(s.draft).toEqual({ tab: "lucius", text: "x" });
+    expect(s.nonce).toBe(1);
+  });
+  it("la bozza si usa una sola volta: close, selectTab e open la tolgono senza toccare nonce", () => {
+    const h = panelReducer(base(), { type: "handoff", target: agent, draft: "x" });
+    for (const a of [{ type: "close" }, { type: "selectTab", tab: "pending" }, { type: "open" }] as const) {
+      const s = panelReducer(h, a);
+      expect(s.draft).toBeNull();
+      expect(s.nonce).toBe(h.nonce);
+    }
+  });
+  it("open con clearOverride mostra l'argomento della pagina", () => {
+    const s = panelReducer(base({ pageLucius: plan, override: agent }), { type: "open", tab: "lucius", clearOverride: true });
+    expect(s.override).toBeNull();
+    expect(luciusTarget(s)).toEqual(plan);
+    expect(panelReducer(base({ override: agent }), { type: "open", tab: "lucius" }).override).toEqual(agent);
   });
   it("navigate chiude e toglie la sostituzione", () => {
     const s = panelReducer(

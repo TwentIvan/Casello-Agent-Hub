@@ -17,7 +17,7 @@ export type PanelEnv =
 export interface PanelApi {
   state: PanelState;
   env: PanelEnv;
-  openPanel(tab?: PanelTab): void;
+  openPanel(tab?: PanelTab, opts?: { clearOverride?: boolean }): void;
   closePanel(): void;
   selectTab(tab: PanelTab): void;
   handoff(target: ChatTarget, draft: string): void;
@@ -62,7 +62,7 @@ export function PanelProvider({ env, children }: { env: PanelEnv; children: Reac
     [appSlug, hostContext, location],
   );
 
-  const openPanel = useCallback((tab?: PanelTab) => dispatch({ type: "open", tab }), []);
+  const openPanel = useCallback((tab?: PanelTab, opts?: { clearOverride?: boolean }) => dispatch({ type: "open", tab, clearOverride: opts?.clearOverride }), []);
   const closePanel = useCallback(() => {
     dispatch({ type: "close" });
     // Nell'iframe chiudere vuol dire nascondere l'iframe: lo fa il caricatore della pagina ospite

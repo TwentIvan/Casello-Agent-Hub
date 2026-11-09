@@ -78,12 +78,12 @@ function NavMenu({ location, items }: { location: string; items: NavItem[] }) {
             </Link>
           </SidebarMenuButton>
           {item.href === "/pending-actions" && pending > 0 && (
-            <SidebarMenuBadge className="rounded-none bg-brand font-mono text-on-brand" title={`${pending} voci da confermare`}>
+            <SidebarMenuBadge className="rounded-none bg-brand font-mono text-on-brand" title={pendingLabel(pending)}>
               {pending}
             </SidebarMenuBadge>
           )}
           {item.href === "/teams" && unread > 0 && (
-            <SidebarMenuBadge className="font-mono text-accent-text" title={`${unread} notizie non lette nel bollettino`}>
+            <SidebarMenuBadge className="font-mono text-accent-text" title={`${unread} ${unread === 1 ? "notizia non letta" : "notizie non lette"} nel bollettino`}>
               {unread}
             </SidebarMenuBadge>
           )}
@@ -91,6 +91,10 @@ function NavMenu({ location, items }: { location: string; items: NavItem[] }) {
       ))}
     </SidebarMenu>
   );
+}
+
+function pendingLabel(n: number): string {
+  return `${n} ${n === 1 ? "voce" : "voci"} da confermare`;
 }
 
 /*
@@ -104,7 +108,7 @@ function CaveHeader() {
   // Stesso contatore e stessa cache del badge del menu
   const stats = useGetDashboardStats({ query: { queryKey: getGetDashboardStatsQueryKey(), refetchInterval: 30_000 } });
   const pending = stats.data?.pendingActions ?? 0;
-  const label = pending > 0 ? `Apri Alfred, ${pending} voci da confermare` : "Apri Alfred";
+  const label = `Apri Alfred${pending > 0 ? `, ${pendingLabel(pending)}` : ""}${status !== "stopped" ? ", voce attiva" : ""}`;
   return (
     <header className="relative flex h-28 shrink-0 flex-col overflow-hidden bg-notte">
       <div aria-hidden="true" className="h-16 shrink-0">

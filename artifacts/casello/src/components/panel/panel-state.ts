@@ -17,7 +17,7 @@ export interface PanelState {
 }
 
 export type PanelAction =
-  | { type: "open"; tab?: PanelTab }
+  | { type: "open"; tab?: PanelTab; clearOverride?: boolean }
   | { type: "close" }
   | { type: "selectTab"; tab: PanelTab }
   | { type: "handoff"; target: ChatTarget; draft: string }
@@ -37,11 +37,12 @@ export const INITIAL_PANEL_STATE: PanelState = {
 export function panelReducer(state: PanelState, action: PanelAction): PanelState {
   switch (action.type) {
     case "open":
-      return { ...state, open: true, tab: action.tab ?? state.tab };
+      // La bozza del passaggio di consegne si mostra una sola volta
+      return { ...state, open: true, tab: action.tab ?? state.tab, draft: null, override: action.clearOverride ? null : state.override };
     case "close":
-      return { ...state, open: false };
+      return { ...state, open: false, draft: null };
     case "selectTab":
-      return { ...state, tab: action.tab };
+      return { ...state, tab: action.tab, draft: null };
     case "handoff": {
       if (action.target.kind === "alfred") {
         return { ...state, open: true, tab: "alfred", draft: { tab: "alfred", text: action.draft }, nonce: state.nonce + 1 };

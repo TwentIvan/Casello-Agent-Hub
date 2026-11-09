@@ -164,14 +164,29 @@ export function withConfirmedWrites(tools: CatalogTool[]): CatalogTool[] {
   return tools.map((tool) => (effectiveLevel(tool) === "L1" ? { ...tool, levelOverride: "L2" as const } : tool));
 }
 
-// Contesto di sistema: app e istruzioni dell'agente. I tool non sono elencati nel testo:
+const TODAY_DATE = new Intl.DateTimeFormat("it-IT", {
+  timeZone: "Europe/Rome",
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+const TODAY_TIME = new Intl.DateTimeFormat("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+/** «Oggi è lunedì 9 novembre 2026, ore 16:12 (ora italiana).»: senza, il modello indovina la data. */
+export function todayLine(now: Date): string {
+  return `Oggi è ${TODAY_DATE.format(now)}, ore ${TODAY_TIME.format(now)} (ora italiana).`;
+}
+
+// Contesto di sistema: data di oggi, app e istruzioni dell'agente. I tool non sono elencati nel testo:
 // arrivano al modello come function calling.
-export function buildSystemPrompt(agent: Agent, app: App): string {
+export function buildSystemPrompt(agent: Agent, app: App, now: Date = new Date()): string {
   const functional = app.functionalDescription?.trim() ?? "";
   const context = [
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
     `🤖 CONTESTO AGENTE: ${agent.name}`,
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    todayLine(now),
     `App: ${app.name} (${app.baseUrl})`,
     app.description ?? "",
     ...(functional

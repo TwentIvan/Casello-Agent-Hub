@@ -47,6 +47,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   inneschi di sorveglianza (vedi "Inneschi").
 - Proposte multiple (4a): un agente propone più creazioni o modifiche collegate con lo strumento interno `proponi`; in «Da confermare» compare una sola voce «Proposta» con i passi,
   approvabile in parte (caselle per passo), con riferimenti agli id creati dai passi precedenti; Alfred la legge passo per passo e la decide (vedi "Proposte multiple").
+- Responsabile di Botcave stesso: l'App 4 (Botcave come app di sé stessa) con token di servizio d'ambito `agent`, che legge e scrive ma non decide mai al posto dell'utente (vedi "Token personali su `/api`").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -868,6 +869,13 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   "The Hub Up 5c (tappa 1)"). Default alla creazione `["mcp"]`; i token esistenti sono diventati `{mcp}`: nessun permesso nuovo. L'ambito `node` non si sceglie
   (`createNodeToken`: nasce solo con un nodo, `api_tokens.node_id`, scade dopo 365 giorni, non compare tra i token personali);
   un token di nodo su `/api` (fuori da `/api/node`) → 403 «il token non ha l'ambito per questa operazione», su `/mcp` → 401.
+- Ambito `agent` (token personale per il Responsabile di Botcave stesso, segreto di servizio dell'App 4): **esclusivo** (con altri ambiti → 400 «l'ambito agent non si combina con altri
+  ambiti»), vale su `/api` come `api:read` + `api:write` (GET/HEAD e scritture) tranne `AGENT_DENIED_ROUTES` (`lib/auth.ts`, confronto senza distinzione di maiuscole), che danno 403 «il token non ha
+  l'ambito per questa operazione»: `POST /pending-actions/:n/approve|reject`, `POST /plan-proposals|team-chat-proposals|character-proposals/:id/decision`, `PATCH /analysis-items/:id`,
+  `PUT /team-instances/:id/plan` e `POST /team-instances/:id/plan/manual-actions/:actionId/done` (l'agente non decide mai al posto dell'utente), `POST /apps` e `PATCH /apps/:id`
+  (configurazione delle app con indirizzi e segreti: un tool dell'App 4 riprogrammato non deve poter dirottare il segreto di servizio di un'altra app) e ogni `DELETE` (regola sul
+  metodo: le eliminazioni restano alla sessione dell'utente; vale anche sulle route `sessionOnly`, che con `agent` rispondono quindi 403 d'ambito). Le route `sessionOnly` restano 403, su `/mcp` 401. Durata
+  massima 90 giorni (come ogni token personale). In console: Account → «Token personali», casella «Agente di Botcave (segreto di servizio)», che spegne e disattiva le altre.
 - Il token OAuth `cao_…` con ambito `embed` (pannello incorporabile) vale invece su `/api` come `api:read` + `api:write`, con le eccezioni descritte in
   "Botcave incorporabile (app ospiti)".
 - Regola unica in `requireAuth` (`lib/auth.ts`): con l'header `Authorization` presente conta solo il token, mai il
@@ -889,9 +897,9 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   («errore interno») e registra solo il nome dell'errore (i parametri della query conterrebbero l'hash).
 - Migrazione: `docs/migrations/2026-10-token-api.sql` (additiva, idempotente): da applicare in produzione PRIMA del
   merge e da segnalare nella PR.
-- Casello come app di sé stesso: registrarlo come App con `internal_base_url` `http://casello-api:3000`,
-  autenticazione utente header `Authorization` + scheme `Bearer`, tool con identità `user`; il token arriva come
-  "Token di prova" della run oppure, con identità `service`, come segreto di servizio dell'app.
+- Casello come app di sé stesso (App 4, spec `docs/superpowers/specs/2026-11-09-botcave-responsabile-di-se-stesso-design.md`): `internal_base_url` `http://localhost:3000`
+  (l'API chiama sé stessa), autenticazione di servizio header `Authorization` + scheme `Bearer`, tool con identità `service`, segreto di servizio = token personale con
+  ambito `agent`; catalogo dei tool in `docs/botcave-self/catalogo-tool.json`.
 - In sviluppo con `AUTH_DISABLED=true` i token funzionano solo se `ALLOWED_EMAILS` include `dev@localhost`.
 
 ## Connettore OAuth (app Claude)

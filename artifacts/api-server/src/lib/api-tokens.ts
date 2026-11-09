@@ -12,12 +12,15 @@ const TOKEN_PREFIX = "cas_";
 /**
  * Ambiti di un token: mcp = server MCP; api:read = lettura su /api; api:write = lettura e scrittura su /api;
  * node = protocollo del nodo locale (solo /api/node, solo token legati a un nodo); embed = pannello incorporato
- * (solo collegamenti OAuth `cao_…` dei client `embed`, mai un token personale).
+ * (solo collegamenti OAuth `cao_…` dei client `embed`, mai un token personale); runs = solo avvio e lettura delle run;
+ * agent = lettura e scrittura su /api tranne le decisioni dell'utente, creazione e modifica delle app e le eliminazioni
+ * (AGENT_DENIED_ROUTES in auth.ts), esclusivo:
+ * segreto di servizio dell'App di Botcave stesso.
  */
-export const TOKEN_SCOPES = ["mcp", "api:read", "api:write", "runs", "node", "embed"] as const;
+export const TOKEN_SCOPES = ["mcp", "api:read", "api:write", "runs", "node", "embed", "agent"] as const;
 export type TokenScope = (typeof TOKEN_SCOPES)[number];
 /** Ambiti che l'utente può scegliere per un token personale: `node` nasce solo con un nodo (createNodeToken). */
-export const PERSONAL_TOKEN_SCOPES = ["mcp", "api:read", "api:write", "runs"] as const;
+export const PERSONAL_TOKEN_SCOPES = ["mcp", "api:read", "api:write", "runs", "agent"] as const;
 /** Durata dei token dei nodi. */
 const NODE_TOKEN_DAYS = 365;
 
@@ -72,6 +75,9 @@ export async function createApiToken(
   const known = scopes.filter((scope) => (PERSONAL_TOKEN_SCOPES as readonly string[]).includes(scope));
   if (scopes.length < 1 || known.length !== scopes.length || new Set(scopes).size !== scopes.length) {
     throw new ApiTokenInputError(`ambiti non validi: scegline almeno uno tra ${PERSONAL_TOKEN_SCOPES.join(", ")}`);
+  }
+  if (scopes.includes("agent") && scopes.length > 1) {
+    throw new ApiTokenInputError("l'ambito agent non si combina con altri ambiti");
   }
   const token = TOKEN_PREFIX + randomBytes(32).toString("base64url");
   const [row] = await db

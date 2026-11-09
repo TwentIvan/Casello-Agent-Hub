@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import type { CharacterPageContext, CharacterSubjectType } from "@workspace/api-client-react";
 import { useAlfredAdapter, useLuciusSubjectAdapter } from "./character-adapters";
+import { SUBJECT_LABELS, targetKey } from "./targets";
 import { usePlanChatAdapter, useTeamChatAdapter } from "./plan-team-adapters";
 
 // Un solo pannello (`CharacterChat`) per le conversazioni di Alfred e Lucius: ogni backend (conversazioni dei personaggi,
@@ -9,6 +10,9 @@ import { usePlanChatAdapter, useTeamChatAdapter } from "./plan-team-adapters";
 
 export const POLL_MS = 1500;
 export const MAX_CHARS = 8000;
+
+// Funzioni pure spostate in `targets.ts` (provabili con Vitest senza React)
+export { SUBJECT_LABELS, targetKey };
 
 export type PageContext = CharacterPageContext;
 export type SubjectType = CharacterSubjectType;
@@ -117,33 +121,12 @@ export function useCharacterAdapter(target: ChatTarget): ChatAdapter {
 }
 
 /** Chiave stabile del bersaglio: `CharacterChat` si rimonta quando cambia (gli adattatori usano hook diversi). */
-export function targetKey(target: ChatTarget): string {
-  switch (target.kind) {
-    case "alfred":
-      return "alfred";
-    case "character":
-      return `character:${target.subjectType}:${target.subjectId ?? ""}`;
-    case "plan":
-      return `plan:${target.appId}`;
-    case "team":
-      return `team:${target.instanceId}`;
-  }
-}
-
 export function characterOf(target: ChatTarget): Character {
   return target.kind === "alfred" ? "alfred" : "lucius";
 }
 
 // --- Etichette e aiuti comuni ---------------------------------------------------------------------
 
-export const SUBJECT_LABELS: Record<Exclude<SubjectType, "alfred_thread">, string> = {
-  agent: "Agente",
-  skill: "Skill",
-  team_template: "Modello di squadra",
-  area_agents: "Area Agenti",
-  area_skills: "Area Skill",
-  area_team_templates: "Area Modelli di squadra",
-};
 
 /**
  * Dopo un'eliminazione riuscita: il dettaglio esce dalla cache e la conversazione dall'elenco, prima di rileggerlo,

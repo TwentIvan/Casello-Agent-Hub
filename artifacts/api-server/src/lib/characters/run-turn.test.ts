@@ -9,11 +9,15 @@ import {
   characterMessagesTable,
   characterNotesTable,
   characterProposalsTable,
+  nodesTable,
   usersTable,
 } from "@workspace/db";
 import { encryptSecret } from "../secrets";
 import { INTERRUPTED_TURN_MESSAGE } from "../plan-chat/run-turn";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
+import { seedNodeTurnSetup } from "../../../test/node-turn-fixture";
+import { claimTurn, reportTurn } from "../node-turns/protocol";
+import { turnEntry } from "../node-turns/registry";
 import { createConversation } from "./conversations";
 import { createTurnContext, recordProposal } from "./proposals";
 import { registerSubject } from "./registry";
@@ -41,8 +45,15 @@ const fakeSubject: SubjectHandler = {
     lastPage = page;
     return ["Skill prova: contenuto DATO-DELL-ARGOMENTO"];
   },
-  tools: [{ type: "function", function: { name: "leggi_prova", description: "Legge", parameters: { type: "object", properties: {} } } }],
-  runTool: async () => toolOk("letto"),
+  tools: [
+    { type: "function", function: { name: "leggi_prova", description: "Legge", parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "proponi_prova", description: "Propone", parameters: { type: "object", properties: {} } } },
+  ],
+  runTool: async (call, ctx) => {
+    if (call.name !== "proponi_prova") return toolOk("letto");
+    const r = await recordProposal(ctx, "skill_content", { content: "nuovo" }, "motivo", "hash");
+    return toolOk(r);
+  },
 };
 
 beforeAll(() => {
@@ -260,6 +271,75 @@ describe("conversazioni dei personaggi", () => {
     expect(err).toMatchObject({ status: 409, message: "argomento eliminato" });
     expect(await getMessages()).toHaveLength(0);
     expect((await getConv()).turnStatus).toBe("idle");
+  });
+
+  describe("modello Claude Code (nodo)", () => {
+    const FALLBACK_SUFFIX = "\n\n_(Claude Code non disponibile: risposta del modello di ripiego)_";
+
+    async function useNodeModel(opts: { ready: boolean; fallback: boolean }) {
+      const node = await seedNodeTurnSetup("a@x.it", "Mac");
+      if (opts.ready) await db.update(nodesTable).set({ lastTurnPollAt: new Date() }).where(eq(nodesTable.id, node.nodeId));
+      if (opts.fallback) await db.update(aiAccountsTable).set({ fallbackAiModelId: modelId }).where(eq(aiAccountsTable.nodeId, node.nodeId));
+      await db.update(characterConversationsTable).set({ aiModelId: node.aiModelId }).where(eq(characterConversationsTable.id, conversationId));
+      return node;
+    }
+
+    it("node_turn_with_proposal: il nodo chiama proponi_* dal registro; risposta riferita, scheda creata, token e costo cumulati", async () => {
+      const node = await useNodeModel({ ready: true, fallback: false });
+      await startCharacterTurn(conversationId, "Proponi una modifica", null);
+      const pkg = await claimTurn(node.nodeId, 5_000);
+      expect(pkg?.prompt).toContain("[utente]\nProponi una modifica");
+      const entry = turnEntry(pkg!.id)!;
+      expect(entry.tools.map((t) => t.function.name)).toEqual(expect.arrayContaining(["leggi_prova", "proponi_prova", "ricorda", "passa_a"]));
+      expect(JSON.parse(await entry.dispatch({ id: "c1", name: "proponi_prova", arguments: "{}" }))).toMatchObject({ ok: true });
+      await reportTurn(node.nodeId, pkg!.id, {
+        leaseToken: pkg!.leaseToken,
+        status: "done",
+        content: "Ecco la proposta.",
+        promptTokens: 100,
+        completionTokens: 20,
+        costUsd: 0.05,
+      });
+      await waitIdle(conversationId);
+      const messages = await getMessages();
+      expect(messages[1]).toMatchObject({ role: "assistant", content: "Ecco la proposta.", error: false, tokens: 120 });
+      const cards = await db.select().from(characterProposalsTable).where(eq(characterProposalsTable.messageId, messages[1]!.id));
+      expect(cards).toHaveLength(1);
+      expect(cards[0]).toMatchObject({ kind: "skill_content", status: "pending" });
+      const conv = await getConv();
+      expect(conv.tokensUsed).toBe(120);
+      expect(Number(conv.costUsd)).toBeCloseTo(0.05, 6);
+      expect(chatBodies()).toHaveLength(0);
+    });
+
+    it("node_offline_with_fallback: risposta del modello di ripiego con il suffisso", async () => {
+      await useNodeModel({ ready: false, fallback: true });
+      fake.chatReply = { content: "Risposta di ripiego", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+      await startCharacterTurn(conversationId, "Ciao", null);
+      await waitIdle(conversationId);
+      const messages = await getMessages();
+      expect(messages[1]).toMatchObject({ role: "assistant", error: false, content: `Risposta di ripiego${FALLBACK_SUFFIX}`, tokens: 15 });
+      expect(chatBodies()).toHaveLength(1);
+    });
+
+    it("node_offline_fallback_over_budget: tetto del modello di ripiego raggiunto → messaggio fisso del nodo", async () => {
+      await useNodeModel({ ready: false, fallback: true });
+      await db.update(aiModelsTable).set({ monthlyBudgetUsd: "0" }).where(eq(aiModelsTable.id, modelId));
+      await startCharacterTurn(conversationId, "Ciao", null);
+      await waitIdle(conversationId);
+      const messages = await getMessages();
+      expect(messages[1]).toMatchObject({ role: "assistant", error: true, content: "Il nodo «Mac» è offline: accendilo o scegli un altro modello" });
+      expect(chatBodies()).toHaveLength(0);
+    });
+
+    it("node_offline_without_fallback: messaggio d'errore fisso con il nome del nodo", async () => {
+      await useNodeModel({ ready: false, fallback: false });
+      await startCharacterTurn(conversationId, "Ciao", null);
+      await waitIdle(conversationId);
+      const messages = await getMessages();
+      expect(messages[1]).toMatchObject({ role: "assistant", error: true, content: "Il nodo «Mac» è offline: accendilo o scegli un altro modello", tokens: 0 });
+      expect(chatBodies()).toHaveLength(0);
+    });
   });
 
   it("messaggio vuoto o troppo lungo → 400", async () => {

@@ -1,5 +1,5 @@
 // Turni delle conversazioni dei personaggi (Alfred e Lucius nelle aree): stesso ciclo della chat del piano
-// (`runPlanTurn`) con gli strumenti dell'argomento, quelli di memoria del personaggio e `passa_a`.
+// (`runChatTurn`: modello cloud o Claude Code sul nodo) con gli strumenti dell'argomento, quelli di memoria del personaggio e `passa_a`.
 // `startCharacterTurn` risponde subito con il messaggio dell'utente e lancia il turno in background.
 // Nei log solo id e conteggi: mai il contenuto dei messaggi.
 
@@ -15,14 +15,14 @@ import {
 import { logger } from "../logger";
 import type { ChatToolCall } from "../ai/chat-types";
 import { ProviderError } from "../ai/discovery";
-import { ModelAccessError, modelChat, resolveModel } from "../ai/executor";
+import { ModelAccessError, resolveModel } from "../ai/executor";
 import { estimateTokens } from "../architect/phase-loop";
 import { sliceChars } from "../architect/text";
 import { characterBudgetBlock } from "../budget";
 import { memoryContextBlock } from "../memory/context";
 import { MEMORY_TOOLS, MEMORY_TOOL_NAMES, runMemoryTool } from "../memory/tools";
 import { EMPTY_REPLY_MESSAGE, INTERRUPTED_TURN_MESSAGE, TurnBusyError } from "../plan-chat/run-turn";
-import { PLAN_TURN_LIMITS, runPlanTurn } from "../plan-chat/turn";
+import { runChatTurn } from "../node-turns/chat-turn";
 import { HANDOFF_TOOL, runHandoff } from "./handoff";
 import { CHARACTER_NAMES, characterInstructions } from "./instructions";
 import { createTurnContext } from "./proposals";
@@ -312,16 +312,18 @@ export async function executeCharacterTurn(conversationId: number, assistantMess
         const messages = buildCharacterMessages({ character, subjectData, memory, page, history, userMessage });
         const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
         const ctx = createTurnContext({ userId: conv.userId, conversationId, messageId: assistantMessageId, subjectId: conv.subjectId, page });
-        const outcome = await runPlanTurn(
+        const outcome = await runChatTurn({
+          resolved,
+          userId: conv.userId,
+          consumer: "character",
+          refId: conversationId,
+          messageId: assistantMessageId,
           messages,
-          {
-            chat: (msgs, tools, timeoutMs) => modelChat(resolved, { messages: msgs, tools, timeoutMs, caller: "character-chat" }),
-            runTool: (call) => runCharacterTool(character, handler, call, ctx),
-            now: () => Date.now(),
-          },
-          PLAN_TURN_LIMITS,
-          [...handler.tools, ...MEMORY_TOOLS, HANDOFF_TOOL],
-        );
+          tools: [...handler.tools, ...MEMORY_TOOLS, HANDOFF_TOOL],
+          runTool: (call) => runCharacterTool(character, handler, call, ctx),
+          caller: "character-chat",
+          budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, character, aiModelId),
+        });
         tokens = outcome.tokens;
         costUsd = outcome.costUsd;
         if (outcome.ok) {

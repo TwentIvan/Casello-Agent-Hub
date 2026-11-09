@@ -78,3 +78,18 @@ export async function markModelUnavailable(aiModelId: number): Promise<void> {
     logger.error({ aiModelId, errName: err instanceof Error ? err.name : "unknown" }, "Modello non segnato come non disponibile");
   }
 }
+
+/**
+ * Segna il modello come disponibile (una chiamata reale è riuscita, es. un turno delegato al nodo).
+ * Non lancia mai: un errore del DB finisce solo nel log, con il nome dell'errore.
+ */
+export async function markModelAvailable(aiModelId: number): Promise<void> {
+  try {
+    await db
+      .update(aiModelsTable)
+      .set({ availability: "available", updatedAt: new Date() })
+      .where(eq(aiModelsTable.id, aiModelId));
+  } catch (err) {
+    logger.error({ aiModelId, errName: err instanceof Error ? err.name : "unknown" }, "Modello non segnato come disponibile");
+  }
+}

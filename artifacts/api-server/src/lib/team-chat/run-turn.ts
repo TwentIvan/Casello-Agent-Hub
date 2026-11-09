@@ -1,4 +1,4 @@
-// Esecuzione dei turni della chat di Lucius sulla squadra: stesso ciclo della chat del piano (`runPlanTurn`) con gli
+// Esecuzione dei turni della chat di Lucius sulla squadra: stesso ciclo della chat del piano (`runChatTurn`) con gli
 // strumenti della squadra. `startTeamChatTurn` risponde subito con il messaggio dell'utente e lancia il turno in
 // background. Nei log solo id e conteggi: mai il contenuto dei messaggi.
 
@@ -13,12 +13,12 @@ import {
 } from "@workspace/db";
 import { logger } from "../logger";
 import { ProviderError } from "../ai/discovery";
-import { ModelAccessError, modelChat, resolveModel } from "../ai/executor";
+import { ModelAccessError, resolveModel } from "../ai/executor";
 import { sliceChars } from "../architect/text";
 import { characterBudgetBlock } from "../budget";
 import { memoryContextBlock } from "../memory/context";
 import { EMPTY_REPLY_MESSAGE, INTERRUPTED_TURN_MESSAGE, TurnBusyError } from "../plan-chat/run-turn";
-import { PLAN_TURN_LIMITS, runPlanTurn } from "../plan-chat/turn";
+import { runChatTurn } from "../node-turns/chat-turn";
 import { InstanceError, INSTANCE_MESSAGES } from "../teams/instances";
 import { buildTeamChatMessages, type HistoryMessage } from "./context";
 import { currentValueHash } from "./decide";
@@ -128,16 +128,18 @@ export async function executeTeamChatTurn(conversationId: number, assistantMessa
       const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
       const runner = new TeamChatToolRunner(conv.teamInstanceId, conv.userId, team);
       try {
-        const outcome = await runPlanTurn(
+        const outcome = await runChatTurn({
+          resolved,
+          userId: conv.userId,
+          consumer: "team_chat",
+          refId: conversationId,
+          messageId: assistantMessageId,
           messages,
-          {
-            chat: (msgs, tools, timeoutMs) => modelChat(resolved, { messages: msgs, tools, timeoutMs, caller: "team-chat" }),
-            runTool: (call) => runner.run(call),
-            now: () => Date.now(),
-          },
-          PLAN_TURN_LIMITS,
-          [...TEAM_CHAT_TOOLS],
-        );
+          tools: [...TEAM_CHAT_TOOLS],
+          runTool: (call) => runner.run(call),
+          caller: "team-chat",
+          budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, "lucius", aiModelId),
+        });
         tokens = outcome.tokens;
         costUsd = outcome.costUsd;
         if (outcome.ok) {

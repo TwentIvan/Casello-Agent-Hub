@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePanelSubject } from "@/components/panel/panel-context";
 import { useLocation } from "wouter";
 import { Crown, Plus } from "lucide-react";
 import { getListTeamTemplatesQueryKey, useListTeamTemplates } from "@workspace/api-client-react";
@@ -12,6 +13,7 @@ import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
 
 export default function TeamTemplatesPage() {
+  usePanelSubject({ lucius: { kind: "character", subjectType: "area_team_templates", subjectId: null, title: "Area Modelli di squadra" } });
   const [, navigate] = useLocation();
   const [archived, setArchived] = useState(false);
   const params = { archived: archived ? ("true" as const) : ("false" as const) };

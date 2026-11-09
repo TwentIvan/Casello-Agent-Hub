@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { usePanelSubject } from "@/components/panel/panel-context";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, ArrowLeft } from "lucide-react";
@@ -345,6 +346,7 @@ export default function AnalysisDetailPage() {
     },
   });
   const appId = analysis.data?.appId ?? 0;
+  usePanelSubject({ lucius: analysis.data ? { kind: "plan", appId } : null });
   const app = useGetApp(appId, { query: { queryKey: getGetAppQueryKey(appId), enabled: appId > 0 } });
 
   // A fine analisi lo storico nella scheda dell'app va aggiornato.

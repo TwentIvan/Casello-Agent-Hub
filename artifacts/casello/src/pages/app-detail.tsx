@@ -1,4 +1,5 @@
 import { Link, useParams } from "wouter";
+import { usePanelSubject } from "@/components/panel/panel-context";
 import { ArrowLeft, MessagesSquare } from "lucide-react";
 import { ApiError, getGetAppQueryKey, useGetApp } from "@workspace/api-client-react";
 import { LuciusButton } from "@/components/characters/lucius-button";
@@ -25,6 +26,8 @@ export default function AppDetailPage() {
   const appId = Number(params.id);
   const validId = Number.isInteger(appId) && appId > 0;
   const app = useGetApp(appId, { query: { queryKey: getGetAppQueryKey(appId), enabled: validId } });
+
+  usePanelSubject({ lucius: app.data ? { kind: "plan", appId } : null });
 
   const notFound = !validId || (app.error instanceof ApiError && app.error.status === 404);
 

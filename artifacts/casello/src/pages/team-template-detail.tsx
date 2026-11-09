@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type MutableRefObject } from "react";
+import { usePanelSubject } from "@/components/panel/panel-context";
 import { Link, useLocation, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
@@ -193,6 +194,12 @@ export default function TeamTemplateDetailPage() {
   });
   const t = template.data;
   const dirtyRef = useRef(false);
+  usePanelSubject({
+    lucius: t
+      ? { kind: "character", subjectType: "team_template", subjectId: String(t.id), title: `Modello di squadra · ${t.name}` }
+      : null,
+    hasUnsavedChanges: () => dirtyRef.current,
+  });
   const notFound = (!isNew && !Number.isInteger(id)) || (template.error instanceof ApiError && template.error.status === 404);
 
   return (

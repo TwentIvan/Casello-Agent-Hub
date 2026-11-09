@@ -1,4 +1,5 @@
 import { type MutableRefObject, useEffect, useMemo, useRef, useState } from "react";
+import { usePanelSubject } from "@/components/panel/panel-context";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, FolderSearch } from "lucide-react";
@@ -131,6 +132,10 @@ function TeamDetail({ team }: { team: TeamInstance }) {
   const session = useTeamSession(team.id);
   // il pannello dei personaggi è globale: accettare una scheda cambia `updatedAt` e rimonta l'editor, ma non chiude la conversazione
   const dirtyRef = useRef(false);
+  usePanelSubject({
+    lucius: { kind: "team", instanceId: team.id, closed: team.status === "closed" },
+    hasUnsavedChanges: () => dirtyRef.current,
+  });
   return (
     <div className="space-y-6">
       <TeamEditor key={`${team.id}-${team.updatedAt}`} team={team} session={session} dirtyRef={dirtyRef} />

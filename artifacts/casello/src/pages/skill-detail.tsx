@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePanelSubject } from "@/components/panel/panel-context";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
@@ -27,6 +28,10 @@ export default function SkillDetailPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const skill = useGetSkill(code, { query: { queryKey: getGetSkillQueryKey(code) } });
+  const loadedSkill = skill.data;
+  usePanelSubject({
+    lucius: loadedSkill ? { kind: "character", subjectType: "skill", subjectId: loadedSkill.code, title: `Skill · ${loadedSkill.code}` } : null,
+  });
   const [editing, setEditing] = useState(false);
   const [deprecating, setDeprecating] = useState(false);
 

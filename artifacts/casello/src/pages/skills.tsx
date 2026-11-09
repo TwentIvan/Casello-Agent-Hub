@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePanelSubject } from "@/components/panel/panel-context";
 import { useLocation } from "wouter";
 import { Plus } from "lucide-react";
 import { type SkillKind, getListSkillsQueryKey, useListSkills } from "@workspace/api-client-react";
@@ -16,6 +17,7 @@ import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
 
 export default function SkillsPage() {
+  usePanelSubject({ lucius: { kind: "character", subjectType: "area_skills", subjectId: null, title: "Area Skill" } });
   const [, navigate] = useLocation();
   const [kind, setKind] = useState<SkillKind | "all">("all");
   const [q, setQ] = useState("");

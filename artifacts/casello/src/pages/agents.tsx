@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { usePanelSubject } from "@/components/panel/panel-context";
 import { Link } from "wouter";
 import { Plus } from "lucide-react";
 import {
@@ -24,6 +25,7 @@ import { formatRelative } from "@/lib/format";
 const ALL = "all";
 
 export default function AgentsPage() {
+  usePanelSubject({ lucius: { kind: "character", subjectType: "area_agents", subjectId: null, title: "Area Agenti" } });
   const [appFilter, setAppFilter] = useState<string>(ALL);
   const [statusFilter, setStatusFilter] = useState<AgentStatus | typeof ALL>(ALL);
   const [createKey, setCreateKey] = useState(0);

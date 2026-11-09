@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
+import { usePanelSubject } from "@/components/panel/panel-context";
 import { Link, useLocation, useParams } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -313,6 +314,12 @@ export default function AgentDetailPage() {
     query: { queryKey: getGetAgentQueryKey(agentId), enabled: Number.isInteger(agentId) },
   });
   const appId = agent.data?.appId ?? 0;
+  usePanelSubject({
+    lucius: agent.data
+      ? { kind: "character", subjectType: "agent", subjectId: String(agent.data.id), title: `Agente · ${agent.data.name}` }
+      : null,
+    hasUnsavedChanges: () => dirtyRef.current || toolsDirtyRef.current,
+  });
   const app = useGetApp(appId, { query: { queryKey: getGetAppQueryKey(appId), enabled: appId > 0 } });
 
   const deleteAgent = useDeleteAgent({

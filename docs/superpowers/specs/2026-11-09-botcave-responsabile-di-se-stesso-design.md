@@ -140,7 +140,7 @@ Test dell'API (`test/botcave-self-catalog.test.ts`) che legge il file e verifica
 
 ## 6. Configurazione in produzione (dopo il merge, un passo alla volta con la conferma di Ivan)
 
-1. Ivan crea in Account il token «Botcave · Responsabile» con l'ambito `agent` (scadenza 365 giorni).
+1. Ivan crea in Account il token «Botcave · Responsabile» con l'ambito `agent` (scadenza 90 giorni, il massimo dei token personali).
 2. App 4: `internal_base_url` `http://localhost:3000` (l'API chiama sé stessa nello stesso container, senza passare da Traefik e nginx;
    ripiego `http://casello-api:3000`), autenticazione di servizio `Authorization` `Bearer`; Ivan incolla il token come segreto.
 3. Catalogo: creazione e aggiornamento dei tool dalla console, con `fetch` nella pagina e la sessione di Ivan, dopo aver mostrato il

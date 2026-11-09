@@ -60,3 +60,6 @@ CREATE TABLE IF NOT EXISTS "node_turns" (
 );
 CREATE INDEX IF NOT EXISTS "node_turns_node_status_idx" ON "node_turns" USING btree ("node_id", "status", "created_at");
 CREATE UNIQUE INDEX IF NOT EXISTS "node_turns_token_hash_unique" ON "node_turns" USING btree ("turn_token_hash");
+
+-- Nota informativa dei passi delle run (esecutore del turno, ripiego)
+ALTER TABLE "run_steps" ADD COLUMN IF NOT EXISTS "note" text;

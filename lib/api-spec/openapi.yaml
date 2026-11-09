@@ -5458,6 +5458,11 @@ components:
           type: ["integer", "null"]
         error:
           type: ["string", "null"]
+        note:
+          type: ["string", "null"]
+          description: >-
+            Nota informativa del passo, distinta dall'errore (es. «Claude Code sul nodo «Mac»» o «Claude Code non
+            disponibile: eseguita con <modello>»)
         createdAt:
           type: string
           format: date-time

@@ -1538,6 +1538,7 @@ export const ListRunStepsResponseItem = zod.object({
   "httpStatus": zod.number().nullish(),
   "durationMs": zod.number().nullish(),
   "error": zod.string().nullish(),
+  "note": zod.string().nullish().describe('Nota informativa del passo, distinta dall\'errore (es. «Claude Code sul nodo «Mac»» o «Claude Code non disponibile: eseguita con <modello>»)'),
   "createdAt": zod.coerce.date()
 })
 export const ListRunStepsResponse = zod.array(ListRunStepsResponseItem)

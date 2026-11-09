@@ -51,6 +51,8 @@ export interface StepRecord {
   httpStatus?: number;
   durationMs: number;
   error?: string;
+  /** Nota informativa (es. l'esecutore del turno), distinta dall'errore; oggi solo nei passi delle run */
+  note?: string;
   /** Solo per `queued`: numero della voce nella coda delle azioni dell'utente */
   queuedNumber?: number;
   /** Solo per `queued`: destinatario e sintesi dichiarati dal modello */

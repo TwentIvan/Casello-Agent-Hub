@@ -89,6 +89,8 @@ export interface ModelChatDepsInput {
   logContext: Record<string, unknown>;
   maxTokens?: number;
   temperature?: number;
+  /** Modello già risolto da chi chiama (stesso `aiModelId`): evita una seconda lettura. */
+  resolved?: ResolvedModel;
 }
 
 /**
@@ -102,7 +104,7 @@ export function modelChatDeps(input: ModelChatDepsInput): LoopDeps["chat"] {
   return async (messages, { remainingMs }) => {
     const signal = AbortSignal.any([input.signal, AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, remainingMs))]);
     try {
-      resolved ??= resolveModel(input.aiModelId, { userId: null, mustOwn: false });
+      resolved ??= input.resolved ? Promise.resolve(input.resolved) : resolveModel(input.aiModelId, { userId: null, mustOwn: false });
       const reply = await modelChat(await resolved, {
         messages,
         tools: input.functionTools,
@@ -130,6 +132,8 @@ export interface StepRow {
   httpStatus: number | null;
   durationMs: number;
   error: string | null;
+  /** Solo se il passo ha una nota (colonna di `run_steps`). */
+  note?: string;
 }
 
 /**
@@ -168,6 +172,7 @@ export function stepWriter(
       httpStatus: step.httpStatus ?? null,
       durationMs: Math.round(step.durationMs),
       error: step.error ?? null,
+      ...(step.note !== undefined ? { note: step.note } : {}),
     });
   };
 }

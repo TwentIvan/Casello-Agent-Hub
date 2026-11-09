@@ -49,7 +49,15 @@ export type DelegateOutcome =
     }
   /** `message`: il messaggio fisso da mostrare se il ripiego non c'è o non si può usare. */
   | { kind: "fallback"; reason: FallbackReason; message: string }
-  | { kind: "failed"; error: string; tokens: number; costUsd: string | null }
+  | {
+      kind: "failed";
+      error: string;
+      tokens: number;
+      promptTokens: number;
+      completionTokens: number;
+      cachedTokens: number;
+      costUsd: string | null;
+    }
   | { kind: "cancelled" };
 
 /** Codici del nodo per cui si ripiega: Claude Code non ha lavorato, rifare il turno non duplica nulla (spec §6). */
@@ -88,6 +96,9 @@ async function outcomeOf(result: NodeTurnResult, input: DelegateInput, nodeName:
     kind: "failed",
     error: nodeTurnErrorMessage(code),
     tokens: result.promptTokens + result.completionTokens,
+    promptTokens: result.promptTokens,
+    completionTokens: result.completionTokens,
+    cachedTokens: result.cachedTokens,
     costUsd: result.costUsd,
   };
 }

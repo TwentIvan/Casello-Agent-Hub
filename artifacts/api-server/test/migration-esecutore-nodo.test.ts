@@ -52,6 +52,7 @@ describe("migrazione 2026-11-esecutore-nodo", () => {
     expect(acc.node_id).toBe("integer");
     expect(acc.fallback_ai_model_id).toBe("integer");
     expect((await columns("nodes")).last_turn_poll_at).toBe("timestamp without time zone");
+    expect((await columns("run_steps")).note).toBe("text");
     const r = await db.query<any>("SELECT last_turn_poll_at FROM nodes");
     expect(r.rows).toEqual([{ last_turn_poll_at: null }]);
   });
@@ -94,6 +95,7 @@ describe("migrazione 2026-11-esecutore-nodo", () => {
     expect(schema).toContain('"last_turn_poll_at"');
     expect(schema).toContain('CREATE TABLE IF NOT EXISTS "node_turns"');
     expect(schema).toContain('"ai_accounts_one_per_node"');
+    expect(schema).toContain('ALTER TABLE "run_steps" ADD COLUMN IF NOT EXISTS "note" text;');
     // lo schema di test si carica da solo e permette di inserire un turno
     const t = new PGlite();
     await t.exec(schema);

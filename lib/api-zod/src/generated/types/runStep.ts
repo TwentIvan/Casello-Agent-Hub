@@ -25,5 +25,10 @@ export interface RunStep {
   durationMs?: number | null;
   /** @nullable */
   error?: string | null;
+  /**
+     * Nota informativa del passo, distinta dall'errore (es. «Claude Code sul nodo «Mac»» o «Claude Code non disponibile: eseguita con <modello>»)
+     * @nullable
+     */
+  note?: string | null;
   createdAt: Date;
 }

@@ -150,7 +150,15 @@ describe("delegateTurn", () => {
     const pkg = await claim();
     await turnEntry(pkg.id)!.dispatch({ id: "c1", name: "leggi_prova", arguments: "{}" });
     await reportTurn(setup.nodeId, pkg.id, { leaseToken: pkg.leaseToken, status: "failed", errorCode: "timeout", promptTokens: 50, completionTokens: 10, costUsd: 0.5 });
-    expect(await outcome).toEqual({ kind: "failed", error: "Claude Code non ha risposto in tempo", tokens: 60, costUsd: "0.500000" });
+    expect(await outcome).toEqual({
+      kind: "failed",
+      error: "Claude Code non ha risposto in tempo",
+      tokens: 60,
+      promptTokens: 50,
+      completionTokens: 10,
+      cachedTokens: 0,
+      costUsd: "0.500000",
+    });
     expect(dispatched).toHaveLength(1);
     expect(turnEntry(pkg.id)).toBeUndefined();
   });

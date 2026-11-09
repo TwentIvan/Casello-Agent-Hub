@@ -7,7 +7,9 @@ import {
   type AiProvider,
   type AiProviderInfo,
   useCreateAiAccount,
+  getListNodesQueryKey,
   useListAiProviders,
+  useListNodes,
   useUpdateAiAccount,
 } from "@workspace/api-client-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -29,6 +31,8 @@ import { invalidateAiQueries } from "@/components/ai/ai-queries";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { cn } from "@/lib/utils";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FallbackModelSelect } from "./node-account-fields";
 
 /**
  * Nome di un provider dal registro dell'API (`GET /ai/providers`); finché l'elenco non arriva, o per uno slug
@@ -136,7 +140,10 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
   const [apiKey, setApiKey] = useState("");
   const [allowPrivateNetwork, setAllowPrivateNetwork] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
+  const [nodeId, setNodeId] = useState<number | null>(null);
+  const [fallbackId, setFallbackId] = useState<number | null>(null);
+  const nodes = useListNodes({ query: { queryKey: getListNodesQueryKey() } });
+  const activeNodes = (nodes.data ?? []).filter((n) => n.status === "active");
 
   // Le variabili di una mutation (quindi la chiave in chiaro) restano nella MutationCache di React Query:
   // reset() a fine chiamata stacca l'osservatore e gcTime 0 fa uscire subito la mutation dalla cache.
@@ -187,6 +194,8 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
     setBaseUrl(account?.baseUrl ?? "");
     setApiKey("");
     setAllowPrivateNetwork(account?.allowPrivateNetwork ?? false);
+    setNodeId(account?.nodeId ?? null);
+    setFallbackId(account?.fallbackAiModelId ?? null);
     setError(null);
     // Solo all'apertura o al cambio di account: un refetch dell'elenco non deve cancellare quanto scritto
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -196,6 +205,7 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
 
   const info = providers.data?.find((p) => p.slug === provider);
   const isCustom = provider === "custom";
+  const requiresNode = info?.requiresNode ?? provider === "claude_code_node";
   // Regole dell'API: indirizzo dell'utente per custom, non gestiti e gestiti senza indirizzo predefinito
   const editableUrl = info?.editableBaseUrl ?? false;
   const privateAllowed = allowsPrivateNetwork(provider, info);
@@ -207,14 +217,23 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
     trimmedName.length <= 100 &&
     // In modifica il registro serve solo per l'indirizzo: se non è arrivato si può comunque rinominare
     (editing || (info !== undefined && info.status !== "coming")) &&
-    (!editableUrl || trimmedUrl.length > 0) &&
-    // Senza chiave solo i server personalizzati; in modifica la chiave vuota resta quella di prima
-    (editing || isCustom || key.length > 0);
+    (requiresNode
+      ? editing || nodeId !== null
+      : (!editableUrl || trimmedUrl.length > 0) &&
+        // Senza chiave solo i server personalizzati; in modifica la chiave vuota resta quella di prima
+        (editing || isCustom || key.length > 0));
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (!valid || pending) return;
     setError(null);
+    if (!account && requiresNode) {
+      if (nodeId === null) return;
+      createAccount.mutate({
+        data: { name: trimmedName, provider, nodeId, fallbackAiModelId: fallbackId },
+      });
+      return;
+    }
     if (!account) {
       createAccount.mutate({
         data: {
@@ -229,6 +248,15 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
     }
     const data: AiAccountUpdate = {};
     if (trimmedName !== account.name) data.name = trimmedName;
+    if (requiresNode) {
+      if (fallbackId !== account.fallbackAiModelId) data.fallbackAiModelId = fallbackId;
+      if (Object.keys(data).length === 0) {
+        onOpenChange(false);
+        return;
+      }
+      updateAccount.mutate({ id: account.id, data });
+      return;
+    }
     if (key) data.apiKey = key;
     if (editableUrl && trimmedUrl !== account.baseUrl) data.baseUrl = trimmedUrl;
     if (privateAllowed && allowPrivateNetwork !== account.allowPrivateNetwork) data.allowPrivateNetwork = allowPrivateNetwork;
@@ -245,8 +273,9 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
         <DialogHeader>
           <DialogTitle>{editing ? "Modifica account AI" : "Aggiungi account AI"}</DialogTitle>
           <DialogDescription>
-            Botcave legge l'elenco dei modelli con la chiave prima di salvare. La chiave è conservata cifrata e non
-            viene mai mostrata.
+            {requiresNode
+              ? "I turni passano da Claude Code sul tuo nodo: nessuna chiave da inserire."
+              : "Botcave legge l'elenco dei modelli con la chiave prima di salvare. La chiave è conservata cifrata e non viene mai mostrata."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
@@ -276,6 +305,43 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
               onChange={(e) => setName(e.target.value)}
             />
           </div>
+          {requiresNode ? (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="ai-account-node">Nodo</Label>
+                {editing ? (
+                  <p id="ai-account-node" className="text-sm">
+                    {account?.nodeName ?? "nodo eliminato"}
+                  </p>
+                ) : activeNodes.length === 0 ? (
+                  <p id="ai-account-node" className="text-sm text-muted-foreground">
+                    Nessun nodo attivo: creane uno in Account → Nodi, poi torna qui.
+                  </p>
+                ) : (
+                  <Select value={nodeId === null ? "" : String(nodeId)} onValueChange={(v) => setNodeId(Number(v))}>
+                    <SelectTrigger id="ai-account-node" className="w-full">
+                      <SelectValue placeholder="Scegli un nodo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeNodes.map((n) => (
+                        <SelectItem key={n.id} value={String(n.id)}>
+                          {n.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ai-account-fallback">Modello di ripiego</Label>
+                <FallbackModelSelect id="ai-account-fallback" value={fallbackId} onChange={setFallbackId} />
+                <p className="text-xs text-muted-foreground">
+                  Usato quando il nodo non è pronto per i turni. «Nessuno»: il turno resta in attesa del nodo.
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
           <div className="space-y-2">
             <Label htmlFor="ai-account-base-url">Base URL</Label>
             {editableUrl ? (
@@ -304,7 +370,9 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
               onChange={(e) => setApiKey(e.target.value)}
             />
           </div>
-          {privateAllowed && (
+            </>
+          )}
+          {privateAllowed && !requiresNode && (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Checkbox
@@ -330,7 +398,7 @@ export function AiAccountDialog({ open, onOpenChange, account }: AiAccountDialog
             <Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>
               Annulla
             </Button>
-            <Button type="submit" disabled={!valid || pending}>
+            <Button type="submit" disabled={!valid || pending || (requiresNode && !editing && activeNodes.length === 0)}>
               {pending ? "Verifica…" : "Salva e verifica"}
             </Button>
           </DialogFooter>

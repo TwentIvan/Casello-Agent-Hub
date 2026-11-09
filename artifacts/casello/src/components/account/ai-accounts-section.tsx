@@ -7,6 +7,7 @@ import {
   useDeleteAiAccount,
   useListAiAccounts,
   useSetDefaultAiAccount,
+  useUpdateAiAccount,
   useVerifyAiAccount,
 } from "@workspace/api-client-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -15,12 +16,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { invalidateAiQueries } from "@/components/ai/ai-queries";
+import { invalidateAiQueries, useAiModelGroups } from "@/components/ai/ai-queries";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative, formatUsd } from "@/lib/format";
 import { AiAccountBudget } from "@/components/budget/budget";
 import { AiAccountDialog, useProviderLabel } from "./ai-account-dialog";
+import { FallbackModelSelect } from "./node-account-fields";
 import { AiModelsTable } from "./ai-models-table";
 
 function AccountStatusBadge({ account }: { account: AiAccount }) {
@@ -41,6 +43,61 @@ function AccountStatusBadge({ account }: { account: AiAccount }) {
     <Badge variant="outline" className="border-transparent bg-muted text-muted-foreground">
       da verificare
     </Badge>
+  );
+}
+
+/** Nodo e ripiego di un account Claude Code (nodo). */
+function NodeAccountInfo({ account }: { account: AiAccount }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [changing, setChanging] = useState(false);
+  const update = useUpdateAiAccount({
+    mutation: {
+      onSuccess: () => {
+        void invalidateAiQueries(queryClient);
+        setChanging(false);
+        toast({ title: "Modello di ripiego aggiornato" });
+      },
+      onError: (error) =>
+        toast({ variant: "destructive", title: "Aggiornamento non riuscito", description: apiErrorMessage(error) }),
+    },
+  });
+  const groups = useAiModelGroups();
+  const fallbackName =
+    account.fallbackAiModelId === null
+      ? "Nessuno"
+      : (groups.data?.flatMap((g) => g.models).find((m) => m.id === account.fallbackAiModelId)?.displayName ??
+        `modello ${account.fallbackAiModelId}`);
+  return (
+    <div className="space-y-1 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span>nodo {account.nodeName ?? "eliminato"}</span>
+        <Led
+          state={account.nodeTurnReady ? "ok" : "idle"}
+          label={account.nodeTurnReady ? "Pronto per i turni" : "Nodo offline"}
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span>Modello di ripiego: {fallbackName}</span>
+        {!changing && (
+          <Button variant="ghost" size="sm" onClick={() => setChanging(true)}>
+            Modifica
+          </Button>
+        )}
+      </div>
+      {changing && (
+        <div className="flex max-w-sm items-center gap-2">
+          <FallbackModelSelect
+            value={account.fallbackAiModelId}
+            disabled={update.isPending}
+            onChange={(next) => update.mutate({ id: account.id, data: { fallbackAiModelId: next } })}
+          />
+          <Button variant="ghost" size="sm" onClick={() => setChanging(false)}>
+            Annulla
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -79,6 +136,7 @@ function AccountRow({ account, onEdit, onDelete }: { account: AiAccount; onEdit:
     },
   });
 
+  const isNodeAccount = account.provider === "claude_code_node";
   const modelsId = `ai-account-models-${account.id}`;
   return (
     <li className="space-y-3 p-3">
@@ -89,7 +147,7 @@ function AccountRow({ account, onEdit, onDelete }: { account: AiAccount; onEdit:
               <Star className="size-4 fill-brand text-accent-text" aria-label="Account predefinito" role="img" />
             ) : null}
             <span className="truncate text-sm font-medium">{account.name}</span>
-            <AccountStatusBadge account={account} />
+            {!isNodeAccount && <AccountStatusBadge account={account} />}
           </div>
           <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
             <span>{providerLabel(account.provider)}</span>
@@ -101,6 +159,7 @@ function AccountRow({ account, onEdit, onDelete }: { account: AiAccount; onEdit:
             </span>
             {account.monthlyBudgetUsd !== null && <span>tetto {formatUsd(account.monthlyBudgetUsd)} al mese</span>}
           </div>
+          {isNodeAccount && <NodeAccountInfo account={account} />}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -113,9 +172,11 @@ function AccountRow({ account, onEdit, onDelete }: { account: AiAccount; onEdit:
             {expanded ? <ChevronDown /> : <ChevronRight />}
             Modelli
           </Button>
-          <Button variant="outline" size="sm" disabled={verify.isPending} onClick={() => verify.mutate({ id: account.id })}>
-            {verify.isPending ? "Aggiornamento…" : "Aggiorna modelli"}
-          </Button>
+          {!isNodeAccount && (
+            <Button variant="outline" size="sm" disabled={verify.isPending} onClick={() => verify.mutate({ id: account.id })}>
+              {verify.isPending ? "Aggiornamento…" : "Aggiorna modelli"}
+            </Button>
+          )}
           {!account.isDefault && (
             <Button
               variant="outline"

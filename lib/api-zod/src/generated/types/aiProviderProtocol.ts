@@ -15,5 +15,6 @@ export const AiProviderProtocol = {
   bedrock: 'bedrock',
   vertex: 'vertex',
   azure: 'azure',
+  claude_code_node: 'claude_code_node',
   unknown: 'unknown',
 } as const;

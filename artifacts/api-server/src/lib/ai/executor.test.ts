@@ -2,7 +2,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { APIConnectionError, APIConnectionTimeoutError, APIError, APIUserAbortError } from "openai";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { eq, inArray } from "drizzle-orm";
-import { db, pool, aiAccountsTable, aiModelsTable, providersTable, usersTable } from "@workspace/db";
+import { db, pool, aiAccountsTable, aiModelsTable, nodesTable, providersTable, usersTable } from "@workspace/db";
+import { ensureProviderRegistry } from "../catalog/provider-registry";
 import { allowTestLoopback, FAKE_PROVIDER_ERROR_TEXT, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
 import { encryptSecret } from "../secrets";
 import { logger } from "../logger";
@@ -159,6 +160,7 @@ describe("executorKindFor", () => {
   it("openai_compatible e unknown → esecutore compatibile OpenAI; gli altri protocolli → errore fisso", () => {
     expect(executorKindFor("openai_compatible")).toBe("openai_compatible");
     expect(executorKindFor("unknown")).toBe("openai_compatible");
+    expect(executorKindFor("claude_code_node")).toBe("node");
     for (const p of ["anthropic", "bedrock", "vertex", "azure"] as const) {
       expect(() => executorKindFor(p)).toThrow(new ModelAccessError("esecutore non ancora disponibile per questo provider"));
     }
@@ -166,6 +168,25 @@ describe("executorKindFor", () => {
 });
 
 describe("resolveModel", () => {
+  it("modello di un account nodo → kind node, nodeId e ripiego, senza validare indirizzo né chiave", async () => {
+    await ensureProviderRegistry();
+    const [node] = await db.insert(nodesTable).values({ userId: alice, name: "mac" }).returning();
+    const { aiModelId: fallbackId } = await seed();
+    const [acc] = await db
+      .insert(aiAccountsTable)
+      .values({ userId: alice, name: "Nodo", provider: "claude_code_node", baseUrl: "", apiKeyEnc: null, nodeId: node!.id, fallbackAiModelId: fallbackId })
+      .returning();
+    const [m] = await db.insert(aiModelsTable).values({ accountId: acc!.id, modelId: "sonnet", displayName: "sonnet (ultimo)" }).returning();
+    const r = await resolveModel(m!.id, { userId: alice, mustOwn: true });
+    expect(r).toMatchObject({ kind: "node", nodeId: node!.id, fallbackAiModelId: fallbackId, modelId: "sonnet", baseUrl: "", apiKey: null });
+  });
+
+  it("i modelli cloud hanno nodeId e ripiego null", async () => {
+    const { aiModelId } = await seed();
+    const r = await resolveModel(aiModelId, { userId: alice, mustOwn: true });
+    expect(r).toMatchObject({ nodeId: null, fallbackAiModelId: null });
+  });
+
   it("risolve un modello dell'utente con chiave decifrata e prezzi numerici", async () => {
     const { accountId, aiModelId } = await seed();
     const r = await resolveModel(aiModelId, { userId: alice, mustOwn: true });
@@ -181,6 +202,8 @@ describe("resolveModel", () => {
       priceCachedInput: null,
       ownerUserId: alice,
       contextTokens: null,
+      nodeId: null,
+      fallbackAiModelId: null,
     });
     expect(r.apiKey).toBe(KEY);
   });
@@ -607,9 +630,9 @@ describe("modelChat", () => {
     expect(error).toHaveBeenCalled();
   });
 
-  it("esecutore local_agent → non ancora disponibile", async () => {
+  it("esecutore node → non ancora disponibile", async () => {
     const r = await resolved();
-    await expect(modelChat({ ...r, kind: "local_agent" }, { messages: MESSAGES, caller: "test" })).rejects.toThrow(
+    await expect(modelChat({ ...r, kind: "node" }, { messages: MESSAGES, caller: "test" })).rejects.toThrow(
       "esecutore non ancora disponibile",
     );
   });

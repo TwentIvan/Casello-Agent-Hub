@@ -369,7 +369,9 @@ describe("provider del registro", () => {
       status: "managed",
       defaultBaseUrl: "https://api.deepseek.com/v1",
       editableBaseUrl: false,
+      requiresNode: false,
     });
+    expect(bySlug.get("claude_code_node")).toMatchObject({ protocol: "claude_code_node", status: "managed", defaultBaseUrl: null, requiresNode: true });
     expect(bySlug.get("custom")).toMatchObject({ status: "managed", defaultBaseUrl: null, editableBaseUrl: true });
     expect(bySlug.get("perplexity")).toMatchObject({ status: "managed", defaultBaseUrl: null, editableBaseUrl: true });
     expect(bySlug.get("bedrock")).toMatchObject({ protocol: "bedrock", status: "coming", editableBaseUrl: false });

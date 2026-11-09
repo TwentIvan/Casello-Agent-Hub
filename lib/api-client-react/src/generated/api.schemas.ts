@@ -2056,6 +2056,7 @@ export const AiProviderProtocol = {
   bedrock: 'bedrock',
   vertex: 'vertex',
   azure: 'azure',
+  claude_code_node: 'claude_code_node',
   unknown: 'unknown',
 } as const;
 
@@ -2083,6 +2084,8 @@ export interface AiProviderInfo {
   defaultBaseUrl: string | null;
   /** L'utente inserisce l'indirizzo (custom, provider non gestiti e gestiti senza indirizzo predefinito) */
   editableBaseUrl: boolean;
+  /** Il provider esegue i turni su un nodo dell'utente (Claude Code); si sceglie il nodo, niente chiave né indirizzo */
+  requiresNode: boolean;
 }
 
 export type AiAccountStatus = typeof AiAccountStatus[keyof typeof AiAccountStatus];

@@ -21,4 +21,6 @@ export interface AiProviderInfo {
   defaultBaseUrl: string | null;
   /** L'utente inserisce l'indirizzo (custom, provider non gestiti e gestiti senza indirizzo predefinito) */
   editableBaseUrl: boolean;
+  /** Il provider esegue i turni su un nodo dell'utente (Claude Code); si sceglie il nodo, niente chiave né indirizzo */
+  requiresNode: boolean;
 }

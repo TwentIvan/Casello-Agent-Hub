@@ -358,6 +358,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
           status: p.status,
           defaultBaseUrl: p.defaultBaseUrl,
           editableBaseUrl: providerRules(p).editableBaseUrl,
+          requiresNode: p.protocol === "claude_code_node",
         })),
       ),
     );

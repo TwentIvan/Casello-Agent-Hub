@@ -6876,7 +6876,7 @@ components:
 
     AiProviderProtocol:
       type: string
-      enum: [openai_compatible, anthropic, bedrock, vertex, azure, unknown]
+      enum: [openai_compatible, anthropic, bedrock, vertex, azure, claude_code_node, unknown]
 
     AiProviderStatus:
       type: string
@@ -6887,7 +6887,7 @@ components:
 
     AiProviderInfo:
       type: object
-      required: [slug, name, protocol, status, defaultBaseUrl, editableBaseUrl]
+      required: [slug, name, protocol, status, defaultBaseUrl, editableBaseUrl, requiresNode]
       properties:
         slug:
           $ref: "#/components/schemas/AiProvider"
@@ -6903,6 +6903,10 @@ components:
         editableBaseUrl:
           type: boolean
           description: L'utente inserisce l'indirizzo (custom, provider non gestiti e gestiti senza indirizzo predefinito)
+        requiresNode:
+          type: boolean
+          description: >-
+            Il provider esegue i turni su un nodo dell'utente (Claude Code); si sceglie il nodo, niente chiave né indirizzo
 
     AiAccountStatus:
       type: string

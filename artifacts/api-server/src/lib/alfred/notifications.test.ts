@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { db, pool, aiAccountsTable, aiModelsTable, agentsTable, appsTable, pendingActionsTable, runsTable, teamInstancesTable, usersTable } from "@workspace/db";
 import { LEAD_INPUT_MARKER } from "../product-leads";
-import { NOTIFICATIONS_MAX, NOTIFICATION_TEXT_MAX, alfredNotifications } from "./notifications";
+import { NOTIFICATIONS_LAG_MS, NOTIFICATIONS_MAX, NOTIFICATION_TEXT_MAX, alfredNotifications } from "./notifications";
 import { AlfredError } from "./gemini";
 
 // Novità di Alfred: run dei Responsabili finite e nuove voci in coda, con cursore.
@@ -87,11 +87,12 @@ async function item(opts: { userId?: number; runId?: number | null; status?: "pe
 }
 
 const now = at(60);
+const safe = new Date(now.getTime() - NOTIFICATIONS_LAG_MS); // limite di lettura: now meno il ritardo
 
 describe("alfredNotifications", () => {
   it("senza cursore risponde solo con quello iniziale", async () => {
     await run({});
-    expect(await alfredNotifications(me.userId, null, now)).toEqual({ cursor: now.toISOString(), events: [] });
+    expect(await alfredNotifications(me.userId, null, now)).toEqual({ cursor: safe.toISOString(), events: [] });
   });
 
   it("cursore nel futuro → 400", async () => {
@@ -107,7 +108,7 @@ describe("alfredNotifications", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ kind: "lead_run", run: r.id, app: "Mister", status: "succeeded", output: "Fatto", error: null, at: at(30).toISOString() });
     expect(events[0]!.kind === "lead_run" && events[0]!.items.map((i) => i.numero)).toEqual([1, 2]);
-    expect(cursor).toBe(at(30).toISOString());
+    expect(cursor).toBe(safe.toISOString());
   });
 
   it("voce in coda di una run di area o senza run: queue_item con il nome della squadra", async () => {
@@ -134,7 +135,7 @@ describe("alfredNotifications", () => {
     await item({ status: "rejected" });
     await item({ createdAt: at(0) });
     await item({ createdAt: at(61) });
-    expect(await alfredNotifications(me.userId, at(0), now)).toEqual({ cursor: now.toISOString(), events: [] });
+    expect(await alfredNotifications(me.userId, at(0), now)).toEqual({ cursor: safe.toISOString(), events: [] });
   });
 
   it("12 eventi: 10 in ordine di tempo, poi gli altri 2 con il cursore", async () => {
@@ -145,7 +146,33 @@ describe("alfredNotifications", () => {
     expect(first.cursor).toBe(at(10).toISOString());
     const second = await alfredNotifications(me.userId, new Date(first.cursor), now);
     expect(second.events.map((e) => (e.kind === "queue_item" ? e.numero : 0))).toEqual([11, 12]);
-    expect(second.cursor).toBe(at(12).toISOString());
+    expect(second.cursor).toBe(safe.toISOString());
+  });
+
+  it("11 voci con lo stesso istante: arrivano tutte, una volta sola", async () => {
+    for (let i = 0; i < 11; i++) await item({ createdAt: at(5) });
+    const first = await alfredNotifications(me.userId, at(0), now);
+    expect(first.events).toHaveLength(11);
+    expect(first.cursor).toBe(at(5).toISOString());
+    const second = await alfredNotifications(me.userId, new Date(first.cursor), now);
+    expect(second.events).toEqual([]);
+  });
+
+  it("gruppo con lo stesso istante dopo altre voci: la pagina si estende al gruppo", async () => {
+    for (let i = 1; i <= 8; i++) await item({ createdAt: at(i) });
+    for (let i = 0; i < 4; i++) await item({ createdAt: at(20) });
+    const first = await alfredNotifications(me.userId, at(0), now);
+    expect(first.events).toHaveLength(12);
+    const second = await alfredNotifications(me.userId, new Date(first.cursor), now);
+    expect(second.events).toEqual([]);
+  });
+
+  it("un evento negli ultimi 2 secondi non esce subito e arriva alla chiamata successiva", async () => {
+    await item({ createdAt: new Date(now.getTime() - 1_000) });
+    const early = await alfredNotifications(me.userId, at(0), now);
+    expect(early).toEqual({ cursor: safe.toISOString(), events: [] });
+    const later = await alfredNotifications(me.userId, new Date(early.cursor), new Date(now.getTime() + 3_000));
+    expect(later.events).toHaveLength(1);
   });
 
   it("un cursore più vecchio di un'ora considera solo l'ultima ora", async () => {

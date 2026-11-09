@@ -1444,8 +1444,19 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `active` dell'utente (altrimenti 400 «nodo non disponibile»; già legato → 409 «il nodo ha già un account Claude Code»), niente chiave, indirizzo né rete
   privata (400); `nodeId`/`fallbackAiModelId` su altri provider → 400. Ripiego facoltativo (POST e PATCH, solo login): modello di un account **non nodo**
   dell'utente, altrimenti 400 «modello di ripiego non valido». La risposta espone `nodeId`, `nodeName`, `nodeTurnReady`, `fallbackAiModelId`. «Verifica»
-  non fa chiamate di rete: riallinea i modelli e mette lo stato `ok` (nodo pronto) o `error` «nodo offline» / «nodo eliminato». `resolveModel` su un account
-  nodo restituisce `kind: "node"`, `nodeId`, `fallbackAiModelId` e il nome del modello, senza chiavi; `modelChat` su `kind: "node"` è un errore di programmazione.
+  (e l'aggiornamento settimanale del catalogo) non fa chiamate di rete: riallinea i modelli e mette lo stato `ok` se il nodo esiste ed è attivo, `error`
+  «nodo eliminato» / «nodo disattivato» altrimenti; un Mac in stop non mette l'account in errore (la prontezza è `nodeTurnReady`). `resolveModel` su un
+  account nodo restituisce `kind: "node"`, `nodeId`, `fallbackAiModelId` e il nome del modello, senza chiavi; `modelChat` su `kind: "node"` è un errore di
+  programmazione.
+- **Dove non si sceglie**: i consumatori che girano solo nell'API rifiutano un modello di un account nodo con 400 «Claude Code (nodo) non è disponibile
+  qui: scegli un modello cloud» (`NODE_MODEL_NOT_ALLOWED`, `chooseCloudModel` in `lib/ai/choice.ts`): ruoli `cloud` delle squadre (`validateRoles`,
+  `TEAM_MESSAGES.nodeModelNotAllowed`), avvio delle analisi cloud, `PUT /api/account/centralino-model`; Alfred a voce accetta solo modelli Gemini (400 «modello
+  non adatto ad Alfred»). `POST /api/ai/models/:id/probe` su un modello nodo → 400 «la prova non è disponibile per Claude Code: usa Verifica sull'account»
+  (nessuna chiamata). Righe già salvate non si migrano: un'analisi accodata con un modello nodo fallisce col messaggio fisso, il riassunto del centralino
+  salta i modelli nodo (`centralinoModelFor`), i riassunti delle memorie con un predefinito nodo usano il ripiego cloud del suo account se è usabile,
+  altrimenti si saltano. In console quei selettori (editor dei ruoli, avvio dell'analisi, carta del centralino, preselezione di squadre nuove e analisi:
+  `ModelPicker cloudOnly`, `useDefaultAiModelId({cloudOnly})`, `lib/node-models.ts`) non mostrano i modelli nodo e la tabella dei modelli di un account
+  nodo non ha «Prova»; restano negli agenti, nei personaggi (Alfred scritto, Lucius), nelle chat del piano e di squadra e nel modello predefinito.
 - **Modelli dell'account**: alias `fable`, `opus`, `sonnet`, `haiku` («<alias> (ultimo)») più le offerte `anthropic` non ritirate di `model_offers` (id del
   catalogo passato così com'è a `--model`), riallineati a ogni «Verifica» e aggiornamento del catalogo (spariti → `unavailable`, mai cancellati); prezzi nulli
   (il costo lo riferisce il nodo: `total_cost_usd`, conta in tutti i tetti come quello di ogni modello, `lib/budget.ts` non cambia), `supports_tools = true`;
@@ -1456,9 +1467,12 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   token d'ambito `node`): `POST /api/node/turns/claim` aggiorna `nodes.last_turn_poll_at`, prende il più vecchio `queued` del nodo (`SKIP LOCKED`, lease di
   2 minuti) o attende fino a 25 s un avviso in memoria e ritenta una volta, poi 204 (40/min per nodo, contatore separato); `POST …/:id/ping` `{leaseToken}`
   (6/min per turno) e `POST …/:id/report` (una volta sola; codice fuori elenco → `claude_failed`; numeri interi ≥ 0 altrimenti 400); lease non valida → 409
-  «lease non valida o scaduta». **Pronto per i turni** = nodo `active` con un claim negli ultimi 60 s (un nodo di versione precedente non lo è mai). Controllo
-  ogni 5 s (`startNodeTurnSweeper`): `queued` da oltre 20 s → `expired`, lease scaduta → `failed` `lease_lost`; pulizia oraria delle righe chiuse da oltre 30
-  giorni. All'avvio `queued`/`running` → `failed` `restart`. Disattivare, eliminare o rigenerare il token del nodo chiude i suoi turni `failed` `node_disabled`
+  «lease non valida o scaduta». **Pronto per i turni** = nodo `active` con un claim o un ping di un turno negli ultimi 60 s (anche il ping aggiorna
+  `last_turn_poll_at`: un nodo con tutti i posti occupati non fa claim ma resta pronto; un nodo di versione precedente non lo è mai). Controllo ogni 5 s
+  (`startNodeTurnSweeper`): `queued` da oltre 20 s → `expired` se il nodo non ha turni `running` con lease viva; su un nodo occupato il turno in coda
+  attende un posto fino a 10 minuti (`TURN_BUSY_QUEUE_TIMEOUT_MS`) prima di `expired`; lease scaduta → `failed` `lease_lost`; `running` oltre
+  `claimed_at + timeoutMs del pacchetto + 60 s` → `failed` `timeout` (un nodo che rinnova la lease senza mai riferire); pulizia oraria delle righe chiuse
+  da oltre 30 giorni. All'avvio, prima di `listen`, `queued`/`running` → `failed` `restart`. Disattivare, eliminare o rigenerare il token del nodo chiude i suoi turni `failed` `node_disabled`
   nella stessa transazione.
 - **Pacchetto**: `model`, `systemPrompt` (messaggio `system` più «Gli strumenti di Botcave si chiamano mcp__botcave__<nome>: usa solo quelli.»), `prompt` (gli
   altri messaggi con le etichette `[utente]`/`[assistente]`, su stdin), `mcpUrl` = `<PUBLIC_APP_URL>/mcp/turn`, `turnToken` `cat_…`, `maxTurns` = giri di oggi + 1
@@ -1483,14 +1497,16 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   Senza ripiego, messaggi fissi `NODE_TURN_MESSAGES` (`messages.ts`): nodo offline, nodo eliminato, limite d'uso, accesso mancante, modello non disponibile,
   tempo scaduto, nodo non raggiungibile, esecuzione interrotta, riavvio, errore generico; chat: messaggio d'errore dell'assistente, run `failed`.
 - **`casello-nodo`** (`turns.ts`, `turn-runner.ts`, README): ciclo dei turni accanto a quello dei compiti, un claim in attesa per posto libero
-  (`maxConcurrentTurns` 1..4, default 2); per turno cartella vuota in `~/.casello-nodo/turns/` con `mcp.json` (600) e `claude -p --output-format json --model …
-  --system-prompt … --tools "" --strict-mcp-config --mcp-config … --allowedTools "mcp__botcave__*" --max-turns … --permission-mode dontAsk`, prompt su
+  (`maxConcurrentTurns` 1..4, default 2); all'avvio toglie tutta `~/.casello-nodo/turns/` (resti di un arresto improvviso); per turno cartella vuota in
+  `~/.casello-nodo/turns/` (cwd del turno) con `mcp.json` e `system-prompt.md` (600) e `claude -p --output-format json --model … --system-prompt-file …
+  --setting-sources project --tools "" --strict-mcp-config --mcp-config … --allowedTools "mcp__botcave__*" --max-turns … --permission-mode dontAsk`
+  (impostazioni personali di Claude Code del Mac escluse, istruzioni fuori dagli argomenti; provato con il `claude` vero e il login Team), prompt su
   stdin, gruppo di processi proprio, ping ogni 30 s, timeout con SIGTERM e SIGKILL dopo 10 s; codice d'errore scelto da frasi precise del testo (mai inoltrato);
   409/401/403 su ping o report = turno perso, nessun report. Log senza prompt, risposta né token. Dopo il deploy il nodo va aggiornato (`casello-nodo install`).
 - Console: Account → Account AI «Aggiungi Claude Code (nodo)» (nodo tra i propri attivi, ripiego tra i modelli cloud), LED di prontezza e «Modifica» del
   ripiego; Account → Nodi: «pronto per i turni» e versione; i modelli dell'account nodo compaiono nelle tendine come gli altri; timeline delle run con la nota.
 - Prova: `test/node-turn-flow.test.ts` (API in memoria e ciclo vero di `casello-nodo` con `fake-claude.mjs` che chiama `/mcp/turn` con il client MCP: scheda di
-  Lucius, azione L2 di una run); con `CASELLO_REAL_CLAUDE=1` anche un turno di Alfred scritto con il `claude` vero (`haiku`, `squadre_stato`).
+  Lucius, azione L2 di una run, nodo con un posto occupato e un secondo turno in coda); con `CASELLO_REAL_CLAUDE=1` anche un turno di Alfred scritto con il `claude` vero (`haiku`, `squadre_stato`).
 - Migrazione: `docs/migrations/2026-11-esecutore-nodo.sql` (additiva e idempotente, niente `-post`): valore `claude_code_node` di `provider_protocol` (`ALTER
   TYPE … ADD VALUE IF NOT EXISTS`, fuori da una transazione esplicita; la riga del provider la scrive `ensureProviderRegistry` all'avvio), colonne
   `ai_accounts.node_id`/`fallback_ai_model_id` con indice unico parziale, `nodes.last_turn_poll_at`, enum `node_turn_consumer` e `node_turn_status`, tabella

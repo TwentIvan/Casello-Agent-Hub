@@ -164,14 +164,41 @@ export function withConfirmedWrites(tools: CatalogTool[]): CatalogTool[] {
   return tools.map((tool) => (effectiveLevel(tool) === "L1" ? { ...tool, levelOverride: "L2" as const } : tool));
 }
 
-// Contesto di sistema: app e istruzioni dell'agente. I tool non sono elencati nel testo:
+const TODAY_DATE = new Intl.DateTimeFormat("it-IT", {
+  timeZone: "Europe/Rome",
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+const TODAY_TIME = new Intl.DateTimeFormat("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+/** «Oggi è lunedì 9 novembre 2026, ore 16:12 (ora italiana).»: senza, il modello indovina la data. */
+export function todayLine(now: Date): string {
+  return `Oggi è ${TODAY_DATE.format(now)}, ore ${TODAY_TIME.format(now)} (ora italiana).`;
+}
+
+/**
+ * Limiti più ampi per il Responsabile di prodotto (agente `general`): ogni chiamata porta il catalogo intero dell'app
+ * (con 65 tool circa 16 000 token), e preparare una proposta richiede più letture. Con i limiti di sempre (60 000 token)
+ * il Responsabile di Botcave si fermava dopo 3-4 chiamate. Gli agenti di area restano con DEFAULT_LIMITS.
+ */
+export const PRODUCT_LEAD_LIMITS: LoopLimits = { maxRounds: 12, maxActiveMs: 180_000, maxTokens: 200_000 };
+
+/** Limiti del ciclo per l'agente: quelli del Responsabile per `general`, altrimenti nessuna sostituzione. */
+export function runLimitsFor(agent: Pick<Agent, "role">): Partial<LoopLimits> {
+  return agent.role === "general" ? PRODUCT_LEAD_LIMITS : {};
+}
+
+// Contesto di sistema: data di oggi, app e istruzioni dell'agente. I tool non sono elencati nel testo:
 // arrivano al modello come function calling.
-export function buildSystemPrompt(agent: Agent, app: App): string {
+export function buildSystemPrompt(agent: Agent, app: App, now: Date = new Date()): string {
   const functional = app.functionalDescription?.trim() ?? "";
   const context = [
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
     `🤖 CONTESTO AGENTE: ${agent.name}`,
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    todayLine(now),
     `App: ${app.name} (${app.baseUrl})`,
     app.description ?? "",
     ...(functional
@@ -332,6 +359,8 @@ async function driveLoop(
   limits?: Partial<LoopLimits>,
 ): Promise<void> {
   const runId = ctx.run.id;
+  // Limiti del ruolo, poi quelli passati dall'avvio (test)
+  const loopLimits: Partial<LoopLimits> = { ...runLimitsFor(ctx.agent), ...limits };
   const functionTools = roleFunctionTools(
     ctx.tools.filter((t) => !isInternalTool(t)),
     ctx.tools.filter(isInternalTool),
@@ -400,7 +429,7 @@ async function driveLoop(
     },
     queueAction,
     onStep: writeStep,
-    limits,
+    limits: loopLimits,
     signal: abort,
   };
 

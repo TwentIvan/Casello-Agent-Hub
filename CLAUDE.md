@@ -769,7 +769,9 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 
 - Spec: `docs/superpowers/specs/2026-10-25-casello-agenti-operativi-design.md`.
 - Limiti per turno: 8 giri di tool, 120 s di tempo attivo (ogni chiamata al
-  modello è limitata dal tempo rimasto, minimo 1 s), 60 000 token. Per chiamata HTTP: 15 s, risposta
+  modello è limitata dal tempo rimasto, minimo 1 s), 60 000 token. Il Responsabile di prodotto (agente `general`) ha
+  12 giri, 180 s e 200 000 token (`PRODUCT_LEAD_LIMITS` in `run-executor.ts`): ogni chiamata porta il catalogo intero dell'app.
+  Il prompt di sistema delle run riporta la data e l'ora italiane (`todayLine`). Per chiamata HTTP: 15 s, risposta
   massima 1 048 576 byte. Nessuna pausa per la conferma: i tool L2 vanno in coda e la run
   continua (vedi "Strumenti MCP e coda delle conferme"). Le run `awaiting_client` rimaste dal vecchio meccanismo si chiudono
   `cancelled` all'avvio.

@@ -310,5 +310,6 @@ describe("istruzioni di Alfred scritto", () => {
     const t = characterInstructions("alfred");
     expect(t).toContain("chiedi_al_responsabile");
     expect(t).toContain("una chiamata per App");
+    expect(t).toContain("Ogni Responsabile agisce solo sulla sua App");
   });
 });

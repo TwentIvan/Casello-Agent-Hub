@@ -209,8 +209,25 @@ export const RUNS_SCOPE_ROUTES: ReadonlyArray<{ method: "GET" | "POST"; path: Re
   { method: "GET", path: /^\/runs\/\d+\/steps$/ },
 ];
 
-/** GET e HEAD leggono (api:read o api:write); gli altri metodi scrivono (solo api:write); `runs` solo sulle route di RUNS_SCOPE_ROUTES. */
+/**
+ * Route di decisione che l'ambito `agent` non può usare (coda delle conferme, schede dei personaggi, revisione dell'architetto,
+ * correzione del PLAN): metodo + percorso rispetto a `requireAuth`, con segmenti `[^/]+` e barra finale facoltativa.
+ */
+export const AGENT_DENIED_ROUTES: ReadonlyArray<{ method: "POST" | "PUT" | "PATCH"; path: RegExp }> = [
+  { method: "POST", path: /^\/pending-actions\/[^/]+\/(approve|reject)\/?$/ },
+  { method: "POST", path: /^\/(plan-proposals|team-chat-proposals|character-proposals)\/[^/]+\/decision\/?$/ },
+  { method: "PATCH", path: /^\/analysis-items\/[^/]+\/?$/ },
+  { method: "PUT", path: /^\/team-instances\/[^/]+\/plan\/?$/ },
+];
+
+/**
+ * GET e HEAD leggono (api:read o api:write); gli altri metodi scrivono (solo api:write); `agent` legge e scrive tutto
+ * tranne le route di AGENT_DENIED_ROUTES; `runs` solo sulle route di RUNS_SCOPE_ROUTES.
+ */
 export function hasScopeFor(method: string, path: string, scopes: TokenScope[]): boolean {
+  if (scopes.includes("agent")) {
+    return method === "GET" || method === "HEAD" || !AGENT_DENIED_ROUTES.some((r) => r.method === method && r.path.test(path));
+  }
   const base = method === "GET" || method === "HEAD" ? scopes.includes("api:read") || scopes.includes("api:write") : scopes.includes("api:write");
   if (base) return true;
   return scopes.includes("runs") && RUNS_SCOPE_ROUTES.some((r) => r.method === method && r.path.test(path));
@@ -222,7 +239,7 @@ export function hasScopeFor(method: string, path: string, scopes: TokenScope[]):
  * - `Bearer cao_…` vale solo se è il token d'accesso del pannello incorporato (ambito `embed`): lettura e scrittura,
  *   `req.auth.via = "embed"`, limite per collegamento (`grantId`); un `cao_…` del connettore (`mcp`), scaduto o revocato → 401;
  * - `Bearer cas_…` (token personale): sconosciuto, revocato o scaduto → 401, token di nodo → 403; poi il limite per
- *   token e l'ambito richiesto dal metodo;
+ *   token e l'ambito richiesto dal metodo (`agent`: tutto tranne AGENT_DENIED_ROUTES);
  * - qualunque altro header → 401.
  * Senza header vale la sessione.
  */

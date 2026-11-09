@@ -364,3 +364,77 @@ describe("token personali su /api", () => {
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
+
+describe("ambito agent", () => {
+  const DECISIONS: [string, string][] = [
+    ["POST", "/pending-actions/1/approve"],
+    ["POST", "/pending-actions/1/reject"],
+    ["POST", "/pending-actions/abc/approve"],
+    ["POST", "/pending-actions/1/approve/"],
+    ["POST", "/plan-proposals/1/decision"],
+    ["POST", "/team-chat-proposals/1/decision"],
+    ["POST", "/character-proposals/1/decision"],
+    ["PATCH", "/analysis-items/1"],
+    ["PUT", "/team-instances/1/plan"],
+  ];
+
+  it("legge e scrive: GET /apps 200, HEAD non 403, POST /apps 201", async () => {
+    const token = await tokenWith(["agent"]);
+    expect((await api("GET", "/apps", { token })).status).toBe(200);
+    expect((await api("HEAD", "/apps", { token })).status).not.toBe(403);
+    const post = await api("POST", "/apps", { token, body: { name: "Mister", baseUrl: "https://mister.example.com" } });
+    expect(post.status, post.text).toBe(201);
+  });
+
+  it("le route di decisione → 403 scope", async () => {
+    const token = await tokenWith(["agent"]);
+    for (const [method, path] of DECISIONS) {
+      const res = await api(method, path, { token, body: {} });
+      expect(res.status, `${method} ${path}`).toBe(403);
+      expect(res.json, `${method} ${path}`).toEqual({ error: MESSAGES.scope });
+    }
+  });
+
+  it("le stesse route con api:write non sono 403", async () => {
+    const token = await tokenWith(["api:write"]);
+    for (const [method, path] of DECISIONS) {
+      const res = await api(method, path, { token, body: {} });
+      expect(res.status, `${method} ${path}`).not.toBe(403);
+    }
+  });
+
+  it("le route sessionOnly restano 403 sessionOnly", async () => {
+    const routes: [string, string, unknown?][] = [
+      ["GET", "/account/tokens"],
+      ["POST", "/account/tokens", { name: "x", expiresInDays: 1 }],
+      ["DELETE", "/account/tokens/999999"],
+      ["POST", "/ai/accounts", {}],
+      ["PATCH", "/ai/accounts/999999", {}],
+      ["DELETE", "/ai/accounts/999999"],
+      ["POST", "/ai/accounts/999999/verify"],
+      ["POST", "/ai/accounts/999999/default"],
+      ["POST", "/ai/accounts/999999/models", {}],
+      ["PATCH", "/ai/models/999999", {}],
+      ["PUT", "/budget", {}],
+      ["DELETE", "/auth/github"],
+      ["GET", "/auth/github/link"],
+    ];
+    const token = await tokenWith(["agent"]);
+    for (const [method, path, body] of routes) {
+      const res = await api(method, path, { token, body });
+      expect(res.status, `${method} ${path}`).toBe(403);
+      expect(res.json, `${method} ${path}`).toEqual({ error: MESSAGES.sessionOnly });
+    }
+  });
+
+  it("approva su /mcp → 401", async () => {
+    const token = await tokenWith(["agent"]);
+    const res = await fetch(`${base}/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "approva", arguments: { numero: 1 } } }),
+    });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: MESSAGES.invalid });
+  });
+});

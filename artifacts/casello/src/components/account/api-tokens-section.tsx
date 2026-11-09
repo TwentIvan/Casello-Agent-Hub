@@ -38,6 +38,7 @@ const SCOPE_LABELS: Record<ApiTokenScope, string> = {
   "api:read": "API: lettura",
   "api:write": "API: scrittura",
   runs: "Avvio delle run (app ospiti)",
+  agent: "Agente di Botcave (segreto di servizio)",
 };
 const SCOPE_ORDER: ApiTokenScope[] = ["mcp", "api:read", "api:write", "runs"];
 

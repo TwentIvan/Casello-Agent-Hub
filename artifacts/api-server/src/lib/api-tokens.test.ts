@@ -48,10 +48,20 @@ describe("createApiToken", () => {
     await expect(createApiToken(userId, "x", 30, ["node"] as TokenScope[])).rejects.toBeInstanceOf(ApiTokenInputError);
   });
 
+  it("ambito agent esclusivo: da solo sì, con altri ambiti no", async () => {
+    const { row } = await createApiToken(userId, "Botcave", 90, ["agent"]);
+    expect(row.scopes).toEqual(["agent"]);
+    for (const scopes of [["agent", "api:read"], ["agent", "mcp"]]) {
+      await expect(createApiToken(userId, "x", 30, scopes as TokenScope[])).rejects.toThrow(
+        new ApiTokenInputError("l'ambito agent non si combina con altri ambiti"),
+      );
+    }
+  });
+
   it("vuoto, ripetuto o sconosciuto → ApiTokenInputError", async () => {
     for (const scopes of [[], ["mcp", "mcp"], ["admin"]]) {
       await expect(createApiToken(userId, "x", 30, scopes as TokenScope[])).rejects.toThrow(
-        new ApiTokenInputError("ambiti non validi: scegline almeno uno tra mcp, api:read, api:write, runs"),
+        new ApiTokenInputError("ambiti non validi: scegline almeno uno tra mcp, api:read, api:write, runs, agent"),
       );
     }
   });

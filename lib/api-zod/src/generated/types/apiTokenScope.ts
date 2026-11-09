@@ -7,7 +7,7 @@
  */
 
 /**
- * mcp = server MCP; api:read = solo lettura su /api; api:write = lettura e scrittura su /api; runs = solo avvio e lettura delle run (POST /agents/{id}/runs, GET /runs/{id} e /runs/{id}/steps)
+ * mcp = server MCP; api:read = solo lettura su /api; api:write = lettura e scrittura su /api; runs = solo avvio e lettura delle run (POST /agents/{id}/runs, GET /runs/{id} e /runs/{id}/steps); agent = lettura e scrittura su /api tranne le decisioni dell'utente (coda, schede, revisione dell'architetto, PLAN); da solo, segreto di servizio dell'App di Botcave
  */
 export type ApiTokenScope = typeof ApiTokenScope[keyof typeof ApiTokenScope];
 
@@ -17,4 +17,5 @@ export const ApiTokenScope = {
   'api:read': 'api:read',
   'api:write': 'api:write',
   runs: 'runs',
+  agent: 'agent',
 } as const;

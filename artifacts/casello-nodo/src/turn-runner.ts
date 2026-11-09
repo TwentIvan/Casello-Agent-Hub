@@ -68,6 +68,17 @@ export function turnArgs(pkg: TurnPackage, mcpConfigPath: string): string[] {
   ];
 }
 
+const USAGE_LIMIT = ["usage limit", "rate limit", "limit reached", "hour limit", "weekly limit"];
+const NOT_LOGGED_IN = [
+  "not logged in",
+  "please run /login",
+  "/login",
+  "invalid api key",
+  "oauth token has expired",
+  "oauth token revoked",
+  "authentication_error",
+];
+
 /**
  * Sceglie il codice dal testo dell'errore (solo per classificare: il testo non si inoltra mai).
  * Stop e timeout hanno la precedenza sul testo.
@@ -76,15 +87,10 @@ export function classifyTurnError(text: string, timedOut: boolean, aborted: bool
   if (aborted) return "stopped";
   if (timedOut) return "timeout";
   const t = text.toLowerCase();
-  if (t.includes("limit")) return "usage_limit";
-  if (
-    t.includes("not logged in") ||
-    t.includes("/login") ||
-    t.includes("invalid api key") ||
-    t.includes("oauth")
-  ) {
-    return "not_logged_in";
-  }
+  // Solo frasi precise: usage_limit e not_logged_in fanno scattare il ripiego sul cloud, che non deve partire per
+  // errori generici (contesto troppo lungo, avvisi MCP/OAuth) dopo che Claude può aver già chiamato strumenti
+  if (USAGE_LIMIT.some((p) => t.includes(p))) return "usage_limit";
+  if (NOT_LOGGED_IN.some((p) => t.includes(p))) return "not_logged_in";
   if (
     t.includes("model") &&
     (t.includes("not found") || t.includes("not available") || t.includes("does not exist") || t.includes("invalid model"))
@@ -132,7 +138,8 @@ function buildReport(
     return { leaseToken: pkg.leaseToken, status: "done", content: text.slice(0, TURN_CONTENT_MAX), ...extra };
   }
   if (maxTurns || (cli && !isError)) return failed(pkg, "claude_failed", extra);
-  return failed(pkg, classifyTurnError(`${text}\n${child.stderr}`, false, false), extra);
+  // Con un risultato JSON si classifica solo quello; stderr serve solo se la CLI non ha prodotto un risultato
+  return failed(pkg, classifyTurnError(text || child.stderr, false, false), extra);
 }
 
 /**

@@ -101,6 +101,11 @@ describe("classifyTurnError", () => {
     ["model foo not found", "model_unavailable"],
     ["The model does not exist", "model_unavailable"],
     ["invalid model", "model_unavailable"],
+    ["5-hour limit reached", "usage_limit"],
+    ["Weekly limit hit", "usage_limit"],
+    ["context limit exceeded", "claude_failed"],
+    ["MCP server botcave: oauth discovery failed", "claude_failed"],
+    ["prompt is too long", "claude_failed"],
     ["la solita cosa", "claude_failed"],
     ["", "claude_failed"],
   ])("%s → %s", (text, code) => {
@@ -178,6 +183,11 @@ describe("runTurn", () => {
   it("errore solo su stderr con uscita ≠ 0 → classificato da stderr", async () => {
     await runTurn(pkg(), ctx("turn-stderr", [], {}, { FAKE_ERROR_TEXT: "Please run /login" }));
     expect(reports()).toEqual([expect.objectContaining({ status: "failed", errorCode: "not_logged_in" })]);
+  });
+
+  it("con un risultato JSON lo stderr non conta", async () => {
+    await runTurn(pkg(), ctx("turn-error", [], {}, { FAKE_ERROR_TEXT: "boom" }));
+    expect(reports()[0]).toMatchObject({ errorCode: "claude_failed" });
   });
 
   it("error_max_turns: done se c'è un risultato, altrimenti claude_failed", async () => {

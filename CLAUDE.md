@@ -872,7 +872,9 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - Ambito `agent` (token personale per il Responsabile di Botcave stesso, segreto di servizio dell'App 4): **esclusivo** (con altri ambiti → 400 «l'ambito agent non si combina con altri
   ambiti»), vale su `/api` come `api:read` + `api:write` (GET/HEAD e scritture) tranne `AGENT_DENIED_ROUTES` (`lib/auth.ts`, confronto senza distinzione di maiuscole), che danno 403 «il token non ha
   l'ambito per questa operazione»: `POST /pending-actions/:n/approve|reject`, `POST /plan-proposals|team-chat-proposals|character-proposals/:id/decision`, `PATCH /analysis-items/:id`,
-  `PUT /team-instances/:id/plan` e `POST /team-instances/:id/plan/manual-actions/:actionId/done`: l'agente non decide mai al posto dell'utente. Le route `sessionOnly` restano 403, su `/mcp` 401. Durata
+  `PUT /team-instances/:id/plan` e `POST /team-instances/:id/plan/manual-actions/:actionId/done` (l'agente non decide mai al posto dell'utente), `POST /apps` e `PATCH /apps/:id`
+  (configurazione delle app con indirizzi e segreti: un tool dell'App 4 riprogrammato non deve poter dirottare il segreto di servizio di un'altra app) e ogni `DELETE` (regola sul
+  metodo: le eliminazioni restano alla sessione dell'utente; vale anche sulle route `sessionOnly`, che con `agent` rispondono quindi 403 d'ambito). Le route `sessionOnly` restano 403, su `/mcp` 401. Durata
   massima 90 giorni (come ogni token personale). In console: Account → «Token personali», casella «Agente di Botcave (segreto di servizio)», che spegne e disattiva le altre.
 - Il token OAuth `cao_…` con ambito `embed` (pannello incorporabile) vale invece su `/api` come `api:read` + `api:write`, con le eccezioni descritte in
   "Botcave incorporabile (app ospiti)".

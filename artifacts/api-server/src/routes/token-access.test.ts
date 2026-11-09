@@ -383,14 +383,41 @@ describe("ambito agent", () => {
     ["PATCH", "/Analysis-Items/1"],
     ["PUT", "/Team-Instances/1/PLAN"],
     ["POST", "/Team-Instances/1/Plan/Manual-Actions/m1/Done"],
+    // Configurazione delle app (indirizzi e segreti) ed eliminazioni
+    ["POST", "/apps"],
+    ["POST", "/Apps/"],
+    ["PATCH", "/apps/1"],
+    ["PATCH", "/Apps/1/"],
+    ["DELETE", "/apps/1"],
+    ["DELETE", "/agents/1"],
+    ["DELETE", "/Agents/1"],
+    ["DELETE", "/apps/1/tools/1"],
+    ["DELETE", "/triggers/1"],
   ];
 
-  it("legge e scrive: GET /apps 200, HEAD non 403, POST /apps 201", async () => {
+  it("legge e scrive: GET /apps 200, HEAD non 403, POST /skills 201", async () => {
     const token = await tokenWith(["agent"]);
     expect((await api("GET", "/apps", { token })).status).toBe(200);
     expect((await api("HEAD", "/apps", { token })).status).not.toBe(403);
-    const post = await api("POST", "/apps", { token, body: { name: "Mister", baseUrl: "https://mister.example.com" } });
+    const post = await api("POST", "/skills", { token, body: { code: "agent-scope-test", name: "Prova", kind: "casello", content: "Istruzioni." } });
     expect(post.status, post.text).toBe(201);
+  });
+
+  it("POST /apps e PATCH /apps/:id → 403 scope anche con un corpo valido", async () => {
+    const token = await tokenWith(["agent"]);
+    const writer = await tokenWith(["api:write"]);
+    const created = await api("POST", "/apps", { token: writer, body: { name: "Mister agent", baseUrl: "https://mister-agent.example.com" } });
+    expect(created.status, created.text).toBe(201);
+    const id = (created.json as { id: number }).id;
+    const post = await api("POST", "/apps", { token, body: { name: "Altra", baseUrl: "https://altra.example.com" } });
+    expect(post.status).toBe(403);
+    expect(post.json).toEqual({ error: MESSAGES.scope });
+    const patch = await api("PATCH", `/apps/${id}`, { token, body: { internalBaseUrl: "https://evil.example.com" } });
+    expect(patch.status).toBe(403);
+    expect(patch.json).toEqual({ error: MESSAGES.scope });
+    // Le sotto-route dell'app restano scrivibili (catalogo dei tool)
+    const tools = await api("GET", `/apps/${id}/tools`, { token });
+    expect(tools.status).toBe(200);
   });
 
   it("le route di decisione → 403 scope", async () => {
@@ -430,7 +457,8 @@ describe("ambito agent", () => {
     for (const [method, path, body] of routes) {
       const res = await api(method, path, { token, body });
       expect(res.status, `${method} ${path}`).toBe(403);
-      expect(res.json, `${method} ${path}`).toEqual({ error: MESSAGES.sessionOnly });
+      // Le eliminazioni si fermano prima, sull'ambito
+      expect(res.json, `${method} ${path}`).toEqual({ error: method === "DELETE" ? MESSAGES.scope : MESSAGES.sessionOnly });
     }
   });
 

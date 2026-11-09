@@ -13,7 +13,8 @@ const TOKEN_PREFIX = "cas_";
  * Ambiti di un token: mcp = server MCP; api:read = lettura su /api; api:write = lettura e scrittura su /api;
  * node = protocollo del nodo locale (solo /api/node, solo token legati a un nodo); embed = pannello incorporato
  * (solo collegamenti OAuth `cao_…` dei client `embed`, mai un token personale); runs = solo avvio e lettura delle run;
- * agent = lettura e scrittura su /api tranne le decisioni dell'utente (AGENT_DENIED_ROUTES in auth.ts), esclusivo:
+ * agent = lettura e scrittura su /api tranne le decisioni dell'utente, creazione e modifica delle app e le eliminazioni
+ * (AGENT_DENIED_ROUTES in auth.ts), esclusivo:
  * segreto di servizio dell'App di Botcave stesso.
  */
 export const TOKEN_SCOPES = ["mcp", "api:read", "api:write", "runs", "node", "embed", "agent"] as const;

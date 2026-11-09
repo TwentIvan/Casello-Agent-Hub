@@ -49,12 +49,16 @@ di Botcave, legge e propone modifiche su Botcave partendo da richieste in lingua
   ambito → 400 «l'ambito agent non si combina con altri ambiti». Nessuna migrazione (`api_tokens.scopes` è `text[]`).
 - `hasScopeFor` (`lib/auth.ts`): con `agent`
   - GET e HEAD: ammessi;
-  - gli altri metodi: ammessi, salvo le **route di decisione** (`AGENT_DENIED_ROUTES`, metodo + percorso relativo a `/api`):
+  - `DELETE`: sempre rifiutato (regola sul metodo in `AGENT_DENIED_ROUTES`): le eliminazioni restano alla sessione dell'utente;
+  - gli altri metodi: ammessi, salvo le **route di decisione** e la **configurazione delle app** (`AGENT_DENIED_ROUTES`, metodo + percorso relativo a `/api`):
     - `POST /pending-actions/:number/approve`, `POST /pending-actions/:number/reject` (coda delle conferme);
     - `POST /plan-proposals/:id/decision`, `POST /team-chat-proposals/:id/decision`, `POST /character-proposals/:id/decision` (schede);
     - `PATCH /analysis-items/:id` (revisione dell'architetto: «nulla si attiva senza approvazione nella console»);
     - `PUT /team-instances/:id/plan` (la correzione dell'utente scrive un PLAN già approvato);
-    - `POST /team-instances/:id/plan/manual-actions/:actionId/done` (segnare «Fatto» un'azione manuale è una dichiarazione dell'utente).
+    - `POST /team-instances/:id/plan/manual-actions/:actionId/done` (segnare «Fatto» un'azione manuale è una dichiarazione dell'utente);
+    - `POST /apps` e `PATCH /apps/:id` (configurazione delle app: indirizzi, autenticazione e segreti di servizio). Senza questa regola
+      un'unica approvazione di `update_app_tool` potrebbe riprogrammare un tool L0 dell'App 4 su `PATCH /api/apps/{id}` e poi, senza
+      passare dalla coda, cambiare l'indirizzo interno di un'altra app e farsi mandare il suo segreto di servizio.
 
     Il confronto dei percorsi non distingue le maiuscole (i router di Express non le distinguono).
 

@@ -55,9 +55,17 @@ Equivalente via API (la risposta contiene il token in chiaro: usarla solo se la 
 Il token scade dopo 90 giorni: segnare la data di scadenza che mostra Account e, prima di quella, crearne uno nuovo e ripetere il
 passo 2 (solo `serviceSecret`). Dopo la scadenza ogni tool dell'App 4 risponde 401 e le run del Responsabile non leggono più nulla.
 
-Cosa può fare il token: leggere e scrivere su `/api`, salvo le decisioni dell'utente (approvare o rifiutare voci della coda, decidere le
-schede di Lucius e della chat del piano o di squadra, la revisione dell'architetto, la correzione del PLAN, «Fatto» sulle azioni manuali):
-lì risponde 403. Le route solo con il login restano 403; su `/mcp` vale 401.
+Cosa può fare il token: leggere e scrivere su `/api`, salvo:
+- le decisioni dell'utente (approvare o rifiutare voci della coda, decidere le schede di Lucius e della chat del piano o di squadra, la
+  revisione dell'architetto, la correzione del PLAN, «Fatto» sulle azioni manuali);
+- la configurazione delle app: `POST /api/apps` e `PATCH /api/apps/:id` (indirizzi, autenticazione, segreti di servizio);
+- ogni `DELETE`: le eliminazioni restano alla console con il login.
+
+Lì risponde 403 «il token non ha l'ambito per questa operazione». Le route solo con il login restano 403; su `/mcp` vale 401.
+
+Un solo token per tutto: lo condividono tutte le run dell'App 4 (fino a 6 in parallelo, 2 per agente) e i giri degli inneschi di
+sorveglianza, con il limite di 120 richieste al minuto per token. Run molto pesanti, o più run insieme, possono ricevere HTTP 429 dai tool:
+in quel caso la run va rilanciata più tardi, non serve un secondo token.
 
 ## 2. App 4: indirizzo interno e autenticazione di servizio
 
@@ -183,7 +191,11 @@ Limiti noti del catalogo:
   Si restringe con i filtri (`status`, ricerca e pagina).
 - `create_trigger` crea solo inneschi di sorveglianza; i webhook si creano dalla console (il loro indirizzo segreto non deve passare da una run).
 - Con l'ambito `agent` le route di decisione rispondono 403: il Responsabile non approva, non rifiuta, non decide schede, non rivede le voci
-  dell'architetto, non riscrive il PLAN e non segna «Fatto» le azioni manuali.
+  dell'architetto, non riscrive il PLAN e non segna «Fatto» le azioni manuali. Rispondono 403 anche `POST /api/apps`, `PATCH /api/apps/:id`
+  e ogni `DELETE`.
+- **Attenzione**: approvare `create_app_tool` o `update_app_tool` sull'App 4 cambia i poteri del Responsabile stesso (un tool nuovo o
+  riprogrammato è una route che potrà chiamare con il suo token). Prima di approvare leggere metodo, path e livello della definizione
+  proposta: un L0 deve restare un `GET`, e nessun tool deve puntare a route che l'utente non vuole affidare all'agente.
 
 ## 4. Descrizione funzionale dell'App 4
 

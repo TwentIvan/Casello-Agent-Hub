@@ -210,20 +210,26 @@ export const RUNS_SCOPE_ROUTES: ReadonlyArray<{ method: "GET" | "POST"; path: Re
 ];
 
 /**
- * Route di decisione che l'ambito `agent` non può usare (coda delle conferme, schede dei personaggi, revisione dell'architetto,
- * correzione del PLAN): metodo + percorso rispetto a `requireAuth`, con segmenti `[^/]+`, barra finale facoltativa e senza distinguere le maiuscole (i router di Express non le distinguono).
+ * Route che l'ambito `agent` non può usare: le decisioni dell'utente (coda delle conferme, schede dei personaggi, revisione
+ * dell'architetto, correzione del PLAN), la configurazione delle app (creazione e modifica: indirizzi e segreti; con un tool
+ * riprogrammato l'agente potrebbe dirottare il segreto di servizio di un'altra app) e ogni eliminazione (regola sul metodo:
+ * le eliminazioni restano alla sessione dell'utente). Metodo + percorso rispetto a `requireAuth`, con segmenti `[^/]+`, barra
+ * finale facoltativa e senza distinguere le maiuscole (i router di Express non le distinguono).
  */
-export const AGENT_DENIED_ROUTES: ReadonlyArray<{ method: "POST" | "PUT" | "PATCH"; path: RegExp }> = [
+export const AGENT_DENIED_ROUTES: ReadonlyArray<{ method: "POST" | "PUT" | "PATCH" | "DELETE"; path: RegExp }> = [
   { method: "POST", path: /^\/pending-actions\/[^/]+\/(approve|reject)\/?$/i },
   { method: "POST", path: /^\/(plan-proposals|team-chat-proposals|character-proposals)\/[^/]+\/decision\/?$/i },
   { method: "PATCH", path: /^\/analysis-items\/[^/]+\/?$/i },
   { method: "POST", path: /^\/team-instances\/[^/]+\/plan\/manual-actions\/[^/]+\/done\/?$/i },
   { method: "PUT", path: /^\/team-instances\/[^/]+\/plan\/?$/i },
+  { method: "POST", path: /^\/apps\/?$/i },
+  { method: "PATCH", path: /^\/apps\/[^/]+\/?$/i },
+  { method: "DELETE", path: /^\// },
 ];
 
 /**
  * GET e HEAD leggono (api:read o api:write); gli altri metodi scrivono (solo api:write); `agent` legge e scrive tutto
- * tranne le route di AGENT_DENIED_ROUTES; `runs` solo sulle route di RUNS_SCOPE_ROUTES.
+ * tranne le route di AGENT_DENIED_ROUTES (nessun DELETE); `runs` solo sulle route di RUNS_SCOPE_ROUTES.
  */
 export function hasScopeFor(method: string, path: string, scopes: TokenScope[]): boolean {
   if (scopes.includes("agent")) {

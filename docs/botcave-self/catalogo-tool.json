@@ -1,0 +1,3060 @@
+[
+  {
+    "name": "list_apps",
+    "description": "Elenca le app registrate in Botcave (dati essenziali; per il dettaglio usa get_app_overview).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/apps",
+      "paramLocations": {},
+      "responseFields": [
+        "id",
+        "name",
+        "slug",
+        "description",
+        "status",
+        "mcpUrl",
+        "serviceSecretSet",
+        "sourceType",
+        "sourceRepo",
+        "updatedAt"
+      ]
+    },
+    "replaces": "list_apps"
+  },
+  {
+    "name": "get_app_overview",
+    "description": "Dettaglio di un'app: indirizzi, autenticazione (senza segreti), sorgenti, descrizione funzionale.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'app"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/apps/{id}",
+      "paramLocations": {
+        "id": "path"
+      }
+    },
+    "replaces": "get_app_overview"
+  },
+  {
+    "name": "list_app_tools",
+    "description": "Elenca i tool del catalogo di un'app con tipo, identità, livello e stato (senza schemi né definizioni).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'app"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/apps/{id}/tools",
+      "paramLocations": {
+        "id": "path"
+      },
+      "responseFields": [
+        "id",
+        "name",
+        "description",
+        "kind",
+        "identity",
+        "level",
+        "levelOverride",
+        "status",
+        "needsVerification",
+        "updatedAt"
+      ]
+    },
+    "replaces": "list_app_tools"
+  },
+  {
+    "name": "list_agents",
+    "description": "Elenca gli agenti, anche di una sola app (senza prompt: per quello usa get_agent).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "appId": {
+          "type": "integer",
+          "description": "Solo gli agenti di questa app"
+        }
+      }
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/agents",
+      "paramLocations": {
+        "appId": "query"
+      },
+      "responseFields": [
+        "id",
+        "appId",
+        "name",
+        "role",
+        "area",
+        "status",
+        "model",
+        "aiModelId",
+        "toolIds",
+        "confirmWrites",
+        "monthlyBudgetUsd",
+        "updatedAt"
+      ]
+    },
+    "replaces": "list_agents"
+  },
+  {
+    "name": "get_agent",
+    "description": "Dettaglio di un agente: prompt di sistema, modello, ruolo, tool collegati, tetto e conferma delle scritture.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'agente"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/agents/{id}",
+      "paramLocations": {
+        "id": "path"
+      }
+    },
+    "replaces": "get_agent"
+  },
+  {
+    "name": "list_agent_skills",
+    "description": "Elenca le skill di un agente (istruzioni e tool usati).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'agente"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/agents/{id}/skills",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
+    "name": "list_agent_triggers",
+    "description": "Elenca gli inneschi di un agente con stato, ultimo giro, run create e ultimo errore.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'agente"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/agents/{id}/triggers",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
+    "name": "get_trigger",
+    "description": "Dettaglio di un innesco (configurazione, stato, errori; mai il segreto del webhook).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'innesco"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/triggers/{id}",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
+    "name": "list_trigger_runs",
+    "description": "Ultime 20 run avviate da un innesco.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'innesco"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/triggers/{id}/runs",
+      "paramLocations": {
+        "id": "path"
+      },
+      "responseFields": [
+        "id",
+        "agentId",
+        "status",
+        "errorMessage",
+        "durationMs",
+        "costUsd",
+        "createdAt",
+        "finishedAt",
+        "parentRunId",
+        "triggerId",
+        "triggerName"
+      ]
+    }
+  },
+  {
+    "name": "test_trigger",
+    "description": "Prova un innesco di sorveglianza salvato: chiama il suo tool e mostra fino a 20 elementi con «nuovo» o «già visto». Non scrive nulla e non crea run; al massimo 6 prove al minuto.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'innesco (solo sorveglianza)"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/triggers/{id}/test",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
+    "name": "list_runs",
+    "description": "Elenca le run dalla più recente (senza input e output: per quelli usa get_run).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "agentId": {
+          "type": "integer",
+          "description": "Solo le run di questo agente"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "running",
+            "succeeded",
+            "failed",
+            "awaiting_client",
+            "cancelled"
+          ],
+          "description": "Solo le run in questo stato"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Quante run (1..200, default 50)",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "before": {
+          "type": "integer",
+          "description": "Solo run con id minore di questo (pagina successiva)",
+          "minimum": 1
+        }
+      }
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/runs",
+      "paramLocations": {
+        "agentId": "query",
+        "status": "query",
+        "limit": "query",
+        "before": "query"
+      },
+      "responseFields": [
+        "id",
+        "agentId",
+        "status",
+        "errorMessage",
+        "durationMs",
+        "costUsd",
+        "createdAt",
+        "finishedAt",
+        "parentRunId",
+        "triggerId",
+        "triggerName"
+      ]
+    },
+    "replaces": "list_runs"
+  },
+  {
+    "name": "get_run",
+    "description": "Dettaglio di una run: input, output, errore, token, costo, run madre e figlie.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della run"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/runs/{id}",
+      "paramLocations": {
+        "id": "path"
+      }
+    },
+    "replaces": "get_run"
+  },
+  {
+    "name": "get_run_steps",
+    "description": "Passi di una run in ordine (chiamate al modello e ai tool, argomenti sensibili oscurati).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della run"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/runs/{id}/steps",
+      "paramLocations": {
+        "id": "path"
+      }
+    },
+    "replaces": "get_run_steps"
+  },
+  {
+    "name": "get_dashboard_stats",
+    "description": "Numeri del cruscotto: app, agenti, run, voci da confermare, inneschi in errore.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/dashboard/stats",
+      "paramLocations": {}
+    },
+    "replaces": "get_dashboard_stats"
+  },
+  {
+    "name": "get_budget",
+    "description": "Tetti di spesa e spesa del mese corrente dell'utente (sola lettura).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/budget",
+      "paramLocations": {}
+    }
+  },
+  {
+    "name": "list_app_analyses",
+    "description": "Elenca le analisi dell'architetto di un'app con stato, fase, token e costo.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'app"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/apps/{id}/analyses",
+      "paramLocations": {
+        "id": "path"
+      }
+    },
+    "replaces": "list_app_analyses"
+  },
+  {
+    "name": "get_analysis",
+    "description": "Dettaglio di un'analisi: mappa, log ed elementi proposti con il loro stato.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'analisi"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/analyses/{id}",
+      "paramLocations": {
+        "id": "path"
+      }
+    },
+    "replaces": "get_analysis"
+  },
+  {
+    "name": "get_analysis_issues",
+    "description": "Esporta in Markdown gli elementi di un'analisi, di un capitolo o di uno stato.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'analisi"
+        },
+        "chapter": {
+          "type": "string",
+          "enum": [
+            "tool",
+            "agent",
+            "skill",
+            "endpoint",
+            "completion",
+            "evolution"
+          ],
+          "description": "Solo questo capitolo"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved",
+            "discarded",
+            "postponed"
+          ],
+          "description": "Solo gli elementi in questo stato"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/analyses/{id}/issues",
+      "paramLocations": {
+        "id": "path",
+        "chapter": "query",
+        "status": "query"
+      }
+    },
+    "replaces": "get_analysis_issues"
+  },
+  {
+    "name": "get_app_plan",
+    "description": "Piano dell'app (endpoint, completamento, evoluzione) con lo stato delle issue GitHub.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'app"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/apps/{id}/plan",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
+    "name": "list_skills",
+    "description": "Elenca le skill del catalogo (senza contenuto: per quello usa get_skill).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "casello",
+            "node"
+          ],
+          "description": "Solo skill di questo tipo"
+        },
+        "q": {
+          "type": "string",
+          "description": "Testo da cercare in codice e nome",
+          "maxLength": 100
+        },
+        "deprecated": {
+          "type": "string",
+          "enum": [
+            "true",
+            "false"
+          ],
+          "description": "true = solo deprecate, false = solo in uso"
+        }
+      }
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/skills",
+      "paramLocations": {
+        "kind": "query",
+        "q": "query",
+        "deprecated": "query"
+      },
+      "responseFields": [
+        "code",
+        "name",
+        "description",
+        "kind",
+        "currentVersion",
+        "deprecated",
+        "updatedAt"
+      ]
+    }
+  },
+  {
+    "name": "get_skill",
+    "description": "Dettaglio di una skill con il contenuto della versione corrente.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Codice della skill"
+        }
+      },
+      "required": [
+        "code"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/skills/{code}",
+      "paramLocations": {
+        "code": "path"
+      }
+    }
+  },
+  {
+    "name": "list_skill_versions",
+    "description": "Elenca le versioni di una skill (senza contenuto: per quello usa get_skill_version).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Codice della skill"
+        }
+      },
+      "required": [
+        "code"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/skills/{code}/versions",
+      "paramLocations": {
+        "code": "path"
+      },
+      "responseFields": [
+        "code",
+        "version",
+        "toolHints",
+        "createdAt"
+      ]
+    }
+  },
+  {
+    "name": "get_skill_version",
+    "description": "Una versione di una skill con il suo contenuto.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Codice della skill"
+        },
+        "version": {
+          "type": "integer",
+          "description": "Numero di versione",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "code",
+        "version"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/skills/{code}/versions/{version}",
+      "paramLocations": {
+        "code": "path",
+        "version": "path"
+      }
+    }
+  },
+  {
+    "name": "list_team_templates",
+    "description": "Elenca i modelli di squadra (senza ruoli: per quelli usa get_team_template).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "archived": {
+          "type": "string",
+          "enum": [
+            "true",
+            "false"
+          ],
+          "description": "true = solo archiviati"
+        }
+      }
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/team-templates",
+      "paramLocations": {
+        "archived": "query"
+      },
+      "responseFields": [
+        "id",
+        "name",
+        "description",
+        "version",
+        "archived",
+        "instanceCount",
+        "updatedAt"
+      ]
+    }
+  },
+  {
+    "name": "get_team_template",
+    "description": "Dettaglio di un modello di squadra con i ruoli della versione corrente.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id del modello"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/team-templates/{id}",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
+    "name": "list_team_instances",
+    "description": "Elenca le squadre, dalla modificata più di recente (senza ruoli: per quelli usa get_team_instance).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "active",
+            "closed"
+          ],
+          "description": "Solo le squadre in questo stato"
+        },
+        "appId": {
+          "type": "integer",
+          "description": "Solo le squadre con questa app come lavoro di riferimento"
+        },
+        "refType": {
+          "type": "string",
+          "description": "Tipo del lavoro di riferimento"
+        },
+        "refId": {
+          "type": "string",
+          "description": "Id del lavoro di riferimento"
+        }
+      }
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/team-instances",
+      "paramLocations": {
+        "status": "query",
+        "appId": "query",
+        "refType": "query",
+        "refId": "query"
+      },
+      "responseFields": [
+        "id",
+        "name",
+        "status",
+        "template",
+        "ref",
+        "activatedBy",
+        "monthlyBudgetUsd",
+        "lastTurnAt",
+        "updatedAt",
+        "closedAt"
+      ]
+    }
+  },
+  {
+    "name": "get_team_instance",
+    "description": "Dettaglio di una squadra: ruoli, skill specializzate, stato, tetto, spazio di lavoro.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della squadra"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/team-instances/{id}",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
+    "name": "get_team_plan",
+    "description": "PLAN corrente della squadra: obiettivo, compiti con stato ed esito, azioni manuali, punti aperti.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della squadra"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/team-instances/{id}/plan",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
+    "name": "list_team_tasks",
+    "description": "Esecuzioni dei compiti della squadra, dalla più recente (ultime 200, senza istruzioni né passi).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della squadra"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/team-instances/{id}/tasks",
+      "paramLocations": {
+        "id": "path"
+      },
+      "responseFields": [
+        "id",
+        "planTaskId",
+        "roleKey",
+        "status",
+        "outcome",
+        "error",
+        "costUsd",
+        "nodeName",
+        "createdAt",
+        "finishedAt"
+      ]
+    }
+  },
+  {
+    "name": "get_team_task",
+    "description": "Esecuzione di un compito con istruzioni, esito, dettaglio e passi.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della squadra"
+        },
+        "taskId": {
+          "type": "integer",
+          "description": "Id dell'esecuzione del compito"
+        }
+      },
+      "required": [
+        "id",
+        "taskId"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/team-instances/{id}/tasks/{taskId}",
+      "paramLocations": {
+        "id": "path",
+        "taskId": "path"
+      }
+    }
+  },
+  {
+    "name": "list_team_turns",
+    "description": "Turni del capo, dal più recente (ultimi 50, senza passi).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della squadra"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/team-instances/{id}/turns",
+      "paramLocations": {
+        "id": "path"
+      },
+      "responseFields": [
+        "id",
+        "reasons",
+        "status",
+        "error",
+        "costUsd",
+        "createdAt",
+        "finishedAt"
+      ]
+    }
+  },
+  {
+    "name": "list_team_events",
+    "description": "Eventi della squadra (bollettino), dal più recente; non li segna come letti.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della squadra"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/team-instances/{id}/events",
+      "paramLocations": {
+        "id": "path"
+      },
+      "responseFields": [
+        "id",
+        "type",
+        "taskId",
+        "bulletin",
+        "readAt",
+        "createdAt"
+      ]
+    }
+  },
+  {
+    "name": "get_team_updates",
+    "description": "Aggiornamenti proposti alla squadra dal suo modello e dalle nuove versioni delle skill.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della squadra"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/team-instances/{id}/updates",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
+    "name": "list_pending_actions",
+    "description": "Elenca le voci della coda «Da confermare» (azioni, piani, proposte). Sola lettura: le decide solo l'utente.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "executing",
+            "done",
+            "failed",
+            "rejected",
+            "all"
+          ],
+          "description": "Stato delle voci (default pending)"
+        }
+      }
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/pending-actions",
+      "paramLocations": {
+        "status": "query"
+      }
+    }
+  },
+  {
+    "name": "get_pending_action",
+    "description": "Dettaglio di una voce della coda, con i passi se è una proposta. Sola lettura.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "integer",
+          "description": "Numero della voce"
+        }
+      },
+      "required": [
+        "number"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/pending-actions/{number}",
+      "paramLocations": {
+        "number": "path"
+      }
+    }
+  },
+  {
+    "name": "list_ai_models",
+    "description": "Elenca i modelli usabili, raggruppati per account AI, con stato e prezzi.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/ai/models",
+      "paramLocations": {}
+    },
+    "replaces": "list_ai_models"
+  },
+  {
+    "name": "search_model_catalog",
+    "description": "Cerca nel catalogo pubblico dei modelli (a pagine: usa pageSize piccolo).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "q": {
+          "type": "string",
+          "description": "Testo da cercare",
+          "maxLength": 200
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "all",
+            "chat",
+            "embedding",
+            "image_generation",
+            "image_edit",
+            "audio_transcription",
+            "audio_speech",
+            "video_generation",
+            "rerank",
+            "moderation",
+            "ocr",
+            "search",
+            "realtime",
+            "responses",
+            "completion",
+            "other"
+          ],
+          "description": "Tipo di modello (default chat)"
+        },
+        "tools": {
+          "type": "boolean",
+          "description": "Solo modelli che supportano gli strumenti"
+        },
+        "vision": {
+          "type": "boolean",
+          "description": "Solo modelli con visione"
+        },
+        "reasoning": {
+          "type": "boolean",
+          "description": "Solo modelli con ragionamento"
+        },
+        "usable": {
+          "type": "boolean",
+          "description": "Solo modelli usabili con i propri account"
+        },
+        "maxPrice": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Prezzo massimo in USD per milione di token"
+        },
+        "minContext": {
+          "type": "integer",
+          "description": "Contesto minimo in token",
+          "minimum": 0
+        },
+        "sort": {
+          "type": "string",
+          "enum": [
+            "name",
+            "price",
+            "released",
+            "context"
+          ],
+          "description": "Ordinamento (default name)"
+        },
+        "page": {
+          "type": "integer",
+          "description": "Pagina (default 1)",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "pageSize": {
+          "type": "integer",
+          "description": "Elementi per pagina (1..100, default 50)",
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/catalog/models",
+      "paramLocations": {
+        "q": "query",
+        "mode": "query",
+        "tools": "query",
+        "vision": "query",
+        "reasoning": "query",
+        "usable": "query",
+        "maxPrice": "query",
+        "minContext": "query",
+        "sort": "query",
+        "page": "query",
+        "pageSize": "query"
+      }
+    },
+    "replaces": "search_model_catalog"
+  },
+  {
+    "name": "get_catalog_status",
+    "description": "Stato dell'ultimo aggiornamento del catalogo dei modelli e novità.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/catalog/status",
+      "paramLocations": {}
+    }
+  },
+  {
+    "name": "create_area_agent",
+    "description": "Crea un agente di area di un'app. Senza modello usa quello predefinito dell'utente, se c'è.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "appId": {
+          "type": "integer",
+          "description": "Id dell'app"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome dell'agente",
+          "minLength": 1
+        },
+        "systemPrompt": {
+          "type": "string",
+          "description": "Prompt di sistema"
+        },
+        "aiModelId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Modello di un account AI dell'utente"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "inactive",
+            "draft"
+          ],
+          "description": "Stato iniziale (default draft)"
+        }
+      },
+      "required": [
+        "appId",
+        "name"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/agents",
+      "paramLocations": {
+        "appId": "body",
+        "name": "body",
+        "systemPrompt": "body",
+        "aiModelId": "body",
+        "status": "body"
+      }
+    },
+    "replaces": "create_area_agent"
+  },
+  {
+    "name": "update_agent",
+    "description": "Modifica un agente: solo i campi indicati cambiano.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'agente"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome",
+          "minLength": 1
+        },
+        "systemPrompt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Prompt di sistema"
+        },
+        "aiModelId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Modello di un account AI dell'utente"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "inactive",
+            "draft"
+          ],
+          "description": "Stato dell'agente"
+        },
+        "area": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Area dell'agente"
+        },
+        "defaultIdentity": {
+          "type": "string",
+          "enum": [
+            "user",
+            "service"
+          ],
+          "description": "Identità predefinita dei tool"
+        },
+        "monthlyBudgetUsd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Tetto mensile in USD; null = nessun limite"
+        },
+        "confirmWrites": {
+          "type": "boolean",
+          "description": "Tutte le scritture in «Da confermare» (sempre vero per il Responsabile)"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "PATCH",
+      "path": "/api/agents/{id}",
+      "paramLocations": {
+        "id": "path",
+        "name": "body",
+        "systemPrompt": "body",
+        "aiModelId": "body",
+        "status": "body",
+        "area": "body",
+        "defaultIdentity": "body",
+        "monthlyBudgetUsd": "body",
+        "confirmWrites": "body"
+      }
+    },
+    "replaces": "update_agent"
+  },
+  {
+    "name": "set_agent_tools",
+    "description": "Sostituisce l'elenco dei tool collegati a un agente di area.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'agente"
+        },
+        "toolIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "Id dei tool dell'app: l'elenco completo, non un'aggiunta"
+        }
+      },
+      "required": [
+        "id",
+        "toolIds"
+      ]
+    },
+    "definition": {
+      "method": "PUT",
+      "path": "/api/agents/{id}/tools",
+      "paramLocations": {
+        "id": "path",
+        "toolIds": "body"
+      }
+    },
+    "replaces": "set_agent_tools"
+  },
+  {
+    "name": "trigger_run",
+    "description": "Avvia una run di un agente: la run parte in coda e si segue con get_run.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'agente"
+        },
+        "input": {
+          "type": "string",
+          "description": "Input testuale per l'agente"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/agents/{id}/runs",
+      "paramLocations": {
+        "id": "path",
+        "input": "body"
+      }
+    },
+    "replaces": "trigger_run"
+  },
+  {
+    "name": "cancel_run",
+    "description": "Annulla una run non ancora conclusa.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L1",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della run"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/runs/{id}/cancel",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
+    "name": "create_app_tool",
+    "description": "Aggiunge un tool al catalogo di un'app: nasce draft, gli agenti non lo usano finché non viene attivato.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'app"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome del tool ([a-zA-Z0-9_-], max 64)",
+          "minLength": 1
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Cosa fa il tool"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "http",
+            "mcp",
+            "ui",
+            "composite"
+          ],
+          "description": "Tipo del tool"
+        },
+        "identity": {
+          "type": "string",
+          "enum": [
+            "user",
+            "service"
+          ],
+          "description": "Con quale credenziale chiama l'app"
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "L0",
+            "L1",
+            "L2",
+            "L3"
+          ],
+          "description": "Livello d'azione: L0 lettura, L1 reversibile, L2 con conferma, L3 vietato"
+        },
+        "paramsSchema": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "JSON Schema dei parametri (type object)"
+        },
+        "definition": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Definizione: per http method, path, paramLocations, responseFields"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "definition"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/apps/{id}/tools",
+      "paramLocations": {
+        "id": "path",
+        "name": "body",
+        "description": "body",
+        "kind": "body",
+        "identity": "body",
+        "level": "body",
+        "paramsSchema": "body",
+        "definition": "body"
+      }
+    }
+  },
+  {
+    "name": "update_app_tool",
+    "description": "Modifica un tool del catalogo di un'app: solo i campi indicati cambiano.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'app"
+        },
+        "toolId": {
+          "type": "integer",
+          "description": "Id del tool"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome del tool",
+          "minLength": 1
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Cosa fa il tool"
+        },
+        "identity": {
+          "type": "string",
+          "enum": [
+            "user",
+            "service"
+          ],
+          "description": "Con quale credenziale chiama l'app"
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "L0",
+            "L1",
+            "L2",
+            "L3"
+          ],
+          "description": "Livello d'azione proposto"
+        },
+        "levelOverride": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "L0",
+            "L1",
+            "L2",
+            "L3",
+            null
+          ],
+          "description": "Livello scelto, mai sotto level; null = nessuno"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "active",
+            "disabled"
+          ],
+          "description": "Stato del tool"
+        },
+        "paramsSchema": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "JSON Schema dei parametri"
+        },
+        "definition": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Definizione del tool"
+        }
+      },
+      "required": [
+        "id",
+        "toolId"
+      ]
+    },
+    "definition": {
+      "method": "PATCH",
+      "path": "/api/apps/{id}/tools/{toolId}",
+      "paramLocations": {
+        "id": "path",
+        "toolId": "path",
+        "name": "body",
+        "description": "body",
+        "identity": "body",
+        "level": "body",
+        "levelOverride": "body",
+        "status": "body",
+        "paramsSchema": "body",
+        "definition": "body"
+      }
+    }
+  },
+  {
+    "name": "refresh_mcp_tools",
+    "description": "Rilegge gli strumenti dal server MCP dell'app: i nuovi entrano draft, i cambiati si aggiornano, gli spariti si disattivano.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'app"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/apps/{id}/mcp-tools/refresh",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
+    "name": "create_trigger",
+    "description": "Crea un innesco di un agente: nasce in pausa e non parte finché l'utente non lo attiva. Prima provalo con test_trigger.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L1",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'agente"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "poll",
+            "webhook"
+          ],
+          "description": "poll = sorveglianza di un tool L0, webhook = indirizzo in entrata"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome, da 1 a 80 caratteri, unico per agente",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "instructions": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Testo che apre l'input della run",
+          "maxLength": 2000
+        },
+        "toolId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Solo poll: tool L0 di servizio dell'app da interrogare"
+        },
+        "args": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true,
+          "description": "Solo poll: argomenti fissi del tool (max 8 KB)"
+        },
+        "itemsPath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Percorso dell'elenco nella risposta; null = la risposta è l'elenco"
+        },
+        "idField": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Campo id degli elementi"
+        },
+        "versionField": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Campo versione: un elemento cambiato riparte"
+        },
+        "cursorParam": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Solo poll: parametro del tool per il cursore"
+        },
+        "cursorField": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Solo poll: campo degli elementi che fa da cursore"
+        },
+        "filter": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "field",
+            "equals"
+          ],
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "equals": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          },
+          "description": "Solo gli elementi con field uguale a equals"
+        },
+        "intervalSeconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Solo poll: intervallo in secondi (60..86400, default 300)"
+        },
+        "dedupHeader": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Solo webhook: header con la chiave di deduplicazione"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/agents/{id}/triggers",
+      "paramLocations": {
+        "id": "path",
+        "kind": "body",
+        "name": "body",
+        "instructions": "body",
+        "toolId": "body",
+        "args": "body",
+        "itemsPath": "body",
+        "idField": "body",
+        "versionField": "body",
+        "cursorParam": "body",
+        "cursorField": "body",
+        "filter": "body",
+        "intervalSeconds": "body",
+        "dedupHeader": "body"
+      }
+    }
+  },
+  {
+    "name": "pause_trigger",
+    "description": "Mette in pausa un innesco: smette di avviare run.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L1",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'innesco"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/triggers/{id}/pause",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
+    "name": "resume_trigger",
+    "description": "Attiva o riprende un innesco: azzera gli errori e il giro parte subito, avviando run.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'innesco"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/triggers/{id}/resume",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
+    "name": "start_analysis",
+    "description": "Avvia un'analisi dell'architetto sulle sorgenti dell'app; in cloud spende con il modello scelto.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'app"
+        },
+        "executor": {
+          "type": "string",
+          "enum": [
+            "cloud",
+            "local"
+          ],
+          "description": "cloud (default) o local (agente sul Mac)"
+        },
+        "aiModelId": {
+          "type": "integer",
+          "description": "Modello per l'analisi cloud (obbligatorio con cloud)"
+        },
+        "maxTokens": {
+          "type": "integer",
+          "description": "Tetto di token (50 000..2 000 000, default 1 000 000)",
+          "minimum": 50000,
+          "maximum": 2000000
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/apps/{id}/analyses",
+      "paramLocations": {
+        "id": "path",
+        "executor": "body",
+        "aiModelId": "body",
+        "maxTokens": "body"
+      }
+    },
+    "replaces": "start_analysis"
+  },
+  {
+    "name": "cancel_analysis",
+    "description": "Annulla un'analisi locale non ancora conclusa.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L1",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'analisi"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/analyses/{id}/cancel",
+      "paramLocations": {
+        "id": "path"
+      }
+    },
+    "replaces": "cancel_analysis"
+  },
+  {
+    "name": "create_plan_issues",
+    "description": "Crea su GitHub le issue delle voci approvate del piano (una per voce, al massimo 30); con dryRun mostra solo l'anteprima.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'app"
+        },
+        "itemIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 30,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer"
+          },
+          "description": "Id delle voci approvate del piano"
+        },
+        "dryRun": {
+          "type": "boolean",
+          "description": "Solo anteprima, senza chiamare GitHub"
+        }
+      },
+      "required": [
+        "id",
+        "itemIds"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/apps/{id}/plan/issues",
+      "paramLocations": {
+        "id": "path",
+        "itemIds": "body",
+        "dryRun": "body"
+      }
+    }
+  },
+  {
+    "name": "create_skill",
+    "description": "Crea una skill nel catalogo (versione 1).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Codice unico",
+          "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "description": "Descrizione",
+          "maxLength": 2000
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "casello",
+            "node"
+          ],
+          "description": "casello = istruzioni in Botcave, node = skill sul nodo locale"
+        },
+        "content": {
+          "type": "string",
+          "description": "casello: istruzioni (max 20 000 caratteri); node: nome della skill sul nodo"
+        },
+        "toolHints": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "description": "Solo casello: tool suggeriti"
+        }
+      },
+      "required": [
+        "code",
+        "name",
+        "kind",
+        "content"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/skills",
+      "paramLocations": {
+        "code": "body",
+        "name": "body",
+        "description": "body",
+        "kind": "body",
+        "content": "body",
+        "toolHints": "body"
+      }
+    }
+  },
+  {
+    "name": "update_skill",
+    "description": "Modifica una skill: contenuto o tool suggeriti creano una versione nuova, nome e descrizione no.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Codice della skill"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "description": "Descrizione",
+          "maxLength": 2000
+        },
+        "content": {
+          "type": "string",
+          "description": "Contenuto nuovo"
+        },
+        "toolHints": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "description": "Tool suggeriti"
+        }
+      },
+      "required": [
+        "code"
+      ]
+    },
+    "definition": {
+      "method": "PATCH",
+      "path": "/api/skills/{code}",
+      "paramLocations": {
+        "code": "path",
+        "name": "body",
+        "description": "body",
+        "content": "body",
+        "toolHints": "body"
+      }
+    }
+  },
+  {
+    "name": "deprecate_skill",
+    "description": "Depreca una skill: resta dove è già usata ma non entra in ruoli nuovi.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Codice della skill"
+        }
+      },
+      "required": [
+        "code"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/skills/{code}/deprecate",
+      "paramLocations": {
+        "code": "path"
+      }
+    }
+  },
+  {
+    "name": "create_team_template",
+    "description": "Crea un modello di squadra (versione 1) con i suoi ruoli.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Nome unico",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "description": "Descrizione",
+          "maxLength": 2000
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "key",
+              "name",
+              "task",
+              "isLead",
+              "runsOn",
+              "aiModelId",
+              "tools",
+              "skills"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "description": "Chiave stabile del ruolo",
+                "pattern": "^[a-z0-9_-]{1,40}$"
+              },
+              "name": {
+                "type": "string",
+                "description": "Nome del ruolo",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "task": {
+                "type": "string",
+                "description": "Identità del ruolo: chi è e di cosa risponde",
+                "maxLength": 8000
+              },
+              "isLead": {
+                "type": "boolean",
+                "description": "true per il capo: una squadra ha esattamente un capo"
+              },
+              "runsOn": {
+                "type": "string",
+                "enum": [
+                  "cloud",
+                  "node"
+                ],
+                "description": "cloud = eseguito da Botcave, node = dal nodo locale"
+              },
+              "aiModelId": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Modello del ruolo (obbligatorio per cloud, null per node)"
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "description": "Id dei tool (app_tools) del ruolo"
+              },
+              "skills": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Codici delle skill del catalogo"
+              }
+            }
+          },
+          "description": "Ruoli (1..20, un solo capo)"
+        }
+      },
+      "required": [
+        "name",
+        "roles"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/team-templates",
+      "paramLocations": {
+        "name": "body",
+        "description": "body",
+        "roles": "body"
+      }
+    }
+  },
+  {
+    "name": "update_team_template",
+    "description": "Salva un modello di squadra: nome, descrizione e ruoli insieme creano la versione successiva.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id del modello"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "description": "Descrizione",
+          "maxLength": 2000
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "key",
+              "name",
+              "task",
+              "isLead",
+              "runsOn",
+              "aiModelId",
+              "tools",
+              "skills"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "description": "Chiave stabile del ruolo",
+                "pattern": "^[a-z0-9_-]{1,40}$"
+              },
+              "name": {
+                "type": "string",
+                "description": "Nome del ruolo",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "task": {
+                "type": "string",
+                "description": "Identità del ruolo: chi è e di cosa risponde",
+                "maxLength": 8000
+              },
+              "isLead": {
+                "type": "boolean",
+                "description": "true per il capo: una squadra ha esattamente un capo"
+              },
+              "runsOn": {
+                "type": "string",
+                "enum": [
+                  "cloud",
+                  "node"
+                ],
+                "description": "cloud = eseguito da Botcave, node = dal nodo locale"
+              },
+              "aiModelId": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Modello del ruolo (obbligatorio per cloud, null per node)"
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "description": "Id dei tool (app_tools) del ruolo"
+              },
+              "skills": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Codici delle skill del catalogo"
+              }
+            }
+          },
+          "description": "Tutti i ruoli (1..20, un solo capo)"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "roles"
+      ]
+    },
+    "definition": {
+      "method": "PUT",
+      "path": "/api/team-templates/{id}",
+      "paramLocations": {
+        "id": "path",
+        "name": "body",
+        "description": "body",
+        "roles": "body"
+      }
+    }
+  },
+  {
+    "name": "create_team_instance",
+    "description": "Crea una squadra in bozza per un lavoro, da un modello o da zero; non lavora finché non si attiva.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "templateId": {
+          "type": "integer",
+          "description": "Modello da cui copiare i ruoli"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "ref": {
+          "type": "object",
+          "required": [
+            "appId",
+            "type",
+            "id"
+          ],
+          "description": "Lavoro di riferimento",
+          "properties": {
+            "appId": {
+              "type": "integer",
+              "description": "Id dell'app"
+            },
+            "type": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,40}$",
+              "description": "Tipo di lavoro (es. workitem)"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "description": "Id del lavoro nell'app"
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 300
+            }
+          }
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "key",
+              "name",
+              "task",
+              "isLead",
+              "runsOn",
+              "aiModelId",
+              "tools",
+              "skills",
+              "localSkills"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "description": "Chiave stabile del ruolo",
+                "pattern": "^[a-z0-9_-]{1,40}$"
+              },
+              "name": {
+                "type": "string",
+                "description": "Nome del ruolo",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "task": {
+                "type": "string",
+                "description": "Identità del ruolo: chi è e di cosa risponde",
+                "maxLength": 8000
+              },
+              "isLead": {
+                "type": "boolean",
+                "description": "true per il capo: una squadra ha esattamente un capo"
+              },
+              "runsOn": {
+                "type": "string",
+                "enum": [
+                  "cloud",
+                  "node"
+                ],
+                "description": "cloud = eseguito da Botcave, node = dal nodo locale"
+              },
+              "aiModelId": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Modello del ruolo (obbligatorio per cloud, null per node)"
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "description": "Id dei tool (app_tools) del ruolo"
+              },
+              "skills": {
+                "type": "array",
+                "description": "Skill del catalogo fissate a una versione",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "version"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                }
+              },
+              "localSkills": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Codici delle skill specializzate della squadra usate dal ruolo"
+              }
+            }
+          },
+          "description": "Obbligatori senza modello, ignorati con il modello"
+        }
+      },
+      "required": [
+        "name",
+        "ref"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/team-instances",
+      "paramLocations": {
+        "templateId": "body",
+        "name": "body",
+        "ref": "body",
+        "roles": "body"
+      }
+    }
+  },
+  {
+    "name": "update_team_instance",
+    "description": "Salva una squadra: ruoli e skill specializzate si sostituiscono insieme. Non attiva la squadra.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della squadra"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "refTitle": {
+          "type": "string",
+          "description": "Titolo del lavoro di riferimento",
+          "maxLength": 300
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "key",
+              "name",
+              "task",
+              "isLead",
+              "runsOn",
+              "aiModelId",
+              "tools",
+              "skills",
+              "localSkills"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "description": "Chiave stabile del ruolo",
+                "pattern": "^[a-z0-9_-]{1,40}$"
+              },
+              "name": {
+                "type": "string",
+                "description": "Nome del ruolo",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "task": {
+                "type": "string",
+                "description": "Identità del ruolo: chi è e di cosa risponde",
+                "maxLength": 8000
+              },
+              "isLead": {
+                "type": "boolean",
+                "description": "true per il capo: una squadra ha esattamente un capo"
+              },
+              "runsOn": {
+                "type": "string",
+                "enum": [
+                  "cloud",
+                  "node"
+                ],
+                "description": "cloud = eseguito da Botcave, node = dal nodo locale"
+              },
+              "aiModelId": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Modello del ruolo (obbligatorio per cloud, null per node)"
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "description": "Id dei tool (app_tools) del ruolo"
+              },
+              "skills": {
+                "type": "array",
+                "description": "Skill del catalogo fissate a una versione",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "version"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                }
+              },
+              "localSkills": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Codici delle skill specializzate della squadra usate dal ruolo"
+              }
+            }
+          },
+          "description": "Tutti i ruoli"
+        },
+        "localSkills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "code",
+              "name",
+              "kind",
+              "content"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "casello",
+                  "node"
+                ]
+              },
+              "content": {
+                "type": "string",
+                "description": "Istruzioni (casello) o nome della skill sul nodo (node)"
+              },
+              "toolHints": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "description": "Tutte le skill specializzate della squadra"
+        },
+        "nodeWorkspace": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Spazio di lavoro sul nodo, percorso relativo; null = tolto",
+          "maxLength": 300
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "roles",
+        "localSkills"
+      ]
+    },
+    "definition": {
+      "method": "PUT",
+      "path": "/api/team-instances/{id}",
+      "paramLocations": {
+        "id": "path",
+        "name": "body",
+        "refTitle": "body",
+        "roles": "body",
+        "localSkills": "body",
+        "nodeWorkspace": "body"
+      }
+    }
+  },
+  {
+    "name": "apply_team_updates",
+    "description": "Applica alla squadra gli aggiornamenti scelti tra quelli di get_team_updates (tutto o niente).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della squadra"
+        },
+        "ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": "Id delle voci da applicare"
+        }
+      },
+      "required": [
+        "id",
+        "ids"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/team-instances/{id}/updates/apply",
+      "paramLocations": {
+        "id": "path",
+        "ids": "body"
+      }
+    }
+  },
+  {
+    "name": "activate_team",
+    "description": "Attiva una squadra in bozza: il capo prepara il piano, la squadra lavora e spende con gli account di chi la attiva.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della squadra"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/team-instances/{id}/activate",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
+    "name": "close_team",
+    "description": "Chiude una squadra: annulla i compiti in coda e non si riapre più.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della squadra"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/team-instances/{id}/close",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
+    "name": "send_message_to_lead",
+    "description": "Scrive al capo di una squadra attiva: accoda un suo turno (al massimo 10 messaggi al minuto).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della squadra"
+        },
+        "text": {
+          "type": "string",
+          "description": "Messaggio al capo",
+          "minLength": 1,
+          "maxLength": 4000
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/team-instances/{id}/messages",
+      "paramLocations": {
+        "id": "path",
+        "text": "body"
+      }
+    }
+  },
+  {
+    "name": "set_team_budget",
+    "description": "Imposta il tetto di spesa mensile della squadra; alzarlo su una squadra attiva la fa ripartire.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della squadra"
+        },
+        "monthlyBudgetUsd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Tetto in USD; null = nessun limite"
+        }
+      },
+      "required": [
+        "id",
+        "monthlyBudgetUsd"
+      ]
+    },
+    "definition": {
+      "method": "PUT",
+      "path": "/api/team-instances/{id}/budget",
+      "paramLocations": {
+        "id": "path",
+        "monthlyBudgetUsd": "body"
+      }
+    }
+  },
+  {
+    "name": "refresh_model_catalog",
+    "description": "Avvia l'aggiornamento del catalogo dei modelli dalle fonti pubbliche (al massimo 2 al minuto).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/catalog/refresh",
+      "paramLocations": {}
+    },
+    "replaces": "refresh_model_catalog"
+  },
+  {
+    "name": "resume_run",
+    "description": "Disattivato: la ripresa delle run in pausa non esiste più (le azioni da confermare vanno in coda).",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "disabled",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id della run"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "POST",
+      "path": "/api/runs/{id}/resume",
+      "paramLocations": {
+        "id": "path"
+      }
+    },
+    "replaces": "resume_run"
+  },
+  {
+    "name": "review_analysis_item",
+    "description": "Disattivato: la revisione degli elementi dell'architetto è una decisione dell'utente, si fa dalla console.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L2",
+    "status": "disabled",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'elemento"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved",
+            "discarded",
+            "postponed"
+          ],
+          "description": "Nuovo stato"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Contenuto modificato"
+        },
+        "reviewNote": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Nota di revisione"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "PATCH",
+      "path": "/api/analysis-items/{id}",
+      "paramLocations": {
+        "id": "path",
+        "status": "body",
+        "payload": "body",
+        "reviewNote": "body"
+      }
+    },
+    "replaces": "review_analysis_item"
+  }
+]

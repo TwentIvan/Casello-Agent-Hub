@@ -143,6 +143,14 @@ export const nodePingRateLimit = rateLimit({
   windowMs: 60_000,
   key: (req) => `${byNode(req)}:task:${String(req.params["id"] ?? "?")}`,
 });
+// Turni delegati al nodo: presa (attesa lunga) 40 al minuto per nodo, contatore separato da heartbeat e claim dei
+// compiti; ping 6 al minuto per turno dello stesso nodo.
+export const nodeTurnClaimRateLimit = rateLimit({ limit: 40, windowMs: 60_000, key: byNode });
+export const nodeTurnPingRateLimit = rateLimit({
+  limit: 6,
+  windowMs: 60_000,
+  key: (req) => `${byNode(req)}:turn:${String(req.params["id"] ?? "?")}`,
+});
 
 // Registrazione dinamica dei client OAuth del connettore: 10 al minuto per IP.
 export const oauthRegisterRateLimit = rateLimit({ limit: 10, windowMs: 60_000 });

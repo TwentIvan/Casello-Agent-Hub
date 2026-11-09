@@ -549,6 +549,93 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /node/turns/claim:
+    post:
+      operationId: nodeTurnClaim
+      tags: [nodes]
+      summary: Prende un turno delegato al nodo
+      description: >-
+        Registra la presenza del nodo per i turni (`last_turn_poll_at`) e prende il turno `queued` più vecchio
+        destinato al nodo, portandolo a `running` con una lease di 2 minuti. Senza turni attende fino a 25 secondi
+        un avviso e ritenta una volta; poi 204. Corpo vuoto (`{}`). 40 al minuto per nodo.
+      responses:
+        "200":
+          description: Pacchetto del turno preso
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeTurnPackage"
+        "204":
+          description: Nessun turno da prendere
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /node/turns/{id}/ping:
+    post:
+      operationId: nodeTurnPing
+      tags: [nodes]
+      summary: Rinnova la lease di un turno
+      description: >-
+        Rinnova di 2 minuti la lease del turno preso dal nodo. Turno chiuso, annullato o lease diversa o scaduta →
+        409 (il nodo termina claude). 6 al minuto per turno.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeLease"
+      responses:
+        "200":
+          description: Lease rinnovata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeLeaseRenewed"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /node/turns/{id}/report:
+    post:
+      operationId: nodeTurnReport
+      tags: [nodes]
+      summary: Riferisce l'esito di un turno
+      description: >-
+        Chiude il turno una volta sola (lease del claim e turno `running`), altrimenti 409. `content` oltre 20 000
+        caratteri si tronca; un `errorCode` fuori dall'elenco si registra `claude_failed`. Token interi ≥ 0.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeTurnReport"
+      responses:
+        "204":
+          description: Esito registrato
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   /account/default-model:
     get:
       operationId: getDefaultModel
@@ -7010,7 +7097,7 @@ components:
 
     Node:
       type: object
-      required: [id, name, status, executor, version, skills, workspaceRoot, maxConcurrent, lastSeenAt, online]
+      required: [id, name, status, executor, version, skills, workspaceRoot, maxConcurrent, lastSeenAt, online, turnReady]
       properties:
         id:
           type: integer
@@ -7037,6 +7124,9 @@ components:
         online:
           type: boolean
           description: Ha comunicato negli ultimi 2 minuti
+        turnReady:
+          type: boolean
+          description: Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)
 
     NodeCreate:
       type: object
@@ -7176,6 +7266,75 @@ components:
           type: integer
           minimum: 0
           maximum: 2000000000
+        sessionId:
+          type: string
+          minLength: 1
+          maxLength: 200
+
+    NodeTurnPackage:
+      type: object
+      required: [id, leaseToken, model, systemPrompt, prompt, mcpUrl, turnToken, maxTurns, timeoutMs]
+      properties:
+        id:
+          type: integer
+        leaseToken:
+          type: string
+        model:
+          type: string
+          description: Modello per claude (alias o id)
+        systemPrompt:
+          type: string
+        prompt:
+          type: string
+          description: Messaggi del turno con le loro etichette, da passare su stdin
+        mcpUrl:
+          type: string
+          description: Indirizzo del server MCP del turno (`/mcp/turn`)
+        turnToken:
+          type: string
+          description: Token `cat_…` del turno per `/mcp/turn`, valido finché il turno è in corso
+        maxTurns:
+          type: integer
+        timeoutMs:
+          type: integer
+
+    NodeTurnReport:
+      type: object
+      required: [leaseToken, status]
+      properties:
+        leaseToken:
+          type: string
+          minLength: 1
+          maxLength: 200
+        status:
+          type: string
+          enum: [done, failed]
+        content:
+          type: string
+          maxLength: 200000
+          description: Risposta di Claude (oltre 20 000 caratteri si tronca)
+        errorCode:
+          type: string
+          maxLength: 100
+          description: >-
+            model_unavailable, timeout, usage_limit, not_logged_in, claude_failed, stopped, lease_lost,
+            node_disabled, restart; altro → claude_failed
+        promptTokens:
+          type: integer
+          minimum: 0
+          maximum: 2000000000
+        completionTokens:
+          type: integer
+          minimum: 0
+          maximum: 2000000000
+        cachedTokens:
+          type: integer
+          minimum: 0
+          maximum: 2000000000
+        costUsd:
+          type: number
+          minimum: 0
+          maximum: 100000
         sessionId:
           type: string
           minLength: 1

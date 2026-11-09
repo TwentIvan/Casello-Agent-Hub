@@ -132,6 +132,8 @@ import type {
   NodeReport,
   NodeTaskPackage,
   NodeToken,
+  NodeTurnPackage,
+  NodeTurnReport,
   NotFoundResponse,
   OAuthGrant,
   PayloadTooLargeResponse,
@@ -1857,6 +1859,221 @@ export function useNodeGetAttachment<TData = Awaited<ReturnType<typeof nodeGetAt
 
 
 
+
+export const getNodeTurnClaimUrl = () => {
+
+
+
+
+  return `/api/node/turns/claim`
+}
+
+/**
+ * Registra la presenza del nodo per i turni (`last_turn_poll_at`) e prende il turno `queued` più vecchio destinato al nodo, portandolo a `running` con una lease di 2 minuti. Senza turni attende fino a 25 secondi un avviso e ritenta una volta; poi 204. Corpo vuoto (`{}`). 40 al minuto per nodo.
+ * @summary Prende un turno delegato al nodo
+ */
+export const nodeTurnClaim = async ( options?: RequestInit): Promise<NodeTurnPackage | void> => {
+
+  return customFetch<NodeTurnPackage | void>(getNodeTurnClaimUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getNodeTurnClaimMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeTurnClaim>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof nodeTurnClaim>>, TError,void, TContext> => {
+
+const mutationKey = ['nodeTurnClaim'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodeTurnClaim>>, void> = () => {
+
+
+          return  nodeTurnClaim(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type NodeTurnClaimMutationResult = NonNullable<Awaited<ReturnType<typeof nodeTurnClaim>>>
+
+    export type NodeTurnClaimMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Prende un turno delegato al nodo
+ */
+export const useNodeTurnClaim = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeTurnClaim>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof nodeTurnClaim>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getNodeTurnClaimMutationOptions(options));
+    }
+
+export const getNodeTurnPingUrl = (id: number,) => {
+
+
+
+
+  return `/api/node/turns/${id}/ping`
+}
+
+/**
+ * Rinnova di 2 minuti la lease del turno preso dal nodo. Turno chiuso, annullato o lease diversa o scaduta → 409 (il nodo termina claude). 6 al minuto per turno.
+ * @summary Rinnova la lease di un turno
+ */
+export const nodeTurnPing = async (id: number,
+    nodeLease: NodeLease, options?: RequestInit): Promise<NodeLeaseRenewed> => {
+
+  return customFetch<NodeLeaseRenewed>(getNodeTurnPingUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeLease)
+  }
+);}
+
+
+
+
+export const getNodeTurnPingMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeTurnPing>>, TError,{id: number;data: BodyType<NodeLease>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof nodeTurnPing>>, TError,{id: number;data: BodyType<NodeLease>}, TContext> => {
+
+const mutationKey = ['nodeTurnPing'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodeTurnPing>>, {id: number;data: BodyType<NodeLease>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  nodeTurnPing(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type NodeTurnPingMutationResult = NonNullable<Awaited<ReturnType<typeof nodeTurnPing>>>
+    export type NodeTurnPingMutationBody = BodyType<NodeLease>
+    export type NodeTurnPingMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Rinnova la lease di un turno
+ */
+export const useNodeTurnPing = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeTurnPing>>, TError,{id: number;data: BodyType<NodeLease>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof nodeTurnPing>>,
+        TError,
+        {id: number;data: BodyType<NodeLease>},
+        TContext
+      > => {
+      return useMutation(getNodeTurnPingMutationOptions(options));
+    }
+
+export const getNodeTurnReportUrl = (id: number,) => {
+
+
+
+
+  return `/api/node/turns/${id}/report`
+}
+
+/**
+ * Chiude il turno una volta sola (lease del claim e turno `running`), altrimenti 409. `content` oltre 20 000 caratteri si tronca; un `errorCode` fuori dall'elenco si registra `claude_failed`. Token interi ≥ 0.
+ * @summary Riferisce l'esito di un turno
+ */
+export const nodeTurnReport = async (id: number,
+    nodeTurnReport: NodeTurnReport, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getNodeTurnReportUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeTurnReport)
+  }
+);}
+
+
+
+
+export const getNodeTurnReportMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeTurnReport>>, TError,{id: number;data: BodyType<NodeTurnReport>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof nodeTurnReport>>, TError,{id: number;data: BodyType<NodeTurnReport>}, TContext> => {
+
+const mutationKey = ['nodeTurnReport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodeTurnReport>>, {id: number;data: BodyType<NodeTurnReport>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  nodeTurnReport(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type NodeTurnReportMutationResult = NonNullable<Awaited<ReturnType<typeof nodeTurnReport>>>
+    export type NodeTurnReportMutationBody = BodyType<NodeTurnReport>
+    export type NodeTurnReportMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>
+
+    /**
+ * @summary Riferisce l'esito di un turno
+ */
+export const useNodeTurnReport = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeTurnReport>>, TError,{id: number;data: BodyType<NodeTurnReport>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof nodeTurnReport>>,
+        TError,
+        {id: number;data: BodyType<NodeTurnReport>},
+        TContext
+      > => {
+      return useMutation(getNodeTurnReportMutationOptions(options));
+    }
 
 export const getGetDefaultModelUrl = () => {
 

@@ -2,7 +2,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { db, nodesTable, pool, teamEventsTable, teamInstancesTable, teamTasksTable, teamTurnsTable } from "@workspace/db";
+import { db, nodesTable, nodeTurnsTable, pool, teamEventsTable, teamInstancesTable, teamTasksTable, teamTurnsTable } from "@workspace/db";
 import { getPlan } from "../lib/teams/plan";
 import { startTask } from "../lib/teams/task-runner";
 import { teamSpend } from "../lib/teams/team-budget";
@@ -559,5 +559,106 @@ describe("compiti `node` nella console", () => {
     await db.delete(nodesTable).where(eq(nodesTable.id, nodeId));
     const after = await api("GET", `/team-instances/${instanceId}/tasks/${started.id}`);
     expect(after.json).toMatchObject({ nodeId: null, nodeName: null });
+  });
+});
+
+describe("turni delegati al nodo (/node/turns)", () => {
+  let turnFixture: typeof import("../../test/node-turn-fixture");
+  let settings: typeof import("../lib/node-turns/protocol").turnPollSettings;
+  let savedWait: number;
+
+  beforeAll(async () => {
+    turnFixture = await import("../../test/node-turn-fixture");
+    ({ turnPollSettings: settings } = await import("../lib/node-turns/protocol"));
+    savedWait = settings.waitMs;
+  });
+  beforeEach(() => {
+    settings.waitMs = 50;
+  });
+  afterAll(() => {
+    settings.waitMs = savedWait;
+  });
+
+  const turnRow = async (id: number) => (await db.select().from(nodeTurnsTable).where(eq(nodeTurnsTable.id, id)))[0]!;
+
+  it("claim → pacchetto; ping; report done → 204, secondo report → 409; senza turni → 204", async () => {
+    const setup = await turnFixture.seedNodeTurnSetup("dev@localhost");
+    expect((await api("POST", "/node/turns/claim", { token: setup.nodeToken, body: {} })).status).toBe(204);
+
+    const { turnId, turnToken } = await turnFixture.queueSample(setup);
+    const claim = await api("POST", "/node/turns/claim", { token: setup.nodeToken, body: {} });
+    expect(claim.status, claim.text).toBe(200);
+    expect(claim.json).toMatchObject({ id: turnId, turnToken, model: "sonnet", maxTurns: 7, timeoutMs: 300_000 });
+    expect(claim.json.mcpUrl).toMatch(/\/mcp\/turn$/);
+    const leaseToken = claim.json.leaseToken as string;
+
+    const ping = await api("POST", `/node/turns/${turnId}/ping`, { token: setup.nodeToken, body: { leaseToken } });
+    expect(ping.status, ping.text).toBe(200);
+    expect(typeof ping.json.leaseExpiresAt).toBe("string");
+    expect((await api("POST", `/node/turns/${turnId}/ping`, { token: setup.nodeToken, body: { leaseToken: "altra" } })).status).toBe(409);
+
+    // Token non intero → 400, nulla salvato
+    const bad = await api("POST", `/node/turns/${turnId}/report`, { token: setup.nodeToken, body: { leaseToken, status: "done", content: "x", promptTokens: 1.5 } });
+    expect(bad.status).toBe(400);
+    expect((await turnRow(turnId)).status).toBe("running");
+
+    const report = await api("POST", `/node/turns/${turnId}/report`, {
+      token: setup.nodeToken,
+      body: { leaseToken, status: "done", content: "Fatto", promptTokens: 10, completionTokens: 5, cachedTokens: 0, costUsd: 0.5 },
+    });
+    expect(report.status, report.text).toBe(204);
+    expect(await turnRow(turnId)).toMatchObject({ status: "done", content: "Fatto", promptTokens: 10, package: null });
+    const again = await api("POST", `/node/turns/${turnId}/report`, { token: setup.nodeToken, body: { leaseToken, status: "done", content: "Fatto" } });
+    expect(again.status).toBe(409);
+    expect(again.json).toEqual({ error: LEASE_MSG });
+  });
+
+  it("errorCode sconosciuto → claude_failed; senza token del nodo → 403", async () => {
+    const setup = await turnFixture.seedNodeTurnSetup("dev@localhost");
+    const { turnId } = await turnFixture.queueSample(setup);
+    const claim = await api("POST", "/node/turns/claim", { token: setup.nodeToken, body: {} });
+    const res = await api("POST", `/node/turns/${turnId}/report`, {
+      token: setup.nodeToken,
+      body: { leaseToken: claim.json.leaseToken, status: "failed", errorCode: "qualcosa" },
+    });
+    expect(res.status, res.text).toBe(204);
+    expect(await turnRow(turnId)).toMatchObject({ status: "failed", errorCode: "claude_failed" });
+    expect((await api("POST", "/node/turns/claim", { body: {} })).status).toBe(403);
+  });
+
+  it("la 41ª claim nel minuto → 429", async () => {
+    const setup = await turnFixture.seedNodeTurnSetup("dev@localhost");
+    settings.waitMs = 0;
+    for (let i = 0; i < 40; i++) expect((await api("POST", "/node/turns/claim", { token: setup.nodeToken, body: {} })).status).toBe(204);
+    expect((await api("POST", "/node/turns/claim", { token: setup.nodeToken, body: {} })).status).toBe(429);
+  });
+
+  it("una claim chiusa dal client smette di attendere e non prende turni", async () => {
+    const setup = await turnFixture.seedNodeTurnSetup("dev@localhost");
+    settings.waitMs = 3_000;
+    const ac = new AbortController();
+    const pending = fetch(`${base}/api/node/turns/claim`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${setup.nodeToken}` },
+      body: "{}",
+      signal: ac.signal,
+    }).catch(() => null);
+    await new Promise((r) => setTimeout(r, 100));
+    ac.abort();
+    await pending;
+    await new Promise((r) => setTimeout(r, 50));
+    const { turnId } = await turnFixture.queueSample(setup);
+    await new Promise((r) => setTimeout(r, 100));
+    expect((await turnRow(turnId)).status).toBe("queued");
+  });
+
+  it("GET /account/nodes espone turnReady", async () => {
+    const setup = await turnFixture.seedNodeTurnSetup("dev@localhost");
+    let list = await api("GET", "/account/nodes");
+    expect(list.status, list.text).toBe(200);
+    expect(list.json.find((n: { id: number }) => n.id === setup.nodeId)).toMatchObject({ turnReady: false });
+    expect((await api("POST", "/node/turns/claim", { token: setup.nodeToken, body: {} })).status).toBe(204);
+    list = await api("GET", "/account/nodes");
+    expect(list.json.find((n: { id: number }) => n.id === setup.nodeId)).toMatchObject({ turnReady: true });
   });
 });

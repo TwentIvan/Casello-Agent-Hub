@@ -10,12 +10,25 @@ import {
   NodePingResponse,
   NodeReportBody,
   NodeReportParams,
+  NodeTurnClaimResponse,
+  NodeTurnPingBody,
+  NodeTurnPingParams,
+  NodeTurnPingResponse,
+  NodeTurnReportBody,
+  NodeTurnReportParams,
 } from "@workspace/api-zod";
 import { rfc5987 } from "../lib/teams/attachments";
 import { currentNode } from "../lib/nodes/auth";
 import { NodeError, claimTask, heartbeat, pingTask, reportTask, taskAttachment } from "../lib/nodes/protocol";
+import { claimTurn, pingTurn, reportTurn, turnPollSettings } from "../lib/node-turns/protocol";
 import { parseRequest } from "../middlewares/error-handler";
-import { nodeClaimRateLimit, nodeHeartbeatRateLimit, nodePingRateLimit } from "../middlewares/rate-limit";
+import {
+  nodeClaimRateLimit,
+  nodeHeartbeatRateLimit,
+  nodePingRateLimit,
+  nodeTurnClaimRateLimit,
+  nodeTurnPingRateLimit,
+} from "../middlewares/rate-limit";
 
 // Protocollo dei nodi locali (/api/node/*): montato in routes/index.ts con requireNodeToken, quindi solo con un
 // token d'ambito `node` di un nodo attivo. Il nodo è quello del token.
@@ -23,6 +36,13 @@ import { nodeClaimRateLimit, nodeHeartbeatRateLimit, nodePingRateLimit } from ".
 /** Il contratto dice `integer` ma lo Zod generato accetta qualsiasi numero: i token non interi → 400 (niente arrotondamento). */
 const ReportBody = NodeReportBody.superRefine((body, ctx) => {
   for (const key of ["promptTokens", "completionTokens"] as const) {
+    const value = body[key];
+    if (value !== undefined && !Number.isInteger(value)) ctx.addIssue({ code: "custom", path: [key], message: "deve essere un numero intero" });
+  }
+});
+
+const TurnReportBody = NodeTurnReportBody.superRefine((body, ctx) => {
+  for (const key of ["promptTokens", "completionTokens", "cachedTokens"] as const) {
     const value = body[key];
     if (value !== undefined && !Number.isInteger(value)) ctx.addIssue({ code: "custom", path: [key], message: "deve essere un numero intero" });
   }
@@ -88,6 +108,41 @@ export function createNodeRouter(): IRouter {
     const body = parseRequest(ReportBody, req.body);
     await guarded(res, async () => {
       await reportTask(currentNode(req).id, id, body);
+      res.status(204).end();
+    });
+  });
+
+  // Turni delegati al nodo: la presa attende fino a 25 s; se il client chiude la richiesta l'attesa si annulla
+  // (`res` «close» prima della risposta: quello di `req` arriva già a corpo letto).
+  router.post("/turns/claim", nodeTurnClaimRateLimit, async (req, res) => {
+    const abort = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) abort.abort();
+    });
+    await guarded(res, async () => {
+      const pkg = await claimTurn(currentNode(req).id, turnPollSettings.waitMs, abort.signal);
+      if (abort.signal.aborted) return;
+      if (!pkg) {
+        res.status(204).end();
+        return;
+      }
+      res.json(NodeTurnClaimResponse.parse(pkg));
+    });
+  });
+
+  router.post("/turns/:id/ping", nodeTurnPingRateLimit, async (req, res) => {
+    const { id } = parseRequest(NodeTurnPingParams, req.params);
+    const { leaseToken } = parseRequest(NodeTurnPingBody, req.body);
+    await guarded(res, async () => {
+      res.json(NodeTurnPingResponse.parse(await pingTurn(currentNode(req).id, id, leaseToken)));
+    });
+  });
+
+  router.post("/turns/:id/report", async (req, res) => {
+    const { id } = parseRequest(NodeTurnReportParams, req.params);
+    const body = parseRequest(TurnReportBody, req.body);
+    await guarded(res, async () => {
+      await reportTurn(currentNode(req).id, id, body);
       res.status(204).end();
     });
   });

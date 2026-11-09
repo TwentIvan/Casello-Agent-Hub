@@ -175,7 +175,8 @@ export const ListNodesResponseItem = zod.object({
   "workspaceRoot": zod.string().nullable(),
   "maxConcurrent": zod.number(),
   "lastSeenAt": zod.coerce.date().nullable(),
-  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti')
+  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti'),
+  "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)')
 })
 export const ListNodesResponse = zod.array(ListNodesResponseItem)
 
@@ -203,7 +204,8 @@ export const CreateNodeResponse = zod.object({
   "workspaceRoot": zod.string().nullable(),
   "maxConcurrent": zod.number(),
   "lastSeenAt": zod.coerce.date().nullable(),
-  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti')
+  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti'),
+  "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)')
 }),
   "token": zod.string().describe('Valore del token del nodo, mostrato una sola volta')
 })
@@ -238,7 +240,8 @@ export const DisableNodeResponse = zod.object({
   "workspaceRoot": zod.string().nullable(),
   "maxConcurrent": zod.number(),
   "lastSeenAt": zod.coerce.date().nullable(),
-  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti')
+  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti'),
+  "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)')
 })
 
 
@@ -443,6 +446,89 @@ export const NodeGetAttachmentHeader = zod.object({
 })
 
 export const NodeGetAttachmentResponse = zod.unknown()
+
+
+/**
+ * Registra la presenza del nodo per i turni (`last_turn_poll_at`) e prende il turno `queued` più vecchio destinato al nodo, portandolo a `running` con una lease di 2 minuti. Senza turni attende fino a 25 secondi un avviso e ritenta una volta; poi 204. Corpo vuoto (`{}`). 40 al minuto per nodo.
+ * @summary Prende un turno delegato al nodo
+ */
+export const NodeTurnClaimResponse = zod.object({
+  "id": zod.number(),
+  "leaseToken": zod.string(),
+  "model": zod.string().describe('Modello per claude (alias o id)'),
+  "systemPrompt": zod.string(),
+  "prompt": zod.string().describe('Messaggi del turno con le loro etichette, da passare su stdin'),
+  "mcpUrl": zod.string().describe('Indirizzo del server MCP del turno (`\/mcp\/turn`)'),
+  "turnToken": zod.string().describe('Token `cat_…` del turno per `\/mcp\/turn`, valido finché il turno è in corso'),
+  "maxTurns": zod.number(),
+  "timeoutMs": zod.number()
+})
+
+
+/**
+ * Rinnova di 2 minuti la lease del turno preso dal nodo. Turno chiuso, annullato o lease diversa o scaduta → 409 (il nodo termina claude). 6 al minuto per turno.
+ * @summary Rinnova la lease di un turno
+ */
+export const NodeTurnPingParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const nodeTurnPingBodyLeaseTokenMax = 200;
+
+
+
+export const NodeTurnPingBody = zod.object({
+  "leaseToken": zod.string().min(1).max(nodeTurnPingBodyLeaseTokenMax)
+})
+
+export const NodeTurnPingResponse = zod.object({
+  "leaseExpiresAt": zod.coerce.date()
+})
+
+
+/**
+ * Chiude il turno una volta sola (lease del claim e turno `running`), altrimenti 409. `content` oltre 20 000 caratteri si tronca; un `errorCode` fuori dall'elenco si registra `claude_failed`. Token interi ≥ 0.
+ * @summary Riferisce l'esito di un turno
+ */
+export const NodeTurnReportParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const nodeTurnReportBodyLeaseTokenMax = 200;
+
+export const nodeTurnReportBodyContentMax = 200000;
+
+export const nodeTurnReportBodyErrorCodeMax = 100;
+
+export const nodeTurnReportBodyPromptTokensMin = 0;
+export const nodeTurnReportBodyPromptTokensMax = 2000000000;
+
+export const nodeTurnReportBodyCompletionTokensMin = 0;
+export const nodeTurnReportBodyCompletionTokensMax = 2000000000;
+
+export const nodeTurnReportBodyCachedTokensMin = 0;
+export const nodeTurnReportBodyCachedTokensMax = 2000000000;
+
+export const nodeTurnReportBodyCostUsdMin = 0;
+export const nodeTurnReportBodyCostUsdMax = 100000;
+
+export const nodeTurnReportBodySessionIdMax = 200;
+
+
+
+export const NodeTurnReportBody = zod.object({
+  "leaseToken": zod.string().min(1).max(nodeTurnReportBodyLeaseTokenMax),
+  "status": zod.enum(['done', 'failed']),
+  "content": zod.string().max(nodeTurnReportBodyContentMax).optional().describe('Risposta di Claude (oltre 20 000 caratteri si tronca)'),
+  "errorCode": zod.string().max(nodeTurnReportBodyErrorCodeMax).optional().describe('model_unavailable, timeout, usage_limit, not_logged_in, claude_failed, stopped, lease_lost, node_disabled, restart; altro → claude_failed'),
+  "promptTokens": zod.number().min(nodeTurnReportBodyPromptTokensMin).max(nodeTurnReportBodyPromptTokensMax).optional(),
+  "completionTokens": zod.number().min(nodeTurnReportBodyCompletionTokensMin).max(nodeTurnReportBodyCompletionTokensMax).optional(),
+  "cachedTokens": zod.number().min(nodeTurnReportBodyCachedTokensMin).max(nodeTurnReportBodyCachedTokensMax).optional(),
+  "costUsd": zod.number().min(nodeTurnReportBodyCostUsdMin).max(nodeTurnReportBodyCostUsdMax).optional(),
+  "sessionId": zod.string().min(1).max(nodeTurnReportBodySessionIdMax).optional()
+})
+
+export const NodeTurnReportResponse = zod.void()
 
 
 /**

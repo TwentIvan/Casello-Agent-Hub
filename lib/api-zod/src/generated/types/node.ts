@@ -23,4 +23,6 @@ export interface Node {
   lastSeenAt: Date | null;
   /** Ha comunicato negli ultimi 2 minuti */
   online: boolean;
+  /** Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi) */
+  turnReady: boolean;
 }

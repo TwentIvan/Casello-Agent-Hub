@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { failInterruptedAnalyses } from "./lib/architect/run-analysis";
 import { startLocalLeaseJob } from "./lib/architect/local-executor";
 import { startNodeSweeper, sweepNodeTasks } from "./lib/nodes/lease-sweeper";
+import { failInterruptedNodeTurns, startNodeTurnSweeper } from "./lib/node-turns/sweeper";
 import { startOAuthSweeper } from "./lib/oauth/grants";
 import { ensureEmbedClients } from "./lib/embed/clients";
 import { closeAllActiveSessions, startAlfredSweeper } from "./lib/alfred/sessions";
@@ -135,6 +136,15 @@ startLocalLeaseJob();
 // Compiti presi dai nodi: lease scadute chiuse come fallite e avviso «nessun nodo adatto», all'avvio e ogni minuto.
 void sweepNodeTasks();
 startNodeSweeper();
+
+// Turni delegati al nodo rimasti aperti: registro e token in memoria sono persi, falliscono `restart` (i chiamanti
+// sono chiusi dalle loro pulizie); poi scadenze ogni 5 s e pulizia oraria delle righe vecchie.
+failInterruptedNodeTurns()
+  .then((count) => {
+    if (count > 0) logger.warn({ count }, "Turni del nodo interrotti dal riavvio chiusi come falliti");
+  })
+  .catch((err: unknown) => logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Chiusura dei turni del nodo interrotti non riuscita"))
+  .finally(() => startNodeTurnSweeper());
 
 // Connettore OAuth: pulizia di codici, token, collegamenti revocati e client inutilizzati, all'avvio e ogni ora.
 startOAuthSweeper();

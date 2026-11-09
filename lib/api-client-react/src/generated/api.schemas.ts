@@ -2207,6 +2207,8 @@ export interface Node {
   lastSeenAt: string | null;
   /** Ha comunicato negli ultimi 2 minuti */
   online: boolean;
+  /** Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi) */
+  turnReady: boolean;
 }
 
 export interface NodeCreate {
@@ -2331,6 +2333,74 @@ export interface NodeReport {
      * @maximum 2000000000
      */
   completionTokens?: number;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  sessionId?: string;
+}
+
+export interface NodeTurnPackage {
+  id: number;
+  leaseToken: string;
+  /** Modello per claude (alias o id) */
+  model: string;
+  systemPrompt: string;
+  /** Messaggi del turno con le loro etichette, da passare su stdin */
+  prompt: string;
+  /** Indirizzo del server MCP del turno (`/mcp/turn`) */
+  mcpUrl: string;
+  /** Token `cat_…` del turno per `/mcp/turn`, valido finché il turno è in corso */
+  turnToken: string;
+  maxTurns: number;
+  timeoutMs: number;
+}
+
+export type NodeTurnReportStatus = typeof NodeTurnReportStatus[keyof typeof NodeTurnReportStatus];
+
+
+export const NodeTurnReportStatus = {
+  done: 'done',
+  failed: 'failed',
+} as const;
+
+export interface NodeTurnReport {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  leaseToken: string;
+  status: NodeTurnReportStatus;
+  /**
+     * Risposta di Claude (oltre 20 000 caratteri si tronca)
+     * @maxLength 200000
+     */
+  content?: string;
+  /**
+     * model_unavailable, timeout, usage_limit, not_logged_in, claude_failed, stopped, lease_lost, node_disabled, restart; altro → claude_failed
+     * @maxLength 100
+     */
+  errorCode?: string;
+  /**
+     * @minimum 0
+     * @maximum 2000000000
+     */
+  promptTokens?: number;
+  /**
+     * @minimum 0
+     * @maximum 2000000000
+     */
+  completionTokens?: number;
+  /**
+     * @minimum 0
+     * @maximum 2000000000
+     */
+  cachedTokens?: number;
+  /**
+     * @minimum 0
+     * @maximum 100000
+     */
+  costUsd?: number;
   /**
      * @minLength 1
      * @maxLength 200

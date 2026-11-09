@@ -144,6 +144,24 @@ describe("delegateTurn", () => {
     expect(turnEntry(pkg.id)).toBeUndefined();
   });
 
+  it("report usage_limit o not_logged_in dopo una tool call → failed col messaggio fisso, nessun ripiego", async () => {
+    await markNodeReady();
+    for (const [errorCode, message] of [
+      ["usage_limit", NODE_TURN_MESSAGES.usageLimit],
+      ["not_logged_in", NODE_TURN_MESSAGES.notLoggedIn],
+    ] as const) {
+      const outcome = delegateTurn(input());
+      const pkg = await claim();
+      // Come /mcp/turn: la chiamata si conta prima del dispatcher
+      const entry = turnEntry(pkg.id)!;
+      entry.calls += 1;
+      await entry.dispatch({ id: "c1", name: "leggi_prova", arguments: "{}" });
+      await reportTurn(setup.nodeId, pkg.id, { leaseToken: pkg.leaseToken, status: "failed", errorCode });
+      expect(await outcome).toMatchObject({ kind: "failed", error: message });
+      expect(turnEntry(pkg.id)).toBeUndefined();
+    }
+  });
+
   it("report timeout dopo una tool call → failed «Claude Code non ha risposto in tempo», nessun ripiego", async () => {
     await markNodeReady();
     const outcome = delegateTurn(input());

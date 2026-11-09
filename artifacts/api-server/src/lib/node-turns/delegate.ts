@@ -73,7 +73,12 @@ function fallback(reason: FallbackReason, nodeName: string): DelegateOutcome {
   return { kind: "fallback", reason, message };
 }
 
-async function outcomeOf(result: NodeTurnResult, input: DelegateInput, nodeName: string): Promise<DelegateOutcome> {
+/**
+ * Esito del turno chiuso. `calls`: chiamate agli strumenti registrate nel turno; con almeno una Claude può aver già agito
+ * (azioni in coda, schede, messaggi al capo) e il ripiego le duplicherebbe: niente ripiego, nemmeno su `usage_limit` o
+ * `not_logged_in` (spec §6).
+ */
+async function outcomeOf(result: NodeTurnResult, input: DelegateInput, nodeName: string, calls: number): Promise<DelegateOutcome> {
   // Un report arrivato prima dell'annullamento vince: il contenuto resta
   if (result.status === "done") {
     await markModelAvailable(input.resolved.aiModelId);
@@ -90,7 +95,7 @@ async function outcomeOf(result: NodeTurnResult, input: DelegateInput, nodeName:
   if (result.status === "cancelled" || input.signal?.aborted) return { kind: "cancelled" };
   if (result.status === "expired") return fallback("expired", nodeName);
   const code = result.errorCode;
-  if (code !== null && FALLBACK_CODES.has(code)) return fallback(code, nodeName);
+  if (code !== null && FALLBACK_CODES.has(code) && calls === 0) return fallback(code, nodeName);
   if (code === "model_unavailable") await markModelUnavailable(input.resolved.aiModelId);
   return {
     kind: "failed",
@@ -139,7 +144,7 @@ export async function delegateTurn(input: DelegateInput): Promise<DelegateOutcom
       maxCalls: CALLS_PER_TURN * input.maxTurns,
     });
     const result = await waitTurn(turnId, input.signal);
-    const outcome = await outcomeOf(result, input, node.name);
+    const outcome = await outcomeOf(result, input, node.name, turnEntry(turnId)?.calls ?? 0);
     logger.info(
       { turnId, consumer: input.consumer, refId: input.refId, status: result.status, errorCode: result.errorCode, outcome: outcome.kind },
       "Turno delegato al nodo chiuso",

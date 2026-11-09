@@ -1,4 +1,5 @@
-// Riassunti delle conversazioni nello storico dei personaggi: modello predefinito dell'utente, 30 s, 1 000 token.
+// Riassunti delle conversazioni nello storico dei personaggi: modello predefinito dell'utente (se è Claude Code (nodo), il
+// ripiego cloud del suo account, altrimenti nessun riassunto), 30 s, 1 000 token.
 // Nei log solo id e conteggi: mai il contenuto delle conversazioni.
 
 import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
@@ -49,14 +50,34 @@ export interface SummaryDeps {
 const defaultChat = (resolved: ResolvedModel, messages: ChatCompletionMessageParam[]) =>
   modelChat(resolved, { messages, maxTokens: SUMMARY_MAX_TOKENS, timeoutMs: SUMMARY_TIMEOUT_MS, maxRetries: 0, caller: "memory-summary" });
 
+/**
+ * Modello del riassunto: il predefinito dell'utente se è ancora suo; se è un modello Claude Code (nodo), il ripiego
+ * cloud del suo account (il riassunto chiama il modello dall'API). Null = riassunto saltato. Errori di risoluzione
+ * (modello non usabile) → null.
+ */
+async function summaryModel(userId: number): Promise<ResolvedModel | null> {
+  const defaultId = await getDefaultModel(userId);
+  if (defaultId === null) return null;
+  if (!(await ownModel(userId, defaultId, db))) return null;
+  try {
+    const resolved = await resolveModel(defaultId, { userId, mustOwn: true });
+    if (resolved.kind !== "node") return resolved;
+    if (resolved.fallbackAiModelId === null) return null;
+    const fallback = await resolveModel(resolved.fallbackAiModelId, { userId, mustOwn: true });
+    return fallback.kind === "openai_compatible" ? fallback : null;
+  } catch (err) {
+    logger.warn({ errName: err instanceof Error ? err.name : "Error" }, "Modello del riassunto non usabile");
+    return null;
+  }
+}
+
 export async function summarizeConversation(input: SummaryInput, deps: SummaryDeps = {}): Promise<"saved" | "skipped"> {
-  const defaultId = await getDefaultModel(input.userId);
-  if (defaultId === null) return "skipped";
-  if (!(await ownModel(input.userId, defaultId, db))) return "skipped";
-  if (await characterBudgetBlock(input.userId, input.character, defaultId)) return "skipped";
+  const resolved = await summaryModel(input.userId);
+  if (!resolved) return "skipped";
+  const modelId = resolved.aiModelId;
+  if (await characterBudgetBlock(input.userId, input.character, modelId)) return "skipped";
   let reply: ModelChatResult;
   try {
-    const resolved = await resolveModel(defaultId, { userId: input.userId, mustOwn: true });
     reply = await (deps.chat ?? defaultChat)(resolved, [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: input.transcript.slice(-TRANSCRIPT_MAX_CHARS) },
@@ -74,7 +95,7 @@ export async function summarizeConversation(input: SummaryInput, deps: SummaryDe
     refId: input.refId,
     title: input.title.trim() || FALLBACK_TITLE,
     summary,
-    aiModelId: defaultId,
+    aiModelId: modelId,
     tokensUsed: reply.promptTokens + reply.completionTokens,
     costUsd: reply.costUsd,
   });

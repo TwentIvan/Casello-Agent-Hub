@@ -61,6 +61,7 @@ async function summarize(userId: number, lines: string[]): Promise<string[] | nu
     const aiModelId = await centralinoModelFor(userId);
     if (aiModelId === null) return null;
     const resolved = await resolveModel(aiModelId, { userId, mustOwn: true });
+    if (resolved.kind !== "openai_compatible") return null;
     const reply = await modelChat(resolved, {
       caller: "centralino",
       messages: [

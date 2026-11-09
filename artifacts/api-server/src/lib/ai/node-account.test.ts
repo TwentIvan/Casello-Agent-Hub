@@ -59,12 +59,12 @@ describe("verifyAccount su un account nodo", () => {
     return acc!;
   }
 
-  it("nodo mai collegato → error «nodo offline», modelli comunque scritti con strumenti", async () => {
+  it("nodo attivo mai collegato (o Mac in stop) → ok: la prontezza si mostra a parte; modelli scritti con strumenti", async () => {
     const acc = await seedAccount(true, null);
     const models = await verifyAccount(acc);
     expect(models).not.toBeNull();
     const [after] = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.id, acc.id));
-    expect(after).toMatchObject({ status: "error", lastError: "nodo offline" });
+    expect(after).toMatchObject({ status: "ok", lastError: null });
     const rows = await db.select().from(aiModelsTable).where(eq(aiModelsTable.accountId, acc.id));
     expect(rows.map((r) => r.modelId)).toEqual(expect.arrayContaining([...NODE_MODEL_ALIASES]));
     expect(rows.every((r) => r.supportsTools === true)).toBe(true);
@@ -75,6 +75,14 @@ describe("verifyAccount su un account nodo", () => {
     await verifyAccount(acc);
     const [after] = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.id, acc.id));
     expect(after).toMatchObject({ status: "ok", lastError: null });
+  });
+
+  it("nodo disattivato → error «nodo disattivato»", async () => {
+    const acc = await seedAccount(true, new Date());
+    await db.update(nodesTable).set({ status: "disabled" }).where(eq(nodesTable.id, acc.nodeId!));
+    await verifyAccount(acc);
+    const [after] = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.id, acc.id));
+    expect(after).toMatchObject({ status: "error", lastError: "nodo disattivato" });
   });
 
   it("nodo eliminato → error «nodo eliminato»", async () => {

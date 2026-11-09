@@ -19,6 +19,7 @@ import {
 } from "@workspace/db";
 import { decryptSecret, encryptSecret } from "../lib/secrets";
 import { allowTestLoopback } from "../../test/fake-provider";
+import { nodeModelFor } from "../../test/node-turn-fixture";
 
 // Route dell'architetto su un'app Express vera (porta 0), senza login (AUTH_DISABLED=true).
 // Il finto provider (modello dell'utente di sviluppo) trattiene le richieste: le analisi avviate restano in corso finché il test non
@@ -372,6 +373,16 @@ describe("avvio dell'analisi", () => {
     const res = await api("POST", `/apps/${app.id}/analyses`, { model: "openrouter/auto" });
     expect(res.status).toBe(400);
     expect(res.json).toEqual({ error: "scegli un modello" });
+    expect(await db.select().from(analysesTable)).toHaveLength(0);
+  });
+
+  it("modello Claude Code (nodo) → 400 con il messaggio fisso e nessuna analisi", async () => {
+    const [dev] = await db.select().from(usersTable).where(eq(usersTable.email, "dev@localhost"));
+    const nodeModel = await nodeModelFor(dev!.id);
+    const app = await createApp();
+    const res = await api("POST", `/apps/${app.id}/analyses`, { aiModelId: nodeModel });
+    expect(res.status).toBe(400);
+    expect(res.json).toEqual({ error: "Claude Code (nodo) non è disponibile qui: scegli un modello cloud" });
     expect(await db.select().from(analysesTable)).toHaveLength(0);
   });
 

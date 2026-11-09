@@ -13,6 +13,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { encryptSecret } from "../lib/secrets";
+import { nodeModelFor } from "../../test/node-turn-fixture";
 
 // Modello del centralino dell'utente, sull'app completa senza login (AUTH_DISABLED=true: l'utente corrente è dev@localhost). Account e
 // modelli si inseriscono a mano; nessuna chiamata ai provider (indirizzi https finti, mai contattati).
@@ -125,6 +126,15 @@ describe("modello del centralino", () => {
 
     const cleared = await api("PUT", "/account/centralino-model", { aiModelId: null });
     expect(cleared.json).toEqual({ aiModelId: null });
+  });
+
+  it("modello Claude Code (nodo) → 400 con il messaggio fisso, nulla salvato", async () => {
+    const dev = await devUserId();
+    const nodeModel = await nodeModelFor(dev);
+    const ko = await api("PUT", "/account/centralino-model", { aiModelId: nodeModel });
+    expect(ko.status).toBe(400);
+    expect(ko.json).toEqual({ error: "Claude Code (nodo) non è disponibile qui: scegli un modello cloud" });
+    expect((await api("GET", "/account/centralino-model")).json).toEqual({ aiModelId: null });
   });
 
   it("con un token → 403 solo login", async () => {

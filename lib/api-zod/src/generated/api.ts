@@ -541,7 +541,7 @@ export const GetDefaultModelResponse = zod.object({
 
 
 /**
- * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti) e non di un account Claude Code (nodo) (400); null lo toglie. Solo con il login: con un token risponde 403.
  * @summary Imposta o toglie il modello predefinito dell'utente
  */
 export const SetDefaultModelBody = zod.object({
@@ -563,7 +563,7 @@ export const GetCentralinoModelResponse = zod.object({
 
 
 /**
- * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti) e non di un account Claude Code (nodo) (400); null lo toglie. Solo con il login: con un token risponde 403.
  * @summary Imposta o toglie il modello del centralino
  */
 export const SetCentralinoModelBody = zod.object({
@@ -4557,7 +4557,7 @@ export const UpdateAiModelResponse = zod.object({
 
 
 /**
- * Solo per i modelli degli account dell'utente. Una chiamata con un messaggio minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la disponibilità. Massimo 5 prove al minuto per IP.
+ * Solo per i modelli degli account dell'utente. Una chiamata con un messaggio minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la disponibilità. Massimo 5 prove al minuto per IP. I modelli di un account Claude Code (nodo) non si provano (400): si usa «Verifica» sull'account.
  * @summary Prova un modello con una chiamata da 1 token
  */
 export const ProbeAiModelParams = zod.object({

@@ -49,7 +49,7 @@ export function CentralinoModelCard() {
         ) : (
           <div className="flex flex-wrap items-start gap-2">
             <div className="w-full max-w-md">
-              <ModelPicker id="centralino-model" value={value} onChange={setChosen} allowNone disabled={save.isPending} />
+              <ModelPicker id="centralino-model" value={value} onChange={setChosen} allowNone disabled={save.isPending} cloudOnly />
             </div>
             <Button
               disabled={value === saved || save.isPending}

@@ -44,7 +44,7 @@ export function NewTeamDialog({ open, onOpenChange, template }: NewTeamDialogPro
   const templates = useListTeamTemplates(undefined, {
     query: { queryKey: getListTeamTemplatesQueryKey(), enabled: open && !template },
   });
-  const defaultModelId = useDefaultAiModelId();
+  const defaultModelId = useDefaultAiModelId({ cloudOnly: true });
   const [templateChoice, setTemplateChoice] = useState<string>("");
   const [name, setName] = useState("");
   const [appId, setAppId] = useState("");

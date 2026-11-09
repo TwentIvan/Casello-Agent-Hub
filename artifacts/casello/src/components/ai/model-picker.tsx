@@ -17,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatModelPrice } from "@/lib/format";
+import { isNodeAccount, withoutNodeModels } from "@/lib/node-models";
 import { cn } from "@/lib/utils";
 import { useAiModelGroups } from "./ai-queries";
 
@@ -29,6 +30,8 @@ interface ModelPickerProps {
   disabled?: boolean;
   /** Mostra in cima la voce «Nessun modello» (onChange(null)), per i campi in cui l'assenza è una scelta valida. */
   allowNone?: boolean;
+  /** Consumatore che gira solo nel cloud: niente modelli Claude Code (nodo); uno già scelto resta come voce disabilitata. */
+  cloudOnly?: boolean;
   /** Passati al trigger (es. da FormControl o per un Label con htmlFor). */
   id?: string;
   "aria-describedby"?: string;
@@ -62,7 +65,7 @@ function ModelItem({ model, selected, onPick }: { model: AiModel; selected: bool
  * tra quelli dell'utente (agente configurato da altri, modello nascosto o del vecchio gateway dismesso) resta
  * come voce disabilitata, così il valore non si perde.
  */
-export function ModelPicker({ value, onChange, disabled, allowNone, id, ...aria }: ModelPickerProps) {
+export function ModelPicker({ value, onChange, disabled, allowNone, cloudOnly, id, ...aria }: ModelPickerProps) {
   const groups = useAiModelGroups();
   // null: nessuna scelta dell'utente, il gruppo "Altri modelli" è aperto se contiene il valore corrente
   const [othersToggled, setOthersToggled] = useState<boolean | null>(null);
@@ -74,12 +77,16 @@ export function ModelPicker({ value, onChange, disabled, allowNone, id, ...aria 
   if (!groups.data) return <Skeleton className="h-9 w-full" />;
 
   const data = groups.data;
+  const pickable = cloudOnly ? withoutNodeModels(data) : data;
   // Solo i modelli selezionabili; quelli disponibili ma senza strumenti vanno in "Altri modelli"
-  const main = data.map((g) => ({ group: g, models: g.models.filter((m) => m.selectable && m.supportsTools !== false) }));
-  const others = data.flatMap((g) => g.models.filter((m) => m.status === "available" && m.supportsTools === false));
+  const main = pickable.map((g) => ({ group: g, models: g.models.filter((m) => m.selectable && m.supportsTools !== false) }));
+  const others = pickable.flatMap((g) => g.models.filter((m) => m.status === "available" && m.supportsTools === false));
   const current = value != null ? data.flatMap((g) => g.models).find((m) => m.id === value) : undefined;
+  // Claude Code (nodo) già scelto dove non si può usare: resta visibile ma non si riseleziona
+  const nodeCurrent =
+    cloudOnly && current && data.some((g) => isNodeAccount(g.account) && g.models.includes(current)) ? current : undefined;
   // Valore corrente ritirato o non disponibile: resta come voce disabilitata
-  const staleCurrent = current && current.status !== "available" ? current : undefined;
+  const staleCurrent = current && (current.status !== "available" || nodeCurrent) ? current : undefined;
   const showOthers = othersToggled ?? (current !== undefined && others.includes(current));
   const known = current !== undefined;
   const foreign = value != null && !known;
@@ -103,9 +110,11 @@ export function ModelPicker({ value, onChange, disabled, allowNone, id, ...aria 
   const triggerLabel = foreign
     ? `modello di un altro utente, nascosto o non più disponibile (#${value})`
     : current
-      ? staleCurrent
-        ? `${current.displayName} (${current.status === "retired" ? "ritirato" : "non disponibile"})`
-        : current.displayName
+      ? nodeCurrent
+        ? `${current.displayName} (Claude Code non disponibile qui)`
+        : staleCurrent
+          ? `${current.displayName} (${current.status === "retired" ? "ritirato" : "non disponibile"})`
+          : current.displayName
       : null;
 
   return (

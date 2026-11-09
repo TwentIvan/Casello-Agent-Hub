@@ -2162,7 +2162,7 @@ export const getSetDefaultModelUrl = () => {
 }
 
 /**
- * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti) e non di un account Claude Code (nodo) (400); null lo toglie. Solo con il login: con un token risponde 403.
  * @summary Imposta o toglie il modello predefinito dell'utente
  */
 export const setDefaultModel = async (defaultModel: DefaultModel, options?: RequestInit): Promise<DefaultModel> => {
@@ -2311,7 +2311,7 @@ export const getSetCentralinoModelUrl = () => {
 }
 
 /**
- * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti) e non di un account Claude Code (nodo) (400); null lo toglie. Solo con il login: con un token risponde 403.
  * @summary Imposta o toglie il modello del centralino
  */
 export const setCentralinoModel = async (centralinoModel: CentralinoModel, options?: RequestInit): Promise<CentralinoModel> => {
@@ -10206,7 +10206,7 @@ export const getProbeAiModelUrl = (id: number,) => {
 }
 
 /**
- * Solo per i modelli degli account dell'utente. Una chiamata con un messaggio minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la disponibilità. Massimo 5 prove al minuto per IP.
+ * Solo per i modelli degli account dell'utente. Una chiamata con un messaggio minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la disponibilità. Massimo 5 prove al minuto per IP. I modelli di un account Claude Code (nodo) non si provano (400): si usa «Verifica» sull'account.
  * @summary Prova un modello con una chiamata da 1 token
  */
 export const probeAiModel = async (id: number, options?: RequestInit): Promise<AiModelProbeResult> => {
@@ -10223,7 +10223,7 @@ export const probeAiModel = async (id: number, options?: RequestInit): Promise<A
 
 
 
-export const getProbeAiModelMutationOptions = <TError = ErrorType<NotFoundResponse | TooManyRequestsResponse>,
+export const getProbeAiModelMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | TooManyRequestsResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof probeAiModel>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof probeAiModel>>, TError,{id: number}, TContext> => {
 
@@ -10252,12 +10252,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type ProbeAiModelMutationResult = NonNullable<Awaited<ReturnType<typeof probeAiModel>>>
 
-    export type ProbeAiModelMutationError = ErrorType<NotFoundResponse | TooManyRequestsResponse>
+    export type ProbeAiModelMutationError = ErrorType<BadRequestResponse | NotFoundResponse | TooManyRequestsResponse>
 
     /**
  * @summary Prova un modello con una chiamata da 1 token
  */
-export const useProbeAiModel = <TError = ErrorType<NotFoundResponse | TooManyRequestsResponse>,
+export const useProbeAiModel = <TError = ErrorType<BadRequestResponse | NotFoundResponse | TooManyRequestsResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof probeAiModel>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof probeAiModel>>,

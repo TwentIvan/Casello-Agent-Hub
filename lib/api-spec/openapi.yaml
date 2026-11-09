@@ -662,7 +662,8 @@ paths:
       summary: Imposta o toglie il modello predefinito dell'utente
       description: >-
         Il modello deve essere di un account AI dell'utente (400 "modello non disponibile"
-        altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+        altrimenti) e non di un account Claude Code (nodo) (400); null lo toglie. Solo con il login:
+        con un token risponde 403.
       requestBody:
         required: true
         content:
@@ -708,7 +709,8 @@ paths:
       summary: Imposta o toglie il modello del centralino
       description: >-
         Il modello deve essere di un account AI dell'utente (400 "modello non disponibile"
-        altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+        altrimenti) e non di un account Claude Code (nodo) (400); null lo toglie. Solo con il login:
+        con un token risponde 403.
       requestBody:
         required: true
         content:
@@ -3284,7 +3286,8 @@ paths:
       description: >-
         Solo per i modelli degli account dell'utente. Una chiamata con un messaggio
         minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la
-        disponibilità. Massimo 5 prove al minuto per IP.
+        disponibilità. Massimo 5 prove al minuto per IP. I modelli di un account Claude Code (nodo)
+        non si provano (400): si usa «Verifica» sull'account.
       parameters:
         - $ref: "#/components/parameters/IdParam"
       responses:
@@ -3294,6 +3297,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AiModelProbeResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
         "429":

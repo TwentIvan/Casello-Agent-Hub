@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db, aiAccountsTable, aiModelsTable, usersTable } from "@workspace/db";
-import { MODEL_UNAVAILABLE, ModelChoiceError, NO_MODEL, chooseOwnModel, type ModelChoice } from "./choice";
+import { MODEL_UNAVAILABLE, ModelChoiceError, NODE_MODEL_NOT_ALLOWED, NO_MODEL, chooseOwnModel, type ModelChoice } from "./choice";
+import { isNodeModel } from "./node-account";
 import type { Tx } from "../architect/apply";
 
 /**
@@ -68,20 +69,27 @@ export async function getCentralinoModel(userId: number, executor: Executor = db
   return row?.id ?? null;
 }
 
-/** Imposta (modello di un proprio account, altrimenti `ModelChoiceError`) o toglie (null) il modello del centralino. */
+/**
+ * Imposta (modello di un proprio account cloud, altrimenti `ModelChoiceError`) o toglie (null) il modello del
+ * centralino. Il riassunto del centralino chiama il modello dall'API: Claude Code (nodo) non è ammesso.
+ */
 export async function setCentralinoModel(userId: number, aiModelId: number | null): Promise<void> {
   if (aiModelId !== null) {
     if (!Number.isSafeInteger(aiModelId) || aiModelId <= 0 || !(await ownModel(userId, aiModelId, db))) {
       throw new ModelChoiceError(MODEL_UNAVAILABLE);
     }
+    if (await isNodeModel(aiModelId)) throw new ModelChoiceError(NODE_MODEL_NOT_ALLOWED);
   }
   await db.update(usersTable).set({ centralinoAiModelId: aiModelId }).where(eq(usersTable.id, userId));
 }
 
-/** Modello per il riassunto del centralino: il suo, altrimenti il predefinito; solo se ancora di un account dell'utente. */
+/**
+ * Modello per il riassunto del centralino: il suo, altrimenti il predefinito; solo se ancora di un account dell'utente
+ * e non Claude Code (nodo), che non ha esecutore nell'API.
+ */
 export async function centralinoModelFor(userId: number): Promise<number | null> {
   for (const id of [await getCentralinoModel(userId), await getDefaultModel(userId)]) {
-    if (id !== null && (await ownModel(userId, id, db))) return id;
+    if (id !== null && (await ownModel(userId, id, db)) && !(await isNodeModel(id))) return id;
   }
   return null;
 }

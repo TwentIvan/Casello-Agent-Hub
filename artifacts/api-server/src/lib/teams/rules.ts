@@ -1,7 +1,7 @@
 import { inArray } from "drizzle-orm";
 import { db, appToolsTable, skillsTable, skillVersionsTable } from "@workspace/db";
 import { effectiveLevel } from "../tools/levels";
-import { ModelChoiceError, MODEL_UNAVAILABLE, chooseOwnModel } from "../ai/choice";
+import { ModelChoiceError, MODEL_UNAVAILABLE, NODE_MODEL_NOT_ALLOWED, chooseCloudModel } from "../ai/choice";
 import {
   InstanceRoleSchema,
   MAX_ROLES,
@@ -18,6 +18,7 @@ import type { SkillKind } from "./skills";
 export const TEAM_MESSAGES = {
   oneLead: "una squadra ha esattamente un capo",
   modelUnavailable: MODEL_UNAVAILABLE,
+  nodeModelNotAllowed: NODE_MODEL_NOT_ALLOWED,
   teamClosed: "squadra chiusa",
   duplicateName: "ruoli con lo stesso nome",
   duplicateKey: "ruoli con la stessa chiave",
@@ -102,9 +103,12 @@ export async function validateRoles(input: ValidateRolesInput): Promise<void> {
     if (role.aiModelId === null) fail(TEAM_MESSAGES.modelUnavailable);
     if (checkedModels.has(role.aiModelId)) continue;
     try {
-      await chooseOwnModel(role.aiModelId, userId);
+      // Capo e compiti `cloud` girano nell'API: un modello Claude Code (nodo) non ha esecutore qui
+      await chooseCloudModel(role.aiModelId, userId);
     } catch (err) {
-      if (err instanceof ModelChoiceError) fail(TEAM_MESSAGES.modelUnavailable);
+      if (err instanceof ModelChoiceError) {
+        fail(err.message === NODE_MODEL_NOT_ALLOWED ? TEAM_MESSAGES.nodeModelNotAllowed : TEAM_MESSAGES.modelUnavailable);
+      }
       throw err;
     }
     checkedModels.add(role.aiModelId);

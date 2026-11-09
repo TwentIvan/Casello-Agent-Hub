@@ -47,3 +47,26 @@ export function queueSample(setup: NodeTurnSetup, over: Partial<TurnPackageBody>
     pkg: samplePackage(over),
   });
 }
+
+/**
+ * Modello «Claude Code (nodo)» di un utente già esistente: nodo attivo, account nodo (con il ripiego indicato) e il
+ * modello `sonnet`. Per le prove delle scelte dove i modelli nodo non sono ammessi.
+ */
+export async function nodeModelFor(userId: number, opts: { fallbackAiModelId?: number | null; nodeName?: string } = {}): Promise<number> {
+  await ensureProviderRegistry();
+  const { node } = await createNode(userId, opts.nodeName ?? `Mac ${Math.random().toString(36).slice(2, 8)}`);
+  const [account] = await db
+    .insert(aiAccountsTable)
+    .values({
+      userId,
+      name: "Claude Code",
+      provider: NODE_PROVIDER,
+      baseUrl: "",
+      apiKeyEnc: null,
+      nodeId: node.id,
+      fallbackAiModelId: opts.fallbackAiModelId ?? null,
+    })
+    .returning();
+  const [model] = await db.insert(aiModelsTable).values({ accountId: account!.id, modelId: "sonnet", displayName: "sonnet (ultimo)" }).returning();
+  return model!.id;
+}

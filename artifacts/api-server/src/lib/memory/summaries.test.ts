@@ -23,6 +23,7 @@ import { summarizeConversation, sweepSummaries } from "./summaries";
 import { MEMORY_MESSAGES } from "./types";
 import { userSpend } from "../budget";
 import { MEMORY_TOOLS, runMemoryTool } from "./tools";
+import { nodeModelFor } from "../../../test/node-turn-fixture";
 
 const KEY = "sk-CHIAVE-RIASSUNTI";
 const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000);
@@ -125,6 +126,27 @@ describe("sweepSummaries", () => {
     expect((await getPlan(id)).summarizedAt).not.toBeNull();
     // non si ritenta senza novità
     expect(await sweepSummaries()).toBe(0);
+  });
+
+  it("predefinito Claude Code (nodo) con ripiego: riassunto col ripiego, mai una chiamata al nodo", async () => {
+    const nodeModel = await nodeModelFor(userId, { fallbackAiModelId: modelId });
+    await db.update(usersTable).set({ defaultAiModelId: nodeModel }).where(eq(usersTable.id, userId));
+    const id = await planConv(minutesAgo(31));
+    expect(await sweepSummaries()).toBe(1);
+    const rows = await history();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ refId: id, aiModelId: modelId, tokensUsed: 1200 });
+    expect(fake.requests.filter((r) => r.path.endsWith("/chat/completions"))).toHaveLength(1);
+  });
+
+  it("predefinito Claude Code (nodo) senza ripiego: saltato, summarized_at valorizzato", async () => {
+    const nodeModel = await nodeModelFor(userId);
+    await db.update(usersTable).set({ defaultAiModelId: nodeModel }).where(eq(usersTable.id, userId));
+    const id = await planConv(minutesAgo(31));
+    await sweepSummaries();
+    expect(await history()).toHaveLength(0);
+    expect((await getPlan(id)).summarizedAt).not.toBeNull();
+    expect(fake.requests.filter((r) => r.path.endsWith("/chat/completions"))).toHaveLength(0);
   });
 
   it("senza messaggi: segnata e basta; i messaggi d'errore non entrano nella trascrizione", async () => {

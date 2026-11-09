@@ -65,3 +65,14 @@ export async function validateFallback(userId: number, aiModelId: number | null)
     .limit(1);
   if (!row) throw new HttpError(400, FALLBACK_INVALID);
 }
+
+/** Il modello è di un account Claude Code (nodo)? Falso anche se il modello non esiste. */
+export async function isNodeModel(aiModelId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ provider: aiAccountsTable.provider })
+    .from(aiModelsTable)
+    .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
+    .where(eq(aiModelsTable.id, aiModelId))
+    .limit(1);
+  return row?.provider === NODE_PROVIDER;
+}

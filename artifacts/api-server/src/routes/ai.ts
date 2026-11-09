@@ -50,7 +50,7 @@ import { upsertDiscovered, verifyAccount, type Tx } from "../lib/ai/accounts";
 import { ModelAccessError } from "../lib/ai/executor";
 import { HttpError, NODE_PROVIDER, nodeTurnReady, validateFallback } from "../lib/ai/node-account";
 import { effectiveStatus, isSelectable, pickRecommended } from "../lib/ai/model-status";
-import { probeModel } from "../lib/ai/probe";
+import { ProbeUnsupportedError, probeModel } from "../lib/ai/probe";
 import {
   LEGACY_GATEWAY_PROVIDER,
   normalizeBaseUrl,
@@ -913,6 +913,10 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
     try {
       result = await probeModel(id, userId);
     } catch (err) {
+      if (err instanceof ProbeUnsupportedError) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
       if (!(err instanceof ModelAccessError)) throw err;
       res.status(404).json({ error: MODEL_NOT_FOUND });
       return;

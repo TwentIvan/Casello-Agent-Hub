@@ -23,6 +23,7 @@ import { ensureProviderRegistry } from "../lib/catalog/provider-registry";
 import { LEGACY_GATEWAY_PROVIDER } from "../lib/ai/providers";
 import { ensureLegacyGatewayProvider } from "../../test/legacy-gateway";
 import { resolveModel } from "../lib/ai/executor";
+import { nodeModelFor } from "../../test/node-turn-fixture";
 
 // API degli account AI su un'app Express vera (porta 0), senza login (AUTH_DISABLED=true: utente di
 // sviluppo). Il secondo utente e i suoi account si inseriscono a mano nel DB. La scoperta dei modelli
@@ -901,6 +902,19 @@ describe("prova del modello", () => {
     expect(row).toMatchObject({ availability: "unavailable", lastProbeOk: false });
   });
 
+  it("modello di un account Claude Code (nodo) → 400 con messaggio fisso, nessuna chiamata né prova registrata", async () => {
+    // La prima richiesta crea l'utente di sviluppo
+    await api("GET", "/ai/accounts");
+    const nodeModel = await nodeModelFor(await devUserId());
+    fake.requests = [];
+    const res = await api("POST", `/ai/models/${nodeModel}/probe`);
+    expect(res.status, res.text).toBe(400);
+    expect(res.json).toEqual({ error: "la prova non è disponibile per Claude Code: usa Verifica sull'account" });
+    const [row] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.id, nodeModel));
+    expect(row!.lastProbeAt).toBeNull();
+    expect(fake.requests).toHaveLength(0);
+  });
+
   it("modello di un altro utente, del vecchio gateway o inesistente → 404, nessuna chiamata", async () => {
     const other = await otherUserAccount();
     const legacy = await legacyGatewayAccount();
@@ -1125,7 +1139,7 @@ describe("account nodo (Claude Code)", () => {
     expect(fake.requests).toHaveLength(0);
   });
 
-  it("elenco: nodeName e nodeTurnReady; verifica senza rete; nodo che sonda → ok", async () => {
+  it("elenco: nodeName e nodeTurnReady; verifica senza rete; nodo attivo che non sonda → ok ma non pronto", async () => {
     const node = await myNode({ lastTurnPollAt: new Date() });
     const acc = (await nodeAccount(node.id)).json;
     expect(acc.nodeTurnReady).toBe(true);
@@ -1134,7 +1148,7 @@ describe("account nodo (Claude Code)", () => {
     await db.update(nodesTable).set({ lastTurnPollAt: null }).where(eq(nodesTable.id, node.id));
     const res = await api("POST", `/ai/accounts/${acc.id}/verify`);
     expect(res.status, res.text).toBe(200);
-    expect(res.json).toMatchObject({ status: "error", lastError: "nodo offline", nodeTurnReady: false });
+    expect(res.json).toMatchObject({ status: "ok", lastError: null, nodeTurnReady: false });
     expect(res.json.modelCount).toBeGreaterThanOrEqual(4);
     expect(fake.requests).toHaveLength(0);
   });

@@ -9,7 +9,7 @@ import {
   useDeprecateSkill,
   useGetSkill,
 } from "@workspace/api-client-react";
-import { CharacterButton } from "@/components/characters/character-button";
+import { LuciusButton } from "@/components/characters/lucius-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -73,9 +73,7 @@ export default function SkillDetailPage() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <CharacterButton
-                target={{ kind: "character", subjectType: "skill", subjectId: s.code, title: `Skill · ${s.code}` }}
-              />
+              <LuciusButton />
               <Button onClick={() => setEditing(true)}>Nuova versione</Button>
               {!s.deprecated && (
                 <Button variant="outline" onClick={() => setDeprecating(true)}>

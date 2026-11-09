@@ -1,7 +1,7 @@
 import { Link, useParams } from "wouter";
 import { ArrowLeft, MessagesSquare } from "lucide-react";
 import { ApiError, getGetAppQueryKey, useGetApp } from "@workspace/api-client-react";
-import { CharacterButton } from "@/components/characters/character-button";
+import { LuciusButton } from "@/components/characters/lucius-button";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentModelsCard } from "@/components/apps/agent-models-card";
@@ -49,7 +49,7 @@ export default function AppDetailPage() {
               <h2 className="text-h2">{app.data.name}</h2>
               <StatusBadge kind="app" status={app.data.status} />
               <div className="ml-auto flex flex-wrap gap-2">
-                <CharacterButton target={{ kind: "plan", appId }} />
+                <LuciusButton />
                 <Button variant="outline" size="sm" asChild>
                   <Link href={`/apps/${appId}/plan`}>
                     <MessagesSquare />

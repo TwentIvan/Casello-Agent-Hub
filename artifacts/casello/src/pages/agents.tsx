@@ -8,7 +8,7 @@ import {
   useListAgents,
   useListApps,
 } from "@workspace/api-client-react";
-import { CharacterButton } from "@/components/characters/character-button";
+import { LuciusButton } from "@/components/characters/lucius-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -62,7 +62,7 @@ export default function AgentsPage() {
           <p className="text-sm text-muted-foreground">Gli agenti configurati sulle app, con istruzioni e strumenti.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <CharacterButton target={{ kind: "character", subjectType: "area_agents", subjectId: null, title: "Area Agenti" }} />
+          <LuciusButton />
           <Button onClick={openCreate} disabled={!hasApps} title={hasApps ? undefined : "Registra prima un'app"}>
             <Plus />
             Nuovo agente

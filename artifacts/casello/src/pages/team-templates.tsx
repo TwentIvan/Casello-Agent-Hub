@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { Crown, Plus } from "lucide-react";
 import { getListTeamTemplatesQueryKey, useListTeamTemplates } from "@workspace/api-client-react";
-import { CharacterButton } from "@/components/characters/character-button";
+import { LuciusButton } from "@/components/characters/lucius-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,7 +28,7 @@ export default function TeamTemplatesPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <CharacterButton target={{ kind: "character", subjectType: "area_team_templates", subjectId: null, title: "Area Modelli di squadra" }} />
+          <LuciusButton />
           <Button onClick={() => navigate("/team-templates/new")}>
             <Plus />
             Nuovo modello

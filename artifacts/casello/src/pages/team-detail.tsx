@@ -40,7 +40,7 @@ import { RolesEditor } from "@/components/teams/roles-editor";
 import { SaveAsTemplateDialog } from "@/components/teams/save-as-template-dialog";
 import { TeamStatusBadge } from "@/components/teams/team-status";
 import { TeamUpdatesCard } from "@/components/teams/team-updates-card";
-import { CharacterButton } from "@/components/characters/character-button";
+import { LuciusButton } from "@/components/characters/lucius-button";
 import { LeadMessageCard } from "@/components/teams/lead-message";
 import { PlanApprovalCards } from "@/components/teams/plan-approval-card";
 import { PlanCard } from "@/components/teams/plan-card";
@@ -245,15 +245,7 @@ function TeamEditor({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <CharacterButton
-            target={{ kind: "team", instanceId: team.id, closed }}
-            hasUnsavedChanges={() => dirtyRef.current}
-          />
-          {/* Anche Alfred: un suo passaggio a Lucius sulla stessa squadra eredita questo controllo */}
-          <CharacterButton
-            target={{ kind: "alfred", page: { page: "team", id: String(team.id) } }}
-            hasUnsavedChanges={() => dirtyRef.current}
-          />
+          <LuciusButton />
           {!closed && (
             <Button onClick={() => submit()} disabled={!dirty || save.isPending}>
               {save.isPending ? "Salvataggio…" : "Salva"}

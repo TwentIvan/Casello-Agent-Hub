@@ -10,7 +10,6 @@ import {
   useListAgents,
   useListRuns,
 } from "@workspace/api-client-react";
-import { CharacterButton } from "@/components/characters/character-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -135,7 +134,6 @@ export default function Dashboard() {
           <h2 className="text-h2">Dashboard</h2>
           <p className="text-sm text-muted-foreground">Panoramica delle app, degli agenti e delle esecuzioni.</p>
         </div>
-        <CharacterButton target={{ kind: "alfred", page: { page: "dashboard" } }} />
       </div>
 
       <BudgetAlerts />

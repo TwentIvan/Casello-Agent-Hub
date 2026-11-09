@@ -19,7 +19,7 @@ import {
   useGetApp,
   useUpdateAgent,
 } from "@workspace/api-client-react";
-import { CharacterButton } from "@/components/characters/character-button";
+import { LuciusButton } from "@/components/characters/lucius-button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -383,10 +383,7 @@ export default function AgentDetailPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <CharacterButton
-              target={{ kind: "character", subjectType: "agent", subjectId: String(agent.data.id), title: `Agente · ${agent.data.name}` }}
-              hasUnsavedChanges={() => dirtyRef.current || toolsDirtyRef.current}
-            />
+            <LuciusButton />
             {agent.data.role !== "general" && (
               <Button variant="outline" className="text-destructive" onClick={() => setConfirmDelete(true)}>
                 <Trash2 />

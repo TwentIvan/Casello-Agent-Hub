@@ -13,7 +13,7 @@ import {
   useGetTeamTemplate,
   useSaveTeamTemplate,
 } from "@workspace/api-client-react";
-import { CharacterButton } from "@/components/characters/character-button";
+import { LuciusButton } from "@/components/characters/lucius-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -104,15 +104,7 @@ function TemplateEditor({ template, dirtyRef }: { template?: TeamTemplate; dirty
         </div>
         <div className="flex flex-wrap gap-2">
           {template && (
-            <CharacterButton
-              target={{
-                kind: "character",
-                subjectType: "team_template",
-                subjectId: String(template.id),
-                title: `Modello di squadra · ${template.name}`,
-              }}
-              hasUnsavedChanges={() => dirtyRef?.current ?? false}
-            />
+            <LuciusButton />
           )}
           {!readOnly && (
             <Button onClick={submit} disabled={pending || (template !== undefined && !dirty) || name.trim() === ""}>

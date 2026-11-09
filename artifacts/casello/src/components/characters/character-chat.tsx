@@ -1,5 +1,4 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { useLocation } from "wouter";
 import { Send } from "lucide-react";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { Led } from "@/components/brand/led";
@@ -14,7 +13,8 @@ import { apiErrorMessage } from "@/lib/api-errors";
 import { formatCost } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { MAX_CHARS, targetKey, useCharacterAdapter, type ChatTarget, type ProposalLike } from "./adapters";
-import { handoffTarget, pageFromPath, useHandoff } from "./handoff-context";
+import { usePanel } from "@/components/panel/panel-context";
+import { handoffTarget } from "@/components/panel/page-subject";
 import { ChatMessages } from "./chat-messages";
 import { ChatToolbar } from "./chat-toolbar";
 import { NewConversationDialog } from "./new-conversation-dialog";
@@ -47,8 +47,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   const adapter = useCharacterAdapter(target);
   const list = adapter.useConversations();
   const { toast } = useToast();
-  const handoff = useHandoff();
-  const [location] = useLocation();
+  const { handoff, alfredPage } = usePanel();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const effectiveId = list ? (selectedId ?? list.items[0]?.id ?? null) : null;
   const conv = adapter.useConversation(effectiveId);
@@ -169,7 +168,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   };
 
   const openHandoff = async (p: ProposalLike) => {
-    const next = handoffTarget(p.payload, pageFromPath(location));
+    const next = handoffTarget(p.payload, alfredPage);
     if (!next) {
       toast({ variant: "destructive", title: "Operazione non riuscita", description: "scheda non valida" });
       return;
@@ -185,7 +184,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
         setDecidingId(null);
       }
     }
-    handoff.open(next.target, next.draft);
+    handoff(next.target, next.draft);
   };
 
   const cost = data ? formatCost(data.costUsd, data.tokensUsed) : null;
@@ -193,7 +192,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
 
   return (
     <div className={cn("min-w-0", sheet ? "flex h-full min-h-0 flex-col" : "space-y-3")}>
-      <div className={cn("flex items-start gap-3", sheet && "border-b p-4 pr-12")}>
+      <div className={cn("flex items-start gap-3", sheet && "border-b p-4")}>
         <Mark size={18} className="mt-1" />
         <div className="min-w-0 flex-1">
           <p className="font-mono text-base font-medium">{name}</p>

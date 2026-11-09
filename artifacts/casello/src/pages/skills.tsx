@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { Plus } from "lucide-react";
 import { type SkillKind, getListSkillsQueryKey, useListSkills } from "@workspace/api-client-react";
-import { CharacterButton } from "@/components/characters/character-button";
+import { LuciusButton } from "@/components/characters/lucius-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,7 +39,7 @@ export default function SkillsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <CharacterButton target={{ kind: "character", subjectType: "area_skills", subjectId: null, title: "Area Skill" }} />
+          <LuciusButton />
           <Button onClick={() => setCreating(true)}>
             <Plus />
             Nuova skill

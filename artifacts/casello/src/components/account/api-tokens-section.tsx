@@ -40,7 +40,7 @@ const SCOPE_LABELS: Record<ApiTokenScope, string> = {
   runs: "Avvio delle run (app ospiti)",
   agent: "Agente di Botcave (segreto di servizio)",
 };
-const SCOPE_ORDER: ApiTokenScope[] = ["mcp", "api:read", "api:write", "runs"];
+const SCOPE_ORDER: ApiTokenScope[] = ["mcp", "api:read", "api:write", "runs", "agent"];
 
 const formatDate = (value: string) => new Date(value).toLocaleDateString("it-IT", { dateStyle: "short" });
 
@@ -62,11 +62,15 @@ function CreateTokenDialog({
   const [read, setRead] = useState(false);
   const [write, setWrite] = useState(false);
   const [runsScope, setRunsScope] = useState(false);
+  const [agentScope, setAgentScope] = useState(false);
   const days = Number(daysText);
   const daysValid = Number.isInteger(days) && days >= 1 && days <= MAX_DAYS;
-  const scopes = SCOPE_ORDER.filter((scope) =>
-    scope === "mcp" ? mcp : scope === "api:read" ? read || write : scope === "api:write" ? write : runsScope,
-  );
+  // L'ambito agent è esclusivo: con lui gli altri controlli sono spenti e disattivati.
+  const scopes = SCOPE_ORDER.filter((scope) => {
+    if (agentScope) return scope === "agent";
+    if (scope === "agent") return false;
+    return scope === "mcp" ? mcp : scope === "api:read" ? read || write : scope === "api:write" ? write : runsScope;
+  });
   const nameValid = name.trim().length > 0 && name.trim().length <= MAX_NAME;
 
   const create = useCreateApiToken({
@@ -126,14 +130,14 @@ function CreateTokenDialog({
           <fieldset className="space-y-2">
             <legend className="mb-2 text-sm font-medium leading-none">Cosa può fare</legend>
             <div className="flex items-center gap-2">
-              <Checkbox id="scope-mcp" checked={mcp} onCheckedChange={(v) => setMcp(v === true)} />
+              <Checkbox id="scope-mcp" checked={mcp && !agentScope} disabled={agentScope} onCheckedChange={(v) => setMcp(v === true)} />
               <Label htmlFor="scope-mcp" className="font-normal">{SCOPE_LABELS.mcp}</Label>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox
                 id="scope-read"
-                checked={read || write}
-                disabled={write}
+                checked={!agentScope && (read || write)}
+                disabled={write || agentScope}
                 onCheckedChange={(v) => setRead(v === true)}
               />
               <Label htmlFor="scope-read" className="font-normal">{SCOPE_LABELS["api:read"]}</Label>
@@ -141,7 +145,8 @@ function CreateTokenDialog({
             <div className="flex items-center gap-2">
               <Checkbox
                 id="scope-write"
-                checked={write}
+                checked={write && !agentScope}
+                disabled={agentScope}
                 onCheckedChange={(v) => {
                   setWrite(v === true);
                   if (v === true) setRead(true);
@@ -150,9 +155,29 @@ function CreateTokenDialog({
               <Label htmlFor="scope-write" className="font-normal">{SCOPE_LABELS["api:write"]}</Label>
             </div>
             <div className="flex items-center gap-2">
-              <Checkbox id="scope-runs" checked={runsScope} onCheckedChange={(v) => setRunsScope(v === true)} />
+              <Checkbox id="scope-runs" checked={runsScope && !agentScope} disabled={agentScope} onCheckedChange={(v) => setRunsScope(v === true)} />
               <Label htmlFor="scope-runs" className="font-normal">{SCOPE_LABELS.runs}</Label>
             </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="scope-agent"
+                checked={agentScope}
+                onCheckedChange={(v) => {
+                  const on = v === true;
+                  setAgentScope(on);
+                  if (on) {
+                    setMcp(false);
+                    setRead(false);
+                    setWrite(false);
+                    setRunsScope(false);
+                  }
+                }}
+              />
+              <Label htmlFor="scope-agent" className="font-normal">{SCOPE_LABELS.agent}</Label>
+            </div>
+            <p className="text-xs text-ink-muted">
+              Legge e scrive su Botcave, ma non approva né rifiuta nulla: da usare come segreto di servizio dell'App Botcave.
+            </p>
             {scopes.length === 0 && <p className="text-xs text-destructive">Scegli almeno un ambito.</p>}
           </fieldset>
           <DialogFooter>
@@ -179,7 +204,7 @@ function TokenRevealDialog({
 }) {
   const token = created?.token ?? null;
   const hasMcp = created?.scopes.includes("mcp") ?? false;
-  const hasApi = created?.scopes.some((scope) => scope.startsWith("api:")) ?? false;
+  const hasApi = created?.scopes.some((scope) => scope.startsWith("api:") || scope === "agent") ?? false;
   const origin = window.location.origin;
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);

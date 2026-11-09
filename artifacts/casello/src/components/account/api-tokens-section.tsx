@@ -82,6 +82,8 @@ function CreateTokenDialog({
         setMcp(true);
         setRead(false);
         setWrite(false);
+        setRunsScope(false);
+        setAgentScope(false);
         onCreated({ token: created.token, scopes: variables.data.scopes ?? scopes });
       },
       onError: (error) =>

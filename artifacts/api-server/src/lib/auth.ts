@@ -211,13 +211,14 @@ export const RUNS_SCOPE_ROUTES: ReadonlyArray<{ method: "GET" | "POST"; path: Re
 
 /**
  * Route di decisione che l'ambito `agent` non può usare (coda delle conferme, schede dei personaggi, revisione dell'architetto,
- * correzione del PLAN): metodo + percorso rispetto a `requireAuth`, con segmenti `[^/]+` e barra finale facoltativa.
+ * correzione del PLAN): metodo + percorso rispetto a `requireAuth`, con segmenti `[^/]+`, barra finale facoltativa e senza distinguere le maiuscole (i router di Express non le distinguono).
  */
 export const AGENT_DENIED_ROUTES: ReadonlyArray<{ method: "POST" | "PUT" | "PATCH"; path: RegExp }> = [
-  { method: "POST", path: /^\/pending-actions\/[^/]+\/(approve|reject)\/?$/ },
-  { method: "POST", path: /^\/(plan-proposals|team-chat-proposals|character-proposals)\/[^/]+\/decision\/?$/ },
-  { method: "PATCH", path: /^\/analysis-items\/[^/]+\/?$/ },
-  { method: "PUT", path: /^\/team-instances\/[^/]+\/plan\/?$/ },
+  { method: "POST", path: /^\/pending-actions\/[^/]+\/(approve|reject)\/?$/i },
+  { method: "POST", path: /^\/(plan-proposals|team-chat-proposals|character-proposals)\/[^/]+\/decision\/?$/i },
+  { method: "PATCH", path: /^\/analysis-items\/[^/]+\/?$/i },
+  { method: "POST", path: /^\/team-instances\/[^/]+\/plan\/manual-actions\/[^/]+\/done\/?$/i },
+  { method: "PUT", path: /^\/team-instances\/[^/]+\/plan\/?$/i },
 ];
 
 /**

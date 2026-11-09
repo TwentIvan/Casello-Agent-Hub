@@ -376,6 +376,13 @@ describe("ambito agent", () => {
     ["POST", "/character-proposals/1/decision"],
     ["PATCH", "/analysis-items/1"],
     ["PUT", "/team-instances/1/plan"],
+    ["POST", "/team-instances/1/plan/manual-actions/m1/done"],
+    ["POST", "/Pending-Actions/1/Approve"],
+    ["POST", "/pending-actions/1/APPROVE"],
+    ["POST", "/Character-Proposals/1/Decision"],
+    ["PATCH", "/Analysis-Items/1"],
+    ["PUT", "/Team-Instances/1/PLAN"],
+    ["POST", "/Team-Instances/1/Plan/Manual-Actions/m1/Done"],
   ];
 
   it("legge e scrive: GET /apps 200, HEAD non 403, POST /apps 201", async () => {

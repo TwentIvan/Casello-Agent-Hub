@@ -53,7 +53,10 @@ di Botcave, legge e propone modifiche su Botcave partendo da richieste in lingua
     - `POST /pending-actions/:number/approve`, `POST /pending-actions/:number/reject` (coda delle conferme);
     - `POST /plan-proposals/:id/decision`, `POST /team-chat-proposals/:id/decision`, `POST /character-proposals/:id/decision` (schede);
     - `PATCH /analysis-items/:id` (revisione dell'architetto: «nulla si attiva senza approvazione nella console»);
-    - `PUT /team-instances/:id/plan` (la correzione dell'utente scrive un PLAN già approvato).
+    - `PUT /team-instances/:id/plan` (la correzione dell'utente scrive un PLAN già approvato);
+    - `POST /team-instances/:id/plan/manual-actions/:actionId/done` (segnare «Fatto» un'azione manuale è una dichiarazione dell'utente).
+
+    Il confronto dei percorsi non distingue le maiuscole (i router di Express non le distinguono).
 
     Su queste → 403 «il token non ha l'ambito per questa operazione» (`TOKEN_MESSAGES.scope`).
 - Le route `sessionOnly` restano 403 come per ogni token. Su `/mcp` `agent` non vale (401, manca `mcp`): gli strumenti `approva` e

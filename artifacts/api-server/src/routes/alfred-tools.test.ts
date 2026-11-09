@@ -1,4 +1,5 @@
 import http from "node:http";
+import { alfredInstructions } from "../lib/alfred/instructions";
 import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
@@ -512,5 +513,14 @@ describe("proposte multiple", () => {
     expect(await stepStates(p)).toEqual({ p1: "done", p2: "done", p3: "excluded" });
     expect(mcpApp.calls).toHaveLength(2);
     expect((await statusOf(p)).status).toBe("done");
+  });
+});
+
+describe("istruzioni di Alfred a voce", () => {
+  it("istruzioni_responsabili: spiega quando chiamare i Responsabili", () => {
+    const t = alfredInstructions("Ivan");
+    expect(t).toContain("chiedi_al_responsabile");
+    expect(t).toContain("elenca_app");
+    expect(t).toContain("non ricorda le richieste precedenti");
   });
 });

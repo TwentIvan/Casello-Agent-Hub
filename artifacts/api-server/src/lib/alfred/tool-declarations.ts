@@ -1,5 +1,5 @@
 /**
- * Dichiarazioni Gemini degli otto strumenti del centralino e dei quattro di memoria di Alfred (spec §4). Tipi dello schema di Gemini
+ * Dichiarazioni Gemini degli strumenti di Alfred a voce (centralino, Responsabili di prodotto, memoria) (spec §4). Tipi dello schema di Gemini
  * (`OBJECT`, `INTEGER`, `STRING`); finiscono nel token temporaneo, il browser non può cambiarle.
  */
 export const ALFRED_TOOL_DECLARATIONS: Record<string, unknown>[] = [

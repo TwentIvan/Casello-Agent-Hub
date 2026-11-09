@@ -1,5 +1,5 @@
 // Argomento `alfred_thread`: il filo unico di Alfred scritto. Strumenti del centralino (come Alfred vocale, senza il
-// doppio passo del codice) più `leggi_run` e `proponi_decisione`, che crea una scheda `decision` da accettare in console.
+// doppio passo del codice) più `leggi_run`, `elenca_app` e `chiedi_al_responsabile` (Responsabili di prodotto) e `proponi_decisione`, che crea una scheda `decision` da accettare in console.
 // Contesto e risultati senza segreti né indirizzi delle app.
 
 import { createHash } from "node:crypto";

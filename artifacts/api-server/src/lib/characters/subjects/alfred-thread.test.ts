@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { characterInstructions } from "../instructions";
 import { eq } from "drizzle-orm";
 import {
   db,
@@ -301,5 +302,13 @@ describe("proposte multiple nella chat", () => {
     const [plan] = await db.insert(pendingActionsTable).values({ userId, number: 50, kind: "plan", argsEnc: "x", argsPublic: {}, recipient: "r", summary: "Piano" }).returning();
     expect(await call(ctx2, "proponi_decisione", { numero: plan!.number, decisione: "approva", escludi: [1] })).toEqual({ ok: false, error: "passi da escludere non validi" });
     expect(await db.select().from(characterProposalsTable).where(eq(characterProposalsTable.messageId, ctx2.messageId))).toHaveLength(0);
+  });
+});
+
+describe("istruzioni di Alfred scritto", () => {
+  it("istruzioni_responsabili: spiega quando chiamare i Responsabili", () => {
+    const t = characterInstructions("alfred");
+    expect(t).toContain("chiedi_al_responsabile");
+    expect(t).toContain("una chiamata per App");
   });
 });

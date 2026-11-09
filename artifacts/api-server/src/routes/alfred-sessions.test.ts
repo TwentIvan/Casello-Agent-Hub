@@ -119,7 +119,7 @@ describe("buildLiveConfig", () => {
     const none = buildLiveConfig({ voice: "Kore", userName: null }) as { systemInstruction: { parts: { text: string }[] } };
     expect(none.systemInstruction.parts[0]!.text).not.toContain("null");
     expect(none.systemInstruction.parts[0]!.text).not.toContain("undefined");
-    expect(ALFRED_TOOL_DECLARATIONS).toHaveLength(12);
+    expect(ALFRED_TOOL_DECLARATIONS).toHaveLength(15);
     expect(none.systemInstruction.parts[0]!.text).toContain("leggi_proposta");
   });
 });
@@ -212,6 +212,9 @@ describe("POST /alfred/sessions", () => {
       "coda_da_confermare",
       "leggi_proposta",
       "scrivi_al_capo",
+      "elenca_app",
+      "chiedi_al_responsabile",
+      "leggi_run",
       "prepara_decisione",
       "conferma_decisione",
       "ricorda",

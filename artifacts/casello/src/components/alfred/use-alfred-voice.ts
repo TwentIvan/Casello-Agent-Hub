@@ -165,7 +165,11 @@ export function useAlfredVoice() {
       lastUserSpeechAt: s.lastUserSpeechAt,
       now: Date.now(),
     });
-    if (text) ws.send(JSON.stringify({ realtimeInput: { text } }));
+    if (text) {
+      ws.send(JSON.stringify({ realtimeInput: { text } }));
+      // Il modello sta per rispondere: finché non finisce il turno non si consegna altro
+      s.modelTurn = true;
+    }
   }, []);
 
   const stopPlayback = useCallback(() => {
@@ -317,7 +321,7 @@ export function useAlfredVoice() {
       s.queue.add(res.events);
       deliverRef.current();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 404 && s.active && s.sessionId === id && s.gen >= gen) sessionClosedRef.current();
+      if (e instanceof ApiError && e.status === 404 && s.active && s.sessionId === id && s.gen === gen) sessionClosedRef.current();
     } finally {
       s.pollInFlight = false;
     }
@@ -330,7 +334,10 @@ export function useAlfredVoice() {
     async (gen: number, ws: WebSocket, calls: { id: string; name: string; args?: Record<string, unknown> }[]) => {
       const s = r.current;
       // Durante gli strumenti le novità non si consegnano; a fine strumenti si riprova
+      const sid = s.sessionId;
       s.toolRunning++;
+      // Il modello sta lavorando al turno anche se l'audio non è ancora arrivato
+      s.modelTurn = true;
       try {
         const responses: { id: string; name: string; response: unknown }[] = [];
         for (const fc of calls) {
@@ -357,7 +364,11 @@ export function useAlfredVoice() {
         }
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ toolResponse: { functionResponses: responses } }));
       } finally {
-        s.toolRunning = Math.max(0, s.toolRunning - 1);
+        // Una sessione nuova (stop e avvio durante lo strumento) ha il suo contatore
+        if (s.sessionId === sid) {
+          s.toolRunning = Math.max(0, s.toolRunning - 1);
+          deliverRef.current();
+        }
       }
     },
     [sessionClosed],
@@ -489,6 +500,8 @@ export function useAlfredVoice() {
         }
       }
       stopPlayback();
+      // Il turno del vecchio socket non si chiuderà più
+      s.modelTurn = false;
       // Attesa crescente tra un tentativo e l'altro: 0, 1 s, 2 s, 4 s
       if (attempt > 0) await sleep(1000 * 2 ** (attempt - 1));
       if (!s.active || s.gen !== gen) return;

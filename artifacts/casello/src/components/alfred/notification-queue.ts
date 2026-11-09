@@ -18,17 +18,20 @@ export function notificationKey(e: AlfredNotification): string {
 
 const oneLine = (text: string): string => text.replace(/\s+/g, " ").trim();
 
+const KIND_LABEL: Record<string, string> = { action: "azione", proposal: "proposta", plan: "piano", plan_change: "modifica del piano" };
+const kindLabel = (tipo: string): string => KIND_LABEL[tipo] ?? tipo;
+
 const RUN_STATUS: Record<string, string> = { succeeded: "finita", failed: "non riuscita", cancelled: "annullata" };
 
 function formatEvent(e: AlfredNotification): string {
   if (e.kind === "lead_run") {
     const outcome = oneLine((e.status === "succeeded" ? e.output : e.error ?? e.output) ?? "");
     const items = e.items ?? [];
-    const created = items.length > 0 ? ` Voci create: ${items.map((i) => `n. ${i.numero} (${i.tipo}) ${oneLine(i.sintesi)}`).join("; ")}` : "";
-    return `- Responsabile di ${oneLine(e.app ?? "app")}, run ${e.run}, ${RUN_STATUS[e.status ?? ""] ?? oneLine(e.status ?? "")}: ${outcome}.${created}`;
+    const created = items.length > 0 ? ` Voci create: ${items.map((i) => `n. ${i.numero} (${kindLabel(i.tipo)}) ${oneLine(i.sintesi)}`).join("; ")}` : "";
+    return `- Responsabile di ${oneLine(e.app ?? "app")}, run ${e.run}, ${RUN_STATUS[e.status ?? ""] ?? oneLine(e.status ?? "")}${outcome ? `: ${outcome}` : ""}.${created}`;
   }
   const team = e.squadra ? `, squadra ${oneLine(e.squadra)}` : "";
-  return `- Nuova voce n. ${e.numero} (${e.tipo})${team}: ${oneLine(e.sintesi ?? "")}.`;
+  return `- Nuova voce n. ${e.numero} (${kindLabel(e.tipo ?? "")})${team}: ${oneLine(e.sintesi ?? "")}.`;
 }
 
 export function formatNotifications(events: AlfredNotification[]): string {

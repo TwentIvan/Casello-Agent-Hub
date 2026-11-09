@@ -68,13 +68,17 @@ describe("formatNotifications", () => {
       run({ run: 13, status: "failed", output: null, error: "Errore\nbrutto", items: [] }),
       item({ squadra: "Squadra A" }),
       item({ numero: 9 }),
+      run({ run: 14, output: null, error: null, items: [] }),
+      item({ numero: 10, tipo: "plan_change" }),
     ]);
     const lines = text.split("\n");
     expect(lines[0]).toBe("[novità]");
-    expect(lines[1]).toBe("- Responsabile di The Hub Up, run 12, finita: Riga uno riga due. Voci create: n. 7 (proposal) Crea partner");
+    expect(lines[1]).toBe("- Responsabile di The Hub Up, run 12, finita: Riga uno riga due. Voci create: n. 7 (proposta) Crea partner");
     expect(lines[2]).toBe("- Responsabile di The Hub Up, run 13, non riuscita: Errore brutto.");
-    expect(lines[3]).toBe("- Nuova voce n. 8 (action), squadra Squadra A: Invia email.");
-    expect(lines[4]).toBe("- Nuova voce n. 9 (action): Invia email.");
-    expect(lines).toHaveLength(5);
+    expect(lines[3]).toBe("- Nuova voce n. 8 (azione), squadra Squadra A: Invia email.");
+    expect(lines[4]).toBe("- Nuova voce n. 9 (azione): Invia email.");
+    expect(lines[5]).toBe("- Responsabile di The Hub Up, run 14, finita.");
+    expect(lines[6]).toBe("- Nuova voce n. 10 (modifica del piano): Invia email.");
+    expect(lines).toHaveLength(7);
   });
 });

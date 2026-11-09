@@ -51,6 +51,20 @@ describe("NotificationQueue", () => {
     expect(q.takeMessage({ ...quiet, lastUserSpeechAt: 97_000 })).not.toBeNull();
   });
 
+  it("markSeen prima o dopo add: la run non si consegna", () => {
+    const before = new NotificationQueue();
+    before.markSeen("lead_run:12");
+    before.add([run()]);
+    expect(before.size()).toBe(0);
+    const after = new NotificationQueue();
+    after.add([run(), item()]);
+    after.markSeen("lead_run:12");
+    expect(after.size()).toBe(1);
+    expect(after.takeMessage(quiet)).not.toContain("run 12");
+    after.add([run()]);
+    expect(after.size()).toBe(0);
+  });
+
   it("con la coda vuota dà null e dopo la consegna si svuota", () => {
     const q = new NotificationQueue();
     expect(q.takeMessage(quiet)).toBeNull();
@@ -73,12 +87,20 @@ describe("formatNotifications", () => {
     ]);
     const lines = text.split("\n");
     expect(lines[0]).toBe("[novità]");
-    expect(lines[1]).toBe("- Responsabile di The Hub Up, run 12, finita: Riga uno riga due. Voci create: n. 7 (proposta) Crea partner");
-    expect(lines[2]).toBe("- Responsabile di The Hub Up, run 13, non riuscita: Errore brutto.");
-    expect(lines[3]).toBe("- Nuova voce n. 8 (azione), squadra Squadra A: Invia email.");
-    expect(lines[4]).toBe("- Nuova voce n. 9 (azione): Invia email.");
+    expect(lines[1]).toBe("- Responsabile di The Hub Up, run 12, finita: «Riga uno riga due». Voci create: n. 7 (proposta) «Crea partner»");
+    expect(lines[2]).toBe("- Responsabile di The Hub Up, run 13, non riuscita: «Errore brutto».");
+    expect(lines[3]).toBe("- Nuova voce n. 8 (azione), squadra «Squadra A»: «Invia email».");
+    expect(lines[4]).toBe("- Nuova voce n. 9 (azione): «Invia email».");
     expect(lines[5]).toBe("- Responsabile di The Hub Up, run 14, finita.");
-    expect(lines[6]).toBe("- Nuova voce n. 10 (modifica del piano): Invia email.");
+    expect(lines[6]).toBe("- Nuova voce n. 10 (modifica del piano): «Invia email».");
     expect(lines).toHaveLength(7);
+  });
+
+  it("al più 10 righe di eventi, poi una riga con il resto", () => {
+    const events = Array.from({ length: 13 }, (_, i) => item({ numero: i + 1 }));
+    const lines = formatNotifications(events).split("\n");
+    expect(lines).toHaveLength(12);
+    expect(lines[10]).toContain("n. 10");
+    expect(lines[11]).toBe("- e altre 3 novità.");
   });
 });

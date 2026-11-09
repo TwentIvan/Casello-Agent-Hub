@@ -38,6 +38,16 @@ const AUDIO_ERROR =
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+/** Una run già conclusa e riferita da uno strumento è già stata detta: il polling non la ripresenta. */
+function markReportedRun(queue: NotificationQueue, response: unknown): void {
+  const res = (response as { ok?: boolean; result?: { id?: unknown; status?: unknown } } | null) ?? null;
+  const run = res?.ok ? res.result : null;
+  if (run && typeof run.id === "number" && ["succeeded", "failed", "cancelled"].includes(String(run.status))) {
+    queue.markSeen(`lead_run:${run.id}`);
+  }
+}
+
+const POLL_CLOSED = "La sessione di Alfred si è chiusa: riaprila per continuare.";
 const CLOSED = "Sessione chiusa. Premi «Parla con Alfred» per ricominciare.";
 const CONFIRM_NOT_HEARD = "conferma non ricevuta: chiedi all'utente";
 
@@ -321,20 +331,19 @@ export function useAlfredVoice() {
       s.queue.add(res.events);
       deliverRef.current();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 404 && s.active && s.sessionId === id && s.gen === gen) sessionClosedRef.current();
+      if (e instanceof ApiError && e.status === 404 && s.active && s.sessionId === id && s.gen === gen) pollClosedRef.current();
     } finally {
       s.pollInFlight = false;
     }
   }, []);
-  const sessionClosedRef = useRef(sessionClosed);
-  sessionClosedRef.current = sessionClosed;
+  const pollClosedRef = useRef(() => fail("closed", POLL_CLOSED));
+  pollClosedRef.current = () => fail("closed", POLL_CLOSED);
 
   /** Chiamate degli strumenti: fuori dal ciclo dei frame, così l'audio non si riordina. */
   const runToolCalls = useCallback(
     async (gen: number, ws: WebSocket, calls: { id: string; name: string; args?: Record<string, unknown> }[]) => {
       const s = r.current;
       // Durante gli strumenti le novità non si consegnano; a fine strumenti si riprova
-      const sid = s.sessionId;
       s.toolRunning++;
       // Il modello sta lavorando al turno anche se l'audio non è ancora arrivato
       s.modelTurn = true;
@@ -349,6 +358,7 @@ export function useAlfredVoice() {
           try {
             const result = await api.current.runTool.mutateAsync({ id: s.sessionId, name: fc.name, data: { args: fc.args ?? {} } });
             responses.push({ id: fc.id, name: fc.name, response: result });
+            if (fc.name === "chiedi_al_responsabile" || fc.name === "leggi_run") markReportedRun(s.queue, result);
             if (fc.name === "prepara_decisione") {
               s.heard = false;
               s.awaitingHeard = true;
@@ -364,8 +374,8 @@ export function useAlfredVoice() {
         }
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ toolResponse: { functionResponses: responses } }));
       } finally {
-        // Una sessione nuova (stop e avvio durante lo strumento) ha il suo contatore
-        if (s.sessionId === sid) {
+        // Ogni connessione azzera il contatore: si decrementa solo se è ancora la stessa generazione
+        if (s.gen === gen) {
           s.toolRunning = Math.max(0, s.toolRunning - 1);
           deliverRef.current();
         }
@@ -387,7 +397,11 @@ export function useAlfredVoice() {
         s.reconnects = 0;
         setStatus("listening");
         // Solo alla prima apertura: dopo una ripresa la conversazione continua da sola
-        if (!s.resumed) ws.send(JSON.stringify({ realtimeInput: { text: "[apertura]" } }));
+        if (!s.resumed) {
+          ws.send(JSON.stringify({ realtimeInput: { text: "[apertura]" } }));
+          // Il saluto è un turno del modello: niente «[novità]» sopra
+          s.modelTurn = true;
+        }
         // Novità: prima chiamata senza cursore (lo fissa), poi un giro ogni 5 s finché la sessione è attiva
         if (!s.pollTimer) {
           s.pollTimer = setInterval(() => void pollRef.current(), NOTIFICATIONS_POLL_MS);
@@ -439,6 +453,7 @@ export function useAlfredVoice() {
       const s = r.current;
       const gen = ++s.gen;
       s.ready = false;
+      s.toolRunning = 0; // gli strumenti della connessione precedente non contano più
       s.resumed = resumed;
       const ws = new WebSocket(`${GEMINI_WS}?access_token=${encodeURIComponent(token)}`);
       // Binario come ArrayBuffer e decodifica sincrona: i frame si elaborano nell'ordine di arrivo

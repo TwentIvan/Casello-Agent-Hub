@@ -5,7 +5,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthGate } from "@/components/auth-gate";
 import { AppShell } from "@/components/layout/app-shell";
-import { HandoffProvider } from "@/components/characters/handoff-context";
+import { AlfredVoiceProvider } from "@/components/panel/voice-context";
+import { PanelProvider, type PanelEnv } from "@/components/panel/panel-context";
+import { ConsolePanelSheet } from "@/components/panel/console-panel-sheet";
 import { isClientError } from "@/lib/api-errors";
 import { isUnauthorized } from "@/lib/auth";
 import Dashboard from "@/pages/dashboard";
@@ -49,35 +51,42 @@ const queryClient: QueryClient = new QueryClient({
   },
 });
 
+// Ambiente stabile del pannello nella console: un oggetto nuovo a ogni render rinnoverebbe il contesto
+const CONSOLE_PANEL_ENV: PanelEnv = { surface: "console" };
+
 function Router() {
-  // HandoffProvider: un solo pannello dei personaggi per tutta la console (pulsanti «Chiedi a…» e passaggi di consegne)
+  // Dentro AuthGate: uscendo dalla sessione la voce di Alfred si smonta. Un solo pannello per tutta la console
+  // (pulsanti «Chiedi a…» e passaggi di consegne tra Alfred e Lucius); PanelProvider legge l'indirizzo di wouter.
   return (
-    <HandoffProvider>
-      <AppShell>
-        <Switch>
-          <Route path="/" component={Dashboard} />
-          <Route path="/apps" component={AppsPage} />
-          <Route path="/apps/:id" component={AppDetailPage} />
-          <Route path="/apps/:id/plan" component={AppPlanPage} />
-          <Route path="/agents" component={AgentsPage} />
-          <Route path="/agents/:id" component={AgentDetailPage} />
-          <Route path="/runs" component={RunsPage} />
-          <Route path="/runs/:id" component={RunDetailPage} />
-          <Route path="/pending-actions" component={PendingActionsPage} />
-          <Route path="/models" component={ModelsPage} />
-          <Route path="/skills" component={SkillsPage} />
-          <Route path="/skills/:code" component={SkillDetailPage} />
-          <Route path="/team-templates" component={TeamTemplatesPage} />
-          <Route path="/team-templates/:id" component={TeamTemplateDetailPage} />
-          <Route path="/teams" component={TeamsPage} />
-          <Route path="/teams/:id" component={TeamDetailPage} />
-          <Route path="/analyses/:id" component={AnalysisDetailPage} />
-          <Route path="/account" component={AccountPage} />
-          <Route path="/alfred" component={AlfredPage} />
-          <Route component={NotFound} />
-        </Switch>
-      </AppShell>
-    </HandoffProvider>
+    <AlfredVoiceProvider>
+      <PanelProvider env={CONSOLE_PANEL_ENV}>
+        <AppShell>
+          <Switch>
+            <Route path="/" component={Dashboard} />
+            <Route path="/apps" component={AppsPage} />
+            <Route path="/apps/:id" component={AppDetailPage} />
+            <Route path="/apps/:id/plan" component={AppPlanPage} />
+            <Route path="/agents" component={AgentsPage} />
+            <Route path="/agents/:id" component={AgentDetailPage} />
+            <Route path="/runs" component={RunsPage} />
+            <Route path="/runs/:id" component={RunDetailPage} />
+            <Route path="/pending-actions" component={PendingActionsPage} />
+            <Route path="/models" component={ModelsPage} />
+            <Route path="/skills" component={SkillsPage} />
+            <Route path="/skills/:code" component={SkillDetailPage} />
+            <Route path="/team-templates" component={TeamTemplatesPage} />
+            <Route path="/team-templates/:id" component={TeamTemplateDetailPage} />
+            <Route path="/teams" component={TeamsPage} />
+            <Route path="/teams/:id" component={TeamDetailPage} />
+            <Route path="/analyses/:id" component={AnalysisDetailPage} />
+            <Route path="/account" component={AccountPage} />
+            <Route path="/alfred" component={AlfredPage} />
+            <Route component={NotFound} />
+          </Switch>
+        </AppShell>
+        <ConsolePanelSheet />
+      </PanelProvider>
+    </AlfredVoiceProvider>
   );
 }
 

@@ -5,7 +5,8 @@ import { Square } from "lucide-react";
 import { AlfredTranscript } from "@/components/alfred/alfred-transcript";
 import { Led, type LedState } from "@/components/brand/led";
 import { AlfredMark } from "@/components/brand/marks";
-import { type AlfredStatus, useAlfredVoice } from "@/components/alfred/use-alfred-voice";
+import { type AlfredStatus } from "@/components/alfred/use-alfred-voice";
+import { useSharedAlfredVoice } from "@/components/panel/voice-context";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,7 +38,7 @@ function useAlfredInstallable() {
 
 export default function AlfredPage() {
   useAlfredInstallable();
-  const { status, error, lines, start, stop } = useAlfredVoice();
+  const { status, error, lines, start, stop } = useSharedAlfredVoice();
   const settings = useGetAlfredSettings({ query: { queryKey: getGetAlfredSettingsQueryKey() } });
   const noModel = settings.data !== undefined && settings.data.aiModelId === null;
   const running = status !== "stopped";

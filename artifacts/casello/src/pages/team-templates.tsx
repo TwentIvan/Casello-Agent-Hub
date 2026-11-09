@@ -1,8 +1,9 @@
 import { useState } from "react";
+import { usePanelSubject } from "@/components/panel/panel-context";
 import { useLocation } from "wouter";
 import { Crown, Plus } from "lucide-react";
 import { getListTeamTemplatesQueryKey, useListTeamTemplates } from "@workspace/api-client-react";
-import { CharacterButton } from "@/components/characters/character-button";
+import { LuciusButton } from "@/components/characters/lucius-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,6 +13,7 @@ import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
 
 export default function TeamTemplatesPage() {
+  usePanelSubject({ lucius: { kind: "character", subjectType: "area_team_templates", subjectId: null, title: "Area Modelli di squadra" } });
   const [, navigate] = useLocation();
   const [archived, setArchived] = useState(false);
   const params = { archived: archived ? ("true" as const) : ("false" as const) };
@@ -28,7 +30,7 @@ export default function TeamTemplatesPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <CharacterButton target={{ kind: "character", subjectType: "area_team_templates", subjectId: null, title: "Area Modelli di squadra" }} />
+          <LuciusButton />
           <Button onClick={() => navigate("/team-templates/new")}>
             <Plus />
             Nuovo modello

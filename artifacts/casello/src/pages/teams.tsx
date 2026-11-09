@@ -9,7 +9,6 @@ import {
   useListApps,
   useListTeamInstances,
 } from "@workspace/api-client-react";
-import { CharacterButton } from "@/components/characters/character-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -43,7 +42,6 @@ export default function TeamsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <CharacterButton target={{ kind: "alfred", page: { page: "teams" } }} />
           <Button onClick={() => setCreating(true)}>
             <Plus />
             Nuova squadra

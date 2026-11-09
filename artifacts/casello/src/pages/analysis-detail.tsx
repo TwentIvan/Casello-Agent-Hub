@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { usePanelSubject } from "@/components/panel/panel-context";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, ArrowLeft } from "lucide-react";
@@ -14,7 +15,7 @@ import {
   useGetApp,
   useReleaseAnalysis,
 } from "@workspace/api-client-react";
-import { CharacterButton } from "@/components/characters/character-button";
+import { LuciusButton } from "@/components/characters/lucius-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LuciusMark } from "@/components/brand/marks";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -345,6 +346,7 @@ export default function AnalysisDetailPage() {
     },
   });
   const appId = analysis.data?.appId ?? 0;
+  usePanelSubject({ lucius: analysis.data ? { kind: "plan", appId } : null });
   const app = useGetApp(appId, { query: { queryKey: getGetAppQueryKey(appId), enabled: appId > 0 } });
 
   // A fine analisi lo storico nella scheda dell'app va aggiornato.
@@ -418,7 +420,7 @@ export default function AnalysisDetailPage() {
           <Led state={ANALYSIS_STATUS_LED[a.status]} label={ANALYSIS_STATUS_LABELS[a.status]} />
           {active && <Spinner className="size-4" />}
           <div className="ml-auto">
-            <CharacterButton target={{ kind: "plan", appId: a.appId }} />
+            <LuciusButton />
           </div>
         </div>
         <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">

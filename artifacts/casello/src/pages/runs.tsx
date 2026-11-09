@@ -8,7 +8,6 @@ import {
   useListAgents,
   useListRuns,
 } from "@workspace/api-client-react";
-import { CharacterButton } from "@/components/characters/character-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -80,7 +79,6 @@ export default function RunsPage() {
           <h2 className="text-h2">Run</h2>
           <p className="text-sm text-muted-foreground">Le esecuzioni degli agenti, dalla più recente.</p>
         </div>
-        <CharacterButton target={{ kind: "alfred", page: { page: "runs" } }} />
       </div>
 
       <div className="flex flex-wrap gap-3">

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, Sparkles, LayoutTemplate, Users, Mic, type LucideIcon } from "lucide-react";
+import { Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, Sparkles, LayoutTemplate, Users, type LucideIcon } from "lucide-react";
 import {
   getGetDashboardStatsQueryKey,
   getListUnreadTeamEventsQueryKey,
@@ -23,6 +23,10 @@ import {
 } from "@/components/ui/sidebar";
 import { BudgetGuard } from "@/components/budget/budget";
 import { CaveVault } from "@/components/brand/cave";
+import { LedDot } from "@/components/brand/led";
+import { AlfredMark } from "@/components/brand/marks";
+import { usePanel } from "@/components/panel/panel-context";
+import { useSharedAlfredVoice } from "@/components/panel/voice-context";
 import { Button } from "@/components/ui/button";
 import { UserMenu } from "./user-menu";
 
@@ -74,12 +78,12 @@ function NavMenu({ location, items }: { location: string; items: NavItem[] }) {
             </Link>
           </SidebarMenuButton>
           {item.href === "/pending-actions" && pending > 0 && (
-            <SidebarMenuBadge className="rounded-none bg-brand font-mono text-on-brand" title={`${pending} voci da confermare`}>
+            <SidebarMenuBadge className="rounded-none bg-brand font-mono text-on-brand" title={pendingLabel(pending)}>
               {pending}
             </SidebarMenuBadge>
           )}
           {item.href === "/teams" && unread > 0 && (
-            <SidebarMenuBadge className="font-mono text-accent-text" title={`${unread} notizie non lette nel bollettino`}>
+            <SidebarMenuBadge className="font-mono text-accent-text" title={`${unread} ${unread === 1 ? "notizia non letta" : "notizie non lette"} nel bollettino`}>
               {unread}
             </SidebarMenuBadge>
           )}
@@ -89,12 +93,22 @@ function NavMenu({ location, items }: { location: string; items: NavItem[] }) {
   );
 }
 
+function pendingLabel(n: number): string {
+  return `${n} ${n === 1 ? "voce" : "voci"} da confermare`;
+}
+
 /*
  * Barra in alto: la volta della caverna (stalattiti sul buio e LED ambra), sotto il logo chiaro su scuro, che apre il
- * menu dell'account, e a destra il microfono per parlare con Alfred. È buia in entrambi i temi, come la copertina del
+ * menu dell'account, e a destra il pulsante che apre Alfred nel pannello. È buia in entrambi i temi, come la copertina del
  * manuale.
  */
 function CaveHeader() {
+  const { openPanel } = usePanel();
+  const { status } = useSharedAlfredVoice();
+  // Stesso contatore e stessa cache del badge del menu
+  const stats = useGetDashboardStats({ query: { queryKey: getGetDashboardStatsQueryKey(), refetchInterval: 30_000 } });
+  const pending = stats.data?.pendingActions ?? 0;
+  const label = `Apri Alfred${pending > 0 ? `, ${pendingLabel(pending)}` : ""}${status !== "stopped" ? ", voce attiva" : ""}`;
   return (
     <header className="relative flex h-28 shrink-0 flex-col overflow-hidden bg-notte">
       <div aria-hidden="true" className="h-16 shrink-0">
@@ -104,16 +118,20 @@ function CaveHeader() {
         <SidebarTrigger className="-ml-1 text-nebbia hover:bg-ardesia hover:text-nebbia" />
         <UserMenu />
         <Button
-          asChild
           variant="ghost"
           size="icon"
-          className="ml-auto text-nebbia hover:bg-ardesia hover:text-nebbia"
-          aria-label="Parla con Alfred"
-          title="Parla con Alfred"
+          className="relative ml-auto text-nebbia hover:bg-ardesia hover:text-nebbia"
+          aria-label={label}
+          title={label}
+          onClick={() => openPanel("alfred")}
         >
-          <Link href="/alfred">
-            <Mic />
-          </Link>
+          <AlfredMark size={20} tone="light" />
+          {pending > 0 && (
+            <span className="absolute -right-1 -top-1 min-w-4 rounded-none bg-brand px-1 text-center font-mono text-[10px] leading-4 text-on-brand">
+              {pending}
+            </span>
+          )}
+          {status !== "stopped" && <LedDot state="work" className="absolute -bottom-0.5 -right-0.5" />}
         </Button>
       </div>
       {/* Il pavimento di roccia */}

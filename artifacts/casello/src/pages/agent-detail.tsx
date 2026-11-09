@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
+import { usePanelSubject } from "@/components/panel/panel-context";
 import { Link, useLocation, useParams } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -19,7 +20,7 @@ import {
   useGetApp,
   useUpdateAgent,
 } from "@workspace/api-client-react";
-import { CharacterButton } from "@/components/characters/character-button";
+import { LuciusButton } from "@/components/characters/lucius-button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -313,6 +314,12 @@ export default function AgentDetailPage() {
     query: { queryKey: getGetAgentQueryKey(agentId), enabled: Number.isInteger(agentId) },
   });
   const appId = agent.data?.appId ?? 0;
+  usePanelSubject({
+    lucius: agent.data
+      ? { kind: "character", subjectType: "agent", subjectId: String(agent.data.id), title: `Agente · ${agent.data.name}` }
+      : null,
+    hasUnsavedChanges: () => dirtyRef.current || toolsDirtyRef.current,
+  });
   const app = useGetApp(appId, { query: { queryKey: getGetAppQueryKey(appId), enabled: appId > 0 } });
 
   const deleteAgent = useDeleteAgent({
@@ -383,10 +390,7 @@ export default function AgentDetailPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <CharacterButton
-              target={{ kind: "character", subjectType: "agent", subjectId: String(agent.data.id), title: `Agente · ${agent.data.name}` }}
-              hasUnsavedChanges={() => dirtyRef.current || toolsDirtyRef.current}
-            />
+            <LuciusButton />
             {agent.data.role !== "general" && (
               <Button variant="outline" className="text-destructive" onClick={() => setConfirmDelete(true)}>
                 <Trash2 />

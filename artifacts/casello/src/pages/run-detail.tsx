@@ -13,7 +13,6 @@ import {
   useGetAgent,
   useGetRun,
 } from "@workspace/api-client-react";
-import { CharacterButton } from "@/components/characters/character-button";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -131,7 +130,6 @@ export default function RunDetailPage() {
           <h2 className="text-h2">Run #{r.id}</h2>
           <RunStatusBadge status={r.status} />
           <div className="ml-auto flex flex-wrap gap-2">
-            <CharacterButton target={{ kind: "alfred", page: { page: "run", id: String(r.id) } }} />
             {active && (
               <Button variant="outline" size="sm" onClick={() => setConfirmCancel(true)}>
                 <Ban className="size-4" />

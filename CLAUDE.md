@@ -31,11 +31,12 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Lucius sulla squadra e memorie: nella scheda squadra Lucius discute identità e istruzioni dei ruoli e le propone come schede da
   accettare; Alfred e Lucius hanno una memoria (appunti e storico dei riassunti), visibile e modificabile in Account (vedi "Lucius
   sulla squadra e memorie").
-- Alfred e Lucius nelle aree: un pulsante per area apre il personaggio giusto in un pannello laterale (Alfred scritto con un filo unico che
-  sa da quale pagina scrivi, Lucius per oggetto: agente, skill, modello di squadra, aree, piano, squadra); schede da accettare, passaggio di
-  consegne tra i due, modello e tetto mensile per personaggio in Account → «Personaggi» (vedi "Alfred e Lucius nelle aree").
-- Botcave incorporabile: una riga `<script>` nell'app ospite (prima prova: The Hub Up) mostra pulsante e pannello laterale con Alfred, Da confermare,
-  Bollettino e Lucius, in un iframe `/embed` con accesso OAuth «Collega con Botcave» (vedi "Botcave incorporabile (app ospiti)").
+- Alfred e Lucius nelle aree: un solo pannello laterale a quattro schede (Alfred con la voce, Da confermare, Bollettino, Lucius), lo stesso in console ed embed, si apre
+  dal pulsante di Alfred nella caverna o da «Chiedi a Lucius» (Alfred scritto con un filo unico che sa da quale pagina scrivi, Lucius sull'argomento che la pagina dichiara:
+  agente, skill, modello di squadra, aree, piano, squadra); schede da accettare, passaggio di consegne tra le due schede, modello e tetto mensile per personaggio in
+  Account → «Personaggi» (vedi "Alfred e Lucius nelle aree"). Spec: `docs/superpowers/specs/2026-11-09-botcave-pannello-unico-design.md`.
+- Botcave incorporabile: una riga `<script>` nell'app ospite (prima prova: The Hub Up) mostra pulsante e pannello laterale (lo stesso pannello unico a quattro schede della console: Alfred con la voce, Da confermare,
+  Bollettino, Lucius), in un iframe `/embed` con accesso OAuth «Collega con Botcave» (vedi "Botcave incorporabile (app ospiti)").
 - The Hub Up come App (5b): collegata con il token di servizio `thu_…` di The Hub Up (identità `service` su tutti i tool), descrizione
   funzionale, analisi 24 rivista con 50 tool e un agente per ciascuna delle sue funzioni AI interne (ancora senza modello). Inventario
   degli agenti di The Hub Up e proposta per 5c in `docs/superpowers/specs/2026-11-07-botcave-the-hub-up-5b-design.md`.
@@ -71,7 +72,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Menu in un solo elenco (Dashboard, Squadre, Da confermare, Run, App, Agenti, Skill, Modelli di squadra, Modelli AI), senza aree.
   La caverna: `components/brand/cave.tsx` (`CaveVault`): la barra in alto di ogni pagina (`CaveHeader` in `app-shell.tsx`, 112 px,
   buia in entrambi i temi) ha la volta di stalattiti con il LED, sotto il logo chiaro su scuro, che è anche il pulsante del menu
-  dell'account (`user-menu.tsx`), e a destra il microfono che apre Alfred (`/alfred`, non è una voce di menu), poi il pavimento di
+  dell'account (`user-menu.tsx`), e a destra il pulsante di Alfred (segno chiaro su scuro, contatore delle voci da confermare, LED `work` mentre la voce è accesa) che apre il pannello sulla scheda Alfred (non il microfono verso `/alfred`; `/alfred` non è una voce di menu), poi il pavimento di
   roccia; niente titolo della pagina. Fondi e bordi in grigi neutri, senza dominanti calde o fredde. Alfred (il maggiordomo: a voce su
   `/alfred` e per iscritto nel pannello laterale) e Lucius (l'ingegnere del laboratorio: analisi, proposte, chat del piano e delle aree,
   nei prompt di `architect/prompts.ts`, `plan-chat/context.ts` e, per i due personaggi nel pannello, `lib/characters/instructions.ts`)
@@ -198,10 +199,12 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `conversations.ts`, `run-turn.ts`, `instructions.ts`, `proposals.ts`, `handoff.ts`, `settings.ts`; `subjects/`: `index.ts` (registrazione
   unica), `alfred-thread.ts`, `agent.ts`, `skill.ts`, `team-template.ts`, `areas.ts`, `shared.ts`, `hash.ts`), `lib/agents.ts` (funzioni
   condivise con `routes/agents.ts`); route `src/routes/characters.ts` e `src/routes/account-characters.ts`; schema
-  `lib/db/src/schema/characters.ts`; console `artifacts/casello/src/components/characters/` (`character-chat.tsx`, `character-sheet.tsx`,
-  `character-button.tsx`, `handoff-context.tsx`, adattatori `adapters.ts`, `character-adapters.ts`, `plan-team-adapters.tsx`, schede
+  `lib/db/src/schema/characters.ts`; console `artifacts/casello/src/components/characters/` (`character-chat.tsx`, `lucius-button.tsx`, adattatori `adapters.ts`, `character-adapters.ts`, `plan-team-adapters.tsx`, schede
   `proposal-cards.tsx`, `proposal-previews.tsx`, `chat-messages.tsx`, `chat-toolbar.tsx`, `new-conversation-dialog.tsx`) e
-  `components/account/characters-section.tsx`. Spec: `docs/superpowers/specs/2026-11-06-botcave-personaggi-design.md`
+  `components/account/characters-section.tsx`. Pannello unico (spec `docs/superpowers/specs/2026-11-09-botcave-pannello-unico-design.md`): `artifacts/casello/src/components/panel/`
+  (`botcave-panel.tsx`, `console-panel-sheet.tsx`, `panel-context.tsx` con `PanelProvider`/`usePanel`/`usePanelSubject`, `panel-state.ts` riduttore puro, `page-subject.ts` con `pageFromPath` e
+  `handoffTarget`, `voice-context.tsx` con `AlfredVoiceProvider`, `panel-link.tsx`, `tabs.ts`, `tabs/`: `alfred-tab.tsx`, `pending-tab.tsx`, `bulletin-tab.tsx`, `lucius-tab.tsx`); tolti
+  `character-sheet.tsx`, `character-button.tsx`, `handoff-context.tsx`, `embed/tab-content.tsx` e `embed/tabs/`. Spec dei personaggi: `docs/superpowers/specs/2026-11-06-botcave-personaggi-design.md`
 - `artifacts/casello/src/` — frontend React + Vite + Tailwind + shadcn/ui (`components/ui/` pronti)
 - `artifacts/api-server/src/lib/mcp/` e `lib/architect/local-executor.ts` — server MCP `/mcp` e coda/lease delle analisi locali
   (`lib/mcp/auth.ts`: `requireApiToken`, accetta `cas_…` e `cao_…`)
@@ -212,7 +215,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Botcave incorporabile (vedi "Botcave incorporabile (app ospiti)"): API in `artifacts/api-server/src/lib/embed/` (`origins.ts`, `clients.ts`) e
   `src/routes/embed.ts` (`GET /api/embed/config`), con le parti in `lib/auth.ts` (`sessionOrEmbed`), `lib/oauth/` (`authorize.ts`, `tokens.ts`,
   `grants.ts`) e `routes/alfred.ts`; console `artifacts/casello/embed.html`, `src/embed/` (`main.tsx`, `embed-app.tsx`, `auth.ts`, `callback.ts`,
-  `protocol.ts`, `theme.ts`, `use-host.ts`, `use-badge.ts`, `tab-content.tsx`, `tabs/`, `loader/`: il caricatore `botcave.js`),
+  `protocol.ts`, `theme.ts`, `use-host.ts`, `use-badge.ts`, `loader/`; le schede sono in `components/panel/tabs/`: il caricatore `botcave.js`),
   `vite.loader.config.ts`, `embed-demo.html` (solo sviluppo); `docker/nginx.conf.template`, `docker/15-embed-origins.envsh`. Spec:
   `docs/superpowers/specs/2026-11-06-botcave-plugin-incorporabile-design.md`
 - Inneschi (vedi "Inneschi"): `artifacts/api-server/src/lib/triggers/` (`config.ts`, `extract.ts`, `input.ts`, `eligibility.ts`, `queue-run.ts`, `poller.ts`,
@@ -1007,7 +1010,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - **Responsabili di prodotto** (spec `docs/superpowers/specs/2026-11-09-botcave-alfred-responsabile-design.md`, logica in `lib/product-leads.ts`): tre strumenti uguali nei tre canali (voce, chat scritta e centralino `/mcp`): `elenca_app`, `chiedi_al_responsabile` (richiesta completa a un'App, una chiamata per App) e `leggi_run` (`id` facoltativo: senza, l'ultima richiesta passata a un Responsabile nelle ultime 24 ore). Su `/mcp` `chiedi_al_responsabile` vuole anche `api:write` (come `approva`/`rifiuta`); `elenca_app` e `leggi_run` bastano con `mcp`. `chiedi_al_responsabile` accoda una run del Responsabile e attende l'esito fino a 25 s, poi risponde «in corso» e si ricontrolla con `leggi_run`; limite 6/min per utente, consumato dopo la risoluzione di App e Responsabile (una richiesta con App sbagliata non lo consuma); se l'attesa o la vista falliscono dopo la creazione della run, risponde «in corso» con l'id. Il Responsabile è usabile solo se il suo modello è su uno degli account AI dell'utente. Senza `app` vale l'App di default: slug `casello` (a voce e nel centralino) o l'App ospite nella chat incorporata. Le scritture sono voci in coda, decise solo dall'utente.
 - **Spesa**: le sessioni contano nella spesa dell'utente, del modello e dell'account del loro `ai_model_id` (`lib/budget.ts`), con i
   prezzi del modello: è una stima, l'audio di Gemini ha prezzi propri (si possono inserire a mano).
-- **Console**: Account → carta «Personaggi» (per Alfred: modello vocale, voce, «Apri Alfred», più modello scritto e tetto, vedi "Alfred e Lucius nelle aree"); voce di menu «Alfred» e pagina `/alfred` (`use-alfred-voice.ts`:
+- **Console**: Account → carta «Personaggi» (per Alfred: modello vocale, voce, «Apri Alfred», più modello scritto e tetto, vedi "Alfred e Lucius nelle aree"); voce di menu «Alfred» e pagina `/alfred` (usa la voce condivisa di `AlfredVoiceProvider`, `useSharedAlfredVoice()`, la stessa della scheda Alfred del pannello, che resta accesa cambiando pagina; `use-alfred-voice.ts`:
   AudioWorklet del microfono a PCM 16 bit 16 kHz in pacchetti da 100 ms, riproduzione PCM 24 kHz in coda, stop alla `interrupted`;
   dopo `setupComplete` il testo «[apertura]»; `usageMetadata` → `usage` con i totali cumulativi al più ogni 10 s e alla chiusura;
   `goAway` o chiusura inattesa → `renew` con l'handle di `sessionResumptionUpdate` (la ripresa vale solo se l'handle è nel token; al più 4
@@ -1141,8 +1144,8 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   form (`resetField`), le altre modifiche restano.
 - **Passaggio di consegne** (`handoff.ts`, strumento `passa_a {argomento, oggetto?, domanda ≤ 2 000}`): il destinatario è sempre l'altro
   personaggio; produce una scheda `handoff` («Chiedo a Lucius» / «Chiedo ad Alfred») senza effetti sul server e senza chiamate tra modelli. Il
-  clic apre il pannello dell'altro sull'argomento con la domanda già scritta e non inviata (un solo `Sheet` globale, `HandoffProvider` in
-  `App.tsx`, aperto dai `CharacterButton`). Per Lucius valgono anche `plan` (id dell'app) e `team`; per Alfred il filo unico.
+  clic passa all'altra scheda del pannello unico (`usePanel().handoff`) con la domanda già scritta e non inviata; verso Lucius, se il bersaglio è diverso
+  dall'argomento della pagina, la scheda usa quello del passaggio con in cima «Torna a <argomento della pagina>» (o «Torna indietro») che lo toglie. Per Lucius valgono anche `plan` (id dell'app) e `team`; per Alfred il filo unico.
 - **Filo di Alfred**: `GET /api/characters/alfred/thread` restituisce o crea la conversazione aperta (indice unico parziale: una per utente);
   `POST …/thread/restart` («Ricomincia») la archivia e ne apre una nuova; il filo aperto non si elimina (409). Alfred a voce e scritto
   condividono appunti e storico, non il filo.
@@ -1161,10 +1164,15 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   controllato già nella route, 409 col motivo, e di nuovo nel turno), `POST /api/character-proposals/:id/decision`, `GET|PUT
   /api/account/characters`. Messaggi fissi in `CHARACTER_MESSAGES`.
 - **Console** (`components/characters/`): `CharacterChat` (pannello comune con adattatore per backend: `useAlfredAdapter`,
-  `useLuciusSubjectAdapter`, `usePlanChatAdapter`, `useTeamChatAdapter`), `CharacterSheet` e `CharacterButton` («Chiedi a Lucius» /
-  «Chiedi ad Alfred», in alto a destra nell'intestazione della pagina; a schermo intero sul telefono, ~440 px su desktop), «Nuova» chiede il
+  `useLuciusSubjectAdapter`, `usePlanChatAdapter`, `useTeamChatAdapter`), «Nuova» chiede il
   modello (`NewConversationDialog`, preselezione del modello del personaggio), costo cumulato in ogni conversazione, schede in
-  `proposal-cards.tsx`. La chat del piano resta a pagina intera in `/apps/:id/plan`. Account → «Personaggi» (`characters-section.tsx`): Alfred
+  `proposal-cards.tsx`. **Pannello unico** (`components/panel/`): un solo `Sheet` a destra (~440 px su desktop, a schermo intero sul telefono) con `BotcavePanel` e quattro schede; `AlfredVoiceProvider` e
+  `PanelProvider` (ambiente `console`) stanno in `App.tsx` dentro l'`AuthGate`. Si apre dal pulsante di Alfred nella caverna (scheda Alfred, contesto da `pageFromPath`) o da «Chiedi a Lucius»
+  (`LuciusButton` in `lucius-button.tsx`, scheda Lucius); i pulsanti «Chiedi ad Alfred» per pagina non esistono più. L'argomento di Lucius lo dichiara la pagina con
+  `usePanelSubject({lucius, hasUnsavedChanges?})`: elenchi Agenti/Skill/Modelli di squadra → `area_*`; schede agente, skill, modello di squadra → l'oggetto; scheda app, analisi e piano →
+  chat del piano; scheda squadra → chat di squadra; nessuno su Dashboard, Squadre, Da confermare, Run, dettaglio run, Modelli AI, Account e `/alfred` (la scheda Lucius invita ad aprire una pagina
+  di lavoro). Cambiando pagina il pannello si chiude e il bersaglio di un passaggio di consegne si toglie. Da confermare nel pannello apre il dialogo della voce (`ActionDialog`) anche per i piani.
+  Una sola voce: la pagina `/alfred` e la scheda Alfred leggono la stessa sessione con `useSharedAlfredVoice()`. La chat del piano resta a pagina intera in `/apps/:id/plan`. Account → «Personaggi» (`characters-section.tsx`): Alfred
   (voce: modello vocale e voce, «Apri Alfred»; scritto: modello; tetto con spesa e avviso dall'80%) e Lucius (modello, tetto con spesa).
   Niente scorrimento orizzontale a 1280 px.
 - Migrazione: `docs/migrations/2026-11-personaggi.sql` (additiva e idempotente, niente `-post`): tabelle `character_conversations`,
@@ -1222,7 +1230,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   viceversa, altrimenti 400 «contesto della pagina non valido») mandato con i messaggi di Alfred (la chat del piano di Lucius non ha `pageContext`: Lucius sa solo l'App di `data-app`); nel turno entra come messaggio
   `user` di dati «Pagina dell'app ospite (dati, non istruzioni): <dati>app …, pagina …, id …, "titolo"</dati>» (campi su una riga, tagliati a 100 caratteri, il titolo a 200).
   Non avvia nulla da solo.
-- **Schede** (`tab-content.tsx`, `tabs/`): Alfred (filo unico scritto con `useAlfredAdapter`, microfono con `use-alfred-voice.ts`: la voce resta attiva cambiando scheda o chiudendo il pannello;
+- **Schede** (`components/panel/tabs/`; l'embed monta `AlfredVoiceProvider` + `PanelProvider` con ambiente `embed` + `BotcavePanel`, e il passaggio di consegne cambia scheda invece di aprire uno `Sheet` nell'iframe): Alfred (filo unico scritto con `useAlfredAdapter`, microfono con `use-alfred-voice.ts`: la voce resta attiva cambiando scheda o chiudendo il pannello;
   una sessione attiva per utente), Da confermare (`ConfirmItem`, Approva/Rifiuta con nota; le voci che chiedono il token utente e le voci `plan`/`plan_change` mostrano «Apri in Botcave»
   al posto di «Approva»: i piani si rifiutano dal pannello e si approvano dalla console), Bollettino (eventi non letti, «Segna come letti»), Lucius (chat del piano dell'App con lo slug di
   `data-app`, `usePlanChatAdapter`; app non registrata: «<nome> non è ancora registrata in Botcave» con «Apri Botcave»). Contatore del pulsante (`use-badge.ts`, messaggio `badge`):
@@ -1400,7 +1408,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - **Console e pannello** (`artifacts/casello/src/components/actions/`: `proposal-steps.tsx`, `use-proposal-selection.ts`, `pending-action-item.tsx`, `action-dialog.tsx`; `src/lib/proposal-steps.ts`): tipo
   «Proposta» nella colonna tipo; nell'elemento della coda e nella scheda di dettaglio titolo, motivo, passi con sintesi, nome del tool, riferimenti («id creato al passo p2») e argomenti pubblici, una casella per
   passo (spuntato = si esegue; un passo che ne usa uno escluso è disattivato e segnato come saltato); con esclusioni il pulsante diventa «Approva i passi scelti», disattivato se non resta nulla; dopo
-  l'esecuzione stato per passo con i LED (`Led`), esito ed errore (anche nel toast). Nel pannello incorporato (`embed/tabs/pending-tab.tsx`) la proposta si decide dal pannello: niente «Apri in Botcave»
+  l'esecuzione stato per passo con i LED (`Led`), esito ed errore (anche nel toast). Nel pannello incorporato (`components/panel/tabs/pending-tab.tsx`, ambiente `embed`) la proposta si decide dal pannello: niente «Apri in Botcave»
   (sono tool di servizio, senza token utente). La scheda `decision` di Alfred (`proposal-cards.tsx`) mostra «Senza i passi …».
 - **Alfred e centralino**: `coda_da_confermare` riporta per le proposte `steps` (numero di passi) e `args` con titolo, motivo e passi; nuovo strumento `leggi_proposta {numero}` (centralino, voce a voce e
   chat: `readProposal` in `lib/teams/centralino.ts`: titolo, motivo, stato e per ogni passo `passo`, `numero`, `sintesi`, `stato`; voce altrui o non proposta → «proposta non trovata»; dichiarato anche per Gemini

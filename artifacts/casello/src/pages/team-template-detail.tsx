@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type MutableRefObject } from "react";
+import { usePanelSubject } from "@/components/panel/panel-context";
 import { Link, useLocation, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
@@ -13,7 +14,7 @@ import {
   useGetTeamTemplate,
   useSaveTeamTemplate,
 } from "@workspace/api-client-react";
-import { CharacterButton } from "@/components/characters/character-button";
+import { LuciusButton } from "@/components/characters/lucius-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -104,15 +105,7 @@ function TemplateEditor({ template, dirtyRef }: { template?: TeamTemplate; dirty
         </div>
         <div className="flex flex-wrap gap-2">
           {template && (
-            <CharacterButton
-              target={{
-                kind: "character",
-                subjectType: "team_template",
-                subjectId: String(template.id),
-                title: `Modello di squadra · ${template.name}`,
-              }}
-              hasUnsavedChanges={() => dirtyRef?.current ?? false}
-            />
+            <LuciusButton />
           )}
           {!readOnly && (
             <Button onClick={submit} disabled={pending || (template !== undefined && !dirty) || name.trim() === ""}>
@@ -201,6 +194,12 @@ export default function TeamTemplateDetailPage() {
   });
   const t = template.data;
   const dirtyRef = useRef(false);
+  usePanelSubject({
+    lucius: t
+      ? { kind: "character", subjectType: "team_template", subjectId: String(t.id), title: `Modello di squadra · ${t.name}` }
+      : null,
+    hasUnsavedChanges: () => dirtyRef.current,
+  });
   const notFound = (!isNew && !Number.isInteger(id)) || (template.error instanceof ApiError && template.error.status === 404);
 
   return (

@@ -1,11 +1,13 @@
 // Pagina /embed: il pannello di Botcave dentro l'iframe dell'app ospite.
 // Accesso con il token `embed` (auth.ts), mai con il cookie di sessione (richieste con credentials "omit");
 // dialogo con l'ospite in use-host.ts.
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { QueryCache, QueryClient, QueryClientProvider, MutationCache } from "@tanstack/react-query";
 import { Router } from "wouter";
 import { getCurrentUser, setAuthTokenGetter, setBaseUrl, setRequestCredentials } from "@workspace/api-client-react";
-import { HandoffProvider } from "@/components/characters/handoff-context";
+import { BotcavePanel } from "@/components/panel/botcave-panel";
+import { PanelProvider, usePanel, type PanelEnv } from "@/components/panel/panel-context";
+import { AlfredVoiceProvider } from "@/components/panel/voice-context";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -13,7 +15,6 @@ import { BotcaveLogo, BotcaveMark } from "@/components/brand/marks";
 import { Led } from "@/components/brand/led";
 import { isClientError } from "@/lib/api-errors";
 import { isUnauthorized } from "@/lib/auth";
-import { cn } from "@/lib/utils";
 import {
   clearTokens,
   completeConnect,
@@ -25,11 +26,8 @@ import {
   startConnect,
 } from "./auth";
 import { useHost } from "./use-host";
-import { TAB_LABELS, TAB_ORDER, TabContent } from "./tab-content";
 import { useBadge, usePanelOpen } from "./use-badge";
 import { embedHrefs, useEmbedLocation } from "./embed-location";
-import { useAlfredVoice } from "@/components/alfred/use-alfred-voice";
-import type { EmbedTab } from "./protocol";
 
 setBaseUrl(null);
 setAuthTokenGetter(getAccessToken);
@@ -115,52 +113,47 @@ function ConnectScreen({ busy, error, onConnect }: ConnectState & { onConnect: (
   );
 }
 
-function Shell({
-  host,
-}: {
-  host: ReturnType<typeof useHost>;
-}) {
-  const [tab, setTab] = useState<EmbedTab>("alfred");
+/** Apre il pannello sulla scheda chiesta dalla pagina ospite e tiene aggiornato il contatore del suo pulsante. */
+function EmbedPanel({ host }: { host: ReturnType<typeof useHost> }) {
+  const { openPanel } = usePanel();
   const { openRequest } = host;
   const open = usePanelOpen(openRequest);
   useBadge(open, host.post);
-  // La voce di Alfred vive nella Shell: cambiare scheda o chiudere il pannello non la ferma; solo «Basta così» o
-  // lasciare la pagina ospite (o scollegarsi)
-  const voice = useAlfredVoice();
 
+  // Ogni nuova richiesta `open` (seq diverso) porta sulla scheda chiesta, o su quella corrente se non ne indica
   useEffect(() => {
-    if (openRequest?.tab) setTab(openRequest.tab);
-  }, [openRequest]);
+    if (openRequest) openPanel(openRequest.tab);
+  }, [openRequest, openPanel]);
 
+  // Nell'iframe il pannello si mostra sempre: a nasconderlo è il caricatore della pagina ospite
   return (
-    <div className="flex h-dvh flex-col bg-surface-1 text-ink">
-      <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <BotcaveMark className="h-5" />
-        <nav role="tablist" aria-label="Schede di Botcave" className="flex min-w-0 flex-1 gap-1 overflow-hidden">
-          {TAB_ORDER.map((t) => (
-            <button
-              key={t}
-              type="button"
-              role="tab"
-              aria-selected={tab === t}
-              onClick={() => setTab(t)}
-              className={cn(
-                "truncate rounded-sm px-2 py-1 text-label",
-                tab === t ? "bg-surface-2 text-ink" : "text-ink-muted hover:text-ink",
-              )}
-            >
-              {TAB_LABELS[t]}
-            </button>
-          ))}
-        </nav>
-        <Button variant="ghost" size="sm" onClick={() => host.post({ botcave: 1, type: "close" })}>
-          Chiudi
-        </Button>
-      </header>
-      <main role="tabpanel" className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
-        <TabContent tab={tab} appSlug={host.appSlug} appName={host.appName} hostContext={host.context} voice={voice} />
-      </main>
+    <div className="h-dvh">
+      <BotcavePanel />
     </div>
+  );
+}
+
+function Shell({ host }: { host: ReturnType<typeof useHost> }) {
+  const { appSlug, appName, context, post } = host;
+  // Ambiente stabile: un oggetto nuovo a ogni render rinnoverebbe il contesto del pannello
+  const env = useMemo<PanelEnv>(
+    () => ({
+      surface: "embed",
+      appSlug,
+      appName,
+      hostContext: context,
+      onClose: () => post({ botcave: 1, type: "close" }),
+    }),
+    [appSlug, appName, context, post],
+  );
+  // La voce di Alfred vive sopra il pannello: cambiare scheda o chiudere il pannello non la ferma; solo «Basta così» o
+  // lasciare la pagina ospite (o scollegarsi)
+  return (
+    <AlfredVoiceProvider>
+      <PanelProvider env={env}>
+        <EmbedPanel host={host} />
+      </PanelProvider>
+    </AlfredVoiceProvider>
   );
 }
 
@@ -210,12 +203,7 @@ function EmbedRoot() {
   if (!connected || connect.busy) {
     return <ConnectScreen busy={connect.busy} error={connect.error} onConnect={connect.connect} />;
   }
-  // HandoffProvider: i passaggi di consegne tra Alfred e Lucius aprono il pannello dell'altro personaggio
-  return (
-    <HandoffProvider>
-      <Shell host={host} />
-    </HandoffProvider>
-  );
+  return <Shell host={host} />;
 }
 
 export function EmbedApp() {

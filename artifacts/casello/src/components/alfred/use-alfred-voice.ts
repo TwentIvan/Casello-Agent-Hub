@@ -576,7 +576,7 @@ export function useAlfredVoice() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
-  // Uscendo dalla pagina la conversazione finisce
+  // Allo smontaggio del provider (logout, o uscita dall'iframe o dalla pagina ospite) la conversazione finisce
   useEffect(
     () => () => {
       const s = r.current;

@@ -1,4 +1,5 @@
 import { type MutableRefObject, useEffect, useMemo, useRef, useState } from "react";
+import { usePanelSubject } from "@/components/panel/panel-context";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, FolderSearch } from "lucide-react";
@@ -40,7 +41,7 @@ import { RolesEditor } from "@/components/teams/roles-editor";
 import { SaveAsTemplateDialog } from "@/components/teams/save-as-template-dialog";
 import { TeamStatusBadge } from "@/components/teams/team-status";
 import { TeamUpdatesCard } from "@/components/teams/team-updates-card";
-import { CharacterButton } from "@/components/characters/character-button";
+import { LuciusButton } from "@/components/characters/lucius-button";
 import { LeadMessageCard } from "@/components/teams/lead-message";
 import { PlanApprovalCards } from "@/components/teams/plan-approval-card";
 import { PlanCard } from "@/components/teams/plan-card";
@@ -131,6 +132,10 @@ function TeamDetail({ team }: { team: TeamInstance }) {
   const session = useTeamSession(team.id);
   // il pannello dei personaggi è globale: accettare una scheda cambia `updatedAt` e rimonta l'editor, ma non chiude la conversazione
   const dirtyRef = useRef(false);
+  usePanelSubject({
+    lucius: { kind: "team", instanceId: team.id, closed: team.status === "closed" },
+    hasUnsavedChanges: () => dirtyRef.current,
+  });
   return (
     <div className="space-y-6">
       <TeamEditor key={`${team.id}-${team.updatedAt}`} team={team} session={session} dirtyRef={dirtyRef} />
@@ -245,15 +250,7 @@ function TeamEditor({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <CharacterButton
-            target={{ kind: "team", instanceId: team.id, closed }}
-            hasUnsavedChanges={() => dirtyRef.current}
-          />
-          {/* Anche Alfred: un suo passaggio a Lucius sulla stessa squadra eredita questo controllo */}
-          <CharacterButton
-            target={{ kind: "alfred", page: { page: "team", id: String(team.id) } }}
-            hasUnsavedChanges={() => dirtyRef.current}
-          />
+          <LuciusButton />
           {!closed && (
             <Button onClick={() => submit()} disabled={!dirty || save.isPending}>
               {save.isPending ? "Salvataggio…" : "Salva"}

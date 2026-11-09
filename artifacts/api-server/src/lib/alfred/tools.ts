@@ -31,7 +31,7 @@ const SCHEMAS = {
   scrivi_al_capo: z.object({ id: teamId, testo: z.string().min(1).max(4000) }),
   elenca_app: z.object({}).passthrough(),
   chiedi_al_responsabile: z.object({ richiesta: z.string().min(1).max(LEAD_REQUEST_MAX), app: z.string().min(1).max(100).optional() }),
-  leggi_run: z.object({ id: z.number().int().positive() }),
+  leggi_run: z.object({ id: z.number().int().positive().optional() }),
   prepara_decisione: z.object({
     numero: z.number().int().positive(),
     decisione: z.enum(["approva", "rifiuta"]),
@@ -137,7 +137,7 @@ export async function runAlfredTool(userId: number, sessionId: number, name: str
       case "chiedi_al_responsabile":
         return { ok: true, result: await askProductLead(userId, { richiesta: a["richiesta"] as string, app: a["app"] as string | undefined }) };
       case "leggi_run": {
-        const run = await readLeadRun(userId, a["id"] as number);
+        const run = await readLeadRun(userId, a["id"] as number | undefined);
         return run ? { ok: true, result: run } : { ok: false, error: "run non trovata" };
       }
       case "prepara_decisione":

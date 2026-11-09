@@ -252,6 +252,8 @@ describe("askProductLead: controlli", () => {
     await seedApp("Casello", "casello", me.modelId);
     await expect(askProductLead(me.userId, { richiesta: "   " })).rejects.toThrow("richiesta vuota o troppo lunga");
     await expect(askProductLead(me.userId, { richiesta: "x".repeat(4_001) })).rejects.toThrow("richiesta vuota o troppo lunga");
+    // le richieste con App inesistente non consumano il limite
+    for (let i = 0; i < 8; i++) await expect(askProductLead(me.userId, { richiesta: "ok", app: "nessuna" })).rejects.toThrow("non trovata");
     for (let i = 0; i < 6; i++) await askProductLead(me.userId, { richiesta: "ok" }, { waitMs: 0 });
     const err = await askProductLead(me.userId, { richiesta: "ok" }, { waitMs: 0 }).catch((e) => e);
     expect(err).toBeInstanceOf(ProductLeadError);
@@ -355,5 +357,38 @@ describe("readLeadRun", () => {
     expect(view!.output).toHaveLength(2_000);
     expect(view!.error).toHaveLength(300);
     expect(await readLeadRun(other.userId, run!.id)).toBeNull();
+  });
+});
+
+describe("readLeadRun senza id", () => {
+  const ago = (h: number) => new Date(Date.now() - h * 3_600_000);
+
+  it("l'ultima run chiesta tramite Alfred; ignora altri utenti, run non nate da Alfred e run oltre 24 h", async () => {
+    const me = await freshUser();
+    const other = await freshUser();
+    const { lead } = await seedApp("Casello", "casello", me.modelId);
+    const { lead: otherLead } = await seedApp("Altra", "altra", other.modelId);
+    expect(await readLeadRun(me.userId)).toBeNull();
+
+    const first = await askProductLead(me.userId, { richiesta: "uno" }, { waitMs: 0 });
+    await db.update(runsTable).set({ createdAt: ago(2) }).where(eq(runsTable.id, first.id));
+    const second = await askProductLead(me.userId, { richiesta: "due" }, { waitMs: 0 });
+    await db.update(runsTable).set({ createdAt: ago(1) }).where(eq(runsTable.id, second.id));
+    // più recente ma non nata da Alfred, e una di un altro utente
+    await db.insert(runsTable).values({ agentId: lead.id, aiModelId: me.modelId, input: "manuale", status: "succeeded" });
+    await db.insert(runsTable).values({ agentId: otherLead.id, aiModelId: other.modelId, input: leadRunInput("X", "altrui"), status: "succeeded" });
+
+    expect((await readLeadRun(me.userId))!.id).toBe(second.id);
+    expect((await readLeadRun(other.userId))!.app).toBe("Altra");
+    await drain();
+  });
+
+  it("nessuna nelle ultime 24 ore → null", async () => {
+    const me = await freshUser();
+    await seedApp("Casello", "casello", me.modelId);
+    const old = await askProductLead(me.userId, { richiesta: "vecchia" }, { waitMs: 0 });
+    await db.update(runsTable).set({ createdAt: ago(25) }).where(eq(runsTable.id, old.id));
+    expect(await readLeadRun(me.userId)).toBeNull();
+    await drain();
   });
 });

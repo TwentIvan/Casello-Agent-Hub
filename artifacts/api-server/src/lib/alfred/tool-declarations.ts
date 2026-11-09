@@ -64,11 +64,10 @@ export const ALFRED_TOOL_DECLARATIONS: Record<string, unknown>[] = [
   },
   {
     name: "leggi_run",
-    description: "Stato, esito, errore, costo e voci create di una run dell'utente.",
+    description: "Stato, esito, errore, costo e voci create di una run dell'utente; senza id, l'ultima richiesta passata a un Responsabile.",
     parameters: {
       type: "OBJECT",
-      properties: { id: { type: "INTEGER", description: "Id della run" } },
-      required: ["id"],
+      properties: { id: { type: "INTEGER", description: "Id della run (facoltativo)" } },
     },
   },
   {

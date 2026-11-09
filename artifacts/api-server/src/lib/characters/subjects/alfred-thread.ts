@@ -136,7 +136,7 @@ export const ALFRED_THREAD_TOOLS: ChatCompletionFunctionTool[] = [
     },
     ["richiesta"],
   ),
-  fn("leggi_run", "Stato, esito, errore, costo e voci create di una run dell'utente.", { id: { type: "integer", description: "Id della run" } }, ["id"]),
+  fn("leggi_run", "Stato, esito, errore, costo e voci create di una run dell'utente; senza id, l'ultima richiesta passata a un Responsabile.", { id: { type: "integer", description: "Id della run (facoltativo)" } }, []),
   fn(
     "proponi_decisione",
     "Prepara una scheda con cui l'utente approva o rifiuta una voce della coda: non decide nulla da sola, l'utente conferma in console. Leggi prima la voce e riportane numero e sintesi.",
@@ -164,7 +164,7 @@ const SCHEMAS = {
   scrivi_al_capo: z.object({ id: positive, testo: z.string().min(1).max(4000) }),
   elenca_app: z.object({}).passthrough(),
   chiedi_al_responsabile: z.object({ richiesta: z.string().min(1).max(LEAD_REQUEST_MAX), app: z.string().min(1).max(100).optional() }),
-  leggi_run: z.object({ id: positive }),
+  leggi_run: z.object({ id: positive.optional() }),
   proponi_decisione: z.object({
     numero: positive,
     decisione: z.enum(["approva", "rifiuta"]),
@@ -279,7 +279,7 @@ async function runTool(call: ChatToolCall, ctx: TurnContext): Promise<string> {
         return toolOk(await askProductLead(userId, { richiesta: a["richiesta"] as string, app: a["app"] as string | undefined, hostApp }));
       }
       case "leggi_run": {
-        const run = await readLeadRun(userId, a["id"] as number);
+        const run = await readLeadRun(userId, a["id"] as number | undefined);
         return run ? toolOk(run) : toolFail(ALFRED_THREAD_MESSAGES.runNotFound);
       }
       case "proponi_decisione":

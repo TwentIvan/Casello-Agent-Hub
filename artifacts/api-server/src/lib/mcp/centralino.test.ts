@@ -12,6 +12,7 @@ import {
   appsTable,
   pendingActionsTable,
   pendingActionStepsTable,
+  runsTable,
   teamEventsTable,
   teamTasksTable,
   teamTurnsTable,
@@ -166,6 +167,27 @@ describe("centralino su /mcp", () => {
     const res = await call(client, "chiedi_al_responsabile", { richiesta: "ciao", app: "nessuna" });
     expect(res.isError).toBe(true);
     expect(res.json.error).toBe("App nessuna non trovata: chiedi a elenca_app");
+    await client.close();
+  });
+
+  it("chiedi_al_responsabile vuole api:write: con il solo mcp errore d'ambito e nessuna run; con api:write passa ai controlli", async () => {
+    const before = (await db.select().from(runsTable)).length;
+    const weak = await connect(mcpOnlyToken);
+    const denied = await call(weak, "chiedi_al_responsabile", { richiesta: "ciao", app: "nessuna" });
+    expect(denied.isError).toBe(true);
+    expect(denied.json.error).toBe(TOKEN_MESSAGES.scope);
+    expect((await db.select().from(runsTable)).length).toBe(before);
+    await weak.close();
+    const strong = await connect(token);
+    const ok = await call(strong, "chiedi_al_responsabile", { richiesta: "ciao", app: "nessuna" });
+    expect(ok.json.error).toBe("App nessuna non trovata: chiedi a elenca_app");
+    await strong.close();
+  });
+
+  it("leggi_run senza id: run non trovata se non ce ne sono", async () => {
+    const client = await connect(mcpOnlyToken);
+    const res = await call(client, "leggi_run", {});
+    expect(res.json.error).toBe("run non trovata");
     await client.close();
   });
 

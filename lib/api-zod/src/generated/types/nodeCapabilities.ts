@@ -5,6 +5,8 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { NodeCapabilitiesClaude } from './nodeCapabilitiesClaude';
+import type { NodeCapabilitiesKind } from './nodeCapabilitiesKind';
 
 export interface NodeCapabilities {
   /**
@@ -42,4 +44,13 @@ export interface NodeCapabilities {
      * @items.maxLength 300
      */
   folders?: string[];
+  /** Come è installato il nodo; solo `app` riceve aggiornamenti automatici */
+  kind?: NodeCapabilitiesKind;
+  /** Stato di Claude Code sul Mac. Tollerante di proposito: il server tiene solo i campi noti con il tipo giusto (`found`, `version`, `loggedIn`, `authMethod`, `subscriptionType`, `loginExpiresAt`) e scarta il resto, così un campo strano non fa fallire l'heartbeat. */
+  claude?: NodeCapabilitiesClaude;
+  /**
+     * Versione di cui l'aggiornamento non è riuscito (ripristinata la precedente)
+     * @maxLength 100
+     */
+  updateFailed?: string;
 }

@@ -31,6 +31,7 @@ export * from "./team-plans";
 export * from "./team-work";
 export * from "./nodes";
 export * from "./node-turns";
+export * from "./node-pairings";
 export * from "./team-attachments";
 export * from "./oauth";
 export * from "./alfred";

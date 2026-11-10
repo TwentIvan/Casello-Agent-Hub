@@ -29,6 +29,7 @@ import TeamTemplatesPage from "@/pages/team-templates";
 import TeamTemplateDetailPage from "@/pages/team-template-detail";
 import TeamsPage from "@/pages/teams";
 import TeamDetailPage from "@/pages/team-detail";
+import NodePairPage from "@/pages/node-pair";
 import NotFound from "@/pages/not-found";
 
 const currentUserKey = getGetCurrentUserQueryKey();
@@ -81,6 +82,7 @@ function Router() {
             <Route path="/analyses/:id" component={AnalysisDetailPage} />
             <Route path="/account" component={AccountPage} />
             <Route path="/alfred" component={AlfredPage} />
+            <Route path="/nodes/pair" component={NodePairPage} />
             <Route component={NotFound} />
           </Switch>
         </AppShell>

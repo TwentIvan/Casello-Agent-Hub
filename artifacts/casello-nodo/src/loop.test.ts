@@ -1,12 +1,15 @@
+import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CaselloClient } from "./client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CaselloClient, type TurnPackage } from "./client";
 import { startLoop, type LoopDeps } from "./loop";
 import { readState } from "./state";
 import { FakeCasello, json } from "./test/fake-casello";
 import { FAKE_TOKEN, fakeSpawn, taskPackage, tempDir, testConfig } from "./test/helpers";
 import type { Config } from "./config";
+import { NODE_VERSION } from "./capabilities";
+import { updatePaths, type UpdatePaths } from "./updater";
 
 let casello: FakeCasello;
 let base: string;
@@ -93,7 +96,8 @@ describe("startLoop", () => {
 
     const [hb] = casello.calls("POST", "/api/node/heartbeat");
     expect(hb.body).toEqual({
-      version: "0.2.0",
+      version: NODE_VERSION,
+      kind: "cli",
       executor: "claude-code",
       skills: ["sap-code-review"],
       workspaceRoot: root,
@@ -306,5 +310,327 @@ describe("startLoop", () => {
     const count = casello.calls("POST", "/api/node/heartbeat").length;
     await new Promise((r) => setTimeout(r, 200));
     expect(casello.calls("POST", "/api/node/heartbeat").length).toBe(count);
+  });
+});
+
+describe("aggiornamenti, impostazioni, diagnosi e disinstallazione", () => {
+  const OLD = Buffer.from("programma vecchio\n");
+  const NEW = Buffer.from("programma nuovo\n".repeat(20));
+  const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
+  const DOWNLOAD = "/downloads/nodo/casello-nodo-9.9.9";
+  let upd: UpdatePaths;
+
+  beforeEach(async () => {
+    upd = updatePaths(path.join(base, "home"));
+    await mkdir(path.dirname(upd.programPath), { recursive: true });
+    await writeFile(upd.programPath, OLD, { mode: 0o755 });
+    casello.on("GET", DOWNLOAD, (_req, res) => {
+      res.statusCode = 200;
+      res.end(NEW);
+    });
+  });
+
+  const update = (over: Record<string, unknown> = {}) => ({
+    version: "9.9.9",
+    sha256: sha(NEW),
+    size: NEW.length,
+    required: false,
+    ...over,
+  });
+  const downloads = () => casello.calls("GET", DOWNLOAD).length;
+  const appDeps = (over: Partial<LoopDeps> = {}): Partial<LoopDeps> => ({
+    kind: "app",
+    updatePaths: upd,
+    exit: vi.fn(),
+    drainPollMs: 20,
+    ...over,
+  });
+
+  function turnPkg(id: number): TurnPackage {
+    return {
+      id,
+      leaseToken: `lease-t${id}`,
+      model: "sonnet",
+      systemPrompt: "s",
+      prompt: "p",
+      mcpUrl: "http://127.0.0.1:9/mcp/turn",
+      turnToken: "cat_x",
+      maxTurns: 4,
+      timeoutMs: 60_000,
+    };
+  }
+
+  it("heartbeat con kind «app» e la versione fallita letta da update.json", async () => {
+    await writeFile(upd.updateJsonPath, JSON.stringify({ failedVersion: "9.9.9", from: NODE_VERSION, to: "9.9.9" }));
+    casello.on("POST", "/api/node/heartbeat", (_req, res) => json(res, 200, { pending: 0, update: update() }));
+    start(config(), "esito", appDeps());
+    await waitFor(() => casello.calls("POST", "/api/node/heartbeat").length >= 3);
+    expect(casello.calls("POST", "/api/node/heartbeat")[0].body).toMatchObject({ kind: "app", updateFailed: "9.9.9" });
+    // La versione fallita non si riprova
+    expect(downloads()).toBe(0);
+  });
+
+  it("primo heartbeat riuscito → update.json dell'aggiornamento chiuso", async () => {
+    await writeFile(upd.updateJsonPath, JSON.stringify({ from: "0.2.0", to: NODE_VERSION, startedAt: new Date().toISOString(), starts: 1 }));
+    casello.on("POST", "/api/node/heartbeat", (_req, res) => json(res, 200, { pending: 0 }));
+    start(config(), "esito", appDeps());
+    await waitFor(() => casello.calls("POST", "/api/node/heartbeat").length >= 1);
+    await waitFor(async () => !(await readdir(path.dirname(upd.updateJsonPath))).includes("update.json"));
+  });
+
+  it("update non obbligatorio con un compito in corso: scarica solo a compito finito, poi sostituisce ed esce con 0", async () => {
+    let given = false;
+    let downloadsAtReport = -1;
+    casello.on("POST", "/api/node/heartbeat", (_req, res) => json(res, 200, { pending: given ? 0 : 1, update: update() }));
+    casello.on("POST", "/api/node/claim", (_req, res) => {
+      if (given) return json(res, 204);
+      given = true;
+      json(res, 200, taskPackage());
+    });
+    casello.on("POST", "/api/node/tasks/:id/report", (_req, res) => {
+      downloadsAtReport = downloads();
+      json(res, 204);
+    });
+    const exit = vi.fn();
+    process.env.FAKE_CLAUDE_DELAY_MS = "500";
+    try {
+      start(config(), "slow", appDeps({ exit }));
+      await waitFor(() => exit.mock.calls.length > 0);
+    } finally {
+      delete process.env.FAKE_CLAUDE_DELAY_MS;
+    }
+    expect(downloadsAtReport).toBe(0);
+    expect(casello.calls("POST", "/api/node/tasks/42/report")[0].body).toMatchObject({ status: "done" });
+    expect(exit).toHaveBeenCalledWith(0);
+    expect(await readFile(upd.programPath)).toEqual(NEW);
+    expect(await readFile(upd.prevPath)).toEqual(OLD);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(downloads()).toBe(1);
+  });
+
+  it("sha256 diverso → programma intatto e nuovo tentativo non prima di un'ora", async () => {
+    let now = new Date("2026-11-10T10:00:00.000Z").getTime();
+    casello.on("POST", "/api/node/heartbeat", (_req, res) =>
+      json(res, 200, { pending: 0, update: update({ sha256: "f".repeat(64) }) }),
+    );
+    const exit = vi.fn();
+    start(config(), "esito", appDeps({ exit, now: () => new Date(now) }));
+    await waitFor(() => downloads() === 1);
+    await waitFor(() => casello.calls("POST", "/api/node/heartbeat").length >= 6);
+    expect(downloads()).toBe(1);
+    now += 59 * 60_000;
+    await new Promise((r) => setTimeout(r, 200));
+    expect(downloads()).toBe(1);
+    now += 2 * 60_000;
+    await waitFor(() => downloads() === 2);
+    expect(await readFile(upd.programPath)).toEqual(OLD);
+    expect(exit).not.toHaveBeenCalled();
+  });
+
+  it("update obbligatorio con lavoro oltre 30 minuti (orologio finto) → compito interrotto come uno stop, poi aggiornamento", async () => {
+    let now = Date.parse("2026-11-10T10:00:00.000Z");
+    let given = false;
+    casello.on("POST", "/api/node/heartbeat", (_req, res) =>
+      json(res, 200, { pending: given ? 0 : 1, ...(given ? { update: update({ required: true }) } : {}) }),
+    );
+    casello.on("POST", "/api/node/claim", (_req, res) => {
+      if (given) return json(res, 204);
+      given = true;
+      json(res, 200, taskPackage());
+    });
+    casello.on("POST", "/api/node/tasks/:id/report", (_req, res) => json(res, 204));
+    const exit = vi.fn();
+    start(
+      config(),
+      "sleep",
+      appDeps({
+        exit,
+        killGraceMs: 100,
+        now: () => new Date(now),
+        // Ogni attesa del drenaggio fa passare 5 minuti
+        sleep: async () => {
+          now += 5 * 60_000;
+          await new Promise((r) => setTimeout(r, 5));
+        },
+      }),
+    );
+    await waitFor(() => exit.mock.calls.length > 0, 10_000);
+    expect(casello.calls("POST", "/api/node/tasks/42/report")[0].body).toMatchObject({
+      status: "failed",
+      outcome: "esecuzione interrotta: nodo fermato",
+    });
+    expect(exit).toHaveBeenCalledWith(0);
+    expect(await readFile(upd.programPath)).toEqual(NEW);
+  });
+
+  /** Download lento: risponde dopo `delayMs` e registra quando ha finito. */
+  function slowDownload(body: Buffer, delayMs: number, done: { at: number }) {
+    casello.on("GET", DOWNLOAD, async (_req, res) => {
+      await new Promise((r) => setTimeout(r, delayMs));
+      done.at = Date.now();
+      res.statusCode = 200;
+      res.end(body);
+    });
+  }
+
+  it("durante un download lento il nodo continua a prendere lavoro; poi aspetta il compito e si aggiorna", async () => {
+    const done = { at: 0 };
+    slowDownload(NEW, 600, done);
+    let given = false;
+    let downloadStarted = false;
+    casello.on("POST", "/api/node/heartbeat", (_req, res) => {
+      // Primo heartbeat: nodo libero, l'aggiornamento parte; poi arriva un compito
+      const body = { pending: downloadStarted && !given ? 1 : 0, update: update() };
+      downloadStarted ||= downloads() > 0;
+      json(res, 200, body);
+    });
+    casello.on("POST", "/api/node/claim", (_req, res) => {
+      if (given) return json(res, 204);
+      given = true;
+      json(res, 200, taskPackage());
+    });
+    let reportAt = 0;
+    casello.on("POST", "/api/node/tasks/:id/report", (_req, res) => {
+      reportAt = Date.now();
+      json(res, 204);
+    });
+    const exit = vi.fn();
+    process.env.FAKE_CLAUDE_DELAY_MS = "900";
+    try {
+      start(config(), "slow", appDeps({ exit }));
+      await waitFor(() => exit.mock.calls.length > 0, 10_000);
+    } finally {
+      delete process.env.FAKE_CLAUDE_DELAY_MS;
+    }
+    const [claim] = casello.calls("POST", "/api/node/claim");
+    expect(claim.at).toBeLessThan(done.at);
+    expect(reportAt).toBeGreaterThan(done.at);
+    expect(exit).toHaveBeenCalledWith(0);
+    expect(await readFile(upd.programPath)).toEqual(NEW);
+  });
+
+  it("download con sha256 sbagliato: il nodo non si ferma mai (claim durante e dopo il download)", async () => {
+    const done = { at: 0 };
+    slowDownload(NEW, 400, done);
+    casello.on("POST", "/api/node/heartbeat", (_req, res) =>
+      json(res, 200, { pending: 1, update: update({ sha256: "e".repeat(64) }) }),
+    );
+    casello.on("POST", "/api/node/claim", (_req, res) => json(res, 204));
+    const exit = vi.fn();
+    start(config(), "esito", appDeps({ exit }));
+    await waitFor(() => done.at > 0);
+    const started = casello.calls("GET", DOWNLOAD)[0].at;
+    const during = casello.calls("POST", "/api/node/claim").filter((c) => c.at > started && c.at < done.at);
+    expect(during.length).toBeGreaterThan(0);
+    const after = casello.calls("POST", "/api/node/claim").length;
+    await waitFor(() => casello.calls("POST", "/api/node/claim").length > after + 2);
+    expect(exit).not.toHaveBeenCalled();
+    expect(await readFile(upd.programPath)).toEqual(OLD);
+  });
+
+  it("nodo installato con la CLI che riceve update → ignorato", async () => {
+    casello.on("POST", "/api/node/heartbeat", (_req, res) => json(res, 200, { pending: 0, update: update({ required: true }) }));
+    const exit = vi.fn();
+    start(config(), "esito", { updatePaths: upd, exit });
+    await waitFor(() => casello.calls("POST", "/api/node/heartbeat").length >= 3);
+    expect(downloads()).toBe(0);
+    expect(exit).not.toHaveBeenCalled();
+    expect(await readFile(upd.programPath)).toEqual(OLD);
+  });
+
+  it("settings dal server: posti dei compiti nell'heartbeat; null → torna alla config locale", async () => {
+    let settings: Record<string, unknown> | null = { maxConcurrent: 3, maxConcurrentTurns: null, taskTimeoutMinutes: 10 };
+    casello.on("POST", "/api/node/heartbeat", (_req, res) => json(res, 200, { pending: 0, ...(settings ? { settings } : {}) }));
+    start(config({ maxConcurrent: 1 }), "esito");
+    await waitFor(() => casello.calls("POST", "/api/node/heartbeat").length >= 2);
+    expect(casello.calls("POST", "/api/node/heartbeat").at(-1)?.body).toMatchObject({ maxConcurrent: 3 });
+    settings = { maxConcurrent: null, maxConcurrentTurns: null, taskTimeoutMinutes: null };
+    const n = casello.calls("POST", "/api/node/heartbeat").length;
+    await waitFor(() => casello.calls("POST", "/api/node/heartbeat").length >= n + 2);
+    expect(casello.calls("POST", "/api/node/heartbeat").at(-1)?.body).toMatchObject({ maxConcurrent: 1 });
+  });
+
+  it("settings {maxConcurrentTurns: 1} → un solo claim di turno in attesa; null → di nuovo due posti", async () => {
+    let settings: Record<string, unknown> = { maxConcurrent: null, maxConcurrentTurns: 1, taskTimeoutMinutes: null };
+    const turnsToGive = [1, 2];
+    casello.on("POST", "/api/node/heartbeat", (_req, res) => json(res, 200, { pending: 0, settings }));
+    casello.on("POST", "/api/node/turns/claim", async (_req, res) => {
+      // Il primo turno si consegna solo dopo che le impostazioni del primo heartbeat sono applicate
+      await waitFor(() => casello.calls("POST", "/api/node/heartbeat").length >= 1);
+      await new Promise((r) => setTimeout(r, 50));
+      const id = turnsToGive.shift();
+      if (id !== undefined) return json(res, 200, turnPkg(id));
+      await new Promise((r) => setTimeout(r, 30));
+      json(res, 204);
+    });
+    casello.on("POST", "/api/node/turns/:id/ping", (_req, res) =>
+      json(res, 200, { leaseExpiresAt: new Date(Date.now() + 120_000).toISOString() }),
+    );
+    const claimsAtReport: number[] = [];
+    casello.on("POST", "/api/node/turns/:id/report", (_req, res) => {
+      claimsAtReport.push(casello.calls("POST", "/api/node/turns/claim").length);
+      // Dopo il primo turno le impostazioni tornano alla config locale (2 posti)
+      settings = { maxConcurrent: null, maxConcurrentTurns: null, taskTimeoutMinutes: null };
+      json(res, 204);
+    });
+    start(config({ maxConcurrentTurns: 2 }), "turn-slow", {
+      spawn: fakeSpawn("turn-slow", [], { FAKE_CLAUDE_DELAY_MS: "400" }),
+      turnsDir: path.join(base, "turns"),
+    });
+    await waitFor(() => claimsAtReport.length === 2, 10_000);
+    // Primo turno: nessun altro claim mentre è in corso
+    expect(claimsAtReport[0]).toBe(1);
+    // Secondo turno (posti di nuovo 2): i claim continuano mentre è in corso
+    expect(claimsAtReport[1]).toBeGreaterThan(2);
+  });
+
+  it("diagnosticsRequested → una sola diagnosi inviata, senza il token", async () => {
+    let requested = true;
+    casello.on("POST", "/api/node/heartbeat", (_req, res) => json(res, 200, { pending: 0, diagnosticsRequested: requested }));
+    casello.on("POST", "/api/node/diagnostics", async (_req, res) => {
+      await new Promise((r) => setTimeout(r, 200));
+      requested = false;
+      json(res, 204);
+    });
+    start(config(), "esito", { osVersion: async () => "15.1" });
+    await waitFor(() => casello.calls("POST", "/api/node/diagnostics").length === 1);
+    await waitFor(() => !requested);
+    await new Promise((r) => setTimeout(r, 200));
+    const sent = casello.calls("POST", "/api/node/diagnostics");
+    expect(sent).toHaveLength(1);
+    const content = (sent[0].body as { content: string }).content;
+    expect(content).toContain("15.1");
+    expect(JSON.stringify(sent[0].body)).not.toContain(FAKE_TOKEN);
+  });
+
+  it("uninstallRequested → disinstallazione chiamata una volta, nessun lavoro preso", async () => {
+    casello.on("POST", "/api/node/heartbeat", (_req, res) => json(res, 200, { pending: 3, uninstallRequested: true }));
+    const onUninstallRequested = vi.fn();
+    start(config(), "esito", { onUninstallRequested });
+    await waitFor(() => casello.calls("POST", "/api/node/heartbeat").length >= 3);
+    expect(onUninstallRequested).toHaveBeenCalledTimes(1);
+    expect(casello.calls("POST", "/api/node/claim")).toHaveLength(0);
+  });
+
+  for (const status of [401, 403]) {
+    it(`heartbeat ${status} in modalità app → una sola notifica, nessun lavoro, nuovi tentativi, nessuna uscita`, async () => {
+      casello.on("POST", "/api/node/heartbeat", (_req, res) => json(res, status, { error: "token non valido" }));
+      const notify = vi.fn(async () => {});
+      const exit = vi.fn();
+      start(config(), "esito", appDeps({ notify, exit }));
+      await waitFor(() => casello.calls("POST", "/api/node/heartbeat").length >= 4);
+      expect(notify).toHaveBeenCalledTimes(1);
+      expect(notify).toHaveBeenCalledWith("Botcave Nodo non è più collegato: aprilo e scegli Ricollega");
+      expect(casello.calls("POST", "/api/node/claim")).toHaveLength(0);
+      expect(exit).not.toHaveBeenCalled();
+    });
+  }
+
+  it("heartbeat 401 con la CLI → nessuna notifica", async () => {
+    casello.on("POST", "/api/node/heartbeat", (_req, res) => json(res, 401, { error: "token non valido" }));
+    const notify = vi.fn(async () => {});
+    start(config(), "esito", { notify });
+    await waitFor(() => casello.calls("POST", "/api/node/heartbeat").length >= 3);
+    expect(notify).not.toHaveBeenCalled();
   });
 });

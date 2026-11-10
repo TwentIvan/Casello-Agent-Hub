@@ -33,6 +33,52 @@ export const GetEmbedConfigResponse = zod.object({
 
 
 /**
+ * Chiamata dal nodo al primo avvio. Risponde con `userCode` (XXXX-XXXX, da mostrare all'utente), `pollSecret` (segreto del nodo) e la scadenza (10 minuti); nel DB restano solo gli hash. 10 richieste al minuto per IP.
+ * @summary Avvia l'abbinamento di un Mac dal browser (pubblica)
+ */
+export const startNodePairingBodyDeviceNameMax = 100;
+
+export const startNodePairingBodyVersionMax = 50;
+
+
+
+export const StartNodePairingBody = zod.object({
+  "deviceName": zod.string().min(1).max(startNodePairingBodyDeviceNameMax),
+  "version": zod.string().min(1).max(startNodePairingBodyVersionMax)
+})
+
+export const StartNodePairingResponse = zod.object({
+  "pairingId": zod.string(),
+  "userCode": zod.string().describe('Codice XXXX-XXXX da mostrare all\'utente'),
+  "pollSecret": zod.string(),
+  "expiresAt": zod.coerce.date()
+})
+
+
+/**
+ * 202 `pending` finché l'utente non decide. Dopo l'approvazione risponde 200 con il token del nodo, una sola volta. Rifiutata, scaduta, già consegnata o segreto sbagliato: 410. 30 richieste al minuto per richiesta.
+ * @summary Il nodo chiede l'esito dell'abbinamento (pubblica)
+ */
+export const pollNodePairingBodyPairingIdMax = 64;
+
+export const pollNodePairingBodyPollSecretMax = 200;
+
+
+
+export const PollNodePairingBody = zod.object({
+  "pairingId": zod.string().max(pollNodePairingBodyPairingIdMax),
+  "pollSecret": zod.string().max(pollNodePairingBodyPollSecretMax)
+})
+
+export const PollNodePairingResponse = zod.object({
+  "status": zod.enum(['approved']),
+  "token": zod.string().describe('Token del nodo, consegnato una sola volta'),
+  "nodeId": zod.number(),
+  "nodeName": zod.string()
+})
+
+
+/**
  * Con la sessione del login o con un token personale (api:read o api:write); auth dice quale.
  * @summary Utente della sessione corrente
  */
@@ -165,6 +211,23 @@ export const RevokeOAuthGrantResponse = zod.void()
  * Nodi locali registrati, per nome, con le capacità dichiarate e se sono vivi (comunicato negli ultimi 2 minuti). Solo con il login: con un token risponde 403.
  * @summary Elenca i nodi locali dell'utente
  */
+export const listNodesResponseClaudeOneVersionMax = 100;
+
+export const listNodesResponseClaudeOneAuthMethodMax = 100;
+
+export const listNodesResponseClaudeOneSubscriptionTypeMax = 100;
+
+export const listNodesResponseClaudeOneLoginExpiresAtMax = 100;
+
+export const listNodesResponseSettingsOneMaxConcurrentMax = 3;
+
+export const listNodesResponseSettingsOneMaxConcurrentTurnsMax = 4;
+
+export const listNodesResponseSettingsOneTaskTimeoutMinutesMin = 5;
+export const listNodesResponseSettingsOneTaskTimeoutMinutesMax = 240;
+
+
+
 export const ListNodesResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -176,7 +239,30 @@ export const ListNodesResponseItem = zod.object({
   "maxConcurrent": zod.number(),
   "lastSeenAt": zod.coerce.date().nullable(),
   "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti'),
-  "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)')
+  "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)'),
+  "kind": zod.union([zod.literal('app'),zod.literal('cli'),zod.literal(null)]).nullable().describe('Installato con l\'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato'),
+  "pairedAt": zod.coerce.date().nullable(),
+  "pairedIp": zod.string().nullable().describe('Indirizzo abbreviato (IPv4 \/24, IPv6 \/48) da cui è arrivata la richiesta di abbinamento'),
+  "claude": zod.union([zod.object({
+  "found": zod.boolean(),
+  "version": zod.string().max(listNodesResponseClaudeOneVersionMax).optional(),
+  "loggedIn": zod.boolean().optional(),
+  "authMethod": zod.string().max(listNodesResponseClaudeOneAuthMethodMax).optional(),
+  "subscriptionType": zod.string().max(listNodesResponseClaudeOneSubscriptionTypeMax).optional(),
+  "loginExpiresAt": zod.string().max(listNodesResponseClaudeOneLoginExpiresAtMax).optional()
+}),zod.null()]).describe('Stato di Claude Code sul Mac, dall\'ultimo heartbeat'),
+  "claudeCheckedAt": zod.coerce.date().nullable(),
+  "settings": zod.union([zod.object({
+  "maxConcurrent": zod.number().min(1).max(listNodesResponseSettingsOneMaxConcurrentMax).nullable(),
+  "maxConcurrentTurns": zod.number().min(1).max(listNodesResponseSettingsOneMaxConcurrentTurnsMax).nullable(),
+  "taskTimeoutMinutes": zod.number().min(listNodesResponseSettingsOneTaskTimeoutMinutesMin).max(listNodesResponseSettingsOneTaskTimeoutMinutesMax).nullable()
+}),zod.null()]).describe('Impostazioni scelte in console; null = tutte di default'),
+  "updateAvailable": zod.string().nullable().describe('Versione proposta dal manifest (solo nodi installati con l\'app)'),
+  "updateFailedVersion": zod.string().nullable(),
+  "belowMinVersion": zod.boolean().describe('Versione sotto la minima del protocollo (il server non gli consegna lavoro)'),
+  "diagnosticsAt": zod.coerce.date().nullable(),
+  "diagnosticsRequestedAt": zod.coerce.date().nullable(),
+  "uninstallRequestedAt": zod.coerce.date().nullable()
 })
 export const ListNodesResponse = zod.array(ListNodesResponseItem)
 
@@ -193,6 +279,23 @@ export const CreateNodeBody = zod.object({
   "name": zod.string().min(1).max(createNodeBodyNameMax)
 })
 
+export const createNodeResponseNodeClaudeOneVersionMax = 100;
+
+export const createNodeResponseNodeClaudeOneAuthMethodMax = 100;
+
+export const createNodeResponseNodeClaudeOneSubscriptionTypeMax = 100;
+
+export const createNodeResponseNodeClaudeOneLoginExpiresAtMax = 100;
+
+export const createNodeResponseNodeSettingsOneMaxConcurrentMax = 3;
+
+export const createNodeResponseNodeSettingsOneMaxConcurrentTurnsMax = 4;
+
+export const createNodeResponseNodeSettingsOneTaskTimeoutMinutesMin = 5;
+export const createNodeResponseNodeSettingsOneTaskTimeoutMinutesMax = 240;
+
+
+
 export const CreateNodeResponse = zod.object({
   "node": zod.object({
   "id": zod.number(),
@@ -205,7 +308,30 @@ export const CreateNodeResponse = zod.object({
   "maxConcurrent": zod.number(),
   "lastSeenAt": zod.coerce.date().nullable(),
   "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti'),
-  "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)')
+  "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)'),
+  "kind": zod.union([zod.literal('app'),zod.literal('cli'),zod.literal(null)]).nullable().describe('Installato con l\'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato'),
+  "pairedAt": zod.coerce.date().nullable(),
+  "pairedIp": zod.string().nullable().describe('Indirizzo abbreviato (IPv4 \/24, IPv6 \/48) da cui è arrivata la richiesta di abbinamento'),
+  "claude": zod.union([zod.object({
+  "found": zod.boolean(),
+  "version": zod.string().max(createNodeResponseNodeClaudeOneVersionMax).optional(),
+  "loggedIn": zod.boolean().optional(),
+  "authMethod": zod.string().max(createNodeResponseNodeClaudeOneAuthMethodMax).optional(),
+  "subscriptionType": zod.string().max(createNodeResponseNodeClaudeOneSubscriptionTypeMax).optional(),
+  "loginExpiresAt": zod.string().max(createNodeResponseNodeClaudeOneLoginExpiresAtMax).optional()
+}),zod.null()]).describe('Stato di Claude Code sul Mac, dall\'ultimo heartbeat'),
+  "claudeCheckedAt": zod.coerce.date().nullable(),
+  "settings": zod.union([zod.object({
+  "maxConcurrent": zod.number().min(1).max(createNodeResponseNodeSettingsOneMaxConcurrentMax).nullable(),
+  "maxConcurrentTurns": zod.number().min(1).max(createNodeResponseNodeSettingsOneMaxConcurrentTurnsMax).nullable(),
+  "taskTimeoutMinutes": zod.number().min(createNodeResponseNodeSettingsOneTaskTimeoutMinutesMin).max(createNodeResponseNodeSettingsOneTaskTimeoutMinutesMax).nullable()
+}),zod.null()]).describe('Impostazioni scelte in console; null = tutte di default'),
+  "updateAvailable": zod.string().nullable().describe('Versione proposta dal manifest (solo nodi installati con l\'app)'),
+  "updateFailedVersion": zod.string().nullable(),
+  "belowMinVersion": zod.boolean().describe('Versione sotto la minima del protocollo (il server non gli consegna lavoro)'),
+  "diagnosticsAt": zod.coerce.date().nullable(),
+  "diagnosticsRequestedAt": zod.coerce.date().nullable(),
+  "uninstallRequestedAt": zod.coerce.date().nullable()
 }),
   "token": zod.string().describe('Valore del token del nodo, mostrato una sola volta')
 })
@@ -230,6 +356,23 @@ export const DisableNodeParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const disableNodeResponseClaudeOneVersionMax = 100;
+
+export const disableNodeResponseClaudeOneAuthMethodMax = 100;
+
+export const disableNodeResponseClaudeOneSubscriptionTypeMax = 100;
+
+export const disableNodeResponseClaudeOneLoginExpiresAtMax = 100;
+
+export const disableNodeResponseSettingsOneMaxConcurrentMax = 3;
+
+export const disableNodeResponseSettingsOneMaxConcurrentTurnsMax = 4;
+
+export const disableNodeResponseSettingsOneTaskTimeoutMinutesMin = 5;
+export const disableNodeResponseSettingsOneTaskTimeoutMinutesMax = 240;
+
+
+
 export const DisableNodeResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -241,7 +384,30 @@ export const DisableNodeResponse = zod.object({
   "maxConcurrent": zod.number(),
   "lastSeenAt": zod.coerce.date().nullable(),
   "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti'),
-  "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)')
+  "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)'),
+  "kind": zod.union([zod.literal('app'),zod.literal('cli'),zod.literal(null)]).nullable().describe('Installato con l\'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato'),
+  "pairedAt": zod.coerce.date().nullable(),
+  "pairedIp": zod.string().nullable().describe('Indirizzo abbreviato (IPv4 \/24, IPv6 \/48) da cui è arrivata la richiesta di abbinamento'),
+  "claude": zod.union([zod.object({
+  "found": zod.boolean(),
+  "version": zod.string().max(disableNodeResponseClaudeOneVersionMax).optional(),
+  "loggedIn": zod.boolean().optional(),
+  "authMethod": zod.string().max(disableNodeResponseClaudeOneAuthMethodMax).optional(),
+  "subscriptionType": zod.string().max(disableNodeResponseClaudeOneSubscriptionTypeMax).optional(),
+  "loginExpiresAt": zod.string().max(disableNodeResponseClaudeOneLoginExpiresAtMax).optional()
+}),zod.null()]).describe('Stato di Claude Code sul Mac, dall\'ultimo heartbeat'),
+  "claudeCheckedAt": zod.coerce.date().nullable(),
+  "settings": zod.union([zod.object({
+  "maxConcurrent": zod.number().min(1).max(disableNodeResponseSettingsOneMaxConcurrentMax).nullable(),
+  "maxConcurrentTurns": zod.number().min(1).max(disableNodeResponseSettingsOneMaxConcurrentTurnsMax).nullable(),
+  "taskTimeoutMinutes": zod.number().min(disableNodeResponseSettingsOneTaskTimeoutMinutesMin).max(disableNodeResponseSettingsOneTaskTimeoutMinutesMax).nullable()
+}),zod.null()]).describe('Impostazioni scelte in console; null = tutte di default'),
+  "updateAvailable": zod.string().nullable().describe('Versione proposta dal manifest (solo nodi installati con l\'app)'),
+  "updateFailedVersion": zod.string().nullable(),
+  "belowMinVersion": zod.boolean().describe('Versione sotto la minima del protocollo (il server non gli consegna lavoro)'),
+  "diagnosticsAt": zod.coerce.date().nullable(),
+  "diagnosticsRequestedAt": zod.coerce.date().nullable(),
+  "uninstallRequestedAt": zod.coerce.date().nullable()
 })
 
 
@@ -275,6 +441,313 @@ export const GetNodeFoldersResponse = zod.object({
 
 
 /**
+ * Indirizzo dello zip dell'app nel manifest dell'immagine (`available` false senza manifest). Solo con il login.
+ * @summary Pacchetto di Botcave Nodo per Mac
+ */
+export const GetNodeDownloadResponse = zod.object({
+  "available": zod.boolean(),
+  "version": zod.string().nullable(),
+  "url": zod.string().nullable(),
+  "size": zod.number().nullable()
+})
+
+
+/**
+ * Sostituisce le impostazioni (null = default del nodo); il nodo le riceve con l'heartbeat. Valori fuori intervallo: 400 «impostazioni del nodo non valide». 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Impostazioni di un nodo locale
+ */
+export const UpdateNodeSettingsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const updateNodeSettingsBodyMaxConcurrentMax = 3;
+
+export const updateNodeSettingsBodyMaxConcurrentTurnsMax = 4;
+
+export const updateNodeSettingsBodyTaskTimeoutMinutesMin = 5;
+export const updateNodeSettingsBodyTaskTimeoutMinutesMax = 240;
+
+
+
+export const UpdateNodeSettingsBody = zod.object({
+  "maxConcurrent": zod.number().min(1).max(updateNodeSettingsBodyMaxConcurrentMax).nullable(),
+  "maxConcurrentTurns": zod.number().min(1).max(updateNodeSettingsBodyMaxConcurrentTurnsMax).nullable(),
+  "taskTimeoutMinutes": zod.number().min(updateNodeSettingsBodyTaskTimeoutMinutesMin).max(updateNodeSettingsBodyTaskTimeoutMinutesMax).nullable()
+})
+
+export const updateNodeSettingsResponseClaudeOneVersionMax = 100;
+
+export const updateNodeSettingsResponseClaudeOneAuthMethodMax = 100;
+
+export const updateNodeSettingsResponseClaudeOneSubscriptionTypeMax = 100;
+
+export const updateNodeSettingsResponseClaudeOneLoginExpiresAtMax = 100;
+
+export const updateNodeSettingsResponseSettingsOneMaxConcurrentMax = 3;
+
+export const updateNodeSettingsResponseSettingsOneMaxConcurrentTurnsMax = 4;
+
+export const updateNodeSettingsResponseSettingsOneTaskTimeoutMinutesMin = 5;
+export const updateNodeSettingsResponseSettingsOneTaskTimeoutMinutesMax = 240;
+
+
+
+export const UpdateNodeSettingsResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'disabled']),
+  "executor": zod.string().nullable(),
+  "version": zod.string().nullable(),
+  "skills": zod.array(zod.string()),
+  "workspaceRoot": zod.string().nullable(),
+  "maxConcurrent": zod.number(),
+  "lastSeenAt": zod.coerce.date().nullable(),
+  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti'),
+  "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)'),
+  "kind": zod.union([zod.literal('app'),zod.literal('cli'),zod.literal(null)]).nullable().describe('Installato con l\'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato'),
+  "pairedAt": zod.coerce.date().nullable(),
+  "pairedIp": zod.string().nullable().describe('Indirizzo abbreviato (IPv4 \/24, IPv6 \/48) da cui è arrivata la richiesta di abbinamento'),
+  "claude": zod.union([zod.object({
+  "found": zod.boolean(),
+  "version": zod.string().max(updateNodeSettingsResponseClaudeOneVersionMax).optional(),
+  "loggedIn": zod.boolean().optional(),
+  "authMethod": zod.string().max(updateNodeSettingsResponseClaudeOneAuthMethodMax).optional(),
+  "subscriptionType": zod.string().max(updateNodeSettingsResponseClaudeOneSubscriptionTypeMax).optional(),
+  "loginExpiresAt": zod.string().max(updateNodeSettingsResponseClaudeOneLoginExpiresAtMax).optional()
+}),zod.null()]).describe('Stato di Claude Code sul Mac, dall\'ultimo heartbeat'),
+  "claudeCheckedAt": zod.coerce.date().nullable(),
+  "settings": zod.union([zod.object({
+  "maxConcurrent": zod.number().min(1).max(updateNodeSettingsResponseSettingsOneMaxConcurrentMax).nullable(),
+  "maxConcurrentTurns": zod.number().min(1).max(updateNodeSettingsResponseSettingsOneMaxConcurrentTurnsMax).nullable(),
+  "taskTimeoutMinutes": zod.number().min(updateNodeSettingsResponseSettingsOneTaskTimeoutMinutesMin).max(updateNodeSettingsResponseSettingsOneTaskTimeoutMinutesMax).nullable()
+}),zod.null()]).describe('Impostazioni scelte in console; null = tutte di default'),
+  "updateAvailable": zod.string().nullable().describe('Versione proposta dal manifest (solo nodi installati con l\'app)'),
+  "updateFailedVersion": zod.string().nullable(),
+  "belowMinVersion": zod.boolean().describe('Versione sotto la minima del protocollo (il server non gli consegna lavoro)'),
+  "diagnosticsAt": zod.coerce.date().nullable(),
+  "diagnosticsRequestedAt": zod.coerce.date().nullable(),
+  "uninstallRequestedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Il nodo la invia al prossimo heartbeat. 6 all'ora per nodo. 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Chiede al nodo di inviare una diagnosi
+ */
+export const RequestNodeDiagnosticsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const requestNodeDiagnosticsResponseClaudeOneVersionMax = 100;
+
+export const requestNodeDiagnosticsResponseClaudeOneAuthMethodMax = 100;
+
+export const requestNodeDiagnosticsResponseClaudeOneSubscriptionTypeMax = 100;
+
+export const requestNodeDiagnosticsResponseClaudeOneLoginExpiresAtMax = 100;
+
+export const requestNodeDiagnosticsResponseSettingsOneMaxConcurrentMax = 3;
+
+export const requestNodeDiagnosticsResponseSettingsOneMaxConcurrentTurnsMax = 4;
+
+export const requestNodeDiagnosticsResponseSettingsOneTaskTimeoutMinutesMin = 5;
+export const requestNodeDiagnosticsResponseSettingsOneTaskTimeoutMinutesMax = 240;
+
+
+
+export const RequestNodeDiagnosticsResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'disabled']),
+  "executor": zod.string().nullable(),
+  "version": zod.string().nullable(),
+  "skills": zod.array(zod.string()),
+  "workspaceRoot": zod.string().nullable(),
+  "maxConcurrent": zod.number(),
+  "lastSeenAt": zod.coerce.date().nullable(),
+  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti'),
+  "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)'),
+  "kind": zod.union([zod.literal('app'),zod.literal('cli'),zod.literal(null)]).nullable().describe('Installato con l\'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato'),
+  "pairedAt": zod.coerce.date().nullable(),
+  "pairedIp": zod.string().nullable().describe('Indirizzo abbreviato (IPv4 \/24, IPv6 \/48) da cui è arrivata la richiesta di abbinamento'),
+  "claude": zod.union([zod.object({
+  "found": zod.boolean(),
+  "version": zod.string().max(requestNodeDiagnosticsResponseClaudeOneVersionMax).optional(),
+  "loggedIn": zod.boolean().optional(),
+  "authMethod": zod.string().max(requestNodeDiagnosticsResponseClaudeOneAuthMethodMax).optional(),
+  "subscriptionType": zod.string().max(requestNodeDiagnosticsResponseClaudeOneSubscriptionTypeMax).optional(),
+  "loginExpiresAt": zod.string().max(requestNodeDiagnosticsResponseClaudeOneLoginExpiresAtMax).optional()
+}),zod.null()]).describe('Stato di Claude Code sul Mac, dall\'ultimo heartbeat'),
+  "claudeCheckedAt": zod.coerce.date().nullable(),
+  "settings": zod.union([zod.object({
+  "maxConcurrent": zod.number().min(1).max(requestNodeDiagnosticsResponseSettingsOneMaxConcurrentMax).nullable(),
+  "maxConcurrentTurns": zod.number().min(1).max(requestNodeDiagnosticsResponseSettingsOneMaxConcurrentTurnsMax).nullable(),
+  "taskTimeoutMinutes": zod.number().min(requestNodeDiagnosticsResponseSettingsOneTaskTimeoutMinutesMin).max(requestNodeDiagnosticsResponseSettingsOneTaskTimeoutMinutesMax).nullable()
+}),zod.null()]).describe('Impostazioni scelte in console; null = tutte di default'),
+  "updateAvailable": zod.string().nullable().describe('Versione proposta dal manifest (solo nodi installati con l\'app)'),
+  "updateFailedVersion": zod.string().nullable(),
+  "belowMinVersion": zod.boolean().describe('Versione sotto la minima del protocollo (il server non gli consegna lavoro)'),
+  "diagnosticsAt": zod.coerce.date().nullable(),
+  "diagnosticsRequestedAt": zod.coerce.date().nullable(),
+  "uninstallRequestedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * File di testo (`attachment`). 404 se il nodo non è dell'utente o non ha diagnosi. Solo con il login.
+ * @summary Scarica l'ultima diagnosi del nodo
+ */
+export const GetNodeDiagnosticsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetNodeDiagnosticsResponse = zod.string()
+
+
+/**
+ * Il nodo lo legge con l'heartbeat, chiude il lavoro e chiama `/node/uninstalled`. 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Chiede al nodo di disinstallarsi dal Mac
+ */
+export const RequestNodeUninstallParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const requestNodeUninstallResponseClaudeOneVersionMax = 100;
+
+export const requestNodeUninstallResponseClaudeOneAuthMethodMax = 100;
+
+export const requestNodeUninstallResponseClaudeOneSubscriptionTypeMax = 100;
+
+export const requestNodeUninstallResponseClaudeOneLoginExpiresAtMax = 100;
+
+export const requestNodeUninstallResponseSettingsOneMaxConcurrentMax = 3;
+
+export const requestNodeUninstallResponseSettingsOneMaxConcurrentTurnsMax = 4;
+
+export const requestNodeUninstallResponseSettingsOneTaskTimeoutMinutesMin = 5;
+export const requestNodeUninstallResponseSettingsOneTaskTimeoutMinutesMax = 240;
+
+
+
+export const RequestNodeUninstallResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['active', 'disabled']),
+  "executor": zod.string().nullable(),
+  "version": zod.string().nullable(),
+  "skills": zod.array(zod.string()),
+  "workspaceRoot": zod.string().nullable(),
+  "maxConcurrent": zod.number(),
+  "lastSeenAt": zod.coerce.date().nullable(),
+  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti'),
+  "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)'),
+  "kind": zod.union([zod.literal('app'),zod.literal('cli'),zod.literal(null)]).nullable().describe('Installato con l\'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato'),
+  "pairedAt": zod.coerce.date().nullable(),
+  "pairedIp": zod.string().nullable().describe('Indirizzo abbreviato (IPv4 \/24, IPv6 \/48) da cui è arrivata la richiesta di abbinamento'),
+  "claude": zod.union([zod.object({
+  "found": zod.boolean(),
+  "version": zod.string().max(requestNodeUninstallResponseClaudeOneVersionMax).optional(),
+  "loggedIn": zod.boolean().optional(),
+  "authMethod": zod.string().max(requestNodeUninstallResponseClaudeOneAuthMethodMax).optional(),
+  "subscriptionType": zod.string().max(requestNodeUninstallResponseClaudeOneSubscriptionTypeMax).optional(),
+  "loginExpiresAt": zod.string().max(requestNodeUninstallResponseClaudeOneLoginExpiresAtMax).optional()
+}),zod.null()]).describe('Stato di Claude Code sul Mac, dall\'ultimo heartbeat'),
+  "claudeCheckedAt": zod.coerce.date().nullable(),
+  "settings": zod.union([zod.object({
+  "maxConcurrent": zod.number().min(1).max(requestNodeUninstallResponseSettingsOneMaxConcurrentMax).nullable(),
+  "maxConcurrentTurns": zod.number().min(1).max(requestNodeUninstallResponseSettingsOneMaxConcurrentTurnsMax).nullable(),
+  "taskTimeoutMinutes": zod.number().min(requestNodeUninstallResponseSettingsOneTaskTimeoutMinutesMin).max(requestNodeUninstallResponseSettingsOneTaskTimeoutMinutesMax).nullable()
+}),zod.null()]).describe('Impostazioni scelte in console; null = tutte di default'),
+  "updateAvailable": zod.string().nullable().describe('Versione proposta dal manifest (solo nodi installati con l\'app)'),
+  "updateFailedVersion": zod.string().nullable(),
+  "belowMinVersion": zod.boolean().describe('Versione sotto la minima del protocollo (il server non gli consegna lavoro)'),
+  "diagnosticsAt": zod.coerce.date().nullable(),
+  "diagnosticsRequestedAt": zod.coerce.date().nullable(),
+  "uninstallRequestedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Solo con il token d'ambito `node`. Sostituisce la diagnosi precedente e azzera la richiesta. Corpo oltre 256 KB: 413.
+ * @summary Il nodo invia la diagnosi richiesta
+ */
+
+
+
+export const NodeUploadDiagnosticsBody = zod.object({
+  "content": zod.string().min(1)
+})
+
+export const NodeUploadDiagnosticsResponse = zod.void()
+
+
+/**
+ * Solo con il token d'ambito `node`. Disattiva il nodo come «Disattiva».
+ * @summary Il nodo comunica di essersi disinstallato
+ */
+export const NodeUninstalledResponse = zod.void()
+
+
+/**
+ * Il codice si accetta con o senza trattino e in minuscolo. Sconosciuta, scaduta o già decisa: 404. Solo con il login.
+ * @summary Dati di una richiesta di collegamento
+ */
+export const getNodePairingPathCodeMax = 20;
+
+
+
+export const GetNodePairingParams = zod.object({
+  "code": zod.coerce.string().min(1).max(getNodePairingPathCodeMax)
+})
+
+export const GetNodePairingResponse = zod.object({
+  "deviceName": zod.string(),
+  "version": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date()
+})
+
+
+/**
+ * Con `replaceNodeId` il nodo esistente dell'utente resta (nome invariato) e i suoi token si revocano come con «Rigenera token»; senza, si crea un nodo con `name` (doppione 409 "nome già usato"). Il token non si crea qui: lo riceve il nodo con il poll. Al quinto errore la richiesta scade. Solo con il login.
+ * @summary Approva il collegamento di un Mac
+ */
+export const approveNodePairingPathCodeMax = 20;
+
+
+
+export const ApproveNodePairingParams = zod.object({
+  "code": zod.coerce.string().min(1).max(approveNodePairingPathCodeMax)
+})
+
+export const ApproveNodePairingBody = zod.object({
+  "name": zod.string().describe('Nome del nodo nuovo (ignorato con replaceNodeId)'),
+  "replaceNodeId": zod.number().nullish()
+})
+
+export const ApproveNodePairingResponse = zod.object({
+  "status": zod.enum(['approved', 'denied'])
+})
+
+
+/**
+ * Solo con il login.
+ * @summary Rifiuta il collegamento di un Mac
+ */
+export const denyNodePairingPathCodeMax = 20;
+
+
+
+export const DenyNodePairingParams = zod.object({
+  "code": zod.coerce.string().min(1).max(denyNodePairingPathCodeMax)
+})
+
+export const DenyNodePairingResponse = zod.object({
+  "status": zod.enum(['approved', 'denied'])
+})
+
+
+/**
  * Protocollo dei nodi: solo con il token d'ambito `node` di un nodo attivo (sessione e token personali: 403). Aggiorna le capacità dichiarate e `last_seen_at`; risponde con il numero di compiti che il nodo potrebbe prendere. 6 al minuto per nodo.
  * @summary Heartbeat del nodo locale
  */
@@ -294,6 +767,8 @@ export const nodeHeartbeatBodyFoldersItemMax = 300;
 
 export const nodeHeartbeatBodyFoldersMax = 2000;
 
+export const nodeHeartbeatBodyUpdateFailedMax = 100;
+
 
 
 export const NodeHeartbeatBody = zod.object({
@@ -302,11 +777,36 @@ export const NodeHeartbeatBody = zod.object({
   "skills": zod.array(zod.string().min(1).max(nodeHeartbeatBodySkillsItemMax)).max(nodeHeartbeatBodySkillsMax).describe('Nomi delle skill disponibili sul nodo'),
   "workspaceRoot": zod.string().max(nodeHeartbeatBodyWorkspaceRootMax).describe('Radice degli spazi di lavoro (testo descrittivo)'),
   "maxConcurrent": zod.number().min(1).max(nodeHeartbeatBodyMaxConcurrentMax),
-  "folders": zod.array(zod.string().min(1).max(nodeHeartbeatBodyFoldersItemMax)).max(nodeHeartbeatBodyFoldersMax).optional().describe('Sottocartelle della radice (percorsi relativi con `\/`, fino a 3 livelli), per la scelta dello spazio di lavoro in console. Facoltativo: un nodo che non lo manda lascia invariato l\'elenco salvato.')
+  "folders": zod.array(zod.string().min(1).max(nodeHeartbeatBodyFoldersItemMax)).max(nodeHeartbeatBodyFoldersMax).optional().describe('Sottocartelle della radice (percorsi relativi con `\/`, fino a 3 livelli), per la scelta dello spazio di lavoro in console. Facoltativo: un nodo che non lo manda lascia invariato l\'elenco salvato.'),
+  "kind": zod.enum(['app', 'cli']).optional().describe('Come è installato il nodo; solo `app` riceve aggiornamenti automatici'),
+  "claude": zod.record(zod.string(), zod.unknown()).optional().describe('Stato di Claude Code sul Mac. Tollerante di proposito: il server tiene solo i campi noti con il tipo giusto (`found`, `version`, `loggedIn`, `authMethod`, `subscriptionType`, `loginExpiresAt`) e scarta il resto, così un campo strano non fa fallire l\'heartbeat.'),
+  "updateFailed": zod.string().max(nodeHeartbeatBodyUpdateFailedMax).optional().describe('Versione di cui l\'aggiornamento non è riuscito (ripristinata la precedente)')
 })
 
+export const nodeHeartbeatResponseSettingsMaxConcurrentMax = 3;
+
+export const nodeHeartbeatResponseSettingsMaxConcurrentTurnsMax = 4;
+
+export const nodeHeartbeatResponseSettingsTaskTimeoutMinutesMin = 5;
+export const nodeHeartbeatResponseSettingsTaskTimeoutMinutesMax = 240;
+
+
+
 export const NodeHeartbeatResponse = zod.object({
-  "pending": zod.number().describe('Compiti in attesa che il nodo potrebbe prendere')
+  "pending": zod.number().describe('Compiti in attesa che il nodo potrebbe prendere'),
+  "update": zod.object({
+  "version": zod.string(),
+  "sha256": zod.string(),
+  "size": zod.number(),
+  "required": zod.boolean()
+}).optional(),
+  "settings": zod.object({
+  "maxConcurrent": zod.number().min(1).max(nodeHeartbeatResponseSettingsMaxConcurrentMax).nullable(),
+  "maxConcurrentTurns": zod.number().min(1).max(nodeHeartbeatResponseSettingsMaxConcurrentTurnsMax).nullable(),
+  "taskTimeoutMinutes": zod.number().min(nodeHeartbeatResponseSettingsTaskTimeoutMinutesMin).max(nodeHeartbeatResponseSettingsTaskTimeoutMinutesMax).nullable()
+}).optional(),
+  "diagnosticsRequested": zod.boolean().optional(),
+  "uninstallRequested": zod.boolean().optional()
 })
 
 
@@ -2450,6 +2950,16 @@ export const GetDashboardStatsResponse = zod.object({
   "cancelledRuns": zod.number(),
   "pendingActions": zod.number().describe('Azioni dell\'utente corrente in attesa di conferma'),
   "triggersInError": zod.number().describe('Inneschi fermi in stato error (servono «Riprendi»)'),
+  "recentlyPairedNodes": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "pairedAt": zod.coerce.date()
+})).describe('Nodi dell\'utente collegati nelle ultime 24 ore (attivi)'),
+  "nodeClaudeWarnings": zod.array(zod.object({
+  "nodeId": zod.number(),
+  "nodeName": zod.string(),
+  "reason": zod.enum(['not_installed', 'not_logged_in', 'login_expiring'])
+})).describe('Nodi con un account «Claude Code (nodo)» dell\'utente il cui Claude non è pronto'),
   "avgDurationMs": zod.number().nullish()
 })
 

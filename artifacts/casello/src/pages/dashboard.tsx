@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RunStatusBadge } from "@/components/run-status-badge";
 import { BudgetAlerts } from "@/components/budget/budget";
+import { CLAUDE_WARNING_TEXT } from "@/components/account/node-status-list";
 import { formatDuration, formatRelative } from "@/lib/format";
 
 // Le run durano da secondi a decine di secondi: aggiornamento periodico leggero.
@@ -137,6 +138,28 @@ export default function Dashboard() {
       </div>
 
       <BudgetAlerts />
+
+      {s?.recentlyPairedNodes.map((node) => (
+        <Alert key={`paired-${node.id}`}>
+          <AlertTitle>Nuovo Mac collegato: {node.name}</AlertTitle>
+          <AlertDescription>
+            <Link href="/account" className="underline">
+              Apri Account → Nodi
+            </Link>
+          </AlertDescription>
+        </Alert>
+      ))}
+      {s?.nodeClaudeWarnings.map((w) => (
+        <Alert key={`claude-${w.nodeId}-${w.reason}`} variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertTitle>{w.nodeName}: {CLAUDE_WARNING_TEXT[w.reason]}</AlertTitle>
+          <AlertDescription>
+            <Link href="/account" className="underline">
+              Apri Account → Nodi
+            </Link>
+          </AlertDescription>
+        </Alert>
+      ))}
 
       {stats.isError && (
         <Alert variant="destructive">

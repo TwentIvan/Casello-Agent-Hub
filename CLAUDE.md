@@ -53,6 +53,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   approvabile in parte (caselle per passo), con riferimenti agli id creati dai passi precedenti; Alfred la legge passo per passo e la decide (vedi "Proposte multiple").
 - Esecutore «Claude Code (nodo)»: un account AI legato a un nodo fa eseguire a `casello-nodo` con `claude -p` (posto Claude Team dell'utente) i turni di Alfred scritto, Lucius,
   chat del piano e di squadra e le run degli agenti; strumenti su `/mcp/turn` con un token per turno, ripiego facoltativo su un modello cloud (vedi "Esecutore Claude Code (nodo)").
+- Botcave Nodo (app per Mac): il nodo si installa, si collega, si aggiorna, si diagnostica e si disinstalla senza terminale: app senza finestre con Node
+  incluso, abbinamento dal browser con un codice, aggiornamento automatico dal manifest, verifica e installazione di Claude Code, impostazioni, diagnosi
+  e disinstallazione dalla console (vedi "Botcave Nodo (app per Mac)").
 - Responsabile di Botcave stesso: l'App 4 (Botcave come app di sé stessa) con token di servizio d'ambito `agent`, che legge e scrive ma non decide mai al posto dell'utente (vedi "Token personali su `/api`").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
@@ -102,6 +105,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `pnpm --filter @workspace/casello run test` — test della console (Vitest: protocollo, tema, rinnovo del token e coda del caricatore del pannello incorporabile)
 - `pnpm --filter @workspace/casello-nodo run test` / `run build` — test e build del servizio `casello-nodo` (la build produce
   `artifacts/casello-nodo/dist/index.mjs`, richiesto da `casello-nodo install`)
+- `bash artifacts/casello-nodo/scripts/build-app.sh` — build di Botcave Nodo per Mac (solo macOS, Node 24, rete verso nodejs.org e npm): app zippata,
+  binario universale e `nodo-manifest.json` in `docker/nodo-downloads/` (in CI lo fa il job `build-nodo`)
 - `pnpm run typecheck` — typecheck di tutti i package (da far passare prima di ogni commit)
 - `pnpm run build` — typecheck + build
 - `pnpm --filter @workspace/api-spec run codegen` — rigenera hook React Query e schemi Zod da `openapi.yaml`
@@ -190,6 +195,14 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   servizio `artifacts/casello-nodo/` (README, `src/`: `cli.ts`, `loop.ts`, `runner.ts`, `client.ts`, `config.ts`, `launchd.ts`,
   `workspace.ts`, `capabilities.ts`, `task-file.ts`); console: `components/account/nodes-section.tsx` (Account → Nodi) e
   `components/teams/team-attachments.tsx` (scheda squadra). Spec: `docs/superpowers/specs/2026-11-04-casello-nodo-locale-design.md`
+- Botcave Nodo per Mac (vedi "Botcave Nodo (app per Mac)"): API in `artifacts/api-server/src/lib/nodes/` (`pairing.ts` abbinamento, `manifest.ts` manifest e
+  aggiornamenti, `node-admin.ts` impostazioni, diagnosi e disinstallazione, con `protocol.ts` e `lease-sweeper.ts`), route `src/routes/node-pairing.ts` e
+  `src/routes/nodes.ts`/`node.ts`, Dashboard in `src/routes/dashboard.ts`; schema `lib/db/src/schema/node-pairings.ts` e `nodes.ts`; nodo in `artifacts/casello-nodo/src/`
+  (`app-mode.ts` modalità app e menu, `pairing.ts`, `dialogs.ts` con `osascript`, `updater.ts`, `claude-check.ts`, `node-admin.ts` diagnosi e disinstallazione, con
+  `loop.ts`, `cli.ts`, `config.ts`, `index.ts`), build `artifacts/casello-nodo/scripts/build-app.sh`, `app/` (`Info.plist`, `sea-config.json`), `min-version.txt`; file pubblicati in
+  `docker/nodo-downloads/`; console `pages/node-pair.tsx` (`/nodes/pair`), `lib/pair-code.ts`, `components/account/` (`node-download-card.tsx`, `node-status-list.tsx`,
+  `node-settings-dialog.tsx`, `nodes-section.tsx`). Prova di flusso `artifacts/api-server/test/node-app-flow.test.ts`. Spec:
+  `docs/superpowers/specs/2026-11-10-botcave-nodo-senza-terminale-design.md`
 - Alfred (vedi "Alfred (maggiordomo vocale)"): `artifacts/api-server/src/lib/alfred/` (`config.ts`, `settings.ts`, `gemini.ts`, `sessions.ts`,
   `tools.ts`, `tool-declarations.ts`, `confirmations.ts`, `instructions.ts`, `notifications.ts`); route `src/routes/alfred.ts`; schema `lib/db/src/schema/alfred.ts`;
   console `artifacts/casello/src/pages/alfred.tsx`, `components/alfred/` (`use-alfred-voice.ts`, `mic-worklet.ts`, `alfred-transcript.tsx`, `notification-queue.ts`),
@@ -622,6 +635,8 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `waiting_since`, `no_node_notified`, `attachment_ids`). Da applicare in produzione PRIMA del merge e da segnalare nella PR; riportata in
   `docs/schema-casello.sql`. Poi `docs/migrations/2026-11-nodo-cartelle.sql` (additiva e idempotente, PRIMA del merge): colonne
   `nodes.workspace_folders` (jsonb) e `nodes.folders_updated_at`.
+- Installazione, collegamento, aggiornamento e disinstallazione senza terminale (app «Botcave Nodo»): vedi "Botcave Nodo (app per Mac)"; i comandi qui sopra restano
+  l'alternativa da terminale.
 - Non ancora fatto: interfaccia in The Hub Up (5), organizzazioni e policy dei dati (2: proprietà degli allegati e dei nodi per organizzazione).
 
 ## Modelli AI (account AI)
@@ -1525,6 +1540,101 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `node_turns` con indici, `run_steps.note`. Da applicare su Neon PRIMA del merge (SQL completo in chat) e da segnalare nella PR; riportata in
   `docs/schema-casello.sql`. Nessuna variabile nuova.
 
+## Botcave Nodo (app per Mac)
+
+- Spec: `docs/superpowers/specs/2026-11-10-botcave-nodo-senza-terminale-design.md`; piano `docs/superpowers/plans/2026-11-10-botcave-nodo-senza-terminale.md`. Dove il
+  codice differisce dalla spec vale il codice, descritto qui. «Botcave Nodo.app» installa, collega, aggiorna, diagnostica e disinstalla il nodo locale (vedi "Nodi
+  (esecuzione dei ruoli node)") senza terminale; la console (Account → Nodi) è l'unica interfaccia di gestione. La CLI (`casello-nodo install|uninstall|status|run`)
+  resta per sviluppo, test e chi la preferisce: l'app è un'altra entrata dello stesso programma. Prima versione **senza firma Apple** (primo avvio con «Apri comunque»).
+- **App** (`app-mode.ts`, `index.ts`): eseguibile unico (Node 24 «single executable application» con il bundle CommonJS di `casello-nodo`) in
+  `Botcave Nodo.app/Contents/MacOS/botcave-nodo`, `CFBundleIdentifier` `cloud.fantamister.botcave-nodo`, `LSUIElement` (niente icona nel Dock). Senza argomenti (un `-psn_…` aggiunto dal Finder si ignora,
+  `launchArgs`) e dentro un `.app` (`isAppExecPath`) parte la modalità app, con argomenti la CLI (`--version` stampa la versione, iniettata con `--define:__NODE_VERSION__` da `package.json`). Senza
+  config → abbinamento; con una config valida della CLI ma senza `~/.casello-nodo/bin/casello-nodo` → la adotta (indirizzo, token e radice restano) e installa programma e
+  LaunchAgent; collegato → menu nativo (`choose from list`): «Apri Botcave» (`/account`), «Installa Claude Code» (solo se `claude` manca), «Accedi a Claude», «Cambia
+  cartella di lavoro» (config e `kickstart -k` del servizio), «Apri i log», «Ricollega», «Disinstalla». Dialoghi e notifiche con `osascript` (`dialogs.ts`: ogni riga un
+  argomento `-e`, testi escapati, mai una shell; il testo d'errore di `osascript` non si mostra). L'installazione copia l'eseguibile in `~/.casello-nodo/bin/casello-nodo`
+  (temporaneo e rename; prima del rename `xattr -d com.apple.quarantine` sulla copia, così Gatekeeper non blocca il servizio avviato da launchd, errori
+  ignorati; la config col token si scrive **prima** della copia, così un errore non perde il token consegnato una volta sola) e carica il LaunchAgent di
+  sempre (`cloud.fantamister.casello-nodo`) con `[programma, "run"]`; toglie la copia `.mjs` della CLI. Il servizio usa la copia: l'app in Applicazioni non cambia mai.
+  Indirizzo fisso `https://casello.fantamister.cloud` (`DEFAULT_URL`); `BOTCAVE_NODO_URL` lo sostituisce solo in sviluppo (https, http solo verso localhost).
+- **Abbinamento** («device flow», `lib/nodes/pairing.ts`, `routes/node-pairing.ts`, nodo `pairing.ts`; tabella `node_pairings`, stati `pending|approved|denied|consumed|expired`):
+  `POST /api/node-pairing/start` (pubblica, 10/min per IP) `{deviceName ≤ 100, version}` → `{pairingId, userCode, pollSecret, expiresAt}`: codice di 8 caratteri
+  dell'alfabeto `ABCDEFGHJKMNPQRSTVWXYZ23456789` mostrato `XXXX-XXXX` (accettato anche senza trattino e in minuscolo), segreto di 32 byte, nel DB solo gli hash SHA-256,
+  10 minuti, IP abbreviato all'/24 o /48. Il nodo apre `<caselloUrl>/nodes/pair?code=…`, notifica il codice e interroga `POST /api/node-pairing/poll` `{pairingId,
+  pollSecret}` ogni 3 s (30/min per richiesta; si ferma al 410, con una sicurezza locale calcolata come durata, scadenza meno l'ora del server dell'header `Date`
+  di `start` (12 minuti se manca) più 2 minuti dall'inizio, mai con l'orologio del Mac): 202 `pending`; 200 `{token, nodeId, nodeName}` crea il token di nodo (`createNodeToken`) e consuma la richiesta nella stessa
+  transazione (consegna una volta sola); altrimenti 410 «collegamento non più valido». Console (solo login, `sessionOnly`, 20/min per utente): `GET
+  /api/account/node-pairings/:code` (404 «richiesta di collegamento non trovata o scaduta»), `POST …/approve` `{name, replaceNodeId?}` (nodo nuovo con le regole di
+  `POST /api/account/nodes`; con `replaceNodeId` un nodo attivo dell'utente tiene nome e id e i suoi token si revocano come con «Rigenera token», compiti e turni in carico
+  chiusi; nella stessa transazione si azzerano richieste e stato del Mac vecchio: `uninstall_requested_at`, `diagnostics_requested_at`, `update_failed_version`, `kind`,
+  `claude_status`, `claude_checked_at`), `POST …/deny`; al più 5 decisioni fallite per codice, poi `expired`. L'approvazione proroga la richiesta di almeno 2 minuti (`COLLECT_GRACE_MS`) perché il nodo
+  ritiri il token; il token NON nasce all'approvazione. Richieste più vecchie di 1 ora cancellate dal controllo orario dei nodi. Il nodo chiede poi la radice con
+  `choose folder` (da `~/Botcave`, creata se manca; annullato = `~/Botcave`). Pagina `/nodes/pair` (`node-pair.tsx`): «Nuovo nodo» (default) o «Sostituisci <nome>»
+  (preselezionato se il nome coincide), avviso «Conferma solo se hai appena aperto Botcave Nodo su questo Mac»; il codice si toglie dall'indirizzo e, senza login, resta in
+  `sessionStorage` (`lib/pair-code.ts`): il `returnTo` del login è `/nodes/pair` senza query. Nodo collegato: «collegato il … da <IP abbreviato>» in Account → Nodi
+  (`nodes.paired_at`, `paired_ip`; `Node.pairedAt`, `Node.pairedIp`) e per 24 ore l'avviso «Nuovo Mac collegato» nella Dashboard (`recentlyPairedNodes` di `/api/dashboard/stats`).
+- **Ricollega e token revocato**: «Ricollega» rifà l'abbinamento e scrive solo il nuovo token nella config, poi riavvia il servizio. Con 401/403 sull'heartbeat un nodo
+  `app` non esce (launchd lo riavvierebbe in ciclo): non prende lavoro, notifica una volta «Botcave Nodo non è più collegato: aprilo e scegli Ricollega» e riprova a ogni
+  heartbeat. Un nodo disattivato non si riattiva: la console dice «per usare di nuovo questo Mac apri Botcave Nodo e scegli Ricollega (crea un nodo nuovo)». «Rigenera
+  token» della console resta per i nodi della CLI.
+- **Build e distribuzione** (`scripts/build-app.sh`, job `build-nodo` di `deploy.yml`, vedi "Deploy"): `pnpm run build:sea` (bundle CJS), blob SEA iniettato con `postject`
+  negli eseguibili ufficiali di Node 24 `darwin-arm64` e `darwin-x64` (scaricati da nodejs.org e verificati con `SHASUMS256.txt`), `lipo` universale, firma ad-hoc, prova di
+  `--version` in arm64 e x64 (Rosetta). Escono `Botcave-Nodo-<versione>.zip`, `casello-nodo-<versione>` e `nodo-manifest.json` `{version, minVersion, binary: {file, sha256,
+  size}, app: {…}}`; `minVersion` da `artifacts/casello-nodo/min-version.txt` (oggi `0.2.0`: i nodi della CLI 0.2.0 continuano a prendere lavoro), la versione da
+  `package.json` (oggi `0.3.0`). **Ogni modifica a `artifacts/casello-nodo/src` richiede di alzare `version` in
+  `artifacts/casello-nodo/package.json`**: i file pubblicati hanno la versione nel nome e la cache immutable (la CI lo controlla sui branch diversi da `main`). L'API legge il manifest da `NODO_MANIFEST_PATH` (default `/app/nodo/nodo-manifest.json`; assente = nessun aggiornamento proposto e nessun
+  nodo sotto la minima). `GET /api/account/nodes/download` (solo login) dà versione, dimensione e indirizzo dello zip; Account → Nodi → carta «Botcave Nodo per Mac» con
+  «Scarica per Mac» e i passi del primo avvio (trascina in Applicazioni, apri, «Apri comunque» in Privacy e sicurezza, «Collega»).
+- **Aggiornamento automatico** (`manifest.ts`, nodo `updater.ts` e `loop.ts`; solo nodi con heartbeat `kind: "app"`, cioè il programma in esecuzione è
+  `~/.casello-nodo/bin/casello-nodo`): la risposta all'heartbeat porta `update {version, sha256, size, required}` se la versione è sotto quella del manifest e diversa da
+  quella già fallita (`nodes.update_failed_version`); `required` sotto `minVersion`. Sotto la minima il server non consegna compiti né turni (`claim` 204), per ogni `kind`.
+  Un aggiornamento non obbligatorio parte solo con il nodo libero (ricontrollato a ogni heartbeat); il nodo scarica `<caselloUrl>/downloads/nodo/casello-nodo-<versione>`
+  (indirizzo dalla config, mai dalla risposta; nessun redirect né token, ≤ 300 MB, 10 minuti) in `casello-nodo.download`, verifica dimensione e sha256 **continuando a
+  lavorare**, poi smette di prendere lavoro e aspetta quello in corso fino a 30 minuti (obbligatorio: poi lo interrompe come uno stop; altrimenti rinvia). Scrive
+  `~/.casello-nodo/update.json` `{from, to, startedAt, starts: 0}`, tiene la versione precedente come `casello-nodo.prev` (collegamento fisico), rinomina il nuovo sopra il
+  programma ed esce con 0 (launchd lo riavvia). Ogni errore lascia intatto il programma (e toglie l'`update.json` appena scritto, non una
+  versione fallita già registrata); nuovo tentativo dopo un'ora. Ritorno indietro (`checkUpdateOnStart`, prima di
+  `run`): con `update.json` aperto ogni avvio incrementa `starts`; al terzo entro 2 minuti ripristina `.prev`, registra `failedVersion` ed esce; il nodo la riferisce con
+  `updateFailed` e la console mostra «L'aggiornamento alla versione <v> non è riuscito» (il server la toglie quando l'heartbeat riporta quella versione o una più
+  nuova). Il primo heartbeat riuscito chiude `update.json` (`markUpdateHealthy`). Nodi della CLI
+  (`kind: "cli"` o senza `kind`): nessun aggiornamento, la console dice «Installa Botcave Nodo per gli aggiornamenti automatici».
+- **Claude Code** (`claude-check.ts`): verifica all'avvio e ogni 10 minuti (`claude` nel PATH del servizio, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`; `claude
+  --version` e `claude auth status --json`, 10 s ciascuno); l'heartbeat porta `claude {found, version, loggedIn, authMethod, subscriptionType, loginExpiresAt}` (niente email né
+  organizzazione; il server tiene solo questi campi e scarta quelli di tipo sbagliato senza rifiutare l'heartbeat) in `nodes.claude_status` con `claude_checked_at`. Console: LED in Account →
+  Nodi («installato · versione», accesso, piano, scadenza), avviso se il login manca (`loggedIn: false`; assente = non noto, nessun avviso) o scade entro 3 giorni anche sulla carta dell'account «Claude Code (nodo)» e nella
+  Dashboard (`nodeClaudeWarnings`). «Installa Claude Code» (conferma, poi `/bin/bash -c "curl -fsSL https://claude.ai/install.sh | bash"` con URL costante, 10 minuti,
+  notifiche) e «Accedi a Claude» (`claude auth login`, poi verifica ogni 5 s per al più 10 minuti).
+- **Impostazioni, diagnosi, disinstallazione** (`lib/nodes/node-admin.ts`, nodo `node-admin.ts`; route solo login): `PUT /api/account/nodes/:id/settings`
+  `{maxConcurrent 1..3, maxConcurrentTurns 1..4, taskTimeoutMinutes 5..240}` (ognuno null = config locale; altro → 400 «impostazioni del nodo non valide») in
+  `nodes.settings`: arrivano con l'heartbeat e valgono senza riavvio (ridurre i posti non interrompe nulla); `permissionMode` resta locale. `POST
+  /api/account/nodes/:id/diagnostics-request` (6/ora per nodo) → `diagnosticsRequested` nell'heartbeat → `POST /api/node/diagnostics` (token di nodo, ≤ 256 KB) con
+  versioni, esito di Claude, config senza token, `state.json` e le ultime 500 righe di `casello-nodo.log` (il token si toglie comunque; righe vecchie tagliate per stare nel
+  limite), in `node_diagnostics` (una per nodo, la nuova sostituisce la vecchia, cancellata dopo 7 giorni); `GET …/diagnostics` la scarica come testo (`attachment`,
+  `nosniff`; 404 se manca). Disinstallazione dal menu (con conferma) o dalla console (`POST …/uninstall-request` → `uninstallRequested`): il nodo smette di prendere lavoro,
+  chiude quello in corso come uno stop, chiama `POST /api/node/uninstalled` (il server disattiva il nodo come «Disattiva»; un errore non ferma la disinstallazione), toglie
+  `~/.casello-nodo/bin` (anche `.prev`), config e plist e per ultimo fa il `bootout` (che termina il servizio stesso); log e spazi di lavoro restano; notifica «Botcave Nodo è
+  stato rimosso. Puoi spostare l'app nel cestino.». La disinstallazione vince su un aggiornamento in sospeso.
+- **Sicurezza**: route pubbliche di abbinamento con i loro limiti, codici monouso, solo hash nel DB, token creato solo al `poll` dopo un'approvazione con il login (mai
+  token personali, `agent` o `embed`), avviso in Dashboard a ogni collegamento. Il codice non va nei log: `/nodes/pair` e `/api/account/node-pairings/` senza access log in
+  nginx, percorso oscurato (`…/node-pairings/***`) nei log dell'API, sia delle richieste (`app.ts`) sia degli errori non gestiti
+  (`middlewares/error-handler.ts`, che oscura allo stesso modo anche `/api/hooks/`), codice e segreto mai nei log del nodo. Aggiornamenti: indirizzo dalla config, sha256 e dimensione dalla
+  risposta all'heartbeat (TLS e token del nodo), file temporaneo e rename. Senza firma Apple la fiducia sta nell'HTTPS di Botcave: va chiusa con firma e notarizzazione
+  (Developer ID) prima degli utenti esterni. L'URL dell'installatore di Claude Code è nel codice; le richieste della console sono un elenco chiuso di azioni del nodo.
+- **Differenze dalla spec**: proroga di 2 minuti all'approvazione; codice di abbinamento in `sessionStorage` attraverso il login e location nginx senza access log (non
+  previste dalla spec); con 401/403 il nodo app non si ferma (resta in attesa e notifica); un aggiornamento non obbligatorio non si scarica finché il nodo è occupato e
+  la pausa del lavoro avviene solo dopo download e verifica; l'immagine dell'API copia solo il manifest; `min-version.txt` = `0.2.0`.
+- Prove: Vitest dell'API (abbinamento, heartbeat esteso, `claim` sotto la minima, diagnosi, disinstallazione), di `casello-nodo` (abbinamento, adozione, aggiornamento e
+  ritorno indietro, Claude Code, impostazioni, disinstallazione, con `osascript` finto) e della console (`pair-code`); prova di flusso
+  `artifacts/api-server/test/node-app-flow.test.ts` (API in memoria e codice vero del nodo, dialoghi, `launchctl`, `open` e Claude finti, home temporanea, binario servito
+  da `/downloads/nodo/` dello stesso server: abbinamento → heartbeat `app` con Claude → aggiornamento e uscita 0 → avvio senza ritorno indietro → disinstallazione dalla
+  console). A mano sul Mac dopo il deploy: scaricare lo zip, «Apri comunque», abbinare, un turno di Alfred scritto, un aggiornamento, disinstallare.
+- Migrazione: `docs/migrations/2026-11-nodo-senza-terminale.sql` (additiva e idempotente, niente `-post`): enum `node_pairing_status`, tabelle `node_pairings` e
+  `node_diagnostics`, colonne `nodes.kind`, `paired_at`, `paired_ip`, `claude_status`, `claude_checked_at`, `settings`, `diagnostics_requested_at`, `uninstall_requested_at`,
+  `update_failed_version`. Da applicare su Neon PRIMA del merge (SQL completo in chat) e da segnalare nella PR; riportata in `docs/schema-casello.sql`. Nessuna variabile
+  nuova obbligatoria: `NODO_MANIFEST_PATH` (API) è facoltativa, `BOTCAVE_NODO_URL` (nodo) solo per lo sviluppo.
+- Fuori ambito: firma e notarizzazione (prima degli utenti esterni), icona nella barra dei menu, Windows e Linux, MDM, cambio della radice dalla console, Claude Code
+  incluso nell'app.
+
 ## Esecutore locale
 
 Le analisi dell'architetto possono essere eseguite da Claude Code sul Mac dell'utente invece che dal cloud
@@ -1566,6 +1676,12 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
   `^~ /.well-known/oauth-` e `^~ /oauth/` (connettore OAuth, stessi header; `^~` impedisce che la fallback della SPA li catturi).
 - nginx ha anche `^~ /api/hooks/` (webhook degli inneschi, vedi "Inneschi"): `access_log off`, `error_log /dev/stderr crit`, `client_max_body_size 256k`, perché il segreto sta
   nel percorso; non togliere le due direttive (la CI le controlla).
+- Botcave Nodo (vedi "Botcave Nodo (app per Mac)"): il job `build-nodo` (`macos-latest`, dopo `test` e prima di `build`, anche su `feat/**`) controlla che la versione del nodo
+  sia alzata se `artifacts/casello-nodo/src` differisce da `main` (solo sui push dei branch diversi da `main`), esegue i test di `casello-nodo`, installa Rosetta se manca
+  (per la prova x64) e `scripts/build-app.sh` e passa `docker/nodo-downloads/` (zip, binario, manifest) ai job delle immagini come artefatto `nodo-downloads`: `casello-web` serve la cartella da
+  `/downloads/nodo/`, `casello-api` copia solo `nodo-manifest.json` in `/app/nodo/` (in locale la cartella ha solo `.gitkeep`, i file costruiti sono in `.gitignore`).
+  nginx: `^~ /downloads/nodo/` (cache di 1 anno, il manifest 1 ora; `Cache-Control` senza `always`, così un 404 non resta in cache), `= /nodes/pair` e `^~ /api/account/node-pairings/` con `access_log off` (il codice di abbinamento sta
+  nella query o nel percorso; la seconda anche con `error_log /dev/stderr crit`, controllata dalla CI). API e nodo pubblicati vanno sempre insieme.
 - Healthcheck di `casello-api`: `GET /api/healthz` sulla porta 3000. È nel `HEALTHCHECK` di
   `docker/api.Dockerfile` (con `node`, l'immagine slim non ha curl/wget); su Coolify impostarlo anche
   in Health Check (path `/api/healthz`, porta 3000), altrimenti Coolify non lo usa per il deploy.
@@ -1596,4 +1712,6 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
 - La console ha Vitest (`pnpm --filter @workspace/casello run test`); `pnpm run build` della console costruisce due entrate (`vite.config.ts` e `vite.loader.config.ts`, il caricatore `botcave.js`).
 - `docker/nginx.conf` non esiste più: è `docker/nginx.conf.template` (envsubst dell'entrypoint di nginx; `$uri` e simili restano intatti). Una CSP in una `location`
   con `add_header` propri non eredita quelle esterne: si ripete dove serve.
+- Ogni modifica a `artifacts/casello-nodo/src` richiede di alzare `version` in `artifacts/casello-nodo/package.json`: i file pubblicati hanno la versione nel nome e la
+  cache immutable. Il job `build-nodo` fallisce sui push dei branch diversi da `main` se `src` differisce da `main` e la versione è la stessa.
 - I residui di Replit sono stati rimossi; restano solo i plugin `@replit/*` di `artifacts/mockup-sandbox`.

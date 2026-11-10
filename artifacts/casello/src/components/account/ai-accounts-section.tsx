@@ -9,6 +9,8 @@ import {
   useSetDefaultAiAccount,
   useUpdateAiAccount,
   useVerifyAiAccount,
+  getListNodesQueryKey,
+  useListNodes,
 } from "@workspace/api-client-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Led, LedDot } from "@/components/brand/led";
@@ -23,6 +25,7 @@ import { formatRelative, formatUsd } from "@/lib/format";
 import { AiAccountBudget } from "@/components/budget/budget";
 import { AiAccountDialog, useProviderLabel } from "./ai-account-dialog";
 import { FallbackModelSelect } from "./node-account-fields";
+import { claudeStatusLed } from "./node-status-list";
 import { AiModelsTable } from "./ai-models-table";
 
 function AccountStatusBadge({ account }: { account: AiAccount }) {
@@ -63,6 +66,8 @@ function NodeAccountInfo({ account }: { account: AiAccount }) {
     },
   });
   const groups = useAiModelGroups();
+  const nodes = useListNodes({ query: { queryKey: getListNodesQueryKey() } });
+  const claudeLed = account.nodeId == null ? null : claudeStatusLed(nodes.data?.find((n) => n.id === account.nodeId)?.claude ?? null);
   const fallbackName =
     account.fallbackAiModelId === null
       ? "Nessuno"
@@ -77,6 +82,7 @@ function NodeAccountInfo({ account }: { account: AiAccount }) {
           label={account.nodeTurnReady ? "Pronto per i turni" : "Nodo offline"}
         />
       </div>
+      {claudeLed && <Led state={claudeLed.state} label={`Claude Code: ${claudeLed.label}`} />}
       <div className="flex flex-wrap items-center gap-2">
         <span>Modello di ripiego: {fallbackName}</span>
         {!changing && (

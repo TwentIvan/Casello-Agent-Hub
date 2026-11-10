@@ -90,6 +90,70 @@ paths:
               schema:
                 $ref: "#/components/schemas/EmbedConfig"
 
+  /node-pairing/start:
+    post:
+      operationId: startNodePairing
+      tags: [nodes]
+      summary: Avvia l'abbinamento di un Mac dal browser (pubblica)
+      description: >-
+        Chiamata dal nodo al primo avvio. Risponde con `userCode` (XXXX-XXXX, da mostrare all'utente), `pollSecret`
+        (segreto del nodo) e la scadenza (10 minuti); nel DB restano solo gli hash. 10 richieste al minuto per IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodePairingStart"
+      responses:
+        "201":
+          description: Richiesta creata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePairingStarted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /node-pairing/poll:
+    post:
+      operationId: pollNodePairing
+      tags: [nodes]
+      summary: Il nodo chiede l'esito dell'abbinamento (pubblica)
+      description: >-
+        202 `pending` finché l'utente non decide. Dopo l'approvazione risponde 200 con il token del nodo, una sola
+        volta. Rifiutata, scaduta, già consegnata o segreto sbagliato: 410. 30 richieste al minuto per richiesta.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodePairingPoll"
+      responses:
+        "200":
+          description: Approvata, con il token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePairingResult"
+        "202":
+          description: In attesa della decisione dell'utente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePairingPending"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "410":
+          description: Collegamento non più valido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   # ─── Auth ───────────────────────────────────────────────────────────────────
   # /auth/login e /auth/callback sono redirect del flusso OIDC (Google), non chiamate JSON.
   # Lo stesso vale per /auth/github/login, /auth/github/link e /auth/github/callback (GitHub).
@@ -394,6 +458,253 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /account/nodes/download:
+    get:
+      operationId: getNodeDownload
+      tags: [nodes]
+      summary: Pacchetto di Botcave Nodo per Mac
+      description: >-
+        Indirizzo dello zip dell'app nel manifest dell'immagine (`available` false senza manifest). Solo con il login.
+      responses:
+        "200":
+          description: Pacchetto scaricabile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeDownload"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /account/nodes/{id}/settings:
+    put:
+      operationId: updateNodeSettings
+      tags: [nodes]
+      summary: Impostazioni di un nodo locale
+      description: >-
+        Sostituisce le impostazioni (null = default del nodo); il nodo le riceve con l'heartbeat. Valori fuori
+        intervallo: 400 «impostazioni del nodo non valide». 404 se il nodo non è dell'utente. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeSettings"
+      responses:
+        "200":
+          description: Nodo aggiornato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /account/nodes/{id}/diagnostics-request:
+    post:
+      operationId: requestNodeDiagnostics
+      tags: [nodes]
+      summary: Chiede al nodo di inviare una diagnosi
+      description: >-
+        Il nodo la invia al prossimo heartbeat. 6 all'ora per nodo. 404 se il nodo non è dell'utente. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Richiesta registrata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /account/nodes/{id}/diagnostics:
+    get:
+      operationId: getNodeDiagnostics
+      tags: [nodes]
+      summary: Scarica l'ultima diagnosi del nodo
+      description: File di testo (`attachment`). 404 se il nodo non è dell'utente o non ha diagnosi. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Testo della diagnosi
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /account/nodes/{id}/uninstall-request:
+    post:
+      operationId: requestNodeUninstall
+      tags: [nodes]
+      summary: Chiede al nodo di disinstallarsi dal Mac
+      description: >-
+        Il nodo lo legge con l'heartbeat, chiude il lavoro e chiama `/node/uninstalled`. 404 se il nodo non è
+        dell'utente. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Richiesta registrata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /node/diagnostics:
+    post:
+      operationId: nodeUploadDiagnostics
+      tags: [nodes]
+      summary: Il nodo invia la diagnosi richiesta
+      description: >-
+        Solo con il token d'ambito `node`. Sostituisce la diagnosi precedente e azzera la richiesta. Corpo oltre 256 KB: 413.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeDiagnosticsUpload"
+      responses:
+        "204":
+          description: Diagnosi salvata
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+
+  /node/uninstalled:
+    post:
+      operationId: nodeUninstalled
+      tags: [nodes]
+      summary: Il nodo comunica di essersi disinstallato
+      description: Solo con il token d'ambito `node`. Disattiva il nodo come «Disattiva».
+      responses:
+        "204":
+          description: Nodo disattivato
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /account/node-pairings/{code}:
+    get:
+      operationId: getNodePairing
+      tags: [nodes]
+      summary: Dati di una richiesta di collegamento
+      description: >-
+        Il codice si accetta con o senza trattino e in minuscolo. Sconosciuta, scaduta o già decisa: 404. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/NodePairingCodeParam"
+      responses:
+        "200":
+          description: Richiesta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePairingInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /account/node-pairings/{code}/approve:
+    post:
+      operationId: approveNodePairing
+      tags: [nodes]
+      summary: Approva il collegamento di un Mac
+      description: >-
+        Con `replaceNodeId` il nodo esistente dell'utente resta (nome invariato) e i suoi token si revocano come con
+        «Rigenera token»; senza, si crea un nodo con `name` (doppione 409 "nome già usato"). Il token non si crea qui:
+        lo riceve il nodo con il poll. Al quinto errore la richiesta scade. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/NodePairingCodeParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodePairingApprove"
+      responses:
+        "200":
+          description: Approvata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePairingDecision"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /account/node-pairings/{code}/deny:
+    post:
+      operationId: denyNodePairing
+      tags: [nodes]
+      summary: Rifiuta il collegamento di un Mac
+      description: Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/NodePairingCodeParam"
+      responses:
+        "200":
+          description: Rifiutata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePairingDecision"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
   /node/heartbeat:
     post:
@@ -4510,6 +4821,14 @@ paths:
 
 components:
   parameters:
+    NodePairingCodeParam:
+      name: code
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 20
     CharacterQuery:
       name: character
       in: query
@@ -5826,7 +6145,7 @@ components:
 
     DashboardStats:
       type: object
-      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, cancelledRuns, activeAgents, pendingActions, triggersInError]
+      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, cancelledRuns, activeAgents, pendingActions, triggersInError, recentlyPairedNodes, nodeClaudeWarnings]
       properties:
         totalApps:
           type: integer
@@ -5848,6 +6167,34 @@ components:
         triggersInError:
           type: integer
           description: Inneschi fermi in stato error (servono «Riprendi»)
+        recentlyPairedNodes:
+          type: array
+          description: Nodi dell'utente collegati nelle ultime 24 ore (attivi)
+          items:
+            type: object
+            required: [id, name, pairedAt]
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              pairedAt:
+                type: string
+                format: date-time
+        nodeClaudeWarnings:
+          type: array
+          description: Nodi con un account «Claude Code (nodo)» dell'utente il cui Claude non è pronto
+          items:
+            type: object
+            required: [nodeId, nodeName, reason]
+            properties:
+              nodeId:
+                type: integer
+              nodeName:
+                type: string
+              reason:
+                type: string
+                enum: [not_installed, not_logged_in, login_expiring]
         avgDurationMs:
           type: ["number", "null"]
 
@@ -7196,7 +7543,7 @@ components:
 
     Node:
       type: object
-      required: [id, name, status, executor, version, skills, workspaceRoot, maxConcurrent, lastSeenAt, online, turnReady]
+      required: [id, name, status, executor, version, skills, workspaceRoot, maxConcurrent, lastSeenAt, online, turnReady, kind, pairedAt, pairedIp, claude, claudeCheckedAt, settings, updateAvailable, updateFailedVersion, belowMinVersion, diagnosticsAt, diagnosticsRequestedAt, uninstallRequestedAt]
       properties:
         id:
           type: integer
@@ -7226,6 +7573,118 @@ components:
         turnReady:
           type: boolean
           description: Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)
+        kind:
+          type: ["string", "null"]
+          enum: [app, cli, null]
+          description: Installato con l'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato
+        pairedAt:
+          type: ["string", "null"]
+          format: date-time
+        pairedIp:
+          type: ["string", "null"]
+          description: Indirizzo abbreviato (IPv4 /24, IPv6 /48) da cui è arrivata la richiesta di abbinamento
+        claude:
+          description: Stato di Claude Code sul Mac, dall'ultimo heartbeat
+          oneOf:
+            - $ref: "#/components/schemas/NodeClaudeStatus"
+            - type: "null"
+        claudeCheckedAt:
+          type: ["string", "null"]
+          format: date-time
+        settings:
+          description: Impostazioni scelte in console; null = tutte di default
+          oneOf:
+            - $ref: "#/components/schemas/NodeSettings"
+            - type: "null"
+        updateAvailable:
+          type: ["string", "null"]
+          description: Versione proposta dal manifest (solo nodi installati con l'app)
+        updateFailedVersion:
+          type: ["string", "null"]
+        belowMinVersion:
+          type: boolean
+          description: Versione sotto la minima del protocollo (il server non gli consegna lavoro)
+        diagnosticsAt:
+          type: ["string", "null"]
+          format: date-time
+        diagnosticsRequestedAt:
+          type: ["string", "null"]
+          format: date-time
+        uninstallRequestedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    NodeClaudeStatus:
+      type: object
+      required: [found]
+      properties:
+        found:
+          type: boolean
+        version:
+          type: string
+          maxLength: 100
+        loggedIn:
+          type: boolean
+        authMethod:
+          type: string
+          maxLength: 100
+        subscriptionType:
+          type: string
+          maxLength: 100
+        loginExpiresAt:
+          type: string
+          maxLength: 100
+
+    NodeSettings:
+      type: object
+      required: [maxConcurrent, maxConcurrentTurns, taskTimeoutMinutes]
+      properties:
+        maxConcurrent:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 3
+        maxConcurrentTurns:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 4
+        taskTimeoutMinutes:
+          type: ["integer", "null"]
+          minimum: 5
+          maximum: 240
+
+    NodeDownload:
+      type: object
+      required: [available, version, url, size]
+      properties:
+        available:
+          type: boolean
+        version:
+          type: ["string", "null"]
+        url:
+          type: ["string", "null"]
+        size:
+          type: ["integer", "null"]
+
+    NodeDiagnosticsUpload:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+
+    NodeUpdate:
+      type: object
+      required: [version, sha256, size, required]
+      properties:
+        version:
+          type: string
+        sha256:
+          type: string
+        size:
+          type: integer
+        required:
+          type: boolean
 
     NodeCreate:
       type: object
@@ -7254,6 +7713,102 @@ components:
           type: string
           description: Valore del token, mostrato una sola volta
 
+    NodePairingStart:
+      type: object
+      required: [deviceName, version]
+      properties:
+        deviceName:
+          type: string
+          minLength: 1
+          maxLength: 100
+        version:
+          type: string
+          minLength: 1
+          maxLength: 50
+
+    NodePairingStarted:
+      type: object
+      required: [pairingId, userCode, pollSecret, expiresAt]
+      properties:
+        pairingId:
+          type: string
+        userCode:
+          type: string
+          description: Codice XXXX-XXXX da mostrare all'utente
+        pollSecret:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+
+    NodePairingPoll:
+      type: object
+      required: [pairingId, pollSecret]
+      properties:
+        pairingId:
+          type: string
+          maxLength: 64
+        pollSecret:
+          type: string
+          maxLength: 200
+
+    NodePairingPending:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [pending]
+
+    NodePairingResult:
+      type: object
+      required: [status, token, nodeId, nodeName]
+      properties:
+        status:
+          type: string
+          enum: [approved]
+        token:
+          type: string
+          description: Token del nodo, consegnato una sola volta
+        nodeId:
+          type: integer
+        nodeName:
+          type: string
+
+    NodePairingInfo:
+      type: object
+      required: [deviceName, version, createdAt, expiresAt]
+      properties:
+        deviceName:
+          type: string
+        version:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+
+    NodePairingApprove:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: Nome del nodo nuovo (ignorato con replaceNodeId)
+        replaceNodeId:
+          type: integer
+          nullable: true
+
+    NodePairingDecision:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [approved, denied]
+
     NodeHeartbeat:
       type: object
       required: [pending]
@@ -7261,6 +7816,14 @@ components:
         pending:
           type: integer
           description: Compiti in attesa che il nodo potrebbe prendere
+        update:
+          $ref: "#/components/schemas/NodeUpdate"
+        settings:
+          $ref: "#/components/schemas/NodeSettings"
+        diagnosticsRequested:
+          type: boolean
+        uninstallRequested:
+          type: boolean
 
     NodeCapabilities:
       type: object
@@ -7301,6 +7864,21 @@ components:
           description: >-
             Sottocartelle della radice (percorsi relativi con `/`, fino a 3 livelli), per la scelta dello spazio
             di lavoro in console. Facoltativo: un nodo che non lo manda lascia invariato l'elenco salvato.
+        kind:
+          type: string
+          enum: [app, cli]
+          description: Come è installato il nodo; solo `app` riceve aggiornamenti automatici
+        claude:
+          type: object
+          additionalProperties: true
+          description: >-
+            Stato di Claude Code sul Mac. Tollerante di proposito: il server tiene solo i campi noti con il tipo
+            giusto (`found`, `version`, `loggedIn`, `authMethod`, `subscriptionType`, `loginExpiresAt`) e scarta il
+            resto, così un campo strano non fa fallire l'heartbeat.
+        updateFailed:
+          type: string
+          maxLength: 100
+          description: Versione di cui l'aggiornamento non è riuscito (ripristinata la precedente)
 
     NodeFolders:
       type: object

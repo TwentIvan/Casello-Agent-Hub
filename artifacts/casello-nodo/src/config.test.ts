@@ -109,6 +109,7 @@ describe("loadConfig", () => {
       configPath: "/Users/prova/.casello-nodo/config.json",
       logsDir: "/Users/prova/.casello-nodo/logs",
       programPath: "/Users/prova/.casello-nodo/bin/casello-nodo.mjs",
+      appProgramPath: "/Users/prova/.casello-nodo/bin/casello-nodo",
       statePath: "/Users/prova/.casello-nodo/state.json",
       turnsDir: "/Users/prova/.casello-nodo/turns",
     });

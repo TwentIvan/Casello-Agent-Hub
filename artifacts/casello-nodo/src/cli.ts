@@ -1,21 +1,27 @@
 import { execFile } from "node:child_process";
-import { chmod, copyFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
-import { ConfigError, defaultPaths, loadConfig, type Config } from "./config";
+import { ConfigError, defaultPaths, loadConfig, secureBaseUrl, writeConfigMerged, type Config } from "./config";
+import { CaselloClient } from "./client";
 import {
   buildPlist,
   installService,
   plistPath,
   realLaunchctl,
   serviceStatus,
-  uninstallService,
+  serviceTarget,
   type LaunchctlRunner,
 } from "./launchd";
-import { startLoop } from "./loop";
+import { osascriptDialogs } from "./dialogs";
+import { NODE_VERSION } from "./capabilities";
+import { checkClaude, createCachedClaudeStatus, realClaudeDeps } from "./claude-check";
+import { startLoop, type Loop, type NodeKind } from "./loop";
+import { uninstallSelf } from "./node-admin";
 import { readState } from "./state";
+import { checkUpdateOnStart, updatePaths } from "./updater";
 
 export interface CliDeps {
   home: string;
@@ -38,6 +44,9 @@ export interface CliDeps {
   exit: (code: number) => void;
   /** Ora corrente (iniettabile nei test). */
   now?: () => Date;
+  /** Notifica del Mac (servizio dell'app: nodo scollegato, disinstallazione). */
+  notify?: (text: string) => Promise<void>;
+  fetch?: typeof fetch;
 }
 
 const USAGE = `uso: casello-nodo <comando>
@@ -46,6 +55,7 @@ const USAGE = `uso: casello-nodo <comando>
   uninstall   rimuove il servizio (config e log restano)
   status      stato del servizio, ultimo heartbeat e compiti e turni in corso
   run         avvia il nodo in primo piano
+  --version   stampa la versione del nodo
 `;
 
 const INSTALL_USAGE =
@@ -61,17 +71,14 @@ function expandHome(p: string, home: string): string {
 
 /** Il token viaggia nell'header: https obbligatorio, http solo verso questa macchina. */
 export function validateUrl(raw: string): string {
-  let u: URL;
   try {
-    u = new URL(raw);
+    new URL(raw);
   } catch {
     throw new CliError("indirizzo di Botcave non valido");
   }
-  const local = ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
-  if (u.protocol !== "https:" && !(u.protocol === "http:" && local)) {
-    throw new CliError("l'indirizzo di Botcave deve essere https");
-  }
-  return raw.replace(/\/+$/, "");
+  const url = secureBaseUrl(raw);
+  if (!url) throw new CliError("l'indirizzo di Botcave deve essere https");
+  return url;
 }
 
 async function ensureDirectory(dir: string): Promise<void> {
@@ -137,35 +144,145 @@ async function install(argv: string[], d: CliDeps): Promise<number> {
     throw new CliError("eseguibile non costruito: esegui `pnpm --filter @workspace/casello-nodo run build`");
   }
 
-  const paths = defaultPaths(d.home);
-  const configDir = path.dirname(paths.configPath);
-  await mkdir(configDir, { recursive: true, mode: 0o700 });
-  // La cartella può esistere già con permessi più larghi
-  await chmod(configDir, 0o700);
-  // Prima della config: se la copia fallisce non resta scritto nulla di nuovo
-  const program = await installProgram(d.entryPath, paths.programPath);
-  // Il token non passa mai da un file con permessi larghi: file temporaneo creato 600, poi rename sulla config
-  const tmp = `${paths.configPath}.${process.pid}.tmp`;
-  await rm(tmp, { force: true });
-  await writeFile(tmp, `${JSON.stringify({ caselloUrl: url, token, workspaceRoot }, null, 2)}\n`, {
-    mode: 0o600,
-    flag: "wx",
+  const { program, claudeBin } = await installNode({ caselloUrl: url, token, workspaceRoot }, d, {
+    programSource: d.entryPath,
+    programPath: defaultPaths(d.home).programPath,
+    programArguments: (p) => [d.execPath, p, "run"],
+    execDir: d.execPath,
+    writeConfig: true,
+    configFirst: false,
   });
-  await rename(tmp, paths.configPath);
-  await mkdir(paths.logsDir, { recursive: true, mode: 0o700 });
-
-  const claudeBin = await d.whichClaude();
   if (!claudeBin) {
     d.err("attenzione: `claude` non trovato nel PATH; uso /usr/local/bin, /opt/homebrew/bin e ~/.local/bin. Installa Claude Code e fai il login.\n");
   }
-  const plist = buildPlist({
-    programArguments: [d.execPath, program, "run"],
-    logsDir: paths.logsDir,
-    path: servicePath(claudeBin, d.execPath, d.home),
-  });
-  await installService({ launchctl: d.launchctl, uid: d.uid, home: d.home, plist });
+  const paths = defaultPaths(d.home);
   d.out(`Servizio installato e avviato (${plistPath(d.home)}).\nProgramma: ${program}\nConfig: ${paths.configPath}\nLog: ${paths.logsDir}\n`);
   return 0;
+}
+
+export interface InstallDeps {
+  home: string;
+  uid: number;
+  launchctl: LaunchctlRunner;
+  whichClaude: () => Promise<string | null>;
+  /**
+   * Toglie `com.apple.quarantine` dalla copia del programma prima del rename (iniettabile nei test). Default: `xattr`
+   * su macOS, nulla altrove. Un errore non ferma l'installazione.
+   */
+  removeQuarantine?: (file: string) => Promise<void>;
+}
+
+/**
+ * La copia di un'app scaricata e aperta con «Apri comunque» eredita l'attributo di quarantena: senza toglierlo Gatekeeper
+ * potrebbe bloccare il servizio avviato da launchd, che non ha un dialogo. Mai un errore: «No such xattr» e simili si ignorano.
+ */
+export function realRemoveQuarantine(file: string): Promise<void> {
+  if (process.platform !== "darwin") return Promise.resolve();
+  return new Promise((resolve) => {
+    execFile("/usr/bin/xattr", ["-d", "com.apple.quarantine", file], { timeout: 10_000 }, () => resolve());
+  });
+}
+
+interface InstallTarget {
+  programSource: string;
+  programPath: string;
+  /** Argomenti del LaunchAgent dato il programma installato. */
+  programArguments: (program: string) => string[];
+  /** Eseguibile la cui cartella entra nel PATH del servizio. */
+  execDir: string;
+  writeConfig: boolean;
+  /** Scrive la config prima di copiare il programma (app: il token non si perde). */
+  configFirst: boolean;
+}
+
+/** Programma, config (se richiesta), cartella dei log e LaunchAgent: comune a CLI e app. */
+async function installNode(
+  cfg: { caselloUrl: string; token: string; workspaceRoot: string },
+  d: InstallDeps,
+  target: InstallTarget,
+): Promise<{ program: string; claudeBin: string | null }> {
+  const paths = defaultPaths(d.home);
+  const configDir = path.dirname(paths.configPath);
+  await mkdir(configDir, { recursive: true, mode: 0o700 });
+  await chmod(configDir, 0o700);
+  const writeConfig = () =>
+    writeConfigMerged(paths.configPath, { caselloUrl: cfg.caselloUrl, token: cfg.token, workspaceRoot: cfg.workspaceRoot });
+  // App: il token dell'abbinamento si consegna una volta sola, quindi si salva per primo (riaprendo l'app la config si
+  // adotta). CLI: prima il programma, così se la copia fallisce non resta scritto nulla di nuovo.
+  if (target.writeConfig && target.configFirst) await writeConfig();
+  const program = await installProgram(target.programSource, target.programPath, d.removeQuarantine ?? realRemoveQuarantine);
+  if (target.writeConfig && !target.configFirst) await writeConfig();
+  await mkdir(paths.logsDir, { recursive: true, mode: 0o700 });
+  const claudeBin = await d.whichClaude();
+  const plist = buildPlist({
+    programArguments: target.programArguments(program),
+    logsDir: paths.logsDir,
+    path: servicePath(claudeBin, target.execDir, d.home),
+  });
+  await installService({ launchctl: d.launchctl, uid: d.uid, home: d.home, plist });
+  return { program, claudeBin };
+}
+
+/**
+ * Installazione dell'app: copia l'eseguibile in `~/.casello-nodo/bin/casello-nodo` (755, temporaneo e rename), scrive
+ * la config (600, gli altri campi restano: scritta per prima, così una copia non riuscita non perde il token
+ * appena consegnato) e carica il LaunchAgent con `[programma, "run"]`: il programma è un
+ * eseguibile, senza node davanti. `writeConfig: false` adotta una config esistente senza toccarla. Toglie la copia
+ * `.mjs` di un'installazione della CLI.
+ */
+export async function installFromConfig(
+  cfg: { caselloUrl: string; token: string; workspaceRoot: string },
+  programSource: string,
+  d: InstallDeps,
+  opts: { writeConfig?: boolean } = {},
+): Promise<{ program: string }> {
+  const paths = defaultPaths(d.home);
+  const { program } = await installNode(cfg, d, {
+    programSource,
+    programPath: paths.appProgramPath,
+    programArguments: (p) => [p, "run"],
+    execDir: paths.appProgramPath,
+    writeConfig: opts.writeConfig ?? true,
+    configFirst: true,
+  });
+  await rm(paths.programPath, { force: true });
+  return { program };
+}
+
+/**
+ * Disinstallazione locale: toglie la cartella del programma (anche `.prev`), il plist e, con `removeConfig`, la config
+ * con il token, poi scarica il servizio. Log e spazi di lavoro restano. Con `removeConfig` prima avvisa Botcave
+ * (`POST /api/node/uninstalled`, il nodo si disattiva) con il token della config: tentativo unico, un errore non ferma
+ * la disinstallazione. Il `bootout` è l'ultimo passo perché, chiamato dal servizio stesso, ne termina il processo;
+ * `beforeBootout` (es. la notifica finale) gira subito prima.
+ */
+export async function uninstallLocal(
+  d: { launchctl: LaunchctlRunner; uid: number; home: string; fetch?: typeof fetch },
+  opts: { removeConfig: boolean; beforeBootout?: () => Promise<void> },
+): Promise<{ wasLoaded: boolean }> {
+  const paths = defaultPaths(d.home);
+  if (opts.removeConfig) await notifyUninstalled(paths.configPath, d);
+  const { loaded: wasLoaded } = await serviceStatus(d.launchctl, d.uid);
+  await rm(path.dirname(paths.programPath), { recursive: true, force: true });
+  if (opts.removeConfig) await rm(paths.configPath, { force: true });
+  await rm(plistPath(d.home), { force: true });
+  await opts.beforeBootout?.();
+  if (wasLoaded) await d.launchctl(["bootout", serviceTarget(d.uid)]);
+  return { wasLoaded };
+}
+
+async function notifyUninstalled(configPath: string, d: { home: string; fetch?: typeof fetch }): Promise<void> {
+  let config: Config;
+  try {
+    config = loadConfig(configPath, { home: d.home });
+  } catch {
+    return;
+  }
+  try {
+    await new CaselloClient({ baseUrl: config.caselloUrl, token: config.token, fetch: d.fetch }).uninstalled();
+  } catch {
+    // Botcave non raggiungibile o nodo già disattivato: il nodo si toglie dalla console
+  }
 }
 
 /**
@@ -173,7 +290,7 @@ async function install(argv: string[], d: CliDeps): Promise<number> {
  * mai un file a metà). Il servizio usa la copia, così la cartella in cui è stato costruito si può spostare o cancellare.
  * Se l'installazione parte già dalla copia, non c'è nulla da copiare.
  */
-async function installProgram(entryPath: string, programPath: string): Promise<string> {
+async function installProgram(entryPath: string, programPath: string, removeQuarantine: (file: string) => Promise<void>): Promise<string> {
   if (path.resolve(entryPath) === programPath) return programPath;
   const dir = path.dirname(programPath);
   const tmp = `${programPath}.${process.pid}.tmp`;
@@ -182,6 +299,7 @@ async function installProgram(entryPath: string, programPath: string): Promise<s
     await rm(tmp, { force: true });
     await copyFile(entryPath, tmp);
     await chmod(tmp, 0o755);
+    await removeQuarantine(tmp).catch(() => {});
     await rename(tmp, programPath);
   } catch {
     await rm(tmp, { force: true }).catch(() => {});
@@ -191,9 +309,8 @@ async function installProgram(entryPath: string, programPath: string): Promise<s
 }
 
 async function uninstall(d: CliDeps): Promise<number> {
-  const { wasLoaded } = await uninstallService({ launchctl: d.launchctl, uid: d.uid, home: d.home });
+  const { wasLoaded } = await uninstallLocal(d, { removeConfig: false });
   const paths = defaultPaths(d.home);
-  await rm(path.dirname(paths.programPath), { recursive: true, force: true });
   d.out(
     `${wasLoaded ? "Servizio fermato e rimosso" : "Servizio non caricato; plist rimosso"}, programma rimosso.\nConfig e log restano: ${paths.configPath} e ${paths.logsDir}\n`,
   );
@@ -232,15 +349,50 @@ async function status(d: CliDeps): Promise<number> {
   return 0;
 }
 
+/** `app` se il programma in esecuzione è la copia dell'app in `~/.casello-nodo/bin/casello-nodo` (eseguibile SEA). */
+export function nodeKind(execPath: string, home: string): NodeKind {
+  return path.resolve(execPath) === defaultPaths(home).appProgramPath ? "app" : "cli";
+}
+
 async function run(d: CliDeps): Promise<number> {
   const paths = defaultPaths(d.home);
+  const upd = updatePaths(d.home);
+  // Aggiornamento appena installato che non riparte: al terzo avvio entro 2 minuti si torna alla versione precedente
+  if (checkUpdateOnStart(upd, d.now?.() ?? new Date()) === "rolled_back") {
+    d.err("aggiornamento non riuscito: ripristinata la versione precedente, riavvio\n");
+    return 1;
+  }
   let config: Config;
   try {
     config = loadConfig(paths.configPath, { home: d.home });
   } catch (e) {
     throw new CliError(e instanceof ConfigError ? e.message : "config non leggibile");
   }
-  const loop = d.startLoop(config, { logsDir: paths.logsDir, statePath: paths.statePath });
+  const kind = nodeKind(d.execPath, d.home);
+  const notify = kind === "app" ? d.notify : undefined;
+  // Controllo all'avvio e ogni 10 minuti: tra un controllo e l'altro vale l'ultimo risultato
+  const claudeStatus = createCachedClaudeStatus(() => checkClaude(realClaudeDeps(d.home)));
+  // `loop` si usa nella callback solo dopo l'avvio del ciclo
+  const loop: Loop = d.startLoop(config, {
+    logsDir: paths.logsDir,
+    statePath: paths.statePath,
+    kind,
+    claudeStatus,
+    updatePaths: upd,
+    exit: d.exit,
+    notify,
+    onUninstallRequested: () =>
+      void uninstallSelf({
+        home: d.home,
+        uid: d.uid,
+        launchctl: d.launchctl,
+        fetch: d.fetch,
+        stopLoop: () => loop.stop(),
+        appMode: kind === "app",
+        notify,
+        exit: d.exit,
+      }),
+  });
   return new Promise<number>((resolve) => {
     let signals = 0;
     const handler = () => {
@@ -277,6 +429,9 @@ export async function runCli(argv: string[], d: CliDeps): Promise<number> {
         return await status(d);
       case "run":
         return await run(d);
+      case "--version":
+        d.out(`${NODE_VERSION}\n`);
+        return 0;
       default:
         d.err(USAGE);
         return command === undefined || command === "--help" || command === "help" ? 0 : 1;
@@ -285,12 +440,6 @@ export async function runCli(argv: string[], d: CliDeps): Promise<number> {
     d.err(`${e instanceof CliError || e instanceof Error ? e.message : "errore"}\n`);
     return 1;
   }
-}
-
-function whichClaudeReal(): Promise<string | null> {
-  return new Promise((resolve) => {
-    execFile("which", ["claude"], (err, stdout) => resolve(err ? null : stdout.trim() || null));
-  });
 }
 
 function realPrompt(question: string, hidden: boolean): Promise<string> {
@@ -345,10 +494,11 @@ export function realDeps(entryPath: string): CliDeps {
     launchctl: realLaunchctl,
     execPath: process.execPath,
     entryPath,
-    whichClaude: whichClaudeReal,
+    whichClaude: () => realClaudeDeps(homedir()).which(),
     ...(process.stdin.isTTY ? { prompt: realPrompt } : {}),
     out: (t) => void process.stdout.write(t),
     err: (t) => void process.stderr.write(t),
+    notify: (text) => osascriptDialogs().notify("Botcave Nodo", text),
     startLoop,
     onSignal: (sig, h) => void process.on(sig, h),
     onFatal: (h) => {

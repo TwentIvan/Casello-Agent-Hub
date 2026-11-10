@@ -1,4 +1,5 @@
 import { readFileSync, statSync } from "node:fs";
+import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
@@ -30,8 +31,35 @@ export interface NodePaths {
   /** Cartelle temporanee dei turni (una per turno, cancellata a fine turno). */
   turnsDir: string;
   statePath: string;
-  /** Copia del programma usata dal servizio: non dipende dalla cartella in cui è stato costruito. */
+  /** Copia del programma usata dal servizio con la CLI (`node casello-nodo.mjs run`). */
   programPath: string;
+  /** Copia dell'eseguibile dell'app (`casello-nodo run`, senza node davanti). */
+  appProgramPath: string;
+}
+
+/** Indirizzo di Botcave fisso nella build dell'app. */
+export const DEFAULT_URL = "https://casello.fantamister.cloud";
+
+/**
+ * Indirizzo di Botcave valido per il token (https, http solo verso questa macchina), senza `/` finale; null se non
+ * valido.
+ */
+export function secureBaseUrl(raw: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
+  if (u.protocol !== "https:" && !(u.protocol === "http:" && local)) return null;
+  return raw.replace(/\/+$/, "");
+}
+
+/** Indirizzo dell'app: `BOTCAVE_NODO_URL` (sviluppo) se valido, altrimenti quello fisso. */
+export function appBaseUrl(env: Record<string, string | undefined> = process.env): string {
+  const override = env.BOTCAVE_NODO_URL?.trim();
+  return (override && secureBaseUrl(override)) || DEFAULT_URL;
 }
 
 /** Percorsi predefiniti del nodo sotto `~/.casello-nodo`. */
@@ -43,6 +71,7 @@ export function defaultPaths(home = homedir()): NodePaths {
     turnsDir: path.join(dir, "turns"),
     statePath: path.join(dir, "state.json"),
     programPath: path.join(dir, "bin", "casello-nodo.mjs"),
+    appProgramPath: path.join(dir, "bin", "casello-nodo"),
   };
 }
 
@@ -119,4 +148,26 @@ export function loadConfig(configPath = defaultPaths().configPath, opts: { home?
     maxConcurrentTurns: c.maxConcurrentTurns,
     taskTimeoutMinutes: c.taskTimeoutMinutes,
   };
+}
+
+/**
+ * Scrive i campi dati sopra la config esistente (gli altri campi restano). Il token non passa mai da un file con
+ * permessi larghi: file temporaneo creato 600, poi rename sulla config; la cartella è 700.
+ */
+export async function writeConfigMerged(configPath: string, patch: Record<string, unknown>): Promise<void> {
+  const dir = path.dirname(configPath);
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  // La cartella può esistere già con permessi più larghi
+  await chmod(dir, 0o700);
+  let current: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(await readFile(configPath, "utf8"));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) current = parsed as Record<string, unknown>;
+  } catch {
+    // assente o non leggibile: si riparte dai soli campi dati
+  }
+  const tmp = `${configPath}.${process.pid}.tmp`;
+  await rm(tmp, { force: true });
+  await writeFile(tmp, `${JSON.stringify({ ...current, ...patch }, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+  await rename(tmp, configPath);
 }

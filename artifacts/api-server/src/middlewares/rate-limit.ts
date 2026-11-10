@@ -5,6 +5,10 @@ import type { Character } from "../lib/memory/types";
 export function fixedWindowCounter({ limit, windowMs }: { limit: number; windowMs: number }) {
   const hits = new Map<string, { count: number; resetAt: number }>();
   return {
+    /** Azzera tutte le finestre (solo per i test). */
+    reset(): void {
+      hits.clear();
+    },
     /** Conta una richiesta: `ok` false oltre il limite, con i secondi da attendere. */
     consume(k: string): { ok: boolean; retryAfterSec: number } {
       const now = Date.now();
@@ -137,6 +141,12 @@ export function consumeCharacterMessage(userId: number, character: Character): b
 // separati), ping 4 al minuto per compito dello stesso nodo.
 const byNode = (req: Request) => `node:${req.node?.id ?? "?"}`;
 export const nodeHeartbeatRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byNode });
+// Richiesta di diagnosi dalla console: 6 all'ora per nodo (e utente)
+export const nodeDiagnosticsRequestRateLimit = rateLimit({
+  limit: 6,
+  windowMs: 3600_000,
+  key: (req) => `node-diagnostics:${req.userId ?? "?"}:${String(req.params["id"] ?? "?")}`,
+});
 export const nodeClaimRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byNode });
 export const nodePingRateLimit = rateLimit({
   limit: 4,
@@ -226,4 +236,23 @@ const webhookTriggerCounter = fixedWindowCounter({ limit: 60, windowMs: 60_000 }
 /** Conta una richiesta autenticata (segreto e firma validi) di un innesco: false oltre 60 al minuto. */
 export function consumeWebhookTrigger(triggerId: number): boolean {
   return webhookTriggerCounter.consume(`hook:${triggerId}`).ok;
+}
+
+// Abbinamento dei nodi dal browser. `start` (pubblica): 10 al minuto per IP; `poll` (pubblica): 30 al minuto per
+// richiesta (`pairingId`, o IP se manca); route dell'account: 20 al minuto per utente, un solo contatore per le tre.
+const nodePairingStartCounter = fixedWindowCounter({ limit: 10, windowMs: 60_000 });
+const nodePairingPollCounter = fixedWindowCounter({ limit: 30, windowMs: 60_000 });
+const nodePairingAccountCounter = fixedWindowCounter({ limit: 20, windowMs: 60_000 });
+export const nodePairingStartLimit = middlewareFor(nodePairingStartCounter, (req) => `ip:${req.ip ?? "unknown"}`);
+export const nodePairingPollLimit = middlewareFor(nodePairingPollCounter, (req) => {
+  const id = (req.body as { pairingId?: unknown } | undefined)?.pairingId;
+  return typeof id === "string" && id.length > 0 && id.length <= 64 ? `pairing:${id}` : `ip:${req.ip ?? "unknown"}`;
+});
+export const nodePairingAccountLimit = middlewareFor(nodePairingAccountCounter, byUser);
+
+/** Azzera i contatori dell'abbinamento (solo per i test). */
+export function resetNodePairingLimits(): void {
+  nodePairingStartCounter.reset();
+  nodePairingPollCounter.reset();
+  nodePairingAccountCounter.reset();
 }

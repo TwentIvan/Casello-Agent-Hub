@@ -5,8 +5,8 @@
 // Lo stesso vale per i turni delegati al nodo (`node_turns`): chiudono `failed` `node_disabled`, l'attesa di chi li ha
 // delegati si risolve dopo il commit.
 
-import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
-import { db, apiTokensTable, nodesTable, teamTasksTable, type Node, type TeamTaskRow } from "@workspace/db";
+import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { db, apiTokensTable, nodeDiagnosticsTable, nodesTable, teamTasksTable, type Node, type TeamTaskRow } from "@workspace/db";
 import { createNodeToken } from "../api-tokens";
 import { nodeTurnReady } from "../ai/node-account";
 import { notifyTurnsClosed } from "../node-turns/queue";
@@ -14,6 +14,7 @@ import { failNodeTurns } from "../node-turns/sweeper";
 import { logger } from "../logger";
 import { isUniqueViolation } from "../pg-errors";
 import { closeTaskRow, errName, notifyTaskClosed, type TaskResult } from "../teams/task-runner";
+import { isBelowMinVersion, loadNodeManifest, updateFor, type NodeManifest } from "./manifest";
 import { NODE_PROTOCOL_MESSAGES } from "./protocol";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -41,6 +42,36 @@ export interface NodeView {
   online: boolean;
   /** Pronto per i turni delegati: attivo e ha chiesto un turno negli ultimi 60 s. */
   turnReady: boolean;
+  /** `app` (installato con l'app per Mac), `cli`, null se il nodo non l'ha dichiarato. */
+  kind: "app" | "cli" | null;
+  pairedAt: Date | null;
+  /** IP abbreviato (/24 o /48) da cui è arrivata la richiesta di abbinamento. */
+  pairedIp: string | null;
+  claude: Record<string, unknown> | null;
+  claudeCheckedAt: Date | null;
+  settings: NodeSettingsView | null;
+  /** Versione proposta dal manifest (solo per i nodi installati con l'app). */
+  updateAvailable: string | null;
+  updateFailedVersion: string | null;
+  /** Versione sotto la minima del protocollo: il server non gli consegna lavoro. */
+  belowMinVersion: boolean;
+  diagnosticsAt: Date | null;
+  diagnosticsRequestedAt: Date | null;
+  uninstallRequestedAt: Date | null;
+}
+
+export interface NodeSettingsView {
+  maxConcurrent: number | null;
+  maxConcurrentTurns: number | null;
+  taskTimeoutMinutes: number | null;
+}
+
+/** Impostazioni salvate in forma normalizzata (null = default del nodo); null se non ce ne sono. */
+export function settingsOf(row: Pick<Node, "settings">): NodeSettingsView | null {
+  const raw = row.settings;
+  if (!raw) return null;
+  const pick = (key: string): number | null => (typeof raw[key] === "number" ? (raw[key] as number) : null);
+  return { maxConcurrent: pick("maxConcurrent"), maxConcurrentTurns: pick("maxConcurrentTurns"), taskTimeoutMinutes: pick("taskTimeoutMinutes") };
 }
 
 /** Nome vuoto o troppo lungo: il messaggio va nel 400. */
@@ -59,7 +90,8 @@ export class NodeNameConflictError extends Error {
   }
 }
 
-export function toNodeView(row: Node, now: Date = new Date()): NodeView {
+export function toNodeView(row: Node, now: Date = new Date(), diagnosticsAt: Date | null = null, manifest: NodeManifest | null = loadNodeManifest()): NodeView {
+  const kind = row.kind === "app" || row.kind === "cli" ? row.kind : null;
   return {
     id: row.id,
     name: row.name,
@@ -72,13 +104,46 @@ export function toNodeView(row: Node, now: Date = new Date()): NodeView {
     lastSeenAt: row.lastSeenAt,
     online: row.lastSeenAt !== null && now.getTime() - row.lastSeenAt.getTime() <= NODE_ONLINE_WINDOW_MS,
     turnReady: nodeTurnReady(row, now),
+    kind,
+    pairedAt: row.pairedAt,
+    pairedIp: row.pairedIp,
+    claude: row.claudeStatus,
+    claudeCheckedAt: row.claudeCheckedAt,
+    settings: settingsOf(row),
+    updateAvailable: updateFor(row.version, kind, manifest, row.updateFailedVersion)?.version ?? null,
+    updateFailedVersion: row.updateFailedVersion,
+    belowMinVersion: isBelowMinVersion(row.version, manifest),
+    diagnosticsAt,
+    diagnosticsRequestedAt: row.diagnosticsRequestedAt,
+    uninstallRequestedAt: row.uninstallRequestedAt,
   };
+}
+
+/** Date delle diagnosi salvate, per id di nodo. */
+async function diagnosticsDates(nodeIds: number[]): Promise<Map<number, Date>> {
+  if (nodeIds.length === 0) return new Map();
+  const rows = await db
+    .select({ nodeId: nodeDiagnosticsTable.nodeId, createdAt: nodeDiagnosticsTable.createdAt })
+    .from(nodeDiagnosticsTable)
+    .where(inArray(nodeDiagnosticsTable.nodeId, nodeIds));
+  return new Map(rows.map((r) => [r.nodeId, r.createdAt]));
+}
+
+/** Vista del nodo con la data dell'ultima diagnosi (una lettura in più). */
+export async function toNodeViewFull(row: Node): Promise<NodeView> {
+  return toNodeView(row, new Date(), (await diagnosticsDates([row.id])).get(row.id) ?? null);
+}
+
+/** Nome del nodo ripulito; vuoto o troppo lungo lancia `NodeInputError`. */
+export function cleanNodeName(name: string): string {
+  const clean = name.trim();
+  if (clean.length < 1 || clean.length > NAME_MAX) throw new NodeInputError(NODE_MESSAGES.nameInvalid);
+  return clean;
 }
 
 /** Registra un nodo e il suo token (mostrato una sola volta), in una transazione. */
 export async function createNode(userId: number, name: string): Promise<{ node: NodeView; token: string }> {
-  const cleanName = name.trim();
-  if (cleanName.length < 1 || cleanName.length > NAME_MAX) throw new NodeInputError(NODE_MESSAGES.nameInvalid);
+  const cleanName = cleanNodeName(name);
   try {
     return await db.transaction(async (tx) => {
       const [row] = await tx.insert(nodesTable).values({ userId, name: cleanName }).returning();
@@ -115,7 +180,9 @@ export async function getNodeFolders(userId: number, id: number): Promise<NodeFo
 export async function listNodes(userId: number): Promise<NodeView[]> {
   const rows = await db.select().from(nodesTable).where(eq(nodesTable.userId, userId)).orderBy(asc(nodesTable.name), asc(nodesTable.id));
   const now = new Date();
-  return rows.map((row) => toNodeView(row, now));
+  const manifest = loadNodeManifest();
+  const diagnostics = await diagnosticsDates(rows.map((r) => r.id));
+  return rows.map((row) => toNodeView(row, now, diagnostics.get(row.id) ?? null, manifest));
 }
 
 const NODE_STOPPED: TaskResult = { status: "failed", outcome: NODE_PROTOCOL_MESSAGES.disabled, error: NODE_PROTOCOL_MESSAGES.disabled };
@@ -138,7 +205,7 @@ async function stopNodeTasks(tx: Tx, nodeId: number): Promise<TeamTaskRow[]> {
   return closed;
 }
 
-interface StoppedWork {
+export interface StoppedWork {
   tasks: TeamTaskRow[];
   turnIds: number[];
 }
@@ -149,7 +216,7 @@ async function stopNodeWork(tx: Tx, nodeId: number): Promise<StoppedWork> {
 }
 
 /** Dopo il commit: attese dei turni risolte; PLAN, evento `bloccato` e turno del capo per ogni compito fermato (un errore non ferma gli altri). */
-async function notifyStopped({ tasks, turnIds }: StoppedWork): Promise<void> {
+export async function notifyStopped({ tasks, turnIds }: StoppedWork): Promise<void> {
   notifyTurnsClosed(turnIds);
   for (const task of tasks) {
     try {
@@ -173,7 +240,7 @@ export async function disableNode(userId: number, id: number): Promise<NodeView 
   });
   if (!out) return null;
   await notifyStopped(out.stopped);
-  return toNodeView(out.row);
+  return toNodeViewFull(out.row);
 }
 
 /** Elimina il nodo e i suoi token (cascade), dopo averne fermato i compiti; false se non è dell'utente. */
@@ -196,6 +263,18 @@ export async function deleteNode(userId: number, id: number): Promise<boolean> {
 }
 
 /**
+ * Nella transazione, con la riga del nodo già bloccata: revoca i token del nodo e ne ferma compiti e turni in carico
+ * (il processo col vecchio token non potrebbe più riferire). Dopo il commit si chiama `notifyStopped`.
+ */
+export async function revokeNodeTokens(tx: Tx, nodeId: number): Promise<StoppedWork> {
+  await tx
+    .update(apiTokensTable)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(apiTokensTable.nodeId, nodeId), isNull(apiTokensTable.revokedAt)));
+  return stopNodeWork(tx, nodeId);
+}
+
+/**
  * Revoca i token del nodo e ne crea uno nuovo (mostrato una sola volta); null se il nodo non è dell'utente. Il processo
  * col vecchio token non potrebbe più riferire: i compiti che ha in carico si fermano come con la disattivazione.
  */
@@ -208,11 +287,7 @@ export async function regenerateNodeToken(userId: number, id: number): Promise<{
       .where(and(eq(nodesTable.id, id), eq(nodesTable.userId, userId)))
       .for("update");
     if (!node) return null;
-    await tx
-      .update(apiTokensTable)
-      .set({ revokedAt: new Date() })
-      .where(and(eq(apiTokensTable.nodeId, id), isNull(apiTokensTable.revokedAt)));
-    const stopped = await stopNodeWork(tx, id);
+    const stopped = await revokeNodeTokens(tx, id);
     return { token: await createNodeToken(tx, userId, id, `Nodo ${node.name}`), stopped };
   });
   if (!out) return null;

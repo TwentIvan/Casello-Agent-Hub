@@ -2,10 +2,12 @@ import { EventEmitter } from "node:events";
 import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runCli, servicePath, type CliDeps } from "./cli";
+import { NODE_VERSION } from "./capabilities";
+import { realRemoveQuarantine, runCli, servicePath, type CliDeps } from "./cli";
 import { defaultPaths } from "./config";
 import { LABEL, plistPath, type LaunchctlRunner } from "./launchd";
 import { writeState } from "./state";
+import { updatePaths } from "./updater";
 import { FAKE_TOKEN, tempDir } from "./test/helpers";
 
 let home: string;
@@ -215,6 +217,14 @@ describe("install", () => {
   });
 });
 
+describe("--version", () => {
+  it("stampa solo la versione del nodo, senza toccare launchd", async () => {
+    expect(await runCli(["--version"], deps())).toBe(0);
+    expect(out).toBe(`${NODE_VERSION}\n`);
+    expect(calls).toEqual([]);
+  });
+});
+
 describe("uninstall", () => {
   it("bootout, toglie il plist e lascia config e log", async () => {
     await runCli(installArgs(), deps());
@@ -328,6 +338,32 @@ describe("run", () => {
     expect(crash.mock.invocationCallOrder[0]).toBeLessThan(exit.mock.invocationCallOrder[0]);
   });
 
+  it("kind: «app» se il programma in esecuzione è la copia dell'app, altrimenti «cli»", async () => {
+    await writeConfig();
+    const startLoop = vi.fn(() => ({ stop: async () => {}, crash: () => {} })) as unknown as CliDeps["startLoop"];
+    void runCli(["run"], deps({ startLoop, execPath: defaultPaths(home).appProgramPath }));
+    await vi.waitFor(() => expect(startLoop).toHaveBeenCalledTimes(1));
+    expect((startLoop as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1]).toMatchObject({ kind: "app" });
+    const cliLoop = vi.fn(() => ({ stop: async () => {}, crash: () => {} })) as unknown as CliDeps["startLoop"];
+    void runCli(["run"], deps({ startLoop: cliLoop }));
+    await vi.waitFor(() => expect(cliLoop).toHaveBeenCalledTimes(1));
+    expect((cliLoop as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1]).toMatchObject({ kind: "cli" });
+  });
+
+  it("terzo avvio entro 2 minuti da un aggiornamento → ripristina la versione precedente ed esce senza avviare il ciclo", async () => {
+    await writeConfig();
+    const upd = updatePaths(home);
+    await mkdir(path.dirname(upd.programPath), { recursive: true });
+    await writeFile(upd.programPath, "nuovo");
+    await writeFile(upd.prevPath, "vecchio");
+    const startedAt = new Date("2026-11-10T10:00:00.000Z");
+    await writeFile(upd.updateJsonPath, JSON.stringify({ from: "0.3.0", to: "0.4.0", startedAt: startedAt.toISOString(), starts: 2 }));
+    const d = deps({ now: () => new Date(startedAt.getTime() + 60_000) });
+    expect(await runCli(["run"], d)).toBe(1);
+    expect(d.startLoop).not.toHaveBeenCalled();
+    expect(await readFile(upd.programPath, "utf8")).toBe("vecchio");
+  });
+
   it("config mancante → errore, il ciclo non parte", async () => {
     const d = deps();
     expect(await runCli(["run"], d)).toBe(1);
@@ -347,4 +383,13 @@ describe("servicePath", () => {
 it("comando sconosciuto → uso e codice 1", async () => {
   expect(await runCli(["boh"], deps())).toBe(1);
   expect(err).toContain("uso:");
+});
+
+describe("realRemoveQuarantine", () => {
+  it("su un file senza l'attributo (o fuori da macOS) non fallisce", async () => {
+    const file = path.join(home, "senza-quarantena");
+    await writeFile(file, "x");
+    await expect(realRemoveQuarantine(file)).resolves.toBeUndefined();
+    await expect(realRemoveQuarantine(path.join(home, "inesistente"))).resolves.toBeUndefined();
+  });
 });

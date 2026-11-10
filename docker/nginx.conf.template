@@ -49,6 +49,22 @@ server {
         client_max_body_size 256k;
     }
 
+    # Abbinamento di un Mac: il codice è nel percorso (/api/account/node-pairings/<codice>[/approve|/deny]), quindi
+    # niente access log e solo errori critici nell'error_log, come /api/hooks/; stesso proxy e stessi header di /api/
+    location ^~ /api/account/node-pairings/ {
+        access_log off;
+        error_log /dev/stderr crit;
+        set $api_upstream http://casello-api:3000;
+        proxy_pass $api_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+
     # Server MCP per gli agenti locali (Claude Code): stesso proxy di /api/, corpi fino a 2 MB
     # (un esito di fase), niente buffering per le risposte in streaming
     location /mcp {
@@ -107,6 +123,32 @@ server {
         try_files $uri =404;
         add_header Cache-Control "public, max-age=300";
         add_header Access-Control-Allow-Origin "*";
+    }
+
+    # Botcave Nodo per Mac (zip dell'app, binario per gli aggiornamenti e manifest, scritti dal job build-nodo): il
+    # manifest cambia a ogni versione (1 ora), gli altri file hanno la versione nel nome (1 anno). Ogni location con
+    # add_header propri perde quelli ereditati: nosniff e CSP della console si ripetono nella location annidata.
+    location ^~ /downloads/nodo/ {
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Content-Security-Policy "frame-ancestors 'none'" always;
+
+        location = /downloads/nodo/nodo-manifest.json {
+            try_files $uri =404;
+            add_header Cache-Control "public, max-age=3600";
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header Content-Security-Policy "frame-ancestors 'none'" always;
+        }
+    }
+
+    # Abbinamento di un Mac: il codice è nella query, quindi niente access log (la pagina è la SPA, come "location /")
+    location = /nodes/pair {
+        access_log off;
+        try_files /index.html =404;
+        add_header Cache-Control "no-cache";
+        add_header Content-Security-Policy "frame-ancestors 'none'" always;
+        add_header Referrer-Policy "no-referrer" always;
     }
 
     location /assets/ {

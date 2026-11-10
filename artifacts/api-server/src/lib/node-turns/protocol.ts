@@ -5,6 +5,7 @@
 import { randomBytes } from "node:crypto";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { db, nodesTable, nodeTurnsTable, type NodeTurn } from "@workspace/db";
+import { isBelowMinVersion, loadNodeManifest } from "../nodes/manifest";
 import { NODE_PROTOCOL_MESSAGES, NodeError } from "../nodes/protocol";
 import { oauthBase } from "../oauth/config";
 import { normalizeErrorCode } from "./messages";
@@ -120,18 +121,20 @@ export async function claimTurn(nodeId: number, waitMs: number = TURN_POLL_WAIT_
     .update(nodesTable)
     .set({ lastTurnPollAt: new Date() })
     .where(and(eq(nodesTable.id, nodeId), eq(nodesTable.status, "active")))
-    .returning({ id: nodesTable.id });
+    .returning({ id: nodesTable.id, version: nodesTable.version });
   if (!node) throw new NodeError(403, NODE_PROTOCOL_MESSAGES.disabled);
   if (signal?.aborted) return null;
+  // Versione sotto la minima del protocollo: nessun turno (l'attesa resta, il nodo non ripete la richiesta in un ciclo stretto)
+  const blocked = isBelowMinVersion(node.version, loadNodeManifest());
   // Iscrizione prima della ricerca: un turno accodato tra la ricerca e l'attesa sveglia subito la presa
   const subscription = subscribeNodeSignal(nodeId);
   try {
-    const first = await claimOnce(nodeId);
+    const first = blocked ? null : await claimOnce(nodeId);
     if (first || waitMs <= 0) return first;
     await turnPollSettings.afterFirstAttempt?.();
     await subscription.wait(waitMs, signal);
     if (signal?.aborted) return null;
-    return await claimOnce(nodeId);
+    return blocked ? null : await claimOnce(nodeId);
   } finally {
     subscription.close();
   }

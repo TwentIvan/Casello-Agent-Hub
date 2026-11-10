@@ -127,11 +127,22 @@ import type {
   NodeCapabilities,
   NodeCreate,
   NodeCreated,
+  NodeDiagnosticsUpload,
+  NodeDownload,
   NodeFolders,
   NodeHeartbeat,
   NodeLease,
   NodeLeaseRenewed,
+  NodePairingApprove,
+  NodePairingDecision,
+  NodePairingInfo,
+  NodePairingPending,
+  NodePairingPoll,
+  NodePairingResult,
+  NodePairingStart,
+  NodePairingStarted,
   NodeReport,
+  NodeSettings,
   NodeTaskPackage,
   NodeToken,
   NodeTurnPackage,
@@ -386,6 +397,148 @@ export function useGetEmbedConfig<TData = Awaited<ReturnType<typeof getEmbedConf
 
 
 
+
+export const getStartNodePairingUrl = () => {
+
+
+
+
+  return `/api/node-pairing/start`
+}
+
+/**
+ * Chiamata dal nodo al primo avvio. Risponde con `userCode` (XXXX-XXXX, da mostrare all'utente), `pollSecret` (segreto del nodo) e la scadenza (10 minuti); nel DB restano solo gli hash. 10 richieste al minuto per IP.
+ * @summary Avvia l'abbinamento di un Mac dal browser (pubblica)
+ */
+export const startNodePairing = async (nodePairingStart: NodePairingStart, options?: RequestInit): Promise<NodePairingStarted> => {
+
+  return customFetch<NodePairingStarted>(getStartNodePairingUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodePairingStart)
+  }
+);}
+
+
+
+
+export const getStartNodePairingMutationOptions = <TError = ErrorType<BadRequestResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startNodePairing>>, TError,{data: BodyType<NodePairingStart>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startNodePairing>>, TError,{data: BodyType<NodePairingStart>}, TContext> => {
+
+const mutationKey = ['startNodePairing'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startNodePairing>>, {data: BodyType<NodePairingStart>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  startNodePairing(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartNodePairingMutationResult = NonNullable<Awaited<ReturnType<typeof startNodePairing>>>
+    export type StartNodePairingMutationBody = BodyType<NodePairingStart>
+    export type StartNodePairingMutationError = ErrorType<BadRequestResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Avvia l'abbinamento di un Mac dal browser (pubblica)
+ */
+export const useStartNodePairing = <TError = ErrorType<BadRequestResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startNodePairing>>, TError,{data: BodyType<NodePairingStart>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startNodePairing>>,
+        TError,
+        {data: BodyType<NodePairingStart>},
+        TContext
+      > => {
+      return useMutation(getStartNodePairingMutationOptions(options));
+    }
+
+export const getPollNodePairingUrl = () => {
+
+
+
+
+  return `/api/node-pairing/poll`
+}
+
+/**
+ * 202 `pending` finché l'utente non decide. Dopo l'approvazione risponde 200 con il token del nodo, una sola volta. Rifiutata, scaduta, già consegnata o segreto sbagliato: 410. 30 richieste al minuto per richiesta.
+ * @summary Il nodo chiede l'esito dell'abbinamento (pubblica)
+ */
+export const pollNodePairing = async (nodePairingPoll: NodePairingPoll, options?: RequestInit): Promise<NodePairingResult | NodePairingPending> => {
+
+  return customFetch<NodePairingResult | NodePairingPending>(getPollNodePairingUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodePairingPoll)
+  }
+);}
+
+
+
+
+export const getPollNodePairingMutationOptions = <TError = ErrorType<BadRequestResponse | ErrorResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pollNodePairing>>, TError,{data: BodyType<NodePairingPoll>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pollNodePairing>>, TError,{data: BodyType<NodePairingPoll>}, TContext> => {
+
+const mutationKey = ['pollNodePairing'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pollNodePairing>>, {data: BodyType<NodePairingPoll>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  pollNodePairing(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PollNodePairingMutationResult = NonNullable<Awaited<ReturnType<typeof pollNodePairing>>>
+    export type PollNodePairingMutationBody = BodyType<NodePairingPoll>
+    export type PollNodePairingMutationError = ErrorType<BadRequestResponse | ErrorResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Il nodo chiede l'esito dell'abbinamento (pubblica)
+ */
+export const usePollNodePairing = <TError = ErrorType<BadRequestResponse | ErrorResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pollNodePairing>>, TError,{data: BodyType<NodePairingPoll>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pollNodePairing>>,
+        TError,
+        {data: BodyType<NodePairingPoll>},
+        TContext
+      > => {
+      return useMutation(getPollNodePairingMutationOptions(options));
+    }
 
 export const getGetCurrentUserUrl = () => {
 
@@ -1492,6 +1645,739 @@ export function useGetNodeFolders<TData = Awaited<ReturnType<typeof getNodeFolde
 
 
 
+
+export const getGetNodeDownloadUrl = () => {
+
+
+
+
+  return `/api/account/nodes/download`
+}
+
+/**
+ * Indirizzo dello zip dell'app nel manifest dell'immagine (`available` false senza manifest). Solo con il login.
+ * @summary Pacchetto di Botcave Nodo per Mac
+ */
+export const getNodeDownload = async ( options?: RequestInit): Promise<NodeDownload> => {
+
+  return customFetch<NodeDownload>(getGetNodeDownloadUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetNodeDownloadQueryKey = () => {
+    return [
+    `/api/account/nodes/download`
+    ] as const;
+    }
+
+
+export const getGetNodeDownloadQueryOptions = <TData = Awaited<ReturnType<typeof getNodeDownload>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNodeDownload>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNodeDownloadQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNodeDownload>>> = ({ signal }) => getNodeDownload({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNodeDownload>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetNodeDownloadQueryResult = NonNullable<Awaited<ReturnType<typeof getNodeDownload>>>
+export type GetNodeDownloadQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+
+
+/**
+ * @summary Pacchetto di Botcave Nodo per Mac
+ */
+
+export function useGetNodeDownload<TData = Awaited<ReturnType<typeof getNodeDownload>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNodeDownload>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetNodeDownloadQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateNodeSettingsUrl = (id: number,) => {
+
+
+
+
+  return `/api/account/nodes/${id}/settings`
+}
+
+/**
+ * Sostituisce le impostazioni (null = default del nodo); il nodo le riceve con l'heartbeat. Valori fuori intervallo: 400 «impostazioni del nodo non valide». 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Impostazioni di un nodo locale
+ */
+export const updateNodeSettings = async (id: number,
+    nodeSettings: NodeSettings, options?: RequestInit): Promise<Node> => {
+
+  return customFetch<Node>(getUpdateNodeSettingsUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeSettings)
+  }
+);}
+
+
+
+
+export const getUpdateNodeSettingsMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateNodeSettings>>, TError,{id: number;data: BodyType<NodeSettings>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateNodeSettings>>, TError,{id: number;data: BodyType<NodeSettings>}, TContext> => {
+
+const mutationKey = ['updateNodeSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateNodeSettings>>, {id: number;data: BodyType<NodeSettings>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateNodeSettings(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateNodeSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateNodeSettings>>>
+    export type UpdateNodeSettingsMutationBody = BodyType<NodeSettings>
+    export type UpdateNodeSettingsMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Impostazioni di un nodo locale
+ */
+export const useUpdateNodeSettings = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateNodeSettings>>, TError,{id: number;data: BodyType<NodeSettings>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateNodeSettings>>,
+        TError,
+        {id: number;data: BodyType<NodeSettings>},
+        TContext
+      > => {
+      return useMutation(getUpdateNodeSettingsMutationOptions(options));
+    }
+
+export const getRequestNodeDiagnosticsUrl = (id: number,) => {
+
+
+
+
+  return `/api/account/nodes/${id}/diagnostics-request`
+}
+
+/**
+ * Il nodo la invia al prossimo heartbeat. 6 all'ora per nodo. 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Chiede al nodo di inviare una diagnosi
+ */
+export const requestNodeDiagnostics = async (id: number, options?: RequestInit): Promise<Node> => {
+
+  return customFetch<Node>(getRequestNodeDiagnosticsUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRequestNodeDiagnosticsMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestNodeDiagnostics>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestNodeDiagnostics>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['requestNodeDiagnostics'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestNodeDiagnostics>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  requestNodeDiagnostics(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestNodeDiagnosticsMutationResult = NonNullable<Awaited<ReturnType<typeof requestNodeDiagnostics>>>
+
+    export type RequestNodeDiagnosticsMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Chiede al nodo di inviare una diagnosi
+ */
+export const useRequestNodeDiagnostics = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestNodeDiagnostics>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestNodeDiagnostics>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRequestNodeDiagnosticsMutationOptions(options));
+    }
+
+export const getGetNodeDiagnosticsUrl = (id: number,) => {
+
+
+
+
+  return `/api/account/nodes/${id}/diagnostics`
+}
+
+/**
+ * File di testo (`attachment`). 404 se il nodo non è dell'utente o non ha diagnosi. Solo con il login.
+ * @summary Scarica l'ultima diagnosi del nodo
+ */
+export const getNodeDiagnostics = async (id: number, options?: RequestInit): Promise<string> => {
+
+  return customFetch<string>(getGetNodeDiagnosticsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetNodeDiagnosticsQueryKey = (id: number,) => {
+    return [
+    `/api/account/nodes/${id}/diagnostics`
+    ] as const;
+    }
+
+
+export const getGetNodeDiagnosticsQueryOptions = <TData = Awaited<ReturnType<typeof getNodeDiagnostics>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNodeDiagnostics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNodeDiagnosticsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNodeDiagnostics>>> = ({ signal }) => getNodeDiagnostics(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNodeDiagnostics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetNodeDiagnosticsQueryResult = NonNullable<Awaited<ReturnType<typeof getNodeDiagnostics>>>
+export type GetNodeDiagnosticsQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+
+/**
+ * @summary Scarica l'ultima diagnosi del nodo
+ */
+
+export function useGetNodeDiagnostics<TData = Awaited<ReturnType<typeof getNodeDiagnostics>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNodeDiagnostics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetNodeDiagnosticsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRequestNodeUninstallUrl = (id: number,) => {
+
+
+
+
+  return `/api/account/nodes/${id}/uninstall-request`
+}
+
+/**
+ * Il nodo lo legge con l'heartbeat, chiude il lavoro e chiama `/node/uninstalled`. 404 se il nodo non è dell'utente. Solo con il login.
+ * @summary Chiede al nodo di disinstallarsi dal Mac
+ */
+export const requestNodeUninstall = async (id: number, options?: RequestInit): Promise<Node> => {
+
+  return customFetch<Node>(getRequestNodeUninstallUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRequestNodeUninstallMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestNodeUninstall>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestNodeUninstall>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['requestNodeUninstall'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestNodeUninstall>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  requestNodeUninstall(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestNodeUninstallMutationResult = NonNullable<Awaited<ReturnType<typeof requestNodeUninstall>>>
+
+    export type RequestNodeUninstallMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Chiede al nodo di disinstallarsi dal Mac
+ */
+export const useRequestNodeUninstall = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestNodeUninstall>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestNodeUninstall>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRequestNodeUninstallMutationOptions(options));
+    }
+
+export const getNodeUploadDiagnosticsUrl = () => {
+
+
+
+
+  return `/api/node/diagnostics`
+}
+
+/**
+ * Solo con il token d'ambito `node`. Sostituisce la diagnosi precedente e azzera la richiesta. Corpo oltre 256 KB: 413.
+ * @summary Il nodo invia la diagnosi richiesta
+ */
+export const nodeUploadDiagnostics = async (nodeDiagnosticsUpload: NodeDiagnosticsUpload, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getNodeUploadDiagnosticsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeDiagnosticsUpload)
+  }
+);}
+
+
+
+
+export const getNodeUploadDiagnosticsMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | PayloadTooLargeResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeUploadDiagnostics>>, TError,{data: BodyType<NodeDiagnosticsUpload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof nodeUploadDiagnostics>>, TError,{data: BodyType<NodeDiagnosticsUpload>}, TContext> => {
+
+const mutationKey = ['nodeUploadDiagnostics'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodeUploadDiagnostics>>, {data: BodyType<NodeDiagnosticsUpload>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  nodeUploadDiagnostics(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type NodeUploadDiagnosticsMutationResult = NonNullable<Awaited<ReturnType<typeof nodeUploadDiagnostics>>>
+    export type NodeUploadDiagnosticsMutationBody = BodyType<NodeDiagnosticsUpload>
+    export type NodeUploadDiagnosticsMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | PayloadTooLargeResponse>
+
+    /**
+ * @summary Il nodo invia la diagnosi richiesta
+ */
+export const useNodeUploadDiagnostics = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | PayloadTooLargeResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeUploadDiagnostics>>, TError,{data: BodyType<NodeDiagnosticsUpload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof nodeUploadDiagnostics>>,
+        TError,
+        {data: BodyType<NodeDiagnosticsUpload>},
+        TContext
+      > => {
+      return useMutation(getNodeUploadDiagnosticsMutationOptions(options));
+    }
+
+export const getNodeUninstalledUrl = () => {
+
+
+
+
+  return `/api/node/uninstalled`
+}
+
+/**
+ * Solo con il token d'ambito `node`. Disattiva il nodo come «Disattiva».
+ * @summary Il nodo comunica di essersi disinstallato
+ */
+export const nodeUninstalled = async ( options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getNodeUninstalledUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getNodeUninstalledMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeUninstalled>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof nodeUninstalled>>, TError,void, TContext> => {
+
+const mutationKey = ['nodeUninstalled'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodeUninstalled>>, void> = () => {
+
+
+          return  nodeUninstalled(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type NodeUninstalledMutationResult = NonNullable<Awaited<ReturnType<typeof nodeUninstalled>>>
+
+    export type NodeUninstalledMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+
+    /**
+ * @summary Il nodo comunica di essersi disinstallato
+ */
+export const useNodeUninstalled = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeUninstalled>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof nodeUninstalled>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getNodeUninstalledMutationOptions(options));
+    }
+
+export const getGetNodePairingUrl = (code: string,) => {
+
+
+
+
+  return `/api/account/node-pairings/${code}`
+}
+
+/**
+ * Il codice si accetta con o senza trattino e in minuscolo. Sconosciuta, scaduta o già decisa: 404. Solo con il login.
+ * @summary Dati di una richiesta di collegamento
+ */
+export const getNodePairing = async (code: string, options?: RequestInit): Promise<NodePairingInfo> => {
+
+  return customFetch<NodePairingInfo>(getGetNodePairingUrl(code),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetNodePairingQueryKey = (code: string,) => {
+    return [
+    `/api/account/node-pairings/${code}`
+    ] as const;
+    }
+
+
+export const getGetNodePairingQueryOptions = <TData = Awaited<ReturnType<typeof getNodePairing>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>>(code: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNodePairing>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNodePairingQueryKey(code);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNodePairing>>> = ({ signal }) => getNodePairing(code, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: code !== null && code !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNodePairing>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetNodePairingQueryResult = NonNullable<Awaited<ReturnType<typeof getNodePairing>>>
+export type GetNodePairingQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>
+
+
+/**
+ * @summary Dati di una richiesta di collegamento
+ */
+
+export function useGetNodePairing<TData = Awaited<ReturnType<typeof getNodePairing>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>>(
+ code: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNodePairing>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetNodePairingQueryOptions(code,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getApproveNodePairingUrl = (code: string,) => {
+
+
+
+
+  return `/api/account/node-pairings/${code}/approve`
+}
+
+/**
+ * Con `replaceNodeId` il nodo esistente dell'utente resta (nome invariato) e i suoi token si revocano come con «Rigenera token»; senza, si crea un nodo con `name` (doppione 409 "nome già usato"). Il token non si crea qui: lo riceve il nodo con il poll. Al quinto errore la richiesta scade. Solo con il login.
+ * @summary Approva il collegamento di un Mac
+ */
+export const approveNodePairing = async (code: string,
+    nodePairingApprove: NodePairingApprove, options?: RequestInit): Promise<NodePairingDecision> => {
+
+  return customFetch<NodePairingDecision>(getApproveNodePairingUrl(code),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodePairingApprove)
+  }
+);}
+
+
+
+
+export const getApproveNodePairingMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveNodePairing>>, TError,{code: string;data: BodyType<NodePairingApprove>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof approveNodePairing>>, TError,{code: string;data: BodyType<NodePairingApprove>}, TContext> => {
+
+const mutationKey = ['approveNodePairing'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof approveNodePairing>>, {code: string;data: BodyType<NodePairingApprove>}> = (props) => {
+          const {code,data} = props ?? {};
+
+          return  approveNodePairing(code,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApproveNodePairingMutationResult = NonNullable<Awaited<ReturnType<typeof approveNodePairing>>>
+    export type ApproveNodePairingMutationBody = BodyType<NodePairingApprove>
+    export type ApproveNodePairingMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Approva il collegamento di un Mac
+ */
+export const useApproveNodePairing = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveNodePairing>>, TError,{code: string;data: BodyType<NodePairingApprove>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof approveNodePairing>>,
+        TError,
+        {code: string;data: BodyType<NodePairingApprove>},
+        TContext
+      > => {
+      return useMutation(getApproveNodePairingMutationOptions(options));
+    }
+
+export const getDenyNodePairingUrl = (code: string,) => {
+
+
+
+
+  return `/api/account/node-pairings/${code}/deny`
+}
+
+/**
+ * Solo con il login.
+ * @summary Rifiuta il collegamento di un Mac
+ */
+export const denyNodePairing = async (code: string, options?: RequestInit): Promise<NodePairingDecision> => {
+
+  return customFetch<NodePairingDecision>(getDenyNodePairingUrl(code),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getDenyNodePairingMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof denyNodePairing>>, TError,{code: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof denyNodePairing>>, TError,{code: string}, TContext> => {
+
+const mutationKey = ['denyNodePairing'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof denyNodePairing>>, {code: string}> = (props) => {
+          const {code} = props ?? {};
+
+          return  denyNodePairing(code,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DenyNodePairingMutationResult = NonNullable<Awaited<ReturnType<typeof denyNodePairing>>>
+
+    export type DenyNodePairingMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Rifiuta il collegamento di un Mac
+ */
+export const useDenyNodePairing = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof denyNodePairing>>, TError,{code: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof denyNodePairing>>,
+        TError,
+        {code: string},
+        TContext
+      > => {
+      return useMutation(getDenyNodePairingMutationOptions(options));
+    }
 
 export const getNodeHeartbeatUrl = () => {
 

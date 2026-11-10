@@ -5,6 +5,8 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { DashboardStatsNodeClaudeWarningsItem } from './dashboardStatsNodeClaudeWarningsItem';
+import type { DashboardStatsRecentlyPairedNodesItem } from './dashboardStatsRecentlyPairedNodesItem';
 
 export interface DashboardStats {
   totalApps: number;
@@ -18,6 +20,10 @@ export interface DashboardStats {
   pendingActions: number;
   /** Inneschi fermi in stato error (servono «Riprendi») */
   triggersInError: number;
+  /** Nodi dell'utente collegati nelle ultime 24 ore (attivi) */
+  recentlyPairedNodes: DashboardStatsRecentlyPairedNodesItem[];
+  /** Nodi con un account «Claude Code (nodo)» dell'utente il cui Claude non è pronto */
+  nodeClaudeWarnings: DashboardStatsNodeClaudeWarningsItem[];
   /** @nullable */
   avgDurationMs?: number | null;
 }

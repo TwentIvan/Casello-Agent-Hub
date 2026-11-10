@@ -4,8 +4,13 @@ import {
   NodeHeartbeatResponse,
   NodePingResponse,
   NodeReportBody,
+  NodeUploadDiagnosticsBody,
   NodeTurnClaimResponse,
   NodeTurnReportBody,
+  PollNodePairingBody,
+  PollNodePairingResponse,
+  StartNodePairingBody,
+  StartNodePairingResponse,
 } from "@workspace/api-zod";
 import type { z } from "zod";
 
@@ -16,6 +21,8 @@ export type TaskReport = z.input<typeof NodeReportBody>;
 export type TurnPackage = z.infer<typeof NodeTurnClaimResponse>;
 export type TurnReport = z.input<typeof NodeTurnReportBody>;
 export type Capabilities = z.input<typeof NodeHeartbeatBody>;
+/** Risposta dell'heartbeat: compiti in attesa più, facoltativi, aggiornamento, impostazioni e richieste della console. */
+export type HeartbeatResult = z.infer<typeof NodeHeartbeatResponse>;
 
 export const LEASE_LOST = "lease non valida o scaduta";
 
@@ -107,7 +114,7 @@ export class CaselloClient {
     this.maxRetryMs = opts.maxRetryMs ?? 5 * 60_000;
   }
 
-  async heartbeat(caps: Capabilities): Promise<{ pending: number }> {
+  async heartbeat(caps: Capabilities): Promise<HeartbeatResult> {
     const body = NodeHeartbeatBody.parse(caps);
     const res = await this.request("POST", "/node/heartbeat", { json: body });
     return NodeHeartbeatResponse.parse(await res.json());
@@ -159,6 +166,16 @@ export class CaselloClient {
   async reportTurn(turnId: number, report: TurnReport): Promise<void> {
     const body = NodeTurnReportBody.parse(report);
     await this.request("POST", `/node/turns/${turnId}/report`, { json: body });
+  }
+
+  /** Invia la diagnosi richiesta dalla console (≤ 256 KB). */
+  async uploadDiagnostics(content: string): Promise<void> {
+    await this.request("POST", "/node/diagnostics", { json: NodeUploadDiagnosticsBody.parse({ content }) });
+  }
+
+  /** Comunica la disinstallazione (Botcave disattiva il nodo). Un solo tentativo, 10 s: chi chiama prosegue comunque. */
+  async uninstalled(): Promise<void> {
+    await this.request("POST", "/node/uninstalled", { json: {}, noRetry: true, timeoutMs: 10_000 });
   }
 
   async downloadAttachment(taskId: number, attachmentId: number, leaseToken: string): Promise<Buffer> {
@@ -240,4 +257,63 @@ async function errorDetail(res: Response): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** `serverNow`: ora del server dall'header `Date` della risposta, se presente e valida (serve a non dipendere dall'orologio del Mac). */
+export type PairingStart = z.infer<typeof StartNodePairingResponse> & { serverNow?: Date };
+/** Esito di un'interrogazione: `gone` = 410 (rifiutata, scaduta, già consegnata o segreto sbagliato). */
+export type PollResult =
+  | { status: "pending" }
+  | { status: "approved"; token: string; nodeId: number; nodeName: string }
+  | { status: "gone" };
+
+/** Abbinamento dal browser (`/api/node-pairing/…`): route pubbliche, senza token. */
+export interface PairingClient {
+  start(body: z.input<typeof StartNodePairingBody>): Promise<PairingStart>;
+  /** Errori di rete, 429 e 5xx lanciano un'eccezione: chi chiama riprova al giro dopo. */
+  poll(pairingId: string, pollSecret: string): Promise<PollResult>;
+}
+
+export function createPairingClient(opts: { baseUrl: string; fetch?: typeof fetch; timeoutMs?: number }): PairingClient {
+  const fetchImpl = opts.fetch ?? fetch;
+  const post = async (pathname: string, body: unknown): Promise<Response> => {
+    try {
+      return await fetchImpl(`${opts.baseUrl}/api${pathname}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        redirect: "error",
+        signal: AbortSignal.timeout(opts.timeoutMs ?? 30_000),
+      });
+    } catch {
+      throw new NetworkError();
+    }
+  };
+  return {
+    async start(body) {
+      const res = await post("/node-pairing/start", StartNodePairingBody.parse(body));
+      if (!res.ok) throw new HttpError(res.status, await errorDetail(res));
+      const parsed = StartNodePairingResponse.safeParse(await res.json().catch(() => null));
+      if (!parsed.success) throw new Error("risposta di Botcave non valida");
+      const date = Date.parse(res.headers.get("date") ?? "");
+      return Number.isNaN(date) ? parsed.data : { ...parsed.data, serverNow: new Date(date) };
+    },
+    async poll(pairingId, pollSecret) {
+      const res = await post("/node-pairing/poll", PollNodePairingBody.parse({ pairingId, pollSecret }));
+      if (res.status === 410) return { status: "gone" };
+      if (res.status === 202) {
+        // Il corpo 202 non è nello schema generato: si legge a mano
+        const body = (await res.json().catch(() => null)) as { status?: unknown } | null;
+        if (body?.status === "pending") return { status: "pending" };
+        throw new Error("risposta di Botcave non valida");
+      }
+      if (res.status === 200) {
+        const parsed = PollNodePairingResponse.safeParse(await res.json().catch(() => null));
+        if (!parsed.success) throw new Error("risposta di Botcave non valida");
+        const { token, nodeId, nodeName } = parsed.data;
+        return { status: "approved", token, nodeId, nodeName };
+      }
+      throw new HttpError(res.status, await errorDetail(res));
+    },
+  };
 }

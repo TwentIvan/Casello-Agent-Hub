@@ -1,5 +1,19 @@
-// Entrata di `casello-nodo`: comandi install, uninstall, status, run (vedi cli.ts).
+// Entrata di `casello-nodo`: con argomenti i comandi della CLI (install, uninstall, status, run, --version, vedi cli.ts);
+// senza argomenti dentro `Botcave Nodo.app` la modalità app (abbinamento e menu, vedi app-mode.ts); altrimenti l'uso.
+import { isSea } from "node:sea";
 import { fileURLToPath } from "node:url";
+import { isAppExecPath, launchArgs, realAppDeps, runAppMode } from "./app-mode";
+import { NODE_VERSION } from "./capabilities";
 import { realDeps, runCli } from "./cli";
+import { appBaseUrl } from "./config";
 
-void runCli(process.argv.slice(2), realDeps(fileURLToPath(import.meta.url))).then((code) => process.exit(code));
+// Eseguibile unico (SEA, bundle CommonJS): `import.meta.url` non esiste e il programma è l'eseguibile stesso.
+// Nella SEA `process.argv` è [eseguibile, eseguibile, …argomenti], come [node, script, …argomenti] della CLI.
+const entryPath = isSea() ? process.execPath : fileURLToPath(import.meta.url);
+// Il Finder può aggiungere `-psn_…` all'avvio dell'app: non è un comando della CLI
+const argv = launchArgs(process.argv.slice(2));
+const done =
+  argv.length === 0 && isAppExecPath(process.execPath)
+    ? runAppMode(realAppDeps({ caselloUrl: appBaseUrl(), version: NODE_VERSION, programSource: process.execPath }))
+    : runCli(argv, realDeps(entryPath));
+void done.then((code) => process.exit(code));

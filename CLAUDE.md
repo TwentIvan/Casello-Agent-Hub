@@ -857,6 +857,11 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   usa quello di Lucius (`characterModelFor`); il tetto di Lucius vale anche qui (409 nella route, messaggio d'errore dell'assistente nel turno).
 - Nel contesto del modello non entrano segreti né indirizzi delle app. Il turno gira in background: la UI fa
   polling sulla conversazione; all'avvio i turni rimasti aperti (`failInterruptedPlanTurns`) vengono chiusi come falliti.
+  **Turni appesi** (`lib/stale-turns.ts`, vale anche per conversazioni dei personaggi e chat di squadra): durante un deploy il container nuovo
+  parte prima che il vecchio si fermi, quindi un turno avviato nel vecchio dopo la pulizia dell'avvio resterebbe `running` per sempre (la
+  conversazione rifiuterebbe ogni messaggio). Ogni processo ricorda i turni che esegue (`trackTurn`); ogni minuto `startStaleTurnSweeper`
+  chiude con il messaggio del riavvio i turni `running` con `updated_at` più vecchio di 5 minuti (`STALE_TURN_MS`) che non girano in questo
+  processo, con le stesse `failInterrupted*` dell'avvio (filtro `olderThan`/`exclude`).
 - La rianalisi dell'architetto riceve le voci da chat approvate (e quelle con un'issue) come "già pianificate" (fasi
   completion ed evolution; la fase catalog solo quelle `endpoint`) e non le ripropone. Nel piano restano anche le voci
   da chat approvate delle analisi precedenti.

@@ -329,6 +329,24 @@ describe("turni della chat del piano", () => {
     expect(messages[3]!.error).toBe(true);
   });
 
+  it("turni appesi: chiude solo quelli più vecchi del filtro e non esclusi", async () => {
+    const old = new Date(Date.now() - 10 * 60_000);
+    await db.update(planConversationsTable).set({ turnStatus: "running", updatedAt: old }).where(eq(planConversationsTable.id, conversationId));
+    await db.insert(planMessagesTable).values([
+      { conversationId, role: "user", content: "ciao" },
+      { conversationId, role: "assistant", content: "" },
+    ]);
+    // Escluso (turno vivo in questo processo): resta in corso
+    expect(await failInterruptedPlanTurns({ olderThan: new Date(Date.now() - 5 * 60_000), exclude: [conversationId] })).toBe(0);
+    // Più recente del filtro: resta in corso
+    expect(await failInterruptedPlanTurns({ olderThan: new Date(Date.now() - 20 * 60_000), exclude: [] })).toBe(0);
+    expect((await getConv()).turnStatus).toBe("running");
+    // Appeso da oltre 5 minuti e non vivo qui: chiuso con il messaggio del riavvio
+    expect(await failInterruptedPlanTurns({ olderThan: new Date(Date.now() - 5 * 60_000), exclude: [] })).toBe(1);
+    expect((await getConv()).turnStatus).toBe("idle");
+    expect((await getMessages())[1]).toMatchObject({ content: INTERRUPTED_TURN_MESSAGE, error: true });
+  });
+
   it("failInterruptedPlanTurns rimette idle e aggiunge il messaggio di interruzione", async () => {
     await db.update(planConversationsTable).set({ turnStatus: "running" }).where(eq(planConversationsTable.id, conversationId));
     await db.insert(planMessagesTable).values([

@@ -2,7 +2,7 @@
 // `startPlanTurn` risponde subito con il messaggio dell'utente e lancia il turno in background.
 // Nei log solo id e conteggi: mai il contenuto dei messaggi.
 
-import { and, asc, desc, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, lt, ne, notInArray, or, sql } from "drizzle-orm";
 import {
   db,
   analysesTable,
@@ -16,6 +16,7 @@ import {
   type PlanMessage,
 } from "@workspace/db";
 import { logger } from "../logger";
+import { trackTurn, type StaleTurnFilter } from "../stale-turns";
 import { characterBudgetBlock } from "../budget";
 import { ProviderError } from "../ai/discovery";
 import { ModelAccessError, resolveModel } from "../ai/executor";
@@ -214,7 +215,11 @@ function errorText(err: unknown): string {
 }
 
 /** Esegue il turno e lo chiude sempre (messaggio dell'assistente, totali, `idle`). Non lancia mai. */
-export async function executePlanTurn(conversationId: number, assistantMessageId: number): Promise<void> {
+export function executePlanTurn(conversationId: number, assistantMessageId: number): Promise<void> {
+  return trackTurn("plan", conversationId, () => executePlanTurnInner(conversationId, assistantMessageId));
+}
+
+async function executePlanTurnInner(conversationId: number, assistantMessageId: number): Promise<void> {
   let content = GENERIC_ERROR_MESSAGE;
   let isError = true;
   let tokens = 0;
@@ -352,12 +357,18 @@ export async function executePlanTurn(conversationId: number, assistantMessageId
 }
 
 /** All'avvio i turni rimasti `running` sono stati interrotti dal riavvio: si chiudono con un messaggio. */
-export async function failInterruptedPlanTurns(): Promise<number> {
+export async function failInterruptedPlanTurns(filter?: StaleTurnFilter): Promise<number> {
   return db.transaction(async (tx) => {
     const interrupted = await tx
       .update(planConversationsTable)
       .set({ turnStatus: "idle", updatedAt: new Date() })
-      .where(eq(planConversationsTable.turnStatus, "running"))
+      .where(
+        and(
+          eq(planConversationsTable.turnStatus, "running"),
+          filter ? lt(planConversationsTable.updatedAt, filter.olderThan) : undefined,
+          filter && filter.exclude.length > 0 ? notInArray(planConversationsTable.id, filter.exclude) : undefined,
+        ),
+      )
       .returning({ id: planConversationsTable.id });
     if (interrupted.length === 0) return 0;
     const ids = interrupted.map((c) => c.id);

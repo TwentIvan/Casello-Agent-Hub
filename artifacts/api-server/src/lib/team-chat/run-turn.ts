@@ -2,7 +2,7 @@
 // strumenti della squadra. `startTeamChatTurn` risponde subito con il messaggio dell'utente e lancia il turno in
 // background. Nei log solo id e conteggi: mai il contenuto dei messaggi.
 
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, notInArray, sql } from "drizzle-orm";
 import {
   db,
   teamChatConversationsTable,
@@ -13,6 +13,7 @@ import {
   type TeamChatMessage,
 } from "@workspace/db";
 import { logger } from "../logger";
+import { trackTurn, type StaleTurnFilter } from "../stale-turns";
 import { ProviderError } from "../ai/discovery";
 import { ModelAccessError, resolveModel } from "../ai/executor";
 import { sliceChars } from "../architect/text";
@@ -111,7 +112,11 @@ function errorText(err: unknown): string {
 }
 
 /** Esegue il turno e lo chiude sempre (messaggio dell'assistente, schede, totali, `idle`). Non lancia mai. */
-export async function executeTeamChatTurn(conversationId: number, assistantMessageId: number): Promise<void> {
+export function executeTeamChatTurn(conversationId: number, assistantMessageId: number): Promise<void> {
+  return trackTurn("team", conversationId, () => executeTeamChatTurnInner(conversationId, assistantMessageId));
+}
+
+async function executeTeamChatTurnInner(conversationId: number, assistantMessageId: number): Promise<void> {
   let content = GENERIC_ERROR_MESSAGE;
   let isError = true;
   let tokens = 0;
@@ -217,12 +222,18 @@ export async function executeTeamChatTurn(conversationId: number, assistantMessa
 }
 
 /** All'avvio i turni rimasti `running` sono stati interrotti dal riavvio: si chiudono con un messaggio. */
-export async function failInterruptedTeamChatTurns(): Promise<number> {
+export async function failInterruptedTeamChatTurns(filter?: StaleTurnFilter): Promise<number> {
   return db.transaction(async (tx) => {
     const interrupted = await tx
       .update(teamChatConversationsTable)
       .set({ turnStatus: "idle", updatedAt: new Date() })
-      .where(eq(teamChatConversationsTable.turnStatus, "running"))
+      .where(
+        and(
+          eq(teamChatConversationsTable.turnStatus, "running"),
+          filter ? lt(teamChatConversationsTable.updatedAt, filter.olderThan) : undefined,
+          filter && filter.exclude.length > 0 ? notInArray(teamChatConversationsTable.id, filter.exclude) : undefined,
+        ),
+      )
       .returning({ id: teamChatConversationsTable.id });
     if (interrupted.length === 0) return 0;
     const ids = interrupted.map((c) => c.id);

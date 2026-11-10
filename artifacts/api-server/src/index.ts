@@ -19,6 +19,7 @@ import { failInterruptedActions } from "./lib/actions/decide";
 import { failInterruptedPlanTurns } from "./lib/plan-chat/run-turn";
 import { failInterruptedTeamChatTurns } from "./lib/team-chat/run-turn";
 import { failInterruptedCharacterTurns } from "./lib/characters/run-turn";
+import { startStaleTurnSweeper } from "./lib/stale-turns";
 import { resetStaleIssueReservations } from "./lib/plan-issues/service";
 import { failInterruptedCatalogRuns } from "./lib/catalog/refresh";
 import { startCatalogScheduler } from "./lib/catalog/scheduler";
@@ -100,6 +101,13 @@ failInterruptedCharacterTurns()
     if (count > 0) logger.warn({ count }, "Turni delle conversazioni dei personaggi interrotti dal riavvio chiusi");
   })
   .catch((err: unknown) => logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Chiusura dei turni delle conversazioni dei personaggi interrotti non riuscita"));
+
+// Turni di chat rimasti appesi dopo l'avvio (deploy con due container accesi insieme): controllo ogni minuto.
+startStaleTurnSweeper({
+  plan: failInterruptedPlanTurns,
+  character: failInterruptedCharacterTurns,
+  team: failInterruptedTeamChatTurns,
+});
 
 // Le voci prenotate per la creazione di un'issue (`creating` senza numero) quando l'API si è fermata.
 resetStaleIssueReservations()

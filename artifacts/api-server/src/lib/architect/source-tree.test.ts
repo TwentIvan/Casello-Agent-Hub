@@ -76,17 +76,28 @@ describe("SourceTree", () => {
   });
 
   it("zip bomb: file troppo grande escluso in base alla dimensione dichiarata", () => {
-    const bomb = new Uint8Array(300 * 1024).fill(0x61);
+    const bomb = new Uint8Array(SOURCE_LIMITS.maxFileBytes + 1024).fill(0x61);
     const tree = SourceTree.fromZip(zip({ "bomb.txt": bomb, "a.ts": "x" }));
     expect(tree.has("bomb.txt")).toBe(false);
     expect(tree.skipped.tooLarge).toBe(1);
     expect(tree.has("a.ts")).toBe(true);
   });
 
+  it("file troppo grande: dichiarato, non inesistente", () => {
+    const size = SOURCE_LIMITS.maxFileBytes + 10 * 1024;
+    const tree = SourceTree.fromZip(zip({ "server/routes.ts": "a".repeat(size), "server/index.ts": "x", "web/big.css": "b".repeat(size) }));
+    expect(() => tree.read("server/routes.ts")).toThrow(/File troppo grande da leggere: server\/routes\.ts \(\d+ KB, limite 1024 KB\)/);
+    expect(() => tree.read("server/nope.ts")).toThrow(/File inesistente/);
+    expect(tree.tooLargeUnder("server").map((f) => f.path)).toEqual(["server/routes.ts"]);
+    expect(tree.tooLargeUnder("", 1)).toEqual([]);
+    expect(tree.tooLargeUnder("", 2).map((f) => f.path)).toEqual(["server/routes.ts", "web/big.css"]);
+    expect(tree.tooLargeMatching("**/*.ts").map((f) => f.path)).toEqual(["server/routes.ts"]);
+  });
+
   it("zip bomb: totale oltre il limite", () => {
     const chunk = "a".repeat(SOURCE_LIMITS.maxFileBytes);
     const files: Record<string, string> = {};
-    for (let i = 0; i < 250; i++) files[`f${i}.txt`] = chunk;
+    for (let i = 0; i < Math.ceil(SOURCE_LIMITS.maxTotalBytes / SOURCE_LIMITS.maxFileBytes) + 1; i++) files[`f${i}.txt`] = chunk;
     expect(() => SourceTree.fromZip(zip(files))).toThrow(/limite/);
     expect(() => SourceTree.fromZip(zip(files))).toThrow(SourceTreeError);
   });

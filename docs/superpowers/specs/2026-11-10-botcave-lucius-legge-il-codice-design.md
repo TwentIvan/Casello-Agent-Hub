@@ -39,7 +39,7 @@ propone le schede `discard`/`update` del caso.
   3. Se lo SHA coincide con quello in memoria: si riusa il `SourceTree` (ultimo uso aggiornato). Se la lettura dello SHA fallisce
      e c'è un repository in memoria per lo stesso repo e branch, si riusa con l'etichetta «commit non verificato»; senza
      repository in memoria si scarica comunque.
-  4. Altrimenti `fetchGithubTree` dell'architetto (stessi limiti: 50 MB, 5 000 file, 256 KB per file, 60 MB in tutto) sul branch;
+  4. Altrimenti `fetchGithubTree` dell'architetto (stessi limiti: 50 MB, 5 000 file, 1 MiB per file (era 256 KB: vedi §7), 60 MB in tutto) sul branch;
      lo SHA registrato è quello letto al passo 2 (piccola finestra possibile tra le due chiamate: accettata).
   5. Download concorrenti per la stessa app condividono la stessa promessa; un download fallito non resta in cache.
 - **Sfratto**: al più 3 repository (si toglie quello usato meno di recente, con `dispose()` del worker della regex); controllo
@@ -129,3 +129,4 @@ variabile nuova, nessuna modifica a OpenAPI, console o nodo.
 - Nella chat dei personaggi gli errori degli strumenti del codice sono risultati `{ok:false}`.
 - L'elenco di `area_agents` riporta lo slug delle App.
 - Lo zipball si scarica al branch: lo SHA è quello letto prima.
+- Limite per file portato da 256 KB a 1 MiB (anche per l'architetto) e file oltre il limite dichiarati negli strumenti invece che scartati in silenzio: nella prova su The Hub Up `server/routes.ts` (528 KB) risultava «inesistente».

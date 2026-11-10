@@ -1,6 +1,7 @@
 import { createHash, generateKeyPairSync, randomBytes, verify, type KeyObject } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { buildZip } from "../src/lib/zip-writer";
 
 /**
  * Finto GitHub per i test: API REST (`apiBase`) e sito web (`webBase`, OAuth) su due porte locali.
@@ -67,6 +68,44 @@ export interface FakeGithubIssue {
   updatedAt: string;
 }
 
+export interface FakeGitTreeEntry {
+  path: string;
+  mode: string;
+  type: string;
+  sha: string;
+}
+
+/** Stato Git di un repo: oggetti e riferimenti. Gli alberi sono piatti (percorsi completi con `/`). */
+export interface FakeGitRepo {
+  blobs: Map<string, Buffer>;
+  trees: Map<string, FakeGitTreeEntry[]>;
+  commits: Map<string, { tree: string; parents: string[]; message: string }>;
+  /** Chiavi come `heads/main` (senza `refs/`). */
+  refs: Map<string, string>;
+  defaultBranch: string;
+}
+
+export interface FakePull {
+  number: number;
+  head: string;
+  base: string;
+  title: string;
+  body: string;
+  draft: boolean;
+  state: "open" | "closed";
+  merged: boolean;
+  headSha: string;
+}
+
+export interface FakeCheckRun {
+  id: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  annotations: { path: string; start_line: number; message: string }[];
+  jobId?: number;
+}
+
 export interface FakeGithubRequest {
   /** Quale dei due server ha ricevuto la richiesta. */
   host: "api" | "web";
@@ -122,6 +161,20 @@ export interface FakeGithub {
   zipballs: Map<string, Uint8Array>;
   /** proprietario/nome → sha dell'ultimo commit di ogni branch (`GET /repos/{repo}/commits/{ref}`; senza voce: 404). */
   commits: Map<string, string>;
+  /** proprietario/nome → stato Git (Data API, zipball e commit dallo stato quando presente). */
+  git: Map<string, FakeGitRepo>;
+  /** proprietario/nome → pull request. */
+  pulls: Map<string, FakePull[]>;
+  /** sha → check run. */
+  checkRuns: Map<string, FakeCheckRun[]>;
+  /** sha → stati di commit. */
+  statuses: Map<string, { context: string; state: string }[]>;
+  /** id del job → log di testo. */
+  jobLogs: Map<number, string>;
+  /** Crea un repo Git con un commit iniziale sul branch dato; risponde con lo sha del commit. */
+  seedRepo(fullName: string, branch: string, files: Record<string, string>): string;
+  /** File (percorso → testo) del commit a cui punta un branch o uno sha. */
+  filesAt(fullName: string, ref: string): Record<string, string>;
   /** Durata dei token di installazione emessi (default 1 h). */
   tokenTtlMs: number;
   /** Token utente con cui `/login/oauth/authorize` approva subito (null = 404). */
@@ -154,6 +207,58 @@ export function pkceChallenge(verifier: string): string {
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(body));
+}
+
+function sha1(text: string | Buffer): string {
+  return createHash("sha1").update(text).digest("hex");
+}
+
+function blobSha(content: Buffer): string {
+  return sha1(Buffer.concat([Buffer.from(`blob ${content.length}\0`), content]));
+}
+
+function storeTree(repo: FakeGitRepo, entries: FakeGitTreeEntry[]): string {
+  const sorted = [...entries].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const sha = sha1(`tree\n${sorted.map((e) => `${e.mode} ${e.type} ${e.sha}\t${e.path}`).join("\n")}`);
+  repo.trees.set(sha, sorted);
+  return sha;
+}
+
+function storeCommit(repo: FakeGitRepo, tree: string, parents: string[], message: string): string {
+  const sha = sha1(`commit\n${tree}\n${parents.join(",")}\n${message}`);
+  repo.commits.set(sha, { tree, parents, message });
+  return sha;
+}
+
+/** Branch (con o senza `refs/heads/`), `HEAD` o sha completo di un commit → sha, altrimenti null. */
+function resolveRef(repo: FakeGitRepo, ref: string): string | null {
+  if (ref === "HEAD") return repo.refs.get(`heads/${repo.defaultBranch}`) ?? null;
+  const name = ref.replace(/^refs\//, "").replace(/^heads\//, "");
+  const byBranch = repo.refs.get(`heads/${name}`);
+  if (byBranch) return byBranch;
+  return repo.commits.has(ref) ? ref : null;
+}
+
+function isAncestor(repo: FakeGitRepo, ancestor: string, descendant: string): boolean {
+  const seen = new Set<string>();
+  const queue = [descendant];
+  while (queue.length) {
+    const cur = queue.pop()!;
+    if (cur === ancestor) return true;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    queue.push(...(repo.commits.get(cur)?.parents ?? []));
+  }
+  return false;
+}
+
+function filesOfCommit(repo: FakeGitRepo, commitSha: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const commit = repo.commits.get(commitSha);
+  for (const e of repo.trees.get(commit?.tree ?? "") ?? []) {
+    if (e.type === "blob") out[e.path] = (repo.blobs.get(e.sha) ?? Buffer.alloc(0)).toString("utf8");
+  }
+  return out;
 }
 
 const DEFAULT_PERMISSIONS: Record<string, string> = { contents: "read", metadata: "read", issues: "write" };
@@ -231,6 +336,31 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
     issuedTokens: new Map(),
     zipballs: new Map(),
     commits: new Map(),
+    git: new Map(),
+    pulls: new Map(),
+    checkRuns: new Map(),
+    statuses: new Map(),
+    jobLogs: new Map(),
+    seedRepo(fullName, branch, files) {
+      const repo: FakeGitRepo = { blobs: new Map(), trees: new Map(), commits: new Map(), refs: new Map(), defaultBranch: branch };
+      const entries: FakeGitTreeEntry[] = Object.entries(files).map(([path, content]) => {
+        const buf = Buffer.from(content, "utf8");
+        const sha = blobSha(buf);
+        repo.blobs.set(sha, buf);
+        return { path, mode: "100644", type: "blob", sha };
+      });
+      const tree = storeTree(repo, entries);
+      const commit = storeCommit(repo, tree, [], "seed");
+      repo.refs.set(`heads/${branch}`, commit);
+      fake.git.set(fullName, repo);
+      return commit;
+    },
+    filesAt(fullName, ref) {
+      const repo = fake.git.get(fullName);
+      const sha = repo ? resolveRef(repo, ref) : null;
+      if (!repo || !sha) throw new Error(`ref sconosciuto: ${ref}`);
+      return filesOfCommit(repo, sha);
+    },
     tokenTtlMs: 3_600_000,
     authorizeAs: null,
     failWith: null,
@@ -359,6 +489,271 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
         if ((fake.repos.get(inst.id) ?? []).some((r) => r.fullName === fullName)) return send(res, 200, installationJson(inst));
       }
       return send(res, 404, NOT_FOUND);
+    }
+
+
+    // Log di un job (destinazione del redirect): senza autenticazione, come l'indirizzo firmato di GitHub
+    if (method === "GET" && (m = /^\/_logs\/(\d+)$/.exec(path))) {
+      const log = fake.jobLogs.get(Number(m[1]));
+      if (log === undefined) return send(res, 404, NOT_FOUND);
+      res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+      res.end(log);
+      return;
+    }
+
+    /**
+     * Controlli comuni dei percorsi `/repos/{o}/{r}/…`: token valido (401), repo dell'installazione (404),
+     * repo nel token e permesso almeno al livello richiesto (403). Risponde da sé e dà null in caso di errore.
+     */
+    function access(permission: string, level: "read" | "write"): string | null {
+      const issued = liveToken(req);
+      if (!issued) {
+        send(res, 401, BAD_CREDENTIALS);
+        return null;
+      }
+      const fullName = `${decodeURIComponent(repoMatch![1]!)}/${decodeURIComponent(repoMatch![2]!)}`;
+      if (!(fake.repos.get(issued.installationId) ?? []).some((r) => r.fullName === fullName)) {
+        send(res, 404, NOT_FOUND);
+        return null;
+      }
+      if (!reposOf(issued).some((r) => r.fullName === fullName) || (LEVEL[issued.permissions[permission] ?? ""] ?? 0) < LEVEL[level]!) {
+        send(res, 403, NOT_ACCESSIBLE);
+        return null;
+      }
+      return fullName;
+    }
+    const repoMatch = /^\/repos\/([^/]+)\/([^/]+)(\/.*)?$/.exec(path);
+    const rest = repoMatch?.[3] ?? "";
+    const gitOf = (fullName: string): FakeGitRepo | undefined => fake.git.get(fullName);
+
+    if (repoMatch && rest === "" && method === "GET") {
+      const fullName = access("contents", "read");
+      if (!fullName) return;
+      const r = (fake.repos.get(liveToken(req)!.installationId) ?? []).find((x) => x.fullName === fullName)!;
+      return send(res, 200, { ...repoJson(r, 0), default_branch: gitOf(fullName)?.defaultBranch ?? r.defaultBranch });
+    }
+
+    if (repoMatch && /^\/git\//.test(rest)) {
+      const write = method !== "GET";
+      const fullName = access("contents", write ? "write" : "read");
+      if (!fullName) return;
+      const repo = gitOf(fullName);
+      if (!repo) return send(res, 404, NOT_FOUND);
+      const b = (body ?? {}) as Record<string, unknown>;
+      const refJson = (key: string) => ({ ref: `refs/${key}`, object: { sha: repo.refs.get(key)!, type: "commit" } });
+      let g: RegExpExecArray | null;
+
+      if (method === "GET" && rest === "/git/refs") return send(res, 200, [...repo.refs.keys()].map(refJson));
+      if (method === "GET" && (g = /^\/git\/refs?\/(heads\/.+)$/.exec(rest))) {
+        const key = decodeURIComponent(g[1]!);
+        return repo.refs.has(key) ? send(res, 200, refJson(key)) : send(res, 404, NOT_FOUND);
+      }
+      if (method === "POST" && rest === "/git/refs") {
+        const ref = typeof b["ref"] === "string" ? b["ref"] : "";
+        const sha = typeof b["sha"] === "string" ? b["sha"] : "";
+        if (!/^refs\/heads\/.+/.test(ref) || !repo.commits.has(sha)) return send(res, 422, { message: "Validation Failed" });
+        const key = ref.slice("refs/".length);
+        if (repo.refs.has(key)) return send(res, 422, { message: "Reference already exists" });
+        repo.refs.set(key, sha);
+        return send(res, 201, refJson(key));
+      }
+      if (method === "PATCH" && (g = /^\/git\/refs\/(heads\/.+)$/.exec(rest))) {
+        const key = decodeURIComponent(g[1]!);
+        const current = repo.refs.get(key);
+        if (!current) return send(res, 404, NOT_FOUND);
+        const sha = typeof b["sha"] === "string" ? b["sha"] : "";
+        if (!repo.commits.has(sha)) return send(res, 422, { message: "Object does not exist" });
+        if (b["force"] !== true && !isAncestor(repo, current, sha)) return send(res, 422, { message: "Update is not a fast forward" });
+        repo.refs.set(key, sha);
+        return send(res, 200, refJson(key));
+      }
+      if (method === "POST" && rest === "/git/blobs") {
+        if (typeof b["content"] !== "string") return send(res, 422, { message: "Validation Failed" });
+        const buf = b["encoding"] === "base64" ? Buffer.from(b["content"], "base64") : Buffer.from(b["content"], "utf8");
+        const sha = blobSha(buf);
+        repo.blobs.set(sha, buf);
+        return send(res, 201, { sha });
+      }
+      if (method === "POST" && rest === "/git/trees") {
+        const base = typeof b["base_tree"] === "string" ? b["base_tree"] : null;
+        if (base !== null && !repo.trees.has(base)) return send(res, 422, { message: "base_tree does not exist" });
+        const entries = new Map((base ? repo.trees.get(base)! : []).map((e) => [e.path, e]));
+        for (const raw of Array.isArray(b["tree"]) ? (b["tree"] as Record<string, unknown>[]) : []) {
+          const p = raw["path"];
+          if (typeof p !== "string" || !p) return send(res, 422, { message: "Validation Failed" });
+          if (raw["sha"] === null) {
+            entries.delete(p);
+            continue;
+          }
+          if (typeof raw["sha"] !== "string" || !repo.blobs.has(raw["sha"])) return send(res, 422, { message: "tree entry sha does not exist" });
+          entries.set(p, { path: p, mode: typeof raw["mode"] === "string" ? raw["mode"] : "100644", type: "blob", sha: raw["sha"] });
+        }
+        return send(res, 201, { sha: storeTree(repo, [...entries.values()]) });
+      }
+      if (method === "GET" && (g = /^\/git\/commits\/([0-9a-f]{40})$/.exec(rest))) {
+        const c = repo.commits.get(g[1]!);
+        if (!c) return send(res, 404, NOT_FOUND);
+        return send(res, 200, { sha: g[1], message: c.message, tree: { sha: c.tree }, parents: c.parents.map((sha) => ({ sha })) });
+      }
+      if (method === "POST" && rest === "/git/commits") {
+        const tree = typeof b["tree"] === "string" ? b["tree"] : "";
+        const parents = Array.isArray(b["parents"]) ? (b["parents"] as unknown[]).filter((x): x is string => typeof x === "string") : [];
+        if (!repo.trees.has(tree) || parents.some((p) => !repo.commits.has(p)) || typeof b["message"] !== "string") {
+          return send(res, 422, { message: "Validation Failed" });
+        }
+        const sha = storeCommit(repo, tree, parents, b["message"]);
+        return send(res, 201, { sha, tree: { sha: tree }, parents: parents.map((p) => ({ sha: p })), message: b["message"] });
+      }
+      return send(res, 404, NOT_FOUND);
+    }
+
+    if (repoMatch && (rest === "/pulls" || /^\/pulls\/\d+$/.test(rest))) {
+      const fullName = access("pull_requests", method === "GET" ? "read" : "write");
+      if (!fullName) return;
+      const list = fake.pulls.get(fullName) ?? [];
+      fake.pulls.set(fullName, list);
+      const pullJson = (p: FakePull) => {
+        const headSha = gitOf(fullName)?.refs.get(`heads/${p.head}`) ?? p.headSha;
+        return {
+          number: p.number,
+          title: p.title,
+          body: p.body,
+          html_url: `https://github.com/${fullName}/pull/${p.number}`,
+          draft: p.draft,
+          state: p.state,
+          merged: p.merged,
+          head: { ref: p.head, sha: headSha },
+          base: { ref: p.base },
+        };
+      };
+      if (method === "POST" && rest === "/pulls") {
+        const b = (body ?? {}) as Record<string, unknown>;
+        const repo = gitOf(fullName);
+        const head = typeof b["head"] === "string" ? b["head"].replace(/^[^:]+:/, "") : "";
+        const base = typeof b["base"] === "string" ? b["base"] : "";
+        if (typeof b["title"] !== "string" || !b["title"] || !repo?.refs.has(`heads/${head}`) || !repo.refs.has(`heads/${base}`)) {
+          return send(res, 422, { message: "Validation Failed" });
+        }
+        if (list.some((p) => p.state === "open" && p.head === head && p.base === base)) {
+          return send(res, 422, { message: "A pull request already exists" });
+        }
+        const issueMax = (fake.issues.get(fullName) ?? []).reduce((max, i) => Math.max(max, i.number), 0);
+        const pull: FakePull = {
+          number: Math.max(issueMax, ...list.map((p) => p.number), 0) + 1,
+          head,
+          base,
+          title: b["title"],
+          body: typeof b["body"] === "string" ? b["body"] : "",
+          draft: b["draft"] === true,
+          state: "open",
+          merged: false,
+          headSha: repo.refs.get(`heads/${head}`)!,
+        };
+        list.push(pull);
+        return send(res, 201, pullJson(pull));
+      }
+      if (method === "GET" && rest === "/pulls") {
+        const state = url.searchParams.get("state") ?? "open";
+        const head = url.searchParams.get("head")?.replace(/^[^:]+:/, "") ?? null;
+        const base = url.searchParams.get("base");
+        return send(
+          res,
+          200,
+          pageOf(
+            list.filter((p) => (state === "all" || p.state === state) && (head === null || p.head === head) && (base === null || p.base === base)),
+            url,
+          ).map(pullJson),
+        );
+      }
+      if (method === "GET") {
+        const pull = list.find((p) => p.number === Number(rest.split("/")[2]));
+        return pull ? send(res, 200, pullJson(pull)) : send(res, 404, NOT_FOUND);
+      }
+    }
+
+    if (repoMatch && method === "GET") {
+      let c: RegExpExecArray | null;
+      if ((c = /^\/commits\/([^/]+)\/check-runs$/.exec(rest))) {
+        if (!access("checks", "read")) return;
+        const runs = fake.checkRuns.get(decodeURIComponent(c[1]!)) ?? [];
+        const fullName = `${decodeURIComponent(repoMatch[1]!)}/${decodeURIComponent(repoMatch[2]!)}`;
+        return send(res, 200, {
+          total_count: runs.length,
+          check_runs: pageOf(runs, url).map((r) => ({
+            id: r.id,
+            name: r.name,
+            status: r.status,
+            conclusion: r.conclusion,
+            details_url: r.jobId !== undefined ? `https://github.com/${fullName}/actions/runs/1/job/${r.jobId}` : `https://github.com/${fullName}/runs/${r.id}`,
+          })),
+        });
+      }
+      if ((c = /^\/check-runs\/(\d+)\/annotations$/.exec(rest))) {
+        if (!access("checks", "read")) return;
+        for (const runs of fake.checkRuns.values()) {
+          const run = runs.find((r) => r.id === Number(c![1]));
+          if (run) return send(res, 200, pageOf(run.annotations, url));
+        }
+        return send(res, 404, NOT_FOUND);
+      }
+      if ((c = /^\/commits\/([^/]+)\/status$/.exec(rest))) {
+        if (!access("statuses", "read")) return;
+        const statuses = fake.statuses.get(decodeURIComponent(c[1]!)) ?? [];
+        const state = statuses.some((s) => s.state === "failure" || s.state === "error")
+          ? "failure"
+          : statuses.length === 0 || statuses.some((s) => s.state === "pending")
+            ? "pending"
+            : "success";
+        return send(res, 200, { state, total_count: statuses.length, statuses: statuses.map((s) => ({ context: s.context, state: s.state })) });
+      }
+      if ((c = /^\/actions\/jobs\/(\d+)\/logs$/.exec(rest))) {
+        if (!access("actions", "read")) return;
+        if (!fake.jobLogs.has(Number(c[1]))) return send(res, 404, NOT_FOUND);
+        res.writeHead(302, { location: `${fake.apiBase}/_logs/${c[1]}` }).end();
+        return;
+      }
+      if ((c = /^\/issues\/(\d+)$/.exec(rest))) {
+        const fullName = access("issues", "read");
+        if (!fullName) return;
+        const i = (fake.issues.get(fullName) ?? []).find((x) => x.number === Number(c![1]));
+        if (!i) return send(res, 404, NOT_FOUND);
+        return send(res, 200, {
+          number: i.number,
+          title: i.title,
+          body: i.body,
+          state: i.state,
+          state_reason: i.stateReason,
+          labels: i.labels.map((name) => ({ name })),
+          updated_at: i.updatedAt,
+          html_url: `https://github.com/${fullName}/issues/${i.number}`,
+        });
+      }
+    }
+
+    // Zipball e commit dallo stato Git, quando il repo è stato creato con `seedRepo`
+    if (repoMatch && method === "GET" && (m = /^\/(zipball|commits)(?:\/(.+))?$/.exec(rest))) {
+      const fullName = `${decodeURIComponent(repoMatch[1]!)}/${decodeURIComponent(repoMatch[2]!)}`;
+      const repo = gitOf(fullName);
+      if (repo && (m[1] === "zipball" || m[2] !== undefined)) {
+        const fn = access("contents", "read");
+        if (!fn) return;
+        const ref = m[2] === undefined ? "HEAD" : decodeURIComponent(m[2]);
+        const sha = resolveRef(repo, ref);
+        if (!sha) return send(res, 404, NOT_FOUND);
+        if (m[1] === "commits") {
+          if (req.headers.accept === "application/vnd.github.sha") {
+            res.writeHead(200, { "content-type": "application/vnd.github.sha" });
+            res.end(sha);
+            return;
+          }
+          return send(res, 200, { sha });
+        }
+        const top = `${fullName.replace("/", "-")}-${sha.slice(0, 7)}`;
+        const files = Object.entries(filesOfCommit(repo, sha)).map(([name, content]) => ({ name: `${top}/${name}`, content: Buffer.from(content, "utf8") }));
+        res.writeHead(200, { "content-type": "application/zip" });
+        res.end(buildZip(files));
+        return;
+      }
     }
 
     if (method === "GET" && (m = /^\/repos\/([^/]+)\/([^/]+)\/zipball(?:\/(.+))?$/.exec(path))) {

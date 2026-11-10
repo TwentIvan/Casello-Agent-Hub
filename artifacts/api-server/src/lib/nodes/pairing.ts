@@ -188,7 +188,8 @@ async function recordFailure(userCodeHash: string): Promise<void> {
 
 /**
  * Approva: nodo nuovo (`name`, regole di `createNode`) oppure `replaceNodeId`, un nodo attivo dell'utente che resta con
- * il suo nome e di cui si revocano i token come con «Rigenera token». La richiesta passa a `approved` legata all'utente e
+ * il suo nome e di cui si revocano i token come con «Rigenera token» e si azzerano le richieste e lo stato del Mac vecchio
+ * (disinstallazione, diagnosi, aggiornamento fallito, tipo, stato di Claude). La richiesta passa a `approved` legata all'utente e
  * al nodo; il token lo crea il `poll`. Errori di nome o di nodo contano come tentativi falliti (5 → `expired`).
  */
 export async function approvePairing(
@@ -217,6 +218,11 @@ export async function approvePairing(
         if (!node) throw new PairingError(404, NODE_MESSAGES.notFound);
         nodeId = node.id;
         work = await revokeNodeTokens(tx, node.id);
+        // Il Mac nuovo non eredita le richieste e lo stato del vecchio (disinstallazione, diagnosi, aggiornamento fallito, Claude)
+        await tx
+          .update(nodesTable)
+          .set({ uninstallRequestedAt: null, diagnosticsRequestedAt: null, updateFailedVersion: null, kind: null, claudeStatus: null, claudeCheckedAt: null })
+          .where(eq(nodesTable.id, node.id));
       } else {
         const [created] = await tx.insert(nodesTable).values({ userId, name: cleanNodeName(input.name) }).returning({ id: nodesTable.id });
         nodeId = created!.id;

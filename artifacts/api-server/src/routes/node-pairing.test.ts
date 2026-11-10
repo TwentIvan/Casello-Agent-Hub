@@ -174,6 +174,44 @@ describe("abbinamento dei nodi", () => {
     expect(bad.json).toEqual({ error: "nodo non trovato" });
   });
 
+  it("replaceNodeId azzera le richieste del Mac vecchio: il primo heartbeat del nuovo non ha uninstallRequested", async () => {
+    const userId = await devUserId();
+    const old = await createNode(userId, "Mac da sostituire");
+    await db
+      .update(nodesTable)
+      .set({
+        uninstallRequestedAt: new Date(),
+        diagnosticsRequestedAt: new Date(),
+        updateFailedVersion: "0.9.0",
+        kind: "app",
+        claudeStatus: { found: true, loggedIn: false },
+        claudeCheckedAt: new Date(),
+      })
+      .where(eq(nodesTable.id, old.node.id));
+    const p = await newPairing();
+    const ok = await api("POST", `/account/node-pairings/${p.userCode}/approve`, { body: { name: "x", replaceNodeId: old.node.id } });
+    expect(ok.status, ok.text).toBe(200);
+    const res = await poll(p);
+    expect(res.status).toBe(200);
+    const hb = await api("POST", "/node/heartbeat", { token: res.json.token, body: HEARTBEAT });
+    expect(hb.status, hb.text).toBe(200);
+    expect(hb.json.uninstallRequested).toBeUndefined();
+    expect(hb.json.diagnosticsRequested).toBeUndefined();
+    const [node] = await db.select().from(nodesTable).where(eq(nodesTable.id, old.node.id));
+    expect(node).toMatchObject({ uninstallRequestedAt: null, diagnosticsRequestedAt: null, updateFailedVersion: null, claudeStatus: null, claudeCheckedAt: null });
+  });
+
+  it("GET /account/nodes dopo l'abbinamento riporta pairedAt e pairedIp abbreviato", async () => {
+    const p = await newPairing();
+    await api("POST", `/account/node-pairings/${p.userCode}/approve`, { body: { name: "Mac con IP" } });
+    const res = await poll(p);
+    expect(res.status).toBe(200);
+    const list = await api("GET", "/account/nodes");
+    expect(list.status, list.text).toBe(200);
+    const node = list.json.find((n: { id: number }) => n.id === res.json.nodeId);
+    expect(node).toMatchObject({ pairedIp: "203.0.113.0/24", pairedAt: expect.any(String) });
+  });
+
   it("nome già usato → 409; deny → poll 410", async () => {
     await createNode(await devUserId(), "Mac");
     const p = await newPairing();

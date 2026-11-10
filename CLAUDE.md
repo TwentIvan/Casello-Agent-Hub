@@ -1564,12 +1564,13 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   transazione (consegna una volta sola); altrimenti 410 «collegamento non più valido». Console (solo login, `sessionOnly`, 20/min per utente): `GET
   /api/account/node-pairings/:code` (404 «richiesta di collegamento non trovata o scaduta»), `POST …/approve` `{name, replaceNodeId?}` (nodo nuovo con le regole di
   `POST /api/account/nodes`; con `replaceNodeId` un nodo attivo dell'utente tiene nome e id e i suoi token si revocano come con «Rigenera token», compiti e turni in carico
-  chiusi), `POST …/deny`; al più 5 decisioni fallite per codice, poi `expired`. L'approvazione proroga la richiesta di almeno 2 minuti (`COLLECT_GRACE_MS`) perché il nodo
+  chiusi; nella stessa transazione si azzerano richieste e stato del Mac vecchio: `uninstall_requested_at`, `diagnostics_requested_at`, `update_failed_version`, `kind`,
+  `claude_status`, `claude_checked_at`), `POST …/deny`; al più 5 decisioni fallite per codice, poi `expired`. L'approvazione proroga la richiesta di almeno 2 minuti (`COLLECT_GRACE_MS`) perché il nodo
   ritiri il token; il token NON nasce all'approvazione. Richieste più vecchie di 1 ora cancellate dal controllo orario dei nodi. Il nodo chiede poi la radice con
   `choose folder` (da `~/Botcave`, creata se manca; annullato = `~/Botcave`). Pagina `/nodes/pair` (`node-pair.tsx`): «Nuovo nodo» (default) o «Sostituisci <nome>»
   (preselezionato se il nome coincide), avviso «Conferma solo se hai appena aperto Botcave Nodo su questo Mac»; il codice si toglie dall'indirizzo e, senza login, resta in
   `sessionStorage` (`lib/pair-code.ts`): il `returnTo` del login è `/nodes/pair` senza query. Nodo collegato: «collegato il … da <IP abbreviato>» in Account → Nodi
-  (`nodes.paired_at`, `paired_ip`) e per 24 ore l'avviso «Nuovo Mac collegato» nella Dashboard (`recentlyPairedNodes` di `/api/dashboard/stats`).
+  (`nodes.paired_at`, `paired_ip`; `Node.pairedAt`, `Node.pairedIp`) e per 24 ore l'avviso «Nuovo Mac collegato» nella Dashboard (`recentlyPairedNodes` di `/api/dashboard/stats`).
 - **Ricollega e token revocato**: «Ricollega» rifà l'abbinamento e scrive solo il nuovo token nella config, poi riavvia il servizio. Con 401/403 sull'heartbeat un nodo
   `app` non esce (launchd lo riavvierebbe in ciclo): non prende lavoro, notifica una volta «Botcave Nodo non è più collegato: aprilo e scegli Ricollega» e riprova a ogni
   heartbeat. Un nodo disattivato non si riattiva: la console dice «per usare di nuovo questo Mac apri Botcave Nodo e scegli Ricollega (crea un nodo nuovo)». «Rigenera

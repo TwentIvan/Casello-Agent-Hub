@@ -92,13 +92,16 @@ describe("runPairing", () => {
     expect(log).toContain("alert:Collegamento non riuscito o scaduto: riapri Botcave Nodo");
   });
 
-  it("errori temporanei del poll non fermano l'attesa; oltre la scadenza → errore", async () => {
+  it("errori temporanei del poll non fermano l'attesa; oltre la scadenza locale (durata dal server + 2 minuti) → errore", async () => {
     const log: string[] = [];
     const c = clock("2026-11-10T10:09:55.000Z");
+    const polls: string[] = [];
+    const base = scriptedClient(Array.from({ length: 100 }, (_, i) => (i === 0 ? new Error("rete") : { status: "pending" as const })), polls);
     await expect(
       runPairing({
         caselloUrl: "https://casello.example.com",
-        client: scriptedClient([new Error("rete"), { status: "pending" }, { status: "pending" }]),
+        // il server dice 5 secondi alla scadenza: la sicurezza locale scatta dopo 5 s + 2 minuti
+        client: { ...base, start: async () => ({ ...START, serverNow: new Date("2026-11-10T10:09:55.000Z") }) },
         dialogs: fakeDialogs(log),
         openUrl: async () => {},
         sleep: c.sleep,
@@ -108,6 +111,42 @@ describe("runPairing", () => {
       }),
     ).rejects.toBeInstanceOf(PairingFailedError);
     expect(log).toContain("alert:Collegamento non riuscito o scaduto: riapri Botcave Nodo");
+    // (5 s + 120 s) / 3 s = 41 interrogazioni prima della sicurezza locale
+    expect(polls).toHaveLength(41);
+  });
+
+  it("orologio del Mac 15 minuti avanti: l'abbinamento riesce lo stesso", async () => {
+    const c = clock("2026-11-10T10:15:00.000Z");
+    const base = scriptedClient([{ status: "pending" }, { status: "pending" }, { status: "approved", token: "cas_nuovo", nodeId: 7, nodeName: "Mac" }]);
+    const result = await runPairing({
+      caselloUrl: "https://casello.example.com",
+      client: { ...base, start: async () => ({ ...START, serverNow: new Date("2026-11-10T10:00:00.000Z") }) },
+      dialogs: fakeDialogs([]),
+      openUrl: async () => {},
+      sleep: c.sleep,
+      now: c.now,
+      deviceName: "Mac",
+      version: "0.3.0",
+    });
+    expect(result).toEqual({ token: "cas_nuovo", nodeId: 7, nodeName: "Mac" });
+  });
+
+  it("senza l'ora del server la sicurezza locale è di 12 + 2 minuti dall'inizio", async () => {
+    const c = clock("2026-11-10T11:00:00.000Z");
+    const polls: string[] = [];
+    await expect(
+      runPairing({
+        caselloUrl: "https://casello.example.com",
+        client: scriptedClient(Array.from({ length: 400 }, () => ({ status: "pending" as const })), polls),
+        dialogs: fakeDialogs([]),
+        openUrl: async () => {},
+        sleep: c.sleep,
+        now: c.now,
+        deviceName: "Mac",
+        version: "0.3.0",
+      }),
+    ).rejects.toBeInstanceOf(PairingFailedError);
+    expect(polls).toHaveLength(280);
   });
 });
 
@@ -158,5 +197,21 @@ describe("createPairingClient", () => {
     await expect(client.poll("p", "s")).rejects.toThrow();
     await expect(client.poll("p", "s")).rejects.toThrow();
     await expect(client.start({ deviceName: "Mac", version: "0.3.0" })).rejects.toThrow();
+  });
+});
+
+describe("createPairingClient: ora del server", () => {
+  it("start legge l'header Date in serverNow; senza o non valido resta assente", async () => {
+    const body = JSON.stringify({ pairingId: "p-1", userCode: "ABCD-EFGH", pollSecret: "s".repeat(20), expiresAt: "2026-11-10T10:10:00.000Z" });
+    const respond = (date?: string) =>
+      createPairingClient({
+        baseUrl: "https://casello.example.com",
+        fetch: (async () =>
+          new Response(body, { status: 201, headers: { "Content-Type": "application/json", ...(date ? { Date: date } : {}) } })) as unknown as typeof fetch,
+      });
+    const withDate = await respond("Tue, 10 Nov 2026 10:00:00 GMT").start({ deviceName: "Mac", version: "0.3.0" });
+    expect(withDate.serverNow?.toISOString()).toBe("2026-11-10T10:00:00.000Z");
+    expect((await respond().start({ deviceName: "Mac", version: "0.3.0" })).serverNow).toBeUndefined();
+    expect((await respond("boh").start({ deviceName: "Mac", version: "0.3.0" })).serverNow).toBeUndefined();
   });
 });

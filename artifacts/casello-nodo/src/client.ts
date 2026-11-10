@@ -259,7 +259,8 @@ async function errorDetail(res: Response): Promise<string | null> {
   }
 }
 
-export type PairingStart = z.infer<typeof StartNodePairingResponse>;
+/** `serverNow`: ora del server dall'header `Date` della risposta, se presente e valida (serve a non dipendere dall'orologio del Mac). */
+export type PairingStart = z.infer<typeof StartNodePairingResponse> & { serverNow?: Date };
 /** Esito di un'interrogazione: `gone` = 410 (rifiutata, scaduta, già consegnata o segreto sbagliato). */
 export type PollResult =
   | { status: "pending" }
@@ -294,7 +295,8 @@ export function createPairingClient(opts: { baseUrl: string; fetch?: typeof fetc
       if (!res.ok) throw new HttpError(res.status, await errorDetail(res));
       const parsed = StartNodePairingResponse.safeParse(await res.json().catch(() => null));
       if (!parsed.success) throw new Error("risposta di Botcave non valida");
-      return parsed.data;
+      const date = Date.parse(res.headers.get("date") ?? "");
+      return Number.isNaN(date) ? parsed.data : { ...parsed.data, serverNow: new Date(date) };
     },
     async poll(pairingId, pollSecret) {
       const res = await post("/node-pairing/poll", PollNodePairingBody.parse({ pairingId, pollSecret }));

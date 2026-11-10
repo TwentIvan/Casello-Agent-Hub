@@ -1561,7 +1561,8 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `POST /api/node-pairing/start` (pubblica, 10/min per IP) `{deviceName ≤ 100, version}` → `{pairingId, userCode, pollSecret, expiresAt}`: codice di 8 caratteri
   dell'alfabeto `ABCDEFGHJKMNPQRSTVWXYZ23456789` mostrato `XXXX-XXXX` (accettato anche senza trattino e in minuscolo), segreto di 32 byte, nel DB solo gli hash SHA-256,
   10 minuti, IP abbreviato all'/24 o /48. Il nodo apre `<caselloUrl>/nodes/pair?code=…`, notifica il codice e interroga `POST /api/node-pairing/poll` `{pairingId,
-  pollSecret}` ogni 3 s (30/min per richiesta): 202 `pending`; 200 `{token, nodeId, nodeName}` crea il token di nodo (`createNodeToken`) e consuma la richiesta nella stessa
+  pollSecret}` ogni 3 s (30/min per richiesta; si ferma al 410, con una sicurezza locale calcolata come durata, scadenza meno l'ora del server dell'header `Date`
+  di `start` (12 minuti se manca) più 2 minuti dall'inizio, mai con l'orologio del Mac): 202 `pending`; 200 `{token, nodeId, nodeName}` crea il token di nodo (`createNodeToken`) e consuma la richiesta nella stessa
   transazione (consegna una volta sola); altrimenti 410 «collegamento non più valido». Console (solo login, `sessionOnly`, 20/min per utente): `GET
   /api/account/node-pairings/:code` (404 «richiesta di collegamento non trovata o scaduta»), `POST …/approve` `{name, replaceNodeId?}` (nodo nuovo con le regole di
   `POST /api/account/nodes`; con `replaceNodeId` un nodo attivo dell'utente tiene nome e id e i suoi token si revocano come con «Rigenera token», compiti e turni in carico

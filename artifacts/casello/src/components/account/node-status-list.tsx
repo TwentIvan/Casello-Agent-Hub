@@ -57,7 +57,7 @@ export function NodeStatusDetails({ node }: { node: Node }) {
     notices.push(`L'aggiornamento alla versione ${node.updateFailedVersion} non è riuscito.`);
   }
   if (node.kind === "app" && node.status === "disabled") {
-    notices.push("Ricollega dal Mac: apri Botcave Nodo.");
+    notices.push("Nodo disattivato: per usare di nuovo questo Mac apri Botcave Nodo e scegli Ricollega (crea un nodo nuovo).");
   }
   return (
     <div className="space-y-1 text-xs text-muted-foreground">

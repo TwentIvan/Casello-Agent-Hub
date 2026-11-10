@@ -48,7 +48,7 @@ export function NodeDownloadCard() {
         <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
           <li>Apri il file scaricato e trascina Botcave Nodo in Applicazioni.</li>
           <li>Aprilo. Se macOS lo blocca, vai in Impostazioni di Sistema → Privacy e sicurezza e premi «Apri comunque».</li>
-          <li>Premi «Collega questo Mac»: si apre questa console e confermi il collegamento.</li>
+          <li>Si apre questa console su «Collega questo Mac»: controlla il nome e premi «Collega».</li>
         </ol>
       </CardContent>
     </Card>

@@ -7866,7 +7866,12 @@ components:
           enum: [app, cli]
           description: Come è installato il nodo; solo `app` riceve aggiornamenti automatici
         claude:
-          $ref: "#/components/schemas/NodeClaudeStatus"
+          type: object
+          additionalProperties: true
+          description: >-
+            Stato di Claude Code sul Mac. Tollerante di proposito: il server tiene solo i campi noti con il tipo
+            giusto (`found`, `version`, `loggedIn`, `authMethod`, `subscriptionType`, `loginExpiresAt`) e scarta il
+            resto, così un campo strano non fa fallire l'heartbeat.
         updateFailed:
           type: string
           maxLength: 100

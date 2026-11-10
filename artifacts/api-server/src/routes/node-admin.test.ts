@@ -195,6 +195,16 @@ describe("stato di Claude", () => {
   });
 });
 
+describe("stato di Claude malformato", () => {
+  it("un campo strano non fa fallire l'heartbeat: 200 e si salvano solo i campi validi", async () => {
+    const { id, token } = await newNode();
+    const claude = { found: true, version: null, loginExpiresAt: 1763651609, loggedIn: "yes", authMethod: "x".repeat(300), email: "x@y", extra: { a: 1 } };
+    const hb = await api("POST", "/node/heartbeat", { token, body: caps({ claude }) });
+    expect(hb.status, hb.text).toBe(200);
+    expect((await nodeRow(id)).claudeStatus).toEqual({ found: true, authMethod: "x".repeat(100), loginExpiresAt: "1763651609" });
+  });
+});
+
 describe("impostazioni", () => {
   it("PUT salva e l'heartbeat le porta; null = default del nodo", async () => {
     const { id, token } = await newNode();

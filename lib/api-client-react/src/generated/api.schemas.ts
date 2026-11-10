@@ -2493,6 +2493,11 @@ export const NodeCapabilitiesKind = {
   cli: 'cli',
 } as const;
 
+/**
+ * Stato di Claude Code sul Mac. Tollerante di proposito: il server tiene solo i campi noti con il tipo giusto (`found`, `version`, `loggedIn`, `authMethod`, `subscriptionType`, `loginExpiresAt`) e scarta il resto, così un campo strano non fa fallire l'heartbeat.
+ */
+export type NodeCapabilitiesClaude = { [key: string]: unknown };
+
 export interface NodeCapabilities {
   /**
      * @minLength 1
@@ -2531,7 +2536,8 @@ export interface NodeCapabilities {
   folders?: string[];
   /** Come è installato il nodo; solo `app` riceve aggiornamenti automatici */
   kind?: NodeCapabilitiesKind;
-  claude?: NodeClaudeStatus;
+  /** Stato di Claude Code sul Mac. Tollerante di proposito: il server tiene solo i campi noti con il tipo giusto (`found`, `version`, `loggedIn`, `authMethod`, `subscriptionType`, `loginExpiresAt`) e scarta il resto, così un campo strano non fa fallire l'heartbeat. */
+  claude?: NodeCapabilitiesClaude;
   /**
      * Versione di cui l'aggiornamento non è riuscito (ripristinata la precedente)
      * @maxLength 100

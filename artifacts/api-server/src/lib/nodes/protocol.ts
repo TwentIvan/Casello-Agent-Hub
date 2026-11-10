@@ -82,6 +82,7 @@ export function cleanClaudeStatus(input: Record<string, unknown>): Record<string
   for (const key of CLAUDE_STRING_KEYS) {
     const value = input[key];
     if (typeof value === "string" && value.length > 0) out[key] = value.slice(0, 100);
+    else if (typeof value === "number" && Number.isFinite(value)) out[key] = String(value).slice(0, 100);
   }
   return out;
 }

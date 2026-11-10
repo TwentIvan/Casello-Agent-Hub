@@ -761,14 +761,6 @@ export const nodeHeartbeatBodyFoldersItemMax = 300;
 
 export const nodeHeartbeatBodyFoldersMax = 2000;
 
-export const nodeHeartbeatBodyClaudeVersionMax = 100;
-
-export const nodeHeartbeatBodyClaudeAuthMethodMax = 100;
-
-export const nodeHeartbeatBodyClaudeSubscriptionTypeMax = 100;
-
-export const nodeHeartbeatBodyClaudeLoginExpiresAtMax = 100;
-
 export const nodeHeartbeatBodyUpdateFailedMax = 100;
 
 
@@ -781,14 +773,7 @@ export const NodeHeartbeatBody = zod.object({
   "maxConcurrent": zod.number().min(1).max(nodeHeartbeatBodyMaxConcurrentMax),
   "folders": zod.array(zod.string().min(1).max(nodeHeartbeatBodyFoldersItemMax)).max(nodeHeartbeatBodyFoldersMax).optional().describe('Sottocartelle della radice (percorsi relativi con `\/`, fino a 3 livelli), per la scelta dello spazio di lavoro in console. Facoltativo: un nodo che non lo manda lascia invariato l\'elenco salvato.'),
   "kind": zod.enum(['app', 'cli']).optional().describe('Come è installato il nodo; solo `app` riceve aggiornamenti automatici'),
-  "claude": zod.object({
-  "found": zod.boolean(),
-  "version": zod.string().max(nodeHeartbeatBodyClaudeVersionMax).optional(),
-  "loggedIn": zod.boolean().optional(),
-  "authMethod": zod.string().max(nodeHeartbeatBodyClaudeAuthMethodMax).optional(),
-  "subscriptionType": zod.string().max(nodeHeartbeatBodyClaudeSubscriptionTypeMax).optional(),
-  "loginExpiresAt": zod.string().max(nodeHeartbeatBodyClaudeLoginExpiresAtMax).optional()
-}).optional(),
+  "claude": zod.record(zod.string(), zod.unknown()).optional().describe('Stato di Claude Code sul Mac. Tollerante di proposito: il server tiene solo i campi noti con il tipo giusto (`found`, `version`, `loggedIn`, `authMethod`, `subscriptionType`, `loginExpiresAt`) e scarta il resto, così un campo strano non fa fallire l\'heartbeat.'),
   "updateFailed": zod.string().max(nodeHeartbeatBodyUpdateFailedMax).optional().describe('Versione di cui l\'aggiornamento non è riuscito (ripristinata la precedente)')
 })
 

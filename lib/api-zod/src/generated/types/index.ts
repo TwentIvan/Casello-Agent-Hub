@@ -197,6 +197,7 @@ export * from './memoryNoteUpdate';
 export * from './modelBudget';
 export * from './node';
 export * from './nodeCapabilities';
+export * from './nodeCapabilitiesClaude';
 export * from './nodeCapabilitiesKind';
 export * from './nodeClaudeStatus';
 export * from './nodeCreate';

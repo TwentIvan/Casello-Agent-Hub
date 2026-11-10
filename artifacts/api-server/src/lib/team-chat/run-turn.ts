@@ -8,6 +8,7 @@ import {
   teamChatConversationsTable,
   teamChatMessagesTable,
   teamChatProposalsTable,
+  appsTable,
   teamInstancesTable,
   type TeamChatMessage,
 } from "@workspace/db";
@@ -19,6 +20,9 @@ import { characterBudgetBlock } from "../budget";
 import { memoryContextBlock } from "../memory/context";
 import { EMPTY_REPLY_MESSAGE, INTERRUPTED_TURN_MESSAGE, TurnBusyError } from "../plan-chat/run-turn";
 import { runChatTurn } from "../node-turns/chat-turn";
+import { codeAvailability } from "../code-reader/source-cache";
+import { CODE_INSTRUCTIONS, CODE_TOOLS, CodeToolRunner, isCodeTool } from "../code-reader/tools";
+import { CODE_TURN_LIMITS } from "../plan-chat/turn";
 import { InstanceError, INSTANCE_MESSAGES } from "../teams/instances";
 import { buildTeamChatMessages, type HistoryMessage } from "./context";
 import { currentValueHash } from "./decide";
@@ -124,7 +128,21 @@ export async function executeTeamChatTurn(conversationId: number, assistantMessa
     } else {
       const team = await loadTeamSnapshot(conv.teamInstanceId);
       const { history, userMessage } = await loadHistory(conversationId, assistantMessageId);
-      const messages = buildTeamChatMessages({ team, memory: await memoryContextBlock(conv.userId, "lucius"), history, userMessage });
+      // Codice dell'app di riferimento della squadra (un solo lettore per turno)
+      const [refApp] = await db
+        .select({ app: appsTable })
+        .from(teamInstancesTable)
+        .innerJoin(appsTable, eq(appsTable.id, teamInstancesTable.refAppId))
+        .where(eq(teamInstancesTable.id, conv.teamInstanceId))
+        .limit(1);
+      const codeRunner = refApp && (await codeAvailability(conv.userId, refApp.app)).ok ? new CodeToolRunner(conv.userId, refApp.app.id) : null;
+      const messages = buildTeamChatMessages({
+        team,
+        memory: await memoryContextBlock(conv.userId, "lucius"),
+        history,
+        userMessage,
+        ...(codeRunner ? { codeInstructions: CODE_INSTRUCTIONS } : {}),
+      });
       const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
       const runner = new TeamChatToolRunner(conv.teamInstanceId, conv.userId, team);
       try {
@@ -135,8 +153,9 @@ export async function executeTeamChatTurn(conversationId: number, assistantMessa
           refId: conversationId,
           messageId: assistantMessageId,
           messages,
-          tools: [...TEAM_CHAT_TOOLS],
-          runTool: (call) => runner.run(call),
+          tools: codeRunner ? [...TEAM_CHAT_TOOLS, ...CODE_TOOLS] : [...TEAM_CHAT_TOOLS],
+          ...(codeRunner ? { limits: CODE_TURN_LIMITS } : {}),
+          runTool: (call) => (codeRunner && isCodeTool(call.name) ? codeRunner.run(call) : runner.run(call)),
           caller: "team-chat",
           budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, "lucius", aiModelId),
         });

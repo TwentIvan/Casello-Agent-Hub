@@ -10,7 +10,7 @@ import { extractEntry, readZipEntries, ZipFormatError, type RawZipEntry } from "
 
 export const SOURCE_LIMITS = {
   maxZipBytes: 52_428_800,
-  maxFileBytes: 262_144,
+  maxFileBytes: 1_048_576,
   maxFiles: 5_000,
   maxTotalBytes: 62_914_560,
   // Una lettura numerata (righe + prefissi "N: " + intestazione) resta sotto i 64 000 caratteri
@@ -50,6 +50,10 @@ const BINARY_EXTENSIONS = new Set([
   // documenti e binari
   "pdf", "exe", "dll", "so", "dylib", "class", "wasm", "mp3", "mp4", "mov", "avi",
 ]);
+
+function kb(bytes: number): number {
+  return Math.round(bytes / 1024);
+}
 
 export class SourceTreeError extends Error {
   constructor(message: string) {
@@ -187,9 +191,17 @@ export class SourceTree {
   private regexWorker: RegexSearchWorker | null = null;
   /** Dopo `dispose()` la ricerca regex non ricrea il worker (un riferimento tenuto dopo lo sfratto non deve farlo rivivere). */
   private disposed = false;
+  /** File esclusi perché oltre `maxFileBytes` (percorso → byte dichiarati): si dichiarano, non spariscono. */
+  private readonly tooLargeFiles: Map<string, number>;
 
-  private constructor(files: Map<string, string>, totalBytes: number, skipped: SourceSkipped) {
+  private constructor(
+    files: Map<string, string>,
+    totalBytes: number,
+    skipped: SourceSkipped,
+    tooLargeFiles: Map<string, number> = new Map(),
+  ) {
     this.files = files;
+    this.tooLargeFiles = tooLargeFiles;
     this.fileCount = files.size;
     this.totalBytes = totalBytes;
     this.skipped = skipped;
@@ -247,6 +259,7 @@ export class SourceTree {
 
     // Decisioni prima di decomprimere, sulla dimensione dichiarata (che l'estrazione poi impone).
     const skipped: SourceSkipped = { binary: 0, tooLarge: 0, ignored: 0 };
+    const tooLargeFiles = new Map<string, number>();
     const plan: [string, RawZipEntry][] = [];
     let plannedBytes = 0;
     for (const [fullPath, e] of candidates) {
@@ -261,6 +274,7 @@ export class SourceTree {
       }
       if (e.originalSize > SOURCE_LIMITS.maxFileBytes) {
         skipped.tooLarge++;
+        tooLargeFiles.set(path, e.originalSize);
         continue;
       }
       if (plan.length + 1 > SOURCE_LIMITS.maxFiles) {
@@ -295,7 +309,37 @@ export class SourceTree {
       }
       files.set(path, decoder.decode(data));
     }
-    return new SourceTree(files, totalBytes, skipped);
+    return new SourceTree(files, totalBytes, skipped, tooLargeFiles);
+  }
+
+  /** Errore per un file non leggibile: «troppo grande» se escluso per dimensione, altrimenti «inesistente». */
+  private missingFile(path: string, normalized: string | null): SourceTreeError {
+    const size = normalized ? this.tooLargeFiles.get(normalized) : undefined;
+    if (size === undefined) return new SourceTreeError(`File inesistente: ${path}`);
+    return new SourceTreeError(
+      `File troppo grande da leggere: ${path} (${kb(size)} KB, limite ${kb(SOURCE_LIMITS.maxFileBytes)} KB)`,
+    );
+  }
+
+  /** File esclusi per dimensione sotto una cartella (stessa profondità di `list`), in ordine di percorso. */
+  tooLargeUnder(dir: string, depth = 1): { path: string; bytes: number }[] {
+    const d = normalizeQueryPath(dir);
+    if (d === null) return [];
+    const maxDepth = Math.min(Math.max(Math.trunc(depth) || 1, 1), MAX_LIST_DEPTH);
+    const prefix = d === "" ? "" : `${d}/`;
+    return [...this.tooLargeFiles]
+      .filter(([path]) => path.startsWith(prefix) && path.slice(prefix.length).split("/").length <= maxDepth)
+      .map(([path, bytes]) => ({ path, bytes }))
+      .sort((a, b) => (a.path < b.path ? -1 : 1));
+  }
+
+  /** File esclusi per dimensione che un glob (se dato) avrebbe incluso in una ricerca. */
+  tooLargeMatching(glob?: string): { path: string; bytes: number }[] {
+    const globMatch = glob ? compileGlob(glob) : null;
+    return [...this.tooLargeFiles]
+      .filter(([path]) => !globMatch || globMatch(path))
+      .map(([path, bytes]) => ({ path, bytes }))
+      .sort((a, b) => (a.path < b.path ? -1 : 1));
   }
 
   has(path: string): boolean {
@@ -358,7 +402,10 @@ export class SourceTree {
         out.add(prefix + parts.slice(0, i + 1).join("/") + (isFile ? "" : "/"));
       }
     }
-    if (!found) throw new SourceTreeError(`Cartella inesistente: ${dir}`);
+    // Una cartella con soli file troppo grandi esiste: l'elenco è vuoto e l'avviso li dichiara
+    if (!found && ![...this.tooLargeFiles.keys()].some((p) => p.startsWith(prefix))) {
+      throw new SourceTreeError(`Cartella inesistente: ${dir}`);
+    }
     return [...out].sort();
   }
 
@@ -373,7 +420,7 @@ export class SourceTree {
   ): { content: string; totalLines: number; truncated: boolean } {
     const p = normalizeQueryPath(path);
     const text = p ? this.files.get(p) : undefined;
-    if (text === undefined) throw new SourceTreeError(`File inesistente: ${path}`);
+    if (text === undefined) throw this.missingFile(path, p);
     const lines = text === "" ? [] : text.split("\n");
     if (text.endsWith("\n")) lines.pop();
     const totalLines = lines.length;
@@ -409,7 +456,7 @@ export class SourceTree {
   lines(path: string, from: number, to: number): string[] {
     const p = normalizeQueryPath(path);
     const text = p ? this.files.get(p) : undefined;
-    if (text === undefined) throw new SourceTreeError(`File inesistente: ${path}`);
+    if (text === undefined) throw this.missingFile(path, p);
     const all = text === "" ? [] : text.split("\n");
     if (text.endsWith("\n")) all.pop();
     const start = Math.max(Math.trunc(from) || 1, 1);

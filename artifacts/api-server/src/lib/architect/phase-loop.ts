@@ -389,6 +389,17 @@ function excludedHint(n: number, hints: ReadHints): string {
   return hints.includeIgnored ? `[${base}: usa ${hints.includeIgnored}=true per includerli]` : `[${base}]`;
 }
 
+const MAX_TOO_LARGE_LISTED = 10;
+
+/** Avviso sui file esclusi perché troppo grandi: esistono, ma non si leggono né si cercano. */
+function tooLargeHint(files: { path: string; bytes: number }[], what: string): string | null {
+  if (files.length === 0) return null;
+  const names = files.slice(0, MAX_TOO_LARGE_LISTED).map((f) => `${f.path} (${Math.round(f.bytes / 1024)} KB)`);
+  const more = files.length > MAX_TOO_LARGE_LISTED ? ` e altri ${files.length - MAX_TOO_LARGE_LISTED}` : "";
+  const limit = Math.round(SOURCE_LIMITS.maxFileBytes / 1024);
+  return `[${files.length} file ${what} perché oltre ${limit} KB (esistono ma non si possono leggere): ${names.join(", ")}${more}]`;
+}
+
 export function listDir(
   tree: SourceTree,
   path: string,
@@ -405,6 +416,8 @@ export function listDir(
   }
   const hidden = includeIgnored ? 0 : tree.countHidden(path, depth ?? 1);
   if (hidden > 0) lines.push(excludedHint(hidden, hints));
+  const large = tooLargeHint(tree.tooLargeUnder(path, depth ?? 1), "esclusi dall'elenco");
+  if (large) lines.push(large);
   return {
     content: capOutput(lines.join("\n"), limits),
     log: `list_dir ${logArg(path || "/")} (${plural(entries.length, "voce", "voci")})`,
@@ -550,6 +563,8 @@ export async function search(
   // Non si contano le corrispondenze nascoste (costerebbe una seconda ricerca): si dice quanti file non sono stati cercati
   const hidden = includeIgnored ? 0 : tree.countHiddenMatching(glob);
   if (hidden > 0) lines.push(excludedHint(hidden, hints));
+  const large = tooLargeHint(tree.tooLargeMatching(glob), "non cercati");
+  if (large) lines.push(large);
   return {
     content: capOutput(lines.join("\n"), limits),
     log: `search "${logArg(pattern)}"${regex ? " (regex)" : ""} (${plural(results.length, "risultato", "risultati")})`,

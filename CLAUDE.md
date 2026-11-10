@@ -877,6 +877,10 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - **Strumenti** (`tools.ts`; parametro `app` = slug, obbligatorio dove le App sono più d'una): `elenca_cartella`, `leggi_file` (al più 400 righe e 16 000 caratteri per lettura), `cerca_nel_codice` (regex,
   worker con timeout); uscita di ogni strumento ≤ 20 000 caratteri, intestazione con lo sha7 e codice dichiarato dato non attendibile. Errori fissi in `CODE_MESSAGES` (`messages.ts`), mai il testo di GitHub; nella
   chat dei personaggi un errore degli strumenti del codice è un risultato `{ok:false}`.
+- **File grandi** (`SOURCE_LIMITS.maxFileBytes` = 1 MiB, uguale per l'architetto): un file oltre il limite non si carica ma non sparisce. `SourceTree` ne
+  ricorda percorso e dimensione: `leggi_file`/`read_file` rispondono «File troppo grande da leggere: <percorso> (N KB, limite 1024 KB)» invece di «File
+  inesistente», `elenca_cartella`/`list_dir` e `cerca_nel_codice`/`search` aggiungono l'avviso con i file esclusi (al più 10 nomi); una cartella con soli file
+  troppo grandi esiste (elenco vuoto più l'avviso).
 - **Dove si offrono**: chat del piano (App del piano), argomento `agent` (App dell'agente), `area_agents` (tutte le App con il codice leggibile dall'utente, slug nell'elenco), chat di squadra (App di riferimento); solo con il
   codice disponibile. Limiti dei turni con il codice: 12 giri, 150 000 token, 240 s (`CODE_TURN_LIMITS`, parametro `limits` di `runChatTurn`); sul nodo (`/mcp/turn`) `maxTurns` 13.
 - **Istruzioni**: `CODE_INSTRUCTIONS` nel piano (verificare, citare file e righe, `discard`/`update` con le evidenze); `CODE_INSTRUCTIONS_GENERAL` negli altri contesti, aggiunta da `extraInstructions` nel turno

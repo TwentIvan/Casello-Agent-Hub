@@ -65,6 +65,7 @@ beforeEach(() => {
     buildZip([
       { name: "proj/src/a.ts", content: Buffer.from("export const alfa = 1;\n") },
       { name: "proj/big.txt", content: Buffer.from(big) },
+      { name: "proj/server/routes.ts", content: Buffer.from("x".repeat(1_100_000)) },
     ]),
   );
   gh.zipballs.set("ivan/altra", buildZip([{ name: "proj/b.ts", content: Buffer.from("export const beta = 2;\n") }]));
@@ -115,6 +116,18 @@ describe("strumenti di lettura del codice", () => {
     expect(out).toContain("continua con daRiga=401");
     expect(out).not.toContain("fromLine");
     expect(out.length).toBeLessThanOrEqual(20_000);
+  });
+
+  it("file troppo grande: dichiarato in lettura, elenco e ricerca", async () => {
+    const app = await mkApp("Fanta", "fanta", "ivan/fanta");
+    const runner = new CodeToolRunner(userId, app.id);
+    const read = await runner.run(call("leggi_file", { percorso: "server/routes.ts" }));
+    expect(read).toContain("File troppo grande da leggere: server/routes.ts (1074 KB, limite 1024 KB)");
+    expect(read).not.toContain("inesistente");
+    const list = await runner.run(call("elenca_cartella", { percorso: "server" }));
+    expect(list).toContain("1 file esclusi dall'elenco perché oltre 1024 KB (esistono ma non si possono leggere): server/routes.ts (1074 KB)");
+    const found = await runner.run(call("cerca_nel_codice", { testo: "alfa" }));
+    expect(found).toContain("non cercati perché oltre 1024 KB");
   });
 
   it("daRiga: 401 legge dalla riga 401", async () => {

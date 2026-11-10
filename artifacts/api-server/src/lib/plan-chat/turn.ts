@@ -17,6 +17,9 @@ export interface PlanTurnLimits {
 
 export const PLAN_TURN_LIMITS: PlanTurnLimits = { maxRounds: 6, maxTokens: 40_000, maxActiveMs: 120_000 };
 
+/** Turni in cui Lucius legge il codice dell'app: più giri, più token e più tempo (spec «Lucius legge il codice»). */
+export const CODE_TURN_LIMITS: PlanTurnLimits = { maxRounds: 12, maxTokens: 150_000, maxActiveMs: 240_000 };
+
 export interface PlanTurnDeps {
   chat(
     messages: ChatCompletionMessageParam[],

@@ -7,7 +7,7 @@ import type { ChatCompletionFunctionTool, ChatCompletionMessageParam } from "ope
 import type { ChatToolCall } from "../ai/chat-types";
 import { modelChat, resolveModel, type ResolvedModel } from "../ai/executor";
 import { logger } from "../logger";
-import { PLAN_TURN_LIMITS, runPlanTurn, type PlanTurnOutcome } from "../plan-chat/turn";
+import { PLAN_TURN_LIMITS, runPlanTurn, type PlanTurnLimits, type PlanTurnOutcome } from "../plan-chat/turn";
 import { delegateTurn } from "./delegate";
 import { NODE_TURN_MESSAGES } from "./messages";
 
@@ -32,6 +32,8 @@ export interface ChatTurnInput {
   caller: string;
   /** Tetto di spesa per il modello di ripiego: il motivo del blocco, o null. */
   budgetCheck(aiModelId: number): Promise<string | null>;
+  /** Limiti del turno (default `PLAN_TURN_LIMITS`); valgono anche sul nodo (giri + 1) e nel ripiego. */
+  limits?: PlanTurnLimits;
 }
 
 function cloudTurn(resolved: ResolvedModel, input: ChatTurnInput): Promise<PlanTurnOutcome> {
@@ -42,7 +44,7 @@ function cloudTurn(resolved: ResolvedModel, input: ChatTurnInput): Promise<PlanT
       runTool: input.runTool,
       now: () => Date.now(),
     },
-    PLAN_TURN_LIMITS,
+    input.limits ?? PLAN_TURN_LIMITS,
     input.tools,
   );
 }
@@ -76,7 +78,7 @@ export async function runChatTurn(input: ChatTurnInput): Promise<PlanTurnOutcome
     messages: input.messages,
     tools: input.tools,
     dispatch: input.runTool,
-    maxTurns: CHAT_NODE_MAX_TURNS,
+    maxTurns: (input.limits ?? PLAN_TURN_LIMITS).maxRounds + 1,
     timeoutMs: CHAT_NODE_TIMEOUT_MS,
   });
   switch (outcome.kind) {

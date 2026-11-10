@@ -157,6 +157,13 @@ jobs:
               echo "::error::location /api/hooks/: manca '$directive'"; echo "$hooks"; exit 1
             fi
           done
+          # Abbinamento dei nodi: il codice e' nel percorso, stesse due direttive
+          pairings=$(awk '/location \^~ \/api\/account\/node-pairings\//{f=1} f{print} f&&/^    }/{exit}' <<<"$conf")
+          for directive in "access_log off;" "error_log /dev/stderr crit;"; do
+            if ! grep -qF -- "$directive" <<<"$pairings"; then
+              echo "::error::location /api/account/node-pairings/: manca '$directive'"; echo "$pairings"; exit 1
+            fi
+          done
           run_web ""
           expect /embed "frame-ancestors 'none'"
           docker rm -f web-smoke-run >/dev/null

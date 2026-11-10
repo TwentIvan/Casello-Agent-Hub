@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { TOOL_LEVEL_LABELS } from "@/lib/tool-labels";
 import { cn } from "@/lib/utils";
-import { CODE_LABELS, RUNS_ON_LABELS, type RoleDraft, codeOptions, newRole } from "./role-draft";
+import { CODE_LABELS, RUNS_ON_LABELS, type RoleDraft, codeOptions, newRole, selectableCodeOptions } from "./role-draft";
 import { SkillKindBadge } from "./skill-kind";
 import { SkillPicker } from "./skill-picker";
 import { ToolPicker } from "./tool-picker";
@@ -39,6 +39,8 @@ interface RolesEditorProps {
 }
 
 export const CODE_DISABLED_HINT = "Collega il repository dell'app tramite l'App GitHub per dare il codice ai ruoli";
+export const CODE_LEAD_HINT = "Il capo non esegue compiti: il codice vale per gli altri ruoli";
+
 
 /** Il ruolo ha le istruzioni se tra le sue skill specializzate c'è `ruolo-<key>`. */
 const hasInstructions = (role: RoleDraft) => role.key !== "" && role.localSkills.includes(`ruolo-${role.key}`);
@@ -90,6 +92,8 @@ function RoleCard({
   const id = `role-${role.uid}`;
   const availableLocal = localSkills.filter((s) => !role.localSkills.includes(s.code));
   const localName = (code: string) => localSkills.find((s) => s.code === code)?.name;
+  const code: TeamRoleCode = codeOptions(role.runsOn).includes(role.code) ? role.code : "none";
+  const selectableCodes = selectableCodeOptions(role.runsOn, role.code, codeEnabled, role.isLead);
 
   return (
     <Card className={cn(role.isLead && "border-primary ring-1 ring-primary/30")}>
@@ -186,23 +190,30 @@ function RoleCard({
 
         <div className="space-y-1.5">
           <Label htmlFor={`${id}-code`}>Codice</Label>
-          <Select
-            value={codeOptions(role.runsOn).includes(role.code) ? role.code : "none"}
-            onValueChange={(v) => onChange({ code: v as TeamRoleCode })}
-            disabled={readOnly || !codeEnabled}
-          >
-            <SelectTrigger id={`${id}-code`} className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {codeOptions(role.runsOn).map((k) => (
-                <SelectItem key={k} value={k}>
-                  {CODE_LABELS[k]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {!codeEnabled && <p className="text-xs text-muted-foreground">{CODE_DISABLED_HINT}</p>}
+          {role.isLead && code === "none" ? (
+            <p className="text-xs text-muted-foreground">{CODE_LEAD_HINT}</p>
+          ) : (
+            <>
+              <Select
+                value={code}
+                onValueChange={(v) => onChange({ code: v as TeamRoleCode })}
+                disabled={readOnly || selectableCodes.length < 2}
+              >
+                <SelectTrigger id={`${id}-code`} className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectableCodes.map((k) => (
+                    <SelectItem key={k} value={k}>
+                      {CODE_LABELS[k]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {role.isLead && <p className="text-xs text-muted-foreground">{CODE_LEAD_HINT}</p>}
+              {!codeEnabled && <p className="text-xs text-muted-foreground">{CODE_DISABLED_HINT}</p>}
+            </>
+          )}
         </div>
 
         <div className="space-y-1.5">

@@ -56,6 +56,17 @@ export function codeOptions(runsOn: TeamRoleRunsOn): TeamRoleCode[] {
   return runsOn === "node" ? ["none", "write"] : ["none", "read", "write"];
 }
 
+/**
+ * Valori del «Codice» che si possono scegliere: senza GitHub (o per il capo) solo «Nessuno» più il valore attuale,
+ * così un ruolo che ha già il codice può tornare a «Nessuno».
+ */
+export function selectableCodeOptions(runsOn: TeamRoleRunsOn, current: TeamRoleCode, codeEnabled: boolean, isLead: boolean): TeamRoleCode[] {
+  const all = codeOptions(runsOn);
+  const value = all.includes(current) ? current : "none";
+  if (codeEnabled && !isLead) return all;
+  return value === "none" ? ["none"] : ["none", value];
+}
+
 export const RUNS_ON_LABELS: Record<TeamRoleRunsOn, string> = {
   cloud: "Cloud",
   node: "Nodo locale",

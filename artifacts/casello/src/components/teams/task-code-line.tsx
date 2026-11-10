@@ -1,6 +1,7 @@
 import { ExternalLink } from "lucide-react";
 import type { TeamCodeTask } from "@workspace/api-client-react";
 import { Led, type LedState } from "@/components/brand/led";
+import { ciLabel } from "./task-code";
 
 const CI_LED: Record<NonNullable<TeamCodeTask["ciState"]>, LedState> = {
   pending: "work",
@@ -19,7 +20,7 @@ const PR_STATE_LABELS = { open: "aperta", merged: "unita", closed: "chiusa" } as
 
 /** Riga del codice di un compito: branch, PR, stato della CI e riepilogo. */
 export function TaskCodeLine({ code }: { code: TeamCodeTask }) {
-  const label = code.ciSummary ?? (code.prNumber === null ? "Nessuna PR" : "CI non ancora letta");
+  const label = code.ciSummary ?? ciLabel(code);
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
       <a

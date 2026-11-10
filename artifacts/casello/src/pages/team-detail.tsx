@@ -165,9 +165,10 @@ function TeamEditor({
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [savingAsTemplate, setSavingAsTemplate] = useState(false);
   const closed = team.status === "closed";
-  // Il codice ai ruoli si dà solo se l'App di riferimento ha il repository collegato tramite l'App GitHub
+  // Il codice ai ruoli si dà solo se l'App di riferimento ha il repository collegato tramite l'App GitHub; finché l'App
+  // non è letta (o la lettura fallisce) la tendina resta attiva: decide comunque il server al salvataggio
   const refApp = useGetApp(team.ref.appId, { query: { queryKey: getGetAppQueryKey(team.ref.appId) } });
-  const codeEnabled = refApp.data?.sourceType === "github" && refApp.data.sourceInstallationId !== null;
+  const codeEnabled = !refApp.data || (refApp.data.sourceType === "github" && refApp.data.sourceInstallationId !== null);
 
   const savedJson = useMemo(
     () =>

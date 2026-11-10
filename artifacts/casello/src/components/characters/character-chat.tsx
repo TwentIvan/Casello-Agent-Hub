@@ -17,6 +17,7 @@ import { usePanel } from "@/components/panel/panel-context";
 import { handoffTarget } from "@/components/panel/page-subject";
 import { ChatMessages } from "./chat-messages";
 import { ChatToolbar } from "./chat-toolbar";
+import { TurnProgressView } from "./turn-progress-view";
 import { NewConversationDialog } from "./new-conversation-dialog";
 
 interface CharacterChatProps {
@@ -273,11 +274,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
               onHandoff={(p) => void openHandoff(p)}
             />
           )}
-          {running && (
-            <p className="text-sm text-ink-muted" aria-live="polite">
-              <Led state="work" label={`${name} sta pensando…`} />
-            </p>
-          )}
+          {running && <TurnProgressView progress={data?.progress ?? null} name={name} />}
         </div>
 
         {readOnly ? (

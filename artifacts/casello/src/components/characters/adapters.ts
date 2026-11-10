@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
-import type { CharacterPageContext, CharacterSubjectType } from "@workspace/api-client-react";
+import type { CharacterPageContext, CharacterSubjectType, TurnProgress } from "@workspace/api-client-react";
 import { useAlfredAdapter, useLuciusSubjectAdapter } from "./character-adapters";
 import { SUBJECT_LABELS, targetKey } from "./targets";
 import { usePlanChatAdapter, useTeamChatAdapter } from "./plan-team-adapters";
@@ -54,6 +54,8 @@ export interface ProposalLike {
 }
 
 export interface ConvDetail {
+  /** Passi del turno in corso (null se il server non li riporta). */
+  progress: TurnProgress | null;
   id: number;
   title: string;
   aiModelId: number | null;

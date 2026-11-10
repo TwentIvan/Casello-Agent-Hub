@@ -4,12 +4,18 @@ import type { CharacterPageContext, CharacterSubjectType, TurnProgress } from "@
 import { useAlfredAdapter, useLuciusSubjectAdapter } from "./character-adapters";
 import { SUBJECT_LABELS, targetKey } from "./targets";
 import { usePlanChatAdapter, useTeamChatAdapter } from "./plan-team-adapters";
+import type { SendMode } from "./chat-send";
 
 // Un solo pannello (`CharacterChat`) per le conversazioni di Alfred e Lucius: ogni backend (conversazioni dei personaggi,
 // chat del piano, chat di squadra) ha un adattatore che porta i suoi dati a una forma comune.
 
 export const POLL_MS = 1500;
 export const MAX_CHARS = 8000;
+
+/** Si rilegge la conversazione finché il turno è in corso o c'è un messaggio in coda (può far ripartire subito un turno). */
+export function chatPollInterval(data: { turnStatus: string; queuedMessage?: unknown } | undefined): number | false {
+  return data?.turnStatus === "running" || (data?.queuedMessage ?? null) !== null ? POLL_MS : false;
+}
 
 // Funzioni pure spostate in `targets.ts` (provabili con Vitest senza React)
 export { SUBJECT_LABELS, targetKey };
@@ -62,6 +68,8 @@ export interface ConvDetail {
   tokensUsed: number;
   costUsd: number | null;
   turnStatus: "idle" | "running";
+  /** Messaggio in coda: parte da solo a fine turno (null = nessuno). */
+  queuedMessage: { id: number; content: string } | null;
   /** Motivo della sola lettura (archiviata, argomento eliminato, squadra chiusa), null = si scrive. */
   readOnlyReason: string | null;
   /** Oggetto della conversazione (solo conversazioni dei personaggi), per le anteprime delle schede. */
@@ -90,7 +98,12 @@ export interface ChatAdapter {
   remove?(id: number): Promise<void>;
   /** Solo Alfred: archivia il filo e ne apre uno nuovo. */
   restart?(): Promise<number>;
-  send(id: number, content: string): Promise<void>;
+  /** `now` durante un turno: il testo va in coda e il turno si ferma; `queue`: parte a fine turno. */
+  send(id: number, content: string, mode?: SendMode): Promise<void>;
+  /** Ferma il turno in corso. */
+  stop(id: number): Promise<void>;
+  /** Toglie il messaggio in coda. */
+  cancelQueued(id: number): Promise<void>;
   /** Assente dove il backend non lo permette (chat di squadra): il modello si mostra senza poterlo cambiare. */
   setModel?(id: number, aiModelId: number): Promise<void>;
   decide(proposalId: number, decision: "accept" | "reject"): Promise<void>;

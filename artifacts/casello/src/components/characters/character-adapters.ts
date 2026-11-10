@@ -4,6 +4,7 @@ import {
   getGetAlfredThreadQueryKey,
   getGetCharacterConversationQueryKey,
   getListCharacterConversationsQueryKey,
+  useCancelQueuedCharacterMessage,
   useCreateCharacterConversation,
   useDecideCharacterProposal,
   useDeleteCharacterConversation,
@@ -12,11 +13,13 @@ import {
   useListCharacterConversations,
   useRestartAlfredThread,
   useSendCharacterMessage,
+  useStopCharacterTurn,
   useUpdateCharacterConversation,
 } from "@workspace/api-client-react";
+import type { SendMode } from "./chat-send";
 import {
+  chatPollInterval,
   forgetConversation,
-  POLL_MS,
   SUBJECT_LABELS,
   useInvalidateOnTurnEnd,
   type ChatAdapter,
@@ -64,6 +67,7 @@ function mapCharacterDetail(d: CharacterConversationDetail): ConvDetail {
     tokensUsed: d.tokensUsed,
     costUsd: d.costUsd,
     turnStatus: d.turnStatus,
+    queuedMessage: d.queuedMessage ? { id: d.queuedMessage.id, content: d.queuedMessage.content } : null,
     progress: d.progress ?? null,
     readOnlyReason: readOnlyReasonOf(d),
     subjectId: d.subjectId,
@@ -84,12 +88,31 @@ function useCharacterMutations(queryClient: QueryClient) {
   const send = useSendCharacterMessage();
   const update = useUpdateCharacterConversation();
   const decide = useDecideCharacterProposal();
+  const stop = useStopCharacterTurn();
+  const cancelQueued = useCancelQueuedCharacterMessage();
   const refresh = () => void queryClient.invalidateQueries({ predicate: isCharacterConversationQuery });
   return {
     refresh,
-    async send(id: number, content: string, pageContext?: PageContext) {
+    async send(id: number, content: string, mode?: SendMode, pageContext?: PageContext) {
       try {
-        await send.mutateAsync({ id, data: pageContext ? { content, pageContext } : { content } });
+        await send.mutateAsync({
+          id,
+          data: { content, ...(pageContext ? { pageContext } : {}), ...(mode && mode !== "normal" ? { mode } : {}) },
+        });
+      } finally {
+        refresh();
+      }
+    },
+    async stop(id: number) {
+      try {
+        await stop.mutateAsync({ id });
+      } finally {
+        refresh();
+      }
+    },
+    async cancelQueued(id: number) {
+      try {
+        await cancelQueued.mutateAsync({ id });
       } finally {
         refresh();
       }
@@ -130,7 +153,7 @@ export function useAlfredAdapter(page: PageContext): ChatAdapter {
       const q = useGetAlfredThread({
         query: {
           queryKey: threadKey,
-          refetchInterval: (query) => (query.state.data?.turnStatus === "running" ? POLL_MS : false),
+          refetchInterval: (query) => chatPollInterval(query.state.data),
         },
       });
       // A fine turno Alfred può aver scritto al capo o deciso una voce: si rileggono squadre, bollettino, coda e cruscotto
@@ -151,9 +174,23 @@ export function useAlfredAdapter(page: PageContext): ChatAdapter {
       queryClient.setQueryData(threadKey, detail);
       return detail.id;
     },
-    send: async (id, content) => {
+    send: async (id, content, mode) => {
       try {
-        await common.send(id, content, page);
+        await common.send(id, content, mode, page);
+      } finally {
+        refreshThread();
+      }
+    },
+    stop: async (id) => {
+      try {
+        await common.stop(id);
+      } finally {
+        refreshThread();
+      }
+    },
+    cancelQueued: async (id) => {
+      try {
+        await common.cancelQueued(id);
       } finally {
         refreshThread();
       }
@@ -215,7 +252,7 @@ export function useLuciusSubjectAdapter(target: Extract<ChatTarget, { kind: "cha
         query: {
           queryKey: getGetCharacterConversationQueryKey(id ?? 0),
           enabled: id !== null,
-          refetchInterval: (query) => (query.state.data?.turnStatus === "running" ? POLL_MS : false),
+          refetchInterval: (query) => chatPollInterval(query.state.data),
         },
       });
       useInvalidateOnTurnEnd(q.data?.turnStatus === "running", common.refresh);
@@ -242,7 +279,9 @@ export function useLuciusSubjectAdapter(target: Extract<ChatTarget, { kind: "cha
         common.refresh();
       }
     },
-    send: (id, content) => common.send(id, content),
+    send: (id, content, mode) => common.send(id, content, mode),
+    stop: common.stop,
+    cancelQueued: common.cancelQueued,
     setModel: common.setModel,
     decide: common.decide,
   };

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Send } from "lucide-react";
+import { ListPlus, Send, Square } from "lucide-react";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { Led } from "@/components/brand/led";
 import { AlfredMark, LuciusMark } from "@/components/brand/marks";
@@ -16,6 +16,7 @@ import { MAX_CHARS, targetKey, useCharacterAdapter, type ChatTarget, type Propos
 import { usePanel } from "@/components/panel/panel-context";
 import { handoffTarget } from "@/components/panel/page-subject";
 import { ChatMessages } from "./chat-messages";
+import { sendActions, sendModeOf, type SendAction } from "./chat-send";
 import { ChatToolbar } from "./chat-toolbar";
 import { TurnProgressView } from "./turn-progress-view";
 import { NewConversationDialog } from "./new-conversation-dialog";
@@ -58,7 +59,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   useEffect(() => {
     if (draft !== undefined) setText(draft);
   }, [draft]);
-  const [busy, setBusy] = useState<null | "send" | "create" | "delete" | "restart" | "model">(null);
+  const [busy, setBusy] = useState<null | "send" | "create" | "delete" | "restart" | "model" | "stop" | "cancel">(null);
   const [decidingId, setDecidingId] = useState<number | null>(null);
   const [lock, setLock] = useState<{ id: number; reason: string } | null>(null);
   const [confirmAccept, setConfirmAccept] = useState<ProposalLike | null>(null);
@@ -116,18 +117,21 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   // consegne con la domanda già scritta): se ne crea una nuova solo quando l'elenco è vuoto
   const sendTargetId = list ? effectiveId : (data?.id ?? null);
   const trimmed = text.trim();
-  const canSend =
-    !readOnly &&
-    !running &&
+  // Pulsanti mostrati (a testo pieno) e quelli attivi adesso: durante il turno «Invia subito» e «Accoda»
+  const shownActions = sendActions({ running, readOnly, empty: false });
+  const activeActions = sendActions({ running, readOnly, empty: trimmed.length === 0 });
+  const sendReady =
     busy === null &&
     awaitingRead === null &&
     !(list?.isLoading ?? false) &&
-    trimmed.length > 0 &&
     text.length <= MAX_CHARS &&
     (sendTargetId !== null || list !== null);
-  const submit = () => {
-    if (!canSend) return;
-    void run("send", "Messaggio non inviato", async () => {
+  const canSend = (action: SendAction) => sendReady && activeActions.includes(action);
+  const submit = (action: SendAction) => {
+    if (!canSend(action)) return;
+    const mode = sendModeOf(action);
+    const sentText = text;
+    void run("send", mode === "queue" ? "Messaggio non accodato" : "Messaggio non inviato", async () => {
       let id = sendTargetId;
       // Senza conversazioni la prima si crea con il primo messaggio (modello del personaggio)
       if (id === null) {
@@ -135,10 +139,25 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
         setSelectedId(id);
       }
       const before = id === data?.id ? data.messages.length : 0;
-      await adapter.send(id, trimmed);
-      setAwaitingRead({ messages: before });
-      setText("");
+      await adapter.send(id, trimmed, mode);
+      // Durante un turno il testo va in coda: lo mostra la conversazione riletta, l'invio resta libero
+      if (mode === "normal") setAwaitingRead({ messages: before });
+      // La casella resta attiva durante l'invio: si svuota solo se nel frattempo non si è scritto altro
+      setText((current) => (current === sentText ? "" : current));
     });
+  };
+  // Invio da tastiera: a turno fermo l'invio, durante il turno «Invia subito»
+  const keyboardAction: SendAction = running ? "now" : "send";
+  const queued = data?.queuedMessage ?? null;
+  const stopTurn = () => {
+    if (!data) return;
+    const id = data.id;
+    void run("stop", "Turno non fermato", () => adapter.stop(id));
+  };
+  const cancelQueued = () => {
+    if (!data) return;
+    const id = data.id;
+    void run("cancel", "Messaggio in coda non annullato", () => adapter.cancelQueued(id));
   };
 
   const doDecide = async (p: ProposalLike, decision: "accept" | "reject") => {
@@ -274,7 +293,35 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
               onHandoff={(p) => void openHandoff(p)}
             />
           )}
-          {running && <TurnProgressView progress={data?.progress ?? null} name={name} />}
+          {running && (
+            <TurnProgressView
+              progress={data?.progress ?? null}
+              name={name}
+              action={
+                !readOnly && data ? (
+                  <Button type="button" variant="secondary" size="sm" onClick={stopTurn} disabled={busy !== null}>
+                    <Square />
+                    {busy === "stop" ? "Arresto…" : "Ferma"}
+                  </Button>
+                ) : undefined
+              }
+            />
+          )}
+          {queued && (
+            <div className="flex min-w-0 items-start gap-2 rounded-md border border-dashed p-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-label text-ink-muted">In coda</p>
+                <p className="line-clamp-2 break-words text-body-sm text-ink-muted" title={queued.content}>
+                  {queued.content}
+                </p>
+              </div>
+              {!readOnly && (
+                <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={cancelQueued} disabled={busy !== null}>
+                  {busy === "cancel" ? "Annullamento…" : "Annulla"}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
 
         {readOnly ? (
@@ -284,7 +331,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
             className="space-y-2"
             onSubmit={(e) => {
               e.preventDefault();
-              submit();
+              submit(keyboardAction);
             }}
           >
             <Textarea
@@ -293,22 +340,37 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
-                  submit();
+                  submit(keyboardAction);
                 }
               }}
               rows={3}
               placeholder={adapter.character === "alfred" ? "Scrivi ad Alfred…" : "Scrivi a Lucius…"}
               aria-label={`Messaggio per ${name}`}
-              disabled={running || busy === "send"}
             />
             <div className="flex items-center justify-between gap-2">
               <span className={cn("font-mono text-xs tabular-nums text-ink-muted", text.length > MAX_CHARS && "text-destructive")}>
                 {text.length.toLocaleString("it-IT")} / {MAX_CHARS.toLocaleString("it-IT")}
               </span>
-              <Button type="submit" size="sm" disabled={!canSend}>
-                <Send />
-                {busy === "send" ? "Invio…" : adapter.character === "alfred" ? "Scrivi ad Alfred" : "Scrivi a Lucius"}
-              </Button>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {shownActions.includes("queue") && (
+                  <Button type="button" variant="outline" size="sm" disabled={!canSend("queue")} onClick={() => submit("queue")}>
+                    <ListPlus />
+                    Accoda
+                  </Button>
+                )}
+                {shownActions.includes("now") && (
+                  <Button type="submit" size="sm" disabled={!canSend("now")}>
+                    <Send />
+                    {busy === "send" ? "Invio…" : "Invia subito"}
+                  </Button>
+                )}
+                {shownActions.includes("send") && (
+                  <Button type="submit" size="sm" disabled={!canSend("send")}>
+                    <Send />
+                    {busy === "send" ? "Invio…" : adapter.character === "alfred" ? "Scrivi ad Alfred" : "Scrivi a Lucius"}
+                  </Button>
+                )}
+              </div>
             </div>
           </form>
         )}

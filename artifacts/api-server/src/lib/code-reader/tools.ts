@@ -8,7 +8,7 @@ import type { ChatToolCall } from "../ai/chat-types";
 import { FULL_READ_LIMITS, listDir, readFile, search, type ReadLimits } from "../architect/phase-loop";
 import { SourceTreeError } from "../architect/source-tree";
 import { logger } from "../logger";
-import { CODE_MESSAGES } from "./messages";
+import { CODE_INSTRUCTIONS, CODE_MESSAGES } from "./messages";
 import { CodeReaderError, getAppSource, type AppSource } from "./source-cache";
 
 /** Limiti ridotti rispetto all'architetto: il testo resta nel contesto della chat. */
@@ -18,6 +18,8 @@ export const CODE_READ_LIMITS: ReadLimits = {
   maxReadChars: 16_000,
   maxToolOutputChars: 20_000,
 };
+
+export { CODE_INSTRUCTIONS };
 
 export const CODE_TOOL_NAMES = ["elenca_cartella", "leggi_file", "cerca_nel_codice"] as const;
 type CodeToolName = (typeof CODE_TOOL_NAMES)[number];

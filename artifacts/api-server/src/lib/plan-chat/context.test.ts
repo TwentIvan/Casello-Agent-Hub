@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CODE_INSTRUCTIONS } from "../code-reader/messages";
 import { estimateTokens } from "../architect/phase-loop";
 import {
   PLAN_CONTEXT_MAX_TOKENS,
@@ -21,10 +22,33 @@ const baseInput = (over: Partial<PlanContextInput> = {}): PlanContextInput => ({
   otherApps: [],
   history: [{ role: "user", content: "Come integriamo?", proposals: [] }],
   memory: "",
+  code: { available: false, reason: "l'app non ha un repository GitHub collegato" },
   ...over,
 });
 
 const text = (m: { content?: unknown }) => String(m.content);
+
+describe("lettura del codice nel contesto", () => {
+  it("con codice: frase d'istruzione e riga nel blocco dati", () => {
+    const msgs = buildPlanMessages(baseInput({ code: { available: true, repo: "ivan/fanta", branch: "main" } }));
+    expect(text(msgs[0]!)).toContain(CODE_INSTRUCTIONS);
+    expect(text(msgs[0]!)).toContain("Puoi leggere il codice dell'app (ultimo commit del branch)");
+    expect(text(msgs[1]!)).toContain("Codice: disponibile (ivan/fanta@main)");
+  });
+
+  it("branch non indicato: branch predefinito", () => {
+    const msgs = buildPlanMessages(baseInput({ code: { available: true, repo: "ivan/fanta", branch: null } }));
+    expect(text(msgs[1]!)).toContain("Codice: disponibile (ivan/fanta@branch predefinito)");
+  });
+
+  it("senza codice: frase con il motivo e riga non disponibile", () => {
+    const reason = "l'app non ha un repository GitHub collegato";
+    const msgs = buildPlanMessages(baseInput({ code: { available: false, reason } }));
+    expect(text(msgs[0]!)).toContain(`Non puoi leggere il codice di questa app (${reason}): se serve un dettaglio che nei dati non c'è, dillo.`);
+    expect(text(msgs[0]!)).not.toContain("Puoi leggere il codice");
+    expect(text(msgs[1]!)).toContain(`Codice: non disponibile (${reason})`);
+  });
+});
 
 describe("buildPlanMessages", () => {
   it("il prompt di sistema non contiene dati dell'app", () => {

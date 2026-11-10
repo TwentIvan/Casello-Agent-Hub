@@ -35,6 +35,9 @@ import { memoryContextBlock } from "../memory/context";
 import { MEMORY_TOOLS } from "../memory/tools";
 import { PLAN_TOOLS, PlanToolRunner, type PlanToolItem } from "./tools";
 import { runChatTurn } from "../node-turns/chat-turn";
+import { codeAvailability } from "../code-reader/source-cache";
+import { CODE_TOOLS, CodeToolRunner, isCodeTool } from "../code-reader/tools";
+import { CODE_TURN_LIMITS } from "./turn";
 
 export const PLAN_MESSAGE_MAX_CHARS = 8_000;
 export const INTERRUPTED_TURN_MESSAGE = "Turno interrotto dal riavvio di Botcave: riscrivi il messaggio.";
@@ -247,6 +250,7 @@ export async function executePlanTurn(conversationId: number, assistantMessageId
           toolNames: await activeToolNames(o.id),
         });
       }
+      const codeInfo = await codeAvailability(conv.userId, app);
       const messages = buildPlanMessages({
         app: {
           name: app.name,
@@ -259,6 +263,7 @@ export async function executePlanTurn(conversationId: number, assistantMessageId
         otherApps,
         history: await loadHistory(conversationId, assistantMessageId),
         memory: await memoryContextBlock(conv.userId, "lucius"),
+        code: codeInfo.ok ? { available: true, repo: codeInfo.repo, branch: codeInfo.branch } : { available: false, reason: codeInfo.reason },
       });
 
       const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
@@ -286,6 +291,8 @@ export async function executePlanTurn(conversationId: number, assistantMessageId
         },
         conv.userId,
       );
+      // Un solo lettore del codice per turno (un solo controllo dello sha per app)
+      const codeRunner = codeInfo.ok ? new CodeToolRunner(conv.userId, app.id) : null;
       const outcome = await runChatTurn({
         resolved,
         userId: conv.userId,
@@ -293,8 +300,9 @@ export async function executePlanTurn(conversationId: number, assistantMessageId
         refId: conversationId,
         messageId: assistantMessageId,
         messages,
-        tools: [...PLAN_TOOLS, ...MEMORY_TOOLS],
-        runTool: (call) => runner.run(call),
+        tools: codeRunner ? [...PLAN_TOOLS, ...MEMORY_TOOLS, ...CODE_TOOLS] : [...PLAN_TOOLS, ...MEMORY_TOOLS],
+        ...(codeRunner ? { limits: CODE_TURN_LIMITS } : {}),
+        runTool: (call) => (codeRunner && isCodeTool(call.name) ? codeRunner.run(call) : runner.run(call)),
         caller: "plan-chat",
         budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, "lucius", aiModelId),
       });

@@ -9,12 +9,17 @@ import {
   analysisItemsTable,
   appsTable,
   characterHistoryTable,
+  githubInstallationsTable,
   planConversationsTable,
   planMessagesTable,
   planProposalsTable,
   usersTable,
 } from "@workspace/db";
 import { encryptSecret } from "../secrets";
+import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
+import { clearInstallationTokenCache } from "../github/app";
+import { clearCodeCache, setCodeCacheOptionsForTests } from "../code-reader/source-cache";
+import { buildZip } from "../zip-writer";
 import { listNotes } from "../memory/notes";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
 import {
@@ -24,6 +29,11 @@ import {
   loadPlanItems,
   startPlanTurn,
 } from "./run-turn";
+
+// lib/auth legge la configurazione del login all'import (via routes/apps): senza variabili si importa con AUTH_DISABLED
+vi.hoisted(() => {
+  process.env["AUTH_DISABLED"] ??= "true";
+});
 
 const ACCOUNT_KEY = "sk-CHIAVE-DELLA-CHAT";
 const SECRET_URL = "https://segreto.example";
@@ -361,5 +371,108 @@ describe("turni della chat del piano", () => {
     expect(body.messages.find((m) => m.role === "system")!.content).not.toContain("preferisce risposte brevi");
     expect(body.messages.find((m) => m.role === "user")!.content).toContain("preferisce risposte brevi");
     expect(body.tools.map((t) => t.function.name)).toEqual(expect.arrayContaining(["propose", "ricorda", "cerca_nello_storico"]));
+  });
+});
+
+describe("lettura del codice nella chat del piano", () => {
+  const SHA = "abcdef1234567890".repeat(2) + "abcdef12";
+  let gh: FakeGithub;
+
+  const chatRequests = () => fake.requests.filter((r) => r.path.includes("chat/completions"));
+  const toolNames = (body: unknown): string[] =>
+    ((body as { tools?: { function: { name: string } }[] }).tools ?? []).map((t) => t.function.name);
+
+  beforeAll(async () => {
+    gh = await startFakeGithub();
+  });
+  afterAll(async () => {
+    await gh.close();
+  });
+
+  beforeEach(async () => {
+    setCodeCacheOptionsForTests({
+      githubConfig: {
+        appId: gh.appId,
+        slug: gh.slug,
+        clientId: gh.clientId,
+        clientSecret: gh.clientSecret,
+        privateKey: gh.privateKeyPem,
+        apiBase: gh.apiBase,
+        webBase: gh.webBase,
+      },
+    });
+    clearInstallationTokenCache();
+    gh.installations.clear();
+    gh.repos.clear();
+    gh.revoked.clear();
+    gh.issuedTokens.clear();
+    gh.zipballs.clear();
+    gh.commits.clear();
+    gh.requests.length = 0;
+    gh.failWith = null;
+    gh.addInstallation({ id: 11, appId: Number(gh.appId), accountLogin: "ivan", accountType: "User", repositorySelection: "all" }, [
+      { fullName: "ivan/fanta", defaultBranch: "main", private: true },
+    ]);
+    gh.zipballs.set("ivan/fanta", buildZip([{ name: "proj/src/a.ts", content: Buffer.from("export const alfa = 1;\n") }]));
+    gh.commits.set("ivan/fanta", SHA);
+    await db.insert(githubInstallationsTable).values({ userId, installationId: 11, accountLogin: "ivan", accountType: "User", repositorySelection: "all" });
+  });
+  afterEach(async () => {
+    await waitIdle(conversationId);
+    await clearCodeCache();
+  });
+
+  it("app collegata a GitHub: strumenti del codice offerti, risultato con sha7 e scheda discard salvata", async () => {
+    await db
+      .update(appsTable)
+      .set({ sourceType: "github", sourceRepo: "ivan/fanta", sourceBranch: "main", sourceInstallationId: 11 })
+      .where(eq(appsTable.id, appId));
+    const [item] = await db
+      .insert(analysisItemsTable)
+      .values({ analysisId, chapter: "completion", ref: "completion:1", position: 0, diff: "new", payload: completion("k1", "Costante alfa") })
+      .returning();
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      if (n === 1) {
+        return { content: null, toolCalls: [{ id: "c1", name: "cerca_nel_codice", arguments: JSON.stringify({ testo: "alfa" }) }], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+      }
+      if (n === 2) {
+        return {
+          content: null,
+          toolCalls: [{ id: "c2", name: "propose", arguments: JSON.stringify({ kind: "discard", chapter: "completion", targetRef: item!.ref, rationale: "già fatto in src/a.ts:1" }) }],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+        };
+      }
+      return { content: "Fatto.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+
+    await startPlanTurn(conversationId, "verifica il codice");
+    await waitIdle(conversationId);
+
+    const reqs = chatRequests();
+    expect(toolNames(reqs[0]!.body)).toEqual(expect.arrayContaining(["elenca_cartella", "leggi_file", "cerca_nel_codice", "propose"]));
+    const second = JSON.stringify(reqs[1]!.body);
+    expect(second).toContain("Codice di Mister @ abcdef1");
+    expect(second).toContain("src/a.ts:1");
+    const system = (reqs[0]!.body as { messages: { role: string; content: string }[] }).messages[0]!.content;
+    expect(system).toContain("Puoi leggere il codice dell'app");
+    const proposals = await db.select().from(planProposalsTable);
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0]).toMatchObject({ kind: "discard", status: "pending" });
+  });
+
+  it("app con zip: nessuno strumento del codice nella richiesta al modello", async () => {
+    await db.update(appsTable).set({ sourceType: "zip" }).where(eq(appsTable.id, appId));
+    fake.chatReply = { content: "ok", toolCalls: [], usage: { prompt_tokens: 5, completion_tokens: 5 } };
+
+    await startPlanTurn(conversationId, "ciao");
+    await waitIdle(conversationId);
+
+    const names = toolNames(chatRequests()[0]!.body);
+    expect(names).toContain("propose");
+    for (const t of ["elenca_cartella", "leggi_file", "cerca_nel_codice"]) expect(names).not.toContain(t);
+    const system = (chatRequests()[0]!.body as { messages: { role: string; content: string }[] }).messages[0]!.content;
+    expect(system).toContain("Non puoi leggere il codice di questa app");
   });
 });

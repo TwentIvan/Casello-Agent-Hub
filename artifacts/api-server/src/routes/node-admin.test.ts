@@ -387,6 +387,10 @@ describe("Dashboard", () => {
     await db.update(nodesTable).set({ claudeStatus: { found: true, loggedIn: true, loginExpiresAt: later } }).where(eq(nodesTable.id, setup.nodeId));
     expect(await reasons()).toEqual([]);
 
+    // Claude trovato ma accesso non noto (loggedIn assente): nessun avviso
+    await db.update(nodesTable).set({ claudeStatus: { found: true, version: "2.1.0" } }).where(eq(nodesTable.id, setup.nodeId));
+    expect(await reasons()).toEqual([]);
+
     // Nessun dato di Claude ancora: nessun avviso
     await db.update(nodesTable).set({ claudeStatus: null }).where(eq(nodesTable.id, setup.nodeId));
     expect(await reasons()).toEqual([]);

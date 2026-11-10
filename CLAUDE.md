@@ -1591,12 +1591,13 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `~/.casello-nodo/update.json` `{from, to, startedAt, starts: 0}`, tiene la versione precedente come `casello-nodo.prev` (collegamento fisico), rinomina il nuovo sopra il
   programma ed esce con 0 (launchd lo riavvia). Ogni errore lascia intatto il programma; nuovo tentativo dopo un'ora. Ritorno indietro (`checkUpdateOnStart`, prima di
   `run`): con `update.json` aperto ogni avvio incrementa `starts`; al terzo entro 2 minuti ripristina `.prev`, registra `failedVersion` ed esce; il nodo la riferisce con
-  `updateFailed` e la console mostra «L'aggiornamento alla versione <v> non è riuscito». Il primo heartbeat riuscito chiude `update.json` (`markUpdateHealthy`). Nodi della CLI
+  `updateFailed` e la console mostra «L'aggiornamento alla versione <v> non è riuscito» (il server la toglie quando l'heartbeat riporta quella versione o una più
+  nuova). Il primo heartbeat riuscito chiude `update.json` (`markUpdateHealthy`). Nodi della CLI
   (`kind: "cli"` o senza `kind`): nessun aggiornamento, la console dice «Installa Botcave Nodo per gli aggiornamenti automatici».
 - **Claude Code** (`claude-check.ts`): verifica all'avvio e ogni 10 minuti (`claude` nel PATH del servizio, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`; `claude
   --version` e `claude auth status --json`, 10 s ciascuno); l'heartbeat porta `claude {found, version, loggedIn, authMethod, subscriptionType, loginExpiresAt}` (niente email né
   organizzazione; il server tiene solo questi campi e scarta quelli di tipo sbagliato senza rifiutare l'heartbeat) in `nodes.claude_status` con `claude_checked_at`. Console: LED in Account →
-  Nodi («installato · versione», accesso, piano, scadenza), avviso se il login manca o scade entro 3 giorni anche sulla carta dell'account «Claude Code (nodo)» e nella
+  Nodi («installato · versione», accesso, piano, scadenza), avviso se il login manca (`loggedIn: false`; assente = non noto, nessun avviso) o scade entro 3 giorni anche sulla carta dell'account «Claude Code (nodo)» e nella
   Dashboard (`nodeClaudeWarnings`). «Installa Claude Code» (conferma, poi `/bin/bash -c "curl -fsSL https://claude.ai/install.sh | bash"` con URL costante, 10 minuti,
   notifiche) e «Accedi a Claude» (`claude auth login`, poi verifica ogni 5 s per al più 10 minuti).
 - **Impostazioni, diagnosi, disinstallazione** (`lib/nodes/node-admin.ts`, nodo `node-admin.ts`; route solo login): `PUT /api/account/nodes/:id/settings`

@@ -21,7 +21,7 @@ import {
   type TeamTaskRow,
 } from "@workspace/db";
 import { logger } from "../logger";
-import { isBelowMinVersion, loadNodeManifest, updateFor, type NodeUpdate } from "./manifest";
+import { compareVersions, isBelowMinVersion, loadNodeManifest, updateFor, type NodeUpdate } from "./manifest";
 import { ATTACHMENT_MESSAGES, taskAttachmentViews, validateNodeWorkspace } from "../teams/attachments";
 import { InstanceRoleSchema, type InstanceRole } from "../teams/manifest";
 import { getPlan, patchPlan } from "../teams/plan";
@@ -220,7 +220,7 @@ export function cleanFolders(folders: string[]): string[] {
 
 export async function heartbeat(nodeId: number, caps: NodeCapabilities): Promise<HeartbeatResult> {
   const now = new Date();
-  const [node] = await db
+  const [updated] = await db
     .update(nodesTable)
     .set({
       version: caps.version,
@@ -237,7 +237,18 @@ export async function heartbeat(nodeId: number, caps: NodeCapabilities): Promise
     })
     .where(and(eq(nodesTable.id, nodeId), eq(nodesTable.status, "active")))
     .returning();
-  if (!node) throw new NodeError(403, NODE_PROTOCOL_MESSAGES.disabled);
+  if (!updated) throw new NodeError(403, NODE_PROTOCOL_MESSAGES.disabled);
+  let node = updated;
+  // Il nodo gira ormai con la versione fallita o una più nuova (aggiornato in altro modo): l'avviso non vale più
+  const failed = node.updateFailedVersion;
+  if (failed !== null && (compareVersions(caps.version, failed) ?? -1) >= 0) {
+    const [cleared] = await db
+      .update(nodesTable)
+      .set({ updateFailedVersion: null })
+      .where(and(eq(nodesTable.id, nodeId), eq(nodesTable.updateFailedVersion, failed)))
+      .returning();
+    if (cleared) node = cleared;
+  }
   const result: HeartbeatResult = { pending: (await eligibleTasks(node)).eligible.length };
   const update = updateFor(node.version, node.kind, loadNodeManifest(), node.updateFailedVersion);
   if (update) result.update = update;

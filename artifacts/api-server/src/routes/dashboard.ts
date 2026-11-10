@@ -26,7 +26,8 @@ type ClaudeWarning = "not_installed" | "not_logged_in" | "login_expiring";
 function claudeWarning(status: Record<string, unknown> | null, now: number): ClaudeWarning | null {
   if (!status) return null;
   if (status["found"] !== true) return "not_installed";
-  if (status["loggedIn"] !== true) return "not_logged_in";
+  // loggedIn assente = non si sa (es. `claude auth status` non riuscito): nessun avviso
+  if (status["loggedIn"] === false) return "not_logged_in";
   const expires = loginExpiry(status["loginExpiresAt"]);
   return expires !== null && expires - now <= LOGIN_EXPIRING_MS ? "login_expiring" : null;
 }

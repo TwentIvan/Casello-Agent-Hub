@@ -1727,9 +1727,13 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
   `^~ /.well-known/oauth-` e `^~ /oauth/` (connettore OAuth, stessi header; `^~` impedisce che la fallback della SPA li catturi).
 - nginx ha anche `^~ /api/hooks/` (webhook degli inneschi, vedi "Inneschi"): `access_log off`, `error_log /dev/stderr crit`, `client_max_body_size 256k`, perché il segreto sta
   nel percorso; non togliere le due direttive (la CI le controlla).
-- Botcave Nodo (vedi "Botcave Nodo (app per Mac)"): il job `build-nodo` (`macos-latest`, dopo `test` e prima di `build`, anche su `feat/**`) controlla che la versione del nodo
-  sia alzata se `artifacts/casello-nodo/src` differisce da `main` (solo sui push dei branch diversi da `main`), esegue i test di `casello-nodo`, installa Rosetta se manca
-  (per la prova x64) e `scripts/build-app.sh` e passa `docker/nodo-downloads/` (zip, binario, manifest) ai job delle immagini come artefatto `nodo-downloads`: `casello-web` serve la cartella da
+- Botcave Nodo (vedi "Botcave Nodo (app per Mac)"): il job `nodo-plan` (`ubuntu-latest`) controlla che la versione del nodo sia alzata se `artifacts/casello-nodo/src`
+  differisce da `main` (solo sui push dei branch diversi da `main`) e confronta versione (`package.json`) e minima (`min-version.txt`) con il manifest pubblicato
+  (`https://casello.fantamister.cloud/downloads/nodo/nodo-manifest.json`): se coincidono riscarica zip e binario pubblicati, li verifica con sha256 e dimensione del
+  manifest e li passa come artefatto `nodo-downloads`, e `build-nodo` si salta (un deploy che non cambia la versione del nodo non aspetta un runner macOS, spesso
+  in coda); altrimenti (o se il manifest o un file non si scaricano o non corrispondono) il job `build-nodo` (`macos-latest`, dopo `test` e `nodo-plan`) esegue i test di
+  `casello-nodo`, installa Rosetta se manca (per la prova x64) e `scripts/build-app.sh`; `build` e `deploy` partono con `build-nodo` riuscito o saltato per riuso
+  (`always()` con gli esiti espliciti). In entrambi i casi `docker/nodo-downloads/` (zip, binario, manifest) arriva ai job delle immagini come artefatto `nodo-downloads`: `casello-web` serve la cartella da
   `/downloads/nodo/`, `casello-api` copia solo `nodo-manifest.json` in `/app/nodo/` (in locale la cartella ha solo `.gitkeep`, i file costruiti sono in `.gitignore`).
   nginx: `^~ /downloads/nodo/` (cache di 1 anno, il manifest 1 ora; `Cache-Control` senza `always`, così un 404 non resta in cache), `= /nodes/pair` e `^~ /api/account/node-pairings/` con `access_log off` (il codice di abbinamento sta
   nella query o nel percorso; la seconda anche con `error_log /dev/stderr crit`, controllata dalla CI). API e nodo pubblicati vanno sempre insieme.

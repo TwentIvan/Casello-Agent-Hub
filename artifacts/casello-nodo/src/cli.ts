@@ -16,6 +16,7 @@ import {
   type LaunchctlRunner,
 } from "./launchd";
 import { osascriptDialogs } from "./dialogs";
+import { checkClaude, createCachedClaudeStatus, realClaudeDeps } from "./claude-check";
 import { startLoop, type Loop, type NodeKind } from "./loop";
 import { uninstallSelf } from "./node-admin";
 import { readState } from "./state";
@@ -350,11 +351,14 @@ async function run(d: CliDeps): Promise<number> {
   }
   const kind = nodeKind(d.execPath, d.home);
   const notify = kind === "app" ? d.notify : undefined;
+  // Controllo all'avvio e ogni 10 minuti: tra un controllo e l'altro vale l'ultimo risultato
+  const claudeStatus = createCachedClaudeStatus(() => checkClaude(realClaudeDeps(d.home)));
   // `loop` si usa nella callback solo dopo l'avvio del ciclo
   const loop: Loop = d.startLoop(config, {
     logsDir: paths.logsDir,
     statePath: paths.statePath,
     kind,
+    claudeStatus,
     updatePaths: upd,
     exit: d.exit,
     notify,
@@ -416,12 +420,6 @@ export async function runCli(argv: string[], d: CliDeps): Promise<number> {
   }
 }
 
-function whichClaudeReal(): Promise<string | null> {
-  return new Promise((resolve) => {
-    execFile("which", ["claude"], (err, stdout) => resolve(err ? null : stdout.trim() || null));
-  });
-}
-
 function realPrompt(question: string, hidden: boolean): Promise<string> {
   if (!hidden) {
     return new Promise((resolve) => {
@@ -474,7 +472,7 @@ export function realDeps(entryPath: string): CliDeps {
     launchctl: realLaunchctl,
     execPath: process.execPath,
     entryPath,
-    whichClaude: whichClaudeReal,
+    whichClaude: () => realClaudeDeps(homedir()).which(),
     ...(process.stdin.isTTY ? { prompt: realPrompt } : {}),
     out: (t) => void process.stdout.write(t),
     err: (t) => void process.stderr.write(t),

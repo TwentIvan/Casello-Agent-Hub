@@ -5,12 +5,13 @@ import path from "node:path";
 import { installFromConfig, uninstallLocal } from "./cli";
 import { createPairingClient, type PairingClient } from "./client";
 import { ConfigError, defaultPaths, loadConfig, writeConfigMerged, type Config } from "./config";
+import { installClaude, loginClaude, realClaudeDeps, type ClaudeDeps, type ExecLongFn } from "./claude-check";
 import { osascriptDialogs, type Dialogs } from "./dialogs";
 import { UNINSTALLED_TEXT } from "./node-admin";
 import { realLaunchctl, serviceTarget, type LaunchctlRunner } from "./launchd";
 import { PairingFailedError, runPairing } from "./pairing";
 
-/** Azioni su Claude Code (verifica, installazione, login): le implementa il Task 6. */
+/** Azioni su Claude Code (verifica, installazione, login). */
 export interface ClaudeActions {
   found(): Promise<boolean>;
   install(): Promise<void>;
@@ -196,12 +197,35 @@ export async function runAppMode(d: AppDeps): Promise<number> {
   }
 }
 
-/** Claude Code: in attesa del Task 6 le voci mostrano solo un avviso. */
-export function placeholderClaudeActions(dialogs: Dialogs, whichClaude: () => Promise<string | null>): ClaudeActions {
+/** Azioni reali su Claude Code (spec §6): conferma, installazione, accesso, con notifiche. */
+export function realClaudeActions(
+  dialogs: Dialogs,
+  deps: ClaudeDeps & { exec?: ExecLongFn; spawnLogin?: (bin: string) => void; sleep?: (ms: number) => Promise<void> },
+): ClaudeActions {
+  const notify = (text: string) => dialogs.notify("Botcave Nodo", text).catch(() => {});
+  const login = async () => {
+    await notify("Si apre il login di Claude nel browser: completalo, Botcave Nodo controlla l'esito");
+    const ok = await loginClaude(deps);
+    await notify(ok ? "Accesso a Claude eseguito" : "Accesso a Claude non completato: riprova da «Accedi a Claude»");
+  };
   return {
-    found: async () => (await whichClaude()) !== null,
-    install: () => dialogs.alert("Disponibile a breve"),
-    login: () => dialogs.alert("Disponibile a breve"),
+    found: async () => (await deps.which().catch(() => null)) !== null,
+    install: async () => {
+      const ok = await dialogs.confirm(
+        "Botcave Nodo scaricherà e installerà Claude Code dall'installatore ufficiale (claude.ai/install.sh). Può richiedere qualche minuto.",
+        "Installa",
+      );
+      if (!ok) return;
+      await notify("Installazione di Claude Code in corso");
+      const st = await installClaude(deps);
+      if (!st.found) {
+        await notify("Installazione di Claude Code non riuscita: riprova");
+        return;
+      }
+      await notify(`Claude Code installato${st.version ? ` (${st.version})` : ""}`);
+      if (await dialogs.confirm("Vuoi accedere a Claude ora?", "Accedi a Claude")) await login();
+    },
+    login,
   };
 }
 
@@ -226,7 +250,8 @@ function realOpen(target: string): Promise<void> {
 /** Dipendenze reali della modalità app. */
 export function realAppDeps(opts: { caselloUrl: string; version: string; programSource: string }): AppDeps {
   const dialogs = osascriptDialogs();
-  const whichClaude = () => execText("/usr/bin/which", ["claude"]);
+  const claudeDeps = realClaudeDeps(homedir());
+  const whichClaude = claudeDeps.which;
   return {
     home: homedir(),
     uid: process.getuid?.() ?? 0,
@@ -240,6 +265,6 @@ export function realAppDeps(opts: { caselloUrl: string; version: string; program
     deviceName: realDeviceName,
     version: opts.version,
     whichClaude,
-    claude: placeholderClaudeActions(dialogs, whichClaude),
+    claude: realClaudeActions(dialogs, claudeDeps),
   };
 }

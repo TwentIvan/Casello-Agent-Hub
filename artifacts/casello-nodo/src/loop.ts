@@ -317,8 +317,7 @@ export function startLoop(config: Config, deps: LoopDeps = {}): Loop {
     if (!update.required && (running.size > 0 || (turnLoop?.activeCount() ?? 0) > 0)) return;
     const label = isValidVersion(update.version) ? update.version : "?";
     updating = true;
-    // Da qui niente lavoro nuovo: il download è breve e poi si sostituisce il programma
-    pauseWork();
+    // Il nodo continua a lavorare durante download e verifica: smette di prendere lavoro solo nel `drain`, a file verificato
     logger.info(`aggiornamento a ${label}${update.required ? " (obbligatorio)" : ""}: download`);
     void applyUpdate(update, {
       caselloUrl: config.caselloUrl,

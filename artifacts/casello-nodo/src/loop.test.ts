@@ -463,6 +463,71 @@ describe("aggiornamenti, impostazioni, diagnosi e disinstallazione", () => {
     expect(await readFile(upd.programPath)).toEqual(NEW);
   });
 
+  /** Download lento: risponde dopo `delayMs` e registra quando ha finito. */
+  function slowDownload(body: Buffer, delayMs: number, done: { at: number }) {
+    casello.on("GET", DOWNLOAD, async (_req, res) => {
+      await new Promise((r) => setTimeout(r, delayMs));
+      done.at = Date.now();
+      res.statusCode = 200;
+      res.end(body);
+    });
+  }
+
+  it("durante un download lento il nodo continua a prendere lavoro; poi aspetta il compito e si aggiorna", async () => {
+    const done = { at: 0 };
+    slowDownload(NEW, 600, done);
+    let given = false;
+    let downloadStarted = false;
+    casello.on("POST", "/api/node/heartbeat", (_req, res) => {
+      // Primo heartbeat: nodo libero, l'aggiornamento parte; poi arriva un compito
+      const body = { pending: downloadStarted && !given ? 1 : 0, update: update() };
+      downloadStarted ||= downloads() > 0;
+      json(res, 200, body);
+    });
+    casello.on("POST", "/api/node/claim", (_req, res) => {
+      if (given) return json(res, 204);
+      given = true;
+      json(res, 200, taskPackage());
+    });
+    let reportAt = 0;
+    casello.on("POST", "/api/node/tasks/:id/report", (_req, res) => {
+      reportAt = Date.now();
+      json(res, 204);
+    });
+    const exit = vi.fn();
+    process.env.FAKE_CLAUDE_DELAY_MS = "900";
+    try {
+      start(config(), "slow", appDeps({ exit }));
+      await waitFor(() => exit.mock.calls.length > 0, 10_000);
+    } finally {
+      delete process.env.FAKE_CLAUDE_DELAY_MS;
+    }
+    const [claim] = casello.calls("POST", "/api/node/claim");
+    expect(claim.at).toBeLessThan(done.at);
+    expect(reportAt).toBeGreaterThan(done.at);
+    expect(exit).toHaveBeenCalledWith(0);
+    expect(await readFile(upd.programPath)).toEqual(NEW);
+  });
+
+  it("download con sha256 sbagliato: il nodo non si ferma mai (claim durante e dopo il download)", async () => {
+    const done = { at: 0 };
+    slowDownload(NEW, 400, done);
+    casello.on("POST", "/api/node/heartbeat", (_req, res) =>
+      json(res, 200, { pending: 1, update: update({ sha256: "e".repeat(64) }) }),
+    );
+    casello.on("POST", "/api/node/claim", (_req, res) => json(res, 204));
+    const exit = vi.fn();
+    start(config(), "esito", appDeps({ exit }));
+    await waitFor(() => done.at > 0);
+    const started = casello.calls("GET", DOWNLOAD)[0].at;
+    const during = casello.calls("POST", "/api/node/claim").filter((c) => c.at > started && c.at < done.at);
+    expect(during.length).toBeGreaterThan(0);
+    const after = casello.calls("POST", "/api/node/claim").length;
+    await waitFor(() => casello.calls("POST", "/api/node/claim").length > after + 2);
+    expect(exit).not.toHaveBeenCalled();
+    expect(await readFile(upd.programPath)).toEqual(OLD);
+  });
+
   it("nodo installato con la CLI che riceve update → ignorato", async () => {
     casello.on("POST", "/api/node/heartbeat", (_req, res) => json(res, 200, { pending: 0, update: update({ required: true }) }));
     const exit = vi.fn();

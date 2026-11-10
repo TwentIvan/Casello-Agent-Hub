@@ -6,6 +6,7 @@ export const CODE_WRITE_MESSAGES = {
   nothingToCommit: "nessuna modifica da committare",
   noCommits: "nessun commit da proporre: usa crea_commit",
   credential: (path: string) => `il file ${path} sembra contenere una credenziale: non lo committo`,
+  credentialText: "il testo sembra contenere una credenziale: non lo mando a GitHub",
   workflows: "i workflow della CI non si modificano da Botcave",
   badPath: "percorso non valido",
   binary: (path: string) => `il file ${path} non è testo UTF-8 valido: i binari non si committano`,

@@ -208,6 +208,20 @@ describe("strumenti del codice dei ruoli", () => {
     expect(gh.requests).toHaveLength(0);
   });
 
+  it("credenziale nel messaggio di commit o nel titolo/corpo della PR: rifiutata senza chiamate", async () => {
+    const s = await open();
+    const secret = `ghp_${"a1".repeat(12)}`;
+    await s.run("scrivi_file", { percorso: "src/n.ts", contenuto: "x\n" });
+    gh.requests.length = 0;
+    expect(await s.run("crea_commit", { messaggio: `usa ${secret}` })).toEqual({ ok: false, content: CODE_WRITE_MESSAGES.credentialText });
+    expect(gh.requests).toHaveLength(0);
+    await s.run("crea_commit", { messaggio: "Fix" });
+    gh.requests.length = 0;
+    expect(await s.run("apri_pr", { titolo: `Fix ${secret}`, corpo: "" })).toEqual({ ok: false, content: CODE_WRITE_MESSAGES.credentialText });
+    expect(await s.run("apri_pr", { titolo: "Fix", corpo: `token: ${secret}` })).toEqual({ ok: false, content: CODE_WRITE_MESSAGES.credentialText });
+    expect(gh.requests).toHaveLength(0);
+  });
+
   it("apri_pr: bozza verso il base con Closes, poi la stessa PR", async () => {
     const s = await open({ issue: 7 });
     expect(await s.run("apri_pr", { titolo: "Fix", corpo: "Corpo" })).toEqual({ ok: false, content: CODE_WRITE_MESSAGES.noCommits });

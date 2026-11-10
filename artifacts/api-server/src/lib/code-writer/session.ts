@@ -22,7 +22,7 @@ import {
   type RepoRef,
 } from "./github-git";
 import { CODE_WRITE_MESSAGES, CodeWriteError } from "./messages";
-import { checkCommit, redactCredentials } from "./secrets-check";
+import { checkCommit, findCredential, redactCredentials } from "./secrets-check";
 import { WorkingCopy } from "./working-copy";
 
 /**
@@ -285,6 +285,7 @@ export class CodeTaskSession {
   private async commit(message: string): Promise<ToolResult> {
     const text = message.trim();
     if (text.length < 1 || text.length > CODE_SESSION_LIMITS.maxMessageChars) return fail(CODE_WRITE_MESSAGES.badMessage);
+    if (findCredential(text)) return fail(CODE_WRITE_MESSAGES.credentialText);
     if (this.commits >= CODE_SESSION_LIMITS.maxCommits) return fail(CODE_WRITE_MESSAGES.tooManyCommits);
     const changes = this.wc.pending();
     const bad = checkCommit(changes);
@@ -362,6 +363,7 @@ export class CodeTaskSession {
     const t = title.trim();
     if (t.length < 1 || t.length > CODE_SESSION_LIMITS.maxTitleChars) return fail(CODE_WRITE_MESSAGES.badTitle);
     if (body.length > CODE_SESSION_LIMITS.maxBodyChars) return fail(CODE_WRITE_MESSAGES.badBody);
+    if (findCredential(t) || findCredential(body)) return fail(CODE_WRITE_MESSAGES.credentialText);
     if (!this.branchExists) return fail(CODE_WRITE_MESSAGES.noCommits);
     const existing = await findOpenPull(this.repo, this.branch);
     const pull =

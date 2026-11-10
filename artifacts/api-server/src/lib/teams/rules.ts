@@ -34,6 +34,8 @@ export const TEAM_MESSAGES = {
   skillNodeOnly: (code: string) => `la skill ${code} gira solo sul nodo locale`,
   toolNotUsable: (name: string) => `lo strumento ${name} non può essere usato da una squadra`,
   nodeRoleHasModel: "un ruolo sul nodo non ha un modello cloud",
+  codeUnavailable: "l'app di riferimento non ha il codice collegato tramite l'App GitHub",
+  nodeCodeRead: "un ruolo node non usa la lettura del codice: scegli Nessuno o Scrittura",
 } as const;
 
 export class TeamRuleError extends Error {
@@ -54,6 +56,8 @@ export interface ValidateRolesInput {
   previous: Role[] | null;
   /** Solo istanze: skill specializzate dell'istanza, per codice, con il loro tipo. */
   localSkillCodes?: Map<string, SkillKind>;
+  /** Solo istanze: App di riferimento, letta dal chiamante fuori dalle transazioni. Serve a controllare i ruoli con `code`. */
+  refApp?: { sourceType: string | null; sourceRepo: string | null; sourceInstallationId: number | null };
 }
 
 const skillCodesOf = (role: Role): string[] =>
@@ -66,7 +70,7 @@ function fail(message: string): never {
 }
 
 export async function validateRoles(input: ValidateRolesInput): Promise<void> {
-  const { roles, mode, userId, previous, localSkillCodes } = input;
+  const { roles, mode, userId, previous, localSkillCodes, refApp } = input;
 
   // Forma del manifesto: è la stessa che si rilegge a ogni lettura, quindi un ruolo che non la rispetta
   // (es. strumenti o skill ripetuti) non deve mai essere salvato
@@ -91,6 +95,15 @@ export async function validateRoles(input: ValidateRolesInput): Promise<void> {
     if (skillCodesOf(role).length + localCodesOf(role).length > MAX_SKILLS_PER_ROLE) {
       fail(TEAM_MESSAGES.tooManySkills(role.name));
     }
+  }
+
+  // Codice: i ruoli node non leggono; sull'istanza serve un'App con il codice su GitHub tramite installazione
+  for (const role of roles) {
+    if (role.runsOn === "node" && role.code === "read") fail(TEAM_MESSAGES.nodeCodeRead);
+  }
+  if (mode === "instance" && roles.some((r) => r.code !== "none")) {
+    const ok = refApp && refApp.sourceType === "github" && !!refApp.sourceRepo && refApp.sourceInstallationId != null;
+    if (!ok) fail(TEAM_MESSAGES.codeUnavailable);
   }
 
   // Luogo e modello

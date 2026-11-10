@@ -19,6 +19,7 @@ const trole = (over: Partial<TemplateRole> = {}): TemplateRole => ({
   runsOn: "cloud",
   aiModelId: 1,
   tools: [],
+  code: "none",
   skills: [],
   ...over,
 });
@@ -38,6 +39,14 @@ describe("computeUpdates", () => {
     const items = computeUpdates({ base, current: [trole({ name: "Coordinatore" })], instance: base.map((r) => pin(r)), skillVersions: noSkills });
     expect(items).toEqual([
       { id: "role_changed:capo:name", type: "role_changed", roleKey: "capo", roleName: "Capo", field: "name", from: "Capo", to: "Coordinatore" },
+    ]);
+  });
+
+  it("code cambiato nel modello propone role_changed:<key>:code", () => {
+    const base = [trole()];
+    const items = computeUpdates({ base, current: [trole({ code: "write" })], instance: base.map((r) => pin(r)), skillVersions: noSkills });
+    expect(items).toEqual([
+      { id: "role_changed:capo:code", type: "role_changed", roleKey: "capo", roleName: "Capo", field: "code", from: "none", to: "write" },
     ]);
   });
 

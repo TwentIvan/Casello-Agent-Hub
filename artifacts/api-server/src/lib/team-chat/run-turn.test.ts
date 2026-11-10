@@ -101,8 +101,8 @@ beforeEach(async () => {
   const [skill] = await db.insert(skillsTable).values({ code: "sap.review", name: "Review SAP", kind: "casello" }).returning();
   await db.insert(skillVersionsTable).values({ skillId: skill!.id, version: 1, content: "Contenuto della review SAP" });
   const roles: InstanceRole[] = [
-    { key: "capo", name: "Capo", task: "Coordina", isLead: true, runsOn: "cloud", aiModelId: modelId, tools: [], skills: [], localSkills: [] },
-    { key: "dev", name: "Sviluppatore", task: "Sviluppa", isLead: false, runsOn: "cloud", aiModelId: modelId, tools: [tool!.id], skills: [{ code: "sap.review", version: 1 }], localSkills: [] },
+    { key: "capo", name: "Capo", task: "Coordina", isLead: true, runsOn: "cloud", aiModelId: modelId, tools: [], code: "none", skills: [], localSkills: [] },
+    { key: "dev", name: "Sviluppatore", task: "Sviluppa", isLead: false, runsOn: "cloud", aiModelId: modelId, tools: [tool!.id], code: "none", skills: [{ code: "sap.review", version: 1 }], localSkills: [] },
   ];
   const view = await createInstance(userId, { name: "Squadra ordini", ref: { appId: app!.id, type: "wi", id: "1174" }, roles });
   instanceId = view.id;

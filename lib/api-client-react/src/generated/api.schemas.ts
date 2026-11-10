@@ -3342,6 +3342,18 @@ export const TeamRoleRunsOn = {
 } as const;
 
 /**
+ * Accesso al codice dell'App di riferimento (i ruoli node non usano read)
+ */
+export type TeamRoleCode = typeof TeamRoleCode[keyof typeof TeamRoleCode];
+
+
+export const TeamRoleCode = {
+  none: 'none',
+  read: 'read',
+  write: 'write',
+} as const;
+
+/**
  * Ruolo di un modello di squadra (manifesto in ingresso)
  */
 export interface TeamRole {
@@ -3357,6 +3369,8 @@ export interface TeamRole {
   isLead: boolean;
   runsOn: TeamRoleRunsOn;
   aiModelId: number | null;
+  /** Accesso al codice dell'App di riferimento (i ruoli node non usano read) */
+  code?: TeamRoleCode;
   tools: number[];
   /** @items.pattern ^[a-z0-9][a-z0-9._-]{1,63}$ */
   skills: string[];
@@ -3368,6 +3382,18 @@ export type TeamRoleViewRunsOn = typeof TeamRoleViewRunsOn[keyof typeof TeamRole
 export const TeamRoleViewRunsOn = {
   cloud: 'cloud',
   node: 'node',
+} as const;
+
+/**
+ * Accesso al codice dell'App di riferimento
+ */
+export type TeamRoleViewCode = typeof TeamRoleViewCode[keyof typeof TeamRoleViewCode];
+
+
+export const TeamRoleViewCode = {
+  none: 'none',
+  read: 'read',
+  write: 'write',
 } as const;
 
 export type TeamRoleViewModel = {
@@ -3415,6 +3441,8 @@ export interface TeamRoleView {
   task: string;
   isLead: boolean;
   runsOn: TeamRoleViewRunsOn;
+  /** Accesso al codice dell'App di riferimento */
+  code?: TeamRoleViewCode;
   model: TeamRoleViewModel;
   tools: TeamRoleViewToolsItem[];
   skills: TeamRoleViewSkillsItem[];
@@ -3456,6 +3484,18 @@ export const TeamInstanceRoleRunsOn = {
   node: 'node',
 } as const;
 
+/**
+ * Accesso al codice dell'App di riferimento (i ruoli node non usano read)
+ */
+export type TeamInstanceRoleCode = typeof TeamInstanceRoleCode[keyof typeof TeamInstanceRoleCode];
+
+
+export const TeamInstanceRoleCode = {
+  none: 'none',
+  read: 'read',
+  write: 'write',
+} as const;
+
 export type TeamInstanceRoleSkillsItem = {
   /** @pattern ^[a-z0-9][a-z0-9._-]{1,63}$ */
   code: string;
@@ -3479,6 +3519,8 @@ export interface TeamInstanceRole {
   isLead: boolean;
   runsOn: TeamInstanceRoleRunsOn;
   aiModelId: number | null;
+  /** Accesso al codice dell'App di riferimento (i ruoli node non usano read) */
+  code?: TeamInstanceRoleCode;
   tools: number[];
   skills: TeamInstanceRoleSkillsItem[];
   /**
@@ -3593,6 +3635,7 @@ export const TeamUpdateItemField = {
   runsOn: 'runsOn',
   aiModelId: 'aiModelId',
   tools: 'tools',
+  code: 'code',
 } as const;
 
 /**
@@ -3685,6 +3728,11 @@ export interface TeamPlanTask {
   status: TeamPlanTaskStatus;
   /** @maxLength 300 */
   outcome: string | null;
+  /**
+     * Numero dell'issue del piano dell'App a cui si riferisce il compito
+     * @minimum 1
+     */
+  issue?: number | null;
 }
 
 export interface TeamManualAction {

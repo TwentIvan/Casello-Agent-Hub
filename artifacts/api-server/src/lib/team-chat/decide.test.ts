@@ -37,6 +37,7 @@ const role = (over: Partial<InstanceRole> = {}): InstanceRole => ({
   runsOn: "cloud",
   aiModelId: modelId,
   tools: [],
+  code: "none",
   skills: [],
   localSkills: [],
   ...over,

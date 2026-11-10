@@ -26,6 +26,7 @@ const FIELD_LABELS: Record<NonNullable<TeamUpdateItem["field"]>, string> = {
   runsOn: "dove gira",
   aiModelId: "modello",
   tools: "strumenti",
+  code: "codice",
 };
 
 /** Testo di una voce: cosa cambierebbe applicandola. */

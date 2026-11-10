@@ -3251,6 +3251,8 @@ export const ListTeamTemplatesQueryParams = zod.object({
   "archived": zod.enum(['true', 'false']).optional().describe('`true` per i modelli archiviati (default, solo quelli non archiviati)')
 })
 
+export const listTeamTemplatesResponseRolesItemCodeDefault = `none`;
+
 export const ListTeamTemplatesResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -3264,6 +3266,7 @@ export const ListTeamTemplatesResponseItem = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
+  "code": zod.enum(['none', 'read', 'write']).default(listTeamTemplatesResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3303,6 +3306,7 @@ export const createTeamTemplateBodyRolesItemNameMax = 80;
 
 export const createTeamTemplateBodyRolesItemTaskMax = 8000;
 
+export const createTeamTemplateBodyRolesItemCodeDefault = `none`;
 export const createTeamTemplateBodyRolesItemSkillsItemRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
 
 
@@ -3316,10 +3320,13 @@ export const CreateTeamTemplateBody = zod.object({
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
   "aiModelId": zod.number().nullable(),
+  "code": zod.enum(['none', 'read', 'write']).default(createTeamTemplateBodyRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento (i ruoli node non usano read)'),
   "tools": zod.array(zod.number()),
   "skills": zod.array(zod.string().regex(createTeamTemplateBodyRolesItemSkillsItemRegExp))
 }).describe('Ruolo di un modello di squadra (manifesto in ingresso)'))
 })
+
+export const createTeamTemplateResponseRolesItemCodeDefault = `none`;
 
 export const CreateTeamTemplateResponse = zod.object({
   "id": zod.number(),
@@ -3334,6 +3341,7 @@ export const CreateTeamTemplateResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
+  "code": zod.enum(['none', 'read', 'write']).default(createTeamTemplateResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3367,6 +3375,8 @@ export const GetTeamTemplateParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const getTeamTemplateResponseRolesItemCodeDefault = `none`;
+
 export const GetTeamTemplateResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -3380,6 +3390,7 @@ export const GetTeamTemplateResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
+  "code": zod.enum(['none', 'read', 'write']).default(getTeamTemplateResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3423,6 +3434,7 @@ export const saveTeamTemplateBodyRolesItemNameMax = 80;
 
 export const saveTeamTemplateBodyRolesItemTaskMax = 8000;
 
+export const saveTeamTemplateBodyRolesItemCodeDefault = `none`;
 export const saveTeamTemplateBodyRolesItemSkillsItemRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
 
 
@@ -3436,10 +3448,13 @@ export const SaveTeamTemplateBody = zod.object({
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
   "aiModelId": zod.number().nullable(),
+  "code": zod.enum(['none', 'read', 'write']).default(saveTeamTemplateBodyRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento (i ruoli node non usano read)'),
   "tools": zod.array(zod.number()),
   "skills": zod.array(zod.string().regex(saveTeamTemplateBodyRolesItemSkillsItemRegExp))
 }).describe('Ruolo di un modello di squadra (manifesto in ingresso)'))
 })
+
+export const saveTeamTemplateResponseRolesItemCodeDefault = `none`;
 
 export const SaveTeamTemplateResponse = zod.object({
   "id": zod.number(),
@@ -3454,6 +3469,7 @@ export const SaveTeamTemplateResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
+  "code": zod.enum(['none', 'read', 'write']).default(saveTeamTemplateResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3504,12 +3520,15 @@ export const GetTeamTemplateVersionParams = zod.object({
   "version": zod.coerce.number().min(1)
 })
 
+export const getTeamTemplateVersionResponseCodeDefault = `none`;
+
 export const GetTeamTemplateVersionResponseItem = zod.object({
   "key": zod.string(),
   "name": zod.string(),
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
+  "code": zod.enum(['none', 'read', 'write']).default(getTeamTemplateVersionResponseCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3544,6 +3563,8 @@ export const ListTeamInstancesQueryParams = zod.object({
   "refId": zod.coerce.string().optional()
 })
 
+export const listTeamInstancesResponseRolesItemCodeDefault = `none`;
+
 export const ListTeamInstancesResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -3566,6 +3587,7 @@ export const ListTeamInstancesResponseItem = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
+  "code": zod.enum(['none', 'read', 'write']).default(listTeamInstancesResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3621,6 +3643,7 @@ export const createTeamInstanceBodyRolesItemNameMax = 80;
 
 export const createTeamInstanceBodyRolesItemTaskMax = 8000;
 
+export const createTeamInstanceBodyRolesItemCodeDefault = `none`;
 export const createTeamInstanceBodyRolesItemSkillsItemCodeRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
 
 export const createTeamInstanceBodyRolesItemLocalSkillsItemRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
@@ -3642,6 +3665,7 @@ export const CreateTeamInstanceBody = zod.object({
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
   "aiModelId": zod.number().nullable(),
+  "code": zod.enum(['none', 'read', 'write']).default(createTeamInstanceBodyRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento (i ruoli node non usano read)'),
   "tools": zod.array(zod.number()),
   "skills": zod.array(zod.object({
   "code": zod.string().regex(createTeamInstanceBodyRolesItemSkillsItemCodeRegExp),
@@ -3650,6 +3674,8 @@ export const CreateTeamInstanceBody = zod.object({
   "localSkills": zod.array(zod.string().regex(createTeamInstanceBodyRolesItemLocalSkillsItemRegExp)).describe('Codici delle skill specializzate della squadra usate dal ruolo')
 }).describe('Ruolo di una squadra (manifesto in ingresso, skill fissate a una versione)')).optional().describe('Obbligatori senza modello, ignorati con il modello')
 })
+
+export const createTeamInstanceResponseRolesItemCodeDefault = `none`;
 
 export const CreateTeamInstanceResponse = zod.object({
   "id": zod.number(),
@@ -3673,6 +3699,7 @@ export const CreateTeamInstanceResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
+  "code": zod.enum(['none', 'read', 'write']).default(createTeamInstanceResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3718,6 +3745,8 @@ export const GetTeamInstanceParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const getTeamInstanceResponseRolesItemCodeDefault = `none`;
+
 export const GetTeamInstanceResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -3740,6 +3769,7 @@ export const GetTeamInstanceResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
+  "code": zod.enum(['none', 'read', 'write']).default(getTeamInstanceResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3795,6 +3825,7 @@ export const saveTeamInstanceBodyRolesItemNameMax = 80;
 
 export const saveTeamInstanceBodyRolesItemTaskMax = 8000;
 
+export const saveTeamInstanceBodyRolesItemCodeDefault = `none`;
 export const saveTeamInstanceBodyRolesItemSkillsItemCodeRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
 
 export const saveTeamInstanceBodyRolesItemLocalSkillsItemRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
@@ -3815,6 +3846,7 @@ export const SaveTeamInstanceBody = zod.object({
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
   "aiModelId": zod.number().nullable(),
+  "code": zod.enum(['none', 'read', 'write']).default(saveTeamInstanceBodyRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento (i ruoli node non usano read)'),
   "tools": zod.array(zod.number()),
   "skills": zod.array(zod.object({
   "code": zod.string().regex(saveTeamInstanceBodyRolesItemSkillsItemCodeRegExp),
@@ -3832,6 +3864,8 @@ export const SaveTeamInstanceBody = zod.object({
   "status": zod.enum(['draft', 'active']).optional().describe('Facoltativo e solo uguale allo stato attuale: si attiva con `POST \/team-instances\/{id}\/activate` e una squadra attiva non torna in bozza.'),
   "nodeWorkspace": zod.string().max(saveTeamInstanceBodyNodeWorkspaceMax).nullish().describe('Spazio di lavoro sul nodo: percorso relativo, solo lettere, cifre, `._ -` e `\/`, senza `\/` iniziale né `..` (altrimenti 400 «spazio di lavoro non valido»). Omesso = invariato, null = tolto.')
 })
+
+export const saveTeamInstanceResponseRolesItemCodeDefault = `none`;
 
 export const SaveTeamInstanceResponse = zod.object({
   "id": zod.number(),
@@ -3855,6 +3889,7 @@ export const SaveTeamInstanceResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
+  "code": zod.enum(['none', 'read', 'write']).default(saveTeamInstanceResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3964,6 +3999,8 @@ export const CloseTeamInstanceParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const closeTeamInstanceResponseRolesItemCodeDefault = `none`;
+
 export const CloseTeamInstanceResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -3986,6 +4023,7 @@ export const CloseTeamInstanceResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
+  "code": zod.enum(['none', 'read', 'write']).default(closeTeamInstanceResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -4038,7 +4076,7 @@ export const GetTeamInstanceUpdatesResponse = zod.object({
   "type": zod.enum(['role_added', 'role_removed', 'role_changed', 'skill_added', 'skill_removed', 'skill_version']),
   "roleKey": zod.string(),
   "roleName": zod.string(),
-  "field": zod.enum(['name', 'task', 'isLead', 'runsOn', 'aiModelId', 'tools']).optional(),
+  "field": zod.enum(['name', 'task', 'isLead', 'runsOn', 'aiModelId', 'tools', 'code']).optional(),
   "from": zod.unknown().optional().describe('Valore attuale nella squadra (role_changed)'),
   "to": zod.unknown().optional().describe('Valore proposto dal modello (role_changed) o ruolo da aggiungere (role_added)'),
   "skillCode": zod.string().optional(),
@@ -4066,6 +4104,8 @@ export const ApplyTeamInstanceUpdatesBody = zod.object({
   "ids": zod.array(zod.string().max(applyTeamInstanceUpdatesBodyIdsItemMax)).min(1).max(applyTeamInstanceUpdatesBodyIdsMax).describe('Id delle voci da applicare, senza ripetizioni')
 })
 
+export const applyTeamInstanceUpdatesResponseRolesItemCodeDefault = `none`;
+
 export const ApplyTeamInstanceUpdatesResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -4088,6 +4128,7 @@ export const ApplyTeamInstanceUpdatesResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
+  "code": zod.enum(['none', 'read', 'write']).default(applyTeamInstanceUpdatesResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -4149,6 +4190,8 @@ export const SaveTeamInstanceAsTemplateBody = zod.object({
 })).max(saveTeamInstanceAsTemplateBodyPromoteMax).optional().describe('Skill specializzate da promuovere nel catalogo, con il nuovo codice')
 })
 
+export const saveTeamInstanceAsTemplateResponseRolesItemCodeDefault = `none`;
+
 export const SaveTeamInstanceAsTemplateResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -4162,6 +4205,7 @@ export const SaveTeamInstanceAsTemplateResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
+  "code": zod.enum(['none', 'read', 'write']).default(saveTeamInstanceAsTemplateResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -4206,6 +4250,7 @@ export const getTeamPlanResponseTasksItemOneInstructionsMax = 4000;
 
 export const getTeamPlanResponseTasksItemOneOutcomeMax = 300;
 
+
 export const getTeamPlanResponseManualActionsItemIdMax = 40;
 
 export const getTeamPlanResponseManualActionsItemTextMax = 500;
@@ -4222,7 +4267,8 @@ export const GetTeamPlanResponse = zod.object({
   "roleKey": zod.string().min(1).max(getTeamPlanResponseTasksItemOneRoleKeyMax),
   "instructions": zod.string().max(getTeamPlanResponseTasksItemOneInstructionsMax),
   "status": zod.enum(['planned', 'running', 'waiting_node', 'done', 'blocked', 'failed']),
-  "outcome": zod.string().max(getTeamPlanResponseTasksItemOneOutcomeMax).nullable()
+  "outcome": zod.string().max(getTeamPlanResponseTasksItemOneOutcomeMax).nullable(),
+  "issue": zod.number().min(1).nullish().describe('Numero dell\'issue del piano dell\'App a cui si riferisce il compito')
 }).and(zod.object({
   "updatedAt": zod.coerce.date()
 }))),
@@ -4267,6 +4313,7 @@ export const saveTeamPlanBodyTasksItemInstructionsMax = 4000;
 
 export const saveTeamPlanBodyTasksItemOutcomeMax = 300;
 
+
 export const saveTeamPlanBodyTasksMax = 50;
 
 export const saveTeamPlanBodyManualActionsItemIdMax = 40;
@@ -4287,7 +4334,8 @@ export const SaveTeamPlanBody = zod.object({
   "roleKey": zod.string().min(1).max(saveTeamPlanBodyTasksItemRoleKeyMax),
   "instructions": zod.string().max(saveTeamPlanBodyTasksItemInstructionsMax),
   "status": zod.enum(['planned', 'running', 'waiting_node', 'done', 'blocked', 'failed']),
-  "outcome": zod.string().max(saveTeamPlanBodyTasksItemOutcomeMax).nullable()
+  "outcome": zod.string().max(saveTeamPlanBodyTasksItemOutcomeMax).nullable(),
+  "issue": zod.number().min(1).nullish().describe('Numero dell\'issue del piano dell\'App a cui si riferisce il compito')
 })).max(saveTeamPlanBodyTasksMax),
   "manualActions": zod.array(zod.object({
   "id": zod.string().min(1).max(saveTeamPlanBodyManualActionsItemIdMax),
@@ -4307,6 +4355,7 @@ export const saveTeamPlanResponseTasksItemOneInstructionsMax = 4000;
 
 export const saveTeamPlanResponseTasksItemOneOutcomeMax = 300;
 
+
 export const saveTeamPlanResponseManualActionsItemIdMax = 40;
 
 export const saveTeamPlanResponseManualActionsItemTextMax = 500;
@@ -4323,7 +4372,8 @@ export const SaveTeamPlanResponse = zod.object({
   "roleKey": zod.string().min(1).max(saveTeamPlanResponseTasksItemOneRoleKeyMax),
   "instructions": zod.string().max(saveTeamPlanResponseTasksItemOneInstructionsMax),
   "status": zod.enum(['planned', 'running', 'waiting_node', 'done', 'blocked', 'failed']),
-  "outcome": zod.string().max(saveTeamPlanResponseTasksItemOneOutcomeMax).nullable()
+  "outcome": zod.string().max(saveTeamPlanResponseTasksItemOneOutcomeMax).nullable(),
+  "issue": zod.number().min(1).nullish().describe('Numero dell\'issue del piano dell\'App a cui si riferisce il compito')
 }).and(zod.object({
   "updatedAt": zod.coerce.date()
 }))),
@@ -4359,6 +4409,7 @@ export const markTeamManualActionDoneResponseTasksItemOneInstructionsMax = 4000;
 
 export const markTeamManualActionDoneResponseTasksItemOneOutcomeMax = 300;
 
+
 export const markTeamManualActionDoneResponseManualActionsItemIdMax = 40;
 
 export const markTeamManualActionDoneResponseManualActionsItemTextMax = 500;
@@ -4375,7 +4426,8 @@ export const MarkTeamManualActionDoneResponse = zod.object({
   "roleKey": zod.string().min(1).max(markTeamManualActionDoneResponseTasksItemOneRoleKeyMax),
   "instructions": zod.string().max(markTeamManualActionDoneResponseTasksItemOneInstructionsMax),
   "status": zod.enum(['planned', 'running', 'waiting_node', 'done', 'blocked', 'failed']),
-  "outcome": zod.string().max(markTeamManualActionDoneResponseTasksItemOneOutcomeMax).nullable()
+  "outcome": zod.string().max(markTeamManualActionDoneResponseTasksItemOneOutcomeMax).nullable(),
+  "issue": zod.number().min(1).nullish().describe('Numero dell\'issue del piano dell\'App a cui si riferisce il compito')
 }).and(zod.object({
   "updatedAt": zod.coerce.date()
 }))),
@@ -4400,6 +4452,8 @@ export const ActivateTeamInstanceParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const activateTeamInstanceResponseRolesItemCodeDefault = `none`;
+
 export const ActivateTeamInstanceResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -4422,6 +4476,7 @@ export const ActivateTeamInstanceResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
+  "code": zod.enum(['none', 'read', 'write']).default(activateTeamInstanceResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -4498,6 +4553,8 @@ export const SetTeamBudgetBody = zod.object({
   "monthlyBudgetUsd": zod.number().min(setTeamBudgetBodyMonthlyBudgetUsdMin).max(setTeamBudgetBodyMonthlyBudgetUsdMax).nullable()
 })
 
+export const setTeamBudgetResponseRolesItemCodeDefault = `none`;
+
 export const SetTeamBudgetResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -4520,6 +4577,7 @@ export const SetTeamBudgetResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
+  "code": zod.enum(['none', 'read', 'write']).default(setTeamBudgetResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()

@@ -8809,6 +8809,11 @@ components:
         aiModelId:
           type: integer
           nullable: true
+        code:
+          type: string
+          enum: [none, read, write]
+          default: none
+          description: Accesso al codice dell'App di riferimento (i ruoli node non usano read)
         tools:
           type: array
           items:
@@ -8835,6 +8840,11 @@ components:
         runsOn:
           type: string
           enum: [cloud, node]
+        code:
+          type: string
+          enum: [none, read, write]
+          default: none
+          description: Accesso al codice dell'App di riferimento
         model:
           type: object
           nullable: true
@@ -8958,6 +8968,11 @@ components:
         aiModelId:
           type: integer
           nullable: true
+        code:
+          type: string
+          enum: [none, read, write]
+          default: none
+          description: Accesso al codice dell'App di riferimento (i ruoli node non usano read)
         tools:
           type: array
           items:
@@ -9106,7 +9121,7 @@ components:
           type: string
         field:
           type: string
-          enum: [name, task, isLead, runsOn, aiModelId, tools]
+          enum: [name, task, isLead, runsOn, aiModelId, tools, code]
         from:
           description: Valore attuale nella squadra (role_changed)
         to:
@@ -9183,6 +9198,11 @@ components:
           type: string
           nullable: true
           maxLength: 300
+        issue:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Numero dell'issue del piano dell'App a cui si riferisce il compito
 
     TeamManualAction:
       type: object

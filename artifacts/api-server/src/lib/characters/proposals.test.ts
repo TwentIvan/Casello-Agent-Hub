@@ -53,7 +53,7 @@ let mcpTool: CatalogTool;
 let userTool: CatalogTool;
 let templateId: number;
 
-const role = (over: Partial<TemplateRole> = {}): TemplateRole => ({ key: "capo", name: "Capo", task: "Guida", isLead: true, runsOn: "node", aiModelId: null, tools: [], skills: [], ...over });
+const role = (over: Partial<TemplateRole> = {}): TemplateRole => ({ key: "capo", name: "Capo", task: "Guida", isLead: true, runsOn: "node", aiModelId: null, tools: [], code: "none", skills: [], ...over });
 
 async function conversation(character: Character, subjectType: SubjectType, subjectId: string | null, owner = userId) {
   const [conv] = await db

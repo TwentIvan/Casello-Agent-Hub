@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { TeamRoleCode } from './teamRoleCode';
 import type { TeamRoleRunsOn } from './teamRoleRunsOn';
 
 /**
@@ -23,6 +24,8 @@ export interface TeamRole {
   isLead: boolean;
   runsOn: TeamRoleRunsOn;
   aiModelId: number | null;
+  /** Accesso al codice dell'App di riferimento (i ruoli node non usano read) */
+  code?: TeamRoleCode;
   tools: number[];
   /** @items.pattern ^[a-z0-9][a-z0-9._-]{1,63}$ */
   skills: string[];

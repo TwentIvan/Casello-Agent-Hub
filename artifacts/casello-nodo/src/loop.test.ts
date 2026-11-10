@@ -93,7 +93,7 @@ describe("startLoop", () => {
 
     const [hb] = casello.calls("POST", "/api/node/heartbeat");
     expect(hb.body).toEqual({
-      version: "0.1.0",
+      version: "0.2.0",
       executor: "claude-code",
       skills: ["sap-code-review"],
       workspaceRoot: root,

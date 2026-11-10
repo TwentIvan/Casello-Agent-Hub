@@ -33,4 +33,9 @@ export interface AiAccountUpdate {
      * @nullable
      */
   monthlyBudgetUsd?: number | null;
+  /**
+     * Solo account claude_code_node; null toglie il ripiego
+     * @nullable
+     */
+  fallbackAiModelId?: number | null;
 }

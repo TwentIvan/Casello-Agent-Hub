@@ -17,6 +17,8 @@ export const runStepsTable = pgTable(
     httpStatus: integer("http_status"),
     durationMs: integer("duration_ms"),
     error: text("error"),
+    /** Nota informativa del passo (es. «Claude Code sul nodo «Mac»»), distinta dall'errore. */
+    note: text("note"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [index("run_steps_run_id_position_idx").on(table.runId, table.position)],

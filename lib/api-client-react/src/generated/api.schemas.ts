@@ -762,6 +762,11 @@ export interface RunStep {
   durationMs?: number | null;
   /** @nullable */
   error?: string | null;
+  /**
+     * Nota informativa del passo, distinta dall'errore (es. «Claude Code sul nodo «Mac»» o «Claude Code non disponibile: eseguita con <modello>»)
+     * @nullable
+     */
+  note?: string | null;
   createdAt: string;
 }
 
@@ -2094,6 +2099,7 @@ export const AiProviderProtocol = {
   bedrock: 'bedrock',
   vertex: 'vertex',
   azure: 'azure',
+  claude_code_node: 'claude_code_node',
   unknown: 'unknown',
 } as const;
 
@@ -2121,6 +2127,8 @@ export interface AiProviderInfo {
   defaultBaseUrl: string | null;
   /** L'utente inserisce l'indirizzo (custom, provider non gestiti e gestiti senza indirizzo predefinito) */
   editableBaseUrl: boolean;
+  /** Il provider esegue i turni su un nodo dell'utente (Claude Code); si sceglie il nodo, niente chiave né indirizzo */
+  requiresNode: boolean;
 }
 
 export type AiAccountStatus = typeof AiAccountStatus[keyof typeof AiAccountStatus];
@@ -2136,6 +2144,23 @@ export interface AiAccount {
   id: number;
   name: string;
   provider: AiProvider;
+  /**
+     * Nodo che esegue i turni (solo account claude_code_node); null per gli account cloud
+     * @nullable
+     */
+  nodeId: number | null;
+  /**
+     * Nome del nodo (null se non è un account nodo o il nodo è stato eliminato)
+     * @nullable
+     */
+  nodeName: string | null;
+  /** Il nodo è attivo e sta sondando i turni (ultimi 60 s); sempre false per gli account cloud */
+  nodeTurnReady: boolean;
+  /**
+     * Modello di un account cloud dell'utente a cui vanno i turni se il nodo non risponde; null per i cloud
+     * @nullable
+     */
+  fallbackAiModelId: number | null;
   baseUrl: string;
   /** Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati */
   allowPrivateNetwork: boolean;
@@ -2180,6 +2205,13 @@ export interface AiAccountInput {
   baseUrl?: string | null;
   /** Solo custom e provider non gestiti */
   allowPrivateNetwork?: boolean;
+  /** Obbligatorio per claude_code_node (un nodo attivo dell'utente, senza altro account); vietato per gli altri provider */
+  nodeId?: number;
+  /**
+     * Solo per claude_code_node, modello di ripiego, di un account non nodo dell'utente
+     * @nullable
+     */
+  fallbackAiModelId?: number | null;
 }
 
 export interface OAuthGrant {
@@ -2218,6 +2250,8 @@ export interface Node {
   lastSeenAt: string | null;
   /** Ha comunicato negli ultimi 2 minuti */
   online: boolean;
+  /** Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi) */
+  turnReady: boolean;
 }
 
 export interface NodeCreate {
@@ -2342,6 +2376,74 @@ export interface NodeReport {
      * @maximum 2000000000
      */
   completionTokens?: number;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  sessionId?: string;
+}
+
+export interface NodeTurnPackage {
+  id: number;
+  leaseToken: string;
+  /** Modello per claude (alias o id) */
+  model: string;
+  systemPrompt: string;
+  /** Messaggi del turno con le loro etichette, da passare su stdin */
+  prompt: string;
+  /** Indirizzo del server MCP del turno (`/mcp/turn`) */
+  mcpUrl: string;
+  /** Token `cat_…` del turno per `/mcp/turn`, valido finché il turno è in corso */
+  turnToken: string;
+  maxTurns: number;
+  timeoutMs: number;
+}
+
+export type NodeTurnReportStatus = typeof NodeTurnReportStatus[keyof typeof NodeTurnReportStatus];
+
+
+export const NodeTurnReportStatus = {
+  done: 'done',
+  failed: 'failed',
+} as const;
+
+export interface NodeTurnReport {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  leaseToken: string;
+  status: NodeTurnReportStatus;
+  /**
+     * Risposta di Claude (oltre 20 000 caratteri si tronca)
+     * @maxLength 200000
+     */
+  content?: string;
+  /**
+     * model_unavailable, timeout, usage_limit, not_logged_in, claude_failed, stopped, lease_lost, node_disabled, restart; altro → claude_failed
+     * @maxLength 100
+     */
+  errorCode?: string;
+  /**
+     * @minimum 0
+     * @maximum 2000000000
+     */
+  promptTokens?: number;
+  /**
+     * @minimum 0
+     * @maximum 2000000000
+     */
+  completionTokens?: number;
+  /**
+     * @minimum 0
+     * @maximum 2000000000
+     */
+  cachedTokens?: number;
+  /**
+     * @minimum 0
+     * @maximum 100000
+     */
+  costUsd?: number;
   /**
      * @minLength 1
      * @maxLength 200
@@ -2506,6 +2608,11 @@ export interface AiAccountUpdate {
      * @nullable
      */
   monthlyBudgetUsd?: number | null;
+  /**
+     * Solo account claude_code_node; null toglie il ripiego
+     * @nullable
+     */
+  fallbackAiModelId?: number | null;
 }
 
 /**

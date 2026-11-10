@@ -8,6 +8,7 @@ export const providerProtocolEnum = pgEnum("provider_protocol", [
   "vertex",
   "azure",
   "unknown",
+  "claude_code_node",
 ]);
 
 // managed: esecutore disponibile; coming: protocollo noto senza esecutore; unmanaged: sconosciuto al registro

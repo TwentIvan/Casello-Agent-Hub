@@ -12,7 +12,7 @@ import type { Logger } from "./log";
 const SkillName = NodeHeartbeatBody.shape.skills.element;
 
 /** Versione del pacchetto `casello-nodo` (allineata a package.json, verificata dai test). */
-export const NODE_VERSION = "0.1.0";
+export const NODE_VERSION = "0.2.0";
 export const NODE_EXECUTOR = "claude-code";
 
 async function subdirs(dir: string): Promise<string[]> {

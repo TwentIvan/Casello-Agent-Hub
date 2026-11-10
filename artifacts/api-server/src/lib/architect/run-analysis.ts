@@ -22,6 +22,7 @@ import {
   type App,
 } from "@workspace/db";
 import type { ChatResult } from "../ai/chat-types";
+import { NODE_MODEL_NOT_ALLOWED } from "../ai/choice";
 import { ProviderError } from "../ai/discovery";
 import { errorLogFields, errorStatus, ModelAccessError, modelChat as executorChat, resolveModel, type ResolvedModel } from "../ai/executor";
 import { logger } from "../logger";
@@ -455,6 +456,8 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       if (err instanceof ModelAccessError || err instanceof ProviderError) throw new AnalysisError(err.message);
       throw err;
     }
+    // Scelta già rifiutata all'avvio; un'analisi accodata prima di quel controllo non chiama il nodo
+    if (resolved.kind !== "openai_compatible") throw new AnalysisError(NODE_MODEL_NOT_ALLOWED);
 
     const loaded = await loadSources(app, opts, log);
     tree = loaded.tree;

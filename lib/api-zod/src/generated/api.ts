@@ -175,7 +175,8 @@ export const ListNodesResponseItem = zod.object({
   "workspaceRoot": zod.string().nullable(),
   "maxConcurrent": zod.number(),
   "lastSeenAt": zod.coerce.date().nullable(),
-  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti')
+  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti'),
+  "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)')
 })
 export const ListNodesResponse = zod.array(ListNodesResponseItem)
 
@@ -203,7 +204,8 @@ export const CreateNodeResponse = zod.object({
   "workspaceRoot": zod.string().nullable(),
   "maxConcurrent": zod.number(),
   "lastSeenAt": zod.coerce.date().nullable(),
-  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti')
+  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti'),
+  "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)')
 }),
   "token": zod.string().describe('Valore del token del nodo, mostrato una sola volta')
 })
@@ -238,7 +240,8 @@ export const DisableNodeResponse = zod.object({
   "workspaceRoot": zod.string().nullable(),
   "maxConcurrent": zod.number(),
   "lastSeenAt": zod.coerce.date().nullable(),
-  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti')
+  "online": zod.boolean().describe('Ha comunicato negli ultimi 2 minuti'),
+  "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)')
 })
 
 
@@ -446,6 +449,89 @@ export const NodeGetAttachmentResponse = zod.unknown()
 
 
 /**
+ * Registra la presenza del nodo per i turni (`last_turn_poll_at`) e prende il turno `queued` più vecchio destinato al nodo, portandolo a `running` con una lease di 2 minuti. Senza turni attende fino a 25 secondi un avviso e ritenta una volta; poi 204. Corpo vuoto (`{}`). 40 al minuto per nodo.
+ * @summary Prende un turno delegato al nodo
+ */
+export const NodeTurnClaimResponse = zod.object({
+  "id": zod.number(),
+  "leaseToken": zod.string(),
+  "model": zod.string().describe('Modello per claude (alias o id)'),
+  "systemPrompt": zod.string(),
+  "prompt": zod.string().describe('Messaggi del turno con le loro etichette, da passare su stdin'),
+  "mcpUrl": zod.string().describe('Indirizzo del server MCP del turno (`\/mcp\/turn`)'),
+  "turnToken": zod.string().describe('Token `cat_…` del turno per `\/mcp\/turn`, valido finché il turno è in corso'),
+  "maxTurns": zod.number(),
+  "timeoutMs": zod.number()
+})
+
+
+/**
+ * Rinnova di 2 minuti la lease del turno preso dal nodo. Turno chiuso, annullato o lease diversa o scaduta → 409 (il nodo termina claude). 6 al minuto per turno.
+ * @summary Rinnova la lease di un turno
+ */
+export const NodeTurnPingParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const nodeTurnPingBodyLeaseTokenMax = 200;
+
+
+
+export const NodeTurnPingBody = zod.object({
+  "leaseToken": zod.string().min(1).max(nodeTurnPingBodyLeaseTokenMax)
+})
+
+export const NodeTurnPingResponse = zod.object({
+  "leaseExpiresAt": zod.coerce.date()
+})
+
+
+/**
+ * Chiude il turno una volta sola (lease del claim e turno `running`), altrimenti 409. `content` oltre 20 000 caratteri si tronca; un `errorCode` fuori dall'elenco si registra `claude_failed`. Token interi ≥ 0.
+ * @summary Riferisce l'esito di un turno
+ */
+export const NodeTurnReportParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const nodeTurnReportBodyLeaseTokenMax = 200;
+
+export const nodeTurnReportBodyContentMax = 200000;
+
+export const nodeTurnReportBodyErrorCodeMax = 100;
+
+export const nodeTurnReportBodyPromptTokensMin = 0;
+export const nodeTurnReportBodyPromptTokensMax = 2000000000;
+
+export const nodeTurnReportBodyCompletionTokensMin = 0;
+export const nodeTurnReportBodyCompletionTokensMax = 2000000000;
+
+export const nodeTurnReportBodyCachedTokensMin = 0;
+export const nodeTurnReportBodyCachedTokensMax = 2000000000;
+
+export const nodeTurnReportBodyCostUsdMin = 0;
+export const nodeTurnReportBodyCostUsdMax = 100000;
+
+export const nodeTurnReportBodySessionIdMax = 200;
+
+
+
+export const NodeTurnReportBody = zod.object({
+  "leaseToken": zod.string().min(1).max(nodeTurnReportBodyLeaseTokenMax),
+  "status": zod.enum(['done', 'failed']),
+  "content": zod.string().max(nodeTurnReportBodyContentMax).optional().describe('Risposta di Claude (oltre 20 000 caratteri si tronca)'),
+  "errorCode": zod.string().max(nodeTurnReportBodyErrorCodeMax).optional().describe('model_unavailable, timeout, usage_limit, not_logged_in, claude_failed, stopped, lease_lost, node_disabled, restart; altro → claude_failed'),
+  "promptTokens": zod.number().min(nodeTurnReportBodyPromptTokensMin).max(nodeTurnReportBodyPromptTokensMax).optional(),
+  "completionTokens": zod.number().min(nodeTurnReportBodyCompletionTokensMin).max(nodeTurnReportBodyCompletionTokensMax).optional(),
+  "cachedTokens": zod.number().min(nodeTurnReportBodyCachedTokensMin).max(nodeTurnReportBodyCachedTokensMax).optional(),
+  "costUsd": zod.number().min(nodeTurnReportBodyCostUsdMin).max(nodeTurnReportBodyCostUsdMax).optional(),
+  "sessionId": zod.string().min(1).max(nodeTurnReportBodySessionIdMax).optional()
+})
+
+export const NodeTurnReportResponse = zod.void()
+
+
+/**
  * Modello proposto per gli agenti che Casello crea (agente generale di un'app nuova, agenti approvati dall'architetto, agenti creati senza modello). Null se non impostato o se il modello è stato eliminato. Solo con il login: con un token risponde 403.
  * @summary Modello predefinito dell'utente
  */
@@ -455,7 +541,7 @@ export const GetDefaultModelResponse = zod.object({
 
 
 /**
- * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti) e non di un account Claude Code (nodo) (400); null lo toglie. Solo con il login: con un token risponde 403.
  * @summary Imposta o toglie il modello predefinito dell'utente
  */
 export const SetDefaultModelBody = zod.object({
@@ -477,7 +563,7 @@ export const GetCentralinoModelResponse = zod.object({
 
 
 /**
- * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+ * Il modello deve essere di un account AI dell'utente (400 "modello non disponibile" altrimenti) e non di un account Claude Code (nodo) (400); null lo toglie. Solo con il login: con un token risponde 403.
  * @summary Imposta o toglie il modello del centralino
  */
 export const SetCentralinoModelBody = zod.object({
@@ -1487,6 +1573,7 @@ export const ListRunStepsResponseItem = zod.object({
   "httpStatus": zod.number().nullish(),
   "durationMs": zod.number().nullish(),
   "error": zod.string().nullish(),
+  "note": zod.string().nullish().describe('Nota informativa del passo, distinta dall\'errore (es. «Claude Code sul nodo «Mac»» o «Claude Code non disponibile: eseguita con <modello>»)'),
   "createdAt": zod.coerce.date()
 })
 export const ListRunStepsResponse = zod.array(ListRunStepsResponseItem)
@@ -4163,10 +4250,11 @@ export const listAiProvidersResponseSlugRegExp = new RegExp('^[a-z0-9_-]{1,64}$'
 export const ListAiProvidersResponseItem = zod.object({
   "slug": zod.string().regex(listAiProvidersResponseSlugRegExp).describe('Slug di un provider della tabella providers'),
   "name": zod.string(),
-  "protocol": zod.enum(['openai_compatible', 'anthropic', 'bedrock', 'vertex', 'azure', 'unknown']),
+  "protocol": zod.enum(['openai_compatible', 'anthropic', 'bedrock', 'vertex', 'azure', 'claude_code_node', 'unknown']),
   "status": zod.enum(['managed', 'coming', 'unmanaged']).describe('managed: esecutore disponibile; coming: protocollo noto ancora senza esecutore (non selezionabile); unmanaged: sconosciuto al registro, configurabile come compatibile OpenAI con indirizzo dell\'utente'),
   "defaultBaseUrl": zod.string().nullable().describe('Indirizzo predefinito; null se lo inserisce l\'utente'),
-  "editableBaseUrl": zod.boolean().describe('L\'utente inserisce l\'indirizzo (custom, provider non gestiti e gestiti senza indirizzo predefinito)')
+  "editableBaseUrl": zod.boolean().describe('L\'utente inserisce l\'indirizzo (custom, provider non gestiti e gestiti senza indirizzo predefinito)'),
+  "requiresNode": zod.boolean().describe('Il provider esegue i turni su un nodo dell\'utente (Claude Code); si sceglie il nodo, niente chiave né indirizzo')
 })
 export const ListAiProvidersResponse = zod.array(ListAiProvidersResponseItem)
 
@@ -4182,6 +4270,10 @@ export const ListAiAccountsResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "provider": zod.string().regex(listAiAccountsResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
+  "nodeId": zod.number().nullable().describe('Nodo che esegue i turni (solo account claude_code_node); null per gli account cloud'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se non è un account nodo o il nodo è stato eliminato)'),
+  "nodeTurnReady": zod.boolean().describe('Il nodo è attivo e sta sondando i turni (ultimi 60 s); sempre false per gli account cloud'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di un account cloud dell\'utente a cui vanno i turni se il nodo non risponde; null per i cloud'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -4213,7 +4305,9 @@ export const CreateAiAccountBody = zod.object({
   "provider": zod.string().regex(createAiAccountBodyProviderRegExp).describe('Slug di un provider della tabella providers'),
   "apiKey": zod.string().max(createAiAccountBodyApiKeyMax).nullish().describe('Chiave del provider (solo scrittura, salvata cifrata); vuota solo per custom'),
   "baseUrl": zod.string().max(createAiAccountBodyBaseUrlMax).nullish().describe('Obbligatorio per custom, provider non gestiti e gestiti senza indirizzo predefinito; gli altri usano il base URL predefinito'),
-  "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom e provider non gestiti')
+  "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom e provider non gestiti'),
+  "nodeId": zod.number().optional().describe('Obbligatorio per claude_code_node (un nodo attivo dell\'utente, senza altro account); vietato per gli altri provider'),
+  "fallbackAiModelId": zod.number().nullish().describe('Solo per claude_code_node, modello di ripiego, di un account non nodo dell\'utente')
 })
 
 export const createAiAccountResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
@@ -4223,6 +4317,10 @@ export const CreateAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "provider": zod.string().regex(createAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
+  "nodeId": zod.number().nullable().describe('Nodo che esegue i turni (solo account claude_code_node); null per gli account cloud'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se non è un account nodo o il nodo è stato eliminato)'),
+  "nodeTurnReady": zod.boolean().describe('Il nodo è attivo e sta sondando i turni (ultimi 60 s); sempre false per gli account cloud'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di un account cloud dell\'utente a cui vanno i turni se il nodo non risponde; null per i cloud'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -4259,7 +4357,8 @@ export const UpdateAiAccountBody = zod.object({
   "apiKey": zod.string().max(updateAiAccountBodyApiKeyMax).nullish().describe('Assente o \"\" = invariata; null la rimuove (solo custom); un valore la sostituisce'),
   "baseUrl": zod.string().min(1).max(updateAiAccountBodyBaseUrlMax).optional().describe('Solo se il provider ha l\'indirizzo modificabile (vedi AiProviderInfo.editableBaseUrl)'),
   "allowPrivateNetwork": zod.boolean().optional().describe('Solo custom e provider non gestiti'),
-  "monthlyBudgetUsd": zod.number().min(updateAiAccountBodyMonthlyBudgetUsdMin).max(updateAiAccountBodyMonthlyBudgetUsdMax).nullish().describe('Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite')
+  "monthlyBudgetUsd": zod.number().min(updateAiAccountBodyMonthlyBudgetUsdMin).max(updateAiAccountBodyMonthlyBudgetUsdMax).nullish().describe('Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite'),
+  "fallbackAiModelId": zod.number().nullish().describe('Solo account claude_code_node; null toglie il ripiego')
 })
 
 export const updateAiAccountResponseProviderRegExp = new RegExp('^[a-z0-9_-]{1,64}$');
@@ -4269,6 +4368,10 @@ export const UpdateAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "provider": zod.string().regex(updateAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
+  "nodeId": zod.number().nullable().describe('Nodo che esegue i turni (solo account claude_code_node); null per gli account cloud'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se non è un account nodo o il nodo è stato eliminato)'),
+  "nodeTurnReady": zod.boolean().describe('Il nodo è attivo e sta sondando i turni (ultimi 60 s); sempre false per gli account cloud'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di un account cloud dell\'utente a cui vanno i turni se il nodo non risponde; null per i cloud'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -4307,6 +4410,10 @@ export const VerifyAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "provider": zod.string().regex(verifyAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
+  "nodeId": zod.number().nullable().describe('Nodo che esegue i turni (solo account claude_code_node); null per gli account cloud'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se non è un account nodo o il nodo è stato eliminato)'),
+  "nodeTurnReady": zod.boolean().describe('Il nodo è attivo e sta sondando i turni (ultimi 60 s); sempre false per gli account cloud'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di un account cloud dell\'utente a cui vanno i turni se il nodo non risponde; null per i cloud'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -4333,6 +4440,10 @@ export const SetDefaultAiAccountResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "provider": zod.string().regex(setDefaultAiAccountResponseProviderRegExp).describe('Slug di un provider della tabella providers'),
+  "nodeId": zod.number().nullable().describe('Nodo che esegue i turni (solo account claude_code_node); null per gli account cloud'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se non è un account nodo o il nodo è stato eliminato)'),
+  "nodeTurnReady": zod.boolean().describe('Il nodo è attivo e sta sondando i turni (ultimi 60 s); sempre false per gli account cloud'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di un account cloud dell\'utente a cui vanno i turni se il nodo non risponde; null per i cloud'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -4481,7 +4592,7 @@ export const UpdateAiModelResponse = zod.object({
 
 
 /**
- * Solo per i modelli degli account dell'utente. Una chiamata con un messaggio minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la disponibilità. Massimo 5 prove al minuto per IP.
+ * Solo per i modelli degli account dell'utente. Una chiamata con un messaggio minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la disponibilità. Massimo 5 prove al minuto per IP. I modelli di un account Claude Code (nodo) non si provano (400): si usa «Verifica» sull'account.
  * @summary Prova un modello con una chiamata da 1 token
  */
 export const ProbeAiModelParams = zod.object({
@@ -4528,6 +4639,10 @@ export const ListAiModelsResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "provider": zod.string().regex(listAiModelsResponseAccountProviderRegExp).describe('Slug di un provider della tabella providers'),
+  "nodeId": zod.number().nullable().describe('Nodo che esegue i turni (solo account claude_code_node); null per gli account cloud'),
+  "nodeName": zod.string().nullable().describe('Nome del nodo (null se non è un account nodo o il nodo è stato eliminato)'),
+  "nodeTurnReady": zod.boolean().describe('Il nodo è attivo e sta sondando i turni (ultimi 60 s); sempre false per gli account cloud'),
+  "fallbackAiModelId": zod.number().nullable().describe('Modello di un account cloud dell\'utente a cui vanno i turni se il nodo non risponde; null per i cloud'),
   "baseUrl": zod.string(),
   "allowPrivateNetwork": zod.boolean().describe('Consente http e indirizzi privati (solo custom e provider non gestiti); loopback, link-local e metadati restano vietati'),
   "isDefault": zod.boolean(),
@@ -4704,7 +4819,7 @@ export const listCatalogProvidersResponseSlugRegExp = new RegExp('^[a-z0-9_-]{1,
 export const ListCatalogProvidersResponseItem = zod.object({
   "slug": zod.string().regex(listCatalogProvidersResponseSlugRegExp).describe('Slug di un provider della tabella providers'),
   "name": zod.string(),
-  "protocol": zod.enum(['openai_compatible', 'anthropic', 'bedrock', 'vertex', 'azure', 'unknown']),
+  "protocol": zod.enum(['openai_compatible', 'anthropic', 'bedrock', 'vertex', 'azure', 'claude_code_node', 'unknown']),
   "status": zod.enum(['managed', 'coming', 'unmanaged']).describe('managed: esecutore disponibile; coming: protocollo noto ancora senza esecutore (non selezionabile); unmanaged: sconosciuto al registro, configurabile come compatibile OpenAI con indirizzo dell\'utente'),
   "origin": zod.enum(['registry', 'discovered']),
   "firstSeenAt": zod.coerce.date(),

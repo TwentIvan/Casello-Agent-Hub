@@ -5,6 +5,7 @@ import {
   aiModelsTable,
   appsTable,
   appToolsTable,
+  nodesTable,
   runsTable,
   runStepsTable,
   type Agent,
@@ -12,9 +13,12 @@ import {
   type Run,
 } from "@workspace/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import type { ChatCompletionFunctionTool, ChatCompletionTool } from "openai/resources/chat/completions";
 import { enqueueAction } from "./actions/queue";
 import { PROPOSE_TOOL_NAME, handlePropose, proposalEligible, proposeTool } from "./actions/propose";
+import { dispatchAgentCall } from "./agent-dispatch";
 import {
+  DEFAULT_LIMITS,
   QUEUE_FAILED,
   runAgentLoop,
   type LoopDeps,
@@ -23,7 +27,9 @@ import {
   type QueueActionResult,
   type StepRecord,
 } from "./agent-loop";
+import { resolveModel, type ResolvedModel } from "./ai/executor";
 import { runBudgetBlock } from "./budget";
+import { delegateTurn } from "./node-turns/delegate";
 import { logger } from "./logger";
 import { loopModelCallError, modelChatDeps, newUsage, stepWriter, type LoopUsage } from "./loop-wiring";
 import { ESCALATION_TOOL_NAME, escalationTool, handleEscalation, productLead } from "./escalation";
@@ -345,38 +351,20 @@ export function modelCallError(runId: number, err: unknown): Error {
   return loopModelCallError({ runId }, err);
 }
 
-/**
- * Esegue il ciclo dell'agente dallo stato dato e salva l'esito nella run.
- * Token, costo e durata si sommano a quelli già registrati.
- */
-async function driveLoop(
-  ctx: RunContext,
-  state: LoopState,
-  segmentStart: number,
-  writeStep: (step: StepRecord) => Promise<void>,
-  usage: SegmentUsage,
-  abort: AbortSignal,
-  limits?: Partial<LoopLimits>,
-): Promise<void> {
-  const runId = ctx.run.id;
-  // Limiti del ruolo, poi quelli passati dall'avvio (test)
-  const loopLimits: Partial<LoopLimits> = { ...runLimitsFor(ctx.agent), ...limits };
-  const functionTools = roleFunctionTools(
-    ctx.tools.filter((t) => !isInternalTool(t)),
-    ctx.tools.filter(isInternalTool),
-  );
-  const aiModelId = runModelId(ctx);
-  // Modello dell'agente (chi configura paga), risolto alla prima chiamata
-  const chat = modelChatDeps({
-    aiModelId,
-    functionTools,
-    caller: "run-executor",
-    usage,
-    signal: abort,
-    logContext: { runId },
-  });
+type ToolDeps = Pick<LoopDeps, "tools" | "executeTool" | "queueAction" | "onStep">;
 
-  // Proprietario delle azioni accodate: chi possiede l'account AI del modello della run (chi configura paga)
+/**
+ * Strumenti della run (esecuzione, coda delle azioni, scrittura dei passi), gli stessi per il ciclo cloud e per il
+ * dispatcher del turno delegato al nodo. Il proprietario delle azioni accodate è chi possiede l'account AI del modello
+ * `aiModelId` (chi configura paga).
+ */
+function runToolDeps(
+  ctx: RunContext,
+  aiModelId: number,
+  writeStep: (step: StepRecord) => Promise<void>,
+  abort: AbortSignal,
+): ToolDeps {
+  const runId = ctx.run.id;
   let owner: Promise<number | null> | null = null;
   const ownerOf = async (): Promise<number | null> => {
     owner ??= modelOwner(aiModelId);
@@ -413,9 +401,7 @@ async function driveLoop(
       return { ok: false, message: QUEUE_FAILED };
     }
   };
-
-  const deps: LoopDeps = {
-    chat,
+  return {
     tools: ctx.tools,
     executeTool: (tool, args) => {
       if (!isInternalTool(tool)) return runTool(ctx, tool, args, abort);
@@ -429,12 +415,21 @@ async function driveLoop(
     },
     queueAction,
     onStep: writeStep,
-    limits: loopLimits,
-    signal: abort,
   };
+}
 
-  const outcome = await runAgentLoop(state, deps);
+/** Strumenti offerti al modello (o a Claude Code): quelli dell'app più gli interni (`proponi`, segnalazione). */
+function runFunctionTools(ctx: RunContext): ChatCompletionTool[] {
+  return roleFunctionTools(
+    ctx.tools.filter((t) => !isInternalTool(t)),
+    ctx.tools.filter(isInternalTool),
+  );
+}
 
+type RunEnd = { status: "succeeded"; output: string } | { status: "failed"; error: string };
+
+/** Chiude la run (solo se ancora `running`) con l'esito e i totali: segmenti precedenti più questo. */
+async function finishRun(ctx: RunContext, segmentStart: number, usage: SegmentUsage, end: RunEnd): Promise<void> {
   const totals = {
     promptTokens: (ctx.run.promptTokens ?? 0) + usage.promptTokens,
     completionTokens: (ctx.run.completionTokens ?? 0) + usage.completionTokens,
@@ -442,37 +437,217 @@ async function driveLoop(
     costUsd: totalCost(ctx.run, usage),
     durationMs: (ctx.run.durationMs ?? 0) + (Date.now() - segmentStart),
   };
+  await db
+    .update(runsTable)
+    .set(
+      end.status === "succeeded"
+        ? { ...totals, status: "succeeded", output: end.output, finishedAt: new Date() }
+        : { ...totals, status: "failed", errorMessage: end.error, finishedAt: new Date() },
+    )
+    .where(and(eq(runsTable.id, ctx.run.id), eq(runsTable.status, "running")));
+  clearUserToken(ctx.run.id);
+}
+
+/** Modello risolto per scegliere l'esecutore; null se non si risolve (l'errore lo dà il ciclo cloud come passo `model`). */
+async function resolveOrNull(aiModelId: number): Promise<ResolvedModel | null> {
+  try {
+    return await resolveModel(aiModelId, { userId: null, mustOwn: false });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Esegue il turno della run sull'esecutore del suo modello e salva l'esito: Claude Code sul nodo per un modello
+ * `kind: "node"`, altrimenti il ciclo dell'agente. Token, costo e durata si sommano a quelli già registrati.
+ */
+async function driveLoop(
+  ctx: RunContext,
+  state: LoopState,
+  segmentStart: number,
+  writeStep: (step: StepRecord) => Promise<void>,
+  usage: SegmentUsage,
+  abort: AbortSignal,
+  limits?: Partial<LoopLimits>,
+): Promise<void> {
+  const aiModelId = runModelId(ctx);
+  const resolved = await resolveOrNull(aiModelId);
+  if (resolved?.kind === "node") {
+    return driveNodeTurn(ctx, state, segmentStart, writeStep, usage, abort, resolved, limits);
+  }
+  return driveCloudLoop(ctx, state, segmentStart, writeStep, usage, abort, aiModelId, resolved, limits);
+}
+
+/** Ciclo dell'agente sul modello cloud `aiModelId` (già risolto, se possibile). */
+async function driveCloudLoop(
+  ctx: RunContext,
+  state: LoopState,
+  segmentStart: number,
+  writeStep: (step: StepRecord) => Promise<void>,
+  usage: SegmentUsage,
+  abort: AbortSignal,
+  aiModelId: number,
+  resolved: ResolvedModel | null,
+  limits?: Partial<LoopLimits>,
+): Promise<void> {
+  const runId = ctx.run.id;
+  // Limiti del ruolo, poi quelli passati dall'avvio (test)
+  const loopLimits: Partial<LoopLimits> = { ...runLimitsFor(ctx.agent), ...limits };
+  // Modello dell'agente (chi configura paga)
+  const chat = modelChatDeps({
+    aiModelId,
+    functionTools: runFunctionTools(ctx),
+    caller: "run-executor",
+    usage,
+    signal: abort,
+    logContext: { runId },
+    ...(resolved ? { resolved } : {}),
+  });
+
+  const outcome = await runAgentLoop(state, {
+    ...runToolDeps(ctx, aiModelId, writeStep, abort),
+    chat,
+    limits: loopLimits,
+    signal: abort,
+  });
 
   switch (outcome.type) {
     case "finished":
-      await db
-        .update(runsTable)
-        .set({
-          ...totals,
-          status: "succeeded",
-          output: outcome.content,
-          finishedAt: new Date(),
-        })
-        .where(and(eq(runsTable.id, runId), eq(runsTable.status, "running")));
-      clearUserToken(runId);
-      return;
+      return finishRun(ctx, segmentStart, usage, { status: "succeeded", output: outcome.content });
     case "failed":
-      await db
-        .update(runsTable)
-        .set({
-          ...totals,
-          status: "failed",
-          errorMessage: outcome.error,
-          finishedAt: new Date(),
-        })
-        .where(and(eq(runsTable.id, runId), eq(runsTable.status, "running")));
-      clearUserToken(runId);
-      return;
+      return finishRun(ctx, segmentStart, usage, { status: "failed", error: outcome.error });
     case "cancelled":
       // Lo stato lo ha già scritto cancelRun: qui si registra solo l'uso del segmento
       await writeCancelledUsage(ctx.run, segmentStart, usage);
       clearUserToken(runId);
       return;
+  }
+}
+
+/** Tempo massimo di Claude Code per il turno di una run: più ampio per il Responsabile di prodotto. */
+export const RUN_NODE_TIMEOUT_MS = 300_000;
+export const PRODUCT_LEAD_NODE_TIMEOUT_MS = 600_000;
+
+/** Token e costo riferiti dal nodo, sommati all'uso del segmento (costo null con token → parziale). */
+function addNodeUsage(
+  usage: SegmentUsage,
+  r: { promptTokens: number; completionTokens: number; cachedTokens: number; costUsd: string | null },
+): void {
+  usage.promptTokens += r.promptTokens;
+  usage.completionTokens += r.completionTokens;
+  usage.cachedTokens += r.cachedTokens;
+  const cost = r.costUsd === null ? NaN : Number(r.costUsd);
+  if (Number.isFinite(cost)) usage.costUsd += cost;
+  else if (r.promptTokens + r.completionTokens > 0) usage.costPartial = true;
+}
+
+async function nodeNote(nodeId: number | null): Promise<string | undefined> {
+  if (nodeId === null) return undefined;
+  const [node] = await db.select({ name: nodesTable.name }).from(nodesTable).where(eq(nodesTable.id, nodeId)).limit(1);
+  return node ? `Claude Code sul nodo «${node.name}»` : undefined;
+}
+
+/**
+ * Modello di ripiego dell'account nodo, se usabile per questa run: dello stesso proprietario, cloud, risolvibile e
+ * senza tetti raggiunti (`runBudgetBlock` come alla partenza della run). Null altrimenti.
+ */
+async function usableRunFallback(ctx: RunContext, node: ResolvedModel): Promise<{ resolved: ResolvedModel; name: string } | null> {
+  const id = node.fallbackAiModelId;
+  if (id === null) return null;
+  let fallback: ResolvedModel;
+  try {
+    fallback = await resolveModel(id, { userId: node.ownerUserId, mustOwn: true });
+  } catch (err) {
+    logger.warn({ fallbackAiModelId: id, errName: err instanceof Error ? err.name : "unknown" }, "Modello di ripiego non usabile");
+    return null;
+  }
+  if (fallback.kind !== "openai_compatible") return null;
+  if ((await runBudgetBlock({ ...ctx.agent, aiModelId: id })) !== null) return null;
+  const [row] = await db
+    .select({ displayName: aiModelsTable.displayName })
+    .from(aiModelsTable)
+    .where(eq(aiModelsTable.id, id))
+    .limit(1);
+  return { resolved: fallback, name: row?.displayName || fallback.modelId };
+}
+
+/**
+ * Turno della run delegato a Claude Code sul nodo (spec §5 «Run degli agenti»): stessi messaggi iniziali e stessi
+ * strumenti del ciclo cloud, chiamate smistate da `dispatchAgentCall` (passi `tool`/`queued` mentre Claude lavora),
+ * a fine turno un passo `model` con la nota del nodo. Nodo non disponibile → ripiego sul modello cloud dell'account
+ * (run riassegnata a quel modello) o run fallita col messaggio fisso del nodo.
+ */
+async function driveNodeTurn(
+  ctx: RunContext,
+  state: LoopState,
+  segmentStart: number,
+  writeStep: (step: StepRecord) => Promise<void>,
+  usage: SegmentUsage,
+  abort: AbortSignal,
+  resolved: ResolvedModel,
+  limits?: Partial<LoopLimits>,
+): Promise<void> {
+  const runId = ctx.run.id;
+  const deps = runToolDeps(ctx, resolved.aiModelId, writeStep, abort);
+  const t0 = Date.now();
+  const outcome = await delegateTurn({
+    resolved,
+    userId: resolved.ownerUserId,
+    consumer: "run",
+    refId: runId,
+    messages: state.messages,
+    tools: runFunctionTools(ctx).filter((t): t is ChatCompletionFunctionTool => t.type === "function"),
+    dispatch: (call) => dispatchAgentCall(call, deps),
+    // Giri del ciclo cloud più la risposta finale
+    maxTurns: (runLimitsFor(ctx.agent).maxRounds ?? DEFAULT_LIMITS.maxRounds) + 1,
+    timeoutMs: ctx.agent.role === "general" ? PRODUCT_LEAD_NODE_TIMEOUT_MS : RUN_NODE_TIMEOUT_MS,
+    signal: abort,
+  });
+  const durationMs = Date.now() - t0;
+
+  switch (outcome.kind) {
+    case "done":
+      addNodeUsage(usage, outcome);
+      // Report arrivato insieme all'annullamento: la run è già `cancelled`, si registra solo l'uso
+      if (abort.aborted) {
+        await writeCancelledUsage(ctx.run, segmentStart, usage);
+        clearUserToken(runId);
+        return;
+      }
+      await writeStep({ type: "model", ok: true, durationMs, note: await nodeNote(resolved.nodeId) });
+      return finishRun(ctx, segmentStart, usage, { status: "succeeded", output: outcome.content });
+    case "failed":
+      addNodeUsage(usage, outcome);
+      await writeStep({ type: "model", ok: false, durationMs, error: outcome.error, note: await nodeNote(resolved.nodeId) });
+      return finishRun(ctx, segmentStart, usage, { status: "failed", error: outcome.error });
+    case "cancelled":
+      await writeCancelledUsage(ctx.run, segmentStart, usage);
+      clearUserToken(runId);
+      return;
+    case "fallback": {
+      const fallback = await usableRunFallback(ctx, resolved);
+      logger.info({ runId, reason: outcome.reason, fallback: fallback !== null }, "Run senza Claude Code");
+      if (!fallback) {
+        await writeStep({ type: "model", ok: false, durationMs, error: outcome.message });
+        return finishRun(ctx, segmentStart, usage, { status: "failed", error: outcome.message });
+      }
+      const fallbackId = fallback.resolved.aiModelId;
+      // La spesa va all'account del ripiego: la run ne prende il modello
+      const [moved] = await db
+        .update(runsTable)
+        .set({ aiModelId: fallbackId })
+        .where(and(eq(runsTable.id, runId), eq(runsTable.status, "running")))
+        .returning({ id: runsTable.id });
+      if (!moved) {
+        // Annullata nel frattempo
+        await writeCancelledUsage(ctx.run, segmentStart, usage);
+        clearUserToken(runId);
+        return;
+      }
+      await writeStep({ type: "model", ok: true, durationMs, note: `Claude Code non disponibile: eseguita con ${fallback.name}` });
+      const fallbackCtx: RunContext = { ...ctx, run: { ...ctx.run, aiModelId: fallbackId } };
+      return driveCloudLoop(fallbackCtx, state, segmentStart, writeStep, usage, abort, fallbackId, fallback.resolved, limits);
+    }
   }
 }
 

@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { getListAiModelsQueryKey, useListAiModels } from "@workspace/api-client-react";
+import { withoutNodeModels } from "@/lib/node-models";
 
 /** Modelli selezionabili dall'utente (dei suoi account), raggruppati per account. */
 export function useAiModelGroups() {
@@ -9,11 +10,13 @@ export function useAiModelGroups() {
 /**
  * Modello da preselezionare: quello consigliato (`recommended`) dell'account predefinito; se nessun account
  * è predefinito del primo gruppo con account non in errore, poi di qualsiasi
- * gruppo. null finché i modelli non sono arrivati o se non ce ne sono.
+ * gruppo. null finché i modelli non sono arrivati o se non ce ne sono. `cloudOnly`: senza i modelli Claude Code (nodo).
  */
-export function useDefaultAiModelId(): number | null {
+export function useDefaultAiModelId(opts: { cloudOnly?: boolean } = {}): number | null {
   const groups = useAiModelGroups();
-  const data = groups.data ?? [];
+  const all = groups.data ?? [];
+  // Consumatori solo cloud: mai preselezionare un modello Claude Code (nodo)
+  const data = opts.cloudOnly ? withoutNodeModels(all) : all;
   const hasSelectable = (g: (typeof data)[number]) => g.models.some((m) => m.selectable);
   const preferred = data.find((g) => g.account.isDefault && hasSelectable(g));
   // In mancanza del predefinito si preferisce un account non in errore

@@ -2,10 +2,15 @@
 // token ed eliminazione. Un nodo è dell'utente che lo registra; quello di un altro utente non esiste (null).
 // Disattivare, eliminare o rigenerare il token ferma i compiti che il nodo ha in carico: nella stessa transazione (riga
 // del nodo bloccata) chiudono `failed` «nodo disattivato» con la lease tolta, dopo il commit PLAN, evento e turno del capo.
+// Lo stesso vale per i turni delegati al nodo (`node_turns`): chiudono `failed` `node_disabled`, l'attesa di chi li ha
+// delegati si risolve dopo il commit.
 
 import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
 import { db, apiTokensTable, nodesTable, teamTasksTable, type Node, type TeamTaskRow } from "@workspace/db";
 import { createNodeToken } from "../api-tokens";
+import { nodeTurnReady } from "../ai/node-account";
+import { notifyTurnsClosed } from "../node-turns/queue";
+import { failNodeTurns } from "../node-turns/sweeper";
 import { logger } from "../logger";
 import { isUniqueViolation } from "../pg-errors";
 import { closeTaskRow, errName, notifyTaskClosed, type TaskResult } from "../teams/task-runner";
@@ -34,6 +39,8 @@ export interface NodeView {
   maxConcurrent: number;
   lastSeenAt: Date | null;
   online: boolean;
+  /** Pronto per i turni delegati: attivo e ha chiesto un turno negli ultimi 60 s. */
+  turnReady: boolean;
 }
 
 /** Nome vuoto o troppo lungo: il messaggio va nel 400. */
@@ -64,6 +71,7 @@ export function toNodeView(row: Node, now: Date = new Date()): NodeView {
     maxConcurrent: row.maxConcurrent,
     lastSeenAt: row.lastSeenAt,
     online: row.lastSeenAt !== null && now.getTime() - row.lastSeenAt.getTime() <= NODE_ONLINE_WINDOW_MS,
+    turnReady: nodeTurnReady(row, now),
   };
 }
 
@@ -130,8 +138,19 @@ async function stopNodeTasks(tx: Tx, nodeId: number): Promise<TeamTaskRow[]> {
   return closed;
 }
 
-/** Dopo il commit: PLAN, evento `bloccato` e turno del capo per ogni compito fermato (un errore non ferma gli altri). */
-async function notifyStoppedTasks(tasks: TeamTaskRow[]): Promise<void> {
+interface StoppedWork {
+  tasks: TeamTaskRow[];
+  turnIds: number[];
+}
+
+/** Nella transazione, con la riga del nodo bloccata: ferma compiti e turni del nodo. */
+async function stopNodeWork(tx: Tx, nodeId: number): Promise<StoppedWork> {
+  return { tasks: await stopNodeTasks(tx, nodeId), turnIds: await failNodeTurns(tx, nodeId) };
+}
+
+/** Dopo il commit: attese dei turni risolte; PLAN, evento `bloccato` e turno del capo per ogni compito fermato (un errore non ferma gli altri). */
+async function notifyStopped({ tasks, turnIds }: StoppedWork): Promise<void> {
+  notifyTurnsClosed(turnIds);
   for (const task of tasks) {
     try {
       await notifyTaskClosed(task, NODE_STOPPED);
@@ -150,10 +169,10 @@ export async function disableNode(userId: number, id: number): Promise<NodeView 
       .where(and(eq(nodesTable.id, id), eq(nodesTable.userId, userId)))
       .returning();
     if (!row) return null;
-    return { row, stopped: await stopNodeTasks(tx, id) };
+    return { row, stopped: await stopNodeWork(tx, id) };
   });
   if (!out) return null;
-  await notifyStoppedTasks(out.stopped);
+  await notifyStopped(out.stopped);
   return toNodeView(out.row);
 }
 
@@ -166,13 +185,13 @@ export async function deleteNode(userId: number, id: number): Promise<boolean> {
       .where(and(eq(nodesTable.id, id), eq(nodesTable.userId, userId)))
       .for("update");
     if (!node) return null;
-    // Prima dell'eliminazione: poi `node_id` diventa null e i compiti del nodo non si riconoscerebbero più
-    const tasks = await stopNodeTasks(tx, id);
+    // Prima dell'eliminazione: poi `node_id` diventa null e compiti e turni del nodo non si riconoscerebbero più
+    const work = await stopNodeWork(tx, id);
     await tx.delete(nodesTable).where(eq(nodesTable.id, id));
-    return tasks;
+    return work;
   });
   if (!stopped) return false;
-  await notifyStoppedTasks(stopped);
+  await notifyStopped(stopped);
   return true;
 }
 
@@ -193,10 +212,10 @@ export async function regenerateNodeToken(userId: number, id: number): Promise<{
       .update(apiTokensTable)
       .set({ revokedAt: new Date() })
       .where(and(eq(apiTokensTable.nodeId, id), isNull(apiTokensTable.revokedAt)));
-    const stopped = await stopNodeTasks(tx, id);
+    const stopped = await stopNodeWork(tx, id);
     return { token: await createNodeToken(tx, userId, id, `Nodo ${node.name}`), stopped };
   });
   if (!out) return null;
-  await notifyStoppedTasks(out.stopped);
+  await notifyStopped(out.stopped);
   return { token: out.token };
 }

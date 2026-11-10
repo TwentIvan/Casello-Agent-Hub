@@ -23,6 +23,8 @@ export const nodesTable = pgTable(
     workspaceFolders: jsonb("workspace_folders").$type<string[]>(),
     foldersUpdatedAt: timestamp("folders_updated_at"),
     lastSeenAt: timestamp("last_seen_at"),
+    // Ultimo sondaggio dei turni delegati (`/api/node/turns/claim`)
+    lastTurnPollAt: timestamp("last_turn_poll_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

@@ -22,6 +22,8 @@ const POLL_MS = 1500;
 /** Passo di una run o di un turno/compito di una squadra: stessa forma di `run_steps`. */
 export type StepView = Pick<RunStep, "id" | "position" | "type" | "toolName" | "ok" | "httpStatus" | "durationMs" | "error"> & {
   args?: unknown;
+  /** Nota informativa (solo nei passi delle run, es. «Claude Code sul nodo «Mac»»). */
+  note?: string | null;
 };
 
 /** Numero e sintesi di un passo `queued` (args = { numero, destinatario, sintesi, argomenti }). */
@@ -85,6 +87,7 @@ function StepRow({ step }: { step: StepView }) {
         )}
         <span className="ml-auto text-xs font-mono tabular-nums text-muted-foreground">{formatDuration(step.durationMs)}</span>
       </div>
+      {step.note && <p className="pl-8 text-xs text-muted-foreground break-words">{step.note}</p>}
       {step.error && <p className="pl-8 text-xs text-destructive break-words">{step.error}</p>}
       {queued?.sintesi && <p className="pl-8 text-xs text-muted-foreground break-words">{queued.sintesi}</p>}
       {hasArgs && (

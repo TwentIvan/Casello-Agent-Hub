@@ -19,7 +19,7 @@ export interface LoggerOptions {
 }
 
 export const LOG_FILE = "casello-nodo.log";
-const TOKEN_PATTERN = /cas_[A-Za-z0-9_-]+/g;
+const TOKEN_PATTERN = /ca[st]_[A-Za-z0-9_-]+/g;
 
 /**
  * Log su file con rotazione (10 MB, 5 file) e su stdout. Chi chiama non passa mai token, contenuti degli allegati,

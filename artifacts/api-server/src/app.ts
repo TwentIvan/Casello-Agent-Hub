@@ -8,6 +8,7 @@ import { logger } from "./lib/logger";
 import { sessionMiddleware } from "./lib/auth";
 import { oauthErrorHandler, oauthRouter } from "./routes/oauth";
 import { mcpRouter } from "./lib/mcp/server";
+import { mcpTurnRouter } from "./lib/mcp/turn-server";
 import { hooksRouter } from "./routes/hooks";
 import { redactHookPath } from "./lib/triggers/secrets";
 import { errorHandler } from "./middlewares/error-handler";
@@ -65,6 +66,8 @@ app.use(
 // Server MCP per gli agenti locali: fuori da /api, prima di CORS, del parser JSON globale (ha il
 // suo, fino a 2 MB per gli esiti di fase) e della sessione. Autenticazione solo con il token
 // personale (Bearer), niente cookie; nessuna origine CORS ammessa: non è chiamato dai browser.
+// /mcp/turn (token del turno `cat_…`) va prima di /mcp, che altrimenti lo catturerebbe
+app.use("/mcp/turn", mcpTurnRouter());
 app.use("/mcp", mcpRouter());
 // Webhook in entrata degli inneschi: pubblici (il segreto è nel percorso), prima di CORS, dei parser globali e
 // della sessione; parser grezzo proprio da 256 KB. Non sono chiamati dai browser.

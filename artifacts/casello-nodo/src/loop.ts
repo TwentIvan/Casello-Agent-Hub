@@ -3,6 +3,7 @@ import { NODE_EXECUTOR, NODE_VERSION, scanFolders, scanSkills } from "./capabili
 import { defaultPaths, type Config } from "./config";
 import { createLogger, type Logger } from "./log";
 import { isLeaseLostReport, killAllTaskGroups, runTask, WorkspaceQueue, type SpawnFn } from "./runner";
+import { startTurnLoop, type TurnLoop } from "./turns";
 import { writeState, type NodeState } from "./state";
 
 export interface LoopDeps {
@@ -12,17 +13,22 @@ export interface LoopDeps {
   /** Cartella dei log se `logger` manca (default `~/.casello-nodo/logs`). */
   logsDir?: string;
   logToStdout?: boolean;
+  /** Cartelle temporanee dei turni (default `~/.casello-nodo/turns`). */
+  turnsDir?: string;
+  /** Attesa dopo un errore del claim dei turni (default 5 s). */
+  turnErrorWaitMs?: number;
   /** File di stato letto da `casello-nodo status` (default `~/.casello-nodo/state.json`). */
   statePath?: string;
   heartbeatIntervalMs?: number;
   pingIntervalMs?: number;
   killGraceMs?: number;
+  turnPingIntervalMs?: number;
   /** Attesa tra due tentativi di consegna del report (default 30 s). */
   reportRetryMs?: number;
 }
 
 export interface Loop {
-  /** Ferma heartbeat e nuovi claim, interrompe i compiti in corso (report `failed`) e ne attende la chiusura. */
+  /** Ferma heartbeat e nuovi claim, interrompe compiti (report `failed`) e turni (report `stopped`) e ne attende la chiusura. */
   stop(): Promise<void>;
   /** Errore fatale del processo: registra e termina subito (in modo sincrono) i gruppi dei compiti in corso. */
   crash(err: unknown): void;
@@ -62,12 +68,14 @@ export function startLoop(config: Config, deps: LoopDeps = {}): Loop {
   const stopController = new AbortController();
   const workspaceQueue = new WorkspaceQueue();
   let timer: NodeJS.Timeout | undefined;
+  let turnLoop: TurnLoop | null = null;
   let currentTick: Promise<void> | null = null;
   let stateWrite: Promise<void> = Promise.resolve();
 
   function saveState(): Promise<void> {
     state.updatedAt = new Date().toISOString();
     state.tasks = [...running].map(([taskId, t]) => ({ taskId, startedAt: t.startedAt.toISOString() }));
+    state.turns = turnLoop?.running() ?? [];
     const snapshot = JSON.parse(JSON.stringify(state)) as NodeState;
     // Scritture in fila: l'ultima vince sempre
     stateWrite = stateWrite
@@ -178,8 +186,19 @@ export function startLoop(config: Config, deps: LoopDeps = {}): Loop {
     }, delay);
   }
 
-  logger.info(`nodo avviato (versione ${NODE_VERSION}, max ${config.maxConcurrent} compiti)`);
+  logger.info(`nodo avviato (versione ${NODE_VERSION}, max ${config.maxConcurrent} compiti, ${config.maxConcurrentTurns} turni)`);
   schedule(0);
+  turnLoop = startTurnLoop({
+    config,
+    client,
+    logger,
+    turnsDir: deps.turnsDir ?? paths.turnsDir,
+    spawn: deps.spawn,
+    errorWaitMs: deps.turnErrorWaitMs,
+    pingIntervalMs: deps.turnPingIntervalMs,
+    killGraceMs: deps.killGraceMs,
+    onChange: () => void saveState(),
+  });
 
   return {
     async stop() {
@@ -187,7 +206,7 @@ export function startLoop(config: Config, deps: LoopDeps = {}): Loop {
       if (timer) clearTimeout(timer);
       stopController.abort();
       if (currentTick) await currentTick;
-      await Promise.all([...running.values()].map((t) => t.promise));
+      await Promise.all([...[...running.values()].map((t) => t.promise), turnLoop?.stop()]);
       await stateWrite;
       logger.info("nodo fermato");
     },

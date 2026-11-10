@@ -31,12 +31,29 @@ export const MODEL_UNAVAILABLE = "modello non disponibile";
  * eventualmente decifrata da `resolveModel` resta in questa funzione e non viene restituita.
  */
 export async function chooseOwnModel(aiModelId: number, userId: number): Promise<ModelChoice> {
+  return choose(aiModelId, userId, false);
+}
+
+/** Consumatori senza esecutore sul nodo (ruoli `cloud` delle squadre, analisi cloud, centralino). */
+export const NODE_MODEL_NOT_ALLOWED = "Claude Code (nodo) non è disponibile qui: scegli un modello cloud";
+
+/**
+ * Come `chooseOwnModel`, per i consumatori che girano solo nel cloud: un modello di un account Claude Code (nodo)
+ * → `ModelChoiceError` con NODE_MODEL_NOT_ALLOWED.
+ */
+export async function chooseCloudModel(aiModelId: number, userId: number): Promise<ModelChoice> {
+  return choose(aiModelId, userId, true);
+}
+
+async function choose(aiModelId: number, userId: number, cloudOnly: boolean): Promise<ModelChoice> {
   if (!Number.isSafeInteger(aiModelId) || aiModelId <= 0) throw new ModelChoiceError(MODEL_UNAVAILABLE);
+  let resolved;
   try {
-    const resolved = await resolveModel(aiModelId, { userId, mustOwn: true });
-    return { aiModelId: resolved.aiModelId, model: resolved.modelId };
+    resolved = await resolveModel(aiModelId, { userId, mustOwn: true });
   } catch (err) {
     if (err instanceof ModelAccessError || err instanceof ProviderError) throw new ModelChoiceError(err.message);
     throw err;
   }
+  if (cloudOnly && resolved.kind === "node") throw new ModelChoiceError(NODE_MODEL_NOT_ALLOWED);
+  return { aiModelId: resolved.aiModelId, model: resolved.modelId };
 }

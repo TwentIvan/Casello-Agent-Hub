@@ -254,6 +254,12 @@ function NodeRow({
           )}
         </div>
         <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+          {!disabled && (
+            <Led
+              state={node.turnReady ? "ok" : "idle"}
+              label={node.turnReady ? "pronto per i turni" : "non pronto per i turni"}
+            />
+          )}
           <span>{node.lastSeenAt ? `ultimo contatto ${formatRelative(node.lastSeenAt)}` : "mai collegato"}</span>
           {node.version && <span>versione {node.version}</span>}
           {node.executor && <span>executor {node.executor}</span>}

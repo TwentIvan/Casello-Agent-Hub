@@ -22,6 +22,7 @@ import { invalidateAiQueries } from "@/components/ai/ai-queries";
 import { AiModelBudgetCell } from "@/components/budget/budget";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { isNodeAccount } from "@/lib/node-models";
 import { formatUsd } from "@/lib/format";
 
 const MAX_PRICE = 999_999.999999;
@@ -194,6 +195,7 @@ function AddModelForm({ accountId }: { accountId: number }) {
 
 /** Modelli di un account: prezzi, "nascosto" e tetto di spesa modificabili. */
 export function AiModelsTable({ account }: { account: AiAccount }) {
+  const nodeAccount = isNodeAccount(account);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const models = useListAiAccountModels(account.id, {
@@ -306,15 +308,18 @@ export function AiModelsTable({ account }: { account: AiAccount }) {
                     <AiModelBudgetCell model={model} />
                   </TableCell>
                   <TableCell>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={probe.isPending && probe.variables?.id === model.id}
-                      onClick={() => probe.mutate({ id: model.id })}
-                    >
-                      {probe.isPending && probe.variables?.id === model.id ? "Prova…" : "Prova"}
-                    </Button>
+                    {/* Claude Code (nodo): niente prova dall'API, si usa «Verifica» sull'account */}
+                    {!nodeAccount && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={probe.isPending && probe.variables?.id === model.id}
+                        onClick={() => probe.mutate({ id: model.id })}
+                      >
+                        {probe.isPending && probe.variables?.id === model.id ? "Prova…" : "Prova"}
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

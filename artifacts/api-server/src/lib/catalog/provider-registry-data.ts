@@ -118,11 +118,13 @@ export const PROVIDER_REGISTRY: RegistryProvider[] = [
     litellm: ["azure", "azure_ai", "azure_text"],
     openrouterAuthor: null,
   },
+  // Pseudo-provider: nessuna chiave né indirizzo, i turni li esegue Claude Code su un nodo dell'utente
+  { slug: "claude_code_node", name: "Claude Code (nodo)", protocol: "claude_code_node", defaultBaseUrl: null, litellm: [], openrouterAuthor: null },
 ];
 
 /** Stato di un provider dal suo protocollo: gestito solo se Casello ha un esecutore per quel protocollo. */
 export function statusForProtocol(protocol: ProviderProtocol): "managed" | "coming" | "unmanaged" {
-  if (protocol === "openai_compatible") return "managed";
+  if (protocol === "openai_compatible" || protocol === "claude_code_node") return "managed";
   if (protocol === "unknown") return "unmanaged";
   return "coming";
 }

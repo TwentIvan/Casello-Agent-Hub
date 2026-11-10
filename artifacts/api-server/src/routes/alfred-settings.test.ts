@@ -6,6 +6,7 @@ import { db, pool, aiAccountsTable, aiModelsTable, modelOffersTable, modelsTable
 import { encryptSecret } from "../lib/secrets";
 import { isAlfredModelName } from "../lib/alfred/config";
 import { startFakeGemini, type FakeGemini } from "../../test/fake-gemini";
+import { nodeModelFor } from "../../test/node-turn-fixture";
 
 // Modello e voce di Alfred sull'app completa senza login (AUTH_DISABLED=true: utente dev@localhost). Gemini è finto:
 // GEMINI_NATIVE_BASE punta al finto, gli account hanno un indirizzo https segnaposto mai contattato.
@@ -152,6 +153,16 @@ describe("PUT /account/alfred", () => {
       expect(res.status).toBe(400);
       expect(res.json).toEqual({ error: "modello non adatto ad Alfred" });
     }
+  });
+
+  it("modello Claude Code (nodo): fuori dalla GET, PUT → 400 non adatto, nessuna chiamata a Gemini", async () => {
+    const dev = await devUserId();
+    const nodeModel = await nodeModelFor(dev);
+    expect((await api("GET", "/account/alfred")).json.models).toEqual([]);
+    const res = await api("PUT", "/account/alfred", { aiModelId: nodeModel });
+    expect(res.status).toBe(400);
+    expect(res.json).toEqual({ error: "modello non adatto ad Alfred" });
+    expect(gemini.state.modelRequests).toEqual([]);
   });
 
   it("modello altrui → 400; voce sconosciuta → 400 e nulla salvato", async () => {

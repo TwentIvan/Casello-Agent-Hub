@@ -32,10 +32,10 @@ import { normalizeBaseUrl, privateNetworkAllowed, validateBaseUrl, type AiProvid
  */
 
 /**
- * Tipo di esecutore, dal protocollo del provider: oggi solo `openai_compatible`; `local_agent` è il
- * prossimo sottoprogetto (agente locale via MCP) ed è solo dichiarato.
+ * Tipo di esecutore, dal protocollo del provider: `openai_compatible` chiama il provider, `node` delega il
+ * turno a Claude Code su un nodo dell'utente (non passa da `modelChat`).
  */
-export type ExecutorKind = "openai_compatible" | "local_agent";
+export type ExecutorKind = "openai_compatible" | "node";
 
 export interface ResolvedModel {
   aiModelId: number;
@@ -58,6 +58,10 @@ export interface ResolvedModel {
   contextTokens: number | null;
   /** Proprietario dell'account. */
   ownerUserId: number;
+  /** Nodo dell'account (solo `kind: "node"`); null per i modelli cloud. */
+  nodeId: number | null;
+  /** Modello di ripiego dell'account nodo; null per i modelli cloud. */
+  fallbackAiModelId: number | null;
 }
 
 export interface ChatOptions {
@@ -95,6 +99,7 @@ const PROTOCOL_UNSUPPORTED = "esecutore non ancora disponibile per questo provid
  */
 export function executorKindFor(protocol: ProviderProtocol): ExecutorKind {
   if (protocol === "openai_compatible" || protocol === "unknown") return "openai_compatible";
+  if (protocol === "claude_code_node") return "node";
   throw new ModelAccessError(PROTOCOL_UNSUPPORTED);
 }
 
@@ -146,12 +151,16 @@ export async function resolveModel(aiModelId: number, opts: { userId: number | n
   }
   const kind = executorKindFor(protocol);
 
-  // Rivalidato a ogni chiamata: le regole (e lo stato del provider) possono essere cambiate dopo il salvataggio
-  const allowPrivate = account.allowPrivateNetwork && privateNetworkAllowed({ slug: account.provider, status: providerStatus });
-  if (validateBaseUrl(account.baseUrl, allowPrivate) !== null) throw new ProviderError("bad_url");
-  const baseUrl = normalizeBaseUrl(account.baseUrl);
+  // Rivalidato a ogni chiamata: le regole (e lo stato del provider) possono essere cambiate dopo il salvataggio.
+  // Gli account nodo non hanno indirizzo né chiave
+  let baseUrl = "";
+  if (kind !== "node") {
+    const allowPrivate = account.allowPrivateNetwork && privateNetworkAllowed({ slug: account.provider, status: providerStatus });
+    if (validateBaseUrl(account.baseUrl, allowPrivate) !== null) throw new ProviderError("bad_url");
+    baseUrl = normalizeBaseUrl(account.baseUrl);
+  }
   let apiKey: string | null = null;
-  if (account.apiKeyEnc !== null) {
+  if (kind !== "node" && account.apiKeyEnc !== null) {
     try {
       apiKey = decryptSecret(account.apiKeyEnc);
     } catch {
@@ -171,6 +180,8 @@ export async function resolveModel(aiModelId: number, opts: { userId: number | n
     priceCachedInput: toPrice(model.priceCachedInputPerMtok),
     contextTokens: model.contextTokens,
     ownerUserId: account.userId,
+    nodeId: kind === "node" ? account.nodeId : null,
+    fallbackAiModelId: kind === "node" ? account.fallbackAiModelId : null,
   } as ResolvedModel;
   Object.defineProperty(resolved, "apiKey", { value: apiKey, enumerable: false, writable: false, configurable: false });
   return resolved;

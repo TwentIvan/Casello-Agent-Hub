@@ -13,6 +13,7 @@ import {
   appsTable,
   modelOffersTable,
   modelsTable,
+  nodesTable,
   providersTable,
   usersTable,
 } from "@workspace/db";
@@ -21,6 +22,8 @@ import { encryptSecret } from "../lib/secrets";
 import { ensureProviderRegistry } from "../lib/catalog/provider-registry";
 import { LEGACY_GATEWAY_PROVIDER } from "../lib/ai/providers";
 import { ensureLegacyGatewayProvider } from "../../test/legacy-gateway";
+import { resolveModel } from "../lib/ai/executor";
+import { nodeModelFor } from "../../test/node-turn-fixture";
 
 // API degli account AI su un'app Express vera (porta 0), senza login (AUTH_DISABLED=true: utente di
 // sviluppo). Il secondo utente e i suoi account si inseriscono a mano nel DB. La scoperta dei modelli
@@ -369,7 +372,9 @@ describe("provider del registro", () => {
       status: "managed",
       defaultBaseUrl: "https://api.deepseek.com/v1",
       editableBaseUrl: false,
+      requiresNode: false,
     });
+    expect(bySlug.get("claude_code_node")).toMatchObject({ protocol: "claude_code_node", status: "managed", defaultBaseUrl: null, requiresNode: true });
     expect(bySlug.get("custom")).toMatchObject({ status: "managed", defaultBaseUrl: null, editableBaseUrl: true });
     expect(bySlug.get("perplexity")).toMatchObject({ status: "managed", defaultBaseUrl: null, editableBaseUrl: true });
     expect(bySlug.get("bedrock")).toMatchObject({ protocol: "bedrock", status: "coming", editableBaseUrl: false });
@@ -897,6 +902,19 @@ describe("prova del modello", () => {
     expect(row).toMatchObject({ availability: "unavailable", lastProbeOk: false });
   });
 
+  it("modello di un account Claude Code (nodo) → 400 con messaggio fisso, nessuna chiamata né prova registrata", async () => {
+    // La prima richiesta crea l'utente di sviluppo
+    await api("GET", "/ai/accounts");
+    const nodeModel = await nodeModelFor(await devUserId());
+    fake.requests = [];
+    const res = await api("POST", `/ai/models/${nodeModel}/probe`);
+    expect(res.status, res.text).toBe(400);
+    expect(res.json).toEqual({ error: "la prova non è disponibile per Claude Code: usa Verifica sull'account" });
+    const [row] = await db.select().from(aiModelsTable).where(eq(aiModelsTable.id, nodeModel));
+    expect(row!.lastProbeAt).toBeNull();
+    expect(fake.requests).toHaveLength(0);
+  });
+
   it("modello di un altro utente, del vecchio gateway o inesistente → 404, nessuna chiamata", async () => {
     const other = await otherUserAccount();
     const legacy = await legacyGatewayAccount();
@@ -1003,5 +1021,149 @@ describe("app completa", () => {
       expect((await api("POST", "/ai/models/999999/probe", undefined, fullBase)).status).toBe(404);
     }
     expect((await api("POST", "/ai/models/999999/probe", undefined, fullBase)).status).toBe(429);
+  });
+});
+
+describe("account nodo (Claude Code)", () => {
+  beforeEach(async () => {
+    await ensureProviderRegistry();
+    // L'utente di sviluppo nasce alla prima richiesta autenticata
+    await api("GET", "/ai/accounts");
+  });
+
+  async function myNode(over: Partial<typeof nodesTable.$inferInsert> = {}) {
+    const [n] = await db.insert(nodesTable).values({ userId: await devUserId(), name: `mac-${Math.random()}`, ...over }).returning();
+    return n!;
+  }
+
+  async function nodeAccount(nodeId: number, over: Record<string, unknown> = {}) {
+    return api("POST", "/ai/accounts", { name: "Claude Code", provider: "claude_code_node", nodeId, ...over });
+  }
+
+  it("creazione: 201, modelli degli alias, nessuna chiave né indirizzo, nessuna chiamata di rete", async () => {
+    const node = await myNode();
+    const res = await nodeAccount(node.id);
+    expect(res.status, res.text).toBe(201);
+    expect(res.json).toMatchObject({
+      provider: "claude_code_node",
+      baseUrl: "",
+      keySet: false,
+      allowPrivateNetwork: false,
+      nodeId: node.id,
+      nodeName: node.name,
+      nodeTurnReady: false,
+      fallbackAiModelId: null,
+    });
+    expect(res.json.modelCount).toBeGreaterThanOrEqual(4);
+    const [row] = await db.select().from(aiAccountsTable).where(eq(aiAccountsTable.id, res.json.id));
+    expect(row).toMatchObject({ baseUrl: "", apiKeyEnc: null, allowPrivateNetwork: false, nodeId: node.id });
+    expect(fake.requests).toHaveLength(0);
+    const models = await modelsOf(res.json.id);
+    expect(models.every((m) => m.supportsTools)).toBe(true);
+  });
+
+  it("nodeId mancante, nodo altrui o disattivato → 400 «nodo non disponibile»", async () => {
+    const [other] = await db.insert(usersTable).values({ email: "altro2@example.com", name: "Altro" }).returning();
+    const foreign = await myNode({ userId: other!.id });
+    const disabled = await myNode({ status: "disabled" });
+    for (const body of [{ nodeId: undefined }, { nodeId: foreign.id }, { nodeId: disabled.id }, { nodeId: 99999 }]) {
+      const res = await api("POST", "/ai/accounts", { name: "X", provider: "claude_code_node", ...body });
+      expect(res.status, res.text).toBe(400);
+      expect(res.json).toEqual({ error: "nodo non disponibile" });
+    }
+  });
+
+  it("chiave o indirizzo nel corpo → 400; secondo account sullo stesso nodo → 409", async () => {
+    const node = await myNode();
+    for (const extra of [{ apiKey: KEY }, { baseUrl: fake.baseUrl }]) {
+      const res = await nodeAccount(node.id, extra);
+      expect(res.status, res.text).toBe(400);
+      expect(res.json).toEqual({ error: "l'account Claude Code non ha chiave né indirizzo" });
+    }
+    expect((await nodeAccount(node.id)).status).toBe(201);
+    const again = await nodeAccount(node.id, { name: "Secondo" });
+    expect(again.status).toBe(409);
+    expect(again.json).toEqual({ error: "il nodo ha già un account Claude Code" });
+  });
+
+  it("nodeId o fallbackAiModelId con un altro provider → 400", async () => {
+    const node = await myNode();
+    let res = await api("POST", "/ai/accounts", customInput({ nodeId: node.id }));
+    expect(res.status, res.text).toBe(400);
+    expect(res.json).toEqual({ error: "il nodo vale solo per gli account Claude Code" });
+    const cloud = await createAccount();
+    const [model] = await modelsOf(cloud.id);
+    res = await api("POST", "/ai/accounts", customInput({ fallbackAiModelId: model!.id }));
+    expect(res.status, res.text).toBe(400);
+    expect(res.json).toEqual({ error: "il modello di ripiego vale solo per gli account Claude Code" });
+    res = await api("PATCH", `/ai/accounts/${cloud.id}`, { fallbackAiModelId: model!.id });
+    expect(res.status, res.text).toBe(400);
+    expect(res.json).toEqual({ error: "il modello di ripiego vale solo per gli account Claude Code" });
+  });
+
+  it("ripiego: modello di un proprio account cloud ammesso; del nodo stesso o di un altro utente → 400; null lo toglie", async () => {
+    const cloud = await createAccount();
+    const [cloudModel] = await modelsOf(cloud.id);
+    const node = await myNode();
+    const created = await nodeAccount(node.id, { fallbackAiModelId: cloudModel!.id });
+    expect(created.status, created.text).toBe(201);
+    expect(created.json.fallbackAiModelId).toBe(cloudModel!.id);
+
+    const [ownModel] = await modelsOf(created.json.id);
+    const node2 = await myNode();
+    const { model: foreignModel } = await otherUserAccount();
+    for (const bad of [ownModel!.id, foreignModel.id, 99999]) {
+      const res = await nodeAccount(node2.id, { fallbackAiModelId: bad });
+      expect(res.status, res.text).toBe(400);
+      expect(res.json).toEqual({ error: "modello di ripiego non valido" });
+      const patch = await api("PATCH", `/ai/accounts/${created.json.id}`, { fallbackAiModelId: bad });
+      expect(patch.status, patch.text).toBe(400);
+      expect(patch.json).toEqual({ error: "modello di ripiego non valido" });
+    }
+    const cleared = await api("PATCH", `/ai/accounts/${created.json.id}`, { fallbackAiModelId: null });
+    expect(cleared.status, cleared.text).toBe(200);
+    expect(cleared.json.fallbackAiModelId).toBeNull();
+  });
+
+  it("modifica: nome e tetto sì; chiave o indirizzo → 400", async () => {
+    const node = await myNode();
+    const acc = (await nodeAccount(node.id)).json;
+    let res = await api("PATCH", `/ai/accounts/${acc.id}`, { name: "Rinominato", monthlyBudgetUsd: 5 });
+    expect(res.status, res.text).toBe(200);
+    expect(res.json).toMatchObject({ name: "Rinominato", monthlyBudgetUsd: 5, baseUrl: "" });
+    for (const body of [{ apiKey: KEY }, { baseUrl: fake.baseUrl }, { allowPrivateNetwork: true }]) {
+      res = await api("PATCH", `/ai/accounts/${acc.id}`, body);
+      expect(res.status, res.text).toBe(400);
+      expect(res.json).toEqual({ error: "l'account Claude Code non ha chiave né indirizzo" });
+    }
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it("elenco: nodeName e nodeTurnReady; verifica senza rete; nodo attivo che non sonda → ok ma non pronto", async () => {
+    const node = await myNode({ lastTurnPollAt: new Date() });
+    const acc = (await nodeAccount(node.id)).json;
+    expect(acc.nodeTurnReady).toBe(true);
+    const list = await api("GET", "/ai/accounts");
+    expect(list.json.find((a: { id: number }) => a.id === acc.id)).toMatchObject({ nodeName: node.name, nodeTurnReady: true, nodeId: node.id });
+    await db.update(nodesTable).set({ lastTurnPollAt: null }).where(eq(nodesTable.id, node.id));
+    const res = await api("POST", `/ai/accounts/${acc.id}/verify`);
+    expect(res.status, res.text).toBe(200);
+    expect(res.json).toMatchObject({ status: "ok", lastError: null, nodeTurnReady: false });
+    expect(res.json.modelCount).toBeGreaterThanOrEqual(4);
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it("i provider riportano editableBaseUrl false per il nodo", async () => {
+    const res = await api("GET", "/ai/providers");
+    expect(res.json.find((p: { slug: string }) => p.slug === "claude_code_node")).toMatchObject({ editableBaseUrl: false, requiresNode: true });
+  });
+
+  it("un account nodo con un indirizzo vecchio nel DB si risolve comunque come kind node", async () => {
+    const node = await myNode();
+    const acc = (await nodeAccount(node.id)).json;
+    await db.update(aiAccountsTable).set({ baseUrl: "http://vecchio.example/v1" }).where(eq(aiAccountsTable.id, acc.id));
+    const [m] = await modelsOf(acc.id);
+    const r = await resolveModel(m!.id, { userId: await devUserId(), mustOwn: true });
+    expect(r).toMatchObject({ kind: "node", nodeId: node.id, baseUrl: "" });
   });
 });

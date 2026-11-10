@@ -15,10 +15,10 @@ const TODAY = ["deepseek", "openrouter", "huggingface", "mistral", "groq", "toge
 const KEEP = [...TODAY, LEGACY_GATEWAY_PROVIDER];
 
 describe("PROVIDER_REGISTRY", () => {
-  it("slug unici in [a-z0-9-]; il vecchio gateway non c'è più", () => {
+  it("slug unici in [a-z0-9_-]; il vecchio gateway non c'è più", () => {
     const slugs = PROVIDER_REGISTRY.map((p) => p.slug);
     expect(new Set(slugs).size).toBe(slugs.length);
-    for (const s of slugs) expect(s).toMatch(/^[a-z0-9-]+$/);
+    for (const s of slugs) expect(s).toMatch(/^[a-z0-9_-]+$/);
     expect(bySlug(LEGACY_GATEWAY_PROVIDER)).toBeUndefined();
   });
 
@@ -71,6 +71,7 @@ describe("PROVIDER_REGISTRY", () => {
     expect(statusForProtocol("openai_compatible")).toBe("managed");
     for (const p of ["anthropic", "bedrock", "vertex", "azure"] as const) expect(statusForProtocol(p)).toBe("coming");
     expect(statusForProtocol("unknown")).toBe("unmanaged");
+    expect(statusForProtocol("claude_code_node")).toBe("managed");
     expect(bySlug("bedrock")?.protocol).toBe("bedrock");
     expect(bySlug("custom")?.protocol).toBe("openai_compatible");
   });

@@ -32,7 +32,7 @@ import {
   CancelAnalysisResponse,
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
-import { ModelChoiceError, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
+import { ModelChoiceError, chooseCloudModel, type ModelChoice } from "../lib/ai/choice";
 import { resolveAgentModel } from "../lib/ai/default-model";
 import { isUniqueViolation } from "../lib/pg-errors";
 import { userBudgetBlock } from "../lib/budget";
@@ -74,12 +74,12 @@ const CHAPTER_ORDER: AnalysisChapter[] = PHASES.flatMap((phase) => PHASE_CHAPTER
 const POSTPONABLE = new Set<AnalysisChapter>(["endpoint", "completion", "evolution"]);
 
 /**
- * Modello dell'analisi cloud: `aiModelId` obbligatorio (modello di un account dell'utente che
- * avvia). Lancia ModelChoiceError con il messaggio per il 400.
+ * Modello dell'analisi cloud: `aiModelId` obbligatorio (modello di un account cloud dell'utente che
+ * avvia: Claude Code (nodo) non esegue le analisi). Lancia ModelChoiceError con il messaggio per il 400.
  */
 async function analysisModel(aiModelId: number | undefined, userId: number): Promise<ModelChoice> {
   if (aiModelId === undefined) throw new ModelChoiceError(CHOOSE_MODEL);
-  return chooseOwnModel(aiModelId, userId);
+  return chooseCloudModel(aiModelId, userId);
 }
 
 /** L'app ha già un'analisi `queued`/`running` (indice unico parziale `analyses_one_active_per_app`). */

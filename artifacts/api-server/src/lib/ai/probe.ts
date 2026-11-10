@@ -7,6 +7,16 @@ import { modelChat, resolveModel } from "./executor";
 // Una prova con 1 token non deve tenere la richiesta aperta per i 120 s di una chiamata normale
 const PROBE_TIMEOUT_MS = 20_000;
 
+export const PROBE_NODE_UNSUPPORTED = "la prova non è disponibile per Claude Code: usa Verifica sull'account";
+
+/** Modello di un account Claude Code (nodo): nessuna chiamata dall'API, la route risponde 400. */
+export class ProbeUnsupportedError extends Error {
+  constructor() {
+    super(PROBE_NODE_UNSUPPORTED);
+    this.name = "ProbeUnsupportedError";
+  }
+}
+
 /**
  * "Prova" di un modello: una chiamata reale con un messaggio minimo e `max_tokens: 1` (costo di
  * frazioni di centesimo, a carico dell'account). Solo per i modelli degli account dell'utente.
@@ -22,6 +32,7 @@ export async function probeModel(
     // Un ProviderError di resolveModel (indirizzo non più consentito, chiave illeggibile) arriva solo
     // dopo il controllo del proprietario: è l'esito della prova
     const resolved = await resolveModel(aiModelId, { userId, mustOwn: true });
+    if (resolved.kind === "node") throw new ProbeUnsupportedError();
     const out = await modelChat(resolved, {
       messages: [{ role: "user", content: "ping" }],
       maxTokens: 1,

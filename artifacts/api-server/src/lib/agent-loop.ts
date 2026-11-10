@@ -5,7 +5,10 @@
 
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { assistantToolCalls, type ChatResult } from "./ai/chat-types";
-import { validateArgs } from "./tools/definition";
+import {
+  RECIPIENT_PARAM, SUMMARY_PARAM, MAX_SUMMARY_CHARS, QUEUE_FIELDS_MISSING, QUEUE_FAILED, queuedMessage,
+  prepareCall, errorStep, executePrepared, toolStep, enqueuePrepared, errorMessage, type PreparedCall,
+} from "./agent-dispatch";
 import { effectiveLevel } from "./tools/levels";
 import type { CatalogTool, ToolResult } from "./tools/types";
 
@@ -48,6 +51,8 @@ export interface StepRecord {
   httpStatus?: number;
   durationMs: number;
   error?: string;
+  /** Nota informativa (es. l'esecutore del turno), distinta dall'errore; oggi solo nei passi delle run */
+  note?: string;
   /** Solo per `queued`: numero della voce nella coda delle azioni dell'utente */
   queuedNumber?: number;
   /** Solo per `queued`: destinatario e sintesi dichiarati dal modello */
@@ -82,96 +87,10 @@ export type LoopOutcome =
   /** Annullato dall'esterno (`deps.signal`): niente altri passi, lo stato della run lo scrive chi ha annullato */
   | { type: "cancelled"; state: LoopState };
 
-/** Parametri che Casello aggiunge agli strumenti L2: servono alla coda, non arrivano al servizio. */
-export const RECIPIENT_PARAM = "destinatario";
-export const SUMMARY_PARAM = "sintesi";
-export const MAX_SUMMARY_CHARS = 500;
-
-export const QUEUE_FIELDS_MISSING = "servono destinatario e sintesi per un'azione da confermare";
-export const QUEUE_FAILED = "impossibile accodare l'azione";
-
-export function queuedMessage(number: number): string {
-  return `accodata come n. ${number}, in attesa di conferma dell'utente`;
-}
-
-// Esito della preparazione di una chiamata: errore da restituire al modello, tool pronto da eseguire
-// o azione L2 da accodare
-type PreparedCall =
-  | { kind: "error"; call: ToolCall; args: unknown; message: string }
-  | { kind: "ready"; call: ToolCall; tool: CatalogTool; args: Record<string, unknown> }
-  | {
-      kind: "queue";
-      call: ToolCall;
-      tool: CatalogTool;
-      args: Record<string, unknown>;
-      recipient: string;
-      summary: string;
-    };
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
+export { RECIPIENT_PARAM, SUMMARY_PARAM, MAX_SUMMARY_CHARS, QUEUE_FIELDS_MISSING, QUEUE_FAILED, queuedMessage };
 
 function cloneState(state: LoopState): LoopState {
   return JSON.parse(JSON.stringify(state)) as LoopState;
-}
-
-function prepareCall(call: ToolCall, tools: CatalogTool[]): PreparedCall {
-  const tool = tools.find((t) => t.name === call.name);
-  if (!tool) {
-    return { kind: "error", call, args: call.arguments, message: `Errore: lo strumento "${call.name}" non esiste` };
-  }
-  // Alcuni modelli inviano una stringa vuota quando non ci sono argomenti
-  const raw = call.arguments.trim() === "" ? "{}" : call.arguments;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return {
-      kind: "error",
-      call,
-      args: call.arguments,
-      message: `Errore: gli argomenti di "${call.name}" non sono JSON valido`,
-    };
-  }
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return {
-      kind: "error",
-      call,
-      args: parsed,
-      message: `Errore: gli argomenti di "${call.name}" devono essere un oggetto JSON`,
-    };
-  }
-  const { [RECIPIENT_PARAM]: recipient, [SUMMARY_PARAM]: summary, ...rest } = parsed as Record<string, unknown>;
-
-  if (effectiveLevel(tool) !== "L2") {
-    // Destinatario e sintesi superflui si tolgono, a meno che lo strumento non li dichiari come suoi
-    const declared = declaredParams(tool.paramsSchema);
-    const args = { ...rest };
-    if (recipient !== undefined && declared.has(RECIPIENT_PARAM)) args[RECIPIENT_PARAM] = recipient;
-    if (summary !== undefined && declared.has(SUMMARY_PARAM)) args[SUMMARY_PARAM] = summary;
-    return { kind: "ready", call, tool, args };
-  }
-
-  if (
-    typeof recipient !== "string" ||
-    typeof summary !== "string" ||
-    recipient.trim() === "" ||
-    summary.trim() === ""
-  ) {
-    return { kind: "error", call, args: rest, message: QUEUE_FIELDS_MISSING };
-  }
-  if (summary.length > MAX_SUMMARY_CHARS) {
-    return { kind: "error", call, args: rest, message: `la sintesi supera i ${MAX_SUMMARY_CHARS} caratteri` };
-  }
-  const argError = validateArgs(tool.paramsSchema, rest);
-  if (argError) return { kind: "error", call, args: rest, message: `argomenti non validi: ${argError}` };
-  return { kind: "queue", call, tool, args: rest, recipient, summary };
-}
-
-function declaredParams(schema: Record<string, unknown>): Set<string> {
-  const props = schema["properties"];
-  return new Set(props && typeof props === "object" && !Array.isArray(props) ? Object.keys(props) : []);
 }
 
 // Eseguibili in parallelo: sola lettura (L0), HTTP o MCP
@@ -201,63 +120,18 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
   };
 
   // Esegue un tool già preparato; un'eccezione diventa un errore per il modello
-  const execute = async (p: Extract<PreparedCall, { kind: "ready" }>): Promise<{ result: ToolResult; durationMs: number }> => {
-    const t0 = now();
-    let result: ToolResult;
-    try {
-      result = await deps.executeTool(p.tool, p.args);
-    } catch (err) {
-      result = { ok: false, content: `Errore durante l'esecuzione di "${p.tool.name}": ${errorMessage(err)}` };
-    }
-    return { result, durationMs: now() - t0 };
-  };
+  const execute = (p: Extract<PreparedCall, { kind: "ready" }>) => executePrepared(p, deps.executeTool, now);
 
   const record = async (p: Extract<PreparedCall, { kind: "ready" }>, result: ToolResult, durationMs: number) => {
     state.messages.push(toolMessage(p.call.id, result.content));
-    await deps.onStep({
-      type: "tool",
-      toolName: p.tool.name,
-      args: p.args,
-      ok: result.ok,
-      httpStatus: result.status,
-      durationMs,
-      error: result.ok ? undefined : result.content,
-    });
+    await deps.onStep(toolStep(p, result, durationMs));
   };
 
   // Accoda un'azione L2: il modello riceve il numero della voce o il motivo del rifiuto
   const enqueue = async (p: Extract<PreparedCall, { kind: "queue" }>): Promise<void> => {
-    const t0 = now();
-    let outcome: QueueActionResult;
-    try {
-      outcome = await deps.queueAction(p.tool, p.args, p.recipient, p.summary);
-    } catch {
-      outcome = { ok: false, message: QUEUE_FAILED };
-    }
-    const durationMs = now() - t0;
-    if (outcome.ok) {
-      state.messages.push(toolMessage(p.call.id, queuedMessage(outcome.number)));
-      await deps.onStep({
-        type: "queued",
-        toolName: p.tool.name,
-        args: p.args,
-        ok: true,
-        durationMs,
-        queuedNumber: outcome.number,
-        recipient: p.recipient,
-        summary: p.summary,
-      });
-      return;
-    }
-    state.messages.push(toolMessage(p.call.id, outcome.message));
-    await deps.onStep({
-      type: "tool",
-      toolName: p.tool.name,
-      args: p.args,
-      ok: false,
-      durationMs,
-      error: outcome.message,
-    });
+    const { text, step } = await enqueuePrepared(p, deps.queueAction, now);
+    state.messages.push(toolMessage(p.call.id, text));
+    await deps.onStep(step);
   };
 
   const cancelled = (): LoopOutcome | null =>
@@ -272,14 +146,7 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
       if (prepared.kind === "error") {
         state.queue.shift();
         state.messages.push(toolMessage(prepared.call.id, prepared.message));
-        await deps.onStep({
-          type: "tool",
-          toolName: prepared.call.name,
-          args: prepared.args,
-          ok: false,
-          durationMs: 0,
-          error: prepared.message,
-        });
+        await deps.onStep(errorStep(prepared));
         continue;
       }
 

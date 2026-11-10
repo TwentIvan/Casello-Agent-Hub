@@ -60,7 +60,7 @@ function formatDateTime(value: string): string {
 export function AnalysesCard({ app }: { app: App }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const defaultModelId = useDefaultAiModelId();
+  const defaultModelId = useDefaultAiModelId({ cloudOnly: true });
   const [chosenModelId, setChosenModelId] = useState<number | null>(null);
   const [maxTokensText, setMaxTokensText] = useState(String(DEFAULT_MAX_TOKENS));
   const [local, setLocal] = useState(false);
@@ -180,7 +180,7 @@ export function AnalysesCard({ app }: { app: App }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="analysis-model">Modello</Label>
-            <ModelPicker id="analysis-model" value={aiModelId} onChange={setChosenModelId} />
+            <ModelPicker id="analysis-model" value={aiModelId} onChange={setChosenModelId} cloudOnly />
           </div>
           <div className="space-y-2">
             <Label htmlFor="analysis-max-tokens">Tetto di token</Label>

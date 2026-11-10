@@ -549,6 +549,93 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /node/turns/claim:
+    post:
+      operationId: nodeTurnClaim
+      tags: [nodes]
+      summary: Prende un turno delegato al nodo
+      description: >-
+        Registra la presenza del nodo per i turni (`last_turn_poll_at`) e prende il turno `queued` più vecchio
+        destinato al nodo, portandolo a `running` con una lease di 2 minuti. Senza turni attende fino a 25 secondi
+        un avviso e ritenta una volta; poi 204. Corpo vuoto (`{}`). 40 al minuto per nodo.
+      responses:
+        "200":
+          description: Pacchetto del turno preso
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeTurnPackage"
+        "204":
+          description: Nessun turno da prendere
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /node/turns/{id}/ping:
+    post:
+      operationId: nodeTurnPing
+      tags: [nodes]
+      summary: Rinnova la lease di un turno
+      description: >-
+        Rinnova di 2 minuti la lease del turno preso dal nodo. Turno chiuso, annullato o lease diversa o scaduta →
+        409 (il nodo termina claude). 6 al minuto per turno.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeLease"
+      responses:
+        "200":
+          description: Lease rinnovata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeLeaseRenewed"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /node/turns/{id}/report:
+    post:
+      operationId: nodeTurnReport
+      tags: [nodes]
+      summary: Riferisce l'esito di un turno
+      description: >-
+        Chiude il turno una volta sola (lease del claim e turno `running`), altrimenti 409. `content` oltre 20 000
+        caratteri si tronca; un `errorCode` fuori dall'elenco si registra `claude_failed`. Token interi ≥ 0.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeTurnReport"
+      responses:
+        "204":
+          description: Esito registrato
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   /account/default-model:
     get:
       operationId: getDefaultModel
@@ -575,7 +662,8 @@ paths:
       summary: Imposta o toglie il modello predefinito dell'utente
       description: >-
         Il modello deve essere di un account AI dell'utente (400 "modello non disponibile"
-        altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+        altrimenti) e non di un account Claude Code (nodo) (400); null lo toglie. Solo con il login:
+        con un token risponde 403.
       requestBody:
         required: true
         content:
@@ -621,7 +709,8 @@ paths:
       summary: Imposta o toglie il modello del centralino
       description: >-
         Il modello deve essere di un account AI dell'utente (400 "modello non disponibile"
-        altrimenti); null lo toglie. Solo con il login: con un token risponde 403.
+        altrimenti) e non di un account Claude Code (nodo) (400); null lo toglie. Solo con il login:
+        con un token risponde 403.
       requestBody:
         required: true
         content:
@@ -3232,7 +3321,8 @@ paths:
       description: >-
         Solo per i modelli degli account dell'utente. Una chiamata con un messaggio
         minimo e max_tokens 1, a carico dell'account; aggiorna esito e data dell'ultima prova e la
-        disponibilità. Massimo 5 prove al minuto per IP.
+        disponibilità. Massimo 5 prove al minuto per IP. I modelli di un account Claude Code (nodo)
+        non si provano (400): si usa «Verifica» sull'account.
       parameters:
         - $ref: "#/components/parameters/IdParam"
       responses:
@@ -3242,6 +3332,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AiModelProbeResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
         "429":
@@ -5460,6 +5552,11 @@ components:
           type: ["integer", "null"]
         error:
           type: ["string", "null"]
+        note:
+          type: ["string", "null"]
+          description: >-
+            Nota informativa del passo, distinta dall'errore (es. «Claude Code sul nodo «Mac»» o «Claude Code non
+            disponibile: eseguita con <modello>»)
         createdAt:
           type: string
           format: date-time
@@ -6965,7 +7062,7 @@ components:
 
     AiProviderProtocol:
       type: string
-      enum: [openai_compatible, anthropic, bedrock, vertex, azure, unknown]
+      enum: [openai_compatible, anthropic, bedrock, vertex, azure, claude_code_node, unknown]
 
     AiProviderStatus:
       type: string
@@ -6976,7 +7073,7 @@ components:
 
     AiProviderInfo:
       type: object
-      required: [slug, name, protocol, status, defaultBaseUrl, editableBaseUrl]
+      required: [slug, name, protocol, status, defaultBaseUrl, editableBaseUrl, requiresNode]
       properties:
         slug:
           $ref: "#/components/schemas/AiProvider"
@@ -6992,6 +7089,10 @@ components:
         editableBaseUrl:
           type: boolean
           description: L'utente inserisce l'indirizzo (custom, provider non gestiti e gestiti senza indirizzo predefinito)
+        requiresNode:
+          type: boolean
+          description: >-
+            Il provider esegue i turni su un nodo dell'utente (Claude Code); si sceglie il nodo, niente chiave né indirizzo
 
     AiAccountStatus:
       type: string
@@ -6999,7 +7100,7 @@ components:
 
     AiAccount:
       type: object
-      required: [id, name, provider, baseUrl, allowPrivateNetwork, isDefault, status, lastError, lastCheckedAt, keySet, modelCount, monthlyBudgetUsd]
+      required: [id, name, provider, baseUrl, allowPrivateNetwork, isDefault, status, lastError, lastCheckedAt, keySet, modelCount, monthlyBudgetUsd, nodeId, nodeName, nodeTurnReady, fallbackAiModelId]
       properties:
         id:
           type: integer
@@ -7007,6 +7108,18 @@ components:
           type: string
         provider:
           $ref: "#/components/schemas/AiProvider"
+        nodeId:
+          type: ["integer", "null"]
+          description: Nodo che esegue i turni (solo account claude_code_node); null per gli account cloud
+        nodeName:
+          type: ["string", "null"]
+          description: Nome del nodo (null se non è un account nodo o il nodo è stato eliminato)
+        nodeTurnReady:
+          type: boolean
+          description: Il nodo è attivo e sta sondando i turni (ultimi 60 s); sempre false per gli account cloud
+        fallbackAiModelId:
+          type: ["integer", "null"]
+          description: Modello di un account cloud dell'utente a cui vanno i turni se il nodo non risponde; null per i cloud
         baseUrl:
           type: string
         allowPrivateNetwork:
@@ -7053,6 +7166,12 @@ components:
         allowPrivateNetwork:
           type: boolean
           description: Solo custom e provider non gestiti
+        nodeId:
+          type: integer
+          description: Obbligatorio per claude_code_node (un nodo attivo dell'utente, senza altro account); vietato per gli altri provider
+        fallbackAiModelId:
+          type: ["integer", "null"]
+          description: Solo per claude_code_node, modello di ripiego, di un account non nodo dell'utente
 
     OAuthGrant:
       type: object
@@ -7077,7 +7196,7 @@ components:
 
     Node:
       type: object
-      required: [id, name, status, executor, version, skills, workspaceRoot, maxConcurrent, lastSeenAt, online]
+      required: [id, name, status, executor, version, skills, workspaceRoot, maxConcurrent, lastSeenAt, online, turnReady]
       properties:
         id:
           type: integer
@@ -7104,6 +7223,9 @@ components:
         online:
           type: boolean
           description: Ha comunicato negli ultimi 2 minuti
+        turnReady:
+          type: boolean
+          description: Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)
 
     NodeCreate:
       type: object
@@ -7243,6 +7365,75 @@ components:
           type: integer
           minimum: 0
           maximum: 2000000000
+        sessionId:
+          type: string
+          minLength: 1
+          maxLength: 200
+
+    NodeTurnPackage:
+      type: object
+      required: [id, leaseToken, model, systemPrompt, prompt, mcpUrl, turnToken, maxTurns, timeoutMs]
+      properties:
+        id:
+          type: integer
+        leaseToken:
+          type: string
+        model:
+          type: string
+          description: Modello per claude (alias o id)
+        systemPrompt:
+          type: string
+        prompt:
+          type: string
+          description: Messaggi del turno con le loro etichette, da passare su stdin
+        mcpUrl:
+          type: string
+          description: Indirizzo del server MCP del turno (`/mcp/turn`)
+        turnToken:
+          type: string
+          description: Token `cat_…` del turno per `/mcp/turn`, valido finché il turno è in corso
+        maxTurns:
+          type: integer
+        timeoutMs:
+          type: integer
+
+    NodeTurnReport:
+      type: object
+      required: [leaseToken, status]
+      properties:
+        leaseToken:
+          type: string
+          minLength: 1
+          maxLength: 200
+        status:
+          type: string
+          enum: [done, failed]
+        content:
+          type: string
+          maxLength: 200000
+          description: Risposta di Claude (oltre 20 000 caratteri si tronca)
+        errorCode:
+          type: string
+          maxLength: 100
+          description: >-
+            model_unavailable, timeout, usage_limit, not_logged_in, claude_failed, stopped, lease_lost,
+            node_disabled, restart; altro → claude_failed
+        promptTokens:
+          type: integer
+          minimum: 0
+          maximum: 2000000000
+        completionTokens:
+          type: integer
+          minimum: 0
+          maximum: 2000000000
+        cachedTokens:
+          type: integer
+          minimum: 0
+          maximum: 2000000000
+        costUsd:
+          type: number
+          minimum: 0
+          maximum: 100000
         sessionId:
           type: string
           minLength: 1
@@ -7459,6 +7650,9 @@ components:
           minimum: 0
           maximum: 1000000
           description: Tetto di spesa mensile in USD (arrotondato al centesimo); null = nessun limite
+        fallbackAiModelId:
+          type: ["integer", "null"]
+          description: Solo account claude_code_node; null toglie il ripiego
 
     AiModel:
       type: object

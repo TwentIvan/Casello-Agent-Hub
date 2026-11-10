@@ -31,7 +31,54 @@ function writeEsito() {
   process.stdout.write(cliJson("risultato della CLI"));
 }
 
+function turnJson(result, extra = {}) {
+  return JSON.stringify({
+    type: "result",
+    subtype: "success",
+    is_error: false,
+    result,
+    session_id: "s",
+    total_cost_usd: 0.01,
+    usage: { input_tokens: 100, cache_read_input_tokens: 20, cache_creation_input_tokens: 5, output_tokens: 40 },
+    ...extra,
+  });
+}
+
+async function readStdin() {
+  let data = "";
+  for await (const c of process.stdin) data += c;
+  return data;
+}
+
 switch (mode) {
+  case "turn": {
+    // risponde ripetendo il prompt ricevuto su stdin
+    const input = await readStdin();
+    process.stdout.write(turnJson(`ciao (${input})`));
+    break;
+  }
+  case "turn-error": {
+    await readStdin();
+    process.stdout.write(turnJson(process.env.FAKE_ERROR_TEXT ?? "boom", { is_error: true, subtype: "error_during_execution" }));
+    process.exit(1);
+    break;
+  }
+  case "turn-stderr": {
+    await readStdin();
+    process.stderr.write(process.env.FAKE_ERROR_TEXT ?? "boom");
+    process.exit(1);
+    break;
+  }
+  case "turn-maxturns": {
+    await readStdin();
+    process.stdout.write(turnJson(process.env.FAKE_RESULT ?? "", { subtype: "error_max_turns", is_error: true }));
+    break;
+  }
+  case "turn-slow": {
+    await readStdin();
+    setTimeout(() => process.stdout.write(turnJson("lento")), Number(process.env.FAKE_CLAUDE_DELAY_MS ?? "300"));
+    break;
+  }
   case "esito":
     writeEsito();
     break;

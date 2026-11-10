@@ -173,7 +173,7 @@ function RoleCard({
           {role.runsOn === "cloud" && (
             <div className="min-w-0 space-y-1.5">
               <Label htmlFor={`${id}-model`}>Modello</Label>
-              <ModelPicker id={`${id}-model`} value={role.aiModelId} onChange={(v) => onChange({ aiModelId: v })} disabled={readOnly} />
+              <ModelPicker id={`${id}-model`} value={role.aiModelId} onChange={(v) => onChange({ aiModelId: v })} disabled={readOnly} cloudOnly />
             </div>
           )}
         </div>

@@ -4,6 +4,7 @@ import { encryptSecret } from "../secrets";
 import { InstanceRoleSchema, TemplateRoleSchema, type InstanceRole, type TemplateRole } from "./manifest";
 import { TEAM_MESSAGES, TeamRuleError, validateRoles } from "./rules";
 import type { SkillKind } from "./skills";
+import { nodeModelFor } from "../../../test/node-turn-fixture";
 
 // Regole di salvataggio di modelli e istanze sul Postgres di prova (PGlite del global setup)
 
@@ -117,6 +118,12 @@ describe("modello e luogo", () => {
     await expectError(template([role({ aiModelId: null })]), TEAM_MESSAGES.modelUnavailable);
     await expectError(template([role({ aiModelId: otherModel })]), TEAM_MESSAGES.modelUnavailable);
     await expectError(template([role({ aiModelId: 999_999 })]), TEAM_MESSAGES.modelUnavailable);
+  });
+
+  it("cloud con un modello Claude Code (nodo) → 400 con il messaggio fisso", async () => {
+    const nodeModel = await nodeModelFor(userId);
+    await expectError(template([role({ aiModelId: nodeModel })]), TEAM_MESSAGES.nodeModelNotAllowed);
+    expect(TEAM_MESSAGES.nodeModelNotAllowed).toBe("Claude Code (nodo) non è disponibile qui: scegli un modello cloud");
   });
 
   it("node con modello", async () => {

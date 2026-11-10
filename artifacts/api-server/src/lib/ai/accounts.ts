@@ -1,8 +1,9 @@
 import { eq, sql } from "drizzle-orm";
-import { db, aiAccountsTable, aiModelsTable, providersTable, type AiAccount } from "@workspace/db";
+import { db, aiAccountsTable, aiModelsTable, nodesTable, providersTable, type AiAccount } from "@workspace/db";
 import { decryptSecret } from "../secrets";
 import { discoverModels, ProviderError, type DiscoveredModel } from "./discovery";
 import { LEGACY_GATEWAY_PROVIDER, privateNetworkAllowed } from "./providers";
+import { NODE_PROVIDER, nodeAccountModels } from "./node-account";
 
 // Modelli degli account AI: salvataggio dei modelli scoperti, verifica di un account e arricchimento
 // dal catalogo. Usati dalle route degli account e dall'aggiornamento del catalogo.
@@ -123,6 +124,7 @@ async function recognizeCustomProvider(tx: Tx, accountId: number): Promise<void>
  */
 export async function verifyAccount(account: AiAccount): Promise<DiscoveredModel[] | null> {
   const now = new Date();
+  if (account.provider === NODE_PROVIDER) return verifyNodeAccount(account, now);
   let models: DiscoveredModel[];
   try {
     let apiKey: string | null = null;
@@ -166,6 +168,33 @@ export async function verifyAccount(account: AiAccount): Promise<DiscoveredModel
       .returning({ id: aiAccountsTable.id });
     // Account eliminato durante la verifica: niente modelli orfani (la route risponde 404)
     if (updated.length) await upsertDiscovered(tx, account.id, models);
+  });
+  return models;
+}
+
+/**
+ * Account nodo: nessuna chiamata di rete. I modelli sono gli alias di Claude Code più le offerte `anthropic`
+ * del catalogo; lo stato è `ok` se il nodo esiste ed è attivo, altrimenti `error` con testo fisso.
+ */
+async function verifyNodeAccount(account: AiAccount, now: Date): Promise<DiscoveredModel[] | null> {
+  const [node] =
+    account.nodeId === null
+      ? []
+      : await db.select({ status: nodesTable.status }).from(nodesTable).where(eq(nodesTable.id, account.nodeId)).limit(1);
+  // Stato dell'account: solo nodo eliminato o disattivato. Un Mac in stop durante l'aggiornamento settimanale del
+  // catalogo non mette l'account in errore: la prontezza ai turni si mostra a parte (`nodeTurnReady`)
+  const lastError = node === undefined ? "nodo eliminato" : node.status !== "active" ? "nodo disattivato" : null;
+  const models = await nodeAccountModels();
+  await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(aiAccountsTable)
+      .set({ status: lastError === null ? "ok" : "error", lastError, lastCheckedAt: now, updatedAt: now })
+      .where(eq(aiAccountsTable.id, account.id))
+      .returning({ id: aiAccountsTable.id });
+    if (!updated.length) return;
+    await upsertDiscovered(tx, account.id, models);
+    // I turni del nodo usano gli strumenti del centralino: tutti i modelli dell'account li supportano
+    await tx.update(aiModelsTable).set({ supportsTools: true }).where(eq(aiModelsTable.accountId, account.id));
   });
   return models;
 }

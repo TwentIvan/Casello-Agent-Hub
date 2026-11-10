@@ -12,6 +12,8 @@ export interface Config {
   permissionMode: string;
   skillsDirs: string[];
   maxConcurrent: number;
+  /** Turni delegati in parallelo (1..4, default 2). */
+  maxConcurrentTurns: number;
   taskTimeoutMinutes: number;
 }
 
@@ -25,6 +27,8 @@ export class ConfigError extends Error {
 export interface NodePaths {
   configPath: string;
   logsDir: string;
+  /** Cartelle temporanee dei turni (una per turno, cancellata a fine turno). */
+  turnsDir: string;
   statePath: string;
   /** Copia del programma usata dal servizio: non dipende dalla cartella in cui è stato costruito. */
   programPath: string;
@@ -36,6 +40,7 @@ export function defaultPaths(home = homedir()): NodePaths {
   return {
     configPath: path.join(dir, "config.json"),
     logsDir: path.join(dir, "logs"),
+    turnsDir: path.join(dir, "turns"),
     statePath: path.join(dir, "state.json"),
     programPath: path.join(dir, "bin", "casello-nodo.mjs"),
   };
@@ -54,6 +59,7 @@ const ConfigFile = z.object({
   permissionMode: z.string().min(1).default("bypassPermissions"),
   skillsDirs: z.array(z.string().min(1)).optional(),
   maxConcurrent: z.number().int().min(1).max(3).default(1),
+  maxConcurrentTurns: z.number().int().min(1).max(4).default(2),
   taskTimeoutMinutes: z
     .number()
     .positive()
@@ -110,6 +116,7 @@ export function loadConfig(configPath = defaultPaths().configPath, opts: { home?
     permissionMode: c.permissionMode,
     skillsDirs: (c.skillsDirs ?? defaultSkillsDirs(home)).map((d) => expandHome(d, home)),
     maxConcurrent: c.maxConcurrent,
+    maxConcurrentTurns: c.maxConcurrentTurns,
     taskTimeoutMinutes: c.taskTimeoutMinutes,
   };
 }

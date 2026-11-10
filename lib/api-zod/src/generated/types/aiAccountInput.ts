@@ -28,4 +28,11 @@ export interface AiAccountInput {
   baseUrl?: string | null;
   /** Solo custom e provider non gestiti */
   allowPrivateNetwork?: boolean;
+  /** Obbligatorio per claude_code_node (un nodo attivo dell'utente, senza altro account); vietato per gli altri provider */
+  nodeId?: number;
+  /**
+     * Solo per claude_code_node, modello di ripiego, di un account non nodo dell'utente
+     * @nullable
+     */
+  fallbackAiModelId?: number | null;
 }

@@ -8,6 +8,7 @@ import { startOAuthSweeper } from "./lib/oauth/grants";
 import { ensureEmbedClients } from "./lib/embed/clients";
 import { closeAllActiveSessions, startAlfredSweeper } from "./lib/alfred/sessions";
 import { startMemorySweeper } from "./lib/memory/summaries";
+import { startCodeCacheSweeper } from "./lib/code-reader/source-cache";
 import { failInterruptedRuns } from "./lib/run-executor";
 import { startRunQueue } from "./lib/run-queue";
 import { startTriggerPoller } from "./lib/triggers/poller";
@@ -164,6 +165,7 @@ try {
 }
 startAlfredSweeper();
 startMemorySweeper();
+startCodeCacheSweeper();
 
 app.listen(port, (err) => {
   if (err) {

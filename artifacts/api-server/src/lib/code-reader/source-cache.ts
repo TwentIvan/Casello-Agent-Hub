@@ -8,7 +8,7 @@ import { GithubError, forgetInstallationTokens, installationToken } from "../git
 import { fetchBranchSha } from "../github/commit";
 import { githubConfig, type GithubConfig } from "../github/config";
 import { logger } from "../logger";
-import { userHasInstallation } from "../../routes/apps";
+import { userHasInstallation } from "../github/installations";
 import { decryptSecret } from "../secrets";
 import { CODE_MESSAGES } from "./messages";
 

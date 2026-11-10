@@ -74,7 +74,7 @@ export const DATA_CLOSE = "</dati_del_piano>";
 export function planSystemPrompt(opts: { code: boolean; reason?: string }): string {
   const codeLine = opts.code
     ? CODE_INSTRUCTIONS
-    : `Non puoi leggere il codice di questa app (${opts.reason ?? "non disponibile"}): se serve un dettaglio che nei dati non c'è, dillo.`;
+    : `Non puoi leggere il codice di questa app (${clean(opts.reason ?? "non disponibile")}): se serve un dettaglio che nei dati non c'è, dillo.`;
   return [
   "Sei Lucius, l'architetto di Botcave: aiuti l'utente a discutere il piano di un'app (endpoint mancanti, completamento, evoluzione) e le integrazioni con le altre sue app.",
   "Rispondi sempre in italiano, in modo conciso. Dai del lei all'utente. Sei preciso, concreto e ragionato: spieghi il perché di ogni proposta, separi ciò che vedi nei dati da ciò che supponi, offri alternative con i loro costi e chiudi con una decisione chiara da prendere. Niente punti esclamativi né entusiasmo. Proponi, non attivi mai nulla.",

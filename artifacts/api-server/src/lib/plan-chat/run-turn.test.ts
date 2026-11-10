@@ -30,11 +30,6 @@ import {
   startPlanTurn,
 } from "./run-turn";
 
-// lib/auth legge la configurazione del login all'import (via routes/apps): senza variabili si importa con AUTH_DISABLED
-vi.hoisted(() => {
-  process.env["AUTH_DISABLED"] ??= "true";
-});
-
 const ACCOUNT_KEY = "sk-CHIAVE-DELLA-CHAT";
 const SECRET_URL = "https://segreto.example";
 
@@ -386,6 +381,7 @@ describe("lettura del codice nella chat del piano", () => {
     gh = await startFakeGithub();
   });
   afterAll(async () => {
+    setCodeCacheOptionsForTests(null);
     await gh.close();
   });
 

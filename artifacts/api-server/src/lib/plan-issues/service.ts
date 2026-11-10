@@ -3,7 +3,7 @@ import { db, analysesTable, analysisItemsTable, appsTable, type AnalysisItem } f
 import { githubConfig } from "../github/config";
 import { IssueError, createIssue, ensureLabels, issuesToken, listCaselloIssues } from "../github/issues";
 import { completionData } from "../architect/issues";
-import { INSTALLATION_NOT_YOURS, userHasInstallation } from "../../routes/apps";
+import { INSTALLATION_NOT_YOURS, userHasInstallation } from "../github/installations";
 import { latestCompletedAnalysisId, loadPlanItems } from "../plan-chat/run-turn";
 import { creationOrder, isEligible, issueContent, issueLabels } from "./content";
 import { logger } from "../logger";

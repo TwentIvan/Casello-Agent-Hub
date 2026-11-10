@@ -44,7 +44,7 @@ import { ITEM_SCHEMAS, PHASES, reviewedToolPayload, type AnalysisChapter } from 
 import { SOURCE_LIMITS } from "../lib/architect/source-tree";
 import { runRateLimit } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
-import { INSTALLATION_NOT_YOURS, userHasInstallation } from "./apps";
+import { INSTALLATION_NOT_YOURS, userHasInstallation } from "../lib/github/installations";
 import { toPublicAnalysis, toPublicAnalysisDetail, toPublicItem } from "./serializers";
 
 // Route dell'architetto: avvio delle analisi (sorgenti dell'app o zip caricato, oppure in coda per

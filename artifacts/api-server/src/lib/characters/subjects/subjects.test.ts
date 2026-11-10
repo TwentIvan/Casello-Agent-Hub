@@ -1,9 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-
-// lib/auth legge la configurazione del login all'import (via routes/apps): senza variabili si importa con AUTH_DISABLED
-vi.hoisted(() => {
-  process.env["AUTH_DISABLED"] ??= "true";
-});
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import {
   db,

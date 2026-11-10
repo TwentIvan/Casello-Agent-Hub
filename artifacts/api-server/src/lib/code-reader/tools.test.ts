@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { db, pool, appsTable, githubInstallationsTable, usersTable, type App } from "@workspace/db";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import type { ChatToolCall } from "../ai/chat-types";
@@ -7,11 +7,6 @@ import type { GithubConfig } from "../github/config";
 import { buildZip } from "../zip-writer";
 import { clearCodeCache, setCodeCacheOptionsForTests } from "./source-cache";
 import { CODE_TOOLS, CODE_TOOL_NAMES, CodeToolRunner, isCodeTool } from "./tools";
-
-// lib/auth legge la configurazione del login all'import (via routes/apps): senza variabili si importa con AUTH_DISABLED
-vi.hoisted(() => {
-  process.env["AUTH_DISABLED"] ??= "true";
-});
 
 const SHA1 = "abcdef1234567890".repeat(2) + "abcdef12";
 const big = Array.from({ length: 1000 }, (_, i) => `riga numero ${i + 1} ${"x".repeat(20)}`).join("\n");

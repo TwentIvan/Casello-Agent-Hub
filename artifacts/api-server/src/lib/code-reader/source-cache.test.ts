@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { db, pool, appsTable, githubInstallationsTable, usersTable, type App } from "@workspace/db";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { clearInstallationTokenCache } from "../github/app";
@@ -13,11 +13,6 @@ import {
   setCodeCacheOptionsForTests,
   sweepCodeCache,
 } from "./source-cache";
-
-// lib/auth legge la configurazione del login all'import (via routes/apps): senza variabili si importa con AUTH_DISABLED
-vi.hoisted(() => {
-  process.env["AUTH_DISABLED"] ??= "true";
-});
 
 const SHA1 = "a".repeat(40);
 const SHA2 = "b".repeat(40);

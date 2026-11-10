@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process";
-import { chmod, copyFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
-import { ConfigError, defaultPaths, loadConfig, type Config } from "./config";
+import { ConfigError, defaultPaths, loadConfig, secureBaseUrl, writeConfigMerged, type Config } from "./config";
 import {
   buildPlist,
   installService,
@@ -61,17 +61,14 @@ function expandHome(p: string, home: string): string {
 
 /** Il token viaggia nell'header: https obbligatorio, http solo verso questa macchina. */
 export function validateUrl(raw: string): string {
-  let u: URL;
   try {
-    u = new URL(raw);
+    new URL(raw);
   } catch {
     throw new CliError("indirizzo di Botcave non valido");
   }
-  const local = ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
-  if (u.protocol !== "https:" && !(u.protocol === "http:" && local)) {
-    throw new CliError("l'indirizzo di Botcave deve essere https");
-  }
-  return raw.replace(/\/+$/, "");
+  const url = secureBaseUrl(raw);
+  if (!url) throw new CliError("l'indirizzo di Botcave deve essere https");
+  return url;
 }
 
 async function ensureDirectory(dir: string): Promise<void> {
@@ -137,35 +134,105 @@ async function install(argv: string[], d: CliDeps): Promise<number> {
     throw new CliError("eseguibile non costruito: esegui `pnpm --filter @workspace/casello-nodo run build`");
   }
 
-  const paths = defaultPaths(d.home);
-  const configDir = path.dirname(paths.configPath);
-  await mkdir(configDir, { recursive: true, mode: 0o700 });
-  // La cartella può esistere già con permessi più larghi
-  await chmod(configDir, 0o700);
-  // Prima della config: se la copia fallisce non resta scritto nulla di nuovo
-  const program = await installProgram(d.entryPath, paths.programPath);
-  // Il token non passa mai da un file con permessi larghi: file temporaneo creato 600, poi rename sulla config
-  const tmp = `${paths.configPath}.${process.pid}.tmp`;
-  await rm(tmp, { force: true });
-  await writeFile(tmp, `${JSON.stringify({ caselloUrl: url, token, workspaceRoot }, null, 2)}\n`, {
-    mode: 0o600,
-    flag: "wx",
+  const { program, claudeBin } = await installNode({ caselloUrl: url, token, workspaceRoot }, d, {
+    programSource: d.entryPath,
+    programPath: defaultPaths(d.home).programPath,
+    programArguments: (p) => [d.execPath, p, "run"],
+    execDir: d.execPath,
+    writeConfig: true,
   });
-  await rename(tmp, paths.configPath);
-  await mkdir(paths.logsDir, { recursive: true, mode: 0o700 });
-
-  const claudeBin = await d.whichClaude();
   if (!claudeBin) {
     d.err("attenzione: `claude` non trovato nel PATH; uso /usr/local/bin, /opt/homebrew/bin e ~/.local/bin. Installa Claude Code e fai il login.\n");
   }
-  const plist = buildPlist({
-    programArguments: [d.execPath, program, "run"],
-    logsDir: paths.logsDir,
-    path: servicePath(claudeBin, d.execPath, d.home),
-  });
-  await installService({ launchctl: d.launchctl, uid: d.uid, home: d.home, plist });
+  const paths = defaultPaths(d.home);
   d.out(`Servizio installato e avviato (${plistPath(d.home)}).\nProgramma: ${program}\nConfig: ${paths.configPath}\nLog: ${paths.logsDir}\n`);
   return 0;
+}
+
+export interface InstallDeps {
+  home: string;
+  uid: number;
+  launchctl: LaunchctlRunner;
+  whichClaude: () => Promise<string | null>;
+}
+
+interface InstallTarget {
+  programSource: string;
+  programPath: string;
+  /** Argomenti del LaunchAgent dato il programma installato. */
+  programArguments: (program: string) => string[];
+  /** Eseguibile la cui cartella entra nel PATH del servizio. */
+  execDir: string;
+  writeConfig: boolean;
+}
+
+/** Programma, config (se richiesta), cartella dei log e LaunchAgent: comune a CLI e app. */
+async function installNode(
+  cfg: { caselloUrl: string; token: string; workspaceRoot: string },
+  d: InstallDeps,
+  target: InstallTarget,
+): Promise<{ program: string; claudeBin: string | null }> {
+  const paths = defaultPaths(d.home);
+  const configDir = path.dirname(paths.configPath);
+  await mkdir(configDir, { recursive: true, mode: 0o700 });
+  await chmod(configDir, 0o700);
+  // Prima della config: se la copia fallisce non resta scritto nulla di nuovo
+  const program = await installProgram(target.programSource, target.programPath);
+  if (target.writeConfig) {
+    await writeConfigMerged(paths.configPath, {
+      caselloUrl: cfg.caselloUrl,
+      token: cfg.token,
+      workspaceRoot: cfg.workspaceRoot,
+    });
+  }
+  await mkdir(paths.logsDir, { recursive: true, mode: 0o700 });
+  const claudeBin = await d.whichClaude();
+  const plist = buildPlist({
+    programArguments: target.programArguments(program),
+    logsDir: paths.logsDir,
+    path: servicePath(claudeBin, target.execDir, d.home),
+  });
+  await installService({ launchctl: d.launchctl, uid: d.uid, home: d.home, plist });
+  return { program, claudeBin };
+}
+
+/**
+ * Installazione dell'app: copia l'eseguibile in `~/.casello-nodo/bin/casello-nodo` (755, temporaneo e rename), scrive
+ * la config (600, gli altri campi restano) e carica il LaunchAgent con `[programma, "run"]`: il programma è un
+ * eseguibile, senza node davanti. `writeConfig: false` adotta una config esistente senza toccarla. Toglie la copia
+ * `.mjs` di un'installazione della CLI.
+ */
+export async function installFromConfig(
+  cfg: { caselloUrl: string; token: string; workspaceRoot: string },
+  programSource: string,
+  d: InstallDeps,
+  opts: { writeConfig?: boolean } = {},
+): Promise<{ program: string }> {
+  const paths = defaultPaths(d.home);
+  const { program } = await installNode(cfg, d, {
+    programSource,
+    programPath: paths.appProgramPath,
+    programArguments: (p) => [p, "run"],
+    execDir: paths.appProgramPath,
+    writeConfig: opts.writeConfig ?? true,
+  });
+  await rm(paths.programPath, { force: true });
+  return { program };
+}
+
+/**
+ * Disinstallazione locale: scarica il servizio, toglie il plist e la cartella del programma (anche `.prev`); con
+ * `removeConfig` anche la config con il token. Log e spazi di lavoro restano.
+ */
+export async function uninstallLocal(
+  d: { launchctl: LaunchctlRunner; uid: number; home: string },
+  opts: { removeConfig: boolean },
+): Promise<{ wasLoaded: boolean }> {
+  const { wasLoaded } = await uninstallService({ launchctl: d.launchctl, uid: d.uid, home: d.home });
+  const paths = defaultPaths(d.home);
+  await rm(path.dirname(paths.programPath), { recursive: true, force: true });
+  if (opts.removeConfig) await rm(paths.configPath, { force: true });
+  return { wasLoaded };
 }
 
 /**
@@ -191,9 +258,8 @@ async function installProgram(entryPath: string, programPath: string): Promise<s
 }
 
 async function uninstall(d: CliDeps): Promise<number> {
-  const { wasLoaded } = await uninstallService({ launchctl: d.launchctl, uid: d.uid, home: d.home });
+  const { wasLoaded } = await uninstallLocal(d, { removeConfig: false });
   const paths = defaultPaths(d.home);
-  await rm(path.dirname(paths.programPath), { recursive: true, force: true });
   d.out(
     `${wasLoaded ? "Servizio fermato e rimosso" : "Servizio non caricato; plist rimosso"}, programma rimosso.\nConfig e log restano: ${paths.configPath} e ${paths.logsDir}\n`,
   );

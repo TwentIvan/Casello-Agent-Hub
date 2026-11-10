@@ -29,6 +29,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
+import { NodeDownloadCard } from "@/components/account/node-download-card";
+import { NodeExtraActions, NodeStatusDetails } from "@/components/account/node-status-list";
 
 const MAX_NAME = 100;
 const MAX_SKILL_CHIPS = 4;
@@ -92,7 +94,7 @@ function NewNodeDialog({
           }}
         >
           <DialogHeader>
-            <DialogTitle>Nuovo nodo</DialogTitle>
+            <DialogTitle>Installazione da terminale</DialogTitle>
             <DialogDescription>
               Un nodo è un Mac su cui gira Claude Code per eseguire i compiti «nodo» delle squadre. Dopo la creazione vedrai
               il suo token una sola volta.
@@ -266,6 +268,7 @@ function NodeRow({
           <span>{node.maxConcurrent === 1 ? "1 compito alla volta" : `${node.maxConcurrent} compiti alla volta`}</span>
           {node.workspaceRoot && <span className="min-w-0 break-all font-mono">{node.workspaceRoot}</span>}
         </div>
+        <NodeStatusDetails node={node} />
         <SkillChips skills={node.skills} />
       </div>
       <div className="flex flex-wrap gap-2">
@@ -274,9 +277,12 @@ function NodeRow({
             Disattiva
           </Button>
         )}
-        <Button variant="outline" size="sm" onClick={onRegenerate}>
-          Rigenera token
-        </Button>
+        <NodeExtraActions node={node} />
+        {node.kind !== "app" && (
+          <Button variant="outline" size="sm" onClick={onRegenerate}>
+            Rigenera token
+          </Button>
+        )}
         <Button variant="outline" size="sm" className="text-destructive" onClick={onDelete}>
           Elimina
         </Button>
@@ -339,6 +345,8 @@ export function NodesSection() {
   });
 
   return (
+    <div className="space-y-6">
+    <NodeDownloadCard />
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
         <div className="space-y-1.5">
@@ -350,7 +358,7 @@ export function NodesSection() {
         </div>
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus />
-          Nuovo nodo
+          Installazione da terminale
         </Button>
       </CardHeader>
       <CardContent>
@@ -359,7 +367,7 @@ export function NodesSection() {
         ) : !nodes.data ? (
           <Skeleton className="h-16 w-full" />
         ) : nodes.data.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nessun nodo: creane uno per far eseguire i compiti «nodo» sul tuo Mac.</p>
+          <p className="text-sm text-muted-foreground">Nessun nodo: scarica Botcave Nodo per Mac e collegalo, oppure usa l'installazione da terminale.</p>
         ) : (
           <ul className="divide-y rounded-md border">
             {nodes.data.map((node) => (
@@ -419,5 +427,6 @@ export function NodesSection() {
         onConfirm={() => deleting && remove.mutate({ id: deleting.id })}
       />
     </Card>
+    </div>
   );
 }

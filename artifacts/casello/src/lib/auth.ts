@@ -1,4 +1,5 @@
 import { ApiError } from "@workspace/api-client-react";
+import { returnToPath } from "@/lib/pair-code";
 
 export function isUnauthorized(error: unknown): boolean {
   return error instanceof ApiError && error.status === 401;
@@ -10,7 +11,8 @@ function currentReturnTo(): string {
   url.searchParams.delete("auth");
   url.searchParams.delete("provider");
   url.searchParams.delete("github");
-  return encodeURIComponent(`${url.pathname}${url.search}`);
+  // Il codice di abbinamento di un Mac non passa dal redirect (finirebbe nei log): vedi pair-code.ts
+  return encodeURIComponent(returnToPath(url));
 }
 
 /** URL di login con Google che, a login riuscito, riporta alla pagina corrente. */

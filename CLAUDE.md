@@ -1547,8 +1547,8 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   (esecuzione dei ruoli node)") senza terminale; la console (Account → Nodi) è l'unica interfaccia di gestione. La CLI (`casello-nodo install|uninstall|status|run`)
   resta per sviluppo, test e chi la preferisce: l'app è un'altra entrata dello stesso programma. Prima versione **senza firma Apple** (primo avvio con «Apri comunque»).
 - **App** (`app-mode.ts`, `index.ts`): eseguibile unico (Node 24 «single executable application» con il bundle CommonJS di `casello-nodo`) in
-  `Botcave Nodo.app/Contents/MacOS/botcave-nodo`, `CFBundleIdentifier` `cloud.fantamister.botcave-nodo`, `LSUIElement` (niente icona nel Dock). Senza argomenti e dentro un
-  `.app` (`isAppExecPath`) parte la modalità app, con argomenti la CLI (`--version` stampa la versione, iniettata con `--define:__NODE_VERSION__` da `package.json`). Senza
+  `Botcave Nodo.app/Contents/MacOS/botcave-nodo`, `CFBundleIdentifier` `cloud.fantamister.botcave-nodo`, `LSUIElement` (niente icona nel Dock). Senza argomenti (un `-psn_…` aggiunto dal Finder si ignora,
+  `launchArgs`) e dentro un `.app` (`isAppExecPath`) parte la modalità app, con argomenti la CLI (`--version` stampa la versione, iniettata con `--define:__NODE_VERSION__` da `package.json`). Senza
   config → abbinamento; con una config valida della CLI ma senza `~/.casello-nodo/bin/casello-nodo` → la adotta (indirizzo, token e radice restano) e installa programma e
   LaunchAgent; collegato → menu nativo (`choose from list`): «Apri Botcave» (`/account`), «Installa Claude Code» (solo se `claude` manca), «Accedi a Claude», «Cambia
   cartella di lavoro» (config e `kickstart -k` del servizio), «Apri i log», «Ricollega», «Disinstalla». Dialoghi e notifiche con `osascript` (`dialogs.ts`: ogni riga un

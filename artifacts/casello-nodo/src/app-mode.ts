@@ -63,6 +63,14 @@ export function isAppExecPath(execPath: string): boolean {
   return /\.app\/Contents\/MacOS\//.test(execPath);
 }
 
+/**
+ * Argomenti utili per scegliere la modalità: toglie il `-psn_<n>_<n>` che il Finder (o `open`) può aggiungere avviando
+ * un'app, così un doppio clic non finisce nella CLI.
+ */
+export function launchArgs(argv: string[]): string[] {
+  return argv.filter((a) => !a.startsWith("-psn_"));
+}
+
 function readConfig(home: string): Config | null {
   try {
     return loadConfig(defaultPaths(home).configPath, { home });

@@ -1,7 +1,7 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { isAppExecPath, MENU_ITEMS, runAppMode, type AppDeps, type ClaudeActions } from "./app-mode";
+import { isAppExecPath, launchArgs, MENU_ITEMS, runAppMode, type AppDeps, type ClaudeActions } from "./app-mode";
 import type { PairingClient, PollResult } from "./client";
 import { appBaseUrl, DEFAULT_URL, defaultPaths } from "./config";
 import { escapeAppleScript, osascriptDialogs, type Dialogs, type ExecFileLike } from "./dialogs";
@@ -430,6 +430,12 @@ describe("osascriptDialogs", () => {
 });
 
 describe("modalità e indirizzo", () => {
+  it("launchArgs toglie -psn_ del Finder e lascia gli altri argomenti", () => {
+    expect(launchArgs(["-psn_0_12345"])).toEqual([]);
+    expect(launchArgs([])).toEqual([]);
+    expect(launchArgs(["-psn_0_1", "run"])).toEqual(["run"]);
+    expect(launchArgs(["--version"])).toEqual(["--version"]);
+  });
   it("isAppExecPath", () => {
     expect(isAppExecPath("/Applications/Botcave Nodo.app/Contents/MacOS/botcave-nodo")).toBe(true);
     expect(isAppExecPath("/opt/homebrew/bin/node")).toBe(false);

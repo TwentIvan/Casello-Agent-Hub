@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { PlanToolRunner, type NewProposal, type PlanToolEnv, type PlanToolItem } from "./tools";
+import {
+  MAX_INVALID_PER_TURN,
+  PLAN_TOOLS,
+  PROPOSAL_EXHAUSTED,
+  PlanToolRunner,
+  type NewProposal,
+  type PlanToolEnv,
+  type PlanToolItem,
+} from "./tools";
 
 const completionPayload = (key: string, dependsOn: string[] = []) => ({
   key,
@@ -109,15 +117,50 @@ describe("PlanToolRunner", () => {
     expect(await r.run(call("boh", {}))).toContain("strumento sconosciuto");
   });
 
-  it("alla terza proposta non valida le correzioni sono esaurite", async () => {
+  it("alla terza proposta non valida sulla stessa voce le correzioni di quella voce sono esaurite, le altre passano", async () => {
     const { env, saved } = makeEnv();
     const r = new PlanToolRunner(env, 1);
-    const bad = call("propose", { kind: "add", chapter: "completion", payload: {}, rationale: "r" });
+    const bad = call("propose", { kind: "add", chapter: "completion", payload: { key: "kx" }, rationale: "r" });
     expect((await r.run(bad)).startsWith("proposta non valida")).toBe(true);
     expect((await r.run(bad)).startsWith("proposta non valida")).toBe(true);
-    expect(await r.run(bad)).toBe("correzioni esaurite: non proporre altro in questo turno");
+    expect(await r.run(bad)).toBe(PROPOSAL_EXHAUSTED);
+    const good = call("propose", { kind: "discard", chapter: "completion", targetRef: "c1", rationale: "r" });
+    expect(await r.run(good)).toBe("proposta registrata (#1): l'utente la vedrà come scheda");
+    expect(saved).toHaveLength(1);
+  });
+
+  it("dopo troppe proposte non valide nel turno nessuna proposta passa più", async () => {
+    const { env, saved } = makeEnv();
+    const r = new PlanToolRunner(env, 1);
+    for (let i = 0; i < MAX_INVALID_PER_TURN; i++) {
+      expect((await r.run(call("propose", { kind: "add", chapter: "completion", payload: { key: `k${i}` }, rationale: "r" }))).startsWith("proposta non valida")).toBe(true);
+    }
     const good = call("propose", { kind: "discard", chapter: "completion", targetRef: "c1", rationale: "r" });
     expect(await r.run(good)).toBe("correzioni esaurite: non proporre altro in questo turno");
     expect(saved).toHaveLength(0);
+  });
+
+  it("l'errore nomina il campo tra virgolette ed elenca i campi del capitolo", async () => {
+    const r = new PlanToolRunner(makeEnv().env, 1);
+    const { missing: _m, ...withoutMissing } = completionPayload("k2");
+    const out = await r.run(call("propose", { kind: "add", chapter: "completion", payload: withoutMissing, rationale: "r" }));
+    expect(out).toContain('campo "missing": campo obbligatorio');
+    expect(out).toContain("Campi di completion:");
+    expect(out).toContain("missing (testo: cosa manca oggi");
+  });
+
+  it("propose update con solo alcuni campi li fonde sulla voce esistente", async () => {
+    const { env, saved } = makeEnv();
+    const out = await new PlanToolRunner(env, 1).run(
+      call("propose", { kind: "update", chapter: "completion", targetRef: "c1", payload: { phase: 2, doneWhen: "test verde" }, rationale: "r" }),
+    );
+    expect(out).toBe("proposta registrata (#1): l'utente la vedrà come scheda");
+    expect(saved[0].payload).toMatchObject({ key: "k1", title: "Aggiungere gli ordini", missing: "manca", phase: 2, doneWhen: "test verde" });
+  });
+
+  it("la descrizione dello strumento elenca i campi di ogni capitolo", () => {
+    const propose = PLAN_TOOLS.find((t) => t.function.name === "propose")!;
+    const desc = JSON.stringify(propose.function.parameters);
+    for (const field of ["missing", "doneWhen", "patch", "priority", "impact"]) expect(desc).toContain(field);
   });
 });

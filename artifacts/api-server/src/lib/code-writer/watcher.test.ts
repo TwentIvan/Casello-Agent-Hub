@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { appsTable, db, pool, teamCodeTasksTable, teamEventsTable, teamInstancesTable, teamTurnsTable, usersTable } from "@workspace/db";
+import { appsTable, db, pool, teamCodeTasksTable, teamEventsTable, teamInstancesTable, teamTasksTable, teamTurnsTable, usersTable } from "@workspace/db";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { clearInstallationTokenCache } from "../github/app";
 import { resetGithubConfigForTests } from "../github/config";
@@ -178,5 +178,30 @@ describe("sorveglianza della CI", () => {
     await watchCodeTasksOnce(at(60_000));
     expect(await events()).toHaveLength(0);
     expect((await row()).ciCheckedAt).toBeNull();
+  });
+
+  it("compito del PLAN in esecuzione: esito rinviato, poi notificato una volta", async () => {
+    run("test", "completed", "failure");
+    const plan = await getPlan(instanceId);
+    await writePlanVersion(instanceId, { ...plan, tasks: [{ ...plan.tasks[0]!, status: "running", outcome: null }] }, "approved");
+    const [exec] = await db.insert(teamTasksTable).values({ instanceId, planTaskId: "t1", roleKey: "dev", instructions: "", status: "running" }).returning();
+    await watchCodeTasksOnce(at(60_000));
+    expect(await events()).toHaveLength(0);
+    expect(await reasons()).toEqual([]);
+    expect((await getPlan(instanceId)).tasks[0]!.status).toBe("running");
+    expect(await row()).toMatchObject({ ciState: "failure", ciNotifiedSha: null });
+    await db.update(teamTasksTable).set({ status: "done" }).where(eq(teamTasksTable.id, exec!.id));
+    await watchCodeTasksOnce(at(120_000));
+    await watchCodeTasksOnce(at(180_000));
+    expect(await events()).toHaveLength(1);
+    expect(await reasons()).toHaveLength(1);
+    expect((await getPlan(instanceId)).tasks[0]!.status).toBe("blocked");
+  });
+
+  it("errore di GitHub: riga saltata e ci_checked_at aggiornato", async () => {
+    gh.pulls.set(REPO, []);
+    await watchCodeTasksOnce(at(60_000));
+    expect(await events()).toHaveLength(0);
+    expect((await row()).ciCheckedAt!.getTime()).toBe(at(60_000).getTime());
   });
 });

@@ -2,7 +2,7 @@
 // voci) e lo strumento di creazione dell'area. Alla proposta si controllano solo forma e limiti; nome o codice già usati
 // (409) e il resto delle regole li dà l'accettazione. Schede di creazione: nessuna impronta (`target_hash` null).
 
-import { and, asc, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, isNotNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { db, agentsTable, appToolsTable, appsTable } from "@workspace/db";
 import type { ChatToolCall } from "../../ai/chat-types";
@@ -27,7 +27,7 @@ const SearchArgs = z.object({ q: z.string().max(100).optional() });
 async function listAgents(q?: string) {
   const conditions = q?.trim() ? [or(ilike(agentsTable.name, likePattern(q)), ilike(appsTable.name, likePattern(q)))] : [];
   const rows = await db
-    .select({ id: agentsTable.id, name: agentsTable.name, role: agentsTable.role, status: agentsTable.status, appId: appsTable.id, app: appsTable.name })
+    .select({ id: agentsTable.id, name: agentsTable.name, role: agentsTable.role, status: agentsTable.status, appId: appsTable.id, app: appsTable.name, slug: appsTable.slug })
     .from(agentsTable)
     .innerJoin(appsTable, eq(appsTable.id, agentsTable.appId))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
@@ -37,7 +37,7 @@ async function listAgents(q?: string) {
 }
 
 const AREA_AGENTS_TOOLS = [
-  fn("elenca_agenti", "Elenca gli agenti (nome, app, ruolo, stato), al massimo 50, con ricerca per nome dell'agente o dell'app.", Q),
+  fn("elenca_agenti", "Elenca gli agenti (nome, app con il suo slug, ruolo, stato), al massimo 50, con ricerca per nome dell'agente o dell'app.", Q),
   READ_APP_TOOLS_TOOL,
   fn(
     "proponi_nuovo_agente",
@@ -204,7 +204,12 @@ export const areaAgentsSubject = area("area_agents", "Area Agenti", AREA_AGENTS_
 }, listAgents, {
   // Nessuna app di partenza: gli strumenti del codice vogliono `app`; disponibili se almeno un'app ha il codice leggibile
   codeApp: async (userId) => {
-    for (const app of await db.select().from(appsTable).orderBy(asc(appsTable.id))) {
+    const apps = await db
+      .select()
+      .from(appsTable)
+      .where(and(eq(appsTable.sourceType, "github"), isNotNull(appsTable.sourceRepo)))
+      .orderBy(asc(appsTable.id));
+    for (const app of apps) {
       if ((await codeAvailability(userId, app)).ok) return { defaultAppId: null, available: true };
     }
     return { defaultAppId: null, available: false };

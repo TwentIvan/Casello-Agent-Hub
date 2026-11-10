@@ -19,7 +19,7 @@ import {
 import { encryptSecret } from "../secrets";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { clearInstallationTokenCache } from "../github/app";
-import { CODE_INSTRUCTIONS } from "../code-reader/messages";
+import { CODE_INSTRUCTIONS_GENERAL } from "../code-reader/messages";
 import { clearCodeCache, setCodeCacheOptionsForTests } from "../code-reader/source-cache";
 import { buildZip } from "../zip-writer";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
@@ -322,8 +322,23 @@ describe("lettura del codice nella chat di squadra", () => {
     await waitIdle(conversationId);
     const bodies = chatBodies();
     expect(toolNames(bodies[0])).toEqual(expect.arrayContaining([...CODE, "proponi_identita", "ricorda"]));
-    expect(bodies[0]!.messages[0]!.content).toContain(CODE_INSTRUCTIONS);
+    expect(bodies[0]!.messages[0]!.content).toContain(CODE_INSTRUCTIONS_GENERAL);
     expect(JSON.stringify(bodies[1])).toContain("Codice di Mister @ abcdef1");
+  });
+
+  it("limiti del codice: 7 giri di strumenti (oltre i 6 normali) si completano", async () => {
+    await db.update(appsTable).set({ sourceType: "github", sourceRepo: "ivan/fanta", sourceBranch: "main", sourceInstallationId: 11 });
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      return n <= 7
+        ? { content: null, toolCalls: [{ id: `c${n}`, name: "leggi_file", arguments: JSON.stringify({ percorso: "src/a.ts" }) }], usage: { prompt_tokens: 10, completion_tokens: 5 } }
+        : { content: "Fatto.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+    await startTeamChatTurn(conversationId, "guarda");
+    await waitIdle(conversationId);
+    expect(chatBodies()).toHaveLength(8);
+    expect((await getMessages()).at(-1)).toMatchObject({ content: "Fatto.", error: false });
   });
 
   it("app di riferimento zip: nessuno strumento del codice né frase", async () => {
@@ -334,6 +349,6 @@ describe("lettura del codice nella chat di squadra", () => {
     const body = chatBodies()[0]!;
     expect(toolNames(body)).toContain("proponi_identita");
     for (const t of CODE) expect(toolNames(body)).not.toContain(t);
-    expect(body.messages[0]!.content).not.toContain(CODE_INSTRUCTIONS);
+    expect(body.messages[0]!.content).not.toContain(CODE_INSTRUCTIONS_GENERAL);
   });
 });

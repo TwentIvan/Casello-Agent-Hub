@@ -8,7 +8,7 @@ import type { ChatToolCall } from "../ai/chat-types";
 import { FULL_READ_LIMITS, listDir, readFile, search, type ReadLimits } from "../architect/phase-loop";
 import { SourceTreeError } from "../architect/source-tree";
 import { logger } from "../logger";
-import { CODE_INSTRUCTIONS, CODE_MESSAGES } from "./messages";
+import { CODE_INSTRUCTIONS, CODE_INSTRUCTIONS_GENERAL, CODE_MESSAGES } from "./messages";
 import { CodeReaderError, getAppSource, type AppSource } from "./source-cache";
 
 /** Limiti ridotti rispetto all'architetto: il testo resta nel contesto della chat. */
@@ -19,7 +19,7 @@ export const CODE_READ_LIMITS: ReadLimits = {
   maxToolOutputChars: 20_000,
 };
 
-export { CODE_INSTRUCTIONS };
+export { CODE_INSTRUCTIONS, CODE_INSTRUCTIONS_GENERAL };
 
 export const CODE_TOOL_NAMES = ["elenca_cartella", "leggi_file", "cerca_nel_codice"] as const;
 type CodeToolName = (typeof CODE_TOOL_NAMES)[number];
@@ -28,7 +28,7 @@ export function isCodeTool(name: string): boolean {
   return (CODE_TOOL_NAMES as readonly string[]).includes(name);
 }
 
-const APP_PARAM = { type: "string", description: "Slug dell'app (facoltativo: senza, vale l'app della pagina)" };
+const APP_PARAM = { type: "string", description: "Slug dell'app; senza, vale l'app dell'argomento se c'è" };
 
 function fn(name: string, description: string, properties: Record<string, unknown>, required: string[]): ChatCompletionFunctionTool {
   return {

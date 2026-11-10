@@ -21,7 +21,7 @@ import { memoryContextBlock } from "../memory/context";
 import { EMPTY_REPLY_MESSAGE, INTERRUPTED_TURN_MESSAGE, TurnBusyError } from "../plan-chat/run-turn";
 import { runChatTurn } from "../node-turns/chat-turn";
 import { codeAvailability } from "../code-reader/source-cache";
-import { CODE_INSTRUCTIONS, CODE_TOOLS, CodeToolRunner, isCodeTool } from "../code-reader/tools";
+import { CODE_INSTRUCTIONS_GENERAL, CODE_TOOLS, CodeToolRunner, isCodeTool } from "../code-reader/tools";
 import { CODE_TURN_LIMITS } from "../plan-chat/turn";
 import { InstanceError, INSTANCE_MESSAGES } from "../teams/instances";
 import { buildTeamChatMessages, type HistoryMessage } from "./context";
@@ -141,7 +141,7 @@ export async function executeTeamChatTurn(conversationId: number, assistantMessa
         memory: await memoryContextBlock(conv.userId, "lucius"),
         history,
         userMessage,
-        ...(codeRunner ? { codeInstructions: CODE_INSTRUCTIONS } : {}),
+        ...(codeRunner ? { codeInstructions: CODE_INSTRUCTIONS_GENERAL } : {}),
       });
       const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
       const runner = new TeamChatToolRunner(conv.teamInstanceId, conv.userId, team);

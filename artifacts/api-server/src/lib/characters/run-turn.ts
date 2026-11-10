@@ -23,7 +23,7 @@ import { memoryContextBlock } from "../memory/context";
 import { MEMORY_TOOLS, MEMORY_TOOL_NAMES, runMemoryTool } from "../memory/tools";
 import { EMPTY_REPLY_MESSAGE, INTERRUPTED_TURN_MESSAGE, TurnBusyError } from "../plan-chat/run-turn";
 import { runChatTurn } from "../node-turns/chat-turn";
-import { CODE_INSTRUCTIONS, CODE_TOOLS, CODE_TOOL_NAMES, CodeToolRunner } from "../code-reader/tools";
+import { CODE_INSTRUCTIONS_GENERAL, CODE_TOOLS, CODE_TOOL_NAMES, CodeToolRunner } from "../code-reader/tools";
 import { CODE_TURN_LIMITS } from "../plan-chat/turn";
 import { HANDOFF_TOOL, runHandoff } from "./handoff";
 import { CHARACTER_NAMES, characterInstructions } from "./instructions";
@@ -275,7 +275,10 @@ async function runCharacterTool(
 ): Promise<string> {
   try {
     // Lettura del codice: testo semplice dal lettore, avvolto come risultato riuscito
-    if (codeRunner && (CODE_TOOL_NAMES as readonly string[]).includes(call.name)) return toolOk(await codeRunner.run(call));
+    if (codeRunner && (CODE_TOOL_NAMES as readonly string[]).includes(call.name)) {
+      const text = await codeRunner.run(call);
+      return text.startsWith("Errore: ") ? toolFail(text.slice("Errore: ".length)) : toolOk(text);
+    }
     if ((MEMORY_TOOL_NAMES as readonly string[]).includes(call.name)) {
       const args = parseArgs(call.arguments);
       if (!args) return toolFail(TOOL_ERRORS.invalidArgs);
@@ -333,7 +336,7 @@ export async function executeCharacterTurn(conversationId: number, assistantMess
           page,
           history,
           userMessage,
-          ...(codeRunner ? { extraInstructions: CODE_INSTRUCTIONS } : {}),
+          ...(codeRunner ? { extraInstructions: CODE_INSTRUCTIONS_GENERAL } : {}),
         });
         const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
         const ctx = createTurnContext({ userId: conv.userId, conversationId, messageId: assistantMessageId, subjectId: conv.subjectId, page });

@@ -19,7 +19,7 @@ import { encryptSecret } from "../secrets";
 import { INTERRUPTED_TURN_MESSAGE } from "../plan-chat/run-turn";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { clearInstallationTokenCache } from "../github/app";
-import { CODE_INSTRUCTIONS } from "../code-reader/messages";
+import { CODE_INSTRUCTIONS_GENERAL } from "../code-reader/messages";
 import { clearCodeCache, setCodeCacheOptionsForTests } from "../code-reader/source-cache";
 import { buildZip } from "../zip-writer";
 import { agentSubject } from "./subjects/agent";
@@ -433,12 +433,33 @@ describe("lettura del codice nei turni dei personaggi", () => {
 
     const bodies = chatBodies();
     expect(toolNames(bodies[0])).toEqual(expect.arrayContaining(CODE));
-    expect(bodies[0]!.messages[0]!.content).toContain(CODE_INSTRUCTIONS);
+    expect(bodies[0]!.messages[0]!.content).toContain(CODE_INSTRUCTIONS_GENERAL);
     const tool = bodies[1]!.messages.find((m) => m.role === "tool")!;
     const parsed = JSON.parse(tool.content as string) as { ok: boolean; result: string };
     expect(parsed.ok).toBe(true);
     expect(parsed.result).toContain("Codice di Mister @ abcdef1");
     expect(parsed.result).toContain("export const alfa");
+  });
+
+  it("area Agenti: lo slug dell'app è nei dati; errore del lettore → ok:false senza prefisso; limiti da 12 giri", async () => {
+    const conv = await createConversation(userId, "lucius", "area_agents", null);
+    conversationId = conv.id;
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      // 7 giri di strumenti (oltre i 6 della chat normale), il primo con un errore del lettore (manca `app`)
+      return n <= 7
+        ? { content: null, toolCalls: [{ id: `c${n}`, name: "leggi_file", arguments: JSON.stringify({ percorso: "src/a.ts" }) }], usage: { prompt_tokens: 10, completion_tokens: 5 } }
+        : { content: "Fatto.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+    await startCharacterTurn(conversationId, "controlla", null);
+    await waitIdle(conversationId);
+    const bodies = chatBodies();
+    expect(bodies.length).toBe(8);
+    expect(JSON.stringify(bodies[0]!.messages)).toContain('\\"slug\\":\\"mister\\"');
+    expect(JSON.parse(bodies[1]!.messages.find((m) => m.role === "tool")!.content as string)).toEqual({ ok: false, error: "indica l'app con il suo slug" });
+    const messages = await getMessages();
+    expect(messages.at(-1)).toMatchObject({ content: "Fatto.", error: false });
   });
 
   it("argomento skill: nessuno strumento del codice", async () => {
@@ -447,7 +468,7 @@ describe("lettura del codice nei turni dei personaggi", () => {
     await waitIdle(conversationId);
     const body = chatBodies()[0]!;
     for (const t of CODE) expect(toolNames(body)).not.toContain(t);
-    expect(body.messages[0]!.content).not.toContain(CODE_INSTRUCTIONS);
+    expect(body.messages[0]!.content).not.toContain(CODE_INSTRUCTIONS_GENERAL);
   });
 
   it("agente di un'app zip: nessuno strumento del codice", async () => {

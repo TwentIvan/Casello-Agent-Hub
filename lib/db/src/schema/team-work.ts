@@ -30,7 +30,9 @@ export type TeamTurnReason =
   | { type: "task_finished"; taskId: number }
   | { type: "decision"; number: number; outcome: "approved" | "rejected"; note: string | null }
   | { type: "activation" }
-  | { type: "restart" };
+  | { type: "restart" }
+  | { type: "ci_finished"; taskCodeId: number; outcome: "success" | "failure" | "none" }
+  | { type: "pr_closed"; taskCodeId: number; merged: boolean };
 
 // Esecuzione di un compito del PLAN da parte di un ruolo
 export const teamTasksTable = pgTable(

@@ -11,6 +11,7 @@ import {
   getGetDashboardStatsQueryKey,
   getGetTeamInstanceUpdatesQueryKey,
   getGetTeamPlanQueryKey,
+  getGetAppQueryKey,
   getListPendingActionsQueryKey,
   getListTeamEventsQueryKey,
   getListTeamTasksQueryKey,
@@ -20,6 +21,7 @@ import {
   getListTeamTemplatesQueryKey,
   useActivateTeamInstance,
   useCloseTeamInstance,
+  useGetApp,
   useGetTeamInstance,
   useGetTeamPlan,
   useSaveTeamInstance,
@@ -163,6 +165,9 @@ function TeamEditor({
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [savingAsTemplate, setSavingAsTemplate] = useState(false);
   const closed = team.status === "closed";
+  // Il codice ai ruoli si dà solo se l'App di riferimento ha il repository collegato tramite l'App GitHub
+  const refApp = useGetApp(team.ref.appId, { query: { queryKey: getGetAppQueryKey(team.ref.appId) } });
+  const codeEnabled = refApp.data?.sourceType === "github" && refApp.data.sourceInstallationId !== null;
 
   const savedJson = useMemo(
     () =>
@@ -359,7 +364,7 @@ function TeamEditor({
 
       <section className="space-y-3">
         <h3 className="text-lg font-medium">Ruoli</h3>
-        <RolesEditor roles={roles} onChange={setRoles} mode="instance" localSkills={localOptions} readOnly={closed} teamId={team.id} />
+        <RolesEditor roles={roles} onChange={setRoles} mode="instance" localSkills={localOptions} readOnly={closed} teamId={team.id} codeEnabled={codeEnabled} />
       </section>
 
       <section className="space-y-3">

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Crown, Download, Plus, Trash2, X } from "lucide-react";
-import { getDownloadRoleInstructionsUrl, getDownloadRolesExportUrl, type TeamRoleRunsOn } from "@workspace/api-client-react";
+import { getDownloadRoleInstructionsUrl, getDownloadRolesExportUrl, type TeamRoleCode, type TeamRoleRunsOn } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { TOOL_LEVEL_LABELS } from "@/lib/tool-labels";
 import { cn } from "@/lib/utils";
-import { RUNS_ON_LABELS, type RoleDraft, newRole } from "./role-draft";
+import { CODE_LABELS, RUNS_ON_LABELS, type RoleDraft, codeOptions, newRole } from "./role-draft";
 import { SkillKindBadge } from "./skill-kind";
 import { SkillPicker } from "./skill-picker";
 import { ToolPicker } from "./tool-picker";
@@ -34,7 +34,11 @@ interface RolesEditorProps {
   readOnly?: boolean;
   /** Squadra (solo `instance`): abilita gli scarichi delle istruzioni dei ruoli. */
   teamId?: number;
+  /** Se l'App di riferimento permette di dare il codice ai ruoli (nei modelli sempre sì). */
+  codeEnabled?: boolean;
 }
+
+export const CODE_DISABLED_HINT = "Collega il repository dell'app tramite l'App GitHub per dare il codice ai ruoli";
 
 /** Il ruolo ha le istruzioni se tra le sue skill specializzate c'è `ruolo-<key>`. */
 const hasInstructions = (role: RoleDraft) => role.key !== "" && role.localSkills.includes(`ruolo-${role.key}`);
@@ -68,6 +72,7 @@ function RoleCard({
   localSkills,
   readOnly,
   teamId,
+  codeEnabled,
   onChange,
   onMakeLead,
   onRemove,
@@ -77,6 +82,7 @@ function RoleCard({
   localSkills: LocalSkillOption[];
   readOnly: boolean;
   teamId?: number;
+  codeEnabled: boolean;
   onChange: (patch: Partial<RoleDraft>) => void;
   onMakeLead: () => void;
   onRemove: () => void;
@@ -176,6 +182,27 @@ function RoleCard({
               <ModelPicker id={`${id}-model`} value={role.aiModelId} onChange={(v) => onChange({ aiModelId: v })} disabled={readOnly} cloudOnly />
             </div>
           )}
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor={`${id}-code`}>Codice</Label>
+          <Select
+            value={codeOptions(role.runsOn).includes(role.code) ? role.code : "none"}
+            onValueChange={(v) => onChange({ code: v as TeamRoleCode })}
+            disabled={readOnly || !codeEnabled}
+          >
+            <SelectTrigger id={`${id}-code`} className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {codeOptions(role.runsOn).map((k) => (
+                <SelectItem key={k} value={k}>
+                  {CODE_LABELS[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {!codeEnabled && <p className="text-xs text-muted-foreground">{CODE_DISABLED_HINT}</p>}
         </div>
 
         <div className="space-y-1.5">
@@ -288,7 +315,7 @@ function RoleCard({
 }
 
 /** Editor dei ruoli di una squadra (modello o istanza): schede impilate, un solo capo. */
-export function RolesEditor({ roles, onChange, mode, localSkills = [], readOnly = false, teamId }: RolesEditorProps) {
+export function RolesEditor({ roles, onChange, mode, localSkills = [], readOnly = false, teamId, codeEnabled = true }: RolesEditorProps) {
   const update = (uid: string, patch: Partial<RoleDraft>) =>
     onChange(roles.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
   const makeLead = (uid: string) => onChange(roles.map((r) => ({ ...r, isLead: r.uid === uid })));
@@ -318,6 +345,7 @@ export function RolesEditor({ roles, onChange, mode, localSkills = [], readOnly 
           localSkills={localSkills}
           readOnly={readOnly}
           teamId={teamId}
+          codeEnabled={codeEnabled}
           onChange={(patch) => update(role.uid, patch)}
           onMakeLead={() => makeLead(role.uid)}
           onRemove={() => onChange(roles.filter((r) => r.uid !== role.uid))}

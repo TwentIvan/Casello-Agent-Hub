@@ -30,6 +30,8 @@ interface TaskDraft {
   title: string;
   roleKey: string;
   instructions: string;
+  /** Numero dell'issue del piano dell'App, vuoto se il compito non ne ha. */
+  issue: string;
 }
 
 /** Un elemento per riga, senza righe vuote. */
@@ -80,7 +82,7 @@ export function PlanEditorDialog({
   const [constraints, setConstraints] = useState(plan.constraints.join("\n"));
   const [openPoints, setOpenPoints] = useState(plan.openPoints.join("\n"));
   const [tasks, setTasks] = useState<TaskDraft[]>(() =>
-    plan.tasks.map((t) => ({ id: t.id, title: t.title, roleKey: t.roleKey, instructions: t.instructions })),
+    plan.tasks.map((t) => ({ id: t.id, title: t.title, roleKey: t.roleKey, instructions: t.instructions, issue: t.issue ? String(t.issue) : "" })),
   );
   const [confirming, setConfirming] = useState(false);
   const roles = team.roles;
@@ -112,7 +114,8 @@ export function PlanEditorDialog({
     listError("Punti aperti", openPointList) ??
     (tasks.length > MAX_TASKS ? `Al massimo ${MAX_TASKS} compiti.` : null) ??
     (tasks.some((t) => t.title.trim() === "") ? "Ogni compito ha bisogno di un titolo." : null) ??
-    (tasks.some((t) => t.roleKey === "") ? "Ogni compito ha bisogno di un ruolo." : null);
+    (tasks.some((t) => t.roleKey === "") ? "Ogni compito ha bisogno di un ruolo." : null) ??
+    (tasks.some((t) => t.issue.trim() !== "" && !/^[1-9]\d{0,8}$/.test(t.issue.trim())) ? "Issue: un numero intero positivo." : null);
 
   const input = (): TeamPlanInput => ({
     objective: objective.trim(),
@@ -128,6 +131,7 @@ export function PlanEditorDialog({
         // Il server conserva stato ed esito dei compiti esistenti; i nuovi partono pianificati
         status: old?.status ?? "planned",
         outcome: old?.outcome ?? null,
+        issue: t.issue.trim() === "" ? null : Number(t.issue.trim()),
       };
     }),
     manualActions: plan.manualActions,
@@ -143,6 +147,7 @@ export function PlanEditorDialog({
         title: "",
         roleKey: roles.find((r) => !r.isLead)?.key ?? roles[0]?.key ?? "",
         instructions: "",
+        issue: "",
       },
     ]);
 
@@ -214,6 +219,21 @@ export function PlanEditorDialog({
                     >
                       <Trash2 />
                     </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor={`plan-issue-${t.id}`} className="shrink-0 text-xs text-muted-foreground">
+                      Issue
+                    </Label>
+                    <Input
+                      id={`plan-issue-${t.id}`}
+                      type="number"
+                      min={1}
+                      inputMode="numeric"
+                      placeholder="facoltativa"
+                      value={t.issue}
+                      onChange={(e) => update(t.id, { issue: e.target.value })}
+                      className="w-32"
+                    />
                   </div>
                   <Textarea
                     aria-label={`Istruzioni del compito ${t.id}`}

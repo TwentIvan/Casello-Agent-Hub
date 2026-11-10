@@ -1,6 +1,5 @@
 import { GithubError, githubCall, installationToken } from "../github/app";
 import type { GithubConfig } from "../github/config";
-import { readBytesLimited } from "../http-read";
 import { CODE_WRITE_MESSAGES, CodeWriteError } from "./messages";
 
 /**
@@ -30,7 +29,8 @@ const TASK_BRANCH_RE = /^botcave\/\d+-[A-Za-z0-9_-]{1,40}$/;
 const PER_PAGE = 100;
 const MAX_PAGES = 5;
 const LOG_TIMEOUT_MS = 15_000;
-const LOG_MAX_BYTES = 5 * 1024 * 1024;
+/** Del log si tengono solo gli ultimi byte: un log enorme (suite grandi) dà comunque la sua coda. */
+const LOG_TAIL_BYTES = 256 * 1024;
 const LOG_TAIL_LINES = 150;
 const DEFAULT_LOG_SUFFIXES = [".actions.githubusercontent.com", ".blob.core.windows.net"];
 
@@ -383,13 +383,44 @@ export async function failedJobLogTail(r: RepoRef, jobId: number): Promise<strin
     await res.body?.cancel().catch(() => {});
     throw new CodeWriteError(CODE_WRITE_MESSAGES.unavailable, res.status);
   }
-  let text: string;
+  let tail: { bytes: Uint8Array; truncated: boolean };
   try {
-    text = new TextDecoder("utf-8").decode(await readBytesLimited(res, LOG_MAX_BYTES));
+    tail = await readTailBytes(res, LOG_TAIL_BYTES);
   } catch {
     throw new CodeWriteError(CODE_WRITE_MESSAGES.unavailable, res.status);
   }
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const lines = new TextDecoder("utf-8").decode(tail.bytes).replace(/\r\n/g, "\n").split("\n");
+  // La prima riga di una coda tagliata è a metà: si scarta
+  if (tail.truncated) lines.shift();
   if (lines[lines.length - 1] === "") lines.pop();
   return lines.slice(-LOG_TAIL_LINES).join("\n");
+}
+
+/**
+ * Legge tutto il corpo tenendo in memoria solo gli ultimi `maxBytes` (il tempo lo limita il segnale della fetch).
+ */
+async function readTailBytes(res: Response, maxBytes: number): Promise<{ bytes: Uint8Array; truncated: boolean }> {
+  if (!res.body) return { bytes: new Uint8Array(0), truncated: false };
+  const reader = res.body.getReader();
+  let chunks: Uint8Array[] = [];
+  let kept = 0;
+  let truncated = false;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    kept += value.byteLength;
+    if (kept > 2 * maxBytes) {
+      const all = Buffer.concat(chunks);
+      chunks = [all.subarray(all.byteLength - maxBytes)];
+      kept = maxBytes;
+      truncated = true;
+    }
+  }
+  const all = Buffer.concat(chunks);
+  if (all.byteLength > maxBytes) {
+    truncated = true;
+    return { bytes: new Uint8Array(all.subarray(all.byteLength - maxBytes)), truncated };
+  }
+  return { bytes: new Uint8Array(all), truncated };
 }

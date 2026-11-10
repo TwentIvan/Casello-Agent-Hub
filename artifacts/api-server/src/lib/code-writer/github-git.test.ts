@@ -245,4 +245,18 @@ describe("client GitHub dei compiti", () => {
     expect(logReq.auth).toBeUndefined();
     setLogHostsForTests(null);
   });
+
+  it("log oltre i 5 MiB: si legge fino in fondo e si tiene la coda", async () => {
+    const line = "x".repeat(99);
+    // ~6 MiB di righe, poi le ultime righe riconoscibili
+    const body = Array.from({ length: 63_000 }, () => line).join("\n") + "\n" + Array.from({ length: 200 }, (_, i) => `fine ${i + 1}`).join("\n") + "\n";
+    expect(Buffer.byteLength(body)).toBeGreaterThan(5 * 1024 * 1024);
+    gh.jobLogs.set(56, body);
+    setLogHostsForTests([new URL(gh.apiBase).host]);
+    const lines = (await failedJobLogTail(r, 56)).split("\n");
+    expect(lines).toHaveLength(150);
+    expect(lines[0]).toBe("fine 51");
+    expect(lines[149]).toBe("fine 200");
+    setLogHostsForTests(null);
+  });
 });

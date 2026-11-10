@@ -440,9 +440,11 @@ CREATE TABLE "plan_messages" (
 	"error" boolean DEFAULT false NOT NULL,
 	"tokens" integer DEFAULT 0 NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
+	"queued_at" timestamp,
 	CONSTRAINT "plan_messages_conversation_id_plan_conversations_id_fk" FOREIGN KEY ("conversation_id") REFERENCES "public"."plan_conversations"("id") ON DELETE cascade ON UPDATE no action
 );
 CREATE INDEX "plan_messages_conversation_idx" ON "plan_messages" USING btree ("conversation_id", "id");
+CREATE UNIQUE INDEX IF NOT EXISTS "plan_messages_queued_uidx" ON "plan_messages" USING btree ("conversation_id") WHERE "queued_at" IS NOT NULL;
 
 -- Voci del piano: origine e conversazione che le ha create o modificate
 ALTER TABLE "analysis_items" ADD COLUMN "origin" "item_origin" DEFAULT 'architect' NOT NULL;
@@ -939,9 +941,11 @@ CREATE TABLE IF NOT EXISTS "team_chat_messages" (
 	"error" boolean DEFAULT false NOT NULL,
 	"tokens" integer DEFAULT 0 NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
+	"queued_at" timestamp,
 	CONSTRAINT "team_chat_messages_conversation_id_team_chat_conversations_id_fk" FOREIGN KEY ("conversation_id") REFERENCES "public"."team_chat_conversations"("id") ON DELETE cascade ON UPDATE no action
 );
 CREATE INDEX IF NOT EXISTS "team_chat_messages_conversation_idx" ON "team_chat_messages" USING btree ("conversation_id", "id");
+CREATE UNIQUE INDEX IF NOT EXISTS "team_chat_messages_queued_uidx" ON "team_chat_messages" USING btree ("conversation_id") WHERE "queued_at" IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS "team_chat_proposals" (
 	"id" serial PRIMARY KEY NOT NULL,
@@ -1040,9 +1044,11 @@ CREATE TABLE IF NOT EXISTS "character_messages" (
 	"tokens" integer DEFAULT 0 NOT NULL,
 	"page_context" jsonb,
 	"created_at" timestamp DEFAULT now() NOT NULL,
+	"queued_at" timestamp,
 	CONSTRAINT "character_messages_conversation_id_character_conversations_id_fk" FOREIGN KEY ("conversation_id") REFERENCES "public"."character_conversations"("id") ON DELETE cascade ON UPDATE no action
 );
 CREATE INDEX IF NOT EXISTS "character_messages_conversation_idx" ON "character_messages" USING btree ("conversation_id", "id");
+CREATE UNIQUE INDEX IF NOT EXISTS "character_messages_queued_uidx" ON "character_messages" USING btree ("conversation_id") WHERE "queued_at" IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS "character_proposals" (
 	"id" serial PRIMARY KEY NOT NULL,

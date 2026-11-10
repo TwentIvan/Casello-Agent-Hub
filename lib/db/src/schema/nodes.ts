@@ -25,6 +25,18 @@ export const nodesTable = pgTable(
     lastSeenAt: timestamp("last_seen_at"),
     // Ultimo sondaggio dei turni delegati (`/api/node/turns/claim`)
     lastTurnPollAt: timestamp("last_turn_poll_at"),
+    // Come è stato creato il nodo: app per Mac (`app`) o CLI (`cli`); null per i nodi più vecchi
+    kind: text("kind"),
+    pairedAt: timestamp("paired_at"),
+    pairedIp: text("paired_ip"),
+    // Stato di Claude Code sul Mac, comunicato con l'heartbeat
+    claudeStatus: jsonb("claude_status").$type<Record<string, unknown>>(),
+    claudeCheckedAt: timestamp("claude_checked_at"),
+    // Impostazioni scelte in console (maxConcurrent, maxConcurrentTurns, timeout)
+    settings: jsonb("settings").$type<Record<string, unknown>>(),
+    diagnosticsRequestedAt: timestamp("diagnostics_requested_at"),
+    uninstallRequestedAt: timestamp("uninstall_requested_at"),
+    updateFailedVersion: text("update_failed_version"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

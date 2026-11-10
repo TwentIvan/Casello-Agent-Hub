@@ -14,6 +14,10 @@ export const CODE_WRITE_MESSAGES = {
   notFound: (path: string) => `file inesistente: ${path}`,
   textNotFound: "testo non trovato",
   textRepeated: (n: number) => `testo presente ${n} volte: allarga il contesto`,
+  specialFile: (path: string) => `${path} è un link simbolico o un sottomodulo: non si modifica da Botcave`,
+  issueNotFound: (n: number) => `issue #${n} non trovata`,
+  pullNotFound: (n: number) => `PR #${n} non trovata`,
+  pullRejected: "GitHub ha rifiutato la PR: controlla che il branch abbia commit nuovi rispetto al base",
   unavailable: "GitHub non risponde (riprova più tardi)",
   noAccess: "l'App GitHub di Botcave non ha più accesso a questo repository: reinstallala o scegli un altro repo",
 } as const;

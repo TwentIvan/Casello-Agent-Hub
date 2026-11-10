@@ -104,6 +104,37 @@ describe("client GitHub dei compiti", () => {
     expect(gh.filesAt(REPO, second.sha)["a.txt"]).toBe("due");
   });
 
+  it("conserva il modo eseguibile e rifiuta link simbolici senza scrivere blob", async () => {
+    const b = gh.seedRepo(REPO, "main", { "run.sh": { content: "#!/bin/sh", mode: "100755" }, "ln": { content: "a.txt", mode: "120000" }, "a.txt": "x" });
+    const tree = await getCommitTree(r, b);
+    const { sha } = await commitFiles(r, { branch: "botcave/1-t9", parentSha: b, baseTreeSha: tree, changes: new Map([["run.sh", "#!/bin/sh\necho"], ["n.txt", "n"]]), message: "m", createBranch: true });
+    const entries = gh.git.get(REPO)!.trees.get(gh.git.get(REPO)!.commits.get(sha)!.tree)!;
+    expect(entries.find((e) => e.path === "run.sh")!.mode).toBe("100755");
+    expect(entries.find((e) => e.path === "n.txt")!.mode).toBe("100644");
+    expect(entries.find((e) => e.path === "ln")!.mode).toBe("120000");
+    gh.requests.length = 0;
+    const err = await rejects(commitFiles(r, { branch: "botcave/1-t10", parentSha: b, baseTreeSha: tree, changes: new Map([["ln", "z"]]), message: "m", createBranch: true }));
+    expect(err.message).toBe(CODE_WRITE_MESSAGES.specialFile("ln"));
+    expect(gh.requests.some((q) => q.method === "POST")).toBe(false);
+  });
+
+  it("messaggi fissi per issue/PR inesistenti, PR rifiutata, branch non valido e 403 sul log", async () => {
+    expect((await rejects(getIssue(r, 99))).message).toBe(CODE_WRITE_MESSAGES.issueNotFound(99));
+    expect((await rejects(getPull(r, 99))).message).toBe(CODE_WRITE_MESSAGES.pullNotFound(99));
+    await expect(createDraftPull(r, { head: "botcave/1-zz", base: "main", title: "t", body: "" })).rejects.toMatchObject({ message: CODE_WRITE_MESSAGES.pullRejected });
+    await expect(createDraftPull(r, { head: "botcave/1-t1", base: "botcave/1-t1", title: "t", body: "" })).rejects.toThrow(/coincide/);
+    await expect(commitFiles(r, { branch: "botcave/../x", parentSha: base, baseTreeSha: "x", changes: new Map(), message: "m", createBranch: true })).rejects.toThrow(/botcave\//);
+    gh.installationPermissions.set(INST, { contents: "read", metadata: "read" });
+    clearInstallationTokenCache();
+    expect((await rejects(failedJobLogTail(r, 1))).message).toBe(CODE_WRITE_MESSAGES.permission("checks: read, statuses: read, actions: read"));
+  });
+
+  it("403 su una chiamata col token valido → permission", async () => {
+    await readCi(r, base); // riempie la cache con il token vero
+    for (const t of gh.issuedTokens.values()) t.permissions = { checks: "read" };
+    expect((await rejects(readCi(r, base))).message).toBe(CODE_WRITE_MESSAGES.permission("statuses: read"));
+  });
+
   it("blob UTF-8 non ASCII", async () => {
     await commitFiles(r, {
       branch: "botcave/1-t2",

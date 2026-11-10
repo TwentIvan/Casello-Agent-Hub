@@ -26,7 +26,7 @@ export interface CiSnapshot {
   statuses: { context: string; state: string }[];
 }
 
-const BRANCH_PREFIX = "botcave/";
+const TASK_BRANCH_RE = /^botcave\/\d+-[A-Za-z0-9_-]{1,40}$/;
 const PER_PAGE = 100;
 const MAX_PAGES = 5;
 const LOG_TIMEOUT_MS = 15_000;
@@ -50,9 +50,7 @@ function isObj(v: unknown): v is Record<string, unknown> {
 }
 
 function permissionsList(perms: Record<string, string>): string {
-  const entries = Object.entries(perms);
-  const [name, level] = entries[0]!;
-  return `${name}: ${level}`;
+  return Object.entries(perms).map(([name, level]) => `${name}: ${level}`).join(", ");
 }
 
 async function tokenFor(r: RepoRef, permissions: Record<string, string>): Promise<string> {
@@ -115,8 +113,8 @@ function str(v: unknown, status: number): string {
 }
 
 function assertTaskBranch(branch: string): void {
-  if (!branch.startsWith(BRANCH_PREFIX) || branch.length === BRANCH_PREFIX.length) {
-    throw new Error("scrittura rifiutata: il branch deve iniziare con botcave/");
+  if (!TASK_BRANCH_RE.test(branch)) {
+    throw new Error("scrittura rifiutata: il branch deve essere del tipo botcave/<squadra>-<compito>");
   }
 }
 
@@ -151,6 +149,24 @@ export async function getCommitTree(r: RepoRef, sha: string): Promise<string> {
   return str(json["tree"]["sha"], status);
 }
 
+/**
+ * Modi dei file modificati già presenti nell'albero di partenza: 100755 si conserva; link simbolici (120000)
+ * e sottomoduli (160000) fanno rifiutare il commit prima di scrivere qualsiasi blob. Albero troncato:
+ * i percorsi non trovati restano 100644.
+ */
+async function existingModes(r: RepoRef, token: string, baseTreeSha: string, paths: Iterable<string>): Promise<Map<string, string>> {
+  const wanted = new Set(paths);
+  const out = new Map<string, string>();
+  const { status, json } = await call(r, token, "contents: write", { method: "GET", path: repoPath(r, `/git/trees/${encodeURIComponent(baseTreeSha)}?recursive=1`) });
+  if (!isObj(json) || !Array.isArray(json["tree"])) throw badShape(status);
+  for (const e of json["tree"] as unknown[]) {
+    if (!isObj(e) || typeof e["path"] !== "string" || typeof e["mode"] !== "string" || !wanted.has(e["path"])) continue;
+    if (e["mode"] === "120000" || e["mode"] === "160000" || e["type"] === "commit") throw new CodeWriteError(CODE_WRITE_MESSAGES.specialFile(e["path"]));
+    out.set(e["path"], e["mode"]);
+  }
+  return out;
+}
+
 // --- Commit -----------------------------------------------------------------------------
 
 export async function commitFiles(
@@ -167,10 +183,11 @@ export async function commitFiles(
   assertTaskBranch(input.branch);
   const perm = "contents: write";
   const token = await tokenFor(r, { contents: "write" });
+  const modes = await existingModes(r, token, input.baseTreeSha, input.changes.keys());
   const tree: { path: string; mode: string; type: string; sha: string | null }[] = [];
   for (const [path, content] of input.changes) {
     if (content === null) {
-      tree.push({ path, mode: "100644", type: "blob", sha: null });
+      tree.push({ path, mode: modes.get(path) ?? "100644", type: "blob", sha: null });
       continue;
     }
     const { status, json } = await call(r, token, perm, {
@@ -179,7 +196,7 @@ export async function commitFiles(
       body: { content: Buffer.from(content, "utf8").toString("base64"), encoding: "base64" },
     });
     if (!isObj(json)) throw badShape(status);
-    tree.push({ path, mode: "100644", type: "blob", sha: str(json["sha"], status) });
+    tree.push({ path, mode: modes.get(path) ?? "100644", type: "blob", sha: str(json["sha"], status) });
   }
   const t = await call(r, token, perm, {
     method: "POST",
@@ -236,18 +253,23 @@ export async function findOpenPull(r: RepoRef, branch: string): Promise<PullInfo
 
 export async function createDraftPull(r: RepoRef, input: { head: string; base: string; title: string; body: string }): Promise<PullInfo> {
   assertTaskBranch(input.head);
+  if (input.head === input.base) throw new Error("scrittura rifiutata: il branch del compito coincide con il base");
   const token = await tokenFor(r, PULLS);
-  const { status, json } = await call(r, token, "pull_requests: write", {
-    method: "POST",
-    path: repoPath(r, "/pulls"),
-    body: { title: input.title, body: input.body, head: input.head, base: input.base, draft: true },
-  });
+  const { status, json } = await call(
+    r,
+    token,
+    "pull_requests: write",
+    { method: "POST", path: repoPath(r, "/pulls"), body: { title: input.title, body: input.body, head: input.head, base: input.base, draft: true } },
+    [422],
+  );
+  if (status === 422) throw new CodeWriteError(CODE_WRITE_MESSAGES.pullRejected, 422);
   return pullInfo(json, status);
 }
 
 export async function getPull(r: RepoRef, n: number): Promise<{ state: "open" | "merged" | "closed"; headSha: string; url: string }> {
   const token = await tokenFor(r, PULLS);
-  const { status, json } = await call(r, token, "pull_requests: write", { method: "GET", path: repoPath(r, `/pulls/${n}`) });
+  const { status, json } = await call(r, token, "pull_requests: write", { method: "GET", path: repoPath(r, `/pulls/${n}`) }, [404]);
+  if (status === 404) throw new CodeWriteError(CODE_WRITE_MESSAGES.pullNotFound(n), 404);
   const info = pullInfo(json, status);
   const o = json as Record<string, unknown>;
   const state = o["merged"] === true || typeof o["merged_at"] === "string" ? "merged" : o["state"] === "open" ? "open" : "closed";
@@ -258,7 +280,8 @@ export async function getPull(r: RepoRef, n: number): Promise<{ state: "open" | 
 
 export async function getIssue(r: RepoRef, n: number): Promise<{ title: string; state: string; labels: string[]; body: string }> {
   const token = await tokenFor(r, { issues: "read" });
-  const { status, json } = await call(r, token, "issues: read", { method: "GET", path: repoPath(r, `/issues/${n}`) });
+  const { status, json } = await call(r, token, "issues: read", { method: "GET", path: repoPath(r, `/issues/${n}`) }, [404]);
+  if (status === 404) throw new CodeWriteError(CODE_WRITE_MESSAGES.issueNotFound(n), 404);
   if (!isObj(json) || typeof json["title"] !== "string") throw badShape(status);
   const labels = Array.isArray(json["labels"])
     ? (json["labels"] as unknown[]).flatMap((l) => (isObj(l) && typeof l["name"] === "string" ? [l["name"]] : typeof l === "string" ? [l] : []))
@@ -333,6 +356,10 @@ export async function failedJobLogTail(r: RepoRef, jobId: number): Promise<strin
   if (res.status === 403) {
     await res.body?.cancel().catch(() => {});
     throw new CodeWriteError(CODE_WRITE_MESSAGES.permission("actions: read"), 403);
+  }
+  if (res.status === 401 || res.status === 404) {
+    await res.body?.cancel().catch(() => {});
+    throw new CodeWriteError(CODE_WRITE_MESSAGES.noAccess, res.status);
   }
   if (!res.ok) {
     await res.body?.cancel().catch(() => {});

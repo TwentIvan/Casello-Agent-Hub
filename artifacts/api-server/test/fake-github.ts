@@ -172,7 +172,7 @@ export interface FakeGithub {
   /** id del job → log di testo. */
   jobLogs: Map<number, string>;
   /** Crea un repo Git con un commit iniziale sul branch dato; risponde con lo sha del commit. */
-  seedRepo(fullName: string, branch: string, files: Record<string, string>): string;
+  seedRepo(fullName: string, branch: string, files: Record<string, string | { content: string; mode: string }>): string;
   /** File (percorso → testo) del commit a cui punta un branch o uno sha. */
   filesAt(fullName: string, ref: string): Record<string, string>;
   /** Durata dei token di installazione emessi (default 1 h). */
@@ -343,11 +343,12 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
     jobLogs: new Map(),
     seedRepo(fullName, branch, files) {
       const repo: FakeGitRepo = { blobs: new Map(), trees: new Map(), commits: new Map(), refs: new Map(), defaultBranch: branch };
-      const entries: FakeGitTreeEntry[] = Object.entries(files).map(([path, content]) => {
+      const entries: FakeGitTreeEntry[] = Object.entries(files).map(([path, spec]) => {
+        const { content, mode } = typeof spec === "string" ? { content: spec, mode: "100644" } : spec;
         const buf = Buffer.from(content, "utf8");
         const sha = blobSha(buf);
         repo.blobs.set(sha, buf);
-        return { path, mode: "100644", type: "blob", sha };
+        return { path, mode, type: mode === "160000" ? "commit" : "blob", sha };
       });
       const tree = storeTree(repo, entries);
       const commit = storeCommit(repo, tree, [], "seed");
@@ -543,6 +544,11 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
       const refJson = (key: string) => ({ ref: `refs/${key}`, object: { sha: repo.refs.get(key)!, type: "commit" } });
       let g: RegExpExecArray | null;
 
+      if (method === "GET" && (g = /^\/git\/trees\/([0-9a-f]{40})$/.exec(rest))) {
+        const entries = repo.trees.get(g[1]!);
+        if (!entries) return send(res, 404, NOT_FOUND);
+        return send(res, 200, { sha: g[1], truncated: false, tree: entries.map((e) => ({ path: e.path, mode: e.mode, type: e.type, sha: e.sha })) });
+      }
       if (method === "GET" && rest === "/git/refs") return send(res, 200, [...repo.refs.keys()].map(refJson));
       if (method === "GET" && (g = /^\/git\/refs?\/(heads\/.+)$/.exec(rest))) {
         const key = decodeURIComponent(g[1]!);

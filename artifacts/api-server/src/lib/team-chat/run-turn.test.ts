@@ -8,6 +8,7 @@ import {
   appToolsTable,
   appsTable,
   characterHistoryTable,
+  githubInstallationsTable,
   skillsTable,
   skillVersionsTable,
   teamChatConversationsTable,
@@ -16,6 +17,11 @@ import {
   usersTable,
 } from "@workspace/db";
 import { encryptSecret } from "../secrets";
+import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
+import { clearInstallationTokenCache } from "../github/app";
+import { CODE_INSTRUCTIONS_GENERAL } from "../code-reader/messages";
+import { clearCodeCache, setCodeCacheOptionsForTests } from "../code-reader/source-cache";
+import { buildZip } from "../zip-writer";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
 import type { InstanceRole } from "../teams/manifest";
 import { closeInstance, createInstance, getInstance } from "../teams/instances";
@@ -254,5 +260,95 @@ describe("turni della chat di squadra", () => {
     expect(await failInterruptedTeamChatTurns()).toBe(1);
     expect((await getConv()).turnStatus).toBe("idle");
     expect((await getMessages())[1]).toMatchObject({ error: true, content: "Turno interrotto dal riavvio di Botcave: riscrivi il messaggio." });
+  });
+});
+
+describe("lettura del codice nella chat di squadra", () => {
+  const SHA = "abcdef1234567890".repeat(2) + "abcdef12";
+  let gh: FakeGithub;
+  const CODE = ["elenca_cartella", "leggi_file", "cerca_nel_codice"];
+  const toolNames = (body: unknown): string[] => ((body as { tools?: { function: { name: string } }[] }).tools ?? []).map((t) => t.function.name);
+
+  beforeAll(async () => {
+    gh = await startFakeGithub();
+  });
+  afterAll(async () => {
+    await gh.close();
+  });
+
+  beforeEach(async () => {
+    setCodeCacheOptionsForTests({
+      githubConfig: {
+        appId: gh.appId,
+        slug: gh.slug,
+        clientId: gh.clientId,
+        clientSecret: gh.clientSecret,
+        privateKey: gh.privateKeyPem,
+        apiBase: gh.apiBase,
+        webBase: gh.webBase,
+      },
+    });
+    clearInstallationTokenCache();
+    gh.installations.clear();
+    gh.repos.clear();
+    gh.revoked.clear();
+    gh.issuedTokens.clear();
+    gh.zipballs.clear();
+    gh.commits.clear();
+    gh.requests.length = 0;
+    gh.failWith = null;
+    gh.addInstallation({ id: 11, appId: Number(gh.appId), accountLogin: "ivan", accountType: "User", repositorySelection: "all" }, [
+      { fullName: "ivan/fanta", defaultBranch: "main", private: true },
+    ]);
+    gh.zipballs.set("ivan/fanta", buildZip([{ name: "proj/src/a.ts", content: Buffer.from("export const alfa = 1;\n") }]));
+    gh.commits.set("ivan/fanta", SHA);
+    await db.insert(githubInstallationsTable).values({ userId, installationId: 11, accountLogin: "ivan", accountType: "User", repositorySelection: "all" });
+  });
+  afterEach(async () => {
+    await waitIdle(conversationId);
+    await clearCodeCache();
+  });
+
+  it("app di riferimento collegata: strumenti e frase nel system, leggi_file con l'intestazione", async () => {
+    await db.update(appsTable).set({ sourceType: "github", sourceRepo: "ivan/fanta", sourceBranch: "main", sourceInstallationId: 11 });
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      return n === 1
+        ? { content: null, toolCalls: [{ id: "c1", name: "leggi_file", arguments: JSON.stringify({ percorso: "src/a.ts" }) }], usage: { prompt_tokens: 10, completion_tokens: 5 } }
+        : { content: "Letto.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+    await startTeamChatTurn(conversationId, "guarda il codice");
+    await waitIdle(conversationId);
+    const bodies = chatBodies();
+    expect(toolNames(bodies[0])).toEqual(expect.arrayContaining([...CODE, "proponi_identita", "ricorda"]));
+    expect(bodies[0]!.messages[0]!.content).toContain(CODE_INSTRUCTIONS_GENERAL);
+    expect(JSON.stringify(bodies[1])).toContain("Codice di Mister @ abcdef1");
+  });
+
+  it("limiti del codice: 7 giri di strumenti (oltre i 6 normali) si completano", async () => {
+    await db.update(appsTable).set({ sourceType: "github", sourceRepo: "ivan/fanta", sourceBranch: "main", sourceInstallationId: 11 });
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      return n <= 7
+        ? { content: null, toolCalls: [{ id: `c${n}`, name: "leggi_file", arguments: JSON.stringify({ percorso: "src/a.ts" }) }], usage: { prompt_tokens: 10, completion_tokens: 5 } }
+        : { content: "Fatto.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+    await startTeamChatTurn(conversationId, "guarda");
+    await waitIdle(conversationId);
+    expect(chatBodies()).toHaveLength(8);
+    expect((await getMessages()).at(-1)).toMatchObject({ content: "Fatto.", error: false });
+  });
+
+  it("app di riferimento zip: nessuno strumento del codice né frase", async () => {
+    await db.update(appsTable).set({ sourceType: "zip" });
+    fake.chatReply = { content: "ok", toolCalls: [], usage: { prompt_tokens: 5, completion_tokens: 5 } };
+    await startTeamChatTurn(conversationId, "ciao");
+    await waitIdle(conversationId);
+    const body = chatBodies()[0]!;
+    expect(toolNames(body)).toContain("proponi_identita");
+    for (const t of CODE) expect(toolNames(body)).not.toContain(t);
+    expect(body.messages[0]!.content).not.toContain(CODE_INSTRUCTIONS_GENERAL);
   });
 });

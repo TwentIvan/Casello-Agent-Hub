@@ -376,16 +376,26 @@ const READ_SPECS: Record<ReadToolName, ArgSpec> = {
   read_mcp_tool: { name: { type: "string", required: true } },
 };
 
-function excludedHint(n: number): string {
-  return `[${n} file esclusi per default (lockfile, generati, test, minificati): usa includeIgnored=true per includerli]`;
+/** Nomi dei parametri citati nei suggerimenti dell'output: l'architetto e Lucius hanno strumenti con nomi diversi. */
+export interface ReadHints {
+  fromLine: string;
+  /** null = lo strumento non ha il parametro: l'avviso dice solo quanti file sono esclusi. */
+  includeIgnored: string | null;
+}
+const ARCHITECT_HINTS: ReadHints = { fromLine: "fromLine", includeIgnored: "includeIgnored" };
+
+function excludedHint(n: number, hints: ReadHints): string {
+  const base = `${n} file esclusi per default (lockfile, generati, test, minificati)`;
+  return hints.includeIgnored ? `[${base}: usa ${hints.includeIgnored}=true per includerli]` : `[${base}]`;
 }
 
-function listDir(
+export function listDir(
   tree: SourceTree,
   path: string,
   depth: number | undefined,
   includeIgnored: boolean | undefined,
   limits: ReadLimits,
+  hints: ReadHints = ARCHITECT_HINTS,
 ): ToolOutput {
   const entries = tree.list(path, depth ?? 1, { includeIgnored });
   const shown = entries.slice(0, Math.min(MAX_LIST_ENTRIES, fittingLines(entries, limits)));
@@ -394,7 +404,7 @@ function listDir(
     lines.push(`[...altre ${entries.length - shown.length} voci non mostrate: elenca una sottocartella o riduci depth]`);
   }
   const hidden = includeIgnored ? 0 : tree.countHidden(path, depth ?? 1);
-  if (hidden > 0) lines.push(excludedHint(hidden));
+  if (hidden > 0) lines.push(excludedHint(hidden, hints));
   return {
     content: capOutput(lines.join("\n"), limits),
     log: `list_dir ${logArg(path || "/")} (${plural(entries.length, "voce", "voci")})`,
@@ -408,6 +418,7 @@ function readBlock(
   fromLine: number | undefined,
   toLine: number | undefined,
   limits: ReadLimits,
+  hints: ReadHints,
 ): { text: string; count: number } {
   const { content, totalLines } = tree.read(path, fromLine ?? 1, toLine, {
     maxLines: limits.maxReadLines,
@@ -424,19 +435,20 @@ function readBlock(
   const out = [`File ${path}, righe ${start}-${last} di ${totalLines}:`];
   lines.forEach((text, i) => out.push(`${start + i}: ${text}`));
   if (last < requestedEnd) {
-    out.push(`[...troncato al limite di lettura: continua con fromLine=${last + 1}]`);
+    out.push(`[...troncato al limite di lettura: continua con ${hints.fromLine}=${last + 1}]`);
   }
   return { text: out.join("\n"), count: lines.length };
 }
 
-function readFile(
+export function readFile(
   tree: SourceTree,
   path: string,
   fromLine: number | undefined,
   toLine: number | undefined,
   limits: ReadLimits,
+  hints: ReadHints = ARCHITECT_HINTS,
 ): ToolOutput {
-  const { text, count } = readBlock(tree, path, fromLine, toLine, limits);
+  const { text, count } = readBlock(tree, path, fromLine, toLine, limits, hints);
   return {
     content: capOutput(text, limits),
     log: `read_file ${logArg(path)} (${plural(count, "riga", "righe")})`,
@@ -457,7 +469,7 @@ function readFiles(tree: SourceTree, paths: string[], limits: ReadLimits): ToolO
   for (const path of unique) {
     let part: string;
     try {
-      const block = readBlock(tree, path, 1, undefined, limits);
+      const block = readBlock(tree, path, 1, undefined, limits, ARCHITECT_HINTS);
       const size = block.text.length + (parts.length ? 2 : 0);
       if (chars + size <= budget) {
         chars += size;
@@ -516,13 +528,14 @@ function withContext(
   return out;
 }
 
-async function search(
+export async function search(
   tree: SourceTree,
   pattern: string,
   glob: string | undefined,
   regex: boolean | undefined,
   includeIgnored: boolean | undefined,
   limits: ReadLimits,
+  hints: ReadHints = ARCHITECT_HINTS,
 ): Promise<ToolOutput> {
   const results = await tree.search(pattern, { glob, regex, includeIgnored });
   const considered = results.slice(0, MAX_SEARCH_MATCHES);
@@ -536,7 +549,7 @@ async function search(
   }
   // Non si contano le corrispondenze nascoste (costerebbe una seconda ricerca): si dice quanti file non sono stati cercati
   const hidden = includeIgnored ? 0 : tree.countHiddenMatching(glob);
-  if (hidden > 0) lines.push(excludedHint(hidden));
+  if (hidden > 0) lines.push(excludedHint(hidden, hints));
   return {
     content: capOutput(lines.join("\n"), limits),
     log: `search "${logArg(pattern)}"${regex ? " (regex)" : ""} (${plural(results.length, "risultato", "risultati")})`,

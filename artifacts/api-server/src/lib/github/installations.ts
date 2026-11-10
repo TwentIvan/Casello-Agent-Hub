@@ -46,3 +46,16 @@ export async function syncInstallations(cfg: GithubConfig, userId: number, userT
     }
   });
 }
+
+/** Messaggio della spec per un'installazione che non c'è, non è dell'utente o non vede il repo. */
+export const INSTALLATION_NOT_YOURS = "installazione non trovata o non tua";
+
+/** L'utente ha collegato quell'installazione (riga in `github_installations`). */
+export async function userHasInstallation(userId: number, installationId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ id: githubInstallationsTable.id })
+    .from(githubInstallationsTable)
+    .where(and(eq(githubInstallationsTable.userId, userId), eq(githubInstallationsTable.installationId, installationId)))
+    .limit(1);
+  return !!row;
+}

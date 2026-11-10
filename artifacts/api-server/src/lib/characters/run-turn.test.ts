@@ -3,6 +3,9 @@ import { eq } from "drizzle-orm";
 import {
   db,
   pool,
+  agentsTable,
+  appsTable,
+  githubInstallationsTable,
   aiAccountsTable,
   aiModelsTable,
   characterConversationsTable,
@@ -14,6 +17,13 @@ import {
 } from "@workspace/db";
 import { encryptSecret } from "../secrets";
 import { INTERRUPTED_TURN_MESSAGE } from "../plan-chat/run-turn";
+import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
+import { clearInstallationTokenCache } from "../github/app";
+import { CODE_INSTRUCTIONS_GENERAL } from "../code-reader/messages";
+import { clearCodeCache, setCodeCacheOptionsForTests } from "../code-reader/source-cache";
+import { buildZip } from "../zip-writer";
+import { agentSubject } from "./subjects/agent";
+import { areaAgentsSubject } from "./subjects/areas";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
 import { seedNodeTurnSetup } from "../../../test/node-turn-fixture";
 import { claimTurn, reportTurn } from "../node-turns/protocol";
@@ -345,5 +355,159 @@ describe("conversazioni dei personaggi", () => {
   it("messaggio vuoto o troppo lungo → 400", async () => {
     await expect(startCharacterTurn(conversationId, "   ", null)).rejects.toMatchObject({ status: 400, message: "messaggio vuoto" });
     await expect(startCharacterTurn(conversationId, "x".repeat(8_001), null)).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe("lettura del codice nei turni dei personaggi", () => {
+  const SHA = "abcdef1234567890".repeat(2) + "abcdef12";
+  let gh: FakeGithub;
+  let unregisterReal: Array<() => void> = [];
+  let appId: number;
+  let agentId: number;
+
+  const toolNames = (body: unknown): string[] => ((body as { tools?: { function: { name: string } }[] }).tools ?? []).map((t) => t.function.name);
+  const CODE = ["elenca_cartella", "leggi_file", "cerca_nel_codice"];
+
+  beforeAll(async () => {
+    gh = await startFakeGithub();
+  });
+  afterAll(async () => {
+    await gh.close();
+  });
+
+  beforeEach(async () => {
+    unregisterReal = [registerSubject(agentSubject), registerSubject(areaAgentsSubject)];
+    setCodeCacheOptionsForTests({
+      githubConfig: {
+        appId: gh.appId,
+        slug: gh.slug,
+        clientId: gh.clientId,
+        clientSecret: gh.clientSecret,
+        privateKey: gh.privateKeyPem,
+        apiBase: gh.apiBase,
+        webBase: gh.webBase,
+      },
+    });
+    clearInstallationTokenCache();
+    gh.installations.clear();
+    gh.repos.clear();
+    gh.revoked.clear();
+    gh.issuedTokens.clear();
+    gh.zipballs.clear();
+    gh.commits.clear();
+    gh.requests.length = 0;
+    gh.failWith = null;
+    gh.addInstallation({ id: 11, appId: Number(gh.appId), accountLogin: "ivan", accountType: "User", repositorySelection: "all" }, [
+      { fullName: "ivan/fanta", defaultBranch: "main", private: true },
+    ]);
+    gh.zipballs.set("ivan/fanta", buildZip([{ name: "proj/src/a.ts", content: Buffer.from("export const alfa = 1;\n") }]));
+    gh.commits.set("ivan/fanta", SHA);
+    await db.insert(githubInstallationsTable).values({ userId, installationId: 11, accountLogin: "ivan", accountType: "User", repositorySelection: "all" });
+    await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
+    const [app] = await db
+      .insert(appsTable)
+      .values({ name: "Mister", slug: "mister", baseUrl: "https://mister.example", sourceType: "github", sourceRepo: "ivan/fanta", sourceBranch: "main", sourceInstallationId: 11 })
+      .returning();
+    appId = app!.id;
+    const [agent] = await db.insert(agentsTable).values({ appId, name: "Smistatore", role: "area" }).returning();
+    agentId = agent!.id;
+  });
+  afterEach(async () => {
+    await waitIdle(conversationId);
+    for (const u of unregisterReal) u();
+    await clearCodeCache();
+  });
+
+  it("agente di un'app collegata: tre strumenti e istruzioni nel system; leggi_file restituisce l'intestazione", async () => {
+    const conv = await createConversation(userId, "lucius", "agent", String(agentId));
+    conversationId = conv.id;
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      return n === 1
+        ? { content: null, toolCalls: [{ id: "c1", name: "leggi_file", arguments: JSON.stringify({ percorso: "src/a.ts" }) }], usage: { prompt_tokens: 10, completion_tokens: 5 } }
+        : { content: "Letto.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+    await startCharacterTurn(conversationId, "controlla il codice", null);
+    await waitIdle(conversationId);
+
+    const bodies = chatBodies();
+    expect(toolNames(bodies[0])).toEqual(expect.arrayContaining(CODE));
+    expect(bodies[0]!.messages[0]!.content).toContain(CODE_INSTRUCTIONS_GENERAL);
+    const tool = bodies[1]!.messages.find((m) => m.role === "tool")!;
+    const parsed = JSON.parse(tool.content as string) as { ok: boolean; result: string };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.result).toContain("Codice di Mister @ abcdef1");
+    expect(parsed.result).toContain("export const alfa");
+  });
+
+  it("area Agenti: lo slug dell'app è nei dati; errore del lettore → ok:false senza prefisso; limiti da 12 giri", async () => {
+    const conv = await createConversation(userId, "lucius", "area_agents", null);
+    conversationId = conv.id;
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      // 7 giri di strumenti (oltre i 6 della chat normale), il primo con un errore del lettore (manca `app`)
+      return n <= 7
+        ? { content: null, toolCalls: [{ id: `c${n}`, name: "leggi_file", arguments: JSON.stringify({ percorso: "src/a.ts" }) }], usage: { prompt_tokens: 10, completion_tokens: 5 } }
+        : { content: "Fatto.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+    await startCharacterTurn(conversationId, "controlla", null);
+    await waitIdle(conversationId);
+    const bodies = chatBodies();
+    expect(bodies.length).toBe(8);
+    expect(JSON.stringify(bodies[0]!.messages)).toContain('\\"slug\\":\\"mister\\"');
+    expect(JSON.parse(bodies[1]!.messages.find((m) => m.role === "tool")!.content as string)).toEqual({ ok: false, error: "indica l'app con il suo slug" });
+    const messages = await getMessages();
+    expect(messages.at(-1)).toMatchObject({ content: "Fatto.", error: false });
+  });
+
+  it("argomento skill: nessuno strumento del codice", async () => {
+    fake.chatReply = { content: "ok", toolCalls: [], usage: { prompt_tokens: 5, completion_tokens: 5 } };
+    await startCharacterTurn(conversationId, "ciao", null);
+    await waitIdle(conversationId);
+    const body = chatBodies()[0]!;
+    for (const t of CODE) expect(toolNames(body)).not.toContain(t);
+    expect(body.messages[0]!.content).not.toContain(CODE_INSTRUCTIONS_GENERAL);
+  });
+
+  it("agente di un'app zip: nessuno strumento del codice", async () => {
+    await db.update(appsTable).set({ sourceType: "zip" }).where(eq(appsTable.id, appId));
+    const conv = await createConversation(userId, "lucius", "agent", String(agentId));
+    conversationId = conv.id;
+    fake.chatReply = { content: "ok", toolCalls: [], usage: { prompt_tokens: 5, completion_tokens: 5 } };
+    await startCharacterTurn(conversationId, "ciao", null);
+    await waitIdle(conversationId);
+    for (const t of CODE) expect(toolNames(chatBodies()[0])).not.toContain(t);
+  });
+
+  it("area Agenti: strumenti offerti con almeno un'app leggibile, l'app va indicata", async () => {
+    const conv = await createConversation(userId, "lucius", "area_agents", null);
+    conversationId = conv.id;
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      return n === 1
+        ? { content: null, toolCalls: [{ id: "c1", name: "leggi_file", arguments: JSON.stringify({ percorso: "src/a.ts" }) }], usage: { prompt_tokens: 10, completion_tokens: 5 } }
+        : n === 2
+          ? { content: null, toolCalls: [{ id: "c2", name: "leggi_file", arguments: JSON.stringify({ app: "mister", percorso: "src/a.ts" }) }], usage: { prompt_tokens: 10, completion_tokens: 5 } }
+          : { content: "Fatto.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+    await startCharacterTurn(conversationId, "controlla", null);
+    await waitIdle(conversationId);
+    const bodies = chatBodies();
+    expect(toolNames(bodies[0])).toEqual(expect.arrayContaining(CODE));
+    expect(bodies[1]!.messages.find((m) => m.role === "tool")!.content).toContain("indica l'app con il suo slug");
+    expect(bodies[2]!.messages.filter((m) => m.role === "tool").at(-1)!.content).toContain("Codice di Mister");
+  });
+
+  it("area Agenti senza app leggibili: nessuno strumento del codice", async () => {
+    await db.update(appsTable).set({ sourceType: "zip" }).where(eq(appsTable.id, appId));
+    const conv = await createConversation(userId, "lucius", "area_agents", null);
+    conversationId = conv.id;
+    fake.chatReply = { content: "ok", toolCalls: [], usage: { prompt_tokens: 5, completion_tokens: 5 } };
+    await startCharacterTurn(conversationId, "ciao", null);
+    await waitIdle(conversationId);
+    for (const t of CODE) expect(toolNames(chatBodies()[0])).not.toContain(t);
   });
 });

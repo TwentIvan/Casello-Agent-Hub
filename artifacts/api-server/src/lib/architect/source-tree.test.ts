@@ -195,6 +195,14 @@ describe("SourceTree", () => {
     expect(tree.fileCount).toBe(2);
   });
 
+  it("dopo dispose la ricerca regex non ricrea il worker", async () => {
+    const tree = SourceTree.fromZip(zip({ "a.ts": "ciao\n" }));
+    expect(await tree.search("ciao", { regex: true })).toHaveLength(1);
+    await tree.dispose();
+    await expect(tree.search("ciao", { regex: true })).rejects.toThrow("ricerca regex non disponibile: riprova");
+    expect(await tree.search("ciao")).toHaveLength(1);
+  });
+
   it("ReDoS: la ricerca regex è interrotta e poi disabilitata", async () => {
     const tree = SourceTree.fromZip(zip({ "a.txt": "a".repeat(40) + "!\nciao\n" }));
     try {
@@ -221,7 +229,7 @@ describe("SourceTree", () => {
     const res = await tree.search("x", { regex: true });
     expect(res).toEqual([{ path: "a.txt", line: 2, text: "x" }]);
     await tree.dispose();
-    await expect(tree.search("x", { regex: true })).resolves.toHaveLength(1);
+    await expect(tree.search("x", { regex: true })).rejects.toThrow(SourceTreeError);
     await tree.dispose();
   }, 20_000);
 });

@@ -68,6 +68,8 @@ export interface TeamChatContextInput {
   memory: string;
   history: HistoryMessage[];
   userMessage: string;
+  /** Frase sulla lettura del codice, in fondo al prompt di sistema; presente solo se gli strumenti sono offerti. */
+  codeInstructions?: string;
 }
 
 export const TEAM_CONTEXT_MAX_TOKENS = 30_000;
@@ -192,7 +194,7 @@ function renderHistory(history: HistoryMessage[], userMessage: string, maxChars:
  */
 export function buildTeamChatMessages(input: TeamChatContextInput): ChatCompletionMessageParam[] {
   const build = (historyChars: number, detail: SkillDetail): ChatCompletionMessageParam[] => [
-    { role: "system", content: TEAM_CHAT_SYSTEM_PROMPT },
+    { role: "system", content: input.codeInstructions ? `${TEAM_CHAT_SYSTEM_PROMPT}\n${input.codeInstructions}` : TEAM_CHAT_SYSTEM_PROMPT },
     { role: "user", content: dataBlock(input, detail) },
     ...renderHistory(input.history, input.userMessage, historyChars),
   ];

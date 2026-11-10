@@ -25,8 +25,8 @@ import {
   type App,
 } from "@workspace/db";
 import { installationToken } from "../github/app";
+import { fetchBranchSha } from "../github/commit";
 import { githubConfig, type GithubConfig } from "../github/config";
-import { readBytesLimited } from "../http-read";
 import { logger } from "../logger";
 import type { McpToolInfo } from "../tools/mcp-client";
 import type { AppConnection } from "../tools/types";
@@ -55,9 +55,6 @@ export const LOCAL_PREFACE =
 
 /** Tetto all'attesa delle sorgenti (OpenAPI, elenco MCP e commit) durante il claim: oltre, il claim risponde comunque. */
 const CLAIM_SOURCES_DEADLINE_MS = 15_000;
-/** Timeout della lettura dello sha del branch da GitHub. */
-const GITHUB_COMMIT_TIMEOUT_MS = 10_000;
-const FULL_SHA_RE = /^[0-9a-f]{40}$/i;
 
 // Messaggi fissi per l'agente (spec §8)
 export const LOCAL_MESSAGES = {
@@ -140,25 +137,7 @@ async function branchCommit(app: App, opts: LocalSourceOptions): Promise<string 
   try {
     // Il repo è validato da installationToken (proprietario/nome, senza `.` o `..`)
     const token = await installationToken(cfg, app.sourceInstallationId, { repo: app.sourceRepo });
-    const ref = (app.sourceBranch?.trim() || "HEAD").split("/").map(encodeURIComponent).join("/");
-    const res = await fetch(`${cfg.apiBase}/repos/${app.sourceRepo}/commits/${ref}`, {
-      headers: {
-        accept: "application/vnd.github.sha",
-        authorization: `Bearer ${token}`,
-        "x-github-api-version": "2022-11-28",
-        "user-agent": "casello",
-      },
-      redirect: "manual",
-      signal: AbortSignal.timeout(GITHUB_COMMIT_TIMEOUT_MS),
-    });
-    if (!res.ok) {
-      await res.body?.cancel().catch(() => {});
-      return null;
-    }
-    const body = new TextDecoder("utf-8").decode(await readBytesLimited(res, 4096)).trim();
-    // Con `application/vnd.github.sha` il corpo è lo sha; se GitHub risponde in JSON, il campo `sha`
-    const sha = body.startsWith("{") ? (JSON.parse(body) as { sha?: unknown }).sha : body;
-    return typeof sha === "string" && FULL_SHA_RE.test(sha) ? sha.toLowerCase() : null;
+    return await fetchBranchSha({ apiBase: cfg.apiBase, repo: app.sourceRepo, branch: app.sourceBranch, token });
   } catch {
     return null;
   }

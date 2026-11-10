@@ -123,7 +123,7 @@ export async function fetchGithubTree(input: {
   }
   if (!res.ok) {
     await res.body?.cancel().catch(() => {});
-    throw new SourceError(`errore GitHub (${res.status})`);
+    throw new SourceError(`errore GitHub (${res.status})`, res.status);
   }
 
   let bytes: Uint8Array;

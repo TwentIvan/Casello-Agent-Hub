@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, asc, count, eq, inArray } from "drizzle-orm";
+import { asc, count, eq, inArray } from "drizzle-orm";
 import {
   db,
   appsTable,
   agentsTable,
   agentTriggersTable,
-  githubInstallationsTable,
   pendingActionsTable,
   teamInstancesTable,
 } from "@workspace/db";
@@ -27,6 +26,7 @@ import { checkAuthHeaderName, checkExtraHeaders, normalizeExtraHeaders } from ".
 import type { AuthConfig, ExtraHeader } from "../lib/tools/types";
 import { uniqueSlug, withSlugRetry } from "../lib/slug";
 import { isValidGithubRepo } from "../lib/architect/sources";
+import { INSTALLATION_NOT_YOURS, userHasInstallation } from "../lib/github/installations";
 import { currentUserId } from "../lib/auth";
 import { GITHUB_MESSAGES, GithubError, repoInstallationId } from "../lib/github/app";
 import { githubConfig } from "../lib/github/config";
@@ -161,19 +161,6 @@ function sourceTokenChange(token: string | null | undefined): { sourceTokenEnc?:
   const trimmed = token?.trim();
   if (!trimmed) return {};
   return { sourceTokenEnc: encryptSecret(trimmed) };
-}
-
-/** Messaggio della spec per un'installazione che non c'è, non è dell'utente o non vede il repo. */
-export const INSTALLATION_NOT_YOURS = "installazione non trovata o non tua";
-
-/** L'utente ha collegato quell'installazione (riga in `github_installations`). */
-export async function userHasInstallation(userId: number, installationId: number): Promise<boolean> {
-  const [row] = await db
-    .select({ id: githubInstallationsTable.id })
-    .from(githubInstallationsTable)
-    .where(and(eq(githubInstallationsTable.userId, userId), eq(githubInstallationsTable.installationId, installationId)))
-    .limit(1);
-  return !!row;
 }
 
 interface InstallationState {

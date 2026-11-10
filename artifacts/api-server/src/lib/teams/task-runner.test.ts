@@ -9,6 +9,8 @@ import {
   aiModelsTable,
   appsTable,
   appToolsTable,
+  githubInstallationsTable,
+  teamCodeTasksTable,
   pendingActionsTable,
   teamEventsTable,
   teamInstancesTable,
@@ -23,11 +25,22 @@ import { encryptSecret } from "../secrets";
 import { modelSpends, userSpend } from "../budget";
 import { allowTestLoopback, startFakeProvider, type FakeChatReply, type FakeProvider } from "../../../test/fake-provider";
 import { startFakeMcp, type FakeMcp } from "../../../test/fake-mcp";
+import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
+import { clearInstallationTokenCache } from "../github/app";
+import { resetGithubConfigForTests } from "../github/config";
+import { getCodeTask } from "../code-writer/code-tasks";
 import { getPlan, writePlanVersion, type PlanTask } from "./plan";
 import { listEvents, markRead, unreadBulletin } from "./events";
 import { loadRoleTools } from "./role-tools";
 import { teamBudgetBlock, teamSpend, TEAM_BUDGET_REACHED } from "./team-budget";
-import { MAX_RUNNING_TASKS, TASK_MESSAGES, failInterruptedTeamWork, settleTaskExecutions, startTask } from "./task-runner";
+import {
+  CODE_TASK_INSTRUCTIONS,
+  MAX_RUNNING_TASKS,
+  TASK_MESSAGES,
+  failInterruptedTeamWork,
+  settleTaskExecutions,
+  startTask,
+} from "./task-runner";
 
 // Compiti dei ruoli cloud: finto provider per il modello, una finta app HTTP per app e un finto server MCP
 
@@ -497,5 +510,175 @@ describe("compiti dei ruoli cloud", () => {
     expect((await steps(task.id))[1]!.args).toEqual({ id: "1", password: "***" });
     const all = await pool.query("select row_to_json(s)::text as j from team_task_steps s");
     for (const row of all.rows) expect(row.j).not.toContain("parola-segreta-123");
+  });
+});
+
+describe("compiti dei ruoli cloud con codice", () => {
+  const REPO = "ivan/hub-up";
+  const INST = 31;
+  const GH_VARS = ["GITHUB_APP_ID", "GITHUB_APP_SLUG", "GITHUB_APP_CLIENT_ID", "GITHUB_APP_CLIENT_SECRET", "GITHUB_APP_PRIVATE_KEY", "GITHUB_API_BASE", "GITHUB_WEB_BASE"];
+  const savedEnv: Record<string, string | undefined> = {};
+  let gh: FakeGithub;
+
+  beforeAll(async () => {
+    gh = await startFakeGithub();
+    const values: Record<string, string> = {
+      GITHUB_APP_ID: gh.appId,
+      GITHUB_APP_SLUG: gh.slug,
+      GITHUB_APP_CLIENT_ID: gh.clientId,
+      GITHUB_APP_CLIENT_SECRET: gh.clientSecret,
+      GITHUB_APP_PRIVATE_KEY: gh.privateKeyPem,
+      GITHUB_API_BASE: gh.apiBase,
+      GITHUB_WEB_BASE: gh.webBase,
+    };
+    for (const name of GH_VARS) {
+      savedEnv[name] = process.env[name];
+      process.env[name] = values[name];
+    }
+    resetGithubConfigForTests();
+  });
+
+  afterAll(async () => {
+    for (const name of GH_VARS) {
+      if (savedEnv[name] === undefined) delete process.env[name];
+      else process.env[name] = savedEnv[name];
+    }
+    resetGithubConfigForTests();
+    await gh.close();
+  });
+
+  beforeEach(async () => {
+    clearInstallationTokenCache();
+    gh.requests.length = 0;
+    gh.installations.clear();
+    gh.repos.clear();
+    gh.git.clear();
+    gh.pulls.clear();
+    gh.installationPermissions.clear();
+    gh.addInstallation({ id: INST, appId: Number(gh.appId), accountLogin: "ivan", accountType: "User", repositorySelection: "selected" }, [
+      { fullName: REPO, defaultBranch: "main", private: true },
+    ]);
+    gh.installationPermissions.set(INST, {
+      contents: "write",
+      pull_requests: "write",
+      checks: "read",
+      statuses: "read",
+      actions: "read",
+      issues: "write",
+      metadata: "read",
+    });
+    gh.seedRepo(REPO, "main", { "README.md": "# Hub\n", "src/a.ts": "export const a = 1;\n" });
+    await db.update(appsTable).set({ sourceType: "github", sourceRepo: REPO, sourceInstallationId: INST }).where(eq(appsTable.id, appAId));
+  });
+
+  const owned = () =>
+    db.insert(githubInstallationsTable).values({ userId, installationId: INST, accountLogin: "ivan", accountType: "User", repositorySelection: "selected" });
+  const coder = (code: "read" | "write" = "write") => cloudRole([], { key: "analista", code } as Partial<InstanceRoleData>);
+
+  it("ruolo code write: legge, modifica, committa, apre la PR e riferisce", async () => {
+    await owned();
+    const instanceId = await seedTeam([coder()]);
+    const branch = `botcave/${instanceId}-t1`;
+    script = [
+      call("leggi_file", { percorso: "src/a.ts" }),
+      call("modifica_file", { percorso: "src/a.ts", vecchio: "a = 1", nuovo: "a = 2" }),
+      call("crea_commit", { messaggio: "Aggiorna a" }),
+      call("apri_pr", { titolo: "Aggiorna a", corpo: "Cambia il valore di a" }),
+      report("PR #1 aperta, CI in corso"),
+    ];
+
+    const task = await runOne(instanceId);
+
+    expect(task).toMatchObject({ status: "done", outcome: "PR #1 aperta, CI in corso" });
+    expect(gh.filesAt(REPO, branch)["src/a.ts"]).toBe("export const a = 2;\n");
+    expect(gh.filesAt(REPO, "main")["src/a.ts"]).toBe("export const a = 1;\n");
+    expect(await getCodeTask(instanceId, "t1")).toMatchObject({ repo: REPO, branch, baseBranch: "main", prNumber: 1, prState: "open", ciState: "pending" });
+
+    const first = chatRequests()[0];
+    expect(first.messages[0].content).toContain(CODE_TASK_INSTRUCTIONS);
+    expect(first.messages[2]).toMatchObject({ role: "user" });
+    expect(first.messages[2].content).toContain(`Repository: ${REPO}`);
+    expect(first.messages[2].content).toContain(`Branch del compito: ${branch}`);
+    expect(first.messages[2].content).toContain("PR: nessuna");
+    const names = first.tools.map((t: { function: { name: string } }) => t.function.name);
+    expect(names).toEqual(expect.arrayContaining(["riferisci", "leggi_file", "scrivi_file", "crea_commit", "apri_pr", "leggi_esito_ci"]));
+
+    // Il codice non si salva nei passi: contenuto oscurato
+    const edit = (await steps(task.id)).find((s) => s.toolName === "modifica_file")!;
+    expect(edit.args).toEqual({ percorso: "src/a.ts", vecchio: "***", nuovo: "***" });
+    expect(edit.ok).toBe(true);
+  });
+
+  it("riesecuzione sul branch: PR esistente, CI rossa e lettura dal branch", async () => {
+    await owned();
+    const instanceId = await seedTeam([coder()]);
+    const branch = `botcave/${instanceId}-t1`;
+    script = [
+      call("modifica_file", { percorso: "src/a.ts", vecchio: "a = 1", nuovo: "a = 2" }),
+      call("crea_commit", { messaggio: "Aggiorna a" }),
+      call("apri_pr", { titolo: "Aggiorna a", corpo: "Cambia a" }),
+      report("PR #1 aperta, CI in corso"),
+    ];
+    await runOne(instanceId);
+    await db
+      .update(teamCodeTasksTable)
+      .set({ ciState: "failure", ciSummary: "test non superati" })
+      .where(eq(teamCodeTasksTable.instanceId, instanceId));
+
+    const before = chatRequests().length;
+    script = [call("leggi_file", { percorso: "src/a.ts" }), report("corretto", "blocked")];
+    const second = await runOne(instanceId);
+
+    expect(second.status).toBe("blocked");
+    const reqs = chatRequests().slice(before);
+    const msg = reqs[0].messages[2].content as string;
+    expect(msg).toContain(`Branch del compito: ${branch}`);
+    expect(msg).toContain("PR: #1");
+    expect(msg).toContain("CI: failure · test non superati");
+    expect(msg).toContain("la CI è fallita: usa leggi_esito_ci, correggi, committa");
+    const toolMsg = reqs[1].messages.find((m: { role: string }) => m.role === "tool");
+    expect(toolMsg.content).toContain("export const a = 2;");
+  });
+
+  it("chi ha attivato non possiede l'installazione → blocked codeAccess", async () => {
+    const instanceId = await seedTeam([coder()]);
+    const task = await runOne(instanceId);
+
+    expect(task).toMatchObject({ status: "blocked", outcome: TASK_MESSAGES.codeAccess, error: TASK_MESSAGES.codeAccess });
+    expect(TASK_MESSAGES.codeAccess).toBe("accesso al repository non disponibile");
+    expect(chatRequests()).toHaveLength(0);
+    expect((await getPlan(instanceId)).tasks[0]).toMatchObject({ status: "blocked", outcome: TASK_MESSAGES.codeAccess });
+    expect((await listEvents(instanceId))[0]).toMatchObject({ type: "bloccato", taskId: task.id });
+    expect(await turns(instanceId)).toHaveLength(1);
+  });
+
+  it("limiti CODE_TASK_LIMITS per i ruoli con codice", async () => {
+    await owned();
+    const instanceId = await seedTeam([coder("read")]);
+    fake.chatReply = () => call("leggi_file", { percorso: "README.md" });
+
+    const task = await runOne(instanceId);
+
+    expect(task.status).toBe("failed");
+    expect(task.error).toBe("limite di 30 giri di strumenti raggiunto");
+    expect((await steps(task.id)).filter((s) => s.toolName === "leggi_file")).toHaveLength(30);
+    // Sola lettura: niente strumenti di scrittura offerti
+    const names = chatRequests()[0].tools.map((t: { function: { name: string } }) => t.function.name);
+    expect(names).toContain("leggi_file");
+    expect(names).not.toContain("scrivi_file");
+  });
+
+  it("modifiche non committate segnalate nell'esito", async () => {
+    await owned();
+    const instanceId = await seedTeam([coder()]);
+    script = [call("scrivi_file", { percorso: "src/nuovo.ts", contenuto: "export {};\n" }), report("y".repeat(300), "blocked")];
+
+    const task = await runOne(instanceId);
+
+    const note = " (modifiche non committate scartate: 1 file)";
+    expect(task.status).toBe("blocked");
+    expect(task.outcome).toHaveLength(300);
+    expect(task.outcome!.endsWith(note)).toBe(true);
+    expect(gh.pulls.get(REPO) ?? []).toHaveLength(0);
   });
 });

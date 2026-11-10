@@ -140,6 +140,7 @@ async function install(argv: string[], d: CliDeps): Promise<number> {
     programArguments: (p) => [d.execPath, p, "run"],
     execDir: d.execPath,
     writeConfig: true,
+    configFirst: false,
   });
   if (!claudeBin) {
     d.err("attenzione: `claude` non trovato nel PATH; uso /usr/local/bin, /opt/homebrew/bin e ~/.local/bin. Installa Claude Code e fai il login.\n");
@@ -164,6 +165,8 @@ interface InstallTarget {
   /** Eseguibile la cui cartella entra nel PATH del servizio. */
   execDir: string;
   writeConfig: boolean;
+  /** Scrive la config prima di copiare il programma (app: il token non si perde). */
+  configFirst: boolean;
 }
 
 /** Programma, config (se richiesta), cartella dei log e LaunchAgent: comune a CLI e app. */
@@ -176,15 +179,13 @@ async function installNode(
   const configDir = path.dirname(paths.configPath);
   await mkdir(configDir, { recursive: true, mode: 0o700 });
   await chmod(configDir, 0o700);
-  // Prima della config: se la copia fallisce non resta scritto nulla di nuovo
+  const writeConfig = () =>
+    writeConfigMerged(paths.configPath, { caselloUrl: cfg.caselloUrl, token: cfg.token, workspaceRoot: cfg.workspaceRoot });
+  // App: il token dell'abbinamento si consegna una volta sola, quindi si salva per primo (riaprendo l'app la config si
+  // adotta). CLI: prima il programma, così se la copia fallisce non resta scritto nulla di nuovo.
+  if (target.writeConfig && target.configFirst) await writeConfig();
   const program = await installProgram(target.programSource, target.programPath);
-  if (target.writeConfig) {
-    await writeConfigMerged(paths.configPath, {
-      caselloUrl: cfg.caselloUrl,
-      token: cfg.token,
-      workspaceRoot: cfg.workspaceRoot,
-    });
-  }
+  if (target.writeConfig && !target.configFirst) await writeConfig();
   await mkdir(paths.logsDir, { recursive: true, mode: 0o700 });
   const claudeBin = await d.whichClaude();
   const plist = buildPlist({
@@ -198,7 +199,8 @@ async function installNode(
 
 /**
  * Installazione dell'app: copia l'eseguibile in `~/.casello-nodo/bin/casello-nodo` (755, temporaneo e rename), scrive
- * la config (600, gli altri campi restano) e carica il LaunchAgent con `[programma, "run"]`: il programma è un
+ * la config (600, gli altri campi restano: scritta per prima, così una copia non riuscita non perde il token
+ * appena consegnato) e carica il LaunchAgent con `[programma, "run"]`: il programma è un
  * eseguibile, senza node davanti. `writeConfig: false` adotta una config esistente senza toccarla. Toglie la copia
  * `.mjs` di un'installazione della CLI.
  */
@@ -215,6 +217,7 @@ export async function installFromConfig(
     programArguments: (p) => [p, "run"],
     execDir: paths.appProgramPath,
     writeConfig: opts.writeConfig ?? true,
+    configFirst: true,
   });
   await rm(paths.programPath, { force: true });
   return { program };

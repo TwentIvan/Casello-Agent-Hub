@@ -157,6 +157,38 @@ describe("primo avvio senza config", () => {
     expect(calls.some((c) => c[0] === "bootstrap")).toBe(false);
   });
 
+  it("copia del programma non riuscita dopo l'abbinamento → config con il token salvata; riaprendo si adotta senza start", async () => {
+    const missing = path.join(home, "inesistente", "botcave-nodo");
+    expect(await runAppMode(deps({ programSource: missing }))).toBe(1);
+    expect(await readConfig()).toEqual({
+      caselloUrl: "https://casello.example.com",
+      token: FAKE_TOKEN,
+      workspaceRoot: path.join(home, "Botcave"),
+    });
+    expect((await stat(defaultPaths(home).configPath)).mode & 0o777).toBe(0o600);
+    await expect(stat(defaultPaths(home).appProgramPath)).rejects.toThrow();
+    expect(calls.some((c) => c[0] === "bootstrap")).toBe(false);
+    expect(log.at(-1)).toBe("alert:Operazione non riuscita: riprova; se si ripete, apri i log dal menu di Botcave Nodo");
+
+    let started = false;
+    const reopen = await runAppMode(
+      deps({
+        pairingClient: () => ({
+          start: async () => {
+            started = true;
+            throw new Error("non doveva partire");
+          },
+          poll: async () => ({ status: "gone" }),
+        }),
+      }),
+    );
+    expect(reopen).toBe(0);
+    expect(started).toBe(false);
+    expect(await readFile(defaultPaths(home).appProgramPath, "utf8")).toBe("eseguibile v1\n");
+    expect((await readConfig()).token).toBe(FAKE_TOKEN);
+    expect(calls.some((c) => c[0] === "bootstrap")).toBe(true);
+  });
+
   it("Botcave non raggiungibile all'avvio dell'abbinamento → dialogo ed uscita 1", async () => {
     const client: PairingClient = {
       start: async () => {

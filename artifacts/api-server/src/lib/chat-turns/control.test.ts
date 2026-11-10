@@ -67,6 +67,12 @@ describe("stop e coda comuni alle chat", () => {
     expect(await closeTurnAsStopped(spec, conversationId)).toBe(false);
   });
 
+  it("closeTurnAsStopped su una conversazione già idle non riscrive il messaggio vuoto", async () => {
+    await db.update(characterConversationsTable).set({ turnStatus: "idle" }).where(eq(characterConversationsTable.id, conversationId));
+    expect(await closeTurnAsStopped(spec, conversationId)).toBe(false);
+    expect(await getMessage(assistantId)).toMatchObject({ content: "", error: false });
+  });
+
   it("closeTurnAsStopped annulla i turni del nodo aperti della conversazione", async () => {
     const { turnId } = await enqueueTurn({ nodeId, userId, aiModelId, consumer: "character", refId: conversationId, pkg: samplePackage() });
     const { turnId: other } = await enqueueTurn({ nodeId, userId, aiModelId, consumer: "plan_chat", refId: conversationId, pkg: samplePackage() });

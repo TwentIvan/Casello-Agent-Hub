@@ -3,7 +3,7 @@
 // `startCharacterTurn` risponde subito con il messaggio dell'utente e lancia il turno in background.
 // Nei log solo id e conteggi: mai il contenuto dei messaggi.
 
-import { and, asc, eq, inArray, lt, notInArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import {
   db,
@@ -25,7 +25,9 @@ import { MEMORY_TOOLS, MEMORY_TOOL_NAMES, runMemoryTool } from "../memory/tools"
 import { EMPTY_REPLY_MESSAGE, INTERRUPTED_TURN_MESSAGE, TurnBusyError } from "../plan-chat/run-turn";
 import { runChatTurn } from "../node-turns/chat-turn";
 import { CODE_INSTRUCTIONS_GENERAL, CODE_TOOLS, CODE_TOOL_NAMES, CodeToolRunner } from "../code-reader/tools";
-import { CODE_TURN_LIMITS } from "../plan-chat/turn";
+import { CODE_TURN_LIMITS, STOPPED_TURN_MESSAGE } from "../plan-chat/turn";
+import { drainQueued, isTurnOpen } from "../chat-turns/control";
+import type { ChatKindSpec } from "../chat-turns/spec";
 import { HANDOFF_TOOL, runHandoff } from "./handoff";
 import { CHARACTER_NAMES, characterInstructions } from "./instructions";
 import { createTurnContext } from "./proposals";
@@ -192,7 +194,7 @@ export async function startCharacterTurn(conversationId: number, content: string
     const [{ n }] = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(characterMessagesTable)
-      .where(eq(characterMessagesTable.conversationId, conversationId));
+      .where(and(eq(characterMessagesTable.conversationId, conversationId), isNull(characterMessagesTable.queuedAt)));
     const pageContext: PageContext | null = page
       ? { page: page.page, ...(page.id !== undefined ? { id: page.id } : {}), ...(page.host !== undefined ? { host: page.host } : {}) }
       : null;
@@ -239,7 +241,8 @@ async function loadHistory(
   const messages = await db
     .select()
     .from(characterMessagesTable)
-    .where(eq(characterMessagesTable.conversationId, conversationId))
+    // Il messaggio in coda non è ancora partito: fuori dalla cronologia
+    .where(and(eq(characterMessagesTable.conversationId, conversationId), isNull(characterMessagesTable.queuedAt)))
     .orderBy(asc(characterMessagesTable.id));
   const proposals = await db
     .select({ messageId: characterProposalsTable.messageId, kind: characterProposalsTable.kind, status: characterProposalsTable.status })
@@ -303,12 +306,31 @@ function errorText(err: unknown): string {
   return GENERIC_ERROR_MESSAGE;
 }
 
-/** Esegue il turno e lo chiude sempre (messaggio dell'assistente, totali, `idle`). Non lancia mai. */
+/** Le conversazioni dei personaggi per «Ferma» e «Accoda» (`lib/chat-turns/control.ts`). */
+export const CHARACTER_CHAT_SPEC: ChatKindSpec = {
+  kind: "character",
+  consumer: "character",
+  conversationsTable: "character_conversations",
+  messagesTable: "character_messages",
+  hasPageContext: true,
+  start: (conversationId, content, page) => startCharacterTurn(conversationId, content, page),
+};
+
+/**
+ * Esegue il turno e lo chiude sempre (messaggio dell'assistente, totali, `idle`), poi fa partire il messaggio in coda.
+ * «Ferma» interrompe il turno con il segnale: risposta «Risposta interrotta.». Non lancia mai.
+ */
 export function executeCharacterTurn(conversationId: number, assistantMessageId: number): Promise<void> {
-  return trackTurn("character", conversationId, (_signal) => executeCharacterTurnInner(conversationId, assistantMessageId));
+  return trackTurn("character", conversationId, (signal) => executeCharacterTurnInner(conversationId, assistantMessageId, signal))
+    .catch((err: unknown) => {
+      logger.error({ conversationId, errName: err instanceof Error ? err.name : typeof err }, "Turno della conversazione del personaggio non chiuso");
+    })
+    .then(() => drainQueued(CHARACTER_CHAT_SPEC, conversationId));
 }
 
-async function executeCharacterTurnInner(conversationId: number, assistantMessageId: number): Promise<void> {
+async function executeCharacterTurnInner(conversationId: number, assistantMessageId: number, signal: AbortSignal): Promise<void> {
+  // Turno chiuso nel DB prima di partire davvero (Ferma da un altro processo): niente modello, niente scritture
+  if (!(await isTurnOpen(CHARACTER_CHAT_SPEC, conversationId, assistantMessageId))) return;
   let content = GENERIC_ERROR_MESSAGE;
   let isError = true;
   let tokens = 0;
@@ -357,10 +379,15 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
           runTool: (call) => runCharacterTool(character, handler, call, ctx, codeRunner),
           caller: "character-chat",
           budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, character, aiModelId),
+          signal,
         });
         tokens = outcome.tokens;
         costUsd = outcome.costUsd;
-        if (outcome.ok) {
+        // Un esito arrivato subito dopo «Ferma» (es. dal nodo) vale come interruzione
+        if ((!outcome.ok && outcome.stopped === true) || signal.aborted) {
+          content = STOPPED_TURN_MESSAGE;
+          isError = false;
+        } else if (outcome.ok) {
           content = outcome.content.trim() === "" ? EMPTY_REPLY_MESSAGE : outcome.content;
           isError = false;
         } else {
@@ -369,13 +396,24 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
       }
     }
   } catch (err) {
-    content = errorText(err);
-    logger.warn({ conversationId, errName: err instanceof Error ? err.name : typeof err }, "Turno della conversazione del personaggio non riuscito");
+    if (signal.aborted) {
+      content = STOPPED_TURN_MESSAGE;
+      isError = false;
+    } else {
+      content = errorText(err);
+      logger.warn({ conversationId, errName: err instanceof Error ? err.name : typeof err }, "Turno della conversazione del personaggio non riuscito");
+    }
   }
 
   try {
     await db.transaction(async (tx) => {
-      await tx.update(characterMessagesTable).set({ content, error: isError, tokens }).where(eq(characterMessagesTable.id, assistantMessageId));
+      // Solo se il messaggio è ancora vuoto: altrimenti il turno è stato chiuso altrove (totali e stato non si toccano)
+      const written = await tx
+        .update(characterMessagesTable)
+        .set({ content, error: isError, tokens })
+        .where(and(eq(characterMessagesTable.id, assistantMessageId), eq(characterMessagesTable.content, "")))
+        .returning({ id: characterMessagesTable.id });
+      if (written.length === 0) return;
       // Costo parziale (null) se manca il prezzo di un turno con token; una conversazione senza token parte da 0
       await tx
         .update(characterConversationsTable)
@@ -400,11 +438,18 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
       .where(eq(characterConversationsTable.id, conversationId))
       .catch(() => {});
   }
-  logger.info({ conversationId, assistantMessageId, tokens, error: isError }, "Turno della conversazione del personaggio chiuso");
+  logger.info({ conversationId, assistantMessageId, tokens, error: isError, stopped: signal.aborted }, "Turno della conversazione del personaggio chiuso");
 }
 
 /** All'avvio i turni rimasti `running` sono stati interrotti dal riavvio: si chiudono con un messaggio. */
 export async function failInterruptedCharacterTurns(filter?: StaleTurnFilter): Promise<number> {
+  const ids = await closeInterruptedCharacterTurns(filter);
+  // Le conversazioni chiuse possono avere un messaggio in coda: parte ora
+  for (const id of ids) await drainQueued(CHARACTER_CHAT_SPEC, id);
+  return ids.length;
+}
+
+async function closeInterruptedCharacterTurns(filter?: StaleTurnFilter): Promise<number[]> {
   return db.transaction(async (tx) => {
     const interrupted = await tx
       .update(characterConversationsTable)
@@ -417,7 +462,7 @@ export async function failInterruptedCharacterTurns(filter?: StaleTurnFilter): P
         ),
       )
       .returning({ id: characterConversationsTable.id });
-    if (interrupted.length === 0) return 0;
+    if (interrupted.length === 0) return [];
     const ids = interrupted.map((c) => c.id);
     const lastEmpties = await tx
       .select({ id: sql<number>`max(${characterMessagesTable.id})::int` })
@@ -439,6 +484,6 @@ export async function failInterruptedCharacterTurns(filter?: StaleTurnFilter): P
         .insert(characterMessagesTable)
         .values(missing.map((conversationId) => ({ conversationId, role: "assistant" as const, content: INTERRUPTED_TURN_MESSAGE, error: true })));
     }
-    return interrupted.length;
+    return ids;
   });
 }

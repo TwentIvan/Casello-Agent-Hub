@@ -35,7 +35,7 @@ function toDate(value: unknown): Date {
 
 /**
  * Chiude nel DB un turno che non gira in questo processo: conversazione `running` → `idle`, ultimo messaggio
- * dell'assistente ancora vuoto → «Risposta interrotta.» (non è un errore). True se qualcosa è cambiato. Poi annulla i
+ * dell'assistente ancora vuoto → «Risposta interrotta.» (non è un errore). True se la conversazione era `running`; su una conversazione già ferma non si tocca nulla. Poi annulla i
  * turni del nodo ancora aperti della conversazione.
  */
 export async function closeTurnAsStopped(spec: ChatKindSpec, conversationId: number): Promise<boolean> {
@@ -45,7 +45,9 @@ export async function closeTurnAsStopped(spec: ChatKindSpec, conversationId: num
          set turn_status = 'idle', updated_at = now()
        where id = ${conversationId} and turn_status = 'running'
       returning id`);
-    const msg = await tx.execute(sql`
+    // Conversazione già ferma: l'ultimo messaggio vuoto non è del turno da chiudere
+    if (conv.rows.length === 0) return false;
+    await tx.execute(sql`
       update ${msgTable(spec)}
          set content = ${STOPPED_TURN_MESSAGE}, error = false
        where id = (
@@ -56,10 +58,23 @@ export async function closeTurnAsStopped(spec: ChatKindSpec, conversationId: num
              )
          and content = ''
       returning id`);
-    return conv.rows.length > 0 || msg.rows.length > 0;
+    return true;
   });
   await cancelOpenTurnsFor(spec.consumer, conversationId);
   return changed;
+}
+
+/**
+ * Il turno è ancora aperto: conversazione `running` e messaggio dell'assistente del turno ancora vuoto. Falso se il
+ * turno è stato chiuso nel DB (Ferma, turni appesi) prima che partisse davvero in questo processo.
+ */
+export async function isTurnOpen(spec: ChatKindSpec, conversationId: number, assistantMessageId: number): Promise<boolean> {
+  const result = await db.execute(sql`
+    select 1 from ${convTable(spec)} c
+      join ${msgTable(spec)} m on m.conversation_id = c.id
+     where c.id = ${conversationId} and c.turn_status = 'running'
+       and m.id = ${assistantMessageId} and m.role = 'assistant' and m.content = ''`);
+  return result.rows.length > 0;
 }
 
 async function readState(spec: ChatKindSpec, conversationId: number, messageId: number | null): Promise<{ idle: boolean; filled: boolean }> {

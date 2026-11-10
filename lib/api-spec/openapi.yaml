@@ -90,6 +90,70 @@ paths:
               schema:
                 $ref: "#/components/schemas/EmbedConfig"
 
+  /node-pairing/start:
+    post:
+      operationId: startNodePairing
+      tags: [nodes]
+      summary: Avvia l'abbinamento di un Mac dal browser (pubblica)
+      description: >-
+        Chiamata dal nodo al primo avvio. Risponde con `userCode` (XXXX-XXXX, da mostrare all'utente), `pollSecret`
+        (segreto del nodo) e la scadenza (10 minuti); nel DB restano solo gli hash. 10 richieste al minuto per IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodePairingStart"
+      responses:
+        "201":
+          description: Richiesta creata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePairingStarted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /node-pairing/poll:
+    post:
+      operationId: pollNodePairing
+      tags: [nodes]
+      summary: Il nodo chiede l'esito dell'abbinamento (pubblica)
+      description: >-
+        202 `pending` finché l'utente non decide. Dopo l'approvazione risponde 200 con il token del nodo, una sola
+        volta. Rifiutata, scaduta, già consegnata o segreto sbagliato: 410. 30 richieste al minuto per richiesta.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodePairingPoll"
+      responses:
+        "200":
+          description: Approvata, con il token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePairingResult"
+        "202":
+          description: In attesa della decisione dell'utente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePairingPending"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "410":
+          description: Collegamento non più valido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   # ─── Auth ───────────────────────────────────────────────────────────────────
   # /auth/login e /auth/callback sono redirect del flusso OIDC (Google), non chiamate JSON.
   # Lo stesso vale per /auth/github/login, /auth/github/link e /auth/github/callback (GitHub).
@@ -394,6 +458,92 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /account/node-pairings/{code}:
+    get:
+      operationId: getNodePairing
+      tags: [nodes]
+      summary: Dati di una richiesta di collegamento
+      description: >-
+        Il codice si accetta con o senza trattino e in minuscolo. Sconosciuta, scaduta o già decisa: 404. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/NodePairingCodeParam"
+      responses:
+        "200":
+          description: Richiesta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePairingInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /account/node-pairings/{code}/approve:
+    post:
+      operationId: approveNodePairing
+      tags: [nodes]
+      summary: Approva il collegamento di un Mac
+      description: >-
+        Con `replaceNodeId` il nodo esistente dell'utente resta (nome invariato) e i suoi token si revocano come con
+        «Rigenera token»; senza, si crea un nodo con `name` (doppione 409 "nome già usato"). Il token non si crea qui:
+        lo riceve il nodo con il poll. Al quinto errore la richiesta scade. Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/NodePairingCodeParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodePairingApprove"
+      responses:
+        "200":
+          description: Approvata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePairingDecision"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /account/node-pairings/{code}/deny:
+    post:
+      operationId: denyNodePairing
+      tags: [nodes]
+      summary: Rifiuta il collegamento di un Mac
+      description: Solo con il login.
+      parameters:
+        - $ref: "#/components/parameters/NodePairingCodeParam"
+      responses:
+        "200":
+          description: Rifiutata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePairingDecision"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
   /node/heartbeat:
     post:
@@ -4510,6 +4660,14 @@ paths:
 
 components:
   parameters:
+    NodePairingCodeParam:
+      name: code
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 20
     CharacterQuery:
       name: character
       in: query
@@ -7253,6 +7411,102 @@ components:
         token:
           type: string
           description: Valore del token, mostrato una sola volta
+
+    NodePairingStart:
+      type: object
+      required: [deviceName, version]
+      properties:
+        deviceName:
+          type: string
+          minLength: 1
+          maxLength: 100
+        version:
+          type: string
+          minLength: 1
+          maxLength: 50
+
+    NodePairingStarted:
+      type: object
+      required: [pairingId, userCode, pollSecret, expiresAt]
+      properties:
+        pairingId:
+          type: string
+        userCode:
+          type: string
+          description: Codice XXXX-XXXX da mostrare all'utente
+        pollSecret:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+
+    NodePairingPoll:
+      type: object
+      required: [pairingId, pollSecret]
+      properties:
+        pairingId:
+          type: string
+          maxLength: 64
+        pollSecret:
+          type: string
+          maxLength: 200
+
+    NodePairingPending:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [pending]
+
+    NodePairingResult:
+      type: object
+      required: [status, token, nodeId, nodeName]
+      properties:
+        status:
+          type: string
+          enum: [approved]
+        token:
+          type: string
+          description: Token del nodo, consegnato una sola volta
+        nodeId:
+          type: integer
+        nodeName:
+          type: string
+
+    NodePairingInfo:
+      type: object
+      required: [deviceName, version, createdAt, expiresAt]
+      properties:
+        deviceName:
+          type: string
+        version:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+
+    NodePairingApprove:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: Nome del nodo nuovo (ignorato con replaceNodeId)
+        replaceNodeId:
+          type: integer
+          nullable: true
+
+    NodePairingDecision:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [approved, denied]
 
     NodeHeartbeat:
       type: object

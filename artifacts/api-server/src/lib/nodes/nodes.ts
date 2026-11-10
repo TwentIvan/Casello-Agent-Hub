@@ -75,10 +75,16 @@ export function toNodeView(row: Node, now: Date = new Date()): NodeView {
   };
 }
 
+/** Nome del nodo ripulito; vuoto o troppo lungo lancia `NodeInputError`. */
+export function cleanNodeName(name: string): string {
+  const clean = name.trim();
+  if (clean.length < 1 || clean.length > NAME_MAX) throw new NodeInputError(NODE_MESSAGES.nameInvalid);
+  return clean;
+}
+
 /** Registra un nodo e il suo token (mostrato una sola volta), in una transazione. */
 export async function createNode(userId: number, name: string): Promise<{ node: NodeView; token: string }> {
-  const cleanName = name.trim();
-  if (cleanName.length < 1 || cleanName.length > NAME_MAX) throw new NodeInputError(NODE_MESSAGES.nameInvalid);
+  const cleanName = cleanNodeName(name);
   try {
     return await db.transaction(async (tx) => {
       const [row] = await tx.insert(nodesTable).values({ userId, name: cleanName }).returning();
@@ -138,7 +144,7 @@ async function stopNodeTasks(tx: Tx, nodeId: number): Promise<TeamTaskRow[]> {
   return closed;
 }
 
-interface StoppedWork {
+export interface StoppedWork {
   tasks: TeamTaskRow[];
   turnIds: number[];
 }
@@ -149,7 +155,7 @@ async function stopNodeWork(tx: Tx, nodeId: number): Promise<StoppedWork> {
 }
 
 /** Dopo il commit: attese dei turni risolte; PLAN, evento `bloccato` e turno del capo per ogni compito fermato (un errore non ferma gli altri). */
-async function notifyStopped({ tasks, turnIds }: StoppedWork): Promise<void> {
+export async function notifyStopped({ tasks, turnIds }: StoppedWork): Promise<void> {
   notifyTurnsClosed(turnIds);
   for (const task of tasks) {
     try {
@@ -196,6 +202,18 @@ export async function deleteNode(userId: number, id: number): Promise<boolean> {
 }
 
 /**
+ * Nella transazione, con la riga del nodo già bloccata: revoca i token del nodo e ne ferma compiti e turni in carico
+ * (il processo col vecchio token non potrebbe più riferire). Dopo il commit si chiama `notifyStopped`.
+ */
+export async function revokeNodeTokens(tx: Tx, nodeId: number): Promise<StoppedWork> {
+  await tx
+    .update(apiTokensTable)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(apiTokensTable.nodeId, nodeId), isNull(apiTokensTable.revokedAt)));
+  return stopNodeWork(tx, nodeId);
+}
+
+/**
  * Revoca i token del nodo e ne crea uno nuovo (mostrato una sola volta); null se il nodo non è dell'utente. Il processo
  * col vecchio token non potrebbe più riferire: i compiti che ha in carico si fermano come con la disattivazione.
  */
@@ -208,11 +226,7 @@ export async function regenerateNodeToken(userId: number, id: number): Promise<{
       .where(and(eq(nodesTable.id, id), eq(nodesTable.userId, userId)))
       .for("update");
     if (!node) return null;
-    await tx
-      .update(apiTokensTable)
-      .set({ revokedAt: new Date() })
-      .where(and(eq(apiTokensTable.nodeId, id), isNull(apiTokensTable.revokedAt)));
-    const stopped = await stopNodeWork(tx, id);
+    const stopped = await revokeNodeTokens(tx, id);
     return { token: await createNodeToken(tx, userId, id, `Nodo ${node.name}`), stopped };
   });
   if (!out) return null;

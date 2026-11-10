@@ -33,6 +33,52 @@ export const GetEmbedConfigResponse = zod.object({
 
 
 /**
+ * Chiamata dal nodo al primo avvio. Risponde con `userCode` (XXXX-XXXX, da mostrare all'utente), `pollSecret` (segreto del nodo) e la scadenza (10 minuti); nel DB restano solo gli hash. 10 richieste al minuto per IP.
+ * @summary Avvia l'abbinamento di un Mac dal browser (pubblica)
+ */
+export const startNodePairingBodyDeviceNameMax = 100;
+
+export const startNodePairingBodyVersionMax = 50;
+
+
+
+export const StartNodePairingBody = zod.object({
+  "deviceName": zod.string().min(1).max(startNodePairingBodyDeviceNameMax),
+  "version": zod.string().min(1).max(startNodePairingBodyVersionMax)
+})
+
+export const StartNodePairingResponse = zod.object({
+  "pairingId": zod.string(),
+  "userCode": zod.string().describe('Codice XXXX-XXXX da mostrare all\'utente'),
+  "pollSecret": zod.string(),
+  "expiresAt": zod.coerce.date()
+})
+
+
+/**
+ * 202 `pending` finché l'utente non decide. Dopo l'approvazione risponde 200 con il token del nodo, una sola volta. Rifiutata, scaduta, già consegnata o segreto sbagliato: 410. 30 richieste al minuto per richiesta.
+ * @summary Il nodo chiede l'esito dell'abbinamento (pubblica)
+ */
+export const pollNodePairingBodyPairingIdMax = 64;
+
+export const pollNodePairingBodyPollSecretMax = 200;
+
+
+
+export const PollNodePairingBody = zod.object({
+  "pairingId": zod.string().max(pollNodePairingBodyPairingIdMax),
+  "pollSecret": zod.string().max(pollNodePairingBodyPollSecretMax)
+})
+
+export const PollNodePairingResponse = zod.object({
+  "status": zod.enum(['approved']),
+  "token": zod.string().describe('Token del nodo, consegnato una sola volta'),
+  "nodeId": zod.number(),
+  "nodeName": zod.string()
+})
+
+
+/**
  * Con la sessione del login o con un token personale (api:read o api:write); auth dice quale.
  * @summary Utente della sessione corrente
  */
@@ -271,6 +317,65 @@ export const GetNodeFoldersResponse = zod.object({
   "workspaceRoot": zod.string().nullable(),
   "folders": zod.array(zod.string()).nullable(),
   "foldersUpdatedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Il codice si accetta con o senza trattino e in minuscolo. Sconosciuta, scaduta o già decisa: 404. Solo con il login.
+ * @summary Dati di una richiesta di collegamento
+ */
+export const getNodePairingPathCodeMax = 20;
+
+
+
+export const GetNodePairingParams = zod.object({
+  "code": zod.coerce.string().min(1).max(getNodePairingPathCodeMax)
+})
+
+export const GetNodePairingResponse = zod.object({
+  "deviceName": zod.string(),
+  "version": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date()
+})
+
+
+/**
+ * Con `replaceNodeId` il nodo esistente dell'utente resta (nome invariato) e i suoi token si revocano come con «Rigenera token»; senza, si crea un nodo con `name` (doppione 409 "nome già usato"). Il token non si crea qui: lo riceve il nodo con il poll. Al quinto errore la richiesta scade. Solo con il login.
+ * @summary Approva il collegamento di un Mac
+ */
+export const approveNodePairingPathCodeMax = 20;
+
+
+
+export const ApproveNodePairingParams = zod.object({
+  "code": zod.coerce.string().min(1).max(approveNodePairingPathCodeMax)
+})
+
+export const ApproveNodePairingBody = zod.object({
+  "name": zod.string().describe('Nome del nodo nuovo (ignorato con replaceNodeId)'),
+  "replaceNodeId": zod.number().nullish()
+})
+
+export const ApproveNodePairingResponse = zod.object({
+  "status": zod.enum(['approved', 'denied'])
+})
+
+
+/**
+ * Solo con il login.
+ * @summary Rifiuta il collegamento di un Mac
+ */
+export const denyNodePairingPathCodeMax = 20;
+
+
+
+export const DenyNodePairingParams = zod.object({
+  "code": zod.coerce.string().min(1).max(denyNodePairingPathCodeMax)
+})
+
+export const DenyNodePairingResponse = zod.object({
+  "status": zod.enum(['approved', 'denied'])
 })
 
 

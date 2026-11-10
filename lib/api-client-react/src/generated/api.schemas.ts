@@ -2273,6 +2273,85 @@ export interface NodeToken {
   token: string;
 }
 
+export interface NodePairingStart {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  deviceName: string;
+  /**
+     * @minLength 1
+     * @maxLength 50
+     */
+  version: string;
+}
+
+export interface NodePairingStarted {
+  pairingId: string;
+  /** Codice XXXX-XXXX da mostrare all'utente */
+  userCode: string;
+  pollSecret: string;
+  expiresAt: string;
+}
+
+export interface NodePairingPoll {
+  /** @maxLength 64 */
+  pairingId: string;
+  /** @maxLength 200 */
+  pollSecret: string;
+}
+
+export type NodePairingPendingStatus = typeof NodePairingPendingStatus[keyof typeof NodePairingPendingStatus];
+
+
+export const NodePairingPendingStatus = {
+  pending: 'pending',
+} as const;
+
+export interface NodePairingPending {
+  status: NodePairingPendingStatus;
+}
+
+export type NodePairingResultStatus = typeof NodePairingResultStatus[keyof typeof NodePairingResultStatus];
+
+
+export const NodePairingResultStatus = {
+  approved: 'approved',
+} as const;
+
+export interface NodePairingResult {
+  status: NodePairingResultStatus;
+  /** Token del nodo, consegnato una sola volta */
+  token: string;
+  nodeId: number;
+  nodeName: string;
+}
+
+export interface NodePairingInfo {
+  deviceName: string;
+  version: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface NodePairingApprove {
+  /** Nome del nodo nuovo (ignorato con replaceNodeId) */
+  name: string;
+  replaceNodeId?: number | null;
+}
+
+export type NodePairingDecisionStatus = typeof NodePairingDecisionStatus[keyof typeof NodePairingDecisionStatus];
+
+
+export const NodePairingDecisionStatus = {
+  approved: 'approved',
+  denied: 'denied',
+} as const;
+
+export interface NodePairingDecision {
+  status: NodePairingDecisionStatus;
+}
+
 export interface NodeHeartbeat {
   /** Compiti in attesa che il nodo potrebbe prendere */
   pending: number;

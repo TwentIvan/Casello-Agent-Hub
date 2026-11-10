@@ -12,6 +12,7 @@ import { InstanceRoleSchema } from "../teams/manifest";
 import { errName, finishTaskExecution } from "../teams/task-runner";
 import { NODE_ONLINE_WINDOW_MS } from "./nodes";
 import { teamCapBlock } from "../teams/team-budget";
+import { purgeNodePairings } from "./pairing";
 import { blockCappedTask, hasSkills, roleNodeSkills } from "./protocol";
 
 export const SWEEP_INTERVAL_MS = 60_000;
@@ -127,6 +128,10 @@ export async function notifyNodelessTasks(now: Date = new Date()): Promise<numbe
   return notified;
 }
 
+/** Le richieste di abbinamento vecchie si cancellano ogni ora. */
+const PAIRING_PURGE_EVERY_MS = 3600_000;
+let lastPairingPurge = 0;
+
 /** Avvio del processo dell'API: prima di NODE_ONLINE_WINDOW_MS i nodi sembrano spenti solo perché l'API era giù. */
 const PROCESS_STARTED_AT = new Date();
 
@@ -151,6 +156,14 @@ export async function sweepNodeTasks(now: Date = new Date(), upSince: Date = PRO
     await purgeDeletedAttachments();
   } catch (err) {
     logger.error({ errName: errName(err) }, "Pulizia degli allegati eliminati non riuscita");
+  }
+  if (now.getTime() - lastPairingPurge >= PAIRING_PURGE_EVERY_MS) {
+    lastPairingPurge = now.getTime();
+    try {
+      await purgeNodePairings(now);
+    } catch (err) {
+      logger.error({ errName: errName(err) }, "Pulizia delle richieste di abbinamento non riuscita");
+    }
   }
   if (now.getTime() - upSince.getTime() < NODE_ONLINE_WINDOW_MS) return;
   try {

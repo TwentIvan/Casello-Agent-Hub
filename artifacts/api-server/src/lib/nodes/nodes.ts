@@ -45,6 +45,8 @@ export interface NodeView {
   /** `app` (installato con l'app per Mac), `cli`, null se il nodo non l'ha dichiarato. */
   kind: "app" | "cli" | null;
   pairedAt: Date | null;
+  /** IP abbreviato (/24 o /48) da cui è arrivata la richiesta di abbinamento. */
+  pairedIp: string | null;
   claude: Record<string, unknown> | null;
   claudeCheckedAt: Date | null;
   settings: NodeSettingsView | null;
@@ -104,6 +106,7 @@ export function toNodeView(row: Node, now: Date = new Date(), diagnosticsAt: Dat
     turnReady: nodeTurnReady(row, now),
     kind,
     pairedAt: row.pairedAt,
+    pairedIp: row.pairedIp,
     claude: row.claudeStatus,
     claudeCheckedAt: row.claudeCheckedAt,
     settings: settingsOf(row),

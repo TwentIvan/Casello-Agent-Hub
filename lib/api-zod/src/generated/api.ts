@@ -242,6 +242,7 @@ export const ListNodesResponseItem = zod.object({
   "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)'),
   "kind": zod.union([zod.literal('app'),zod.literal('cli'),zod.literal(null)]).nullable().describe('Installato con l\'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato'),
   "pairedAt": zod.coerce.date().nullable(),
+  "pairedIp": zod.string().nullable().describe('Indirizzo abbreviato (IPv4 \/24, IPv6 \/48) da cui è arrivata la richiesta di abbinamento'),
   "claude": zod.union([zod.object({
   "found": zod.boolean(),
   "version": zod.string().max(listNodesResponseClaudeOneVersionMax).optional(),
@@ -310,6 +311,7 @@ export const CreateNodeResponse = zod.object({
   "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)'),
   "kind": zod.union([zod.literal('app'),zod.literal('cli'),zod.literal(null)]).nullable().describe('Installato con l\'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato'),
   "pairedAt": zod.coerce.date().nullable(),
+  "pairedIp": zod.string().nullable().describe('Indirizzo abbreviato (IPv4 \/24, IPv6 \/48) da cui è arrivata la richiesta di abbinamento'),
   "claude": zod.union([zod.object({
   "found": zod.boolean(),
   "version": zod.string().max(createNodeResponseNodeClaudeOneVersionMax).optional(),
@@ -385,6 +387,7 @@ export const DisableNodeResponse = zod.object({
   "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)'),
   "kind": zod.union([zod.literal('app'),zod.literal('cli'),zod.literal(null)]).nullable().describe('Installato con l\'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato'),
   "pairedAt": zod.coerce.date().nullable(),
+  "pairedIp": zod.string().nullable().describe('Indirizzo abbreviato (IPv4 \/24, IPv6 \/48) da cui è arrivata la richiesta di abbinamento'),
   "claude": zod.union([zod.object({
   "found": zod.boolean(),
   "version": zod.string().max(disableNodeResponseClaudeOneVersionMax).optional(),
@@ -503,6 +506,7 @@ export const UpdateNodeSettingsResponse = zod.object({
   "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)'),
   "kind": zod.union([zod.literal('app'),zod.literal('cli'),zod.literal(null)]).nullable().describe('Installato con l\'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato'),
   "pairedAt": zod.coerce.date().nullable(),
+  "pairedIp": zod.string().nullable().describe('Indirizzo abbreviato (IPv4 \/24, IPv6 \/48) da cui è arrivata la richiesta di abbinamento'),
   "claude": zod.union([zod.object({
   "found": zod.boolean(),
   "version": zod.string().max(updateNodeSettingsResponseClaudeOneVersionMax).optional(),
@@ -565,6 +569,7 @@ export const RequestNodeDiagnosticsResponse = zod.object({
   "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)'),
   "kind": zod.union([zod.literal('app'),zod.literal('cli'),zod.literal(null)]).nullable().describe('Installato con l\'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato'),
   "pairedAt": zod.coerce.date().nullable(),
+  "pairedIp": zod.string().nullable().describe('Indirizzo abbreviato (IPv4 \/24, IPv6 \/48) da cui è arrivata la richiesta di abbinamento'),
   "claude": zod.union([zod.object({
   "found": zod.boolean(),
   "version": zod.string().max(requestNodeDiagnosticsResponseClaudeOneVersionMax).optional(),
@@ -638,6 +643,7 @@ export const RequestNodeUninstallResponse = zod.object({
   "turnReady": zod.boolean().describe('Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi)'),
   "kind": zod.union([zod.literal('app'),zod.literal('cli'),zod.literal(null)]).nullable().describe('Installato con l\'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato'),
   "pairedAt": zod.coerce.date().nullable(),
+  "pairedIp": zod.string().nullable().describe('Indirizzo abbreviato (IPv4 \/24, IPv6 \/48) da cui è arrivata la richiesta di abbinamento'),
   "claude": zod.union([zod.object({
   "found": zod.boolean(),
   "version": zod.string().max(requestNodeUninstallResponseClaudeOneVersionMax).optional(),

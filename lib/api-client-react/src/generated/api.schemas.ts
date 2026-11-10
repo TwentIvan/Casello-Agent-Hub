@@ -2330,6 +2330,11 @@ export interface Node {
   kind: NodeKind;
   /** @nullable */
   pairedAt: string | null;
+  /**
+     * Indirizzo abbreviato (IPv4 /24, IPv6 /48) da cui è arrivata la richiesta di abbinamento
+     * @nullable
+     */
+  pairedIp: string | null;
   /** Stato di Claude Code sul Mac, dall'ultimo heartbeat */
   claude: NodeClaudeStatus | null;
   /** @nullable */

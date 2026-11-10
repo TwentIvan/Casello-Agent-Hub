@@ -7543,7 +7543,7 @@ components:
 
     Node:
       type: object
-      required: [id, name, status, executor, version, skills, workspaceRoot, maxConcurrent, lastSeenAt, online, turnReady, kind, pairedAt, claude, claudeCheckedAt, settings, updateAvailable, updateFailedVersion, belowMinVersion, diagnosticsAt, diagnosticsRequestedAt, uninstallRequestedAt]
+      required: [id, name, status, executor, version, skills, workspaceRoot, maxConcurrent, lastSeenAt, online, turnReady, kind, pairedAt, pairedIp, claude, claudeCheckedAt, settings, updateAvailable, updateFailedVersion, belowMinVersion, diagnosticsAt, diagnosticsRequestedAt, uninstallRequestedAt]
       properties:
         id:
           type: integer
@@ -7580,6 +7580,9 @@ components:
         pairedAt:
           type: ["string", "null"]
           format: date-time
+        pairedIp:
+          type: ["string", "null"]
+          description: Indirizzo abbreviato (IPv4 /24, IPv6 /48) da cui è arrivata la richiesta di abbinamento
         claude:
           description: Stato di Claude Code sul Mac, dall'ultimo heartbeat
           oneOf:

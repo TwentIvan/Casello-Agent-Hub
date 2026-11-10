@@ -263,6 +263,16 @@ function NodeRow({
             />
           )}
           <span>{node.lastSeenAt ? `ultimo contatto ${formatRelative(node.lastSeenAt)}` : "mai collegato"}</span>
+          {node.pairedAt && (
+            <span>
+              collegato il {new Date(node.pairedAt).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}
+              {node.pairedIp && (
+                <>
+                  {" "}da <span className="font-mono">{node.pairedIp}</span>
+                </>
+              )}
+            </span>
+          )}
           {node.version && <span>versione {node.version}</span>}
           {node.executor && <span>executor {node.executor}</span>}
           <span>{node.maxConcurrent === 1 ? "1 compito alla volta" : `${node.maxConcurrent} compiti alla volta`}</span>

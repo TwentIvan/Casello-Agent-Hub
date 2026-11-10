@@ -421,6 +421,35 @@ describe("Ferma e Accoda", () => {
     expect(done.queuedMessage).toBeNull();
   });
 
+  it("now in ritardo: il turno T1 finisce e parte T2 con il messaggio accodato prima dello stop → T2 non si ferma", async () => {
+    const { id } = await createConv();
+    await startSlowTurn(id);
+    const { CHARACTER_CHAT_SPEC } = await import("../lib/characters/run-turn");
+    const { queueChatMessage, stopChatTurn } = await import("../lib/chat-turns/control");
+    const [t1] = await db
+      .select({ id: characterMessagesTable.id })
+      .from(characterMessagesTable)
+      .where(eq(characterMessagesTable.conversationId, id))
+      .orderBy(characterMessagesTable.id);
+    const t1Assistant = t1!.id + 1;
+    // Il messaggio entra in coda (come fa «Invia subito» prima dello stop)…
+    await queueChatMessage(CHARACTER_CHAT_SPEC, id, "Subito", null);
+    // …T1 finisce nel frattempo (qui con un altro stop) e parte T2 con il messaggio accodato, lento
+    fake.delayMs = 1_000;
+    expect(await stopChatTurn(CHARACTER_CHAT_SPEC, id)).toBe(true);
+    await waitFor(() => chatCalls() === 2);
+    fake.delayMs = 0;
+    // …solo ora arriva lo stop di «Invia subito», legato a T1: T2 non si ferma
+    expect(await stopChatTurn(CHARACTER_CHAT_SPEC, id, { expectedAssistantId: t1Assistant })).toBe(false);
+    await waitFor(async () => (await history(id)).turnStatus === "idle");
+    expect((await history(id)).messages.map((m) => [m.role, m.content])).toEqual([
+      ["user", "Primo"],
+      ["assistant", "Risposta interrotta."],
+      ["user", "Subito"],
+      ["assistant", "Risposta"],
+    ]);
+  });
+
   it("due mode now ravvicinati: entrambi 202, parte l'ultimo testo", async () => {
     const { id } = await createConv();
     await startSlowTurn(id);

@@ -232,7 +232,7 @@ export const PLAN_CHAT_SPEC: ChatKindSpec = {
  * «Ferma» interrompe il turno con il segnale: risposta «Risposta interrotta.». Non lancia mai.
  */
 export function executePlanTurn(conversationId: number, assistantMessageId: number): Promise<void> {
-  return trackTurn("plan", conversationId, (signal) => executePlanTurnInner(conversationId, assistantMessageId, signal))
+  return trackTurn("plan", conversationId, (signal) => executePlanTurnInner(conversationId, assistantMessageId, signal), assistantMessageId)
     .catch((err: unknown) => {
       logger.error({ conversationId, errName: err instanceof Error ? err.name : typeof err }, "Turno della chat del piano non chiuso");
     })

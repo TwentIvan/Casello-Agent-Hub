@@ -12,26 +12,46 @@ export type ChatTurnKind = "plan" | "character" | "team";
 export const STALE_TURN_MS = 5 * 60_000;
 const SWEEP_EVERY_MS = 60_000;
 
-const live: Record<ChatTurnKind, Map<number, AbortController>> = { plan: new Map(), character: new Map(), team: new Map() };
+interface LiveTurn {
+  controller: AbortController;
+  /** Id del messaggio dell'assistente del turno, se noto: «Ferma» di un invio accodato colpisce solo quel turno. */
+  turnId: number | null;
+}
 
-/** Segna il turno della conversazione come in corso in questo processo fino alla fine di `run`, che riceve il segnale di interruzione. */
-export async function trackTurn<T>(kind: ChatTurnKind, conversationId: number, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
-  const controller = new AbortController();
-  live[kind].set(conversationId, controller);
+const live: Record<ChatTurnKind, Map<number, LiveTurn>> = { plan: new Map(), character: new Map(), team: new Map() };
+
+/**
+ * Segna il turno della conversazione come in corso in questo processo fino alla fine di `run`, che riceve il segnale di
+ * interruzione. `turnId` è l'id del messaggio dell'assistente del turno.
+ */
+export async function trackTurn<T>(
+  kind: ChatTurnKind,
+  conversationId: number,
+  run: (signal: AbortSignal) => Promise<T>,
+  turnId: number | null = null,
+): Promise<T> {
+  const entry: LiveTurn = { controller: new AbortController(), turnId };
+  live[kind].set(conversationId, entry);
   try {
-    return await run(controller.signal);
+    return await run(entry.controller.signal);
   } finally {
     // Solo se la voce è ancora la nostra (un turno nuovo della stessa conversazione non va cancellato)
-    if (live[kind].get(conversationId) === controller) live[kind].delete(conversationId);
+    if (live[kind].get(conversationId) === entry) live[kind].delete(conversationId);
   }
 }
 
 /** Annulla il turno in corso in questo processo; true se c'era. */
 export function abortTurn(kind: ChatTurnKind, conversationId: number): boolean {
-  const controller = live[kind].get(conversationId);
-  if (!controller) return false;
-  controller.abort();
+  const entry = live[kind].get(conversationId);
+  if (!entry) return false;
+  entry.controller.abort();
   return true;
+}
+
+/** Id del messaggio dell'assistente del turno vivo in questo processo: undefined senza turno vivo, null se non noto. */
+export function liveTurnId(kind: ChatTurnKind, conversationId: number): number | null | undefined {
+  const entry = live[kind].get(conversationId);
+  return entry === undefined ? undefined : entry.turnId;
 }
 
 /** Il turno della conversazione gira in questo processo. */

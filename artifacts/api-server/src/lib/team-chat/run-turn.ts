@@ -129,7 +129,7 @@ export const TEAM_CHAT_SPEC: ChatKindSpec = {
  * in coda. «Ferma» interrompe il turno con il segnale: risposta «Risposta interrotta.». Non lancia mai.
  */
 export function executeTeamChatTurn(conversationId: number, assistantMessageId: number): Promise<void> {
-  return trackTurn("team", conversationId, (signal) => executeTeamChatTurnInner(conversationId, assistantMessageId, signal))
+  return trackTurn("team", conversationId, (signal) => executeTeamChatTurnInner(conversationId, assistantMessageId, signal), assistantMessageId)
     .catch((err: unknown) => {
       logger.error({ conversationId, errName: err instanceof Error ? err.name : typeof err }, "Turno della chat di squadra non chiuso");
     })

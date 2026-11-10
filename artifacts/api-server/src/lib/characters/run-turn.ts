@@ -321,7 +321,7 @@ export const CHARACTER_CHAT_SPEC: ChatKindSpec = {
  * «Ferma» interrompe il turno con il segnale: risposta «Risposta interrotta.». Non lancia mai.
  */
 export function executeCharacterTurn(conversationId: number, assistantMessageId: number): Promise<void> {
-  return trackTurn("character", conversationId, (signal) => executeCharacterTurnInner(conversationId, assistantMessageId, signal))
+  return trackTurn("character", conversationId, (signal) => executeCharacterTurnInner(conversationId, assistantMessageId, signal), assistantMessageId)
     .catch((err: unknown) => {
       logger.error({ conversationId, errName: err instanceof Error ? err.name : typeof err }, "Turno della conversazione del personaggio non chiuso");
     })

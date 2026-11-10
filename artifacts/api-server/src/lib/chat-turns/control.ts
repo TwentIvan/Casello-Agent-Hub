@@ -7,7 +7,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { logger } from "../logger";
-import { abortTurn } from "../stale-turns";
+import { abortTurn, liveTurnId } from "../stale-turns";
 import { cancelOpenTurnsFor } from "../node-turns/queue";
 import { STOPPED_TURN_MESSAGE } from "../plan-chat/turn";
 import type { PageContext } from "../characters/types";
@@ -38,12 +38,24 @@ function toDate(value: unknown): Date {
  * dell'assistente ancora vuoto → «Risposta interrotta.» (non è un errore). True se la conversazione era `running`; su una conversazione già ferma non si tocca nulla. Poi annulla i
  * turni del nodo ancora aperti della conversazione.
  */
-export async function closeTurnAsStopped(spec: ChatKindSpec, conversationId: number): Promise<boolean> {
+export async function closeTurnAsStopped(spec: ChatKindSpec, conversationId: number, expectedAssistantId?: number): Promise<boolean> {
+  // Con `expectedAssistantId` si chiude solo il turno di quel messaggio: ancora vuoto e ultimo dell'assistente
+  const sameTurn =
+    expectedAssistantId === undefined
+      ? sql`true`
+      : sql`exists (
+          select 1 from ${msgTable(spec)} m
+           where m.id = ${expectedAssistantId} and m.conversation_id = ${conversationId} and m.role = 'assistant' and m.content = ''
+             and not exists (
+               select 1 from ${msgTable(spec)} m2
+                where m2.conversation_id = ${conversationId} and m2.role = 'assistant' and m2.id > m.id
+             )
+        )`;
   const changed = await db.transaction(async (tx) => {
     const conv = await tx.execute(sql`
       update ${convTable(spec)}
          set turn_status = 'idle', updated_at = now()
-       where id = ${conversationId} and turn_status = 'running'
+       where id = ${conversationId} and turn_status = 'running' and ${sameTurn}
       returning id`);
     // Conversazione già ferma: l'ultimo messaggio vuoto non è del turno da chiudere
     if (conv.rows.length === 0) return false;
@@ -94,14 +106,22 @@ async function readState(spec: ChatKindSpec, conversationId: number, messageId: 
  * solo e risponde true; altrimenti lo chiude nel DB e, se c'era qualcosa da chiudere, fa partire il messaggio in coda.
  * False se non c'era nessun turno da fermare.
  */
-export async function stopChatTurn(spec: ChatKindSpec, conversationId: number): Promise<boolean> {
-  // Il messaggio del turno da fermare (l'ultimo dell'assistente) prima dell'interruzione
+export async function stopChatTurn(
+  spec: ChatKindSpec,
+  conversationId: number,
+  opts: { expectedAssistantId?: number } = {},
+): Promise<boolean> {
+  const expected = opts.expectedAssistantId;
+  // Il messaggio del turno da fermare (l'ultimo dell'assistente, o quello atteso) prima dell'interruzione
   const last = await db.execute(sql`
     select id from ${msgTable(spec)}
      where conversation_id = ${conversationId} and role = 'assistant'
      order by id desc
      limit 1`);
-  const messageId = (last.rows[0] as { id?: number } | undefined)?.id ?? null;
+  const messageId = expected ?? (last.rows[0] as { id?: number } | undefined)?.id ?? null;
+  // Turno vivo qui ma diverso da quello atteso (es. già partito con il messaggio accodato): non si ferma
+  const liveId = liveTurnId(spec.kind, conversationId);
+  if (expected !== undefined && liveId !== undefined && liveId !== expected) return false;
   if (abortTurn(spec.kind, conversationId)) {
     const deadline = Date.now() + STOP_WAIT_MS;
     while (Date.now() < deadline) {
@@ -111,7 +131,7 @@ export async function stopChatTurn(spec: ChatKindSpec, conversationId: number): 
     }
     return true;
   }
-  const closed = await closeTurnAsStopped(spec, conversationId);
+  const closed = await closeTurnAsStopped(spec, conversationId, expected);
   if (closed) await drainQueued(spec, conversationId);
   return closed;
 }
@@ -211,6 +231,18 @@ async function isRunning(spec: ChatKindSpec, conversationId: number): Promise<bo
   return (conv.rows[0] as { turn_status?: string } | undefined)?.turn_status === "running";
 }
 
+/** Id del messaggio dell'assistente del turno in corso (l'ultimo), o null se la conversazione non è `running`. */
+async function runningTurnId(spec: ChatKindSpec, conversationId: number): Promise<number | null> {
+  const result = await db.execute(sql`
+    select (select m.id from ${msgTable(spec)} m
+             where m.conversation_id = c.id and m.role = 'assistant'
+             order by m.id desc limit 1) as assistant_id
+      from ${convTable(spec)} c
+     where c.id = ${conversationId} and c.turn_status = 'running'`);
+  const row = result.rows[0] as { assistant_id?: number | null } | undefined;
+  return row?.assistant_id == null ? null : Number(row.assistant_id);
+}
+
 const isTurnBusy = (err: unknown): boolean => err instanceof Error && err.name === "TurnBusyError";
 
 /**
@@ -228,16 +260,21 @@ export async function sendChatMessage<M>(
   start: () => Promise<M>,
 ): Promise<ChatSendOutcome<M>> {
   if (mode === "normal") return { kind: "started", message: await start() };
-  if (!(await isRunning(spec, conversationId))) {
+  // Il turno da fermare si fissa PRIMA dell'inserimento in coda: se nel frattempo finisce e parte il turno del
+  // messaggio accodato, «Invia subito» non deve fermare quello
+  let turnId = await runningTurnId(spec, conversationId);
+  if (turnId === null && !(await isRunning(spec, conversationId))) {
     try {
       return { kind: "started", message: await start() };
     } catch (err) {
       // Un turno partito nel frattempo: il messaggio va in coda
       if (!isTurnBusy(err)) throw err;
+      turnId = await runningTurnId(spec, conversationId);
     }
   }
   const queued = await queueChatMessage(spec, conversationId, content, page);
-  if (mode === "now") await stopChatTurn(spec, conversationId);
+  // Senza un messaggio dell'assistente (turno appena preso, non ancora scritto) non c'è un turno sicuro da fermare
+  if (mode === "now" && turnId !== null) await stopChatTurn(spec, conversationId, { expectedAssistantId: turnId });
   // Turno finito prima dell'inserimento in coda (o fermato senza svuotare): nessuno farebbe partire il messaggio
   if (!(await isRunning(spec, conversationId))) await drainQueued(spec, conversationId);
   return { kind: "queued", queued };

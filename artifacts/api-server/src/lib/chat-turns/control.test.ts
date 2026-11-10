@@ -149,6 +149,35 @@ describe("stop e coda comuni alle chat", () => {
     expect(started).toHaveLength(1);
   });
 
+  it("stopChatTurn con expectedAssistantId: un turno vivo diverso non si ferma", async () => {
+    let aborted = false;
+    let release!: () => void;
+    const turn = trackTurn(
+      "character",
+      conversationId,
+      async (signal) => {
+        signal.addEventListener("abort", () => (aborted = true), { once: true });
+        await new Promise<void>((resolve) => (release = resolve));
+      },
+      assistantId,
+    );
+    expect(await stopChatTurn(spec, conversationId, { expectedAssistantId: assistantId - 1 })).toBe(false);
+    expect(aborted).toBe(false);
+    expect((await getConv()).turnStatus).toBe("running");
+    release();
+    await turn;
+  });
+
+  it("closeTurnAsStopped con expectedAssistantId di un turno precedente non chiude il turno nuovo", async () => {
+    const [newer] = await db.insert(characterMessagesTable).values({ conversationId, role: "assistant", content: "" }).returning();
+    expect(await closeTurnAsStopped(spec, conversationId, assistantId)).toBe(false);
+    expect(await stopChatTurn(spec, conversationId, { expectedAssistantId: assistantId })).toBe(false);
+    expect((await getConv()).turnStatus).toBe("running");
+    expect(await getMessage(newer!.id)).toMatchObject({ content: "" });
+    expect(await closeTurnAsStopped(spec, conversationId, newer!.id)).toBe(true);
+    expect(await getMessage(newer!.id)).toMatchObject({ content: "Risposta interrotta." });
+  });
+
   it("stopChatTurn su turno non in corso → false", async () => {
     await closeTurnAsStopped(spec, conversationId);
     expect(await stopChatTurn(spec, conversationId)).toBe(false);

@@ -20,6 +20,7 @@ import {
   type TeamInstanceRow,
   type TeamTaskRow,
 } from "@workspace/db";
+import { instructionsWithGit, adoptNodePull } from "../code-writer/node-git";
 import { logger } from "../logger";
 import { compareVersions, isBelowMinVersion, loadNodeManifest, updateFor, type NodeUpdate } from "./manifest";
 import { ATTACHMENT_MESSAGES, taskAttachmentViews, validateNodeWorkspace } from "../teams/attachments";
@@ -327,6 +328,8 @@ async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<Ta
     preferredModel(role),
     taskAttachmentViews(instance.id, task.attachmentIds),
   ]);
+  const planTask = plan.tasks.find((t) => t.id === task.planTaskId);
+  const instructions = role.code === "write" ? await instructionsWithGit(instance, task, planTask?.issue ?? null) : task.instructions;
   return {
     taskId: task.id,
     leaseToken: task.leaseToken!,
@@ -336,8 +339,8 @@ async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<Ta
     role: { key: role.key, name: role.name, task: role.task, preferredModel: model },
     task: {
       planTaskId: task.planTaskId,
-      title: plan.tasks.find((t) => t.id === task.planTaskId)?.title ?? task.planTaskId,
-      instructions: task.instructions,
+      title: planTask?.title ?? task.planTaskId,
+      instructions,
     },
     plan: {
       objective: plan.objective,
@@ -481,4 +484,6 @@ export async function reportTask(nodeId: number, taskId: number, input: NodeRepo
     { kind: "lease", nodeId, leaseToken: input.leaseToken, now: new Date(), sessionId: input.sessionId ?? null },
   );
   if (!closed) throw new NodeError(409, NODE_PROTOCOL_MESSAGES.lease);
+  // Ruolo con codice: la PR aperta sul branch del compito passa alla sorveglianza (non solleva mai)
+  if (input.status === "done") await adoptNodePull(task);
 }

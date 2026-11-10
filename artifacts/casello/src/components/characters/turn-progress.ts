@@ -27,6 +27,7 @@ export function progressLines(
     lines.push({ text: p.omitted === 1 ? "… e un altro passo" : `… e altri ${p.omitted} passi`, state: "muted" });
   }
   for (const s of p.steps) lines.push({ text: s.text, state: s.status === "running" ? "work" : "done" });
-  if (!p.steps.some((s) => s.status === "running")) lines.push({ text: `${name} ragiona…`, state: "work" });
+  if (p.steps.length === 0) lines.push({ text: `${name} sta pensando…`, state: "work" });
+  else if (!p.steps.some((s) => s.status === "running")) lines.push({ text: `${name} ragiona…`, state: "work" });
   return { lines, elapsed: formatElapsed(nowMs - Date.parse(p.startedAt)) };
 }

@@ -35,7 +35,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   sulla squadra e memorie").
 - Lucius legge il codice: nella chat del piano, nelle schede agente e nelle aree degli agenti e nella chat di squadra Lucius legge il codice delle App collegate a GitHub (ultimo commit del branch, in cache) con
   `elenca_cartella`, `leggi_file`, `cerca_nel_codice` e verifica le voci prima di proporre (vedi "Lucius legge il codice"). Spec: `docs/superpowers/specs/2026-11-10-botcave-lucius-legge-il-codice-design.md`.
-- Avanzamento dei turni: mentre una chat (Alfred scritto, Lucius, chat del piano e di squadra, console ed embed) aspetta la risposta, sotto «sta pensando…» compaiono gli ultimi passi
+- Avanzamento dei turni: mentre una chat (Alfred scritto, Lucius, chat del piano e di squadra, console ed embed) aspetta la risposta, al posto di «sta pensando…» compaiono gli ultimi passi
   (strumenti chiamati, con frasi fisse) e il tempo trascorso; registro in memoria, nessuna migrazione (vedi "Avanzamento dei turni"). Spec: `docs/superpowers/specs/2026-11-10-botcave-avanzamento-turni-design.md`.
 - Alfred e Lucius nelle aree: un solo pannello laterale a quattro schede (Alfred con la voce, Da confermare, Bollettino, Lucius), lo stesso in console ed embed, si apre
   dal pulsante di Alfred nella caverna o da «Chiedi a Lucius» (Alfred scritto con un filo unico che sa da quale pagina scrivi, Lucius sull'argomento che la pagina dichiara:
@@ -895,7 +895,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - Spec: `docs/superpowers/specs/2026-11-10-botcave-avanzamento-turni-design.md`. Dove il codice differisce dalla spec vale il codice, descritto qui. Durante un turno di chat l'utente vede i passi in corso invece del solo «sta pensando…».
 - **Registro** (`lib/turn-progress/progress.ts`): in memoria, una voce per conversazione. `runChatTurn` (`lib/node-turns/chat-turn.ts`) apre la voce all'inizio e la chiude in `finally`, e avvolge `runTool`:
   vale per il modello cloud, per il nodo e per il ripiego. Si tengono gli ultimi 8 passi (`omitted` conta quelli scartati), il conteggio si ferma a 200.
-- **Frasi** (`describe.ts`, `describeStep`): una frase fissa per strumento (es. lettura di un file, ricerca nel codice), mai argomenti, risultati o segreti né indirizzi delle app; strumento sconosciuto → frase generica.
+- **Frasi** (`describe.ts`, `describeStep`): una frase fissa per strumento (es. lettura di un file, ricerca nel codice), degli argomenti entra solo un elenco chiuso di campi (percorsi, testi cercati, glob, slug, codici delle skill, numero della proposta, app del Responsabile), mai contenuti, risultati, appunti, messaggi, segreti né indirizzi delle app; strumento sconosciuto → frase generica.
 - **API**: schema OpenAPI `TurnProgress`, campo facoltativo `progress` in `PlanConversationDetail`, `TeamChatConversationDetail` e `CharacterConversationDetail` (anche il filo di Alfred), valorizzato solo con
   `turnStatus = running`; la console già fa polling sulla conversazione.
 - **Console**: `components/characters/turn-progress.ts` (righe e `formatElapsed`) e `turn-progress-view.tsx`, usati da `character-chat.tsx` (console ed embed).

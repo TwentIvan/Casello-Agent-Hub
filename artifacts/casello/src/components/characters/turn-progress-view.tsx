@@ -18,7 +18,7 @@ export function TurnProgressView({ progress, name }: { progress: TurnProgress | 
         <p key={i} className={cn("flex items-start gap-2 break-words", l.state === "work" && "text-ink")}>
           {l.state === "work" ? <LedDot state="work" className="mt-1.5" /> : <span className="w-2 shrink-0" aria-hidden="true" />}
           <span className="min-w-0 break-words">{l.text}</span>
-          {l.state === "work" && i === lines.length - 1 && elapsed && <span className="shrink-0 font-mono">· {elapsed}</span>}
+          {l.state === "work" && i === lines.length - 1 && elapsed && <span className="shrink-0 font-mono" aria-hidden="true">· {elapsed}</span>}
         </p>
       ))}
     </div>

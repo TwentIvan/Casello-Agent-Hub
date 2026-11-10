@@ -31,6 +31,12 @@ describe("progressLines", () => {
     expect(r.elapsed).toBe("42 s");
   });
 
+  it("avanzamento senza passi (turno appena partito): «sta pensando»", () => {
+    const r = progressLines(progress([]), "Lucius", NOW);
+    expect(r.lines).toEqual([{ text: "Lucius sta pensando…", state: "work" }]);
+    expect(r.elapsed).toBe("42 s");
+  });
+
   it("tutti i passi finiti: ultima riga «ragiona»", () => {
     const r = progressLines(progress([{ text: "Legge a.ts", status: "done" }]), "Lucius", NOW);
     expect(r.lines.at(-1)).toEqual({ text: "Lucius ragiona…", state: "work" });

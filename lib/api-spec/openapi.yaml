@@ -8967,6 +8967,11 @@ components:
         aiModelId:
           type: integer
           nullable: true
+        code:
+          type: string
+          enum: [none, read, write]
+          default: none
+          description: Accesso al codice dell'App di riferimento (i ruoli node non usano read)
         tools:
           type: array
           items:
@@ -8993,6 +8998,11 @@ components:
         runsOn:
           type: string
           enum: [cloud, node]
+        code:
+          type: string
+          enum: [none, read, write]
+          default: none
+          description: Accesso al codice dell'App di riferimento
         model:
           type: object
           nullable: true
@@ -9116,6 +9126,11 @@ components:
         aiModelId:
           type: integer
           nullable: true
+        code:
+          type: string
+          enum: [none, read, write]
+          default: none
+          description: Accesso al codice dell'App di riferimento (i ruoli node non usano read)
         tools:
           type: array
           items:
@@ -9264,7 +9279,7 @@ components:
           type: string
         field:
           type: string
-          enum: [name, task, isLead, runsOn, aiModelId, tools]
+          enum: [name, task, isLead, runsOn, aiModelId, tools, code]
         from:
           description: Valore attuale nella squadra (role_changed)
         to:
@@ -9341,6 +9356,11 @@ components:
           type: string
           nullable: true
           maxLength: 300
+        issue:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Numero dell'issue del piano dell'App a cui si riferisce il compito
 
     TeamManualAction:
       type: object
@@ -9391,10 +9411,51 @@ components:
           items:
             $ref: "#/components/schemas/TeamManualAction"
 
+    TeamCodeTask:
+      type: object
+      description: Codice scritto da un compito del PLAN, con branch, PR e stato della CI
+      required: [planTaskId, repo, branch, baseBranch, prNumber, prUrl, prState, ciState, ciSummary, ciCheckedAt]
+      properties:
+        planTaskId:
+          type: string
+        repo:
+          type: string
+          description: Repository nel formato `proprietario/nome`
+        branch:
+          type: string
+        baseBranch:
+          type: string
+        prNumber:
+          type: integer
+          nullable: true
+        prUrl:
+          type: string
+          nullable: true
+        prState:
+          type: string
+          enum: [open, merged, closed]
+          nullable: true
+        ciState:
+          type: string
+          enum: [pending, success, failure, none]
+          nullable: true
+        ciSummary:
+          type: string
+          nullable: true
+        ciCheckedAt:
+          type: string
+          format: date-time
+          nullable: true
+
     TeamPlan:
       type: object
-      required: [objective, constraints, openPoints, tasks, manualActions, version, status, approvedVersion, updatedAt]
+      required: [objective, constraints, openPoints, tasks, manualActions, codeTasks, version, status, approvedVersion, updatedAt]
       properties:
+        codeTasks:
+          type: array
+          description: Branch, PR e CI dei compiti che hanno scritto codice (vuoto se nessuno)
+          items:
+            $ref: "#/components/schemas/TeamCodeTask"
         objective:
           type: string
         constraints:

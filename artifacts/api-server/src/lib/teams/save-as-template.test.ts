@@ -24,6 +24,7 @@ describe("saveInstanceAsTemplate", () => {
     runsOn: "cloud",
     aiModelId: modelId,
     tools: [],
+    code: "none",
     skills: [],
     ...over,
   });

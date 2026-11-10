@@ -1,6 +1,6 @@
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import { db, teamInstancesTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamInstanceRow, type TeamTurnReason, type TeamTurnRow } from "@workspace/db";
+import { db, teamInstancesTable, teamCodeTasksTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamInstanceRow, type TeamTurnReason, type TeamTurnRow } from "@workspace/db";
 import { runAgentLoop, type LoopDeps, type LoopLimits } from "../agent-loop";
 import { logger } from "../logger";
 import { modelChatDeps, newUsage, stepWriter, usageCost, type LoopUsage } from "../loop-wiring";
@@ -47,8 +47,9 @@ const LEAD_TOOLS_INSTRUCTION = [
   "- senza un PLAN approvato proponilo con `proponi_piano` (obiettivo, vincoli, punti aperti, compiti con ruolo e istruzioni) e fermati: l'utente lo approva o lo rifiuta con una nota;",
   "- con il PLAN approvato lancia i compiti previsti con `assegna_compito`; un compito fuori PLAN o un cambio di obiettivo, vincoli o compiti si propone con `proponi_piano` e va riapprovato;",
   "- `aggiorna_piano` cambia senza approvazione punti aperti, azioni manuali ed esiti dei compiti non in corso;",
-  "- `leggi_esito` legge il dettaglio dell'ultima esecuzione di un compito; `leggi_piano` rilegge il PLAN;",
+  "- `leggi_esito` legge il dettaglio dell'ultima esecuzione di un compito; `leggi_piano` rilegge il PLAN; `leggi_piano_app` legge le voci approvate del piano dell'App (con le issue) per dare ai compiti il campo `issue`;",
   "- `segnala` avvisa l'utente (bloccato, decisione richiesta, azione manuale richiesta); `chiudi_lavoro` dichiara finito il lavoro;",
+  "- Un compito con codice è finito davvero solo con la CI verde. Con la CI rossa riassegnalo: riparte dallo stesso branch. Un compito che dipende da un altro con codice aspetta che la sua PR sia unita (motivo pr_closed): ogni compito parte dal branch base.",
   "- i compiti assegnati girano dopo il turno: il loro esito arriva in un turno successivo, non aspettarlo.",
 ].join("\n");
 
@@ -169,6 +170,15 @@ function planMessage(plan: PlanView, attachments: AttachmentView[]): string {
   return parts.join("\n");
 }
 
+async function codeTaskOf(instanceId: number, id: number) {
+  const [row] = await db
+    .select()
+    .from(teamCodeTasksTable)
+    .where(and(eq(teamCodeTasksTable.id, id), eq(teamCodeTasksTable.instanceId, instanceId)))
+    .limit(1);
+  return row;
+}
+
 /** Motivi del turno come messaggi `user` separati: richieste e note dell'utente non entrano mai nel prompt di sistema. */
 async function reasonMessages(instanceId: number, reasons: TeamTurnReason[]): Promise<string[]> {
   const out: string[] = [];
@@ -190,6 +200,20 @@ async function reasonMessages(instanceId: number, reasons: TeamTurnReason[]): Pr
           .where(and(eq(teamTasksTable.id, reason.taskId), eq(teamTasksTable.instanceId, instanceId)))
           .limit(1);
         if (task) out.push(`Novità: il compito ${task.planTaskId} (ruolo ${task.roleKey}) è finito con stato ${task.status}. Esito: ${task.outcome ?? "(nessuno)"}`);
+        break;
+      }
+      case "ci_finished": {
+        const code = await codeTaskOf(instanceId, reason.taskCodeId);
+        if (!code) break;
+        const verdict =
+          reason.outcome === "success" ? "verde" : reason.outcome === "failure" ? `non superata (${code.ciSummary ?? "nessun riepilogo"})` : "nessuna CI configurata";
+        out.push(`Novità: CI del compito ${code.planTaskId} (PR #${code.prNumber ?? "?"}): ${verdict}.`);
+        break;
+      }
+      case "pr_closed": {
+        const code = await codeTaskOf(instanceId, reason.taskCodeId);
+        if (!code) break;
+        out.push(`Novità: la PR #${code.prNumber ?? "?"} del compito ${code.planTaskId} è stata ${reason.merged ? "unita" : "chiusa senza merge"}.`);
         break;
       }
       case "decision":

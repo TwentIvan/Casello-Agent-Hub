@@ -15,6 +15,9 @@ const noRepeats = <T>(items: T[], keyOf: (item: T) => string): boolean =>
 
 const skillCode = z.string().regex(SKILL_CODE);
 
+export const ROLE_CODES = ["none", "read", "write"] as const;
+export type RoleCode = (typeof ROLE_CODES)[number];
+
 const baseRole = {
   key: z.string().regex(RoleKey),
   name: z.string().min(1).max(80),
@@ -22,6 +25,8 @@ const baseRole = {
   isLead: z.boolean(),
   runsOn: z.enum(["cloud", "node"]),
   aiModelId: z.number().int().nullable(),
+  // Accesso al codice dell'App di riferimento: assente = nessuno (i manifesti già salvati restano validi)
+  code: z.enum(ROLE_CODES).default("none"),
   tools: z.array(z.number().int()).refine((ids) => noRepeats(ids, String), { message: "strumenti ripetuti" }),
 };
 

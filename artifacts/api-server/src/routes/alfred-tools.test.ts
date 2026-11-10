@@ -85,7 +85,7 @@ async function activeTeam(owner: number, name: string, ownerModel: number): Prom
   const created = await createInstance(owner, {
     name,
     ref: { appId, type: "wi", id: name },
-    roles: [{ key: "capo", name: "Capo", task: "", isLead: true, runsOn: "cloud", aiModelId: ownerModel, tools: [], skills: [], localSkills: [] }],
+    roles: [{ key: "capo", name: "Capo", task: "", isLead: true, runsOn: "cloud", aiModelId: ownerModel, tools: [], code: "none", skills: [], localSkills: [] }],
   });
   await activateInstance(owner, created.id);
   return created.id;

@@ -25,7 +25,7 @@ let modelId: number;
 let instanceId: number;
 
 const plan = (objective = "Obiettivo"): Plan => ({ objective, constraints: [], openPoints: [], tasks: [], manualActions: [] });
-const irole = (): InstanceRole => ({ key: "capo", name: "Capo", task: "", isLead: true, runsOn: "cloud", aiModelId: modelId, tools: [], skills: [], localSkills: [] });
+const irole = (): InstanceRole => ({ key: "capo", name: "Capo", task: "", isLead: true, runsOn: "cloud", aiModelId: modelId, tools: [], code: "none", skills: [], localSkills: [] });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function api(method: string, path: string, body?: unknown): Promise<{ status: number; json: any }> {

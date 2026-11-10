@@ -12,6 +12,7 @@ import { startCodeCacheSweeper } from "./lib/code-reader/source-cache";
 import { failInterruptedRuns } from "./lib/run-executor";
 import { startRunQueue } from "./lib/run-queue";
 import { startTriggerPoller } from "./lib/triggers/poller";
+import { startCodeWatcher } from "./lib/code-writer/watcher";
 import { failInterruptedTeamWork } from "./lib/teams/task-runner";
 import { pumpTurnInBackground, resumeQueuedTurns } from "./lib/teams/turn-runner";
 import { setOnTurnQueued } from "./lib/teams/turn-queue";
@@ -58,6 +59,8 @@ failInterruptedRuns()
     startRunQueue();
     // Sorveglianza degli inneschi: dopo la coda delle run, che riceve le run create dai giri.
     startTriggerPoller();
+    // Sorveglianza della CI delle PR dei compiti con codice.
+    startCodeWatcher();
   });
 
 // Ogni motivo accodato fa partire il turno del capo della squadra (se nessun turno è in corso).

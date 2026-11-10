@@ -20,7 +20,7 @@ export const CODE_READ_LIMITS: ReadLimits = {
 };
 
 /** Suggerimenti dell'output coerenti con i parametri di Lucius (niente includeIgnored). */
-const CODE_HINTS: ReadHints = { fromLine: "daRiga", includeIgnored: null };
+export const CODE_HINTS: ReadHints = { fromLine: "daRiga", includeIgnored: null };
 
 export { CODE_INSTRUCTIONS, CODE_INSTRUCTIONS_GENERAL };
 

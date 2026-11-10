@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { TeamRoleViewCode } from './teamRoleViewCode';
 import type { TeamRoleViewModel } from './teamRoleViewModel';
 import type { TeamRoleViewRunsOn } from './teamRoleViewRunsOn';
 import type { TeamRoleViewSkillsItem } from './teamRoleViewSkillsItem';
@@ -19,6 +20,8 @@ export interface TeamRoleView {
   task: string;
   isLead: boolean;
   runsOn: TeamRoleViewRunsOn;
+  /** Accesso al codice dell'App di riferimento */
+  code?: TeamRoleViewCode;
   model: TeamRoleViewModel;
   tools: TeamRoleViewToolsItem[];
   skills: TeamRoleViewSkillsItem[];

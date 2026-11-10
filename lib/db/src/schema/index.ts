@@ -39,3 +39,4 @@ export * from "./team-chat";
 export * from "./character-memory";
 export * from "./characters";
 export * from "./agent-triggers";
+export * from "./team-code-tasks";

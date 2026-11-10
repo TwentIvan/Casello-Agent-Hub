@@ -54,7 +54,7 @@ import {
   DeleteTeamAttachmentParams,
 } from "@workspace/api-zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { db, nodesTable, teamTaskStepsTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamTaskRow, type TeamTurnRow } from "@workspace/db";
+import { db, nodesTable, teamCodeTasksTable, teamTaskStepsTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamTaskRow, type TeamTurnRow } from "@workspace/db";
 import { currentUserId } from "../lib/auth";
 import { AttachmentError, MAX_ATTACHMENT_BYTES, rfc5987, deleteAttachment, getAttachment, listAttachments, saveAttachment } from "../lib/teams/attachments";
 import { InstanceError, closeInstance, createInstance, getInstance, listInstances, saveInstance, setInstanceBudget } from "../lib/teams/instances";
@@ -207,11 +207,31 @@ router.post("/team-instances/:id/save-as-template", async (req, res) => {
   });
 });
 
+// Stato di branch, PR e CI dei compiti che hanno scritto codice, da affiancare al PLAN
+async function withCodeTasks<T extends object>(instanceId: number, plan: T) {
+  const rows = await db.select().from(teamCodeTasksTable).where(eq(teamCodeTasksTable.instanceId, instanceId)).orderBy(teamCodeTasksTable.id);
+  return {
+    ...plan,
+    codeTasks: rows.map((r) => ({
+      planTaskId: r.planTaskId,
+      repo: r.repo,
+      branch: r.branch,
+      baseBranch: r.baseBranch,
+      prNumber: r.prNumber,
+      prUrl: r.prUrl,
+      prState: r.prState,
+      ciState: r.ciState,
+      ciSummary: r.ciSummary,
+      ciCheckedAt: r.ciCheckedAt ? r.ciCheckedAt.toISOString() : null,
+    })),
+  };
+}
+
 router.get("/team-instances/:id/plan", async (req, res) => {
   const { id } = parseRequest(GetTeamPlanParams, req.params);
   await guarded(res, async () => {
     await getInstance(id);
-    res.json(GetTeamPlanResponse.parse(await getPlan(id)));
+    res.json(GetTeamPlanResponse.parse(await withCodeTasks(id, await getPlan(id))));
   });
 });
 
@@ -220,14 +240,14 @@ router.put("/team-instances/:id/plan", async (req, res) => {
   const body = parseRequest(SaveTeamPlanBody, req.body);
   await guarded(res, async () => {
     const plan = { ...body, manualActions: body.manualActions.map((a) => ({ ...a, doneAt: a.doneAt ? a.doneAt.toISOString() : null })) };
-    res.json(SaveTeamPlanResponse.parse(await correctPlan(id, plan)));
+    res.json(SaveTeamPlanResponse.parse(await withCodeTasks(id, await correctPlan(id, plan))));
   });
 });
 
 router.post("/team-instances/:id/plan/manual-actions/:actionId/done", async (req, res) => {
   const { id, actionId } = parseRequest(MarkTeamManualActionDoneParams, req.params);
   await guarded(res, async () => {
-    res.json(MarkTeamManualActionDoneResponse.parse(await markManualActionDone(id, actionId)));
+    res.json(MarkTeamManualActionDoneResponse.parse(await withCodeTasks(id, await markManualActionDone(id, actionId))));
   });
 });
 

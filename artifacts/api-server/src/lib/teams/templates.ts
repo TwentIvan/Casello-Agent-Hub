@@ -46,6 +46,7 @@ export type RoleView = {
   task: string;
   isLead: boolean;
   runsOn: "cloud" | "node";
+  code: "none" | "read" | "write";
   model: { id: number; name: string } | null;
   tools: ToolView[];
   skills: SkillRoleView[];
@@ -135,6 +136,7 @@ export async function describeRoles(
       task: role.task,
       isLead: role.isLead,
       runsOn: role.runsOn,
+      code: role.code ?? "none",
       model,
       tools: roleTools,
       skills: [...catalogSkills, ...localViews],

@@ -28,4 +28,9 @@ export interface TeamPlanTask {
   status: TeamPlanTaskStatus;
   /** @maxLength 300 */
   outcome: string | null;
+  /**
+     * Numero dell'issue del piano dell'App a cui si riferisce il compito
+     * @minimum 1
+     */
+  issue?: number | null;
 }

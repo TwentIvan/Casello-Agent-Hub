@@ -5,11 +5,14 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { TeamCodeTask } from './teamCodeTask';
 import type { TeamManualAction } from './teamManualAction';
 import type { TeamPlanStatus } from './teamPlanStatus';
 import type { TeamPlanTasksItem } from './teamPlanTasksItem';
 
 export interface TeamPlan {
+  /** Branch, PR e CI dei compiti che hanno scritto codice (vuoto se nessuno) */
+  codeTasks: TeamCodeTask[];
   objective: string;
   constraints: string[];
   openPoints: string[];

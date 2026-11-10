@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
+import { TaskCodeLine } from "./task-code-line";
 import { PlanEditorDialog } from "./plan-editor-dialog";
 import { PlanStatusBadge, TaskStatusBadge } from "./team-work-status";
 
@@ -70,6 +71,7 @@ export function PlanCard({
   });
 
   const p = plan.data;
+  const codeByTask = new Map((p?.codeTasks ?? []).map((c) => [c.planTaskId, c]));
   return (
     <Card>
       <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 space-y-0">
@@ -133,10 +135,12 @@ export function PlanCard({
                         <span className="font-mono text-xs text-muted-foreground">{t.id}</span>
                         <span className="min-w-0 break-words text-sm font-medium">{t.title}</span>
                         <span className="text-sm text-muted-foreground">· {roleName(t.roleKey)}</span>
+                        {t.issue != null && <span className="font-mono text-xs text-muted-foreground">Issue #{t.issue}</span>}
                         <span className="ml-auto">
                           <TaskStatusBadge status={t.status} />
                         </span>
                       </div>
+                      {codeByTask.get(t.id) && <TaskCodeLine code={codeByTask.get(t.id)!} />}
                       {t.outcome && <p className="mt-1.5 break-words text-sm">{t.outcome}</p>}
                       {t.instructions && (
                         <details className="mt-1 text-xs">

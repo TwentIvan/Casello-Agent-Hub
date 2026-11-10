@@ -43,6 +43,7 @@ const role = (over: Partial<TemplateRole> = {}): TemplateRole => ({
   runsOn: "cloud",
   aiModelId: modelId,
   tools: [],
+  code: "none",
   skills: [],
   ...over,
 });
@@ -74,13 +75,14 @@ describe("modelli di squadra", () => {
     const created = await createTemplate(userId, {
       name: "Sviluppo",
       description: "Squadra base",
-      roles: [role({ tools: [toolId], skills: ["sap.review"] })],
+      roles: [role({ tools: [toolId], code: "none", skills: ["sap.review"] })],
     });
     expect(created).toMatchObject({ name: "Sviluppo", description: "Squadra base", version: 1, archived: false, instanceCount: 0 });
     expect(created.roles[0]).toMatchObject({
       key: "capo",
       model: { id: modelId, name: "Modello uno" },
       tools: [{ id: toolId, appId, appName: "Mister", name: "crea_ordine", level: "L1", available: true }],
+      code: "none",
       skills: [{ code: "sap.review", name: "Review SAP", kind: "casello", deprecated: false }],
     });
     expect((await getTemplate(created.id)).roles).toEqual(created.roles);

@@ -2,6 +2,7 @@ import type {
   SkillKind,
   TeamInstanceRole,
   TeamRole,
+  TeamRoleCode,
   TeamRoleRunsOn,
   TeamRoleView,
   ToolLevel,
@@ -36,10 +37,34 @@ export interface RoleDraft {
   isLead: boolean;
   runsOn: TeamRoleRunsOn;
   aiModelId: number | null;
+  /** Accesso al codice dell'App di riferimento. */
+  code: TeamRoleCode;
   tools: ToolRef[];
   skills: SkillRef[];
   /** Codici delle skill specializzate della squadra (vuoto nei modelli). */
   localSkills: string[];
+}
+
+export const CODE_LABELS: Record<TeamRoleCode, string> = {
+  none: "Nessuno",
+  read: "Lettura",
+  write: "Scrittura",
+};
+
+/** Un ruolo `node` non legge il codice dall'API: ha solo Nessuno o Scrittura. */
+export function codeOptions(runsOn: TeamRoleRunsOn): TeamRoleCode[] {
+  return runsOn === "node" ? ["none", "write"] : ["none", "read", "write"];
+}
+
+/**
+ * Valori del «Codice» che si possono scegliere: senza GitHub (o per il capo) solo «Nessuno» più il valore attuale,
+ * così un ruolo che ha già il codice può tornare a «Nessuno».
+ */
+export function selectableCodeOptions(runsOn: TeamRoleRunsOn, current: TeamRoleCode, codeEnabled: boolean, isLead: boolean): TeamRoleCode[] {
+  const all = codeOptions(runsOn);
+  const value = all.includes(current) ? current : "none";
+  if (codeEnabled && !isLead) return all;
+  return value === "none" ? ["none"] : ["none", value];
 }
 
 export const RUNS_ON_LABELS: Record<TeamRoleRunsOn, string> = {
@@ -82,6 +107,7 @@ export function draftFromView(role: TeamRoleView): RoleDraft {
     isLead: role.isLead,
     runsOn: role.runsOn,
     aiModelId: role.model?.id ?? null,
+    code: role.code ?? "none",
     tools: role.tools.map((t) => ({ id: t.id, appName: t.appName, name: t.name, level: t.level, available: t.available })),
     skills: role.skills
       .filter((s) => !s.local)
@@ -103,6 +129,7 @@ export function toTemplateRole(role: RoleDraft): TeamRole {
     isLead: role.isLead,
     runsOn: role.runsOn,
     aiModelId: modelOf(role),
+    code: codeOptions(role.runsOn).includes(role.code) ? role.code : "none",
     tools: role.tools.map((t) => t.id),
     skills: role.skills.map((s) => s.code),
   };
@@ -128,6 +155,7 @@ export function newRole(existing: RoleDraft[]): RoleDraft {
     isLead: existing.length === 0,
     runsOn: "cloud",
     aiModelId: null,
+    code: "none",
     tools: [],
     skills: [],
     localSkills: [],

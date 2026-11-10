@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NODE_VERSION } from "./capabilities";
 import { runCli, servicePath, type CliDeps } from "./cli";
 import { defaultPaths } from "./config";
 import { LABEL, plistPath, type LaunchctlRunner } from "./launchd";
@@ -213,6 +214,14 @@ describe("install", () => {
     expect(await runCli(["install"], deps({ prompt }))).toBe(0);
     expect(asked.map((a) => a[1])).toEqual([false, true, false]);
     expect(out).not.toContain(FAKE_TOKEN);
+  });
+});
+
+describe("--version", () => {
+  it("stampa solo la versione del nodo, senza toccare launchd", async () => {
+    expect(await runCli(["--version"], deps())).toBe(0);
+    expect(out).toBe(`${NODE_VERSION}\n`);
+    expect(calls).toEqual([]);
   });
 });
 

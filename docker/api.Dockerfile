@@ -28,6 +28,10 @@ FROM node:24-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /deploy /app
+# Manifest di Botcave Nodo (versione corrente e minima, letto da lib/nodes/manifest.ts) senza zip né binario, che
+# serve solo casello-web. Il glob con .gitkeep: senza manifest (build locale) la COPY non fallisce e non si propone
+# nessun aggiornamento.
+COPY docker/nodo-downloads/.gitkeep docker/nodo-downloads/nodo-manifest.jso[n] /app/nodo/
 USER node
 EXPOSE 3000
 # node:24-slim non ha curl/wget: l'healthcheck usa fetch di Node

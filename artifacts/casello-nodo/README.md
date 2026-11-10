@@ -27,6 +27,16 @@ Costruisci l'eseguibile (`pnpm --filter @workspace/casello-nodo run build`, prod
 - `casello-nodo run` avvia il nodo in primo piano (è quello che lancia launchd). `Ctrl+C` o SIGTERM lo fermano:
   i compiti in corso risultano falliti («esecuzione interrotta: nodo fermato»); un secondo segnale forza l'uscita.
 
+## App per Mac (Botcave Nodo)
+
+`bash artifacts/casello-nodo/scripts/build-app.sh` (solo macOS, Node 24 nel PATH o in `NODE_BIN`, pnpm e rete verso
+nodejs.org e npm) costruisce il bundle CommonJS (`pnpm run build:sea`, `dist/sea.cjs`), lo inietta come «single executable
+application» negli eseguibili ufficiali di Node per arm64 e x64 (verificati con `SHASUMS256.txt`), li unisce con `lipo` in
+un binario universale con firma ad-hoc, prova `--version` nelle due architetture e scrive in `docker/nodo-downloads/`
+`Botcave-Nodo-<versione>.zip` (l'app), `casello-nodo-<versione>` (il binario per gli aggiornamenti) e `nodo-manifest.json`
+(versione minima da `min-version.txt`). In CI lo fa il job `build-nodo`; i file entrano nelle immagini web
+(`/downloads/nodo/`) e API (solo il manifest). `casello-nodo --version` stampa la versione.
+
 ## Dove stanno le cose
 
 - Programma: `~/.casello-nodo/bin/casello-nodo.mjs` (copia scritta da `install`).

@@ -109,6 +109,32 @@ server {
         add_header Access-Control-Allow-Origin "*";
     }
 
+    # Botcave Nodo per Mac (zip dell'app, binario per gli aggiornamenti e manifest, scritti dal job build-nodo): il
+    # manifest cambia a ogni versione (1 ora), gli altri file hanno la versione nel nome (1 anno). Ogni location con
+    # add_header propri perde quelli ereditati: nosniff e CSP della console si ripetono nella location annidata.
+    location ^~ /downloads/nodo/ {
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Content-Security-Policy "frame-ancestors 'none'" always;
+
+        location = /downloads/nodo/nodo-manifest.json {
+            try_files $uri =404;
+            add_header Cache-Control "public, max-age=3600" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header Content-Security-Policy "frame-ancestors 'none'" always;
+        }
+    }
+
+    # Abbinamento di un Mac: il codice è nella query, quindi niente access log (la pagina è la SPA, come "location /")
+    location = /nodes/pair {
+        access_log off;
+        try_files /index.html =404;
+        add_header Cache-Control "no-cache";
+        add_header Content-Security-Policy "frame-ancestors 'none'" always;
+        add_header Referrer-Policy "no-referrer" always;
+    }
+
     location /assets/ {
         try_files $uri =404;
         add_header Cache-Control "public, max-age=31536000, immutable";

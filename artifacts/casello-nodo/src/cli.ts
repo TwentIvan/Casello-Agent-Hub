@@ -16,6 +16,7 @@ import {
   type LaunchctlRunner,
 } from "./launchd";
 import { osascriptDialogs } from "./dialogs";
+import { NODE_VERSION } from "./capabilities";
 import { checkClaude, createCachedClaudeStatus, realClaudeDeps } from "./claude-check";
 import { startLoop, type Loop, type NodeKind } from "./loop";
 import { uninstallSelf } from "./node-admin";
@@ -54,6 +55,7 @@ const USAGE = `uso: casello-nodo <comando>
   uninstall   rimuove il servizio (config e log restano)
   status      stato del servizio, ultimo heartbeat e compiti e turni in corso
   run         avvia il nodo in primo piano
+  --version   stampa la versione del nodo
 `;
 
 const INSTALL_USAGE =
@@ -410,6 +412,9 @@ export async function runCli(argv: string[], d: CliDeps): Promise<number> {
         return await status(d);
       case "run":
         return await run(d);
+      case "--version":
+        d.out(`${NODE_VERSION}\n`);
+        return 0;
       default:
         d.err(USAGE);
         return command === undefined || command === "--help" || command === "help" ? 0 : 1;

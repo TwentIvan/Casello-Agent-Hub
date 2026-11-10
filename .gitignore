@@ -50,3 +50,7 @@ Thumbs.db
 
 # Artefatti del test runner
 .vitest/
+
+# Botcave Nodo: zip, binario e manifest li scrive artifacts/casello-nodo/scripts/build-app.sh (in CI il job build-nodo)
+docker/nodo-downloads/*
+!docker/nodo-downloads/.gitkeep

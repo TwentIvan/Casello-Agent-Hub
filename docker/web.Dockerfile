@@ -35,4 +35,6 @@ ENV EMBED_ALLOWED_ORIGINS=""
 # envsubst sostituisce solo le variabili EMBED_*: le altre (anche quelle aggiunte da Coolify) restano testo di nginx
 ENV NGINX_ENVSUBST_FILTER=EMBED_
 COPY --from=build /repo/artifacts/casello/dist/public /usr/share/nginx/html
+# Botcave Nodo per Mac (zip, binario e manifest dal job build-nodo della CI); in locale la cartella può avere solo .gitkeep
+COPY docker/nodo-downloads/ /usr/share/nginx/html/downloads/nodo/
 EXPOSE 80

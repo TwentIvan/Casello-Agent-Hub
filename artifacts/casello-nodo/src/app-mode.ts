@@ -6,6 +6,7 @@ import { installFromConfig, uninstallLocal } from "./cli";
 import { createPairingClient, type PairingClient } from "./client";
 import { ConfigError, defaultPaths, loadConfig, writeConfigMerged, type Config } from "./config";
 import { osascriptDialogs, type Dialogs } from "./dialogs";
+import { UNINSTALLED_TEXT } from "./node-admin";
 import { realLaunchctl, serviceTarget, type LaunchctlRunner } from "./launchd";
 import { PairingFailedError, runPairing } from "./pairing";
 
@@ -34,6 +35,8 @@ export interface AppDeps {
   version: string;
   whichClaude: () => Promise<string | null>;
   claude: ClaudeActions;
+  /** `fetch` per l'avviso di disinstallazione a Botcave (iniettabile nei test). */
+  fetch?: typeof fetch;
 }
 
 /** Voci del menu nell'ordine della spec §4. */
@@ -50,7 +53,6 @@ type MenuItem = (typeof MENU_ITEMS)[number];
 
 const UNREACHABLE_TEXT = "Botcave non raggiungibile: controlla la connessione e riapri Botcave Nodo";
 const FAILED_TEXT = "Operazione non riuscita: riprova; se si ripete, apri i log dal menu di Botcave Nodo";
-const UNINSTALLED_TEXT = "Botcave Nodo è stato rimosso. Puoi spostare l'app nel cestino.";
 const connectedText = (name: string) => `Botcave Nodo è collegato come «${name}»`;
 
 /** Avviato con un doppio clic: l'eseguibile sta dentro un pacchetto `.app`. */
@@ -166,8 +168,10 @@ async function menu(d: AppDeps, cfg: Config): Promise<number> {
         "Disinstalla",
       );
       if (!ok) return 0;
-      await uninstallLocal(d, { removeConfig: true });
-      await d.dialogs.notify("Botcave Nodo", UNINSTALLED_TEXT).catch(() => {});
+      await uninstallLocal(d, {
+        removeConfig: true,
+        beforeBootout: () => d.dialogs.notify("Botcave Nodo", UNINSTALLED_TEXT).catch(() => {}),
+      });
       return 0;
     }
     default:

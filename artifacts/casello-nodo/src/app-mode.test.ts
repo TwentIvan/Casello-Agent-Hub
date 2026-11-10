@@ -15,6 +15,7 @@ let calls: string[][];
 let loaded: boolean;
 let log: string[];
 let opened: string[];
+let fetched: Array<{ url: string; auth: string | null }>;
 
 beforeEach(async () => {
   ({ dir: home, cleanup } = await tempDir("casello-app-"));
@@ -25,6 +26,7 @@ beforeEach(async () => {
   loaded = false;
   log = [];
   opened = [];
+  fetched = [];
 });
 afterEach(() => cleanup());
 
@@ -100,6 +102,10 @@ function deps(over: Partial<AppDeps> = {}): AppDeps {
     version: "0.3.0",
     whichClaude: async () => "/Users/x/.local/bin/claude",
     claude: claude(),
+    fetch: (async (url: string | URL | Request, init?: RequestInit) => {
+      fetched.push({ url: String(url), auth: new Headers(init?.headers).get("authorization") });
+      return new Response(null, { status: 204 });
+    }) as typeof fetch,
     ...over,
   };
 }
@@ -323,12 +329,24 @@ describe("collegato: menu", () => {
     await expect(stat(paths.configPath)).rejects.toThrow();
     expect((await stat(paths.logsDir)).isDirectory()).toBe(true);
     expect(log).toContain("notify:Botcave Nodo:Botcave Nodo è stato rimosso. Puoi spostare l'app nel cestino.");
+    // Botcave disattiva il nodo
+    expect(fetched).toEqual([{ url: "https://casello.example.com/api/node/uninstalled", auth: `Bearer ${FAKE_TOKEN}` }]);
+  });
+
+  it("«Disinstalla» con Botcave non raggiungibile → la disinstallazione locale avviene comunque", async () => {
+    const failing = (async () => {
+      throw new TypeError("fetch failed");
+    }) as typeof fetch;
+    expect(await runAppMode(deps({ fetch: failing, dialogs: dialogs({ menu: "Disinstalla", confirm: true }) }))).toBe(0);
+    await expect(stat(defaultPaths(home).configPath)).rejects.toThrow();
+    expect(calls).toContainEqual(["bootout", `gui/501/${LABEL}`]);
   });
 
   it("«Disinstalla» senza conferma → niente cambia", async () => {
     expect(await runAppMode(deps({ dialogs: dialogs({ menu: "Disinstalla", confirm: false }) }))).toBe(0);
     expect(calls.some((c) => c[0] === "bootout")).toBe(false);
     expect((await stat(defaultPaths(home).configPath)).isFile()).toBe(true);
+    expect(fetched).toEqual([]);
   });
 });
 

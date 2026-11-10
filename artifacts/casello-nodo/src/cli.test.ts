@@ -6,6 +6,7 @@ import { runCli, servicePath, type CliDeps } from "./cli";
 import { defaultPaths } from "./config";
 import { LABEL, plistPath, type LaunchctlRunner } from "./launchd";
 import { writeState } from "./state";
+import { updatePaths } from "./updater";
 import { FAKE_TOKEN, tempDir } from "./test/helpers";
 
 let home: string;
@@ -326,6 +327,32 @@ describe("run", () => {
     expect(crash).toHaveBeenCalledWith(boom);
     expect(exit).toHaveBeenCalledWith(1);
     expect(crash.mock.invocationCallOrder[0]).toBeLessThan(exit.mock.invocationCallOrder[0]);
+  });
+
+  it("kind: «app» se il programma in esecuzione è la copia dell'app, altrimenti «cli»", async () => {
+    await writeConfig();
+    const startLoop = vi.fn(() => ({ stop: async () => {}, crash: () => {} })) as unknown as CliDeps["startLoop"];
+    void runCli(["run"], deps({ startLoop, execPath: defaultPaths(home).appProgramPath }));
+    await vi.waitFor(() => expect(startLoop).toHaveBeenCalledTimes(1));
+    expect((startLoop as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1]).toMatchObject({ kind: "app" });
+    const cliLoop = vi.fn(() => ({ stop: async () => {}, crash: () => {} })) as unknown as CliDeps["startLoop"];
+    void runCli(["run"], deps({ startLoop: cliLoop }));
+    await vi.waitFor(() => expect(cliLoop).toHaveBeenCalledTimes(1));
+    expect((cliLoop as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1]).toMatchObject({ kind: "cli" });
+  });
+
+  it("terzo avvio entro 2 minuti da un aggiornamento → ripristina la versione precedente ed esce senza avviare il ciclo", async () => {
+    await writeConfig();
+    const upd = updatePaths(home);
+    await mkdir(path.dirname(upd.programPath), { recursive: true });
+    await writeFile(upd.programPath, "nuovo");
+    await writeFile(upd.prevPath, "vecchio");
+    const startedAt = new Date("2026-11-10T10:00:00.000Z");
+    await writeFile(upd.updateJsonPath, JSON.stringify({ from: "0.3.0", to: "0.4.0", startedAt: startedAt.toISOString(), starts: 2 }));
+    const d = deps({ now: () => new Date(startedAt.getTime() + 60_000) });
+    expect(await runCli(["run"], d)).toBe(1);
+    expect(d.startLoop).not.toHaveBeenCalled();
+    expect(await readFile(upd.programPath, "utf8")).toBe("vecchio");
   });
 
   it("config mancante → errore, il ciclo non parte", async () => {

@@ -11,8 +11,14 @@ import type { Logger } from "./log";
 /** Schema di un nome di skill nell'heartbeat (lunghezza ed eventuale formato del contratto). */
 const SkillName = NodeHeartbeatBody.shape.skills.element;
 
-/** Versione del pacchetto `casello-nodo` (allineata a package.json, verificata dai test). */
-export const NODE_VERSION = "0.2.0";
+/** Iniettata dalla build (`esbuild --define:__NODE_VERSION__`, letta da package.json); assente con tsx e nei test. */
+declare const __NODE_VERSION__: string | undefined;
+
+/**
+ * Versione del pacchetto `casello-nodo`: quella della build; senza build (tsx, test) la costante di riserva, allineata a
+ * package.json (verificata dai test).
+ */
+export const NODE_VERSION: string = typeof __NODE_VERSION__ === "string" && __NODE_VERSION__ !== "" ? __NODE_VERSION__ : "0.3.0";
 export const NODE_EXECUTOR = "claude-code";
 
 async function subdirs(dir: string): Promise<string[]> {

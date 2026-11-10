@@ -26,6 +26,18 @@ export interface TurnLoop {
   /** Interrompe l'attesa del claim e i turni in corso (report `stopped`) e ne attende la chiusura. */
   stop(): Promise<void>;
   running(): Array<{ turnId: number; startedAt: string }>;
+  /**
+   * Posti per i turni (impostazioni dalla console; null = `maxConcurrentTurns` della config). Ridurli non interrompe
+   * nulla: il ciclo smette di prendere turni finché quelli in corso non scendono sotto il nuovo limite.
+   */
+  setMaxTurns(n: number | null): void;
+  /** Smette di prendere turni (aggiornamento in arrivo); il claim già in attesa si conclude. */
+  pause(): void;
+  resume(): void;
+  /** Nessun turno in corso né claim in attesa. */
+  idle(): boolean;
+  /** Turni in corso. */
+  activeCount(): number;
 }
 
 /** Attesa interrompibile dallo stop. */
@@ -45,7 +57,8 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
 /**
  * Ciclo dei turni delegati, indipendente da quello dei compiti: all'avvio toglie la cartella dei turni; finché c'è un posto libero (`maxConcurrentTurns`) tiene
  * esattamente un claim in attesa (long-poll); 204 → subito un altro claim; errore di rete o 5xx → attesa di 5 s;
- * 403 (nodo disattivato) → attesa di 30 s, registrata una volta sola.
+ * 401/403 (token non valido o nodo disattivato) → attesa di 30 s, registrata una volta sola. I posti si cambiano senza
+ * riavvio (`setMaxTurns`) e il ciclo si sospende durante un aggiornamento (`pause`).
  */
 export function startTurnLoop(opts: TurnLoopOptions): TurnLoop {
   const { config, client, logger } = opts;
@@ -54,6 +67,9 @@ export function startTurnLoop(opts: TurnLoopOptions): TurnLoop {
   const stopCtl = new AbortController();
   const active = new Map<number, { startedAt: Date; promise: Promise<void> }>();
   let slotWaiter: (() => void) | null = null;
+  let maxTurns = config.maxConcurrentTurns;
+  let paused = false;
+  let claiming = false;
   let disabledLogged = false;
   let lastErrorLogged: string | null = null;
 
@@ -98,19 +114,25 @@ export function startTurnLoop(opts: TurnLoopOptions): TurnLoop {
       logger.warn(`turni: cartella dei turni non pulita (${(err as Error).message})`),
     );
     while (!stopCtl.signal.aborted) {
-      if (active.size >= config.maxConcurrentTurns) {
+      if (paused || active.size >= maxTurns) {
         await freeSlot();
         continue;
       }
       let pkg: TurnPackage | null;
+      claiming = true;
       try {
         pkg = await client.claimTurn(stopCtl.signal);
+        claiming = false;
         disabledLogged = false;
         lastErrorLogged = null;
       } catch (err) {
+        claiming = false;
         if (stopCtl.signal.aborted) break;
-        if (err instanceof HttpError && err.status === 403) {
-          if (!disabledLogged) logger.warn("turni: nodo disattivato (403), riprovo ogni 30 secondi");
+        if (err instanceof HttpError && (err.status === 401 || err.status === 403)) {
+          if (!disabledLogged) {
+            const why = err.status === 403 ? "nodo disattivato (403)" : "token del nodo non valido (401)";
+            logger.warn(`turni: ${why}, riprovo ogni 30 secondi`);
+          }
           disabledLogged = true;
           await wait(disabledWaitMs, stopCtl.signal);
           continue;
@@ -137,5 +159,18 @@ export function startTurnLoop(opts: TurnLoopOptions): TurnLoop {
       await Promise.all([...active.values()].map((t) => t.promise));
     },
     running: () => [...active].map(([turnId, t]) => ({ turnId, startedAt: t.startedAt.toISOString() })),
+    setMaxTurns(n) {
+      maxTurns = n ?? config.maxConcurrentTurns;
+      slotWaiter?.();
+    },
+    pause() {
+      paused = true;
+    },
+    resume() {
+      paused = false;
+      slotWaiter?.();
+    },
+    idle: () => active.size === 0 && !claiming,
+    activeCount: () => active.size,
   };
 }

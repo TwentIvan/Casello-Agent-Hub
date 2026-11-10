@@ -5,17 +5,21 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
 import { ConfigError, defaultPaths, loadConfig, secureBaseUrl, writeConfigMerged, type Config } from "./config";
+import { CaselloClient } from "./client";
 import {
   buildPlist,
   installService,
   plistPath,
   realLaunchctl,
   serviceStatus,
-  uninstallService,
+  serviceTarget,
   type LaunchctlRunner,
 } from "./launchd";
-import { startLoop } from "./loop";
+import { osascriptDialogs } from "./dialogs";
+import { startLoop, type Loop, type NodeKind } from "./loop";
+import { uninstallSelf } from "./node-admin";
 import { readState } from "./state";
+import { checkUpdateOnStart, updatePaths } from "./updater";
 
 export interface CliDeps {
   home: string;
@@ -38,6 +42,9 @@ export interface CliDeps {
   exit: (code: number) => void;
   /** Ora corrente (iniettabile nei test). */
   now?: () => Date;
+  /** Notifica del Mac (servizio dell'app: nodo scollegato, disinstallazione). */
+  notify?: (text: string) => Promise<void>;
+  fetch?: typeof fetch;
 }
 
 const USAGE = `uso: casello-nodo <comando>
@@ -224,18 +231,39 @@ export async function installFromConfig(
 }
 
 /**
- * Disinstallazione locale: scarica il servizio, toglie il plist e la cartella del programma (anche `.prev`); con
- * `removeConfig` anche la config con il token. Log e spazi di lavoro restano.
+ * Disinstallazione locale: toglie la cartella del programma (anche `.prev`), il plist e, con `removeConfig`, la config
+ * con il token, poi scarica il servizio. Log e spazi di lavoro restano. Con `removeConfig` prima avvisa Botcave
+ * (`POST /api/node/uninstalled`, il nodo si disattiva) con il token della config: tentativo unico, un errore non ferma
+ * la disinstallazione. Il `bootout` è l'ultimo passo perché, chiamato dal servizio stesso, ne termina il processo;
+ * `beforeBootout` (es. la notifica finale) gira subito prima.
  */
 export async function uninstallLocal(
-  d: { launchctl: LaunchctlRunner; uid: number; home: string },
-  opts: { removeConfig: boolean },
+  d: { launchctl: LaunchctlRunner; uid: number; home: string; fetch?: typeof fetch },
+  opts: { removeConfig: boolean; beforeBootout?: () => Promise<void> },
 ): Promise<{ wasLoaded: boolean }> {
-  const { wasLoaded } = await uninstallService({ launchctl: d.launchctl, uid: d.uid, home: d.home });
   const paths = defaultPaths(d.home);
+  if (opts.removeConfig) await notifyUninstalled(paths.configPath, d);
+  const { loaded: wasLoaded } = await serviceStatus(d.launchctl, d.uid);
   await rm(path.dirname(paths.programPath), { recursive: true, force: true });
   if (opts.removeConfig) await rm(paths.configPath, { force: true });
+  await rm(plistPath(d.home), { force: true });
+  await opts.beforeBootout?.();
+  if (wasLoaded) await d.launchctl(["bootout", serviceTarget(d.uid)]);
   return { wasLoaded };
+}
+
+async function notifyUninstalled(configPath: string, d: { home: string; fetch?: typeof fetch }): Promise<void> {
+  let config: Config;
+  try {
+    config = loadConfig(configPath, { home: d.home });
+  } catch {
+    return;
+  }
+  try {
+    await new CaselloClient({ baseUrl: config.caselloUrl, token: config.token, fetch: d.fetch }).uninstalled();
+  } catch {
+    // Botcave non raggiungibile o nodo già disattivato: il nodo si toglie dalla console
+  }
 }
 
 /**
@@ -301,15 +329,47 @@ async function status(d: CliDeps): Promise<number> {
   return 0;
 }
 
+/** `app` se il programma in esecuzione è la copia dell'app in `~/.casello-nodo/bin/casello-nodo` (eseguibile SEA). */
+export function nodeKind(execPath: string, home: string): NodeKind {
+  return path.resolve(execPath) === defaultPaths(home).appProgramPath ? "app" : "cli";
+}
+
 async function run(d: CliDeps): Promise<number> {
   const paths = defaultPaths(d.home);
+  const upd = updatePaths(d.home);
+  // Aggiornamento appena installato che non riparte: al terzo avvio entro 2 minuti si torna alla versione precedente
+  if (checkUpdateOnStart(upd, d.now?.() ?? new Date()) === "rolled_back") {
+    d.err("aggiornamento non riuscito: ripristinata la versione precedente, riavvio\n");
+    return 1;
+  }
   let config: Config;
   try {
     config = loadConfig(paths.configPath, { home: d.home });
   } catch (e) {
     throw new CliError(e instanceof ConfigError ? e.message : "config non leggibile");
   }
-  const loop = d.startLoop(config, { logsDir: paths.logsDir, statePath: paths.statePath });
+  const kind = nodeKind(d.execPath, d.home);
+  const notify = kind === "app" ? d.notify : undefined;
+  // `loop` si usa nella callback solo dopo l'avvio del ciclo
+  const loop: Loop = d.startLoop(config, {
+    logsDir: paths.logsDir,
+    statePath: paths.statePath,
+    kind,
+    updatePaths: upd,
+    exit: d.exit,
+    notify,
+    onUninstallRequested: () =>
+      void uninstallSelf({
+        home: d.home,
+        uid: d.uid,
+        launchctl: d.launchctl,
+        fetch: d.fetch,
+        stopLoop: () => loop.stop(),
+        appMode: kind === "app",
+        notify,
+        exit: d.exit,
+      }),
+  });
   return new Promise<number>((resolve) => {
     let signals = 0;
     const handler = () => {
@@ -418,6 +478,7 @@ export function realDeps(entryPath: string): CliDeps {
     ...(process.stdin.isTTY ? { prompt: realPrompt } : {}),
     out: (t) => void process.stdout.write(t),
     err: (t) => void process.stderr.write(t),
+    notify: (text) => osascriptDialogs().notify("Botcave Nodo", text),
     startLoop,
     onSignal: (sig, h) => void process.on(sig, h),
     onFatal: (h) => {

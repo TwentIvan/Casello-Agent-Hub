@@ -4,6 +4,7 @@ import {
   NodeHeartbeatResponse,
   NodePingResponse,
   NodeReportBody,
+  NodeUploadDiagnosticsBody,
   NodeTurnClaimResponse,
   NodeTurnReportBody,
   PollNodePairingBody,
@@ -20,6 +21,8 @@ export type TaskReport = z.input<typeof NodeReportBody>;
 export type TurnPackage = z.infer<typeof NodeTurnClaimResponse>;
 export type TurnReport = z.input<typeof NodeTurnReportBody>;
 export type Capabilities = z.input<typeof NodeHeartbeatBody>;
+/** Risposta dell'heartbeat: compiti in attesa più, facoltativi, aggiornamento, impostazioni e richieste della console. */
+export type HeartbeatResult = z.infer<typeof NodeHeartbeatResponse>;
 
 export const LEASE_LOST = "lease non valida o scaduta";
 
@@ -111,7 +114,7 @@ export class CaselloClient {
     this.maxRetryMs = opts.maxRetryMs ?? 5 * 60_000;
   }
 
-  async heartbeat(caps: Capabilities): Promise<{ pending: number }> {
+  async heartbeat(caps: Capabilities): Promise<HeartbeatResult> {
     const body = NodeHeartbeatBody.parse(caps);
     const res = await this.request("POST", "/node/heartbeat", { json: body });
     return NodeHeartbeatResponse.parse(await res.json());
@@ -163,6 +166,16 @@ export class CaselloClient {
   async reportTurn(turnId: number, report: TurnReport): Promise<void> {
     const body = NodeTurnReportBody.parse(report);
     await this.request("POST", `/node/turns/${turnId}/report`, { json: body });
+  }
+
+  /** Invia la diagnosi richiesta dalla console (≤ 256 KB). */
+  async uploadDiagnostics(content: string): Promise<void> {
+    await this.request("POST", "/node/diagnostics", { json: NodeUploadDiagnosticsBody.parse({ content }) });
+  }
+
+  /** Comunica la disinstallazione (Botcave disattiva il nodo). Un solo tentativo, 10 s: chi chiama prosegue comunque. */
+  async uninstalled(): Promise<void> {
+    await this.request("POST", "/node/uninstalled", { json: {}, noRetry: true, timeoutMs: 10_000 });
   }
 
   async downloadAttachment(taskId: number, attachmentId: number, leaseToken: string): Promise<Buffer> {

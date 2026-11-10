@@ -214,3 +214,18 @@ variabile nuova.
 Merge, chiusura o approvazione di PR da Botcave; PR in pila (un compito che parte dal branch di un altro); pulsante «Affida alla
 squadra» dal Piano; scrittura con il token manuale; modifica dei workflow della CI; file binari; strumenti del codice per le run degli
 agenti fuori dalle squadre e per Lucius in scrittura.
+
+## 12. Differenze dal codice
+
+Dove il codice differisce dalla spec vale il codice.
+
+- Ruoli `read`: ricevono `CODE_READ_INSTRUCTIONS`, una variante delle istruzioni senza commit e PR (la spec parla solo di `CODE_TASK_INSTRUCTIONS`).
+- Passi dei compiti: gli argomenti `contenuto`, `vecchio` e `nuovo` degli strumenti di scrittura sono oscurati (`***`) in `team_task_steps`, perché il codice non si salva.
+- Modo dei file: a ogni commit si rilegge il tree ricorsivo del base per conservare `100755`; link simbolici e sottomoduli sono rifiutati, i file nuovi hanno `100644` (una chiamata GitHub in più per commit).
+- Cappe di `leggi_esito_ci` (8 000 caratteri per log, 3 job, 20 annotazioni) applicate nello strumento e non nel client, che taglia solo a 150 righe; un errore delle annotazioni non fa fallire l'intero strumento.
+- `WorkingCopy.remove` di un file che esiste solo come nuovo toglie la voce invece di segnare un'eliminazione; `apri_pr` su una PR già registrata conserva `ci_state`; un errore inatteso all'apertura della sessione chiude il compito `blocked` con «errore interno».
+- Sorveglianza: con un'esecuzione del compito attiva (`queued|running|waiting_node`) la notifica dell'esito della CI si rimanda al giro successivo alla sua fine (niente prenotazione, evento, aggiornamento del PLAN né turno). Una CI rilanciata sullo stesso sha non si riferisce di nuovo (una volta per sha): da rivedere come scelta di prodotto.
+- `leggi_piano_app`: ogni voce porta anche `key`, per risolvere le dipendenze.
+- `TeamCodeTask` (OpenAPI) porta anche `repo`; `codeTasks` compare anche nelle risposte di `PUT …/plan` e delle azioni manuali, non solo di `GET …/plan`.
+- `issue` nelle schede e nelle proposte di Lucius: nessun campo `code` nelle schede `template_roles` (Lucius non lo propone; si imposta dall'editor dei ruoli).
+- Prova di flusso: il capo si guida passo per passo (assegnazione con `startTask`, motivi dei turni letti dal DB) invece di passare dai suoi turni con il finto provider; i numeri delle PR condividono la numerazione delle issue nel finto GitHub.

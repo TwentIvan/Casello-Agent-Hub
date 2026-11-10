@@ -16,4 +16,5 @@ export const TeamUpdateItemField = {
   runsOn: 'runsOn',
   aiModelId: 'aiModelId',
   tools: 'tools',
+  code: 'code',
 } as const;

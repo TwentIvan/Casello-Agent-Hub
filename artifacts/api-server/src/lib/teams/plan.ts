@@ -36,6 +36,8 @@ export const PlanTaskSchema = z.object({
   instructions: z.string().max(4000),
   status: z.enum(TASK_STATUSES),
   outcome: z.string().max(300).nullable(),
+  // Numero dell'issue del piano dell'App a cui si riferisce il compito (facoltativo)
+  issue: z.number().int().min(1).nullable().optional(),
   // Messo dal server se manca
   updatedAt: z.string().optional(),
 });
@@ -273,9 +275,9 @@ export async function patchPlan(instanceId: number, patch: PlanPatch, executor: 
 // ─── Funzioni pure ──────────────────────────────────────────────────────────
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-const contentOf = (t: PlanTask) => ({ title: t.title, roleKey: t.roleKey, instructions: t.instructions });
+const contentOf = (t: PlanTask) => ({ title: t.title, roleKey: t.roleKey, instructions: t.instructions, issue: t.issue ?? null });
 // Confronto campo per campo: indipendente dall'ordine delle chiavi (il jsonb di Postgres le riordina)
-const sameTaskContent = (a: PlanTask, b: PlanTask) => a.title === b.title && a.roleKey === b.roleKey && a.instructions === b.instructions;
+const sameTaskContent = (a: PlanTask, b: PlanTask) => a.title === b.title && a.roleKey === b.roleKey && a.instructions === b.instructions && (a.issue ?? null) === (b.issue ?? null);
 
 /** Una modifica è rilevante (richiede l'approvazione) se cambia obiettivo, vincoli o compiti (aggiunti, tolti, titolo/ruolo/istruzioni). */
 export function isRelevantChange(before: Plan | null, after: Plan): boolean {

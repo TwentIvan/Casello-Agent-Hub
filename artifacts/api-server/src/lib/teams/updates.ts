@@ -4,7 +4,7 @@ import { InstanceRoleSchema, type InstanceRole, type TemplateRole } from "./mani
 import { TEAM_MESSAGES, TeamRuleError, validateRoles } from "./rules";
 import type { Executor } from "./skills";
 import { getTemplateVersion } from "./templates";
-import { INSTANCE_MESSAGES, InstanceError, getInstance, type InstanceView } from "./instances";
+import { INSTANCE_MESSAGES, InstanceError, getInstance, loadRefApp, type InstanceView } from "./instances";
 
 // Aggiornamenti proposti a un'istanza (spec §4): differenze tra la versione del modello copiata e quella
 // corrente (confronto di contenuto per `key`, non di numeri di versione) e skill del catalogo fissate a una
@@ -14,7 +14,7 @@ export const UPDATE_MESSAGES = {
   changed: "aggiornamenti cambiati: ricarica",
 } as const;
 
-export const ROLE_FIELDS = ["name", "task", "isLead", "runsOn", "aiModelId", "tools"] as const;
+export const ROLE_FIELDS = ["name", "task", "isLead", "runsOn", "aiModelId", "tools", "code"] as const;
 export type RoleField = (typeof ROLE_FIELDS)[number];
 
 export type UpdateType = "role_added" | "role_removed" | "role_changed" | "skill_added" | "skill_removed" | "skill_version";
@@ -235,7 +235,7 @@ export async function applyUpdates(userId: number, instanceId: number, ids: stri
     .select({ code: teamInstanceSkillsTable.code, kind: teamInstanceSkillsTable.kind })
     .from(teamInstanceSkillsTable)
     .where(eq(teamInstanceSkillsTable.instanceId, instanceId));
-  await validateRoles({ roles: next, mode: "instance", userId, previous: roles, localSkillCodes: new Map(local.map((s) => [s.code, s.kind])) });
+  await validateRoles({ roles: next, mode: "instance", userId, previous: roles, localSkillCodes: new Map(local.map((s) => [s.code, s.kind])), refApp: await loadRefApp(row.refAppId) });
 
   const remaining = computeUpdates({ base, current, instance: next, skillVersions });
   const templateVersion =

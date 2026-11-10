@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Crown, Download, Plus, Trash2, X } from "lucide-react";
-import { getDownloadRoleInstructionsUrl, getDownloadRolesExportUrl, type TeamRoleRunsOn } from "@workspace/api-client-react";
+import { getDownloadRoleInstructionsUrl, getDownloadRolesExportUrl, type TeamRoleCode, type TeamRoleRunsOn } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { TOOL_LEVEL_LABELS } from "@/lib/tool-labels";
 import { cn } from "@/lib/utils";
-import { RUNS_ON_LABELS, type RoleDraft, newRole } from "./role-draft";
+import { CODE_LABELS, RUNS_ON_LABELS, type RoleDraft, codeOptions, newRole, selectableCodeOptions } from "./role-draft";
 import { SkillKindBadge } from "./skill-kind";
 import { SkillPicker } from "./skill-picker";
 import { ToolPicker } from "./tool-picker";
@@ -34,7 +34,13 @@ interface RolesEditorProps {
   readOnly?: boolean;
   /** Squadra (solo `instance`): abilita gli scarichi delle istruzioni dei ruoli. */
   teamId?: number;
+  /** Se l'App di riferimento permette di dare il codice ai ruoli (nei modelli sempre sì). */
+  codeEnabled?: boolean;
 }
+
+export const CODE_DISABLED_HINT = "Collega il repository dell'app tramite l'App GitHub per dare il codice ai ruoli";
+export const CODE_LEAD_HINT = "Il capo non esegue compiti: il codice vale per gli altri ruoli";
+
 
 /** Il ruolo ha le istruzioni se tra le sue skill specializzate c'è `ruolo-<key>`. */
 const hasInstructions = (role: RoleDraft) => role.key !== "" && role.localSkills.includes(`ruolo-${role.key}`);
@@ -68,6 +74,7 @@ function RoleCard({
   localSkills,
   readOnly,
   teamId,
+  codeEnabled,
   onChange,
   onMakeLead,
   onRemove,
@@ -77,6 +84,7 @@ function RoleCard({
   localSkills: LocalSkillOption[];
   readOnly: boolean;
   teamId?: number;
+  codeEnabled: boolean;
   onChange: (patch: Partial<RoleDraft>) => void;
   onMakeLead: () => void;
   onRemove: () => void;
@@ -84,6 +92,8 @@ function RoleCard({
   const id = `role-${role.uid}`;
   const availableLocal = localSkills.filter((s) => !role.localSkills.includes(s.code));
   const localName = (code: string) => localSkills.find((s) => s.code === code)?.name;
+  const code: TeamRoleCode = codeOptions(role.runsOn).includes(role.code) ? role.code : "none";
+  const selectableCodes = selectableCodeOptions(role.runsOn, role.code, codeEnabled, role.isLead);
 
   return (
     <Card className={cn(role.isLead && "border-primary ring-1 ring-primary/30")}>
@@ -175,6 +185,34 @@ function RoleCard({
               <Label htmlFor={`${id}-model`}>Modello</Label>
               <ModelPicker id={`${id}-model`} value={role.aiModelId} onChange={(v) => onChange({ aiModelId: v })} disabled={readOnly} cloudOnly />
             </div>
+          )}
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor={`${id}-code`}>Codice</Label>
+          {role.isLead && code === "none" ? (
+            <p className="text-xs text-muted-foreground">{CODE_LEAD_HINT}</p>
+          ) : (
+            <>
+              <Select
+                value={code}
+                onValueChange={(v) => onChange({ code: v as TeamRoleCode })}
+                disabled={readOnly || selectableCodes.length < 2}
+              >
+                <SelectTrigger id={`${id}-code`} className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectableCodes.map((k) => (
+                    <SelectItem key={k} value={k}>
+                      {CODE_LABELS[k]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {role.isLead && <p className="text-xs text-muted-foreground">{CODE_LEAD_HINT}</p>}
+              {!codeEnabled && <p className="text-xs text-muted-foreground">{CODE_DISABLED_HINT}</p>}
+            </>
           )}
         </div>
 
@@ -288,7 +326,7 @@ function RoleCard({
 }
 
 /** Editor dei ruoli di una squadra (modello o istanza): schede impilate, un solo capo. */
-export function RolesEditor({ roles, onChange, mode, localSkills = [], readOnly = false, teamId }: RolesEditorProps) {
+export function RolesEditor({ roles, onChange, mode, localSkills = [], readOnly = false, teamId, codeEnabled = true }: RolesEditorProps) {
   const update = (uid: string, patch: Partial<RoleDraft>) =>
     onChange(roles.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
   const makeLead = (uid: string) => onChange(roles.map((r) => ({ ...r, isLead: r.uid === uid })));
@@ -318,6 +356,7 @@ export function RolesEditor({ roles, onChange, mode, localSkills = [], readOnly 
           localSkills={localSkills}
           readOnly={readOnly}
           teamId={teamId}
+          codeEnabled={codeEnabled}
           onChange={(patch) => update(role.uid, patch)}
           onMakeLead={() => makeLead(role.uid)}
           onRemove={() => onChange(roles.filter((r) => r.uid !== role.uid))}

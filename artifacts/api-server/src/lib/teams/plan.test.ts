@@ -34,7 +34,7 @@ const plan = (over: Partial<Plan> = {}): Plan => ({
   manualActions: [],
   ...over,
 });
-const irole = (): InstanceRole => ({ key: "capo", name: "Capo", task: "", isLead: true, runsOn: "cloud", aiModelId: modelId, tools: [], skills: [], localSkills: [] });
+const irole = (): InstanceRole => ({ key: "capo", name: "Capo", task: "", isLead: true, runsOn: "cloud", aiModelId: modelId, tools: [], code: "none", skills: [], localSkills: [] });
 
 beforeEach(async () => {
   await pool.query("TRUNCATE users, apps, ai_accounts, team_instances RESTART IDENTITY CASCADE");
@@ -58,6 +58,15 @@ afterAll(async () => {
 
 describe("funzioni pure del PLAN", () => {
   const base = plan({ tasks: [task("t1"), task("t2")] });
+  it("cambiare issue di un compito è una modifica rilevante", () => {
+    const plain = plan();
+    const withIssue = plan({ tasks: [task("t1", { issue: 12 })] });
+    expect(PlanSchema.safeParse(withIssue).success).toBe(true);
+    expect(isRelevantChange(plain, withIssue)).toBe(true);
+    expect(isRelevantChange(withIssue, plan({ tasks: [task("t1", { issue: 12 })] }))).toBe(false);
+    expect(isRelevantChange(plan({ tasks: [task("t1", { issue: null })] }), plain)).toBe(false);
+  });
+
   it("isRelevantChange: rilevanti obiettivo, vincoli, compiti aggiunti/tolti e titolo/ruolo/istruzioni", () => {
     expect(isRelevantChange(null, base)).toBe(true);
     expect(isRelevantChange(base, { ...base, objective: "Altro" })).toBe(true);

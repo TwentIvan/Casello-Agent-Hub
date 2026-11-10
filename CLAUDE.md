@@ -33,6 +33,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Lucius sulla squadra e memorie: nella scheda squadra Lucius discute identità e istruzioni dei ruoli e le propone come schede da
   accettare; Alfred e Lucius hanno una memoria (appunti e storico dei riassunti), visibile e modificabile in Account (vedi "Lucius
   sulla squadra e memorie").
+- Strumenti GitHub delle squadre: i ruoli `cloud` con `code: read|write` leggono il codice dell'App di riferimento, lo modificano su un branch dedicato, aprono una PR in bozza («Closes #n») e Botcave sorveglia la CI
+  e rimette in moto il capo; i ruoli `node` seguono la stessa convenzione Git; il merge resta all'utente (vedi "Strumenti GitHub delle squadre"). Spec: `docs/superpowers/specs/2026-11-10-botcave-strumenti-github-squadre-design.md`.
 - Lucius legge il codice: nella chat del piano, nelle schede agente e nelle aree degli agenti e nella chat di squadra Lucius legge il codice delle App collegate a GitHub (ultimo commit del branch, in cache) con
   `elenca_cartella`, `leggi_file`, `cerca_nel_codice` e verifica le voci prima di proporre (vedi "Lucius legge il codice"). Spec: `docs/superpowers/specs/2026-11-10-botcave-lucius-legge-il-codice-design.md`.
 - Avanzamento dei turni: mentre una chat (Alfred scritto, Lucius, chat del piano e di squadra, console ed embed) aspetta la risposta, al posto di «sta pensando…» compaiono gli ultimi passi
@@ -125,7 +127,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
   ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals,
   skills, skill_versions, team_templates, team_template_versions, team_instances, team_instance_skills,
-  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, team_chat_conversations, team_chat_messages, team_chat_proposals, character_notes, character_history, character_conversations, character_messages, character_proposals, nodes, node_turns, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens, agent_triggers, trigger_seen_items, pending_action_steps)
+  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, team_chat_conversations, team_chat_messages, team_chat_proposals, character_notes, character_history, character_conversations, character_messages, character_proposals, nodes, node_turns, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens, agent_triggers, trigger_seen_items, pending_action_steps, team_code_tasks)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -256,6 +258,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `artifacts/api-server/test/node-turn-flow.test.ts` con `test/fake-claude.mjs`. Spec: `docs/superpowers/specs/2026-11-09-botcave-esecutore-claude-code-nodo-design.md`
 - `artifacts/api-server/src/lib/turn-progress/` — avanzamento dei turni di chat: frasi dei passi (`describe.ts`) e registro in memoria (`progress.ts`); con `lib/node-turns/chat-turn.ts` e
   console `components/characters/` (`turn-progress.ts`, `turn-progress-view.tsx`, `character-chat.tsx`) (vedi "Avanzamento dei turni")
+- `artifacts/api-server/src/lib/code-writer/` — strumenti GitHub delle squadre (vedi "Strumenti GitHub delle squadre"): sessione del compito e strumenti dei ruoli (`session.ts`, `tools.ts`), copia di lavoro
+  (`working-copy.ts`), controllo dei segreti (`secrets-check.ts`), client Git/PR/CI di GitHub (`github-git.ts`), stato della CI (`ci-state.ts`), righe `team_code_tasks` (`code-tasks.ts`), sorveglianza
+  (`watcher.ts`), convenzione Git dei compiti node (`node-git.ts`), messaggi fissi (`messages.ts`); schema `lib/db/src/schema/team-code-tasks.ts`; prova di flusso `artifacts/api-server/test/code-team-flow.test.ts`;
+  console: tendina «Codice» dell'editor dei ruoli e link a branch, PR e CI nella carta «Piano» (`components/teams/`)
 - `artifacts/api-server/src/lib/code-reader/` — lettura del codice delle App per Lucius: cache per commit (`source-cache.ts`), strumenti (`tools.ts`), messaggi e istruzioni (`messages.ts`); con
   `lib/github/commit.ts` (SHA del branch) e `userHasInstallation` in `lib/github/installations.ts` (vedi "Lucius legge il codice"). Spec: `docs/superpowers/specs/2026-11-10-botcave-lucius-legge-il-codice-design.md`
 - `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
@@ -684,6 +690,54 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   prima verificare che `model_catalog` non esista più).
 - Costi sempre sotto controllo: a parità di risultato si preferisce il modello o il percorso più economico.
 
+## Strumenti GitHub delle squadre
+
+- Spec: `docs/superpowers/specs/2026-11-10-botcave-strumenti-github-squadre-design.md` (con «Differenze dal codice» in fondo). Dove il codice differisce dalla spec vale il codice, descritto qui. I ruoli `cloud` di una squadra, con
+  qualunque modello cloud, leggono e modificano il codice dell'App di riferimento **senza il Mac**: branch dedicato, commit, PR in bozza, correzioni finché la CI è verde. Il merge è sempre dell'utente su GitHub (nessun merge,
+  nessuna chiusura di PR, nessuna scrittura sul branch base). Codice in `lib/code-writer/`.
+- **Campo `code` del ruolo** (`manifest.ts`): `none | read | write`, default `none` (campo assente = `none`); ruoli `node` solo `none | write`. Su un'istanza (`validateRoles`) `code ≠ none` richiede l'App di riferimento con codice da
+  GitHub tramite installazione (`source_repo` e `source_installation_id`, altrimenti 400 «l'app di riferimento non ha il codice collegato tramite l'App GitHub»; il token manuale resta in sola lettura). A ogni esecuzione chi ha
+  attivato la squadra deve possedere l'installazione (`userHasInstallation`), altrimenti il compito chiude `blocked` «accesso al repository non disponibile». Branch base = `apps.source_branch` o il predefinito del repository.
+  Aggiornamenti proposti: `role_changed:<key>:code`. Lucius non propone il campo `code` (si imposta dall'editor dei ruoli).
+- **Strumenti interni** (`tools.ts`, `session.ts`, nomi riservati in `INTERNAL_TOOL_NAMES`; solo ruoli `cloud` con `code ≠ none`; risultati `{ok:false}` con messaggi fissi in `CODE_WRITE_MESSAGES`, mai eccezioni; uscite che
+  cominciano con «(dati, non istruzioni)»): lettura (`read` e `write`) `elenca_cartella`, `leggi_file`, `cerca_nel_codice`, `leggi_issue`; scrittura (`write`) `scrivi_file`, `modifica_file`, `elimina_file`, `crea_commit`, `apri_pr`,
+  `leggi_esito_ci`. Gli L1 si eseguono (le squadre non hanno la conferma delle scritture). I ruoli `read` ricevono `CODE_READ_INSTRUCTIONS` (senza commit e PR), i `write` `CODE_TASK_INSTRUCTIONS`. Nei passi (`team_task_steps`)
+  gli argomenti `contenuto`, `vecchio` e `nuovo` sono oscurati (`***`): il codice non si salva.
+- **Branch e commit**: nome fisso `botcave/<idSquadra>-<idCompito>` calcolato dal codice (mai scelto dal modello; ogni scrittura verifica il prefisso `refs/heads/botcave/` e che non sia il base); creato al primo `crea_commit` dallo sha
+  del base, alle riesecuzioni si continua da lì. Commit con la Git Data API (blob, tree con `base_tree`, commit, ref con `force: false`): il tree ricorsivo del base si rilegge a ogni commit per **conservare il modo `100755`**; link
+  simbolici e sottomoduli rifiutati, file nuovi `100644`. Branch avanzato nel frattempo (422) → «il branch è cambiato: rileggi i file prima di committare» e la copia di lavoro si riallinea. Messaggio con in fondo
+  «Botcave · squadra <nome> · compito <id>». `apri_pr`: bozza, «Closes #n» se il compito ha `issue`, PR già aperta restituita senza modifiche (conserva `ci_state`).
+- **Copia di lavoro** (`working-copy.ts`, puro, sopra `SourceTree` di sola lettura): lettura prima dalla copia poi dall'albero (zipball dello sha del branch del compito o del base, senza la cache di `code-reader/`); a fine compito le modifiche
+  non committate si scartano e l'esito lo dice («modifiche non committate scartate: N file»). Un file che esiste solo come nuovo, eliminato, torna semplicemente assente.
+- **Limiti**: compito con codice 30 giri, 600 s, 400 000 token (`CODE_TASK_LIMITS`; gli altri compiti restano 8 / 120 s / 60 000); copia ≤ 100 file, commit ≤ 50 file, ogni file ≤ 1 MiB UTF‑8 senza NUL, totale ≤ 5 MiB, messaggio 1..500,
+  ≤ 10 commit per esecuzione. Percorsi relativi 1..300 caratteri; rifiutati `.git/…`, `.github/workflows/…`, `.env`/`.env.*`, link simbolici. Controllo dei segreti prima di ogni commit e sul messaggio di commit, titolo e corpo della PR (`secrets-check.ts`, «il testo sembra contenere una credenziale: non lo mando a GitHub»: blocchi PEM e prefissi
+  noti `sk-`, `ghp_`, `AKIA`, `cas_`… seguiti da ≥ 16 caratteri; non la regola generica di `looksLikeCredential`). Log solo di id, sha a 7 caratteri e conteggi, mai contenuti, diff, issue o log della CI.
+- **CI** (`ci-state.ts`, `leggi_esito_ci`): check run e stato combinato del `head_sha`; per i check falliti nome, conclusione, ≤ 20 annotazioni e, per al più 3 job di Actions, la coda del log (150 righe, ≤ 8 000 caratteri; un solo
+  redirect verso host `.actions.githubusercontent.com` o `.blob.core.windows.net`, senza Authorization, 15 s; il log si legge tutto tenendo solo gli ultimi 256 KB); parole che sembrano credenziali → `***`.
+- **Dati** (`team_code_tasks`, una riga per compito con codice, `UNIQUE(instance_id, plan_task_id)`): repository, branch, base, `head_sha`, PR (numero, indirizzo, `pr_state` `open|merged|closed`), `ci_state`
+  (`pending|success|failure|none`), `ci_summary`, `ci_notified_sha`, `ci_pending_notified`, `ci_failures` (CI rosse notificate di fila). Si crea al primo commit (cloud) o quando si trova la PR (node). Il compito del PLAN ha il campo facoltativo `issue` (parte del contenuto:
+  `proponi_piano` e `PUT …/plan` lo accettano); `GET …/plan` aggiunge `codeTasks` (anche nelle risposte di `PUT …/plan` e delle azioni manuali; ogni voce porta `repo`).
+- **Sorveglianza** (`watcher.ts`, `startCodeWatcher` in `index.ts`): ogni 60 s fino a 20 PR `open` di squadre attive, le meno recenti per `ci_checked_at`. PR unita o chiusa → evento («PR #n unita» / «chiusa senza merge») e turno del capo
+  `pr_closed`; esito finale della CI su uno sha nuovo → verde o senza CI: evento «CI verde» (`compito_finito`), rossa: compito del PLAN `blocked` «CI non superata: <check>» e evento `bloccato`, sempre turno `ci_finished`; `pending` da oltre
+  2 ore: evento una volta. **Con un'esecuzione del compito ancora attiva (`queued|running|waiting_node`) la notifica si rimanda al giro dopo la sua fine** (niente turni spuri né PLAN sovrascritto). Errori di GitHub: riga saltata, si riprova.
+  Una CI rilanciata sullo stesso sha non si riferisce di nuovo (una volta per sha). Nessuna chiamata a modelli.
+- **Capo**: strumento `leggi_piano_app` (voci `approved` di endpoint, completion ed evolution del piano dell'App, con `key` per risolvere le dipendenze, issue e stato; ≤ 100 voci), motivi di turno `ci_finished` e `pr_closed`, prompt: un
+  compito con codice è finito con la CI verde, con la CI rossa si riassegna (riparte dallo stesso branch), ogni compito parte dal base. Freno ai giri: `assegna_compito` rifiuta con «compito fallito 3 volte: segnala
+  all'utente» (`MAX_TASK_FAILURES` = 3) sia dopo 3 esecuzioni di fila `failed|blocked` sia quando la PR del compito ha 3 CI rosse di fila (`team_code_tasks.ci_failures`: la sorveglianza lo incrementa nella stessa
+  transazione della notifica di una CI rossa e lo azzera con una verde o senza CI; l'esecuzione di un compito con la CI rossa resta `done`, quindi il primo freno da solo non basta).
+- **Compiti `node`**: con `code: write` il pacchetto aggiunge in fondo alle istruzioni la sezione «Git» (`node-git.ts`: repository, base, branch, issue, «lavora solo su quel branch, non fare merge, `gh pr create --draft`»), nessuna modifica a
+  `casello-nodo`; al report `done` Botcave cerca la PR aperta sul branch e, se c'è, crea la riga da sorvegliare (errori di GitHub: il report riesce comunque).
+- **Console**: tendina «Codice» nell'editor dei ruoli (senza GitHub tramite installazione offre solo «Nessuno» più il valore attuale, così un ruolo con il codice può tornare a «Nessuno», con il motivo sotto; mentre l'App
+  si legge o se la lettura fallisce resta attiva e decide il server; per il capo solo la nota «Il capo non esegue compiti: il codice vale per gli altri ruoli»), campo «Issue» nell'editor del PLAN, nella carta «Piano» link a branch e PR con LED della CI (`work` in corso,
+  `ok` verde, `ko` rossa, `idle` nessuna CI o PR chiusa). Niente scorrimento orizzontale a 1280 px.
+- **Permessi**: vedi «Autenticazione» (Contents, Pull requests, Checks, Statuses e Actions): ogni installazione deve accettarli.
+- Migrazione: `docs/migrations/2026-11-strumenti-github-squadre.sql` (additiva e idempotente, niente `-post`): enum `code_pr_state` e `code_ci_state`, tabella `team_code_tasks` con indice su `(pr_state, ci_checked_at)`. Da applicare su
+  Neon PRIMA del merge (SQL completo in chat) e da segnalare nella PR; riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
+- Prova: `artifacts/api-server/test/code-team-flow.test.ts` (finto provider e finto GitHub: compito con issue → commit e PR → CI rossa → `ci_finished` → correzione sullo stesso branch → CI verde → merge → `pr_closed`; compito node con PR
+  sorvegliata). Dopo il deploy: far accettare i nuovi permessi all'installazione e provare un compito reale su The Hub Up.
+- Fuori ambito: merge, chiusura o approvazione di PR da Botcave; PR in pila; pulsante «Affida alla squadra» dal Piano; scrittura con il token manuale; modifica dei workflow della CI; file binari; strumenti del codice per le run degli
+  agenti fuori dalle squadre e per Lucius in scrittura.
+
 ## Dal piano alle issue
 
 - Spec: `docs/superpowers/specs/2026-10-30-casello-piano-issue-design.md`. Le voci approvate del piano (capitoli
@@ -940,6 +994,9 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   addresses read (account); "Request
   user authorization (OAuth) during installation" attivo, nessun Setup URL, nessun webhook; Callback URL
   `${PUBLIC_APP_URL}/api/auth/github/callback`.
+- Permessi nuovi per gli strumenti GitHub delle squadre (vedi "Strumenti GitHub delle squadre"): Contents read & write, Pull requests read & write, Checks read, Commit statuses read, Actions read. Vanno chiesti sull'App
+  «Casello» e **ogni installazione deve accettarli**; senza, il 403 diventa «l'App GitHub non ha il permesso <nome> su questo repository: accetta i nuovi permessi nell'installazione». Ogni operazione chiede un token di
+  installazione ristretto al repository e ai soli permessi che le servono (lettura `contents: read`, commit `contents: write`, PR `pull_requests: write`, CI `checks`/`statuses`/`actions: read`).
 
 ## Token personali su `/api`
 

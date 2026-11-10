@@ -75,11 +75,11 @@ export interface CallResult {
  */
 export async function githubCall(
   cfg: GithubConfig,
-  input: { base: "api" | "web"; method: "GET" | "POST"; path: string; token?: string; body?: unknown },
+  input: { base: "api" | "web"; method: "GET" | "POST" | "PATCH"; path: string; token?: string; body?: unknown; accept?: string },
 ): Promise<CallResult> {
   const url = `${input.base === "api" ? cfg.apiBase : cfg.webBase}${input.path}`;
   const headers: Record<string, string> = {
-    accept: input.base === "api" ? "application/vnd.github+json" : "application/json",
+    accept: input.accept ?? (input.base === "api" ? "application/vnd.github+json" : "application/json"),
     "x-github-api-version": API_VERSION,
     "user-agent": "casello",
   };

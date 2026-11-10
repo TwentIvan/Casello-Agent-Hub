@@ -15,7 +15,7 @@ import { isExhausted } from "../budget";
 import { validateNodeWorkspace } from "./attachments";
 import { patchPlan } from "./plan";
 import { InstanceRoleSchema, type InstanceRole, type TemplateRole } from "./manifest";
-import { TEAM_MESSAGES, TeamRuleError, validateRoles } from "./rules";
+import { TEAM_MESSAGES, TeamRuleError, validateRoles, type ValidateRolesInput } from "./rules";
 import { SKILL_CODE, SKILL_MESSAGES, validateSkillContent, type Executor, type SkillKind } from "./skills";
 import { teamSpend } from "./team-budget";
 import { TEMPLATE_MESSAGES, TemplateError, describeRoles, getTemplateVersion, type LocalSkillInfo, type RoleView } from "./templates";
@@ -147,6 +147,16 @@ async function assertAppExists(appId: number): Promise<void> {
   if (!app) throw new TeamRuleError(INSTANCE_MESSAGES.refAppNotFound);
 }
 
+/** App di riferimento per i controlli sui ruoli con codice; letta dal pool, mai dentro una transazione di scrittura. */
+export async function loadRefApp(appId: number): Promise<NonNullable<ValidateRolesInput["refApp"]>> {
+  const [app] = await db
+    .select({ sourceType: appsTable.sourceType, sourceRepo: appsTable.sourceRepo, sourceInstallationId: appsTable.sourceInstallationId })
+    .from(appsTable)
+    .where(eq(appsTable.id, appId))
+    .limit(1);
+  return app ?? { sourceType: null, sourceRepo: null, sourceInstallationId: null };
+}
+
 export async function createInstance(userId: number, input: CreateInstanceInput, executor: Executor = db): Promise<InstanceView> {
   await assertAppExists(input.ref.appId);
 
@@ -165,7 +175,7 @@ export async function createInstance(userId: number, input: CreateInstanceInput,
     if (!input.roles) throw new TeamRuleError(INSTANCE_MESSAGES.rolesRequired);
     roles = input.roles;
   }
-  await validateRoles({ roles, mode: "instance", userId, previous, localSkillCodes: new Map() });
+  await validateRoles({ roles, mode: "instance", userId, previous, localSkillCodes: new Map(), refApp: await loadRefApp(input.ref.appId) });
 
   const [row] = await executor
     .insert(teamInstancesTable)
@@ -231,7 +241,7 @@ export async function saveInstance(
     if (invalid) throw new TeamRuleError(invalid);
   }
   const previous = InstanceRoleSchema.array().parse(current.roles);
-  await validateRoles({ roles: input.roles, mode: "instance", userId, previous, localSkillCodes });
+  await validateRoles({ roles: input.roles, mode: "instance", userId, previous, localSkillCodes, refApp: await loadRefApp(current.refAppId) });
 
   await executor.transaction(async (tx) => {
     const [locked] = await tx.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, id)).limit(1).for("update");

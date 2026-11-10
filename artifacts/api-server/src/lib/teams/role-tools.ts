@@ -23,10 +23,22 @@ export const INTERNAL_TOOL_NAMES = [
   "leggi_esito",
   "segnala",
   "chiudi_lavoro",
+  "leggi_piano_app",
   // Run degli agenti di area (escalation.ts), non delle squadre
   "segnala_al_responsabile",
   // Proposta con più passi (actions/propose.ts)
   "proponi",
+  // Codice dei compiti (code-writer/tools.ts)
+  "elenca_cartella",
+  "leggi_file",
+  "cerca_nel_codice",
+  "leggi_issue",
+  "scrivi_file",
+  "modifica_file",
+  "elimina_file",
+  "crea_commit",
+  "apri_pr",
+  "leggi_esito_ci",
 ] as const;
 
 export type InternalToolName = (typeof INTERNAL_TOOL_NAMES)[number];

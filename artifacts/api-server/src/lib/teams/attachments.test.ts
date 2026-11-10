@@ -157,7 +157,7 @@ describe("validateNodeWorkspace", () => {
 
 async function currentSave() {
   const [row] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, instanceId));
-  return { name: row!.name, roles: [nodeRole({ key: "capo", name: "Capo", isLead: true })], localSkills: [] };
+  return { name: row!.name, roles: [{ ...nodeRole({ key: "capo", name: "Capo", isLead: true }), code: "none" as const }], localSkills: [] };
 }
 
 describe("assegna_compito con allegati", () => {

@@ -24,6 +24,7 @@ const trole = (over: Partial<TemplateRole> = {}): TemplateRole => ({
   runsOn: "cloud",
   aiModelId: modelId,
   tools: [],
+  code: "none",
   skills: [],
   ...over,
 });
@@ -35,6 +36,7 @@ const irole = (over: Partial<InstanceRole> = {}): InstanceRole => ({
   runsOn: "cloud",
   aiModelId: modelId,
   tools: [],
+  code: "none",
   skills: [],
   localSkills: [],
   ...over,

@@ -46,6 +46,7 @@ const role = (over: Partial<TemplateRole> = {}): TemplateRole => ({
   runsOn: "cloud",
   aiModelId: myModel,
   tools: [],
+  code: "none",
   skills: [],
   ...over,
 });
@@ -190,5 +191,33 @@ describe("strumenti", () => {
     const ok = await tool("t4");
     await expect(template([role({ tools: [ok] })])).resolves.toBeUndefined();
     await expectError(template([role({ tools: [999_999] })]), TEAM_MESSAGES.toolNotUsable("#999999"));
+  });
+});
+
+describe("ruoli con accesso al codice", () => {
+  const github = { sourceType: "github", sourceRepo: "o/r", sourceInstallationId: 7 };
+  const instance = (roles: InstanceRole[], refApp?: Parameters<typeof validateRoles>[0]["refApp"]) =>
+    validateRoles({ roles, mode: "instance", userId, previous: null, localSkillCodes: new Map(), refApp });
+
+  it("code write senza GitHub tramite installazione → 400 codeUnavailable", async () => {
+    await expectError(instance([instRole({ code: "write" })]), TEAM_MESSAGES.codeUnavailable);
+    await expectError(instance([instRole({ code: "write" })], { sourceType: "zip", sourceRepo: null, sourceInstallationId: null }), TEAM_MESSAGES.codeUnavailable);
+    await expectError(instance([instRole({ code: "read" })], { ...github, sourceInstallationId: null }), TEAM_MESSAGES.codeUnavailable);
+    await expect(instance([instRole({ code: "write" })], github)).resolves.toBeUndefined();
+    await expect(instance([instRole()])).resolves.toBeUndefined();
+  });
+
+  it("node con code read → 400 nodeCodeRead", async () => {
+    await expectError(template([role({ runsOn: "node", aiModelId: null, code: "read" })]), TEAM_MESSAGES.nodeCodeRead);
+    await expect(template([role({ runsOn: "node", aiModelId: null, code: "write" })])).resolves.toBeUndefined();
+  });
+
+  it("ruolo senza code si legge come none", () => {
+    const { code: _code, ...legacy } = role();
+    expect(TemplateRoleSchema.parse(legacy).code).toBe("none");
+  });
+
+  it("modello di squadra con code write si salva senza app", async () => {
+    await expect(template([role({ code: "write" })])).resolves.toBeUndefined();
   });
 });

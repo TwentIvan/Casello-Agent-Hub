@@ -3,7 +3,7 @@
 // `startCharacterTurn` risponde subito con il messaggio dell'utente e lancia il turno in background.
 // Nei log solo id e conteggi: mai il contenuto dei messaggi.
 
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, notInArray, sql } from "drizzle-orm";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import {
   db,
@@ -13,6 +13,7 @@ import {
   type CharacterMessage,
 } from "@workspace/db";
 import { logger } from "../logger";
+import { trackTurn, type StaleTurnFilter } from "../stale-turns";
 import type { ChatToolCall } from "../ai/chat-types";
 import { ProviderError } from "../ai/discovery";
 import { ModelAccessError, resolveModel } from "../ai/executor";
@@ -303,7 +304,11 @@ function errorText(err: unknown): string {
 }
 
 /** Esegue il turno e lo chiude sempre (messaggio dell'assistente, totali, `idle`). Non lancia mai. */
-export async function executeCharacterTurn(conversationId: number, assistantMessageId: number): Promise<void> {
+export function executeCharacterTurn(conversationId: number, assistantMessageId: number): Promise<void> {
+  return trackTurn("character", conversationId, () => executeCharacterTurnInner(conversationId, assistantMessageId));
+}
+
+async function executeCharacterTurnInner(conversationId: number, assistantMessageId: number): Promise<void> {
   let content = GENERIC_ERROR_MESSAGE;
   let isError = true;
   let tokens = 0;
@@ -399,12 +404,18 @@ export async function executeCharacterTurn(conversationId: number, assistantMess
 }
 
 /** All'avvio i turni rimasti `running` sono stati interrotti dal riavvio: si chiudono con un messaggio. */
-export async function failInterruptedCharacterTurns(): Promise<number> {
+export async function failInterruptedCharacterTurns(filter?: StaleTurnFilter): Promise<number> {
   return db.transaction(async (tx) => {
     const interrupted = await tx
       .update(characterConversationsTable)
       .set({ turnStatus: "idle", updatedAt: new Date() })
-      .where(eq(characterConversationsTable.turnStatus, "running"))
+      .where(
+        and(
+          eq(characterConversationsTable.turnStatus, "running"),
+          filter ? lt(characterConversationsTable.updatedAt, filter.olderThan) : undefined,
+          filter && filter.exclude.length > 0 ? notInArray(characterConversationsTable.id, filter.exclude) : undefined,
+        ),
+      )
       .returning({ id: characterConversationsTable.id });
     if (interrupted.length === 0) return 0;
     const ids = interrupted.map((c) => c.id);

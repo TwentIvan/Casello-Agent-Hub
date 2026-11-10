@@ -466,6 +466,28 @@ describe("turni del capo", () => {
     expect(await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, id))).toHaveLength(7);
   });
 
+  it("assegna_compito dopo 3 CI rosse di fila sulla PR del compito: rifiutato con il messaggio fisso", async () => {
+    const id = await seedActiveApproved();
+    await db.insert(teamTasksTable).values({ instanceId: id, planTaskId: "t1", roleKey: "analista", instructions: "Analizza", status: "done" });
+    await patchPlan(id, { tasks: [{ id: "t1", status: "blocked", outcome: "CI non superata: test" }] });
+    await db
+      .insert(teamCodeTasksTable)
+      .values({ instanceId: id, planTaskId: "t1", repo: "o/r", branch: `botcave/${id}-t1`, baseBranch: "main", prNumber: 5, prState: "open", ciState: "failure", ciFailures: 3 });
+    leadScript.push(call("assegna_compito", { taskId: "t1" }), text("Segnalo all'utente."));
+    await sendToLead(userId, id, "riprova t1");
+    await settleAll();
+    expect(toolMessages(leadRequests()[1]!)).toEqual([LEAD_MESSAGES.tooManyFailures]);
+    expect(await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, id))).toHaveLength(1);
+
+    // Con 2 CI rosse si può ancora riassegnare
+    await db.update(teamCodeTasksTable).set({ ciFailures: 2 }).where(eq(teamCodeTasksTable.instanceId, id));
+    workerScript.push(call("riferisci", { status: "done", outcome: "ok" }));
+    leadScript.push(call("assegna_compito", { taskId: "t1" }), text("Assegnato."));
+    await sendToLead(userId, id, "riprova ancora");
+    await settleAll();
+    expect(await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, id))).toHaveLength(2);
+  });
+
   it("proponi_piano con un id di compito sconosciuto: messaggio fisso, nulla scritto", async () => {
     const id = await seedActiveApproved();
     leadScript.push(

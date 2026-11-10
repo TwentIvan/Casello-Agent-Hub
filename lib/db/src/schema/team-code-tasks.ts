@@ -26,6 +26,8 @@ export const teamCodeTasksTable = pgTable(
     ciCheckedAt: timestamp("ci_checked_at"),
     ciNotifiedSha: text("ci_notified_sha"),
     ciPendingNotified: boolean("ci_pending_notified").notNull().default(false),
+    // CI rosse notificate di fila (azzerate da un esito verde o senza CI): freno ai giri «CI rossa → riassegna»
+    ciFailures: integer("ci_failures").notNull().default(0),
     lastCommitAt: timestamp("last_commit_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

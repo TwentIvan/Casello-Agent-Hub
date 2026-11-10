@@ -106,7 +106,8 @@ async function watchRow(code: TeamCodeTaskRow, r: RepoRef, now: Date): Promise<v
         ciCheckedAt: now,
         updatedAt: now,
         ciPendingNotified: alertPending ? true : pendingNotified,
-        ...(notify ? { ciNotifiedSha: pull.headSha } : {}),
+        // CI rosse di fila: +1 a ogni rossa notificata, azzerate da un esito verde o senza CI (freno di `assegna_compito`)
+        ...(notify ? { ciNotifiedSha: pull.headSha, ciFailures: state === "failure" ? sql`${t.ciFailures} + 1` : 0 } : {}),
       })
       .where(
         and(

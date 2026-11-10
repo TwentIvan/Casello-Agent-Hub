@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { db, pendingActionsTable, teamInstancesTable, teamTasksTable } from "@workspace/db";
+import { db, pendingActionsTable, teamCodeTasksTable, teamInstancesTable, teamTasksTable } from "@workspace/db";
 import { completionData } from "../architect/issues";
 import { latestCompletedAnalysisId, loadPlanItems } from "../plan-chat/run-turn";
 import { enqueuePlanItem } from "../actions/queue";
@@ -485,7 +485,7 @@ async function updatePlan(ctx: LeadContext, args: Record<string, unknown>): Prom
 
 /**
  * `assegna_compito`: solo un compito del PLAN approvato in stato planned, blocked o failed, e non se le sue ultime 3
- * esecuzioni sono tutte fallite o bloccate. Lo stato della squadra lo verifica startTask con la riga della squadra
+ * esecuzioni sono tutte fallite o bloccate o se la sua PR ha avuto 3 CI rosse di fila (`team_code_tasks.ci_failures`). Lo stato della squadra lo verifica startTask con la riga della squadra
  * bloccata («la squadra non è attiva»).
  */
 async function assignTask(ctx: LeadContext, args: Record<string, unknown>): Promise<ToolResult> {
@@ -513,6 +513,13 @@ async function assignTask(ctx: LeadContext, args: Record<string, unknown>): Prom
   if (recent.length === MAX_TASK_FAILURES && recent.every((r) => r.status === "failed" || r.status === "blocked")) {
     return fail(LEAD_MESSAGES.tooManyFailures);
   }
+  // Stesso freno per il giro «CI rossa → riassegna»: l'esecuzione resta `done`, le CI rosse di fila le conta la sorveglianza
+  const [code] = await db
+    .select({ ciFailures: teamCodeTasksTable.ciFailures })
+    .from(teamCodeTasksTable)
+    .where(and(eq(teamCodeTasksTable.instanceId, ctx.instanceId), eq(teamCodeTasksTable.planTaskId, taskId)))
+    .limit(1);
+  if (code && code.ciFailures >= MAX_TASK_FAILURES) return fail(LEAD_MESSAGES.tooManyFailures);
   try {
     const row = await startTask(ctx.instanceId, taskId, attachmentIds);
     return done(

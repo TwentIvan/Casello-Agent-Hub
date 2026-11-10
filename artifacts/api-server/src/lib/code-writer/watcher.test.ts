@@ -172,6 +172,32 @@ describe("sorveglianza della CI", () => {
     expect(r.lastCommitAt!.getTime()).toBe(at(120_000).getTime());
   });
 
+  it("ci_failures: +1 a ogni CI rossa notificata, a zero con la CI verde o senza CI", async () => {
+    const SHA3 = "c".repeat(40);
+    const SHA4 = "d".repeat(40);
+    run("test", "completed", "failure");
+    await watchCodeTasksOnce(at(60_000));
+    await watchCodeTasksOnce(at(90_000));
+    expect((await row()).ciFailures).toBe(1);
+    gh.pulls.get(REPO)![0]!.headSha = SHA2;
+    run("test", "completed", "failure", SHA2);
+    await watchCodeTasksOnce(at(120_000));
+    expect((await row()).ciFailures).toBe(2);
+    gh.pulls.get(REPO)![0]!.headSha = SHA3;
+    run("test", "completed", "success", SHA3);
+    await watchCodeTasksOnce(at(180_000));
+    expect((await row()).ciFailures).toBe(0);
+    gh.pulls.get(REPO)![0]!.headSha = SHA4;
+    run("test", "completed", "failure", SHA4);
+    await watchCodeTasksOnce(at(240_000));
+    expect((await row()).ciFailures).toBe(1);
+    await db.update(teamCodeTasksTable).set({ ciFailures: 2 }).where(eq(teamCodeTasksTable.id, codeId));
+    gh.pulls.get(REPO)![0]!.headSha = "e".repeat(40);
+    await watchCodeTasksOnce(at(300_000));
+    await watchCodeTasksOnce(at(300_000 + 11 * 60_000));
+    expect(await row()).toMatchObject({ ciState: "none", ciFailures: 0 });
+  });
+
   it("squadra chiusa: riga ignorata", async () => {
     await db.update(teamInstancesTable).set({ status: "closed" }).where(eq(teamInstancesTable.id, instanceId));
     run("build");

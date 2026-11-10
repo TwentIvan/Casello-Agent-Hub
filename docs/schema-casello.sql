@@ -1308,6 +1308,7 @@ CREATE TABLE IF NOT EXISTS "team_code_tasks" (
 	"ci_checked_at" timestamp,
 	"ci_notified_sha" text,
 	"ci_pending_notified" boolean DEFAULT false NOT NULL,
+	"ci_failures" integer DEFAULT 0 NOT NULL,
 	"last_commit_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,

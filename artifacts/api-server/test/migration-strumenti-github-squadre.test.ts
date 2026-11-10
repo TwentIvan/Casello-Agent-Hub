@@ -9,6 +9,7 @@ const COLUMNS = [
   "base_branch",
   "branch",
   "ci_checked_at",
+  "ci_failures",
   "ci_notified_sha",
   "ci_pending_notified",
   "ci_state",
@@ -67,11 +68,27 @@ describe("migrazione 2026-11-strumenti-github-squadre", () => {
     await ins("t1");
     await expect(ins("t1")).rejects.toThrow();
     await ins("t2");
-    const r = await db.query<any>("SELECT ci_pending_notified, pr_state, ci_state FROM team_code_tasks");
+    const r = await db.query<any>("SELECT ci_pending_notified, pr_state, ci_state, ci_failures FROM team_code_tasks");
     expect(r.rows).toHaveLength(2);
-    expect(r.rows[0]).toEqual({ ci_pending_notified: false, pr_state: null, ci_state: null });
+    expect(r.rows[0]).toEqual({ ci_pending_notified: false, pr_state: null, ci_state: null, ci_failures: 0 });
     await db.exec("DELETE FROM team_instances");
     expect((await db.query<any>("SELECT 1 FROM team_code_tasks")).rows).toHaveLength(0);
+  });
+
+  it("aggiunge ci_failures anche a una tabella creata dalla prima versione dello script", async () => {
+    const old = new PGlite();
+    try {
+      await old.exec(read("./fixtures/schema-pre-nodo-locale.sql"));
+      const script = read("../../../docs/migrations/2026-11-strumenti-github-squadre.sql");
+      await old.exec(script.replace('\t"ci_failures" integer DEFAULT 0 NOT NULL,\n', "").replace(/ALTER TABLE "team_code_tasks" ADD COLUMN[^\n]*\n/, ""));
+      let cols = await old.query<any>("SELECT column_name FROM information_schema.columns WHERE table_name = 'team_code_tasks' AND column_name = 'ci_failures'");
+      expect(cols.rows).toHaveLength(0);
+      await old.exec(script);
+      cols = await old.query<any>("SELECT column_name FROM information_schema.columns WHERE table_name = 'team_code_tasks' AND column_name = 'ci_failures'");
+      expect(cols.rows).toHaveLength(1);
+    } finally {
+      await old.close();
+    }
   });
 
   it("ha l'indice di sorveglianza e schema-casello.sql contiene le stesse definizioni", async () => {
@@ -82,5 +99,6 @@ describe("migrazione 2026-11-strumenti-github-squadre", () => {
     expect(schema).toContain("code_pr_state");
     expect(schema).toContain("code_ci_state");
     expect(schema).toContain('CREATE INDEX IF NOT EXISTS "team_code_tasks_watch_idx"');
+    expect(schema).toContain('"ci_failures" integer DEFAULT 0 NOT NULL');
   });
 });

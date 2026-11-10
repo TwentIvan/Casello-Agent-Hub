@@ -1610,7 +1610,8 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   stato rimosso. Puoi spostare l'app nel cestino.». La disinstallazione vince su un aggiornamento in sospeso.
 - **Sicurezza**: route pubbliche di abbinamento con i loro limiti, codici monouso, solo hash nel DB, token creato solo al `poll` dopo un'approvazione con il login (mai
   token personali, `agent` o `embed`), avviso in Dashboard a ogni collegamento. Il codice non va nei log: `/nodes/pair` e `/api/account/node-pairings/` senza access log in
-  nginx, `req.url` oscurato nel log delle richieste dell'API, codice e segreto mai nei log del nodo. Aggiornamenti: indirizzo dalla config, sha256 e dimensione dalla
+  nginx, percorso oscurato (`…/node-pairings/***`) nei log dell'API, sia delle richieste (`app.ts`) sia degli errori non gestiti
+  (`middlewares/error-handler.ts`, che oscura allo stesso modo anche `/api/hooks/`), codice e segreto mai nei log del nodo. Aggiornamenti: indirizzo dalla config, sha256 e dimensione dalla
   risposta all'heartbeat (TLS e token del nodo), file temporaneo e rename. Senza firma Apple la fiducia sta nell'HTTPS di Botcave: va chiusa con firma e notarizzazione
   (Developer ID) prima degli utenti esterni. L'URL dell'installatore di Claude Code è nel codice; le richieste della console sono un elenco chiuso di azioni del nodo.
 - **Differenze dalla spec**: proroga di 2 minuti all'approvazione; codice di abbinamento in `sessionStorage` attraverso il login e location nginx senza access log (non

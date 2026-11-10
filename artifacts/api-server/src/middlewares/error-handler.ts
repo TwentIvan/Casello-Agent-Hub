@@ -1,7 +1,9 @@
 import type { ErrorRequestHandler } from "express";
 import type { ZodError, ZodIssue } from "zod";
 import { logger } from "../lib/logger";
+import { redactPairingPath } from "../lib/nodes/pairing";
 import { ATTACHMENT_UPLOAD_PATH } from "../lib/teams/attachments";
+import { redactHookPath } from "../lib/triggers/secrets";
 
 // Gestore finale degli errori di /api: risposte sempre JSON `{ error }`.
 // Body, parametri o query che non passano gli schemi Zod generati (letti con `parseRequest`) →
@@ -96,9 +98,10 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
     res.status(413).json({ error: isArchive ? "archivio troppo grande" : "corpo della richiesta troppo grande" });
     return;
   }
-  // Solo metodo e percorso: mai header (X-App-User-Token) né body
+  // Solo metodo e percorso: mai header (X-App-User-Token) né body. Il percorso si oscura come nel log delle richieste
+  // (app.ts): il segreto di un webhook e il codice di abbinamento di un Mac stanno nel percorso
   (req.log ?? logger).error(
-    { err, method: req.method, url: req.originalUrl.split("?")[0] },
+    { err, method: req.method, url: redactPairingPath(redactHookPath(req.originalUrl.split("?")[0]!)) },
     "Errore non gestito nella richiesta",
   );
   res.status(500).json({ error: "Errore interno" });

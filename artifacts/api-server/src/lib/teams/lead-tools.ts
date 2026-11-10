@@ -1,6 +1,8 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, pendingActionsTable, teamInstancesTable, teamTasksTable } from "@workspace/db";
+import { completionData } from "../architect/issues";
+import { latestCompletedAnalysisId, loadPlanItems } from "../plan-chat/run-turn";
 import { enqueuePlanItem } from "../actions/queue";
 import { ATTACHMENT_MESSAGES, existingAttachmentIds } from "./attachments";
 import { logger } from "../logger";
@@ -46,6 +48,7 @@ export const LEAD_MESSAGES = {
   withdrawn: "Il capo ha ritirato la proposta di piano",
   unknownTool: "strumento non disponibile",
   tooManyFailures: "compito fallito 3 volte: segnala all'utente",
+  noAppPlan: "nessun piano per l'app di riferimento",
 } as const;
 
 /** Esecuzioni consecutive fallite o bloccate dopo le quali `assegna_compito` rifiuta di riprovare un compito. */
@@ -90,7 +93,7 @@ export function planForModel(plan: PlanView): string {
     objective: plan.objective,
     constraints: plan.constraints,
     openPoints: plan.openPoints,
-    tasks: plan.tasks.map((t) => ({ id: t.id, title: t.title, roleKey: t.roleKey, instructions: t.instructions, status: t.status, outcome: t.outcome })),
+    tasks: plan.tasks.map((t) => ({ id: t.id, title: t.title, roleKey: t.roleKey, instructions: t.instructions, status: t.status, outcome: t.outcome, ...(t.issue ? { issue: t.issue } : {}) })),
     manualActions: plan.manualActions.map((a) => ({ id: a.id, text: a.text, done: a.done })),
   });
 }
@@ -120,6 +123,7 @@ const LEAD_TOOL_DEFS = [
               title: { type: "string", maxLength: 200 },
               roleKey: { type: "string", description: "Chiave del ruolo che esegue il compito" },
               instructions: { type: "string", maxLength: 4000 },
+              issue: { type: "integer", minimum: 1, description: "Numero dell'issue del piano dell'App a cui si riferisce il compito (facoltativo)" },
             },
             required: ["title", "roleKey", "instructions"],
           },
@@ -178,6 +182,11 @@ const LEAD_TOOL_DEFS = [
     properties: { taskId: { type: "string" } },
     required: ["taskId"],
   }),
+  internalTool(
+    "leggi_piano_app",
+    "Legge il piano dell'App di riferimento (analisi più recente): voci approvate di endpoint, completamento ed evoluzione, con fase, priorità, dipendenze e issue GitHub. Serve a dare ai compiti l'`issue` giusta.",
+    { type: "object", properties: {} },
+  ),
   internalTool("segnala", "Segnala un evento all'utente nel bollettino; azione_manuale_richiesta aggiunge anche l'azione al PLAN.", {
     type: "object",
     properties: {
@@ -210,6 +219,7 @@ const ProposeSchema = z.object({
         title: z.string().trim().min(1).max(200),
         roleKey: z.string().min(1).max(40),
         instructions: z.string().max(4000),
+        issue: z.number().int().min(1).nullable().optional(),
       }),
     )
     .max(50),
@@ -325,6 +335,7 @@ async function proposePlan(ctx: LeadContext, args: Record<string, unknown>): Pro
     title: t.title,
     roleKey: t.roleKey,
     instructions: t.instructions,
+    ...(t.issue ? { issue: t.issue } : {}),
     status: "planned",
     outcome: null,
   }));
@@ -515,6 +526,35 @@ async function assignTask(ctx: LeadContext, args: Record<string, unknown>): Prom
   }
 }
 
+const MAX_APP_PLAN_ITEMS = 100;
+const MAX_APP_PLAN_CHARS = 20_000;
+
+/** `leggi_piano_app`: voci approvate del piano dell'App di riferimento (sola lettura). */
+async function readAppPlan(ctx: LeadContext): Promise<ToolResult> {
+  const [instance] = await db.select({ refAppId: teamInstancesTable.refAppId }).from(teamInstancesTable).where(eq(teamInstancesTable.id, ctx.instanceId)).limit(1);
+  if (!instance) return fail(LEAD_MESSAGES.noAppPlan);
+  const analysisId = await latestCompletedAnalysisId(instance.refAppId);
+  if (analysisId === null) return fail(LEAD_MESSAGES.noAppPlan);
+  const items = (await loadPlanItems(analysisId, instance.refAppId)).filter((i) => i.status === "approved").slice(0, MAX_APP_PLAN_ITEMS);
+  const view = items.map((item) => {
+    const p = (item.payload ?? {}) as Record<string, unknown>;
+    const completion = item.chapter === "completion" ? completionData(item) : null;
+    const title = typeof p["title"] === "string" ? p["title"] : typeof p["path"] === "string" ? `${typeof p["method"] === "string" ? `${p["method"]} ` : ""}${p["path"]}` : item.ref;
+    return {
+      id: item.id,
+      chapter: item.chapter,
+      key: completion?.key ?? null,
+      title,
+      phase: completion ? completion.phase : null,
+      priority: typeof p["priority"] === "number" ? p["priority"] : null,
+      dependsOn: completion?.dependsOn ?? [],
+      issue: item.issueNumber !== null && item.issueNumber !== undefined ? { number: item.issueNumber, state: item.issueState ?? "open" } : null,
+    };
+  });
+  while (view.length > 0 && JSON.stringify(view).length > MAX_APP_PLAN_CHARS) view.pop();
+  return done(JSON.stringify(view));
+}
+
 /** `leggi_esito`: ultima esecuzione del compito. */
 async function readOutcome(ctx: LeadContext, args: Record<string, unknown>): Promise<ToolResult> {
   const parsed = TaskIdSchema.safeParse(args);
@@ -573,6 +613,7 @@ const HANDLERS: Record<string, (ctx: LeadContext, args: Record<string, unknown>)
   aggiorna_piano: updatePlan,
   assegna_compito: assignTask,
   leggi_esito: readOutcome,
+  leggi_piano_app: readAppPlan,
   segnala: signal,
   chiudi_lavoro: closeWork,
 };

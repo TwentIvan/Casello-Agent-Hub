@@ -5,7 +5,10 @@ import {
   pool,
   aiAccountsTable,
   aiModelsTable,
+  analysesTable,
+  analysisItemsTable,
   appsTable,
+  teamCodeTasksTable,
   pendingActionsTable,
   teamInstancesTable,
   teamTasksTable,
@@ -221,6 +224,7 @@ describe("turni del capo", () => {
       "aggiorna_piano",
       "assegna_compito",
       "leggi_esito",
+      "leggi_piano_app",
       "segnala",
       "chiudi_lavoro",
     ]);
@@ -530,5 +534,63 @@ describe("turni del capo", () => {
     await setInstanceBudget(id, 5);
     await settleAll();
     expect(await turns(id)).toHaveLength(0);
+  });
+
+  it("leggi_piano_app: solo le voci approvate dell'analisi più recente, con issue", async () => {
+    const id = await seedActiveApproved();
+    const [analysis] = await db
+      .insert(analysesTable)
+      .values({ appId, model: "m", sources: { code: "none", openapi: false, description: true }, maxTokens: 1000, status: "completed" })
+      .returning();
+    const completion = (key: string, phase: number, dependsOn: string[] = []) => ({ key, title: `Titolo ${key}`, phase, dependsOn });
+    await db.insert(analysisItemsTable).values([
+      { analysisId: analysis!.id, chapter: "completion", ref: "completion:1", position: 0, diff: "new", payload: completion("a", 1), status: "approved" },
+      { analysisId: analysis!.id, chapter: "completion", ref: "completion:2", position: 1, diff: "new", payload: completion("b", 2, ["a"]), status: "approved", issueRepo: "ivan/hub", issueNumber: 7, issueState: "open" },
+      { analysisId: analysis!.id, chapter: "completion", ref: "completion:3", position: 2, diff: "new", payload: completion("c", 2), status: "pending" },
+    ]);
+    leadScript.push(call("leggi_piano_app", {}), text("Letto."));
+    await sendToLead(userId, id, "leggi il piano dell'app");
+    await settleAll();
+    const result = JSON.parse(toolMessages(leadRequests()[1]!)[0]!) as { id: number; chapter: string; title: string; phase: number | null; dependsOn: string[]; issue: { number: number; state: string } | null }[];
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ chapter: "completion", title: "Titolo a", phase: 1, dependsOn: [], issue: null });
+    expect(result[1]).toMatchObject({ title: "Titolo b", phase: 2, dependsOn: ["a"], issue: { number: 7, state: "open" } });
+  });
+
+  it("leggi_piano_app senza analisi: messaggio fisso", async () => {
+    const id = await seedActiveApproved();
+    leadScript.push(call("leggi_piano_app", {}), text("Niente."));
+    await sendToLead(userId, id, "leggi il piano dell'app");
+    await settleAll();
+    expect(toolMessages(leadRequests()[1]!)[0]).toContain("nessun piano per l'app di riferimento");
+  });
+
+  it("proponi_piano salva l'issue del compito", async () => {
+    const id = await seedTeam();
+    leadScript.push(call("proponi_piano", { ...PROPOSAL, tasks: [{ ...PROPOSAL.tasks[0], issue: 7 }] }), text("Piano proposto."));
+    await activateInstance(userId, id);
+    await settleAll();
+    const plan = await getPlan(id);
+    expect(plan.tasks[0]!.issue).toBe(7);
+  });
+
+  it("motivi ci_finished e pr_closed resi nel messaggio del turno", async () => {
+    const id = await seedActiveApproved();
+    const [code] = await db
+      .insert(teamCodeTasksTable)
+      .values({ instanceId: id, planTaskId: "t1", repo: "ivan/hub", branch: "b", baseBranch: "main", prNumber: 12, ciSummary: "test falliti" })
+      .returning();
+    await enqueueTurnReason(id, { type: "ci_finished", taskCodeId: code!.id, outcome: "failure" });
+    await enqueueTurnReason(id, { type: "ci_finished", taskCodeId: code!.id, outcome: "success" });
+    await enqueueTurnReason(id, { type: "ci_finished", taskCodeId: code!.id, outcome: "none" });
+    await enqueueTurnReason(id, { type: "pr_closed", taskCodeId: code!.id, merged: true });
+    await enqueueTurnReason(id, { type: "pr_closed", taskCodeId: code!.id, merged: false });
+    await settleAll();
+    const users = leadRequests().flatMap(userMessages).join("\n");
+    expect(users).toContain("Novità: CI del compito t1 (PR #12): non superata (test falliti).");
+    expect(users).toContain("Novità: CI del compito t1 (PR #12): verde.");
+    expect(users).toContain("Novità: CI del compito t1 (PR #12): nessuna CI configurata.");
+    expect(users).toContain("Novità: la PR #12 del compito t1 è stata unita.");
+    expect(users).toContain("Novità: la PR #12 del compito t1 è stata chiusa senza merge.");
   });
 });

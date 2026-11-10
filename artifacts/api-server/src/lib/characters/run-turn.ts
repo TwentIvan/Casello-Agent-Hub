@@ -23,6 +23,8 @@ import { memoryContextBlock } from "../memory/context";
 import { MEMORY_TOOLS, MEMORY_TOOL_NAMES, runMemoryTool } from "../memory/tools";
 import { EMPTY_REPLY_MESSAGE, INTERRUPTED_TURN_MESSAGE, TurnBusyError } from "../plan-chat/run-turn";
 import { runChatTurn } from "../node-turns/chat-turn";
+import { CODE_INSTRUCTIONS, CODE_TOOLS, CODE_TOOL_NAMES, CodeToolRunner } from "../code-reader/tools";
+import { CODE_TURN_LIMITS } from "../plan-chat/turn";
 import { HANDOFF_TOOL, runHandoff } from "./handoff";
 import { CHARACTER_NAMES, characterInstructions } from "./instructions";
 import { createTurnContext } from "./proposals";
@@ -76,6 +78,8 @@ export interface CharacterContextInput {
   page: PageContext | null;
   history: CharacterHistoryMessage[];
   userMessage: string;
+  /** Istruzioni in più, in fondo al messaggio `system` (es. lettura del codice) */
+  extraInstructions?: string;
 }
 
 const stripDelimiters = (text: string) => text.split(DATA_OPEN).join("").split(DATA_CLOSE).join("");
@@ -129,7 +133,10 @@ function renderHistory(history: CharacterHistoryMessage[], userMessage: string, 
 export function buildCharacterMessages(input: CharacterContextInput): ChatCompletionMessageParam[] {
   const memory = input.memory.trim();
   const build = (historyChars: number, dataChars: number | null): ChatCompletionMessageParam[] => [
-    { role: "system", content: characterInstructions(input.character) },
+    {
+      role: "system",
+      content: input.extraInstructions ? `${characterInstructions(input.character)}\n${input.extraInstructions}` : characterInstructions(input.character),
+    },
     ...input.subjectData.map((d) =>
       dataMessage("Dati dell'argomento", dataChars === null || d.length <= dataChars ? d : `${sliceChars(d, dataChars)}\n… (troncato)`),
     ),
@@ -259,8 +266,16 @@ function parseArgs(raw: string): Record<string, unknown> | null {
 }
 
 /** Smista una tool call: memoria del personaggio, `passa_a` o strumenti dell'argomento. Stringa JSON, mai eccezioni. */
-async function runCharacterTool(character: Character, handler: SubjectHandler, call: ChatToolCall, ctx: TurnContext): Promise<string> {
+async function runCharacterTool(
+  character: Character,
+  handler: SubjectHandler,
+  call: ChatToolCall,
+  ctx: TurnContext,
+  codeRunner: CodeToolRunner | null,
+): Promise<string> {
   try {
+    // Lettura del codice: testo semplice dal lettore, avvolto come risultato riuscito
+    if (codeRunner && (CODE_TOOL_NAMES as readonly string[]).includes(call.name)) return toolOk(await codeRunner.run(call));
     if ((MEMORY_TOOL_NAMES as readonly string[]).includes(call.name)) {
       const args = parseArgs(call.arguments);
       if (!args) return toolFail(TOOL_ERRORS.invalidArgs);
@@ -309,7 +324,17 @@ export async function executeCharacterTurn(conversationId: number, assistantMess
           handler.context(conv.userId, conv.subjectId, page),
           memoryContextBlock(conv.userId, character),
         ]);
-        const messages = buildCharacterMessages({ character, subjectData, memory, page, history, userMessage });
+        const code = handler.codeApp ? await handler.codeApp(conv.userId, conv.subjectId) : null;
+        const codeRunner = code?.available ? new CodeToolRunner(conv.userId, code.defaultAppId) : null;
+        const messages = buildCharacterMessages({
+          character,
+          subjectData,
+          memory,
+          page,
+          history,
+          userMessage,
+          ...(codeRunner ? { extraInstructions: CODE_INSTRUCTIONS } : {}),
+        });
         const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
         const ctx = createTurnContext({ userId: conv.userId, conversationId, messageId: assistantMessageId, subjectId: conv.subjectId, page });
         const outcome = await runChatTurn({
@@ -319,8 +344,9 @@ export async function executeCharacterTurn(conversationId: number, assistantMess
           refId: conversationId,
           messageId: assistantMessageId,
           messages,
-          tools: [...handler.tools, ...MEMORY_TOOLS, HANDOFF_TOOL],
-          runTool: (call) => runCharacterTool(character, handler, call, ctx),
+          tools: [...handler.tools, ...MEMORY_TOOLS, HANDOFF_TOOL, ...(codeRunner ? CODE_TOOLS : [])],
+          ...(codeRunner ? { limits: CODE_TURN_LIMITS } : {}),
+          runTool: (call) => runCharacterTool(character, handler, call, ctx, codeRunner),
           caller: "character-chat",
           budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, character, aiModelId),
         });

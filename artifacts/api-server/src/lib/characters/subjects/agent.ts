@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, agentToolsTable, agentsTable, aiModelsTable, appToolsTable, appsTable } from "@workspace/db";
 import type { ChatToolCall } from "../../ai/chat-types";
+import { codeAvailability } from "../../code-reader/source-cache";
 import { effectiveLevel } from "../../tools/levels";
 import { validateTriggerConfig } from "../../triggers/config";
 import { recordProposal } from "../proposals";
@@ -224,4 +225,18 @@ export const agentSubject: SubjectHandler = {
   },
   tools: AGENT_TOOLS,
   runTool,
+  codeApp: async (userId, subjectId) => {
+    const id = idFromSubject(subjectId);
+    const [row] =
+      id === null
+        ? []
+        : await db
+            .select({ app: appsTable })
+            .from(agentsTable)
+            .innerJoin(appsTable, eq(appsTable.id, agentsTable.appId))
+            .where(eq(agentsTable.id, id))
+            .limit(1);
+    if (!row) return { defaultAppId: null, available: false };
+    return { defaultAppId: row.app.id, available: (await codeAvailability(userId, row.app)).ok };
+  },
 };

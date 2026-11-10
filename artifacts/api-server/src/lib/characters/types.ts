@@ -61,6 +61,11 @@ export interface SubjectHandler {
   tools: ChatCompletionFunctionTool[];
   /** Restituisce sempre una stringa JSON `{ok: true, result}` o `{ok: false, error}`, mai eccezioni. */
   runTool(call: ChatToolCall, ctx: TurnContext): Promise<string>;
+  /**
+   * Lettura del codice (solo Lucius): app di partenza degli strumenti del codice (null = va indicata con `app`) e
+   * se almeno un'app ha il codice leggibile. Senza questo metodo l'argomento non offre strumenti del codice.
+   */
+  codeApp?(userId: number, subjectId: string | null): Promise<{ defaultAppId: number | null; available: boolean }>;
 }
 
 export const CHARACTER_MESSAGE_MAX_CHARS = 8_000;

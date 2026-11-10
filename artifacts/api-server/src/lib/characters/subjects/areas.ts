@@ -6,6 +6,7 @@ import { and, asc, eq, ilike, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 import { db, agentsTable, appToolsTable, appsTable } from "@workspace/db";
 import type { ChatToolCall } from "../../ai/chat-types";
+import { codeAvailability } from "../../code-reader/source-cache";
 import { MAX_SKILL_CONTENT, SKILL_CODE, listSkills, validateSkillContent } from "../../teams/skills";
 import { listTemplates } from "../../teams/templates";
 import { recordProposal } from "../proposals";
@@ -174,7 +175,7 @@ const creator = (schema: z.ZodType, propose: (ctx: TurnContext, a: any, rational
   },
 });
 
-const area = (type: "area_agents" | "area_skills" | "area_team_templates", title: string, tools: ReturnType<typeof fn>[], handlers: Record<string, AreaTool>, list: (q?: string) => Promise<unknown>): SubjectHandler => ({
+const area = (type: "area_agents" | "area_skills" | "area_team_templates", title: string, tools: ReturnType<typeof fn>[], handlers: Record<string, AreaTool>, list: (q?: string) => Promise<unknown>, extra: Partial<SubjectHandler> = {}): SubjectHandler => ({
   character: "lucius",
   type,
   resolve: async () => ({ title }),
@@ -191,6 +192,7 @@ const area = (type: "area_agents" | "area_skills" | "area_team_templates", title
       return toolFail(LUCIUS_MESSAGES.internal);
     }
   },
+  ...extra,
 });
 
 const listTool = (list: (q?: string) => Promise<unknown>): AreaTool => ({ schema: SearchArgs, run: async (a) => toolOk(await list(a.q)) });
@@ -199,7 +201,15 @@ export const areaAgentsSubject = area("area_agents", "Area Agenti", AREA_AGENTS_
   elenca_agenti: listTool(listAgents),
   leggi_strumenti_app: { schema: ReadAppToolsArgs, run: (a) => readAppToolsTool(a, null) },
   proponi_nuovo_agente: creator(NewAgentArgs, proposeAgent),
-}, listAgents);
+}, listAgents, {
+  // Nessuna app di partenza: gli strumenti del codice vogliono `app`; disponibili se almeno un'app ha il codice leggibile
+  codeApp: async (userId) => {
+    for (const app of await db.select().from(appsTable).orderBy(asc(appsTable.id))) {
+      if ((await codeAvailability(userId, app)).ok) return { defaultAppId: null, available: true };
+    }
+    return { defaultAppId: null, available: false };
+  },
+});
 
 export const areaSkillsSubject = area("area_skills", "Area Skill", AREA_SKILLS_TOOLS, {
   elenca_skill: listTool(listSkillRows),

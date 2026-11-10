@@ -852,6 +852,10 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   un modello; la chat è il pannello comune `CharacterChat` (`components/characters/`, adattatore `usePlanChatAdapter`) a pagina intera, i
   vecchi `chat-panel.tsx` e `conversation-list.tsx` non esistono più (vedi "Alfred e Lucius nelle aree"). Il modello propone schede `add` / `update` / `discard`; solo quelle accettate dall'utente diventano
   voci `analysis_items` con `origin = chat` (e `conversation_id`). Lucius può leggere il codice dell'app (vedi "Lucius legge il codice").
+- Strumento `propose` (`lib/plan-chat/tools.ts`): la descrizione elenca i campi di ogni capitolo (`CHAPTER_FIELDS`); un payload non valido risponde col nome
+  del campo tra virgolette (`campo "missing": campo obbligatorio`: in completion un campo si chiama proprio `missing`) e con l'elenco dei campi del capitolo;
+  con `update` bastano i campi da cambiare (si fondono sulla voce esistente prima della validazione). Correzioni: 2 per proposta (stesso tipo, capitolo e voce;
+  poi «correzioni esaurite per questa proposta») e al più 8 proposte non valide per turno (poi «correzioni esaurite: non proporre altro in questo turno»).
 - Route (`routes/plan-chat.ts`): `GET /api/apps/:id/plan`, `GET|POST /api/apps/:id/plan-conversations`,
   `GET|PATCH|DELETE /api/plan-conversations/:id`, `POST /api/plan-conversations/:id/messages`,
   `POST /api/plan-proposals/:id/decision`. Codice in `lib/plan-chat/` (`context.ts`, `tools.ts`, `turn.ts`,

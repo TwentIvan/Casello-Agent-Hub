@@ -74,13 +74,37 @@ describe("stop e coda comuni alle chat", () => {
   });
 
   it("closeTurnAsStopped annulla i turni del nodo aperti della conversazione", async () => {
-    const { turnId } = await enqueueTurn({ nodeId, userId, aiModelId, consumer: "character", refId: conversationId, pkg: samplePackage() });
-    const { turnId: other } = await enqueueTurn({ nodeId, userId, aiModelId, consumer: "plan_chat", refId: conversationId, pkg: samplePackage() });
+    const { turnId } = await enqueueTurn({ nodeId, userId, aiModelId, consumer: "character", refId: conversationId, messageId: assistantId, pkg: samplePackage() });
+    const { turnId: other } = await enqueueTurn({ nodeId, userId, aiModelId, consumer: "plan_chat", refId: conversationId, messageId: assistantId, pkg: samplePackage() });
     await closeTurnAsStopped(spec, conversationId);
     const [row] = await db.select().from(nodeTurnsTable).where(eq(nodeTurnsTable.id, turnId));
     expect(row!.status).toBe("cancelled");
     const [untouched] = await db.select().from(nodeTurnsTable).where(eq(nodeTurnsTable.id, other));
     expect(untouched!.status).toBe("queued");
+  });
+
+  it("closeTurnAsStopped annulla solo il turno del nodo del messaggio chiuso", async () => {
+    // Turno del nodo di un messaggio precedente ancora aperto (non dovrebbe esserci, ma non è di questo turno)
+    const { turnId: older } = await enqueueTurn({ nodeId, userId, aiModelId, consumer: "character", refId: conversationId, messageId: assistantId - 1, pkg: samplePackage() });
+    const { turnId } = await enqueueTurn({ nodeId, userId, aiModelId, consumer: "character", refId: conversationId, messageId: assistantId, pkg: samplePackage() });
+    expect(await closeTurnAsStopped(spec, conversationId)).toBe(true);
+    const status = async (id: number) => (await db.select().from(nodeTurnsTable).where(eq(nodeTurnsTable.id, id)))[0]!.status;
+    expect(await status(turnId)).toBe("cancelled");
+    expect(await status(older)).toBe("queued");
+  });
+
+  it("closeTurnAsStopped che non chiude nulla non annulla i turni del nodo (turno nuovo durante un deploy)", async () => {
+    const [newer] = await db.insert(characterMessagesTable).values({ conversationId, role: "assistant", content: "" }).returning();
+    const { turnId } = await enqueueTurn({ nodeId, userId, aiModelId, consumer: "character", refId: conversationId, messageId: newer!.id, pkg: samplePackage() });
+    // «Invia subito» con il turno precedente: la conversazione ora lavora sul messaggio nuovo
+    expect(await closeTurnAsStopped(spec, conversationId, assistantId)).toBe(false);
+    const [row] = await db.select().from(nodeTurnsTable).where(eq(nodeTurnsTable.id, turnId));
+    expect(row!.status).toBe("queued");
+    // Anche su una conversazione già ferma nessun turno del nodo si annulla
+    await db.update(characterConversationsTable).set({ turnStatus: "idle" }).where(eq(characterConversationsTable.id, conversationId));
+    expect(await closeTurnAsStopped(spec, conversationId)).toBe(false);
+    const [still] = await db.select().from(nodeTurnsTable).where(eq(nodeTurnsTable.id, turnId));
+    expect(still!.status).toBe("queued");
   });
 
   it("queueChatMessage sostituisce il testo e conserva queued_at", async () => {
@@ -104,6 +128,21 @@ describe("stop e coda comuni alle chat", () => {
     expect(started).toEqual([{ conversationId, content: "In coda", page: { page: "dashboard" } }]);
     expect(await queuedRows()).toHaveLength(0);
     expect(await getQueued(spec, conversationId)).toBeNull();
+  });
+
+  it("drainQueued: un messaggio sostituito mentre il turno parte resta in coda col testo nuovo", async () => {
+    startImpl = async (id, content, page) => {
+      started.push({ conversationId: id, content, page });
+      // «Accoda» di un altro messaggio tra l'avvio del turno e la rimozione della riga
+      await queueChatMessage(spec, id, "Sostituito", null);
+      return { id: 999 };
+    };
+    await queueChatMessage(spec, conversationId, "Primo", null);
+    await drainQueued(spec, conversationId);
+    expect(started.map((s) => s.content)).toEqual(["Primo"]);
+    const rows = await queuedRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.content).toBe("Sostituito");
   });
 
   it("drainQueued con start che lancia TurnBusyError lascia la riga", async () => {

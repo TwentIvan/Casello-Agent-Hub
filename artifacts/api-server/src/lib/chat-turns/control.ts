@@ -35,8 +35,8 @@ function toDate(value: unknown): Date {
 
 /**
  * Chiude nel DB un turno che non gira in questo processo: conversazione `running` → `idle`, ultimo messaggio
- * dell'assistente ancora vuoto → «Risposta interrotta.» (non è un errore). True se la conversazione era `running`; su una conversazione già ferma non si tocca nulla. Poi annulla i
- * turni del nodo ancora aperti della conversazione.
+ * dell'assistente ancora vuoto → «Risposta interrotta.» (non è un errore). True se la conversazione era `running`; su una conversazione già ferma non si tocca nulla. Se ha
+ * chiuso il turno, annulla i turni del nodo ancora aperti del suo messaggio dell'assistente.
  */
 export async function closeTurnAsStopped(spec: ChatKindSpec, conversationId: number, expectedAssistantId?: number): Promise<boolean> {
   // Con `expectedAssistantId` si chiude solo il turno di quel messaggio: ancora vuoto e ultimo dell'assistente
@@ -51,29 +51,33 @@ export async function closeTurnAsStopped(spec: ChatKindSpec, conversationId: num
                 where m2.conversation_id = ${conversationId} and m2.role = 'assistant' and m2.id > m.id
              )
         )`;
-  const changed = await db.transaction(async (tx) => {
+  // Id del messaggio dell'assistente del turno chiuso (l'ultimo), o null se non si è chiuso nulla
+  const closedAssistantId = await db.transaction(async (tx): Promise<number | null> => {
     const conv = await tx.execute(sql`
       update ${convTable(spec)}
          set turn_status = 'idle', updated_at = now()
        where id = ${conversationId} and turn_status = 'running' and ${sameTurn}
       returning id`);
     // Conversazione già ferma: l'ultimo messaggio vuoto non è del turno da chiudere
-    if (conv.rows.length === 0) return false;
+    if (conv.rows.length === 0) return null;
+    const last = await tx.execute(sql`
+      select id from ${msgTable(spec)}
+       where conversation_id = ${conversationId} and role = 'assistant'
+       order by id desc
+       limit 1`);
+    const lastId = (last.rows[0] as { id?: number } | undefined)?.id;
+    if (lastId === undefined) return 0;
     await tx.execute(sql`
       update ${msgTable(spec)}
          set content = ${STOPPED_TURN_MESSAGE}, error = false
-       where id = (
-               select id from ${msgTable(spec)}
-                where conversation_id = ${conversationId} and role = 'assistant'
-                order by id desc
-                limit 1
-             )
-         and content = ''
-      returning id`);
-    return true;
+       where id = ${lastId} and content = ''`);
+    return Number(lastId);
   });
-  await cancelOpenTurnsFor(spec.consumer, conversationId);
-  return changed;
+  if (closedAssistantId === null) return false;
+  // Solo i turni del nodo del messaggio chiuso: un turno nuovo della stessa conversazione (es. partito in un altro
+  // processo durante un deploy) non si tocca. 0 = nessun messaggio dell'assistente, quindi nessun turno del nodo.
+  if (closedAssistantId > 0) await cancelOpenTurnsFor(spec.consumer, conversationId, closedAssistantId);
+  return true;
 }
 
 /**
@@ -124,11 +128,16 @@ export async function stopChatTurn(
   if (expected !== undefined && liveId !== undefined && liveId !== expected) return false;
   if (abortTurn(spec.kind, conversationId)) {
     const deadline = Date.now() + STOP_WAIT_MS;
+    let closed = false;
     while (Date.now() < deadline) {
       const state = await readState(spec, conversationId, messageId);
-      if (state.idle || state.filled) break;
+      if (state.idle || state.filled) {
+        closed = true;
+        break;
+      }
       await new Promise((resolve) => setTimeout(resolve, STOP_POLL_MS));
     }
+    if (!closed) logger.warn({ kind: spec.kind, conversationId }, "Turno fermato non ancora chiuso dopo 10 s");
     return true;
   }
   const closed = await closeTurnAsStopped(spec, conversationId, expected);
@@ -215,7 +224,11 @@ export async function drainQueued(spec: ChatKindSpec, conversationId: number): P
       }
       return;
     }
-    await db.execute(sql`delete from ${msgTable(spec)} where id = ${queued.id} and queued_at is not null`);
+    // Solo se il testo è ancora quello avviato: un «Accoda» arrivato nel frattempo ha sostituito il messaggio, che resta
+    // in coda e parte alla fine del turno appena avviato
+    await db.execute(
+      sql`delete from ${msgTable(spec)} where id = ${queued.id} and queued_at is not null and content = ${queued.content}`,
+    );
   } catch (err) {
     logger.warn({ kind: spec.kind, conversationId, errName: err instanceof Error ? err.name : "unknown" }, "Coda della conversazione non elaborata");
   }

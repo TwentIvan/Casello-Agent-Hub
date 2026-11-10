@@ -323,14 +323,16 @@ describe("Ferma e Accoda nella chat di squadra", () => {
     expect((await getInstance(instanceId)).roles.find((r) => r.key === "dev")!.task).toBe("Sviluppatore attento ai test");
   });
 
-  it("turno chiuso altrove: il messaggio resta «Risposta interrotta.» e tokens_used non cambia", async () => {
+  it("turno chiuso altrove: il messaggio resta «Risposta interrotta.», i token spesi si sommano, stato e updated_at no", async () => {
     slowSecondRound(300);
     await startTeamChatTurn(conversationId, "Ciao");
     await waitFor(() => chatBodies().length === 2);
     expect(await closeTurnAsStopped(TEAM_CHAT_SPEC, conversationId)).toBe(true);
+    const closedAt = (await getConv()).updatedAt;
     await waitFor(() => !isLiveTurn("team", conversationId));
     expect((await getMessages())[1]).toMatchObject({ content: "Risposta interrotta.", error: false, tokens: 0 });
-    expect(await getConv()).toMatchObject({ turnStatus: "idle", tokensUsed: 0 });
+    expect(await getConv()).toMatchObject({ turnStatus: "idle", tokensUsed: 240 });
+    expect((await getConv()).updatedAt).toEqual(closedAt);
   });
 
   it("a fine turno parte il messaggio in coda", async () => {
@@ -377,6 +379,18 @@ describe("Ferma e Accoda nella chat di squadra", () => {
     expect(chatBodies()[0]!.messages.at(-1)).toMatchObject({ role: "user", content: "In coda" });
     expect((await getMessages())[1]).toMatchObject({ content: "Risposta interrotta.", tokens: 0 });
     expect((await getConv()).tokensUsed).toBe(15);
+  });
+
+  it("fermato prima che il messaggio dell'assistente fosse scritto: il messaggio vuoto diventa «Risposta interrotta.»", async () => {
+    fake.chatReply = { content: "Risposta", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    await db.insert(teamChatMessagesTable).values({ conversationId, role: "user", content: "Ciao" });
+    // Conversazione già `idle` (Ferma l'ha chiusa prima dell'inserimento) e messaggio dell'assistente ancora vuoto
+    const [assistant] = await db.insert(teamChatMessagesTable).values({ conversationId, role: "assistant", content: "" }).returning();
+    await executeTeamChatTurn(conversationId, assistant!.id);
+    await waitFor(() => !isLiveTurn("team", conversationId));
+    expect(chatBodies()).toHaveLength(0);
+    expect((await getMessages())[1]).toMatchObject({ content: "Risposta interrotta.", error: false, tokens: 0 });
+    expect(await getConv()).toMatchObject({ turnStatus: "idle", tokensUsed: 0 });
   });
 });
 

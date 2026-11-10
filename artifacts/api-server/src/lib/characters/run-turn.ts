@@ -27,6 +27,7 @@ import { runChatTurn } from "../node-turns/chat-turn";
 import { CODE_INSTRUCTIONS_GENERAL, CODE_TOOLS, CODE_TOOL_NAMES, CodeToolRunner } from "../code-reader/tools";
 import { CODE_TURN_LIMITS, STOPPED_TURN_MESSAGE } from "../plan-chat/turn";
 import { drainQueued, isTurnOpen } from "../chat-turns/control";
+import { turnTotals } from "../chat-turns/totals";
 import type { ChatKindSpec } from "../chat-turns/spec";
 import { HANDOFF_TOOL, runHandoff } from "./handoff";
 import { CHARACTER_NAMES, characterInstructions } from "./instructions";
@@ -329,8 +330,15 @@ export function executeCharacterTurn(conversationId: number, assistantMessageId:
 }
 
 async function executeCharacterTurnInner(conversationId: number, assistantMessageId: number, signal: AbortSignal): Promise<void> {
-  // Turno chiuso nel DB prima di partire davvero (Ferma da un altro processo): niente modello, niente scritture
-  if (!(await isTurnOpen(CHARACTER_CHAT_SPEC, conversationId, assistantMessageId))) return;
+  // Turno chiuso nel DB prima di partire davvero (Ferma da un altro processo): niente modello. Se «Ferma» è arrivato
+  // prima che il messaggio dell'assistente fosse scritto, quel messaggio è rimasto vuoto: diventa «Risposta interrotta.»
+  if (!(await isTurnOpen(CHARACTER_CHAT_SPEC, conversationId, assistantMessageId))) {
+    await db
+      .update(characterMessagesTable)
+      .set({ content: STOPPED_TURN_MESSAGE, error: false })
+      .where(and(eq(characterMessagesTable.id, assistantMessageId), eq(characterMessagesTable.content, "")));
+    return;
+  }
   let content = GENERIC_ERROR_MESSAGE;
   let isError = true;
   let tokens = 0;
@@ -407,24 +415,23 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
 
   try {
     await db.transaction(async (tx) => {
-      // Solo se il messaggio è ancora vuoto: altrimenti il turno è stato chiuso altrove (totali e stato non si toccano)
+      // Solo se il messaggio è ancora vuoto: altrimenti il turno è stato chiuso altrove (si sommano solo i totali)
       const written = await tx
         .update(characterMessagesTable)
         .set({ content, error: isError, tokens })
         .where(and(eq(characterMessagesTable.id, assistantMessageId), eq(characterMessagesTable.content, "")))
         .returning({ id: characterMessagesTable.id });
-      if (written.length === 0) return;
-      // Costo parziale (null) se manca il prezzo di un turno con token; una conversazione senza token parte da 0
+      const totals = turnTotals(characterConversationsTable.tokensUsed, characterConversationsTable.costUsd, tokens, costUsd);
+      if (written.length === 0) {
+        // Turno chiuso altrove: chi l'ha chiuso non somma i totali, quindi i token spesi si sommano qui; stato e
+        // updated_at restano quelli della chiusura
+        if (tokens > 0) await tx.update(characterConversationsTable).set(totals).where(eq(characterConversationsTable.id, conversationId));
+        return;
+      }
       await tx
         .update(characterConversationsTable)
         .set({
-          tokensUsed: sql`${characterConversationsTable.tokensUsed} + ${tokens}`,
-          costUsd:
-            tokens === 0
-              ? sql`${characterConversationsTable.costUsd}`
-              : costUsd === null
-                ? sql`null`
-                : sql`case when ${characterConversationsTable.tokensUsed} = 0 then 0 else ${characterConversationsTable.costUsd} end + ${costUsd}::numeric`,
+          ...totals,
           turnStatus: "idle",
           updatedAt: new Date(),
         })

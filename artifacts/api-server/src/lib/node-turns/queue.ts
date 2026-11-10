@@ -182,15 +182,20 @@ export async function cancelTurn(turnId: number): Promise<void> {
 }
 
 /**
- * Chiude `cancelled` tutti i turni ancora aperti di un consumatore per un riferimento (conversazione o run): serve a
- * «Ferma» quando il turno non gira in questo processo. Restituisce quanti ne ha chiusi.
+ * Chiude `cancelled` i turni ancora aperti di un consumatore per un riferimento (conversazione) e un messaggio
+ * dell'assistente: serve a «Ferma» quando il turno non gira in questo processo. Restituisce quanti ne ha chiusi.
  */
-export async function cancelOpenTurnsFor(consumer: NodeTurnConsumer, refId: number): Promise<number> {
+export async function cancelOpenTurnsFor(consumer: NodeTurnConsumer, refId: number, messageId: number): Promise<number> {
   const closed = await db
     .update(nodeTurnsTable)
     .set({ status: "cancelled", package: null, finishedAt: new Date() })
     .where(
-      and(eq(nodeTurnsTable.consumer, consumer), eq(nodeTurnsTable.refId, refId), inArray(nodeTurnsTable.status, [...OPEN_TURN_STATUSES])),
+      and(
+        eq(nodeTurnsTable.consumer, consumer),
+        eq(nodeTurnsTable.refId, refId),
+        eq(nodeTurnsTable.messageId, messageId),
+        inArray(nodeTurnsTable.status, [...OPEN_TURN_STATUSES]),
+      ),
     )
     .returning({ id: nodeTurnsTable.id });
   notifyTurnsClosed(closed.map((r) => r.id));

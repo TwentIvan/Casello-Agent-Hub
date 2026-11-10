@@ -49,8 +49,9 @@ Un turno fermato:
   - Nel ripiego cloud vale lo stesso segnale.
 - **Esito fermato**: `PlanTurnOutcome` aggiunge `stopped?: true`; i tre `execute*Turn` scrivono allora «Risposta interrotta.» con `error: false`.
 - **Scrittura finale condizionata**: la chiusura del turno aggiorna il messaggio dell'assistente solo se `content = ''` (UPDATE condizionato); se
-  nessuna riga cambia il turno è già stato chiuso altrove (fermato da un altro processo, o dallo sweeper): totali e `idle` non si toccano due volte.
-  Il costo del turno si somma alla conversazione solo se la scrittura del messaggio è riuscita.
+  nessuna riga cambia il turno è già stato chiuso altrove (fermato da un altro processo, o dallo sweeper): `idle` e `updated_at` non si toccano due volte.
+  Token e costo del turno si sommano sempre alla conversazione (chi ha chiuso il turno altrove non li somma: nessun doppio conteggio); stato e
+  `updated_at` cambiano solo se la scrittura del messaggio è riuscita.
 
 ### 1.3 API
 

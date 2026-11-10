@@ -25,6 +25,7 @@ import { codeAvailability } from "../code-reader/source-cache";
 import { CODE_INSTRUCTIONS_GENERAL, CODE_TOOLS, CodeToolRunner, isCodeTool } from "../code-reader/tools";
 import { CODE_TURN_LIMITS, STOPPED_TURN_MESSAGE } from "../plan-chat/turn";
 import { drainQueued, isTurnOpen } from "../chat-turns/control";
+import { turnTotals } from "../chat-turns/totals";
 import type { ChatKindSpec } from "../chat-turns/spec";
 import { InstanceError, INSTANCE_MESSAGES } from "../teams/instances";
 import { buildTeamChatMessages, type HistoryMessage } from "./context";
@@ -137,8 +138,15 @@ export function executeTeamChatTurn(conversationId: number, assistantMessageId: 
 }
 
 async function executeTeamChatTurnInner(conversationId: number, assistantMessageId: number, signal: AbortSignal): Promise<void> {
-  // Turno chiuso nel DB prima di partire davvero (Ferma da un altro processo): niente modello, niente scritture
-  if (!(await isTurnOpen(TEAM_CHAT_SPEC, conversationId, assistantMessageId))) return;
+  // Turno chiuso nel DB prima di partire davvero (Ferma da un altro processo): niente modello. Se «Ferma» è arrivato
+  // prima che il messaggio dell'assistente fosse scritto, quel messaggio è rimasto vuoto: diventa «Risposta interrotta.»
+  if (!(await isTurnOpen(TEAM_CHAT_SPEC, conversationId, assistantMessageId))) {
+    await db
+      .update(teamChatMessagesTable)
+      .set({ content: STOPPED_TURN_MESSAGE, error: false })
+      .where(and(eq(teamChatMessagesTable.id, assistantMessageId), eq(teamChatMessagesTable.content, "")));
+    return;
+  }
   let content = GENERIC_ERROR_MESSAGE;
   let isError = true;
   let tokens = 0;
@@ -226,24 +234,23 @@ async function executeTeamChatTurnInner(conversationId: number, assistantMessage
     await db.transaction(async (tx) => {
       // Le schede proposte restano anche se il turno è stato fermato o chiuso altrove (come nelle altre chat)
       if (proposals.length > 0) await tx.insert(teamChatProposalsTable).values(proposals);
-      // Solo se il messaggio è ancora vuoto: altrimenti il turno è stato chiuso altrove (totali e stato non si toccano)
+      // Solo se il messaggio è ancora vuoto: altrimenti il turno è stato chiuso altrove (si sommano solo i totali)
       const written = await tx
         .update(teamChatMessagesTable)
         .set({ content, error: isError, tokens })
         .where(and(eq(teamChatMessagesTable.id, assistantMessageId), eq(teamChatMessagesTable.content, "")))
         .returning({ id: teamChatMessagesTable.id });
-      if (written.length === 0) return;
-      // Costo parziale (null) se manca il prezzo di un turno con token; una conversazione senza token parte da 0
+      const totals = turnTotals(teamChatConversationsTable.tokensUsed, teamChatConversationsTable.costUsd, tokens, costUsd);
+      if (written.length === 0) {
+        // Turno chiuso altrove: chi l'ha chiuso non somma i totali, quindi i token spesi si sommano qui; stato e
+        // updated_at restano quelli della chiusura
+        if (tokens > 0) await tx.update(teamChatConversationsTable).set(totals).where(eq(teamChatConversationsTable.id, conversationId));
+        return;
+      }
       await tx
         .update(teamChatConversationsTable)
         .set({
-          tokensUsed: sql`${teamChatConversationsTable.tokensUsed} + ${tokens}`,
-          costUsd:
-            tokens === 0
-              ? sql`${teamChatConversationsTable.costUsd}`
-              : costUsd === null
-                ? sql`null`
-                : sql`case when ${teamChatConversationsTable.tokensUsed} = 0 then 0 else ${teamChatConversationsTable.costUsd} end + ${costUsd}::numeric`,
+          ...totals,
           turnStatus: "idle",
           updatedAt: new Date(),
         })

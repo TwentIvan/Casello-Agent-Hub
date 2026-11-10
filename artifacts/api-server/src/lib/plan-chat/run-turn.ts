@@ -40,6 +40,7 @@ import { codeAvailability } from "../code-reader/source-cache";
 import { CODE_TOOLS, CodeToolRunner, isCodeTool } from "../code-reader/tools";
 import { CODE_TURN_LIMITS, STOPPED_TURN_MESSAGE } from "./turn";
 import { drainQueued, isTurnOpen } from "../chat-turns/control";
+import { turnTotals } from "../chat-turns/totals";
 import type { ChatKindSpec } from "../chat-turns/spec";
 
 export const PLAN_MESSAGE_MAX_CHARS = 8_000;
@@ -240,8 +241,15 @@ export function executePlanTurn(conversationId: number, assistantMessageId: numb
 }
 
 async function executePlanTurnInner(conversationId: number, assistantMessageId: number, signal: AbortSignal): Promise<void> {
-  // Turno chiuso nel DB prima di partire davvero (Ferma da un altro processo): niente modello, niente scritture
-  if (!(await isTurnOpen(PLAN_CHAT_SPEC, conversationId, assistantMessageId))) return;
+  // Turno chiuso nel DB prima di partire davvero (Ferma da un altro processo): niente modello. Se «Ferma» è arrivato
+  // prima che il messaggio dell'assistente fosse scritto, quel messaggio è rimasto vuoto: diventa «Risposta interrotta.»
+  if (!(await isTurnOpen(PLAN_CHAT_SPEC, conversationId, assistantMessageId))) {
+    await db
+      .update(planMessagesTable)
+      .set({ content: STOPPED_TURN_MESSAGE, error: false })
+      .where(and(eq(planMessagesTable.id, assistantMessageId), eq(planMessagesTable.content, "")));
+    return;
+  }
   let content = GENERIC_ERROR_MESSAGE;
   let isError = true;
   let tokens = 0;
@@ -359,24 +367,23 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
 
   try {
     await db.transaction(async (tx) => {
-      // Solo se il messaggio è ancora vuoto: altrimenti il turno è stato chiuso altrove (totali e stato non si toccano)
+      // Solo se il messaggio è ancora vuoto: altrimenti il turno è stato chiuso altrove (si sommano solo i totali)
       const written = await tx
         .update(planMessagesTable)
         .set({ content, error: isError, tokens })
         .where(and(eq(planMessagesTable.id, assistantMessageId), eq(planMessagesTable.content, "")))
         .returning({ id: planMessagesTable.id });
-      if (written.length === 0) return;
-      // Costo parziale (null) se manca il prezzo di un turno con token; una conversazione senza token parte da 0
+      const totals = turnTotals(planConversationsTable.tokensUsed, planConversationsTable.costUsd, tokens, costUsd);
+      if (written.length === 0) {
+        // Turno chiuso altrove: chi l'ha chiuso non somma i totali, quindi i token spesi si sommano qui; stato e
+        // updated_at restano quelli della chiusura
+        if (tokens > 0) await tx.update(planConversationsTable).set(totals).where(eq(planConversationsTable.id, conversationId));
+        return;
+      }
       await tx
         .update(planConversationsTable)
         .set({
-          tokensUsed: sql`${planConversationsTable.tokensUsed} + ${tokens}`,
-          costUsd:
-            tokens === 0
-              ? sql`${planConversationsTable.costUsd}`
-              : costUsd === null
-                ? sql`null`
-                : sql`case when ${planConversationsTable.tokensUsed} = 0 then 0 else ${planConversationsTable.costUsd} end + ${costUsd}::numeric`,
+          ...totals,
           turnStatus: "idle",
           updatedAt: new Date(),
         })

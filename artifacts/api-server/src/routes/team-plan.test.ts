@@ -1,7 +1,7 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { db, pool, aiAccountsTable, aiModelsTable, appsTable, teamTurnsTable, usersTable } from "@workspace/db";
+import { db, pool, teamCodeTasksTable, aiAccountsTable, aiModelsTable, appsTable, teamTurnsTable, usersTable } from "@workspace/db";
 import { encryptSecret } from "../lib/secrets";
 
 // Route del PLAN delle squadre sull'app completa senza login (AUTH_DISABLED=true)
@@ -102,5 +102,39 @@ describe("route del PLAN", () => {
     expect(done.json.manualActions[0].doneAt).toBeTruthy();
     expect(done.json.version).toBe(2);
     expect((await api("POST", `/team-instances/${instanceId}/plan/manual-actions/zz/done`)).status).toBe(404);
+  });
+
+  it("codeTasks: vuoto senza righe, con branch, PR e CI quando il compito ha scritto codice", async () => {
+    expect((await api("GET", `/team-instances/${instanceId}/plan`)).json.codeTasks).toEqual([]);
+    await db.insert(teamCodeTasksTable).values({
+      instanceId,
+      planTaskId: "t1",
+      repo: "acme/web",
+      branch: "casello/t1",
+      baseBranch: "main",
+      prNumber: 7,
+      prUrl: "https://github.com/acme/web/pull/7",
+      prState: "open",
+      ciState: "failure",
+      ciSummary: "test: rosso",
+      ciCheckedAt: new Date("2026-11-10T10:00:00Z"),
+    });
+    const got = await api("GET", `/team-instances/${instanceId}/plan`);
+    expect(got.json.codeTasks).toEqual([
+      {
+        planTaskId: "t1",
+        repo: "acme/web",
+        branch: "casello/t1",
+        baseBranch: "main",
+        prNumber: 7,
+        prUrl: "https://github.com/acme/web/pull/7",
+        prState: "open",
+        ciState: "failure",
+        ciSummary: "test: rosso",
+        ciCheckedAt: "2026-11-10T10:00:00.000Z",
+      },
+    ]);
+    const put = await api("PUT", `/team-instances/${instanceId}/plan`, plan());
+    expect(put.json.codeTasks).toHaveLength(1);
   });
 });

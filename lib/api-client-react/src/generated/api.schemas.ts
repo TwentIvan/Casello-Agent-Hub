@@ -3769,6 +3769,42 @@ export interface TeamPlanInput {
   manualActions: TeamManualAction[];
 }
 
+export type TeamCodeTaskPrState = typeof TeamCodeTaskPrState[keyof typeof TeamCodeTaskPrState] | null;
+
+
+export const TeamCodeTaskPrState = {
+  open: 'open',
+  merged: 'merged',
+  closed: 'closed',
+} as const;
+
+export type TeamCodeTaskCiState = typeof TeamCodeTaskCiState[keyof typeof TeamCodeTaskCiState] | null;
+
+
+export const TeamCodeTaskCiState = {
+  pending: 'pending',
+  success: 'success',
+  failure: 'failure',
+  none: 'none',
+} as const;
+
+/**
+ * Codice scritto da un compito del PLAN, con branch, PR e stato della CI
+ */
+export interface TeamCodeTask {
+  planTaskId: string;
+  /** Repository nel formato `proprietario/nome` */
+  repo: string;
+  branch: string;
+  baseBranch: string;
+  prNumber: number | null;
+  prUrl: string | null;
+  prState: TeamCodeTaskPrState;
+  ciState: TeamCodeTaskCiState;
+  ciSummary: string | null;
+  ciCheckedAt: string | null;
+}
+
 export type TeamPlanTasksItem = TeamPlanTask & {
   updatedAt: string;
 };
@@ -3783,6 +3819,8 @@ export const TeamPlanStatus = {
 } as const;
 
 export interface TeamPlan {
+  /** Branch, PR e CI dei compiti che hanno scritto codice (vuoto se nessuno) */
+  codeTasks: TeamCodeTask[];
   objective: string;
   constraints: string[];
   openPoints: string[];

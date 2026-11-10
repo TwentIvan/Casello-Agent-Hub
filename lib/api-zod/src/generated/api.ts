@@ -4258,6 +4258,18 @@ export const getTeamPlanResponseManualActionsItemTextMax = 500;
 
 
 export const GetTeamPlanResponse = zod.object({
+  "codeTasks": zod.array(zod.object({
+  "planTaskId": zod.string(),
+  "repo": zod.string().describe('Repository nel formato `proprietario\/nome`'),
+  "branch": zod.string(),
+  "baseBranch": zod.string(),
+  "prNumber": zod.number().nullable(),
+  "prUrl": zod.string().nullable(),
+  "prState": zod.enum(['open', 'merged', 'closed']).nullable(),
+  "ciState": zod.enum(['pending', 'success', 'failure', 'none']).nullable(),
+  "ciSummary": zod.string().nullable(),
+  "ciCheckedAt": zod.coerce.date().nullable()
+}).describe('Codice scritto da un compito del PLAN, con branch, PR e stato della CI')).describe('Branch, PR e CI dei compiti che hanno scritto codice (vuoto se nessuno)'),
   "objective": zod.string(),
   "constraints": zod.array(zod.string()),
   "openPoints": zod.array(zod.string()),
@@ -4363,6 +4375,18 @@ export const saveTeamPlanResponseManualActionsItemTextMax = 500;
 
 
 export const SaveTeamPlanResponse = zod.object({
+  "codeTasks": zod.array(zod.object({
+  "planTaskId": zod.string(),
+  "repo": zod.string().describe('Repository nel formato `proprietario\/nome`'),
+  "branch": zod.string(),
+  "baseBranch": zod.string(),
+  "prNumber": zod.number().nullable(),
+  "prUrl": zod.string().nullable(),
+  "prState": zod.enum(['open', 'merged', 'closed']).nullable(),
+  "ciState": zod.enum(['pending', 'success', 'failure', 'none']).nullable(),
+  "ciSummary": zod.string().nullable(),
+  "ciCheckedAt": zod.coerce.date().nullable()
+}).describe('Codice scritto da un compito del PLAN, con branch, PR e stato della CI')).describe('Branch, PR e CI dei compiti che hanno scritto codice (vuoto se nessuno)'),
   "objective": zod.string(),
   "constraints": zod.array(zod.string()),
   "openPoints": zod.array(zod.string()),
@@ -4417,6 +4441,18 @@ export const markTeamManualActionDoneResponseManualActionsItemTextMax = 500;
 
 
 export const MarkTeamManualActionDoneResponse = zod.object({
+  "codeTasks": zod.array(zod.object({
+  "planTaskId": zod.string(),
+  "repo": zod.string().describe('Repository nel formato `proprietario\/nome`'),
+  "branch": zod.string(),
+  "baseBranch": zod.string(),
+  "prNumber": zod.number().nullable(),
+  "prUrl": zod.string().nullable(),
+  "prState": zod.enum(['open', 'merged', 'closed']).nullable(),
+  "ciState": zod.enum(['pending', 'success', 'failure', 'none']).nullable(),
+  "ciSummary": zod.string().nullable(),
+  "ciCheckedAt": zod.coerce.date().nullable()
+}).describe('Codice scritto da un compito del PLAN, con branch, PR e stato della CI')).describe('Branch, PR e CI dei compiti che hanno scritto codice (vuoto se nessuno)'),
   "objective": zod.string(),
   "constraints": zod.array(zod.string()),
   "openPoints": zod.array(zod.string()),

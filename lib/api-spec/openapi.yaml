@@ -9253,10 +9253,51 @@ components:
           items:
             $ref: "#/components/schemas/TeamManualAction"
 
+    TeamCodeTask:
+      type: object
+      description: Codice scritto da un compito del PLAN, con branch, PR e stato della CI
+      required: [planTaskId, repo, branch, baseBranch, prNumber, prUrl, prState, ciState, ciSummary, ciCheckedAt]
+      properties:
+        planTaskId:
+          type: string
+        repo:
+          type: string
+          description: Repository nel formato `proprietario/nome`
+        branch:
+          type: string
+        baseBranch:
+          type: string
+        prNumber:
+          type: integer
+          nullable: true
+        prUrl:
+          type: string
+          nullable: true
+        prState:
+          type: string
+          enum: [open, merged, closed]
+          nullable: true
+        ciState:
+          type: string
+          enum: [pending, success, failure, none]
+          nullable: true
+        ciSummary:
+          type: string
+          nullable: true
+        ciCheckedAt:
+          type: string
+          format: date-time
+          nullable: true
+
     TeamPlan:
       type: object
-      required: [objective, constraints, openPoints, tasks, manualActions, version, status, approvedVersion, updatedAt]
+      required: [objective, constraints, openPoints, tasks, manualActions, codeTasks, version, status, approvedVersion, updatedAt]
       properties:
+        codeTasks:
+          type: array
+          description: Branch, PR e CI dei compiti che hanno scritto codice (vuoto se nessuno)
+          items:
+            $ref: "#/components/schemas/TeamCodeTask"
         objective:
           type: string
         constraints:

@@ -33,6 +33,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Lucius sulla squadra e memorie: nella scheda squadra Lucius discute identità e istruzioni dei ruoli e le propone come schede da
   accettare; Alfred e Lucius hanno una memoria (appunti e storico dei riassunti), visibile e modificabile in Account (vedi "Lucius
   sulla squadra e memorie").
+- Lucius legge il codice: nella chat del piano, nelle schede agente e nelle aree degli agenti e nella chat di squadra Lucius legge il codice delle App collegate a GitHub (ultimo commit del branch, in cache) con
+  `elenca_cartella`, `leggi_file`, `cerca_nel_codice` e verifica le voci prima di proporre (vedi "Lucius legge il codice"). Spec: `docs/superpowers/specs/2026-11-10-botcave-lucius-legge-il-codice-design.md`.
 - Alfred e Lucius nelle aree: un solo pannello laterale a quattro schede (Alfred con la voce, Da confermare, Bollettino, Lucius), lo stesso in console ed embed, si apre
   dal pulsante di Alfred nella caverna o da «Chiedi a Lucius» (Alfred scritto con un filo unico che sa da quale pagina scrivi, Lucius sull'argomento che la pagina dichiara:
   agente, skill, modello di squadra, aree, piano, squadra); schede da accettare, passaggio di consegne tra le due schede, modello e tetto mensile per personaggio in
@@ -250,6 +252,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (`/api/node/turns/*`); schema `lib/db/src/schema/node-turns.ts`; nodo `artifacts/casello-nodo/src/turns.ts` e `turn-runner.ts`; console
   `components/account/ai-account-dialog.tsx`, `node-account-fields.tsx`, `ai-accounts-section.tsx`, `nodes-section.tsx`, `components/runs/run-steps.tsx`. Prova di flusso
   `artifacts/api-server/test/node-turn-flow.test.ts` con `test/fake-claude.mjs`. Spec: `docs/superpowers/specs/2026-11-09-botcave-esecutore-claude-code-nodo-design.md`
+- `artifacts/api-server/src/lib/code-reader/` — lettura del codice delle App per Lucius: cache per commit (`source-cache.ts`), strumenti (`tools.ts`), messaggi e istruzioni (`messages.ts`); con
+  `lib/github/commit.ts` (SHA del branch) e `userHasInstallation` in `lib/github/installations.ts` (vedi "Lucius legge il codice"). Spec: `docs/superpowers/specs/2026-11-10-botcave-lucius-legge-il-codice-design.md`
 - `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
 - `artifacts/mockup-sandbox/` — sandbox di mockup: NON va in produzione, non toccare
 - `gateway/` — config LiteLLM storica (gateway dismesso, vedi "Modelli AI"); non è più usata dal codice
@@ -843,12 +847,12 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - Pagina `/apps/:id/plan` (`src/pages/app-plan.tsx`, `src/components/plan/`): piano dell'app e conversazioni con
   un modello; la chat è il pannello comune `CharacterChat` (`components/characters/`, adattatore `usePlanChatAdapter`) a pagina intera, i
   vecchi `chat-panel.tsx` e `conversation-list.tsx` non esistono più (vedi "Alfred e Lucius nelle aree"). Il modello propone schede `add` / `update` / `discard`; solo quelle accettate dall'utente diventano
-  voci `analysis_items` con `origin = chat` (e `conversation_id`). Niente lettura del codice.
+  voci `analysis_items` con `origin = chat` (e `conversation_id`). Lucius può leggere il codice dell'app (vedi "Lucius legge il codice").
 - Route (`routes/plan-chat.ts`): `GET /api/apps/:id/plan`, `GET|POST /api/apps/:id/plan-conversations`,
   `GET|PATCH|DELETE /api/plan-conversations/:id`, `POST /api/plan-conversations/:id/messages`,
   `POST /api/plan-proposals/:id/decision`. Codice in `lib/plan-chat/` (`context.ts`, `tools.ts`, `turn.ts`,
   `decide.ts`, `run-turn.ts`).
-- Limiti per turno: 6 giri, 40 000 token, 120 s di tempo attivo; messaggio max 8 000 caratteri; contesto
+- Limiti per turno: 6 giri, 40 000 token, 120 s di tempo attivo (con il codice disponibile 12 giri, 150 000 token, 240 s: `CODE_TURN_LIMITS`); messaggio max 8 000 caratteri; contesto
   ~30 000 token (la cronologia si riduce); 10 messaggi/min per utente. `PlanConversationCreate.aiModelId` è facoltativo: senza modello si
   usa quello di Lucius (`characterModelFor`); il tetto di Lucius vale anche qui (409 nella route, messaggio d'errore dell'assistente nel turno).
 - Nel contesto del modello non entrano segreti né indirizzi delle app. Il turno gira in background: la UI fa
@@ -858,6 +862,24 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   da chat approvate delle analisi precedenti.
 - Migrazione: `docs/migrations/2026-10-chat-del-piano.sql` (da applicare in produzione PRIMA del merge e da
   segnalare nella PR). Dipendenze frontend: `react-markdown`, `remark-gfm`.
+
+## Lucius legge il codice
+
+- Spec: `docs/superpowers/specs/2026-11-10-botcave-lucius-legge-il-codice-design.md` (con «Differenze dal codice» in fondo). Dove il codice differisce dalla spec vale il codice, descritto qui. Lucius legge il
+  codice delle App collegate a GitHub (`lib/code-reader/`) per verificare le voci del piano e le proposte prima di farle; nessuna migrazione, nessuna variabile nuova.
+- **Cache per commit** (`source-cache.ts`): al più 3 repository in memoria, sfrattati dopo 15 minuti di inattività (`SourceTree.dispose` ferma anche la ricerca regex in corso: dopo lo sfratto
+  `cerca_nel_codice` non parte più). Lo SHA del branch si legge con `lib/github/commit.ts` (`accept: application/vnd.github.sha`): stesso SHA → si riusa l'albero, SHA nuovo → nuovo download, richieste
+  concorrenti → un solo download. Se lo SHA non è leggibile ma il repository è in memoria lo si riusa con la dicitura «commit non verificato»; 401/403 sullo SHA → «accesso al repository revocato».
+  Lo zipball si scarica al branch (lo SHA è quello letto prima).
+- **Accesso**: serve un'App con codice da GitHub tramite installazione (`source_installation_id`) o token manuale; l'installazione deve essere dell'utente (`userHasInstallation`, controllata a ogni
+  chiamata anche con il repository in memoria); app con zip o senza sorgenti → «codice non disponibile». Token d'installazione ristretto a `contents: read`, solo in memoria.
+- **Strumenti** (`tools.ts`; parametro `app` = slug, obbligatorio dove le App sono più d'una): `elenca_cartella`, `leggi_file` (al più 400 righe e 16 000 caratteri per lettura), `cerca_nel_codice` (regex,
+  worker con timeout); uscita di ogni strumento ≤ 20 000 caratteri, intestazione con lo sha7 e codice dichiarato dato non attendibile. Errori fissi in `CODE_MESSAGES` (`messages.ts`), mai il testo di GitHub; nella
+  chat dei personaggi un errore degli strumenti del codice è un risultato `{ok:false}`.
+- **Dove si offrono**: chat del piano (App del piano), argomento `agent` (App dell'agente), `area_agents` (tutte le App dell'utente, slug nell'elenco), chat di squadra (App di riferimento); solo con il
+  codice disponibile. Limiti dei turni con il codice: 12 giri, 150 000 token, 240 s (`CODE_TURN_LIMITS`, parametro `limits` di `runChatTurn`); sul nodo (`/mcp/turn`) `maxTurns` 13.
+- **Istruzioni**: `CODE_INSTRUCTIONS` nel piano (verificare, citare file e righe, `discard`/`update` con le evidenze); `CODE_INSTRUCTIONS_GENERAL` negli altri contesti, aggiunta da `extraInstructions` nel turno
+  (non in `lib/characters/instructions.ts`).
 
 ## Autenticazione
 

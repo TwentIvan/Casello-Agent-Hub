@@ -119,3 +119,13 @@ variabile nuova, nessuna modifica a OpenAPI, console o nodo.
 - Turno: chat del piano con un modello finto che chiama `cerca_nel_codice` e poi `propose` (scheda salvata); strumenti offerti solo
   con il codice disponibile; `CODE_TURN_LIMITS` passati a `runPlanTurn` e `maxTurns` 13 al nodo; prompt con la frase giusta;
   argomento `agent` con gli strumenti.
+
+## 7. Differenze dal codice
+
+- Fuori dal piano le istruzioni sul codice sono `CODE_INSTRUCTIONS_GENERAL` (non la stessa frase della chat del piano, che usa `CODE_INSTRUCTIONS`).
+- La frase la aggiunge `extraInstructions` in `run-turn`, non `lib/characters/instructions.ts`.
+- Un 403 sullo SHA si tratta come un 401: «accesso al repository revocato».
+- `userHasInstallation` è stata spostata da `routes/apps.ts` a `lib/github/installations.ts`.
+- Nella chat dei personaggi gli errori degli strumenti del codice sono risultati `{ok:false}`.
+- L'elenco di `area_agents` riporta lo slug delle App.
+- Lo zipball si scarica al branch: lo SHA è quello letto prima.

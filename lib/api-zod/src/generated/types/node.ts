@@ -5,6 +5,9 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { NodeClaudeStatus } from './nodeClaudeStatus';
+import type { NodeKind } from './nodeKind';
+import type { NodeSettings } from './nodeSettings';
 import type { NodeStatus } from './nodeStatus';
 
 export interface Node {
@@ -25,4 +28,32 @@ export interface Node {
   online: boolean;
   /** Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi) */
   turnReady: boolean;
+  /**
+     * Installato con l'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato
+     * @nullable
+     */
+  kind: NodeKind;
+  /** @nullable */
+  pairedAt: Date | null;
+  /** Stato di Claude Code sul Mac, dall'ultimo heartbeat */
+  claude: NodeClaudeStatus | null;
+  /** @nullable */
+  claudeCheckedAt: Date | null;
+  /** Impostazioni scelte in console; null = tutte di default */
+  settings: NodeSettings | null;
+  /**
+     * Versione proposta dal manifest (solo nodi installati con l'app)
+     * @nullable
+     */
+  updateAvailable: string | null;
+  /** @nullable */
+  updateFailedVersion: string | null;
+  /** Versione sotto la minima del protocollo (il server non gli consegna lavoro) */
+  belowMinVersion: boolean;
+  /** @nullable */
+  diagnosticsAt: Date | null;
+  /** @nullable */
+  diagnosticsRequestedAt: Date | null;
+  /** @nullable */
+  uninstallRequestedAt: Date | null;
 }

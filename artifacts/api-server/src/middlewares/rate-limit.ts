@@ -141,6 +141,12 @@ export function consumeCharacterMessage(userId: number, character: Character): b
 // separati), ping 4 al minuto per compito dello stesso nodo.
 const byNode = (req: Request) => `node:${req.node?.id ?? "?"}`;
 export const nodeHeartbeatRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byNode });
+// Richiesta di diagnosi dalla console: 6 all'ora per nodo (e utente)
+export const nodeDiagnosticsRequestRateLimit = rateLimit({
+  limit: 6,
+  windowMs: 3600_000,
+  key: (req) => `node-diagnostics:${req.userId ?? "?"}:${String(req.params["id"] ?? "?")}`,
+});
 export const nodeClaimRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byNode });
 export const nodePingRateLimit = rateLimit({
   limit: 4,

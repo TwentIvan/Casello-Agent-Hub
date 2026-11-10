@@ -5,6 +5,8 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { NodeCapabilitiesKind } from './nodeCapabilitiesKind';
+import type { NodeClaudeStatus } from './nodeClaudeStatus';
 
 export interface NodeCapabilities {
   /**
@@ -42,4 +44,12 @@ export interface NodeCapabilities {
      * @items.maxLength 300
      */
   folders?: string[];
+  /** Come è installato il nodo; solo `app` riceve aggiornamenti automatici */
+  kind?: NodeCapabilitiesKind;
+  claude?: NodeClaudeStatus;
+  /**
+     * Versione di cui l'aggiornamento non è riuscito (ripristinata la precedente)
+     * @maxLength 100
+     */
+  updateFailed?: string;
 }

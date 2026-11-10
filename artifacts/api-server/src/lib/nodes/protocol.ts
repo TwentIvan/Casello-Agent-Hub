@@ -21,6 +21,7 @@ import {
   type TeamTaskRow,
 } from "@workspace/db";
 import { logger } from "../logger";
+import { isBelowMinVersion, loadNodeManifest, updateFor, type NodeUpdate } from "./manifest";
 import { ATTACHMENT_MESSAGES, taskAttachmentViews, validateNodeWorkspace } from "../teams/attachments";
 import { InstanceRoleSchema, type InstanceRole } from "../teams/manifest";
 import { getPlan, patchPlan } from "../teams/plan";
@@ -56,6 +57,33 @@ export interface NodeCapabilities {
   maxConcurrent: number;
   /** Sottocartelle della radice (percorsi relativi); assente = elenco salvato invariato (nodo di versione precedente). */
   folders?: string[];
+  /** Come è installato il nodo; assente = invariato (nodo di versione precedente). */
+  kind?: "app" | "cli";
+  /** Stato di Claude Code sul Mac (assente = invariato). */
+  claude?: Record<string, unknown>;
+  /** Versione di cui l'aggiornamento non è riuscito. */
+  updateFailed?: string;
+}
+
+export interface HeartbeatResult {
+  pending: number;
+  update?: NodeUpdate;
+  settings?: { maxConcurrent: number | null; maxConcurrentTurns: number | null; taskTimeoutMinutes: number | null };
+  diagnosticsRequested?: boolean;
+  uninstallRequested?: boolean;
+}
+
+const CLAUDE_STRING_KEYS = ["version", "authMethod", "subscriptionType", "loginExpiresAt"] as const;
+
+/** Solo i campi noti dello stato di Claude, ognuno col suo tipo e al più 100 caratteri: mai email né id dell'organizzazione. */
+export function cleanClaudeStatus(input: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { found: input["found"] === true };
+  if (typeof input["loggedIn"] === "boolean") out["loggedIn"] = input["loggedIn"];
+  for (const key of CLAUDE_STRING_KEYS) {
+    const value = input[key];
+    if (typeof value === "string" && value.length > 0) out[key] = value.slice(0, 100);
+  }
+  return out;
 }
 
 export interface NodeReport {
@@ -189,7 +217,7 @@ export function cleanFolders(folders: string[]): string[] {
   return [...new Set(folders.filter((f) => validateNodeWorkspace(f) === null))].sort((a, b) => a.localeCompare(b));
 }
 
-export async function heartbeat(nodeId: number, caps: NodeCapabilities): Promise<{ pending: number }> {
+export async function heartbeat(nodeId: number, caps: NodeCapabilities): Promise<HeartbeatResult> {
   const now = new Date();
   const [node] = await db
     .update(nodesTable)
@@ -200,13 +228,25 @@ export async function heartbeat(nodeId: number, caps: NodeCapabilities): Promise
       workspaceRoot: caps.workspaceRoot,
       maxConcurrent: caps.maxConcurrent,
       ...(caps.folders ? { workspaceFolders: cleanFolders(caps.folders), foldersUpdatedAt: now } : {}),
+      ...(caps.kind ? { kind: caps.kind } : {}),
+      ...(caps.claude ? { claudeStatus: cleanClaudeStatus(caps.claude), claudeCheckedAt: now } : {}),
+      ...(caps.updateFailed ? { updateFailedVersion: caps.updateFailed.slice(0, 100) } : {}),
       lastSeenAt: now,
       updatedAt: now,
     })
     .where(and(eq(nodesTable.id, nodeId), eq(nodesTable.status, "active")))
     .returning();
   if (!node) throw new NodeError(403, NODE_PROTOCOL_MESSAGES.disabled);
-  return { pending: (await eligibleTasks(node)).eligible.length };
+  const result: HeartbeatResult = { pending: (await eligibleTasks(node)).eligible.length };
+  const update = updateFor(node.version, node.kind, loadNodeManifest(), node.updateFailedVersion);
+  if (update) result.update = update;
+  if (node.settings) {
+    const pick = (key: string): number | null => (typeof node.settings![key] === "number" ? (node.settings![key] as number) : null);
+    result.settings = { maxConcurrent: pick("maxConcurrent"), maxConcurrentTurns: pick("maxConcurrentTurns"), taskTimeoutMinutes: pick("taskTimeoutMinutes") };
+  }
+  if (node.diagnosticsRequestedAt) result.diagnosticsRequested = true;
+  if (node.uninstallRequestedAt) result.uninstallRequested = true;
+  return result;
 }
 
 // ─── Claim ──────────────────────────────────────────────────────────────────
@@ -330,6 +370,8 @@ export async function blockCappedTask(task: TeamTaskRow): Promise<boolean> {
 /** Prende il compito più vecchio che il nodo può eseguire e ne restituisce il pacchetto; null se non c'è nulla. */
 export async function claimTask(nodeId: number): Promise<TaskPackage | null> {
   const node = await activeNode(nodeId);
+  // Versione sotto la minima del protocollo: niente lavoro finché il nodo non si aggiorna
+  if (isBelowMinVersion(node.version, loadNodeManifest())) return null;
   const { eligible, capped } = await eligibleTasks(node);
   for (const candidate of capped) await blockCappedTask(candidate.task);
   for (const candidate of eligible) {

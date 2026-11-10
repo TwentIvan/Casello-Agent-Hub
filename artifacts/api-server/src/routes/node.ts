@@ -11,6 +11,7 @@ import {
   NodeReportBody,
   NodeReportParams,
   NodeTurnClaimResponse,
+  NodeUploadDiagnosticsBody,
   NodeTurnPingBody,
   NodeTurnPingParams,
   NodeTurnPingResponse,
@@ -19,6 +20,7 @@ import {
 } from "@workspace/api-zod";
 import { rfc5987 } from "../lib/teams/attachments";
 import { currentNode } from "../lib/nodes/auth";
+import { markNodeUninstalled, saveNodeDiagnostics } from "../lib/nodes/node-admin";
 import { NodeError, claimTask, heartbeat, pingTask, reportTask, taskAttachment } from "../lib/nodes/protocol";
 import { claimTurn, pingTurn, reportTurn, turnPollSettings } from "../lib/node-turns/protocol";
 import { parseRequest } from "../middlewares/error-handler";
@@ -68,6 +70,19 @@ export function createNodeRouter(): IRouter {
     await guarded(res, async () => {
       res.json(NodeHeartbeatResponse.parse(await heartbeat(currentNode(req).id, caps)));
     });
+  });
+
+  // Diagnosi richiesta dalla console: il corpo sta nel limite di 256 KB del parser dei nodi (oltre: 413)
+  router.post("/diagnostics", async (req, res) => {
+    const { content } = parseRequest(NodeUploadDiagnosticsBody, req.body);
+    await saveNodeDiagnostics(currentNode(req).id, content);
+    res.status(204).end();
+  });
+
+  // Il nodo si è disinstallato dal Mac: si disattiva come con «Disattiva»
+  router.post("/uninstalled", async (req, res) => {
+    await markNodeUninstalled(currentNode(req).id);
+    res.status(204).end();
   });
 
   router.post("/claim", nodeClaimRateLimit, async (req, res) => {

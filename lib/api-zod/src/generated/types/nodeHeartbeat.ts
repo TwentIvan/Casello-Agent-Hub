@@ -5,8 +5,14 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { NodeSettings } from './nodeSettings';
+import type { NodeUpdate } from './nodeUpdate';
 
 export interface NodeHeartbeat {
   /** Compiti in attesa che il nodo potrebbe prendere */
   pending: number;
+  update?: NodeUpdate;
+  settings?: NodeSettings;
+  diagnosticsRequested?: boolean;
+  uninstallRequested?: boolean;
 }

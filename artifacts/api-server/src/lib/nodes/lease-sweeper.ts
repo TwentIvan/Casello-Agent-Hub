@@ -12,6 +12,7 @@ import { InstanceRoleSchema } from "../teams/manifest";
 import { errName, finishTaskExecution } from "../teams/task-runner";
 import { NODE_ONLINE_WINDOW_MS } from "./nodes";
 import { teamCapBlock } from "../teams/team-budget";
+import { purgeNodeDiagnostics } from "./node-admin";
 import { purgeNodePairings } from "./pairing";
 import { blockCappedTask, hasSkills, roleNodeSkills } from "./protocol";
 
@@ -163,6 +164,11 @@ export async function sweepNodeTasks(now: Date = new Date(), upSince: Date = PRO
       await purgeNodePairings(now);
     } catch (err) {
       logger.error({ errName: errName(err) }, "Pulizia delle richieste di abbinamento non riuscita");
+    }
+    try {
+      await purgeNodeDiagnostics(now);
+    } catch (err) {
+      logger.error({ errName: errName(err) }, "Pulizia delle diagnosi dei nodi non riuscita");
     }
   }
   if (now.getTime() - upSince.getTime() < NODE_ONLINE_WINDOW_MS) return;

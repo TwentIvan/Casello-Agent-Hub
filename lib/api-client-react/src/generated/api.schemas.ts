@@ -973,6 +973,27 @@ export interface TriggerTestResult {
   errors: string[];
 }
 
+export type DashboardStatsRecentlyPairedNodesItem = {
+  id: number;
+  name: string;
+  pairedAt: string;
+};
+
+export type DashboardStatsNodeClaudeWarningsItemReason = typeof DashboardStatsNodeClaudeWarningsItemReason[keyof typeof DashboardStatsNodeClaudeWarningsItemReason];
+
+
+export const DashboardStatsNodeClaudeWarningsItemReason = {
+  not_installed: 'not_installed',
+  not_logged_in: 'not_logged_in',
+  login_expiring: 'login_expiring',
+} as const;
+
+export type DashboardStatsNodeClaudeWarningsItem = {
+  nodeId: number;
+  nodeName: string;
+  reason: DashboardStatsNodeClaudeWarningsItemReason;
+};
+
 export interface DashboardStats {
   totalApps: number;
   totalAgents: number;
@@ -985,6 +1006,10 @@ export interface DashboardStats {
   pendingActions: number;
   /** Inneschi fermi in stato error (servono «Riprendi») */
   triggersInError: number;
+  /** Nodi dell'utente collegati nelle ultime 24 ore (attivi) */
+  recentlyPairedNodes: DashboardStatsRecentlyPairedNodesItem[];
+  /** Nodi con un account «Claude Code (nodo)» dell'utente il cui Claude non è pronto */
+  nodeClaudeWarnings: DashboardStatsNodeClaudeWarningsItem[];
   /** @nullable */
   avgDurationMs?: number | null;
 }
@@ -2234,6 +2259,52 @@ export const NodeStatus = {
   disabled: 'disabled',
 } as const;
 
+/**
+ * Installato con l'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato
+ * @nullable
+ */
+export type NodeKind = typeof NodeKind[keyof typeof NodeKind] | null;
+
+
+export const NodeKind = {
+  app: 'app',
+  cli: 'cli',
+} as const;
+
+export interface NodeClaudeStatus {
+  found: boolean;
+  /** @maxLength 100 */
+  version?: string;
+  loggedIn?: boolean;
+  /** @maxLength 100 */
+  authMethod?: string;
+  /** @maxLength 100 */
+  subscriptionType?: string;
+  /** @maxLength 100 */
+  loginExpiresAt?: string;
+}
+
+export interface NodeSettings {
+  /**
+     * @minimum 1
+     * @maximum 3
+     * @nullable
+     */
+  maxConcurrent: number | null;
+  /**
+     * @minimum 1
+     * @maximum 4
+     * @nullable
+     */
+  maxConcurrentTurns: number | null;
+  /**
+     * @minimum 5
+     * @maximum 240
+     * @nullable
+     */
+  taskTimeoutMinutes: number | null;
+}
+
 export interface Node {
   id: number;
   name: string;
@@ -2252,6 +2323,56 @@ export interface Node {
   online: boolean;
   /** Pronto per i turni delegati (attivo e ha chiesto un turno negli ultimi 60 secondi) */
   turnReady: boolean;
+  /**
+     * Installato con l'app per Mac (`app`) o con la CLI (`cli`); null se non dichiarato
+     * @nullable
+     */
+  kind: NodeKind;
+  /** @nullable */
+  pairedAt: string | null;
+  /** Stato di Claude Code sul Mac, dall'ultimo heartbeat */
+  claude: NodeClaudeStatus | null;
+  /** @nullable */
+  claudeCheckedAt: string | null;
+  /** Impostazioni scelte in console; null = tutte di default */
+  settings: NodeSettings | null;
+  /**
+     * Versione proposta dal manifest (solo nodi installati con l'app)
+     * @nullable
+     */
+  updateAvailable: string | null;
+  /** @nullable */
+  updateFailedVersion: string | null;
+  /** Versione sotto la minima del protocollo (il server non gli consegna lavoro) */
+  belowMinVersion: boolean;
+  /** @nullable */
+  diagnosticsAt: string | null;
+  /** @nullable */
+  diagnosticsRequestedAt: string | null;
+  /** @nullable */
+  uninstallRequestedAt: string | null;
+}
+
+export interface NodeDownload {
+  available: boolean;
+  /** @nullable */
+  version: string | null;
+  /** @nullable */
+  url: string | null;
+  /** @nullable */
+  size: number | null;
+}
+
+export interface NodeDiagnosticsUpload {
+  /** @minLength 1 */
+  content: string;
+}
+
+export interface NodeUpdate {
+  version: string;
+  sha256: string;
+  size: number;
+  required: boolean;
 }
 
 export interface NodeCreate {
@@ -2355,7 +2476,22 @@ export interface NodePairingDecision {
 export interface NodeHeartbeat {
   /** Compiti in attesa che il nodo potrebbe prendere */
   pending: number;
+  update?: NodeUpdate;
+  settings?: NodeSettings;
+  diagnosticsRequested?: boolean;
+  uninstallRequested?: boolean;
 }
+
+/**
+ * Come è installato il nodo; solo `app` riceve aggiornamenti automatici
+ */
+export type NodeCapabilitiesKind = typeof NodeCapabilitiesKind[keyof typeof NodeCapabilitiesKind];
+
+
+export const NodeCapabilitiesKind = {
+  app: 'app',
+  cli: 'cli',
+} as const;
 
 export interface NodeCapabilities {
   /**
@@ -2393,6 +2529,14 @@ export interface NodeCapabilities {
      * @items.maxLength 300
      */
   folders?: string[];
+  /** Come è installato il nodo; solo `app` riceve aggiornamenti automatici */
+  kind?: NodeCapabilitiesKind;
+  claude?: NodeClaudeStatus;
+  /**
+     * Versione di cui l'aggiornamento non è riuscito (ripristinata la precedente)
+     * @maxLength 100
+     */
+  updateFailed?: string;
 }
 
 export interface NodeFolders {

@@ -380,7 +380,7 @@ function excludedHint(n: number): string {
   return `[${n} file esclusi per default (lockfile, generati, test, minificati): usa includeIgnored=true per includerli]`;
 }
 
-function listDir(
+export function listDir(
   tree: SourceTree,
   path: string,
   depth: number | undefined,
@@ -429,7 +429,7 @@ function readBlock(
   return { text: out.join("\n"), count: lines.length };
 }
 
-function readFile(
+export function readFile(
   tree: SourceTree,
   path: string,
   fromLine: number | undefined,
@@ -516,7 +516,7 @@ function withContext(
   return out;
 }
 
-async function search(
+export async function search(
   tree: SourceTree,
   pattern: string,
   glob: string | undefined,

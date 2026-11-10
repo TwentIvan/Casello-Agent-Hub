@@ -1,16 +1,71 @@
 # casello-nodo
 
-Servizio per Mac che esegue con Claude Code i compiti «nodo» delle squadre di Botcave: prende un compito in coda,
-prepara lo spazio di lavoro, lancia `claude` e riferisce l'esito a Botcave.
+Servizio per Mac che esegue con Claude Code i compiti «nodo» delle squadre di Botcave e i turni delegati a un account
+«Claude Code (nodo)»: prende il lavoro in coda, lancia `claude` e riferisce l'esito a Botcave.
 
-## Requisiti
+Si installa in due modi: con l'app **Botcave Nodo** (consigliato, nessun terminale) oppure con la CLI da terminale.
+È lo stesso programma: l'app è un'altra entrata.
 
-- macOS con Node 24.
-- Claude Code installato (`claude` nel PATH) e con il login già fatto.
-- Un nodo creato nella console di Botcave (Account → Nodi): al momento della creazione viene mostrato una sola volta
-  il token del nodo (`cas_…`).
+## Installazione con l'app (consigliata)
 
-## Comandi
+1. In Botcave apri Account → Nodi e premi «Scarica per Mac» (carta «Botcave Nodo per Mac»).
+2. Apri lo zip scaricato e trascina «Botcave Nodo» in Applicazioni.
+3. Apri l'app. La prima versione non è firmata da Apple: se macOS la blocca, vai in Impostazioni di Sistema → Privacy e
+   sicurezza e premi «Apri comunque», poi riaprila.
+4. L'app apre il browser su «Collega questo Mac» (`/nodes/pair`) e mostra una notifica con il codice: controlla che sia lo
+   stesso, scegli «Nuovo nodo» (o «Sostituisci» un nodo esistente) e premi «Collega». Il token non lo vedi mai: l'app lo
+   ritira da sola. Conferma solo se hai appena aperto Botcave Nodo su quel Mac.
+5. L'app chiede la cartella in cui il nodo può lavorare (proposta `~/Botcave`; annullare usa quella), scrive la config,
+   copia il programma in `~/.casello-nodo/bin/casello-nodo` e carica il LaunchAgent. Il servizio usa la copia: l'app in
+   Applicazioni serve solo per il menu.
+
+Se sul Mac c'è già un nodo installato con la CLI, l'app adotta il suo collegamento (indirizzo, token e radice) senza un
+nuovo abbinamento.
+
+### Menu dell'app
+
+Riaprendo l'app a nodo collegato compare un menu:
+
+- «Apri Botcave»: apre Account nella console.
+- «Installa Claude Code» (solo se `claude` manca): dopo una conferma esegue l'installatore ufficiale
+  (`curl -fsSL https://claude.ai/install.sh | bash`, indirizzo fisso nel programma), poi propone «Accedi a Claude».
+- «Accedi a Claude»: lancia `claude auth login` (il login si apre nel browser) e controlla l'esito fino a 10 minuti.
+- «Cambia cartella di lavoro»: sceglie una nuova radice e riavvia il servizio.
+- «Apri i log»: apre `~/.casello-nodo/logs/`.
+- «Ricollega»: rifà l'abbinamento (in console proponi «Sostituisci» sul nodo attuale). Serve se il nodo non è più
+  collegato (notifica «Botcave Nodo non è più collegato: aprilo e scegli Ricollega»); un nodo disattivato non si
+  riattiva, quindi Ricollega crea un nodo nuovo.
+- «Disinstalla»: vedi sotto.
+
+### Dalla console (Account → Nodi)
+
+Per ogni nodo: versione e aggiornamenti, stato di Claude Code (installato, accesso fatto, piano, scadenza del login, con
+avviso entro 3 giorni), «Impostazioni» (compiti e turni contemporanei, timeout dei compiti: valgono senza riavvio e
+prevalgono sulla config locale), «Richiedi diagnosi» / «Scarica diagnosi» (versioni, esito di Claude, config senza token,
+stato e ultime 500 righe del log, conservata 7 giorni) e «Disinstalla dal Mac».
+
+### Aggiornamenti automatici
+
+Solo per i nodi installati con l'app. Quando Botcave ha una versione più nuova, il nodo scarica
+`<indirizzo di Botcave>/downloads/nodo/casello-nodo-<versione>` (l'indirizzo è quello della config, mai uno ricevuto),
+ne verifica dimensione e sha256 continuando a lavorare, poi smette di prendere lavoro, aspetta quello in corso (al più 30
+minuti; un aggiornamento obbligatorio poi lo interrompe, uno facoltativo si rinvia), sostituisce
+`~/.casello-nodo/bin/casello-nodo` tenendo la versione precedente come `casello-nodo.prev` ed esce: launchd lo riavvia.
+Se la versione nuova non parte (tre avvii entro 2 minuti senza un heartbeat riuscito), torna da sola alla precedente e la
+console segnala «aggiornamento non riuscito». Sotto la versione minima Botcave non consegna lavoro finché il nodo non si
+aggiorna. I nodi installati con la CLI non si aggiornano da soli: la console suggerisce di installare l'app.
+
+### Disinstallazione
+
+Dal menu dell'app («Disinstalla», con conferma) o dalla console («Disinstalla dal Mac»): il nodo chiude il lavoro in corso
+come uno stop, avvisa Botcave (il nodo risulta disattivato), toglie programma (anche `.prev`), config con il token e
+LaunchAgent. Log e cartelle di lavoro restano. Poi puoi spostare l'app nel cestino. Se sposti l'app nel cestino senza
+disinstallare, il servizio continua (usa la sua copia): disinstalla dalla console.
+
+## Installazione da terminale (alternativa)
+
+Requisiti: macOS con Node 24; Claude Code installato (`claude` nel PATH) e con il login già fatto; un nodo creato nella
+console (Account → Nodi): al momento della creazione viene mostrato una sola volta il token del nodo (`cas_…`).
 
 Costruisci l'eseguibile (`pnpm --filter @workspace/casello-nodo run build`, produce `dist/index.mjs`), poi:
 
@@ -26,20 +81,26 @@ Costruisci l'eseguibile (`pnpm --filter @workspace/casello-nodo run build`, prod
 - `casello-nodo status` mostra se launchd ha il servizio, l'ultimo heartbeat riuscito, i compiti e i turni in corso.
 - `casello-nodo run` avvia il nodo in primo piano (è quello che lancia launchd). `Ctrl+C` o SIGTERM lo fermano:
   i compiti in corso risultano falliti («esecuzione interrotta: nodo fermato»); un secondo segnale forza l'uscita.
+- `casello-nodo --version` stampa la versione.
 
-## App per Mac (Botcave Nodo)
+Con la CLI il token si rigenera da console («Rigenera token») e si reinstalla; nessun aggiornamento automatico.
+
+## Build dell'app
 
 `bash artifacts/casello-nodo/scripts/build-app.sh` (solo macOS, Node 24 nel PATH o in `NODE_BIN`, pnpm e rete verso
 nodejs.org e npm) costruisce il bundle CommonJS (`pnpm run build:sea`, `dist/sea.cjs`), lo inietta come «single executable
 application» negli eseguibili ufficiali di Node per arm64 e x64 (verificati con `SHASUMS256.txt`), li unisce con `lipo` in
 un binario universale con firma ad-hoc, prova `--version` nelle due architetture e scrive in `docker/nodo-downloads/`
 `Botcave-Nodo-<versione>.zip` (l'app), `casello-nodo-<versione>` (il binario per gli aggiornamenti) e `nodo-manifest.json`
-(versione minima da `min-version.txt`). In CI lo fa il job `build-nodo`; i file entrano nelle immagini web
-(`/downloads/nodo/`) e API (solo il manifest). `casello-nodo --version` stampa la versione.
+(versione da `package.json`, versione minima da `min-version.txt`). In CI lo fa il job `build-nodo`; i file entrano nelle
+immagini web (`/downloads/nodo/`) e API (solo il manifest). In sviluppo `BOTCAVE_NODO_URL` cambia l'indirizzo di Botcave
+dell'app (https, o http solo verso localhost).
 
 ## Dove stanno le cose
 
-- Programma: `~/.casello-nodo/bin/casello-nodo.mjs` (copia scritta da `install`).
+- Programma: `~/.casello-nodo/bin/casello-nodo` (app; `casello-nodo.prev` dopo un aggiornamento) oppure
+  `~/.casello-nodo/bin/casello-nodo.mjs` (CLI, copia scritta da `install`).
+- Aggiornamento in corso o annullato: `~/.casello-nodo/update.json`.
 - Config: `~/.casello-nodo/config.json` (permessi 600; il nodo non parte se sono diversi).
 - Log: `~/.casello-nodo/logs/` (`casello-nodo.log` con rotazione, `launchd.out.log`, `launchd.err.log`).
   Non contengono token, allegati né istruzioni dei compiti.
@@ -48,7 +109,7 @@ un binario universale con firma ad-hoc, prova `--version` nelle due architetture
 
 ## Spazio di lavoro della squadra
 
-Ogni squadra indica una cartella relativa (`node_workspace`) dentro la radice scelta con `--workspace-root`. Il nodo
+Ogni squadra indica una cartella relativa (`node_workspace`) dentro la radice (scelta all'abbinamento dell'app o con `--workspace-root`). Il nodo
 non esce mai dalla radice (nemmeno con link simbolici). Per ogni compito scrive lì `casello-compito.md` (istruzioni,
 piano, skill) e gli allegati in `casello-allegati/`, lancia `claude` con quella cartella come directory di lavoro e
 legge l'esito da `casello-esito.json`. A fine compito i file di servizio vengono rimossi.
@@ -97,3 +158,8 @@ chiamato strumenti nel turno (altrimenti il turno fallisce: rifarlo duplicherebb
   chiedere conferma. Scegli una radice che contenga solo ciò che l'agente può toccare.
 - Il token del nodo sta in `~/.casello-nodo/config.json` (600). L'agente gira con lo stesso utente e potrebbe
   leggerlo. Se pensi sia compromesso, revoca il nodo dalla console (Account → Nodi) e creane uno nuovo.
+- L'app non è ancora firmata né notarizzata da Apple: la fiducia sta nell'HTTPS di Botcave (download dalla console,
+  aggiornamenti dall'indirizzo della config con sha256 e dimensione verificati). Firma e notarizzazione arrivano prima
+  degli utenti esterni.
+- La console può chiedere al nodo solo un elenco chiuso di azioni (impostazioni, diagnosi, disinstallazione): non può
+  fargli eseguire comandi.

@@ -218,6 +218,25 @@ describe("abbinamento dei nodi", () => {
     expect((await api("POST", "/node-pairing/start", { body: { deviceName: "Mac", version: "0.3.0" } })).status).toBe(429);
   });
 
+  it("approvazione a ridosso della scadenza: il poll dopo i 10 minuti dà comunque il token", async () => {
+    const created = new Date("2026-01-01T10:00:00Z");
+    const p = await pairing.startPairing({ deviceName: "Mac", version: "0.3.0", ip: "203.0.113.5" }, created);
+    await pairing.approvePairing(await devUserId(), p.userCode, { name: "Ultimo minuto" }, new Date(created.getTime() + 9 * 60_000 + 59_000));
+    const out = await pairing.pollPairing(p.pairingId, p.pollSecret, new Date(created.getTime() + 11 * 60_000));
+    expect(out).toMatchObject({ status: "approved", nodeName: "Ultimo minuto" });
+    // oltre la proroga di 2 minuti la richiesta non vale più
+    const q = await pairing.startPairing({ deviceName: "Mac", version: "0.3.0" }, created);
+    await pairing.approvePairing(await devUserId(), q.userCode, { name: "Tardi" }, new Date(created.getTime() + 9 * 60_000));
+    await expect(pairing.pollPairing(q.pairingId, q.pollSecret, new Date(created.getTime() + 12 * 60_000))).rejects.toMatchObject({ status: 410 });
+  });
+
+  it("redactPairingPath nasconde il codice nei log e tiene l'azione", () => {
+    expect(pairing.redactPairingPath("/api/account/node-pairings/ABCD-EFGH")).toBe("/api/account/node-pairings/***");
+    expect(pairing.redactPairingPath("/api/account/node-pairings/abcdefgh/approve")).toBe("/api/account/node-pairings/***/approve");
+    expect(pairing.redactPairingPath("/api/account/node-pairings/ABCD-EFGH/deny")).toBe("/api/account/node-pairings/***/deny");
+    expect(pairing.redactPairingPath("/api/account/nodes/3")).toBe("/api/account/nodes/3");
+  });
+
   it("la pulizia cancella le richieste create da oltre 1 ora, in qualunque stato", async () => {
     const old = await newPairing();
     const fresh = await newPairing();

@@ -16,6 +16,8 @@ export const PAIRING_TTL_MS = 10 * 60_000;
 /** Richieste più vecchie di così si cancellano, in qualunque stato. */
 export const PAIRING_RETENTION_MS = 60 * 60_000;
 export const MAX_FAILED_ATTEMPTS = 5;
+/** Dopo l'approvazione la richiesta vive almeno altri 2 minuti: il tempo del nodo per ritirare il token. */
+export const COLLECT_GRACE_MS = 2 * 60_000;
 
 export const PAIRING_MESSAGES = {
   notFound: "richiesta di collegamento non trovata o scaduta",
@@ -62,6 +64,11 @@ export function abbreviateIp(ip: string | undefined): string | null {
   const groups = ip.includes("::") ? [...headGroups, ...Array<string>(Math.max(0, 8 - headGroups.length - tailGroups.length)).fill("0"), ...tailGroups] : headGroups;
   if (groups.length !== 8) return null;
   return `${groups.slice(0, 3).map((g) => g.replace(/^0+(?=.)/, "").toLowerCase()).join(":")}::/48`;
+}
+
+/** Il codice di abbinamento sta nel percorso: nei log `/api/account/node-pairings/<codice>[/azione]` diventa `…/***[/azione]`. */
+export function redactPairingPath(url: string): string {
+  return url.replace(/^(\/api\/account\/node-pairings\/)[^/?#]+/i, "$1***");
 }
 
 export interface StartedPairing {
@@ -214,7 +221,10 @@ export async function approvePairing(
         const [created] = await tx.insert(nodesTable).values({ userId, name: cleanNodeName(input.name) }).returning({ id: nodesTable.id });
         nodeId = created!.id;
       }
-      await tx.update(nodePairingsTable).set({ status: "approved", userId, nodeId, decidedAt: now }).where(eq(nodePairingsTable.id, row.id));
+      // Il nodo deve avere il tempo di ritirare il token anche se si approva a ridosso della scadenza
+      const collectBy = new Date(now.getTime() + COLLECT_GRACE_MS);
+      const expiresAt = row.expiresAt.getTime() < collectBy.getTime() ? collectBy : row.expiresAt;
+      await tx.update(nodePairingsTable).set({ status: "approved", userId, nodeId, decidedAt: now, expiresAt }).where(eq(nodePairingsTable.id, row.id));
       return work;
     });
     if (stopped) await notifyStopped(stopped);

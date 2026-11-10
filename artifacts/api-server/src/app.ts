@@ -11,6 +11,7 @@ import { mcpRouter } from "./lib/mcp/server";
 import { mcpTurnRouter } from "./lib/mcp/turn-server";
 import { hooksRouter } from "./routes/hooks";
 import { redactHookPath } from "./lib/triggers/secrets";
+import { redactPairingPath } from "./lib/nodes/pairing";
 import { errorHandler } from "./middlewares/error-handler";
 
 const app: Express = express();
@@ -51,8 +52,8 @@ app.use(
         return {
           id: req.id,
           method: req.method,
-          // Il percorso di un webhook contiene il segreto: diventa `/api/hooks/<id>/***`.
-          url: req.url === undefined ? undefined : redactHookPath(req.url.split("?")[0]!),
+          // Il percorso di un webhook contiene il segreto (`/api/hooks/<id>/***`), quello dell'abbinamento il codice (`…/node-pairings/***`).
+          url: req.url === undefined ? undefined : redactPairingPath(redactHookPath(req.url.split("?")[0]!)),
         };
       },
       res(res) {

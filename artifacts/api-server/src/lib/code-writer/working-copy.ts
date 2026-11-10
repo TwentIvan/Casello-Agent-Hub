@@ -82,6 +82,12 @@ export class WorkingCopy {
     const bad = checkPath(path);
     if (bad) return bad;
     if (!this.view().has(path)) return CODE_WRITE_MESSAGES.notFound(path);
+    // Un file nato solo nella copia in sospeso (né nell'albero né già committato): basta dimenticarlo
+    if (!this.base.has(path) && !this.committed.has(path)) {
+      this.pendingChanges.delete(path);
+      this.cached = null;
+      return null;
+    }
     if (this.totalPaths(path) > WORKING_COPY_LIMITS.maxPaths) return CODE_WRITE_MESSAGES.tooMany;
     this.pendingChanges.set(path, null);
     this.cached = null;

@@ -45,6 +45,20 @@ describe("WorkingCopy", () => {
     expect(wc.pending().get("a.ts")).toBeNull();
   });
 
+  it("remove di un file solo in sospeso lo dimentica invece di eliminarlo", () => {
+    const wc = new WorkingCopy(tree({ "a.ts": "x\n" }));
+    expect(wc.write("n.ts", "nuovo\n")).toBeNull();
+    expect(wc.remove("n.ts")).toBeNull();
+    expect(wc.pending().has("n.ts")).toBe(false);
+    expect(wc.pendingCount()).toBe(0);
+    expect(wc.view().has("n.ts")).toBe(false);
+    // Già committato: l'eliminazione deve arrivare al commit successivo
+    expect(wc.write("c.ts", "c\n")).toBeNull();
+    wc.markCommitted();
+    expect(wc.remove("c.ts")).toBeNull();
+    expect(wc.pending().get("c.ts")).toBeNull();
+  });
+
   it("rifiuta il 101° file", () => {
     const wc = new WorkingCopy(tree({ "a.ts": "x" }));
     for (let i = 0; i < 100; i++) expect(wc.write(`f${i}.ts`, "x")).toBeNull();

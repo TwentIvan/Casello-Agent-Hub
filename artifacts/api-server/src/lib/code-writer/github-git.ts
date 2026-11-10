@@ -329,6 +329,24 @@ export async function readCi(r: RepoRef, sha: string): Promise<CiSnapshot> {
   return { checks, statuses };
 }
 
+/** Annotazioni di un check run (percorso, riga, messaggio), al più `max` (≤ 100): una sola pagina. */
+export async function checkRunAnnotations(r: RepoRef, checkRunId: number, max: number): Promise<{ path: string; line: number | null; message: string }[]> {
+  const perPage = Math.min(Math.max(Math.trunc(max), 1), PER_PAGE);
+  const token = await tokenFor(r, CI);
+  const { status, json } = await call(r, token, "checks: read", {
+    method: "GET",
+    path: repoPath(r, `/check-runs/${checkRunId}/annotations?per_page=${perPage}&page=1`),
+  });
+  if (!Array.isArray(json)) throw badShape(status);
+  return (json as unknown[])
+    .flatMap((a) =>
+      isObj(a) && typeof a["path"] === "string" && typeof a["message"] === "string"
+        ? [{ path: a["path"], line: typeof a["start_line"] === "number" ? a["start_line"] : null, message: a["message"] }]
+        : [],
+    )
+    .slice(0, perPage);
+}
+
 /** Coda del log di un job (ultime 150 righe): segue un solo redirect, verso un host ammesso e senza Authorization. */
 export async function failedJobLogTail(r: RepoRef, jobId: number): Promise<string> {
   const token = await tokenFor(r, CI);

@@ -20,6 +20,14 @@ export const CODE_WRITE_MESSAGES = {
   pullRejected: "GitHub ha rifiutato la PR: controlla che il branch abbia commit nuovi rispetto al base",
   unavailable: "GitHub non risponde (riprova più tardi)",
   noAccess: "l'App GitHub di Botcave non ha più accesso a questo repository: reinstallala o scegli un altro repo",
+  baseMissing: "branch base non trovato: controlla il branch dell'app",
+  tooManyCommits: "troppi commit in questa esecuzione (al massimo 10): riferisci l'esito",
+  badMessage: "messaggio del commit non valido: da 1 a 500 caratteri",
+  badTitle: "titolo della PR non valido: da 1 a 200 caratteri",
+  badBody: "corpo della PR troppo lungo: al massimo 10 000 caratteri",
+  noPull: "nessuna PR per questo compito: usa apri_pr",
+  readOnly: "il ruolo legge il codice ma non lo modifica",
+  internal: "errore interno dello strumento del codice",
 } as const;
 
 export class CodeWriteError extends Error {

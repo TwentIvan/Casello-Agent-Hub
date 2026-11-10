@@ -12,6 +12,7 @@ import {
   getDefaultBranch,
   getIssue,
   getPull,
+  checkRunAnnotations,
   readCi,
   setLogHostsForTests,
   type RepoRef,
@@ -210,6 +211,22 @@ describe("client GitHub dei compiti", () => {
       { id: 2, name: "lint", status: "in_progress", conclusion: null, jobId: null },
     ]);
     expect(ci.statuses).toEqual([{ context: "ci/x", state: "success" }]);
+  });
+
+  it("checkRunAnnotations legge al più il numero chiesto di annotazioni", async () => {
+    gh.checkRuns.set(base, [
+      {
+        id: 9,
+        name: "build",
+        status: "completed",
+        conclusion: "failure",
+        annotations: Array.from({ length: 30 }, (_, i) => ({ path: "src/a.ts", start_line: i + 1, message: `errore ${i + 1}` })),
+      },
+    ]);
+    const list = await checkRunAnnotations(r, 9, 20);
+    expect(list).toHaveLength(20);
+    expect(list[0]).toEqual({ path: "src/a.ts", line: 1, message: "errore 1" });
+    expect((await rejects(checkRunAnnotations(r, 99, 20))).message).toBe(CODE_WRITE_MESSAGES.noAccess);
   });
 
   it("log: segue un redirect verso host ammesso, rifiuta gli altri, taglia a 150 righe", async () => {

@@ -200,3 +200,45 @@ export async function drainQueued(spec: ChatKindSpec, conversationId: number): P
     logger.warn({ kind: spec.kind, conversationId, errName: err instanceof Error ? err.name : "unknown" }, "Coda della conversazione non elaborata");
   }
 }
+
+/** Modo di invio di un messaggio: `normal` avvia il turno, `queue` lo mette in coda a un turno in corso, `now` lo mette in coda e ferma il turno. */
+export type ChatSendMode = "normal" | "now" | "queue";
+
+export type ChatSendOutcome<M> = { kind: "started"; message: M } | { kind: "queued"; queued: QueuedMessage };
+
+async function isRunning(spec: ChatKindSpec, conversationId: number): Promise<boolean> {
+  const conv = await db.execute(sql`select turn_status from ${convTable(spec)} where id = ${conversationId}`);
+  return (conv.rows[0] as { turn_status?: string } | undefined)?.turn_status === "running";
+}
+
+const isTurnBusy = (err: unknown): boolean => err instanceof Error && err.name === "TurnBusyError";
+
+/**
+ * Invio di un messaggio con il suo modo (le validazioni e i limiti della route vengono prima). `normal`: `start`, un
+ * turno in corso dà `TurnBusyError` come sempre. `queue` e `now`: senza turno in corso si avvia come `normal`; con un
+ * turno in corso (anche scoperto da un `TurnBusyError`) il messaggio va in coda e, con `now`, il turno si ferma. Se il
+ * turno è finito prima che il messaggio entrasse in coda, la coda si svuota subito.
+ */
+export async function sendChatMessage<M>(
+  spec: ChatKindSpec,
+  conversationId: number,
+  content: string,
+  page: PageContext | null,
+  mode: ChatSendMode,
+  start: () => Promise<M>,
+): Promise<ChatSendOutcome<M>> {
+  if (mode === "normal") return { kind: "started", message: await start() };
+  if (!(await isRunning(spec, conversationId))) {
+    try {
+      return { kind: "started", message: await start() };
+    } catch (err) {
+      // Un turno partito nel frattempo: il messaggio va in coda
+      if (!isTurnBusy(err)) throw err;
+    }
+  }
+  const queued = await queueChatMessage(spec, conversationId, content, page);
+  if (mode === "now") await stopChatTurn(spec, conversationId);
+  // Turno finito prima dell'inserimento in coda (o fermato senza svuotare): nessuno farebbe partire il messaggio
+  if (!(await isRunning(spec, conversationId))) await drainQueued(spec, conversationId);
+  return { kind: "queued", queued };
+}

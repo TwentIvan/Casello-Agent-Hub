@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { QueuedChatMessage } from './queuedChatMessage';
 import type { TeamChatConversation } from './teamChatConversation';
 import type { TeamChatMessage } from './teamChatMessage';
 import type { TeamChatProposal } from './teamChatProposal';
@@ -15,4 +16,6 @@ export type TeamChatConversationDetail = TeamChatConversation & ({
   proposals: TeamChatProposal[];
   /** Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null */
   progress?: TurnProgress | null;
+  /** Messaggio in coda che parte alla fine del turno in corso, altrimenti null */
+  queuedMessage: QueuedChatMessage | null;
 });

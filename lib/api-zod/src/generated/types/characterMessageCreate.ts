@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CharacterPageContext } from './characterPageContext';
+import type { ChatSendMode } from './chatSendMode';
 
 export interface CharacterMessageCreate {
   /**
@@ -13,5 +14,6 @@ export interface CharacterMessageCreate {
      * @maxLength 8000
      */
   content: string;
+  mode?: ChatSendMode;
   pageContext?: CharacterPageContext;
 }

@@ -4135,7 +4135,7 @@ paths:
         Risponde subito col messaggio dell'utente; il bot risponde in background (turnStatus running,
         poi idle). 409 se un turno è già in corso, se il modello non è più disponibile o se chi paga il
         modello ha raggiunto il tetto di spesa mensile.
-        Massimo 10 messaggi al minuto per utente.
+        Massimo 10 messaggi al minuto per utente. Con `mode` `queue` e un turno in corso il messaggio resta in coda (uno per conversazione, un nuovo `queue` ne sostituisce il testo) e parte alla fine del turno; con `now` va in coda e il turno in corso si ferma. In entrambi i casi la risposta è il messaggio in coda.
       parameters:
         - $ref: "#/components/parameters/IdParam"
       requestBody:
@@ -4159,6 +4159,43 @@ paths:
           $ref: "#/components/responses/Conflict"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+
+  /plan-conversations/{id}/stop:
+    post:
+      operationId: stopPlanTurn
+      tags: [plan-chat]
+      summary: Ferma il turno in corso
+      description: >-
+        Interrompe il turno della conversazione: la risposta diventa «Risposta interrotta.» e parte il messaggio in coda,
+        se c'è. `stopped` è false se non c'era nessun turno da fermare. 404 per una conversazione di un altro utente.
+        Massimo 30 al minuto per utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Esito
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatTurnStopResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /plan-conversations/{id}/queued:
+    delete:
+      operationId: cancelQueuedPlanMessage
+      tags: [plan-chat]
+      summary: Toglie il messaggio in coda
+      description: Idempotente. 404 per una conversazione di un altro utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Nessun messaggio in coda
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /plan-proposals/{id}/decision:
     post:
@@ -4269,7 +4306,7 @@ paths:
       description: >-
         Risponde subito col messaggio dell'utente; Lucius risponde in background (turnStatus running, poi idle).
         409 se un turno è già in corso, se la squadra è chiusa o se chi paga il modello ha raggiunto il tetto di
-        spesa mensile. Massimo 10 messaggi al minuto per utente.
+        spesa mensile. Massimo 10 messaggi al minuto per utente. Con `mode` `queue` e un turno in corso il messaggio resta in coda (uno per conversazione, un nuovo `queue` ne sostituisce il testo) e parte alla fine del turno; con `now` va in coda e il turno in corso si ferma. In entrambi i casi la risposta è il messaggio in coda.
       parameters:
         - $ref: "#/components/parameters/IdParam"
       requestBody:
@@ -4293,6 +4330,43 @@ paths:
           $ref: "#/components/responses/Conflict"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+
+  /team-chat-conversations/{id}/stop:
+    post:
+      operationId: stopTeamChatTurn
+      tags: [team-chat]
+      summary: Ferma il turno in corso
+      description: >-
+        Interrompe il turno della conversazione: la risposta diventa «Risposta interrotta.» e parte il messaggio in coda,
+        se c'è. `stopped` è false se non c'era nessun turno da fermare. 404 per una conversazione di un altro utente.
+        Massimo 30 al minuto per utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Esito
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatTurnStopResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /team-chat-conversations/{id}/queued:
+    delete:
+      operationId: cancelQueuedTeamChatMessage
+      tags: [team-chat]
+      summary: Toglie il messaggio in coda
+      description: Idempotente. 404 per una conversazione di un altro utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Nessun messaggio in coda
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /team-chat-proposals/{id}/decision:
     post:
@@ -4522,7 +4596,7 @@ paths:
       description: >-
         Risponde subito col messaggio dell'utente; il personaggio risponde in background (turnStatus running, poi idle).
         409 se un turno è già in corso, se l'argomento non esiste più, se la conversazione è archiviata o se è raggiunto
-        il tetto di spesa. Massimo 10 messaggi al minuto per utente e personaggio.
+        il tetto di spesa. Massimo 10 messaggi al minuto per utente e personaggio. Con `mode` `queue` e un turno in corso il messaggio resta in coda (uno per conversazione, un nuovo `queue` ne sostituisce il testo) e parte alla fine del turno; con `now` va in coda e il turno in corso si ferma. In entrambi i casi la risposta è il messaggio in coda.
       parameters:
         - $ref: "#/components/parameters/IdParam"
       requestBody:
@@ -4546,6 +4620,43 @@ paths:
           $ref: "#/components/responses/Conflict"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+
+  /character-conversations/{id}/stop:
+    post:
+      operationId: stopCharacterTurn
+      tags: [characters]
+      summary: Ferma il turno in corso
+      description: >-
+        Interrompe il turno della conversazione: la risposta diventa «Risposta interrotta.» e parte il messaggio in coda,
+        se c'è. `stopped` è false se non c'era nessun turno da fermare. 404 per una conversazione di un altro utente.
+        Massimo 30 al minuto per utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Esito
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatTurnStopResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /character-conversations/{id}/queued:
+    delete:
+      operationId: cancelQueuedCharacterMessage
+      tags: [characters]
+      summary: Toglie il messaggio in coda
+      description: Idempotente. 404 per una conversazione di un altro utente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Nessun messaggio in coda
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /character-proposals/{id}/decision:
     post:
@@ -6759,6 +6870,32 @@ components:
           type: string
           format: date-time
 
+    ChatSendMode:
+      type: string
+      enum: [normal, now, queue]
+      description: >-
+        normal (default) avvia il turno (409 se uno è in corso); queue mette il messaggio in coda se un turno è in corso;
+        now lo mette in coda e ferma il turno in corso.
+
+    QueuedChatMessage:
+      type: object
+      required: [id, content, createdAt]
+      properties:
+        id:
+          type: integer
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    ChatTurnStopResult:
+      type: object
+      required: [stopped]
+      properties:
+        stopped:
+          type: boolean
+
     TurnProgress:
       type: object
       required: [startedAt, steps, omitted]
@@ -6785,7 +6922,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/PlanConversation"
         - type: object
-          required: [messages, proposals, newerAnalysisId]
+          required: [messages, proposals, newerAnalysisId, queuedMessage]
           properties:
             messages:
               type: array
@@ -6803,6 +6940,11 @@ components:
                 - $ref: "#/components/schemas/TurnProgress"
                 - type: "null"
               description: Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null
+            queuedMessage:
+              oneOf:
+                - $ref: "#/components/schemas/QueuedChatMessage"
+                - type: "null"
+              description: Messaggio in coda che parte alla fine del turno in corso, altrimenti null
 
     AppPlan:
       type: object
@@ -6887,6 +7029,8 @@ components:
           type: string
           minLength: 1
           maxLength: 8000
+        mode:
+          $ref: "#/components/schemas/ChatSendMode"
 
     PlanIssuesRequest:
       type: object
@@ -7033,7 +7177,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/TeamChatConversation"
         - type: object
-          required: [messages, proposals]
+          required: [messages, proposals, queuedMessage]
           properties:
             messages:
               type: array
@@ -7048,6 +7192,11 @@ components:
                 - $ref: "#/components/schemas/TurnProgress"
                 - type: "null"
               description: Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null
+            queuedMessage:
+              oneOf:
+                - $ref: "#/components/schemas/QueuedChatMessage"
+                - type: "null"
+              description: Messaggio in coda che parte alla fine del turno in corso, altrimenti null
 
     TeamChatConversationCreate:
       type: object
@@ -7064,6 +7213,8 @@ components:
           type: string
           minLength: 1
           maxLength: 8000
+        mode:
+          $ref: "#/components/schemas/ChatSendMode"
 
     TeamChatProposalDecision:
       type: object
@@ -7208,7 +7359,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/CharacterConversation"
         - type: object
-          required: [messages, proposals]
+          required: [messages, proposals, queuedMessage]
           properties:
             messages:
               type: array
@@ -7223,6 +7374,11 @@ components:
                 - $ref: "#/components/schemas/TurnProgress"
                 - type: "null"
               description: Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null
+            queuedMessage:
+              oneOf:
+                - $ref: "#/components/schemas/QueuedChatMessage"
+                - type: "null"
+              description: Messaggio in coda che parte alla fine del turno in corso, altrimenti null
 
     CharacterConversationCreate:
       type: object
@@ -7257,6 +7413,8 @@ components:
           type: string
           minLength: 1
           maxLength: 8000
+        mode:
+          $ref: "#/components/schemas/ChatSendMode"
         pageContext:
           $ref: "#/components/schemas/CharacterPageContext"
 

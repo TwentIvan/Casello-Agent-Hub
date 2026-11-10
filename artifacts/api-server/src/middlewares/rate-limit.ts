@@ -145,6 +145,13 @@ export function consumeTurnStop(userId: number): boolean {
   return turnStopCounter.consume(`user:${userId}`).ok;
 }
 
+/** Azzera i limiti dei messaggi delle chat dei personaggi e di squadra e di «Ferma» (solo per i test). */
+export function resetChatTurnLimits(): void {
+  teamChatMessageCounter.reset();
+  characterMessageCounter.reset();
+  turnStopCounter.reset();
+}
+
 // Protocollo dei nodi (/api/node, dopo requireNodeToken): heartbeat e claim 6 al minuto per nodo (contatori
 // separati), ping 4 al minuto per compito dello stesso nodo.
 const byNode = (req: Request) => `node:${req.node?.id ?? "?"}`;

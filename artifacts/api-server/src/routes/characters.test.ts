@@ -349,6 +349,180 @@ describe("schede e ambiti del token", () => {
   });
 });
 
+describe("Ferma e Accoda", () => {
+  const chatCalls = () => fake.requests.filter((r) => r.path.includes("/chat/completions")).length;
+
+  async function waitFor(check: () => boolean | Promise<boolean>): Promise<void> {
+    for (let i = 0; i < 400; i++) {
+      if (await check()) return;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    throw new Error("condizione non raggiunta");
+  }
+
+  /** Avvia un turno la cui chiamata al modello resta in attesa 3 s; le chiamate successive rispondono subito. */
+  async function startSlowTurn(id: number, content = "Primo"): Promise<void> {
+    fake.chatReply = { content: "Risposta", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    fake.delayMs = 3_000;
+    const sent = await api("POST", `/character-conversations/${id}/messages`, { content });
+    expect(sent.status, sent.text).toBe(202);
+    await waitFor(() => chatCalls() === 1);
+    fake.delayMs = 0;
+  }
+
+  const history = async (id: number) => {
+    const res = await api("GET", `/character-conversations/${id}`);
+    expect(res.status, res.text).toBe(200);
+    return res.json as { turnStatus: string; messages: Array<{ role: string; content: string }>; queuedMessage: { id: number; content: string } | null };
+  };
+
+  beforeEach(async () => {
+    const { resetChatTurnLimits } = await import("../middlewares/rate-limit");
+    resetChatTurnLimits();
+  });
+
+  it("stop: turno in corso → stopped true e «Risposta interrotta.»; ripetuto → false; altrui → 404", async () => {
+    const { id } = await createConv();
+    await startSlowTurn(id);
+    const stop = await api("POST", `/character-conversations/${id}/stop`);
+    expect(stop.status, stop.text).toBe(200);
+    expect(stop.json).toEqual({ stopped: true });
+    const after = await history(id);
+    expect(after.turnStatus).toBe("idle");
+    expect(after.messages.map((m) => [m.role, m.content])).toEqual([
+      ["user", "Primo"],
+      ["assistant", "Risposta interrotta."],
+    ]);
+    expect((await api("POST", `/character-conversations/${id}/stop`)).json).toEqual({ stopped: false });
+
+    const stranger = await strangerModel();
+    const [foreign] = await db
+      .insert(characterConversationsTable)
+      .values({ userId: stranger.userId, character: "lucius", subjectType: "area_agents", subjectId: null, subjectTitle: "Agenti", aiModelId: stranger.modelId, title: "" })
+      .returning();
+    expect((await api("POST", `/character-conversations/${foreign!.id}/stop`)).status).toBe(404);
+    expect((await api("DELETE", `/character-conversations/${foreign!.id}/queued`)).status).toBe(404);
+  });
+
+  it("mode now con turno in corso → 202, turno fermato e il testo nuovo parte con la sua risposta", async () => {
+    const { id } = await createConv();
+    await startSlowTurn(id);
+    const sent = await api("POST", `/character-conversations/${id}/messages`, { content: "Subito", mode: "now" });
+    expect(sent.status, sent.text).toBe(202);
+    expect(sent.json).toMatchObject({ role: "user", content: "Subito", error: false, pageContext: null });
+    await waitFor(async () => (await history(id)).messages.length === 4 && (await history(id)).turnStatus === "idle");
+    const done = await history(id);
+    expect(done.messages.map((m) => [m.role, m.content])).toEqual([
+      ["user", "Primo"],
+      ["assistant", "Risposta interrotta."],
+      ["user", "Subito"],
+      ["assistant", "Risposta"],
+    ]);
+    expect(done.queuedMessage).toBeNull();
+  });
+
+  it("due mode now ravvicinati: entrambi 202, parte l'ultimo testo", async () => {
+    const { id } = await createConv();
+    await startSlowTurn(id);
+    const [a, b] = await Promise.all([
+      api("POST", `/character-conversations/${id}/messages`, { content: "Uno", mode: "now" }),
+      api("POST", `/character-conversations/${id}/messages`, { content: "Due", mode: "now" }),
+    ]);
+    expect([a.status, b.status]).toEqual([202, 202]);
+    await waitFor(async () => {
+      const h = await history(id);
+      return h.turnStatus === "idle" && h.queuedMessage === null && h.messages.at(-1)?.content === "Risposta";
+    });
+    const done = await history(id);
+    const users = done.messages.filter((m) => m.role === "user").map((m) => m.content);
+    expect(users.at(-1)).toBe("Due");
+    expect(done.messages.at(-1)).toEqual(expect.objectContaining({ role: "assistant", content: "Risposta" }));
+  });
+
+  it("mode queue: messaggio in coda nel dettaglio (fuori da messages), sostituito da un secondo queue, tolto da DELETE", async () => {
+    const { id } = await createConv();
+    await startSlowTurn(id);
+    const first = await api("POST", `/character-conversations/${id}/messages`, { content: "Dopo", mode: "queue" });
+    expect(first.status, first.text).toBe(202);
+    let h = await history(id);
+    expect(h.queuedMessage).toMatchObject({ content: "Dopo" });
+    expect(h.messages.map((m) => m.content)).not.toContain("Dopo");
+    expect((await api("POST", `/character-conversations/${id}/messages`, { content: "Anzi questo", mode: "queue" })).status).toBe(202);
+    h = await history(id);
+    expect(h.queuedMessage).toMatchObject({ id: first.json.id, content: "Anzi questo" });
+    const del = await api("DELETE", `/character-conversations/${id}/queued`);
+    expect(del.status).toBe(204);
+    expect((await history(id)).queuedMessage).toBeNull();
+    await api("POST", `/character-conversations/${id}/stop`);
+    expect((await history(id)).messages).toHaveLength(2);
+  });
+
+  it("mode queue senza turno in corso avvia subito il turno", async () => {
+    const { id } = await createConv();
+    fake.chatReply = { content: "Risposta", toolCalls: [], usage: { prompt_tokens: 1, completion_tokens: 1 } };
+    const sent = await api("POST", `/character-conversations/${id}/messages`, { content: "Ciao", mode: "queue" });
+    expect(sent.status, sent.text).toBe(202);
+    const done = await waitIdle(id);
+    expect(done.messages.map((m: { content: string }) => m.content)).toEqual(["Ciao", "Risposta"]);
+    expect(done.queuedMessage).toBeNull();
+  });
+
+  it("coda su una conversazione archiviata nel frattempo: nessun 500, il messaggio resta in coda", async () => {
+    const { id } = await createConv();
+    await startSlowTurn(id);
+    expect((await api("POST", `/character-conversations/${id}/messages`, { content: "Dopo", mode: "queue" })).status).toBe(202);
+    await db.update(characterConversationsTable).set({ archivedAt: new Date() }).where(eq(characterConversationsTable.id, id));
+    expect((await api("POST", `/character-conversations/${id}/stop`)).json).toEqual({ stopped: true });
+    const h = await history(id);
+    expect(h.turnStatus).toBe("idle");
+    expect(h.queuedMessage).toMatchObject({ content: "Dopo" });
+    expect(h.messages).toHaveLength(2);
+    // Un nuovo messaggio su una conversazione archiviata resta 409 anche in coda
+    expect((await api("POST", `/character-conversations/${id}/messages`, { content: "Ancora", mode: "queue" })).status).toBe(409);
+  });
+
+  it("riavvio con un messaggio in coda: failInterruptedCharacterTurns chiude il turno e fa partire il messaggio", async () => {
+    const { id } = await createConv();
+    fake.chatReply = { content: "Risposta", toolCalls: [], usage: { prompt_tokens: 1, completion_tokens: 1 } };
+    // Turno rimasto aperto da un processo che non c'è più
+    await db.update(characterConversationsTable).set({ turnStatus: "running" }).where(eq(characterConversationsTable.id, id));
+    await db.insert(characterMessagesTable).values([
+      { conversationId: id, role: "user", content: "Prima" },
+      { conversationId: id, role: "assistant", content: "" },
+    ]);
+    expect((await api("POST", `/character-conversations/${id}/messages`, { content: "In coda", mode: "queue" })).status).toBe(202);
+    expect((await history(id)).queuedMessage).toMatchObject({ content: "In coda" });
+    const { failInterruptedCharacterTurns } = await import("../lib/characters/run-turn");
+    await failInterruptedCharacterTurns();
+    await waitFor(async () => {
+      const h = await history(id);
+      return h.turnStatus === "idle" && h.messages.length === 4;
+    });
+    const done = await history(id);
+    expect(done.messages.map((m) => m.content).slice(2)).toEqual(["In coda", "Risposta"]);
+    expect(done.queuedMessage).toBeNull();
+  });
+
+  it("token api:read: stop e DELETE della coda → 403; api:write → ammessi", async () => {
+    const { createApiToken } = await import("../lib/api-tokens");
+    const read = (await createApiToken(userId, "r", 30, ["api:read"])).token;
+    const write = (await createApiToken(userId, "w", 30, ["api:write"])).token;
+    const { id } = await createConv();
+    expect((await api("POST", `/character-conversations/${id}/stop`, undefined, read)).status).toBe(403);
+    expect((await api("DELETE", `/character-conversations/${id}/queued`, undefined, read)).status).toBe(403);
+    expect((await api("POST", `/character-conversations/${id}/stop`, undefined, write)).json).toEqual({ stopped: false });
+    expect((await api("DELETE", `/character-conversations/${id}/queued`, undefined, write)).status).toBe(204);
+  });
+
+  it("stop: la 31ª richiesta in un minuto → 429", async () => {
+    const { id } = await createConv();
+    for (let i = 0; i < 30; i++) expect((await api("POST", `/character-conversations/${id}/stop`)).status).toBe(200);
+    const res = await api("POST", `/character-conversations/${id}/stop`);
+    expect(res.status).toBe(429);
+    expect(res.json.error).toBe("Troppe richieste: riprova tra poco");
+  });
+});
+
 describe("limite dei messaggi", () => {
   it("send_rate_limited_429: l'11° messaggio in un minuto", async () => {
     fake.chatReply = () => ({ content: "ok", toolCalls: [], usage: { prompt_tokens: 1, completion_tokens: 1 } });

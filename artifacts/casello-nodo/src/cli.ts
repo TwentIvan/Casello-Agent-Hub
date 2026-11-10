@@ -165,6 +165,22 @@ export interface InstallDeps {
   uid: number;
   launchctl: LaunchctlRunner;
   whichClaude: () => Promise<string | null>;
+  /**
+   * Toglie `com.apple.quarantine` dalla copia del programma prima del rename (iniettabile nei test). Default: `xattr`
+   * su macOS, nulla altrove. Un errore non ferma l'installazione.
+   */
+  removeQuarantine?: (file: string) => Promise<void>;
+}
+
+/**
+ * La copia di un'app scaricata e aperta con «Apri comunque» eredita l'attributo di quarantena: senza toglierlo Gatekeeper
+ * potrebbe bloccare il servizio avviato da launchd, che non ha un dialogo. Mai un errore: «No such xattr» e simili si ignorano.
+ */
+export function realRemoveQuarantine(file: string): Promise<void> {
+  if (process.platform !== "darwin") return Promise.resolve();
+  return new Promise((resolve) => {
+    execFile("/usr/bin/xattr", ["-d", "com.apple.quarantine", file], { timeout: 10_000 }, () => resolve());
+  });
 }
 
 interface InstallTarget {
@@ -194,7 +210,7 @@ async function installNode(
   // App: il token dell'abbinamento si consegna una volta sola, quindi si salva per primo (riaprendo l'app la config si
   // adotta). CLI: prima il programma, così se la copia fallisce non resta scritto nulla di nuovo.
   if (target.writeConfig && target.configFirst) await writeConfig();
-  const program = await installProgram(target.programSource, target.programPath);
+  const program = await installProgram(target.programSource, target.programPath, d.removeQuarantine ?? realRemoveQuarantine);
   if (target.writeConfig && !target.configFirst) await writeConfig();
   await mkdir(paths.logsDir, { recursive: true, mode: 0o700 });
   const claudeBin = await d.whichClaude();
@@ -274,7 +290,7 @@ async function notifyUninstalled(configPath: string, d: { home: string; fetch?: 
  * mai un file a metà). Il servizio usa la copia, così la cartella in cui è stato costruito si può spostare o cancellare.
  * Se l'installazione parte già dalla copia, non c'è nulla da copiare.
  */
-async function installProgram(entryPath: string, programPath: string): Promise<string> {
+async function installProgram(entryPath: string, programPath: string, removeQuarantine: (file: string) => Promise<void>): Promise<string> {
   if (path.resolve(entryPath) === programPath) return programPath;
   const dir = path.dirname(programPath);
   const tmp = `${programPath}.${process.pid}.tmp`;
@@ -283,6 +299,7 @@ async function installProgram(entryPath: string, programPath: string): Promise<s
     await rm(tmp, { force: true });
     await copyFile(entryPath, tmp);
     await chmod(tmp, 0o755);
+    await removeQuarantine(tmp).catch(() => {});
     await rename(tmp, programPath);
   } catch {
     await rm(tmp, { force: true }).catch(() => {});

@@ -3,7 +3,7 @@ import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/pr
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NODE_VERSION } from "./capabilities";
-import { runCli, servicePath, type CliDeps } from "./cli";
+import { realRemoveQuarantine, runCli, servicePath, type CliDeps } from "./cli";
 import { defaultPaths } from "./config";
 import { LABEL, plistPath, type LaunchctlRunner } from "./launchd";
 import { writeState } from "./state";
@@ -383,4 +383,13 @@ describe("servicePath", () => {
 it("comando sconosciuto → uso e codice 1", async () => {
   expect(await runCli(["boh"], deps())).toBe(1);
   expect(err).toContain("uso:");
+});
+
+describe("realRemoveQuarantine", () => {
+  it("su un file senza l'attributo (o fuori da macOS) non fallisce", async () => {
+    const file = path.join(home, "senza-quarantena");
+    await writeFile(file, "x");
+    await expect(realRemoveQuarantine(file)).resolves.toBeUndefined();
+    await expect(realRemoveQuarantine(path.join(home, "inesistente"))).resolves.toBeUndefined();
+  });
 });

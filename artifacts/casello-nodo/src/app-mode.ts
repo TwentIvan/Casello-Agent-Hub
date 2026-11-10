@@ -38,6 +38,8 @@ export interface AppDeps {
   claude: ClaudeActions;
   /** `fetch` per l'avviso di disinstallazione a Botcave (iniettabile nei test). */
   fetch?: typeof fetch;
+  /** Toglie la quarantena dalla copia del programma (default: `xattr` su macOS, vedi `realRemoveQuarantine`). */
+  removeQuarantine?: (file: string) => Promise<void>;
 }
 
 /** Voci del menu nell'ordine della spec §4. */

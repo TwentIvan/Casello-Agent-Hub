@@ -102,6 +102,7 @@ function deps(over: Partial<AppDeps> = {}): AppDeps {
     version: "0.3.0",
     whichClaude: async () => "/Users/x/.local/bin/claude",
     claude: claude(),
+    removeQuarantine: async () => {},
     fetch: (async (url: string | URL | Request, init?: RequestInit) => {
       fetched.push({ url: String(url), auth: new Headers(init?.headers).get("authorization") });
       return new Response(null, { status: 204 });
@@ -144,6 +145,22 @@ describe("primo avvio senza config", () => {
     expect(plist).not.toContain(FAKE_TOKEN);
     expect(calls.some((c) => c[0] === "bootstrap")).toBe(true);
     expect(log.at(-1)).toBe("alert:Botcave Nodo è collegato come «MacBook di Ivan»");
+  });
+
+  it("toglie la quarantena dalla copia temporanea prima del rename; un errore non ferma l'installazione", async () => {
+    const program = defaultPaths(home).appProgramPath;
+    const seen: Array<{ file: string; tmpExists: boolean; programExists: boolean }> = [];
+    const exists = (p: string) => stat(p).then(() => true, () => false);
+    const removeQuarantine = async (file: string) => {
+      seen.push({ file, tmpExists: await exists(file), programExists: await exists(program) });
+      throw new Error("xattr: No such xattr: com.apple.quarantine");
+    };
+    expect(await runAppMode(deps({ removeQuarantine }))).toBe(0);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.file).toBe(`${program}.${process.pid}.tmp`);
+    expect(seen[0]).toMatchObject({ tmpExists: true, programExists: false });
+    expect(await readFile(program, "utf8")).toBe("eseguibile v1\n");
+    expect(calls.some((c) => c[0] === "bootstrap")).toBe(true);
   });
 
   it("cartella scelta → workspaceRoot è quella", async () => {

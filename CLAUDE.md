@@ -1553,7 +1553,8 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   LaunchAgent; collegato → menu nativo (`choose from list`): «Apri Botcave» (`/account`), «Installa Claude Code» (solo se `claude` manca), «Accedi a Claude», «Cambia
   cartella di lavoro» (config e `kickstart -k` del servizio), «Apri i log», «Ricollega», «Disinstalla». Dialoghi e notifiche con `osascript` (`dialogs.ts`: ogni riga un
   argomento `-e`, testi escapati, mai una shell; il testo d'errore di `osascript` non si mostra). L'installazione copia l'eseguibile in `~/.casello-nodo/bin/casello-nodo`
-  (temporaneo e rename; la config col token si scrive **prima** della copia, così un errore non perde il token consegnato una volta sola) e carica il LaunchAgent di
+  (temporaneo e rename; prima del rename `xattr -d com.apple.quarantine` sulla copia, così Gatekeeper non blocca il servizio avviato da launchd, errori
+  ignorati; la config col token si scrive **prima** della copia, così un errore non perde il token consegnato una volta sola) e carica il LaunchAgent di
   sempre (`cloud.fantamister.casello-nodo`) con `[programma, "run"]`; toglie la copia `.mjs` della CLI. Il servizio usa la copia: l'app in Applicazioni non cambia mai.
   Indirizzo fisso `https://casello.fantamister.cloud` (`DEFAULT_URL`); `BOTCAVE_NODO_URL` lo sostituisce solo in sviluppo (https, http solo verso localhost).
 - **Abbinamento** («device flow», `lib/nodes/pairing.ts`, `routes/node-pairing.ts`, nodo `pairing.ts`; tabella `node_pairings`, stati `pending|approved|denied|consumed|expired`):

@@ -5,9 +5,10 @@ import { clearInstallationTokenCache } from "../github/app";
 import { loadGithubConfig, type GithubConfig } from "../github/config";
 import { getCodeTask } from "./code-tasks";
 import { commitFiles, getBranchHead, getCommitTree, setLogHostsForTests, type RepoRef } from "./github-git";
-import { CODE_WRITE_MESSAGES } from "./messages";
+import { CODE_WRITE_MESSAGES, CodeWriteError } from "./messages";
 import { CodeTaskSession, codeBranch } from "./session";
 import { CODE_READ_TOOLS, CODE_WRITE_TOOLS } from "./tools";
+import type { WorkingCopy } from "./working-copy";
 import { INTERNAL_TOOL_NAMES } from "../teams/role-tools";
 
 // Strumenti del codice dei ruoli: PGlite per team_code_tasks, finto GitHub con stato Git
@@ -71,6 +72,7 @@ afterAll(async () => {
 beforeEach(async () => {
   clearInstallationTokenCache();
   gh.requests.length = 0;
+  gh.failWith = null;
   gh.installations.clear();
   gh.repos.clear();
   gh.git.clear();
@@ -290,5 +292,80 @@ describe("strumenti del codice dei ruoli", () => {
     await expect(
       CodeTaskSession.open({ repo: r, instance: { id: instanceId, name: "S" }, planTaskId: "t2", issue: null, mode: "read", baseBranch: "nope" }),
     ).rejects.toThrow(CODE_WRITE_MESSAGES.baseMissing);
+  });
+  it("branch del compito uguale al base → CodeWriteError con messaggio fisso", async () => {
+    const err = await CodeTaskSession.open({
+      repo: r,
+      instance: { id: instanceId, name: "S" },
+      planTaskId: "t1",
+      issue: null,
+      mode: "read",
+      baseBranch: codeBranch(instanceId, "t1"),
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CodeWriteError);
+    expect((err as Error).message).toBe(CODE_WRITE_MESSAGES.branchIsBase);
+  });
+
+  it("dispose chiude gli alberi dopo una ricerca regex", async () => {
+    const s = await open({ mode: "read" });
+    expect((await s.run("cerca_nel_codice", { testo: "const\\s+b", regex: true })).content).toContain("src/b.ts");
+    const view = (s as unknown as { wc: WorkingCopy }).wc.view();
+    expect(view.isDisposed).toBe(false);
+    await s.dispose();
+    expect(view.isDisposed).toBe(true);
+  });
+
+  it("commit riuscito anche se la registrazione in team_code_tasks fallisce", async () => {
+    const s = await open();
+    await s.run("scrivi_file", { percorso: "src/n.ts", contenuto: "x\n" });
+    // Squadra eliminata: l'INSERT di team_code_tasks viola la chiave esterna
+    await pool.query("DELETE FROM team_instances WHERE id = $1", [instanceId]);
+    const res = await s.run("crea_commit", { messaggio: "Fix" });
+    expect(res.ok).toBe(true);
+    expect(res.content).toMatch(/^commit [0-9a-f]{7} sul branch /);
+    expect(gh.filesAt(REPO, s.branch)["src/n.ts"]).toBe("x\n");
+    expect(s.discardedCount()).toBe(0);
+  });
+
+  it("leggi_esito_ci: annotazioni di al più 3 check, log di al più 3 job e 8 000 caratteri", async () => {
+    setLogHostsForTests([new URL(gh.apiBase).host]);
+    const s = await open();
+    await s.run("scrivi_file", { percorso: "src/n.ts", contenuto: "x\n" });
+    await s.run("crea_commit", { messaggio: "Fix" });
+    await s.run("apri_pr", { titolo: "Fix", corpo: "" });
+    const head = (await getBranchHead(r, s.branch))!;
+    gh.checkRuns.set(
+      head,
+      [1, 2, 3, 4].map((n) => ({
+        id: 100 + n,
+        name: `job${n}`,
+        status: "completed",
+        conclusion: "failure",
+        jobId: 200 + n,
+        annotations: [{ path: "src/n.ts", start_line: n, message: `nota ${n}` }],
+      })),
+    );
+    for (const n of [1, 2, 3, 4]) gh.jobLogs.set(200 + n, `${`job${n} ${"z".repeat(500)}\n`.repeat(100)}fine${n}`);
+    gh.requests.length = 0;
+    // Le annotazioni del primo check non si leggono: il resto dell'esito arriva lo stesso
+    gh.failWith = (q) => (q.path.includes("/check-runs/101/annotations") ? 500 : null);
+    const res = await s.run("leggi_esito_ci", {});
+    gh.failWith = null;
+    setLogHostsForTests(null);
+    expect(res.ok).toBe(true);
+    expect(gh.requests.filter((q) => q.path.includes("/annotations"))).toHaveLength(3);
+    expect(res.content).toContain(`- job1: (annotazioni non disponibili: ${CODE_WRITE_MESSAGES.unavailable})`);
+    expect(res.content).toContain("nota 2");
+    expect(res.content).toContain("nota 3");
+    expect(res.content).not.toContain("nota 4");
+    expect(res.content.match(/Log di job\d \(ultime righe\):/g)).toHaveLength(3);
+    expect(res.content).not.toContain("Log di job4");
+    const logs = res.content.split(/Log di job\d \(ultime righe\):\n/).slice(1);
+    for (const [i, log] of logs.entries()) {
+      const body = log.split("\n\nLog di")[0]!;
+      expect(body.length).toBeLessThanOrEqual(8_000 + 2);
+      expect(body).toContain(`fine${i + 1}`);
+      expect(body.startsWith("…")).toBe(true);
+    }
   });
 });

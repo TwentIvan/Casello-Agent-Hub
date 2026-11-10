@@ -31,6 +31,8 @@ export class WorkingCopy {
   private committed = new Map<string, string | null>();
   private pendingChanges = new Map<string, string | null>();
   private cached: SourceTree | null = null;
+  /** Vista superata da una modifica: si chiude (worker della ricerca regex) quando se ne costruisce una nuova. */
+  private stale: SourceTree | null = null;
 
   constructor(base: SourceTree) {
     this.base = base;
@@ -39,8 +41,31 @@ export class WorkingCopy {
   view(): SourceTree {
     if (this.cached === null) {
       this.cached = this.base.withChanges(new Map([...this.committed, ...this.pendingChanges]));
+      this.disposeStale();
     }
     return this.cached;
+  }
+
+  private invalidate(): void {
+    if (this.cached !== null) {
+      // Una vista superata due volte prima di una nuova lettura: la più vecchia si chiude subito
+      this.disposeStale();
+      this.stale = this.cached;
+    }
+    this.cached = null;
+  }
+
+  private disposeStale(): void {
+    if (this.stale !== null && this.stale !== this.base) void this.stale.dispose();
+    this.stale = null;
+  }
+
+  /** Chiude l'albero di partenza e le viste (worker della ricerca regex): la copia di lavoro non si usa più. */
+  async dispose(): Promise<void> {
+    const trees = [this.base, this.cached, this.stale].filter((t): t is SourceTree => t !== null);
+    this.cached = null;
+    this.stale = null;
+    await Promise.all(trees.map((t) => t.dispose()));
   }
 
   private totalPaths(extra: string): number {
@@ -58,7 +83,7 @@ export class WorkingCopy {
     }
     if (this.totalPaths(path) > WORKING_COPY_LIMITS.maxPaths) return CODE_WRITE_MESSAGES.tooMany;
     this.pendingChanges.set(path, content);
-    this.cached = null;
+    this.invalidate();
     return null;
   }
 
@@ -85,12 +110,12 @@ export class WorkingCopy {
     // Un file nato solo nella copia in sospeso (né nell'albero né già committato): basta dimenticarlo
     if (!this.base.has(path) && !this.committed.has(path)) {
       this.pendingChanges.delete(path);
-      this.cached = null;
+      this.invalidate();
       return null;
     }
     if (this.totalPaths(path) > WORKING_COPY_LIMITS.maxPaths) return CODE_WRITE_MESSAGES.tooMany;
     this.pendingChanges.set(path, null);
-    this.cached = null;
+    this.invalidate();
     return null;
   }
 

@@ -42,6 +42,8 @@ export const CODE_SESSION_LIMITS = {
   maxBodyChars: 10_000,
   maxIssueChars: 8_000,
   maxAnnotations: 20,
+  /** Check falliti di cui si leggono le annotazioni (una chiamata ciascuno). */
+  maxAnnotationChecks: 3,
   maxLogJobs: 3,
   maxLogChars: 8_000,
   maxReadArgChars: 1_000,
@@ -159,7 +161,7 @@ export class CodeTaskSession {
   static async open(input: CodeSessionInput): Promise<CodeTaskSession> {
     const branch = codeBranch(input.instance.id, input.planTaskId);
     const base = input.baseBranch?.trim() ? input.baseBranch.trim() : await getDefaultBranch(input.repo);
-    if (base === branch) throw new Error("il branch del compito coincide con il base");
+    if (base === branch) throw new CodeWriteError(CODE_WRITE_MESSAGES.branchIsBase);
     const { head, exists } = await CodeTaskSession.startPoint(input.repo, branch, base);
     const tree = await loadTree(input.repo, head);
     logger.info({ instanceId: input.instance.id, planTaskId: input.planTaskId, sha: head.slice(0, 7), branchExists: exists }, "Sessione del codice aperta");
@@ -177,6 +179,11 @@ export class CodeTaskSession {
   handles(name: string): boolean {
     if ((READ_TOOL_NAMES as readonly string[]).includes(name)) return true;
     return this.mode === "write" && (WRITE_TOOL_NAMES as readonly string[]).includes(name);
+  }
+
+  /** Chiude gli alberi della sessione (worker della ricerca regex): da chiamare a fine esecuzione. */
+  async dispose(): Promise<void> {
+    await this.wc.dispose();
   }
 
   /** Modifiche non committate: a fine esecuzione si scartano. */
@@ -295,8 +302,8 @@ export class CodeTaskSession {
       }));
     } catch (err) {
       if (err instanceof CodeWriteError && err.message === CODE_WRITE_MESSAGES.branchMoved) {
-        await this.realign();
-        return fail(CODE_WRITE_MESSAGES.branchMoved);
+        const lost = await this.realign();
+        return fail(lost > 0 ? `${CODE_WRITE_MESSAGES.branchMoved} (${lost} modifiche non riapplicate)` : CODE_WRITE_MESSAGES.branchMoved);
       }
       throw err;
     }
@@ -306,37 +313,49 @@ export class CodeTaskSession {
     this.branchExists = true;
     this.commits++;
     this.wc.markCommitted();
-    await upsertCodeTask({
-      instanceId: this.instance.id,
-      planTaskId: this.planTaskId,
-      repo: this.repo.repo,
-      branch: this.branch,
-      baseBranch: this.baseBranch,
-      headSha: sha,
-      committedAt: new Date(),
-    });
+    try {
+      await upsertCodeTask({
+        instanceId: this.instance.id,
+        planTaskId: this.planTaskId,
+        repo: this.repo.repo,
+        branch: this.branch,
+        baseBranch: this.baseBranch,
+        headSha: sha,
+        committedAt: new Date(),
+      });
+    } catch (err) {
+      // Il commit è su GitHub: l'esito resta valido, la riga si riallinea al prossimo commit o all'apertura della PR
+      logger.error(
+        { instanceId: this.instance.id, planTaskId: this.planTaskId, sha: sha.slice(0, 7), errName: err instanceof Error ? err.name : "Error" },
+        "Registrazione del commit del compito non riuscita",
+      );
+    }
     logger.info({ instanceId: this.instance.id, planTaskId: this.planTaskId, sha: sha.slice(0, 7), files }, "Commit del compito scritto");
     return ok(`commit ${sha.slice(0, 7)} sul branch ${this.branch}: ${files} file`);
   }
 
   /** Il branch è avanzato (es. un push a mano): rilegge l'albero dal nuovo head e riapplica le modifiche in sospeso. */
-  private async realign(): Promise<void> {
+  private async realign(): Promise<number> {
     const pending = this.wc.pending();
     const { head, exists } = await CodeTaskSession.startPoint(this.repo, this.branch, this.baseBranch);
     const tree = await loadTree(this.repo, head);
     const wc = new WorkingCopy(tree);
+    let lost = 0;
     for (const [path, content] of pending) {
       if (content === null) {
-        if (tree.has(path)) wc.remove(path);
-      } else {
-        wc.write(path, content);
+        if (tree.has(path) && wc.remove(path) !== null) lost++;
+      } else if (wc.write(path, content) !== null) {
+        lost++;
       }
     }
+    const old = this.wc;
     this.wc = wc;
+    await old.dispose();
     this.headSha = head;
     this.treeSha = null;
     this.branchExists = exists;
-    logger.info({ instanceId: this.instance.id, planTaskId: this.planTaskId, sha: head.slice(0, 7), pending: wc.pendingCount() }, "Branch del compito riallineato");
+    logger.info({ instanceId: this.instance.id, planTaskId: this.planTaskId, sha: head.slice(0, 7), pending: wc.pendingCount(), lost }, "Branch del compito riallineato");
+    return lost;
   }
 
   private async openPull(title: string, body: string): Promise<ToolResult> {
@@ -381,10 +400,16 @@ export class CodeTaskSession {
       lines.push("", "Check falliti:");
       for (const c of failedChecks) lines.push(`- ${c.name} (${c.conclusion ?? "?"})`);
       const notes: string[] = [];
-      for (const c of failedChecks) {
+      for (const c of failedChecks.slice(0, CODE_SESSION_LIMITS.maxAnnotationChecks)) {
         if (notes.length >= CODE_SESSION_LIMITS.maxAnnotations) break;
-        const list = await checkRunAnnotations(this.repo, c.id, CODE_SESSION_LIMITS.maxAnnotations - notes.length);
-        for (const n of list) notes.push(`- ${c.name}: ${n.path}${n.line !== null ? `:${n.line}` : ""}: ${redactCredentials(n.message)}`);
+        try {
+          const list = await checkRunAnnotations(this.repo, c.id, CODE_SESSION_LIMITS.maxAnnotations - notes.length);
+          for (const n of list) notes.push(`- ${c.name}: ${n.path}${n.line !== null ? `:${n.line}` : ""}: ${redactCredentials(n.message)}`);
+        } catch (err) {
+          const msg = codeErrorMessage(err);
+          if (msg === null) throw err;
+          notes.push(`- ${c.name}: (annotazioni non disponibili: ${msg})`);
+        }
       }
       if (notes.length) lines.push("", "Annotazioni:", ...notes.slice(0, CODE_SESSION_LIMITS.maxAnnotations));
       for (const c of failedChecks.filter((x) => x.jobId !== null).slice(0, CODE_SESSION_LIMITS.maxLogJobs)) {

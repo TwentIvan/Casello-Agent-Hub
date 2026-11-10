@@ -20,6 +20,7 @@ export const CODE_WRITE_MESSAGES = {
   pullRejected: "GitHub ha rifiutato la PR: controlla che il branch abbia commit nuovi rispetto al base",
   unavailable: "GitHub non risponde (riprova più tardi)",
   noAccess: "l'App GitHub di Botcave non ha più accesso a questo repository: reinstallala o scegli un altro repo",
+  branchIsBase: "il branch del compito coincide con il branch base",
   baseMissing: "branch base non trovato: controlla il branch dell'app",
   tooManyCommits: "troppi commit in questa esecuzione (al massimo 10): riferisci l'esito",
   badMessage: "messaggio del commit non valido: da 1 a 500 caratteri",

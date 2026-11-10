@@ -85,4 +85,18 @@ describe("WorkingCopy", () => {
     expect(wc.edit("n.ts", "nuovo", "v2")).toBeNull();
     expect(wc.pending().size).toBe(1);
   });
+  it("una vista superata si chiude quando se ne costruisce una nuova; dispose chiude tutto", async () => {
+    const base = tree({ "a.ts": "x\n" });
+    const wc = new WorkingCopy(base);
+    const v1 = wc.view();
+    expect(wc.write("a.ts", "y\n")).toBeNull();
+    expect(v1.isDisposed).toBe(false);
+    const v2 = wc.view();
+    expect(v1.isDisposed).toBe(true);
+    expect(v2.isDisposed).toBe(false);
+    expect(base.isDisposed).toBe(false);
+    await wc.dispose();
+    expect(v2.isDisposed).toBe(true);
+    expect(base.isDisposed).toBe(true);
+  });
 });

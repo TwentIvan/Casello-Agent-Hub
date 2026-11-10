@@ -29,6 +29,8 @@ import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { clearInstallationTokenCache } from "../github/app";
 import { resetGithubConfigForTests } from "../github/config";
 import { getCodeTask } from "../code-writer/code-tasks";
+import { CODE_WRITE_MESSAGES } from "../code-writer/messages";
+import { CodeTaskSession } from "../code-writer/session";
 import { getPlan, writePlanVersion, type PlanTask } from "./plan";
 import { listEvents, markRead, unreadBulletin } from "./events";
 import { loadRoleTools } from "./role-tools";
@@ -576,6 +578,7 @@ describe("compiti dei ruoli cloud con codice", () => {
   const coder = (code: "read" | "write" = "write") => cloudRole([], { key: "analista", code } as Partial<InstanceRoleData>);
 
   it("ruolo code write: legge, modifica, committa, apre la PR e riferisce", async () => {
+    const dispose = vi.spyOn(CodeTaskSession.prototype, "dispose");
     await owned();
     const instanceId = await seedTeam([coder()]);
     const branch = `botcave/${instanceId}-t1`;
@@ -607,6 +610,23 @@ describe("compiti dei ruoli cloud con codice", () => {
     const edit = (await steps(task.id)).find((s) => s.toolName === "modifica_file")!;
     expect(edit.args).toEqual({ percorso: "src/a.ts", vecchio: "***", nuovo: "***" });
     expect(edit.ok).toBe(true);
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("apertura della sessione non riuscita: branch base mancante o errore inatteso → blocked con messaggio fisso", async () => {
+    await owned();
+    await db.update(appsTable).set({ sourceBranch: "nope" }).where(eq(appsTable.id, appAId));
+    const instanceId = await seedTeam([coder()], ["t1", "t2"]);
+
+    const missing = await runOne(instanceId, "t1");
+    expect(missing).toMatchObject({ status: "blocked", outcome: CODE_WRITE_MESSAGES.baseMissing, error: CODE_WRITE_MESSAGES.baseMissing });
+    expect((await getPlan(instanceId)).tasks[0]).toMatchObject({ status: "blocked", outcome: CODE_WRITE_MESSAGES.baseMissing });
+
+    vi.spyOn(CodeTaskSession, "open").mockRejectedValueOnce(new Error("guasto con dettagli interni"));
+    const broken = await runOne(instanceId, "t2");
+    expect(broken).toMatchObject({ status: "blocked", outcome: TASK_MESSAGES.internalError, error: TASK_MESSAGES.internalError });
+    expect(chatRequests()).toHaveLength(0);
+    expect((await listEvents(instanceId)).map((e) => e.type)).toEqual(["bloccato", "bloccato"]);
   });
 
   it("riesecuzione sul branch: PR esistente, CI rossa e lettura dal branch", async () => {

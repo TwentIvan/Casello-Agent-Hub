@@ -35,6 +35,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   sulla squadra e memorie").
 - Lucius legge il codice: nella chat del piano, nelle schede agente e nelle aree degli agenti e nella chat di squadra Lucius legge il codice delle App collegate a GitHub (ultimo commit del branch, in cache) con
   `elenca_cartella`, `leggi_file`, `cerca_nel_codice` e verifica le voci prima di proporre (vedi "Lucius legge il codice"). Spec: `docs/superpowers/specs/2026-11-10-botcave-lucius-legge-il-codice-design.md`.
+- Avanzamento dei turni: mentre una chat (Alfred scritto, Lucius, chat del piano e di squadra, console ed embed) aspetta la risposta, sotto «sta pensando…» compaiono gli ultimi passi
+  (strumenti chiamati, con frasi fisse) e il tempo trascorso; registro in memoria, nessuna migrazione (vedi "Avanzamento dei turni"). Spec: `docs/superpowers/specs/2026-11-10-botcave-avanzamento-turni-design.md`.
 - Alfred e Lucius nelle aree: un solo pannello laterale a quattro schede (Alfred con la voce, Da confermare, Bollettino, Lucius), lo stesso in console ed embed, si apre
   dal pulsante di Alfred nella caverna o da «Chiedi a Lucius» (Alfred scritto con un filo unico che sa da quale pagina scrivi, Lucius sull'argomento che la pagina dichiara:
   agente, skill, modello di squadra, aree, piano, squadra); schede da accettare, passaggio di consegne tra le due schede, modello e tetto mensile per personaggio in
@@ -252,6 +254,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (`/api/node/turns/*`); schema `lib/db/src/schema/node-turns.ts`; nodo `artifacts/casello-nodo/src/turns.ts` e `turn-runner.ts`; console
   `components/account/ai-account-dialog.tsx`, `node-account-fields.tsx`, `ai-accounts-section.tsx`, `nodes-section.tsx`, `components/runs/run-steps.tsx`. Prova di flusso
   `artifacts/api-server/test/node-turn-flow.test.ts` con `test/fake-claude.mjs`. Spec: `docs/superpowers/specs/2026-11-09-botcave-esecutore-claude-code-nodo-design.md`
+- `artifacts/api-server/src/lib/turn-progress/` — avanzamento dei turni di chat: frasi dei passi (`describe.ts`) e registro in memoria (`progress.ts`); con `lib/node-turns/chat-turn.ts` e
+  console `components/characters/` (`turn-progress.ts`, `turn-progress-view.tsx`, `character-chat.tsx`) (vedi "Avanzamento dei turni")
 - `artifacts/api-server/src/lib/code-reader/` — lettura del codice delle App per Lucius: cache per commit (`source-cache.ts`), strumenti (`tools.ts`), messaggi e istruzioni (`messages.ts`); con
   `lib/github/commit.ts` (SHA del branch) e `userHasInstallation` in `lib/github/installations.ts` (vedi "Lucius legge il codice"). Spec: `docs/superpowers/specs/2026-11-10-botcave-lucius-legge-il-codice-design.md`
 - `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
@@ -885,6 +889,17 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   codice disponibile. Limiti dei turni con il codice: 12 giri, 150 000 token, 240 s (`CODE_TURN_LIMITS`, parametro `limits` di `runChatTurn`); sul nodo (`/mcp/turn`) `maxTurns` 13.
 - **Istruzioni**: `CODE_INSTRUCTIONS` nel piano (verificare, citare file e righe, `discard`/`update` con le evidenze); `CODE_INSTRUCTIONS_GENERAL` negli altri contesti, aggiunta da `extraInstructions` nel turno
   (non in `lib/characters/instructions.ts`).
+
+## Avanzamento dei turni
+
+- Spec: `docs/superpowers/specs/2026-11-10-botcave-avanzamento-turni-design.md`. Dove il codice differisce dalla spec vale il codice, descritto qui. Durante un turno di chat l'utente vede i passi in corso invece del solo «sta pensando…».
+- **Registro** (`lib/turn-progress/progress.ts`): in memoria, una voce per conversazione. `runChatTurn` (`lib/node-turns/chat-turn.ts`) apre la voce all'inizio e la chiude in `finally`, e avvolge `runTool`:
+  vale per il modello cloud, per il nodo e per il ripiego. Si tengono gli ultimi 8 passi (`omitted` conta quelli scartati), il conteggio si ferma a 200.
+- **Frasi** (`describe.ts`, `describeStep`): una frase fissa per strumento (es. lettura di un file, ricerca nel codice), mai argomenti, risultati o segreti né indirizzi delle app; strumento sconosciuto → frase generica.
+- **API**: schema OpenAPI `TurnProgress`, campo facoltativo `progress` in `PlanConversationDetail`, `TeamChatConversationDetail` e `CharacterConversationDetail` (anche il filo di Alfred), valorizzato solo con
+  `turnStatus = running`; la console già fa polling sulla conversazione.
+- **Console**: `components/characters/turn-progress.ts` (righe e `formatElapsed`) e `turn-progress-view.tsx`, usati da `character-chat.tsx` (console ed embed).
+- Nessuna migrazione e nessuna variabile. Limite: il registro è in memoria, quindi vale con un solo container API; con più container i passi andrebbero salvati nel DB.
 
 ## Autenticazione
 

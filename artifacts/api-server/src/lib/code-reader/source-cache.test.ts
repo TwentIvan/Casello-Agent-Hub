@@ -187,6 +187,29 @@ describe("cache delle sorgenti", () => {
     await expect(getAppSource(userId, app)).rejects.toThrow(CODE_MESSAGES.revoked);
   });
 
+  it("403 sullo sha: accesso revocato, token scartati e cache non riusata", async () => {
+    const app = await mkApp();
+    await getAppSource(userId, app);
+    const tokens = () => gh.requests.filter((r) => r.path === "/app/installations/11/access_tokens").length;
+    expect(tokens()).toBe(1);
+    gh.failWith = (r) => (r.path.includes("/commits/") ? 403 : null);
+    await expect(getAppSource(userId, app)).rejects.toThrow(CODE_MESSAGES.revoked);
+    gh.failWith = null;
+    await getAppSource(userId, app);
+    expect(tokens()).toBe(2);
+  });
+
+  it("lo sfratto fa dispose dell'albero", async () => {
+    const apps = [await mkApp("ivan/fanta"), await mkApp("ivan/r2"), await mkApp("ivan/r3"), await mkApp("ivan/r4")];
+    const first = await getAppSource(userId, apps[0]!);
+    await first.tree.search("export", { regex: true });
+    for (const a of apps.slice(1)) {
+      clock += 1000;
+      await getAppSource(userId, a);
+    }
+    await expect(first.tree.search("export", { regex: true })).rejects.toThrow("ricerca regex non disponibile: riprova");
+  });
+
   it("app zip: codice non disponibile", async () => {
     const app = await mkApp("ivan/fanta", { sourceType: "zip", sourceInstallationId: null });
     expect(await codeAvailability(userId, app)).toEqual({ ok: false, reason: CODE_MESSAGES.unavailable("Fanta") });

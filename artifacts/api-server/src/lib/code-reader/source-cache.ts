@@ -81,7 +81,7 @@ function isNetworkError(err: SourceError): boolean {
 function mapError(err: unknown, app: App): CodeReaderError {
   if (err instanceof CodeReaderError) return err;
   if (err instanceof SourceError) {
-    if (err.status === 401) {
+    if (err.status === 401 || err.status === 403) {
       if (app.sourceInstallationId != null) forgetInstallationTokens(app.sourceInstallationId);
       return new CodeReaderError(CODE_MESSAGES.revoked);
     }
@@ -115,8 +115,8 @@ async function loadSource(app: App, repo: string, branch: string | null): Promis
   try {
     sha = await fetchBranchSha({ apiBase, repo, branch, token });
   } catch (err) {
-    // Accesso revocato: niente riuso del repository in memoria
-    if (err instanceof SourceError && err.status === 401) throw err;
+    // Accesso revocato o negato: niente riuso del repository in memoria
+    if (err instanceof SourceError && (err.status === 401 || err.status === 403)) throw err;
     sha = null;
   }
 

@@ -185,6 +185,8 @@ export class SourceTree {
   private readonly sortedPaths: string[];
   private readonly noise: Set<string>;
   private regexWorker: RegexSearchWorker | null = null;
+  /** Dopo `dispose()` la ricerca regex non ricrea il worker (un riferimento tenuto dopo lo sfratto non deve farlo rivivere). */
+  private disposed = false;
 
   private constructor(files: Map<string, string>, totalBytes: number, skipped: SourceSkipped) {
     this.files = files;
@@ -432,6 +434,7 @@ export class SourceTree {
       } catch {
         throw new SourceTreeError(`Espressione regolare non valida: ${pattern}`);
       }
+      if (this.disposed) throw new SourceTreeError("ricerca regex non disponibile: riprova");
       this.regexWorker ??= new RegexSearchWorker(() => [...this.files.entries()]);
       try {
         const scoped = opts.includeIgnored ? this.sortedPaths : this.sortedPaths.filter((p) => !this.noise.has(p));
@@ -475,6 +478,7 @@ export class SourceTree {
 
   /** Termina il worker della ricerca regex, se avviato. */
   async dispose(): Promise<void> {
+    this.disposed = true;
     await this.regexWorker?.dispose();
     this.regexWorker = null;
   }

@@ -65,9 +65,12 @@ Per ognuna delle tre chat (stesse route esistenti, prefissi di oggi):
   - Limite: il contatore dei messaggi della chat (10/min) non si consuma; 30/min per utente per lo stop (`consumeTurnStop`).
 - `POST …/messages` accetta `mode` facoltativo: `normal` (default, come oggi: 409 «il personaggio sta già rispondendo» se il turno è in corso),
   `now`, `queue`.
-  - `now`: se il turno è in corso lo ferma come `…/stop` e poi avvia il turno nuovo; altrimenti come `normal`. 202.
+  - `now`: se il turno è in corso il messaggio diventa il messaggio in coda (come `queue`, sostituendo il testo di un eventuale messaggio già
+    in coda, che la console mostra) e il turno si ferma come `…/stop`: a fine turno parte subito; altrimenti come `normal`. Così non c'è una
+    corsa tra il turno fermato e il turno nuovo. 202.
   - `queue`: se il turno è in corso salva il messaggio con `queued_at = now()` (un solo messaggio in coda per conversazione: uno nuovo ne
-    sostituisce il testo e la pagina, `queued_at` resta del primo); se il turno non è in corso parte subito. 202 con `{ queued: true|false }`.
+    sostituisce il testo e la pagina, `queued_at` resta del primo); se il turno non è in corso parte subito. 202.
+  - La risposta resta il messaggio dell'utente (quello in coda, se accodato); lo stato si legge dal dettaglio (`queuedMessage`).
   - Validazioni (vuoto, lunghezza, contesto della pagina, argomento eliminato, conversazione archiviata, squadra chiusa) come oggi, anche in coda.
 - `DELETE …/queued` («Annulla»): toglie il messaggio in coda (204; nessuno → 204).
 - I dettagli della conversazione (`CharacterConversationDetail`, `PlanConversationDetail`, `TeamChatConversationDetail`) espongono `queuedMessage`
@@ -76,10 +79,11 @@ Per ognuna delle tre chat (stesse route esistenti, prefissi di oggi):
 
 ### 1.4 Partenza del messaggio in coda
 
-- A fine turno (normale, fermato o fallito), dopo la scrittura finale, `drainQueued(kind, conversationId)`: in una transazione con la
-  conversazione bloccata (`FOR UPDATE`) e `turn_status = idle`, il messaggio in coda perde `queued_at`, diventa l'ultimo messaggio dell'utente
-  (id più alto: si reinserisce come riga nuova e si cancella la vecchia, così l'ordine della cronologia resta per id) e si avvia il turno come
-  `startXTurn` (che rimette `running`).
+- A fine turno (normale, fermato o fallito), dopo la scrittura finale, `drainQueued`: con la conversazione `idle` il messaggio in coda
+  diventa l'ultimo messaggio dell'utente
+  (si avvia il turno con `startXTurn`, che inserisce il messaggio come riga nuova con l'id più alto, poi si cancella la riga in coda: l'ordine
+  della cronologia resta per id). Se `startXTurn` rifiuta (turno già ripartito: la coda si svuoterà alla sua fine; argomento eliminato,
+  conversazione archiviata, squadra chiusa) il messaggio resta in coda, visibile con «Annulla».
 - Al momento della partenza si controllano tetto del personaggio, modello e tetto di spesa come per un messaggio normale: se bloccato il messaggio
   parte comunque e il turno chiude con il messaggio d'errore dell'assistente (come oggi per un tetto raggiunto nel turno). Il limite di 10/min si
   consuma all'accodamento, non alla partenza.

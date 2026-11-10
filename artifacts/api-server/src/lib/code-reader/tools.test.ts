@@ -112,8 +112,49 @@ describe("strumenti di lettura del codice", () => {
     const out = await new CodeToolRunner(userId, app.id).run(call("leggi_file", { percorso: "big.txt" }));
     expect(out).toContain("400: riga numero 400");
     expect(out).not.toContain("401: riga numero 401");
-    expect(out).toContain("continua con fromLine=401");
+    expect(out).toContain("continua con daRiga=401");
+    expect(out).not.toContain("fromLine");
     expect(out.length).toBeLessThanOrEqual(20_000);
+  });
+
+  it("daRiga: 401 legge dalla riga 401", async () => {
+    const app = await mkApp("Fanta", "fanta", "ivan/fanta");
+    const out = await new CodeToolRunner(userId, app.id).run(call("leggi_file", { percorso: "big.txt", daRiga: 401 }));
+    expect(out).toContain("401: riga numero 401");
+    expect(out).not.toContain("400: riga numero 400");
+  });
+
+  it("parametri non previsti rifiutati", async () => {
+    const app = await mkApp("Fanta", "fanta", "ivan/fanta");
+    const out = await new CodeToolRunner(userId, app.id).run(call("leggi_file", { percorso: "big.txt", fromLine: 401 }));
+    expect(out).toBe("Errore: parametri non previsti: fromLine");
+  });
+
+  it("niente includeIgnored negli output", async () => {
+    const app = await mkApp("Fanta", "fanta", "ivan/fanta");
+    gh.zipballs.set(
+      "ivan/fanta",
+      buildZip([
+        { name: "proj/src/a.ts", content: Buffer.from("export const alfa = 1;\n") },
+        { name: "proj/package-lock.json", content: Buffer.from("{}") },
+      ]),
+    );
+    const r = new CodeToolRunner(userId, app.id);
+    const l = await r.run(call("elenca_cartella", { percorso: "" }));
+    const s = await r.run(call("cerca_nel_codice", { testo: "alfa" }));
+    expect(l).toContain("file esclusi per default");
+    expect(l + s).not.toContain("includeIgnored");
+  });
+
+  it("albero sfrattato durante il turno: il runner lo ricarica", async () => {
+    const app = await mkApp("Fanta", "fanta", "ivan/fanta");
+    const r = new CodeToolRunner(userId, app.id);
+    await r.run(call("cerca_nel_codice", { testo: "alfa", regex: true }));
+    gh.commits.set("ivan/fanta", "1234567".repeat(5) + "abcde");
+    // un'altra richiesta (altro runner) vede lo sha nuovo e sfratta l'albero tenuto da r
+    await new CodeToolRunner(userId, app.id).run(call("elenca_cartella", { percorso: "" }));
+    const out = await r.run(call("cerca_nel_codice", { testo: "alfa", regex: true }));
+    expect(out).toContain("src/a.ts:1");
   });
 
   it("cerca_nel_codice con intestazione e sha7", async () => {

@@ -205,6 +205,12 @@ describe("cache delle sorgenti", () => {
     await expect(first.tree.search("export", { regex: true })).rejects.toThrow("ricerca regex non disponibile: riprova");
   });
 
+  it("5xx sullo zipball: GitHub non raggiungibile", async () => {
+    const app = await mkApp();
+    gh.failWith = (r) => (r.path.includes("/zipball") ? 502 : null);
+    await expect(getAppSource(userId, app)).rejects.toThrow(CODE_MESSAGES.unreachable);
+  });
+
   it("app zip: codice non disponibile", async () => {
     const app = await mkApp("ivan/fanta", { sourceType: "zip", sourceInstallationId: null });
     expect(await codeAvailability(userId, app)).toEqual({ ok: false, reason: CODE_MESSAGES.unavailable("Fanta") });

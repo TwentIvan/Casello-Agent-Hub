@@ -867,8 +867,9 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 
 - Spec: `docs/superpowers/specs/2026-11-10-botcave-lucius-legge-il-codice-design.md` (con «Differenze dal codice» in fondo). Dove il codice differisce dalla spec vale il codice, descritto qui. Lucius legge il
   codice delle App collegate a GitHub (`lib/code-reader/`) per verificare le voci del piano e le proposte prima di farle; nessuna migrazione, nessuna variabile nuova.
-- **Cache per commit** (`source-cache.ts`): al più 3 repository in memoria, sfrattati dopo 15 minuti di inattività (`SourceTree.dispose` ferma anche la ricerca regex in corso: dopo lo sfratto
-  `cerca_nel_codice` non parte più). Lo SHA del branch si legge con `lib/github/commit.ts` (`accept: application/vnd.github.sha`): stesso SHA → si riusa l'albero, SHA nuovo → nuovo download, richieste
+- **Cache per commit** (`source-cache.ts`): al più 3 repository in memoria, sfrattati dopo 15 minuti di inattività o per LRU oltre il terzo repository (`SourceTree.dispose` ferma anche la ricerca regex in corso: dopo lo sfratto la ricerca regex dell'albero
+  non parte più; `CodeToolRunner` se ne accorge (`isDisposed`) e rilegge il codice con `getAppSource`; GitHub 5xx sullo zipball → «GitHub non raggiungibile»). I suggerimenti degli output usano i parametri di Lucius
+  (`daRiga`, niente `includeIgnored`) e i parametri non previsti sono rifiutati. Lo SHA del branch si legge con `lib/github/commit.ts` (`accept: application/vnd.github.sha`): stesso SHA → si riusa l'albero, SHA nuovo → nuovo download, richieste
   concorrenti → un solo download. Se lo SHA non è leggibile ma il repository è in memoria lo si riusa con la dicitura «commit non verificato»; 401/403 sullo SHA → «accesso al repository revocato».
   Lo zipball si scarica al branch (lo SHA è quello letto prima).
 - **Accesso**: serve un'App con codice da GitHub tramite installazione (`source_installation_id`) o token manuale; l'installazione deve essere dell'utente (`userHasInstallation`, controllata a ogni
@@ -876,7 +877,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - **Strumenti** (`tools.ts`; parametro `app` = slug, obbligatorio dove le App sono più d'una): `elenca_cartella`, `leggi_file` (al più 400 righe e 16 000 caratteri per lettura), `cerca_nel_codice` (regex,
   worker con timeout); uscita di ogni strumento ≤ 20 000 caratteri, intestazione con lo sha7 e codice dichiarato dato non attendibile. Errori fissi in `CODE_MESSAGES` (`messages.ts`), mai il testo di GitHub; nella
   chat dei personaggi un errore degli strumenti del codice è un risultato `{ok:false}`.
-- **Dove si offrono**: chat del piano (App del piano), argomento `agent` (App dell'agente), `area_agents` (tutte le App dell'utente, slug nell'elenco), chat di squadra (App di riferimento); solo con il
+- **Dove si offrono**: chat del piano (App del piano), argomento `agent` (App dell'agente), `area_agents` (tutte le App con il codice leggibile dall'utente, slug nell'elenco), chat di squadra (App di riferimento); solo con il
   codice disponibile. Limiti dei turni con il codice: 12 giri, 150 000 token, 240 s (`CODE_TURN_LIMITS`, parametro `limits` di `runChatTurn`); sul nodo (`/mcp/turn`) `maxTurns` 13.
 - **Istruzioni**: `CODE_INSTRUCTIONS` nel piano (verificare, citare file e righe, `discard`/`update` con le evidenze); `CODE_INSTRUCTIONS_GENERAL` negli altri contesti, aggiunta da `extraInstructions` nel turno
   (non in `lib/characters/instructions.ts`).

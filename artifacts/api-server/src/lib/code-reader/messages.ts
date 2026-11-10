@@ -8,6 +8,7 @@ export const CODE_MESSAGES = {
   notFound: "repository o branch non trovato",
   unreachable: "GitHub non raggiungibile: riprova tra poco",
   appNotFound: (slug: string) => `app non trovata: ${slug}`,
+  appGone: "l'app dell'argomento non esiste più",
   needApp: "indica l'app con il suo slug",
   internal: "errore interno dello strumento",
 } as const;

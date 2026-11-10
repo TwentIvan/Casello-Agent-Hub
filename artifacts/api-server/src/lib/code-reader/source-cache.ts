@@ -86,6 +86,7 @@ function mapError(err: unknown, app: App): CodeReaderError {
       return new CodeReaderError(CODE_MESSAGES.revoked);
     }
     if (err.status === 404) return new CodeReaderError(CODE_MESSAGES.notFound);
+    if (err.status !== null && err.status >= 500) return new CodeReaderError(CODE_MESSAGES.unreachable);
     if (isNetworkError(err)) return new CodeReaderError(CODE_MESSAGES.unreachable);
     return new CodeReaderError(err.message);
   }

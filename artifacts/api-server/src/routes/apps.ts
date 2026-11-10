@@ -1,13 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { INSTALLATION_NOT_YOURS, userHasInstallation } from "../lib/github/installations";
-import { and, asc, count, eq, inArray } from "drizzle-orm";
+import { asc, count, eq, inArray } from "drizzle-orm";
 import {
   db,
   appsTable,
   agentsTable,
   agentTriggersTable,
-  githubInstallationsTable,
   pendingActionsTable,
   teamInstancesTable,
 } from "@workspace/db";
@@ -28,6 +26,7 @@ import { checkAuthHeaderName, checkExtraHeaders, normalizeExtraHeaders } from ".
 import type { AuthConfig, ExtraHeader } from "../lib/tools/types";
 import { uniqueSlug, withSlugRetry } from "../lib/slug";
 import { isValidGithubRepo } from "../lib/architect/sources";
+import { INSTALLATION_NOT_YOURS, userHasInstallation } from "../lib/github/installations";
 import { currentUserId } from "../lib/auth";
 import { GITHUB_MESSAGES, GithubError, repoInstallationId } from "../lib/github/app";
 import { githubConfig } from "../lib/github/config";

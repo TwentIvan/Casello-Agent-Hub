@@ -477,6 +477,10 @@ export class SourceTree {
   }
 
   /** Termina il worker della ricerca regex, se avviato. */
+  get isDisposed(): boolean {
+    return this.disposed;
+  }
+
   async dispose(): Promise<void> {
     this.disposed = true;
     await this.regexWorker?.dispose();

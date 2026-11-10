@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import type { ChatCompletionFunctionTool } from "openai/resources/chat/completions";
 import { appsTable, db } from "@workspace/db";
 import type { ChatToolCall } from "../ai/chat-types";
-import { FULL_READ_LIMITS, listDir, readFile, search, type ReadLimits } from "../architect/phase-loop";
+import { FULL_READ_LIMITS, listDir, readFile, search, type ReadHints, type ReadLimits } from "../architect/phase-loop";
 import { SourceTreeError } from "../architect/source-tree";
 import { logger } from "../logger";
 import { CODE_INSTRUCTIONS, CODE_INSTRUCTIONS_GENERAL, CODE_MESSAGES } from "./messages";
@@ -18,6 +18,9 @@ export const CODE_READ_LIMITS: ReadLimits = {
   maxReadChars: 16_000,
   maxToolOutputChars: 20_000,
 };
+
+/** Suggerimenti dell'output coerenti con i parametri di Lucius (niente includeIgnored). */
+const CODE_HINTS: ReadHints = { fromLine: "daRiga", includeIgnored: null };
 
 export { CODE_INSTRUCTIONS, CODE_INSTRUCTIONS_GENERAL };
 
@@ -92,6 +95,8 @@ function parseArgs(raw: string): Args | string {
 
 function checkArgs(name: CodeToolName, a: Args): string | null {
   const problems: string[] = [];
+  const unknown = Object.keys(a).filter((k) => !(k in SPECS[name]));
+  if (unknown.length) return `parametri non previsti: ${unknown.join(", ")}`;
   for (const [key, [type, required]] of Object.entries(SPECS[name])) {
     const v = a[key];
     if (v === undefined || v === null) {
@@ -134,6 +139,11 @@ export class CodeToolRunner {
 
     const app = await this.resolveApp(parsed["app"] as string | undefined);
     let source = this.sources.get(app.id);
+    // Un albero sfrattato dalla cache durante il turno non è più utilizzabile: si ricarica
+    if (source?.tree.isDisposed) {
+      this.sources.delete(app.id);
+      source = undefined;
+    }
     if (!source) {
       source = await getAppSource(this.userId, app);
       this.sources.set(app.id, source);
@@ -142,7 +152,7 @@ export class CodeToolRunner {
     const tree = source.tree;
     let body: string;
     if (name === "elenca_cartella") {
-      body = listDir(tree, parsed["percorso"] as string, parsed["profondita"] as number | undefined, false, CODE_READ_LIMITS).content;
+      body = listDir(tree, parsed["percorso"] as string, parsed["profondita"] as number | undefined, false, CODE_READ_LIMITS, CODE_HINTS).content;
     } else if (name === "leggi_file") {
       body = readFile(
         tree,
@@ -150,6 +160,7 @@ export class CodeToolRunner {
         parsed["daRiga"] as number | undefined,
         parsed["aRiga"] as number | undefined,
         CODE_READ_LIMITS,
+        CODE_HINTS,
       ).content;
     } else {
       body = (
@@ -160,6 +171,7 @@ export class CodeToolRunner {
           parsed["regex"] as boolean | undefined,
           false,
           CODE_READ_LIMITS,
+          CODE_HINTS,
         )
       ).content;
     }
@@ -170,7 +182,7 @@ export class CodeToolRunner {
     const where = slug ? eq(appsTable.slug, slug) : this.defaultAppId != null ? eq(appsTable.id, this.defaultAppId) : null;
     if (!where) throw new CodeReaderError(CODE_MESSAGES.needApp);
     const [app] = await db.select().from(appsTable).where(where);
-    if (!app) throw new CodeReaderError(CODE_MESSAGES.appNotFound(slug ?? String(this.defaultAppId)));
+    if (!app) throw new CodeReaderError(slug ? CODE_MESSAGES.appNotFound(slug) : CODE_MESSAGES.appGone);
     return app;
   }
 }

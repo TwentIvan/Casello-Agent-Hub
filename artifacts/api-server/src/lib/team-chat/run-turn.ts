@@ -113,7 +113,7 @@ function errorText(err: unknown): string {
 
 /** Esegue il turno e lo chiude sempre (messaggio dell'assistente, schede, totali, `idle`). Non lancia mai. */
 export function executeTeamChatTurn(conversationId: number, assistantMessageId: number): Promise<void> {
-  return trackTurn("team", conversationId, () => executeTeamChatTurnInner(conversationId, assistantMessageId));
+  return trackTurn("team", conversationId, (_signal) => executeTeamChatTurnInner(conversationId, assistantMessageId));
 }
 
 async function executeTeamChatTurnInner(conversationId: number, assistantMessageId: number): Promise<void> {

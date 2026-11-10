@@ -216,7 +216,7 @@ function errorText(err: unknown): string {
 
 /** Esegue il turno e lo chiude sempre (messaggio dell'assistente, totali, `idle`). Non lancia mai. */
 export function executePlanTurn(conversationId: number, assistantMessageId: number): Promise<void> {
-  return trackTurn("plan", conversationId, () => executePlanTurnInner(conversationId, assistantMessageId));
+  return trackTurn("plan", conversationId, (_signal) => executePlanTurnInner(conversationId, assistantMessageId));
 }
 
 async function executePlanTurnInner(conversationId: number, assistantMessageId: number): Promise<void> {

@@ -114,3 +114,28 @@ describe("runChatTurn: avanzamento", () => {
     expect(readTurnProgress("character", 1)).toBeNull();
   });
 });
+
+describe("runChatTurn: interruzione", () => {
+  it("sul nodo cancelled con segnale annullato è stopped", async () => {
+    const ac = new AbortController();
+    ac.abort();
+    delegateTurn.mockResolvedValue({ kind: "cancelled" });
+    const out = await runChatTurn(input("node", { signal: ac.signal }));
+    expect(out).toMatchObject({ ok: false, stopped: true, error: "Risposta interrotta.", tokens: 0, costUsd: null });
+    expect(delegateTurn.mock.calls[0]![0]).toMatchObject({ signal: ac.signal });
+  });
+
+  it("cancelled senza segnale annullato resta il messaggio del nodo, senza stopped", async () => {
+    delegateTurn.mockResolvedValue({ kind: "cancelled" });
+    const out = await runChatTurn(input("node"));
+    expect(out.ok).toBe(false);
+    expect(out).not.toHaveProperty("stopped");
+  });
+
+  it("sul cloud il segnale arriva a modelChat", async () => {
+    const ac = new AbortController();
+    modelChat.mockResolvedValueOnce(reply(false));
+    await runChatTurn(input("openai_compatible", { signal: ac.signal }));
+    expect(modelChat.mock.calls[0]![1]).toMatchObject({ signal: ac.signal });
+  });
+});

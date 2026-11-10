@@ -305,7 +305,7 @@ function errorText(err: unknown): string {
 
 /** Esegue il turno e lo chiude sempre (messaggio dell'assistente, totali, `idle`). Non lancia mai. */
 export function executeCharacterTurn(conversationId: number, assistantMessageId: number): Promise<void> {
-  return trackTurn("character", conversationId, () => executeCharacterTurnInner(conversationId, assistantMessageId));
+  return trackTurn("character", conversationId, (_signal) => executeCharacterTurnInner(conversationId, assistantMessageId));
 }
 
 async function executeCharacterTurnInner(conversationId: number, assistantMessageId: number): Promise<void> {

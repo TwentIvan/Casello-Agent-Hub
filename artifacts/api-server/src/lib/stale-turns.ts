@@ -12,21 +12,36 @@ export type ChatTurnKind = "plan" | "character" | "team";
 export const STALE_TURN_MS = 5 * 60_000;
 const SWEEP_EVERY_MS = 60_000;
 
-const live: Record<ChatTurnKind, Set<number>> = { plan: new Set(), character: new Set(), team: new Set() };
+const live: Record<ChatTurnKind, Map<number, AbortController>> = { plan: new Map(), character: new Map(), team: new Map() };
 
-/** Segna il turno della conversazione come in corso in questo processo fino alla fine di `run`. */
-export async function trackTurn<T>(kind: ChatTurnKind, conversationId: number, run: () => Promise<T>): Promise<T> {
-  live[kind].add(conversationId);
+/** Segna il turno della conversazione come in corso in questo processo fino alla fine di `run`, che riceve il segnale di interruzione. */
+export async function trackTurn<T>(kind: ChatTurnKind, conversationId: number, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  live[kind].set(conversationId, controller);
   try {
-    return await run();
+    return await run(controller.signal);
   } finally {
-    live[kind].delete(conversationId);
+    // Solo se la voce è ancora la nostra (un turno nuovo della stessa conversazione non va cancellato)
+    if (live[kind].get(conversationId) === controller) live[kind].delete(conversationId);
   }
+}
+
+/** Annulla il turno in corso in questo processo; true se c'era. */
+export function abortTurn(kind: ChatTurnKind, conversationId: number): boolean {
+  const controller = live[kind].get(conversationId);
+  if (!controller) return false;
+  controller.abort();
+  return true;
+}
+
+/** Il turno della conversazione gira in questo processo. */
+export function isLiveTurn(kind: ChatTurnKind, conversationId: number): boolean {
+  return live[kind].has(conversationId);
 }
 
 /** Conversazioni con un turno in corso in questo processo. */
 export function liveTurns(kind: ChatTurnKind): number[] {
-  return [...live[kind]];
+  return [...live[kind].keys()];
 }
 
 export interface StaleTurnFilter {

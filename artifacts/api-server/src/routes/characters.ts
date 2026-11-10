@@ -1,3 +1,4 @@
+import { readTurnProgress } from "../lib/turn-progress/progress";
 import { Router, type IRouter, type Response } from "express";
 import { and, asc, desc, eq, ne } from "drizzle-orm";
 import {
@@ -79,6 +80,7 @@ async function detail(userId: number, conv: CharacterConversation) {
     ...toPublicConversation(conv),
     subjectGone: await subjectGone(userId, conv),
     messages: messages.map(toPublicMessage),
+    progress: conv.turnStatus === "running" ? readTurnProgress("character", conv.id) : null,
     proposals: proposals.map((p) => toPublicProposal(toProposalView(p))),
   };
 }

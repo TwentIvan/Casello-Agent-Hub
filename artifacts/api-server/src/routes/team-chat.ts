@@ -1,3 +1,4 @@
+import { readTurnProgress } from "../lib/turn-progress/progress";
 import { Router, type IRouter, type Response } from "express";
 import { and, asc, desc, eq } from "drizzle-orm";
 import {
@@ -158,6 +159,7 @@ export function createTeamChatRouter(): IRouter {
         GetTeamChatConversationResponse.parse({
           ...toPublicConversation(conv),
           messages: messages.map(toPublicMessage),
+          progress: conv.turnStatus === "running" ? readTurnProgress("team_chat", id) : null,
           proposals: proposals.map((p) => {
             const view = toProposalView(p);
             return toPublicProposal(view, currentValueOf(team, view));

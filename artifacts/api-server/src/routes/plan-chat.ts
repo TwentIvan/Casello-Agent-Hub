@@ -1,3 +1,4 @@
+import { readTurnProgress } from "../lib/turn-progress/progress";
 import { Router, type IRouter } from "express";
 import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
 import {
@@ -231,6 +232,7 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
         messages: messages.map(toPublicPlanMessage),
         proposals: await publicProposals(proposals),
         newerAnalysisId: newer?.id ?? null,
+        progress: conv.turnStatus === "running" ? readTurnProgress("plan_chat", id) : null,
       }),
     );
   });

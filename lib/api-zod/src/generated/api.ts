@@ -5728,7 +5728,15 @@ export const GetPlanConversationResponse = zod.object({
   "decidedAt": zod.coerce.date().nullable(),
   "createdAt": zod.coerce.date()
 })),
-  "newerAnalysisId": zod.number().nullable().describe('Id di un\'analisi completata più recente di quella della conversazione, se esiste')
+  "newerAnalysisId": zod.number().nullable().describe('Id di un\'analisi completata più recente di quella della conversazione, se esiste'),
+  "progress": zod.union([zod.object({
+  "startedAt": zod.coerce.date(),
+  "steps": zod.array(zod.object({
+  "text": zod.string(),
+  "status": zod.enum(['running', 'done'])
+})),
+  "omitted": zod.number().describe('Passi precedenti non più elencati')
+}),zod.null()]).optional().describe('Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null')
 }))
 
 
@@ -5931,7 +5939,15 @@ export const GetTeamChatConversationResponse = zod.object({
   "currentValue": zod.string().describe('Identità o istruzioni attuali del ruolo (\"\" se non ci sono), per mostrare le differenze'),
   "decidedAt": zod.coerce.date().nullable(),
   "createdAt": zod.coerce.date()
-}))
+})),
+  "progress": zod.union([zod.object({
+  "startedAt": zod.coerce.date(),
+  "steps": zod.array(zod.object({
+  "text": zod.string(),
+  "status": zod.enum(['running', 'done'])
+})),
+  "omitted": zod.number().describe('Passi precedenti non più elencati')
+}),zod.null()]).optional().describe('Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null')
 }))
 
 
@@ -6086,7 +6102,15 @@ export const GetAlfredThreadResponse = zod.object({
   "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
   "decidedAt": zod.coerce.date().nullable(),
   "createdAt": zod.coerce.date()
-}))
+})),
+  "progress": zod.union([zod.object({
+  "startedAt": zod.coerce.date(),
+  "steps": zod.array(zod.object({
+  "text": zod.string(),
+  "status": zod.enum(['running', 'done'])
+})),
+  "omitted": zod.number().describe('Passi precedenti non più elencati')
+}),zod.null()]).optional().describe('Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null')
 }))
 
 
@@ -6156,7 +6180,15 @@ export const RestartAlfredThreadResponse = zod.object({
   "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
   "decidedAt": zod.coerce.date().nullable(),
   "createdAt": zod.coerce.date()
-}))
+})),
+  "progress": zod.union([zod.object({
+  "startedAt": zod.coerce.date(),
+  "steps": zod.array(zod.object({
+  "text": zod.string(),
+  "status": zod.enum(['running', 'done'])
+})),
+  "omitted": zod.number().describe('Passi precedenti non più elencati')
+}),zod.null()]).optional().describe('Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null')
 }))
 
 
@@ -6295,7 +6327,15 @@ export const GetCharacterConversationResponse = zod.object({
   "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
   "decidedAt": zod.coerce.date().nullable(),
   "createdAt": zod.coerce.date()
-}))
+})),
+  "progress": zod.union([zod.object({
+  "startedAt": zod.coerce.date(),
+  "steps": zod.array(zod.object({
+  "text": zod.string(),
+  "status": zod.enum(['running', 'done'])
+})),
+  "omitted": zod.number().describe('Passi precedenti non più elencati')
+}),zod.null()]).optional().describe('Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null')
 }))
 
 

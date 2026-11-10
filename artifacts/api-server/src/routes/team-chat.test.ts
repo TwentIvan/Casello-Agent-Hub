@@ -17,6 +17,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { encryptSecret } from "../lib/secrets";
+import { beginTurnProgress, endTurnProgress, startStep } from "../lib/turn-progress/progress";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 
 // Route della chat di squadra e scarico delle istruzioni, su un'app Express vera senza login (AUTH_DISABLED=true).
@@ -218,6 +219,26 @@ describe("messaggi", () => {
     const blank = await api("POST", `/team-chat-conversations/${id}/messages`, { content: "   " });
     expect(blank.status).toBe(400);
     expect((await api("POST", `/team-chat-conversations/${id}/messages`, { content: "a".repeat(8001) })).status).toBe(400);
+  });
+
+  it("GET espone i passi del turno in corso, altrimenti progress null", async () => {
+    const { id } = await createConv();
+    try {
+      beginTurnProgress("team_chat", id);
+      startStep("team_chat", id, "Legge a.ts");
+      expect((await api("GET", `/team-chat-conversations/${id}`)).json.progress).toBeNull();
+      endTurnProgress("team_chat", id);
+      await db.update(teamChatConversationsTable).set({ turnStatus: "running" }).where(eq(teamChatConversationsTable.id, id));
+      expect((await api("GET", `/team-chat-conversations/${id}`)).json.progress).toBeNull();
+      beginTurnProgress("team_chat", id);
+      startStep("team_chat", id, "Legge a.ts");
+      const res = await api("GET", `/team-chat-conversations/${id}`);
+      expect(res.json.progress.steps[0]).toEqual({ text: "Legge a.ts", status: "running" });
+      expect(res.json.progress.omitted).toBe(0);
+    } finally {
+      endTurnProgress("team_chat", id);
+      await db.update(teamChatConversationsTable).set({ turnStatus: "idle" }).where(eq(teamChatConversationsTable.id, id));
+    }
   });
 
   it("turno in corso → 409; conversazione inesistente → 404", async () => {

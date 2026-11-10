@@ -8,6 +8,7 @@
 import type { PlanConversation } from './planConversation';
 import type { PlanMessage } from './planMessage';
 import type { PlanProposal } from './planProposal';
+import type { TurnProgress } from './turnProgress';
 
 export type PlanConversationDetail = PlanConversation & ({
   messages: PlanMessage[];
@@ -17,4 +18,6 @@ export type PlanConversationDetail = PlanConversation & ({
      * @nullable
      */
   newerAnalysisId: number | null;
+  /** Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null */
+  progress?: TurnProgress | null;
 });

@@ -8,8 +8,11 @@
 import type { TeamChatConversation } from './teamChatConversation';
 import type { TeamChatMessage } from './teamChatMessage';
 import type { TeamChatProposal } from './teamChatProposal';
+import type { TurnProgress } from './turnProgress';
 
-export type TeamChatConversationDetail = TeamChatConversation & {
+export type TeamChatConversationDetail = TeamChatConversation & ({
   messages: TeamChatMessage[];
   proposals: TeamChatProposal[];
-};
+  /** Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null */
+  progress?: TurnProgress | null;
+});

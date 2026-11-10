@@ -7,6 +7,7 @@ const delegateTurn = vi.fn();
 vi.mock("../ai/executor", () => ({ modelChat: (...a: unknown[]) => modelChat(...a), resolveModel: vi.fn() }));
 vi.mock("./delegate", () => ({ delegateTurn: (...a: unknown[]) => delegateTurn(...a) }));
 
+import { readTurnProgress } from "../turn-progress/progress";
 import { CHAT_NODE_MAX_TURNS, runChatTurn, type ChatTurnInput } from "./chat-turn";
 
 const TOOL = { type: "function" as const, function: { name: "leggi_prova", description: "Legge", parameters: { type: "object", properties: {} } } };
@@ -68,5 +69,48 @@ describe("runChatTurn: limiti", () => {
     expect(delegateTurn.mock.calls[0]![0]).toMatchObject({ maxTurns: 13, timeoutMs: 300_000 });
     await runChatTurn(input("node"));
     expect(delegateTurn.mock.calls[1]![0]).toMatchObject({ maxTurns: CHAT_NODE_MAX_TURNS });
+  });
+});
+
+describe("runChatTurn: avanzamento", () => {
+  it("registra il passo durante lo strumento", async () => {
+    modelChat.mockResolvedValueOnce(reply(true));
+    modelChat.mockResolvedValueOnce(reply(false));
+    let seen: ReturnType<typeof readTurnProgress> = null;
+    await runChatTurn(input("openai_compatible", { runTool: async () => { seen = readTurnProgress("character", 1); return "{}"; } }));
+    expect(seen!.steps).toEqual([{ text: "Usa uno strumento", status: "running" }]);
+    expect(readTurnProgress("character", 1)).toBeNull();
+  });
+
+  it("passo done dopo lo strumento", async () => {
+    modelChat.mockResolvedValueOnce(reply(true));
+    modelChat.mockResolvedValueOnce(reply(true));
+    modelChat.mockResolvedValueOnce(reply(false));
+    const seen: Array<ReturnType<typeof readTurnProgress>> = [];
+    await runChatTurn(input("openai_compatible", { runTool: async () => { seen.push(readTurnProgress("character", 1)); return "{}"; } }));
+    expect(seen[1]!.steps[0]!.status).toBe("done");
+  });
+
+  it("registro vuoto se il modello fallisce", async () => {
+    modelChat.mockRejectedValue(new Error("boom"));
+    await runChatTurn(input("openai_compatible")).catch(() => undefined);
+    expect(readTurnProgress("character", 1)).toBeNull();
+  });
+
+  it("registro vuoto se runTool lancia", async () => {
+    modelChat.mockResolvedValueOnce(reply(true));
+    await expect(runChatTurn(input("openai_compatible", { runTool: async () => { throw new Error("ko"); } }))).rejects.toThrow();
+    expect(readTurnProgress("character", 1)).toBeNull();
+  });
+
+  it("sul nodo registra il passo del dispatcher", async () => {
+    let seen: ReturnType<typeof readTurnProgress> = null;
+    delegateTurn.mockImplementation(async (a: { dispatch(c: unknown): Promise<string> }) => {
+      await a.dispatch({ id: "x", name: "leggi_file", arguments: '{"percorso":"a.ts"}' });
+      return { kind: "done", content: "ok", tokens: 1, costUsd: null };
+    });
+    await runChatTurn(input("node", { runTool: async () => { seen = readTurnProgress("character", 1); return "{}"; } }));
+    expect(seen!.steps[0]!.text).toBe("Legge a.ts");
+    expect(readTurnProgress("character", 1)).toBeNull();
   });
 });

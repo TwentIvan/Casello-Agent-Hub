@@ -17,6 +17,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { encryptSecret } from "../lib/secrets";
+import { beginTurnProgress, endTurnProgress, startStep } from "../lib/turn-progress/progress";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 
 // Route della chat del piano su un'app Express vera (porta 0), senza login (AUTH_DISABLED=true: l'utente
@@ -281,6 +282,29 @@ describe("route della chat del piano", () => {
     const ok = await api("POST", `/plan-conversations/${id}/messages`, { content: "ciao" });
     expect(ok.status, ok.text).toBe(202);
     await waitIdleApi(id);
+  });
+
+  it("GET espone i passi del turno in corso, altrimenti progress null", async () => {
+    const { id } = await createConv();
+    try {
+      // idle con voce nel registro: null
+      beginTurnProgress("plan_chat", id);
+      startStep("plan_chat", id, "Legge a.ts");
+      expect((await api("GET", `/plan-conversations/${id}`)).json.progress).toBeNull();
+      // running senza voce: null
+      endTurnProgress("plan_chat", id);
+      await db.update(planConversationsTable).set({ turnStatus: "running" }).where(eq(planConversationsTable.id, id));
+      expect((await api("GET", `/plan-conversations/${id}`)).json.progress).toBeNull();
+      // running con voce: passi
+      beginTurnProgress("plan_chat", id);
+      startStep("plan_chat", id, "Legge a.ts");
+      const res = await api("GET", `/plan-conversations/${id}`);
+      expect(res.json.progress.steps[0]).toEqual({ text: "Legge a.ts", status: "running" });
+      expect(res.json.progress.omitted).toBe(0);
+    } finally {
+      endTurnProgress("plan_chat", id);
+      await db.update(planConversationsTable).set({ turnStatus: "idle" }).where(eq(planConversationsTable.id, id));
+    }
   });
 
   it("PATCH con un turno in corso → 409", async () => {

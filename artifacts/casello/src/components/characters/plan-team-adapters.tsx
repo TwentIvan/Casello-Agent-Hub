@@ -46,6 +46,7 @@ function mapCommon(d: AnyDetail, readOnlyReason: string | null): Omit<ConvDetail
     tokensUsed: d.tokensUsed,
     costUsd: d.costUsd,
     turnStatus: d.turnStatus,
+    progress: d.progress ?? null,
     readOnlyReason,
     subjectId: null,
     messages: d.messages.map((m) => ({ id: m.id, role: m.role, content: m.content, error: m.error })),

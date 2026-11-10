@@ -13,6 +13,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { encryptSecret } from "../lib/secrets";
+import { beginTurnProgress, endTurnProgress, startStep } from "../lib/turn-progress/progress";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../test/fake-provider";
 import { registerSubject } from "../lib/characters/registry";
 import { toolOk, type SubjectHandler } from "../lib/characters/types";
@@ -250,6 +251,32 @@ describe("messaggi", () => {
     }
     const dashboard = await api("POST", `/character-conversations/${id}/messages`, { content: "ciao", pageContext: { page: "dashboard", host } });
     expect(dashboard.json.error).toBe("contesto della pagina non valido");
+  });
+
+  it("GET espone i passi del turno in corso (anche il filo di Alfred), altrimenti progress null", async () => {
+    const { id } = await createConv();
+    const thread = (await api("GET", "/characters/alfred/thread")).json.id as number;
+    try {
+      for (const cid of [id, thread]) {
+        beginTurnProgress("character", cid);
+        startStep("character", cid, "Legge a.ts");
+        expect((await api("GET", `/character-conversations/${cid}`)).json.progress).toBeNull();
+        endTurnProgress("character", cid);
+        await db.update(characterConversationsTable).set({ turnStatus: "running" }).where(eq(characterConversationsTable.id, cid));
+        expect((await api("GET", `/character-conversations/${cid}`)).json.progress).toBeNull();
+        beginTurnProgress("character", cid);
+        startStep("character", cid, "Legge a.ts");
+        const res = await api("GET", `/character-conversations/${cid}`);
+        expect(res.json.progress.steps[0]).toEqual({ text: "Legge a.ts", status: "running" });
+        expect(res.json.progress.omitted).toBe(0);
+        if (cid === thread) expect((await api("GET", "/characters/alfred/thread")).json.progress.steps).toHaveLength(1);
+      }
+    } finally {
+      for (const cid of [id, thread]) {
+        endTurnProgress("character", cid);
+        await db.update(characterConversationsTable).set({ turnStatus: "idle" }).where(eq(characterConversationsTable.id, cid));
+      }
+    }
   });
 
   it("send_busy_409: turno già in corso", async () => {

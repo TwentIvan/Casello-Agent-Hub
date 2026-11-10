@@ -8,8 +8,11 @@
 import type { CharacterConversation } from './characterConversation';
 import type { CharacterMessage } from './characterMessage';
 import type { CharacterProposal } from './characterProposal';
+import type { TurnProgress } from './turnProgress';
 
-export type CharacterConversationDetail = CharacterConversation & {
+export type CharacterConversationDetail = CharacterConversation & ({
   messages: CharacterMessage[];
   proposals: CharacterProposal[];
-};
+  /** Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null */
+  progress?: TurnProgress | null;
+});

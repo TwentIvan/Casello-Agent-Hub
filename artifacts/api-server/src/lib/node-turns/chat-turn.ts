@@ -8,6 +8,8 @@ import type { ChatToolCall } from "../ai/chat-types";
 import { modelChat, resolveModel, type ResolvedModel } from "../ai/executor";
 import { logger } from "../logger";
 import { PLAN_TURN_LIMITS, runPlanTurn, type PlanTurnLimits, type PlanTurnOutcome } from "../plan-chat/turn";
+import { describeStep } from "../turn-progress/describe";
+import { beginTurnProgress, endTurnProgress, finishStep, startStep } from "../turn-progress/progress";
 import { delegateTurn } from "./delegate";
 import { NODE_TURN_MESSAGES } from "./messages";
 
@@ -66,7 +68,28 @@ async function usableFallback(input: ChatTurnInput): Promise<ResolvedModel | nul
 }
 
 /** Esegue il turno e restituisce lo stesso esito di `runPlanTurn`. Errori inattesi del DB salgono al chiamante. */
-export async function runChatTurn(input: ChatTurnInput): Promise<PlanTurnOutcome> {
+export async function runChatTurn(original: ChatTurnInput): Promise<PlanTurnOutcome> {
+  beginTurnProgress(original.consumer, original.refId);
+  try {
+    return await runTrackedTurn(original);
+  } finally {
+    endTurnProgress(original.consumer, original.refId);
+  }
+}
+
+/** Come `runChatTurn`, con ogni chiamata di strumento registrata come passo visibile nella console. */
+async function runTrackedTurn(original: ChatTurnInput): Promise<PlanTurnOutcome> {
+  const input: ChatTurnInput = {
+    ...original,
+    async runTool(call) {
+      const stepId = startStep(original.consumer, original.refId, describeStep(call.name, call.arguments));
+      try {
+        return await original.runTool(call);
+      } finally {
+        finishStep(original.consumer, original.refId, stepId);
+      }
+    },
+  };
   if (input.resolved.kind !== "node") return cloudTurn(input.resolved, input);
 
   const outcome = await delegateTurn({

@@ -64,6 +64,7 @@ function mapCharacterDetail(d: CharacterConversationDetail): ConvDetail {
     tokensUsed: d.tokensUsed,
     costUsd: d.costUsd,
     turnStatus: d.turnStatus,
+    progress: d.progress ?? null,
     readOnlyReason: readOnlyReasonOf(d),
     subjectId: d.subjectId,
     messages: d.messages.map((m) => ({ id: m.id, role: m.role, content: m.content, error: m.error })),

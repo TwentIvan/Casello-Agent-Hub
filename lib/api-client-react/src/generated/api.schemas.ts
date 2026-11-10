@@ -1533,6 +1533,26 @@ export interface PlanProposal {
   createdAt: string;
 }
 
+export type TurnProgressStepsItemStatus = typeof TurnProgressStepsItemStatus[keyof typeof TurnProgressStepsItemStatus];
+
+
+export const TurnProgressStepsItemStatus = {
+  running: 'running',
+  done: 'done',
+} as const;
+
+export type TurnProgressStepsItem = {
+  text: string;
+  status: TurnProgressStepsItemStatus;
+};
+
+export interface TurnProgress {
+  startedAt: string;
+  steps: TurnProgressStepsItem[];
+  /** Passi precedenti non più elencati */
+  omitted: number;
+}
+
 export type PlanConversationDetail = PlanConversation & ({
   messages: PlanMessage[];
   proposals: PlanProposal[];
@@ -1541,6 +1561,8 @@ export type PlanConversationDetail = PlanConversation & ({
      * @nullable
      */
   newerAnalysisId: number | null;
+  /** Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null */
+  progress?: TurnProgress | null;
 });
 
 export interface PlanIssuesSummary {
@@ -1730,10 +1752,12 @@ export interface TeamChatProposal {
   createdAt: string;
 }
 
-export type TeamChatConversationDetail = TeamChatConversation & {
+export type TeamChatConversationDetail = TeamChatConversation & ({
   messages: TeamChatMessage[];
   proposals: TeamChatProposal[];
-};
+  /** Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null */
+  progress?: TurnProgress | null;
+});
 
 export interface TeamChatConversationCreate {
   /**
@@ -1917,10 +1941,12 @@ export interface CharacterProposal {
   createdAt: string;
 }
 
-export type CharacterConversationDetail = CharacterConversation & {
+export type CharacterConversationDetail = CharacterConversation & ({
   messages: CharacterMessage[];
   proposals: CharacterProposal[];
-};
+  /** Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null */
+  progress?: TurnProgress | null;
+});
 
 export type CharacterConversationCreateSubjectType = typeof CharacterConversationCreateSubjectType[keyof typeof CharacterConversationCreateSubjectType];
 

@@ -6759,6 +6759,28 @@ components:
           type: string
           format: date-time
 
+    TurnProgress:
+      type: object
+      required: [startedAt, steps, omitted]
+      properties:
+        startedAt:
+          type: string
+          format: date-time
+        steps:
+          type: array
+          items:
+            type: object
+            required: [text, status]
+            properties:
+              text:
+                type: string
+              status:
+                type: string
+                enum: [running, done]
+        omitted:
+          type: integer
+          description: Passi precedenti non più elencati
+
     PlanConversationDetail:
       allOf:
         - $ref: "#/components/schemas/PlanConversation"
@@ -6776,6 +6798,11 @@ components:
             newerAnalysisId:
               type: ["integer", "null"]
               description: Id di un'analisi completata più recente di quella della conversazione, se esiste
+            progress:
+              oneOf:
+                - $ref: "#/components/schemas/TurnProgress"
+                - type: "null"
+              description: Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null
 
     AppPlan:
       type: object
@@ -7016,6 +7043,11 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/TeamChatProposal"
+            progress:
+              oneOf:
+                - $ref: "#/components/schemas/TurnProgress"
+                - type: "null"
+              description: Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null
 
     TeamChatConversationCreate:
       type: object
@@ -7186,6 +7218,11 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/CharacterProposal"
+            progress:
+              oneOf:
+                - $ref: "#/components/schemas/TurnProgress"
+                - type: "null"
+              description: Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null
 
     CharacterConversationCreate:
       type: object

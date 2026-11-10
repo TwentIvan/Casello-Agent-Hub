@@ -45,23 +45,16 @@ jobs:
 
       - run: pnpm --filter @workspace/casello run test
 
-  # Botcave Nodo per Mac: eseguibile unico (Node 24 + casello-nodo) universale arm64/x64, app zippata e manifest.
-  # Gli artefatti finiscono in docker/nodo-downloads/ delle immagini: web li serve da /downloads/nodo/, l'API legge il manifest.
-  build-nodo:
-    name: Build Botcave Nodo (macOS)
-    needs: test
-    runs-on: macos-latest
+  # Botcave Nodo: si ricostruisce su macOS solo se la versione (package.json) o la minima (min-version.txt) differiscono da
+  # quelle pubblicate in produzione. Altrimenti si riusano zip, binario e manifest già pubblicati (verificati con sha256 e
+  # dimensione del manifest): un deploy che non tocca il nodo non aspetta un runner macOS.
+  nodo-plan:
+    name: Botcave Nodo da ricostruire?
+    runs-on: ubuntu-latest
+    outputs:
+      reuse: ${{ steps.plan.outputs.reuse }}
     steps:
       - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
 
       # I file pubblicati hanno la versione nel nome e la cache immutable: codice del nodo cambiato senza alzare la versione
       # = i nodi non si aggiornerebbero (o prenderebbero un file vecchio dalla cache). Solo sui push dei branch diversi da main.
@@ -81,6 +74,70 @@ jobs:
             echo "::error file=artifacts/casello-nodo/package.json::artifacts/casello-nodo/src è cambiato rispetto a main ma la versione è ancora ${branch_version}: alza \"version\" in artifacts/casello-nodo/package.json (i file pubblicati hanno la versione nel nome e la cache immutable)"
             exit 1
           fi
+
+      - name: Confronto con la versione pubblicata e riuso dei file
+        id: plan
+        run: |
+          set -euo pipefail
+          base="https://casello.fantamister.cloud/downloads/nodo"
+          out="docker/nodo-downloads"
+          version=$(node -p 'require("./artifacts/casello-nodo/package.json").version')
+          min=$(tr -d '[:space:]' < artifacts/casello-nodo/min-version.txt)
+          manifest=$(mktemp)
+          reuse=false
+          if curl -fsS --max-time 30 "$base/nodo-manifest.json" -o "$manifest"; then
+            read -r pub_version pub_min < <(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(m.version??"", m.minVersion??"")' "$manifest" || echo "- -")
+            echo "pubblicata: ${pub_version} (minima ${pub_min}); questo commit: ${version} (minima ${min})"
+            if [ "$pub_version" = "$version" ] && [ "$pub_min" = "$min" ]; then reuse=true; fi
+          else
+            echo "manifest pubblicato non raggiungibile: si ricostruisce"
+          fi
+          if [ "$reuse" = true ]; then
+            # Nomi e impronte dal manifest; nomi solo [A-Za-z0-9._-] (niente percorsi)
+            for kind in binary app; do
+              read -r file sha size < <(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))[process.argv[2]]??{};console.log(m.file??"", m.sha256??"", m.size??"")' "$manifest" "$kind")
+              if ! [[ "$file" =~ ^[A-Za-z0-9._-]+$ ]] || [ -z "$sha" ] || [ -z "$size" ]; then echo "voce $kind del manifest non valida"; reuse=false; break; fi
+              if ! curl -fsS --max-time 600 "$base/$file" -o "$out/$file"; then echo "download di $file non riuscito"; reuse=false; break; fi
+              got_size=$(wc -c < "$out/$file" | tr -d "[:space:]")
+              got_sha=$(sha256sum "$out/$file" | cut -d' ' -f1)
+              if [ "$got_size" != "$size" ] || [ "$got_sha" != "$sha" ]; then echo "$file non corrisponde al manifest"; reuse=false; break; fi
+            done
+          fi
+          if [ "$reuse" = true ]; then
+            cp "$manifest" "$out/nodo-manifest.json"
+            echo "si riusano i file pubblicati della versione ${version}"
+          else
+            find "$out" -type f ! -name .gitkeep -delete
+            echo "Botcave Nodo va ricostruito su macOS"
+          fi
+          echo "reuse=$reuse" >> "$GITHUB_OUTPUT"
+
+      - if: steps.plan.outputs.reuse == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nodo-downloads
+          path: docker/nodo-downloads/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Botcave Nodo per Mac: eseguibile unico (Node 24 + casello-nodo) universale arm64/x64, app zippata e manifest.
+  # Gli artefatti finiscono in docker/nodo-downloads/ delle immagini: web li serve da /downloads/nodo/, l'API legge il manifest.
+  build-nodo:
+    name: Build Botcave Nodo (macOS)
+    needs: [test, nodo-plan]
+    if: needs.nodo-plan.outputs.reuse != 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
 
       - run: pnpm install --frozen-lockfile --filter @workspace/casello-nodo...
 
@@ -102,7 +159,11 @@ jobs:
 
   build:
     name: Build ${{ matrix.app }}
-    needs: [test, build-nodo]
+    needs: [test, nodo-plan, build-nodo]
+    # build-nodo saltato (file del nodo riusati) non deve saltare la build delle immagini
+    if: >-
+      always() && needs.test.result == 'success' && needs.nodo-plan.result == 'success' &&
+      (needs.build-nodo.result == 'success' || (needs.build-nodo.result == 'skipped' && needs.nodo-plan.outputs.reuse == 'true'))
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -207,7 +268,8 @@ jobs:
   deploy:
     name: Deploy su Coolify
     needs: build
-    if: github.ref == 'refs/heads/main'
+    # always(): build-nodo saltato più indietro nella catena non deve saltare il deploy; conta solo l'esito di build
+    if: always() && github.ref == 'refs/heads/main' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:

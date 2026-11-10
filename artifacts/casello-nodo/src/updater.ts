@@ -185,6 +185,7 @@ export async function applyUpdate(update: UpdateInfo, deps: ApplyUpdateDeps): Pr
   }
 
   let interrupted = false;
+  let wroteUpdateJson = false;
   try {
     if (!(await deps.drain(DRAIN_MAX_MS))) {
       if (!update.required) throw new UpdateError("lavoro ancora in corso: aggiornamento rinviato");
@@ -199,9 +200,13 @@ export async function applyUpdate(update: UpdateInfo, deps: ApplyUpdateDeps): Pr
       startedAt: now.toISOString(),
       starts: 0,
     });
+    wroteUpdateJson = true;
     await replaceProgram(paths);
   } catch (err) {
     await rm(paths.downloadPath, { force: true }).catch(() => {});
+    // Il programma non è stato sostituito (il rename è l'ultimo passo): un update.json aperto farebbe contare gli avvii
+    // del programma di prima come quelli di un aggiornamento. Solo quello scritto qui: una versione fallita registrata resta.
+    if (wroteUpdateJson) await rm(paths.updateJsonPath, { force: true }).catch(() => {});
     if (interrupted) {
       // Il lavoro è già fermo: si riparte con il programma di prima
       deps.exit(1);

@@ -1591,7 +1591,8 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   (indirizzo dalla config, mai dalla risposta; nessun redirect né token, ≤ 300 MB, 10 minuti) in `casello-nodo.download`, verifica dimensione e sha256 **continuando a
   lavorare**, poi smette di prendere lavoro e aspetta quello in corso fino a 30 minuti (obbligatorio: poi lo interrompe come uno stop; altrimenti rinvia). Scrive
   `~/.casello-nodo/update.json` `{from, to, startedAt, starts: 0}`, tiene la versione precedente come `casello-nodo.prev` (collegamento fisico), rinomina il nuovo sopra il
-  programma ed esce con 0 (launchd lo riavvia). Ogni errore lascia intatto il programma; nuovo tentativo dopo un'ora. Ritorno indietro (`checkUpdateOnStart`, prima di
+  programma ed esce con 0 (launchd lo riavvia). Ogni errore lascia intatto il programma (e toglie l'`update.json` appena scritto, non una
+  versione fallita già registrata); nuovo tentativo dopo un'ora. Ritorno indietro (`checkUpdateOnStart`, prima di
   `run`): con `update.json` aperto ogni avvio incrementa `starts`; al terzo entro 2 minuti ripristina `.prev`, registra `failedVersion` ed esce; il nodo la riferisce con
   `updateFailed` e la console mostra «L'aggiornamento alla versione <v> non è riuscito» (il server la toglie quando l'heartbeat riporta quella versione o una più
   nuova). Il primo heartbeat riuscito chiude `update.json` (`markUpdateHealthy`). Nodi della CLI

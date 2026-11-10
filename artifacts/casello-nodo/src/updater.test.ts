@@ -168,6 +168,36 @@ describe("applyUpdate", () => {
     await programIsOld();
   });
 
+  it("sostituzione non riuscita → update.json tolto, file scaricato rimosso, programma intatto, lavoro ripreso", async () => {
+    serve(NEW);
+    // .prev occupato da una cartella non vuota: il rename di .prev fallisce prima di toccare il programma
+    await mkdir(path.join(paths.prevPath, "occupato"), { recursive: true });
+    const d = deps();
+    await expect(applyUpdate(update(), d)).rejects.toThrow("sostituzione del programma non riuscita");
+    expect(existsSync(paths.updateJsonPath)).toBe(false);
+    expect(d.resume).toHaveBeenCalled();
+    expect(d.exit).not.toHaveBeenCalled();
+    await programIsOld();
+  });
+
+  it("sostituzione non riuscita dopo un'interruzione → update.json tolto ed uscita 1", async () => {
+    serve(NEW);
+    await mkdir(path.join(paths.prevPath, "occupato"), { recursive: true });
+    const d = deps({ drain: vi.fn(async () => false) });
+    await applyUpdate(update({ required: true }), d);
+    expect(existsSync(paths.updateJsonPath)).toBe(false);
+    expect(d.order).toEqual(["interrupt", "exit:1"]);
+    await programIsOld();
+  });
+
+  it("errore prima di update.json → una versione fallita già registrata resta", async () => {
+    serve(NEW);
+    await writeFile(paths.updateJsonPath, JSON.stringify({ failedVersion: "0.3.5" }));
+    const d = deps({ drain: vi.fn(async () => false) });
+    await expect(applyUpdate(update(), d)).rejects.toThrow("lavoro");
+    expect(readFailedVersion(paths)).toBe("0.3.5");
+  });
+
   it("obbligatorio e lavoro oltre l'attesa → interruzione come uno stop, poi sostituzione ed uscita", async () => {
     serve(NEW);
     const d = deps();

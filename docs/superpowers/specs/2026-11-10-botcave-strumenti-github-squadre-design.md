@@ -102,9 +102,9 @@ le parole che sembrano credenziali (§7) diventano `***`.
 
 - `lib/code-writer/working-copy.ts` (puro): mappa percorso → `{contenuto} | {eliminato}`, sopra un `SourceTree` di sola lettura.
   Lettura: prima la copia, poi l'albero. `elenca_cartella` e `cerca_nel_codice` vedono i file nuovi e non vedono gli eliminati.
-- L'albero si legge dallo zipball dello sha del branch del compito (o del base) con la cache di `code-reader/source-cache.ts`, estesa
-  per chiave (app, ref): stesso sha → stesso albero. Dopo un commit lo sha nuovo è noto: l'albero si ricostruisce applicando la copia
-  committata all'albero precedente, senza riscaricare lo zipball.
+- L'albero si legge una volta per esecuzione dallo zipball dello sha del branch del compito (o del base), con lo stesso parser di
+  Lucius, senza la cache condivisa di `code-reader/source-cache.ts` (che è per App al branch base). Dopo un commit non si riscarica:
+  la vista è l'albero letto più le modifiche già committate e quelle in sospeso (`SourceTree.withChanges`).
 - La copia di lavoro vive per l'esecuzione del compito: a fine compito le modifiche non committate si scartano e l'esito lo dice
   («modifiche non committate scartate: N file»).
 

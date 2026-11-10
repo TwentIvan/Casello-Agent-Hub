@@ -1581,7 +1581,8 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   negli eseguibili ufficiali di Node 24 `darwin-arm64` e `darwin-x64` (scaricati da nodejs.org e verificati con `SHASUMS256.txt`), `lipo` universale, firma ad-hoc, prova di
   `--version` in arm64 e x64 (Rosetta). Escono `Botcave-Nodo-<versione>.zip`, `casello-nodo-<versione>` e `nodo-manifest.json` `{version, minVersion, binary: {file, sha256,
   size}, app: {…}}`; `minVersion` da `artifacts/casello-nodo/min-version.txt` (oggi `0.2.0`: i nodi della CLI 0.2.0 continuano a prendere lavoro), la versione da
-  `package.json` (oggi `0.3.0`). L'API legge il manifest da `NODO_MANIFEST_PATH` (default `/app/nodo/nodo-manifest.json`; assente = nessun aggiornamento proposto e nessun
+  `package.json` (oggi `0.3.0`). **Ogni modifica a `artifacts/casello-nodo/src` richiede di alzare `version` in
+  `artifacts/casello-nodo/package.json`**: i file pubblicati hanno la versione nel nome e la cache immutable (la CI lo controlla sui branch diversi da `main`). L'API legge il manifest da `NODO_MANIFEST_PATH` (default `/app/nodo/nodo-manifest.json`; assente = nessun aggiornamento proposto e nessun
   nodo sotto la minima). `GET /api/account/nodes/download` (solo login) dà versione, dimensione e indirizzo dello zip; Account → Nodi → carta «Botcave Nodo per Mac» con
   «Scarica per Mac» e i passi del primo avvio (trascina in Applicazioni, apri, «Apri comunque» in Privacy e sicurezza, «Collega»).
 - **Aggiornamento automatico** (`manifest.ts`, nodo `updater.ts` e `loop.ts`; solo nodi con heartbeat `kind: "app"`, cioè il programma in esecuzione è
@@ -1675,10 +1676,11 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
   `^~ /.well-known/oauth-` e `^~ /oauth/` (connettore OAuth, stessi header; `^~` impedisce che la fallback della SPA li catturi).
 - nginx ha anche `^~ /api/hooks/` (webhook degli inneschi, vedi "Inneschi"): `access_log off`, `error_log /dev/stderr crit`, `client_max_body_size 256k`, perché il segreto sta
   nel percorso; non togliere le due direttive (la CI le controlla).
-- Botcave Nodo (vedi "Botcave Nodo (app per Mac)"): il job `build-nodo` (`macos-latest`, dopo `test` e prima di `build`, anche su `feat/**`) esegue i test di `casello-nodo` e
-  `scripts/build-app.sh` e passa `docker/nodo-downloads/` (zip, binario, manifest) ai job delle immagini come artefatto `nodo-downloads`: `casello-web` serve la cartella da
+- Botcave Nodo (vedi "Botcave Nodo (app per Mac)"): il job `build-nodo` (`macos-latest`, dopo `test` e prima di `build`, anche su `feat/**`) controlla che la versione del nodo
+  sia alzata se `artifacts/casello-nodo/src` differisce da `main` (solo sui push dei branch diversi da `main`), esegue i test di `casello-nodo`, installa Rosetta se manca
+  (per la prova x64) e `scripts/build-app.sh` e passa `docker/nodo-downloads/` (zip, binario, manifest) ai job delle immagini come artefatto `nodo-downloads`: `casello-web` serve la cartella da
   `/downloads/nodo/`, `casello-api` copia solo `nodo-manifest.json` in `/app/nodo/` (in locale la cartella ha solo `.gitkeep`, i file costruiti sono in `.gitignore`).
-  nginx: `^~ /downloads/nodo/` (cache di 1 anno, il manifest 1 ora), `= /nodes/pair` e `^~ /api/account/node-pairings/` con `access_log off` (il codice di abbinamento sta
+  nginx: `^~ /downloads/nodo/` (cache di 1 anno, il manifest 1 ora; `Cache-Control` senza `always`, così un 404 non resta in cache), `= /nodes/pair` e `^~ /api/account/node-pairings/` con `access_log off` (il codice di abbinamento sta
   nella query o nel percorso; la seconda anche con `error_log /dev/stderr crit`, controllata dalla CI). API e nodo pubblicati vanno sempre insieme.
 - Healthcheck di `casello-api`: `GET /api/healthz` sulla porta 3000. È nel `HEALTHCHECK` di
   `docker/api.Dockerfile` (con `node`, l'immagine slim non ha curl/wget); su Coolify impostarlo anche
@@ -1710,4 +1712,6 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
 - La console ha Vitest (`pnpm --filter @workspace/casello run test`); `pnpm run build` della console costruisce due entrate (`vite.config.ts` e `vite.loader.config.ts`, il caricatore `botcave.js`).
 - `docker/nginx.conf` non esiste più: è `docker/nginx.conf.template` (envsubst dell'entrypoint di nginx; `$uri` e simili restano intatti). Una CSP in una `location`
   con `add_header` propri non eredita quelle esterne: si ripete dove serve.
+- Ogni modifica a `artifacts/casello-nodo/src` richiede di alzare `version` in `artifacts/casello-nodo/package.json`: i file pubblicati hanno la versione nel nome e la
+  cache immutable. Il job `build-nodo` fallisce sui push dei branch diversi da `main` se `src` differisce da `main` e la versione è la stessa.
 - I residui di Replit sono stati rimossi; restano solo i plugin `@replit/*` di `artifacts/mockup-sandbox`.

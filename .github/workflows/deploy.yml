@@ -63,9 +63,32 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      # I file pubblicati hanno la versione nel nome e la cache immutable: codice del nodo cambiato senza alzare la versione
+      # = i nodi non si aggiornerebbero (o prenderebbero un file vecchio dalla cache). Solo sui push dei branch diversi da main.
+      - name: Versione di Botcave Nodo alzata se cambia il codice
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin main
+          if git diff --quiet FETCH_HEAD -- artifacts/casello-nodo/src; then
+            echo "artifacts/casello-nodo/src uguale a main: nessun controllo della versione"
+            exit 0
+          fi
+          main_version=$(git show FETCH_HEAD:artifacts/casello-nodo/package.json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version??"")}catch{console.log("")}})')
+          branch_version=$(node -p 'require("./artifacts/casello-nodo/package.json").version')
+          echo "versione su main: ${main_version:-assente}, su questo branch: ${branch_version}"
+          if [ -n "$main_version" ] && [ "$main_version" = "$branch_version" ]; then
+            echo "::error file=artifacts/casello-nodo/package.json::artifacts/casello-nodo/src è cambiato rispetto a main ma la versione è ancora ${branch_version}: alza \"version\" in artifacts/casello-nodo/package.json (i file pubblicati hanno la versione nel nome e la cache immutable)"
+            exit 1
+          fi
+
       - run: pnpm install --frozen-lockfile --filter @workspace/casello-nodo...
 
       - run: pnpm --filter @workspace/casello-nodo run test
+
+      # La prova di --version in x64 gira con Rosetta: installata se manca (già presente = errore ignorato)
+      - name: Rosetta per la prova x64
+        run: softwareupdate --install-rosetta --agree-to-license || true
 
       - name: Build dell'app, del binario e del manifest
         run: bash artifacts/casello-nodo/scripts/build-app.sh

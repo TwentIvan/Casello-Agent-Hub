@@ -312,6 +312,23 @@ export class SourceTree {
     return new SourceTree(files, totalBytes, skipped, tooLargeFiles);
   }
 
+  /**
+   * Nuovo albero con le modifiche applicate: contenuto = file aggiunto o sostituito, `null` = tolto.
+   * Stesso `skipped`; un file troppo grande sovrascritto o tolto non risulta più escluso.
+   */
+  withChanges(changes: Map<string, string | null>): SourceTree {
+    const files = new Map(this.files);
+    const tooLargeFiles = new Map(this.tooLargeFiles);
+    for (const [path, content] of changes) {
+      tooLargeFiles.delete(path);
+      if (content === null) files.delete(path);
+      else files.set(path, content);
+    }
+    let totalBytes = 0;
+    for (const text of files.values()) totalBytes += Buffer.byteLength(text, "utf8");
+    return new SourceTree(files, totalBytes, { ...this.skipped }, tooLargeFiles);
+  }
+
   /** Errore per un file non leggibile: «troppo grande» se escluso per dimensione, altrimenti «inesistente». */
   private missingFile(path: string, normalized: string | null): SourceTreeError {
     const size = normalized ? this.tooLargeFiles.get(normalized) : undefined;
@@ -340,6 +357,12 @@ export class SourceTree {
       .filter(([path]) => !globMatch || globMatch(path))
       .map(([path, bytes]) => ({ path, bytes }))
       .sort((a, b) => (a.path < b.path ? -1 : 1));
+  }
+
+  /** Testo integrale di un file (senza numerazione né tagli), undefined se non c'è. */
+  text(path: string): string | undefined {
+    const p = normalizeQueryPath(path);
+    return p ? this.files.get(p) : undefined;
   }
 
   has(path: string): boolean {

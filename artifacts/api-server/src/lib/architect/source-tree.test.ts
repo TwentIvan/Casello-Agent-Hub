@@ -473,3 +473,15 @@ describe("SourceTree: file esclusi per default", () => {
     }
   });
 });
+
+describe("SourceTree.withChanges", () => {
+  it("sostituisce, aggiunge e toglie senza toccare l'originale", () => {
+    const tree = SourceTree.fromZip(zip({ "a.ts": "uno\n", "b.ts": "due\n" }));
+    const next = tree.withChanges(new Map<string, string | null>([["a.ts", "tre\n"], ["c.ts", "nuovo\n"], ["b.ts", null]]));
+    expect(next.list("")).toEqual(["a.ts", "c.ts"]);
+    expect(next.text("a.ts")).toBe("tre\n");
+    expect(tree.text("a.ts")).toBe("uno\n");
+    expect(next.fileCount).toBe(2);
+    expect(next.skipped).toEqual(tree.skipped);
+  });
+});

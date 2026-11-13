@@ -66,7 +66,7 @@ export function classifyGitError(stderr: string, phase: "fetch" | "push"): strin
   return GIT_MESSAGES.pushRetry;
 }
 
-interface CommonOptions {
+export interface CommonOptions {
   root: string;
   git: NodeTaskGit;
   getToken: () => Promise<string>;

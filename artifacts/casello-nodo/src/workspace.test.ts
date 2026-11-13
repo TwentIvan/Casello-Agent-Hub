@@ -34,7 +34,7 @@ describe("resolveWorkspace", () => {
   });
 
   it("rifiuta una cartella inesistente", async () => {
-    await expect(resolveWorkspace(root, "manca")).rejects.toThrow("spazio di lavoro non valido");
+    await expect(resolveWorkspace(root, "manca")).rejects.toThrow("spazio di lavoro mancante o non trovato sul Mac: sceglilo nella scheda squadra (Spazio di lavoro)");
   });
 
   it("rifiuta una radice inesistente", async () => {

@@ -1,7 +1,7 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { isAppExecPath, launchArgs, MENU_ITEMS, runAppMode, type AppDeps, type ClaudeActions, type GitActions } from "./app-mode";
+import { isAppExecPath, launchArgs, MENU_ITEMS, realGitActions, runAppMode, type AppDeps, type ClaudeActions, type GitActions } from "./app-mode";
 import type { PairingClient, PollResult } from "./client";
 import { appBaseUrl, DEFAULT_URL, defaultPaths } from "./config";
 import { escapeAppleScript, osascriptDialogs, type Dialogs, type ExecFileLike } from "./dialogs";
@@ -344,6 +344,18 @@ describe("collegato: menu", () => {
     await runAppMode(deps({ git: git(false), dialogs: dialogs({ menu: "Installa Git" }) }));
     expect(log.find((l) => l.startsWith("menu:"))).toContain("Installa Git");
     expect(gitCalls).toEqual(["install"]);
+  });
+
+  it("realGitActions: «trovato» dallo stato in cache, senza lanciare git a ogni menu", async () => {
+    let checks = 0;
+    const actions = realGitActions(dialogs(), {
+      status: async () => {
+        checks++;
+        return { found: true, version: "2.39.5" };
+      },
+    });
+    expect(await actions.found()).toBe(true);
+    expect(checks).toBe(1);
   });
 
   it("voci di Claude → ClaudeActions", async () => {

@@ -1,7 +1,8 @@
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
-export const WORKSPACE_INVALID = "spazio di lavoro non valido";
+export const WORKSPACE_INVALID =
+  "spazio di lavoro mancante o non trovato sul Mac: sceglilo nella scheda squadra (Spazio di lavoro)";
 
 export class WorkspaceError extends Error {
   constructor() {

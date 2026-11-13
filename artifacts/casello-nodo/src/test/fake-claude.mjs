@@ -26,7 +26,11 @@ function writeEsito() {
   }
   writeFileSync(
     "casello-esito.json",
-    JSON.stringify({ status: "done", outcome: "fatto dal file", detail: "dettaglio dal file" }),
+    JSON.stringify({
+      status: process.env.FAKE_ESITO_STATUS ?? "done",
+      outcome: process.env.FAKE_ESITO_OUTCOME ?? "fatto dal file",
+      detail: "dettaglio dal file",
+    }),
   );
   process.stdout.write(cliJson("risultato della CLI"));
 }

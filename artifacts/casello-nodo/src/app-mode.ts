@@ -6,7 +6,7 @@ import { installFromConfig, uninstallLocal } from "./cli";
 import { createPairingClient, type PairingClient } from "./client";
 import { ConfigError, defaultPaths, loadConfig, writeConfigMerged, type Config } from "./config";
 import { installClaude, loginClaude, realClaudeDeps, type ClaudeDeps, type ExecLongFn, type RunFn } from "./claude-check";
-import { checkGit, installGit } from "./git-check";
+import { checkGit, createCachedGitStatus, installGit, type GitStatus } from "./git-check";
 import { osascriptDialogs, type Dialogs } from "./dialogs";
 import { UNINSTALLED_TEXT } from "./node-admin";
 import { realLaunchctl, serviceTarget, type LaunchctlRunner } from "./launchd";
@@ -255,9 +255,14 @@ export function realClaudeActions(
 }
 
 /** Azioni reali su Git: conferma e installazione dei Command Line Tools di Apple. */
-export function realGitActions(dialogs: Dialogs, deps: { run?: RunFn; exec?: ExecLongFn } = {}): GitActions {
+export function realGitActions(
+  dialogs: Dialogs,
+  deps: { run?: RunFn; exec?: ExecLongFn; status?: () => Promise<GitStatus> } = {},
+): GitActions {
+  // Stato in cache (10 minuti): il menu non lancia `git` a ogni apertura
+  const status = deps.status ?? createCachedGitStatus(() => checkGit({ run: deps.run }));
   return {
-    found: async () => (await checkGit({ run: deps.run })).found,
+    found: async () => (await status()).found,
     install: async () => {
       const ok = await dialogs.confirm(
         "Botcave Nodo avvierà l'installazione degli strumenti da riga di comando di Apple, che includono Git. macOS mostrerà un suo dialogo e può richiedere qualche minuto.",

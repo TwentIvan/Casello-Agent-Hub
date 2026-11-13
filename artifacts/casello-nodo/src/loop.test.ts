@@ -153,14 +153,14 @@ describe("startLoop", () => {
     }
   });
 
-  it("spazio di lavoro null → report blocked «spazio di lavoro non valido»", async () => {
+  it("spazio di lavoro null → report blocked «spazio di lavoro mancante»", async () => {
     oneTask(taskPackage({ workspace: null }));
     casello.on("POST", "/api/node/tasks/:id/report", (_req, res) => json(res, 204));
     start(config(), "esito");
     await waitFor(() => casello.calls("POST", "/api/node/tasks/42/report").length > 0);
     expect(casello.calls("POST", "/api/node/tasks/42/report")[0].body).toMatchObject({
       status: "blocked",
-      outcome: "spazio di lavoro non valido",
+      outcome: "spazio di lavoro mancante o non trovato sul Mac: sceglilo nella scheda squadra (Spazio di lavoro)",
     });
   });
 

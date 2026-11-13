@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CaselloClient } from "./client";
 import { isLeaseLostReport, killAllTaskGroups, runTask, WorkspaceQueue, type RunContext } from "./runner";
+import { GIT_MESSAGES, GitWorkspaceError } from "./git-errors";
 import { FakeCasello, json } from "./test/fake-casello";
 import { FAKE_TOKEN, fakeSpawn, taskPackage, tempDir, testConfig, type SpawnCall } from "./test/helpers";
 
@@ -141,7 +142,7 @@ describe("runTask", () => {
     const report = await runTask(taskPackage({ workspace }), ctx("esito", calls));
     expect(report).toMatchObject({
       status: "blocked",
-      outcome: "spazio di lavoro non valido",
+      outcome: "spazio di lavoro mancante o non trovato sul Mac: sceglilo nella scheda squadra (Spazio di lavoro)",
       leaseToken: "lease-abc",
     });
     expect(calls).toHaveLength(0);
@@ -152,7 +153,7 @@ describe("runTask", () => {
     await symlink(path.join(base, "radice-evil"), path.join(root, "link"));
     const calls: SpawnCall[] = [];
     const report = await runTask(taskPackage({ workspace: "link" }), ctx("esito", calls));
-    expect(report).toMatchObject({ status: "blocked", outcome: "spazio di lavoro non valido" });
+    expect(report).toMatchObject({ status: "blocked", outcome: "spazio di lavoro mancante o non trovato sul Mac: sceglilo nella scheda squadra (Spazio di lavoro)" });
     expect(calls).toHaveLength(0);
     expect(existsSync(path.join(base, "radice-evil", "casello-compito.md"))).toBe(false);
   });
@@ -547,3 +548,272 @@ async function waitDead(pid: number): Promise<void> {
 async function realCwd(call: SpawnCall): Promise<string> {
   return realpath(String(call.options.cwd));
 }
+
+describe("runTask: compiti con codice", () => {
+  const GIT = { repo: "twentivan/thehubup", baseBranch: "main", branch: "botcave/7-42", issue: 12 };
+  const GIT_TOKEN = "ghs_token_finto_del_repository_0123456789";
+  const SHA = "a".repeat(40);
+  type PrepareFn = NonNullable<RunContext["gitWorkspace"]>["prepare"];
+  type FinishFn = NonNullable<RunContext["gitWorkspace"]>["finish"];
+  type PrepareOpts = Parameters<PrepareFn>[0];
+  type FinishOpts = Parameters<FinishFn>[0];
+
+  let dir: string;
+  beforeEach(async () => {
+    dir = path.join(root, ".botcave", "compiti", "7-42");
+    casello.on("POST", "/api/node/tasks/:id/git-token", (_req, res) =>
+      json(res, 200, { token: GIT_TOKEN, expiresAt: new Date(Date.now() + 3_600_000).toISOString() }),
+    );
+  });
+
+  function fakeGit(
+    over: {
+      prepare?: (o: PrepareOpts) => Promise<Awaited<ReturnType<PrepareFn>>>;
+      finish?: (o: FinishOpts) => Promise<Awaited<ReturnType<FinishFn>>>;
+    } = {},
+  ) {
+    const seen = { prepare: [] as PrepareOpts[], finish: [] as FinishOpts[] };
+    const gitWorkspace = {
+      prepare: async (o: PrepareOpts) => {
+        seen.prepare.push(o);
+        if (over.prepare) return over.prepare(o);
+        await o.getToken();
+        await mkdir(dir, { recursive: true });
+        return { dir, resumed: false, note: null };
+      },
+      finish: async (o: FinishOpts) => {
+        seen.finish.push(o);
+        if (over.finish) return over.finish(o);
+        await o.getToken();
+        return { pushed: true, headSha: SHA, commits: 2, note: null };
+      },
+    };
+    return { seen, gitWorkspace };
+  }
+
+  function gitCtx(mode: string, calls: SpawnCall[], git: ReturnType<typeof fakeGit>, over: Partial<RunContext> = {}) {
+    return ctx(mode, calls, { gitWorkspace: git.gitWorkspace, locateGit: async () => "/opt/homebrew/bin/git", ...over });
+  }
+
+  it("pacchetto con git: Claude parte con cwd = dir della copia, report done con git {pushed: true, headSha, commits: 2}", async () => {
+    const calls: SpawnCall[] = [];
+    const git = fakeGit();
+    // Spazio di lavoro del pacchetto ignorato: conta la copia di Botcave
+    const report = await runTask(taskPackage({ git: GIT, workspace: null }), gitCtx("esito", calls, git));
+    expect(calls).toHaveLength(1);
+    expect(await realCwd(calls[0])).toBe(await realpath(dir));
+    expect(report).toMatchObject({
+      status: "done",
+      outcome: "fatto dal file",
+      git: { pushed: true, headSha: SHA, commits: 2 },
+    });
+    expect(git.seen.prepare[0]).toMatchObject({ root, git: GIT, gitBin: "/opt/homebrew/bin/git" });
+    expect(git.seen.finish[0]).toMatchObject({ root, git: GIT, dir, gitBin: "/opt/homebrew/bin/git" });
+    // File di servizio tolti alla fine
+    expect(existsSync(path.join(dir, "casello-compito.md"))).toBe(false);
+  });
+
+  it("la coda dello spazio di lavoro usa la cartella della copia", async () => {
+    const queue = new WorkspaceQueue();
+    const keys: string[] = [];
+    const acquire = queue.acquire.bind(queue);
+    queue.acquire = (key, signal) => {
+      keys.push(key);
+      return acquire(key, signal);
+    };
+    const git = fakeGit();
+    await runTask(taskPackage({ git: GIT }), gitCtx("esito", [], git, { workspaceQueue: queue }));
+    expect(keys).toContain(dir);
+    expect(git.seen.prepare[0].queue).toBe(queue);
+  });
+
+  it("Git mancante → blocked «Git non installato sul Mac: apri Botcave Nodo e scegli Installa Git», Claude non parte", async () => {
+    const calls: SpawnCall[] = [];
+    const git = fakeGit();
+    const report = await runTask(taskPackage({ git: GIT }), gitCtx("esito", calls, git, { locateGit: async () => null }));
+    expect(report).toMatchObject({
+      status: "blocked",
+      outcome: "Git non installato sul Mac: apri Botcave Nodo e scegli Installa Git",
+    });
+    expect(report.git).toBeUndefined();
+    expect(calls).toHaveLength(0);
+    expect(git.seen.prepare).toHaveLength(0);
+    expect(casello.calls("POST", "/api/node/tasks/42/git-token")).toHaveLength(0);
+  });
+
+  it("token negato → blocked «accesso al repository non disponibile»", async () => {
+    casello.on("POST", "/api/node/tasks/:id/git-token", (_req, res) =>
+      json(res, 409, { error: "accesso al repository non disponibile" }),
+    );
+    const calls: SpawnCall[] = [];
+    const git = fakeGit();
+    const report = await runTask(taskPackage({ git: GIT }), gitCtx("esito", calls, git));
+    expect(report).toMatchObject({ status: "blocked", outcome: "accesso al repository non disponibile" });
+    expect(calls).toHaveLength(0);
+    expect(git.seen.finish).toHaveLength(0);
+  });
+
+  it("errore della preparazione → stato e messaggio fisso dell'errore", async () => {
+    const calls: SpawnCall[] = [];
+    const git = fakeGit({
+      prepare: async () => {
+        throw new GitWorkspaceError("failed", GIT_MESSAGES.baseMissing);
+      },
+    });
+    const report = await runTask(taskPackage({ git: GIT }), gitCtx("esito", calls, git));
+    expect(report).toMatchObject({ status: "failed", outcome: GIT_MESSAGES.baseMissing });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("lease persa chiedendo il token → nessun report", async () => {
+    casello.on("POST", "/api/node/tasks/:id/git-token", (_req, res) => json(res, 409, { error: "lease non valida o scaduta" }));
+    const calls: SpawnCall[] = [];
+    const report = await runTask(taskPackage({ git: GIT }), gitCtx("esito", calls, fakeGit()));
+    expect(isLeaseLostReport(report)).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("push fallito → failed col messaggio fisso, dettaglio con l'esito di Claude", async () => {
+    const git = fakeGit({
+      finish: async (o) => {
+        await o.getToken();
+        throw new GitWorkspaceError("failed", GIT_MESSAGES.pushChanged);
+      },
+    });
+    const report = await runTask(taskPackage({ git: GIT }), gitCtx("esito", [], git));
+    expect(report.status).toBe("failed");
+    expect(report.outcome).toBe(GIT_MESSAGES.pushChanged);
+    expect(report.detail).toContain("fatto dal file");
+    expect(report.detail).toContain("dettaglio dal file");
+    expect(report.costUsd).toBe(0.25);
+    expect(report.git).toBeUndefined();
+  });
+
+  it("accesso negato al momento del push → failed con il messaggio fisso", async () => {
+    let n = 0;
+    casello.on("POST", "/api/node/tasks/:id/git-token", (_req, res) =>
+      ++n === 1
+        ? json(res, 200, { token: GIT_TOKEN, expiresAt: new Date(Date.now() + 3_600_000).toISOString() })
+        : json(res, 409, { error: "accesso al repository non disponibile" }),
+    );
+    const report = await runTask(taskPackage({ git: GIT }), gitCtx("esito", [], fakeGit()));
+    expect(report).toMatchObject({ status: "failed", outcome: "accesso al repository non disponibile" });
+    expect(report.detail).toContain("fatto dal file");
+  });
+
+  it("Claude blocked con commit: push fatto lo stesso, report blocked con git.pushed true", async () => {
+    const git = fakeGit();
+    const c = gitCtx("esito", [], git, { spawn: fakeSpawn("esito", [], { FAKE_ESITO_STATUS: "blocked", FAKE_ESITO_OUTCOME: "mi manca un dato" }) });
+    const report = await runTask(taskPackage({ git: GIT }), c);
+    expect(git.seen.finish).toHaveLength(1);
+    expect(report).toMatchObject({
+      status: "blocked",
+      outcome: "mi manca un dato",
+      git: { pushed: true, headSha: SHA, commits: 2 },
+    });
+  });
+
+  it("tempo massimo: il lavoro committato si pubblica comunque", async () => {
+    const git = fakeGit();
+    const c = gitCtx("sleep", [], git);
+    c.config = { ...c.config, taskTimeoutMinutes: 0.005 };
+    const report = await runTask(taskPackage({ git: GIT }), c);
+    expect(git.seen.finish).toHaveLength(1);
+    expect(report).toMatchObject({ status: "failed", outcome: "tempo massimo superato", git: { pushed: true } });
+  });
+
+  it("lease persa: nessun finishTaskRepo", async () => {
+    casello.on("POST", "/api/node/tasks/:id/ping", (_req, res) => json(res, 409, { error: "lease non valida o scaduta" }));
+    const git = fakeGit();
+    const report = await runTask(taskPackage({ git: GIT }), gitCtx("sleep", [], git, { pingIntervalMs: 50 }));
+    expect(isLeaseLostReport(report)).toBe(true);
+    expect(git.seen.finish).toHaveLength(0);
+  });
+
+  it("stop del nodo: nessun finishTaskRepo", async () => {
+    const stop = new AbortController();
+    setTimeout(() => stop.abort(), 200);
+    const git = fakeGit();
+    const report = await runTask(taskPackage({ git: GIT }), gitCtx("sleep", [], git, { signal: stop.signal }));
+    expect(report).toMatchObject({ status: "failed", outcome: "esecuzione interrotta: nodo fermato" });
+    expect(git.seen.finish).toHaveLength(0);
+  });
+
+  it("stop durante la preparazione → interrotto, Claude non parte", async () => {
+    const stop = new AbortController();
+    const calls: SpawnCall[] = [];
+    const git = fakeGit({
+      prepare: async (o) => {
+        stop.abort();
+        expect(o.signal.aborted).toBe(true);
+        throw new GitWorkspaceError("failed", GIT_MESSAGES.prepareFailed);
+      },
+    });
+    const report = await runTask(taskPackage({ git: GIT }), gitCtx("esito", calls, git, { signal: stop.signal }));
+    expect(report).toMatchObject({ status: "failed", outcome: "esecuzione interrotta: nodo fermato" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("getToken chiamato due volte (prima e dopo Claude)", async () => {
+    let tokenCallsAtSpawn = -1;
+    const inner = fakeSpawn("esito");
+    const c = gitCtx("esito", [], fakeGit(), {
+      spawn: (cmd, args, opts) => {
+        tokenCallsAtSpawn = casello.calls("POST", "/api/node/tasks/42/git-token").length;
+        return inner(cmd, args, opts);
+      },
+    });
+    await runTask(taskPackage({ git: GIT }), c);
+    expect(tokenCallsAtSpawn).toBe(1);
+    const tokenCalls = casello.calls("POST", "/api/node/tasks/42/git-token");
+    expect(tokenCalls).toHaveLength(2);
+    expect(tokenCalls[1].body).toEqual({ leaseToken: "lease-abc" });
+  });
+
+  it("l'ambiente di Claude non contiene BOTCAVE_GIT_TOKEN", async () => {
+    const calls: SpawnCall[] = [];
+    process.env.BOTCAVE_GIT_TOKEN = "ereditato";
+    try {
+      await runTask(taskPackage({ git: GIT }), gitCtx("esito", calls, fakeGit()));
+    } finally {
+      delete process.env.BOTCAVE_GIT_TOKEN;
+    }
+    const env = calls[0].options.env ?? {};
+    expect(env.BOTCAVE_GIT_TOKEN).toBeUndefined();
+    expect(Object.values(env)).not.toContain(GIT_TOKEN);
+  });
+
+  it("note di prepare/finish in fondo all'esito entro 300 caratteri", async () => {
+    const git = fakeGit({
+      prepare: async (o) => {
+        await o.getToken();
+        await mkdir(dir, { recursive: true });
+        return { dir, resumed: false, note: "commit locali non pubblicati scartati: il branch era cambiato su GitHub" };
+      },
+      finish: async () => ({ pushed: false, headSha: null, commits: 0, note: "modifiche non committate scartate: 3 file" }),
+    });
+    const short = await runTask(taskPackage({ git: GIT }), gitCtx("esito", [], git));
+    expect(short.outcome).toBe(
+      "fatto dal file (commit locali non pubblicati scartati: il branch era cambiato su GitHub) (modifiche non committate scartate: 3 file)",
+    );
+    expect(short.git).toEqual({ pushed: false, headSha: null, commits: 0 });
+
+    const c = gitCtx("esito", [], git, { spawn: fakeSpawn("esito", [], { FAKE_ESITO_OUTCOME: "x".repeat(300) }) });
+    const long = await runTask(taskPackage({ git: GIT }), c);
+    expect(long.outcome).toHaveLength(300);
+    expect(long.outcome.endsWith(" (modifiche non committate scartate: 3 file)")).toBe(true);
+    expect(long.outcome.startsWith("xxx")).toBe(true);
+  });
+
+  it("pacchetto senza git e workspace null → blocked col nuovo WORKSPACE_INVALID", async () => {
+    const calls: SpawnCall[] = [];
+    const git = fakeGit();
+    const report = await runTask(taskPackage({ workspace: null }), gitCtx("esito", calls, git));
+    expect(report).toMatchObject({
+      status: "blocked",
+      outcome: "spazio di lavoro mancante o non trovato sul Mac: sceglilo nella scheda squadra (Spazio di lavoro)",
+    });
+    expect(calls).toHaveLength(0);
+    expect(git.seen.prepare).toHaveLength(0);
+  });
+});

@@ -158,6 +158,21 @@ describe("conversazioni e messaggi", () => {
     expect(await runInput(fourth.runId)).toContain("[utente] tre\n[responsabile] fatto");
   });
 
+  it("due invii simultanei: una sola run", async () => {
+    const me = await seedUser();
+    await seedBotcave(me.modelId);
+    const conv = await createLeadConversation(me.userId);
+    const results = await Promise.allSettled([
+      sendLeadMessage(me.userId, conv.id, { content: "uno" }),
+      sendLeadMessage(me.userId, conv.id, { content: "due" }),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+    expect((rejected.reason as LeadChatError).message).toBe(LEAD_CHAT_MESSAGES.busy);
+    expect(await db.select().from(runsTable)).toHaveLength(1);
+    expect(await db.select().from(leadMessagesTable)).toHaveLength(1);
+  });
+
   it("testo, pagina, proprietà e archiviazione", async () => {
     const me = await seedUser();
     const other = await seedUser("Altro");

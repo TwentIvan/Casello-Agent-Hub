@@ -6674,13 +6674,11 @@ export const SendLeadMessageParams = zod.object({
   "id": zod.coerce.number()
 })
 
-export const sendLeadMessageBodyContentMax = 4000;
-
 export const sendLeadMessageBodyPageContextIdRegExp = new RegExp('^[A-Za-z0-9._:-]{1,100}$');
 
 
 export const SendLeadMessageBody = zod.object({
-  "content": zod.string().min(1).max(sendLeadMessageBodyContentMax),
+  "content": zod.string().describe('Da 1 a 4 000 caratteri (controllo del server con messaggi fissi)'),
   "pageContext": zod.object({
   "page": zod.enum(['dashboard', 'apps', 'app', 'app_plan', 'analysis', 'agents', 'agent', 'runs', 'run', 'pending_actions', 'skills', 'skill', 'team_templates', 'team_template', 'teams', 'team', 'models', 'account', 'console']),
   "id": zod.string().regex(sendLeadMessageBodyPageContextIdRegExp).optional()

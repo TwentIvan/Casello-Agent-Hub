@@ -221,13 +221,24 @@ export async function sendLeadMessage(
   const runInput = leadChatRunInput({ userName: user?.name ?? null, page, history, message: content });
 
   const result = await db.transaction(async (tx) => {
+    // Un messaggio alla volta anche con due invii simultanei: riga della conversazione bloccata, stato dell'ultima run riletto
+    const [locked] = await tx.select().from(leadConversationsTable).where(eq(leadConversationsTable.id, conv.id)).for("update");
+    if (!locked) throw new LeadChatError(404, LEAD_CHAT_MESSAGES.notFound);
+    const [lastNow] = await tx
+      .select({ status: runsTable.status })
+      .from(leadMessagesTable)
+      .leftJoin(runsTable, eq(runsTable.id, leadMessagesTable.runId))
+      .where(eq(leadMessagesTable.conversationId, conv.id))
+      .orderBy(desc(leadMessagesTable.id))
+      .limit(1);
+    if (lastNow?.status && OPEN_STATUSES.has(lastNow.status)) throw new LeadChatError(409, LEAD_CHAT_MESSAGES.busy);
     const created = await createQueuedRun({ agent, input: runInput, tx });
     if (!created.ok) return null;
     const [message] = await tx
       .insert(leadMessagesTable)
       .values({ conversationId: conv.id, content, pageContext: page, runId: created.run.id })
       .returning();
-    const title = conv.title === "" ? (content.split("\n")[0] ?? "").trim().slice(0, TITLE_MAX) : conv.title;
+    const title = locked.title === "" ? (content.split("\n")[0] ?? "").trim().slice(0, TITLE_MAX) : locked.title;
     await tx.update(leadConversationsTable).set({ title, updatedAt: new Date() }).where(eq(leadConversationsTable.id, conv.id));
     return { messageId: message!.id, runId: created.run.id };
   });

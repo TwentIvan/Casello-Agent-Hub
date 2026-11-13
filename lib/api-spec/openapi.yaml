@@ -7367,8 +7367,7 @@ components:
       properties:
         content:
           type: string
-          minLength: 1
-          maxLength: 4000
+          description: Da 1 a 4 000 caratteri (controllo del server con messaggi fissi)
         pageContext:
           $ref: "#/components/schemas/LeadPageContext"
 

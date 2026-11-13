@@ -96,6 +96,12 @@ describe("chat con il Responsabile", () => {
     expect((await api("GET", "/lead-conversations/abc")).status).toBe(400);
     expect((await api("POST", `/lead-conversations/${conv.json.id}/messages`, { content: "x", pageContext: { page: "admin" } })).status).toBe(400);
     expect((await api("POST", `/lead-conversations/${conv.json.id}/messages`, {})).status).toBe(400);
+    const long = await api("POST", `/lead-conversations/${conv.json.id}/messages`, { content: "x".repeat(4001) });
+    expect(long.status).toBe(400);
+    expect(long.json.error).toBe("messaggio troppo lungo: al massimo 4000 caratteri");
+    const empty = await api("POST", `/lead-conversations/${conv.json.id}/messages`, { content: "" });
+    expect(empty.status).toBe(400);
+    expect(empty.json.error).toBe("messaggio vuoto");
   });
 
   it("non disponibile: GET dice il motivo, POST 409", async () => {

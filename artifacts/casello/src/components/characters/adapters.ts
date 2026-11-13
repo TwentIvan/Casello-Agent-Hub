@@ -103,6 +103,8 @@ export interface ChatAdapter {
   emptyHint: string;
   /** Cosa resta dopo l'eliminazione, per il dialogo di conferma. */
   deleteNote?: string;
+  /** Lunghezza massima di un messaggio (default `MAX_CHARS`). */
+  maxChars?: number;
   /** «Nuova» crea subito la conversazione, senza il dialogo del modello (Responsabile: il modello è dell'agente). */
   createWithoutDialog?: boolean;
   /** Argomento in sola lettura per intero (squadra chiusa): niente conversazioni nuove né messaggi. */

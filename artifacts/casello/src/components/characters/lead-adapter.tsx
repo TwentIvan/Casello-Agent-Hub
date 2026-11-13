@@ -30,6 +30,7 @@ export function useLeadChatAdapter(page: { page: string; id?: string }): ChatAda
       "Chiedi al Responsabile di Botcave: conosce squadre, agenti, run, skill e coda. Le scritture le propone in Da confermare.",
     deleteNote: "Le run restano nella pagina Run.",
     createWithoutDialog: true,
+    maxChars: 4000,
     useConversations: () => ({
       items: (list.data ?? []).map((c) => ({ id: c.id, title: c.title, updatedAt: c.updatedAt, tokensUsed: c.tokensUsed, costUsd: c.costUsd })),
       isLoading: list.isLoading,

@@ -74,6 +74,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
     data?.readOnlyReason ?? (lock && data && lock.id === data.id ? lock.reason : null) ?? adapter.closedReason ?? null;
   const readOnly = readOnlyReason !== null;
   const texts = CHARACTER_TEXT[adapter.character];
+  const maxChars = adapter.maxChars ?? MAX_CHARS;
   const name = texts.name;
 
   // Scorre solo il contenitore dei messaggi: `scrollIntoView` farebbe scorrere anche la pagina (es. il piano all'apertura)
@@ -124,7 +125,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
     awaitingRead === null &&
     !(list?.isLoading ?? false) &&
     trimmed.length > 0 &&
-    text.length <= MAX_CHARS &&
+    text.length <= maxChars &&
     (sendTargetId !== null || list !== null);
   const submit = () => {
     if (!canSend) return;
@@ -309,8 +310,8 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
               disabled={running || busy === "send"}
             />
             <div className="flex items-center justify-between gap-2">
-              <span className={cn("font-mono text-xs tabular-nums text-ink-muted", text.length > MAX_CHARS && "text-destructive")}>
-                {text.length.toLocaleString("it-IT")} / {MAX_CHARS.toLocaleString("it-IT")}
+              <span className={cn("font-mono text-xs tabular-nums text-ink-muted", text.length > maxChars && "text-destructive")}>
+                {text.length.toLocaleString("it-IT")} / {maxChars.toLocaleString("it-IT")}
               </span>
               <Button type="submit" size="sm" disabled={!canSend}>
                 <Send />

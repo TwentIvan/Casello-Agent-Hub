@@ -1973,10 +1973,7 @@ export interface LeadConversationDetail {
 }
 
 export interface LeadMessageCreate {
-  /**
-     * @minLength 1
-     * @maxLength 4000
-     */
+  /** Da 1 a 4 000 caratteri (controllo del server con messaggi fissi) */
   content: string;
   pageContext?: LeadPageContext;
 }

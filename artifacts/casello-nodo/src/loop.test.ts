@@ -113,6 +113,15 @@ describe("startLoop", () => {
     expect(state?.lastHeartbeatAt).toBeTruthy();
   });
 
+  it("l'heartbeat porta lo stato di Git quando è disponibile", async () => {
+    oneTask();
+    casello.on("POST", "/api/node/tasks/:id/report", (_req, res) => json(res, 204));
+    start(config(), "esito", { gitStatus: async () => ({ found: true, version: "2.39.5" }) });
+    await waitFor(() => casello.calls("POST", "/api/node/heartbeat").length > 0);
+    const [hb] = casello.calls("POST", "/api/node/heartbeat");
+    expect(hb.body).toMatchObject({ git: { found: true, version: "2.39.5" } });
+  });
+
   it("i log non contengono il token, le istruzioni o l'output della CLI", async () => {
     oneTask();
     casello.on("POST", "/api/node/tasks/:id/report", (_req, res) => json(res, 204));

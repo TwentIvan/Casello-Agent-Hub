@@ -148,3 +148,11 @@ un'etichetta italiana per pagina. Ogni messaggio porta la pagina da cui è scrit
 - Vitest della console: `leadPageFromPath`, `TAB_ORDER` per ambiente.
 - `pnpm run typecheck`.
 - Dopo il deploy: dalla scheda di una squadra chiedere «cosa manca a questa squadra?» e poi «procedi»; controllare la voce in coda.
+
+## Differenze dal codice
+
+- Pulsante: icona `WandSparkles` invece di `Sparkles` (già usata dalla voce di menu «Skill») e nessun LED `work` sul pulsante: servirebbe uno stato condiviso o
+  un polling nella barra; lo stato «Sta rispondendo» resta nella scheda.
+- Le schede del pannello vanno a capo invece di troncarsi: con cinque schede a ~440 px le etichette diventavano illeggibili. Vale anche nell'embed (quattro schede).
+- `progress.startedAt` è la creazione della run (la tabella `runs` non registra l'avvio): comprende l'attesa in coda.
+- Costo della conversazione null solo se una run che ha usato token non ha prezzo (una run fallita prima del modello non lo rende parziale).

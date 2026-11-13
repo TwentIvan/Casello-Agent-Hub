@@ -17,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatModelPrice } from "@/lib/format";
+import { otherModels } from "@/lib/audio-models";
 import { isNodeAccount, withoutNodeModels } from "@/lib/node-models";
 import { cn } from "@/lib/utils";
 import { useAiModelGroups } from "./ai-queries";
@@ -78,9 +79,9 @@ export function ModelPicker({ value, onChange, disabled, allowNone, cloudOnly, i
 
   const data = groups.data;
   const pickable = cloudOnly ? withoutNodeModels(data) : data;
-  // Solo i modelli selezionabili; quelli disponibili ma senza strumenti vanno in "Altri modelli"
+  // Solo i modelli selezionabili; quelli disponibili ma senza strumenti vanno in "Altri modelli" (mai quelli solo audio)
   const main = pickable.map((g) => ({ group: g, models: g.models.filter((m) => m.selectable && m.supportsTools !== false) }));
-  const others = pickable.flatMap((g) => g.models.filter((m) => m.status === "available" && m.supportsTools === false));
+  const others = pickable.flatMap((g) => otherModels(g.models));
   const current = value != null ? data.flatMap((g) => g.models).find((m) => m.id === value) : undefined;
   // Claude Code (nodo) già scelto dove non si può usare: resta visibile ma non si riseleziona
   const nodeCurrent =

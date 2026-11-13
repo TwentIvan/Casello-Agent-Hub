@@ -31,9 +31,20 @@ export function isPreviewModel(modelId: string): boolean {
   return PREVIEW_RE.test(modelId);
 }
 
-/** Selezionabile: disponibile e senza strumenti esclusi (null = non noto, ammesso). */
-export function isSelectable(status: EffectiveStatus, supportsTools: boolean | null): boolean {
-  return status === "available" && supportsTools !== false;
+const AUDIO_ONLY_RE = /(^|[-_./:])(live|audio|tts|transcribe|realtime)([-_./:]|$)/i;
+
+/**
+ * Modello solo vocale o audio (Gemini Live, audio nativo, trascrizione, sintesi vocale, realtime): non risponde alle
+ * chiamate di chat (il provider le rifiuta con un 400), quindi non si propone per agenti, squadre e personaggi. Il
+ * modello vocale di Alfred ha la sua scelta (`lib/alfred/settings.ts`).
+ */
+export function isAudioOnlyModel(modelId: string): boolean {
+  return AUDIO_ONLY_RE.test(modelId);
+}
+
+/** Selezionabile: disponibile, senza strumenti esclusi (null = non noto, ammesso) e non solo audio. */
+export function isSelectable(status: EffectiveStatus, supportsTools: boolean | null, modelId: string): boolean {
+  return status === "available" && supportsTools !== false && !isAudioOnlyModel(modelId);
 }
 
 /**
@@ -51,7 +62,7 @@ export function pickRecommended<
     priceOutput: number | null;
   },
 >(models: M[]): number | null {
-  const selectable = models.filter((m) => isSelectable(m.status, m.supportsTools));
+  const selectable = models.filter((m) => isSelectable(m.status, m.supportsTools, m.modelId));
   const notPreview = selectable.filter((m) => !isPreviewModel(m.modelId));
   const withTools = notPreview.filter((m) => m.supportsTools === true);
   const pool = [withTools, notPreview, selectable].find((p) => p.length > 0);

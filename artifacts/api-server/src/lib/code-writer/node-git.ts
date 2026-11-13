@@ -60,9 +60,17 @@ export class NodeGitAccessError extends Error {
 }
 
 /** Errore di GitHub che non passa riprovando: accesso perso o permesso mancante (gli altri sono temporanei). */
+/** Prefisso fisso del messaggio di permesso mancante (`CODE_WRITE_MESSAGES.permission`). */
+const PERMISSION_PREFIX = CODE_WRITE_MESSAGES.permission("").split(" su questo repository")[0]!.trimEnd();
+
+/**
+ * Accesso perso o permesso mancante: errore permanente. Un 403 o 422 con «GitHub non risponde» (limite di richieste,
+ * GitHub momentaneamente giù) è temporaneo: il compito torna in attesa.
+ */
 function isPermanentGithubError(err: unknown): boolean {
   if (err instanceof GithubError) return err.message === CODE_WRITE_MESSAGES.noAccess;
-  return err instanceof CodeWriteError && (err.message === CODE_WRITE_MESSAGES.noAccess || err.status === 403 || err.status === 422);
+  if (!(err instanceof CodeWriteError)) return false;
+  return err.message === CODE_WRITE_MESSAGES.noAccess || err.message.startsWith(PERMISSION_PREFIX);
 }
 
 /**

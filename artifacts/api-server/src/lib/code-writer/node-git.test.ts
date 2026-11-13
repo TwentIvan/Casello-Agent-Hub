@@ -141,6 +141,32 @@ describe("claim con un errore del repository", () => {
     }
     expect(await row(first.id)).toMatchObject({ status: "waiting_node", leaseToken: null });
   });
+
+  it("permesso mancante (403 senza limite di richieste): il compito con codice si chiude blocked", async () => {
+    const { nodeId, first, second } = await twoTasks(7);
+    gh.failWith = (req) => (req.path.startsWith("/repos/") ? 403 : null);
+    try {
+      const pkg = await claimTask(nodeId);
+      expect(pkg?.taskId).toBe(second.id);
+    } finally {
+      gh.failWith = null;
+    }
+    expect(await row(first.id)).toMatchObject({ status: "blocked", outcome: "accesso al repository non disponibile" });
+  });
+
+  it("limite di richieste di GitHub (403): il compito con codice torna in attesa, non si blocca", async () => {
+    const { nodeId, first, second } = await twoTasks(7);
+    gh.failWith = (req) => (req.path.startsWith("/repos/") ? 403 : null);
+    gh.failHeaders = { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 60) };
+    try {
+      const pkg = await claimTask(nodeId);
+      expect(pkg?.taskId).toBe(second.id);
+    } finally {
+      gh.failWith = null;
+      gh.failHeaders = {};
+    }
+    expect(await row(first.id)).toMatchObject({ status: "waiting_node", leaseToken: null });
+  });
 });
 
 describe("nodePullBody", () => {

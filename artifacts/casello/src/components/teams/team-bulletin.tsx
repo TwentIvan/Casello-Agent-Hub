@@ -26,6 +26,7 @@ const EVENT_LABELS: Record<TeamEventType, string> = {
   azione_manuale_richiesta: "Azione manuale richiesta",
   lavoro_finito: "Lavoro finito",
   interrotto: "Interrotto",
+  risposta_capo: "Risposta del capo",
 };
 
 /** Voce del bollettino: tipo, «Non letto», quando, testo e dettaglio; `footer` sotto il testo (es. la squadra). */

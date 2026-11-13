@@ -622,7 +622,7 @@ DO $$ BEGIN
     CREATE TYPE "public"."team_turn_status" AS ENUM('queued', 'running', 'done', 'failed');
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'team_event_type') THEN
-    CREATE TYPE "public"."team_event_type" AS ENUM('piano_proposto', 'compito_finito', 'bloccato', 'decisione_richiesta', 'azione_manuale_richiesta', 'lavoro_finito', 'interrotto');
+    CREATE TYPE "public"."team_event_type" AS ENUM('piano_proposto', 'compito_finito', 'bloccato', 'decisione_richiesta', 'azione_manuale_richiesta', 'lavoro_finito', 'interrotto', 'risposta_capo');
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'pending_action_kind') THEN
     CREATE TYPE "public"."pending_action_kind" AS ENUM('action', 'plan', 'plan_change', 'proposal');

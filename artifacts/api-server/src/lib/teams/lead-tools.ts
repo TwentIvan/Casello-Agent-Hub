@@ -64,6 +64,8 @@ export interface LeadContext {
   userId: number;
   teamName: string;
   roleKeys: string[];
+  /** Il turno nasce da un messaggio dell'utente: il freno dei 3 fallimenti concede un tentativo. */
+  userRequested?: boolean;
 }
 
 /** Errore da restituire al modello come risultato dello strumento. */
@@ -483,9 +485,28 @@ async function updatePlan(ctx: LeadContext, args: Record<string, unknown>): Prom
   return done("piano aggiornato");
 }
 
+/** Freno ai tentativi: ultime 3 esecuzioni tutte fallite o bloccate, o 3 CI rosse di fila sulla PR del compito. */
+async function failureBrake(instanceId: number, taskId: string): Promise<boolean> {
+  const recent = await db
+    .select({ status: teamTasksTable.status })
+    .from(teamTasksTable)
+    .where(and(eq(teamTasksTable.instanceId, instanceId), eq(teamTasksTable.planTaskId, taskId)))
+    .orderBy(desc(teamTasksTable.id))
+    .limit(MAX_TASK_FAILURES);
+  if (recent.length === MAX_TASK_FAILURES && recent.every((r) => r.status === "failed" || r.status === "blocked")) return true;
+  // Stesso freno per il giro «CI rossa → riassegna»: l'esecuzione resta `done`, le CI rosse di fila le conta la sorveglianza
+  const [code] = await db
+    .select({ ciFailures: teamCodeTasksTable.ciFailures })
+    .from(teamCodeTasksTable)
+    .where(and(eq(teamCodeTasksTable.instanceId, instanceId), eq(teamCodeTasksTable.planTaskId, taskId)))
+    .limit(1);
+  return code !== undefined && code.ciFailures >= MAX_TASK_FAILURES;
+}
+
 /**
  * `assegna_compito`: solo un compito del PLAN approvato in stato planned, blocked o failed, e non se le sue ultime 3
- * esecuzioni sono tutte fallite o bloccate o se la sua PR ha avuto 3 CI rosse di fila (`team_code_tasks.ci_failures`). Lo stato della squadra lo verifica startTask con la riga della squadra
+ * esecuzioni sono tutte fallite o bloccate o se la sua PR ha avuto 3 CI rosse di fila (`team_code_tasks.ci_failures`), salvo
+ * in un turno nato da un messaggio dell'utente. Lo stato della squadra lo verifica startTask con la riga della squadra
  * bloccata («la squadra non è attiva»).
  */
 async function assignTask(ctx: LeadContext, args: Record<string, unknown>): Promise<ToolResult> {
@@ -503,23 +524,12 @@ async function assignTask(ctx: LeadContext, args: Record<string, unknown>): Prom
   const status = current.tasks.find((t) => t.id === taskId)?.status ?? "planned";
   if (BUSY.has(status)) return fail(TASK_MESSAGES.alreadyActive);
   if (status === "done") return fail(TASK_MESSAGES.notInPlan);
-  // Freno ai tentativi: dopo 3 esecuzioni di fila finite male il capo deve passare la mano all'utente
-  const recent = await db
-    .select({ status: teamTasksTable.status })
-    .from(teamTasksTable)
-    .where(and(eq(teamTasksTable.instanceId, ctx.instanceId), eq(teamTasksTable.planTaskId, taskId)))
-    .orderBy(desc(teamTasksTable.id))
-    .limit(MAX_TASK_FAILURES);
-  if (recent.length === MAX_TASK_FAILURES && recent.every((r) => r.status === "failed" || r.status === "blocked")) {
-    return fail(LEAD_MESSAGES.tooManyFailures);
+  // Freno ai tentativi: dopo 3 esecuzioni di fila finite male il capo deve passare la mano all'utente. Un messaggio
+  // dell'utente nel turno vale come sua decisione di riprovare: un tentativo, poi il freno torna a valere
+  if (!ctx.userRequested) {
+    const blocked = await failureBrake(ctx.instanceId, taskId);
+    if (blocked) return fail(LEAD_MESSAGES.tooManyFailures);
   }
-  // Stesso freno per il giro «CI rossa → riassegna»: l'esecuzione resta `done`, le CI rosse di fila le conta la sorveglianza
-  const [code] = await db
-    .select({ ciFailures: teamCodeTasksTable.ciFailures })
-    .from(teamCodeTasksTable)
-    .where(and(eq(teamCodeTasksTable.instanceId, ctx.instanceId), eq(teamCodeTasksTable.planTaskId, taskId)))
-    .limit(1);
-  if (code && code.ciFailures >= MAX_TASK_FAILURES) return fail(LEAD_MESSAGES.tooManyFailures);
   try {
     const row = await startTask(ctx.instanceId, taskId, attachmentIds);
     return done(

@@ -17,4 +17,5 @@ export const TeamEventType = {
   azione_manuale_richiesta: 'azione_manuale_richiesta',
   lavoro_finito: 'lavoro_finito',
   interrotto: 'interrotto',
+  risposta_capo: 'risposta_capo',
 } as const;

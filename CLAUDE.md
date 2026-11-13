@@ -465,7 +465,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   «il compito <id> è in corso: aspetta il suo esito»); `assegna_compito` (solo compito del PLAN approvato in `planned|blocked|failed`,
   altrimenti «il compito non è nel piano approvato: proponi una modifica» o «il compito è già in corso»; se le ultime 3
   esecuzioni del compito sono tutte `failed` o `blocked` → «compito fallito 3 volte: segnala all'utente», `MAX_TASK_FAILURES`:
-  un'esecuzione riuscita in mezzo azzera il conto); `leggi_esito`;
+  un'esecuzione riuscita in mezzo azzera il conto; in un turno nato da un messaggio dell'utente il freno non vale, così «riprova» concede un tentativo e al turno dopo il freno torna, `hasUserRequest`: la ripresa automatica dopo il tetto non conta); `leggi_esito`;
   `segnala` (`bloccato|decisione_richiesta|azione_manuale_richiesta`, bollettino ≤ 300, dettaglio ≤ 4 000;
   `azione_manuale_richiesta` aggiunge l'azione al PLAN, max 30); `chiudi_lavoro` (evento `lavoro_finito`: la squadra resta
   attiva finché l'utente non la chiude). Tutti i capo-strumenti che scrivono bloccano la squadra e falliscono con «la squadra
@@ -508,8 +508,11 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `done`; errore o limite → `failed`. Poi, in ogni caso: stato ed esito nel PLAN, evento (`compito_finito` se `done`, altrimenti
   `bloccato`) e turno del capo con motivo `task_finished`. Le azioni L2 di un ruolo vanno in coda all'utente che ha attivato la
   squadra (voce `action` con `team_instance_id`, la run non si ferma).
+- **Risposta del capo**: in un turno nato da un messaggio dell'utente (console, `invia_al_capo`, Alfred) l'ultimo messaggio del capo diventa l'evento `risposta_capo` (bollettino su una riga ≤ 300,
+  testo intero nel dettaglio se più lungo; vuoto → nessun evento); il prompt lo dice al capo. Migrazione `docs/migrations/2026-11-risposta-capo.sql` (valore dell'enum `team_event_type`, fuori da una
+  transazione esplicita, PRIMA del merge).
 - **Eventi e bollettino** (`events.ts`; `team_events`): tipi `piano_proposto`, `compito_finito`, `bloccato`, `decisione_richiesta`,
-  `azione_manuale_richiesta`, `lavoro_finito`, `interrotto`; bollettino ≤ 300 caratteri, dettaglio ≤ 4 000; mai segreti né
+  `azione_manuale_richiesta`, `lavoro_finito`, `interrotto`, `risposta_capo`; bollettino ≤ 300 caratteri, dettaglio ≤ 4 000; mai segreti né
   indirizzi delle app. Il bollettino è dell'utente che ha attivato la squadra. `GET /api/team-instances/:id/events`,
   `GET /api/team-events?unread=true|false` (dell'utente, al massimo 200; altro valore → 400), `POST /api/team-events/read`
   con `{ids}` (risponde `{updated}`).

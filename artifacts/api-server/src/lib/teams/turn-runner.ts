@@ -7,7 +7,7 @@ import { modelChatDeps, newUsage, stepWriter, usageCost, type LoopUsage } from "
 import { isUniqueViolation } from "../pg-errors";
 import { listAttachments, type AttachmentView } from "./attachments";
 import { MAX_BULLETIN, emitEvent } from "./events";
-import { INSTANCE_MESSAGES, InstanceError, getInstance, type InstanceView } from "./instances";
+import { BUDGET_RESUME_REQUEST, INSTANCE_MESSAGES, InstanceError, getInstance, type InstanceView } from "./instances";
 import { LEAD_TOOLS, leadToolHandler, planForModel } from "./lead-tools";
 import { InstanceRoleSchema, type InstanceRole } from "./manifest";
 import { getPlan, type PlanView } from "./plan";
@@ -52,6 +52,7 @@ const LEAD_TOOLS_INSTRUCTION = [
   "- `segnala` avvisa l'utente (bloccato, decisione richiesta, azione manuale richiesta); `chiudi_lavoro` dichiara finito il lavoro;",
   "- Un compito con codice è finito davvero solo con la CI verde. Con la CI rossa riassegnalo: riparte dallo stesso branch. Un compito che dipende da un altro con codice aspetta che la sua PR sia unita (motivo pr_closed): ogni compito parte dal branch base.",
   "- i compiti assegnati girano dopo il turno: il loro esito arriva in un turno successivo, non aspettarlo.",
+  "- quando il turno nasce da un messaggio dell'utente, il tuo ultimo messaggio del turno gli arriva nel bollettino: rispondigli in breve, con cosa hai fatto e cosa deve fare lui; se ti chiede di riprovare un compito fermato dopo 3 fallimenti, in questo turno puoi riassegnarlo una volta.",
   "- Non chiedere mai all'utente di eseguire comandi sul Mac o nel terminale, e in nessun caso comandi che cancellano file o storia (`rm`, `git reset`, `git clean`, `git push --force`): quello che serve si sistema in Botcave.",
   "- Se un compito `node` è bloccato per spazio di lavoro, Git, accesso al repository o nodo, usa `segnala` con il motivo dell'esito e la soluzione indicata nei problemi di prontezza, e non riassegnarlo finché l'utente non scrive che ha risolto.",
 ].join("\n");
@@ -290,7 +291,14 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
     listAttachments(instance.id),
   ]);
   const tools = [...roleTools.tools, ...LEAD_TOOLS];
-  const internal = leadToolHandler({ instanceId: instance.id, userId: instance.activatedBy, teamName: instance.name, roleKeys: roles.map((r) => r.key) });
+  const userRequested = hasUserRequest([...carried, ...turn.reasons]);
+  const internal = leadToolHandler({
+    instanceId: instance.id,
+    userId: instance.activatedBy,
+    teamName: instance.name,
+    roleKeys: roles.map((r) => r.key),
+    userRequested,
+  });
   const signal = new AbortController().signal;
   const deps: LoopDeps = {
     chat: modelChatDeps({
@@ -318,11 +326,35 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
   const outcome = await runAgentLoop({ messages, queue: [], rounds: 0, tokens: 0, activeMs: 0 }, deps);
   switch (outcome.type) {
     case "finished":
+      if (userRequested) await emitLeadReply(instance.id, outcome.content);
       return { status: "done", aiModelId };
     case "failed":
       return { status: "failed", error: outcome.error, aiModelId };
     case "cancelled":
       return { status: "failed", error: TURN_MESSAGES.internalError, aiModelId };
+  }
+}
+
+/**
+ * Vero se tra i motivi c'è un messaggio scritto dall'utente (non la ripresa automatica dopo il tetto): in quel turno il capo
+ * può riprovare un compito fermato dal freno dei 3 fallimenti, e la sua risposta finale va nel bollettino.
+ */
+export function hasUserRequest(reasons: TeamTurnReason[]): boolean {
+  return reasons.some((r) => r.type === "request" && r.text !== BUDGET_RESUME_REQUEST);
+}
+
+/**
+ * Risposta del capo a un messaggio dell'utente: evento `risposta_capo` (bollettino su una riga ≤ 300, testo intero nel dettaglio se
+ * più lungo). Una risposta vuota non produce nulla; un errore si registra solo nel log (il turno è comunque riuscito).
+ */
+async function emitLeadReply(instanceId: number, content: string): Promise<void> {
+  const oneLine = content.replace(/\s+/g, " ").trim();
+  if (!oneLine) return;
+  const bulletin = oneLine.length > MAX_BULLETIN ? `${oneLine.slice(0, MAX_BULLETIN - 1)}…` : oneLine;
+  try {
+    await emitEvent({ instanceId, type: "risposta_capo", bulletin, ...(oneLine.length > MAX_BULLETIN ? { detail: content.trim() } : {}) });
+  } catch (err) {
+    logger.warn({ instanceId, errName: errName(err) }, "Risposta del capo non registrata nel bollettino");
   }
 }
 

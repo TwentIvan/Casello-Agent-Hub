@@ -46,6 +46,8 @@ tags:
     description: Modelli di squadra di agenti e le loro istanze
   - name: team-chat
     description: Chat di Lucius sulla definizione di una squadra (conversazioni, messaggi, schede) e scarico delle istruzioni dei ruoli
+  - name: lead-chat
+    description: Chat con il Responsabile di prodotto di Botcave (ogni messaggio è una run)
   - name: characters
     description: Conversazioni scritte con Alfred e Lucius (filo di Alfred, argomenti, messaggi, schede)
   - name: memories
@@ -4547,6 +4549,108 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  /lead-chat:
+    get:
+      operationId: getLeadChat
+      tags: [lead-chat]
+      summary: Disponibilità del Responsabile di Botcave per l'utente
+      responses:
+        "200":
+          description: Disponibile o motivo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadChatAvailability"
+
+  /lead-conversations:
+    get:
+      operationId: listLeadConversations
+      tags: [lead-chat]
+      summary: Conversazioni aperte con il Responsabile (al più 100)
+      responses:
+        "200":
+          description: Elenco
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeadConversation"
+    post:
+      operationId: createLeadConversation
+      tags: [lead-chat]
+      summary: Nuova conversazione con il Responsabile
+      description: 409 se il Responsabile non è disponibile o se l'utente ha già 100 conversazioni aperte.
+      responses:
+        "201":
+          description: Conversazione creata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadConversation"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /lead-conversations/{id}:
+    get:
+      operationId: getLeadConversation
+      tags: [lead-chat]
+      summary: Conversazione con i messaggi e le loro run
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Conversazione trovata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadConversationDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteLeadConversation
+      tags: [lead-chat]
+      summary: Elimina la conversazione (le run restano)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Conversazione eliminata
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /lead-conversations/{id}/messages:
+    post:
+      operationId: sendLeadMessage
+      tags: [lead-chat]
+      summary: Invia un messaggio al Responsabile (crea una run)
+      description: >-
+        Un messaggio alla volta (409 se la run precedente è in coda o in corso), al più 10 al minuto per utente (429),
+        409 col motivo se il Responsabile non è disponibile o il tetto di spesa è raggiunto, 429 se la coda è piena.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeadMessageCreate"
+      responses:
+        "202":
+          description: Messaggio accettato, run in coda
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadMessageAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   /character-proposals/{id}/decision:
     post:
       operationId: decideCharacterProposal
@@ -7119,6 +7223,163 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    LeadChatAvailability:
+      type: object
+      required: [available]
+      properties:
+        available:
+          type: boolean
+        reason:
+          type: ["string", "null"]
+          description: Motivo quando non disponibile
+        agentId:
+          type: ["integer", "null"]
+        agentName:
+          type: ["string", "null"]
+        appName:
+          type: ["string", "null"]
+        aiModelId:
+          type: ["integer", "null"]
+        modelName:
+          type: ["string", "null"]
+
+    LeadConversation:
+      type: object
+      required: [id, title, updatedAt, tokensUsed, costUsd]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        tokensUsed:
+          type: integer
+        costUsd:
+          type: ["number", "null"]
+          description: null = costo parziale (prezzo mancante)
+
+    LeadPageContext:
+      type: object
+      required: [page]
+      additionalProperties: false
+      properties:
+        page:
+          type: string
+          enum: [dashboard, apps, app, app_plan, analysis, agents, agent, runs, run, pending_actions, skills, skill, team_templates, team_template, teams, team, models, account, console]
+        id:
+          type: string
+          pattern: "^[A-Za-z0-9._:-]{1,100}$"
+
+    LeadQueueItem:
+      type: object
+      required: [number, kind, status, summary]
+      properties:
+        number:
+          type: integer
+        kind:
+          type: string
+        status:
+          type: string
+        summary:
+          type: string
+
+    LeadRunView:
+      type: object
+      required: [id, status, output, error, costUsd, items]
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum: [pending, running, succeeded, failed, awaiting_client, cancelled]
+        output:
+          type: ["string", "null"]
+        error:
+          type: ["string", "null"]
+        costUsd:
+          type: ["number", "null"]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadQueueItem"
+
+    LeadMessage:
+      type: object
+      required: [id, content, pageContext, createdAt, run]
+      properties:
+        id:
+          type: integer
+        content:
+          type: string
+        pageContext:
+          oneOf:
+            - $ref: "#/components/schemas/LeadPageContext"
+            - type: "null"
+        createdAt:
+          type: string
+          format: date-time
+        run:
+          oneOf:
+            - $ref: "#/components/schemas/LeadRunView"
+            - type: "null"
+          description: null se la run non esiste più
+
+    LeadConversationDetail:
+      type: object
+      required: [id, title, agentId, aiModelId, createdAt, updatedAt, turnStatus, tokensUsed, costUsd, messages, progress]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        agentId:
+          type: integer
+        aiModelId:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        turnStatus:
+          $ref: "#/components/schemas/PlanTurnStatus"
+        tokensUsed:
+          type: integer
+        costUsd:
+          type: ["number", "null"]
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadMessage"
+        progress:
+          oneOf:
+            - $ref: "#/components/schemas/TurnProgress"
+            - type: "null"
+          description: Passi della run in corso, altrimenti null
+
+    LeadMessageCreate:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        pageContext:
+          $ref: "#/components/schemas/LeadPageContext"
+
+    LeadMessageAccepted:
+      type: object
+      required: [messageId, runId]
+      properties:
+        messageId:
+          type: integer
+        runId:
+          type: integer
 
     CharacterPageContext:
       type: object

@@ -11,6 +11,7 @@ import { INSTANCE_MESSAGES, InstanceError, getInstance, type InstanceView } from
 import { LEAD_TOOLS, leadToolHandler, planForModel } from "./lead-tools";
 import { InstanceRoleSchema, type InstanceRole } from "./manifest";
 import { getPlan, type PlanView } from "./plan";
+import { readinessText, teamReadiness } from "./readiness";
 import { loadRoleTools, roleFunctionTools, roleToolExecutor, teamQueueAction, toolSchemaLookup } from "./role-tools";
 import { TASK_MESSAGES, errName, skillTexts } from "./task-runner";
 import { teamBudgetBlock } from "./team-budget";
@@ -51,6 +52,8 @@ const LEAD_TOOLS_INSTRUCTION = [
   "- `segnala` avvisa l'utente (bloccato, decisione richiesta, azione manuale richiesta); `chiudi_lavoro` dichiara finito il lavoro;",
   "- Un compito con codice è finito davvero solo con la CI verde. Con la CI rossa riassegnalo: riparte dallo stesso branch. Un compito che dipende da un altro con codice aspetta che la sua PR sia unita (motivo pr_closed): ogni compito parte dal branch base.",
   "- i compiti assegnati girano dopo il turno: il loro esito arriva in un turno successivo, non aspettarlo.",
+  "- Non chiedere mai all'utente di eseguire comandi sul Mac o nel terminale, e in nessun caso comandi che cancellano file o storia (`rm`, `git reset`, `git clean`, `git push --force`): quello che serve si sistema in Botcave.",
+  "- Se un compito `node` è bloccato per spazio di lavoro, Git, accesso al repository o nodo, usa `segnala` con il motivo dell'esito e la soluzione indicata nei problemi di prontezza, e non riassegnarlo finché l'utente non scrive che ha risolto.",
 ].join("\n");
 
 // ─── Esecuzioni in background ───────────────────────────────────────────────
@@ -305,9 +308,11 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
     limits: LEAD_LIMITS,
     signal,
   };
+  const readiness = await readinessBlock(instance);
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt(instance, lead, roles, skills) },
     { role: "user", content: planMessage(plan, attachments) },
+    ...(readiness ? [{ role: "user" as const, content: readiness }] : []),
     ...reasons.map((content) => ({ role: "user" as const, content })),
   ];
   const outcome = await runAgentLoop({ messages, queue: [], rounds: 0, tokens: 0, activeMs: 0 }, deps);
@@ -318,6 +323,17 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
       return { status: "failed", error: outcome.error, aiModelId };
     case "cancelled":
       return { status: "failed", error: TURN_MESSAGES.internalError, aiModelId };
+  }
+}
+
+/** Problemi dei ruoli node per il capo (dato); un errore nel calcolo salta il blocco, nel log solo il nome dell'errore. */
+async function readinessBlock(instance: TeamInstanceRow): Promise<string | null> {
+  if (instance.activatedBy === null) return null;
+  try {
+    return readinessText(await teamReadiness(instance, instance.activatedBy));
+  } catch (err) {
+    logger.warn({ errName: errName(err) }, "Prontezza dei ruoli node non calcolata per il turno del capo");
+    return null;
   }
 }
 

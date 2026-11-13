@@ -860,7 +860,10 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - Stato effettivo di un modello: ritirato (offerta ritirata o data di dismissione passata) > non disponibile
   (`availability = unavailable`, messo da un 404 o "model_not_found" di una chiamata vera) > disponibile. La
   tendina propone solo modelli disponibili con strumenti (o non noti, "?"); gli altri disponibili in "Altri
-  modelli". "Prova" (5/minuto, solo sui propri account, 1 token, 20 s) riporta un modello a disponibile.
+  modelli". I modelli solo vocali o audio (id con il segmento `live`, `audio`, `tts`, `transcribe` o `realtime`: Gemini Live,
+  audio nativo, trascrizione…) non rispondono alle chiamate di chat (400 del provider): non sono mai selezionabili né consigliati
+  (`isAudioOnlyModel` in `lib/ai/model-status.ts`, stessa regola in console `lib/audio-models.ts`) e non compaiono nemmeno in
+  "Altri modelli"; il modello vocale di Alfred si sceglie a parte. Un ruolo o un agente che ne ha già uno lo mantiene finché non si cambia. "Prova" (5/minuto, solo sui propri account, 1 token, 20 s) riporta un modello a disponibile.
 - Limiti noti: l'enum Postgres `ai_provider` resta nel DB inutilizzato fino alla migrazione
   `2026-10-pulizia-gateway-post.sql`, che lo elimina insieme al vecchio gateway.
 

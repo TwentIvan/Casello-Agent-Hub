@@ -157,7 +157,7 @@ function toPublicModel(m: AiModel, offer: LinkedOffer | null, now: Date) {
     status,
     deprecationDate,
     releasedAt: offer?.releasedAt ?? null,
-    selectable: isSelectable(status, supportsTools),
+    selectable: isSelectable(status, supportsTools, m.modelId),
     recommended: false,
     lastProbeAt: m.lastProbeAt,
     lastProbeOk: m.lastProbeOk,

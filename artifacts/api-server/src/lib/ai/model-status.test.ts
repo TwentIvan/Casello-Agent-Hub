@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectiveStatus, isPreviewModel, isSelectable, pickRecommended, type EffectiveStatus } from "./model-status";
+import { effectiveStatus, isAudioOnlyModel, isPreviewModel, isSelectable, pickRecommended, type EffectiveStatus } from "./model-status";
 
 const NOW = new Date("2026-10-26T12:00:00Z");
 
@@ -33,13 +33,38 @@ describe("isPreviewModel", () => {
   });
 });
 
+describe("isAudioOnlyModel", () => {
+  it("modelli solo vocali o audio: Live, audio nativo, trascrizione, sintesi, realtime", () => {
+    for (const id of [
+      "models/gemini-3.8-live",
+      "models/gemini-3.8-live-extended-thinking",
+      "models/gemini-3.1-flash-live-preview",
+      "models/gemini-3.5-live-translate-preview",
+      "models/gemini-3.5-transcribe-live",
+      "models/gemini-2.5-flash-native-audio-latest",
+      "models/gemini-2.5-flash-preview-tts",
+      "gpt-4o-realtime-preview",
+      "gpt-4o-audio-preview",
+    ]) {
+      expect(isAudioOnlyModel(id), id).toBe(true);
+    }
+  });
+
+  it("i modelli di chat restano", () => {
+    for (const id of ["models/gemini-3.1-flash-lite", "models/gemini-2.5-flash", "deepseek-chat", "olive-7b", "deliver-1", "sonnet"]) {
+      expect(isAudioOnlyModel(id), id).toBe(false);
+    }
+  });
+});
+
 describe("isSelectable", () => {
-  it("solo disponibili e con strumenti non esclusi", () => {
-    expect(isSelectable("available", true)).toBe(true);
-    expect(isSelectable("available", null)).toBe(true);
-    expect(isSelectable("available", false)).toBe(false);
-    expect(isSelectable("unavailable", true)).toBe(false);
-    expect(isSelectable("retired", true)).toBe(false);
+  it("solo disponibili, con strumenti non esclusi e non solo audio", () => {
+    expect(isSelectable("available", true, "deepseek-chat")).toBe(true);
+    expect(isSelectable("available", null, "deepseek-chat")).toBe(true);
+    expect(isSelectable("available", false, "deepseek-chat")).toBe(false);
+    expect(isSelectable("unavailable", true, "deepseek-chat")).toBe(false);
+    expect(isSelectable("retired", true, "deepseek-chat")).toBe(false);
+    expect(isSelectable("available", true, "models/gemini-3.8-live")).toBe(false);
   });
 });
 
@@ -81,5 +106,15 @@ describe("pickRecommended", () => {
     expect(pickRecommended([m(1, "x-preview", { supportsTools: null }), m(2, "y-exp", { supportsTools: null })])).toBe(1);
     expect(pickRecommended([m(1, "x", { supportsTools: false }), m(2, "y", { status: "unavailable" })])).toBeNull();
     expect(pickRecommended([])).toBeNull();
+  });
+
+  it("mai un modello solo audio, anche se è il più economico con strumenti", () => {
+    expect(
+      pickRecommended([
+        m(1, "models/gemini-3.8-live", { priceInput: 0.01, priceOutput: 0.01 }),
+        m(2, "models/gemini-3.1-flash-lite", { priceInput: 0.1, priceOutput: 0.4 }),
+      ]),
+    ).toBe(2);
+    expect(pickRecommended([m(1, "models/gemini-3.8-live")])).toBeNull();
   });
 });

@@ -25,6 +25,8 @@ import {
   useGetTeamInstance,
   useGetTeamPlan,
   useSaveTeamInstance,
+  useGetTeamReadiness,
+  getGetTeamReadinessQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,6 +53,8 @@ import { TEAM_POLL_MS, TeamActivity, type TeamWorkState, useTeamWork } from "@/c
 import { TeamBudgetCard } from "@/components/teams/team-budget";
 import { TeamAttachments } from "@/components/teams/team-attachments";
 import { NodeFolderPicker } from "@/components/teams/node-folder-picker";
+import { TeamReadinessCard } from "@/components/teams/team-readiness-card";
+import { activateLabel, blockingProblems } from "@/lib/team-readiness";
 import { TeamBulletin } from "@/components/teams/team-bulletin";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -170,6 +174,14 @@ function TeamEditor({
   const refApp = useGetApp(team.ref.appId, { query: { queryKey: getGetAppQueryKey(team.ref.appId) } });
   const codeEnabled = !refApp.data || (refApp.data.sourceType === "github" && refApp.data.sourceInstallationId !== null);
 
+  // «Pronta a lavorare»: solo con ruoli `node` salvati, si rilegge ogni 30 s e dopo ogni salvataggio
+  const hasNodeRoles = team.roles.some((r) => r.runsOn === "node");
+  const readiness = useGetTeamReadiness(team.id, {
+    query: { queryKey: getGetTeamReadinessQueryKey(team.id), enabled: hasNodeRoles && !closed, refetchInterval: 30_000 },
+  });
+  const readinessData = hasNodeRoles && !closed ? readiness.data : undefined;
+  const blocking = readinessData ? blockingProblems(readinessData) : [];
+
   const savedJson = useMemo(
     () =>
       JSON.stringify(
@@ -185,6 +197,7 @@ function TeamEditor({
     queryClient.setQueryData(getGetTeamInstanceQueryKey(saved.id), saved);
     void queryClient.invalidateQueries({ queryKey: getListTeamInstancesQueryKey() });
     void queryClient.invalidateQueries({ queryKey: getGetTeamInstanceUpdatesQueryKey(saved.id) });
+    void queryClient.invalidateQueries({ queryKey: getGetTeamReadinessQueryKey(saved.id) });
     setConfirm(null);
   };
 
@@ -352,10 +365,12 @@ function TeamEditor({
           <p className="text-xs text-muted-foreground">
             Percorso relativo alla cartella radice scelta quando hai installato il nodo (solo lettere, cifre, <span className="font-mono">. _ -</span> e{" "}
             <span className="font-mono">/</span>, senza <span className="font-mono">..</span>). Serve ai compiti dei ruoli «nodo»: se è vuoto
-            risultano bloccati. «Sfoglia» mostra le cartelle che il nodo ha sotto la radice. Si salva con «Salva».
+            risultano bloccati, salvo i ruoli con il codice (lavorano in una copia preparata da Botcave). «Sfoglia» mostra le cartelle che il nodo ha sotto la radice. Si salva con «Salva».
           </p>
         </CardContent>
       </Card>
+
+      {readinessData && <TeamReadinessCard readiness={readinessData} />}
 
       <TeamAttachments teamId={team.id} readOnly={closed} />
 
@@ -380,8 +395,24 @@ function TeamEditor({
         open={confirm === "activate"}
         onOpenChange={(open) => !open && setConfirm(null)}
         title="Attivare la squadra?"
-        description="La squadra passa da bozza ad attiva: il capo riceve il primo turno e propone il piano da approvare."
-        confirmLabel="Attiva"
+        description={
+          <>
+            La squadra passa da bozza ad attiva: il capo riceve il primo turno e propone il piano da approvare.
+            {blocking.length > 0 && (
+              <span className="mt-3 block space-y-1">
+                <span className="block font-medium text-ink">Questi ruoli non potranno lavorare finché non li sistemi:</span>
+                <span className="block space-y-0.5">
+                  {blocking.map((b, i) => (
+                    <span key={i} className="block break-words">
+                      {b.roleName}: {b.message}
+                    </span>
+                  ))}
+                </span>
+              </span>
+            )}
+          </>
+        }
+        confirmLabel={activateLabel(readinessData)}
         pendingLabel="Attivazione…"
         pending={activate.isPending}
         onConfirm={() => activate.mutate({ id: team.id })}

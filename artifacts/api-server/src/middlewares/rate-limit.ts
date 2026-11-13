@@ -153,6 +153,12 @@ export const nodePingRateLimit = rateLimit({
   windowMs: 60_000,
   key: (req) => `${byNode(req)}:task:${String(req.params["id"] ?? "?")}`,
 });
+// Token d'installazione per Git del compito: 10 al minuto per compito dello stesso nodo.
+export const nodeGitTokenRateLimit = rateLimit({
+  limit: 10,
+  windowMs: 60_000,
+  key: (req) => `${byNode(req)}:git:${String(req.params["id"] ?? "?")}`,
+});
 // Turni delegati al nodo: presa (attesa lunga) 40 al minuto per nodo, contatore separato da heartbeat e claim dei
 // compiti; ping 6 al minuto per turno dello stesso nodo.
 export const nodeTurnClaimRateLimit = rateLimit({ limit: 40, windowMs: 60_000, key: byNode });

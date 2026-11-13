@@ -29,6 +29,7 @@ Riaprendo l'app a nodo collegato compare un menu:
 - «Apri Botcave»: apre Account nella console.
 - «Installa Claude Code» (solo se `claude` manca): dopo una conferma esegue l'installatore ufficiale
   (`curl -fsSL https://claude.ai/install.sh | bash`, indirizzo fisso nel programma), poi propone «Accedi a Claude».
+- «Installa Git» (solo se `git` manca): dopo una conferma lancia `xcode-select --install` (dialogo di macOS); il nodo se ne accorge da solo.
 - «Accedi a Claude»: lancia `claude auth login` (il login si apre nel browser) e controlla l'esito fino a 10 minuti.
 - «Cambia cartella di lavoro»: sceglie una nuova radice e riavvia il servizio.
 - «Apri i log»: apre `~/.casello-nodo/logs/`.
@@ -106,6 +107,7 @@ dell'app (https, o http solo verso localhost).
   Non contengono token, allegati né istruzioni dei compiti.
 - Stato: `~/.casello-nodo/state.json` (letto da `status`, senza segreti).
 - Turni: `~/.casello-nodo/turns/` (cartelle temporanee, vuote a riposo).
+- Compiti con codice: `<radice>/.botcave/` (cloni e copie di lavoro, vedi sotto).
 
 ## Spazio di lavoro della squadra
 
@@ -117,6 +119,18 @@ legge l'esito da `casello-esito.json`. A fine compito i file di servizio vengono
 Per scegliere la cartella dalla console («Sfoglia» nella scheda della squadra) il nodo manda con ogni heartbeat i nomi
 delle sottocartelle della radice: solo cartelle (mai file né contenuti), fino a 3 livelli e 2 000 voci, senza cartelle
 nascoste, `node_modules` e link simbolici. Una cartella appena creata compare in console entro 30 secondi.
+
+### Compiti con codice (ruoli `node` con `code: write`)
+
+Non serve clonare nulla né configurare `gh`: Botcave manda nel compito repository, branch base e branch di lavoro (`botcave/<squadra>-<compito>`) e il nodo si prepara da solo, dentro la radice, nelle cartelle nascoste `.botcave/`:
+
+- `.botcave/repos/<proprietario>/<nome>.git`: clone nudo condiviso dai compiti dello stesso repository (si può cancellare: si riclona);
+- `.botcave/compiti/<squadra>-<compito>`: copia di lavoro del compito (`git worktree`), cartella di `claude`; se il compito viene rieseguito si riprende il lavoro non pubblicato.
+
+Claude lavora e fa commit solo in locale. Fetch e push li fa il nodo con un token di Botcave valido un'ora, ristretto al repository, passato solo
+nell'ambiente dei comandi `git` (mai su disco, negli argomenti, nei log né a Claude). A fine compito il nodo pubblica il branch (mai `--force`, mai il branch base,
+solo `botcave/…`), toglie la copia di lavoro e riferisce; la PR in bozza la apre Botcave. Serve Git sul Mac (menu «Installa Git») e la versione 0.4.0 o successiva.
+Per i ruoli senza codice lo spazio di lavoro della squadra resta quello descritto sopra.
 
 ## Turni delegati (account «Claude Code (nodo)»)
 

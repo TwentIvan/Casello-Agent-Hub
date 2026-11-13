@@ -826,6 +826,42 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /node/tasks/{id}/git-token:
+    post:
+      operationId: nodeGitToken
+      tags: [nodes]
+      summary: Token per Git del compito
+      description: >-
+        Token di installazione GitHub ristretto al repository del compito (`contents: write`, un'ora), per fetch e
+        push dal nodo. Lease non valida o scaduta → 409; compito senza codice in scrittura, App senza repository o
+        installazione, GitHub non configurato o installazione non dell'utente → 409 «accesso al repository non
+        disponibile»; errore di GitHub → 502; 10 al minuto per compito. Risposta `no-store`.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeGitTokenRequest"
+      responses:
+        "200":
+          description: Token di installazione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeGitToken"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
   /node/tasks/{id}/attachments/{attachmentId}:
     get:
       operationId: nodeGetAttachment
@@ -3006,6 +3042,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TeamInstance"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}/readiness:
+    get:
+      operationId: getTeamReadiness
+      tags: [teams]
+      summary: Prontezza dei ruoli node della squadra
+      description: >-
+        Per ogni ruolo `node` i problemi che gli impedirebbero di lavorare (nodo con le skill, online e aggiornato, Git,
+        spazio di lavoro, repository).
+        Utente di riferimento: chi ha attivato la squadra o, se non è attivata, chi chiede. Squadra chiusa → 409.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Prontezza dei ruoli
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamReadiness"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -7840,7 +7899,7 @@ components:
 
     Node:
       type: object
-      required: [id, name, status, executor, version, skills, workspaceRoot, maxConcurrent, lastSeenAt, online, turnReady, kind, pairedAt, pairedIp, claude, claudeCheckedAt, settings, updateAvailable, updateFailedVersion, belowMinVersion, diagnosticsAt, diagnosticsRequestedAt, uninstallRequestedAt]
+      required: [id, name, status, executor, version, skills, workspaceRoot, maxConcurrent, lastSeenAt, online, turnReady, kind, pairedAt, pairedIp, claude, claudeCheckedAt, gitStatus, settings, updateAvailable, updateFailedVersion, belowMinVersion, diagnosticsAt, diagnosticsRequestedAt, uninstallRequestedAt]
       properties:
         id:
           type: integer
@@ -7888,6 +7947,11 @@ components:
         claudeCheckedAt:
           type: ["string", "null"]
           format: date-time
+        gitStatus:
+          description: Stato di Git sul Mac, dall'ultimo heartbeat; null se il nodo non lo ha mai comunicato
+          oneOf:
+            - $ref: "#/components/schemas/NodeGitStatus"
+            - type: "null"
         settings:
           description: Impostazioni scelte in console; null = tutte di default
           oneOf:
@@ -8176,6 +8240,105 @@ components:
           type: string
           maxLength: 100
           description: Versione di cui l'aggiornamento non è riuscito (ripristinata la precedente)
+        git:
+          type: object
+          additionalProperties: true
+          description: >-
+            Stato di Git sul Mac (`{found, version}`, versione ≤ 50 caratteri). Tollerante come `claude`: campi di
+            tipo sbagliato scartati senza rifiutare l'heartbeat; assente = il valore salvato resta com'è.
+
+    NodeGitStatus:
+      type: object
+      required: [found, version]
+      properties:
+        found:
+          type: boolean
+        version:
+          type: ["string", "null"]
+          maxLength: 50
+
+    NodeTaskGit:
+      type: object
+      required: [repo, baseBranch, branch, issue]
+      properties:
+        repo:
+          type: string
+          description: proprietario/nome
+        baseBranch:
+          type: string
+        branch:
+          type: string
+          description: botcave/<idSquadra>-<idCompito>
+        issue:
+          type: ["integer", "null"]
+
+    NodeReportGit:
+      type: object
+      required: [pushed, headSha, commits]
+      properties:
+        pushed:
+          type: boolean
+        headSha:
+          type: ["string", "null"]
+          pattern: "^[0-9a-f]{40}$"
+        commits:
+          type: integer
+          minimum: 0
+
+    NodeGitTokenRequest:
+      type: object
+      required: [leaseToken]
+      properties:
+        leaseToken:
+          type: string
+          minLength: 1
+          maxLength: 200
+
+    NodeGitToken:
+      type: object
+      required: [token, expiresAt]
+      properties:
+        token:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+
+    TeamReadinessProblem:
+      type: object
+      required: [code, level, message, link]
+      properties:
+        code:
+          type: string
+        level:
+          type: string
+          enum: [error, warning]
+        message:
+          type: string
+        link:
+          type: ["string", "null"]
+
+    TeamReadinessRole:
+      type: object
+      required: [roleKey, roleName, problems]
+      properties:
+        roleKey:
+          type: string
+        roleName:
+          type: string
+        problems:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamReadinessProblem"
+
+    TeamReadiness:
+      type: object
+      required: [roles]
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamReadinessRole"
 
     NodeFolders:
       type: object
@@ -8244,6 +8407,8 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+        git:
+          $ref: "#/components/schemas/NodeReportGit"
 
     NodeTurnPackage:
       type: object
@@ -8316,7 +8481,7 @@ components:
 
     NodeTaskPackage:
       type: object
-      required: [taskId, leaseToken, leaseExpiresAt, team, workspace, role, task, plan, caselloSkills, nodeSkills, attachments]
+      required: [taskId, leaseToken, leaseExpiresAt, team, workspace, role, task, plan, caselloSkills, nodeSkills, attachments, git]
       properties:
         taskId:
           type: integer
@@ -8426,6 +8591,11 @@ components:
           items:
             type: string
           description: Nomi delle skill del nodo richieste dal ruolo
+        git:
+          description: Repository, base e branch per i compiti con codice in scrittura; null altrimenti
+          oneOf:
+            - $ref: "#/components/schemas/NodeTaskGit"
+            - type: "null"
         attachments:
           type: array
           items:

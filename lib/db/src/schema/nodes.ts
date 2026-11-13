@@ -32,6 +32,8 @@ export const nodesTable = pgTable(
     // Stato di Claude Code sul Mac, comunicato con l'heartbeat
     claudeStatus: jsonb("claude_status").$type<Record<string, unknown>>(),
     claudeCheckedAt: timestamp("claude_checked_at"),
+    // Stato di Git sul Mac ({found, version}), comunicato con l'heartbeat
+    gitStatus: jsonb("git_status").$type<{ found: boolean; version: string | null }>(),
     // Impostazioni scelte in console (maxConcurrent, maxConcurrentTurns, timeout)
     settings: jsonb("settings").$type<Record<string, unknown>>(),
     diagnosticsRequestedAt: timestamp("diagnostics_requested_at"),

@@ -67,6 +67,8 @@ export interface LoopDeps {
   notify?: (text: string) => Promise<void>;
   /** Stato di Claude Code per l'heartbeat e la diagnosi (lo riempie il Task 6); undefined = non mandato. */
   claudeStatus?: () => Promise<Record<string, unknown> | undefined>;
+  /** Stato di Git per l'heartbeat (`{found, version}`); undefined = non mandato. */
+  gitStatus?: () => Promise<Record<string, unknown> | undefined>;
   /** Versione di macOS per la diagnosi (default `sw_vers -productVersion`). */
   osVersion?: () => Promise<string | null>;
   /** Disinstallazione chiesta dalla console: chiamata una volta sola (vedi `uninstallSelf`). */
@@ -357,6 +359,7 @@ export function startLoop(config: Config, deps: LoopDeps = {}): Loop {
     try {
       const skills = await scanSkills(config.skillsDirs, logger);
       const claude = await deps.claudeStatus?.().catch(() => undefined);
+      const git = await deps.gitStatus?.().catch(() => undefined);
       const updateFailed = readFailedVersion(updPaths);
       const hb = await client.heartbeat({
         version: NODE_VERSION,
@@ -367,6 +370,7 @@ export function startLoop(config: Config, deps: LoopDeps = {}): Loop {
         folders: await scanFolders(config.workspaceRoot),
         kind,
         ...(claude ? { claude } : {}),
+        ...(git ? { git } : {}),
         ...(updateFailed ? { updateFailed } : {}),
       });
       state.lastHeartbeatAt = new Date().toISOString();

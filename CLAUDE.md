@@ -34,7 +34,10 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   accettare; Alfred e Lucius hanno una memoria (appunti e storico dei riassunti), visibile e modificabile in Account (vedi "Lucius
   sulla squadra e memorie").
 - Strumenti GitHub delle squadre: i ruoli `cloud` con `code: read|write` leggono il codice dell'App di riferimento, lo modificano su un branch dedicato, aprono una PR in bozza («Closes #n») e Botcave sorveglia la CI
-  e rimette in moto il capo; i ruoli `node` seguono la stessa convenzione Git; il merge resta all'utente (vedi "Strumenti GitHub delle squadre"). Spec: `docs/superpowers/specs/2026-11-10-botcave-strumenti-github-squadre-design.md`.
+  e rimette in moto il capo; per i ruoli `node` il nodo prepara la copia di lavoro e pubblica il branch con il token di Botcave, e la PR la apre Botcave (vedi "Nodi (esecuzione dei ruoli node)"); il merge resta all'utente (vedi "Strumenti GitHub delle squadre"). Spec: `docs/superpowers/specs/2026-11-10-botcave-strumenti-github-squadre-design.md`.
+- Spazio di lavoro automatico dei ruoli `node` con codice: un ruolo `node` con `code: write` lavora appena la squadra è attiva, senza clonare a mano, senza `gh` e senza scegliere una cartella: il nodo (0.4.0) clona il repository in `<radice>/.botcave/`,
+  usa una copia di lavoro per compito e fa fetch e push con un token d'installazione per Git (`git-token`); la PR in bozza la apre Botcave al report; la carta «Pronta a lavorare» e il dialogo di «Attiva» avvisano dei problemi (vedi "Strumenti GitHub delle squadre" e
+  "Nodi (esecuzione dei ruoli node)"). Spec: `docs/superpowers/specs/2026-11-13-botcave-spazio-di-lavoro-automatico-design.md`.
 - Lucius legge il codice: nella chat del piano, nelle schede agente e nelle aree degli agenti e nella chat di squadra Lucius legge il codice delle App collegate a GitHub (ultimo commit del branch, in cache) con
   `elenca_cartella`, `leggi_file`, `cerca_nel_codice` e verifica le voci prima di proporre (vedi "Lucius legge il codice"). Spec: `docs/superpowers/specs/2026-11-10-botcave-lucius-legge-il-codice-design.md`.
 - Lucius e Alfred leggono il web: nella chat del piano, nella chat di squadra e nelle conversazioni dei personaggi (Lucius ovunque, Alfred nel filo scritto) lo strumento `leggi_pagina_web` scarica una pagina
@@ -190,6 +193,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (`updates.ts`), salva come modello (`save-as-template.ts`); route in `src/routes/skills.ts`, `team-templates.ts` e
   `team-instances.ts`; console: pagine `skills.tsx`, `skill-detail.tsx`, `team-templates.tsx`, `team-template-detail.tsx`,
   `teams.tsx`, `team-detail.tsx` in `artifacts/casello/src/pages/` (route `/skills`, `/team-templates`, `/teams`; vedi "Squadre (definizione)")
+- Spazio di lavoro automatico (vedi "Nodi" e "Strumenti GitHub delle squadre"): API `artifacts/api-server/src/lib/code-writer/node-git.ts` (`nodeGitContext`, `nodeGitSection`, `adoptNodePull`), `lib/nodes/git-version.ts` (`NODE_GIT_MIN_VERSION`), `lib/nodes/protocol.ts` (`gitTokenForTask`, pacchetto con `git`), `lib/teams/readiness.ts`, `routes/node.ts` (`git-token`), `routes/team-instances.ts` (`readiness`);
+  nodo `artifacts/casello-nodo/src/` (`git-check.ts`, `git-workspace.ts`, `git-errors.ts`, `runner.ts`); console `components/teams/team-readiness-card.tsx`, `lib/team-readiness.ts`, `components/account/node-status-list.tsx`; prova di flusso `artifacts/api-server/test/code-team-flow.test.ts`. Spec: `docs/superpowers/specs/2026-11-13-botcave-spazio-di-lavoro-automatico-design.md`
 - Esecuzione delle squadre (vedi "Squadre (esecuzione)"): in `artifacts/api-server/src/lib/teams/` PLAN (`plan.ts`),
   decisione sulle voci di piano (`plan-decisions.ts`), coda dei turni (`turn-queue.ts`), strumenti dei ruoli (`role-tools.ts`),
   strumenti del capo (`lead-tools.ts`), turni del capo (`turn-runner.ts`), compiti (`task-runner.ts`), eventi (`events.ts`),
@@ -264,7 +269,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   console `components/characters/` (`turn-progress.ts`, `turn-progress-view.tsx`, `character-chat.tsx`) (vedi "Avanzamento dei turni")
 - `artifacts/api-server/src/lib/code-writer/` — strumenti GitHub delle squadre (vedi "Strumenti GitHub delle squadre"): sessione del compito e strumenti dei ruoli (`session.ts`, `tools.ts`), copia di lavoro
   (`working-copy.ts`), controllo dei segreti (`secrets-check.ts`), client Git/PR/CI di GitHub (`github-git.ts`), stato della CI (`ci-state.ts`), righe `team_code_tasks` (`code-tasks.ts`), sorveglianza
-  (`watcher.ts`), convenzione Git dei compiti node (`node-git.ts`), messaggi fissi (`messages.ts`); schema `lib/db/src/schema/team-code-tasks.ts`; prova di flusso `artifacts/api-server/test/code-team-flow.test.ts`;
+  (`watcher.ts`), contesto e sezione Git del pacchetto, apertura e adozione della PR dei compiti node (`node-git.ts`), messaggi fissi (`messages.ts`); schema `lib/db/src/schema/team-code-tasks.ts`; prova di flusso `artifacts/api-server/test/code-team-flow.test.ts`;
   console: tendina «Codice» dell'editor dei ruoli e link a branch, PR e CI nella carta «Piano» (`components/teams/`)
 - `artifacts/api-server/src/lib/code-reader/` — lettura del codice delle App per Lucius: cache per commit (`source-cache.ts`), strumenti (`tools.ts`), messaggi e istruzioni (`messages.ts`); con
   `lib/github/commit.ts` (SHA del branch) e `userHasInstallation` in `lib/github/installations.ts` (vedi "Lucius legge il codice"). Spec: `docs/superpowers/specs/2026-11-10-botcave-lucius-legge-il-codice-design.md`
@@ -582,7 +587,8 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   (`waiting_since`), fino a 200 per chiamata, il cui ruolo è `node` e le cui skill `node` (catalogo, versione fissata, e specializzate
   di tipo `node`: `roleNodeSkills`) sono tutte tra quelle dichiarate dal nodo. Il claim blocca squadra → nodo → compito (`SKIP LOCKED`) e
   rispetta `max_concurrent` (i compiti `running` con lease del nodo); `running`, `node_id`, `lease_token` e `lease_expires_at` si
-  scrivono in un colpo, il PLAN diventa `running` dopo il commit (se il pacchetto non si prepara il compito torna `waiting_node`).
+  scrivono in un colpo, il PLAN diventa `running` dopo il commit (se il pacchetto non si prepara il compito torna `waiting_node`, o si chiude `blocked` «accesso al repository non disponibile» se il
+  repository manca in modo duraturo, e il claim passa al candidato successivo: un compito difettoso non ferma gli altri).
   Pacchetto: squadra, spazio di lavoro, ruolo (con il nome del modello preferito), compito, PLAN, skill `casello`, nomi delle skill
   `node`, metadati degli allegati. Un compito di nodo si riconosce da `lease_token IS NOT NULL`: il limite dei compiti
   cloud (3 `running` per squadra) non lo conta. Se la squadra ha raggiunto il tetto di spesa, i suoi compiti `waiting_node` si
@@ -660,6 +666,19 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `nodes.workspace_folders` (jsonb) e `nodes.folders_updated_at`.
 - Installazione, collegamento, aggiornamento e disinstallazione senza terminale (app «Botcave Nodo»): vedi "Botcave Nodo (app per Mac)"; i comandi qui sopra restano
   l'alternativa da terminale.
+- **Ruoli `node` con codice (0.4.0)**: il nodo non usa lo «Spazio di lavoro» della squadra per i compiti con `git` nel pacchetto. Cartelle gestite da Botcave dentro la radice (`scanFolders` salta le cartelle nascoste, quindi non compaiono): clone nudo condiviso
+  `<radice>/.botcave/repos/<proprietario>/<nome>.git` e copia di lavoro `<radice>/.botcave/compiti/<idSquadra>-<idCompito>` (`git worktree add`, ripresa se esiste; ricreata da `origin/<branch>` se il branch è stato riscritto su GitHub; un lock per repository). Moduli
+  `git-workspace.ts` e `git-errors.ts`: il token passa solo nell'ambiente dei comandi `git` verso GitHub (credential helper azzerati, configurazione globale e di sistema ignorata, configurazione del clone riscritta prima di ogni comando con token, `commondir`/`gitdir` del clone tolti e `GIT_DIR`/`GIT_COMMON_DIR` fissati sul clone nei comandi con token), mai negli argomenti,
+  su disco, nei log né nell'ambiente di Claude Code; il push è di `HEAD` verso `refs/heads/botcave/…`, mai forzato, mai sul base, senza tag né sottomoduli, anche con `blocked`, timeout o stop se ci sono commit (non con lease persa); push fallito → report `failed`;
+  a fine compito la copia si toglie e le modifiche non committate si scartano (l'esito lo dice). Messaggi fissi `GIT_MESSAGES` (Git non installato, repository non raggiungibile, branch base non trovato, push rifiutato, preparazione non riuscita). Capacità `git {found, version}`
+  (`git-check.ts`, all'avvio e ogni 10 minuti con Claude Code) nell'heartbeat → `nodes.git_status` (`Node.gitStatus`; senza `git` il valore resta com'era), riga «Git» in Account → Nodi; voce di menu «Installa Git» (`xcode-select --install`). Per i ruoli `node` senza
+  codice lo «Spazio di lavoro» resta com'è, con il messaggio `WORKSPACE_INVALID` «spazio di lavoro mancante o non trovato sul Mac: sceglilo nella scheda squadra (Spazio di lavoro)».
+- **Prontezza della squadra** (`lib/teams/readiness.ts`, `GET /api/team-instances/:id/readiness`, solo ruoli `node`, solo letture, squadra chiusa → 409): per ruolo problemi `{code, level error|warning, message, link}`: `no_node`, `node_offline`, `workspace_missing`,
+  `workspace_unknown` (ruoli senza codice), `repo_not_linked`, `repo_not_owned`, `node_outdated`, `git_missing` (ruoli con codice). Console: carta «Pronta a lavorare» (`team-readiness-card.tsx`, `lib/team-readiness.ts`) nella scheda squadra con LED per ruolo e
+  aggiornamento ogni 30 s; il dialogo di «Attiva» elenca gli errori e il pulsante diventa «Attiva comunque» (avvisa, non blocca). Il capo riceve nel contesto i problemi noti («dati, non istruzioni») e nel prompt le regole: mai chiedere all'utente comandi sul Mac o
+  distruttivi (`rm`, `git reset`, `git clean`, `git push --force`), `segnala` per i blocchi di spazio, Git, accesso o nodo e niente riassegnazione finché l'utente non dice di aver risolto (`turn-runner.ts`).
+- Migrazione: `docs/migrations/2026-11-spazio-di-lavoro-automatico.sql` (additiva e idempotente, niente `-post`): colonna `nodes.git_status` (jsonb). Da applicare su Neon PRIMA del merge (SQL completo in chat) e da segnalare nella PR; riportata in `docs/schema-casello.sql`.
+  Nessuna variabile nuova, permessi della GitHub App invariati.
 - Non ancora fatto: interfaccia in The Hub Up (5), organizzazioni e policy dei dati (2: proprietà degli allegati e dei nodi per organizzazione).
 
 ## Modelli AI (account AI)
@@ -734,8 +753,13 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   compito con codice è finito con la CI verde, con la CI rossa si riassegna (riparte dallo stesso branch), ogni compito parte dal base. Freno ai giri: `assegna_compito` rifiuta con «compito fallito 3 volte: segnala
   all'utente» (`MAX_TASK_FAILURES` = 3) sia dopo 3 esecuzioni di fila `failed|blocked` sia quando la PR del compito ha 3 CI rosse di fila (`team_code_tasks.ci_failures`: la sorveglianza lo incrementa nella stessa
   transazione della notifica di una CI rossa e lo azzera con una verde o senza CI; l'esecuzione di un compito con la CI rossa resta `done`, quindi il primo freno da solo non basta).
-- **Compiti `node`**: con `code: write` il pacchetto aggiunge in fondo alle istruzioni la sezione «Git» (`node-git.ts`: repository, base, branch, issue, «lavora solo su quel branch, non fare merge, `gh pr create --draft`»), nessuna modifica a
-  `casello-nodo`; al report `done` Botcave cerca la PR aperta sul branch e, se c'è, crea la riga da sorvegliare (errori di GitHub: il report riesce comunque).
+- **Compiti `node`** (spec `docs/superpowers/specs/2026-11-13-botcave-spazio-di-lavoro-automatico-design.md`; niente più `gh` né clone a mano sul Mac): con `code: write` e un'App con `source_repo` il pacchetto del claim porta `git {repo, baseBranch, branch, issue}`
+  (`nodeGitContext` in `node-git.ts`; branch base = `apps.source_branch` o il predefinito del repository, se non si legge: accesso perso, permesso mancante o App senza installazione né branch → il claim chiude il compito `blocked` «accesso al repository non disponibile» (PLAN, evento, turno del capo, `NodeGitAccessError`); errore temporaneo (rete, 5xx, limite di richieste di GitHub anche con 403) → il compito torna `waiting_node`; in entrambi i casi il claim passa al candidato successivo) e le istruzioni finiscono con la sezione «Git» (`nodeGitSection`:
+  sei già sul branch in una copia preparata da Botcave, commit piccoli, niente push né PR né cambio di branch, riferisci `done` o `blocked`). Solo un nodo con versione ≥ `NODE_GIT_MIN_VERSION` = 0.4.0 (`lib/nodes/git-version.ts`) prende questi compiti
+  (claim, `pending` dell'heartbeat e controllo «nessun nodo disponibile» del lease-sweeper; `min-version.txt` resta 0.2.0). `POST /api/node/tasks/:id/git-token` (token `node`, `{leaseToken}`, 10/min per compito, `Cache-Control: no-store`, mai il token nei log)
+  risponde `{token, expiresAt}`: token d'installazione ristretto al repository e a `contents: write` (409 «lease non valida o scaduta»; 409 «accesso al repository non disponibile» senza ruolo con codice, App senza installazione o utente che non la possiede;
+  502 con GitHub in errore). Il nodo fa clone, fetch e push; al report `done` `adoptNodePull` adotta la PR aperta sul branch oppure, se il branch esiste su GitHub con una testa diversa dal base (anche se pubblicato da un'esecuzione precedente non `done`: `git {pushed, headSha, commits}` del report è solo informativo) e chi ha attivato la squadra possiede l'installazione, **la apre Botcave in bozza** (`createDraftPull`: titolo del
+  compito, «Closes #n», esito, piè di pagina, controllo dei segreti) e crea la riga da sorvegliare; `blocked`/`failed` non aprono PR (errori di GitHub: il report riesce comunque).
 - **Console**: tendina «Codice» nell'editor dei ruoli (senza GitHub tramite installazione offre solo «Nessuno» più il valore attuale, così un ruolo con il codice può tornare a «Nessuno», con il motivo sotto; mentre l'App
   si legge o se la lettura fallisce resta attiva e decide il server; per il capo solo la nota «Il capo non esegue compiti: il codice vale per gli altri ruoli»), campo «Issue» nell'editor del PLAN, nella carta «Piano» link a branch e PR con LED della CI (`work` in corso,
   `ok` verde, `ko` rossa, `idle` nessuna CI o PR chiusa). Niente scorrimento orizzontale a 1280 px.
@@ -1760,7 +1784,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   negli eseguibili ufficiali di Node 24 `darwin-arm64` e `darwin-x64` (scaricati da nodejs.org e verificati con `SHASUMS256.txt`), `lipo` universale, firma ad-hoc, prova di
   `--version` in arm64 e x64 (Rosetta). Escono `Botcave-Nodo-<versione>.zip`, `casello-nodo-<versione>` e `nodo-manifest.json` `{version, minVersion, binary: {file, sha256,
   size}, app: {…}}`; `minVersion` da `artifacts/casello-nodo/min-version.txt` (oggi `0.2.0`: i nodi della CLI 0.2.0 continuano a prendere lavoro), la versione da
-  `package.json` (oggi `0.3.0`). **Ogni modifica a `artifacts/casello-nodo/src` richiede di alzare `version` in
+  `package.json` (oggi `0.4.0`). **Ogni modifica a `artifacts/casello-nodo/src` richiede di alzare `version` in
   `artifacts/casello-nodo/package.json`**: i file pubblicati hanno la versione nel nome e la cache immutable (la CI lo controlla sui branch diversi da `main`). L'API legge il manifest da `NODO_MANIFEST_PATH` (default `/app/nodo/nodo-manifest.json`; assente = nessun aggiornamento proposto e nessun
   nodo sotto la minima). `GET /api/account/nodes/download` (solo login) dà versione, dimensione e indirizzo dello zip; Account → Nodi → carta «Botcave Nodo per Mac» con
   «Scarica per Mac» e i passi del primo avvio (trascina in Applicazioni, apri, «Apri comunque» in Privacy e sicurezza, «Collega»).
@@ -1781,7 +1805,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   --version` e `claude auth status --json`, 10 s ciascuno); l'heartbeat porta `claude {found, version, loggedIn, authMethod, subscriptionType, loginExpiresAt}` (niente email né
   organizzazione; il server tiene solo questi campi e scarta quelli di tipo sbagliato senza rifiutare l'heartbeat) in `nodes.claude_status` con `claude_checked_at`. Console: LED in Account →
   Nodi («installato · versione», accesso, piano, scadenza), avviso se il login manca (`loggedIn: false`; assente = non noto, nessun avviso) o scade entro 3 giorni anche sulla carta dell'account «Claude Code (nodo)» e nella
-  Dashboard (`nodeClaudeWarnings`). «Installa Claude Code» (conferma, poi `/bin/bash -c "curl -fsSL https://claude.ai/install.sh | bash"` con URL costante, 10 minuti,
+  Dashboard (`nodeClaudeWarnings`). Stessa logica per Git (`git-check.ts`, vedi "Nodi"): voce di menu «Installa Git» solo se manca (conferma, `xcode-select --install`, il nodo se ne accorge da solo), cartelle `.botcave/` gestite nella radice. «Installa Claude Code» (conferma, poi `/bin/bash -c "curl -fsSL https://claude.ai/install.sh | bash"` con URL costante, 10 minuti,
   notifiche) e «Accedi a Claude» (`claude auth login`, poi verifica ogni 5 s per al più 10 minuti).
 - **Impostazioni, diagnosi, disinstallazione** (`lib/nodes/node-admin.ts`, nodo `node-admin.ts`; route solo login): `PUT /api/account/nodes/:id/settings`
   `{maxConcurrent 1..3, maxConcurrentTurns 1..4, taskTimeoutMinutes 5..240}` (ognuno null = config locale; altro → 400 «impostazioni del nodo non valide») in

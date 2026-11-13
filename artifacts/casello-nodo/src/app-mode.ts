@@ -5,13 +5,20 @@ import path from "node:path";
 import { installFromConfig, uninstallLocal } from "./cli";
 import { createPairingClient, type PairingClient } from "./client";
 import { ConfigError, defaultPaths, loadConfig, writeConfigMerged, type Config } from "./config";
-import { installClaude, loginClaude, realClaudeDeps, type ClaudeDeps, type ExecLongFn } from "./claude-check";
+import { installClaude, loginClaude, realClaudeDeps, type ClaudeDeps, type ExecLongFn, type RunFn } from "./claude-check";
+import { checkGit, createCachedGitStatus, installGit, type GitStatus } from "./git-check";
 import { osascriptDialogs, type Dialogs } from "./dialogs";
 import { UNINSTALLED_TEXT } from "./node-admin";
 import { realLaunchctl, serviceTarget, type LaunchctlRunner } from "./launchd";
 import { PairingFailedError, runPairing } from "./pairing";
 
 /** Azioni su Claude Code (verifica, installazione, login). */
+/** Azioni su Git del menu. */
+export interface GitActions {
+  found(): Promise<boolean>;
+  install(): Promise<void>;
+}
+
 export interface ClaudeActions {
   found(): Promise<boolean>;
   install(): Promise<void>;
@@ -36,6 +43,7 @@ export interface AppDeps {
   version: string;
   whichClaude: () => Promise<string | null>;
   claude: ClaudeActions;
+  git: GitActions;
   /** `fetch` per l'avviso di disinstallazione a Botcave (iniettabile nei test). */
   fetch?: typeof fetch;
   /** Toglie la quarantena dalla copia del programma (default: `xattr` su macOS, vedi `realRemoveQuarantine`). */
@@ -46,6 +54,7 @@ export interface AppDeps {
 export const MENU_ITEMS = [
   "Apri Botcave",
   "Installa Claude Code",
+  "Installa Git",
   "Accedi a Claude",
   "Cambia cartella di lavoro",
   "Apri i log",
@@ -138,7 +147,10 @@ async function adoptCliConfig(d: AppDeps, cfg: Config): Promise<number> {
 
 async function menu(d: AppDeps, cfg: Config): Promise<number> {
   const claudeFound = await d.claude.found();
-  const items = MENU_ITEMS.filter((i) => i !== "Installa Claude Code" || !claudeFound);
+  const gitFound = (await d.git.found().catch(() => true)) === true;
+  const items = MENU_ITEMS.filter(
+    (i) => (i !== "Installa Claude Code" || !claudeFound) && (i !== "Installa Git" || !gitFound),
+  );
   const choice = (await d.dialogs.chooseFromList("Botcave Nodo", items)) as MenuItem | null;
   const paths = defaultPaths(d.home);
   switch (choice) {
@@ -149,6 +161,9 @@ async function menu(d: AppDeps, cfg: Config): Promise<number> {
       return 0;
     case "Installa Claude Code":
       await d.claude.install();
+      return 0;
+    case "Installa Git":
+      await d.git.install();
       return 0;
     case "Accedi a Claude":
       await d.claude.login();
@@ -239,6 +254,26 @@ export function realClaudeActions(
   };
 }
 
+/** Azioni reali su Git: conferma e installazione dei Command Line Tools di Apple. */
+export function realGitActions(
+  dialogs: Dialogs,
+  deps: { run?: RunFn; exec?: ExecLongFn; status?: () => Promise<GitStatus> } = {},
+): GitActions {
+  // Stato in cache (10 minuti): il menu non lancia `git` a ogni apertura
+  const status = deps.status ?? createCachedGitStatus(() => checkGit({ run: deps.run }));
+  return {
+    found: async () => (await status()).found,
+    install: async () => {
+      const ok = await dialogs.confirm(
+        "Botcave Nodo avvierà l'installazione degli strumenti da riga di comando di Apple, che includono Git. macOS mostrerà un suo dialogo e può richiedere qualche minuto.",
+        "Installa",
+      );
+      if (!ok) return;
+      await installGit({ exec: deps.exec, notify: (t) => dialogs.notify("Botcave Nodo", t) });
+    },
+  };
+}
+
 function execText(file: string, args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(file, args, { timeout: 10_000 }, (err, stdout) => resolve(err ? null : String(stdout).trim() || null));
@@ -276,5 +311,6 @@ export function realAppDeps(opts: { caselloUrl: string; version: string; program
     version: opts.version,
     whichClaude,
     claude: realClaudeActions(dialogs, claudeDeps),
+    git: realGitActions(dialogs),
   };
 }

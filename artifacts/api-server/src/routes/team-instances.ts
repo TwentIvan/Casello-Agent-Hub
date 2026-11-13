@@ -4,6 +4,8 @@ import {
   ListTeamInstancesResponse,
   CreateTeamInstanceBody,
   GetTeamInstanceParams,
+  GetTeamReadinessParams,
+  GetTeamReadinessResponse,
   GetTeamInstanceResponse,
   SaveTeamInstanceParams,
   SaveTeamInstanceBody,
@@ -54,10 +56,10 @@ import {
   DeleteTeamAttachmentParams,
 } from "@workspace/api-zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { db, nodesTable, teamCodeTasksTable, teamTaskStepsTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamTaskRow, type TeamTurnRow } from "@workspace/db";
+import { db, nodesTable, teamCodeTasksTable, teamInstancesTable, teamTaskStepsTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamTaskRow, type TeamTurnRow } from "@workspace/db";
 import { currentUserId } from "../lib/auth";
 import { AttachmentError, MAX_ATTACHMENT_BYTES, rfc5987, deleteAttachment, getAttachment, listAttachments, saveAttachment } from "../lib/teams/attachments";
-import { InstanceError, closeInstance, createInstance, getInstance, listInstances, saveInstance, setInstanceBudget } from "../lib/teams/instances";
+import { INSTANCE_MESSAGES, InstanceError, closeInstance, createInstance, getInstance, listInstances, saveInstance, setInstanceBudget } from "../lib/teams/instances";
 import { listEvents, markRead, userEvents } from "../lib/teams/events";
 import { activateInstance, sendToLead } from "../lib/teams/turn-runner";
 import { teamMessageRateLimit } from "../middlewares/rate-limit";
@@ -68,6 +70,7 @@ import { saveInstanceAsTemplate } from "../lib/teams/save-as-template";
 import { TeamRuleError } from "../lib/teams/rules";
 import { TemplateError } from "../lib/teams/templates";
 import { applyUpdates, getUpdates } from "../lib/teams/updates";
+import { teamReadiness } from "../lib/teams/readiness";
 import { parseRequest } from "../middlewares/error-handler";
 
 // Squadre (istanze di modelli) legate a un lavoro. Con un token personale valgono gli ambiti per metodo.
@@ -177,6 +180,16 @@ router.post("/team-instances/:id/close", async (req, res) => {
   const { id } = parseRequest(CloseTeamInstanceParams, req.params);
   await guarded(res, async () => {
     res.json(CloseTeamInstanceResponse.parse(await closeInstance(id)));
+  });
+});
+
+router.get("/team-instances/:id/readiness", async (req, res) => {
+  const { id } = parseRequest(GetTeamReadinessParams, req.params);
+  await guarded(res, async () => {
+    const [row] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, id));
+    if (!row) throw new InstanceError(404, INSTANCE_MESSAGES.notFound);
+    if (row.status === "closed") throw new InstanceError(409, INSTANCE_MESSAGES.closed);
+    res.json(GetTeamReadinessResponse.parse(await teamReadiness(row, currentUserId(req))));
   });
 });
 

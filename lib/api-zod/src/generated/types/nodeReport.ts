@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { NodeReportGit } from './nodeReportGit';
 import type { NodeReportStatus } from './nodeReportStatus';
 
 export interface NodeReport {
@@ -41,4 +42,5 @@ export interface NodeReport {
      * @maxLength 200
      */
   sessionId?: string;
+  git?: NodeReportGit;
 }

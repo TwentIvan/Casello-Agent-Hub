@@ -67,6 +67,14 @@ export function NodeStatusDetails({ node }: { node: Node }) {
           {node.claudeCheckedAt && <span>controllato {formatRelative(node.claudeCheckedAt)}</span>}
         </div>
       )}
+      {node.gitStatus && (
+        <div className="flex flex-wrap items-center gap-x-3">
+          <Led
+            state={node.gitStatus.found ? "ok" : "ko"}
+            label={node.gitStatus.found ? `Git: installato${node.gitStatus.version ? ` · ${node.gitStatus.version}` : ""}` : "Git non installato"}
+          />
+        </div>
+      )}
       {notices.map((text) => (
         <p key={text} className="text-ink">
           {text}

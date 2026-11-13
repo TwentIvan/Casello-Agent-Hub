@@ -18,7 +18,7 @@ declare const __NODE_VERSION__: string | undefined;
  * Versione del pacchetto `casello-nodo`: quella della build; senza build (tsx, test) la costante di riserva, allineata a
  * package.json (verificata dai test).
  */
-export const NODE_VERSION: string = typeof __NODE_VERSION__ === "string" && __NODE_VERSION__ !== "" ? __NODE_VERSION__ : "0.3.0";
+export const NODE_VERSION: string = typeof __NODE_VERSION__ === "string" && __NODE_VERSION__ !== "" ? __NODE_VERSION__ : "0.4.0";
 export const NODE_EXECUTOR = "claude-code";
 
 async function subdirs(dir: string): Promise<string[]> {

@@ -135,6 +135,8 @@ import type {
   NodeDiagnosticsUpload,
   NodeDownload,
   NodeFolders,
+  NodeGitToken,
+  NodeGitTokenRequest,
   NodeHeartbeat,
   NodeLease,
   NodeLeaseRenewed,
@@ -193,6 +195,7 @@ import type {
   TeamMessageResult,
   TeamPlan,
   TeamPlanInput,
+  TeamReadiness,
   TeamRoleView,
   TeamSaveAsTemplate,
   TeamTask,
@@ -2668,6 +2671,78 @@ export const useNodeReport = <TError = ErrorType<BadRequestResponse | Unauthoriz
         TContext
       > => {
       return useMutation(getNodeReportMutationOptions(options));
+    }
+
+export const getNodeGitTokenUrl = (id: number,) => {
+
+
+
+
+  return `/api/node/tasks/${id}/git-token`
+}
+
+/**
+ * Token di installazione GitHub ristretto al repository del compito (`contents: write`, un'ora), per fetch e push dal nodo. Lease non valida o scaduta → 409; compito senza codice in scrittura, App senza repository o installazione, GitHub non configurato o installazione non dell'utente → 409 «accesso al repository non disponibile»; errore di GitHub → 502; 10 al minuto per compito. Risposta `no-store`.
+ * @summary Token per Git del compito
+ */
+export const nodeGitToken = async (id: number,
+    nodeGitTokenRequest: NodeGitTokenRequest, options?: RequestInit): Promise<NodeGitToken> => {
+
+  return customFetch<NodeGitToken>(getNodeGitTokenUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeGitTokenRequest)
+  }
+);}
+
+
+
+
+export const getNodeGitTokenMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeGitToken>>, TError,{id: number;data: BodyType<NodeGitTokenRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof nodeGitToken>>, TError,{id: number;data: BodyType<NodeGitTokenRequest>}, TContext> => {
+
+const mutationKey = ['nodeGitToken'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof nodeGitToken>>, {id: number;data: BodyType<NodeGitTokenRequest>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  nodeGitToken(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type NodeGitTokenMutationResult = NonNullable<Awaited<ReturnType<typeof nodeGitToken>>>
+    export type NodeGitTokenMutationBody = BodyType<NodeGitTokenRequest>
+    export type NodeGitTokenMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>
+
+    /**
+ * @summary Token per Git del compito
+ */
+export const useNodeGitToken = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse | BadGatewayResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof nodeGitToken>>, TError,{id: number;data: BodyType<NodeGitTokenRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof nodeGitToken>>,
+        TError,
+        {id: number;data: BodyType<NodeGitTokenRequest>},
+        TContext
+      > => {
+      return useMutation(getNodeGitTokenMutationOptions(options));
     }
 
 export const getNodeGetAttachmentUrl = (id: number,
@@ -9319,6 +9394,84 @@ export const useCloseTeamInstance = <TError = ErrorType<NotFoundResponse | Confl
       > => {
       return useMutation(getCloseTeamInstanceMutationOptions(options));
     }
+
+export const getGetTeamReadinessUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/readiness`
+}
+
+/**
+ * Per ogni ruolo `node` i problemi che gli impedirebbero di lavorare (nodo con le skill, online e aggiornato, Git, spazio di lavoro, repository). Utente di riferimento: chi ha attivato la squadra o, se non è attivata, chi chiede. Squadra chiusa → 409.
+ * @summary Prontezza dei ruoli node della squadra
+ */
+export const getTeamReadiness = async (id: number, options?: RequestInit): Promise<TeamReadiness> => {
+
+  return customFetch<TeamReadiness>(getGetTeamReadinessUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamReadinessQueryKey = (id: number,) => {
+    return [
+    `/api/team-instances/${id}/readiness`
+    ] as const;
+    }
+
+
+export const getGetTeamReadinessQueryOptions = <TData = Awaited<ReturnType<typeof getTeamReadiness>>, TError = ErrorType<NotFoundResponse | ConflictResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamReadiness>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamReadinessQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamReadiness>>> = ({ signal }) => getTeamReadiness(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamReadiness>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamReadinessQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamReadiness>>>
+export type GetTeamReadinessQueryError = ErrorType<NotFoundResponse | ConflictResponse>
+
+
+/**
+ * @summary Prontezza dei ruoli node della squadra
+ */
+
+export function useGetTeamReadiness<TData = Awaited<ReturnType<typeof getTeamReadiness>>, TError = ErrorType<NotFoundResponse | ConflictResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamReadiness>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamReadinessQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetTeamInstanceUpdatesUrl = (id: number,) => {
 

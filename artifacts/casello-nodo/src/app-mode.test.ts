@@ -1,7 +1,7 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { isAppExecPath, launchArgs, MENU_ITEMS, runAppMode, type AppDeps, type ClaudeActions } from "./app-mode";
+import { isAppExecPath, launchArgs, MENU_ITEMS, realGitActions, runAppMode, type AppDeps, type ClaudeActions, type GitActions } from "./app-mode";
 import type { PairingClient, PollResult } from "./client";
 import { appBaseUrl, DEFAULT_URL, defaultPaths } from "./config";
 import { escapeAppleScript, osascriptDialogs, type Dialogs, type ExecFileLike } from "./dialogs";
@@ -87,6 +87,11 @@ function claude(found = true): ClaudeActions {
   };
 }
 
+const gitCalls: string[] = [];
+function git(found = true): GitActions {
+  return { found: async () => found, install: async () => void gitCalls.push("install") };
+}
+
 function deps(over: Partial<AppDeps> = {}): AppDeps {
   return {
     home,
@@ -102,6 +107,7 @@ function deps(over: Partial<AppDeps> = {}): AppDeps {
     version: "0.3.0",
     whichClaude: async () => "/Users/x/.local/bin/claude",
     claude: claude(),
+    git: git(),
     removeQuarantine: async () => {},
     fetch: (async (url: string | URL | Request, init?: RequestInit) => {
       fetched.push({ url: String(url), auth: new Headers(init?.headers).get("authorization") });
@@ -275,9 +281,11 @@ describe("collegato: menu", () => {
     claudeCalls.length = 0;
   });
 
-  it("voci nell'ordine della spec; «Installa Claude Code» solo se manca", async () => {
+  it("voci nell'ordine della spec; «Installa Claude Code» e «Installa Git» solo se mancano", async () => {
     await runAppMode(deps());
-    expect(log).toContain(`menu:${MENU_ITEMS.filter((i) => i !== "Installa Claude Code").join("|")}`);
+    expect(log).toContain(
+      `menu:${MENU_ITEMS.filter((i) => i !== "Installa Claude Code" && i !== "Installa Git").join("|")}`,
+    );
     log = [];
     await runAppMode(deps({ claude: claude(false) }));
     expect(log).toContain(
@@ -328,6 +336,26 @@ describe("collegato: menu", () => {
     await runAppMode(deps({ dialogs: dialogs({ menu: "Apri Botcave" }) }));
     await runAppMode(deps({ dialogs: dialogs({ menu: "Apri i log" }) }));
     expect(opened).toEqual(["https://casello.example.com/account", defaultPaths(home).logsDir]);
+  });
+
+  it("«Installa Git» compare solo con Git mancante e lancia l'installazione", async () => {
+    gitCalls.length = 0;
+    log = [];
+    await runAppMode(deps({ git: git(false), dialogs: dialogs({ menu: "Installa Git" }) }));
+    expect(log.find((l) => l.startsWith("menu:"))).toContain("Installa Git");
+    expect(gitCalls).toEqual(["install"]);
+  });
+
+  it("realGitActions: «trovato» dallo stato in cache, senza lanciare git a ogni menu", async () => {
+    let checks = 0;
+    const actions = realGitActions(dialogs(), {
+      status: async () => {
+        checks++;
+        return { found: true, version: "2.39.5" };
+      },
+    });
+    expect(await actions.found()).toBe(true);
+    expect(checks).toBe(1);
   });
 
   it("voci di Claude → ClaudeActions", async () => {

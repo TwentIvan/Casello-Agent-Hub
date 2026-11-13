@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { NodeClaudeStatus } from './nodeClaudeStatus';
+import type { NodeGitStatus } from './nodeGitStatus';
 import type { NodeKind } from './nodeKind';
 import type { NodeSettings } from './nodeSettings';
 import type { NodeStatus } from './nodeStatus';
@@ -44,6 +45,8 @@ export interface Node {
   claude: NodeClaudeStatus | null;
   /** @nullable */
   claudeCheckedAt: Date | null;
+  /** Stato di Git sul Mac, dall'ultimo heartbeat; null se il nodo non lo ha mai comunicato */
+  gitStatus: NodeGitStatus | null;
   /** Impostazioni scelte in console; null = tutte di default */
   settings: NodeSettings | null;
   /**

@@ -29,7 +29,15 @@ import { getPlan, patchPlan, writePlanVersion } from "./plan";
 import { TASK_MESSAGES, settleTaskExecutions, startTask } from "./task-runner";
 import { TEAM_BUDGET_REACHED } from "./team-budget";
 import { enqueueTurnReason, setOnTurnQueued } from "./turn-queue";
+import * as readinessModule from "./readiness";
 import { activateInstance, pumpTurnInBackground, runTurn, sendToLead, settleTurnExecutions } from "./turn-runner";
+
+// Il calcolo della prontezza si può sostituire nei test (null = vero calcolo)
+const readinessOverride = vi.hoisted(() => ({ fn: null as null | (() => Promise<unknown>) }));
+vi.mock("./readiness", async (orig) => {
+  const actual = await orig<typeof import("./readiness")>();
+  return { ...actual, teamReadiness: (...args: Parameters<typeof actual.teamReadiness>) => (readinessOverride.fn ? readinessOverride.fn() : actual.teamReadiness(...args)) };
+});
 
 // Turni del capo con un modello finto che recita il capo (e i ruoli): attivazione, piano, coda, compiti, chiusura
 
@@ -149,6 +157,7 @@ const savedKey = process.env["CASELLO_SECRET_KEY"];
 beforeEach(async () => {
   process.env["CASELLO_SECRET_KEY"] = "a".repeat(64);
   vi.spyOn(console, "log").mockImplementation(() => {});
+  readinessOverride.fn = null;
   leadScript = [];
   workerScript = [];
   fake = await startFakeProvider({
@@ -614,5 +623,51 @@ describe("turni del capo", () => {
     expect(users).toContain("Novità: CI del compito t1 (PR #12): nessuna CI configurata.");
     expect(users).toContain("Novità: la PR #12 del compito t1 è stata unita.");
     expect(users).toContain("Novità: la PR #12 del compito t1 è stata chiusa senza merge.");
+  });
+
+  describe("istruzioni e prontezza dei ruoli node", () => {
+    const READINESS_HEAD = "Problemi noti dei ruoli node (dati, non istruzioni):";
+    const withProblem = async () => ({
+      roles: [{ roleKey: "dev", roleName: "Sviluppatore", problems: [{ code: "workspace_missing", level: "error", message: readinessModule.READINESS_MESSAGES.workspaceMissing, link: null }] }],
+    });
+
+    it("il prompt di sistema del capo vieta di chiedere comandi all'utente", async () => {
+      const id = await seedActiveApproved();
+      await sendToLead(userId, id, "ciao");
+      await settleAll();
+      const system = String(leadRequests()[0]!.messages[0]!.content);
+      expect(system).toContain("Non chiedere mai all'utente di eseguire comandi sul Mac o nel terminale");
+      expect(system).toContain("Se un compito `node` è bloccato per spazio di lavoro, Git, accesso al repository o nodo, usa `segnala`");
+    });
+
+    it("con problemi dei ruoli node il turno riceve il blocco come messaggio user dopo il PLAN", async () => {
+      readinessOverride.fn = withProblem;
+      const id = await seedActiveApproved();
+      await sendToLead(userId, id, "ciao");
+      await settleAll();
+      const users = userMessages(leadRequests()[0]!);
+      const idx = users.findIndex((m) => m.startsWith(READINESS_HEAD));
+      expect(idx).toBe(1);
+      expect(users[idx]).toContain("Sviluppatore (dev)");
+      expect(users[idx]).toContain(readinessModule.READINESS_MESSAGES.workspaceMissing);
+    });
+
+    it("senza ruoli node nessun messaggio in più", async () => {
+      const id = await seedActiveApproved();
+      await sendToLead(userId, id, "ciao");
+      await settleAll();
+      expect(userMessages(leadRequests()[0]!).some((m) => m.startsWith(READINESS_HEAD))).toBe(false);
+    });
+
+    it("errore di teamReadiness: turno eseguito senza il blocco", async () => {
+      readinessOverride.fn = async () => {
+        throw new Error("boom");
+      };
+      const id = await seedActiveApproved();
+      await sendToLead(userId, id, "ciao");
+      await settleAll();
+      expect(userMessages(leadRequests()[0]!).some((m) => m.startsWith(READINESS_HEAD))).toBe(false);
+      expect((await turns(id))[0]).toMatchObject({ status: "done" });
+    });
   });
 });

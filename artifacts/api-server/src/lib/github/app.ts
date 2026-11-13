@@ -162,12 +162,21 @@ export async function installationToken(
   installationId: number,
   scope?: { repo: string; permissions?: Record<string, string> },
 ): Promise<string> {
+  return (await installationTokenWithExpiry(cfg, installationId, scope)).token;
+}
+
+/** Come `installationToken`, con la scadenza (anche per un token preso dalla cache; se GitHub non la dà, un'ora da ora). */
+export async function installationTokenWithExpiry(
+  cfg: GithubConfig,
+  installationId: number,
+  scope?: { repo: string; permissions?: Record<string, string> },
+): Promise<{ token: string; expiresAt: number }> {
   if (!Number.isSafeInteger(installationId) || installationId <= 0) throw noAccess(installationId, null);
   if (scope && !isValidGithubRepo(scope.repo)) throw noAccess(installationId, null);
   const permissions = scope?.permissions ?? { contents: "read" };
   const key = scope ? `${installationId}:${scope.repo}:${JSON.stringify(permissions)}` : `${installationId}:*`;
   const hit = tokenCache.get(key);
-  if (hit && hit.expiresAt - Date.now() > TOKEN_MIN_REMAINING_MS) return hit.token;
+  if (hit && hit.expiresAt - Date.now() > TOKEN_MIN_REMAINING_MS) return hit;
 
   const body = scope ? { repositories: [scope.repo.split("/")[1]!], permissions } : undefined;
   const { status, json } = await githubCall(cfg, {
@@ -185,7 +194,7 @@ export async function installationToken(
   const expiresAt = typeof json["expires_at"] === "string" ? Date.parse(json["expires_at"]) : Number.NaN;
   if (Number.isFinite(expiresAt)) tokenCache.set(key, { token, expiresAt });
   else tokenCache.delete(key);
-  return token;
+  return { token, expiresAt: Number.isFinite(expiresAt) ? expiresAt : Date.now() + 3_600_000 };
 }
 
 /** `GET /repos/{owner}/{repo}/installation` con il JWT dell'App: id dell'installazione, null se il repo non è raggiungibile. */

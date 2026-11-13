@@ -20,8 +20,11 @@ import {
   type TeamInstanceRow,
   type TeamTaskRow,
 } from "@workspace/db";
-import { instructionsWithGit, adoptNodePull } from "../code-writer/node-git";
+import { NodeGitAccessError, nodeGitContext, adoptNodePull, gitContext } from "../code-writer/node-git";
+import { GithubError, installationTokenWithExpiry } from "../github/app";
+import { userHasInstallation } from "../github/installations";
 import { logger } from "../logger";
+import { nodeSupportsGit } from "./git-version";
 import { compareVersions, isBelowMinVersion, loadNodeManifest, updateFor, type NodeUpdate } from "./manifest";
 import { ATTACHMENT_MESSAGES, taskAttachmentViews, validateNodeWorkspace } from "../teams/attachments";
 import { InstanceRoleSchema, type InstanceRole } from "../teams/manifest";
@@ -42,7 +45,7 @@ export const NODE_PROTOCOL_MESSAGES = {
 /** Errore del protocollo con lo stato HTTP (409 lease, 403 nodo non attivo). */
 export class NodeError extends Error {
   constructor(
-    public readonly status: 403 | 404 | 409,
+    public readonly status: 403 | 404 | 409 | 502,
     message: string,
   ) {
     super(message);
@@ -62,6 +65,8 @@ export interface NodeCapabilities {
   kind?: "app" | "cli";
   /** Stato di Claude Code sul Mac (assente = invariato). */
   claude?: Record<string, unknown>;
+  /** Git sul Mac, campi non verificati (assente = invariato). */
+  git?: Record<string, unknown>;
   /** Versione di cui l'aggiornamento non è riuscito. */
   updateFailed?: string;
 }
@@ -88,6 +93,17 @@ export function cleanClaudeStatus(input: Record<string, unknown>): Record<string
   return out;
 }
 
+/** Solo `found` (booleano) e `version` (stringa ≤ 50 caratteri o null); input non oggetto → null (nulla da salvare). */
+export function cleanGitStatus(input: unknown): { found: boolean; version: string | null } | null {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return null;
+  const rec = input as Record<string, unknown>;
+  const version = rec["version"];
+  return {
+    found: rec["found"] === true,
+    version: typeof version === "string" && version.length > 0 ? version.slice(0, 50) : null,
+  };
+}
+
 export interface NodeReport {
   leaseToken: string;
   status: "done" | "blocked" | "failed";
@@ -97,6 +113,8 @@ export interface NodeReport {
   promptTokens?: number;
   completionTokens?: number;
   sessionId?: string;
+  /** Stato Git del compito sul Mac: serve solo a decidere se aprire la PR. */
+  git?: { pushed: boolean; headSha: string | null; commits: number };
 }
 
 export interface TaskPackage {
@@ -118,6 +136,8 @@ export interface TaskPackage {
   nodeSkills: string[];
   /** Allegati citati dal compito (solo metadati: il nodo scarica i byte con `taskAttachment`). */
   attachments: { id: number; name: string; contentType: string; sizeBytes: number; sha256: string }[];
+  /** Repository, base e branch dei compiti con codice in scrittura (null negli altri). */
+  git: { repo: string; baseBranch: string; branch: string; issue: number | null } | null;
 }
 
 // ─── Skill dei ruoli ────────────────────────────────────────────────────────
@@ -196,6 +216,8 @@ async function eligibleTasks(node: Node): Promise<{ eligible: Candidate[]; cappe
       skillsByRole.set(roleId, nodeSkills);
     }
     if (!hasSkills(node.skills, nodeSkills)) continue;
+    // Il flusso Git automatico richiede un nodo aggiornato: i vecchi continuano con i compiti senza codice
+    if (role.code === "write" && !nodeSupportsGit(node.version)) continue;
     if (!capped.has(instance.id)) capped.set(instance.id, (await teamCapBlock(instance.id)) !== null);
     (capped.get(instance.id) ? cappedTasks : eligible).push({ task, instance, role, nodeSkills });
   }
@@ -221,6 +243,7 @@ export function cleanFolders(folders: string[]): string[] {
 
 export async function heartbeat(nodeId: number, caps: NodeCapabilities): Promise<HeartbeatResult> {
   const now = new Date();
+  const gitStatus = caps.git === undefined ? null : cleanGitStatus(caps.git);
   const [updated] = await db
     .update(nodesTable)
     .set({
@@ -232,6 +255,7 @@ export async function heartbeat(nodeId: number, caps: NodeCapabilities): Promise
       ...(caps.folders ? { workspaceFolders: cleanFolders(caps.folders), foldersUpdatedAt: now } : {}),
       ...(caps.kind ? { kind: caps.kind } : {}),
       ...(caps.claude ? { claudeStatus: cleanClaudeStatus(caps.claude), claudeCheckedAt: now } : {}),
+      ...(gitStatus ? { gitStatus } : {}),
       ...(caps.updateFailed ? { updateFailedVersion: caps.updateFailed.slice(0, 100) } : {}),
       lastSeenAt: now,
       updatedAt: now,
@@ -329,7 +353,7 @@ async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<Ta
     taskAttachmentViews(instance.id, task.attachmentIds),
   ]);
   const planTask = plan.tasks.find((t) => t.id === task.planTaskId);
-  const instructions = role.code === "write" ? await instructionsWithGit(instance, task, planTask?.issue ?? null) : task.instructions;
+  const gitCtx = role.code === "write" ? await nodeGitContext(instance, task, planTask?.issue ?? null) : null;
   return {
     taskId: task.id,
     leaseToken: task.leaseToken!,
@@ -340,7 +364,7 @@ async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<Ta
     task: {
       planTaskId: task.planTaskId,
       title: planTask?.title ?? task.planTaskId,
-      instructions,
+      instructions: gitCtx?.instructions ?? task.instructions,
     },
     plan: {
       objective: plan.objective,
@@ -352,6 +376,7 @@ async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<Ta
     caselloSkills: skills.map((s) => ({ code: s.code, version: s.version, content: s.content })),
     nodeSkills: candidate.nodeSkills,
     attachments: attachments.map((a) => ({ id: a.id, name: a.name, contentType: a.contentType, sizeBytes: a.sizeBytes, sha256: a.sha256 })),
+    git: gitCtx?.git ?? null,
   };
 }
 
@@ -382,7 +407,28 @@ export async function blockCappedTask(task: TeamTaskRow): Promise<boolean> {
   }
 }
 
-/** Prende il compito più vecchio che il nodo può eseguire e ne restituisce il pacchetto; null se non c'è nulla. */
+/**
+ * Compito appena preso con il repository non accessibile in modo duraturo: si chiude `blocked` «accesso al repository
+ * non disponibile» (PLAN, evento, turno del capo) e la lease si toglie, così non torna in testa alla coda a ogni claim.
+ */
+async function blockGitAccessTask(task: TeamTaskRow): Promise<void> {
+  try {
+    await finishTaskExecution(
+      task,
+      { status: "blocked", outcome: GIT_ACCESS_MESSAGE, error: GIT_ACCESS_MESSAGE },
+      { promptTokens: null, completionTokens: null, costUsd: null },
+      { kind: "node", nodeId: task.nodeId!, leaseToken: task.leaseToken! },
+    );
+  } catch (err) {
+    logger.error({ teamTaskId: task.id, errName: errName(err) }, "Blocco del compito del nodo senza accesso al repository non riuscito");
+  }
+}
+
+/**
+ * Prende il compito più vecchio che il nodo può eseguire e ne restituisce il pacchetto; null se non c'è nulla. Se il
+ * pacchetto non si prepara il compito si chiude `blocked` (repository non accessibile) o torna in attesa (errore
+ * temporaneo), e il claim passa al candidato successivo: un compito difettoso non ferma gli altri.
+ */
 export async function claimTask(nodeId: number): Promise<TaskPackage | null> {
   const node = await activeNode(nodeId);
   // Versione sotto la minima del protocollo: niente lavoro finché il nodo non si aggiorna
@@ -399,13 +445,17 @@ export async function claimTask(nodeId: number): Promise<TaskPackage | null> {
       await patchPlan(task.instanceId, { tasks: [{ id: task.planTaskId, status: "running", outcome: null }] });
       return await buildPackage(candidate, task);
     } catch (err) {
+      if (err instanceof NodeGitAccessError) {
+        logger.warn({ teamTaskId: task.id }, "Repository del compito del nodo non accessibile: compito bloccato");
+        await blockGitAccessTask(task);
+        continue;
+      }
       logger.error({ teamTaskId: task.id, errName: errName(err) }, "Preparazione del pacchetto del nodo non riuscita: compito rimesso in attesa");
       try {
         await releaseClaim(task);
       } catch (releaseErr) {
         logger.error({ teamTaskId: task.id, errName: errName(releaseErr) }, "Compito del nodo non rimesso in attesa: lo chiuderà la scadenza della lease");
       }
-      throw err;
     }
   }
   return null;
@@ -431,6 +481,48 @@ export async function pingTask(nodeId: number, taskId: number, leaseToken: strin
     .returning({ leaseExpiresAt: teamTasksTable.leaseExpiresAt });
   if (!row?.leaseExpiresAt) throw new NodeError(409, NODE_PROTOCOL_MESSAGES.lease);
   return { leaseExpiresAt: row.leaseExpiresAt };
+}
+
+const GIT_ACCESS_MESSAGE = "accesso al repository non disponibile";
+
+/**
+ * Token d'installazione ristretto al repository dell'App di riferimento (`contents: write`) per il nodo che ha in
+ * lease un compito `running` di un ruolo `code = write`: serve a fetch e push da `casello-nodo`. Lease non valida →
+ * 409; ruolo senza codice, App senza repository o installazione, GitHub non configurato o installazione non di chi ha
+ * attivato la squadra → 409 «accesso al repository non disponibile»; errore di GitHub → 502 col suo messaggio fisso.
+ * Il token non si registra mai nei log.
+ */
+export async function gitTokenForTask(nodeId: number, taskId: number, leaseToken: string): Promise<{ token: string; expiresAt: Date }> {
+  const now = new Date();
+  const [task] = await db
+    .select()
+    .from(teamTasksTable)
+    .where(
+      and(
+        eq(teamTasksTable.id, taskId),
+        eq(teamTasksTable.nodeId, nodeId),
+        eq(teamTasksTable.status, "running"),
+        eq(teamTasksTable.leaseToken, leaseToken),
+        gt(teamTasksTable.leaseExpiresAt, now),
+      ),
+    )
+    .limit(1);
+  if (!task) throw new NodeError(409, NODE_PROTOCOL_MESSAGES.lease);
+  const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, task.instanceId)).limit(1);
+  const role = instance ? InstanceRoleSchema.array().parse(instance.roles).find((r) => r.key === task.roleKey) : undefined;
+  if (!instance || !role || role.code !== "write" || instance.activatedBy === null) throw new NodeError(409, GIT_ACCESS_MESSAGE);
+  const ctx = await gitContext(instance);
+  if (!ctx?.ref || !(await userHasInstallation(instance.activatedBy, ctx.ref.installationId))) throw new NodeError(409, GIT_ACCESS_MESSAGE);
+  try {
+    const { token, expiresAt } = await installationTokenWithExpiry(ctx.ref.cfg, ctx.ref.installationId, {
+      repo: ctx.ref.repo,
+      permissions: { contents: "write" },
+    });
+    return { token, expiresAt: new Date(expiresAt) };
+  } catch (err) {
+    if (err instanceof GithubError) throw new NodeError(502, err.message);
+    throw err;
+  }
 }
 
 /**
@@ -485,5 +577,5 @@ export async function reportTask(nodeId: number, taskId: number, input: NodeRepo
   );
   if (!closed) throw new NodeError(409, NODE_PROTOCOL_MESSAGES.lease);
   // Ruolo con codice: la PR aperta sul branch del compito passa alla sorveglianza (non solleva mai)
-  if (input.status === "done") await adoptNodePull(task);
+  if (input.status === "done") await adoptNodePull(task, { outcome });
 }

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { appsTable, db, pool } from "@workspace/db";
+import { appsTable, db, githubInstallationsTable, pool, teamTasksTable } from "@workspace/db";
 import { catalogSkill, ensureUser, nodeRole, seedNodeTeam } from "../../../test/team-node-fixture";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { clearInstallationTokenCache } from "../github/app";
@@ -8,7 +8,8 @@ import { createNode } from "../nodes/nodes";
 import { claimTask, heartbeat, reportTask } from "../nodes/protocol";
 import { startTask } from "../teams/task-runner";
 import { getCodeTask } from "./code-tasks";
-import { nodeGitSection } from "./node-git";
+import { getApprovedPlan, getPlan, writePlanVersion } from "../teams/plan";
+import { nodeGitSection, nodePullBody } from "./node-git";
 
 // Compiti node con codice: sezione Git nel pacchetto e PR adottata al report `done` (PGlite + finto GitHub)
 
@@ -54,6 +55,7 @@ beforeEach(async () => {
   ]);
   gh.installationPermissions.set(7, { contents: "write", pull_requests: "write", checks: "read", statuses: "read", actions: "read", issues: "write", metadata: "read" });
   gh.seedRepo(REPO, "main", { "a.txt": "uno" });
+  await db.insert(githubInstallationsTable).values({ userId, installationId: 7, accountLogin: "ivan", accountType: "User", repositorySelection: "all" });
 });
 
 async function setup(opts: { withRepo?: boolean; code?: "none" | "write"; sourceBranch?: string | null } = {}) {
@@ -67,32 +69,32 @@ async function setup(opts: { withRepo?: boolean; code?: "none" | "write"; source
   }
   const started = await startTask(instanceId, "t1");
   const { node } = await createNode(userId, "Mac");
-  await heartbeat(node.id, { version: "0.1.0", executor: "claude-code", skills: ["sap:abap-developer"], workspaceRoot: "/w", maxConcurrent: 1 });
+  await heartbeat(node.id, { version: "0.4.0", executor: "claude-code", skills: ["sap:abap-developer"], workspaceRoot: "/w", maxConcurrent: 1 });
   const pkg = (await claimTask(node.id))!;
   return { instanceId, nodeId: node.id, taskId: started.id, pkg };
 }
 
 describe("nodeGitSection", () => {
-  it("repository, branch, issue e comando gh", () => {
+  it("nodeGitSection non parla più di gh pr create e dice di non fare push", () => {
     const s = nodeGitSection({ repo: REPO, baseBranch: "main", branch: "botcave/3-t1", issue: 12 });
-    expect(s).toContain("Repository: ivan/mister");
+    expect(s).toContain("`ivan/mister`");
     expect(s).toContain("Issue: #12");
-    expect(s).toContain("gh pr create --draft --base main --head botcave/3-t1");
-    expect(s).toContain("Non fare merge");
+    expect(s).not.toContain("gh pr create");
+    expect(s).toContain("Non fare push, non aprire PR");
+    expect(s).toContain("botcave/3-t1");
   });
-  it("senza base: branch predefinito", () => {
-    const s = nodeGitSection({ repo: REPO, baseBranch: null, branch: "botcave/3-t1", issue: null });
-    expect(s).toContain("il branch predefinito");
-    expect(s).not.toContain("Issue:");
+  it("senza issue niente riga Issue", () => {
+    expect(nodeGitSection({ repo: REPO, baseBranch: "main", branch: "botcave/3-t1", issue: null })).not.toContain("Issue:");
   });
 });
 
 describe("pacchetto del claim", () => {
-  it("ruolo code write: sezione Git con branch e gh pr create --draft", async () => {
+  it("ruolo code write: sezione Git con branch e campo git", async () => {
     const { instanceId, pkg } = await setup();
     expect(pkg.task.instructions.startsWith("Istruzioni di t1")).toBe(true);
     expect(pkg.task.instructions).toContain(`botcave/${instanceId}-t1`);
-    expect(pkg.task.instructions).toContain("gh pr create --draft --base main");
+    expect(pkg.task.instructions).not.toContain("gh pr create");
+    expect(pkg.git).toEqual({ repo: REPO, baseBranch: "main", branch: `botcave/${instanceId}-t1`, issue: null });
   });
   it("senza code write o senza repository: istruzioni invariate", async () => {
     expect((await setup({ code: "none" })).pkg.task.instructions).toBe("Istruzioni di t1");
@@ -102,11 +104,161 @@ describe("pacchetto del claim", () => {
   });
 });
 
-describe("report done", () => {
-  const report = (nodeId: number, taskId: number, pkg: { leaseToken: string }, status: "done" | "failed" = "done") =>
-    reportTask(nodeId, taskId, { leaseToken: pkg.leaseToken, status, outcome: "fatto" });
+describe("claim con un errore del repository", () => {
+  // t1 del ruolo con codice (repository non accessibile), t2 di un ruolo senza codice: il secondo non resta bloccato
+  async function twoTasks(installationId: number) {
+    const skills = [{ code: "sap-abap", version: 1 }];
+    const roles = [nodeRole({ skills, code: "write" }), nodeRole({ key: "semplice", name: "Semplice", skills })];
+    const instanceId = await seedNodeTeam({ userId, roles, tasks: { t1: "operaio", t2: "semplice" } });
+    await db
+      .update(appsTable)
+      .set({ sourceType: "github", sourceRepo: REPO, sourceInstallationId: installationId, sourceBranch: null })
+      .where(eq(appsTable.slug, "hub-up"));
+    const first = await startTask(instanceId, "t1");
+    const second = await startTask(instanceId, "t2");
+    const { node } = await createNode(userId, "Mac");
+    await heartbeat(node.id, { version: "0.4.0", executor: "claude-code", skills: ["sap:abap-developer"], workspaceRoot: "/w", maxConcurrent: 1 });
+    return { instanceId, nodeId: node.id, first, second };
+  }
+  const row = async (id: number) => (await db.select().from(teamTasksTable).where(eq(teamTasksTable.id, id)))[0]!;
 
-  it("con una PR aperta sul branch crea la riga da sorvegliare", async () => {
+  it("installazione revocata: il compito con codice si chiude blocked e il nodo prende quello dopo", async () => {
+    const { instanceId, nodeId, first, second } = await twoTasks(99);
+    const pkg = await claimTask(nodeId);
+    expect(pkg?.taskId).toBe(second.id);
+    expect(await row(first.id)).toMatchObject({ status: "blocked", outcome: "accesso al repository non disponibile", leaseToken: null });
+    expect((await getPlan(instanceId)).tasks.find((t) => t.id === "t1")).toMatchObject({ status: "blocked", outcome: "accesso al repository non disponibile" });
+  });
+
+  it("GitHub non raggiungibile: il compito con codice torna in attesa e il nodo prende quello dopo", async () => {
+    const { nodeId, first, second } = await twoTasks(7);
+    gh.failWith = () => 500;
+    try {
+      const pkg = await claimTask(nodeId);
+      expect(pkg?.taskId).toBe(second.id);
+    } finally {
+      gh.failWith = null;
+    }
+    expect(await row(first.id)).toMatchObject({ status: "waiting_node", leaseToken: null });
+  });
+
+  it("permesso mancante (403 senza limite di richieste): il compito con codice si chiude blocked", async () => {
+    const { nodeId, first, second } = await twoTasks(7);
+    gh.failWith = (req) => (req.path.startsWith("/repos/") ? 403 : null);
+    try {
+      const pkg = await claimTask(nodeId);
+      expect(pkg?.taskId).toBe(second.id);
+    } finally {
+      gh.failWith = null;
+    }
+    expect(await row(first.id)).toMatchObject({ status: "blocked", outcome: "accesso al repository non disponibile" });
+  });
+
+  it("limite di richieste di GitHub (403): il compito con codice torna in attesa, non si blocca", async () => {
+    const { nodeId, first, second } = await twoTasks(7);
+    gh.failWith = (req) => (req.path.startsWith("/repos/") ? 403 : null);
+    gh.failHeaders = { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 60) };
+    try {
+      const pkg = await claimTask(nodeId);
+      expect(pkg?.taskId).toBe(second.id);
+    } finally {
+      gh.failWith = null;
+      gh.failHeaders = {};
+    }
+    expect(await row(first.id)).toMatchObject({ status: "waiting_node", leaseToken: null });
+  });
+});
+
+describe("nodePullBody", () => {
+  it("issue, esito e piè di pagina", () => {
+    expect(nodePullBody({ issue: 7, outcome: "fatto", teamName: "Squadra WI", planTaskId: "t1" })).toBe(
+      "Closes #7\n\nfatto\n\nBotcave · squadra Squadra WI · compito t1",
+    );
+  });
+  it("senza issue né esito solo il piè di pagina; credenziale: solo il piè di pagina", () => {
+    expect(nodePullBody({ issue: null, outcome: "", teamName: "S", planTaskId: "t1" })).toBe("Botcave · squadra S · compito t1");
+    expect(nodePullBody({ issue: 7, outcome: "chiave ghp_abcdefghijklmnopqrstuvwx", teamName: "S", planTaskId: "t1" })).toBe("Botcave · squadra S · compito t1");
+  });
+});
+
+describe("report done", () => {
+  const report = (nodeId: number, taskId: number, pkg: { leaseToken: string }, status: "done" | "failed" = "done", git?: { pushed: boolean; headSha: string | null; commits: number }) =>
+    reportTask(nodeId, taskId, { leaseToken: pkg.leaseToken, status, outcome: "fatto", ...(git ? { git } : {}) });
+  // Aggiunge il branch al repository finto senza perdere il base (seedRepo lo riscrive da capo): avanti al base o uguale
+  const seedBranch = (branch: string, ahead = true) => {
+    const refs = gh.git.get(REPO)!.refs;
+    const sha = ahead ? "e".repeat(40) : refs.get("heads/main")!;
+    refs.set(`heads/${branch}`, sha);
+    return sha;
+  };
+  const pushedGit = (sha: string) => ({ pushed: true, headSha: sha, commits: 1 });
+
+  it("pushed e branch su GitHub senza PR: crea la PR bozza con issue, esito e piè di pagina", async () => {
+    const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
+    const plan = (await getApprovedPlan(instanceId))!;
+    await writePlanVersion(instanceId, { ...plan, tasks: plan.tasks.map((t) => ({ ...t, issue: 7 })) }, "approved");
+    const branch = `botcave/${instanceId}-t1`;
+    const head = seedBranch(branch);
+    await report(nodeId, taskId, pkg, "done", pushedGit(head));
+    const pull = gh.pulls.get(REPO)![0]!;
+    expect(pull).toMatchObject({ head: branch, base: "main", title: "Compito t1", draft: true });
+    expect(pull.body.startsWith("Closes #7")).toBe(true);
+    expect(pull.body).toContain("fatto");
+    expect(pull.body.endsWith("Botcave · squadra Squadra WI · compito t1")).toBe(true);
+    expect(await getCodeTask(instanceId, "t1")).toMatchObject({ prNumber: pull.number, prState: "open", ciState: "pending", headSha: head });
+  });
+
+  it("PR già aperta: adottata, nessuna creazione", async () => {
+    const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
+    const branch = `botcave/${instanceId}-t1`;
+    const head = seedBranch(branch);
+    gh.pulls.set(REPO, [{ number: 5, head: branch, base: "main", title: "t", body: "", draft: true, state: "open", merged: false, headSha: head }]);
+    await report(nodeId, taskId, pkg, "done", pushedGit(head));
+    expect(gh.pulls.get(REPO)).toHaveLength(1);
+    expect(await getCodeTask(instanceId, "t1")).toMatchObject({ prNumber: 5, ciState: "pending" });
+  });
+
+  it("branch uguale al base: nessuna PR, anche con git.pushed", async () => {
+    const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
+    const head = seedBranch(`botcave/${instanceId}-t1`, false);
+    await report(nodeId, taskId, pkg, "done", pushedGit(head));
+    expect(gh.pulls.get(REPO) ?? []).toHaveLength(0);
+    expect(await getCodeTask(instanceId, "t1")).toBeNull();
+  });
+
+  it("branch avanti al base pubblicato da un'esecuzione precedente: done con pushed false o senza git apre la PR", async () => {
+    const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
+    const branch = `botcave/${instanceId}-t1`;
+    gh.git.get(REPO)!.refs.set(`heads/${branch}`, "f".repeat(40));
+    await report(nodeId, taskId, pkg, "done", { pushed: false, headSha: null, commits: 0 });
+    expect(gh.pulls.get(REPO)![0]!).toMatchObject({ head: branch, base: "main", draft: true });
+    expect(await getCodeTask(instanceId, "t1")).toMatchObject({ prState: "open", branch });
+  });
+
+  it("chi ha attivato la squadra non possiede l'installazione: nessuna PR aperta", async () => {
+    const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
+    await db.delete(githubInstallationsTable);
+    gh.git.get(REPO)!.refs.set(`heads/botcave/${instanceId}-t1`, "f".repeat(40));
+    await report(nodeId, taskId, pkg, "done", pushedGit("f".repeat(40)));
+    expect(gh.pulls.get(REPO) ?? []).toHaveLength(0);
+    expect(await getCodeTask(instanceId, "t1")).toBeNull();
+  });
+
+  it("esito che sembra una credenziale: PR col solo piè di pagina", async () => {
+    const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
+    const head = seedBranch(`botcave/${instanceId}-t1`);
+    await reportTask(nodeId, taskId, { leaseToken: pkg.leaseToken, status: "done", outcome: "token ghp_abcdefghijklmnopqrstuvwx", git: pushedGit(head) });
+    expect(gh.pulls.get(REPO)![0]!.body).toBe("Botcave · squadra Squadra WI · compito t1");
+  });
+
+  it("report failed con branch pubblicato: nessuna PR", async () => {
+    const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
+    const head = seedBranch(`botcave/${instanceId}-t1`);
+    await report(nodeId, taskId, pkg, "failed", pushedGit(head));
+    expect(gh.pulls.get(REPO) ?? []).toHaveLength(0);
+  });
+
+  it("con una PR aperta sul branch e senza campo git crea la riga da sorvegliare", async () => {
     const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
     const branch = `botcave/${instanceId}-t1`;
     const head = gh.seedRepo(REPO, branch, { "a.txt": "due" });
@@ -125,8 +277,9 @@ describe("report done", () => {
 
   it("errore di GitHub: il report riesce comunque", async () => {
     const { instanceId, nodeId, taskId, pkg } = await setup();
+    const head = seedBranch(`botcave/${instanceId}-t1`);
     gh.failWith = () => 500;
-    await report(nodeId, taskId, pkg);
+    await report(nodeId, taskId, pkg, "done", pushedGit(head));
     expect(await getCodeTask(instanceId, "t1")).toBeNull();
     gh.failWith = null;
   });

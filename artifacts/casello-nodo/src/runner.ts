@@ -14,6 +14,9 @@ import {
   type TaskReport,
 } from "./client";
 import type { Config } from "./config";
+import { GIT_MESSAGES, GitWorkspaceError } from "./git-errors";
+import { locateGit } from "./git-check";
+import { finishTaskRepo, prepareTaskRepo } from "./git-workspace";
 import type { Logger } from "./log";
 import { ATTACHMENTS_DIR, OUTCOME_FILE, renderTaskFile, TASK_FILE } from "./task-file";
 import { isInside, resolveWorkspace, WORKSPACE_INVALID, WorkspaceError } from "./workspace";
@@ -42,6 +45,15 @@ export interface RunContext {
   signal?: AbortSignal;
   /** Coda per spazio di lavoro condivisa tra i compiti del nodo (default: una per processo). */
   workspaceQueue?: WorkspaceQueue;
+  /** Copia di lavoro Git dei compiti con codice (default: `prepareTaskRepo`/`finishTaskRepo`; i test la sostituiscono). */
+  gitWorkspace?: GitWorkspace;
+  /** Percorso di Git sul Mac, o null se manca (default: `locateGit`). */
+  locateGit?: () => Promise<string | null>;
+}
+
+export interface GitWorkspace {
+  prepare: typeof prepareTaskRepo;
+  finish: typeof finishTaskRepo;
 }
 
 /** Esito scritto dall'operaio in `casello-esito.json` (stato dal contratto, testi troncati dopo). */
@@ -82,10 +94,15 @@ function permissionArgs(mode: string): string[] {
   return mode === "bypassPermissions" ? ["--dangerously-skip-permissions"] : ["--permission-mode", mode];
 }
 
-/** Ambiente del processo figlio senza le variabili `CASELLO_*` (il token del nodo non passa all'operaio). */
+/**
+ * Ambiente del processo figlio senza le variabili `CASELLO_*` (il token del nodo non passa all'operaio) né
+ * `BOTCAVE_GIT_TOKEN` (il token per Git lo ricevono solo i processi `git` del nodo).
+ */
 export function childEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  for (const [k, v] of Object.entries(process.env)) if (!k.startsWith("CASELLO_")) env[k] = v;
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!k.startsWith("CASELLO_") && k !== "BOTCAVE_GIT_TOKEN") env[k] = v;
+  }
   return env;
 }
 
@@ -411,32 +428,103 @@ export function isLeaseLostReport(report: TaskReport): boolean {
   return report.status === "failed" && report.outcome === LEASE_LOST;
 }
 
+type ReportFields = Omit<TaskReport, "leaseToken" | "sessionId">;
+
+/** Note della copia di lavoro in fondo all'esito, « (<nota>)» ciascuna, entro i 300 caratteri dell'esito. */
+export function withNotes(outcome: string, notes: readonly string[]): string {
+  const suffix = notes.map((n) => ` (${n})`).join("");
+  if (!suffix) return outcome;
+  const room = nodeReportBodyOutcomeMax - suffix.length;
+  return room >= 1 ? truncate(outcome, room) + suffix : truncate(outcome + suffix, nodeReportBodyOutcomeMax);
+}
+
+/** Esito di Claude Code dal file `casello-esito.json` o, in mancanza, dal JSON della CLI. */
+async function claudeOutcome(child: ChildResult, cli: CliResult | null, workspace: string): Promise<ReportFields> {
+  const usage = usageFields(cli);
+  if (child.timedOut) return { status: "failed", outcome: TIMEOUT_OUTCOME, ...usage };
+  if (child.spawnFailed) return { status: "failed", outcome: "Claude Code non avviabile" };
+
+  const fromFile = await readOutcomeFile(workspace);
+  if (fromFile) {
+    return {
+      status: fromFile.status,
+      outcome: truncate(fromFile.outcome, nodeReportBodyOutcomeMax),
+      ...(fromFile.detail ? { detail: truncate(fromFile.detail, nodeReportBodyDetailMax) } : {}),
+      ...usage,
+    };
+  }
+  if (!cli) {
+    return { status: "failed", outcome: `Claude Code terminato senza esito (codice ${child.exitCode ?? "nessuno"})` };
+  }
+  const text = (cli.result ?? "").trim();
+  if (cli.is_error) {
+    return {
+      status: "failed",
+      outcome: truncate(text || "Claude Code ha restituito un errore", nodeReportBodyOutcomeMax),
+      ...(text ? { detail: truncate(text, nodeReportBodyDetailMax) } : {}),
+      ...usage,
+    };
+  }
+  return {
+    status: "done",
+    outcome: truncate(text || "compito eseguito senza esito scritto", nodeReportBodyOutcomeMax),
+    ...(text ? { detail: truncate(text, nodeReportBodyDetailMax) } : {}),
+    ...usage,
+  };
+}
+
+/** Dettaglio di un push non riuscito: l'esito di Claude Code, che altrimenti si perderebbe. */
+function claudeDetail(r: ReportFields): string {
+  const head = `Esito di Claude Code (${r.status}): ${r.outcome}`;
+  return truncate(r.detail ? `${head}\n\n${r.detail}` : head, nodeReportBodyDetailMax);
+}
+
 /**
  * Esegue un compito del nodo con Claude Code e restituisce il report da inviare a Casello (validato con lo schema del
  * contratto). Non lancia eccezioni per gli esiti attesi: spazio di lavoro non valido → `blocked`, allegato non valido,
  * tempo massimo, lease persa, stop del nodo o errore della CLI → `failed`. La lease si rinnova dall'inizio (anche in
  * attesa dello spazio di lavoro e durante il download degli allegati); i file di servizio vengono rimossi alla fine.
+ *
+ * Compiti con codice (`pkg.git`, spec §4.3–§4.4): lo spazio di lavoro è la copia Git del compito che prepara Botcave (Git
+ * mancante → `blocked` senza avviare Claude); dopo Claude, qualunque sia il suo esito, i commit nuovi si pubblicano e il
+ * report porta `git`; push non riuscito → `failed` col messaggio fisso e l'esito di Claude nel dettaglio. Lease persa o
+ * stop del nodo: nessuna pubblicazione, la copia resta per la ripresa.
  */
 export async function runTask(pkg: TaskPackage, ctx: RunContext): Promise<TaskReport> {
   const sessionId = randomUUID();
   const base = { leaseToken: pkg.leaseToken, sessionId };
-  const done = (r: Omit<TaskReport, "leaseToken" | "sessionId">): TaskReport => NodeReportBody.parse({ ...base, ...r });
+  const done = (r: ReportFields): TaskReport => NodeReportBody.parse({ ...base, ...r });
+  const queue = ctx.workspaceQueue ?? defaultQueue;
 
-  let workspace: string;
-  try {
-    workspace = await resolveWorkspace(ctx.config.workspaceRoot, pkg.workspace);
-  } catch (err) {
-    if (err instanceof WorkspaceError) {
-      ctx.logger?.warn(`compito ${pkg.taskId}: ${WORKSPACE_INVALID}`);
-      return done({ status: "blocked", outcome: WORKSPACE_INVALID });
+  let workspace: string | null = null;
+  let gitBin: string | null = null;
+  if (pkg.git) {
+    gitBin = await (ctx.locateGit ?? (() => locateGit()))().catch(() => null);
+    if (gitBin === null) {
+      ctx.logger?.warn(`compito ${pkg.taskId}: ${GIT_MESSAGES.notInstalled}`);
+      return done({ status: "blocked", outcome: GIT_MESSAGES.notInstalled });
     }
-    throw err;
+  } else {
+    try {
+      workspace = await resolveWorkspace(ctx.config.workspaceRoot, pkg.workspace);
+    } catch (err) {
+      if (err instanceof WorkspaceError) {
+        ctx.logger?.warn(`compito ${pkg.taskId}: ${WORKSPACE_INVALID}`);
+        return done({ status: "blocked", outcome: WORKSPACE_INVALID });
+      }
+      throw err;
+    }
   }
 
   // Interruzione del compito: lease persa (ping con 409, 401 o 403: compito chiuso, token revocato, nodo disattivato)
   // o stop del nodo
   const control = new AbortController();
   let leaseLost = false;
+  const onLeaseLost = (err: unknown) => {
+    if (!leaseLost) ctx.logger?.warn(`compito ${pkg.taskId}: lease persa (${leaseLossReason(err)}), interrompo il compito`);
+    leaseLost = true;
+    control.abort();
+  };
   const onStop = () => control.abort();
   if (ctx.signal?.aborted) control.abort();
   else ctx.signal?.addEventListener("abort", onStop, { once: true });
@@ -445,32 +533,73 @@ export async function runTask(pkg: TaskPackage, ctx: RunContext): Promise<TaskRe
       ctx.client.ping(pkg.taskId, pkg.leaseToken).then(
         (expiresAt) => ctx.onLeaseRenewed?.(expiresAt),
         (err: unknown) => {
-          if (isLeaseLoss(err)) {
-            if (!leaseLost) ctx.logger?.warn(`compito ${pkg.taskId}: lease persa (${leaseLossReason(err)}), interrompo il compito`);
-            leaseLost = true;
-            control.abort();
-          } else {
-            ctx.logger?.warn(`compito ${pkg.taskId}: ping non riuscito (${(err as Error).message})`);
-          }
+          if (isLeaseLoss(err)) onLeaseLost(err);
+          else ctx.logger?.warn(`compito ${pkg.taskId}: ping non riuscito (${(err as Error).message})`);
         },
       );
     },
     ctx.pingIntervalMs ?? 5 * 60_000,
   );
   const interrupted = () => done({ status: "failed", outcome: leaseLost ? LEASE_LOST : STOPPED_OUTCOME });
+  /** Lease persa o nodo fermato (anche durante la preparazione o la pubblicazione). */
+  const isInterrupted = (err?: unknown) => leaseLost || control.signal.aborted || err instanceof LeaseLostError;
+
+  // Token per Git chiesto a ogni uso (prima e dopo Claude): resta solo in memoria, nell'ambiente dei processi `git`
+  const getToken = async (): Promise<string> => {
+    try {
+      return await ctx.client.gitToken(pkg.taskId, pkg.leaseToken);
+    } catch (err) {
+      if (isLeaseLoss(err)) {
+        onLeaseLost(err);
+        throw new LeaseLostError();
+      }
+      if (err instanceof GitWorkspaceError) throw err;
+      throw new GitWorkspaceError("failed", GIT_MESSAGES.unreachable);
+    }
+  };
+  const gitWs = ctx.gitWorkspace ?? { prepare: prepareTaskRepo, finish: finishTaskRepo };
+  const gitOptions =
+    pkg.git && gitBin
+      ? {
+          root: ctx.config.workspaceRoot,
+          git: pkg.git,
+          getToken,
+          queue,
+          signal: control.signal,
+          gitBin,
+          logger: ctx.logger,
+        }
+      : null;
+  const notes: string[] = [];
 
   let release: (() => void) | null = null;
-  const taskFile = path.join(workspace, TASK_FILE);
-  const outcomeFile = path.join(workspace, OUTCOME_FILE);
   try {
+    if (gitOptions) {
+      try {
+        const prepared = await gitWs.prepare(gitOptions);
+        workspace = prepared.dir;
+        if (prepared.note) notes.push(prepared.note);
+      } catch (err) {
+        if (isInterrupted(err)) return interrupted();
+        if (err instanceof GitWorkspaceError) {
+          ctx.logger?.warn(`compito ${pkg.taskId}: ${err.message}`);
+          return done({ status: err.status, outcome: err.message });
+        }
+        throw err;
+      }
+    }
+    if (workspace === null) throw new Error("spazio di lavoro assente");
+    const ws = workspace;
+
     try {
-      release = await (ctx.workspaceQueue ?? defaultQueue).acquire(workspace, control.signal);
+      // Compiti con codice: la chiave è la cartella della copia del compito
+      release = await queue.acquire(ws, control.signal);
     } catch {
       return interrupted();
     }
 
     try {
-      await fetchAttachments(pkg, workspace, ctx.client);
+      await fetchAttachments(pkg, ws, ctx.client);
     } catch (err) {
       if (err instanceof AttachmentError || err instanceof LeaseLostError) {
         ctx.logger?.warn(`compito ${pkg.taskId}: ${err.message}`);
@@ -480,58 +609,48 @@ export async function runTask(pkg: TaskPackage, ctx: RunContext): Promise<TaskRe
     }
     if (control.signal.aborted) return interrupted();
 
-    await rm(outcomeFile, { force: true });
+    const taskFile = path.join(ws, TASK_FILE);
+    await rm(path.join(ws, OUTCOME_FILE), { force: true });
     await rm(taskFile, { force: true });
     await writeFile(taskFile, renderTaskFile(pkg), { mode: 0o600, flag: "wx" });
 
     ctx.logger?.info(`compito ${pkg.taskId}: avvio Claude Code (sessione ${sessionId})`);
-    const child = await runClaude(workspace, sessionId, ctx, control.signal);
+    const child = await runClaude(ws, sessionId, ctx, control.signal);
     const cli = parseCli(child.stdout);
     const usage = usageFields(cli);
     ctx.logger?.info(
       `compito ${pkg.taskId}: Claude Code terminato (codice ${child.exitCode ?? "nessuno"}${child.timedOut ? ", tempo massimo" : ""})`,
     );
 
-    if (child.timedOut) return done({ status: "failed", outcome: TIMEOUT_OUTCOME, ...usage });
-    if (child.aborted) return { ...interrupted(), ...usage };
-    if (child.spawnFailed) return done({ status: "failed", outcome: "Claude Code non avviabile" });
+    if (!child.timedOut && child.aborted) return { ...interrupted(), ...usage };
+    const result = await claudeOutcome(child, cli, ws);
+    if (!gitOptions) return done(result);
 
-    const fromFile = await readOutcomeFile(workspace);
-    if (fromFile) {
-      return done({
-        status: fromFile.status,
-        outcome: truncate(fromFile.outcome, nodeReportBodyOutcomeMax),
-        ...(fromFile.detail ? { detail: truncate(fromFile.detail, nodeReportBodyDetailMax) } : {}),
-        ...usage,
-      });
+    // Dopo Claude: pubblicazione dei commit, salvo lease persa o nodo fermato (la copia resta)
+    if (isInterrupted()) return { ...interrupted(), ...usage };
+    let finished: Awaited<ReturnType<typeof finishTaskRepo>>;
+    try {
+      finished = await gitWs.finish({ ...gitOptions, dir: ws });
+    } catch (err) {
+      if (isInterrupted(err)) return { ...interrupted(), ...usage };
+      if (err instanceof GitWorkspaceError) {
+        ctx.logger?.warn(`compito ${pkg.taskId}: ${err.message}`);
+        return done({ status: "failed", outcome: withNotes(err.message, notes), detail: claudeDetail(result), ...usage });
+      }
+      throw err;
     }
-    if (!cli) {
-      return done({
-        status: "failed",
-        outcome: `Claude Code terminato senza esito (codice ${child.exitCode ?? "nessuno"})`,
-      });
-    }
-    const text = (cli.result ?? "").trim();
-    if (cli.is_error) {
-      return done({
-        status: "failed",
-        outcome: truncate(text || "Claude Code ha restituito un errore", nodeReportBodyOutcomeMax),
-        ...(text ? { detail: truncate(text, nodeReportBodyDetailMax) } : {}),
-        ...usage,
-      });
-    }
+    if (finished.note) notes.push(finished.note);
     return done({
-      status: "done",
-      outcome: truncate(text || "compito eseguito senza esito scritto", nodeReportBodyOutcomeMax),
-      ...(text ? { detail: truncate(text, nodeReportBodyDetailMax) } : {}),
-      ...usage,
+      ...result,
+      outcome: withNotes(result.outcome, notes),
+      git: { pushed: finished.pushed, headSha: finished.headSha, commits: finished.commits },
     });
   } finally {
     clearInterval(pinger);
     ctx.signal?.removeEventListener("abort", onStop);
-    if (release) {
-      await rm(taskFile, { force: true });
-      await rm(outcomeFile, { force: true });
+    if (release && workspace !== null) {
+      await rm(path.join(workspace, TASK_FILE), { force: true });
+      await rm(path.join(workspace, OUTCOME_FILE), { force: true });
       release();
     }
   }

@@ -14,6 +14,7 @@ import { NODE_ONLINE_WINDOW_MS } from "./nodes";
 import { teamCapBlock } from "../teams/team-budget";
 import { purgeNodeDiagnostics } from "./node-admin";
 import { purgeNodePairings } from "./pairing";
+import { nodeSupportsGit, NODE_GIT_MIN_VERSION } from "./git-version";
 import { blockCappedTask, hasSkills, roleNodeSkills } from "./protocol";
 
 export const SWEEP_INTERVAL_MS = 60_000;
@@ -23,6 +24,7 @@ export const NODELESS_AFTER_MS = 10 * 60_000;
 export const SWEEP_MESSAGES = {
   unreachable: "nodo non più raggiungibile",
   roleMissing: (key: string) => `ruolo ${key} non più nella squadra`,
+  noGitNode: `nessun nodo aggiornato a Botcave Nodo ${NODE_GIT_MIN_VERSION} (serve per i compiti con codice)`,
   noNode: (skills: string[]) => `nessun nodo disponibile con le skill: ${skills.length > 0 ? skills.join(", ") : "(nessuna)"}`,
 } as const;
 
@@ -92,7 +94,7 @@ export async function notifyNodelessTasks(now: Date = new Date()): Promise<numbe
       ),
     );
 
-  const liveByUser = new Map<number, string[][]>();
+  const liveByUser = new Map<number, { skills: string[]; version: string | null }[]>();
   let notified = 0;
   for (const { task, instance } of waiting) {
     try {
@@ -100,17 +102,20 @@ export async function notifyNodelessTasks(now: Date = new Date()): Promise<numbe
       let live = liveByUser.get(userId);
       if (!live) {
         const rows = await db
-          .select({ skills: nodesTable.skills })
+          .select({ skills: nodesTable.skills, version: nodesTable.version })
           .from(nodesTable)
           .where(and(eq(nodesTable.userId, userId), eq(nodesTable.status, "active"), gte(nodesTable.lastSeenAt, new Date(now.getTime() - NODE_ONLINE_WINDOW_MS))));
-        live = rows.map((r) => r.skills);
+        live = rows;
         liveByUser.set(userId, live);
       }
       const role = InstanceRoleSchema.array().parse(instance.roles).find((r) => r.key === task.roleKey);
       const required = role ? await roleNodeSkills(instance.id, role) : [];
-      if (role && live.some((skills) => hasSkills(skills, required))) continue;
+      const needsGit = role?.code === "write";
+      if (role && live.some((n) => hasSkills(n.skills, required) && (!needsGit || nodeSupportsGit(n.version)))) continue;
 
-      const message = role ? SWEEP_MESSAGES.noNode(required) : SWEEP_MESSAGES.roleMissing(task.roleKey);
+      // Con codice: se un nodo vivo ha le skill ma è vecchio, il motivo è la versione
+      const oldOnly = needsGit && live.some((n) => hasSkills(n.skills, required));
+      const message = !role ? SWEEP_MESSAGES.roleMissing(task.roleKey) : oldOnly ? SWEEP_MESSAGES.noGitNode : SWEEP_MESSAGES.noNode(required);
       const emitted = await db.transaction(async (tx) => {
         const [marked] = await tx
           .update(teamTasksTable)

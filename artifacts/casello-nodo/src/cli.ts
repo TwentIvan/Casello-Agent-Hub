@@ -17,6 +17,7 @@ import {
 } from "./launchd";
 import { osascriptDialogs } from "./dialogs";
 import { NODE_VERSION } from "./capabilities";
+import { checkGit, createCachedGitStatus } from "./git-check";
 import { checkClaude, createCachedClaudeStatus, realClaudeDeps } from "./claude-check";
 import { startLoop, type Loop, type NodeKind } from "./loop";
 import { uninstallSelf } from "./node-admin";
@@ -372,12 +373,14 @@ async function run(d: CliDeps): Promise<number> {
   const notify = kind === "app" ? d.notify : undefined;
   // Controllo all'avvio e ogni 10 minuti: tra un controllo e l'altro vale l'ultimo risultato
   const claudeStatus = createCachedClaudeStatus(() => checkClaude(realClaudeDeps(d.home)));
+  const gitStatus = createCachedGitStatus(() => checkGit({}));
   // `loop` si usa nella callback solo dopo l'avvio del ciclo
   const loop: Loop = d.startLoop(config, {
     logsDir: paths.logsDir,
     statePath: paths.statePath,
     kind,
     claudeStatus,
+    gitStatus,
     updatePaths: upd,
     exit: d.exit,
     notify,

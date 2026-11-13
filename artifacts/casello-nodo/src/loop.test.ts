@@ -113,6 +113,15 @@ describe("startLoop", () => {
     expect(state?.lastHeartbeatAt).toBeTruthy();
   });
 
+  it("l'heartbeat porta lo stato di Git quando è disponibile", async () => {
+    oneTask();
+    casello.on("POST", "/api/node/tasks/:id/report", (_req, res) => json(res, 204));
+    start(config(), "esito", { gitStatus: async () => ({ found: true, version: "2.39.5" }) });
+    await waitFor(() => casello.calls("POST", "/api/node/heartbeat").length > 0);
+    const [hb] = casello.calls("POST", "/api/node/heartbeat");
+    expect(hb.body).toMatchObject({ git: { found: true, version: "2.39.5" } });
+  });
+
   it("i log non contengono il token, le istruzioni o l'output della CLI", async () => {
     oneTask();
     casello.on("POST", "/api/node/tasks/:id/report", (_req, res) => json(res, 204));
@@ -144,14 +153,14 @@ describe("startLoop", () => {
     }
   });
 
-  it("spazio di lavoro null → report blocked «spazio di lavoro non valido»", async () => {
+  it("spazio di lavoro null → report blocked «spazio di lavoro mancante»", async () => {
     oneTask(taskPackage({ workspace: null }));
     casello.on("POST", "/api/node/tasks/:id/report", (_req, res) => json(res, 204));
     start(config(), "esito");
     await waitFor(() => casello.calls("POST", "/api/node/tasks/42/report").length > 0);
     expect(casello.calls("POST", "/api/node/tasks/42/report")[0].body).toMatchObject({
       status: "blocked",
-      outcome: "spazio di lavoro non valido",
+      outcome: "spazio di lavoro mancante o non trovato sul Mac: sceglilo nella scheda squadra (Spazio di lavoro)",
     });
   });
 

@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { NodeTaskGit } from './nodeTaskGit';
 import type { NodeTaskPackageAttachmentsItem } from './nodeTaskPackageAttachmentsItem';
 import type { NodeTaskPackageCaselloSkillsItem } from './nodeTaskPackageCaselloSkillsItem';
 import type { NodeTaskPackagePlan } from './nodeTaskPackagePlan';
@@ -28,5 +29,7 @@ export interface NodeTaskPackage {
   caselloSkills: NodeTaskPackageCaselloSkillsItem[];
   /** Nomi delle skill del nodo richieste dal ruolo */
   nodeSkills: string[];
+  /** Repository, base e branch per i compiti con codice in scrittura; null altrimenti */
+  git: NodeTaskGit | null;
   attachments: NodeTaskPackageAttachmentsItem[];
 }

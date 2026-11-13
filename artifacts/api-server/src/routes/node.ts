@@ -3,6 +3,9 @@ import {
   NodeClaimResponse,
   NodeGetAttachmentHeader,
   NodeGetAttachmentParams,
+  NodeGitTokenBody,
+  NodeGitTokenParams,
+  NodeGitTokenResponse,
   NodeHeartbeatBody,
   NodeHeartbeatResponse,
   NodePingBody,
@@ -21,11 +24,12 @@ import {
 import { rfc5987 } from "../lib/teams/attachments";
 import { currentNode } from "../lib/nodes/auth";
 import { markNodeUninstalled, saveNodeDiagnostics } from "../lib/nodes/node-admin";
-import { NodeError, claimTask, heartbeat, pingTask, reportTask, taskAttachment } from "../lib/nodes/protocol";
+import { NodeError, claimTask, gitTokenForTask, heartbeat, pingTask, reportTask, taskAttachment } from "../lib/nodes/protocol";
 import { claimTurn, pingTurn, reportTurn, turnPollSettings } from "../lib/node-turns/protocol";
 import { parseRequest } from "../middlewares/error-handler";
 import {
   nodeClaimRateLimit,
+  nodeGitTokenRateLimit,
   nodeHeartbeatRateLimit,
   nodePingRateLimit,
   nodeTurnClaimRateLimit,
@@ -101,6 +105,17 @@ export function createNodeRouter(): IRouter {
     const { leaseToken } = parseRequest(NodePingBody, req.body);
     await guarded(res, async () => {
       res.json(NodePingResponse.parse(await pingTask(currentNode(req).id, id, leaseToken)));
+    });
+  });
+
+  // Token d'installazione per Git (fetch e push dal nodo): mai nei log, mai in cache
+  router.post("/tasks/:id/git-token", nodeGitTokenRateLimit, async (req, res) => {
+    const { id } = parseRequest(NodeGitTokenParams, req.params);
+    const { leaseToken } = parseRequest(NodeGitTokenBody, req.body);
+    await guarded(res, async () => {
+      const out = await gitTokenForTask(currentNode(req).id, id, leaseToken);
+      res.set("Cache-Control", "no-store");
+      res.json(NodeGitTokenResponse.parse(out));
     });
   });
 

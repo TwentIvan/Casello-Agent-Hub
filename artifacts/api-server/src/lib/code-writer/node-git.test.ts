@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { appsTable, db, pool } from "@workspace/db";
+import { appsTable, db, githubInstallationsTable, pool, teamTasksTable } from "@workspace/db";
 import { catalogSkill, ensureUser, nodeRole, seedNodeTeam } from "../../../test/team-node-fixture";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { clearInstallationTokenCache } from "../github/app";
@@ -8,7 +8,7 @@ import { createNode } from "../nodes/nodes";
 import { claimTask, heartbeat, reportTask } from "../nodes/protocol";
 import { startTask } from "../teams/task-runner";
 import { getCodeTask } from "./code-tasks";
-import { getApprovedPlan, writePlanVersion } from "../teams/plan";
+import { getApprovedPlan, getPlan, writePlanVersion } from "../teams/plan";
 import { nodeGitSection, nodePullBody } from "./node-git";
 
 // Compiti node con codice: sezione Git nel pacchetto e PR adottata al report `done` (PGlite + finto GitHub)
@@ -100,6 +100,45 @@ describe("pacchetto del claim", () => {
     await pool.query("TRUNCATE users, apps, team_instances RESTART IDENTITY CASCADE");
     userId = await ensureUser("dev@localhost");
     expect((await setup({ withRepo: false })).pkg.task.instructions).toBe("Istruzioni di t1");
+  });
+});
+
+describe("claim con un errore del repository", () => {
+  // t1 del ruolo con codice (repository non accessibile), t2 di un ruolo senza codice: il secondo non resta bloccato
+  async function twoTasks(installationId: number) {
+    const skills = [{ code: "sap-abap", version: 1 }];
+    const roles = [nodeRole({ skills, code: "write" }), nodeRole({ key: "semplice", name: "Semplice", skills })];
+    const instanceId = await seedNodeTeam({ userId, roles, tasks: { t1: "operaio", t2: "semplice" } });
+    await db
+      .update(appsTable)
+      .set({ sourceType: "github", sourceRepo: REPO, sourceInstallationId: installationId, sourceBranch: null })
+      .where(eq(appsTable.slug, "hub-up"));
+    const first = await startTask(instanceId, "t1");
+    const second = await startTask(instanceId, "t2");
+    const { node } = await createNode(userId, "Mac");
+    await heartbeat(node.id, { version: "0.4.0", executor: "claude-code", skills: ["sap:abap-developer"], workspaceRoot: "/w", maxConcurrent: 1 });
+    return { instanceId, nodeId: node.id, first, second };
+  }
+  const row = async (id: number) => (await db.select().from(teamTasksTable).where(eq(teamTasksTable.id, id)))[0]!;
+
+  it("installazione revocata: il compito con codice si chiude blocked e il nodo prende quello dopo", async () => {
+    const { instanceId, nodeId, first, second } = await twoTasks(99);
+    const pkg = await claimTask(nodeId);
+    expect(pkg?.taskId).toBe(second.id);
+    expect(await row(first.id)).toMatchObject({ status: "blocked", outcome: "accesso al repository non disponibile", leaseToken: null });
+    expect((await getPlan(instanceId)).tasks.find((t) => t.id === "t1")).toMatchObject({ status: "blocked", outcome: "accesso al repository non disponibile" });
+  });
+
+  it("GitHub non raggiungibile: il compito con codice torna in attesa e il nodo prende quello dopo", async () => {
+    const { nodeId, first, second } = await twoTasks(7);
+    gh.failWith = () => 500;
+    try {
+      const pkg = await claimTask(nodeId);
+      expect(pkg?.taskId).toBe(second.id);
+    } finally {
+      gh.failWith = null;
+    }
+    expect(await row(first.id)).toMatchObject({ status: "waiting_node", leaseToken: null });
   });
 });
 

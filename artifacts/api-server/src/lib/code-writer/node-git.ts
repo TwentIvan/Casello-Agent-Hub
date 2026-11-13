@@ -6,6 +6,8 @@ import type { NodeReport, TaskPackage } from "../nodes/protocol";
 import { InstanceRoleSchema } from "../teams/manifest";
 import { getPlan } from "../teams/plan";
 import { upsertCodeTask } from "./code-tasks";
+import { GithubError } from "../github/app";
+import { CODE_WRITE_MESSAGES, CodeWriteError } from "./messages";
 import { createDraftPull, findOpenPull, getBranchHead, getDefaultBranch, type PullInfo, type RepoRef } from "./github-git";
 import { findCredential } from "./secrets-check";
 import { codeBranch } from "./session";
@@ -46,8 +48,26 @@ export async function gitContext(instance: TeamInstanceRow): Promise<{ sourceRep
 }
 
 /**
+ * Repository non accessibile in modo duraturo (installazione rimossa o senza accesso, permesso non accettato, App senza
+ * installazione né branch): il claim chiude il compito `blocked` invece di rimetterlo in attesa.
+ */
+export class NodeGitAccessError extends Error {
+  constructor() {
+    super("accesso al repository non disponibile");
+    this.name = "NodeGitAccessError";
+  }
+}
+
+/** Errore di GitHub che non passa riprovando: accesso perso o permesso mancante (gli altri sono temporanei). */
+function isPermanentGithubError(err: unknown): boolean {
+  if (err instanceof GithubError) return err.message === CODE_WRITE_MESSAGES.noAccess;
+  return err instanceof CodeWriteError && (err.message === CODE_WRITE_MESSAGES.noAccess || err.status === 403 || err.status === 422);
+}
+
+/**
  * Campo `git` del pacchetto e istruzioni con la sezione Git per un compito `node` con codice in scrittura; null se
- * l'App non ha un repository. Lancia se il branch base non si legge: il claim rimette il compito in attesa.
+ * l'App non ha un repository. Branch base non leggibile: `NodeGitAccessError` se l'accesso manca (il claim chiude il
+ * compito `blocked`), altrimenti l'errore temporaneo (il claim lo rimette in attesa e passa al successivo).
  */
 export async function nodeGitContext(
   instance: TeamInstanceRow,
@@ -58,8 +78,12 @@ export async function nodeGitContext(
   if (!ctx) return null;
   let baseBranch = ctx.sourceBranch;
   if (baseBranch === null) {
-    if (!ctx.ref) throw new Error("branch base non leggibile");
-    baseBranch = await getDefaultBranch(ctx.ref);
+    if (!ctx.ref) throw new NodeGitAccessError();
+    try {
+      baseBranch = await getDefaultBranch(ctx.ref);
+    } catch (err) {
+      throw isPermanentGithubError(err) ? new NodeGitAccessError() : err;
+    }
   }
   const branch = codeBranch(instance.id, task.planTaskId);
   const git: NodeTaskGit = { repo: ctx.sourceRepo, baseBranch, branch, issue };

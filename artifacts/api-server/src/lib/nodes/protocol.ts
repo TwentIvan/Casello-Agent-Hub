@@ -20,7 +20,7 @@ import {
   type TeamInstanceRow,
   type TeamTaskRow,
 } from "@workspace/db";
-import { nodeGitContext, adoptNodePull, gitContext } from "../code-writer/node-git";
+import { NodeGitAccessError, nodeGitContext, adoptNodePull, gitContext } from "../code-writer/node-git";
 import { GithubError, installationTokenWithExpiry } from "../github/app";
 import { userHasInstallation } from "../github/installations";
 import { logger } from "../logger";
@@ -407,7 +407,28 @@ export async function blockCappedTask(task: TeamTaskRow): Promise<boolean> {
   }
 }
 
-/** Prende il compito più vecchio che il nodo può eseguire e ne restituisce il pacchetto; null se non c'è nulla. */
+/**
+ * Compito appena preso con il repository non accessibile in modo duraturo: si chiude `blocked` «accesso al repository
+ * non disponibile» (PLAN, evento, turno del capo) e la lease si toglie, così non torna in testa alla coda a ogni claim.
+ */
+async function blockGitAccessTask(task: TeamTaskRow): Promise<void> {
+  try {
+    await finishTaskExecution(
+      task,
+      { status: "blocked", outcome: GIT_ACCESS_MESSAGE, error: GIT_ACCESS_MESSAGE },
+      { promptTokens: null, completionTokens: null, costUsd: null },
+      { kind: "node", nodeId: task.nodeId!, leaseToken: task.leaseToken! },
+    );
+  } catch (err) {
+    logger.error({ teamTaskId: task.id, errName: errName(err) }, "Blocco del compito del nodo senza accesso al repository non riuscito");
+  }
+}
+
+/**
+ * Prende il compito più vecchio che il nodo può eseguire e ne restituisce il pacchetto; null se non c'è nulla. Se il
+ * pacchetto non si prepara il compito si chiude `blocked` (repository non accessibile) o torna in attesa (errore
+ * temporaneo), e il claim passa al candidato successivo: un compito difettoso non ferma gli altri.
+ */
 export async function claimTask(nodeId: number): Promise<TaskPackage | null> {
   const node = await activeNode(nodeId);
   // Versione sotto la minima del protocollo: niente lavoro finché il nodo non si aggiorna
@@ -424,13 +445,17 @@ export async function claimTask(nodeId: number): Promise<TaskPackage | null> {
       await patchPlan(task.instanceId, { tasks: [{ id: task.planTaskId, status: "running", outcome: null }] });
       return await buildPackage(candidate, task);
     } catch (err) {
+      if (err instanceof NodeGitAccessError) {
+        logger.warn({ teamTaskId: task.id }, "Repository del compito del nodo non accessibile: compito bloccato");
+        await blockGitAccessTask(task);
+        continue;
+      }
       logger.error({ teamTaskId: task.id, errName: errName(err) }, "Preparazione del pacchetto del nodo non riuscita: compito rimesso in attesa");
       try {
         await releaseClaim(task);
       } catch (releaseErr) {
         logger.error({ teamTaskId: task.id, errName: errName(releaseErr) }, "Compito del nodo non rimesso in attesa: lo chiuderà la scadenza della lease");
       }
-      throw err;
     }
   }
   return null;

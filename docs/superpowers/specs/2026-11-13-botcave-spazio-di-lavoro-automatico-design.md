@@ -157,7 +157,9 @@ Il testo d'errore di `git` non si inoltra: si sceglie un messaggio fisso (§4.5)
    `fetch --prune origin`.
 4. Copia di lavoro:
    - se esiste ed è un worktree valido di quel clone sul branch del compito, si riprende così com'è (lavoro non pubblicato di
-     un'esecuzione precedente);
+     un'esecuzione precedente); se però `origin/<branch>` non è un antenato di `HEAD` (il branch è stato riscritto su
+     GitHub), la copia si ricrea da `origin/<branch>` e l'esito riceve «commit locali non pubblicati scartati: il branch era cambiato su
+     GitHub»; una cartella cancellata a mano si ripulisce con `git worktree prune`;
    - altrimenti (assente, o cartella non valida: tolta) `git worktree add -B <branch> <cartella> <origine>`, con `<origine>` =
      `origin/<branch>` se il branch esiste sul remoto, altrimenti `origin/<base>`; base assente sul remoto → `failed` «branch base non
      trovato».

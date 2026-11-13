@@ -2066,12 +2066,12 @@
         "itemIds": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 30,
+          "maxItems": 5,
           "uniqueItems": true,
           "items": {
             "type": "integer"
           },
-          "description": "Id delle voci approvate del piano"
+          "description": "Id delle voci approvate del piano, al massimo 5 per chiamata: la creazione richiede circa 2 s per voce. Per più voci usa più chiamate."
         },
         "dryRun": {
           "type": "boolean",
@@ -2316,6 +2316,15 @@
                 ],
                 "description": "Modello del ruolo (obbligatorio per cloud, null per node)"
               },
+              "code": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "read",
+                  "write"
+                ],
+                "description": "Accesso al codice dell'App di riferimento: none (default), read, write = branch, commit e PR in bozza. I ruoli node usano solo none o write. Non va mai in localSkills."
+              },
               "tools": {
                 "type": "array",
                 "items": {
@@ -2424,6 +2433,15 @@
                   "null"
                 ],
                 "description": "Modello del ruolo (obbligatorio per cloud, null per node)"
+              },
+              "code": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "read",
+                  "write"
+                ],
+                "description": "Accesso al codice dell'App di riferimento: none (default), read, write = branch, commit e PR in bozza. I ruoli node usano solo none o write. Non va mai in localSkills."
               },
               "tools": {
                 "type": "array",
@@ -2562,6 +2580,15 @@
                 ],
                 "description": "Modello del ruolo (obbligatorio per cloud, null per node)"
               },
+              "code": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "read",
+                  "write"
+                ],
+                "description": "Accesso al codice dell'App di riferimento: none (default), read, write = branch, commit e PR in bozza. I ruoli node usano solo none o write. Non va mai in localSkills."
+              },
               "tools": {
                 "type": "array",
                 "items": {
@@ -2594,7 +2621,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Codici delle skill specializzate della squadra usate dal ruolo"
+                "description": "Codici delle skill specializzate già presenti nella squadra (es. ruolo-<key>); [] se non ce ne sono"
               }
             }
           },
@@ -2693,6 +2720,15 @@
                 ],
                 "description": "Modello del ruolo (obbligatorio per cloud, null per node)"
               },
+              "code": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "read",
+                  "write"
+                ],
+                "description": "Accesso al codice dell'App di riferimento: none (default), read, write = branch, commit e PR in bozza. I ruoli node usano solo none o write. Non va mai in localSkills."
+              },
               "tools": {
                 "type": "array",
                 "items": {
@@ -2725,7 +2761,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Codici delle skill specializzate della squadra usate dal ruolo"
+                "description": "Codici delle skill specializzate già presenti nella squadra (es. ruolo-<key>); [] se non ce ne sono"
               }
             }
           },

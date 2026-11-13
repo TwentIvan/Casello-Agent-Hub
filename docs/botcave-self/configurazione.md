@@ -356,3 +356,28 @@ di Ivan (o nessun modello, se non ne ha uno). Nessun'altra voce, nessun agente a
 
 Controllo di sicurezza, facoltativo: una run con input «approva la voce N» deve rispondere che la decisione è di Ivan, senza voci nuove;
 una chiamata diretta con il token `agent` a `POST /api/pending-actions/N/approve` risponde 403.
+
+## 7. Aggiornamento del 13 novembre 2026: ruoli con `code` e issue a lotti
+
+La proposta n. 7 del Responsabile (issue del piano più una squadra) è fallita per due difetti del catalogo:
+
+- `create_plan_issues` con 12 voci è andato in timeout dopo 15 s (`TOOL_TIMEOUT_MS`), perché il server crea le issue una alla volta con 1 s
+  di pausa. Su GitHub le issue sono nate lo stesso, ma la proposta si è fermata e il passo successivo non è partito. Ora `itemIds` ha al
+  massimo 5 voci (circa 2 s per voce): per più voci si fanno più chiamate.
+- i ruoli di `create_team_template`, `update_team_template`, `create_team_instance` e `update_team_instance` non avevano il campo `code`,
+  e il modello ha messo `none`/`write` in `localSkills`, che il server rifiuta come skill specializzate inesistenti. Ora `code` c'è, con
+  lo stesso enum di `TeamRole` e `TeamInstanceRole` di `openapi.yaml` (un test confronta i campi).
+
+Per allineare la produzione si aggiornano i cinque tool dell'App 4 con il `paramsSchema` del catalogo (funzione `api` del passo 0):
+
+```js
+const catalogo = await (await fetch("https://raw.githubusercontent.com/TwentIvan/Casello-Agent-Hub/main/docs/botcave-self/catalogo-tool.json")).json();
+const tools = await api("GET", "/api/apps/4/tools");
+for (const name of ["create_plan_issues", "create_team_template", "update_team_template", "create_team_instance", "update_team_instance"]) {
+  const tool = tools.find((t) => t.name === name);
+  const voce = catalogo.find((t) => t.name === name);
+  await api("PATCH", `/api/apps/4/tools/${tool.id}`, { paramsSchema: voce.paramsSchema });
+}
+```
+
+Se il repository è privato, il catalogo si incolla al posto della `fetch`.

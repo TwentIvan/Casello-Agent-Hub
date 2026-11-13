@@ -295,9 +295,9 @@ describe("flusso: compito node con codice, PR aperta da Botcave", () => {
     const { token } = await gitTokenForTask(node.id, started.id, pkg.leaseToken);
     expect(token).toBeTruthy();
 
-    // Il nodo ha committato e pubblicato il branch: nessuna PR su GitHub
+    // Il nodo ha committato e pubblicato il branch (avanti al base): nessuna PR su GitHub
     const refs = gh.git.get(REPO)!.refs;
-    const head = refs.get("heads/main")!;
+    const head = "d".repeat(40);
     refs.set(`heads/${branch}`, head);
     expect(gh.pulls.get(REPO) ?? []).toHaveLength(0);
     await reportTask(node.id, started.id, { leaseToken: pkg.leaseToken, status: "done", outcome: "fatto", git: { pushed: true, headSha: head, commits: 1 } });

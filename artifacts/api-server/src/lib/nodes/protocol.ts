@@ -577,5 +577,5 @@ export async function reportTask(nodeId: number, taskId: number, input: NodeRepo
   );
   if (!closed) throw new NodeError(409, NODE_PROTOCOL_MESSAGES.lease);
   // Ruolo con codice: la PR aperta sul branch del compito passa alla sorveglianza (non solleva mai)
-  if (input.status === "done") await adoptNodePull(task, { git: input.git, outcome });
+  if (input.status === "done") await adoptNodePull(task, { outcome });
 }

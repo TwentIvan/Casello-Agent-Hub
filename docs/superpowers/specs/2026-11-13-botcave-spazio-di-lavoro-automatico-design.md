@@ -102,21 +102,24 @@ lascia il valore com'era. `Node.gitStatus` nelle risposte di Account → Nodi.
 ### 3.5 Report
 
 `NodeReportBody` aggiunge il campo facoltativo `git: {pushed: boolean, headSha: string | null, commits: integer ≥ 0}` (sha di 40 caratteri
-esadecimali, altrimenti 400). Serve solo a Botcave per decidere se cercare o aprire la PR (§3.6); non entra nell'esito né nel PLAN.
+esadecimali, altrimenti 400). È informativo: la decisione sulla PR guarda il branch su GitHub (§3.6); non entra nell'esito né nel PLAN.
 
 ### 3.6 PR aperta da Botcave
 
 `adoptNodePull` (`lib/code-writer/node-git.ts`) diventa: al report `done` di un compito con ruolo `code: write` e App con installazione,
 
 1. cerca la PR aperta sul branch (`findOpenPull`); se c'è, la adotta come oggi;
-2. altrimenti, se il report dice `git.pushed = true` e il branch esiste su GitHub (`getBranchHead` non nullo), apre la PR in bozza con
+2. altrimenti, se il branch esiste su GitHub ed è avanti rispetto al base (`getBranchHead` non nullo e diverso dalla testa del base),
+   qualunque sia `git.pushed` (il lavoro può essere stato pubblicato da un'esecuzione precedente finita `blocked` o `failed`), e chi ha
+   attivato la squadra possiede l'installazione (`userHasInstallation`, come per il token Git), apre la PR in bozza con
    `createDraftPull` (`pull_requests: write`): titolo = titolo del compito del PLAN (≤ 200), corpo = «Closes #n» se il compito ha `issue`,
    poi l'esito riferito (≤ 300) e il piè di pagina «Botcave · squadra <nome> · compito <id>»; controllo dei segreti (`secrets-check.ts`)
    su titolo e corpo: se scatta, la PR si apre col solo piè di pagina;
 3. crea o aggiorna la riga di `team_code_tasks` (CI in attesa) come oggi.
 
 Errori di GitHub: il report riesce comunque, solo il log (come oggi). Un report `blocked` o `failed` non apre PR, anche con il branch
-pubblicato: il capo riassegna e la riesecuzione riparte da lì.
+pubblicato: il capo riassegna e la riesecuzione riparte da lì; al primo `done` successivo la PR si apre anche se quella esecuzione non ha
+pubblicato nulla di nuovo.
 
 ## 4. Lavoro sul Mac (`casello-nodo`)
 

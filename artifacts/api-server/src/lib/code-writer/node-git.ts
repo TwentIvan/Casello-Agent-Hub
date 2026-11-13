@@ -2,11 +2,12 @@ import { eq } from "drizzle-orm";
 import { appsTable, db, teamInstancesTable, type TeamInstanceRow, type TeamTaskRow } from "@workspace/db";
 import { githubConfig } from "../github/config";
 import { logger } from "../logger";
-import type { NodeReport, TaskPackage } from "../nodes/protocol";
+import type { TaskPackage } from "../nodes/protocol";
 import { InstanceRoleSchema } from "../teams/manifest";
 import { getPlan } from "../teams/plan";
 import { upsertCodeTask } from "./code-tasks";
 import { GithubError } from "../github/app";
+import { userHasInstallation } from "../github/installations";
 import { CODE_WRITE_MESSAGES, CodeWriteError } from "./messages";
 import { createDraftPull, findOpenPull, getBranchHead, getDefaultBranch, type PullInfo, type RepoRef } from "./github-git";
 import { findCredential } from "./secrets-check";
@@ -101,12 +102,25 @@ export function nodePullBody(input: { issue: number | null; outcome: string; tea
   return findCredential(body) ? footer : body;
 }
 
+/** Il branch del compito esiste su GitHub e la sua testa è diversa da quella del base. */
+async function branchAhead(ref: RepoRef, branch: string, baseBranch: string): Promise<boolean> {
+  const head = await getBranchHead(ref, branch);
+  if (head === null) return false;
+  return head !== (await getBranchHead(ref, baseBranch));
+}
+
+/** Chi ha attivato la squadra possiede l'installazione dell'App di riferimento (come per il token Git del nodo). */
+async function activatorOwns(instance: TeamInstanceRow, ref: RepoRef): Promise<boolean> {
+  return instance.activatedBy !== null && (await userHasInstallation(instance.activatedBy, ref.installationId));
+}
+
 /**
- * Compito `node` riferito `done` con ruolo `code = write`: adotta la PR aperta sul branch del compito oppure, se il nodo
- * ha pubblicato il branch (`git.pushed`) e questo esiste su GitHub, la apre in bozza; poi crea o aggiorna la riga di
+ * Compito `node` riferito `done` con ruolo `code = write`: adotta la PR aperta sul branch del compito oppure, se il
+ * branch esiste su GitHub ed è avanti rispetto al base (testa diversa, anche se pubblicato da un'esecuzione precedente
+ * non `done`) e chi ha attivato la squadra possiede l'installazione, la apre in bozza; poi crea o aggiorna la riga di
  * `team_code_tasks` (CI in attesa), così la sorveglianza la segue. Con errori di GitHub: niente, solo il log. Non solleva mai.
  */
-export async function adoptNodePull(task: TeamTaskRow, report: { git?: NodeReport["git"]; outcome: string }): Promise<void> {
+export async function adoptNodePull(task: TeamTaskRow, report: { outcome: string }): Promise<void> {
   try {
     const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, task.instanceId)).limit(1);
     if (!instance) return;
@@ -117,7 +131,7 @@ export async function adoptNodePull(task: TeamTaskRow, report: { git?: NodeRepor
     const branch = codeBranch(instance.id, task.planTaskId);
     let pull: PullInfo | null = await findOpenPull(ctx.ref, branch);
     const baseBranch = ctx.sourceBranch ?? (await getDefaultBranch(ctx.ref));
-    if (!pull && report.git?.pushed === true && (await getBranchHead(ctx.ref, branch)) !== null) {
+    if (!pull && (await branchAhead(ctx.ref, branch, baseBranch)) && (await activatorOwns(instance, ctx.ref))) {
       const planTask = (await getPlan(instance.id)).tasks.find((t) => t.id === task.planTaskId);
       const title = (planTask?.title ?? "").trim().slice(0, 200);
       const issue = planTask?.issue ?? null;

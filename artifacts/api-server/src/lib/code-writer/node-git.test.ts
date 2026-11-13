@@ -55,6 +55,7 @@ beforeEach(async () => {
   ]);
   gh.installationPermissions.set(7, { contents: "write", pull_requests: "write", checks: "read", statuses: "read", actions: "read", issues: "write", metadata: "read" });
   gh.seedRepo(REPO, "main", { "a.txt": "uno" });
+  await db.insert(githubInstallationsTable).values({ userId, installationId: 7, accountLogin: "ivan", accountType: "User", repositorySelection: "all" });
 });
 
 async function setup(opts: { withRepo?: boolean; code?: "none" | "write"; sourceBranch?: string | null } = {}) {
@@ -157,10 +158,10 @@ describe("nodePullBody", () => {
 describe("report done", () => {
   const report = (nodeId: number, taskId: number, pkg: { leaseToken: string }, status: "done" | "failed" = "done", git?: { pushed: boolean; headSha: string | null; commits: number }) =>
     reportTask(nodeId, taskId, { leaseToken: pkg.leaseToken, status, outcome: "fatto", ...(git ? { git } : {}) });
-  // Aggiunge il branch al repository finto senza perdere il base (seedRepo lo riscrive da capo)
-  const seedBranch = (branch: string) => {
+  // Aggiunge il branch al repository finto senza perdere il base (seedRepo lo riscrive da capo): avanti al base o uguale
+  const seedBranch = (branch: string, ahead = true) => {
     const refs = gh.git.get(REPO)!.refs;
-    const sha = refs.get("heads/main")!;
+    const sha = ahead ? "e".repeat(40) : refs.get("heads/main")!;
     refs.set(`heads/${branch}`, sha);
     return sha;
   };
@@ -191,10 +192,28 @@ describe("report done", () => {
     expect(await getCodeTask(instanceId, "t1")).toMatchObject({ prNumber: 5, ciState: "pending" });
   });
 
-  it("git.pushed false o assente: nessuna PR", async () => {
+  it("branch uguale al base: nessuna PR, anche con git.pushed", async () => {
     const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
-    const head = seedBranch(`botcave/${instanceId}-t1`);
-    await report(nodeId, taskId, pkg, "done", { pushed: false, headSha: head, commits: 0 });
+    const head = seedBranch(`botcave/${instanceId}-t1`, false);
+    await report(nodeId, taskId, pkg, "done", pushedGit(head));
+    expect(gh.pulls.get(REPO) ?? []).toHaveLength(0);
+    expect(await getCodeTask(instanceId, "t1")).toBeNull();
+  });
+
+  it("branch avanti al base pubblicato da un'esecuzione precedente: done con pushed false o senza git apre la PR", async () => {
+    const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
+    const branch = `botcave/${instanceId}-t1`;
+    gh.git.get(REPO)!.refs.set(`heads/${branch}`, "f".repeat(40));
+    await report(nodeId, taskId, pkg, "done", { pushed: false, headSha: null, commits: 0 });
+    expect(gh.pulls.get(REPO)![0]!).toMatchObject({ head: branch, base: "main", draft: true });
+    expect(await getCodeTask(instanceId, "t1")).toMatchObject({ prState: "open", branch });
+  });
+
+  it("chi ha attivato la squadra non possiede l'installazione: nessuna PR aperta", async () => {
+    const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
+    await db.delete(githubInstallationsTable);
+    gh.git.get(REPO)!.refs.set(`heads/botcave/${instanceId}-t1`, "f".repeat(40));
+    await report(nodeId, taskId, pkg, "done", pushedGit("f".repeat(40)));
     expect(gh.pulls.get(REPO) ?? []).toHaveLength(0);
     expect(await getCodeTask(instanceId, "t1")).toBeNull();
   });

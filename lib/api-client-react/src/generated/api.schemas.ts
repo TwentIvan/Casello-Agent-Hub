@@ -1853,6 +1853,136 @@ export interface CharacterConversation {
   updatedAt: string;
 }
 
+export interface LeadChatAvailability {
+  available: boolean;
+  /**
+     * Motivo quando non disponibile
+     * @nullable
+     */
+  reason?: string | null;
+  /** @nullable */
+  agentId?: number | null;
+  /** @nullable */
+  agentName?: string | null;
+  /** @nullable */
+  appName?: string | null;
+  /** @nullable */
+  aiModelId?: number | null;
+  /** @nullable */
+  modelName?: string | null;
+}
+
+export interface LeadConversation {
+  id: number;
+  title: string;
+  updatedAt: string;
+  tokensUsed: number;
+  /**
+     * null = costo parziale (prezzo mancante)
+     * @nullable
+     */
+  costUsd: number | null;
+}
+
+export type LeadPageContextPage = typeof LeadPageContextPage[keyof typeof LeadPageContextPage];
+
+
+export const LeadPageContextPage = {
+  dashboard: 'dashboard',
+  apps: 'apps',
+  app: 'app',
+  app_plan: 'app_plan',
+  analysis: 'analysis',
+  agents: 'agents',
+  agent: 'agent',
+  runs: 'runs',
+  run: 'run',
+  pending_actions: 'pending_actions',
+  skills: 'skills',
+  skill: 'skill',
+  team_templates: 'team_templates',
+  team_template: 'team_template',
+  teams: 'teams',
+  team: 'team',
+  models: 'models',
+  account: 'account',
+  console: 'console',
+} as const;
+
+export interface LeadPageContext {
+  page: LeadPageContextPage;
+  /** @pattern ^[A-Za-z0-9._:-]{1,100}$ */
+  id?: string;
+}
+
+export interface LeadQueueItem {
+  number: number;
+  kind: string;
+  status: string;
+  summary: string;
+}
+
+export type LeadRunViewStatus = typeof LeadRunViewStatus[keyof typeof LeadRunViewStatus];
+
+
+export const LeadRunViewStatus = {
+  pending: 'pending',
+  running: 'running',
+  succeeded: 'succeeded',
+  failed: 'failed',
+  awaiting_client: 'awaiting_client',
+  cancelled: 'cancelled',
+} as const;
+
+export interface LeadRunView {
+  id: number;
+  status: LeadRunViewStatus;
+  /** @nullable */
+  output: string | null;
+  /** @nullable */
+  error: string | null;
+  /** @nullable */
+  costUsd: number | null;
+  items: LeadQueueItem[];
+}
+
+export interface LeadMessage {
+  id: number;
+  content: string;
+  pageContext: LeadPageContext | null;
+  createdAt: string;
+  /** null se la run non esiste più */
+  run: LeadRunView | null;
+}
+
+export interface LeadConversationDetail {
+  id: number;
+  title: string;
+  agentId: number;
+  /** @nullable */
+  aiModelId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  turnStatus: PlanTurnStatus;
+  tokensUsed: number;
+  /** @nullable */
+  costUsd: number | null;
+  messages: LeadMessage[];
+  /** Passi della run in corso, altrimenti null */
+  progress: TurnProgress | null;
+}
+
+export interface LeadMessageCreate {
+  /** Da 1 a 4 000 caratteri (controllo del server con messaggi fissi) */
+  content: string;
+  pageContext?: LeadPageContext;
+}
+
+export interface LeadMessageAccepted {
+  messageId: number;
+  runId: number;
+}
+
 /**
  * Pagina dell'app ospite (pannello incorporato); ammesso solo con page "host"
  */

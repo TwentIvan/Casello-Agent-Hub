@@ -217,6 +217,14 @@ export function consumeLeadRequest(userId: number): boolean {
   return leadRequestCounter.consume(`user:${userId}`).ok;
 }
 
+// Messaggi della chat con il Responsabile di Botcave: 10 al minuto per utente (ogni messaggio avvia una run).
+const leadChatCounter = fixedWindowCounter({ limit: 10, windowMs: 60_000 });
+
+/** Conta un messaggio della chat con il Responsabile: false se il limite è raggiunto. */
+export function consumeLeadChatMessage(userId: number): boolean {
+  return leadChatCounter.consume(`user:${userId}`).ok;
+}
+
 // Webhook in entrata degli inneschi (pubblici). Due limiti, entrambi con `Retry-After: 60`:
 // - 120 al minuto per IP, prima del parser del corpo (conta anche le richieste non autenticate);
 // - 60 al minuto per innesco, contato da `handleWebhook` solo DOPO il controllo di segreto e firma: chi non conosce il

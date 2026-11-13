@@ -32,6 +32,8 @@ import { createTriggersRouter } from "./triggers";
 import { requireNodeToken } from "../lib/nodes/auth";
 import { authRouter, requireAuth } from "../lib/auth";
 
+import { createLeadChatRouter } from "./lead-chat";
+
 const router: IRouter = Router();
 
 // Pubbliche: healthcheck e login (/auth/me ha il suo requireAuth). Tutto il resto richiede una
@@ -59,6 +61,7 @@ router.use(createAnalysesRouter());
 router.use(createPlanChatRouter());
 router.use(createTeamChatRouter());
 router.use(createCharactersRouter());
+router.use(createLeadChatRouter());
 router.use(createMemoriesRouter());
 router.use(createPlanIssuesRouter());
 router.use(createAiRouter());

@@ -33,7 +33,7 @@ export function nodeGitSection(input: { repo: string; baseBranch: string; branch
 }
 
 /** Repository dell'App di riferimento: serve `source_repo`; il client GitHub solo con installazione e configurazione. */
-async function gitContext(instance: TeamInstanceRow): Promise<{ sourceRepo: string; sourceBranch: string | null; ref: RepoRef | null } | null> {
+export async function gitContext(instance: TeamInstanceRow): Promise<{ sourceRepo: string; sourceBranch: string | null; ref: RepoRef | null } | null> {
   const [app] = await db.select().from(appsTable).where(eq(appsTable.id, instance.refAppId)).limit(1);
   if (!app || !app.sourceRepo) return null;
   const cfg = githubConfig();

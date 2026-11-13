@@ -20,7 +20,9 @@ import {
   type TeamInstanceRow,
   type TeamTaskRow,
 } from "@workspace/db";
-import { nodeGitContext, adoptNodePull } from "../code-writer/node-git";
+import { nodeGitContext, adoptNodePull, gitContext } from "../code-writer/node-git";
+import { GithubError, installationTokenWithExpiry } from "../github/app";
+import { userHasInstallation } from "../github/installations";
 import { logger } from "../logger";
 import { nodeSupportsGit } from "./git-version";
 import { compareVersions, isBelowMinVersion, loadNodeManifest, updateFor, type NodeUpdate } from "./manifest";
@@ -43,7 +45,7 @@ export const NODE_PROTOCOL_MESSAGES = {
 /** Errore del protocollo con lo stato HTTP (409 lease, 403 nodo non attivo). */
 export class NodeError extends Error {
   constructor(
-    public readonly status: 403 | 404 | 409,
+    public readonly status: 403 | 404 | 409 | 502,
     message: string,
   ) {
     super(message);
@@ -452,6 +454,48 @@ export async function pingTask(nodeId: number, taskId: number, leaseToken: strin
     .returning({ leaseExpiresAt: teamTasksTable.leaseExpiresAt });
   if (!row?.leaseExpiresAt) throw new NodeError(409, NODE_PROTOCOL_MESSAGES.lease);
   return { leaseExpiresAt: row.leaseExpiresAt };
+}
+
+const GIT_ACCESS_MESSAGE = "accesso al repository non disponibile";
+
+/**
+ * Token d'installazione ristretto al repository dell'App di riferimento (`contents: write`) per il nodo che ha in
+ * lease un compito `running` di un ruolo `code = write`: serve a fetch e push da `casello-nodo`. Lease non valida →
+ * 409; ruolo senza codice, App senza repository o installazione, GitHub non configurato o installazione non di chi ha
+ * attivato la squadra → 409 «accesso al repository non disponibile»; errore di GitHub → 502 col suo messaggio fisso.
+ * Il token non si registra mai nei log.
+ */
+export async function gitTokenForTask(nodeId: number, taskId: number, leaseToken: string): Promise<{ token: string; expiresAt: Date }> {
+  const now = new Date();
+  const [task] = await db
+    .select()
+    .from(teamTasksTable)
+    .where(
+      and(
+        eq(teamTasksTable.id, taskId),
+        eq(teamTasksTable.nodeId, nodeId),
+        eq(teamTasksTable.status, "running"),
+        eq(teamTasksTable.leaseToken, leaseToken),
+        gt(teamTasksTable.leaseExpiresAt, now),
+      ),
+    )
+    .limit(1);
+  if (!task) throw new NodeError(409, NODE_PROTOCOL_MESSAGES.lease);
+  const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, task.instanceId)).limit(1);
+  const role = instance ? InstanceRoleSchema.array().parse(instance.roles).find((r) => r.key === task.roleKey) : undefined;
+  if (!instance || !role || role.code !== "write" || instance.activatedBy === null) throw new NodeError(409, GIT_ACCESS_MESSAGE);
+  const ctx = await gitContext(instance);
+  if (!ctx?.ref || !(await userHasInstallation(instance.activatedBy, ctx.ref.installationId))) throw new NodeError(409, GIT_ACCESS_MESSAGE);
+  try {
+    const { token, expiresAt } = await installationTokenWithExpiry(ctx.ref.cfg, ctx.ref.installationId, {
+      repo: ctx.ref.repo,
+      permissions: { contents: "write" },
+    });
+    return { token, expiresAt: new Date(expiresAt) };
+  } catch (err) {
+    if (err instanceof GithubError) throw new NodeError(502, err.message);
+    throw err;
+  }
 }
 
 /**

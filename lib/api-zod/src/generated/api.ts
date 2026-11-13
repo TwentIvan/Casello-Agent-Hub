@@ -6664,6 +6664,134 @@ export const CancelQueuedCharacterMessageResponse = zod.void()
 
 
 /**
+ * @summary Disponibilità del Responsabile di Botcave per l'utente
+ */
+export const GetLeadChatResponse = zod.object({
+  "available": zod.boolean(),
+  "reason": zod.string().nullish().describe('Motivo quando non disponibile'),
+  "agentId": zod.number().nullish(),
+  "agentName": zod.string().nullish(),
+  "appName": zod.string().nullish(),
+  "aiModelId": zod.number().nullish(),
+  "modelName": zod.string().nullish()
+})
+
+
+/**
+ * @summary Conversazioni aperte con il Responsabile (al più 100)
+ */
+export const ListLeadConversationsResponseItem = zod.object({
+  "id": zod.number(),
+  "title": zod.string(),
+  "updatedAt": zod.coerce.date(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)')
+})
+export const ListLeadConversationsResponse = zod.array(ListLeadConversationsResponseItem)
+
+
+/**
+ * 409 se il Responsabile non è disponibile o se l'utente ha già 100 conversazioni aperte.
+ * @summary Nuova conversazione con il Responsabile
+ */
+export const CreateLeadConversationResponse = zod.object({
+  "id": zod.number(),
+  "title": zod.string(),
+  "updatedAt": zod.coerce.date(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)')
+})
+
+
+/**
+ * @summary Conversazione con i messaggi e le loro run
+ */
+export const GetLeadConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const getLeadConversationResponseMessagesItemPageContextOneIdRegExp = new RegExp('^[A-Za-z0-9._:-]{1,100}$');
+
+
+export const GetLeadConversationResponse = zod.object({
+  "id": zod.number(),
+  "title": zod.string(),
+  "agentId": zod.number(),
+  "aiModelId": zod.number().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable(),
+  "messages": zod.array(zod.object({
+  "id": zod.number(),
+  "content": zod.string(),
+  "pageContext": zod.union([zod.object({
+  "page": zod.enum(['dashboard', 'apps', 'app', 'app_plan', 'analysis', 'agents', 'agent', 'runs', 'run', 'pending_actions', 'skills', 'skill', 'team_templates', 'team_template', 'teams', 'team', 'models', 'account', 'console']),
+  "id": zod.string().regex(getLeadConversationResponseMessagesItemPageContextOneIdRegExp).optional()
+}),zod.null()]),
+  "createdAt": zod.coerce.date(),
+  "run": zod.union([zod.object({
+  "id": zod.number(),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']),
+  "output": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "costUsd": zod.number().nullable(),
+  "items": zod.array(zod.object({
+  "number": zod.number(),
+  "kind": zod.string(),
+  "status": zod.string(),
+  "summary": zod.string()
+}))
+}),zod.null()]).describe('null se la run non esiste più')
+})),
+  "progress": zod.union([zod.object({
+  "startedAt": zod.coerce.date(),
+  "steps": zod.array(zod.object({
+  "text": zod.string(),
+  "status": zod.enum(['running', 'done'])
+})),
+  "omitted": zod.number().describe('Passi precedenti non più elencati')
+}),zod.null()]).describe('Passi della run in corso, altrimenti null')
+})
+
+
+/**
+ * @summary Elimina la conversazione (le run restano)
+ */
+export const DeleteLeadConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteLeadConversationResponse = zod.void()
+
+
+/**
+ * Un messaggio alla volta (409 se la run precedente è in coda o in corso), al più 10 al minuto per utente (429), 409 col motivo se il Responsabile non è disponibile o il tetto di spesa è raggiunto, 429 se la coda è piena.
+ * @summary Invia un messaggio al Responsabile (crea una run)
+ */
+export const SendLeadMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const sendLeadMessageBodyPageContextIdRegExp = new RegExp('^[A-Za-z0-9._:-]{1,100}$');
+
+
+export const SendLeadMessageBody = zod.object({
+  "content": zod.string().describe('Da 1 a 4 000 caratteri (controllo del server con messaggi fissi)'),
+  "pageContext": zod.object({
+  "page": zod.enum(['dashboard', 'apps', 'app', 'app_plan', 'analysis', 'agents', 'agent', 'runs', 'run', 'pending_actions', 'skills', 'skill', 'team_templates', 'team_template', 'teams', 'team', 'models', 'account', 'console']),
+  "id": zod.string().regex(sendLeadMessageBodyPageContextIdRegExp).optional()
+}).optional()
+})
+
+export const SendLeadMessageResponse = zod.object({
+  "messageId": zod.number(),
+  "runId": zod.number()
+})
+
+
+/**
  * Accettando la modifica si applica con le regole del salvataggio dell'oggetto; una scheda `decision` di Alfred approva o rifiuta la voce in coda. 409 se la scheda è già decisa o non più attuale (stale).
  * @summary Accetta o rifiuta una scheda di un personaggio
  */

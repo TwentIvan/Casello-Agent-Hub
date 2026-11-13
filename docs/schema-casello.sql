@@ -1322,3 +1322,28 @@ CREATE TABLE IF NOT EXISTS "team_code_tasks" (
 	CONSTRAINT "team_code_tasks_instance_id_team_instances_id_fk" FOREIGN KEY ("instance_id") REFERENCES "public"."team_instances"("id") ON DELETE cascade ON UPDATE no action
 );
 CREATE INDEX IF NOT EXISTS "team_code_tasks_watch_idx" ON "team_code_tasks" USING btree ("pr_state", "ci_checked_at");
+
+-- Responsabile di Botcave da ogni area (docs/migrations/2026-11-responsabile-ovunque.sql)
+CREATE TABLE IF NOT EXISTS "lead_conversations" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"agent_id" integer NOT NULL,
+	"title" text DEFAULT '' NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	"archived_at" timestamp,
+	CONSTRAINT "lead_conversations_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "lead_conversations_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action
+);
+CREATE INDEX IF NOT EXISTS "lead_conversations_user_updated_idx" ON "lead_conversations" USING btree ("user_id", "updated_at");
+CREATE TABLE IF NOT EXISTS "lead_messages" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"conversation_id" integer NOT NULL,
+	"content" text NOT NULL,
+	"page_context" jsonb,
+	"run_id" integer,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "lead_messages_conversation_id_lead_conversations_id_fk" FOREIGN KEY ("conversation_id") REFERENCES "public"."lead_conversations"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "lead_messages_run_id_runs_id_fk" FOREIGN KEY ("run_id") REFERENCES "public"."runs"("id") ON DELETE set null ON UPDATE no action
+);
+CREATE INDEX IF NOT EXISTS "lead_messages_conversation_idx" ON "lead_messages" USING btree ("conversation_id", "id");

@@ -3,6 +3,7 @@ import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import type { CharacterPageContext, CharacterSubjectType, TurnProgress } from "@workspace/api-client-react";
 import { useAlfredAdapter, useLuciusSubjectAdapter } from "./character-adapters";
 import { SUBJECT_LABELS, targetKey } from "./targets";
+import { useLeadChatAdapter } from "./lead-adapter";
 import { usePlanChatAdapter, useTeamChatAdapter } from "./plan-team-adapters";
 import type { SendMode } from "./chat-send";
 
@@ -22,14 +23,16 @@ export { SUBJECT_LABELS, targetKey };
 
 export type PageContext = CharacterPageContext;
 export type SubjectType = CharacterSubjectType;
-export type Character = "alfred" | "lucius";
+export type Character = "alfred" | "lucius" | "responsabile";
 
 /** Su cosa si apre il pannello. */
 export type ChatTarget =
   | { kind: "alfred"; page: PageContext }
   | { kind: "character"; subjectType: Exclude<SubjectType, "alfred_thread">; subjectId: string | null; title: string }
   | { kind: "plan"; appId: number }
-  | { kind: "team"; instanceId: number; closed: boolean };
+  | { kind: "team"; instanceId: number; closed: boolean }
+  /** Chat con il Responsabile di Botcave (solo console): `page` è la pagina da cui si scrive. */
+  | { kind: "lead"; page: { page: string; id?: string } };
 
 export type ProposalStatus = "pending" | "accepted" | "rejected" | "stale";
 
@@ -100,10 +103,10 @@ export interface ChatAdapter {
   restart?(): Promise<number>;
   /** `now` durante un turno: il testo va in coda e il turno si ferma; `queue`: parte a fine turno. */
   send(id: number, content: string, mode?: SendMode): Promise<void>;
-  /** Ferma il turno in corso. */
-  stop(id: number): Promise<void>;
-  /** Toglie il messaggio in coda. */
-  cancelQueued(id: number): Promise<void>;
+  /** Ferma il turno in corso. Assente dove il backend non ha «Ferma» né la coda (Responsabile di Botcave). */
+  stop?(id: number): Promise<void>;
+  /** Toglie il messaggio in coda. Assente insieme a `stop`. */
+  cancelQueued?(id: number): Promise<void>;
   /** Assente dove il backend non lo permette (chat di squadra): il modello si mostra senza poterlo cambiare. */
   setModel?(id: number, aiModelId: number): Promise<void>;
   decide(proposalId: number, decision: "accept" | "reject"): Promise<void>;
@@ -113,6 +116,10 @@ export interface ChatAdapter {
   emptyHint: string;
   /** Cosa resta dopo l'eliminazione, per il dialogo di conferma. */
   deleteNote?: string;
+  /** Lunghezza massima di un messaggio (default `MAX_CHARS`). */
+  maxChars?: number;
+  /** «Nuova» crea subito la conversazione, senza il dialogo del modello (Responsabile: il modello è dell'agente). */
+  createWithoutDialog?: boolean;
   /** Argomento in sola lettura per intero (squadra chiusa): niente conversazioni nuove né messaggi. */
   closedReason?: string | null;
 }
@@ -132,11 +139,15 @@ export function useCharacterAdapter(target: ChatTarget): ChatAdapter {
     case "team":
       // eslint-disable-next-line react-hooks/rules-of-hooks
       return useTeamChatAdapter(target.instanceId, target.closed);
+    case "lead":
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      return useLeadChatAdapter(target.page);
   }
 }
 
 /** Chiave stabile del bersaglio: `CharacterChat` si rimonta quando cambia (gli adattatori usano hook diversi). */
 export function characterOf(target: ChatTarget): Character {
+  if (target.kind === "lead") return "responsabile";
   return target.kind === "alfred" ? "alfred" : "lucius";
 }
 

@@ -116,6 +116,18 @@ const DESCRIBERS: Record<string, Describer> = {
   leggi_run: fixed("Legge l'esito di una run"),
 };
 
+/**
+ * Frase di un passo di una run (`run_steps`), per l'avanzamento della chat con il Responsabile: solo tipo e nome dello
+ * strumento, mai argomenti.
+ */
+export function describeRunStep(step: { type: string; toolName: string | null }): string {
+  if (step.type === "model") return "Pensa";
+  const name = text({ name: step.toolName }, "name");
+  if (!name || (step.type !== "tool" && step.type !== "queued")) return FALLBACK;
+  if (step.type === "tool" && step.toolName === "proponi") return "Prepara una proposta";
+  return step.type === "queued" ? `Mette in coda ${name}` : `Consulta ${name}`;
+}
+
 export function describeStep(name: string, rawArgs: string): string {
   try {
     const describer = Object.hasOwn(DESCRIBERS, name) ? DESCRIBERS[name] : undefined;

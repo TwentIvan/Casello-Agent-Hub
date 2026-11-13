@@ -137,6 +137,13 @@ describe("token embed su /api", () => {
     expect(((await res.json()) as { error: string }).error).toBe("scegli il modello di Alfred in Account");
   });
 
+  it("chat con il Responsabile di Botcave: 403 (solo console)", async () => {
+    const t = await embedToken();
+    expect((await call("GET", "/api/lead-chat", t)).status).toBe(403);
+    expect((await call("GET", "/api/lead-conversations", t)).status).toBe(403);
+    expect((await call("POST", "/api/lead-conversations", t, {})).status).toBe(403);
+  });
+
   it("/mcp rifiuta il token embed", async () => {
     const t = await embedToken();
     const res = await call("POST", "/mcp", t, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });

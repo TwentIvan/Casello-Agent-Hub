@@ -2,7 +2,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ListPlus, Send, Square } from "lucide-react";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { Led } from "@/components/brand/led";
-import { AlfredMark, LuciusMark } from "@/components/brand/marks";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -13,6 +12,8 @@ import { apiErrorMessage } from "@/lib/api-errors";
 import { formatCost } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { MAX_CHARS, targetKey, useCharacterAdapter, type ChatTarget, type ProposalLike } from "./adapters";
+import { CharacterMark } from "./character-mark";
+import { CHARACTER_TEXT } from "./targets";
 import { usePanel } from "@/components/panel/panel-context";
 import { handoffTarget } from "@/components/panel/page-subject";
 import { ChatMessages } from "./chat-messages";
@@ -73,8 +74,9 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   const readOnlyReason =
     data?.readOnlyReason ?? (lock && data && lock.id === data.id ? lock.reason : null) ?? adapter.closedReason ?? null;
   const readOnly = readOnlyReason !== null;
-  const name = adapter.character === "alfred" ? "Alfred" : "Lucius";
-  const Mark = adapter.character === "alfred" ? AlfredMark : LuciusMark;
+  const texts = CHARACTER_TEXT[adapter.character];
+  const maxChars = adapter.maxChars ?? MAX_CHARS;
+  const name = texts.name;
 
   // Scorre solo il contenitore dei messaggi: `scrollIntoView` farebbe scorrere anche la pagina (es. il piano all'apertura)
   useEffect(() => {
@@ -118,13 +120,15 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   const sendTargetId = list ? effectiveId : (data?.id ?? null);
   const trimmed = text.trim();
   // Pulsanti mostrati (a testo pieno) e quelli attivi adesso: durante il turno «Invia subito» e «Accoda»
-  const shownActions = sendActions({ running, readOnly, empty: false });
-  const activeActions = sendActions({ running, readOnly, empty: trimmed.length === 0 });
+  const interruptible = adapter.stop !== undefined;
+  // Senza «Ferma» (Responsabile di Botcave) durante il turno resta visibile l'invio, disattivato
+  const shownActions = interruptible || !running ? sendActions({ running, readOnly, empty: false }) : readOnly ? [] : (["send"] as SendAction[]);
+  const activeActions = sendActions({ running, readOnly, empty: trimmed.length === 0, interruptible });
   const sendReady =
     busy === null &&
     awaitingRead === null &&
     !(list?.isLoading ?? false) &&
-    text.length <= MAX_CHARS &&
+    text.length <= maxChars &&
     (sendTargetId !== null || list !== null);
   const canSend = (action: SendAction) => sendReady && activeActions.includes(action);
   const submit = (action: SendAction) => {
@@ -152,12 +156,16 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   const stopTurn = () => {
     if (!data) return;
     const id = data.id;
-    void run("stop", "Turno non fermato", () => adapter.stop(id));
+    const stop = adapter.stop;
+    if (!stop) return;
+    void run("stop", "Turno non fermato", () => stop(id));
   };
   const cancelQueued = () => {
     if (!data) return;
     const id = data.id;
-    void run("cancel", "Messaggio in coda non annullato", () => adapter.cancelQueued(id));
+    const cancel = adapter.cancelQueued;
+    if (!cancel) return;
+    void run("cancel", "Messaggio in coda non annullato", () => cancel(id));
   };
 
   const doDecide = async (p: ProposalLike, decision: "accept" | "reject") => {
@@ -213,7 +221,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   return (
     <div className={cn("min-w-0", sheet ? "flex h-full min-h-0 flex-col" : "space-y-3")}>
       <div className={cn("flex items-start gap-3", sheet && "border-b p-4")}>
-        <Mark size={18} className="mt-1" />
+        <CharacterMark character={adapter.character} size={18} className="mt-1" />
         <div className="min-w-0 flex-1">
           <p className="font-mono text-base font-medium">{name}</p>
           <p className="truncate text-sm text-ink-muted" title={adapter.subjectLabel}>
@@ -237,7 +245,13 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
           canCreate={!adapter.closedReason}
           canDelete={!!adapter.remove && !!data && !adapter.closedReason}
           canRestart={!!adapter.restart}
-          onCreate={() => setNewOpen(true)}
+          onCreate={() =>
+            adapter.createWithoutDialog
+              ? void run("create", "Conversazione non creata", async () => {
+                  setSelectedId(await adapter.create(null));
+                })
+              : setNewOpen(true)
+          }
           onDelete={() => setConfirmDelete(true)}
           onRestart={() => setConfirmRestart(true)}
         />
@@ -298,7 +312,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
               progress={data?.progress ?? null}
               name={name}
               action={
-                !readOnly && data ? (
+                !readOnly && data && interruptible ? (
                   <Button type="button" variant="secondary" size="sm" onClick={stopTurn} disabled={busy !== null}>
                     <Square />
                     {busy === "stop" ? "Arresto…" : "Ferma"}
@@ -344,12 +358,12 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
                 }
               }}
               rows={3}
-              placeholder={adapter.character === "alfred" ? "Scrivi ad Alfred…" : "Scrivi a Lucius…"}
+              placeholder={texts.placeholder}
               aria-label={`Messaggio per ${name}`}
             />
             <div className="flex items-center justify-between gap-2">
-              <span className={cn("font-mono text-xs tabular-nums text-ink-muted", text.length > MAX_CHARS && "text-destructive")}>
-                {text.length.toLocaleString("it-IT")} / {MAX_CHARS.toLocaleString("it-IT")}
+              <span className={cn("font-mono text-xs tabular-nums text-ink-muted", text.length > maxChars && "text-destructive")}>
+                {text.length.toLocaleString("it-IT")} / {maxChars.toLocaleString("it-IT")}
               </span>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {shownActions.includes("queue") && (
@@ -367,7 +381,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
                 {shownActions.includes("send") && (
                   <Button type="submit" size="sm" disabled={!canSend("send")}>
                     <Send />
-                    {busy === "send" ? "Invio…" : adapter.character === "alfred" ? "Scrivi ad Alfred" : "Scrivi a Lucius"}
+                    {busy === "send" ? "Invio…" : texts.send}
                   </Button>
                 )}
               </div>

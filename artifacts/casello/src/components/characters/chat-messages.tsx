@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
-import { AlfredMark, LuciusMark } from "@/components/brand/marks";
 import { Markdown } from "@/components/plan/markdown";
 import { cn } from "@/lib/utils";
 import type { Character, ConvDetail, ProposalLike, ProposalRenderContext } from "./adapters";
+import { CharacterMark } from "./character-mark";
 import { CharacterProposalCard } from "./proposal-cards";
+import { CHARACTER_TEXT } from "./targets";
 
 interface ChatMessagesProps {
   data: ConvDetail;
@@ -18,8 +19,7 @@ interface ChatMessagesProps {
 
 /** Messaggi della conversazione con le schede legate a ciascuna risposta. */
 export function ChatMessages({ data, character, readOnly, deciding, renderProposal, onDecide, onHandoff }: ChatMessagesProps) {
-  const name = character === "alfred" ? "Alfred" : "Lucius";
-  const Mark = character === "alfred" ? AlfredMark : LuciusMark;
+  const name = CHARACTER_TEXT[character].name;
   return (
     <>
       {data.messages.map((m) => {
@@ -42,7 +42,7 @@ export function ChatMessages({ data, character, readOnly, deciding, renderPropos
                 ) : (
                   <>
                     <p className="mb-1 flex items-center gap-2 text-label text-ink-muted">
-                      <Mark size={12} />
+                      <CharacterMark character={character} size={12} />
                       {name}
                     </p>
                     <Markdown>{m.content}</Markdown>

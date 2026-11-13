@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, Sparkles, LayoutTemplate, Users, type LucideIcon } from "lucide-react";
+import { WandSparkles, Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, Sparkles, LayoutTemplate, Users, type LucideIcon } from "lucide-react";
 import {
   getGetDashboardStatsQueryKey,
   getListUnreadTeamEventsQueryKey,
@@ -120,7 +120,17 @@ function CaveHeader() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative ml-auto text-nebbia hover:bg-ardesia hover:text-nebbia"
+          className="ml-auto text-nebbia hover:bg-ardesia hover:text-nebbia"
+          aria-label="Chiedi al Responsabile di Botcave"
+          title="Chiedi al Responsabile di Botcave"
+          onClick={() => openPanel("lead")}
+        >
+          <WandSparkles aria-hidden="true" className="size-5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative text-nebbia hover:bg-ardesia hover:text-nebbia"
           aria-label={label}
           title={label}
           onClick={() => openPanel("alfred")}

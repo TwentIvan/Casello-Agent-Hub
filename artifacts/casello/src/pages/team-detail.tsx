@@ -365,7 +365,7 @@ function TeamEditor({
           <p className="text-xs text-muted-foreground">
             Percorso relativo alla cartella radice scelta quando hai installato il nodo (solo lettere, cifre, <span className="font-mono">. _ -</span> e{" "}
             <span className="font-mono">/</span>, senza <span className="font-mono">..</span>). Serve ai compiti dei ruoli «nodo»: se è vuoto
-            risultano bloccati. «Sfoglia» mostra le cartelle che il nodo ha sotto la radice. Si salva con «Salva».
+            risultano bloccati, salvo i ruoli con il codice (lavorano in una copia preparata da Botcave). «Sfoglia» mostra le cartelle che il nodo ha sotto la radice. Si salva con «Salva».
           </p>
         </CardContent>
       </Card>

@@ -4136,7 +4136,7 @@ export const CloseTeamInstanceResponse = zod.object({
 
 
 /**
- * Per ogni ruolo `node` i problemi che gli impedirebbero di lavorare (nodo, Git, Claude Code, repository). Utente di riferimento: chi ha attivato la squadra o, se non è attivata, chi chiede. Squadra chiusa → 409.
+ * Per ogni ruolo `node` i problemi che gli impedirebbero di lavorare (nodo con le skill, online e aggiornato, Git, spazio di lavoro, repository). Utente di riferimento: chi ha attivato la squadra o, se non è attivata, chi chiede. Squadra chiusa → 409.
  * @summary Prontezza dei ruoli node della squadra
  */
 export const GetTeamReadinessParams = zod.object({

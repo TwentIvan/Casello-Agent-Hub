@@ -10046,7 +10046,7 @@ components:
           type: integer
         type:
           type: string
-          enum: [piano_proposto, compito_finito, bloccato, decisione_richiesta, azione_manuale_richiesta, lavoro_finito, interrotto]
+          enum: [piano_proposto, compito_finito, bloccato, decisione_richiesta, azione_manuale_richiesta, lavoro_finito, interrotto, risposta_capo]
         taskId:
           type: ["integer", "null"]
         bulletin:

@@ -4891,7 +4891,7 @@ export const ListTeamEventsParams = zod.object({
 export const ListTeamEventsResponseItem = zod.object({
   "id": zod.number(),
   "instanceId": zod.number(),
-  "type": zod.enum(['piano_proposto', 'compito_finito', 'bloccato', 'decisione_richiesta', 'azione_manuale_richiesta', 'lavoro_finito', 'interrotto']),
+  "type": zod.enum(['piano_proposto', 'compito_finito', 'bloccato', 'decisione_richiesta', 'azione_manuale_richiesta', 'lavoro_finito', 'interrotto', 'risposta_capo']),
   "taskId": zod.number().nullable(),
   "bulletin": zod.string(),
   "detail": zod.string().nullable(),
@@ -4912,7 +4912,7 @@ export const ListUnreadTeamEventsQueryParams = zod.object({
 export const ListUnreadTeamEventsResponseItem = zod.object({
   "id": zod.number(),
   "instanceId": zod.number(),
-  "type": zod.enum(['piano_proposto', 'compito_finito', 'bloccato', 'decisione_richiesta', 'azione_manuale_richiesta', 'lavoro_finito', 'interrotto']),
+  "type": zod.enum(['piano_proposto', 'compito_finito', 'bloccato', 'decisione_richiesta', 'azione_manuale_richiesta', 'lavoro_finito', 'interrotto', 'risposta_capo']),
   "taskId": zod.number().nullable(),
   "bulletin": zod.string(),
   "detail": zod.string().nullable(),

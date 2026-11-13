@@ -448,7 +448,9 @@ describe("turni del capo", () => {
     expect(all).toHaveLength(1);
     expect(all[0]).toMatchObject({ kind: "plan_change", status: "rejected", decisionNote: LEAD_MESSAGES.superseded });
     const events = await listEvents(id);
-    expect(events[0]).toMatchObject({ type: "piano_proposto", bulletin: "Il capo ha ritirato la proposta di piano" });
+    expect(events.find((e) => e.type === "piano_proposto")).toMatchObject({ bulletin: "Il capo ha ritirato la proposta di piano" });
+    // La risposta finale al messaggio dell'utente è l'evento più recente
+    expect(events[0]).toMatchObject({ type: "risposta_capo", bulletin: "ok" });
   });
 
   it("assegna_compito dopo 3 esecuzioni fallite o bloccate: rifiutato con messaggio fisso, nessun compito nuovo", async () => {
@@ -457,8 +459,9 @@ describe("turni del capo", () => {
       await db.insert(teamTasksTable).values({ instanceId: id, planTaskId: "t1", roleKey: "analista", instructions: "Analizza", status });
     }
     await patchPlan(id, { tasks: [{ id: "t1", status: "failed" }] });
+    // Turno senza un messaggio dell'utente (es. riavvio): il freno vale
     leadScript.push(call("assegna_compito", { taskId: "t1" }), text("Segnalo all'utente."));
-    await sendToLead(userId, id, "riprova t1");
+    await enqueueTurnReason(id, { type: "restart" });
     await settleAll();
     expect(toolMessages(leadRequests()[1]!)).toEqual([LEAD_MESSAGES.tooManyFailures]);
     expect(await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, id))).toHaveLength(3);
@@ -483,7 +486,7 @@ describe("turni del capo", () => {
       .insert(teamCodeTasksTable)
       .values({ instanceId: id, planTaskId: "t1", repo: "o/r", branch: `botcave/${id}-t1`, baseBranch: "main", prNumber: 5, prState: "open", ciState: "failure", ciFailures: 3 });
     leadScript.push(call("assegna_compito", { taskId: "t1" }), text("Segnalo all'utente."));
-    await sendToLead(userId, id, "riprova t1");
+    await enqueueTurnReason(id, { type: "restart" });
     await settleAll();
     expect(toolMessages(leadRequests()[1]!)).toEqual([LEAD_MESSAGES.tooManyFailures]);
     expect(await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, id))).toHaveLength(1);
@@ -495,6 +498,62 @@ describe("turni del capo", () => {
     await sendToLead(userId, id, "riprova ancora");
     await settleAll();
     expect(await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, id))).toHaveLength(2);
+  });
+
+  it("freno superato da un messaggio dell'utente: un tentativo nel suo turno, poi il freno torna a valere", async () => {
+    const id = await seedActiveApproved();
+    for (const status of ["failed", "blocked", "failed"] as const) {
+      await db.insert(teamTasksTable).values({ instanceId: id, planTaskId: "t1", roleKey: "analista", instructions: "Analizza", status });
+    }
+    await patchPlan(id, { tasks: [{ id: "t1", status: "failed" }] });
+    // Il ruolo fallisce ancora; il turno successivo (task_finished, senza messaggio dell'utente) trova di nuovo il freno
+    workerScript.push(call("riferisci", { status: "blocked", outcome: "ancora bloccato" }));
+    leadScript.push(
+      call("assegna_compito", { taskId: "t1" }),
+      text("Riprovo t1."),
+      call("assegna_compito", { taskId: "t1" }, "c_again"),
+      text("Segnalo all'utente."),
+    );
+    await sendToLead(userId, id, "riprova t1");
+    await settleAll();
+    const rows = await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, id));
+    expect(rows).toHaveLength(4);
+    expect(toolMessages(leadRequests()[1]!)[0]).toMatch(/^compito t1 assegnato/);
+    expect(toolMessages(leadRequests().at(-1)!)).toEqual([LEAD_MESSAGES.tooManyFailures]);
+  });
+
+  it("il messaggio di ripresa dopo il tetto non supera il freno", async () => {
+    const id = await seedActiveApproved();
+    for (const status of ["failed", "failed", "failed"] as const) {
+      await db.insert(teamTasksTable).values({ instanceId: id, planTaskId: "t1", roleKey: "analista", instructions: "Analizza", status });
+    }
+    await patchPlan(id, { tasks: [{ id: "t1", status: "failed" }] });
+    leadScript.push(call("assegna_compito", { taskId: "t1" }), text("Segnalo all'utente."));
+    await enqueueTurnReason(id, { type: "request", text: BUDGET_RESUME_REQUEST });
+    await settleAll();
+    expect(toolMessages(leadRequests()[1]!)).toEqual([LEAD_MESSAGES.tooManyFailures]);
+  });
+
+  it("risposta del capo a un messaggio dell'utente: evento risposta_capo nel bollettino; senza messaggio nessun evento", async () => {
+    const id = await seedActiveApproved();
+    leadScript.push(text("Ho controllato: t1 è fermo perché il nodo è spento."));
+    await sendToLead(userId, id, "come va t1?");
+    await settleAll();
+    const [event] = await listEvents(id);
+    expect(event).toMatchObject({ type: "risposta_capo", bulletin: "Ho controllato: t1 è fermo perché il nodo è spento." });
+
+    const long = "a".repeat(500);
+    leadScript.push(text(long));
+    await sendToLead(userId, id, "dimmi tutto");
+    await settleAll();
+    const [second] = await listEvents(id);
+    expect(second!.bulletin.length).toBeLessThanOrEqual(300);
+    expect(second!.detail).toBe(long);
+
+    leadScript.push(text("Turno di riavvio."));
+    await enqueueTurnReason(id, { type: "restart" });
+    await settleAll();
+    expect((await listEvents(id)).filter((e) => e.type === "risposta_capo")).toHaveLength(2);
   });
 
   it("proponi_piano con un id di compito sconosciuto: messaggio fisso, nulla scritto", async () => {

@@ -319,6 +319,35 @@ describe("finishTaskRepo", () => {
     expect(() => git(cloneDir(), "config", "--get", "push.followTags")).toThrow();
   });
 
+  it("commondir e gitdir piantati nel clone: fetch e push vanno al remoto giusto, il token non va altrove", async () => {
+    const p = await prepareTaskRepo(opts());
+    const sha = localCommit(p.dir, "a.txt");
+    const evil = path.join(base, "evil.git");
+    git(base, "init", "-q", "--bare", evil);
+    // Cartella comune ostile: la sua config dirotta il remoto verso `evil`
+    const common = path.join(base, "comune.git");
+    git(base, "init", "-q", "--bare", common);
+    git(common, "config", `url.${evil}.insteadOf`, remote);
+    const plant = async () => {
+      await writeFile(path.join(cloneDir(), "commondir"), common + "\n");
+      await writeFile(path.join(cloneDir(), "gitdir"), path.join(common, ".git") + "\n");
+    };
+    await plant();
+    const again = await prepareTaskRepo(opts());
+    expect(again.resumed).toBe(true);
+    expect(existsSync(path.join(cloneDir(), "commondir"))).toBe(false);
+    expect(existsSync(path.join(cloneDir(), "gitdir"))).toBe(false);
+    await plant();
+    const r = await finishTaskRepo(opts({ dir: p.dir }));
+    expect(r).toMatchObject({ pushed: true, headSha: sha, commits: 1 });
+    expect(git(remote, "rev-parse", "refs/heads/botcave/12-t1")).toBe(sha);
+    expect(git(evil, "for-each-ref")).toBe("");
+    // Ogni comando con il token fissa GIT_DIR e GIT_COMMON_DIR sul clone
+    const withToken = calls.filter((c) => c.env.BOTCAVE_GIT_TOKEN === TOKEN);
+    expect(withToken.length).toBeGreaterThan(0);
+    for (const c of withToken) expect(c.env).toMatchObject({ GIT_DIR: cloneDir(), GIT_COMMON_DIR: cloneDir() });
+  });
+
   it("copia su un altro branch o con HEAD staccato: i commit si pubblicano sul branch del compito", async () => {
     for (const mode of ["branch", "detach"]) {
       const p = await prepareTaskRepo(opts());

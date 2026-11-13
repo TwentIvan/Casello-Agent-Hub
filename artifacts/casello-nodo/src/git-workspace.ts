@@ -129,13 +129,19 @@ async function locate(root: string, g: NodeTaskGit): Promise<{ clone: string; di
   }
 }
 
+/**
+ * Con il token (fetch e push, sempre nel clone) `GIT_DIR` e `GIT_COMMON_DIR` fissano il clone: un file `commondir` scritto
+ * da Claude porterebbe altrimenti la configurazione (un `insteadOf` verso cui andrebbe il token) da un'altra cartella; le
+ * variabili d'ambiente vincono sul file. Solo con il token: con `GIT_COMMON_DIR` un clone nudo non si riconosce più come tale
+ * (`worktree add`, `--is-bare-repository`), e per gli altri comandi basta togliere il file (`dropCommonDir`).
+ */
 function makeRunner(o: CommonOptions) {
   return (args: string[], cwd: string, token: string | null = null): Promise<ChildResult> =>
     spawnGroup({
       command: o.gitBin ?? "git",
       args: [...SAFE_ARGS, ...args],
       cwd,
-      env: gitEnv(token),
+      env: token === null ? gitEnv(null) : { ...gitEnv(token), GIT_DIR: cwd, GIT_COMMON_DIR: cwd },
       captureStderr: true,
       timeoutMs: token === null ? LOCAL_TIMEOUT_MS : NETWORK_TIMEOUT_MS,
       spawn: o.spawn,
@@ -155,15 +161,24 @@ async function out(run: Run, args: string[], cwd: string): Promise<string> {
 const refExists = async (run: Run, cwd: string, ref: string) =>
   ok(await run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], cwd));
 
+/**
+ * `commondir` e `gitdir` nel clone nudo: git li segue anche lì e prenderebbe configurazione, refs e oggetti da un'altra
+ * cartella. Il nodo non li scrive mai: si tolgono prima di usare il clone.
+ */
+async function dropCommonDir(clone: string): Promise<void> {
+  for (const f of ["commondir", "gitdir"]) await rm(path.join(clone, f), { force: true, recursive: true });
+}
+
 /** Valore tra virgolette per un file di configurazione di `git`. */
 const quoteConfig = (v: string) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 
 /**
- * Prima di ogni comando con token, sotto il lock: la configurazione del clone si riscrive da capo e si tolgono alternates e
- * `config.worktree`. Claude (che gira nella copia) può averli scritti per dirottare il token o eseguire comandi
+ * Prima di ogni comando con token, sotto il lock: la configurazione del clone si riscrive da capo e si tolgono `commondir`,
+ * `gitdir`, alternates e `config.worktree`. Claude (che gira nella copia) può averli scritti per dirottare il token o eseguire comandi
  * (`insteadOf`, `core.alternateRefsCommand`, `push.followTags`…): un clone manomesso si ripara invece di restare rotto.
  */
 async function resetCloneConfig(clone: string, url: string): Promise<void> {
+  await dropCommonDir(clone);
   const caseInsensitive = existsSync(path.join(clone, "head"));
   const lines = [
     "[core]",
@@ -320,6 +335,9 @@ async function countDirty(run: Run, dir: string): Promise<number> {
 export async function finishTaskRepo(o: CommonOptions & { dir: string }): Promise<FinishResult> {
   const { clone, tasks } = await locate(o.root, o.git);
   const run = makeRunner(o);
+  await dropCommonDir(clone).catch(() => {
+    throw failed(GIT_MESSAGES.pushRetry);
+  });
   const { branch, baseBranch } = o.git;
   const dir = await realpath(o.dir).catch(() => null);
   if (dir === null || !isInside(tasks, dir) || dir === tasks || !(await isCloneWorktree(run, dir, clone))) {

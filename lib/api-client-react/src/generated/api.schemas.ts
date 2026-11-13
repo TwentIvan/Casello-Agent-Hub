@@ -1533,6 +1533,28 @@ export interface PlanProposal {
   createdAt: string;
 }
 
+/**
+ * normal (default) avvia il turno (409 se uno è in corso); queue mette il messaggio in coda se un turno è in corso; now lo mette in coda e ferma il turno in corso.
+ */
+export type ChatSendMode = typeof ChatSendMode[keyof typeof ChatSendMode];
+
+
+export const ChatSendMode = {
+  normal: 'normal',
+  now: 'now',
+  queue: 'queue',
+} as const;
+
+export interface QueuedChatMessage {
+  id: number;
+  content: string;
+  createdAt: string;
+}
+
+export interface ChatTurnStopResult {
+  stopped: boolean;
+}
+
 export type TurnProgressStepsItemStatus = typeof TurnProgressStepsItemStatus[keyof typeof TurnProgressStepsItemStatus];
 
 
@@ -1563,6 +1585,8 @@ export type PlanConversationDetail = PlanConversation & ({
   newerAnalysisId: number | null;
   /** Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null */
   progress?: TurnProgress | null;
+  /** Messaggio in coda che parte alla fine del turno in corso, altrimenti null */
+  queuedMessage: QueuedChatMessage | null;
 });
 
 export interface PlanIssuesSummary {
@@ -1627,6 +1651,7 @@ export interface PlanMessageCreate {
      * @maxLength 8000
      */
   content: string;
+  mode?: ChatSendMode;
 }
 
 export interface PlanIssuesRequest {
@@ -1757,6 +1782,8 @@ export type TeamChatConversationDetail = TeamChatConversation & ({
   proposals: TeamChatProposal[];
   /** Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null */
   progress?: TurnProgress | null;
+  /** Messaggio in coda che parte alla fine del turno in corso, altrimenti null */
+  queuedMessage: QueuedChatMessage | null;
 });
 
 export interface TeamChatConversationCreate {
@@ -1773,6 +1800,7 @@ export interface TeamChatMessageCreate {
      * @maxLength 8000
      */
   content: string;
+  mode?: ChatSendMode;
 }
 
 export type TeamChatProposalDecisionAction = typeof TeamChatProposalDecisionAction[keyof typeof TeamChatProposalDecisionAction];
@@ -2076,6 +2104,8 @@ export type CharacterConversationDetail = CharacterConversation & ({
   proposals: CharacterProposal[];
   /** Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null */
   progress?: TurnProgress | null;
+  /** Messaggio in coda che parte alla fine del turno in corso, altrimenti null */
+  queuedMessage: QueuedChatMessage | null;
 });
 
 export type CharacterConversationCreateSubjectType = typeof CharacterConversationCreateSubjectType[keyof typeof CharacterConversationCreateSubjectType];
@@ -2120,6 +2150,7 @@ export interface CharacterMessageCreate {
      * @maxLength 8000
      */
   content: string;
+  mode?: ChatSendMode;
   pageContext?: CharacterPageContext;
 }
 

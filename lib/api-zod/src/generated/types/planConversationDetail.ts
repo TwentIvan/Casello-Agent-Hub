@@ -8,6 +8,7 @@
 import type { PlanConversation } from './planConversation';
 import type { PlanMessage } from './planMessage';
 import type { PlanProposal } from './planProposal';
+import type { QueuedChatMessage } from './queuedChatMessage';
 import type { TurnProgress } from './turnProgress';
 
 export type PlanConversationDetail = PlanConversation & ({
@@ -20,4 +21,6 @@ export type PlanConversationDetail = PlanConversation & ({
   newerAnalysisId: number | null;
   /** Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null */
   progress?: TurnProgress | null;
+  /** Messaggio in coda che parte alla fine del turno in corso, altrimenti null */
+  queuedMessage: QueuedChatMessage | null;
 });

@@ -137,6 +137,21 @@ export function consumeCharacterMessage(userId: number, character: Character): b
   return characterMessageCounter.consume(`${character}:user:${userId}`).ok;
 }
 
+// «Ferma» sui turni delle chat (personaggi, piano, squadra): 30 al minuto per utente, un solo contatore.
+const turnStopCounter = fixedWindowCounter({ limit: 30, windowMs: 60_000 });
+
+/** Conta una richiesta di interruzione di un turno di chat dell'utente: false se il limite è raggiunto. */
+export function consumeTurnStop(userId: number): boolean {
+  return turnStopCounter.consume(`user:${userId}`).ok;
+}
+
+/** Azzera i limiti dei messaggi delle chat dei personaggi e di squadra e di «Ferma» (solo per i test). */
+export function resetChatTurnLimits(): void {
+  teamChatMessageCounter.reset();
+  characterMessageCounter.reset();
+  turnStopCounter.reset();
+}
+
 // Protocollo dei nodi (/api/node, dopo requireNodeToken): heartbeat e claim 6 al minuto per nodo (contatori
 // separati), ping 4 al minuto per compito dello stesso nodo.
 const byNode = (req: Request) => `node:${req.node?.id ?? "?"}`;

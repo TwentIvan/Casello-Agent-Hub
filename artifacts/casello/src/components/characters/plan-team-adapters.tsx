@@ -12,6 +12,8 @@ import {
   getGetTeamInstanceQueryKey,
   getListPlanConversationsQueryKey,
   getListTeamChatConversationsQueryKey,
+  useCancelQueuedPlanMessage,
+  useCancelQueuedTeamChatMessage,
   useCreatePlanConversation,
   useCreateTeamChatConversation,
   useDecidePlanProposal,
@@ -27,12 +29,14 @@ import {
   useListTeamChatConversations,
   useSendPlanMessage,
   useSendTeamChatMessage,
+  useStopPlanTurn,
+  useStopTeamChatTurn,
   useUpdatePlanConversation,
 } from "@workspace/api-client-react";
 import { ProposalCard } from "@/components/plan/proposal-card";
 import { RoleInstructionsCard } from "@/components/teams/role-instructions-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { forgetConversation, POLL_MS, useInvalidateOnTurnEnd, type ChatAdapter, type ConvDetail, type ProposalLike } from "./adapters";
+import { chatPollInterval, forgetConversation, useInvalidateOnTurnEnd, type ChatAdapter, type ConvDetail, type ProposalLike } from "./adapters";
 
 // Adattatori dei backend di oggi: chat del piano (Lucius sul piano dell'app) e chat di squadra (Lucius sui ruoli).
 
@@ -46,6 +50,7 @@ function mapCommon(d: AnyDetail, readOnlyReason: string | null): Omit<ConvDetail
     tokensUsed: d.tokensUsed,
     costUsd: d.costUsd,
     turnStatus: d.turnStatus,
+    queuedMessage: d.queuedMessage ? { id: d.queuedMessage.id, content: d.queuedMessage.content } : null,
     progress: d.progress ?? null,
     readOnlyReason,
     subjectId: null,
@@ -57,8 +62,6 @@ function toProposalLike(p: PlanProposal | TeamChatProposal): ProposalLike {
   return { id: p.id, messageId: p.messageId, kind: p.kind, status: p.status, payload: p.payload, rationale: p.rationale, raw: p };
 }
 
-const pollWhileRunning = (data: { turnStatus: string } | undefined) => (data?.turnStatus === "running" ? POLL_MS : false);
-
 /** Chat del piano dell'app: le schede sono quelle di oggi (`ProposalCard`, che decide da sola). */
 export function usePlanChatAdapter(appId: number): ChatAdapter {
   const queryClient = useQueryClient();
@@ -67,6 +70,8 @@ export function usePlanChatAdapter(appId: number): ChatAdapter {
   const list = useListPlanConversations(appId, { query: { queryKey: getListPlanConversationsQueryKey(appId) } });
   const create = useCreatePlanConversation();
   const send = useSendPlanMessage();
+  const stop = useStopPlanTurn();
+  const cancelQueued = useCancelQueuedPlanMessage();
   const update = useUpdatePlanConversation();
   const decide = useDecidePlanProposal();
   const remove = useDeletePlanConversation();
@@ -91,7 +96,7 @@ export function usePlanChatAdapter(appId: number): ChatAdapter {
         query: {
           queryKey: getGetPlanConversationQueryKey(id ?? 0),
           enabled: id !== null,
-          refetchInterval: (query) => pollWhileRunning(query.state.data),
+          refetchInterval: (query) => chatPollInterval(query.state.data),
         },
       });
       // A fine turno cambiano costi, titolo e (con le proposte) il contesto
@@ -134,9 +139,23 @@ export function usePlanChatAdapter(appId: number): ChatAdapter {
         refreshList();
       }
     },
-    send: async (id, content) => {
+    send: async (id, content, mode) => {
       try {
-        await send.mutateAsync({ id, data: { content } });
+        await send.mutateAsync({ id, data: mode && mode !== "normal" ? { content, mode } : { content } });
+      } finally {
+        refreshConv(id);
+      }
+    },
+    stop: async (id) => {
+      try {
+        await stop.mutateAsync({ id });
+      } finally {
+        refreshConv(id);
+      }
+    },
+    cancelQueued: async (id) => {
+      try {
+        await cancelQueued.mutateAsync({ id });
       } finally {
         refreshConv(id);
       }
@@ -179,6 +198,8 @@ export function useTeamChatAdapter(instanceId: number, closed: boolean): ChatAda
   const list = useListTeamChatConversations(instanceId, { query: { queryKey: getListTeamChatConversationsQueryKey(instanceId) } });
   const create = useCreateTeamChatConversation();
   const send = useSendTeamChatMessage();
+  const stop = useStopTeamChatTurn();
+  const cancelQueued = useCancelQueuedTeamChatMessage();
   const decide = useDecideTeamChatProposal();
   const remove = useDeleteTeamChatConversation();
 
@@ -208,7 +229,7 @@ export function useTeamChatAdapter(instanceId: number, closed: boolean): ChatAda
         query: {
           queryKey: getGetTeamChatConversationQueryKey(id ?? 0),
           enabled: id !== null,
-          refetchInterval: (query) => pollWhileRunning(query.state.data),
+          refetchInterval: (query) => chatPollInterval(query.state.data),
         },
       });
       useInvalidateOnTurnEnd(q.data?.turnStatus === "running", refreshList);
@@ -231,9 +252,23 @@ export function useTeamChatAdapter(instanceId: number, closed: boolean): ChatAda
         refreshList();
       }
     },
-    send: async (id, content) => {
+    send: async (id, content, mode) => {
       try {
-        await send.mutateAsync({ id, data: { content } });
+        await send.mutateAsync({ id, data: mode && mode !== "normal" ? { content, mode } : { content } });
+      } finally {
+        refreshConv(id);
+      }
+    },
+    stop: async (id) => {
+      try {
+        await stop.mutateAsync({ id });
+      } finally {
+        refreshConv(id);
+      }
+    },
+    cancelQueued: async (id) => {
+      try {
+        await cancelQueued.mutateAsync({ id });
       } finally {
         refreshConv(id);
       }

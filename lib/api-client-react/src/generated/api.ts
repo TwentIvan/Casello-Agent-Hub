@@ -86,6 +86,7 @@ import type {
   CharacterProposalDecision,
   CharacterSettings,
   CharacterSettingsView,
+  ChatTurnStopResult,
   ConflictResponse,
   CostEstimate,
   CurrentUser,
@@ -12495,7 +12496,7 @@ export const getSendPlanMessageUrl = (id: number,) => {
 }
 
 /**
- * Risponde subito col messaggio dell'utente; il bot risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se il modello non è più disponibile o se chi paga il modello ha raggiunto il tetto di spesa mensile. Massimo 10 messaggi al minuto per utente.
+ * Risponde subito col messaggio dell'utente; il bot risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se il modello non è più disponibile o se chi paga il modello ha raggiunto il tetto di spesa mensile. Massimo 10 messaggi al minuto per utente. Con `mode` `queue` e un turno in corso il messaggio resta in coda (uno per conversazione, un nuovo `queue` ne sostituisce il testo) e parte alla fine del turno; con `now` va in coda e il turno in corso si ferma. In entrambi i casi la risposta è il messaggio in coda.
  * @summary Invia un messaggio e avvia il turno del bot
  */
 export const sendPlanMessage = async (id: number,
@@ -12556,6 +12557,148 @@ export const useSendPlanMessage = <TError = ErrorType<BadRequestResponse | NotFo
         TContext
       > => {
       return useMutation(getSendPlanMessageMutationOptions(options));
+    }
+
+export const getStopPlanTurnUrl = (id: number,) => {
+
+
+
+
+  return `/api/plan-conversations/${id}/stop`
+}
+
+/**
+ * Interrompe il turno della conversazione: la risposta diventa «Risposta interrotta.» e parte il messaggio in coda, se c'è. `stopped` è false se non c'era nessun turno da fermare. 404 per una conversazione di un altro utente. Massimo 30 al minuto per utente.
+ * @summary Ferma il turno in corso
+ */
+export const stopPlanTurn = async (id: number, options?: RequestInit): Promise<ChatTurnStopResult> => {
+
+  return customFetch<ChatTurnStopResult>(getStopPlanTurnUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getStopPlanTurnMutationOptions = <TError = ErrorType<NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopPlanTurn>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof stopPlanTurn>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['stopPlanTurn'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof stopPlanTurn>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  stopPlanTurn(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StopPlanTurnMutationResult = NonNullable<Awaited<ReturnType<typeof stopPlanTurn>>>
+
+    export type StopPlanTurnMutationError = ErrorType<NotFoundResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Ferma il turno in corso
+ */
+export const useStopPlanTurn = <TError = ErrorType<NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopPlanTurn>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof stopPlanTurn>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getStopPlanTurnMutationOptions(options));
+    }
+
+export const getCancelQueuedPlanMessageUrl = (id: number,) => {
+
+
+
+
+  return `/api/plan-conversations/${id}/queued`
+}
+
+/**
+ * Idempotente. 404 per una conversazione di un altro utente.
+ * @summary Toglie il messaggio in coda
+ */
+export const cancelQueuedPlanMessage = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getCancelQueuedPlanMessageUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getCancelQueuedPlanMessageMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelQueuedPlanMessage>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelQueuedPlanMessage>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['cancelQueuedPlanMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelQueuedPlanMessage>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  cancelQueuedPlanMessage(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelQueuedPlanMessageMutationResult = NonNullable<Awaited<ReturnType<typeof cancelQueuedPlanMessage>>>
+
+    export type CancelQueuedPlanMessageMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Toglie il messaggio in coda
+ */
+export const useCancelQueuedPlanMessage = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelQueuedPlanMessage>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelQueuedPlanMessage>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getCancelQueuedPlanMessageMutationOptions(options));
     }
 
 export const getDecidePlanProposalUrl = (id: number,) => {
@@ -12935,7 +13078,7 @@ export const getSendTeamChatMessageUrl = (id: number,) => {
 }
 
 /**
- * Risponde subito col messaggio dell'utente; Lucius risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se la squadra è chiusa o se chi paga il modello ha raggiunto il tetto di spesa mensile. Massimo 10 messaggi al minuto per utente.
+ * Risponde subito col messaggio dell'utente; Lucius risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se la squadra è chiusa o se chi paga il modello ha raggiunto il tetto di spesa mensile. Massimo 10 messaggi al minuto per utente. Con `mode` `queue` e un turno in corso il messaggio resta in coda (uno per conversazione, un nuovo `queue` ne sostituisce il testo) e parte alla fine del turno; con `now` va in coda e il turno in corso si ferma. In entrambi i casi la risposta è il messaggio in coda.
  * @summary Invia un messaggio e avvia il turno di Lucius
  */
 export const sendTeamChatMessage = async (id: number,
@@ -12996,6 +13139,148 @@ export const useSendTeamChatMessage = <TError = ErrorType<BadRequestResponse | N
         TContext
       > => {
       return useMutation(getSendTeamChatMessageMutationOptions(options));
+    }
+
+export const getStopTeamChatTurnUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-chat-conversations/${id}/stop`
+}
+
+/**
+ * Interrompe il turno della conversazione: la risposta diventa «Risposta interrotta.» e parte il messaggio in coda, se c'è. `stopped` è false se non c'era nessun turno da fermare. 404 per una conversazione di un altro utente. Massimo 30 al minuto per utente.
+ * @summary Ferma il turno in corso
+ */
+export const stopTeamChatTurn = async (id: number, options?: RequestInit): Promise<ChatTurnStopResult> => {
+
+  return customFetch<ChatTurnStopResult>(getStopTeamChatTurnUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getStopTeamChatTurnMutationOptions = <TError = ErrorType<NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopTeamChatTurn>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof stopTeamChatTurn>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['stopTeamChatTurn'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof stopTeamChatTurn>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  stopTeamChatTurn(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StopTeamChatTurnMutationResult = NonNullable<Awaited<ReturnType<typeof stopTeamChatTurn>>>
+
+    export type StopTeamChatTurnMutationError = ErrorType<NotFoundResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Ferma il turno in corso
+ */
+export const useStopTeamChatTurn = <TError = ErrorType<NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopTeamChatTurn>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof stopTeamChatTurn>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getStopTeamChatTurnMutationOptions(options));
+    }
+
+export const getCancelQueuedTeamChatMessageUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-chat-conversations/${id}/queued`
+}
+
+/**
+ * Idempotente. 404 per una conversazione di un altro utente.
+ * @summary Toglie il messaggio in coda
+ */
+export const cancelQueuedTeamChatMessage = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getCancelQueuedTeamChatMessageUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getCancelQueuedTeamChatMessageMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelQueuedTeamChatMessage>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelQueuedTeamChatMessage>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['cancelQueuedTeamChatMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelQueuedTeamChatMessage>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  cancelQueuedTeamChatMessage(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelQueuedTeamChatMessageMutationResult = NonNullable<Awaited<ReturnType<typeof cancelQueuedTeamChatMessage>>>
+
+    export type CancelQueuedTeamChatMessageMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Toglie il messaggio in coda
+ */
+export const useCancelQueuedTeamChatMessage = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelQueuedTeamChatMessage>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelQueuedTeamChatMessage>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getCancelQueuedTeamChatMessageMutationOptions(options));
     }
 
 export const getDecideTeamChatProposalUrl = (id: number,) => {
@@ -13763,7 +14048,7 @@ export const getSendCharacterMessageUrl = (id: number,) => {
 }
 
 /**
- * Risponde subito col messaggio dell'utente; il personaggio risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se l'argomento non esiste più, se la conversazione è archiviata o se è raggiunto il tetto di spesa. Massimo 10 messaggi al minuto per utente e personaggio.
+ * Risponde subito col messaggio dell'utente; il personaggio risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se l'argomento non esiste più, se la conversazione è archiviata o se è raggiunto il tetto di spesa. Massimo 10 messaggi al minuto per utente e personaggio. Con `mode` `queue` e un turno in corso il messaggio resta in coda (uno per conversazione, un nuovo `queue` ne sostituisce il testo) e parte alla fine del turno; con `now` va in coda e il turno in corso si ferma. In entrambi i casi la risposta è il messaggio in coda.
  * @summary Invia un messaggio e avvia il turno del personaggio
  */
 export const sendCharacterMessage = async (id: number,
@@ -13824,6 +14109,148 @@ export const useSendCharacterMessage = <TError = ErrorType<BadRequestResponse | 
         TContext
       > => {
       return useMutation(getSendCharacterMessageMutationOptions(options));
+    }
+
+export const getStopCharacterTurnUrl = (id: number,) => {
+
+
+
+
+  return `/api/character-conversations/${id}/stop`
+}
+
+/**
+ * Interrompe il turno della conversazione: la risposta diventa «Risposta interrotta.» e parte il messaggio in coda, se c'è. `stopped` è false se non c'era nessun turno da fermare. 404 per una conversazione di un altro utente. Massimo 30 al minuto per utente.
+ * @summary Ferma il turno in corso
+ */
+export const stopCharacterTurn = async (id: number, options?: RequestInit): Promise<ChatTurnStopResult> => {
+
+  return customFetch<ChatTurnStopResult>(getStopCharacterTurnUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getStopCharacterTurnMutationOptions = <TError = ErrorType<NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopCharacterTurn>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof stopCharacterTurn>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['stopCharacterTurn'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof stopCharacterTurn>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  stopCharacterTurn(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StopCharacterTurnMutationResult = NonNullable<Awaited<ReturnType<typeof stopCharacterTurn>>>
+
+    export type StopCharacterTurnMutationError = ErrorType<NotFoundResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Ferma il turno in corso
+ */
+export const useStopCharacterTurn = <TError = ErrorType<NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopCharacterTurn>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof stopCharacterTurn>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getStopCharacterTurnMutationOptions(options));
+    }
+
+export const getCancelQueuedCharacterMessageUrl = (id: number,) => {
+
+
+
+
+  return `/api/character-conversations/${id}/queued`
+}
+
+/**
+ * Idempotente. 404 per una conversazione di un altro utente.
+ * @summary Toglie il messaggio in coda
+ */
+export const cancelQueuedCharacterMessage = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getCancelQueuedCharacterMessageUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getCancelQueuedCharacterMessageMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelQueuedCharacterMessage>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelQueuedCharacterMessage>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['cancelQueuedCharacterMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelQueuedCharacterMessage>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  cancelQueuedCharacterMessage(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelQueuedCharacterMessageMutationResult = NonNullable<Awaited<ReturnType<typeof cancelQueuedCharacterMessage>>>
+
+    export type CancelQueuedCharacterMessageMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Toglie il messaggio in coda
+ */
+export const useCancelQueuedCharacterMessage = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelQueuedCharacterMessage>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelQueuedCharacterMessage>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getCancelQueuedCharacterMessageMutationOptions(options));
     }
 
 export const getGetLeadChatUrl = () => {

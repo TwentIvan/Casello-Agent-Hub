@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { STALE_TURN_MS, liveTurns, sweepStaleTurns, trackTurn, type StaleTurnFilter } from "./stale-turns";
+import { STALE_TURN_MS, abortTurn, isLiveTurn, liveTurns, sweepStaleTurns, trackTurn, type StaleTurnFilter } from "./stale-turns";
 
 describe("turni di chat appesi", () => {
   it("trackTurn segna il turno vivo finché gira, anche se fallisce", async () => {
@@ -30,5 +30,25 @@ describe("turni di chat appesi", () => {
     expect(seen.plan!.olderThan.getTime()).toBe(1_000_000 - STALE_TURN_MS);
     expect(seen.plan!.exclude).toEqual([]);
     expect(seen.character!.exclude).toEqual([42]);
+  });
+});
+
+describe("registro dei turni: interruzione", () => {
+  it("abortTurn annulla il segnale del turno in corso e restituisce true", async () => {
+    let aborted = false;
+    await trackTurn("plan", 11, async (signal) => {
+      expect(isLiveTurn("plan", 11)).toBe(true);
+      expect(signal.aborted).toBe(false);
+      expect(abortTurn("plan", 11)).toBe(true);
+      aborted = signal.aborted;
+    });
+    expect(aborted).toBe(true);
+  });
+
+  it("false a turno finito e per una conversazione mai vista", async () => {
+    await trackTurn("team", 12, async () => {});
+    expect(abortTurn("team", 12)).toBe(false);
+    expect(isLiveTurn("team", 12)).toBe(false);
+    expect(abortTurn("character", 999)).toBe(false);
   });
 });

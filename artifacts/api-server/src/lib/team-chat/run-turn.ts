@@ -2,7 +2,7 @@
 // strumenti della squadra. `startTeamChatTurn` risponde subito con il messaggio dell'utente e lancia il turno in
 // background. Nei log solo id e conteggi: mai il contenuto dei messaggi.
 
-import { and, asc, eq, inArray, lt, notInArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
 import {
   db,
   teamChatConversationsTable,
@@ -23,8 +23,11 @@ import { EMPTY_REPLY_MESSAGE, INTERRUPTED_TURN_MESSAGE, TurnBusyError } from "..
 import { runChatTurn } from "../node-turns/chat-turn";
 import { codeAvailability } from "../code-reader/source-cache";
 import { CODE_INSTRUCTIONS_GENERAL, CODE_TOOLS, CodeToolRunner, isCodeTool } from "../code-reader/tools";
+import { CODE_TURN_LIMITS, STOPPED_TURN_MESSAGE } from "../plan-chat/turn";
+import { drainQueued, isTurnOpen } from "../chat-turns/control";
+import { turnTotals } from "../chat-turns/totals";
+import type { ChatKindSpec } from "../chat-turns/spec";
 import { WEB_TOOLS, WebPageReader, isWebTool } from "../web-reader/tool";
-import { CODE_TURN_LIMITS } from "../plan-chat/turn";
 import { InstanceError, INSTANCE_MESSAGES } from "../teams/instances";
 import { buildTeamChatMessages, type HistoryMessage } from "./context";
 import { currentValueHash } from "./decide";
@@ -62,7 +65,7 @@ export async function startTeamChatTurn(conversationId: number, content: string)
     const [{ n }] = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(teamChatMessagesTable)
-      .where(eq(teamChatMessagesTable.conversationId, conversationId));
+      .where(and(eq(teamChatMessagesTable.conversationId, conversationId), isNull(teamChatMessagesTable.queuedAt)));
     const [userMessage] = await db.insert(teamChatMessagesTable).values({ conversationId, role: "user", content }).returning();
     if (n === 0) {
       const title = sliceChars(content.replace(/\s+/g, " ").trim(), TITLE_MAX_CHARS);
@@ -87,7 +90,8 @@ async function loadHistory(conversationId: number, assistantMessageId: number): 
   const messages = await db
     .select()
     .from(teamChatMessagesTable)
-    .where(eq(teamChatMessagesTable.conversationId, conversationId))
+    // Il messaggio in coda non è ancora partito: fuori dalla cronologia
+    .where(and(eq(teamChatMessagesTable.conversationId, conversationId), isNull(teamChatMessagesTable.queuedAt)))
     .orderBy(asc(teamChatMessagesTable.id));
   const proposals = await db
     .select()
@@ -112,12 +116,38 @@ function errorText(err: unknown): string {
   return GENERIC_ERROR_MESSAGE;
 }
 
-/** Esegue il turno e lo chiude sempre (messaggio dell'assistente, schede, totali, `idle`). Non lancia mai. */
+/** La chat di squadra per «Ferma» e «Accoda» (`lib/chat-turns/control.ts`); la pagina non serve. */
+export const TEAM_CHAT_SPEC: ChatKindSpec = {
+  kind: "team",
+  consumer: "team_chat",
+  conversationsTable: "team_chat_conversations",
+  messagesTable: "team_chat_messages",
+  hasPageContext: false,
+  start: (conversationId, content) => startTeamChatTurn(conversationId, content),
+};
+
+/**
+ * Esegue il turno e lo chiude sempre (messaggio dell'assistente, schede, totali, `idle`), poi fa partire il messaggio
+ * in coda. «Ferma» interrompe il turno con il segnale: risposta «Risposta interrotta.». Non lancia mai.
+ */
 export function executeTeamChatTurn(conversationId: number, assistantMessageId: number): Promise<void> {
-  return trackTurn("team", conversationId, () => executeTeamChatTurnInner(conversationId, assistantMessageId));
+  return trackTurn("team", conversationId, (signal) => executeTeamChatTurnInner(conversationId, assistantMessageId, signal), assistantMessageId)
+    .catch((err: unknown) => {
+      logger.error({ conversationId, errName: err instanceof Error ? err.name : typeof err }, "Turno della chat di squadra non chiuso");
+    })
+    .then(() => drainQueued(TEAM_CHAT_SPEC, conversationId));
 }
 
-async function executeTeamChatTurnInner(conversationId: number, assistantMessageId: number): Promise<void> {
+async function executeTeamChatTurnInner(conversationId: number, assistantMessageId: number, signal: AbortSignal): Promise<void> {
+  // Turno chiuso nel DB prima di partire davvero (Ferma da un altro processo): niente modello. Se «Ferma» è arrivato
+  // prima che il messaggio dell'assistente fosse scritto, quel messaggio è rimasto vuoto: diventa «Risposta interrotta.»
+  if (!(await isTurnOpen(TEAM_CHAT_SPEC, conversationId, assistantMessageId))) {
+    await db
+      .update(teamChatMessagesTable)
+      .set({ content: STOPPED_TURN_MESSAGE, error: false })
+      .where(and(eq(teamChatMessagesTable.id, assistantMessageId), eq(teamChatMessagesTable.content, "")));
+    return;
+  }
   let content = GENERIC_ERROR_MESSAGE;
   let isError = true;
   let tokens = 0;
@@ -167,10 +197,15 @@ async function executeTeamChatTurnInner(conversationId: number, assistantMessage
             codeRunner && isCodeTool(call.name) ? codeRunner.run(call) : isWebTool(call.name) ? webReader.run(call) : runner.run(call),
           caller: "team-chat",
           budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, "lucius", aiModelId),
+          signal,
         });
         tokens = outcome.tokens;
         costUsd = outcome.costUsd;
-        if (outcome.ok) {
+        // Un esito arrivato subito dopo «Ferma» (es. dal nodo) vale come interruzione
+        if ((!outcome.ok && outcome.stopped === true) || signal.aborted) {
+          content = STOPPED_TURN_MESSAGE;
+          isError = false;
+        } else if (outcome.ok) {
           content = outcome.content.trim() === "" ? EMPTY_REPLY_MESSAGE : outcome.content;
           isError = false;
         } else {
@@ -190,25 +225,36 @@ async function executeTeamChatTurnInner(conversationId: number, assistantMessage
       }
     }
   } catch (err) {
-    content = errorText(err);
-    logger.warn({ conversationId, errName: err instanceof Error ? err.name : typeof err }, "Turno della chat di squadra non riuscito");
+    if (signal.aborted) {
+      content = STOPPED_TURN_MESSAGE;
+      isError = false;
+    } else {
+      content = errorText(err);
+      logger.warn({ conversationId, errName: err instanceof Error ? err.name : typeof err }, "Turno della chat di squadra non riuscito");
+    }
   }
 
   try {
     await db.transaction(async (tx) => {
-      await tx.update(teamChatMessagesTable).set({ content, error: isError, tokens }).where(eq(teamChatMessagesTable.id, assistantMessageId));
+      // Le schede proposte restano anche se il turno è stato fermato o chiuso altrove (come nelle altre chat)
       if (proposals.length > 0) await tx.insert(teamChatProposalsTable).values(proposals);
-      // Costo parziale (null) se manca il prezzo di un turno con token; una conversazione senza token parte da 0
+      // Solo se il messaggio è ancora vuoto: altrimenti il turno è stato chiuso altrove (si sommano solo i totali)
+      const written = await tx
+        .update(teamChatMessagesTable)
+        .set({ content, error: isError, tokens })
+        .where(and(eq(teamChatMessagesTable.id, assistantMessageId), eq(teamChatMessagesTable.content, "")))
+        .returning({ id: teamChatMessagesTable.id });
+      const totals = turnTotals(teamChatConversationsTable.tokensUsed, teamChatConversationsTable.costUsd, tokens, costUsd);
+      if (written.length === 0) {
+        // Turno chiuso altrove: chi l'ha chiuso non somma i totali, quindi i token spesi si sommano qui; stato e
+        // updated_at restano quelli della chiusura
+        if (tokens > 0) await tx.update(teamChatConversationsTable).set(totals).where(eq(teamChatConversationsTable.id, conversationId));
+        return;
+      }
       await tx
         .update(teamChatConversationsTable)
         .set({
-          tokensUsed: sql`${teamChatConversationsTable.tokensUsed} + ${tokens}`,
-          costUsd:
-            tokens === 0
-              ? sql`${teamChatConversationsTable.costUsd}`
-              : costUsd === null
-                ? sql`null`
-                : sql`case when ${teamChatConversationsTable.tokensUsed} = 0 then 0 else ${teamChatConversationsTable.costUsd} end + ${costUsd}::numeric`,
+          ...totals,
           turnStatus: "idle",
           updatedAt: new Date(),
         })
@@ -222,11 +268,18 @@ async function executeTeamChatTurnInner(conversationId: number, assistantMessage
       .where(eq(teamChatConversationsTable.id, conversationId))
       .catch(() => {});
   }
-  logger.info({ conversationId, assistantMessageId, tokens, proposals: proposals.length, error: isError }, "Turno della chat di squadra chiuso");
+  logger.info({ conversationId, assistantMessageId, tokens, proposals: proposals.length, error: isError, stopped: signal.aborted }, "Turno della chat di squadra chiuso");
 }
 
 /** All'avvio i turni rimasti `running` sono stati interrotti dal riavvio: si chiudono con un messaggio. */
 export async function failInterruptedTeamChatTurns(filter?: StaleTurnFilter): Promise<number> {
+  const ids = await closeInterruptedTeamChatTurns(filter);
+  // Le conversazioni chiuse possono avere un messaggio in coda: parte ora
+  for (const id of ids) await drainQueued(TEAM_CHAT_SPEC, id);
+  return ids.length;
+}
+
+async function closeInterruptedTeamChatTurns(filter?: StaleTurnFilter): Promise<number[]> {
   return db.transaction(async (tx) => {
     const interrupted = await tx
       .update(teamChatConversationsTable)
@@ -239,7 +292,7 @@ export async function failInterruptedTeamChatTurns(filter?: StaleTurnFilter): Pr
         ),
       )
       .returning({ id: teamChatConversationsTable.id });
-    if (interrupted.length === 0) return 0;
+    if (interrupted.length === 0) return [];
     const ids = interrupted.map((c) => c.id);
     const lastEmpties = await tx
       .select({ id: sql<number>`max(${teamChatMessagesTable.id})::int` })
@@ -261,6 +314,6 @@ export async function failInterruptedTeamChatTurns(filter?: StaleTurnFilter): Pr
         .insert(teamChatMessagesTable)
         .values(missing.map((conversationId) => ({ conversationId, role: "assistant" as const, content: INTERRUPTED_TURN_MESSAGE, error: true })));
     }
-    return interrupted.length;
+    return ids;
   });
 }

@@ -374,6 +374,92 @@ describe("scarichi", () => {
   });
 });
 
+describe("Ferma e Accoda", () => {
+  const chatCalls = () => fake.requests.filter((r) => r.path.includes("/chat/completions")).length;
+
+  async function waitFor(check: () => boolean | Promise<boolean>): Promise<void> {
+    for (let i = 0; i < 400; i++) {
+      if (await check()) return;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    throw new Error("condizione non raggiunta");
+  }
+
+  const history = async (id: number) => {
+    const res = await api("GET", `/team-chat-conversations/${id}`);
+    expect(res.status, res.text).toBe(200);
+    return res.json as { turnStatus: string; messages: Array<{ role: string; content: string }>; queuedMessage: { id: number; content: string } | null };
+  };
+
+  async function startSlowTurn(id: number): Promise<void> {
+    fake.chatReply = { content: "Risposta", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    fake.delayMs = 3_000;
+    const sent = await api("POST", `/team-chat-conversations/${id}/messages`, { content: "Primo" });
+    expect(sent.status, sent.text).toBe(202);
+    await waitFor(() => chatCalls() === 1);
+    fake.delayMs = 0;
+  }
+
+  beforeEach(async () => {
+    const { resetChatTurnLimits } = await import("../middlewares/rate-limit");
+    resetChatTurnLimits();
+  });
+
+  it("stop: turno in corso → stopped true e «Risposta interrotta.»; ripetuto → false; altrui → 404", async () => {
+    const { id } = await createConv();
+    await startSlowTurn(id);
+    const stop = await api("POST", `/team-chat-conversations/${id}/stop`);
+    expect(stop.status, stop.text).toBe(200);
+    expect(stop.json).toEqual({ stopped: true });
+    expect((await history(id)).messages.map((m) => m.content)).toEqual(["Primo", "Risposta interrotta."]);
+    expect((await api("POST", `/team-chat-conversations/${id}/stop`)).json).toEqual({ stopped: false });
+    const [stranger] = await db.insert(usersTable).values({ email: "altro@x.it" }).returning();
+    const [conv] = await db.insert(teamChatConversationsTable).values({ teamInstanceId: instanceId, userId: stranger!.id, aiModelId: null, title: "" }).returning();
+    expect((await api("POST", `/team-chat-conversations/${conv!.id}/stop`)).status).toBe(404);
+    expect((await api("DELETE", `/team-chat-conversations/${conv!.id}/queued`)).status).toBe(404);
+  });
+
+  it("mode now con turno in corso → 202 e il testo nuovo parte dopo il turno fermato", async () => {
+    const { id } = await createConv();
+    await startSlowTurn(id);
+    const sent = await api("POST", `/team-chat-conversations/${id}/messages`, { content: "Subito", mode: "now" });
+    expect(sent.status, sent.text).toBe(202);
+    expect(sent.json).toMatchObject({ role: "user", content: "Subito", error: false });
+    await waitFor(async () => {
+      const h = await history(id);
+      return h.turnStatus === "idle" && h.messages.length === 4;
+    });
+    expect((await history(id)).messages.map((m) => m.content)).toEqual(["Primo", "Risposta interrotta.", "Subito", "Risposta"]);
+  });
+
+  it("mode queue: in coda, sostituito, tolto da DELETE", async () => {
+    const { id } = await createConv();
+    await startSlowTurn(id);
+    expect((await api("POST", `/team-chat-conversations/${id}/messages`, { content: "Dopo", mode: "queue" })).status).toBe(202);
+    expect((await api("POST", `/team-chat-conversations/${id}/messages`, { content: "Altro", mode: "queue" })).status).toBe(202);
+    const h = await history(id);
+    expect(h.queuedMessage).toMatchObject({ content: "Altro" });
+    expect(h.messages.map((m) => m.content)).toEqual(["Primo", ""]);
+    expect((await api("DELETE", `/team-chat-conversations/${id}/queued`)).status).toBe(204);
+    expect((await history(id)).queuedMessage).toBeNull();
+    await api("POST", `/team-chat-conversations/${id}/stop`);
+  });
+
+  it("squadra chiusa nel frattempo: nessun 500, il messaggio resta in coda; un nuovo invio → 409", async () => {
+    const { id } = await createConv();
+    await startSlowTurn(id);
+    expect((await api("POST", `/team-chat-conversations/${id}/messages`, { content: "Dopo", mode: "queue" })).status).toBe(202);
+    expect((await api("POST", `/team-instances/${instanceId}/close`)).status).toBe(200);
+    expect((await api("POST", `/team-chat-conversations/${id}/stop`)).json).toEqual({ stopped: true });
+    const h = await history(id);
+    expect(h.turnStatus).toBe("idle");
+    expect(h.queuedMessage).toMatchObject({ content: "Dopo" });
+    const again = await api("POST", `/team-chat-conversations/${id}/messages`, { content: "Ancora", mode: "queue" });
+    expect(again.status).toBe(409);
+    expect(again.json.error).toBe("squadra chiusa");
+  });
+});
+
 describe("limite", () => {
   it("l'11° messaggio in un minuto → 429", async () => {
     const { id } = await createConv();

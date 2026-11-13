@@ -5830,7 +5830,12 @@ export const GetPlanConversationResponse = zod.object({
   "status": zod.enum(['running', 'done'])
 })),
   "omitted": zod.number().describe('Passi precedenti non più elencati')
-}),zod.null()]).optional().describe('Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null')
+}),zod.null()]).optional().describe('Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null'),
+  "queuedMessage": zod.union([zod.object({
+  "id": zod.number(),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}),zod.null()]).describe('Messaggio in coda che parte alla fine del turno in corso, altrimenti null')
 }))
 
 
@@ -5871,7 +5876,7 @@ export const DeletePlanConversationResponse = zod.void()
 
 
 /**
- * Risponde subito col messaggio dell'utente; il bot risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se il modello non è più disponibile o se chi paga il modello ha raggiunto il tetto di spesa mensile. Massimo 10 messaggi al minuto per utente.
+ * Risponde subito col messaggio dell'utente; il bot risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se il modello non è più disponibile o se chi paga il modello ha raggiunto il tetto di spesa mensile. Massimo 10 messaggi al minuto per utente. Con `mode` `queue` e un turno in corso il messaggio resta in coda (uno per conversazione, un nuovo `queue` ne sostituisce il testo) e parte alla fine del turno; con `now` va in coda e il turno in corso si ferma. In entrambi i casi la risposta è il messaggio in coda.
  * @summary Invia un messaggio e avvia il turno del bot
  */
 export const SendPlanMessageParams = zod.object({
@@ -5883,7 +5888,8 @@ export const sendPlanMessageBodyContentMax = 8000;
 
 
 export const SendPlanMessageBody = zod.object({
-  "content": zod.string().min(1).max(sendPlanMessageBodyContentMax)
+  "content": zod.string().min(1).max(sendPlanMessageBodyContentMax),
+  "mode": zod.enum(['normal', 'now', 'queue']).optional().describe('normal (default) avvia il turno (409 se uno è in corso); queue mette il messaggio in coda se un turno è in corso; now lo mette in coda e ferma il turno in corso.')
 })
 
 export const SendPlanMessageResponse = zod.object({
@@ -5893,6 +5899,30 @@ export const SendPlanMessageResponse = zod.object({
   "error": zod.boolean().describe('Messaggio del bot che riporta un errore'),
   "createdAt": zod.coerce.date()
 })
+
+
+/**
+ * Interrompe il turno della conversazione: la risposta diventa «Risposta interrotta.» e parte il messaggio in coda, se c'è. `stopped` è false se non c'era nessun turno da fermare. 404 per una conversazione di un altro utente. Massimo 30 al minuto per utente.
+ * @summary Ferma il turno in corso
+ */
+export const StopPlanTurnParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const StopPlanTurnResponse = zod.object({
+  "stopped": zod.boolean()
+})
+
+
+/**
+ * Idempotente. 404 per una conversazione di un altro utente.
+ * @summary Toglie il messaggio in coda
+ */
+export const CancelQueuedPlanMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CancelQueuedPlanMessageResponse = zod.void()
 
 
 /**
@@ -6041,7 +6071,12 @@ export const GetTeamChatConversationResponse = zod.object({
   "status": zod.enum(['running', 'done'])
 })),
   "omitted": zod.number().describe('Passi precedenti non più elencati')
-}),zod.null()]).optional().describe('Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null')
+}),zod.null()]).optional().describe('Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null'),
+  "queuedMessage": zod.union([zod.object({
+  "id": zod.number(),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}),zod.null()]).describe('Messaggio in coda che parte alla fine del turno in corso, altrimenti null')
 }))
 
 
@@ -6056,7 +6091,7 @@ export const DeleteTeamChatConversationResponse = zod.void()
 
 
 /**
- * Risponde subito col messaggio dell'utente; Lucius risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se la squadra è chiusa o se chi paga il modello ha raggiunto il tetto di spesa mensile. Massimo 10 messaggi al minuto per utente.
+ * Risponde subito col messaggio dell'utente; Lucius risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se la squadra è chiusa o se chi paga il modello ha raggiunto il tetto di spesa mensile. Massimo 10 messaggi al minuto per utente. Con `mode` `queue` e un turno in corso il messaggio resta in coda (uno per conversazione, un nuovo `queue` ne sostituisce il testo) e parte alla fine del turno; con `now` va in coda e il turno in corso si ferma. In entrambi i casi la risposta è il messaggio in coda.
  * @summary Invia un messaggio e avvia il turno di Lucius
  */
 export const SendTeamChatMessageParams = zod.object({
@@ -6068,7 +6103,8 @@ export const sendTeamChatMessageBodyContentMax = 8000;
 
 
 export const SendTeamChatMessageBody = zod.object({
-  "content": zod.string().min(1).max(sendTeamChatMessageBodyContentMax)
+  "content": zod.string().min(1).max(sendTeamChatMessageBodyContentMax),
+  "mode": zod.enum(['normal', 'now', 'queue']).optional().describe('normal (default) avvia il turno (409 se uno è in corso); queue mette il messaggio in coda se un turno è in corso; now lo mette in coda e ferma il turno in corso.')
 })
 
 export const SendTeamChatMessageResponse = zod.object({
@@ -6078,6 +6114,30 @@ export const SendTeamChatMessageResponse = zod.object({
   "error": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
+
+
+/**
+ * Interrompe il turno della conversazione: la risposta diventa «Risposta interrotta.» e parte il messaggio in coda, se c'è. `stopped` è false se non c'era nessun turno da fermare. 404 per una conversazione di un altro utente. Massimo 30 al minuto per utente.
+ * @summary Ferma il turno in corso
+ */
+export const StopTeamChatTurnParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const StopTeamChatTurnResponse = zod.object({
+  "stopped": zod.boolean()
+})
+
+
+/**
+ * Idempotente. 404 per una conversazione di un altro utente.
+ * @summary Toglie il messaggio in coda
+ */
+export const CancelQueuedTeamChatMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CancelQueuedTeamChatMessageResponse = zod.void()
 
 
 /**
@@ -6204,7 +6264,12 @@ export const GetAlfredThreadResponse = zod.object({
   "status": zod.enum(['running', 'done'])
 })),
   "omitted": zod.number().describe('Passi precedenti non più elencati')
-}),zod.null()]).optional().describe('Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null')
+}),zod.null()]).optional().describe('Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null'),
+  "queuedMessage": zod.union([zod.object({
+  "id": zod.number(),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}),zod.null()]).describe('Messaggio in coda che parte alla fine del turno in corso, altrimenti null')
 }))
 
 
@@ -6282,7 +6347,12 @@ export const RestartAlfredThreadResponse = zod.object({
   "status": zod.enum(['running', 'done'])
 })),
   "omitted": zod.number().describe('Passi precedenti non più elencati')
-}),zod.null()]).optional().describe('Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null')
+}),zod.null()]).optional().describe('Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null'),
+  "queuedMessage": zod.union([zod.object({
+  "id": zod.number(),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}),zod.null()]).describe('Messaggio in coda che parte alla fine del turno in corso, altrimenti null')
 }))
 
 
@@ -6429,7 +6499,12 @@ export const GetCharacterConversationResponse = zod.object({
   "status": zod.enum(['running', 'done'])
 })),
   "omitted": zod.number().describe('Passi precedenti non più elencati')
-}),zod.null()]).optional().describe('Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null')
+}),zod.null()]).optional().describe('Passi del turno in corso (solo con turnStatus running e una voce nel registro), altrimenti null'),
+  "queuedMessage": zod.union([zod.object({
+  "id": zod.number(),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}),zod.null()]).describe('Messaggio in coda che parte alla fine del turno in corso, altrimenti null')
 }))
 
 
@@ -6479,7 +6554,7 @@ export const DeleteCharacterConversationResponse = zod.void()
 
 
 /**
- * Risponde subito col messaggio dell'utente; il personaggio risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se l'argomento non esiste più, se la conversazione è archiviata o se è raggiunto il tetto di spesa. Massimo 10 messaggi al minuto per utente e personaggio.
+ * Risponde subito col messaggio dell'utente; il personaggio risponde in background (turnStatus running, poi idle). 409 se un turno è già in corso, se l'argomento non esiste più, se la conversazione è archiviata o se è raggiunto il tetto di spesa. Massimo 10 messaggi al minuto per utente e personaggio. Con `mode` `queue` e un turno in corso il messaggio resta in coda (uno per conversazione, un nuovo `queue` ne sostituisce il testo) e parte alla fine del turno; con `now` va in coda e il turno in corso si ferma. In entrambi i casi la risposta è il messaggio in coda.
  * @summary Invia un messaggio e avvia il turno del personaggio
  */
 export const SendCharacterMessageParams = zod.object({
@@ -6511,6 +6586,7 @@ export const sendCharacterMessageBodyPageContextHostTitleRegExp = new RegExp('^[
 
 export const SendCharacterMessageBody = zod.object({
   "content": zod.string().min(1).max(sendCharacterMessageBodyContentMax),
+  "mode": zod.enum(['normal', 'now', 'queue']).optional().describe('normal (default) avvia il turno (409 se uno è in corso); queue mette il messaggio in coda se un turno è in corso; now lo mette in coda e ferma il turno in corso.'),
   "pageContext": zod.object({
   "page": zod.string().min(1).max(sendCharacterMessageBodyPageContextPageMax).regex(sendCharacterMessageBodyPageContextPageRegExp),
   "id": zod.string().min(1).max(sendCharacterMessageBodyPageContextIdMax).optional(),
@@ -6561,6 +6637,30 @@ export const SendCharacterMessageResponse = zod.object({
 }),zod.null()]),
   "createdAt": zod.coerce.date()
 })
+
+
+/**
+ * Interrompe il turno della conversazione: la risposta diventa «Risposta interrotta.» e parte il messaggio in coda, se c'è. `stopped` è false se non c'era nessun turno da fermare. 404 per una conversazione di un altro utente. Massimo 30 al minuto per utente.
+ * @summary Ferma il turno in corso
+ */
+export const StopCharacterTurnParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const StopCharacterTurnResponse = zod.object({
+  "stopped": zod.boolean()
+})
+
+
+/**
+ * Idempotente. 404 per una conversazione di un altro utente.
+ * @summary Toglie il messaggio in coda
+ */
+export const CancelQueuedCharacterMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CancelQueuedCharacterMessageResponse = zod.void()
 
 
 /**

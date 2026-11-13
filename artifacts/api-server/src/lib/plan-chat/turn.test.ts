@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { ProviderError } from "../ai/discovery";
 import type { ModelChatResult } from "../ai/executor";
-import { runPlanTurn, type PlanTurnDeps } from "./turn";
+import { APIUserAbortError } from "openai";
+import { STOPPED_TURN_MESSAGE, runPlanTurn, type PlanTurnDeps } from "./turn";
 
 const reply = (over: Partial<ModelChatResult>): ModelChatResult => ({
   content: null,
@@ -125,5 +126,40 @@ describe("runPlanTurn", () => {
     const custom = [{ type: "function" as const, function: { name: "solo_questo", parameters: { type: "object" } } }];
     await runPlanTurn(start, deps, undefined, custom);
     expect(sent[0]!.tools).toEqual(custom);
+  });
+});
+
+describe("runPlanTurn: interruzione", () => {
+  it("segnale già annullato: nessuna chiamata al modello", async () => {
+    const ac = new AbortController();
+    ac.abort();
+    const { deps, sent } = makeDeps([reply({ content: "x" })], { signal: ac.signal });
+    expect(await runPlanTurn(start, deps)).toMatchObject({ ok: false, stopped: true, error: STOPPED_TURN_MESSAGE, tokens: 0 });
+    expect(sent).toHaveLength(0);
+  });
+
+  it("annullato tra due strumenti: il secondo non parte e i token del primo giro restano", async () => {
+    const ac = new AbortController();
+    const runTool = vi.fn(async () => {
+      ac.abort();
+      return "esito";
+    });
+    const two = toolReply({ toolCalls: [{ id: "a", name: "read_app", arguments: "{}" }, { id: "b", name: "read_app", arguments: "{}" }] });
+    const { deps } = makeDeps([two], { signal: ac.signal, runTool });
+    const out = await runPlanTurn(start, deps);
+    expect(out).toMatchObject({ ok: false, stopped: true, tokens: 15 });
+    expect(runTool).toHaveBeenCalledTimes(1);
+  });
+
+  it("annullato durante la chiamata: stopped, non il messaggio del provider", async () => {
+    const ac = new AbortController();
+    const { deps } = makeDeps([], {
+      signal: ac.signal,
+      chat: async () => {
+        ac.abort();
+        throw new APIUserAbortError();
+      },
+    });
+    expect(await runPlanTurn(start, deps)).toMatchObject({ ok: false, stopped: true, error: STOPPED_TURN_MESSAGE });
   });
 });

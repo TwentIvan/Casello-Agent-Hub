@@ -495,3 +495,98 @@ describe("route della chat del piano", () => {
     }
   });
 });
+
+describe("Ferma e Accoda nella chat del piano", () => {
+  // Router con un proprio contatore dei messaggi: quello dell'app del file è condiviso con gli altri test
+  let small: http.Server;
+  let root: string;
+  const chatCalls = () => fake.requests.filter((r) => r.path.includes("/chat/completions")).length;
+
+  async function waitFor(check: () => boolean | Promise<boolean>): Promise<void> {
+    for (let i = 0; i < 400; i++) {
+      if (await check()) return;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    throw new Error("condizione non raggiunta");
+  }
+
+  const history = async (id: number) => {
+    const res = await api("GET", `/plan-conversations/${id}`, undefined, root);
+    expect(res.status, res.text).toBe(200);
+    return res.json as { turnStatus: string; messages: Array<{ role: string; content: string }>; queuedMessage: { id: number; content: string } | null };
+  };
+
+  async function startSlowTurn(id: number): Promise<void> {
+    fake.chatReply = { content: "Risposta", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    fake.delayMs = 3_000;
+    const sent = await api("POST", `/plan-conversations/${id}/messages`, { content: "Primo" }, root);
+    expect(sent.status, sent.text).toBe(202);
+    await waitFor(() => chatCalls() === 1);
+    fake.delayMs = 0;
+  }
+
+  beforeAll(async () => {
+    const { createPlanChatRouter } = await import("./plan-chat");
+    const { default: express } = await import("express");
+    const { errorHandler } = await import("../middlewares/error-handler");
+    const { requireAuth } = await import("../lib/auth");
+    const app = express();
+    app.use(express.json());
+    app.use("/api", requireAuth, createPlanChatRouter({ messageLimit: 100 }));
+    app.use(errorHandler);
+    small = http.createServer(app);
+    root = `http://127.0.0.1:${await listen(small)}`;
+  });
+
+  afterAll(async () => {
+    small.closeAllConnections?.();
+    await new Promise<void>((r) => small.close(() => r()));
+  });
+
+  beforeEach(async () => {
+    const { resetChatTurnLimits } = await import("../middlewares/rate-limit");
+    resetChatTurnLimits();
+  });
+
+  it("stop: turno in corso → stopped true e «Risposta interrotta.»; ripetuto → false; altrui → 404", async () => {
+    const { id } = await createConv();
+    await startSlowTurn(id);
+    const stop = await api("POST", `/plan-conversations/${id}/stop`, undefined, root);
+    expect(stop.status, stop.text).toBe(200);
+    expect(stop.json).toEqual({ stopped: true });
+    expect((await history(id)).messages.map((m) => m.content)).toEqual(["Primo", "Risposta interrotta."]);
+    expect((await api("POST", `/plan-conversations/${id}/stop`, undefined, root)).json).toEqual({ stopped: false });
+    const [stranger] = await db.insert(usersTable).values({ email: "altro@x.it" }).returning();
+    const [conv] = await db.insert(planConversationsTable).values({ appId, analysisId, userId: stranger!.id, aiModelId: modelId, title: "altrui" }).returning();
+    expect((await api("POST", `/plan-conversations/${conv!.id}/stop`, undefined, root)).status).toBe(404);
+    expect((await api("DELETE", `/plan-conversations/${conv!.id}/queued`, undefined, root)).status).toBe(404);
+  });
+
+  it("mode now con turno in corso → 202 e il testo nuovo parte dopo il turno fermato", async () => {
+    const { id } = await createConv();
+    await startSlowTurn(id);
+    const sent = await api("POST", `/plan-conversations/${id}/messages`, { content: "Subito", mode: "now" }, root);
+    expect(sent.status, sent.text).toBe(202);
+    expect(sent.json).toMatchObject({ role: "user", content: "Subito", error: false });
+    await waitFor(async () => {
+      const h = await history(id);
+      return h.turnStatus === "idle" && h.messages.length === 4;
+    });
+    expect((await history(id)).messages.map((m) => m.content)).toEqual(["Primo", "Risposta interrotta.", "Subito", "Risposta"]);
+  });
+
+  it("mode queue: in coda nel dettaglio, sostituito, tolto da DELETE", async () => {
+    const { id } = await createConv();
+    await startSlowTurn(id);
+    expect((await api("POST", `/plan-conversations/${id}/messages`, { content: "Dopo", mode: "queue" }, root)).status).toBe(202);
+    expect((await history(id)).queuedMessage).toMatchObject({ content: "Dopo" });
+    expect((await api("POST", `/plan-conversations/${id}/messages`, { content: "Altro", mode: "queue" }, root)).status).toBe(202);
+    const h = await history(id);
+    expect(h.queuedMessage).toMatchObject({ content: "Altro" });
+    expect(h.messages.map((m) => m.content)).toEqual(["Primo", ""]);
+    expect((await api("DELETE", `/plan-conversations/${id}/queued`, undefined, root)).status).toBe(204);
+    expect((await history(id)).queuedMessage).toBeNull();
+    await api("POST", `/plan-conversations/${id}/stop`, undefined, root);
+    expect((await history(id)).messages).toHaveLength(2);
+  });
+});

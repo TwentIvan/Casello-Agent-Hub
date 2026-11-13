@@ -256,3 +256,15 @@ export function resetNodePairingLimits(): void {
   nodePairingPollCounter.reset();
   nodePairingAccountCounter.reset();
 }
+
+// Lettura di pagine web da parte di Lucius e Alfred: 20 al minuto per utente, un solo contatore per i due personaggi.
+const webReadCounter = fixedWindowCounter({ limit: 20, windowMs: 60_000 });
+/** Conta una lettura di pagina web: false oltre 20 al minuto per utente. */
+export function consumeWebRead(userId: number): boolean {
+  return webReadCounter.consume(`user:${userId}`).ok;
+}
+
+/** Azzera il contatore delle letture web (solo per i test). */
+export function resetWebReadLimit(): void {
+  webReadCounter.reset();
+}

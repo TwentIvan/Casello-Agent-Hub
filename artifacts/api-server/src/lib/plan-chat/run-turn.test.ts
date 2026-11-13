@@ -1,4 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { WEB_INSTRUCTIONS, setWebFetcherForTests } from "../web-reader/tool";
+import { resetWebReadLimit } from "../../middlewares/rate-limit";
 import { eq } from "drizzle-orm";
 import {
   db,
@@ -488,5 +490,44 @@ describe("lettura del codice nella chat del piano", () => {
     for (const t of ["elenca_cartella", "leggi_file", "cerca_nel_codice"]) expect(names).not.toContain(t);
     const system = (chatRequests()[0]!.body as { messages: { role: string; content: string }[] }).messages[0]!.content;
     expect(system).toContain("Non puoi leggere il codice di questa app");
+  });
+});
+
+describe("lettura di pagine web nella chat del piano", () => {
+  const toolNames = (body: unknown): string[] => ((body as { tools?: { function: { name: string } }[] }).tools ?? []).map((t) => t.function.name);
+  afterEach(() => {
+    setWebFetcherForTests(null);
+    resetWebReadLimit();
+  });
+  const callWeb = () => {
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      return n === 1
+        ? { content: null, toolCalls: [{ id: "w1", name: "leggi_pagina_web", arguments: JSON.stringify({ url: "https://a.example/x" }) }], usage: { prompt_tokens: 10, completion_tokens: 5 } }
+        : { content: "Letto.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+  };
+  const toolMessage = (b: any): string => b.messages.find((m: any) => m.role === "tool").content as string;
+
+  it("senza codice collegato: strumento e istruzioni sempre presenti; il risultato è dato non attendibile", async () => {
+    setWebFetcherForTests(async () => ({ ok: true as const, finalUrl: "https://a.example/x", kind: "text" as const, charset: null, body: Buffer.from("ciao dal sito"), truncated: false, redirects: 0 }));
+    callWeb();
+    await startPlanTurn(conversationId, "leggi quella pagina");
+    await waitIdle(conversationId);
+    const reqs = fake.requests.filter((r) => r.path.includes("chat/completions")).map((r) => r.body);
+    expect(toolNames(reqs[0])).toContain("leggi_pagina_web");
+    expect((reqs[0] as any).messages[0].content).toContain(WEB_INSTRUCTIONS);
+    expect(toolMessage(reqs[1])).toContain("dati non attendibili");
+  });
+
+  it("indirizzo non ammesso: errore fisso", async () => {
+    setWebFetcherForTests(async () => ({ ok: false, code: "not_allowed" }));
+    callWeb();
+    await startPlanTurn(conversationId, "leggi quella pagina");
+    await waitIdle(conversationId);
+    const t = toolMessage(fake.requests.filter((r) => r.path.includes("chat/completions")).map((r) => r.body)[1]);
+    expect(t).toContain("indirizzo non ammesso: solo pagine pubbliche in https");
+    expect(t).not.toContain("dati non attendibili");
   });
 });

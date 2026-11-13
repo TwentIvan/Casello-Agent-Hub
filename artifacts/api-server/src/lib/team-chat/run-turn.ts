@@ -23,6 +23,7 @@ import { EMPTY_REPLY_MESSAGE, INTERRUPTED_TURN_MESSAGE, TurnBusyError } from "..
 import { runChatTurn } from "../node-turns/chat-turn";
 import { codeAvailability } from "../code-reader/source-cache";
 import { CODE_INSTRUCTIONS_GENERAL, CODE_TOOLS, CodeToolRunner, isCodeTool } from "../code-reader/tools";
+import { WEB_TOOLS, WebPageReader, isWebTool } from "../web-reader/tool";
 import { CODE_TURN_LIMITS } from "../plan-chat/turn";
 import { InstanceError, INSTANCE_MESSAGES } from "../teams/instances";
 import { buildTeamChatMessages, type HistoryMessage } from "./context";
@@ -141,6 +142,8 @@ async function executeTeamChatTurnInner(conversationId: number, assistantMessage
         .where(eq(teamInstancesTable.id, conv.teamInstanceId))
         .limit(1);
       const codeRunner = refApp && (await codeAvailability(conv.userId, refApp.app)).ok ? new CodeToolRunner(conv.userId, refApp.app.id) : null;
+      // Un solo lettore di pagine web per turno (sempre offerto)
+      const webReader = new WebPageReader(conv.userId);
       const messages = buildTeamChatMessages({
         team,
         memory: await memoryContextBlock(conv.userId, "lucius"),
@@ -158,9 +161,10 @@ async function executeTeamChatTurnInner(conversationId: number, assistantMessage
           refId: conversationId,
           messageId: assistantMessageId,
           messages,
-          tools: codeRunner ? [...TEAM_CHAT_TOOLS, ...CODE_TOOLS] : [...TEAM_CHAT_TOOLS],
+          tools: codeRunner ? [...TEAM_CHAT_TOOLS, ...CODE_TOOLS, ...WEB_TOOLS] : [...TEAM_CHAT_TOOLS, ...WEB_TOOLS],
           ...(codeRunner ? { limits: CODE_TURN_LIMITS } : {}),
-          runTool: (call) => (codeRunner && isCodeTool(call.name) ? codeRunner.run(call) : runner.run(call)),
+          runTool: (call) =>
+            codeRunner && isCodeTool(call.name) ? codeRunner.run(call) : isWebTool(call.name) ? webReader.run(call) : runner.run(call),
           caller: "team-chat",
           budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, "lucius", aiModelId),
         });

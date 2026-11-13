@@ -1,5 +1,7 @@
 import {
   NodeClaimResponse,
+  NodeGitTokenBody,
+  NodeGitTokenResponse,
   NodeHeartbeatBody,
   NodeHeartbeatResponse,
   NodePingResponse,
@@ -13,6 +15,7 @@ import {
   StartNodePairingResponse,
 } from "@workspace/api-zod";
 import type { z } from "zod";
+import { GIT_MESSAGES, GitWorkspaceError } from "./git-errors";
 
 /** Pacchetto di un compito preso in carico, come validato dallo schema del contratto. */
 export type TaskPackage = z.infer<typeof NodeClaimResponse>;
@@ -135,6 +138,18 @@ export class CaselloClient {
     return NodePingResponse.parse(await res.json()).leaseExpiresAt;
   }
 
+  /**
+   * Token di installazione GitHub del compito (un'ora), solo in memoria: va nell'ambiente dei processi `git`, mai su disco
+   * né nei log. Lease persa → come `ping` (`isLeaseLoss`); 409 «accesso al repository non disponibile» → `GitWorkspaceError`
+   * `blocked`.
+   */
+  async gitToken(taskId: number, leaseToken: string): Promise<string> {
+    const res = await this.request("POST", `/node/tasks/${taskId}/git-token`, {
+      json: NodeGitTokenBody.parse({ leaseToken }),
+    });
+    return NodeGitTokenResponse.parse(await res.json()).token;
+  }
+
   async report(taskId: number, report: TaskReport): Promise<void> {
     const body = NodeReportBody.parse(report);
     await this.request("POST", `/node/tasks/${taskId}/report`, { json: body });
@@ -236,6 +251,8 @@ export class CaselloClient {
     }
     if (res.ok) return res;
     const detail = await errorDetail(res);
+    // Unico 409 che non è una lease persa: il compito non ha (più) accesso al repository
+    if (res.status === 409 && detail === GIT_MESSAGES.noAccess) throw new GitWorkspaceError("blocked", GIT_MESSAGES.noAccess);
     if (res.status === 409) throw new LeaseLostError();
     if (res.status === 429) {
       const retryAfter = Number(res.headers.get("retry-after"));

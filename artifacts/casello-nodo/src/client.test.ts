@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CaselloClient, HttpError, LeaseLostError } from "./client";
+import { CaselloClient, HttpError, isLeaseLoss, LeaseLostError } from "./client";
+import { GitWorkspaceError } from "./git-errors";
 import { FakeCasello, json } from "./test/fake-casello";
 import { FAKE_TOKEN, taskPackage } from "./test/helpers";
 
@@ -66,6 +67,27 @@ describe("CaselloClient", () => {
     expect(waits).toHaveLength(3);
     expect(waits[1]).toBeGreaterThan(waits[0]);
     expect(waits[2]).toBeGreaterThan(waits[1]);
+  });
+
+  it("gitToken: token dalla risposta; 409 lease persa; 409 accesso negato → GitWorkspaceError blocked", async () => {
+    let mode = "ok";
+    casello.on("POST", "/api/node/tasks/:id/git-token", (_req, res) => {
+      if (mode === "lease") return json(res, 409, { error: "lease non valida o scaduta" });
+      if (mode === "access") return json(res, 409, { error: "accesso al repository non disponibile" });
+      return json(res, 200, { token: "ghs_x", expiresAt: new Date(Date.now() + 3_600_000).toISOString() });
+    });
+    expect(await client().gitToken(42, "lease-abc")).toBe("ghs_x");
+    const [req] = casello.calls("POST", "/api/node/tasks/42/git-token");
+    expect(req.body).toEqual({ leaseToken: "lease-abc" });
+    mode = "lease";
+    const lost = await client().gitToken(42, "lease-abc").catch((e) => e);
+    expect(isLeaseLoss(lost)).toBe(true);
+    mode = "access";
+    const denied = await client().gitToken(42, "lease-abc").catch((e) => e);
+    expect(denied).toBeInstanceOf(GitWorkspaceError);
+    expect(denied.status).toBe("blocked");
+    expect(denied.message).toBe("accesso al repository non disponibile");
+    expect(isLeaseLoss(denied)).toBe(false);
   });
 
   it("409 → LeaseLostError senza nuovi tentativi", async () => {

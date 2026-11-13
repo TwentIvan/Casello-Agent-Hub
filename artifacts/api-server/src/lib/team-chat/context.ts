@@ -2,6 +2,7 @@
 // istruzioni; la squadra, il PLAN e la memoria di Lucius stanno in un messaggio `user` delimitato da
 // <dati_della_squadra>, dichiarato dato non attendibile. Mai indirizzi, segreti o header delle app.
 
+import { WEB_INSTRUCTIONS } from "../web-reader/tool";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { estimateTokens } from "../architect/phase-loop";
 import { sliceChars } from "../architect/text";
@@ -194,7 +195,10 @@ function renderHistory(history: HistoryMessage[], userMessage: string, maxChars:
  */
 export function buildTeamChatMessages(input: TeamChatContextInput): ChatCompletionMessageParam[] {
   const build = (historyChars: number, detail: SkillDetail): ChatCompletionMessageParam[] => [
-    { role: "system", content: input.codeInstructions ? `${TEAM_CHAT_SYSTEM_PROMPT}\n${input.codeInstructions}` : TEAM_CHAT_SYSTEM_PROMPT },
+    {
+      role: "system",
+      content: [TEAM_CHAT_SYSTEM_PROMPT, ...(input.codeInstructions ? [input.codeInstructions] : []), WEB_INSTRUCTIONS].join("\n"),
+    },
     { role: "user", content: dataBlock(input, detail) },
     ...renderHistory(input.history, input.userMessage, historyChars),
   ];

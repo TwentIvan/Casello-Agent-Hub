@@ -46,6 +46,17 @@ const readSkill: Describer = (a) => {
 };
 
 const DESCRIBERS: Record<string, Describer> = {
+  // Solo l'host dell'indirizzo: percorso e query possono contenere token.
+  leggi_pagina_web: (a) => {
+    const raw = typeof a.url === "string" ? a.url : "";
+    let host: string | null = null;
+    try {
+      host = text({ host: new URL(raw).hostname.toLowerCase() }, "host");
+    } catch {
+      host = null;
+    }
+    return host ? `Legge la pagina ${host}` : "Legge una pagina web";
+  },
   leggi_file: (a) => {
     const path = text(a, "percorso");
     if (!path) return "Legge un file";

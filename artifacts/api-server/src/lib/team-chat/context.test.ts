@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { WEB_INSTRUCTIONS } from "../web-reader/tool";
 import { estimateTokens } from "../architect/phase-loop";
 import { DATA_CLOSE, TEAM_CHAT_SYSTEM_PROMPT, TEAM_CONTEXT_MAX_TOKENS, buildTeamChatMessages, type TeamSnapshot } from "./context";
 
@@ -27,7 +28,7 @@ const team = (skillContent = "Istruzioni della skill"): TeamSnapshot => ({
 describe("contesto della chat di squadra", () => {
   it("prompt di sistema senza dati; squadra in un messaggio user; delimitatori tolti; messaggio dell'utente in coda", () => {
     const msgs = buildTeamChatMessages({ team: team(), memory: "Appunti\n1 · breve", history: [], userMessage: "ciao" });
-    expect(msgs[0]).toEqual({ role: "system", content: TEAM_CHAT_SYSTEM_PROMPT });
+    expect(msgs[0]).toEqual({ role: "system", content: `${TEAM_CHAT_SYSTEM_PROMPT}\n${WEB_INSTRUCTIONS}` });
     expect(TEAM_CHAT_SYSTEM_PROMPT).toContain("lei");
     const data = msgs[1]!.content as string;
     expect(msgs[1]!.role).toBe("user");

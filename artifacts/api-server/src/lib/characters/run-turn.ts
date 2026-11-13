@@ -29,6 +29,7 @@ import { CODE_TURN_LIMITS, STOPPED_TURN_MESSAGE } from "../plan-chat/turn";
 import { drainQueued, isTurnOpen } from "../chat-turns/control";
 import { turnTotals } from "../chat-turns/totals";
 import type { ChatKindSpec } from "../chat-turns/spec";
+import { WEB_INSTRUCTIONS, WEB_TOOLS, WebPageReader, isWebTool } from "../web-reader/tool";
 import { HANDOFF_TOOL, runHandoff } from "./handoff";
 import { CHARACTER_NAMES, characterInstructions } from "./instructions";
 import { createTurnContext } from "./proposals";
@@ -139,7 +140,7 @@ export function buildCharacterMessages(input: CharacterContextInput): ChatComple
   const build = (historyChars: number, dataChars: number | null): ChatCompletionMessageParam[] => [
     {
       role: "system",
-      content: input.extraInstructions ? `${characterInstructions(input.character)}\n${input.extraInstructions}` : characterInstructions(input.character),
+      content: [characterInstructions(input.character), ...(input.extraInstructions ? [input.extraInstructions] : []), WEB_INSTRUCTIONS].join("\n"),
     },
     ...input.subjectData.map((d) =>
       dataMessage("Dati dell'argomento", dataChars === null || d.length <= dataChars ? d : `${sliceChars(d, dataChars)}\n… (troncato)`),
@@ -277,8 +278,14 @@ async function runCharacterTool(
   call: ChatToolCall,
   ctx: TurnContext,
   codeRunner: CodeToolRunner | null,
+  webReader: WebPageReader,
 ): Promise<string> {
   try {
+    // Lettura di pagine web: stesso avvolgimento del codice
+    if (isWebTool(call.name)) {
+      const text = await webReader.run(call);
+      return text.startsWith("Errore: ") ? toolFail(text.slice("Errore: ".length)) : toolOk(text);
+    }
     // Lettura del codice: testo semplice dal lettore, avvolto come risultato riuscito
     if (codeRunner && (CODE_TOOL_NAMES as readonly string[]).includes(call.name)) {
       const text = await codeRunner.run(call);
@@ -364,6 +371,8 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
         ]);
         const code = handler.codeApp ? await handler.codeApp(conv.userId, conv.subjectId) : null;
         const codeRunner = code?.available ? new CodeToolRunner(conv.userId, code.defaultAppId) : null;
+        // Un solo lettore di pagine web per turno (sempre offerto)
+        const webReader = new WebPageReader(conv.userId);
         const messages = buildCharacterMessages({
           character,
           subjectData,
@@ -382,9 +391,9 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
           refId: conversationId,
           messageId: assistantMessageId,
           messages,
-          tools: [...handler.tools, ...MEMORY_TOOLS, HANDOFF_TOOL, ...(codeRunner ? CODE_TOOLS : [])],
+          tools: [...handler.tools, ...MEMORY_TOOLS, HANDOFF_TOOL, ...(codeRunner ? CODE_TOOLS : []), ...WEB_TOOLS],
           ...(codeRunner ? { limits: CODE_TURN_LIMITS } : {}),
-          runTool: (call) => runCharacterTool(character, handler, call, ctx, codeRunner),
+          runTool: (call) => runCharacterTool(character, handler, call, ctx, codeRunner, webReader),
           caller: "character-chat",
           budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, character, aiModelId),
           signal,

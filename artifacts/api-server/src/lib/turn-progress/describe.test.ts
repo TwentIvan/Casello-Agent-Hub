@@ -76,3 +76,17 @@ describe("describeStep", () => {
     expect(describeStep("boh", "{}")).toBe("Usa uno strumento");
   });
 });
+
+describe("describeStep leggi_pagina_web", () => {
+  it("usa solo l'host in minuscolo", () => {
+    expect(describeStep("leggi_pagina_web", '{"url":"https://Herdr.dev/blog?token=abc"}')).toBe("Legge la pagina herdr.dev");
+  });
+  it("url non valido o mancante", () => {
+    expect(describeStep("leggi_pagina_web", '{"url":"non valido"}')).toBe("Legge una pagina web");
+    expect(describeStep("leggi_pagina_web", "{}")).toBe("Legge una pagina web");
+  });
+  it("host lungo tagliato a 80", () => {
+    const host = `${"a".repeat(60)}.${"b".repeat(39)}`;
+    expect(describeStep("leggi_pagina_web", JSON.stringify({ url: `https://${host}/` }))).toBe(`Legge la pagina ${host.slice(0, 80)}…`);
+  });
+});

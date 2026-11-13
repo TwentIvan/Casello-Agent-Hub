@@ -42,6 +42,7 @@ import { CODE_TURN_LIMITS, STOPPED_TURN_MESSAGE } from "./turn";
 import { drainQueued, isTurnOpen } from "../chat-turns/control";
 import { turnTotals } from "../chat-turns/totals";
 import type { ChatKindSpec } from "../chat-turns/spec";
+import { WEB_TOOLS, WebPageReader, isWebTool } from "../web-reader/tool";
 
 export const PLAN_MESSAGE_MAX_CHARS = 8_000;
 export const INTERRUPTED_TURN_MESSAGE = "Turno interrotto dal riavvio di Botcave: riscrivi il messaggio.";
@@ -328,6 +329,8 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
       );
       // Un solo lettore del codice per turno (un solo controllo dello sha per app)
       const codeRunner = codeInfo.ok ? new CodeToolRunner(conv.userId, app.id) : null;
+      // Un solo lettore di pagine web per turno (sempre offerto)
+      const webReader = new WebPageReader(conv.userId);
       const outcome = await runChatTurn({
         resolved,
         userId: conv.userId,
@@ -335,9 +338,10 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
         refId: conversationId,
         messageId: assistantMessageId,
         messages,
-        tools: codeRunner ? [...PLAN_TOOLS, ...MEMORY_TOOLS, ...CODE_TOOLS] : [...PLAN_TOOLS, ...MEMORY_TOOLS],
+        tools: codeRunner ? [...PLAN_TOOLS, ...MEMORY_TOOLS, ...CODE_TOOLS, ...WEB_TOOLS] : [...PLAN_TOOLS, ...MEMORY_TOOLS, ...WEB_TOOLS],
         ...(codeRunner ? { limits: CODE_TURN_LIMITS } : {}),
-        runTool: (call) => (codeRunner && isCodeTool(call.name) ? codeRunner.run(call) : runner.run(call)),
+        runTool: (call) =>
+          codeRunner && isCodeTool(call.name) ? codeRunner.run(call) : isWebTool(call.name) ? webReader.run(call) : runner.run(call),
         caller: "plan-chat",
         budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, "lucius", aiModelId),
         signal,

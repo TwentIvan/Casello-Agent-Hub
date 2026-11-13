@@ -2,7 +2,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Send } from "lucide-react";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { Led } from "@/components/brand/led";
-import { AlfredMark, LuciusMark } from "@/components/brand/marks";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -13,6 +12,8 @@ import { apiErrorMessage } from "@/lib/api-errors";
 import { formatCost } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { MAX_CHARS, targetKey, useCharacterAdapter, type ChatTarget, type ProposalLike } from "./adapters";
+import { CharacterMark } from "./character-mark";
+import { CHARACTER_TEXT } from "./targets";
 import { usePanel } from "@/components/panel/panel-context";
 import { handoffTarget } from "@/components/panel/page-subject";
 import { ChatMessages } from "./chat-messages";
@@ -72,8 +73,8 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   const readOnlyReason =
     data?.readOnlyReason ?? (lock && data && lock.id === data.id ? lock.reason : null) ?? adapter.closedReason ?? null;
   const readOnly = readOnlyReason !== null;
-  const name = adapter.character === "alfred" ? "Alfred" : "Lucius";
-  const Mark = adapter.character === "alfred" ? AlfredMark : LuciusMark;
+  const texts = CHARACTER_TEXT[adapter.character];
+  const name = texts.name;
 
   // Scorre solo il contenitore dei messaggi: `scrollIntoView` farebbe scorrere anche la pagina (es. il piano all'apertura)
   useEffect(() => {
@@ -194,7 +195,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   return (
     <div className={cn("min-w-0", sheet ? "flex h-full min-h-0 flex-col" : "space-y-3")}>
       <div className={cn("flex items-start gap-3", sheet && "border-b p-4")}>
-        <Mark size={18} className="mt-1" />
+        <CharacterMark character={adapter.character} size={18} className="mt-1" />
         <div className="min-w-0 flex-1">
           <p className="font-mono text-base font-medium">{name}</p>
           <p className="truncate text-sm text-ink-muted" title={adapter.subjectLabel}>
@@ -218,7 +219,13 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
           canCreate={!adapter.closedReason}
           canDelete={!!adapter.remove && !!data && !adapter.closedReason}
           canRestart={!!adapter.restart}
-          onCreate={() => setNewOpen(true)}
+          onCreate={() =>
+            adapter.createWithoutDialog
+              ? void run("create", "Conversazione non creata", async () => {
+                  setSelectedId(await adapter.create(null));
+                })
+              : setNewOpen(true)
+          }
           onDelete={() => setConfirmDelete(true)}
           onRestart={() => setConfirmRestart(true)}
         />
@@ -297,7 +304,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
                 }
               }}
               rows={3}
-              placeholder={adapter.character === "alfred" ? "Scrivi ad Alfred…" : "Scrivi a Lucius…"}
+              placeholder={texts.placeholder}
               aria-label={`Messaggio per ${name}`}
               disabled={running || busy === "send"}
             />
@@ -307,7 +314,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
               </span>
               <Button type="submit" size="sm" disabled={!canSend}>
                 <Send />
-                {busy === "send" ? "Invio…" : adapter.character === "alfred" ? "Scrivi ad Alfred" : "Scrivi a Lucius"}
+                {busy === "send" ? "Invio…" : texts.send}
               </Button>
             </div>
           </form>

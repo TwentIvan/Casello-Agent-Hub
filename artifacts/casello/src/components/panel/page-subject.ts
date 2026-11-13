@@ -13,6 +13,56 @@ export function pageFromPath(path: string): PageContext {
   return { page: "console" };
 }
 
+/** Pagina della console per il contesto del Responsabile di Botcave: tutte le aree, le altre pagine `console`. */
+export type LeadPageContext = { page: string; id?: string };
+
+const LEAD_ID = /^[A-Za-z0-9._:-]{1,100}$/;
+const LEAD_LISTS: Record<string, string> = {
+  "/": "dashboard",
+  "/apps": "apps",
+  "/agents": "agents",
+  "/runs": "runs",
+  "/pending-actions": "pending_actions",
+  "/skills": "skills",
+  "/team-templates": "team_templates",
+  "/teams": "teams",
+  "/models": "models",
+  "/account": "account",
+};
+const LEAD_DETAILS: [RegExp, string][] = [
+  [/^\/apps\/([^/]+)\/plan$/, "app_plan"],
+  [/^\/apps\/([^/]+)$/, "app"],
+  [/^\/analyses\/([^/]+)$/, "analysis"],
+  [/^\/agents\/([^/]+)$/, "agent"],
+  [/^\/runs\/([^/]+)$/, "run"],
+  [/^\/skills\/([^/]+)$/, "skill"],
+  [/^\/team-templates\/([^/]+)$/, "team_template"],
+  [/^\/teams\/([^/]+)$/, "team"],
+];
+
+function leadId(raw: string): string | null {
+  try {
+    const id = decodeURIComponent(raw);
+    return LEAD_ID.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+export function leadPageFromPath(path: string): LeadPageContext {
+  const clean = path.replace(/\/+$/, "") || "/";
+  const list = LEAD_LISTS[clean];
+  if (list) return { page: list };
+  for (const [re, page] of LEAD_DETAILS) {
+    const m = re.exec(clean);
+    if (m) {
+      const id = leadId(m[1]!);
+      return id === null ? { page } : { page, id };
+    }
+  }
+  return { page: "console" };
+}
+
 export const LUCIUS_SUBJECTS = new Set(Object.keys(SUBJECT_LABELS));
 
 export function positiveInt(value: unknown): number | null {
@@ -51,6 +101,8 @@ export function targetLabel(target: ChatTarget): string {
   switch (target.kind) {
     case "alfred":
       return "Alfred";
+    case "lead":
+      return "Responsabile";
     case "plan":
       return "piano dell'app";
     case "team":

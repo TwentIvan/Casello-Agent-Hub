@@ -8,7 +8,8 @@ import { createNode } from "../nodes/nodes";
 import { claimTask, heartbeat, reportTask } from "../nodes/protocol";
 import { startTask } from "../teams/task-runner";
 import { getCodeTask } from "./code-tasks";
-import { nodeGitSection } from "./node-git";
+import { getApprovedPlan, writePlanVersion } from "../teams/plan";
+import { nodeGitSection, nodePullBody } from "./node-git";
 
 // Compiti node con codice: sezione Git nel pacchetto e PR adottata al report `done` (PGlite + finto GitHub)
 
@@ -102,11 +103,78 @@ describe("pacchetto del claim", () => {
   });
 });
 
-describe("report done", () => {
-  const report = (nodeId: number, taskId: number, pkg: { leaseToken: string }, status: "done" | "failed" = "done") =>
-    reportTask(nodeId, taskId, { leaseToken: pkg.leaseToken, status, outcome: "fatto" });
+describe("nodePullBody", () => {
+  it("issue, esito e piè di pagina", () => {
+    expect(nodePullBody({ issue: 7, outcome: "fatto", teamName: "Squadra WI", planTaskId: "t1" })).toBe(
+      "Closes #7\n\nfatto\n\nBotcave · squadra Squadra WI · compito t1",
+    );
+  });
+  it("senza issue né esito solo il piè di pagina; credenziale: solo il piè di pagina", () => {
+    expect(nodePullBody({ issue: null, outcome: "", teamName: "S", planTaskId: "t1" })).toBe("Botcave · squadra S · compito t1");
+    expect(nodePullBody({ issue: 7, outcome: "chiave ghp_abcdefghijklmnopqrstuvwx", teamName: "S", planTaskId: "t1" })).toBe("Botcave · squadra S · compito t1");
+  });
+});
 
-  it("con una PR aperta sul branch crea la riga da sorvegliare", async () => {
+describe("report done", () => {
+  const report = (nodeId: number, taskId: number, pkg: { leaseToken: string }, status: "done" | "failed" = "done", git?: { pushed: boolean; headSha: string | null; commits: number }) =>
+    reportTask(nodeId, taskId, { leaseToken: pkg.leaseToken, status, outcome: "fatto", ...(git ? { git } : {}) });
+  // Aggiunge il branch al repository finto senza perdere il base (seedRepo lo riscrive da capo)
+  const seedBranch = (branch: string) => {
+    const refs = gh.git.get(REPO)!.refs;
+    const sha = refs.get("heads/main")!;
+    refs.set(`heads/${branch}`, sha);
+    return sha;
+  };
+  const pushedGit = (sha: string) => ({ pushed: true, headSha: sha, commits: 1 });
+
+  it("pushed e branch su GitHub senza PR: crea la PR bozza con issue, esito e piè di pagina", async () => {
+    const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
+    const plan = (await getApprovedPlan(instanceId))!;
+    await writePlanVersion(instanceId, { ...plan, tasks: plan.tasks.map((t) => ({ ...t, issue: 7 })) }, "approved");
+    const branch = `botcave/${instanceId}-t1`;
+    const head = seedBranch(branch);
+    await report(nodeId, taskId, pkg, "done", pushedGit(head));
+    const pull = gh.pulls.get(REPO)![0]!;
+    expect(pull).toMatchObject({ head: branch, base: "main", title: "Compito t1", draft: true });
+    expect(pull.body.startsWith("Closes #7")).toBe(true);
+    expect(pull.body).toContain("fatto");
+    expect(pull.body.endsWith("Botcave · squadra Squadra WI · compito t1")).toBe(true);
+    expect(await getCodeTask(instanceId, "t1")).toMatchObject({ prNumber: pull.number, prState: "open", ciState: "pending", headSha: head });
+  });
+
+  it("PR già aperta: adottata, nessuna creazione", async () => {
+    const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
+    const branch = `botcave/${instanceId}-t1`;
+    const head = seedBranch(branch);
+    gh.pulls.set(REPO, [{ number: 5, head: branch, base: "main", title: "t", body: "", draft: true, state: "open", merged: false, headSha: head }]);
+    await report(nodeId, taskId, pkg, "done", pushedGit(head));
+    expect(gh.pulls.get(REPO)).toHaveLength(1);
+    expect(await getCodeTask(instanceId, "t1")).toMatchObject({ prNumber: 5, ciState: "pending" });
+  });
+
+  it("git.pushed false o assente: nessuna PR", async () => {
+    const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
+    const head = seedBranch(`botcave/${instanceId}-t1`);
+    await report(nodeId, taskId, pkg, "done", { pushed: false, headSha: head, commits: 0 });
+    expect(gh.pulls.get(REPO) ?? []).toHaveLength(0);
+    expect(await getCodeTask(instanceId, "t1")).toBeNull();
+  });
+
+  it("esito che sembra una credenziale: PR col solo piè di pagina", async () => {
+    const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
+    const head = seedBranch(`botcave/${instanceId}-t1`);
+    await reportTask(nodeId, taskId, { leaseToken: pkg.leaseToken, status: "done", outcome: "token ghp_abcdefghijklmnopqrstuvwx", git: pushedGit(head) });
+    expect(gh.pulls.get(REPO)![0]!.body).toBe("Botcave · squadra Squadra WI · compito t1");
+  });
+
+  it("report failed con branch pubblicato: nessuna PR", async () => {
+    const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
+    const head = seedBranch(`botcave/${instanceId}-t1`);
+    await report(nodeId, taskId, pkg, "failed", pushedGit(head));
+    expect(gh.pulls.get(REPO) ?? []).toHaveLength(0);
+  });
+
+  it("con una PR aperta sul branch e senza campo git crea la riga da sorvegliare", async () => {
     const { instanceId, nodeId, taskId, pkg } = await setup({ sourceBranch: "main" });
     const branch = `botcave/${instanceId}-t1`;
     const head = gh.seedRepo(REPO, branch, { "a.txt": "due" });
@@ -125,8 +193,9 @@ describe("report done", () => {
 
   it("errore di GitHub: il report riesce comunque", async () => {
     const { instanceId, nodeId, taskId, pkg } = await setup();
+    const head = seedBranch(`botcave/${instanceId}-t1`);
     gh.failWith = () => 500;
-    await report(nodeId, taskId, pkg);
+    await report(nodeId, taskId, pkg, "done", pushedGit(head));
     expect(await getCodeTask(instanceId, "t1")).toBeNull();
     gh.failWith = null;
   });

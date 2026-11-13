@@ -2,11 +2,12 @@ import { eq } from "drizzle-orm";
 import { appsTable, db, teamInstancesTable, type TeamInstanceRow, type TeamTaskRow } from "@workspace/db";
 import { githubConfig } from "../github/config";
 import { logger } from "../logger";
-import type { TaskPackage } from "../nodes/protocol";
+import type { NodeReport, TaskPackage } from "../nodes/protocol";
 import { InstanceRoleSchema } from "../teams/manifest";
 import { getPlan } from "../teams/plan";
 import { upsertCodeTask } from "./code-tasks";
-import { findOpenPull, getDefaultBranch, type RepoRef } from "./github-git";
+import { createDraftPull, findOpenPull, getBranchHead, getDefaultBranch, type PullInfo, type RepoRef } from "./github-git";
+import { findCredential } from "./secrets-check";
 import { codeBranch } from "./session";
 
 /**
@@ -65,12 +66,23 @@ export async function nodeGitContext(
   return { git, instructions: `${task.instructions}\n\n${nodeGitSection(git)}` };
 }
 
+/** Corpo della PR aperta da Botcave: «Closes #n», esito, piè di pagina; con una credenziale nell'esito, solo il piè di pagina. */
+export function nodePullBody(input: { issue: number | null; outcome: string; teamName: string; planTaskId: string }): string {
+  const footer = `Botcave · squadra ${input.teamName} · compito ${input.planTaskId}`;
+  const parts: string[] = [];
+  if (input.issue !== null) parts.push(`Closes #${input.issue}`);
+  if (input.outcome.trim()) parts.push(input.outcome.trim());
+  parts.push(footer);
+  const body = parts.join("\n\n");
+  return findCredential(body) ? footer : body;
+}
+
 /**
- * Compito `node` riferito `done` con ruolo `code = write`: se sul branch del compito c'è una PR aperta crea o aggiorna
- * la riga di `team_code_tasks` (CI in attesa), così la sorveglianza la segue. Senza PR o con errori di GitHub: niente,
- * solo il log. Non solleva mai.
+ * Compito `node` riferito `done` con ruolo `code = write`: adotta la PR aperta sul branch del compito oppure, se il nodo
+ * ha pubblicato il branch (`git.pushed`) e questo esiste su GitHub, la apre in bozza; poi crea o aggiorna la riga di
+ * `team_code_tasks` (CI in attesa), così la sorveglianza la segue. Con errori di GitHub: niente, solo il log. Non solleva mai.
  */
-export async function adoptNodePull(task: TeamTaskRow): Promise<void> {
+export async function adoptNodePull(task: TeamTaskRow, report: { git?: NodeReport["git"]; outcome: string }): Promise<void> {
   try {
     const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, task.instanceId)).limit(1);
     if (!instance) return;
@@ -79,9 +91,20 @@ export async function adoptNodePull(task: TeamTaskRow): Promise<void> {
     const ctx = await gitContext(instance);
     if (!ctx?.ref) return;
     const branch = codeBranch(instance.id, task.planTaskId);
-    const pull = await findOpenPull(ctx.ref, branch);
-    if (!pull) return;
+    let pull: PullInfo | null = await findOpenPull(ctx.ref, branch);
     const baseBranch = ctx.sourceBranch ?? (await getDefaultBranch(ctx.ref));
+    if (!pull && report.git?.pushed === true && (await getBranchHead(ctx.ref, branch)) !== null) {
+      const planTask = (await getPlan(instance.id)).tasks.find((t) => t.id === task.planTaskId);
+      const title = (planTask?.title ?? "").trim().slice(0, 200);
+      const issue = planTask?.issue ?? null;
+      pull = await createDraftPull(ctx.ref, {
+        head: branch,
+        base: baseBranch,
+        title: title && !findCredential(title) ? title : `Compito ${task.planTaskId}`,
+        body: nodePullBody({ issue, outcome: report.outcome, teamName: instance.name, planTaskId: task.planTaskId }),
+      });
+    }
+    if (!pull) return;
     await upsertCodeTask({
       instanceId: instance.id,
       planTaskId: task.planTaskId,
@@ -93,6 +116,6 @@ export async function adoptNodePull(task: TeamTaskRow): Promise<void> {
       committedAt: new Date(),
     });
   } catch (err) {
-    logger.warn({ instanceId: task.instanceId, taskId: task.id, errName: errName(err) }, "PR del compito node non adottata");
+    logger.warn({ instanceId: task.instanceId, taskId: task.id, errName: errName(err) }, "PR del compito node non aperta né adottata");
   }
 }

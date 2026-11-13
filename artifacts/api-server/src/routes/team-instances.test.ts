@@ -167,6 +167,19 @@ describe("route delle squadre", () => {
     expect(closed.json.error).toBe("squadra chiusa");
   });
 
+  it("GET readiness: 200 con lo schema, squadra chiusa 409, inesistente 404", async () => {
+    const ref = { appId, type: "wi", id: "1" };
+    const inst = await api("POST", "/team-instances", { name: "S", ref, roles: [role()] });
+    const ok = await api("GET", `/team-instances/${inst.json.id}/readiness`);
+    expect(ok.status, ok.text).toBe(200);
+    expect(ok.json).toEqual({ roles: [] });
+    expect((await api("GET", "/team-instances/99999/readiness")).status).toBe(404);
+    await api("POST", `/team-instances/${inst.json.id}/close`);
+    const closed = await api("GET", `/team-instances/${inst.json.id}/readiness`);
+    expect(closed.status).toBe(409);
+    expect(closed.json.error).toBe("squadra chiusa");
+  });
+
   it("strumenti o skill ripetuti in un ruolo → 400 e non si salva nulla (creazione e salvataggio)", async () => {
     const ref = { appId, type: "wi", id: "1" };
     const tools = await api("POST", "/team-instances", { name: "S", ref, roles: [role({ tools: [1, 1] })] });

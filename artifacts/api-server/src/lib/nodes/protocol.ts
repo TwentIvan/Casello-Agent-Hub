@@ -20,8 +20,9 @@ import {
   type TeamInstanceRow,
   type TeamTaskRow,
 } from "@workspace/db";
-import { instructionsWithGit, adoptNodePull } from "../code-writer/node-git";
+import { nodeGitContext, adoptNodePull } from "../code-writer/node-git";
 import { logger } from "../logger";
+import { nodeSupportsGit } from "./git-version";
 import { compareVersions, isBelowMinVersion, loadNodeManifest, updateFor, type NodeUpdate } from "./manifest";
 import { ATTACHMENT_MESSAGES, taskAttachmentViews, validateNodeWorkspace } from "../teams/attachments";
 import { InstanceRoleSchema, type InstanceRole } from "../teams/manifest";
@@ -62,6 +63,8 @@ export interface NodeCapabilities {
   kind?: "app" | "cli";
   /** Stato di Claude Code sul Mac (assente = invariato). */
   claude?: Record<string, unknown>;
+  /** Git sul Mac, campi non verificati (assente = invariato). */
+  git?: Record<string, unknown>;
   /** Versione di cui l'aggiornamento non è riuscito. */
   updateFailed?: string;
 }
@@ -86,6 +89,17 @@ export function cleanClaudeStatus(input: Record<string, unknown>): Record<string
     else if (typeof value === "number" && Number.isFinite(value)) out[key] = String(value).slice(0, 100);
   }
   return out;
+}
+
+/** Solo `found` (booleano) e `version` (stringa ≤ 50 caratteri o null); input non oggetto → null (nulla da salvare). */
+export function cleanGitStatus(input: unknown): { found: boolean; version: string | null } | null {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return null;
+  const rec = input as Record<string, unknown>;
+  const version = rec["version"];
+  return {
+    found: rec["found"] === true,
+    version: typeof version === "string" && version.length > 0 ? version.slice(0, 50) : null,
+  };
 }
 
 export interface NodeReport {
@@ -118,7 +132,7 @@ export interface TaskPackage {
   nodeSkills: string[];
   /** Allegati citati dal compito (solo metadati: il nodo scarica i byte con `taskAttachment`). */
   attachments: { id: number; name: string; contentType: string; sizeBytes: number; sha256: string }[];
-  /** Repository, base e branch dei compiti con codice in scrittura (lo valorizza il task successivo). */
+  /** Repository, base e branch dei compiti con codice in scrittura (null negli altri). */
   git: { repo: string; baseBranch: string; branch: string; issue: number | null } | null;
 }
 
@@ -198,6 +212,8 @@ async function eligibleTasks(node: Node): Promise<{ eligible: Candidate[]; cappe
       skillsByRole.set(roleId, nodeSkills);
     }
     if (!hasSkills(node.skills, nodeSkills)) continue;
+    // Il flusso Git automatico richiede un nodo aggiornato: i vecchi continuano con i compiti senza codice
+    if (role.code === "write" && !nodeSupportsGit(node.version)) continue;
     if (!capped.has(instance.id)) capped.set(instance.id, (await teamCapBlock(instance.id)) !== null);
     (capped.get(instance.id) ? cappedTasks : eligible).push({ task, instance, role, nodeSkills });
   }
@@ -223,6 +239,7 @@ export function cleanFolders(folders: string[]): string[] {
 
 export async function heartbeat(nodeId: number, caps: NodeCapabilities): Promise<HeartbeatResult> {
   const now = new Date();
+  const gitStatus = caps.git === undefined ? null : cleanGitStatus(caps.git);
   const [updated] = await db
     .update(nodesTable)
     .set({
@@ -234,6 +251,7 @@ export async function heartbeat(nodeId: number, caps: NodeCapabilities): Promise
       ...(caps.folders ? { workspaceFolders: cleanFolders(caps.folders), foldersUpdatedAt: now } : {}),
       ...(caps.kind ? { kind: caps.kind } : {}),
       ...(caps.claude ? { claudeStatus: cleanClaudeStatus(caps.claude), claudeCheckedAt: now } : {}),
+      ...(gitStatus ? { gitStatus } : {}),
       ...(caps.updateFailed ? { updateFailedVersion: caps.updateFailed.slice(0, 100) } : {}),
       lastSeenAt: now,
       updatedAt: now,
@@ -331,7 +349,7 @@ async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<Ta
     taskAttachmentViews(instance.id, task.attachmentIds),
   ]);
   const planTask = plan.tasks.find((t) => t.id === task.planTaskId);
-  const instructions = role.code === "write" ? await instructionsWithGit(instance, task, planTask?.issue ?? null) : task.instructions;
+  const gitCtx = role.code === "write" ? await nodeGitContext(instance, task, planTask?.issue ?? null) : null;
   return {
     taskId: task.id,
     leaseToken: task.leaseToken!,
@@ -342,7 +360,7 @@ async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<Ta
     task: {
       planTaskId: task.planTaskId,
       title: planTask?.title ?? task.planTaskId,
-      instructions,
+      instructions: gitCtx?.instructions ?? task.instructions,
     },
     plan: {
       objective: plan.objective,
@@ -354,7 +372,7 @@ async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<Ta
     caselloSkills: skills.map((s) => ({ code: s.code, version: s.version, content: s.content })),
     nodeSkills: candidate.nodeSkills,
     attachments: attachments.map((a) => ({ id: a.id, name: a.name, contentType: a.contentType, sizeBytes: a.sizeBytes, sha256: a.sha256 })),
-    git: null,
+    git: gitCtx?.git ?? null,
   };
 }
 

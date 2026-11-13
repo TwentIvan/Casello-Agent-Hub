@@ -254,7 +254,7 @@ describe("flusso: compito node con PR", () => {
     await db.update(appsTable).set({ sourceType: "github", sourceRepo: REPO, sourceInstallationId: INST }).where(eq(appsTable.slug, "hub-up"));
     const started = await startTask(instanceId, "t1");
     const { node } = await createNode(userId, "Mac");
-    await heartbeat(node.id, { version: "0.1.0", executor: "claude-code", skills: ["sap:abap-developer"], workspaceRoot: "/w", maxConcurrent: 1 });
+    await heartbeat(node.id, { version: "0.4.0", executor: "claude-code", skills: ["sap:abap-developer"], workspaceRoot: "/w", maxConcurrent: 1 });
     const pkg = (await claimTask(node.id))!;
     const branch = `botcave/${instanceId}-t1`;
     expect(pkg.task.instructions).toContain(branch);

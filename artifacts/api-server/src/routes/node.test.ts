@@ -2,7 +2,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { db, nodesTable, nodeTurnsTable, pool, teamEventsTable, teamInstancesTable, teamTasksTable, teamTurnsTable } from "@workspace/db";
+import { appsTable, db, nodesTable, nodeTurnsTable, pool, teamEventsTable, teamInstancesTable, teamTasksTable, teamTurnsTable } from "@workspace/db";
 import { getPlan } from "../lib/teams/plan";
 import { startTask } from "../lib/teams/task-runner";
 import { teamSpend } from "../lib/teams/team-budget";
@@ -107,6 +107,62 @@ describe("heartbeat", () => {
     for (let i = 0; i < 5; i++) expect((await api("POST", "/node/heartbeat", { token, body: caps([]) })).status).toBe(200);
     const limited = await api("POST", "/node/heartbeat", { token, body: caps([]) });
     expect(limited.status).toBe(429);
+  });
+});
+
+describe("capacità git e compiti con codice", () => {
+  const withCode = async (code: "write" | "none", issue?: number) => {
+    const instanceId = await seedNodeTeam({ userId, roles: [sapRole({ code })] });
+    await db.update(appsTable).set({ sourceType: "github", sourceRepo: "ivan/mister", sourceInstallationId: 7, sourceBranch: "main" }).where(eq(appsTable.slug, "hub-up"));
+    if (issue !== undefined) {
+      const { writePlanVersion } = await import("../lib/teams/plan");
+      const plan = await getPlan(instanceId);
+      await writePlanVersion(instanceId, { ...plan, tasks: plan.tasks.map((t) => ({ ...t, issue })) }, "approved");
+    }
+    const started = await startTask(instanceId, "t1");
+    return { instanceId, started };
+  };
+
+  it("heartbeat con git salva gitStatus e senza git lo lascia com'era", async () => {
+    const { node, token } = await createNode(userId, "Mac");
+    const hb = await api("POST", "/node/heartbeat", { token, body: caps([], { git: { found: true, version: "2.39.5" } }) });
+    expect(hb.status, hb.text).toBe(200);
+    const read = async () => (await db.select().from(nodesTable).where(eq(nodesTable.id, node.id)))[0]!.gitStatus;
+    expect(await read()).toEqual({ found: true, version: "2.39.5" });
+    expect((await api("POST", "/node/heartbeat", { token, body: caps([]) })).status).toBe(200);
+    expect(await read()).toEqual({ found: true, version: "2.39.5" });
+    // campo di tipo sbagliato: scartato senza 400
+    const bad = await api("POST", "/node/heartbeat", { token, body: caps([], { git: { found: "sì", version: 3 } }) });
+    expect(bad.status, bad.text).toBe(200);
+    expect(await read()).toEqual({ found: false, version: null });
+  });
+
+  it("compito di un ruolo node con code write: il nodo 0.3.0 non lo vede, il nodo 0.4.0 lo prende con git", async () => {
+    const { instanceId, started } = await withCode("write", 7);
+    const old = await createNode(userId, "Vecchio");
+    const oldHb = await api("POST", "/node/heartbeat", { token: old.token, body: caps(["sap:abap-developer"], { version: "0.3.0" }) });
+    expect(oldHb.json).toEqual({ pending: 0 });
+    expect((await api("POST", "/node/claim", { token: old.token })).status).toBe(204);
+    expect((await taskRow(started.id)).status).toBe("waiting_node");
+
+    const fresh = await createNode(userId, "Nuovo");
+    const hb = await api("POST", "/node/heartbeat", { token: fresh.token, body: caps(["sap:abap-developer"], { version: "0.4.0" }) });
+    expect(hb.json).toEqual({ pending: 1 });
+    const claim = await api("POST", "/node/claim", { token: fresh.token });
+    expect(claim.status, claim.text).toBe(200);
+    expect(claim.json.git).toEqual({ repo: "ivan/mister", baseBranch: "main", branch: `botcave/${instanceId}-t1`, issue: 7 });
+    expect(claim.json.task.instructions).toContain("Non fare push");
+    expect(claim.json.task.instructions).toContain("Issue: #7");
+  });
+
+  it("ruolo node senza codice: pacchetto con git null anche per il nodo 0.4.0", async () => {
+    await withCode("none");
+    const fresh = await createNode(userId, "Nuovo");
+    await api("POST", "/node/heartbeat", { token: fresh.token, body: caps(["sap:abap-developer"], { version: "0.4.0" }) });
+    const claim = await api("POST", "/node/claim", { token: fresh.token });
+    expect(claim.status, claim.text).toBe(200);
+    expect(claim.json.git).toBeNull();
+    expect(claim.json.task.instructions).toBe("Istruzioni di t1");
   });
 });
 

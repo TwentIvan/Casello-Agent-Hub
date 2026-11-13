@@ -67,32 +67,32 @@ async function setup(opts: { withRepo?: boolean; code?: "none" | "write"; source
   }
   const started = await startTask(instanceId, "t1");
   const { node } = await createNode(userId, "Mac");
-  await heartbeat(node.id, { version: "0.1.0", executor: "claude-code", skills: ["sap:abap-developer"], workspaceRoot: "/w", maxConcurrent: 1 });
+  await heartbeat(node.id, { version: "0.4.0", executor: "claude-code", skills: ["sap:abap-developer"], workspaceRoot: "/w", maxConcurrent: 1 });
   const pkg = (await claimTask(node.id))!;
   return { instanceId, nodeId: node.id, taskId: started.id, pkg };
 }
 
 describe("nodeGitSection", () => {
-  it("repository, branch, issue e comando gh", () => {
+  it("nodeGitSection non parla più di gh pr create e dice di non fare push", () => {
     const s = nodeGitSection({ repo: REPO, baseBranch: "main", branch: "botcave/3-t1", issue: 12 });
-    expect(s).toContain("Repository: ivan/mister");
+    expect(s).toContain("`ivan/mister`");
     expect(s).toContain("Issue: #12");
-    expect(s).toContain("gh pr create --draft --base main --head botcave/3-t1");
-    expect(s).toContain("Non fare merge");
+    expect(s).not.toContain("gh pr create");
+    expect(s).toContain("Non fare push, non aprire PR");
+    expect(s).toContain("botcave/3-t1");
   });
-  it("senza base: branch predefinito", () => {
-    const s = nodeGitSection({ repo: REPO, baseBranch: null, branch: "botcave/3-t1", issue: null });
-    expect(s).toContain("il branch predefinito");
-    expect(s).not.toContain("Issue:");
+  it("senza issue niente riga Issue", () => {
+    expect(nodeGitSection({ repo: REPO, baseBranch: "main", branch: "botcave/3-t1", issue: null })).not.toContain("Issue:");
   });
 });
 
 describe("pacchetto del claim", () => {
-  it("ruolo code write: sezione Git con branch e gh pr create --draft", async () => {
+  it("ruolo code write: sezione Git con branch e campo git", async () => {
     const { instanceId, pkg } = await setup();
     expect(pkg.task.instructions.startsWith("Istruzioni di t1")).toBe(true);
     expect(pkg.task.instructions).toContain(`botcave/${instanceId}-t1`);
-    expect(pkg.task.instructions).toContain("gh pr create --draft --base main");
+    expect(pkg.task.instructions).not.toContain("gh pr create");
+    expect(pkg.git).toEqual({ repo: REPO, baseBranch: "main", branch: `botcave/${instanceId}-t1`, issue: null });
   });
   it("senza code write o senza repository: istruzioni invariate", async () => {
     expect((await setup({ code: "none" })).pkg.task.instructions).toBe("Istruzioni di t1");

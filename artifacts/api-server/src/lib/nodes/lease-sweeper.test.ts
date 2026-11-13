@@ -85,6 +85,18 @@ describe("nessun nodo adatto", () => {
     expect(await turns(instanceId)).toHaveLength(0);
   });
 
+  it("compito con codice e soli nodi 0.3.0: evento con «nessun nodo aggiornato a Botcave Nodo 0.4.0»", async () => {
+    const instanceId = await seedNodeTeam({ userId, roles: [nodeRole({ skills: [{ code: "sap-abap", version: 1 }], code: "write" })] });
+    await startTask(instanceId, "t1");
+    const { node } = await createNode(userId, "Vecchio");
+    const now = new Date(Date.now() + 11 * MIN);
+    await heartbeat(node.id, { ...caps(["sap:abap-developer"]), version: "0.3.0" });
+    await db.update(nodesTable).set({ lastSeenAt: now }).where(eq(nodesTable.id, node.id));
+    expect(await notifyNodelessTasks(now)).toBe(1);
+    const evs = await events(instanceId);
+    expect(evs[0]!.bulletin).toContain("nessun nodo aggiornato a Botcave Nodo 0.4.0");
+  });
+
   it("mai se c'è un nodo vivo adatto (anche se occupato)", async () => {
     const instanceId = await seedNodeTeam({ userId, roles: [sapRole()] });
     await startTask(instanceId, "t1");

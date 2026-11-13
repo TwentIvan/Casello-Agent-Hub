@@ -23,7 +23,7 @@ import { resetGithubConfigForTests } from "../src/lib/github/config";
 import { getCodeTask } from "../src/lib/code-writer/code-tasks";
 import { watchCodeTasksOnce } from "../src/lib/code-writer/watcher";
 import { createNode } from "../src/lib/nodes/nodes";
-import { claimTask, heartbeat, reportTask } from "../src/lib/nodes/protocol";
+import { claimTask, gitTokenForTask, heartbeat, reportTask } from "../src/lib/nodes/protocol";
 import { getPlan, writePlanVersion } from "../src/lib/teams/plan";
 import { settleTaskExecutions, startTask } from "../src/lib/teams/task-runner";
 
@@ -269,6 +269,47 @@ describe("flusso: compito node con PR", () => {
     gh.checkRuns.set(head, [{ id: 1, name: "build", status: "completed", conclusion: "success", annotations: [] }]);
     await watchCodeTasksOnce(new Date(Date.now() + 60_000));
     expect(await bulletins(instanceId)).toContain(`compito_finito: Compito t1: CI verde, PR #9 pronta per la revisione`);
+    expect(await reasons(instanceId)).toEqual([{ type: "ci_finished", taskCodeId: row!.id, outcome: "success" }]);
+  });
+});
+
+describe("flusso: compito node con codice, PR aperta da Botcave", () => {
+  it("claim con git → token → report done con git.pushed → PR in bozza → CI verde → ci_finished", async () => {
+    await pool.query(TRUNCATE);
+    resetGithub();
+    const userId = await ensureUser("dev@localhost");
+    await catalogSkill("sap-abap", "node", "sap:abap-developer");
+    const instanceId = await seedNodeTeam({ userId, roles: [nodeRole({ skills: [{ code: "sap-abap", version: 1 }], code: "write" })] });
+    await db.update(appsTable).set({ sourceType: "github", sourceRepo: REPO, sourceInstallationId: INST }).where(eq(appsTable.slug, "hub-up"));
+    await db.insert(githubInstallationsTable).values({ userId, installationId: INST, accountLogin: "ivan", accountType: "User", repositorySelection: "selected" }).onConflictDoNothing();
+    const started = await startTask(instanceId, "t1");
+    const { node } = await createNode(userId, "Mac");
+    await heartbeat(node.id, { version: "0.4.0", executor: "claude-code", skills: ["sap:abap-developer"], workspaceRoot: "/w", maxConcurrent: 1, git: { found: true, version: "2.45.0" } });
+
+    const pkg = (await claimTask(node.id))!;
+    const branch = `botcave/${instanceId}-t1`;
+    expect(pkg.git).toMatchObject({ repo: REPO, baseBranch: "main", branch });
+    expect(pkg.task.instructions).toContain(branch);
+
+    // Token per Git: ristretto al repository, contents: write
+    const { token } = await gitTokenForTask(node.id, started.id, pkg.leaseToken);
+    expect(token).toBeTruthy();
+
+    // Il nodo ha committato e pubblicato il branch: nessuna PR su GitHub
+    const refs = gh.git.get(REPO)!.refs;
+    const head = refs.get("heads/main")!;
+    refs.set(`heads/${branch}`, head);
+    expect(gh.pulls.get(REPO) ?? []).toHaveLength(0);
+    await reportTask(node.id, started.id, { leaseToken: pkg.leaseToken, status: "done", outcome: "fatto", git: { pushed: true, headSha: head, commits: 1 } });
+
+    const pr = gh.pulls.get(REPO)![0]!;
+    expect(pr).toMatchObject({ head: branch, base: "main", draft: true, state: "open" });
+    const row = await getCodeTask(instanceId, "t1");
+    expect(row).toMatchObject({ prNumber: pr.number, prState: "open", ciState: "pending", branch });
+
+    gh.checkRuns.set(head, [{ id: 1, name: "build", status: "completed", conclusion: "success", annotations: [] }]);
+    await watchCodeTasksOnce(new Date(Date.now() + 60_000));
+    expect(await bulletins(instanceId)).toContain(`compito_finito: Compito t1: CI verde, PR #${pr.number} pronta per la revisione`);
     expect(await reasons(instanceId)).toEqual([{ type: "ci_finished", taskCodeId: row!.id, outcome: "success" }]);
   });
 });

@@ -28,7 +28,7 @@ import { turnPollSettings } from "../src/lib/node-turns/protocol";
 
 const ENV_KEYS = ["AUTH_DISABLED", "ALLOWED_EMAILS", "CASELLO_SECRET_KEY", "PUBLIC_APP_URL", "NODO_MANIFEST_PATH"];
 const saved: Record<string, string | undefined> = {};
-const NEXT_VERSION = "0.4.0";
+const NEXT_VERSION = "0.5.0";
 const NEW_BINARY = Buffer.from("#!/bin/sh\n# casello-nodo 0.4.0 finto\n".repeat(64));
 const OLD_BINARY = "#!/bin/sh\n# casello-nodo 0.3.0 finto\n";
 const CLAUDE = { found: true, version: "2.1.30", loggedIn: true, authMethod: "claude.ai", subscriptionType: "team" };

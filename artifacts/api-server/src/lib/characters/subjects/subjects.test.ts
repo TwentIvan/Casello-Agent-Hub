@@ -17,7 +17,7 @@ import { encryptSecret } from "../../secrets";
 import { createSkill, updateSkill } from "../../teams/skills";
 import { insertTemplateUnchecked, appendTemplateVersionUnchecked } from "../../teams/templates";
 import { createTurnContext } from "../proposals";
-import { findSubject } from "../registry";
+import { findSubject, subjectsOf } from "../registry";
 import { startCharacterTurn } from "../run-turn";
 import type { SubjectType, TurnContext } from "../types";
 import { subjectHash } from "./hash";
@@ -289,5 +289,13 @@ describe("subjectHash", () => {
     expect(await subjectHash("skill", "assente")).toBeNull();
     expect(await subjectHash("team_template", "9999")).toBeNull();
     expect(await subjectHash("alfred_thread", "1")).toBeNull();
+  });
+});
+
+describe("strumenti web", () => {
+  it("nessun argomento registrato offre uno strumento chiamato leggi_pagina_web", () => {
+    for (const character of ["alfred", "lucius"] as const) {
+      for (const h of subjectsOf(character)) expect(h.tools.map((t) => t.function.name)).not.toContain("leggi_pagina_web");
+    }
   });
 });

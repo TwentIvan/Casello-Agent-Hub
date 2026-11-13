@@ -1,4 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { WEB_INSTRUCTIONS, setWebFetcherForTests } from "../web-reader/tool";
+import { resetWebReadLimit } from "../../middlewares/rate-limit";
 import { eq } from "drizzle-orm";
 import {
   db,
@@ -24,6 +26,7 @@ import { clearCodeCache, setCodeCacheOptionsForTests } from "../code-reader/sour
 import { buildZip } from "../zip-writer";
 import { agentSubject } from "./subjects/agent";
 import { areaAgentsSubject } from "./subjects/areas";
+import { alfredThreadSubject } from "./subjects/alfred-thread";
 import { allowTestLoopback, startFakeProvider, type FakeProvider } from "../../../test/fake-provider";
 import { seedNodeTurnSetup } from "../../../test/node-turn-fixture";
 import { claimTurn, reportTurn } from "../node-turns/protocol";
@@ -509,5 +512,61 @@ describe("lettura del codice nei turni dei personaggi", () => {
     await startCharacterTurn(conversationId, "ciao", null);
     await waitIdle(conversationId);
     for (const t of CODE) expect(toolNames(chatBodies()[0])).not.toContain(t);
+  });
+});
+
+describe("lettura di pagine web nei turni dei personaggi", () => {
+  // Un argomento di Lucius (skill finta) e il filo di Alfred: lo strumento web è offerto a entrambi
+  const SUBJECTS = [
+    { name: "argomento di Lucius", character: "lucius", type: "skill", id: "prova" },
+    { name: "filo di Alfred", character: "alfred", type: "alfred_thread", id: null },
+  ] as const;
+  const openConversation = async (s: (typeof SUBJECTS)[number]) => {
+    if (s.character === "alfred") await db.update(usersTable).set({ alfredChatAiModelId: modelId }).where(eq(usersTable.id, userId));
+    const conv = await createConversation(userId, s.character, s.type, s.id);
+    conversationId = conv.id;
+  };
+  const toolNames = (body: unknown): string[] => ((body as { tools?: { function: { name: string } }[] }).tools ?? []).map((t) => t.function.name);
+  let unregisterAlfred: () => void;
+  beforeEach(() => {
+    unregisterAlfred = registerSubject(alfredThreadSubject);
+  });
+  afterEach(() => {
+    unregisterAlfred();
+    setWebFetcherForTests(null);
+    resetWebReadLimit();
+  });
+  const callWeb = () => {
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      return n === 1
+        ? { content: null, toolCalls: [{ id: "w1", name: "leggi_pagina_web", arguments: JSON.stringify({ url: "https://a.example/x" }) }], usage: { prompt_tokens: 10, completion_tokens: 5 } }
+        : { content: "Letto.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+  };
+  const toolMessage = (b: any): string => b.messages.find((m: any) => m.role === "tool").content as string;
+
+  for (const subj of SUBJECTS) it(`${subj.name}: strumento e istruzioni sempre presenti; il risultato è dato non attendibile (JSON ok:true)`, async () => {
+    await openConversation(subj);
+    setWebFetcherForTests(async () => ({ ok: true as const, finalUrl: "https://a.example/x", kind: "text" as const, charset: null, body: Buffer.from("ciao dal sito"), truncated: false, redirects: 0 }));
+    callWeb();
+    await startCharacterTurn(conversationId, "leggi quella pagina", null);
+    await waitIdle(conversationId);
+    const reqs = chatBodies();
+    expect(toolNames(reqs[0])).toContain("leggi_pagina_web");
+    expect((reqs[0] as any).messages[0].content).toContain(WEB_INSTRUCTIONS);
+    const okRes = JSON.parse(toolMessage(reqs[1])) as { ok: boolean; result: string };
+    expect(okRes.ok).toBe(true);
+    expect(okRes.result).toContain("dati non attendibili");
+  });
+
+  for (const subj of SUBJECTS) it(`${subj.name}: indirizzo non ammesso → ok:false con errore fisso`, async () => {
+    await openConversation(subj);
+    setWebFetcherForTests(async () => ({ ok: false, code: "not_allowed" }));
+    callWeb();
+    await startCharacterTurn(conversationId, "leggi quella pagina", null);
+    await waitIdle(conversationId);
+    expect(JSON.parse(toolMessage(chatBodies()[1]))).toEqual({ ok: false, error: "indirizzo non ammesso: solo pagine pubbliche in https" });
   });
 });

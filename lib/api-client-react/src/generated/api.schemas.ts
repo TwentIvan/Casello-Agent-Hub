@@ -2440,6 +2440,15 @@ export interface NodeClaudeStatus {
   loginExpiresAt?: string;
 }
 
+export interface NodeGitStatus {
+  found: boolean;
+  /**
+     * @maxLength 50
+     * @nullable
+     */
+  version: string | null;
+}
+
 export interface NodeSettings {
   /**
      * @minimum 1
@@ -2495,6 +2504,8 @@ export interface Node {
   claude: NodeClaudeStatus | null;
   /** @nullable */
   claudeCheckedAt: string | null;
+  /** Stato di Git sul Mac, dall'ultimo heartbeat; null se il nodo non lo ha mai comunicato */
+  gitStatus: NodeGitStatus | null;
   /** Impostazioni scelte in console; null = tutte di default */
   settings: NodeSettings | null;
   /**
@@ -2659,6 +2670,11 @@ export const NodeCapabilitiesKind = {
  */
 export type NodeCapabilitiesClaude = { [key: string]: unknown };
 
+/**
+ * Stato di Git sul Mac (`{found, version}`, versione ≤ 50 caratteri). Tollerante come `claude`: campi di tipo sbagliato scartati senza rifiutare l'heartbeat; assente = il valore salvato resta com'è.
+ */
+export type NodeCapabilitiesGit = { [key: string]: unknown };
+
 export interface NodeCapabilities {
   /**
      * @minLength 1
@@ -2704,6 +2720,68 @@ export interface NodeCapabilities {
      * @maxLength 100
      */
   updateFailed?: string;
+  /** Stato di Git sul Mac (`{found, version}`, versione ≤ 50 caratteri). Tollerante come `claude`: campi di tipo sbagliato scartati senza rifiutare l'heartbeat; assente = il valore salvato resta com'è. */
+  git?: NodeCapabilitiesGit;
+}
+
+export interface NodeTaskGit {
+  /** proprietario/nome */
+  repo: string;
+  baseBranch: string;
+  /** botcave/<idSquadra>-<idCompito> */
+  branch: string;
+  /** @nullable */
+  issue: number | null;
+}
+
+export interface NodeReportGit {
+  pushed: boolean;
+  /**
+     * @nullable
+     * @pattern ^[0-9a-f]{40}$
+     */
+  headSha: string | null;
+  /** @minimum 0 */
+  commits: number;
+}
+
+export interface NodeGitTokenRequest {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  leaseToken: string;
+}
+
+export interface NodeGitToken {
+  token: string;
+  expiresAt: string;
+}
+
+export type TeamReadinessProblemLevel = typeof TeamReadinessProblemLevel[keyof typeof TeamReadinessProblemLevel];
+
+
+export const TeamReadinessProblemLevel = {
+  error: 'error',
+  warning: 'warning',
+} as const;
+
+export interface TeamReadinessProblem {
+  code: string;
+  level: TeamReadinessProblemLevel;
+  message: string;
+  /** @nullable */
+  link: string | null;
+}
+
+export interface TeamReadinessRole {
+  roleKey: string;
+  roleName: string;
+  problems: TeamReadinessProblem[];
+}
+
+export interface TeamReadiness {
+  roles: TeamReadinessRole[];
 }
 
 export interface NodeFolders {
@@ -2771,6 +2849,7 @@ export interface NodeReport {
      * @maxLength 200
      */
   sessionId?: string;
+  git?: NodeReportGit;
 }
 
 export interface NodeTurnPackage {
@@ -2935,6 +3014,8 @@ export interface NodeTaskPackage {
   caselloSkills: NodeTaskPackageCaselloSkillsItem[];
   /** Nomi delle skill del nodo richieste dal ruolo */
   nodeSkills: string[];
+  /** Repository, base e branch per i compiti con codice in scrittura; null altrimenti */
+  git: NodeTaskGit | null;
   attachments: NodeTaskPackageAttachmentsItem[];
 }
 

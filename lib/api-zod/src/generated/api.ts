@@ -219,6 +219,8 @@ export const listNodesResponseClaudeOneSubscriptionTypeMax = 100;
 
 export const listNodesResponseClaudeOneLoginExpiresAtMax = 100;
 
+export const listNodesResponseGitStatusOneVersionMax = 50;
+
 export const listNodesResponseSettingsOneMaxConcurrentMax = 3;
 
 export const listNodesResponseSettingsOneMaxConcurrentTurnsMax = 4;
@@ -252,6 +254,10 @@ export const ListNodesResponseItem = zod.object({
   "loginExpiresAt": zod.string().max(listNodesResponseClaudeOneLoginExpiresAtMax).optional()
 }),zod.null()]).describe('Stato di Claude Code sul Mac, dall\'ultimo heartbeat'),
   "claudeCheckedAt": zod.coerce.date().nullable(),
+  "gitStatus": zod.union([zod.object({
+  "found": zod.boolean(),
+  "version": zod.string().max(listNodesResponseGitStatusOneVersionMax).nullable()
+}),zod.null()]).describe('Stato di Git sul Mac, dall\'ultimo heartbeat; null se il nodo non lo ha mai comunicato'),
   "settings": zod.union([zod.object({
   "maxConcurrent": zod.number().min(1).max(listNodesResponseSettingsOneMaxConcurrentMax).nullable(),
   "maxConcurrentTurns": zod.number().min(1).max(listNodesResponseSettingsOneMaxConcurrentTurnsMax).nullable(),
@@ -287,6 +293,8 @@ export const createNodeResponseNodeClaudeOneSubscriptionTypeMax = 100;
 
 export const createNodeResponseNodeClaudeOneLoginExpiresAtMax = 100;
 
+export const createNodeResponseNodeGitStatusOneVersionMax = 50;
+
 export const createNodeResponseNodeSettingsOneMaxConcurrentMax = 3;
 
 export const createNodeResponseNodeSettingsOneMaxConcurrentTurnsMax = 4;
@@ -321,6 +329,10 @@ export const CreateNodeResponse = zod.object({
   "loginExpiresAt": zod.string().max(createNodeResponseNodeClaudeOneLoginExpiresAtMax).optional()
 }),zod.null()]).describe('Stato di Claude Code sul Mac, dall\'ultimo heartbeat'),
   "claudeCheckedAt": zod.coerce.date().nullable(),
+  "gitStatus": zod.union([zod.object({
+  "found": zod.boolean(),
+  "version": zod.string().max(createNodeResponseNodeGitStatusOneVersionMax).nullable()
+}),zod.null()]).describe('Stato di Git sul Mac, dall\'ultimo heartbeat; null se il nodo non lo ha mai comunicato'),
   "settings": zod.union([zod.object({
   "maxConcurrent": zod.number().min(1).max(createNodeResponseNodeSettingsOneMaxConcurrentMax).nullable(),
   "maxConcurrentTurns": zod.number().min(1).max(createNodeResponseNodeSettingsOneMaxConcurrentTurnsMax).nullable(),
@@ -364,6 +376,8 @@ export const disableNodeResponseClaudeOneSubscriptionTypeMax = 100;
 
 export const disableNodeResponseClaudeOneLoginExpiresAtMax = 100;
 
+export const disableNodeResponseGitStatusOneVersionMax = 50;
+
 export const disableNodeResponseSettingsOneMaxConcurrentMax = 3;
 
 export const disableNodeResponseSettingsOneMaxConcurrentTurnsMax = 4;
@@ -397,6 +411,10 @@ export const DisableNodeResponse = zod.object({
   "loginExpiresAt": zod.string().max(disableNodeResponseClaudeOneLoginExpiresAtMax).optional()
 }),zod.null()]).describe('Stato di Claude Code sul Mac, dall\'ultimo heartbeat'),
   "claudeCheckedAt": zod.coerce.date().nullable(),
+  "gitStatus": zod.union([zod.object({
+  "found": zod.boolean(),
+  "version": zod.string().max(disableNodeResponseGitStatusOneVersionMax).nullable()
+}),zod.null()]).describe('Stato di Git sul Mac, dall\'ultimo heartbeat; null se il nodo non lo ha mai comunicato'),
   "settings": zod.union([zod.object({
   "maxConcurrent": zod.number().min(1).max(disableNodeResponseSettingsOneMaxConcurrentMax).nullable(),
   "maxConcurrentTurns": zod.number().min(1).max(disableNodeResponseSettingsOneMaxConcurrentTurnsMax).nullable(),
@@ -483,6 +501,8 @@ export const updateNodeSettingsResponseClaudeOneSubscriptionTypeMax = 100;
 
 export const updateNodeSettingsResponseClaudeOneLoginExpiresAtMax = 100;
 
+export const updateNodeSettingsResponseGitStatusOneVersionMax = 50;
+
 export const updateNodeSettingsResponseSettingsOneMaxConcurrentMax = 3;
 
 export const updateNodeSettingsResponseSettingsOneMaxConcurrentTurnsMax = 4;
@@ -516,6 +536,10 @@ export const UpdateNodeSettingsResponse = zod.object({
   "loginExpiresAt": zod.string().max(updateNodeSettingsResponseClaudeOneLoginExpiresAtMax).optional()
 }),zod.null()]).describe('Stato di Claude Code sul Mac, dall\'ultimo heartbeat'),
   "claudeCheckedAt": zod.coerce.date().nullable(),
+  "gitStatus": zod.union([zod.object({
+  "found": zod.boolean(),
+  "version": zod.string().max(updateNodeSettingsResponseGitStatusOneVersionMax).nullable()
+}),zod.null()]).describe('Stato di Git sul Mac, dall\'ultimo heartbeat; null se il nodo non lo ha mai comunicato'),
   "settings": zod.union([zod.object({
   "maxConcurrent": zod.number().min(1).max(updateNodeSettingsResponseSettingsOneMaxConcurrentMax).nullable(),
   "maxConcurrentTurns": zod.number().min(1).max(updateNodeSettingsResponseSettingsOneMaxConcurrentTurnsMax).nullable(),
@@ -545,6 +569,8 @@ export const requestNodeDiagnosticsResponseClaudeOneAuthMethodMax = 100;
 export const requestNodeDiagnosticsResponseClaudeOneSubscriptionTypeMax = 100;
 
 export const requestNodeDiagnosticsResponseClaudeOneLoginExpiresAtMax = 100;
+
+export const requestNodeDiagnosticsResponseGitStatusOneVersionMax = 50;
 
 export const requestNodeDiagnosticsResponseSettingsOneMaxConcurrentMax = 3;
 
@@ -579,6 +605,10 @@ export const RequestNodeDiagnosticsResponse = zod.object({
   "loginExpiresAt": zod.string().max(requestNodeDiagnosticsResponseClaudeOneLoginExpiresAtMax).optional()
 }),zod.null()]).describe('Stato di Claude Code sul Mac, dall\'ultimo heartbeat'),
   "claudeCheckedAt": zod.coerce.date().nullable(),
+  "gitStatus": zod.union([zod.object({
+  "found": zod.boolean(),
+  "version": zod.string().max(requestNodeDiagnosticsResponseGitStatusOneVersionMax).nullable()
+}),zod.null()]).describe('Stato di Git sul Mac, dall\'ultimo heartbeat; null se il nodo non lo ha mai comunicato'),
   "settings": zod.union([zod.object({
   "maxConcurrent": zod.number().min(1).max(requestNodeDiagnosticsResponseSettingsOneMaxConcurrentMax).nullable(),
   "maxConcurrentTurns": zod.number().min(1).max(requestNodeDiagnosticsResponseSettingsOneMaxConcurrentTurnsMax).nullable(),
@@ -620,6 +650,8 @@ export const requestNodeUninstallResponseClaudeOneSubscriptionTypeMax = 100;
 
 export const requestNodeUninstallResponseClaudeOneLoginExpiresAtMax = 100;
 
+export const requestNodeUninstallResponseGitStatusOneVersionMax = 50;
+
 export const requestNodeUninstallResponseSettingsOneMaxConcurrentMax = 3;
 
 export const requestNodeUninstallResponseSettingsOneMaxConcurrentTurnsMax = 4;
@@ -653,6 +685,10 @@ export const RequestNodeUninstallResponse = zod.object({
   "loginExpiresAt": zod.string().max(requestNodeUninstallResponseClaudeOneLoginExpiresAtMax).optional()
 }),zod.null()]).describe('Stato di Claude Code sul Mac, dall\'ultimo heartbeat'),
   "claudeCheckedAt": zod.coerce.date().nullable(),
+  "gitStatus": zod.union([zod.object({
+  "found": zod.boolean(),
+  "version": zod.string().max(requestNodeUninstallResponseGitStatusOneVersionMax).nullable()
+}),zod.null()]).describe('Stato di Git sul Mac, dall\'ultimo heartbeat; null se il nodo non lo ha mai comunicato'),
   "settings": zod.union([zod.object({
   "maxConcurrent": zod.number().min(1).max(requestNodeUninstallResponseSettingsOneMaxConcurrentMax).nullable(),
   "maxConcurrentTurns": zod.number().min(1).max(requestNodeUninstallResponseSettingsOneMaxConcurrentTurnsMax).nullable(),
@@ -780,7 +816,8 @@ export const NodeHeartbeatBody = zod.object({
   "folders": zod.array(zod.string().min(1).max(nodeHeartbeatBodyFoldersItemMax)).max(nodeHeartbeatBodyFoldersMax).optional().describe('Sottocartelle della radice (percorsi relativi con `\/`, fino a 3 livelli), per la scelta dello spazio di lavoro in console. Facoltativo: un nodo che non lo manda lascia invariato l\'elenco salvato.'),
   "kind": zod.enum(['app', 'cli']).optional().describe('Come è installato il nodo; solo `app` riceve aggiornamenti automatici'),
   "claude": zod.record(zod.string(), zod.unknown()).optional().describe('Stato di Claude Code sul Mac. Tollerante di proposito: il server tiene solo i campi noti con il tipo giusto (`found`, `version`, `loggedIn`, `authMethod`, `subscriptionType`, `loginExpiresAt`) e scarta il resto, così un campo strano non fa fallire l\'heartbeat.'),
-  "updateFailed": zod.string().max(nodeHeartbeatBodyUpdateFailedMax).optional().describe('Versione di cui l\'aggiornamento non è riuscito (ripristinata la precedente)')
+  "updateFailed": zod.string().max(nodeHeartbeatBodyUpdateFailedMax).optional().describe('Versione di cui l\'aggiornamento non è riuscito (ripristinata la precedente)'),
+  "git": zod.record(zod.string(), zod.unknown()).optional().describe('Stato di Git sul Mac (`{found, version}`, versione ≤ 50 caratteri). Tollerante come `claude`: campi di tipo sbagliato scartati senza rifiutare l\'heartbeat; assente = il valore salvato resta com\'è.')
 })
 
 export const nodeHeartbeatResponseSettingsMaxConcurrentMax = 3;
@@ -860,6 +897,12 @@ export const NodeClaimResponse = zod.object({
   "content": zod.string()
 })),
   "nodeSkills": zod.array(zod.string()).describe('Nomi delle skill del nodo richieste dal ruolo'),
+  "git": zod.union([zod.object({
+  "repo": zod.string().describe('proprietario\/nome'),
+  "baseBranch": zod.string(),
+  "branch": zod.string().describe('botcave\/<idSquadra>-<idCompito>'),
+  "issue": zod.number().nullable()
+}),zod.null()]).describe('Repository, base e branch per i compiti con codice in scrittura; null altrimenti'),
   "attachments": zod.array(zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -916,6 +959,9 @@ export const nodeReportBodyCompletionTokensMax = 2000000000;
 
 export const nodeReportBodySessionIdMax = 200;
 
+export const nodeReportBodyGitHeadShaRegExp = new RegExp('^[0-9a-f]{40}$');
+export const nodeReportBodyGitCommitsMin = 0;
+
 
 
 export const NodeReportBody = zod.object({
@@ -926,10 +972,37 @@ export const NodeReportBody = zod.object({
   "costUsd": zod.number().min(nodeReportBodyCostUsdMin).max(nodeReportBodyCostUsdMax).optional(),
   "promptTokens": zod.number().min(nodeReportBodyPromptTokensMin).max(nodeReportBodyPromptTokensMax).optional(),
   "completionTokens": zod.number().min(nodeReportBodyCompletionTokensMin).max(nodeReportBodyCompletionTokensMax).optional(),
-  "sessionId": zod.string().min(1).max(nodeReportBodySessionIdMax).optional()
+  "sessionId": zod.string().min(1).max(nodeReportBodySessionIdMax).optional(),
+  "git": zod.object({
+  "pushed": zod.boolean(),
+  "headSha": zod.string().regex(nodeReportBodyGitHeadShaRegExp).nullable(),
+  "commits": zod.number().min(nodeReportBodyGitCommitsMin)
+}).optional()
 })
 
 export const NodeReportResponse = zod.void()
+
+
+/**
+ * Token di installazione GitHub ristretto al repository del compito (`contents: write`, un'ora), per fetch e push dal nodo. Lease non valida o scaduta → 409; compito senza codice in scrittura, App senza repository o installazione, GitHub non configurato o installazione non dell'utente → 409 «accesso al repository non disponibile»; errore di GitHub → 502; 10 al minuto per compito. Risposta `no-store`.
+ * @summary Token per Git del compito
+ */
+export const NodeGitTokenParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const nodeGitTokenBodyLeaseTokenMax = 200;
+
+
+
+export const NodeGitTokenBody = zod.object({
+  "leaseToken": zod.string().min(1).max(nodeGitTokenBodyLeaseTokenMax)
+})
+
+export const NodeGitTokenResponse = zod.object({
+  "token": zod.string(),
+  "expiresAt": zod.coerce.date()
+})
 
 
 /**
@@ -4059,6 +4132,28 @@ export const CloseTeamInstanceResponse = zod.object({
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
   "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+})
+
+
+/**
+ * Per ogni ruolo `node` i problemi che gli impedirebbero di lavorare (nodo, Git, Claude Code, repository). Utente di riferimento: chi ha attivato la squadra o, se non è attivata, chi chiede. Squadra chiusa → 409.
+ * @summary Prontezza dei ruoli node della squadra
+ */
+export const GetTeamReadinessParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetTeamReadinessResponse = zod.object({
+  "roles": zod.array(zod.object({
+  "roleKey": zod.string(),
+  "roleName": zod.string(),
+  "problems": zod.array(zod.object({
+  "code": zod.string(),
+  "level": zod.enum(['error', 'warning']),
+  "message": zod.string(),
+  "link": zod.string().nullable()
+}))
+}))
 })
 
 

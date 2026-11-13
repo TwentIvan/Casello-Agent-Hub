@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { NodeCapabilitiesClaude } from './nodeCapabilitiesClaude';
+import type { NodeCapabilitiesGit } from './nodeCapabilitiesGit';
 import type { NodeCapabilitiesKind } from './nodeCapabilitiesKind';
 
 export interface NodeCapabilities {
@@ -53,4 +54,6 @@ export interface NodeCapabilities {
      * @maxLength 100
      */
   updateFailed?: string;
+  /** Stato di Git sul Mac (`{found, version}`, versione ≤ 50 caratteri). Tollerante come `claude`: campi di tipo sbagliato scartati senza rifiutare l'heartbeat; assente = il valore salvato resta com'è. */
+  git?: NodeCapabilitiesGit;
 }

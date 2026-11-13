@@ -118,6 +118,8 @@ export interface TaskPackage {
   nodeSkills: string[];
   /** Allegati citati dal compito (solo metadati: il nodo scarica i byte con `taskAttachment`). */
   attachments: { id: number; name: string; contentType: string; sizeBytes: number; sha256: string }[];
+  /** Repository, base e branch dei compiti con codice in scrittura (lo valorizza il task successivo). */
+  git: { repo: string; baseBranch: string; branch: string; issue: number | null } | null;
 }
 
 // ─── Skill dei ruoli ────────────────────────────────────────────────────────
@@ -352,6 +354,7 @@ async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<Ta
     caselloSkills: skills.map((s) => ({ code: s.code, version: s.version, content: s.content })),
     nodeSkills: candidate.nodeSkills,
     attachments: attachments.map((a) => ({ id: a.id, name: a.name, contentType: a.contentType, sizeBytes: a.sizeBytes, sha256: a.sha256 })),
+    git: null,
   };
 }
 

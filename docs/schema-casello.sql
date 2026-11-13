@@ -1274,6 +1274,7 @@ ALTER TABLE "nodes" ADD COLUMN IF NOT EXISTS "paired_at" timestamp;
 ALTER TABLE "nodes" ADD COLUMN IF NOT EXISTS "paired_ip" text;
 ALTER TABLE "nodes" ADD COLUMN IF NOT EXISTS "claude_status" jsonb;
 ALTER TABLE "nodes" ADD COLUMN IF NOT EXISTS "claude_checked_at" timestamp;
+ALTER TABLE "nodes" ADD COLUMN IF NOT EXISTS "git_status" jsonb;
 ALTER TABLE "nodes" ADD COLUMN IF NOT EXISTS "settings" jsonb;
 ALTER TABLE "nodes" ADD COLUMN IF NOT EXISTS "diagnostics_requested_at" timestamp;
 ALTER TABLE "nodes" ADD COLUMN IF NOT EXISTS "uninstall_requested_at" timestamp;

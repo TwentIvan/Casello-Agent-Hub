@@ -65,6 +65,7 @@ export function taskPackage(over: Partial<TaskPackage> = {}): TaskPackage {
     caselloSkills: [{ code: "stile", version: 2, content: "Scrivi in modo chiaro." }],
     nodeSkills: ["sap-code-review"],
     attachments: [],
+    git: null,
     ...over,
   };
 }

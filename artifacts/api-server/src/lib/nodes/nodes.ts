@@ -49,6 +49,7 @@ export interface NodeView {
   pairedIp: string | null;
   claude: Record<string, unknown> | null;
   claudeCheckedAt: Date | null;
+  gitStatus: { found: boolean; version: string | null } | null;
   settings: NodeSettingsView | null;
   /** Versione proposta dal manifest (solo per i nodi installati con l'app). */
   updateAvailable: string | null;
@@ -109,6 +110,7 @@ export function toNodeView(row: Node, now: Date = new Date(), diagnosticsAt: Dat
     pairedIp: row.pairedIp,
     claude: row.claudeStatus,
     claudeCheckedAt: row.claudeCheckedAt,
+    gitStatus: row.gitStatus ?? null,
     settings: settingsOf(row),
     updateAvailable: updateFor(row.version, kind, manifest, row.updateFailedVersion)?.version ?? null,
     updateFailedVersion: row.updateFailedVersion,

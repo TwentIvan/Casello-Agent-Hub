@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { lstat, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { TaskPackage } from "./client";
 import { GIT_MESSAGES, GitWorkspaceError } from "./git-errors";
@@ -19,18 +19,14 @@ const BRANCH_PREFIX = "botcave/";
 const NAME_RE = /^[A-Za-z0-9_.-]{1,100}$/;
 const BASE_RE = /^[A-Za-z0-9._/-]{1,255}$/;
 const DIVERGED_NOTE = "commit locali non pubblicati scartati: il branch era cambiato su GitHub";
+const OFF_BRANCH_NOTE = "commit locali non pubblicati scartati: la copia non era sul branch del compito";
+const FETCH_REFSPEC = "+refs/heads/*:refs/remotes/origin/*";
 const SERVICE_ENTRIES = [TASK_FILE, OUTCOME_FILE, `${ATTACHMENTS_DIR}/`];
-/** Ogni comando: niente hook (un hook scritto nella copia girerebbe col token nell'ambiente) né fsmonitor. */
-const SAFE_ARGS = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"];
+/** Ogni comando: niente hook (un hook scritto nella copia girerebbe col token nell'ambiente), fsmonitor né firma. */
+const SAFE_ARGS = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "push.gpgSign=false"];
 /** Variabili ereditate che cambierebbero repository, credenziali o tracce di `git`. */
 const INHERITED_GIT_VARS =
   /^(GIT_(DIR|WORK_TREE|INDEX_FILE|COMMON_DIR|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|NAMESPACE|CONFIG_PARAMETERS|CONFIG_COUNT|CONFIG_KEY_\d+|CONFIG_VALUE_\d+|ASKPASS|SSH|SSH_COMMAND|PROXY_COMMAND|TRACE\w*)|SSH_ASKPASS|BOTCAVE_GIT_TOKEN)$/;
-/**
- * Configurazione locale che dirotterebbe il token (riscrittura dell'indirizzo, helper, proxy, include): Claude può scriverla
- * nella copia di lavoro. Con una di queste chiavi i comandi di rete non partono.
- */
-const UNSAFE_CONFIG =
-  /^(url\.|credential\b|http\.|include\.|includeif\.|core\.(askpass|sshcommand|gitproxy)|remote\.[^\n]*\.(proxy|pushurl)$)/i;
 
 /**
  * Ambiente dei processi `git` (spec §4.2): prompt spenti, helper delle credenziali azzerati (il portachiavi del Mac non salva
@@ -47,6 +43,9 @@ export function gitEnv(token: string | null): NodeJS.ProcessEnv {
     env.GIT_CONFIG_COUNT = "1";
     return env;
   }
+  // Configurazione globale e di sistema ignorate (es. `insteadOf` o un proxy in `~/.gitconfig`); quella del clone la riscrive il nodo
+  env.GIT_CONFIG_GLOBAL = "/dev/null";
+  env.GIT_CONFIG_NOSYSTEM = "1";
   env.GIT_CONFIG_COUNT = "2";
   env.GIT_CONFIG_KEY_1 = "credential.helper";
   env.GIT_CONFIG_VALUE_1 = '!f() { echo username=x-access-token; echo "password=$BOTCAVE_GIT_TOKEN"; }; f';
@@ -156,13 +155,36 @@ async function out(run: Run, args: string[], cwd: string): Promise<string> {
 const refExists = async (run: Run, cwd: string, ref: string) =>
   ok(await run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], cwd));
 
-/** Rifiuta i comandi di rete se la configurazione locale (o della copia) potrebbe dirottare il token. */
-async function assertSafeConfig(run: Run, cwd: string): Promise<void> {
-  const list = async (scope: string) => (await out(run, ["config", scope, "--name-only", "--list", "-z"], cwd)).split("\0");
-  const keys = await list("--local");
-  // La configurazione per copia (`config.worktree`) esiste solo con l'estensione attiva; senza, `--worktree` fallisce
-  if (keys.some((k) => k.toLowerCase() === "extensions.worktreeconfig")) keys.push(...(await list("--worktree")));
-  if (keys.some((k) => k !== "" && UNSAFE_CONFIG.test(k))) throw failed();
+/** Valore tra virgolette per un file di configurazione di `git`. */
+const quoteConfig = (v: string) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+
+/**
+ * Prima di ogni comando con token, sotto il lock: la configurazione del clone si riscrive da capo e si tolgono alternates e
+ * `config.worktree`. Claude (che gira nella copia) può averli scritti per dirottare il token o eseguire comandi
+ * (`insteadOf`, `core.alternateRefsCommand`, `push.followTags`…): un clone manomesso si ripara invece di restare rotto.
+ */
+async function resetCloneConfig(clone: string, url: string): Promise<void> {
+  const caseInsensitive = existsSync(path.join(clone, "head"));
+  const lines = [
+    "[core]",
+    "\trepositoryformatversion = 0",
+    "\tfilemode = true",
+    "\tbare = true",
+    ...(caseInsensitive ? ["\tignorecase = true"] : []),
+    ...(process.platform === "darwin" ? ["\tprecomposeunicode = true"] : []),
+    '[remote "origin"]',
+    `\turl = ${quoteConfig(url)}`,
+    `\tfetch = ${FETCH_REFSPEC}`,
+    "",
+  ];
+  const tmp = path.join(clone, `config.botcave-${process.pid}`);
+  await writeFile(tmp, lines.join("\n"));
+  await rename(tmp, path.join(clone, "config"));
+  for (const f of ["objects/info/alternates", "objects/info/http-alternates", "info/grafts", "config.worktree"]) {
+    await rm(path.join(clone, f), { force: true, recursive: true });
+  }
+  const worktrees = await readdir(path.join(clone, "worktrees")).catch(() => [] as string[]);
+  for (const w of worktrees) await rm(path.join(clone, "worktrees", w, "config.worktree"), { force: true, recursive: true });
 }
 
 async function acquire(o: CommonOptions, key: string): Promise<() => void> {
@@ -173,17 +195,28 @@ async function acquire(o: CommonOptions, key: string): Promise<() => void> {
   }
 }
 
-/** La cartella è una copia di lavoro di questo clone, sul branch del compito. */
-async function isTaskWorktree(run: Run, dir: string, clone: string, branch: string): Promise<boolean> {
+/** La cartella è una copia di lavoro di questo clone (su qualunque branch o con HEAD staccato). */
+async function isCloneWorktree(run: Run, dir: string, clone: string): Promise<boolean> {
   const info = await lstat(dir).catch(() => null);
   if (!info?.isDirectory()) return false;
   const top = await run(["rev-parse", "--show-toplevel", "--git-common-dir"], dir);
   if (!ok(top)) return false;
   const [toplevel, common] = top.stdout.trim().split("\n");
   const realCommon = await realpath(path.resolve(dir, common ?? "")).catch(() => null);
-  if (realCommon !== clone || (await realpath(toplevel).catch(() => null)) !== dir) return false;
+  return realCommon === clone && (await realpath(toplevel).catch(() => null)) === dir;
+}
+
+/** Copia di questo clone sul branch del compito: l'unica che si riprende. */
+async function isTaskWorktree(run: Run, dir: string, clone: string, branch: string): Promise<boolean> {
+  if (!(await isCloneWorktree(run, dir, clone))) return false;
   const head = await run(["symbolic-ref", "-q", "HEAD"], dir);
   return ok(head) && head.stdout.trim() === `refs/heads/${branch}`;
+}
+
+/** La copia ha commit che non stanno su nessun branch del remoto (si perderebbero togliendola). */
+async function hasUnpublishedCommits(run: Run, dir: string): Promise<boolean> {
+  const r = await run(["rev-list", "--count", "HEAD", "--not", "--remotes=origin"], dir);
+  return ok(r) && Number(r.stdout.trim()) > 0;
 }
 
 /** Toglie la copia (anche una cartella non valida) e ripulisce le copie registrate che non esistono più. */
@@ -200,11 +233,10 @@ async function syncClone(run: Run, clone: string, url: string, token: string): P
   if (!valid) {
     await rm(clone, { recursive: true, force: true });
     await out(run, ["init", "-q", "--bare", clone], path.dirname(clone));
-    await out(run, ["remote", "add", "origin", url], clone);
   }
-  await assertSafeConfig(run, clone);
-  // Indirizzo esplicito: `remote.origin.url` modificato nella copia non conta
-  const r = await run(["fetch", "--prune", "--no-tags", url, "+refs/heads/*:refs/remotes/origin/*"], clone, token);
+  await resetCloneConfig(clone, url);
+  // Indirizzo esplicito, oltre a quello riscritto nella configurazione
+  const r = await run(["fetch", "--prune", "--no-tags", "--no-recurse-submodules", url, FETCH_REFSPEC], clone, token);
   if (!ok(r)) {
     if (!valid) await rm(clone, { recursive: true, force: true });
     throw failed(classifyGitError(r.stderr, "fetch"));
@@ -249,6 +281,8 @@ export async function prepareTaskRepo(o: CommonOptions): Promise<PrepareResult> 
         return { dir, resumed: true, note: null };
       }
       note = DIVERGED_NOTE;
+    } else if ((await isCloneWorktree(run, dir, clone)) && (await hasUnpublishedCommits(run, dir))) {
+      note = OFF_BRANCH_NOTE;
     }
     await removeWorktree(run, clone, dir);
     const start = hasBranch ? originBranch : `refs/remotes/origin/${baseBranch}`;
@@ -279,15 +313,16 @@ async function countDirty(run: Run, dir: string): Promise<number> {
 }
 
 /**
- * Dopo Claude (spec §4.4): conta i commit nuovi, li pubblica con `push HEAD:refs/heads/<branch>` (mai `--force`, solo
- * `botcave/…` diverso dal base) e toglie la copia. Push fallito → `GitWorkspaceError` e copia lasciata per la ripresa.
+ * Dopo Claude (spec §4.4): conta i commit nuovi, li pubblica dal clone con `push <sha di HEAD>:refs/heads/<branch>` (mai
+ * `--force`, solo `botcave/…` diverso dal base, qualunque sia il branch della copia) e toglie la copia. Push fallito →
+ * `GitWorkspaceError` e copia lasciata per la ripresa. Dopo un push riuscito i passi di pulizia non fanno mai fallire.
  */
 export async function finishTaskRepo(o: CommonOptions & { dir: string }): Promise<FinishResult> {
   const { clone, tasks } = await locate(o.root, o.git);
   const run = makeRunner(o);
   const { branch, baseBranch } = o.git;
   const dir = await realpath(o.dir).catch(() => null);
-  if (dir === null || !isInside(tasks, dir) || dir === tasks || !(await isTaskWorktree(run, dir, clone, branch))) {
+  if (dir === null || !isInside(tasks, dir) || dir === tasks || !(await isCloneWorktree(run, dir, clone))) {
     const release = await acquire(o, clone);
     await run(["worktree", "prune"], clone).finally(release);
     return { pushed: false, headSha: null, commits: 0, note: null };
@@ -298,26 +333,44 @@ export async function finishTaskRepo(o: CommonOptions & { dir: string }): Promis
   const commits = Number(await out(run, ["rev-list", "--count", `${from}..HEAD`], dir));
   let headSha: string | null = null;
   if (commits > 0) {
+    const sha = await out(run, ["rev-parse", "--verify", "HEAD^{commit}"], dir);
+    if (!/^[0-9a-f]{40}$/.test(sha)) throw failed(GIT_MESSAGES.pushRetry);
     const token = await o.getToken();
     const url = o.remoteUrl ?? `https://github.com/${o.git.repo}.git`;
     const release = await acquire(o, clone);
     try {
-      await assertSafeConfig(run, dir);
-      const r = await run(["push", "--no-verify", url, `HEAD:refs/heads/${branch}`], dir, token);
+      await resetCloneConfig(clone, url).catch(() => {
+        throw failed(GIT_MESSAGES.pushRetry);
+      });
+      // Dal clone (non dalla copia, la cui cartella `.git` è nelle mani di Claude), con il ref di destinazione fissato dal nodo
+      const r = await run(
+        ["push", "--no-verify", "--no-recurse-submodules", "--no-follow-tags", url, `${sha}:refs/heads/${branch}`],
+        clone,
+        token,
+      );
       if (!ok(r)) throw failed(classifyGitError(r.stderr, "push"));
     } finally {
       release();
     }
-    headSha = await out(run, ["rev-parse", "HEAD"], dir);
+    headSha = sha;
     o.logger?.info(`Git: compito ${branch}, ${commits} commit pubblicati`);
   }
-  const dirty = await countDirty(run, dir);
-  const release = await acquire(o, clone);
+  let dirty = 0;
   try {
-    await removeWorktree(run, clone, dir);
-    await run(["branch", "-D", branch], clone);
-  } finally {
-    release();
+    dirty = await countDirty(run, dir);
+  } catch {
+    o.logger?.warn(`Git: compito ${branch}, modifiche non committate non contate`);
+  }
+  try {
+    const release = await acquire(o, clone);
+    try {
+      await removeWorktree(run, clone, dir);
+      await run(["branch", "-D", branch], clone);
+    } finally {
+      release();
+    }
+  } catch {
+    o.logger?.warn(`Git: compito ${branch}, copia non tolta`);
   }
   return {
     pushed: commits > 0,

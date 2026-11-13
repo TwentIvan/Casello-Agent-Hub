@@ -58,8 +58,11 @@ const git = (cwd: string, ...args: string[]) =>
     .toString()
     .trim();
 
+/** Comando git da far fallire (per provare la pulizia dopo il push). */
+let failCommand: string | null = null;
 function spySpawn(command: string, args: readonly string[], options: SpawnOptions) {
   calls.push({ args, env: options.env ?? {} });
+  if (failCommand && args.includes(failCommand)) return spawn("false", [], options);
   return spawn(command, args, options);
 }
 
@@ -116,6 +119,7 @@ beforeEach(async () => {
   git(seed, "push", "-q", "origin", "main");
   calls = [];
   tokenCalls = 0;
+  failCommand = null;
 });
 afterEach(async () => cleanup());
 
@@ -165,6 +169,16 @@ describe("prepareTaskRepo", () => {
     await rm(first.dir, { recursive: true, force: true });
     const r = await prepareTaskRepo(opts());
     expect(r.resumed).toBe(false);
+    expect(git(r.dir, "symbolic-ref", "--short", "HEAD")).toBe("botcave/12-t1");
+  });
+
+  it("copia su un altro branch con commit non pubblicati: ricreata con la nota", async () => {
+    const first = await prepareTaskRepo(opts());
+    git(first.dir, "checkout", "-q", "--detach");
+    localCommit(first.dir, "staccato.txt");
+    const r = await prepareTaskRepo(opts());
+    expect(r.resumed).toBe(false);
+    expect(r.note).toBe("commit locali non pubblicati scartati: la copia non era sul branch del compito");
     expect(git(r.dir, "symbolic-ref", "--short", "HEAD")).toBe("botcave/12-t1");
   });
 
@@ -269,14 +283,62 @@ describe("finishTaskRepo", () => {
     expect(git(remote, "branch", "--list")).not.toContain("botcave");
   });
 
-  it("configurazione locale che dirotterebbe il token (insteadOf, helper): nessun push, copia rimasta", async () => {
+  it("clone manomesso e config globale ostile: fetch e push vanno al remoto giusto, niente tag né comandi di Claude", async () => {
     const p = await prepareTaskRepo(opts());
-    localCommit(p.dir, "a.txt");
-    git(p.dir, "config", "url.https://evil.example/.insteadOf", remote);
-    const err = await finishTaskRepo(opts({ dir: p.dir })).catch((e) => e);
-    expect(err).toBeInstanceOf(GitWorkspaceError);
-    expect(calls.some((c) => c.args.includes("push"))).toBe(false);
-    expect(existsSync(p.dir)).toBe(true);
+    const evil = path.join(base, "evil.git");
+    git(base, "init", "-q", "--bare", evil);
+    const marker = path.join(base, "eseguito");
+    // Manomissioni che Claude potrebbe fare dalla copia di lavoro
+    git(cloneDir(), "config", `url.${evil}.insteadOf`, remote);
+    git(cloneDir(), "config", "core.alternateRefsCommand", `touch ${marker}`);
+    git(cloneDir(), "config", "push.followTags", "true");
+    await writeFile(path.join(cloneDir(), "objects", "info", "alternates"), path.join(evil, "objects") + "\n");
+    const sha = localCommit(p.dir, "a.txt");
+    git(p.dir, "tag", "-a", "v-claude", "-m", "tag");
+    // Configurazione globale ostile in una HOME temporanea, senza l'isolamento dei test
+    const home = path.join(base, "home");
+    await mkdir(home);
+    await writeFile(path.join(home, ".gitconfig"), `[url "${evil}"]\n\tinsteadOf = ${remote}\n[http]\n\tproxy = http://127.0.0.1:9\n`);
+    const prevHome = process.env.HOME;
+    process.env.HOME = home;
+    delete process.env.GIT_CONFIG_GLOBAL;
+    try {
+      const again = await prepareTaskRepo(opts());
+      expect(again.resumed).toBe(true);
+      const r = await finishTaskRepo(opts({ dir: p.dir }));
+      expect(r).toMatchObject({ pushed: true, headSha: sha, commits: 1 });
+    } finally {
+      process.env.HOME = prevHome;
+      process.env.GIT_CONFIG_GLOBAL = "/dev/null";
+    }
+    expect(git(remote, "rev-parse", "refs/heads/botcave/12-t1")).toBe(sha);
+    expect(git(evil, "for-each-ref")).toBe("");
+    expect(git(remote, "tag", "--list")).toBe("");
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(path.join(cloneDir(), "objects", "info", "alternates"))).toBe(false);
+    expect(() => git(cloneDir(), "config", "--get", "push.followTags")).toThrow();
+  });
+
+  it("copia su un altro branch o con HEAD staccato: i commit si pubblicano sul branch del compito", async () => {
+    for (const mode of ["branch", "detach"]) {
+      const p = await prepareTaskRepo(opts());
+      if (mode === "branch") git(p.dir, "checkout", "-q", "-b", "altro");
+      else git(p.dir, "checkout", "-q", "--detach");
+      const sha = localCommit(p.dir, `${mode}.txt`);
+      const r = await finishTaskRepo(opts({ dir: p.dir }));
+      expect(r).toMatchObject({ pushed: true, headSha: sha, commits: 1 });
+      expect(git(remote, "rev-parse", "refs/heads/botcave/12-t1")).toBe(sha);
+      expect(existsSync(p.dir)).toBe(false);
+    }
+  });
+
+  it("pulizia dopo un push riuscito che fallisce: il push si riferisce comunque", async () => {
+    const p = await prepareTaskRepo(opts());
+    const sha = localCommit(p.dir, "a.txt");
+    failCommand = "status";
+    const r = await finishTaskRepo(opts({ dir: p.dir }));
+    expect(r).toEqual({ pushed: true, headSha: sha, commits: 1, note: null });
+    expect(git(remote, "rev-parse", "refs/heads/botcave/12-t1")).toBe(sha);
   });
 
   it("il token non compare negli argomenti, solo nell'ambiente dei comandi di rete", async () => {
@@ -291,7 +353,10 @@ describe("finishTaskRepo", () => {
     }
     const pushes = calls.filter((c) => c.args.includes("push"));
     expect(pushes).toHaveLength(1);
-    expect(pushes[0].args.slice(-2)).toEqual([remote, "HEAD:refs/heads/botcave/12-t1"]);
+    const head = git(remote, "rev-parse", "refs/heads/botcave/12-t1");
+    expect(pushes[0].args.slice(-2)).toEqual([remote, `${head}:refs/heads/botcave/12-t1`]);
+    expect(pushes[0].args).toContain("--no-follow-tags");
+    expect(pushes[0].args).toContain("--no-recurse-submodules");
     expect(pushes[0].args.some((a) => a.startsWith("--force") || a.startsWith("+"))).toBe(false);
   });
 });

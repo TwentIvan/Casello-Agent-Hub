@@ -285,6 +285,9 @@ segnalare nella PR. Nessuna variabile nuova. Permessi della GitHub App: invariat
   nell'ambiente dei processi `git` che lo usano; non entra nell'ambiente di Claude Code, che gira con `--dangerously-skip-permissions`.
   Un processo di Claude potrebbe comunque leggere `~/.casello-nodo/config.json` (rischio già noto e documentato in «Nodi»).
 - Gli helper di credenziali del Mac sono azzerati per i comandi con token: niente copia nel portachiavi.
+- Prima di ogni comando con token il nodo riscrive da capo la configurazione del clone (togliendo `objects/info/alternates` e i
+  `config.worktree`), ignora quella globale e di sistema e spegne hook, fsmonitor, firma, sottomoduli e tag nel push. Rischio residuo: un
+  processo lasciato acceso da Claude con lo stesso utente del Mac può leggere l'ambiente del processo `git` (e quindi il token) finché gira.
 - Il push va solo su `refs/heads/botcave/…`, mai forzato, mai sul base; i file di workflow li rifiuta GitHub.
 - La PR la apre il server, con il token d'installazione e il controllo dei segreti su titolo e corpo.
 - Il capo non propone più comandi distruttivi; nessun comando del nodo cancella file fuori da `<radice>/.botcave/`.

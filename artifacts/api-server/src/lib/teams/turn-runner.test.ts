@@ -24,13 +24,13 @@ import { allowTestLoopback, startFakeProvider, type FakeChatReply, type FakeProv
 import { deleteAttachment, saveAttachment } from "./attachments";
 import { listEvents } from "./events";
 import { BUDGET_RESUME_REQUEST, closeInstance, setInstanceBudget } from "./instances";
-import { LEAD_MESSAGES } from "./lead-tools";
-import { getPlan, patchPlan, writePlanVersion } from "./plan";
+import { LEAD_MESSAGES, isEnvironmentFailure } from "./lead-tools";
+import { getPlan, patchPlan, sameProposalContent, writePlanVersion, type PlanView } from "./plan";
 import { TASK_MESSAGES, settleTaskExecutions, startTask } from "./task-runner";
 import { TEAM_BUDGET_REACHED } from "./team-budget";
 import { enqueueTurnReason, setOnTurnQueued } from "./turn-queue";
 import * as readinessModule from "./readiness";
-import { activateInstance, pumpTurnInBackground, runTurn, sendToLead, settleTurnExecutions } from "./turn-runner";
+import { activateInstance, decisionMessages, decisionOnlyTurn, pumpTurnInBackground, readyTaskIds, runTurn, sendToLead, settleTurnExecutions } from "./turn-runner";
 
 // Il calcolo della prontezza si può sostituire nei test (null = vero calcolo)
 const readinessOverride = vi.hoisted(() => ({ fn: null as null | (() => Promise<unknown>) }));
@@ -728,5 +728,161 @@ describe("turni del capo", () => {
       expect(userMessages(leadRequests()[0]!).some((m) => m.startsWith(READINESS_HEAD))).toBe(false);
       expect((await turns(id))[0]).toMatchObject({ status: "done" });
     });
+  });
+});
+
+describe("decisioni sul piano: assegnare, non riproporre", () => {
+  const keepT1 = { id: "t1", title: "Analisi del WI", roleKey: "analista", instructions: "Analizza il WI 1174" };
+  const reworded = { ...keepT1, instructions: "Analizza con cura il WI 1174 e annota i punti da chiudere" };
+
+  it("dopo l'approvazione: novità con i compiti pronti; una riformulazione del PLAN è rifiutata, nessuna voce nuova", async () => {
+    const id = await seedTeam();
+    const number = await activateAndPropose(id);
+    leadScript.push(call("proponi_piano", { ...PROPOSAL, tasks: [reworded] }), text("Assegno t1."));
+    await approveAction(userId, number, {});
+    await settleAll();
+
+    const [first, second] = leadRequests().slice(-2);
+    const novelty = userMessages(first!).find((m) => m.startsWith(`Novità: la voce n. ${number}`));
+    expect(novelty).toContain("approvata dall'utente");
+    expect(novelty).toContain("i compiti pronti (t1)");
+    expect(novelty).toContain("non riproporre il PLAN");
+    expect(toolMessages(second!)).toEqual([LEAD_MESSAGES.proposeAfterDecision]);
+    expect(await items(id)).toHaveLength(1);
+    expect(await getPlan(id)).toMatchObject({ status: "approved", version: 2, approvedVersion: 2 });
+  });
+
+  it("le istruzioni del capo dicono di assegnare dopo l'approvazione e di non riproporre dopo un rifiuto senza nota", async () => {
+    const id = await seedActiveApproved();
+    await sendToLead(userId, id, "ciao");
+    await settleAll();
+    const system = String(leadRequests()[0]!.messages[0]!.content);
+    expect(system).toContain("il passo successivo è assegnare con `assegna_compito` i compiti pronti");
+    expect(system).toContain("dopo un rifiuto senza nota il PLAN approvato resta valido");
+  });
+
+  it("rifiuto senza nota di una modifica: novità «il PLAN approvato resta valido»; la stessa modifica riproposta è rifiutata", async () => {
+    const id = await seedActiveApproved();
+    // Il capo propone una modifica su richiesta dell'utente; l'utente la rifiuta senza nota
+    const extra = { title: "Collaudo", roleKey: "analista", instructions: "Collauda il rilascio" };
+    leadScript.push(call("proponi_piano", { objective: "Chiudere il WI 1174", tasks: [{ id: "t1", title: "Analisi del WI", roleKey: "analista", instructions: "Analizza" }, extra] }), text("Proposto."));
+    await sendToLead(userId, id, "aggiungi il collaudo");
+    await settleAll();
+    const [change] = await items(id);
+    expect(change).toMatchObject({ kind: "plan_change", status: "pending" });
+
+    // Nel turno del rifiuto il capo prova a riproporre: freno della decisione
+    leadScript.push(call("proponi_piano", { objective: "Chiudere il WI 1174", tasks: [{ id: "t1", title: "Analisi del WI", roleKey: "analista", instructions: "Analizza" }, extra] }), text("Ok."));
+    await rejectAction(userId, change!.number, null);
+    await settleAll();
+    const [first, second] = leadRequests().slice(-2);
+    const novelty = userMessages(first!).find((m) => m.startsWith(`Novità: la voce n. ${change!.number}`));
+    expect(novelty).toContain("senza nota: il PLAN approvato resta valido");
+    expect(novelty).toContain("i compiti pronti (t1)");
+    expect(toolMessages(second!)).toEqual([LEAD_MESSAGES.proposeAfterDecision]);
+
+    // In un turno successivo (riavvio) la stessa modifica, anche con id e spazi diversi, è riconosciuta come già rifiutata
+    leadScript.push(
+      call("proponi_piano", { objective: " Chiudere il WI 1174", tasks: [{ ...extra, instructions: "Collauda  il rilascio" }, { id: "t1", title: "Analisi del WI", roleKey: "analista", instructions: "Analizza" }] }),
+      text("Ok."),
+    );
+    await enqueueTurnReason(id, { type: "restart" });
+    await settleAll();
+    expect(toolMessages(leadRequests().at(-1)!)).toEqual([LEAD_MESSAGES.sameAsRejected]);
+    expect(await items(id)).toHaveLength(1);
+
+    // Se è l'utente a chiederlo, la proposta passa
+    leadScript.push(call("proponi_piano", { objective: "Chiudere il WI 1174", tasks: [{ id: "t1", title: "Analisi del WI", roleKey: "analista", instructions: "Analizza" }, extra] }), text("Riproposto."));
+    await sendToLead(userId, id, "ripensandoci il collaudo serve, riproponilo");
+    await settleAll();
+    expect(await items(id)).toHaveLength(2);
+  });
+
+  it("i fallimenti dovuti all'ambiente non contano nel freno dei 3 fallimenti", async () => {
+    const id = await seedActiveApproved();
+    for (const outcome of ["accesso al repository non disponibile", "repository non raggiungibile: riprova più tardi", "nodo non più raggiungibile"]) {
+      await db.insert(teamTasksTable).values({ instanceId: id, planTaskId: "t1", roleKey: "analista", instructions: "Analizza", status: "failed", outcome });
+    }
+    await db.insert(teamTasksTable).values({ instanceId: id, planTaskId: "t1", roleKey: "analista", instructions: "Analizza", status: "blocked", error: "interrotto dal riavvio" });
+    await patchPlan(id, { tasks: [{ id: "t1", status: "failed" }] });
+    workerScript.push(call("riferisci", { status: "done", outcome: "ok" }));
+    leadScript.push(call("assegna_compito", { taskId: "t1" }), text("Assegnato."));
+    await enqueueTurnReason(id, { type: "restart" });
+    await settleAll();
+    expect(await db.select().from(teamTasksTable).where(eq(teamTasksTable.instanceId, id))).toHaveLength(5);
+  });
+
+  it("i fallimenti d'ambiente non azzerano il conto: 3 fallimenti veri intervallati restano un freno", async () => {
+    const id = await seedActiveApproved();
+    const rows = [
+      { status: "failed" as const, outcome: "test rossi" },
+      { status: "failed" as const, outcome: "accesso al repository non disponibile" },
+      { status: "blocked" as const, outcome: "manca una specifica" },
+      { status: "failed" as const, outcome: "Git non installato sul Mac: apri Botcave Nodo e scegli Installa Git" },
+      { status: "failed" as const, outcome: "build rotta" },
+    ];
+    for (const r of rows) await db.insert(teamTasksTable).values({ instanceId: id, planTaskId: "t1", roleKey: "analista", instructions: "Analizza", ...r });
+    await patchPlan(id, { tasks: [{ id: "t1", status: "failed" }] });
+    leadScript.push(call("assegna_compito", { taskId: "t1" }), text("Segnalo."));
+    await enqueueTurnReason(id, { type: "restart" });
+    await settleAll();
+    expect(toolMessages(leadRequests().at(-1)!)).toEqual([LEAD_MESSAGES.tooManyFailures]);
+  });
+});
+
+describe("funzioni pure delle decisioni", () => {
+  const view = (over: Partial<PlanView> = {}): PlanView =>
+    ({
+      version: 2,
+      status: "approved",
+      approvedVersion: 2,
+      objective: "o",
+      constraints: [],
+      openPoints: [],
+      manualActions: [],
+      tasks: [
+        { id: "t1", title: "a", roleKey: "r", instructions: "i", status: "done", outcome: null },
+        { id: "t2", title: "b", roleKey: "r", instructions: "i", status: "planned", outcome: null },
+      ],
+      ...over,
+    }) as PlanView;
+
+  it("readyTaskIds: solo i planned del PLAN approvato corrente", () => {
+    expect(readyTaskIds(view())).toEqual(["t2"]);
+    expect(readyTaskIds(view({ version: 3, status: "proposed" }))).toEqual([]);
+    expect(readyTaskIds(view({ approvedVersion: null, status: "draft" }))).toEqual([]);
+  });
+
+  it("decisionMessages: rifiuto con nota → novità e nota separate; senza PLAN approvato → segnala", () => {
+    const withNote = decisionMessages({ type: "decision", number: 7, outcome: "rejected", note: "togli t2" }, view());
+    expect(withNote).toHaveLength(2);
+    expect(withNote[1]).toBe("Nota dell'utente sul rifiuto della voce n. 7:\ntogli t2");
+    const noPlan = decisionMessages({ type: "decision", number: 7, outcome: "rejected", note: null }, view({ approvedVersion: null, status: "draft" }));
+    expect(noPlan[0]).toContain("Non riproporre lo stesso piano");
+    const approvedNoReady = decisionMessages({ type: "decision", number: 7, outcome: "approved", note: null }, view({ tasks: [] }));
+    expect(approvedNoReady[0]).toContain("Non ci sono compiti pronti");
+  });
+
+  it("decisionOnlyTurn: solo decisioni senza nota", () => {
+    expect(decisionOnlyTurn([{ type: "decision", number: 1, outcome: "approved", note: null }])).toBe(true);
+    expect(decisionOnlyTurn([{ type: "decision", number: 1, outcome: "rejected", note: null }])).toBe(true);
+    expect(decisionOnlyTurn([{ type: "decision", number: 1, outcome: "rejected", note: "cambia" }])).toBe(false);
+    expect(decisionOnlyTurn([{ type: "decision", number: 1, outcome: "approved", note: null }, { type: "restart" }])).toBe(false);
+    expect(decisionOnlyTurn([])).toBe(false);
+  });
+
+  it("isEnvironmentFailure: prefissi d'ambiente, non gli esiti del lavoro", () => {
+    expect(isEnvironmentFailure("accesso al repository non disponibile")).toBe(true);
+    expect(isEnvironmentFailure("L'App GitHub non ha il permesso Contents su questo repository: accetta i nuovi permessi nell'installazione")).toBe(true);
+    expect(isEnvironmentFailure("push non riuscito: il branch è cambiato su GitHub")).toBe(false);
+    expect(isEnvironmentFailure("test rossi")).toBe(false);
+    expect(isEnvironmentFailure(null)).toBe(false);
+  });
+
+  it("sameProposalContent: ignora id, ordine e spazi; non ignora il contenuto", () => {
+    const a = { objective: "o", constraints: ["c"], openPoints: [], manualActions: [], tasks: [{ id: "t1", title: "a", roleKey: "r", instructions: "x y", status: "planned" as const, outcome: null }] };
+    const b = { ...a, constraints: [" c"], tasks: [{ ...a.tasks[0]!, id: "t9", instructions: "x  y " }] };
+    expect(sameProposalContent(a, b)).toBe(true);
+    expect(sameProposalContent(a, { ...a, tasks: [{ ...a.tasks[0]!, instructions: "z" }] })).toBe(false);
   });
 });

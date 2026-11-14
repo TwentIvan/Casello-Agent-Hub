@@ -298,12 +298,35 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `confirm_writes` (conferma delle scritture: le L1 vanno in «Da confermare»; sempre vera per il `general`), ruolo:
   `general` (uno per app, creato con l'app, non eliminabile, usa tutti i tool `active` dell'app; in console è il «Responsabile di prodotto») o `area`
   (usa solo i tool collegati in `agent_tools`)
-- **Tool** (`app_tools`): catalogo per App; `kind` (`http`, `mcp`, `ui`, `composite`: al modello si offrono
-  solo `http` e `mcp`; `mcp` ha `definition {mcpName}`), `identity` (`user`: token dell'utente da `X-App-User-Token`; `service`:
+- **Tool** (`app_tools`): catalogo per App; `kind` (`http`, `mcp`, `ui`, `composite`: alle run degli agenti si offrono
+  `http`, `mcp` e `composite`, mai `ui`; `mcp` ha `definition {mcpName}`; per `composite` vedi "Tool composti"), `identity` (`user`: token dell'utente da `X-App-User-Token`; `service`:
   segreto di servizio), `level` (L0–L3) e `levelOverride` (al posto dei vecchi flag `requiresConfirmation`/`readOnly`), stato (draft/active/disabled), definizione
   (metodo, path, posizione dei parametri) e `params_schema` JSON (`"x-sensitive": true` oscura un parametro)
 - **Run**: esecuzione di un Agent: input, output, errore, durata, token, stato
   (pending/running/awaiting_client/succeeded/failed/cancelled; `awaiting_client` è solo storico); i passi in `run_steps`
+
+## Tool composti
+
+- Issue #95. Un tool `composite` esegue in sequenza 1..10 tool `http`/`mcp` della stessa app e restituisce un output combinato
+  (`lib/tools/composite.ts`, validazione in `definition.ts`, collegamento dei passi in `catalog.ts` con `resolveCompositeTools`).
+- **Definizione** `{steps: [{tool, args}], output}`: `args` e `output` sono mappe nome → modello; un valore che comincia con `$` è un
+  riferimento, `$input[.campo…]` (argomenti del composto) o `$steps.N[.campo…]` (risultato JSON del passo N, solo passi precedenti per
+  gli `args`), fino a 5 campi `^[A-Za-z0-9_-]{1,64}$`, solo proprietà proprie; `$$` all'inizio vale un `$` letterale; il resto è una
+  costante. Il riferimento conserva il tipo (un `id` numerico arriva come numero); un riferimento senza valore si omette. `output`
+  vuoto = risultato dell'ultimo passo; al più 50 campi.
+- **Collegamento** (`buildComposite`, al caricamento dei tool dell'agente e all'approvazione in coda): ogni passo deve esistere nell'app,
+  `active`, `http`/`mcp` (niente composti annidati né `ui`), livello effettivo ≠ L3, con i parametri usati dichiarati; altrimenti il
+  composto si esclude (avviso nel log) o la voce in coda non è eseguibile. Il livello effettivo del composto è il più alto tra il suo
+  e quelli dei passi (in memoria, con `levelOverride`): un passo L2 manda in «Da confermare» tutto il composto (o la conferma delle
+  scritture un passo L1), un passo L3 lo esclude. Un argomento che finisce in un parametro `x-sensitive` di un passo diventa sensibile
+  anche nello schema del composto (timeline, coda). Un agente di area usa i passi del composto collegato anche se non sono collegati a lui.
+- **Esecuzione** (`executeTool` → `runComposite`): argomenti validati con lo schema del composto, poi ogni passo con l'esecutore di sempre
+  (validazione, autenticazione con l'identità del passo, header fissi, timeout, oscuramento delle credenziali), risposta intera
+  (`raw`) per i riferimenti; al primo passo fallito si ferma con «passo N (nome): …» senza annullare i passi già eseguiti; tempo massimo
+  complessivo 60 s (`COMPOSITE_TIMEOUT_MS`) oltre al timeout di ogni passo; output troncato a 20 000 caratteri. Nella timeline il
+  composto è un passo solo. Senza passi collegati l'esecutore risponde «passi del tool composto non disponibili».
+- Fuori ambito: composti nelle squadre, negli inneschi e nelle proposte multiple (restano `http`/`mcp`), proposte di composti dall'architetto.
+  Nessuna migrazione.
 
 ## App con organizzazioni
 

@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db, appToolsTable, pendingActionStepsTable, pendingActionsTable, type PendingActionRow } from "@workspace/db";
 import { logger } from "../logger";
 import { decryptSecret } from "../secrets";
-import { loadAppConnection, toCatalogTool } from "../tools/catalog";
+import { loadAppConnection, resolveCompositeTools, toCatalogTool } from "../tools/catalog";
 import { executeTool, redact } from "../tools/executor";
 import { effectiveLevel } from "../tools/levels";
 import { decidePlanItem } from "../teams/plan-decisions";
@@ -85,12 +85,15 @@ export async function approveAction(
   if (toolId === null || appId === null) return fail(409, ACTION_MESSAGES.notExecutable);
 
   const [toolRow] = await db.select().from(appToolsTable).where(eq(appToolsTable.id, toolId)).limit(1);
-  const tool = toolRow ? toCatalogTool(toolRow) : null;
+  const parsedTool = toolRow ? toCatalogTool(toolRow) : null;
+  // Un tool composto si ricollega ai passi di adesso: un passo diventato L3 o non più attivo lo rende non eseguibile
+  const tool =
+    parsedTool?.kind === "composite" ? ((await resolveCompositeTools([parsedTool]))[0] ?? null) : parsedTool;
   if (
     !tool ||
     tool.status !== "active" ||
     effectiveLevel(tool) === "L3" ||
-    (tool.kind !== "http" && tool.kind !== "mcp")
+    (tool.kind !== "http" && tool.kind !== "mcp" && tool.kind !== "composite")
   ) {
     return fail(409, ACTION_MESSAGES.notExecutable);
   }

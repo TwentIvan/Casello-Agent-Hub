@@ -30,6 +30,7 @@ import {
   type RunOptions,
 } from "./run-executor";
 import { clearUserToken, getUserToken, setUserToken } from "./user-tokens";
+import { approveAction } from "./actions/decide";
 import { decryptSecret } from "./secrets";
 import { logger } from "./logger";
 import { ProviderError } from "./ai/discovery";
@@ -580,6 +581,89 @@ const POST_ITEM: Partial<InsertAppTool> = {
   paramsSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
   definition: { method: "POST", path: "/items", paramLocations: { name: "body" } },
 };
+
+describe("tool composite nelle run", () => {
+  /** Aggiunge all'app della run un tool composto con due passi: legge l'elemento e poi quello indicato dal primo. */
+  // I riferimenti conservano il tipo: l'id letto dal primo passo è un numero, il secondo passo lo vuole intero
+  const intId = { type: "object", properties: { id: { type: "integer" } }, required: ["id"] };
+  const LINKED_ITEM: Partial<InsertAppTool> = { ...GET_ITEM, name: "get_linked", paramsSchema: intId };
+  const DELETE_LINKED: Partial<InsertAppTool> = { ...DELETE_ITEM, name: "delete_linked", paramsSchema: intId };
+
+  async function addComposite(secondStep: Partial<InsertAppTool>): Promise<void> {
+    const [a] = await db.select().from(appsTable);
+    await db.insert(appToolsTable).values([
+      { appId: a!.id, ...secondStep } as InsertAppTool,
+      {
+        appId: a!.id,
+        name: "leggi_collegato",
+        description: "Legge un elemento e quello collegato",
+        kind: "composite",
+        identity: "user",
+        level: "L0",
+        status: "active",
+        paramsSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+        definition: {
+          steps: [
+            { tool: "get_item", args: { id: "$input.id" } },
+            { tool: secondStep.name!, args: { id: "$steps.0.id" } },
+          ],
+          output: { primo: "$steps.0.name", secondo: "$steps.1" },
+        },
+      } as InsertAppTool,
+    ]);
+  }
+
+  it("offerto al modello, esegue i due passi http in ordine e compare nella timeline come un passo", async () => {
+    const id = await seedRun(GET_ITEM);
+    await addComposite(LINKED_ITEM);
+    llmReplies = [toolCallReply("leggi_collegato", { id: "7" }), textReply("Fatto")];
+
+    await startWithToken(id, "tok-1");
+
+    expect((await getRun(id)).status).toBe("succeeded");
+    expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["get_item", "get_linked", "leggi_collegato"]);
+    expect(appRequests.map((r) => `${r.method} ${r.url} ${r.auth}`)).toEqual([
+      "GET /api/items/7 Bearer tok-1",
+      "GET /api/items/42 Bearer tok-1",
+    ]);
+    expect(JSON.parse(llmRequests[1].messages.at(-1).content)).toEqual({ primo: "Rosa", secondo: { id: 42, name: "Rosa" } });
+    const steps = await getSteps(id);
+    expect(steps.map((s) => [s.type, s.toolName, s.ok])).toEqual([
+      ["model", null, true],
+      ["tool", "leggi_collegato", true],
+      ["model", null, true],
+    ]);
+    expect(steps[1]!.args).toEqual({ id: "7" });
+  });
+
+  it("un passo L2: il composto va in coda (nessuna chiamata all'app) e l'approvazione esegue i passi", async () => {
+    const id = await seedRun(GET_ITEM);
+    await addComposite(DELETE_LINKED);
+    llmReplies = [
+      toolCallReply("leggi_collegato", { id: "7", destinatario: "Rosa", sintesi: "Elimina l'elemento collegato al 7" }),
+      textReply("In coda."),
+    ];
+
+    await startWithToken(id, "tok-1");
+
+    expect((await getRun(id)).status).toBe("succeeded");
+    expect(appRequests).toHaveLength(0);
+    const offered = llmRequests[0].tools.find((t: any) => t.function.name === "leggi_collegato").function.parameters;
+    expect(offered.required).toEqual(["id", "destinatario", "sintesi"]);
+    expect((await getSteps(id)).map((s) => s.type)).toEqual(["model", "queued", "model"]);
+    const [action] = await db.select().from(pendingActionsTable);
+    expect(action).toMatchObject({ status: "pending", argsPublic: { id: "7" } });
+
+    const decided = await approveAction(action!.userId, action!.number, { userToken: "tok-2" });
+    expect(decided.ok).toBe(true);
+    expect(appRequests.map((r) => `${r.method} ${r.url} ${r.auth}`)).toEqual([
+      "GET /api/items/7 Bearer tok-2",
+      "DELETE /api/items/42 Bearer tok-2",
+    ]);
+    const [done] = await db.select().from(pendingActionsTable);
+    expect(done!.status).toBe("done");
+  });
+});
 
 describe("scritture in coda (confirmWrites) e descrizione funzionale", () => {
   const call = () => toolCallReply("post_item", { name: "x", destinatario: "Rosa", sintesi: "Crea x" });

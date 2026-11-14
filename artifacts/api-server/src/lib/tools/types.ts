@@ -32,6 +32,11 @@ export type ToolDefinition = HttpDefinition | UiDefinition | CompositeDefinition
 export type CatalogTool = Omit<AppTool, "paramsSchema" | "definition"> & {
   paramsSchema: Record<string, unknown>;
   definition: ToolDefinition;
+  /**
+   * Solo per i tool `composite`: i tool dei passi, nell'ordine della definizione, già risolti e verificati
+   * (`resolveCompositeTools` in catalog.ts). Senza, l'esecutore non esegue il tool composto.
+   */
+  compositeSteps?: CatalogTool[];
 };
 
 export interface ToolResult {

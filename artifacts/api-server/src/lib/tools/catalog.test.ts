@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { db, pool, appsTable, agentsTable, appToolsTable, agentToolsTable } from "@workspace/db";
-import { loadAgentTools, loadAppConnection, maskSensitiveArgs, toFunctionTools } from "./catalog";
+import { loadAgentTools, loadAppConnection, maskSensitiveArgs, resolveCompositeTools, toFunctionTools } from "./catalog";
 import type { CatalogTool } from "./types";
 
 const HTTP_DEF = { method: "GET", path: "/items", paramLocations: {} };
@@ -32,7 +32,7 @@ async function seed() {
       { appId: app!.id, name: "mcp_f", kind: "mcp", status: "active", level: "L1", definition: { mcpName: "cerca" } },
       // Definizione non più valida: va saltata
       { appId: app!.id, name: "broken_d", kind: "http", status: "active", definition: { method: "GET" } },
-      // Fase 1: nessun client esegue tool ui o composti, non vanno offerti al modello
+      // Nessun client esegue i tool ui: non vanno offerti al modello
       { appId: app!.id, name: "open_page", kind: "ui", status: "active", definition: { action: "navigate" } },
       {
         appId: app!.id,
@@ -63,17 +63,19 @@ describe("catalogo dei tool", () => {
     await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
   });
 
-  it("l'agente general vede i tool http e mcp active dell'app, non i draft, ui/composite né i L3", async () => {
+  it("l'agente general vede i tool http, mcp e composite active dell'app, non i draft, gli ui né i L3", async () => {
     const { general } = await seed();
     const tools = await loadAgentTools(general.id);
-    expect(tools.map((t) => t.name).sort()).toEqual(["list_a", "list_b", "mcp_f"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["combo", "list_a", "list_b", "mcp_f"]);
     expect(tools[0]!.definition).toMatchObject({ method: "GET", path: "/items" });
   });
 
-  it("l'agente area vede solo i tool http collegati e active", async () => {
+  it("l'agente area vede solo i tool collegati e active", async () => {
     const { area } = await seed();
     const tools = await loadAgentTools(area.id);
-    expect(tools.map((t) => t.name)).toEqual(["list_b"]);
+    expect(tools.map((t) => t.name)).toEqual(["list_b", "combo"]);
+    // I passi del composto si collegano anche se non sono collegati all'agente
+    expect(tools[1]!.compositeSteps?.map((t) => t.name)).toEqual(["list_a"]);
   });
 
   it("loadAppConnection restituisce i campi di esecuzione dell'app", async () => {
@@ -163,11 +165,11 @@ describe("toFunctionTools", () => {
     ]);
   });
 
-  it("non offre al modello i tool ui e composite", () => {
+  it("non offre al modello i tool ui; i composite sì", () => {
     const http = tool({ type: "object", properties: {} });
     const ui = { ...http, name: "apri", kind: "ui" as const, definition: { action: "navigate" } };
     const composite = { ...http, name: "combo", kind: "composite" as const, definition: { steps: [], output: {} } };
-    expect(toFunctionTools([http, ui, composite]).map((t) => (t.type === "function" ? t.function.name : t.type))).toEqual(["login"]);
+    expect(toFunctionTools([http, ui, composite]).map((t) => (t.type === "function" ? t.function.name : t.type))).toEqual(["login", "combo"]);
   });
 
   it("strumento L2: aggiunge destinatario e sintesi obbligatori, senza toccare lo schema salvato", () => {
@@ -194,5 +196,73 @@ describe("toFunctionTools", () => {
   it("strumento L1: nessun parametro aggiunto", () => {
     const t = { ...tool({ type: "object", properties: {} }), level: "L1" as const };
     expect((toFunctionTools([t])[0] as any).function.parameters).toEqual({ type: "object", properties: {} });
+  });
+});
+
+describe("tool composti nel catalogo", () => {
+  beforeEach(async () => {
+    await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
+  });
+
+  async function seedComposite(steps: { name: string; level?: "L0" | "L1" | "L2" | "L3"; status?: "active" | "draft"; sensitive?: boolean }[]) {
+    const [app] = await db.insert(appsTable).values({ name: "Mister", slug: "mister", baseUrl: "http://mister.example" }).returning();
+    const [general] = await db.insert(agentsTable).values({ appId: app!.id, name: "Generale", role: "general" }).returning();
+    await db.insert(appToolsTable).values([
+      ...steps.map((s) => ({
+        appId: app!.id,
+        name: s.name,
+        kind: "http" as const,
+        status: s.status ?? ("active" as const),
+        level: s.level ?? ("L0" as const),
+        definition: { method: "POST", path: `/${s.name}`, paramLocations: {} },
+        paramsSchema: { type: "object", properties: { codice: { type: "string", ...(s.sensitive ? { "x-sensitive": true } : {}) } } },
+      })),
+      {
+        appId: app!.id,
+        name: "combo",
+        kind: "composite" as const,
+        status: "active" as const,
+        level: "L0" as const,
+        definition: { steps: steps.map((s) => ({ tool: s.name, args: { codice: "$input.codice" } })), output: {} },
+        paramsSchema: { type: "object", properties: { codice: { type: "string" }, altro: { type: "string" } } },
+      },
+    ]);
+    return general!;
+  }
+
+  it("il livello del composto è il più alto dei passi e i passi sono collegati in ordine", async () => {
+    const general = await seedComposite([{ name: "leggi" }, { name: "scrivi", level: "L2" }]);
+    const combo = (await loadAgentTools(general.id)).find((t) => t.name === "combo")!;
+    expect(combo.level).toBe("L0");
+    expect(combo.levelOverride).toBe("L2");
+    expect(combo.compositeSteps?.map((t) => t.name)).toEqual(["leggi", "scrivi"]);
+    // Offerto come L2: destinatario e sintesi obbligatori
+    const [fn] = toFunctionTools([combo]);
+    expect((fn as any).function.parameters.required).toEqual(["destinatario", "sintesi"]);
+  });
+
+  it("un passo L3, non attivo o inesistente esclude il composto", async () => {
+    for (const steps of [[{ name: "leggi" }, { name: "vietato", level: "L3" as const }], [{ name: "bozza", status: "draft" as const }]]) {
+      await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
+      const general = await seedComposite(steps);
+      expect((await loadAgentTools(general.id)).map((t) => t.name)).not.toContain("combo");
+    }
+    await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
+    const general = await seedComposite([{ name: "leggi" }]);
+    await pool.query("DELETE FROM app_tools WHERE name = 'leggi'");
+    expect((await loadAgentTools(general.id)).map((t) => t.name)).toEqual([]);
+  });
+
+  it("un argomento che finisce in un parametro sensibile di un passo diventa sensibile nel composto", async () => {
+    const general = await seedComposite([{ name: "accedi", sensitive: true }]);
+    const combo = (await loadAgentTools(general.id)).find((t) => t.name === "combo")!;
+    expect(maskSensitiveArgs(combo, { codice: "segreto", altro: "x" })).toEqual({ codice: "***", altro: "x" });
+  });
+
+  it("resolveCompositeTools lascia com'erano gli altri tool", async () => {
+    const general = await seedComposite([{ name: "leggi" }]);
+    const tools = await loadAgentTools(general.id);
+    const again = await resolveCompositeTools(tools.filter((t) => t.kind !== "composite"));
+    expect(again.map((t) => t.name)).toEqual(["leggi"]);
   });
 });

@@ -53,12 +53,72 @@ const uiSchema = z.object({
   args: z.record(z.unknown()).optional(),
 });
 
-const compositeSchema = z.object({
-  steps: z
-    .array(z.object({ tool: z.string().min(1), args: z.record(z.string()) }))
-    .min(1),
-  output: z.record(z.string()),
-});
+/** Passi al più in un tool composto: ogni passo è una chiamata all'app, dentro lo stesso turno. */
+export const MAX_COMPOSITE_STEPS = 10;
+const MAX_COMPOSITE_OUTPUT_FIELDS = 50;
+
+// Riferimento di un modello del tool composto: `$input[.campo…]` (argomenti ricevuti dal modello) oppure
+// `$steps.N[.campo…]` (risultato JSON del passo N, contando da 0). Fino a 5 campi, solo proprietà proprie.
+const TEMPLATE_REF = /^\$(input|steps\.(0|[1-9][0-9]?))((?:\.[A-Za-z0-9_-]{1,64}){0,5})$/;
+
+export type CompositeTemplate =
+  | { kind: "literal"; value: string }
+  | { kind: "input"; path: string[] }
+  | { kind: "step"; step: number; path: string[] };
+
+/**
+ * Interpreta un valore di `args` o `output` di un tool composto. Un valore che comincia con `$` è un
+ * riferimento (`$$` all'inizio vale un `$` letterale); ogni altro valore è una costante. Null se il
+ * riferimento non è valido.
+ */
+export function parseCompositeTemplate(value: string): CompositeTemplate | null {
+  if (!value.startsWith("$")) return { kind: "literal", value };
+  if (value.startsWith("$$")) return { kind: "literal", value: value.slice(1) };
+  const m = TEMPLATE_REF.exec(value);
+  if (!m) return null;
+  const path = m[3] ? m[3].slice(1).split(".") : [];
+  return m[1] === "input" ? { kind: "input", path } : { kind: "step", step: Number(m[2]), path };
+}
+
+/** Un riferimento a un passo deve puntare a un passo precedente (`before` = indice del primo passo non ammesso). */
+function checkTemplate(value: string, before: number, ctx: z.RefinementCtx, path: (string | number)[]): void {
+  const t = parseCompositeTemplate(value);
+  if (!t) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path,
+      message: `riferimento non valido "${value.slice(0, 80)}": usa $input.campo o $steps.N.campo ($$ per un $ letterale)`,
+    });
+  } else if (t.kind === "step" && t.step >= before) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path,
+      message: `il riferimento "${value.slice(0, 80)}" usa il passo ${t.step}, che non è precedente`,
+    });
+  }
+}
+
+const compositeSchema = z
+  .object({
+    steps: z
+      .array(z.object({ tool: z.string().min(1), args: z.record(z.string()) }))
+      .min(1)
+      .max(MAX_COMPOSITE_STEPS),
+    output: z.record(z.string()),
+  })
+  .superRefine((def, ctx) => {
+    def.steps.forEach((step, i) => {
+      if (!TOOL_NAME.test(step.tool)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["steps", i, "tool"], message: "nome di tool non valido" });
+      }
+      for (const [name, value] of Object.entries(step.args)) checkTemplate(value, i, ctx, ["steps", i, "args", name]);
+    });
+    const fields = Object.entries(def.output);
+    if (fields.length > MAX_COMPOSITE_OUTPUT_FIELDS) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["output"], message: `al più ${MAX_COMPOSITE_OUTPUT_FIELDS} campi` });
+    }
+    for (const [name, value] of fields) checkTemplate(value, def.steps.length, ctx, ["output", name]);
+  });
 
 const mcpSchema = z.object({ mcpName: z.string().min(1) }).strict();
 
@@ -90,6 +150,9 @@ function italianIssue(issue: ZodIssue): string {
       if (issue.type === "string") return "non può essere vuoto";
       if (issue.type === "array") return `servono almeno ${String(issue.minimum)} elementi`;
       return "valore troppo piccolo";
+    case "too_big":
+      if (issue.type === "array") return `al più ${String(issue.maximum)} elementi`;
+      return "valore troppo grande";
     case "custom":
       return issue.message;
     default:

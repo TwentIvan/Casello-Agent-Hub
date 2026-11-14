@@ -3,9 +3,10 @@ import { decryptSecret } from "../secrets";
 import { checkHttpPath, parseDefinition, validateArgs } from "./definition";
 import { checkAuthHeaderName, extraHeadersFor } from "./headers";
 import { callMcpTool } from "./mcp-client";
+import { runComposite } from "./composite";
 
 export { checkAuthHeaderName };
-import type { AppConnection, AuthConfig, CatalogTool, HttpDefinition, ToolResult } from "./types";
+import type { AppConnection, AuthConfig, CatalogTool, CompositeDefinition, HttpDefinition, ToolResult } from "./types";
 
 // Esecutore HTTP dei tool: l'unico punto in cui una chiamata del modello diventa una
 // richiesta verso un'app. Host, schema e prefisso arrivano SOLO dalla connessione
@@ -317,7 +318,24 @@ export async function executeTool(input: {
 
   try {
     if (tool.kind === "ui") return fail("questo tool viene eseguito dal client, non dal server");
-    if (tool.kind === "composite") return fail("tool composti non ancora supportati");
+    if (tool.kind === "composite") {
+      const compParsed = parseDefinition("composite", tool.definition);
+      if (!compParsed.ok) return fail(`definizione del tool non valida: ${compParsed.error}`);
+      const compArgError = validateArgs(tool.paramsSchema, input.args);
+      if (compArgError) return fail(`argomenti non validi: ${compArgError}`);
+      if (!isPlainObject(input.args)) return fail("argomenti non validi: devono essere un oggetto");
+      // I passi li collega chi carica il tool (`resolveCompositeTools`), che ne verifica anche i livelli
+      if (!tool.compositeSteps) return fail("passi del tool composto non disponibili");
+      const result = await runComposite({
+        tool: { ...tool, definition: compParsed.value as CompositeDefinition },
+        args: input.args,
+        ...(input.signal ? { signal: input.signal } : {}),
+        // Ogni passo con l'esecutore di sempre, per intero: i campi dei riferimenti non vanno troncati
+        executeStep: (step, args, signal) =>
+          executeTool({ conn, tool: step, args, ...(userToken !== undefined ? { userToken } : {}), fetchImpl, timeoutMs, signal, raw: true }),
+      });
+      return input.raw ? result : { ...result, content: truncate(result.content) };
+    }
     if (tool.kind === "mcp") {
       const mcpParsed = parseDefinition("mcp", tool.definition);
       if (!mcpParsed.ok) return fail(`definizione del tool non valida: ${mcpParsed.error}`);

@@ -26,7 +26,7 @@ import { checkAuthHeaderName, checkExtraHeaders, normalizeExtraHeaders } from ".
 import type { AuthConfig, ExtraHeader } from "../lib/tools/types";
 import { uniqueSlug, withSlugRetry } from "../lib/slug";
 import { isValidGithubRepo } from "../lib/architect/sources";
-import { INSTALLATION_NOT_YOURS, userHasInstallation } from "../lib/github/installations";
+import { INSTALLATION_NOT_YOURS, REPO_NOT_VISIBLE, REPOS_NOT_VERIFIED, userHasInstallation, userRepoAccess } from "../lib/github/installations";
 import { currentUserId } from "../lib/auth";
 import { GITHUB_MESSAGES, GithubError, repoInstallationId } from "../lib/github/app";
 import { githubConfig } from "../lib/github/config";
@@ -172,9 +172,10 @@ interface InstallationState {
 /**
  * Sorgente tramite l'installazione della GitHub App, sullo stato risultante: GitHub configurato,
  * sorgente `github` con un repo, installazione collegata dall'utente e che vede quel repo (chiesto a
- * GitHub con il JWT dell'App). Restituisce stato HTTP ed errore, o null se va bene.
+ * GitHub con il JWT dell'App), repo che l'utente stesso vede su GitHub (letto con il suo token alla
+ * callback: altrimenti 403). Restituisce stato HTTP ed errore, o null se va bene.
  */
-async function installationError(userId: number, state: InstallationState): Promise<{ status: 400 | 502; error: string } | null> {
+async function installationError(userId: number, state: InstallationState): Promise<{ status: 400 | 403 | 502; error: string } | null> {
   const cfg = githubConfig();
   if (!cfg) return { status: 400, error: GITHUB_MESSAGES.notConfigured };
   const id = state.sourceInstallationId;
@@ -190,6 +191,9 @@ async function installationError(userId: number, state: InstallationState): Prom
     if (err.message === GITHUB_MESSAGES.notConfigured) return { status: 400, error: GITHUB_MESSAGES.notConfigured };
     return { status: 400, error: INSTALLATION_NOT_YOURS };
   }
+  const access = await userRepoAccess(userId, id, state.sourceRepo);
+  if (access === "not_verified") return { status: 403, error: REPOS_NOT_VERIFIED };
+  if (access !== "ok") return { status: 403, error: REPO_NOT_VISIBLE };
   return null;
 }
 

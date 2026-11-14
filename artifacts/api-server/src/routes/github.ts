@@ -7,8 +7,9 @@ import { GITHUB_MESSAGES, GithubError, forgetInstallationTokens, listInstallatio
 import { githubConfig, type GithubConfig } from "../lib/github/config";
 import { logger } from "../lib/logger";
 
-// Installazioni dell'App GitHub dell'utente e repository che l'App vede: base per scegliere la
-// sorgente di un'app e per la console. Nessun token esce da qui.
+// Installazioni dell'App GitHub dell'utente e repository che l'App vede e che l'utente stesso vede su
+// GitHub (`user_repos`, letti con il suo token alla callback): base per scegliere la sorgente di
+// un'app e per la console. Nessun token esce da qui.
 
 /** Pagina di GitHub in cui gestire un'installazione (diversa per account personali e organizzazioni). */
 function manageUrl(cfg: GithubConfig, accountType: string, accountLogin: string, installationId: number): string {
@@ -71,16 +72,21 @@ router.get("/github/repos", async (req, res) => {
   }
   const userId = currentUserId(req);
   const installations = await db
-    .select({ installationId: githubInstallationsTable.installationId })
+    .select({ installationId: githubInstallationsTable.installationId, userRepos: githubInstallationsTable.userRepos })
     .from(githubInstallationsTable)
     .where(eq(githubInstallationsTable.userId, userId))
     .orderBy(asc(githubInstallationsTable.installationId));
 
   // In sequenza: le installazioni di un utente sono poche
   const all: { installationId: number; fullName: string; defaultBranch: string; private: boolean }[] = [];
-  for (const { installationId } of installations) {
+  for (const { installationId, userRepos } of installations) {
+    // Repo non ancora verificati con il token dell'utente: nessuno (si ricollega GitHub da Account)
+    if (!Array.isArray(userRepos)) continue;
+    const visible = new Set(userRepos);
     try {
-      for (const repo of await listInstallationRepos(cfg, installationId)) all.push({ installationId, ...repo });
+      for (const repo of await listInstallationRepos(cfg, installationId)) {
+        if (visible.has(repo.fullName.toLowerCase())) all.push({ installationId, ...repo });
+      }
     } catch (err) {
       if (isRevoked(err)) {
         // Revocata: si elimina per l'utente e si prosegue con le altre

@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, bigint, text, timestamp, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, bigint, jsonb, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 
 // Installazioni dell'App GitHub di Casello collegate a un utente (nessun token salvato).
@@ -14,6 +14,10 @@ export const githubInstallationsTable = pgTable(
     accountLogin: text("account_login").notNull(),
     accountType: text("account_type").notNull(),
     repositorySelection: text("repository_selection").notNull(),
+    // Repo dell'installazione che l'utente vede davvero su GitHub (proprietario/nome in minuscolo),
+    // letti con il suo token alla callback; null = non ancora verificati (si ricollega GitHub)
+    userRepos: jsonb("user_repos").$type<string[]>(),
+    userReposCheckedAt: timestamp("user_repos_checked_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

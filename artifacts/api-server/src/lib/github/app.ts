@@ -319,3 +319,31 @@ export async function listUserInstallations(
   }
   return out;
 }
+
+/**
+ * Repository di un'installazione che l'utente vede davvero (`GET /user/installations/{id}/repositories`
+ * con il suo token), come proprietario/nome in minuscolo, al massimo 1000: l'ambito dell'installazione
+ * può superare i repo a cui l'utente ha accesso. 403/404 = l'utente non vede l'installazione (elenco
+ * vuoto); 401 = token rifiutato.
+ */
+export async function listUserInstallationRepos(cfg: GithubConfig, userToken: string, installationId: number): Promise<string[]> {
+  if (!Number.isSafeInteger(installationId) || installationId <= 0) return [];
+  const out = new Set<string>();
+  for (let page = 1; page <= MAX_PAGES && out.size < MAX_REPOS; page++) {
+    const { status, json } = await githubCall(cfg, {
+      base: "api",
+      method: "GET",
+      path: `/user/installations/${installationId}/repositories?per_page=${PER_PAGE}&page=${page}`,
+      token: userToken,
+    });
+    if (status === 403 || status === 404) return [];
+    if (status >= 400) throw new GithubError(GITHUB_MESSAGES.loginFailed, status);
+    if (!isObj(json) || !Array.isArray(json["repositories"])) throw badShape(status);
+    const repos = json["repositories"] as unknown[];
+    for (const r of repos) {
+      if (isObj(r) && typeof r["full_name"] === "string" && isValidGithubRepo(r["full_name"])) out.add(r["full_name"].toLowerCase());
+    }
+    if (repos.length < PER_PAGE) break;
+  }
+  return [...out].slice(0, MAX_REPOS);
+}

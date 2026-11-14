@@ -1064,8 +1064,16 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   fa scaricare all'architetto il codice con un token di installazione limitato a quel repo e a
   `contents: read` (un'ora, solo in memoria). Nessun token GitHub viene salvato. Il token manuale della
   fase 3 resta come alternativa.
-- Limite noto: l'ambito di un'installazione può superare i repo a cui l'utente ha accesso su GitHub; prima
-  di aprire Casello a chiunque va verificato l'accesso con il token dell'utente (spec GitHub, §5).
+- Accesso ai repo verificato con il token dell'utente (issue #94): l'ambito di un'installazione può superare i repo che l'utente vede su
+  GitHub, quindi a ogni callback (`syncInstallations`) per ogni installazione si legge `GET /user/installations/{id}/repositories` con il
+  token utente (`listUserInstallationRepos`, poi scartato) e si salvano i nomi in minuscolo in `github_installations.user_repos` (con
+  `user_repos_checked_at`; GitHub in errore su un'installazione → elenco di prima, null se nuova). `GET /api/github/repos` mostra solo quei
+  repo (installazione con `user_repos` null: nessun repo); salvare un'app con `sourceInstallationId` (POST/PATCH) e avviare un'analisi
+  vogliono il repo nell'elenco (`userRepoAccess`): altrimenti 403 «repository non accessibile al tuo account GitHub: …», o con l'elenco
+  null 403 «accesso ai repository non ancora verificato: ricollega GitHub da Account». L'elenco si aggiorna solo a una nuova callback
+  (login o «Collega GitHub»): un repo creato o un accesso perso dopo valgono dal collegamento successivo. Gli altri usi dell'installazione
+  (squadre, Lucius, issue del piano) controllano ancora solo `userHasInstallation`, sul repo già convalidato al salvataggio. Migrazione
+  `docs/migrations/2026-11-accesso-repo-utente.sql` (additiva e idempotente, PRIMA del merge).
 - GitHub App su github.com: permessi Contents read, Issues read & write (per creare le issue del piano: ogni installazione deve accettare il
   nuovo permesso; il token con cui l'architetto legge il codice resta `contents: read`), Metadata read, Email
   addresses read (account); "Request

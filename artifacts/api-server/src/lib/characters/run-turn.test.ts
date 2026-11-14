@@ -32,9 +32,11 @@ import { seedNodeTurnSetup } from "../../../test/node-turn-fixture";
 import { claimTurn, reportTurn } from "../node-turns/protocol";
 import { turnEntry } from "../node-turns/registry";
 import { createConversation } from "./conversations";
-import { createTurnContext, recordProposal } from "./proposals";
+import { createTurnContext, decideCharacterProposal, recordProposal } from "./proposals";
+import { closeTurnAsStopped, queueChatMessage, stopChatTurn } from "../chat-turns/control";
+import { isLiveTurn } from "../stale-turns";
 import { registerSubject } from "./registry";
-import { TurnBusyError, failInterruptedCharacterTurns, startCharacterTurn } from "./run-turn";
+import { CHARACTER_CHAT_SPEC, TurnBusyError, executeCharacterTurn, failInterruptedCharacterTurns, startCharacterTurn } from "./run-turn";
 import { CHARACTER_MESSAGES, CharacterError, toolOk, type SubjectHandler } from "./types";
 
 const ACCOUNT_KEY = "sk-CHIAVE-DEI-PERSONAGGI";
@@ -61,8 +63,11 @@ const fakeSubject: SubjectHandler = {
   tools: [
     { type: "function", function: { name: "leggi_prova", description: "Legge", parameters: { type: "object", properties: {} } } },
     { type: "function", function: { name: "proponi_prova", description: "Propone", parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "consegna_prova", description: "Passa la mano", parameters: { type: "object", properties: {} } } },
   ],
   runTool: async (call, ctx) => {
+    // Scheda `handoff`: si accetta senza effetti sul server
+    if (call.name === "consegna_prova") return toolOk(await recordProposal(ctx, "handoff", { domanda: "Chiedo ad Alfred" }, "", null));
     if (call.name !== "proponi_prova") return toolOk("letto");
     const r = await recordProposal(ctx, "skill_content", { content: "nuovo" }, "motivo", "hash");
     return toolOk(r);
@@ -116,6 +121,14 @@ async function waitIdle(id: number): Promise<void> {
     await new Promise((r) => setTimeout(r, 25));
   }
   throw new Error("turno non terminato");
+}
+
+async function waitFor(check: () => boolean | Promise<boolean>): Promise<void> {
+  for (let i = 0; i < 200; i++) {
+    if (await check()) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  throw new Error("condizione non raggiunta");
 }
 
 const getConv = async () => (await db.select().from(characterConversationsTable).where(eq(characterConversationsTable.id, conversationId)))[0]!;
@@ -352,6 +365,129 @@ describe("conversazioni dei personaggi", () => {
       const messages = await getMessages();
       expect(messages[1]).toMatchObject({ role: "assistant", error: true, content: "Il nodo «Mac» è offline: accendilo o scegli un altro modello", tokens: 0 });
       expect(chatBodies()).toHaveLength(0);
+    });
+  });
+
+  describe("Ferma e Accoda", () => {
+    /** Primo giro: una scheda e 120 token; il secondo giro resta in attesa del provider per `delayMs`. */
+    function slowSecondRound(delayMs: number): void {
+      let n = 0;
+      fake.chatReply = () => {
+        n += 1;
+        if (n === 1) {
+          fake.delayMs = delayMs;
+          return { content: null, toolCalls: [{ id: "c1", name: "consegna_prova", arguments: "{}" }], usage: { prompt_tokens: 100, completion_tokens: 20 } };
+        }
+        return { content: "Risposta tardiva", toolCalls: [], usage: { prompt_tokens: 100, completion_tokens: 20 } };
+      };
+    }
+
+    afterEach(async () => {
+      await waitFor(() => !isLiveTurn("character", conversationId));
+    });
+
+    it("stop durante il turno → «Risposta interrotta.», error false, conversazione idle, token del primo giro registrati", async () => {
+      slowSecondRound(2_000);
+      await startCharacterTurn(conversationId, "Ciao", null);
+      await waitFor(() => chatBodies().length === 2);
+      const t0 = Date.now();
+      expect(await stopChatTurn(CHARACTER_CHAT_SPEC, conversationId)).toBe(true);
+      expect(Date.now() - t0).toBeLessThan(1_500);
+      const messages = await getMessages();
+      expect(messages[1]).toMatchObject({ role: "assistant", content: "Risposta interrotta.", error: false, tokens: 120 });
+      const conv = await getConv();
+      expect(conv).toMatchObject({ turnStatus: "idle", tokensUsed: 120 });
+    });
+
+    it("scheda salvata prima dello stop resta pending e si accetta", async () => {
+      slowSecondRound(2_000);
+      await startCharacterTurn(conversationId, "Ciao", null);
+      await waitFor(() => chatBodies().length === 2);
+      await stopChatTurn(CHARACTER_CHAT_SPEC, conversationId);
+      const messages = await getMessages();
+      const cards = await db.select().from(characterProposalsTable).where(eq(characterProposalsTable.messageId, messages[1]!.id));
+      expect(cards).toHaveLength(1);
+      expect(cards[0]).toMatchObject({ kind: "handoff", status: "pending" });
+      expect(await decideCharacterProposal(userId, cards[0]!.id, "accept")).toMatchObject({ status: "accepted" });
+    });
+
+    it("turno chiuso altrove: il messaggio resta «Risposta interrotta.», i token spesi si sommano, stato e updated_at no", async () => {
+      slowSecondRound(300);
+      await startCharacterTurn(conversationId, "Ciao", null);
+      await waitFor(() => chatBodies().length === 2);
+      expect(await closeTurnAsStopped(CHARACTER_CHAT_SPEC, conversationId)).toBe(true);
+      const closedAt = (await getConv()).updatedAt;
+      await waitFor(() => !isLiveTurn("character", conversationId));
+      const messages = await getMessages();
+      expect(messages[1]).toMatchObject({ content: "Risposta interrotta.", error: false, tokens: 0 });
+      expect(await getConv()).toMatchObject({ turnStatus: "idle", tokensUsed: 240 });
+      expect((await getConv()).updatedAt).toEqual(closedAt);
+    });
+
+    it("a fine turno parte il messaggio in coda", async () => {
+      fake.delayMs = 300;
+      fake.chatReply = { content: "Risposta", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+      await startCharacterTurn(conversationId, "Primo", null);
+      const queued = await queueChatMessage(CHARACTER_CHAT_SPEC, conversationId, "Dopo", { page: "dashboard" });
+      await waitFor(async () => (await getMessages()).length === 4 && (await getConv()).turnStatus === "idle" && !isLiveTurn("character", conversationId));
+      const messages = await getMessages();
+      expect(messages.map((m) => [m.role, m.content])).toEqual([
+        ["user", "Primo"],
+        ["assistant", "Risposta"],
+        ["user", "Dopo"],
+        ["assistant", "Risposta"],
+      ]);
+      expect(messages.every((m) => m.queuedAt === null)).toBe(true);
+      expect(messages[2]!.id).toBeGreaterThan(queued.id);
+      expect(messages[2]!.pageContext).toEqual({ page: "dashboard" });
+      expect(chatBodies()[1]!.messages.at(-1)).toMatchObject({ role: "user", content: "Dopo" });
+    });
+
+    it("la cronologia non contiene il messaggio in coda", async () => {
+      fake.chatReply = { content: "Risposta", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+      await db.update(characterConversationsTable).set({ turnStatus: "running" }).where(eq(characterConversationsTable.id, conversationId));
+      await db.insert(characterMessagesTable).values({ conversationId, role: "user", content: "Ciao" });
+      await queueChatMessage(CHARACTER_CHAT_SPEC, conversationId, "In coda", null);
+      const [assistant] = await db.insert(characterMessagesTable).values({ conversationId, role: "assistant", content: "" }).returning();
+      await executeCharacterTurn(conversationId, assistant!.id);
+      const first = chatBodies()[0]!;
+      expect(first.messages.at(-1)).toMatchObject({ role: "user", content: "Ciao" });
+      expect(JSON.stringify(first.messages)).not.toContain("In coda");
+      // Poi il messaggio in coda parte come turno nuovo
+      await waitFor(async () => chatBodies().length === 2 && (await getConv()).turnStatus === "idle");
+      expect(chatBodies()[1]!.messages.at(-1)).toMatchObject({ role: "user", content: "In coda" });
+      expect(JSON.stringify(chatBodies()[1]!.messages).split("In coda")).toHaveLength(2);
+    });
+
+    it("turno chiuso nel DB prima di partire: nessuna chiamata, nessuna scrittura, poi la coda", async () => {
+      fake.chatReply = { content: "Risposta", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+      await db.insert(characterMessagesTable).values({ conversationId, role: "user", content: "Ciao" });
+      const [assistant] = await db
+        .insert(characterMessagesTable)
+        .values({ conversationId, role: "assistant", content: "Risposta interrotta." })
+        .returning();
+      await queueChatMessage(CHARACTER_CHAT_SPEC, conversationId, "In coda", null);
+      // La conversazione è già `idle`: il turno è stato fermato prima di partire
+      await executeCharacterTurn(conversationId, assistant!.id);
+      await waitFor(async () => (await getConv()).turnStatus === "idle" && !isLiveTurn("character", conversationId));
+      const bodies = chatBodies();
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]!.messages.at(-1)).toMatchObject({ role: "user", content: "In coda" });
+      const messages = await getMessages();
+      expect(messages[1]).toMatchObject({ content: "Risposta interrotta.", tokens: 0 });
+      expect((await getConv()).tokensUsed).toBe(15);
+    });
+
+    it("fermato prima che il messaggio dell'assistente fosse scritto: il messaggio vuoto diventa «Risposta interrotta.»", async () => {
+      fake.chatReply = { content: "Risposta", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+      await db.insert(characterMessagesTable).values({ conversationId, role: "user", content: "Ciao" });
+      // Conversazione già `idle` (Ferma l'ha chiusa prima dell'inserimento) e messaggio dell'assistente ancora vuoto
+      const [assistant] = await db.insert(characterMessagesTable).values({ conversationId, role: "assistant", content: "" }).returning();
+      await executeCharacterTurn(conversationId, assistant!.id);
+      await waitFor(() => !isLiveTurn("character", conversationId));
+      expect(chatBodies()).toHaveLength(0);
+      expect((await getMessages())[1]).toMatchObject({ content: "Risposta interrotta.", error: false, tokens: 0 });
+      expect(await getConv()).toMatchObject({ turnStatus: "idle", tokensUsed: 0 });
     });
   });
 

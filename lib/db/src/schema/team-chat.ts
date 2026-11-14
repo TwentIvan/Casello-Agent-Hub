@@ -1,4 +1,5 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, numeric, boolean, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, numeric, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { teamInstancesTable } from "./team-instances";
 import { usersTable } from "./users";
 import { aiModelsTable } from "./ai-models";
@@ -48,8 +49,13 @@ export const teamChatMessagesTable = pgTable(
     error: boolean("error").notNull().default(false),
     tokens: integer("tokens").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
+    // Messaggio in attesa del turno in corso (uno al più per conversazione)
+    queuedAt: timestamp("queued_at"),
   },
-  (table) => [index("team_chat_messages_conversation_idx").on(table.conversationId, table.id)],
+  (table) => [
+    index("team_chat_messages_conversation_idx").on(table.conversationId, table.id),
+    uniqueIndex("team_chat_messages_queued_uidx").on(table.conversationId).where(sql`${table.queuedAt} IS NOT NULL`),
+  ],
 );
 
 // Proposta di Lucius su un ruolo, da accettare o rifiutare

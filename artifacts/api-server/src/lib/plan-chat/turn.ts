@@ -28,11 +28,16 @@ export interface PlanTurnDeps {
   ): Promise<ModelChatResult>;
   runTool(call: ChatToolCall): Promise<string>;
   now(): number;
+  /** Interruzione richiesta dall'utente: si controlla prima di ogni chiamata al modello e di ogni strumento. */
+  signal?: AbortSignal;
 }
 
 export type PlanTurnOutcome =
   | { ok: true; content: string; tokens: number; costUsd: string | null }
-  | { ok: false; error: string; tokens: number; costUsd: string | null };
+  | { ok: false; error: string; tokens: number; costUsd: string | null; stopped?: true };
+
+/** Messaggio dell'assistente quando l'utente ferma il turno. */
+export const STOPPED_TURN_MESSAGE = "Risposta interrotta.";
 
 const OUT_OF_TOOLS = "Hai esaurito gli strumenti: rispondi ora all'utente.";
 
@@ -51,15 +56,18 @@ export async function runPlanTurn(
   let budgetUsed = 0;
 
   const fail = (error: string): PlanTurnOutcome => ({ ok: false, error, tokens, costUsd: cost.value() });
+  const stopped = (): PlanTurnOutcome => ({ ok: false, error: STOPPED_TURN_MESSAGE, tokens, costUsd: cost.value(), stopped: true });
 
   // Un giro: null = tempo scaduto prima di chiamare; altrimenti l'esito della chiamata o un errore già pronto
   const call = async (tools: ChatCompletionFunctionTool[] | undefined): Promise<ModelChatResult | PlanTurnOutcome> => {
+    if (deps.signal?.aborted) return stopped();
     const left = limits.maxActiveMs - (deps.now() - startedAt);
     if (left <= 0) return fail("Tempo del turno scaduto.");
     let reply: ModelChatResult;
     try {
       reply = await deps.chat(history, tools, Math.max(1_000, left));
     } catch (err) {
+      if (deps.signal?.aborted) return stopped();
       return fail(err instanceof ProviderError ? err.message : "Errore nella chiamata al modello.");
     }
     cost.add(reply);
@@ -79,6 +87,7 @@ export async function runPlanTurn(
     if (budgetUsed > limits.maxTokens) break;
     history.push({ role: "assistant", content: r.content, tool_calls: assistantToolCalls(r.toolCalls) });
     for (const c of r.toolCalls) {
+      if (deps.signal?.aborted) return stopped();
       const content = await deps.runTool(c);
       history.push({ role: "tool", tool_call_id: c.id, content });
     }

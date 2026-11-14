@@ -1,6 +1,6 @@
 import { readTurnProgress } from "../lib/turn-progress/progress";
 import { Router, type IRouter, type Response } from "express";
-import { and, asc, desc, eq, ne } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, ne } from "drizzle-orm";
 import {
   db,
   characterConversationsTable,
@@ -28,6 +28,9 @@ import {
   DecideCharacterProposalParams,
   DecideCharacterProposalBody,
   DecideCharacterProposalResponse,
+  StopCharacterTurnParams,
+  StopCharacterTurnResponse,
+  CancelQueuedCharacterMessageParams,
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
 import { characterBudgetBlock } from "../lib/budget";
@@ -35,10 +38,11 @@ import { ownModel } from "../lib/ai/default-model";
 import { createConversation, getConversation } from "../lib/characters/conversations";
 import { decideCharacterProposal, toProposalView, type ProposalView } from "../lib/characters/proposals";
 import { findSubject } from "../lib/characters/registry";
-import { TurnBusyError, startCharacterTurn } from "../lib/characters/run-turn";
+import { CHARACTER_CHAT_SPEC, TurnBusyError, startCharacterTurn } from "../lib/characters/run-turn";
+import { cancelQueued, getQueued, sendChatMessage, stopChatTurn } from "../lib/chat-turns/control";
 import { getAlfredThread, restartAlfredThread } from "../lib/characters/subjects/alfred-thread";
-import { CHARACTER_MESSAGES, CharacterError, type PageContext } from "../lib/characters/types";
-import { consumeCharacterMessage } from "../middlewares/rate-limit";
+import { CHARACTER_MESSAGES, CHARACTER_MESSAGE_MAX_CHARS, CharacterError, type PageContext } from "../lib/characters/types";
+import { consumeCharacterMessage, consumeTurnStop } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
 import { toNumberOrNull } from "./serializers";
 
@@ -47,6 +51,7 @@ import { toNumberOrNull } from "./serializers";
 // ambiti per metodo (requireAuth).
 
 const LIST_MAX = 100;
+const TOO_MANY_STOPS = "Troppe richieste: riprova tra poco";
 
 const toPublicConversation = (c: CharacterConversation) => {
   const { userId: _userId, summarizedAt: _summarizedAt, ...rest } = c;
@@ -74,7 +79,12 @@ async function subjectGone(userId: number, conv: CharacterConversation): Promise
 }
 
 async function detail(userId: number, conv: CharacterConversation) {
-  const messages = await db.select().from(characterMessagesTable).where(eq(characterMessagesTable.conversationId, conv.id)).orderBy(asc(characterMessagesTable.id));
+  // Il messaggio in coda non è ancora nella cronologia: si espone a parte (`queuedMessage`)
+  const messages = await db
+    .select()
+    .from(characterMessagesTable)
+    .where(and(eq(characterMessagesTable.conversationId, conv.id), isNull(characterMessagesTable.queuedAt)))
+    .orderBy(asc(characterMessagesTable.id));
   const proposals = await db.select().from(characterProposalsTable).where(eq(characterProposalsTable.conversationId, conv.id)).orderBy(asc(characterProposalsTable.id));
   return {
     ...toPublicConversation(conv),
@@ -82,6 +92,7 @@ async function detail(userId: number, conv: CharacterConversation) {
     messages: messages.map(toPublicMessage),
     progress: conv.turnStatus === "running" ? readTurnProgress("character", conv.id) : null,
     proposals: proposals.map((p) => toPublicProposal(toProposalView(p))),
+    queuedMessage: await getQueued(CHARACTER_CHAT_SPEC, conv.id),
   };
 }
 
@@ -204,8 +215,14 @@ export function createCharactersRouter(): IRouter {
       res.status(400).json({ error: CHARACTER_MESSAGES.empty });
       return;
     }
+    const page = body.pageContext ?? null;
     await guarded(res, async () => {
       const conv = await getConversation(userId, id);
+      // Le regole dell'avvio del turno valgono anche per un messaggio che va in coda
+      if (content.length > CHARACTER_MESSAGE_MAX_CHARS) throw new CharacterError(400, CHARACTER_MESSAGES.tooLong);
+      if (page && (page.page === "host") !== (page.host !== undefined)) throw new CharacterError(400, CHARACTER_MESSAGES.badPageContext);
+      if (conv.archivedAt !== null) throw new CharacterError(409, CHARACTER_MESSAGES.archived);
+      if (await subjectGone(userId, conv)) throw new CharacterError(409, CHARACTER_MESSAGES.subjectGone);
       // Tetto raggiunto: 409 col motivo, prima di consumare il limite dei messaggi
       const blocked = await characterBudgetBlock(userId, conv.character, conv.aiModelId);
       if (blocked) {
@@ -217,12 +234,42 @@ export function createCharactersRouter(): IRouter {
         return;
       }
       try {
-        const message = await startCharacterTurn(id, content, body.pageContext ?? null);
-        res.status(202).json(SendCharacterMessageResponse.parse(toPublicMessage(message)));
+        const outcome = await sendChatMessage(CHARACTER_CHAT_SPEC, id, content, page, body.mode ?? "normal", () =>
+          startCharacterTurn(id, content, page),
+        );
+        const message =
+          outcome.kind === "started"
+            ? toPublicMessage(outcome.message)
+            : { ...outcome.queued, role: "user" as const, error: false, pageContext: page };
+        res.status(202).json(SendCharacterMessageResponse.parse(message));
       } catch (err) {
         if (!(err instanceof TurnBusyError)) throw err;
         res.status(409).json({ error: CHARACTER_MESSAGES.busy });
       }
+    });
+  });
+
+  router.post("/character-conversations/:id/stop", async (req, res) => {
+    const { id } = parseRequest(StopCharacterTurnParams, req.params);
+    const userId = currentUserId(req);
+    await guarded(res, async () => {
+      await getConversation(userId, id);
+      if (!consumeTurnStop(userId)) {
+        res.status(429).json({ error: TOO_MANY_STOPS });
+        return;
+      }
+      const stopped = await stopChatTurn(CHARACTER_CHAT_SPEC, id);
+      res.json(StopCharacterTurnResponse.parse({ stopped }));
+    });
+  });
+
+  router.delete("/character-conversations/:id/queued", async (req, res) => {
+    const { id } = parseRequest(CancelQueuedCharacterMessageParams, req.params);
+    const userId = currentUserId(req);
+    await guarded(res, async () => {
+      await getConversation(userId, id);
+      await cancelQueued(CHARACTER_CHAT_SPEC, id);
+      res.status(204).end();
     });
   });
 

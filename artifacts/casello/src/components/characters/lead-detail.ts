@@ -49,6 +49,8 @@ export function mapLeadDetail(d: LeadConversationDetail): ConvDetail {
     readOnlyReason: null,
     subjectId: null,
     progress: d.progress ?? null,
+    // Il Responsabile non ha la coda dei messaggi
+    queuedMessage: null,
     messages,
     proposals,
   };

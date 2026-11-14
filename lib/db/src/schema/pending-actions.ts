@@ -15,8 +15,8 @@ export const pendingActionStatusEnum = pgEnum("pending_action_status", [
   "rejected",
 ]);
 
-// `action` = azione L2 di un tool; `plan` / `plan_change` = proposta di PLAN di una squadra (senza tool né app); `proposal` = proposta con più passi di un agente (app obbligatoria, senza tool)
-export const pendingActionKindEnum = pgEnum("pending_action_kind", ["action", "plan", "plan_change", "proposal"]);
+// `action` = azione L2 di un tool; `plan` / `plan_change` = proposta di PLAN di una squadra (senza tool né app); `proposal` = proposta con più passi di un agente (app obbligatoria, senza tool); `merge` = merge di una PR di una squadra che tocca migrazioni o schema (senza tool né app)
+export const pendingActionKindEnum = pgEnum("pending_action_kind", ["action", "plan", "plan_change", "proposal", "merge"]);
 
 // Coda delle azioni L2 in attesa di conferma: argomenti fissati (cifrati), esito e decisione
 export const pendingActionsTable = pgTable(

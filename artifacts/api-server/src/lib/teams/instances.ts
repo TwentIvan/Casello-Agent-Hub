@@ -315,7 +315,7 @@ export async function closeInstance(id: number): Promise<InstanceView> {
       .where(
         and(
           eq(pendingActionsTable.teamInstanceId, id),
-          inArray(pendingActionsTable.kind, ["plan", "plan_change"]),
+          inArray(pendingActionsTable.kind, ["plan", "plan_change", "merge"]),
           eq(pendingActionsTable.status, "pending"),
         ),
       );

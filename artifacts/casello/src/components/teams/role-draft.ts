@@ -49,22 +49,24 @@ export const CODE_LABELS: Record<TeamRoleCode, string> = {
   none: "Nessuno",
   read: "Lettura",
   write: "Scrittura",
+  merge: "Scrittura e merge",
 };
 
-/** Un ruolo `node` non legge il codice dall'API: ha solo Nessuno o Scrittura. */
+/** Un ruolo `node` non legge il codice dall'API e non unisce le PR: ha solo Nessuno o Scrittura. */
 export function codeOptions(runsOn: TeamRoleRunsOn): TeamRoleCode[] {
-  return runsOn === "node" ? ["none", "write"] : ["none", "read", "write"];
+  return runsOn === "node" ? ["none", "write"] : ["none", "read", "write", "merge"];
 }
 
 /**
- * Valori del «Codice» che si possono scegliere: senza GitHub (o per il capo) solo «Nessuno» più il valore attuale,
- * così un ruolo che ha già il codice può tornare a «Nessuno».
+ * Valori del «Codice» che si possono scegliere: senza GitHub solo «Nessuno» più il valore attuale, così un ruolo che ha
+ * già il codice può tornare a «Nessuno». Il capo non esegue compiti: per lui conta solo «Scrittura e merge» (unisce le PR).
  */
 export function selectableCodeOptions(runsOn: TeamRoleRunsOn, current: TeamRoleCode, codeEnabled: boolean, isLead: boolean): TeamRoleCode[] {
   const all = codeOptions(runsOn);
   const value = all.includes(current) ? current : "none";
   if (codeEnabled && !isLead) return all;
-  return value === "none" ? ["none"] : ["none", value];
+  const base: TeamRoleCode[] = codeEnabled && isLead && runsOn === "cloud" ? ["none", "merge"] : ["none"];
+  return base.includes(value) ? base : [...base, value];
 }
 
 export const RUNS_ON_LABELS: Record<TeamRoleRunsOn, string> = {

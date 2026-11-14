@@ -30,6 +30,7 @@ import { internalTool, type InternalHandler } from "./role-tools";
 import { TeamRuleError } from "./rules";
 import type { Executor } from "./skills";
 import { TASK_MESSAGES, errName, startTask } from "./task-runner";
+import { mergeTeamPull } from "../code-writer/merge";
 
 // Strumenti del capo (spec §4) sopra il PLAN, la coda delle conferme, i compiti e gli eventi. Gli errori tornano al
 // modello come risultato dello strumento (ok: false) con messaggi fissi in italiano, mai come eccezioni.
@@ -633,6 +634,8 @@ const HANDLERS: Record<string, (ctx: LeadContext, args: Record<string, unknown>)
   leggi_piano_app: readAppPlan,
   segnala: signal,
   chiudi_lavoro: closeWork,
+  // Offerto solo al capo con `code: merge` (turn-runner.ts): i controlli stanno in mergeTeamPull
+  unisci_pr: (ctx, args) => mergeTeamPull(ctx.instanceId, args),
 };
 
 /** Esecutore degli strumenti interni del capo: un errore atteso torna al modello, uno inatteso diventa un messaggio fisso. */

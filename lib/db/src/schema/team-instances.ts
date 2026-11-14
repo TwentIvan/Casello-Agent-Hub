@@ -15,7 +15,7 @@ export type InstanceRoleData = {
   aiModelId: number | null;
   tools: number[];
   // Assente nei manifesti salvati prima del campo = "none"
-  code?: "none" | "read" | "write";
+  code?: "none" | "read" | "write" | "merge";
   skills: Array<{ code: string; version: number }>;
   localSkills: string[];
 };

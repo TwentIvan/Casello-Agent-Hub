@@ -95,6 +95,8 @@ export interface FakePull {
   state: "open" | "closed";
   merged: boolean;
   headSha: string;
+  /** Metodo con cui l'ha unita `PUT /pulls/{n}/merge`. */
+  mergeMethod?: string;
 }
 
 export interface FakeCheckRun {
@@ -613,6 +615,59 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
       return send(res, 404, NOT_FOUND);
     }
 
+    // GraphQL: solo la mutazione che toglie una PR dalla bozza
+    if (path === "/graphql" && method === "POST") {
+      const issued = liveToken(req);
+      if (!issued) return send(res, 401, BAD_CREDENTIALS);
+      const b = (body ?? {}) as { query?: unknown; variables?: { id?: unknown } };
+      if (typeof b.query !== "string" || !b.query.includes("markPullRequestReadyForReview")) return send(res, 200, { errors: [{ message: "unsupported" }] });
+      for (const [fullName, list] of fake.pulls) {
+        const pull = list.find((p) => `PR_${fullName}_${p.number}` === b.variables?.id);
+        if (!pull) continue;
+        if (!reposOf(issued).some((r) => r.fullName === fullName) || (LEVEL[issued.permissions["pull_requests"] ?? ""] ?? 0) < LEVEL["write"]!) {
+          return send(res, 200, { data: { markPullRequestReadyForReview: null }, errors: [{ type: "FORBIDDEN", message: "Resource not accessible by integration" }] });
+        }
+        pull.draft = false;
+        return send(res, 200, { data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } } });
+      }
+      return send(res, 200, { data: { markPullRequestReadyForReview: null }, errors: [{ type: "NOT_FOUND", message: "Could not resolve to a node" }] });
+    }
+
+    let pm: RegExpExecArray | null;
+    if (repoMatch && (pm = /^\/pulls\/(\d+)\/(files|merge)$/.exec(rest))) {
+      const merge = pm[2] === "merge";
+      const fullName = access("pull_requests", merge ? "write" : "read");
+      if (!fullName) return;
+      if (merge && !access("contents", "write")) return;
+      const pull = (fake.pulls.get(fullName) ?? []).find((p) => p.number === Number(pm![1]));
+      const repo = gitOf(fullName);
+      if (!pull || !repo) return send(res, 404, NOT_FOUND);
+      const headSha = repo.refs.get(`heads/${pull.head}`) ?? pull.headSha;
+      const treeOf = (sha: string | undefined) => new Map((sha && repo.commits.has(sha) ? repo.trees.get(repo.commits.get(sha)!.tree) ?? [] : []).map((e) => [e.path, e.sha]));
+      if (!merge && method === "GET") {
+        const before = treeOf(repo.refs.get(`heads/${pull.base}`));
+        const after = treeOf(headSha);
+        const changed = [...new Set([...before.keys(), ...after.keys()])].filter((f) => before.get(f) !== after.get(f)).sort();
+        return send(res, 200, pageOf(changed, url).map((filename) => ({ filename, status: after.has(filename) ? (before.has(filename) ? "modified" : "added") : "removed" })));
+      }
+      if (merge && method === "PUT") {
+        const b = (body ?? {}) as Record<string, unknown>;
+        if (pull.state !== "open" || pull.draft) return send(res, 405, { message: "Pull Request is not mergeable" });
+        if (typeof b["sha"] === "string" && b["sha"] !== headSha) return send(res, 409, { message: "Head branch was modified" });
+        const baseSha = repo.refs.get(`heads/${pull.base}`);
+        if (!baseSha) return send(res, 422, { message: "Validation Failed" });
+        const tree = repo.commits.get(headSha)?.tree;
+        if (!tree) return send(res, 422, { message: "Validation Failed" });
+        const sha = storeCommit(repo, tree, [baseSha], typeof b["commit_title"] === "string" ? b["commit_title"] : pull.title);
+        repo.refs.set(`heads/${pull.base}`, sha);
+        pull.state = "closed";
+        pull.merged = true;
+        pull.mergeMethod = typeof b["merge_method"] === "string" ? b["merge_method"] : "merge";
+        return send(res, 200, { sha, merged: true, message: "Pull Request successfully merged" });
+      }
+      return send(res, 404, NOT_FOUND);
+    }
+
     if (repoMatch && (rest === "/pulls" || /^\/pulls\/\d+$/.test(rest))) {
       const fullName = access("pull_requests", method === "GET" ? "read" : "write");
       if (!fullName) return;
@@ -622,6 +677,7 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
         const headSha = gitOf(fullName)?.refs.get(`heads/${p.head}`) ?? p.headSha;
         return {
           number: p.number,
+          node_id: `PR_${fullName}_${p.number}`,
           title: p.title,
           body: p.body,
           html_url: `https://github.com/${fullName}/pull/${p.number}`,

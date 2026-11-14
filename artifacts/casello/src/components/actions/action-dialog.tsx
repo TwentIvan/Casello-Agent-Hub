@@ -19,6 +19,7 @@ import { formatRelative } from "@/lib/format";
 import { ActionStatusBadge } from "./action-status";
 import { decidedTitle } from "./pending-action-item";
 import { ACTION_KIND_LABELS, PlanProposalDetail, isPlanItem } from "./plan-proposal";
+import { MergeDetail } from "./merge-detail";
 import { ProposalSteps } from "./proposal-steps";
 import { useProposalSelection } from "./use-proposal-selection";
 
@@ -162,6 +163,10 @@ export function ActionDialog({
                   {...(action.status === "pending" ? { excluded: selection.excluded, onToggle: selection.toggle } : {})}
                 />
               </div>
+            ) : action.kind === "merge" ? (
+              <div className="rounded-md border p-3">
+                <MergeDetail args={action.args} />
+              </div>
             ) : plan ? (
               <div className="rounded-md border p-3">
                 <PlanProposalDetail args={action.args} />
@@ -233,7 +238,7 @@ export function ActionDialog({
                       setUserToken("");
                     }}
                   >
-                    {approve.isPending ? (plan ? "Approvazione…" : "Esecuzione…") : plan ? "Approva" : action.kind === "proposal" ? selection.approveLabel : "Approva ed esegui"}
+                    {approve.isPending ? (plan ? "Approvazione…" : "Esecuzione…") : plan ? "Approva" : action.kind === "proposal" ? selection.approveLabel : action.kind === "merge" ? "Approva e unisci" : "Approva ed esegui"}
                   </Button>
                 </DialogFooter>
               </div>

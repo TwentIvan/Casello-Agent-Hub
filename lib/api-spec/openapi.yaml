@@ -6374,10 +6374,10 @@ components:
           enum: [pending, executing, done, failed, rejected]
         kind:
           type: string
-          enum: [action, plan, plan_change, proposal]
+          enum: [action, plan, plan_change, proposal, merge]
           description: >-
             Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure
-            proposta con più passi di un agente
+            proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)
         proposal:
           description: Passi della proposta; null per le voci che non sono una proposta
           oneOf:
@@ -9241,9 +9241,9 @@ components:
           nullable: true
         code:
           type: string
-          enum: [none, read, write]
+          enum: [none, read, write, merge]
           default: none
-          description: Accesso al codice dell'App di riferimento (i ruoli node non usano read)
+          description: Accesso al codice dell'App di riferimento (i ruoli node non usano read né merge; merge comprende write e unisce le PR)
         tools:
           type: array
           items:
@@ -9272,7 +9272,7 @@ components:
           enum: [cloud, node]
         code:
           type: string
-          enum: [none, read, write]
+          enum: [none, read, write, merge]
           default: none
           description: Accesso al codice dell'App di riferimento
         model:
@@ -9400,9 +9400,9 @@ components:
           nullable: true
         code:
           type: string
-          enum: [none, read, write]
+          enum: [none, read, write, merge]
           default: none
-          description: Accesso al codice dell'App di riferimento (i ruoli node non usano read)
+          description: Accesso al codice dell'App di riferimento (i ruoli node non usano read né merge; merge comprende write e unisce le PR)
         tools:
           type: array
           items:

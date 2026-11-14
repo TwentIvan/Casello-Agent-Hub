@@ -30,6 +30,9 @@ export const CODE_WRITE_MESSAGES = {
   noPull: "nessuna PR per questo compito: usa apri_pr",
   readOnly: "il ruolo legge il codice ma non lo modifica",
   internal: "errore interno dello strumento del codice",
+  notReady: "GitHub non ha tolto la PR dalla bozza: riprova più tardi",
+  headMoved: "la PR è cambiata dall'ultimo controllo: aspetta l'esito della CI",
+  notMergeable: "GitHub non permette di unire la PR: conflitti con il branch base o regole del branch",
 } as const;
 
 export class CodeWriteError extends Error {

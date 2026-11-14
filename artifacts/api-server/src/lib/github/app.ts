@@ -75,7 +75,7 @@ export interface CallResult {
  */
 export async function githubCall(
   cfg: GithubConfig,
-  input: { base: "api" | "web"; method: "GET" | "POST" | "PATCH"; path: string; token?: string; body?: unknown; accept?: string },
+  input: { base: "api" | "web"; method: "GET" | "POST" | "PATCH" | "PUT"; path: string; token?: string; body?: unknown; accept?: string },
 ): Promise<CallResult> {
   const url = `${input.base === "api" ? cfg.apiBase : cfg.webBase}${input.path}`;
   const headers: Record<string, string> = {

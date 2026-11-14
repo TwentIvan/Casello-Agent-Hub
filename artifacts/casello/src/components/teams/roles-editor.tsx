@@ -39,7 +39,8 @@ interface RolesEditorProps {
 }
 
 export const CODE_DISABLED_HINT = "Collega il repository dell'app tramite l'App GitHub per dare il codice ai ruoli";
-export const CODE_LEAD_HINT = "Il capo non esegue compiti: il codice vale per gli altri ruoli";
+export const CODE_LEAD_HINT = "Il capo non esegue compiti: per lui conta solo «Scrittura e merge», che gli fa unire le PR della squadra";
+export const CODE_MERGE_HINT = "Unisce le PR della squadra con la CI verde; quelle con migrazioni passano da «Da confermare»";
 
 
 /** Il ruolo ha le istruzioni se tra le sue skill specializzate c'è `ruolo-<key>`. */
@@ -190,7 +191,7 @@ function RoleCard({
 
         <div className="space-y-1.5">
           <Label htmlFor={`${id}-code`}>Codice</Label>
-          {role.isLead && code === "none" ? (
+          {role.isLead && code === "none" && selectableCodes.length < 2 ? (
             <p className="text-xs text-muted-foreground">{CODE_LEAD_HINT}</p>
           ) : (
             <>
@@ -211,6 +212,7 @@ function RoleCard({
                 </SelectContent>
               </Select>
               {role.isLead && <p className="text-xs text-muted-foreground">{CODE_LEAD_HINT}</p>}
+              {code === "merge" && <p className="text-xs text-muted-foreground">{CODE_MERGE_HINT}</p>}
               {!codeEnabled && <p className="text-xs text-muted-foreground">{CODE_DISABLED_HINT}</p>}
             </>
           )}

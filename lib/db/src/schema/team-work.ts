@@ -33,7 +33,8 @@ export type TeamTurnReason =
   | { type: "activation" }
   | { type: "restart" }
   | { type: "ci_finished"; taskCodeId: number; outcome: "success" | "failure" | "none" }
-  | { type: "pr_closed"; taskCodeId: number; merged: boolean };
+  | { type: "pr_closed"; taskCodeId: number; merged: boolean }
+  | { type: "merge_failed"; taskCodeId: number; message: string };
 
 // Esecuzione di un compito del PLAN da parte di un ruolo
 export const teamTasksTable = pgTable(

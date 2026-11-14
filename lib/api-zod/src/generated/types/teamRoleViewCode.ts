@@ -16,4 +16,5 @@ export const TeamRoleViewCode = {
   none: 'none',
   read: 'read',
   write: 'write',
+  merge: 'merge',
 } as const;

@@ -25,9 +25,9 @@ export function useLeadChatAdapter(page: { page: string; id?: string }): ChatAda
 
   return {
     character: "responsabile",
-    subjectLabel: "Responsabile di prodotto di Botcave",
+    subjectLabel: "Barbara, la Responsabile di Botcave",
     emptyHint:
-      "Chiedi al Responsabile di Botcave: conosce squadre, agenti, run, skill e coda. Le scritture le propone in Da confermare.",
+      "Chiedi a Barbara, la Responsabile di Botcave: conosce squadre, agenti, run, skill e coda. Le scritture le propone in Da confermare.",
     deleteNote: "Le run restano nella pagina Run.",
     createWithoutDialog: true,
     maxChars: 4000,

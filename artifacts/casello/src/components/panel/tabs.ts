@@ -1,7 +1,7 @@
 import type { EmbedTab } from "@/embed/protocol";
 
 // Schede del pannello unico. Le quattro dell'embed sono le stesse ovunque, nello stesso ordine; la console aggiunge
-// «Responsabile» (chat con il Responsabile di prodotto di Botcave), che le app ospiti non hanno.
+// «Barbara» (chat con Barbara, la Responsabile di Botcave: agente `general` dell'App `casello`), che le app ospiti non hanno.
 export type PanelTab = EmbedTab | "lead";
 
 export const TAB_LABELS: Record<PanelTab, string> = {
@@ -9,7 +9,7 @@ export const TAB_LABELS: Record<PanelTab, string> = {
   pending: "Da confermare",
   bulletin: "Bollettino",
   lucius: "Lucius",
-  lead: "Responsabile",
+  lead: "Barbara",
 };
 
 const EMBED_TABS: readonly PanelTab[] = ["alfred", "pending", "bulletin", "lucius"];

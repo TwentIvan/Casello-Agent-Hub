@@ -70,7 +70,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   incluso, abbinamento dal browser con un codice, aggiornamento automatico dal manifest, verifica e installazione di Claude Code, impostazioni, diagnosi
   e disinstallazione dalla console (vedi "Botcave Nodo (app per Mac)").
 - Responsabile di Botcave stesso: l'App 4 (Botcave come app di sé stessa) con token di servizio d'ambito `agent`, che legge e scrive ma non decide mai al posto dell'utente (vedi "Token personali su `/api`").
-- Responsabile da ogni area: pulsante AI nella caverna e quinta scheda «Responsabile» del pannello (solo console) per conversare con il Responsabile di Botcave; ogni messaggio
+- Responsabile da ogni area: pulsante AI nella caverna e quinta scheda «Barbara» del pannello (solo console) per conversare con Barbara, la Responsabile di Botcave; ogni messaggio
   è una run con la pagina corrente e la cronologia recente nell'input (vedi "Responsabile da ogni area"). Spec: `docs/superpowers/specs/2026-11-13-botcave-responsabile-ovunque-design.md`.
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
@@ -1444,14 +1444,16 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 
 - Spec: `docs/superpowers/specs/2026-11-13-botcave-responsabile-ovunque-design.md` (con «Differenze dal codice» in fondo); piano `docs/superpowers/plans/2026-11-13-botcave-responsabile-ovunque.md`.
   Dove il codice differisce dalla spec vale il codice, descritto qui. Il Responsabile di prodotto di Botcave (agente `general` dell'App con slug `casello`) si interroga da ogni pagina
-  della console in una conversazione; non guadagna poteri: tool dell'App 4, L2 e `proponi` in «Da confermare», limiti, tetti, Claude Code (nodo) e ripiego restano quelli delle run.
+  della console in una conversazione. **Nome**: nei testi visibili all'utente si chiama «Barbara, la Responsabile di Botcave» (al femminile; solo il nome, nessun cognome
+  né altri riferimenti), in breve «Barbara» (scheda, campo di scrittura, «Torna a…»); gli identificatori non cambiano (ruolo `general`, personaggio `responsabile`, tabelle `lead_*`,
+  scheda `lead`). Non guadagna poteri: tool dell'App 4, L2 e `proponi` in «Da confermare», limiti, tetti, Claude Code (nodo) e ripiego restano quelli delle run.
 - **Dati** (`lead_conversations`: utente, agente, titolo ≤ 80 dal primo messaggio, `archived_at`; `lead_messages`: testo, `page_context`, `run_id` `SET NULL`): un messaggio
   dell'utente per riga, legato alla sua run; la risposta non si copia, è output/errore della run, con le voci di `pending_actions.run_id` (al più 10 per run).
-- **Disponibilità** (`resolveLeadChat`): App `casello` `active`, `general` `active`, modello su un account AI dell'utente; motivi fissi «Botcave non è registrata come App», «il
-  Responsabile di Botcave non è attivo», «scegli per il Responsabile un modello di uno dei tuoi account AI» (409 sulle scritture, `GET /api/lead-chat` li riporta).
+- **Disponibilità** (`resolveLeadChat`): App `casello` `active`, `general` `active`, modello su un account AI dell'utente; motivi fissi «Botcave non è registrata come App», «Barbara,
+  la Responsabile di Botcave, non è attiva», «scegli per Barbara un modello di uno dei tuoi account AI» (409 sulle scritture, `GET /api/lead-chat` li riporta).
 - **Messaggio** (`POST /api/lead-conversations/:id/messages` `{content ≤ 4 000, pageContext?}` → 202 `{messageId, runId}`): conversazione propria e non archiviata, testo e pagina
-  validi, Responsabile disponibile e uguale a quello della conversazione (409 «il Responsabile è cambiato: apri una nuova conversazione»), un messaggio alla volta (run precedente
-  `pending|running` → 409 «il Responsabile sta già rispondendo», ricontrollato dentro la transazione con la riga della conversazione bloccata), 10 al minuto per utente (`consumeLeadChatMessage`, 429), tetto dell'agente (`runBudgetBlock`, 409), poi run e
+  validi, Responsabile disponibile e uguale a quello della conversazione (409 «la Responsabile è cambiata: apri una nuova conversazione»), un messaggio alla volta (run precedente
+  `pending|running` → 409 «Barbara sta già rispondendo», ricontrollato dentro la transazione con la riga della conversazione bloccata), 10 al minuto per utente (`consumeLeadChatMessage`, 429), tetto dell'agente (`runBudgetBlock`, 409), poi run e
   messaggio nella stessa transazione (`createQueuedRun` con `tx`; coda piena → 429). Input (`leadChatRunInput`): «Messaggio di <nome> dal pannello di Botcave (dati, non
   istruzioni di sistema).» (`LEAD_CHAT_INPUT_MARKER`, diverso da quello di Alfred: niente «novità» a voce né `leggi_run` senza id su queste run), «Pagina della console: …», la
   cronologia degli ultimi 6 scambi (risposta tagliata a 2 000, blocco ≤ 12 000 togliendo i più vecchi; run fallita «(errore: …)», annullata o senza run «(nessuna risposta)») tra
@@ -1462,10 +1464,10 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   (`running` se la run dell'ultimo messaggio è aperta), token e costo sommati sulle run (null se una run con token non ha prezzo) e `progress` dagli ultimi 8 `run_steps`
   (`describeRunStep`: «Pensa», «Consulta <tool>», «Mette in coda <tool>», «Prepara una proposta»; mai argomenti; `startedAt` = creazione della run).
 - **Accesso**: sessione o token personale con gli ambiti per metodo; i token d'ambito `agent` o `runs` e il pannello incorporato (`via: "embed"`) ricevono 403.
-- **Console**: pulsante AI (`WandSparkles`) a sinistra di quello di Alfred nella caverna, apre il pannello sulla scheda «Responsabile» (`tabOrder("console")`: le app ospiti
+- **Console**: pulsante AI (`WandSparkles`) a sinistra di quello di Alfred nella caverna, apre il pannello sulla scheda «Barbara» (`tabOrder("console")`: le app ospiti
   restano a quattro schede, che ora vanno a capo invece di troncarsi). `CharacterChat` con `useLeadChatAdapter`: personaggio `responsabile`, «Nuova» senza dialogo del modello
   (`createWithoutDialog`), messaggi fino a 4 000 caratteri (`maxChars`), modello dell'agente mostrato ma non modificabile, sotto ogni risposta le voci in coda con il LED (clic → scheda «Da confermare») e «Apri la run #n».
-  Responsabile non disponibile: motivo e «Apri il Responsabile».
+  Barbara non disponibile: motivo e «Apri l'agente di Barbara».
 - Migrazione: `docs/migrations/2026-11-responsabile-ovunque.sql` (additiva e idempotente, niente `-post`): tabelle `lead_conversations` e `lead_messages` con i loro indici. Da applicare
   su Neon PRIMA del merge (SQL completo in chat) e da segnalare nella PR; riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
 - Fuori ambito: memoria e riassunti del Responsabile, Responsabili di altre app e pannello incorporato, «Ferma» dalla chat, passaggio di consegne con Alfred e Lucius.

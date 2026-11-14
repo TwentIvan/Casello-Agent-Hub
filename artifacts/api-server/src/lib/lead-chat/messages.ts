@@ -1,19 +1,19 @@
-// Messaggi fissi della chat con il Responsabile di Botcave: mai testo del modello o del DB.
+// Messaggi fissi della chat con Barbara, la Responsabile di Botcave (agente `general` dell'App `casello`): mai testo del modello o del DB.
 
 export const LEAD_CHAT_MESSAGES = {
   noApp: "Botcave non è registrata come App",
-  inactive: "il Responsabile di Botcave non è attivo",
-  noModel: "scegli per il Responsabile un modello di uno dei tuoi account AI",
-  changed: "il Responsabile è cambiato: apri una nuova conversazione",
+  inactive: "Barbara, la Responsabile di Botcave, non è attiva",
+  noModel: "scegli per Barbara un modello di uno dei tuoi account AI",
+  changed: "la Responsabile è cambiata: apri una nuova conversazione",
   notFound: "conversazione non trovata",
   archived: "conversazione archiviata",
-  busy: "il Responsabile sta già rispondendo",
+  busy: "Barbara sta già rispondendo",
   empty: "messaggio vuoto",
   tooLong: "messaggio troppo lungo: al massimo 4000 caratteri",
   badPage: "contesto della pagina non valido",
   tooMany: "Troppe richieste: riprova tra poco",
   tooManyConversations: "troppe conversazioni: eliminane qualcuna",
-  queueFull: "troppe run in attesa per il Responsabile",
+  queueFull: "troppe run in attesa per Barbara",
   gone: "risposta non più disponibile",
 } as const;
 

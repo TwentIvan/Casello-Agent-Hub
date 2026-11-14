@@ -121,8 +121,8 @@ function CaveHeader() {
           variant="ghost"
           size="icon"
           className="ml-auto text-nebbia hover:bg-ardesia hover:text-nebbia"
-          aria-label="Chiedi al Responsabile di Botcave"
-          title="Chiedi al Responsabile di Botcave"
+          aria-label="Chiedi a Barbara, la Responsabile di Botcave"
+          title="Chiedi a Barbara, la Responsabile di Botcave"
           onClick={() => openPanel("lead")}
         >
           <WandSparkles aria-hidden="true" className="size-5" />

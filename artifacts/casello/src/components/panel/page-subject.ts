@@ -102,7 +102,7 @@ export function targetLabel(target: ChatTarget): string {
     case "alfred":
       return "Alfred";
     case "lead":
-      return "Responsabile";
+      return "Barbara";
     case "plan":
       return "piano dell'app";
     case "team":

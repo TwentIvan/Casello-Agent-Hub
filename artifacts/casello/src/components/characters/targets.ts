@@ -21,7 +21,7 @@ export function targetKey(target: ChatTarget): string {
 export const CHARACTER_TEXT: Record<Character, { name: string; placeholder: string; send: string }> = {
   alfred: { name: "Alfred", placeholder: "Scrivi ad Alfred…", send: "Scrivi ad Alfred" },
   lucius: { name: "Lucius", placeholder: "Scrivi a Lucius…", send: "Scrivi a Lucius" },
-  responsabile: { name: "Responsabile", placeholder: "Scrivi al Responsabile…", send: "Scrivi al Responsabile" },
+  responsabile: { name: "Barbara", placeholder: "Scrivi a Barbara…", send: "Scrivi a Barbara" },
 };
 
 export const SUBJECT_LABELS: Record<Exclude<SubjectType, "alfred_thread">, string> = {

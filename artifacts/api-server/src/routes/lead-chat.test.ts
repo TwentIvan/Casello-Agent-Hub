@@ -81,7 +81,7 @@ describe("chat con il Responsabile", () => {
 
     const busy = await api("POST", `/lead-conversations/${id}/messages`, { content: "ancora" });
     expect(busy.status).toBe(409);
-    expect(busy.json.error).toBe("il Responsabile sta già rispondendo");
+    expect(busy.json.error).toBe("Barbara sta già rispondendo");
 
     const list = await api("GET", "/lead-conversations");
     expect(list.json).toHaveLength(1);
@@ -107,7 +107,7 @@ describe("chat con il Responsabile", () => {
   it("non disponibile: GET dice il motivo, POST 409", async () => {
     await db.update(agentsTable).set({ aiModelId: null });
     const avail = await api("GET", "/lead-chat");
-    expect(avail.json).toMatchObject({ available: false, reason: "scegli per il Responsabile un modello di uno dei tuoi account AI" });
+    expect(avail.json).toMatchObject({ available: false, reason: "scegli per Barbara un modello di uno dei tuoi account AI" });
     expect((await api("POST", "/lead-conversations")).status).toBe(409);
   });
 

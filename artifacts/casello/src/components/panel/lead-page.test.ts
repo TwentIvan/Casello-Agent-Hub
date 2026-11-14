@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { leadPageFromPath } from "./page-subject";
-import { tabOrder } from "./tabs";
+import { TAB_LABELS, tabOrder } from "./tabs";
+import { CHARACTER_TEXT } from "../characters/targets";
 import { INITIAL_PANEL_STATE, panelReducer } from "./panel-state";
 
 describe("leadPageFromPath", () => {
@@ -36,12 +37,17 @@ describe("leadPageFromPath", () => {
 });
 
 describe("schede per ambiente", () => {
-  it("la scheda Responsabile c'è solo nella console", () => {
+  it("la scheda di Barbara, la Responsabile di Botcave, ha il suo nome", () => {
+    expect(TAB_LABELS.lead).toBe("Barbara");
+    expect(CHARACTER_TEXT.responsabile).toEqual({ name: "Barbara", placeholder: "Scrivi a Barbara…", send: "Scrivi a Barbara" });
+  });
+
+  it("la scheda di Barbara c'è solo nella console", () => {
     expect(tabOrder("embed")).toEqual(["alfred", "pending", "bulletin", "lucius"]);
     expect(tabOrder("console")).toEqual(["alfred", "pending", "bulletin", "lucius", "lead"]);
   });
 
-  it("il riduttore apre e seleziona la scheda Responsabile", () => {
+  it("il riduttore apre e seleziona la scheda di Barbara", () => {
     expect(panelReducer(INITIAL_PANEL_STATE, { type: "open", tab: "lead" })).toMatchObject({ open: true, tab: "lead" });
     expect(panelReducer(INITIAL_PANEL_STATE, { type: "selectTab", tab: "lead" }).tab).toBe("lead");
   });

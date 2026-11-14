@@ -200,6 +200,8 @@ CREATE TABLE "github_installations" (
 	"repository_selection" text NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
+	"user_repos" jsonb,
+	"user_repos_checked_at" timestamp,
 	CONSTRAINT "github_installations_user_installation_unique" UNIQUE("user_id","installation_id"),
 	CONSTRAINT "github_installations_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action
 );

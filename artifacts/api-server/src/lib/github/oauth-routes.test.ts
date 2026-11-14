@@ -147,6 +147,7 @@ beforeEach(async () => {
   gh.users.clear();
   gh.emails.clear();
   gh.userInstallations.clear();
+  gh.userRepos.clear();
   gh.installations.clear();
   gh.authorizeAs = null;
 
@@ -312,6 +313,47 @@ describe("login con GitHub", () => {
     expect(await installationsOf(user!.id)).toEqual([502]);
     const [org] = await db.select().from(githubInstallationsTable);
     expect(org!.repositorySelection).toBe("all");
+  });
+
+  it("repo che l'utente vede davvero: salvati per installazione alla callback, aggiornati al login dopo", async () => {
+    gh.repos.set(501, [
+      { fullName: "ivan/Mister", defaultBranch: "main", private: true },
+      { fullName: "ivan/segreto", defaultBranch: "main", private: true },
+    ]);
+    gh.repos.set(502, [{ fullName: "derga/app", defaultBranch: "main", private: true }]);
+    // L'installazione vede due repo, l'utente solo uno
+    gh.userRepos.set(TOKEN_IVAN, ["ivan/Mister", "derga/app"]);
+    gh.authorizeAs = TOKEN_IVAN;
+    await new Client().flow("/api/auth/github/login");
+    const reposOf = async (id: number) =>
+      (await db.select().from(githubInstallationsTable).where(eq(githubInstallationsTable.installationId, id)))[0];
+    expect((await reposOf(501))).toMatchObject({ userRepos: ["ivan/mister"] });
+    expect((await reposOf(501))!.userReposCheckedAt).toBeInstanceOf(Date);
+    expect((await reposOf(502))).toMatchObject({ userRepos: ["derga/app"] });
+    // Il token utente va solo a GitHub
+    expect(gh.requests.some((r) => r.path.startsWith("/user/installations/501/repositories") && r.auth === `Bearer ${TOKEN_IVAN}`)).toBe(true);
+
+    // Accesso perso su GitHub: al login dopo il repo sparisce
+    gh.userRepos.set(TOKEN_IVAN, ["derga/app"]);
+    await new Client().flow("/api/auth/github/login");
+    expect((await reposOf(501))).toMatchObject({ userRepos: [] });
+  });
+
+  it("GitHub non risponde sui repo di un'installazione: l'elenco salvato resta quello di prima", async () => {
+    gh.repos.set(501, [{ fullName: "ivan/mister", defaultBranch: "main", private: true }]);
+    gh.authorizeAs = TOKEN_IVAN;
+    await new Client().flow("/api/auth/github/login");
+    gh.failWith = (r) => (/^\/user\/installations\/\d+\/repositories/.test(r.path) ? 500 : null);
+    try {
+      await new Client().flow("/api/auth/github/login");
+    } finally {
+      gh.failWith = null;
+    }
+    const rows = await db.select().from(githubInstallationsTable);
+    expect(rows.map((r) => [r.installationId, r.userRepos]).sort()).toEqual([
+      [501, ["ivan/mister"]],
+      [502, []],
+    ]);
   });
 
   it("utente annullato su GitHub (access_denied): nessuno scambio, ritorno con github=cancelled", async () => {

@@ -44,7 +44,7 @@ import { ITEM_SCHEMAS, PHASES, reviewedToolPayload, type AnalysisChapter } from 
 import { SOURCE_LIMITS } from "../lib/architect/source-tree";
 import { runRateLimit } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
-import { INSTALLATION_NOT_YOURS, userHasInstallation } from "../lib/github/installations";
+import { INSTALLATION_NOT_YOURS, REPO_NOT_VISIBLE, REPOS_NOT_VERIFIED, userRepoAccess } from "../lib/github/installations";
 import { toPublicAnalysis, toPublicAnalysisDetail, toPublicItem } from "./serializers";
 
 // Route dell'architetto: avvio delle analisi (sorgenti dell'app o zip caricato, oppure in coda per
@@ -225,9 +225,12 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
       return;
     }
     if (app.sourceType === "github" && app.sourceInstallationId != null) {
-      // Tramite l'App: niente token manuale, ma l'installazione deve essere di chi avvia
-      if (!(await userHasInstallation(currentUserId(req), app.sourceInstallationId))) {
-        res.status(403).json({ error: INSTALLATION_NOT_YOURS });
+      // Tramite l'App: niente token manuale, ma l'installazione deve essere di chi avvia e il repo
+      // uno che vede davvero su GitHub
+      const access = await userRepoAccess(currentUserId(req), app.sourceInstallationId, app.sourceRepo!);
+      if (access !== "ok") {
+        const error = access === "no_installation" ? INSTALLATION_NOT_YOURS : access === "not_verified" ? REPOS_NOT_VERIFIED : REPO_NOT_VISIBLE;
+        res.status(403).json({ error });
         return;
       }
     } else if (app.sourceType === "github" && app.sourceTokenEnc == null) {

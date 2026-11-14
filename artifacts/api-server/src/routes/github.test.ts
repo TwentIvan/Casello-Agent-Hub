@@ -51,8 +51,15 @@ async function get(path: string) {
   return { status: res.status, text, json: text ? (JSON.parse(text) as any) : undefined };
 }
 
-async function addRow(installationId: number, accountLogin: string, accountType: "User" | "Organization", repositorySelection = "all") {
-  await db.insert(githubInstallationsTable).values({ userId, installationId, accountLogin, accountType, repositorySelection });
+/** Riga dell'installazione; `userRepos` di default = tutti i repo dell'installazione sul finto GitHub (verificati alla callback). */
+async function addRow(
+  installationId: number,
+  accountLogin: string,
+  accountType: "User" | "Organization",
+  repositorySelection = "all",
+  userRepos: string[] | null = (gh.repos.get(installationId) ?? []).map((r) => r.fullName.toLowerCase()),
+) {
+  await db.insert(githubInstallationsTable).values({ userId, installationId, accountLogin, accountType, repositorySelection, userRepos });
 }
 
 function fakeInstallation(id: number, login: string, type: "User" | "Organization", repos: { fullName: string; defaultBranch?: string; private?: boolean }[]) {
@@ -167,6 +174,18 @@ describe("GET /github/repos", () => {
       { installationId: 11, fullName: "ivan/mister", defaultBranch: "main", private: false },
       { installationId: 11, fullName: "ivan/remove", defaultBranch: "dev", private: true },
     ]);
+  });
+
+  it("solo i repo che l'utente vede davvero su GitHub; installazione non verificata: nessun repo", async () => {
+    fakeInstallation(11, "ivan", "User", [{ fullName: "ivan/Mister" }, { fullName: "ivan/segreto" }]);
+    fakeInstallation(22, "acme", "Organization", [{ fullName: "acme/app" }]);
+    await addRow(11, "ivan", "User", "all", ["ivan/mister"]);
+    await addRow(22, "acme", "Organization", "all", null);
+    const res = await get("/github/repos");
+    expect(res.status, res.text).toBe(200);
+    expect(res.json).toEqual([{ installationId: 11, fullName: "ivan/Mister", defaultBranch: "main", private: false }]);
+    // L'installazione non verificata non si interroga nemmeno
+    expect(gh.requests.some((r) => r.path.includes("/installations/22/"))).toBe(false);
   });
 
   it("ordine indipendente dalla lingua: confronto per codice (maiuscole prima)", async () => {

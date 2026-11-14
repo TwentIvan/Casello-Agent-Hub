@@ -26,6 +26,8 @@ const ENV_KEYS = ["AUTH_DISABLED", "CASELLO_SECRET_KEY", ...GITHUB_KEYS];
 const saved: Record<string, string | undefined> = {};
 
 const NOT_YOURS = "installazione non trovata o non tua";
+const NOT_VISIBLE = "repository non accessibile al tuo account GitHub: scegli un repo che vedi su GitHub";
+const NOT_VERIFIED = "accesso ai repository non ancora verificato: ricollega GitHub da Account";
 const NOT_CONFIGURED = "GitHub non configurato";
 const UNAVAILABLE = "GitHub non risponde (riprova più tardi)";
 
@@ -84,13 +86,19 @@ function fakeInstallation(id: number, login: string, repos: string[]) {
   );
 }
 
-async function addRow(installationId: number, forUser = userId) {
+/** Riga dell'installazione; `userRepos` di default = tutti i repo dell'installazione sul finto GitHub (verificati alla callback). */
+async function addRow(
+  installationId: number,
+  forUser = userId,
+  userRepos: string[] | null = (gh.repos.get(installationId) ?? []).map((r) => r.fullName.toLowerCase()),
+) {
   await db.insert(githubInstallationsTable).values({
     userId: forUser,
     installationId,
     accountLogin: `acc${installationId}`,
     accountType: "User",
     repositorySelection: "selected",
+    userRepos,
   });
 }
 
@@ -239,6 +247,30 @@ describe("salvataggio dell'app con l'installazione", () => {
     expect(unknown.json).toEqual({ error: NOT_YOURS });
   });
 
+  it("repo che l'installazione vede ma l'utente no su GitHub → 403, nessuna app creata o modificata", async () => {
+    fakeInstallation(11, "ivan", ["Ivan/Mister", "ivan/segreto"]);
+    await addRow(11, userId, ["ivan/mister"]);
+    const res = await api("POST", "/apps", appBody({ sourceType: "github", sourceRepo: "ivan/segreto", sourceInstallationId: 11 }));
+    expect(res.status).toBe(403);
+    expect(res.json).toEqual({ error: NOT_VISIBLE });
+    expect((await api("GET", "/apps")).json).toEqual([]);
+
+    // Il nome salvato è in minuscolo: il confronto non distingue le maiuscole
+    const created = await api("POST", "/apps", appBody({ sourceType: "github", sourceRepo: "Ivan/Mister", sourceInstallationId: 11 }));
+    expect(created.status, created.text).toBe(201);
+    const patched = await api("PATCH", `/apps/${created.json.id}`, { sourceRepo: "ivan/segreto" });
+    expect(patched.status).toBe(403);
+    expect(patched.json).toEqual({ error: NOT_VISIBLE });
+    expect((await api("GET", `/apps/${created.json.id}`)).json.sourceRepo).toBe("Ivan/Mister");
+  });
+
+  it("repo non ancora verificati con il token dell'utente (riga di prima della migrazione) → 403", async () => {
+    await addRow(11, userId, null);
+    const res = await api("POST", "/apps", appBody({ sourceType: "github", sourceRepo: "ivan/mister", sourceInstallationId: 11 }));
+    expect(res.status).toBe(403);
+    expect(res.json).toEqual({ error: NOT_VERIFIED });
+  });
+
   it("sorgente diversa da github o repo mancante con l'installazione → 400", async () => {
     await addRow(11);
     for (const extra of [
@@ -329,6 +361,18 @@ describe("avvio dell'analisi con l'installazione", () => {
     const res = await api("POST", `/apps/${app!.id}/analyses`, { aiModelId: modelId });
     expect(res.status).toBe(403);
     expect(res.json).toEqual({ error: NOT_YOURS });
+    expect(await db.select().from(analysesTable)).toHaveLength(0);
+  });
+
+  it("repo che l'utente non vede più su GitHub → 403 e nessuna analisi", async () => {
+    await addRow(11, userId, []);
+    const [app] = await db
+      .insert(appsTable)
+      .values({ name: "Mister", slug: "mister", baseUrl: fakeAppBase, sourceType: "github", sourceRepo: "ivan/mister", sourceInstallationId: 11 })
+      .returning();
+    const res = await api("POST", `/apps/${app!.id}/analyses`, { aiModelId: modelId });
+    expect(res.status).toBe(403);
+    expect(res.json).toEqual({ error: NOT_VISIBLE });
     expect(await db.select().from(analysesTable)).toHaveLength(0);
   });
 });

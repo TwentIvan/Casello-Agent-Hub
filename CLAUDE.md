@@ -1859,7 +1859,7 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
 ## Deploy (non toccare senza motivo)
 
 - Push su `main` → GitHub Actions builda `ghcr.io/twentivan/casello-api` e `casello-web` e chiama i
-  webhook Coolify. Push su `feat/**` builda soltanto (collaudo), senza deploy.
+  webhook Coolify. Push su `feat/**` e `botcave/**` (branch dei compiti delle squadre: la loro CI è quella che Botcave sorveglia) builda soltanto (collaudo), senza deploy.
 - Il tag `:latest` (quello che deploya Coolify) lo scrive solo `main`; ogni build ha anche il tag
   `:<sha>`. I run su `main` sono in coda uno alla volta e il job di deploy chiama i webhook con
   `force=true` e attende la fine del deploy su Coolify: merge ravvicinati non lasciano un'immagine vecchia.

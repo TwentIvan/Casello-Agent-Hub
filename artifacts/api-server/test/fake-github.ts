@@ -138,6 +138,11 @@ export interface FakeGithub {
   emails: Map<string, FakeGithubEmail[]>;
   /** Token utente → id delle installazioni visibili all'utente. */
   userInstallations: Map<string, number[]>;
+  /**
+   * Token utente → repo (proprietario/nome) che l'utente vede davvero; senza voce vede tutti quelli
+   * delle sue installazioni (`GET /user/installations/{id}/repositories`).
+   */
+  userRepos: Map<string, string[]>;
   /** Id → installazione. */
   installations: Map<number, FakeGithubInstallation>;
   /** Id installazione → repo accessibili. */
@@ -327,6 +332,7 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
     users: new Map(),
     emails: new Map(),
     userInstallations: new Map(),
+    userRepos: new Map(),
     installations: new Map(),
     repos: new Map(),
     codes: new Map(),
@@ -948,6 +954,20 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
         .map((id) => fake.installations.get(id))
         .filter((i): i is FakeGithubInstallation => i !== undefined);
       return send(res, 200, { total_count: list.length, installations: pageOf(list, url).map(installationJson) });
+    }
+    if (method === "GET" && (m = /^\/user\/installations\/(\d+)\/repositories$/.exec(path))) {
+      if (!user) return send(res, 401, BAD_CREDENTIALS);
+      const id = Number(m[1]);
+      if (fake.revoked.has(id) || !(fake.userInstallations.get(userToken!) ?? []).includes(id)) return send(res, 404, NOT_FOUND);
+      const allowed = fake.userRepos.get(userToken!);
+      const repos = (fake.repos.get(id) ?? []).filter((r) => !allowed || allowed.includes(r.fullName));
+      const inst = fake.installations.get(id)!;
+      const offset = (Math.max(Number(url.searchParams.get("page") ?? 1) || 1, 1) - 1) * Math.min(Number(url.searchParams.get("per_page") ?? 30) || 30, 100);
+      return send(res, 200, {
+        total_count: repos.length,
+        repository_selection: inst.repositorySelection,
+        repositories: pageOf(repos, url).map((r, i) => repoJson(r, offset + i)),
+      });
     }
 
     return send(res, 404, NOT_FOUND);

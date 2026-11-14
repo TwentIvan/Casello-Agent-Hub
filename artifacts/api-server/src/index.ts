@@ -84,6 +84,18 @@ failInterruptedActions()
   })
   .catch((err: unknown) => logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Chiusura delle azioni in coda interrotte non riuscita"));
 
+// Turni delegati al nodo rimasti aperti: registro e token in memoria sono persi, falliscono `restart` (i chiamanti
+// sono chiusi dalle loro pulizie); scadenze e pulizia oraria partono più sotto con `startNodeTurnSweeper`. Atteso
+// PRIMA delle pulizie delle tre chat: chiudendo i turni interrotti, quelle fanno partire i messaggi in coda, che
+// possono accodare un turno nuovo al nodo; se questa pulizia venisse dopo, chiuderebbe `restart` anche quel turno.
+// Atteso anche prima di `listen`: un nodo che prende un turno subito dopo l'avvio non deve trovare un turno della vita precedente.
+try {
+  const count = await failInterruptedNodeTurns();
+  if (count > 0) logger.warn({ count }, "Turni del nodo interrotti dal riavvio chiusi come falliti");
+} catch (err) {
+  logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Chiusura dei turni del nodo interrotti non riuscita");
+}
+
 // I turni della chat del piano rimasti in corso: la conversazione torna libera, con un messaggio d'errore.
 failInterruptedPlanTurns()
   .then((count) => {
@@ -149,15 +161,6 @@ startLocalLeaseJob();
 void sweepNodeTasks();
 startNodeSweeper();
 
-// Turni delegati al nodo rimasti aperti: registro e token in memoria sono persi, falliscono `restart` (i chiamanti
-// sono chiusi dalle loro pulizie); poi scadenze ogni 5 s e pulizia oraria delle righe vecchie. Atteso prima di
-// `listen`: un nodo che prende un turno subito dopo l'avvio non deve trovare un turno della vita precedente.
-try {
-  const count = await failInterruptedNodeTurns();
-  if (count > 0) logger.warn({ count }, "Turni del nodo interrotti dal riavvio chiusi come falliti");
-} catch (err) {
-  logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Chiusura dei turni del nodo interrotti non riuscita");
-}
 startNodeTurnSweeper();
 
 // Connettore OAuth: pulizia di codici, token, collegamenti revocati e client inutilizzati, all'avvio e ogni ora.

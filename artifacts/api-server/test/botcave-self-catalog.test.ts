@@ -177,6 +177,29 @@ describe("catalogo dei tool di Botcave come App di sé stesso", () => {
     }
   });
 
+  it.each([
+    ["create_team_template", "TeamRole"],
+    ["update_team_template", "TeamRole"],
+    ["create_team_instance", "TeamInstanceRole"],
+    ["update_team_instance", "TeamInstanceRole"],
+  ])("i ruoli di %s hanno tutti i campi di %s, compreso code", (name, schemaName) => {
+    // Un campo mancante nel catalogo il modello lo infila altrove (es. code in localSkills): la squadra viene rifiutata
+    const tool = catalog.find((t) => t.name === name)!;
+    const roleProps = (tool.paramsSchema as { properties: { roles: { items: { properties: Record<string, { enum?: string[] }> } } } })
+      .properties.roles.items.properties;
+    const api = (openapi as unknown as { components: { schemas: Record<string, { properties: Record<string, unknown> }> } })
+      .components.schemas[schemaName];
+    expect(Object.keys(roleProps).sort()).toEqual(Object.keys(api.properties).sort());
+    expect(roleProps.code.enum).toEqual(["none", "read", "write"]);
+  });
+
+  it("create_plan_issues chiede poche voci per chiamata, così la creazione sta nel timeout dei tool", () => {
+    // Il server crea le issue una alla volta con 1 s di pausa: 12 voci superano i 15 s di TOOL_TIMEOUT_MS
+    const tool = catalog.find((t) => t.name === "create_plan_issues")!;
+    const itemIds = (tool.paramsSchema as { properties: { itemIds: { maxItems: number } } }).properties.itemIds;
+    expect(itemIds.maxItems).toBeLessThanOrEqual(5);
+  });
+
   it("il controllo delle esclusioni riconosce le route vietate", () => {
     expect(excludedReason("POST", "/apps")).not.toBeNull();
     expect(excludedReason("PATCH", "/apps/{id}")).not.toBeNull();

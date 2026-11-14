@@ -1,6 +1,6 @@
 import { readTurnProgress } from "../lib/turn-progress/progress";
 import { Router, type IRouter } from "express";
-import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import {
   db,
   aiModelsTable,
@@ -33,6 +33,9 @@ import {
   DecidePlanProposalParams,
   DecidePlanProposalBody,
   DecidePlanProposalResponse,
+  StopPlanTurnParams,
+  StopPlanTurnResponse,
+  CancelQueuedPlanMessageParams,
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
 import { ModelChoiceError, chooseOwnModel } from "../lib/ai/choice";
@@ -41,9 +44,10 @@ import { characterModelFor } from "../lib/characters/settings";
 import { effectiveStatus } from "../lib/ai/model-status";
 import { itemTitle, type PlanChapter } from "../lib/plan-chat/context";
 import { ProposalConflictError, ProposalNotFoundError, decideProposal } from "../lib/plan-chat/decide";
-import { TurnBusyError, latestCompletedAnalysisId, loadPlanItems, startPlanTurn } from "../lib/plan-chat/run-turn";
+import { PLAN_CHAT_SPEC, TurnBusyError, latestCompletedAnalysisId, loadPlanItems, startPlanTurn } from "../lib/plan-chat/run-turn";
+import { cancelQueued, getQueued, sendChatMessage, stopChatTurn } from "../lib/chat-turns/control";
 import { planIssuesSummary } from "../lib/plan-issues/service";
-import { rateLimit } from "../middlewares/rate-limit";
+import { consumeTurnStop, rateLimit } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
 import {
   toPublicItem,
@@ -61,6 +65,7 @@ const CONVERSATION_NOT_FOUND = "Conversazione non trovata";
 const NO_COMPLETED_ANALYSIS = "L'app non ha un'analisi completata";
 const MODEL_UNAVAILABLE = "Il modello non è più disponibile: scegline un altro";
 const TURN_RUNNING = "Il bot sta già rispondendo";
+const TOO_MANY_STOPS = "Troppe richieste: riprova tra poco";
 
 /** Conversazione dell'utente (404 per le altre). */
 async function findConversation(id: number, userId: number): Promise<PlanConversation | undefined> {
@@ -213,7 +218,8 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
     const messages = await db
       .select()
       .from(planMessagesTable)
-      .where(eq(planMessagesTable.conversationId, id))
+      // Il messaggio in coda non è ancora nella cronologia: si espone a parte (`queuedMessage`)
+      .where(and(eq(planMessagesTable.conversationId, id), isNull(planMessagesTable.queuedAt)))
       .orderBy(asc(planMessagesTable.id));
     const proposals = await db
       .select()
@@ -233,6 +239,7 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
         proposals: await publicProposals(proposals),
         newerAnalysisId: newer?.id ?? null,
         progress: conv.turnStatus === "running" ? readTurnProgress("plan_chat", id) : null,
+        queuedMessage: await getQueued(PLAN_CHAT_SPEC, id),
       }),
     );
   });
@@ -312,12 +319,39 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
       return;
     }
     try {
-      const message = await startPlanTurn(id, content);
-      res.status(202).json(SendPlanMessageResponse.parse(toPublicPlanMessage(message)));
+      const outcome = await sendChatMessage(PLAN_CHAT_SPEC, id, content, null, body.mode ?? "normal", () => startPlanTurn(id, content));
+      const message =
+        outcome.kind === "started" ? toPublicPlanMessage(outcome.message) : { ...outcome.queued, role: "user" as const, error: false };
+      res.status(202).json(SendPlanMessageResponse.parse(message));
     } catch (err) {
       if (!(err instanceof TurnBusyError)) throw err;
       res.status(409).json({ error: TURN_RUNNING });
     }
+  });
+
+  router.post("/plan-conversations/:id/stop", async (req, res) => {
+    const { id } = parseRequest(StopPlanTurnParams, req.params);
+    const userId = currentUserId(req);
+    if (!(await findConversation(id, userId))) {
+      res.status(404).json({ error: CONVERSATION_NOT_FOUND });
+      return;
+    }
+    if (!consumeTurnStop(userId)) {
+      res.status(429).json({ error: TOO_MANY_STOPS });
+      return;
+    }
+    const stopped = await stopChatTurn(PLAN_CHAT_SPEC, id);
+    res.json(StopPlanTurnResponse.parse({ stopped }));
+  });
+
+  router.delete("/plan-conversations/:id/queued", async (req, res) => {
+    const { id } = parseRequest(CancelQueuedPlanMessageParams, req.params);
+    if (!(await findConversation(id, currentUserId(req)))) {
+      res.status(404).json({ error: CONVERSATION_NOT_FOUND });
+      return;
+    }
+    await cancelQueued(PLAN_CHAT_SPEC, id);
+    res.status(204).end();
   });
 
   router.post("/plan-proposals/:id/decision", async (req, res) => {

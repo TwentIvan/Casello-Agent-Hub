@@ -1,6 +1,6 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod";
-import { db, pendingActionsTable, teamCodeTasksTable, teamInstancesTable, teamTasksTable } from "@workspace/db";
+import { db, pendingActionsTable, teamCodeTasksTable, teamInstancesTable, teamPlanVersionsTable, teamTasksTable } from "@workspace/db";
 import { completionData } from "../architect/issues";
 import { latestCompletedAnalysisId, loadPlanItems } from "../plan-chat/run-turn";
 import { enqueuePlanItem } from "../actions/queue";
@@ -17,6 +17,7 @@ import {
   getPlan,
   getPlanForUpdate,
   isRelevantChange,
+  sameProposalContent,
   lastExecutions,
   nextTaskIds,
   patchPlan,
@@ -50,7 +51,40 @@ export const LEAD_MESSAGES = {
   unknownTool: "strumento non disponibile",
   tooManyFailures: "compito fallito 3 volte: segnala all'utente",
   noAppPlan: "nessun piano per l'app di riferimento",
+  proposeAfterDecision:
+    "il PLAN approvato è valido: assegna i compiti pronti con assegna_compito. Proponi una modifica solo se l'utente la chiede o se l'esito di un compito la rende necessaria",
+  sameAsRejected:
+    "questa proposta è uguale a una già rifiutata dall'utente: non riproporla. Assegna i compiti pronti del PLAN approvato con assegna_compito o chiedi all'utente cosa cambiare con segnala",
 } as const;
+
+/**
+ * Esiti dovuti all'ambiente (accesso a GitHub, Git, nodo, riavvio, tetto) e non al lavoro del ruolo: non contano nel freno dei
+ * 3 fallimenti, così dopo aver sistemato permessi o nodo il compito si riassegna senza un id nuovo.
+ */
+export const ENVIRONMENT_FAILURE_PREFIXES = [
+  "accesso al repository non disponibile",
+  "repository non raggiungibile",
+  "Git non installato",
+  "branch base non trovato",
+  "push non riuscito: GitHub ha rifiutato le modifiche",
+  "push non riuscito: riprova più tardi",
+  "preparazione del repository non riuscita",
+  "l'App GitHub non ha il permesso",
+  "spazio di lavoro mancante o non trovato",
+  "nodo non più raggiungibile",
+  "nodo disattivato",
+  "esecuzione interrotta: nodo fermato",
+  "Claude Code non avviabile",
+  "interrotto dal riavvio",
+  "tetto di spesa della squadra raggiunto",
+] as const;
+
+/** Vero se l'esito (o l'errore) di un'esecuzione è un problema d'ambiente: confronto sull'inizio del testo, senza maiuscole. */
+export function isEnvironmentFailure(text: string | null | undefined): boolean {
+  if (!text) return false;
+  const t = text.trim().toLowerCase();
+  return ENVIRONMENT_FAILURE_PREFIXES.some((p) => t.startsWith(p.toLowerCase()));
+}
 
 /** Esecuzioni consecutive fallite o bloccate dopo le quali `assegna_compito` rifiuta di riprovare un compito. */
 export const MAX_TASK_FAILURES = 3;
@@ -67,6 +101,8 @@ export interface LeadContext {
   roleKeys: string[];
   /** Il turno nasce da un messaggio dell'utente: il freno dei 3 fallimenti concede un tentativo. */
   userRequested?: boolean;
+  /** Il turno nasce solo da decisioni dell'utente senza nota: `proponi_piano` non riscrive il PLAN approvato. */
+  decisionOnly?: boolean;
 }
 
 /** Errore da restituire al modello come risultato dello strumento. */
@@ -283,6 +319,33 @@ async function readPlan(ctx: LeadContext): Promise<ToolResult> {
   return done(planForModel(await getPlan(ctx.instanceId)));
 }
 
+/**
+ * Contenuto dell'ultima proposta di piano (`plan`/`plan_change`) rifiutata dall'utente (con `decided_by`: non quelle superate
+ * da una nuova proposta o chiuse con la squadra), letto dalla sua versione in `team_plan_versions`.
+ */
+async function lastRejectedProposal(instanceId: number): Promise<Plan | null> {
+  const [row] = await db
+    .select({ planVersion: pendingActionsTable.planVersion })
+    .from(pendingActionsTable)
+    .where(
+      and(
+        eq(pendingActionsTable.teamInstanceId, instanceId),
+        inArray(pendingActionsTable.kind, ["plan", "plan_change"]),
+        eq(pendingActionsTable.status, "rejected"),
+        isNotNull(pendingActionsTable.decidedBy),
+      ),
+    )
+    .orderBy(desc(pendingActionsTable.decidedAt), desc(pendingActionsTable.id))
+    .limit(1);
+  if (row?.planVersion == null) return null;
+  const [version] = await db
+    .select({ plan: teamPlanVersionsTable.plan })
+    .from(teamPlanVersionsTable)
+    .where(and(eq(teamPlanVersionsTable.instanceId, instanceId), eq(teamPlanVersionsTable.version, row.planVersion)))
+    .limit(1);
+  return version?.plan ?? null;
+}
+
 /** Esito di una transazione di `proponi_piano`. */
 type ProposeOutcome =
   | { kind: "changed" }
@@ -347,6 +410,13 @@ async function proposePlan(ctx: LeadContext, args: Record<string, unknown>): Pro
   const kind = approved === null ? "plan" : "plan_change";
   const changes = diffSummary(approved, draft);
   const approvedTasks = new Map((approved?.tasks ?? []).map((t) => [t.id, t]));
+  // Freni contro le riproposte a vuoto (salvo che l'utente abbia scritto nel turno): dopo una decisione senza nota il PLAN
+  // approvato non si riscrive, e una proposta uguale a quella appena rifiutata dall'utente non torna in coda
+  if (relevant && !ctx.userRequested) {
+    if (approved !== null && ctx.decisionOnly) return fail(LEAD_MESSAGES.proposeAfterDecision);
+    const rejected = await lastRejectedProposal(ctx.instanceId);
+    if (rejected && sameProposalContent(rejected, draft)) return fail(LEAD_MESSAGES.sameAsRejected);
+  }
 
   let outcome: ProposeOutcome;
   try {
@@ -486,15 +556,23 @@ async function updatePlan(ctx: LeadContext, args: Record<string, unknown>): Prom
   return done("piano aggiornato");
 }
 
-/** Freno ai tentativi: ultime 3 esecuzioni tutte fallite o bloccate, o 3 CI rosse di fila sulla PR del compito. */
+/** Quante esecuzioni recenti si leggono per trovare le ultime 3 non dovute all'ambiente. */
+const BRAKE_LOOKBACK = 30;
+
+/**
+ * Freno ai tentativi: ultime 3 esecuzioni tutte fallite o bloccate, o 3 CI rosse di fila sulla PR del compito. Le esecuzioni
+ * finite male per l'ambiente (`isEnvironmentFailure`) si saltano: non contano e non azzerano il conto.
+ */
 async function failureBrake(instanceId: number, taskId: string): Promise<boolean> {
-  const recent = await db
-    .select({ status: teamTasksTable.status })
+  const rows = await db
+    .select({ status: teamTasksTable.status, outcome: teamTasksTable.outcome, error: teamTasksTable.error })
     .from(teamTasksTable)
     .where(and(eq(teamTasksTable.instanceId, instanceId), eq(teamTasksTable.planTaskId, taskId)))
     .orderBy(desc(teamTasksTable.id))
-    .limit(MAX_TASK_FAILURES);
-  if (recent.length === MAX_TASK_FAILURES && recent.every((r) => r.status === "failed" || r.status === "blocked")) return true;
+    .limit(BRAKE_LOOKBACK);
+  const bad = (r: (typeof rows)[number]) => r.status === "failed" || r.status === "blocked";
+  const recent = rows.filter((r) => !(bad(r) && (isEnvironmentFailure(r.outcome) || isEnvironmentFailure(r.error)))).slice(0, MAX_TASK_FAILURES);
+  if (recent.length === MAX_TASK_FAILURES && recent.every(bad)) return true;
   // Stesso freno per il giro «CI rossa → riassegna»: l'esecuzione resta `done`, le CI rosse di fila le conta la sorveglianza
   const [code] = await db
     .select({ ciFailures: teamCodeTasksTable.ciFailures })

@@ -45,6 +45,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   pubblica in https e ne dà il testo come dato non attendibile; nessuna migrazione (vedi "Lucius e Alfred leggono il web"). Spec: `docs/superpowers/specs/2026-11-12-botcave-leggi-pagina-web-design.md`.
 - Avanzamento dei turni: mentre una chat (Alfred scritto, Lucius, chat del piano e di squadra, console ed embed) aspetta la risposta, al posto di «sta pensando…» compaiono gli ultimi passi
   (strumenti chiamati, con frasi fisse) e il tempo trascorso; registro in memoria, nessuna migrazione (vedi "Avanzamento dei turni"). Spec: `docs/superpowers/specs/2026-11-10-botcave-avanzamento-turni-design.md`.
+- Ferma, Invia subito, Accoda: nelle tre chat (personaggi, piano, squadra) «Ferma» interrompe il turno («Risposta interrotta.»), «Invia subito» lo ferma e lancia il nuovo messaggio, «Accoda» tiene un solo messaggio che parte a fine turno
+  (vedi "Ferma, Invia subito, Accoda"). Spec: `docs/superpowers/specs/2026-11-10-botcave-personaggi-ferma-skill-esegui-design.md` §1.
 - Alfred e Lucius nelle aree: un solo pannello laterale a quattro schede (Alfred con la voce, Da confermare, Bollettino, Lucius), lo stesso in console ed embed, si apre
   dal pulsante di Alfred nella caverna o da «Chiedi a Lucius» (Alfred scritto con un filo unico che sa da quale pagina scrivi, Lucius sull'argomento che la pagina dichiara:
   agente, skill, modello di squadra, aree, piano, squadra); schede da accettare, passaggio di consegne tra le due schede, modello e tetto mensile per personaggio in
@@ -268,6 +270,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `artifacts/api-server/test/node-turn-flow.test.ts` con `test/fake-claude.mjs`. Spec: `docs/superpowers/specs/2026-11-09-botcave-esecutore-claude-code-nodo-design.md`
 - `artifacts/api-server/src/lib/turn-progress/` — avanzamento dei turni di chat: frasi dei passi (`describe.ts`) e registro in memoria (`progress.ts`); con `lib/node-turns/chat-turn.ts` e
   console `components/characters/` (`turn-progress.ts`, `turn-progress-view.tsx`, `character-chat.tsx`) (vedi "Avanzamento dei turni")
+- `artifacts/api-server/src/lib/chat-turns/` — Ferma, Invia subito e Accoda comuni alle tre chat: descrizione di una chat (`spec.ts`) e logica (`control.ts`: `stopChatTurn`, `sendChatMessage`, `queueChatMessage`, `drainQueued`); con `lib/stale-turns.ts`, i tre `run-turn.ts`,
+  le route `characters.ts`, `plan-chat.ts`, `team-chat.ts`, `consumeTurnStop` in `middlewares/rate-limit.ts` e console `components/characters/` (`chat-send.ts`, `character-chat.tsx`) (vedi "Ferma, Invia subito, Accoda")
 - `artifacts/api-server/src/lib/code-writer/` — strumenti GitHub delle squadre (vedi "Strumenti GitHub delle squadre"): sessione del compito e strumenti dei ruoli (`session.ts`, `tools.ts`), copia di lavoro
   (`working-copy.ts`), controllo dei segreti (`secrets-check.ts`), client Git/PR/CI di GitHub (`github-git.ts`), stato della CI (`ci-state.ts`), righe `team_code_tasks` (`code-tasks.ts`), sorveglianza
   (`watcher.ts`), contesto e sezione Git del pacchetto, apertura e adozione della PR dei compiti node (`node-git.ts`), messaggi fissi (`messages.ts`); schema `lib/db/src/schema/team-code-tasks.ts`; prova di flusso `artifacts/api-server/test/code-team-flow.test.ts`;
@@ -466,11 +470,20 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   «il compito <id> è in corso: aspetta il suo esito»); `assegna_compito` (solo compito del PLAN approvato in `planned|blocked|failed`,
   altrimenti «il compito non è nel piano approvato: proponi una modifica» o «il compito è già in corso»; se le ultime 3
   esecuzioni del compito sono tutte `failed` o `blocked` → «compito fallito 3 volte: segnala all'utente», `MAX_TASK_FAILURES`:
-  un'esecuzione riuscita in mezzo azzera il conto; in un turno nato da un messaggio dell'utente il freno non vale, così «riprova» concede un tentativo e al turno dopo il freno torna, `hasUserRequest`: la ripresa automatica dopo il tetto non conta); `leggi_esito`;
+  un'esecuzione riuscita in mezzo azzera il conto; in un turno nato da un messaggio dell'utente il freno non vale, così «riprova» concede un tentativo e al turno dopo il freno torna, `hasUserRequest`: la ripresa automatica dopo il tetto non conta;
+  le esecuzioni finite male per l'ambiente, cioè con esito o errore che comincia con un testo di `ENVIRONMENT_FAILURE_PREFIXES` (accesso al repository, repository non raggiungibile, Git non installato, branch base non trovato,
+  push rifiutato o da riprovare, preparazione del repository, permesso mancante dell'App GitHub, spazio di lavoro mancante, nodo non raggiungibile, disattivato o fermato, Claude Code non avviabile, riavvio, tetto
+  della squadra; `isEnvironmentFailure`), si saltano: non contano e non azzerano il conto, così dopo aver sistemato permessi o nodo il compito si riassegna con lo stesso id); `leggi_esito`;
   `segnala` (`bloccato|decisione_richiesta|azione_manuale_richiesta`, bollettino ≤ 300, dettaglio ≤ 4 000;
   `azione_manuale_richiesta` aggiunge l'azione al PLAN, max 30); `chiudi_lavoro` (evento `lavoro_finito`: la squadra resta
   attiva finché l'utente non la chiude). Tutti i capo-strumenti che scrivono bloccano la squadra e falliscono con «la squadra
   non è attiva» se non lo è. Il capo usa anche i suoi strumenti di app (livelli di sempre; L2 in coda con `team_instance_id`).
+- **Dopo una decisione** (`decisionMessages`, `readyTaskIds`, `decisionOnlyTurn` in `turn-runner.ts`): la novità di un'approvazione dice che il PLAN corrente è quello approvato ed elenca i compiti pronti (`planned`)
+  da assegnare con `assegna_compito`, senza riproporre né riformulare; un rifiuto con nota chiede di correggere la proposta (nota in un messaggio a parte); un rifiuto senza nota dice che il PLAN approvato resta valido
+  (o, senza PLAN approvato, di chiedere all'utente con `segnala`). Le istruzioni del capo lo ripetono: `proponi_piano` solo per un cambio chiesto dall'utente o reso necessario da un esito. Freni in `proponi_piano`
+  (solo per modifiche rilevanti e mai in un turno con un messaggio dell'utente): in un turno nato solo da decisioni senza nota, con un PLAN approvato → «il PLAN approvato è valido: assegna i compiti pronti…»
+  (`LEAD_MESSAGES.proposeAfterDecision`); contenuto uguale all'ultima proposta di piano rifiutata dall'utente (`decided_by` non nullo; a meno di id dei compiti, ordine e spazi: `sameProposalContent` in `plan.ts`) →
+  «questa proposta è uguale a una già rifiutata…» (`LEAD_MESSAGES.sameAsRejected`). Nulla scritto, nessuna voce.
 - **Proposte e approvazioni**: senza versione approvata `proponi_piano` scrive la versione `proposed` e accoda una voce
   `plan`; con una versione approvata, una modifica rilevante (obiettivo, vincoli, compiti aggiunti/tolti, titolo/ruolo/istruzioni
   di un compito: `isRelevantChange`) accoda una `plan_change` con le differenze (`diffSummary`); una modifica non rilevante
@@ -979,6 +992,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   conversazione rifiuterebbe ogni messaggio). Ogni processo ricorda i turni che esegue (`trackTurn`); ogni minuto `startStaleTurnSweeper`
   chiude con il messaggio del riavvio i turni `running` con `updated_at` più vecchio di 5 minuti (`STALE_TURN_MS`) che non girano in questo
   processo, con le stesse `failInterrupted*` dell'avvio (filtro `olderThan`/`exclude`).
+- Ferma, Invia subito e Accoda valgono anche qui (`/api/plan-conversations/:id/stop|queued`, `mode` su `…/messages`): vedi "Ferma, Invia subito, Accoda".
 - La rianalisi dell'architetto riceve le voci da chat approvate (e quelle con un'issue) come "già pianificate" (fasi
   completion ed evolution; la fase catalog solo quelle `endpoint`) e non le ripropone. Nel piano restano anche le voci
   da chat approvate delle analisi precedenti.
@@ -1046,7 +1060,31 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - **API**: schema OpenAPI `TurnProgress`, campo facoltativo `progress` in `PlanConversationDetail`, `TeamChatConversationDetail` e `CharacterConversationDetail` (anche il filo di Alfred), valorizzato solo con
   `turnStatus = running`; la console già fa polling sulla conversazione.
 - **Console**: `components/characters/turn-progress.ts` (righe e `formatElapsed`) e `turn-progress-view.tsx`, usati da `character-chat.tsx` (console ed embed).
+- Un turno fermato da «Ferma» chiude il registro come ogni altro (`finally`); vedi "Ferma, Invia subito, Accoda".
 - Nessuna migrazione e nessuna variabile. Limite: il registro è in memoria, quindi vale con un solo container API; con più container i passi andrebbero salvati nel DB.
+
+## Ferma, Invia subito, Accoda
+
+- Spec: `docs/superpowers/specs/2026-11-10-botcave-personaggi-ferma-skill-esegui-design.md` §1. Dove il codice differisce dalla spec vale il codice, descritto qui. Le tre chat (conversazioni dei personaggi, chat del piano, chat di squadra) hanno «Ferma»,
+  «Invia subito», «Accoda» e «Annulla» (l'accodato); logica unica in `lib/chat-turns/` (`ChatKindSpec` descrive tabelle, consumatore e avvio di ciascuna chat).
+- **Ferma** (`stopChatTurn`; `POST /api/character-conversations|plan-conversations|team-chat-conversations/:id/stop` → `{stopped}`, 30/min per utente, `consumeTurnStop`, un solo contatore): un turno che gira in questo processo si interrompe
+  con il suo segnale (`abortTurn` di `lib/stale-turns.ts`) e si chiude da solo; la route attende fino a 10 s. Un turno che non gira qui (altro container, riavvio) si chiude direttamente nel DB (`closeTurnAsStopped`) con scrittura finale condizionata
+  (conversazione `running` → `idle`, messaggio dell'assistente ancora vuoto → «Risposta interrotta.» con `error` falso) e, solo se ha chiuso qualcosa, si annullano i turni del nodo aperti del messaggio dell'assistente chiuso (`cancelOpenTurnsFor`
+  con `message_id`: il nodo riceve 409 e termina `claude`; un turno nuovo della stessa conversazione non si tocca). `execute*Turn` salta il turno se è stato chiuso prima di partire (`isTurnOpen`) e, se «Ferma» è arrivato prima che il messaggio
+  dell'assistente fosse scritto, lo riempie con «Risposta interrotta.». `stopped: false` se non c'era nulla da fermare. Attesa di 10 s scaduta: avviso nel log con l'id della conversazione.
+  **Scrittura finale condizionata** (i tre `run-turn.ts`): messaggio dell'assistente solo se ancora vuoto; token e costo del turno si sommano sempre (`turnTotals` di `lib/chat-turns/totals.ts`: chi ha chiuso il turno altrove non li somma),
+  `idle` e `updated_at` solo se la scrittura del messaggio è riuscita. Limite noto: un turno cloud che gira in UN ALTRO container (deploy) non riceve il segnale e può continuare a chiamare strumenti fino alla fine del turno.
+- **Messaggio in coda**: una riga del messaggio utente con `queued_at` non nullo, al più una per conversazione (indice unico parziale `*_queued_uidx`); resta fuori da cronologia, titoli, riassunti e dall'elenco `messages`, ed è esposta come `queuedMessage`
+  (`{id, content, createdAt}`) nel dettaglio della conversazione. `DELETE …/queued` la toglie («Annulla»). `queued_at` è `timestamp` (la spec diceva `timestamptz`: vale il codice). Svuotamento (`drainQueued`): a fine turno, dopo `failInterrupted*`, dopo un «Ferma» chiuso nel DB e dopo un invio
+  `queue`/`now` se il turno era già finito; se il turno non parte (ancora occupato, regola della chat) la riga resta; la riga si toglie solo se il testo è ancora quello avviato (un «Accoda» arrivato intanto resta in coda e parte a fine turno).
+- **Modo di invio** (`mode` su `POST …/messages`: `normal` | `now` | `queue`, default `normal`; risposta 202 col messaggio avviato o accodato): `normal` come sempre (turno in corso → 409). `queue` con un turno in corso mette il messaggio in coda,
+  sostituendo quello già accodato (`queued_at` resta della prima inserzione); `now` con un turno in corso = coda (sostituzione) + «Ferma» del solo turno che girava (si fissa l'id del suo messaggio dell'assistente prima dell'inserimento: se nel frattempo
+  parte il turno accodato non si ferma quello), e il nuovo turno parte dalla coda; nei pochi ms in cui il turno è preso ma il messaggio dell'assistente non è ancora scritto `now` degrada in una semplice coda. Senza turno in corso `queue` e `now` avviano come `normal`. Le validazioni e i limiti della route valgono per ogni modo.
+- **Console** (`components/characters/chat-send.ts`, `character-chat.tsx`, adattatori): durante il turno «Ferma», «Invia subito» e «Accoda» al posto di «Invia», con il messaggio in coda sotto la conversazione e «Annulla»; da tastiera Cmd/Ctrl+Invio = «Invia subito»
+  mentre il turno gira. Vale in console, nel pannello e nell'embed. La chat con il Responsabile di Botcave (ogni messaggio è una run) non ha «Ferma» né la coda: l'adattatore non
+  dichiara `stop`/`cancelQueued` e durante il turno l'invio resta disattivato.
+- Migrazione: `docs/migrations/2026-11-ferma-accoda.sql` (additiva e idempotente, niente `-post`): colonna `queued_at` su `character_messages`, `plan_messages`, `team_chat_messages` e i tre indici unici parziali. Da applicare su Neon PRIMA del merge (SQL completo in chat)
+  e da segnalare nella PR; riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
 
 ## Autenticazione
 
@@ -1071,8 +1109,16 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   fa scaricare all'architetto il codice con un token di installazione limitato a quel repo e a
   `contents: read` (un'ora, solo in memoria). Nessun token GitHub viene salvato. Il token manuale della
   fase 3 resta come alternativa.
-- Limite noto: l'ambito di un'installazione può superare i repo a cui l'utente ha accesso su GitHub; prima
-  di aprire Casello a chiunque va verificato l'accesso con il token dell'utente (spec GitHub, §5).
+- Accesso ai repo verificato con il token dell'utente (issue #94): l'ambito di un'installazione può superare i repo che l'utente vede su
+  GitHub, quindi a ogni callback (`syncInstallations`) per ogni installazione si legge `GET /user/installations/{id}/repositories` con il
+  token utente (`listUserInstallationRepos`, poi scartato) e si salvano i nomi in minuscolo in `github_installations.user_repos` (con
+  `user_repos_checked_at`; GitHub in errore su un'installazione → elenco di prima, null se nuova). `GET /api/github/repos` mostra solo quei
+  repo (installazione con `user_repos` null: nessun repo); salvare un'app con `sourceInstallationId` (POST/PATCH) e avviare un'analisi
+  vogliono il repo nell'elenco (`userRepoAccess`): altrimenti 403 «repository non accessibile al tuo account GitHub: …», o con l'elenco
+  null 403 «accesso ai repository non ancora verificato: ricollega GitHub da Account». L'elenco si aggiorna solo a una nuova callback
+  (login o «Collega GitHub»): un repo creato o un accesso perso dopo valgono dal collegamento successivo. Gli altri usi dell'installazione
+  (squadre, Lucius, issue del piano) controllano ancora solo `userHasInstallation`, sul repo già convalidato al salvataggio. Migrazione
+  `docs/migrations/2026-11-accesso-repo-utente.sql` (additiva e idempotente, PRIMA del merge).
 - GitHub App su github.com: permessi Contents read, Issues read & write (per creare le issue del piano: ogni installazione deve accettare il
   nuovo permesso; il token con cui l'architetto legge il codice resta `contents: read`), Metadata read, Email
   addresses read (account); "Request
@@ -1292,6 +1338,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   404). Console: pannello «Lucius» nella scheda squadra (non più incorporato: pulsante «Chiedi a Lucius» che apre il pannello comune
   `CharacterChat` con `useTeamChatAdapter` in `components/characters/`; schede con `role-instructions-card.tsx`, anteprima del
   Markdown senza frontmatter; il tetto e il modello di partenza sono quelli di Lucius, vedi "Alfred e Lucius nelle aree"), nell'editor dei ruoli il campo «Identità» (l'anteprima delle istruzioni è nelle schede del pannello Lucius).
+- **Ferma e Accoda**: la chat di squadra ha `…/stop`, `…/queued` e `mode` su `…/messages` (vedi "Ferma, Invia subito, Accoda").
 - **Memorie** (`lib/memory/`, tabelle `character_notes` e `character_history`, personaggio `alfred` | `lucius`, per utente: ogni utente
   e ogni personaggio vede solo i propri dati). **Appunti**: ≤ 300 caratteri, ≤ 50 per personaggio e utente («memoria piena: unisci o
   togli un appunto»); vuoti o troppo lunghi rifiutati. Controllo credenziali (`looksLikeCredential`, vale sia per `ricorda` sia per la
@@ -1402,6 +1449,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   Una sola voce: la pagina `/alfred` e la scheda Alfred leggono la stessa sessione con `useSharedAlfredVoice()`. La chat del piano resta a pagina intera in `/apps/:id/plan`. Account → «Personaggi» (`characters-section.tsx`): Alfred
   (voce: modello vocale e voce, «Apri Alfred»; scritto: modello; tetto con spesa e avviso dall'80%) e Lucius (modello, tetto con spesa).
   Niente scorrimento orizzontale a 1280 px.
+- **Ferma e Accoda**: stesse route e stesso comportamento delle altre chat (`/api/character-conversations/:id/stop|queued`, `mode`; vedi "Ferma, Invia subito, Accoda").
 - Migrazione: `docs/migrations/2026-11-personaggi.sql` (additiva e idempotente, niente `-post`): tabelle `character_conversations`,
   `character_messages`, `character_proposals`, colonne `users.alfred_chat_ai_model_id`, `users.lucius_ai_model_id`,
   `users.alfred_monthly_budget_usd`, `users.lucius_monthly_budget_usd`, valore `character_chat` dell'enum `character_history_kind`
@@ -1737,6 +1785,8 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `runAgentLoop`: L2 in coda, conferma delle scritture compresa); i passi `tool`/`queued` compaiono mentre Claude lavora, a fine turno un passo `model` con la
   durata e la nota «Claude Code sul nodo «<nome>»» (colonna nuova `run_steps.note`, testo informativo dei passi); `cancelRun` chiude il turno `cancelled` (il
   ping dopo riceve 409 e il nodo termina `claude`).
+- **Ferma**: con il turno nello stesso processo il segnale arriva a `delegateTurn`, che chiude il turno `cancelled` (`cancelTurn`); con il turno chiuso nel DB (altro processo) «Ferma» e «Invia subito» annullano i `node_turns` aperti del messaggio
+  dell'assistente chiuso (`cancelOpenTurnsFor`). In entrambi i casi il ping dopo riceve 409 e il nodo termina `claude` (vedi "Ferma, Invia subito, Accoda").
 - **Ripiego** (`delegate.ts`): si ripiega sul `fallback_ai_model_id` dell'account nodo se il nodo non è pronto, disattivato o eliminato (deciso prima di
   accodare), se il turno scade `expired` o se il nodo riferisce `usage_limit`/`not_logged_in` **e** il turno non ha registrato chiamate agli strumenti
   (`calls` del registro = 0); mai su `timeout`, `claude_failed`, `stopped`, `lease_lost`, `model_unavailable` né dopo una chiamata (Claude può aver già agito).
@@ -1875,7 +1925,7 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
 ## Deploy (non toccare senza motivo)
 
 - Push su `main` → GitHub Actions builda `ghcr.io/twentivan/casello-api` e `casello-web` e chiama i
-  webhook Coolify. Push su `feat/**` builda soltanto (collaudo), senza deploy.
+  webhook Coolify. Push su `feat/**` e `botcave/**` (branch dei compiti delle squadre: la loro CI è quella che Botcave sorveglia) builda soltanto (collaudo), senza deploy.
 - Il tag `:latest` (quello che deploya Coolify) lo scrive solo `main`; ogni build ha anche il tag
   `:<sha>`. I run su `main` sono in coda uno alla volta e il job di deploy chiama i webhook con
   `force=true` e attende la fine del deploy su Coolify: merge ravvicinati non lasciano un'immagine vecchia.

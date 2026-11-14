@@ -15,6 +15,7 @@ import {
   GithubError,
   installationToken,
   listInstallationRepos,
+  listUserInstallationRepos,
   listUserInstallations,
   repoInstallationId,
 } from "./app";
@@ -523,5 +524,37 @@ describe("/auth/me: githubEnabled", () => {
     resetGithubConfigForTests();
     expect(await githubEnabled()).toBe(true);
     expect(await providers()).toEqual({ google: true, github: true });
+  });
+});
+
+describe("listUserInstallationRepos", () => {
+  beforeEach(() => {
+    gh.addInstallation({ id: 7, appId: Number(gh.appId), accountLogin: "ivan", accountType: "User", repositorySelection: "all" }, [
+      { fullName: "ivan/Mister", defaultBranch: "main", private: true },
+      { fullName: "ivan/segreto", defaultBranch: "main", private: true },
+    ]);
+    gh.addUser(USER_TOKEN, { id: 1, login: "ivanlt", name: null, avatarUrl: null }, { emails: [], installations: [7] });
+  });
+  afterEach(() => {
+    gh.userRepos.clear();
+    gh.failWith = null;
+  });
+
+  it("solo i repo che l'utente vede, in minuscolo, letti con il suo token", async () => {
+    gh.userRepos.set(USER_TOKEN, ["ivan/Mister"]);
+    expect(await listUserInstallationRepos(cfg, USER_TOKEN, 7)).toEqual(["ivan/mister"]);
+    const req = gh.requests.find((r) => r.path.startsWith("/user/installations/7/repositories"));
+    expect(req?.auth).toBe(`Bearer ${USER_TOKEN}`);
+  });
+
+  it("installazione che l'utente non vede (404) o id non valido: elenco vuoto", async () => {
+    expect(await listUserInstallationRepos(cfg, USER_TOKEN, 8)).toEqual([]);
+    expect(await listUserInstallationRepos(cfg, USER_TOKEN, 0)).toEqual([]);
+  });
+
+  it("token rifiutato (401): errore; GitHub in errore (500): non risponde", async () => {
+    await expectGithubError(listUserInstallationRepos(cfg, "ghu_sconosciuto", 7), "accesso con GitHub non riuscito", 401);
+    gh.failWith = () => 500;
+    await expectGithubError(listUserInstallationRepos(cfg, USER_TOKEN, 7), UNAVAILABLE, 500);
   });
 });

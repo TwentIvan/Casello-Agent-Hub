@@ -118,22 +118,23 @@ async function summarizeOne(
   now: Date,
 ): Promise<void> {
   const plan = kind === "plan_conversation";
+  // Il messaggio in coda non è ancora partito: non entra nel riassunto
   const rows = kind === "character_chat"
     ? await db
         .select({ role: characterMessagesTable.role, content: characterMessagesTable.content })
         .from(characterMessagesTable)
-        .where(and(eq(characterMessagesTable.conversationId, conv.id), eq(characterMessagesTable.error, false)))
+        .where(and(eq(characterMessagesTable.conversationId, conv.id), eq(characterMessagesTable.error, false), isNull(characterMessagesTable.queuedAt)))
         .orderBy(asc(characterMessagesTable.id))
     : plan
     ? await db
         .select({ role: planMessagesTable.role, content: planMessagesTable.content })
         .from(planMessagesTable)
-        .where(and(eq(planMessagesTable.conversationId, conv.id), eq(planMessagesTable.error, false)))
+        .where(and(eq(planMessagesTable.conversationId, conv.id), eq(planMessagesTable.error, false), isNull(planMessagesTable.queuedAt)))
         .orderBy(asc(planMessagesTable.id))
     : await db
         .select({ role: teamChatMessagesTable.role, content: teamChatMessagesTable.content })
         .from(teamChatMessagesTable)
-        .where(and(eq(teamChatMessagesTable.conversationId, conv.id), eq(teamChatMessagesTable.error, false)))
+        .where(and(eq(teamChatMessagesTable.conversationId, conv.id), eq(teamChatMessagesTable.error, false), isNull(teamChatMessagesTable.queuedAt)))
         .orderBy(asc(teamChatMessagesTable.id));
   if (rows.length > 0) {
     await summarizeConversation({

@@ -7,7 +7,7 @@ import type { ChatCompletionFunctionTool, ChatCompletionMessageParam } from "ope
 import type { ChatToolCall } from "../ai/chat-types";
 import { modelChat, resolveModel, type ResolvedModel } from "../ai/executor";
 import { logger } from "../logger";
-import { PLAN_TURN_LIMITS, runPlanTurn, type PlanTurnLimits, type PlanTurnOutcome } from "../plan-chat/turn";
+import { PLAN_TURN_LIMITS, STOPPED_TURN_MESSAGE, runPlanTurn, type PlanTurnLimits, type PlanTurnOutcome } from "../plan-chat/turn";
 import { describeStep } from "../turn-progress/describe";
 import { beginTurnProgress, endTurnProgress, finishStep, startStep } from "../turn-progress/progress";
 import { delegateTurn } from "./delegate";
@@ -36,15 +36,18 @@ export interface ChatTurnInput {
   budgetCheck(aiModelId: number): Promise<string | null>;
   /** Limiti del turno (default `PLAN_TURN_LIMITS`); valgono anche sul nodo (giri + 1) e nel ripiego. */
   limits?: PlanTurnLimits;
+  /** Interruzione richiesta dall'utente: annulla la chiamata al modello o il turno sul nodo. */
+  signal?: AbortSignal;
 }
 
 function cloudTurn(resolved: ResolvedModel, input: ChatTurnInput): Promise<PlanTurnOutcome> {
   return runPlanTurn(
     input.messages,
     {
-      chat: (msgs, tools, timeoutMs) => modelChat(resolved, { messages: msgs, tools, timeoutMs, caller: input.caller }),
+      chat: (msgs, tools, timeoutMs) => modelChat(resolved, { messages: msgs, tools, timeoutMs, caller: input.caller, signal: input.signal }),
       runTool: input.runTool,
       now: () => Date.now(),
+      signal: input.signal,
     },
     input.limits ?? PLAN_TURN_LIMITS,
     input.tools,
@@ -103,6 +106,7 @@ async function runTrackedTurn(original: ChatTurnInput): Promise<PlanTurnOutcome>
     dispatch: input.runTool,
     maxTurns: (input.limits ?? PLAN_TURN_LIMITS).maxRounds + 1,
     timeoutMs: CHAT_NODE_TIMEOUT_MS,
+    signal: input.signal,
   });
   switch (outcome.kind) {
     case "done":
@@ -110,6 +114,7 @@ async function runTrackedTurn(original: ChatTurnInput): Promise<PlanTurnOutcome>
     case "failed":
       return { ok: false, error: outcome.error, tokens: outcome.tokens, costUsd: outcome.costUsd };
     case "cancelled":
+      if (input.signal?.aborted) return { ok: false, stopped: true, error: STOPPED_TURN_MESSAGE, tokens: 0, costUsd: null };
       return { ok: false, error: NODE_TURN_MESSAGES.stopped, tokens: 0, costUsd: null };
     case "fallback": {
       const fallback = await usableFallback(input);

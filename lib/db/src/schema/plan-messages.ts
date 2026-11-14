@@ -1,4 +1,5 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { planConversationsTable } from "./plan-conversations";
 
 export const planMessageRoleEnum = pgEnum("plan_message_role", ["user", "assistant"]);
@@ -18,8 +19,13 @@ export const planMessagesTable = pgTable(
     error: boolean("error").notNull().default(false),
     tokens: integer("tokens").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
+    // Messaggio in attesa del turno in corso (uno al più per conversazione)
+    queuedAt: timestamp("queued_at"),
   },
-  (table) => [index("plan_messages_conversation_idx").on(table.conversationId, table.id)],
+  (table) => [
+    index("plan_messages_conversation_idx").on(table.conversationId, table.id),
+    uniqueIndex("plan_messages_queued_uidx").on(table.conversationId).where(sql`${table.queuedAt} IS NOT NULL`),
+  ],
 );
 
 export type PlanMessage = typeof planMessagesTable.$inferSelect;

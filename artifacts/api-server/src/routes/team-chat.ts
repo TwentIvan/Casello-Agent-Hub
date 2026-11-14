@@ -1,6 +1,6 @@
 import { readTurnProgress } from "../lib/turn-progress/progress";
 import { Router, type IRouter, type Response } from "express";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import {
   db,
   teamChatConversationsTable,
@@ -26,6 +26,9 @@ import {
   DecideTeamChatProposalResponse,
   DownloadRoleInstructionsParams,
   DownloadRolesExportParams,
+  StopTeamChatTurnParams,
+  StopTeamChatTurnResponse,
+  CancelQueuedTeamChatMessageParams,
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
 import { ModelChoiceError, chooseOwnModel } from "../lib/ai/choice";
@@ -34,11 +37,12 @@ import { characterModelFor } from "../lib/characters/settings";
 import { buildZip } from "../lib/zip-writer";
 import { TeamChatError, decideTeamChatProposal, toProposalView, type ProposalView } from "../lib/team-chat/decide";
 import { instructionsSkillCode } from "../lib/team-chat/instructions-file";
-import { TEAM_CHAT_MESSAGE_MAX_CHARS, TurnBusyError, startTeamChatTurn } from "../lib/team-chat/run-turn";
+import { TEAM_CHAT_MESSAGE_MAX_CHARS, TEAM_CHAT_SPEC, TurnBusyError, startTeamChatTurn } from "../lib/team-chat/run-turn";
+import { cancelQueued, getQueued, sendChatMessage, stopChatTurn } from "../lib/chat-turns/control";
 import { loadTeamSnapshot } from "../lib/team-chat/snapshot";
 import { INSTANCE_MESSAGES, InstanceError, getInstance } from "../lib/teams/instances";
 import { TeamRuleError } from "../lib/teams/rules";
-import { consumeTeamChatMessage } from "../middlewares/rate-limit";
+import { consumeTeamChatMessage, consumeTurnStop } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
 import { toNumberOrNull } from "./serializers";
 
@@ -151,7 +155,13 @@ export function createTeamChatRouter(): IRouter {
       res.status(404).json({ error: CONVERSATION_NOT_FOUND });
       return;
     }
-    const messages = await db.select().from(teamChatMessagesTable).where(eq(teamChatMessagesTable.conversationId, id)).orderBy(asc(teamChatMessagesTable.id));
+    // Il messaggio in coda non è ancora nella cronologia: si espone a parte (`queuedMessage`)
+    const messages = await db
+      .select()
+      .from(teamChatMessagesTable)
+      .where(and(eq(teamChatMessagesTable.conversationId, id), isNull(teamChatMessagesTable.queuedAt)))
+      .orderBy(asc(teamChatMessagesTable.id));
+    const queuedMessage = await getQueued(TEAM_CHAT_SPEC, id);
     const proposals = await db.select().from(teamChatProposalsTable).where(eq(teamChatProposalsTable.conversationId, id)).orderBy(asc(teamChatProposalsTable.id));
     await guarded(res, async () => {
       const team = proposals.length > 0 ? await loadTeamSnapshot(conv.teamInstanceId) : { roles: [], localSkills: [] };
@@ -160,6 +170,7 @@ export function createTeamChatRouter(): IRouter {
           ...toPublicConversation(conv),
           messages: messages.map(toPublicMessage),
           progress: conv.turnStatus === "running" ? readTurnProgress("team_chat", id) : null,
+          queuedMessage,
           proposals: proposals.map((p) => {
             const view = toProposalView(p);
             return toPublicProposal(view, currentValueOf(team, view));
@@ -208,14 +219,44 @@ export function createTeamChatRouter(): IRouter {
       return;
     }
     await guarded(res, async () => {
+      // Squadra chiusa: 409 anche per un messaggio che andrebbe in coda
+      const instance = await getInstance(conv.teamInstanceId);
+      if (instance.status === "closed") throw new InstanceError(409, INSTANCE_MESSAGES.closed);
       try {
-        const message = await startTeamChatTurn(id, content);
-        res.status(202).json(SendTeamChatMessageResponse.parse(toPublicMessage(message)));
+        const outcome = await sendChatMessage(TEAM_CHAT_SPEC, id, content, null, body.mode ?? "normal", () => startTeamChatTurn(id, content));
+        const message =
+          outcome.kind === "started" ? toPublicMessage(outcome.message) : { ...outcome.queued, role: "user" as const, error: false };
+        res.status(202).json(SendTeamChatMessageResponse.parse(message));
       } catch (err) {
         if (!(err instanceof TurnBusyError)) throw err;
         res.status(409).json({ error: TURN_RUNNING });
       }
     });
+  });
+
+  router.post("/team-chat-conversations/:id/stop", async (req, res) => {
+    const { id } = parseRequest(StopTeamChatTurnParams, req.params);
+    const userId = currentUserId(req);
+    if (!(await findConversation(id, userId))) {
+      res.status(404).json({ error: CONVERSATION_NOT_FOUND });
+      return;
+    }
+    if (!consumeTurnStop(userId)) {
+      res.status(429).json({ error: TOO_MANY });
+      return;
+    }
+    const stopped = await stopChatTurn(TEAM_CHAT_SPEC, id);
+    res.json(StopTeamChatTurnResponse.parse({ stopped }));
+  });
+
+  router.delete("/team-chat-conversations/:id/queued", async (req, res) => {
+    const { id } = parseRequest(CancelQueuedTeamChatMessageParams, req.params);
+    if (!(await findConversation(id, currentUserId(req)))) {
+      res.status(404).json({ error: CONVERSATION_NOT_FOUND });
+      return;
+    }
+    await cancelQueued(TEAM_CHAT_SPEC, id);
+    res.status(204).end();
   });
 
   router.post("/team-chat-proposals/:id/decision", async (req, res) => {

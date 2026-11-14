@@ -2,7 +2,7 @@
 // `startPlanTurn` risponde subito con il messaggio dell'utente e lancia il turno in background.
 // Nei log solo id e conteggi: mai il contenuto dei messaggi.
 
-import { and, asc, desc, eq, inArray, isNotNull, lt, ne, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm";
 import {
   db,
   analysesTable,
@@ -38,8 +38,11 @@ import { PLAN_TOOLS, PlanToolRunner, type PlanToolItem } from "./tools";
 import { runChatTurn } from "../node-turns/chat-turn";
 import { codeAvailability } from "../code-reader/source-cache";
 import { CODE_TOOLS, CodeToolRunner, isCodeTool } from "../code-reader/tools";
+import { CODE_TURN_LIMITS, STOPPED_TURN_MESSAGE } from "./turn";
+import { drainQueued, isTurnOpen } from "../chat-turns/control";
+import { turnTotals } from "../chat-turns/totals";
+import type { ChatKindSpec } from "../chat-turns/spec";
 import { WEB_TOOLS, WebPageReader, isWebTool } from "../web-reader/tool";
-import { CODE_TURN_LIMITS } from "./turn";
 
 export const PLAN_MESSAGE_MAX_CHARS = 8_000;
 export const INTERRUPTED_TURN_MESSAGE = "Turno interrotto dal riavvio di Botcave: riscrivi il messaggio.";
@@ -108,7 +111,7 @@ export async function startPlanTurn(conversationId: number, content: string): Pr
     const [{ n }] = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(planMessagesTable)
-      .where(eq(planMessagesTable.conversationId, conversationId));
+      .where(and(eq(planMessagesTable.conversationId, conversationId), isNull(planMessagesTable.queuedAt)));
     const [userMessage] = await db
       .insert(planMessagesTable)
       .values({ conversationId, role: "user", content })
@@ -181,7 +184,8 @@ async function loadHistory(conversationId: number, assistantMessageId: number): 
   const messages = await db
     .select()
     .from(planMessagesTable)
-    .where(eq(planMessagesTable.conversationId, conversationId))
+    // Il messaggio in coda non è ancora partito: fuori dalla cronologia
+    .where(and(eq(planMessagesTable.conversationId, conversationId), isNull(planMessagesTable.queuedAt)))
     .orderBy(asc(planMessagesTable.id));
   const proposals = await db
     .select()
@@ -215,12 +219,38 @@ function errorText(err: unknown): string {
   return GENERIC_ERROR_MESSAGE;
 }
 
-/** Esegue il turno e lo chiude sempre (messaggio dell'assistente, totali, `idle`). Non lancia mai. */
+/** La chat del piano per «Ferma» e «Accoda» (`lib/chat-turns/control.ts`); la pagina non serve. */
+export const PLAN_CHAT_SPEC: ChatKindSpec = {
+  kind: "plan",
+  consumer: "plan_chat",
+  conversationsTable: "plan_conversations",
+  messagesTable: "plan_messages",
+  hasPageContext: false,
+  start: (conversationId, content) => startPlanTurn(conversationId, content),
+};
+
+/**
+ * Esegue il turno e lo chiude sempre (messaggio dell'assistente, totali, `idle`), poi fa partire il messaggio in coda.
+ * «Ferma» interrompe il turno con il segnale: risposta «Risposta interrotta.». Non lancia mai.
+ */
 export function executePlanTurn(conversationId: number, assistantMessageId: number): Promise<void> {
-  return trackTurn("plan", conversationId, () => executePlanTurnInner(conversationId, assistantMessageId));
+  return trackTurn("plan", conversationId, (signal) => executePlanTurnInner(conversationId, assistantMessageId, signal), assistantMessageId)
+    .catch((err: unknown) => {
+      logger.error({ conversationId, errName: err instanceof Error ? err.name : typeof err }, "Turno della chat del piano non chiuso");
+    })
+    .then(() => drainQueued(PLAN_CHAT_SPEC, conversationId));
 }
 
-async function executePlanTurnInner(conversationId: number, assistantMessageId: number): Promise<void> {
+async function executePlanTurnInner(conversationId: number, assistantMessageId: number, signal: AbortSignal): Promise<void> {
+  // Turno chiuso nel DB prima di partire davvero (Ferma da un altro processo): niente modello. Se «Ferma» è arrivato
+  // prima che il messaggio dell'assistente fosse scritto, quel messaggio è rimasto vuoto: diventa «Risposta interrotta.»
+  if (!(await isTurnOpen(PLAN_CHAT_SPEC, conversationId, assistantMessageId))) {
+    await db
+      .update(planMessagesTable)
+      .set({ content: STOPPED_TURN_MESSAGE, error: false })
+      .where(and(eq(planMessagesTable.id, assistantMessageId), eq(planMessagesTable.content, "")));
+    return;
+  }
   let content = GENERIC_ERROR_MESSAGE;
   let isError = true;
   let tokens = 0;
@@ -314,10 +344,15 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
           codeRunner && isCodeTool(call.name) ? codeRunner.run(call) : isWebTool(call.name) ? webReader.run(call) : runner.run(call),
         caller: "plan-chat",
         budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, "lucius", aiModelId),
+        signal,
       });
       tokens = outcome.tokens;
       costUsd = outcome.costUsd;
-      if (outcome.ok) {
+      // Un esito arrivato subito dopo «Ferma» (es. dal nodo) vale come interruzione
+      if ((!outcome.ok && outcome.stopped === true) || signal.aborted) {
+        content = STOPPED_TURN_MESSAGE;
+        isError = false;
+      } else if (outcome.ok) {
         content = outcome.content.trim() === "" ? EMPTY_REPLY_MESSAGE : outcome.content;
         isError = false;
       } else {
@@ -325,24 +360,34 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
       }
     }
   } catch (err) {
-    content = errorText(err);
-    logger.warn({ conversationId, errName: err instanceof Error ? err.name : typeof err }, "Turno della chat del piano non riuscito");
+    if (signal.aborted) {
+      content = STOPPED_TURN_MESSAGE;
+      isError = false;
+    } else {
+      content = errorText(err);
+      logger.warn({ conversationId, errName: err instanceof Error ? err.name : typeof err }, "Turno della chat del piano non riuscito");
+    }
   }
 
   try {
     await db.transaction(async (tx) => {
-      await tx.update(planMessagesTable).set({ content, error: isError, tokens }).where(eq(planMessagesTable.id, assistantMessageId));
-      // Costo parziale (null) se manca il prezzo di un turno con token; una conversazione senza token parte da 0
+      // Solo se il messaggio è ancora vuoto: altrimenti il turno è stato chiuso altrove (si sommano solo i totali)
+      const written = await tx
+        .update(planMessagesTable)
+        .set({ content, error: isError, tokens })
+        .where(and(eq(planMessagesTable.id, assistantMessageId), eq(planMessagesTable.content, "")))
+        .returning({ id: planMessagesTable.id });
+      const totals = turnTotals(planConversationsTable.tokensUsed, planConversationsTable.costUsd, tokens, costUsd);
+      if (written.length === 0) {
+        // Turno chiuso altrove: chi l'ha chiuso non somma i totali, quindi i token spesi si sommano qui; stato e
+        // updated_at restano quelli della chiusura
+        if (tokens > 0) await tx.update(planConversationsTable).set(totals).where(eq(planConversationsTable.id, conversationId));
+        return;
+      }
       await tx
         .update(planConversationsTable)
         .set({
-          tokensUsed: sql`${planConversationsTable.tokensUsed} + ${tokens}`,
-          costUsd:
-            tokens === 0
-              ? sql`${planConversationsTable.costUsd}`
-              : costUsd === null
-                ? sql`null`
-                : sql`case when ${planConversationsTable.tokensUsed} = 0 then 0 else ${planConversationsTable.costUsd} end + ${costUsd}::numeric`,
+          ...totals,
           turnStatus: "idle",
           updatedAt: new Date(),
         })
@@ -357,11 +402,18 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
       .where(eq(planConversationsTable.id, conversationId))
       .catch(() => {});
   }
-  logger.info({ conversationId, assistantMessageId, tokens, error: isError }, "Turno della chat del piano chiuso");
+  logger.info({ conversationId, assistantMessageId, tokens, error: isError, stopped: signal.aborted }, "Turno della chat del piano chiuso");
 }
 
 /** All'avvio i turni rimasti `running` sono stati interrotti dal riavvio: si chiudono con un messaggio. */
 export async function failInterruptedPlanTurns(filter?: StaleTurnFilter): Promise<number> {
+  const ids = await closeInterruptedPlanTurns(filter);
+  // Le conversazioni chiuse possono avere un messaggio in coda: parte ora
+  for (const id of ids) await drainQueued(PLAN_CHAT_SPEC, id);
+  return ids.length;
+}
+
+async function closeInterruptedPlanTurns(filter?: StaleTurnFilter): Promise<number[]> {
   return db.transaction(async (tx) => {
     const interrupted = await tx
       .update(planConversationsTable)
@@ -374,7 +426,7 @@ export async function failInterruptedPlanTurns(filter?: StaleTurnFilter): Promis
         ),
       )
       .returning({ id: planConversationsTable.id });
-    if (interrupted.length === 0) return 0;
+    if (interrupted.length === 0) return [];
     const ids = interrupted.map((c) => c.id);
     // Il messaggio vuoto del turno interrotto (l'ultimo per conversazione) diventa il messaggio d'errore;
     // se manca se ne crea uno
@@ -398,6 +450,6 @@ export async function failInterruptedPlanTurns(filter?: StaleTurnFilter): Promis
         .insert(planMessagesTable)
         .values(missing.map((conversationId) => ({ conversationId, role: "assistant" as const, content: INTERRUPTED_TURN_MESSAGE, error: true })));
     }
-    return interrupted.length;
+    return ids;
   });
 }

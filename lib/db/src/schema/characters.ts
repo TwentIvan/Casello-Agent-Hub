@@ -63,8 +63,13 @@ export const characterMessagesTable = pgTable(
     // Solo messaggi dell'utente: {page, id?}
     pageContext: jsonb("page_context"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
+    // Messaggio in attesa del turno in corso (uno al più per conversazione)
+    queuedAt: timestamp("queued_at"),
   },
-  (table) => [index("character_messages_conversation_idx").on(table.conversationId, table.id)],
+  (table) => [
+    index("character_messages_conversation_idx").on(table.conversationId, table.id),
+    uniqueIndex("character_messages_queued_uidx").on(table.conversationId).where(sql`${table.queuedAt} IS NOT NULL`),
+  ],
 );
 
 // Proposta di un personaggio, da accettare o rifiutare

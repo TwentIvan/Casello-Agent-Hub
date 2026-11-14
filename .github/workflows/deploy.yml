@@ -2,8 +2,8 @@ name: Build & deploy (Casello)
 
 on:
   push:
-    # I branch feat/** buildano (collaudo), ma solo main deploya
-    branches: [main, "feat/**"]
+    # I branch feat/** e botcave/** (compiti delle squadre) buildano (collaudo), ma solo main deploya
+    branches: [main, "feat/**", "botcave/**"]
   workflow_dispatch:
 
 permissions:
@@ -12,7 +12,7 @@ permissions:
 
 # Un run alla volta per branch. Su main i run si accodano e non vengono mai annullati a metà
 # deploy: GitHub tiene in attesa solo il più recente, quindi in produzione vince l'ultimo merge.
-# Sui feat/** un nuovo push annulla il collaudo in corso.
+# Sui feat/** e botcave/** un nuovo push annulla il collaudo in corso.
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}

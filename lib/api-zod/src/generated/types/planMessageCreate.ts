@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { ChatSendMode } from './chatSendMode';
 
 export interface PlanMessageCreate {
   /**
@@ -12,4 +13,5 @@ export interface PlanMessageCreate {
      * @maxLength 8000
      */
   content: string;
+  mode?: ChatSendMode;
 }

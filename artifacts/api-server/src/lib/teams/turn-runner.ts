@@ -47,6 +47,9 @@ const LEAD_TOOLS_INSTRUCTION = [
   "Uso degli strumenti del capo:",
   "- senza un PLAN approvato proponilo con `proponi_piano` (obiettivo, vincoli, punti aperti, compiti con ruolo e istruzioni) e fermati: l'utente lo approva o lo rifiuta con una nota;",
   "- con il PLAN approvato lancia i compiti previsti con `assegna_compito`; un compito fuori PLAN o un cambio di obiettivo, vincoli o compiti si propone con `proponi_piano` e va riapprovato;",
+  "- appena l'utente approva il PLAN o una sua modifica, il passo successivo è assegnare con `assegna_compito` i compiti pronti (stato planned): non rileggere il piano dell'App per riscriverlo e non riproporre il PLAN riformulando i compiti;",
+  "- dopo un rifiuto senza nota il PLAN approvato resta valido: non riproporre lo stesso contenuto; prosegui con i compiti pronti o chiedi all'utente cosa cambiare con `segnala` (decisione_richiesta);",
+  "- usa `proponi_piano` solo per un cambio chiesto dall'utente (anche con la nota di un rifiuto) o reso necessario dall'esito di un compito, della CI o di una PR;",
   "- `aggiorna_piano` cambia senza approvazione punti aperti, azioni manuali ed esiti dei compiti non in corso;",
   "- `leggi_esito` legge il dettaglio dell'ultima esecuzione di un compito; `leggi_piano` rilegge il PLAN; `leggi_piano_app` legge le voci approvate del piano dell'App (con le issue) per dare ai compiti il campo `issue`;",
   "- `segnala` avvisa l'utente (bloccato, decisione richiesta, azione manuale richiesta); `chiudi_lavoro` dichiara finito il lavoro;",
@@ -183,8 +186,55 @@ async function codeTaskOf(instanceId: number, id: number) {
   return row;
 }
 
+/** Compiti del PLAN approvato pronti da assegnare (stato `planned` nella riga corrente). */
+export function readyTaskIds(plan: PlanView): string[] {
+  if (plan.approvedVersion === null || plan.version !== plan.approvedVersion) return [];
+  return plan.tasks.filter((t) => t.status === "planned").map((t) => t.id);
+}
+
+/**
+ * Novità di una decisione dell'utente su una voce di piano: dice al capo il passo successivo (assegnare i compiti pronti,
+ * non riproporre) e, per un rifiuto con nota, la nota in un messaggio a parte.
+ */
+export function decisionMessages(reason: Extract<TeamTurnReason, { type: "decision" }>, plan: PlanView): string[] {
+  const ready = readyTaskIds(plan);
+  const readyText = ready.length > 0 ? `i compiti pronti (${ready.join(", ")})` : null;
+  if (reason.outcome === "approved") {
+    return [
+      `Novità: la voce n. ${reason.number} della coda è stata approvata dall'utente: il PLAN corrente è quello approvato. ` +
+        (readyText
+          ? `Ora assegna con \`assegna_compito\` ${readyText}; non riproporre il PLAN e non riformulare i compiti.`
+          : "Non ci sono compiti pronti da assegnare: non riproporre il PLAN; aspetta gli esiti dei compiti in corso o segnala all'utente cosa serve."),
+    ];
+  }
+  if (reason.note) {
+    return [
+      `Novità: la voce n. ${reason.number} della coda è stata rifiutata dall'utente con una nota: correggi la proposta tenendone conto.`,
+      `Nota dell'utente sul rifiuto della voce n. ${reason.number}:\n${reason.note}`,
+    ];
+  }
+  if (plan.approvedVersion === null) {
+    return [
+      `Novità: la voce n. ${reason.number} della coda è stata rifiutata dall'utente senza nota. Non riproporre lo stesso piano: chiedi all'utente cosa cambiare con \`segnala\` (decisione_richiesta).`,
+    ];
+  }
+  return [
+    `Novità: la voce n. ${reason.number} della coda è stata rifiutata dall'utente senza nota: il PLAN approvato resta valido così com'è. Non riproporre la stessa modifica; ` +
+      (readyText ? `prosegui assegnando con \`assegna_compito\` ${readyText}` : "prosegui con il PLAN approvato") +
+      " o, se non sai cosa cambiare, chiedilo all'utente con `segnala` (decisione_richiesta).",
+  ];
+}
+
+/**
+ * Vero se il turno nasce solo da decisioni dell'utente senza indicazioni nuove (approvazioni o rifiuti senza nota): in quel
+ * turno `proponi_piano` non riscrive un PLAN approvato.
+ */
+export function decisionOnlyTurn(reasons: TeamTurnReason[]): boolean {
+  return reasons.length > 0 && reasons.every((r) => r.type === "decision" && (r.outcome === "approved" || !r.note));
+}
+
 /** Motivi del turno come messaggi `user` separati: richieste e note dell'utente non entrano mai nel prompt di sistema. */
-async function reasonMessages(instanceId: number, reasons: TeamTurnReason[]): Promise<string[]> {
+async function reasonMessages(instanceId: number, reasons: TeamTurnReason[], plan: PlanView): Promise<string[]> {
   const out: string[] = [];
   for (const reason of reasons) {
     switch (reason.type) {
@@ -221,8 +271,7 @@ async function reasonMessages(instanceId: number, reasons: TeamTurnReason[]): Pr
         break;
       }
       case "decision":
-        out.push(`Novità: la voce n. ${reason.number} della coda è stata ${reason.outcome === "approved" ? "approvata" : "rifiutata"} dall'utente.`);
-        if (reason.outcome === "rejected" && reason.note) out.push(`Nota dell'utente sul rifiuto della voce n. ${reason.number}:\n${reason.note}`);
+        out.push(...decisionMessages(reason, plan));
         break;
     }
   }
@@ -283,21 +332,23 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
 
   // Motivi dei turni falliti prima del modello: prima dei motivi di questo turno, nell'ordine in cui sono arrivati
   const carried = await carriedReasons(turn);
-  const [plan, skills, roleTools, reasons, attachments] = await Promise.all([
-    getPlan(instance.id),
+  const allReasons = [...carried, ...turn.reasons];
+  const plan = await getPlan(instance.id);
+  const [skills, roleTools, reasons, attachments] = await Promise.all([
     skillTexts(instance.id, lead),
     loadRoleTools(lead.tools),
-    reasonMessages(instance.id, [...carried, ...turn.reasons]),
+    reasonMessages(instance.id, allReasons, plan),
     listAttachments(instance.id),
   ]);
   const tools = [...roleTools.tools, ...LEAD_TOOLS];
-  const userRequested = hasUserRequest([...carried, ...turn.reasons]);
+  const userRequested = hasUserRequest(allReasons);
   const internal = leadToolHandler({
     instanceId: instance.id,
     userId: instance.activatedBy,
     teamName: instance.name,
     roleKeys: roles.map((r) => r.key),
     userRequested,
+    decisionOnly: decisionOnlyTurn(allReasons),
   });
   const signal = new AbortController().signal;
   const deps: LoopDeps = {

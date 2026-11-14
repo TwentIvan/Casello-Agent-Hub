@@ -465,11 +465,20 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   «il compito <id> è in corso: aspetta il suo esito»); `assegna_compito` (solo compito del PLAN approvato in `planned|blocked|failed`,
   altrimenti «il compito non è nel piano approvato: proponi una modifica» o «il compito è già in corso»; se le ultime 3
   esecuzioni del compito sono tutte `failed` o `blocked` → «compito fallito 3 volte: segnala all'utente», `MAX_TASK_FAILURES`:
-  un'esecuzione riuscita in mezzo azzera il conto; in un turno nato da un messaggio dell'utente il freno non vale, così «riprova» concede un tentativo e al turno dopo il freno torna, `hasUserRequest`: la ripresa automatica dopo il tetto non conta); `leggi_esito`;
+  un'esecuzione riuscita in mezzo azzera il conto; in un turno nato da un messaggio dell'utente il freno non vale, così «riprova» concede un tentativo e al turno dopo il freno torna, `hasUserRequest`: la ripresa automatica dopo il tetto non conta;
+  le esecuzioni finite male per l'ambiente, cioè con esito o errore che comincia con un testo di `ENVIRONMENT_FAILURE_PREFIXES` (accesso al repository, repository non raggiungibile, Git non installato, branch base non trovato,
+  push rifiutato o da riprovare, preparazione del repository, permesso mancante dell'App GitHub, spazio di lavoro mancante, nodo non raggiungibile, disattivato o fermato, Claude Code non avviabile, riavvio, tetto
+  della squadra; `isEnvironmentFailure`), si saltano: non contano e non azzerano il conto, così dopo aver sistemato permessi o nodo il compito si riassegna con lo stesso id); `leggi_esito`;
   `segnala` (`bloccato|decisione_richiesta|azione_manuale_richiesta`, bollettino ≤ 300, dettaglio ≤ 4 000;
   `azione_manuale_richiesta` aggiunge l'azione al PLAN, max 30); `chiudi_lavoro` (evento `lavoro_finito`: la squadra resta
   attiva finché l'utente non la chiude). Tutti i capo-strumenti che scrivono bloccano la squadra e falliscono con «la squadra
   non è attiva» se non lo è. Il capo usa anche i suoi strumenti di app (livelli di sempre; L2 in coda con `team_instance_id`).
+- **Dopo una decisione** (`decisionMessages`, `readyTaskIds`, `decisionOnlyTurn` in `turn-runner.ts`): la novità di un'approvazione dice che il PLAN corrente è quello approvato ed elenca i compiti pronti (`planned`)
+  da assegnare con `assegna_compito`, senza riproporre né riformulare; un rifiuto con nota chiede di correggere la proposta (nota in un messaggio a parte); un rifiuto senza nota dice che il PLAN approvato resta valido
+  (o, senza PLAN approvato, di chiedere all'utente con `segnala`). Le istruzioni del capo lo ripetono: `proponi_piano` solo per un cambio chiesto dall'utente o reso necessario da un esito. Freni in `proponi_piano`
+  (solo per modifiche rilevanti e mai in un turno con un messaggio dell'utente): in un turno nato solo da decisioni senza nota, con un PLAN approvato → «il PLAN approvato è valido: assegna i compiti pronti…»
+  (`LEAD_MESSAGES.proposeAfterDecision`); contenuto uguale all'ultima proposta di piano rifiutata dall'utente (`decided_by` non nullo; a meno di id dei compiti, ordine e spazi: `sameProposalContent` in `plan.ts`) →
+  «questa proposta è uguale a una già rifiutata…» (`LEAD_MESSAGES.sameAsRejected`). Nulla scritto, nessuna voce.
 - **Proposte e approvazioni**: senza versione approvata `proponi_piano` scrive la versione `proposed` e accoda una voce
   `plan`; con una versione approvata, una modifica rilevante (obiettivo, vincoli, compiti aggiunti/tolti, titolo/ruolo/istruzioni
   di un compito: `isRelevantChange`) accoda una `plan_change` con le differenze (`diffSummary`); una modifica non rilevante

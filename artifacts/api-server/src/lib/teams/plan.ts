@@ -293,6 +293,22 @@ export function isRelevantChange(before: Plan | null, after: Plan): boolean {
   return false;
 }
 
+const squash = (text: string) => text.replace(/\s+/g, " ").trim();
+
+/**
+ * Stesso contenuto rilevante (obiettivo, vincoli, compiti con titolo, ruolo, istruzioni e issue) a meno di id dei compiti,
+ * ordine e spazi: per riconoscere una proposta già rifiutata riproposta tale e quale.
+ */
+export function sameProposalContent(a: Plan, b: Plan): boolean {
+  const tasks = (p: Plan) =>
+    p.tasks.map((t) => JSON.stringify([squash(t.title), t.roleKey, squash(t.instructions), t.issue ?? null])).sort();
+  return (
+    squash(a.objective) === squash(b.objective) &&
+    same(a.constraints.map(squash), b.constraints.map(squash)) &&
+    same(tasks(a), tasks(b))
+  );
+}
+
 /** Riassunto in italiano delle differenze rilevanti, per la voce in coda e il motivo del turno. */
 export function diffSummary(before: Plan | null, after: Plan): string {
   const parts: string[] = [];

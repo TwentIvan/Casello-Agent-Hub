@@ -135,7 +135,8 @@ function CaveHeader() {
           title={label}
           onClick={() => openPanel("alfred")}
         >
-          <AlfredMark size={20} tone="light" />
+          {/* Barra della caverna buia in entrambi i temi: papillon chiaro */}
+          <AlfredMark size={20} tone="dark" />
           {pending > 0 && (
             <span className="absolute -right-1 -top-1 min-w-4 rounded-none bg-brand px-1 text-center font-mono text-[10px] leading-4 text-on-brand">
               {pending}

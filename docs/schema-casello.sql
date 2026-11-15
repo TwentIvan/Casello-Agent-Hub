@@ -629,7 +629,7 @@ DO $$ BEGIN
     CREATE TYPE "public"."team_event_type" AS ENUM('piano_proposto', 'compito_finito', 'bloccato', 'decisione_richiesta', 'azione_manuale_richiesta', 'lavoro_finito', 'interrotto', 'risposta_capo');
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'pending_action_kind') THEN
-    CREATE TYPE "public"."pending_action_kind" AS ENUM('action', 'plan', 'plan_change', 'proposal');
+    CREATE TYPE "public"."pending_action_kind" AS ENUM('action', 'plan', 'plan_change', 'proposal', 'merge');
   END IF;
 END $$;
 
@@ -1319,12 +1319,16 @@ CREATE TABLE IF NOT EXISTS "team_code_tasks" (
 	"ci_pending_notified" boolean DEFAULT false NOT NULL,
 	"ci_failures" integer DEFAULT 0 NOT NULL,
 	"last_commit_at" timestamp,
+	"botcave_merged_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "team_code_tasks_instance_plan_task_unique" UNIQUE("instance_id","plan_task_id"),
 	CONSTRAINT "team_code_tasks_instance_id_team_instances_id_fk" FOREIGN KEY ("instance_id") REFERENCES "public"."team_instances"("id") ON DELETE cascade ON UPDATE no action
 );
 CREATE INDEX IF NOT EXISTS "team_code_tasks_watch_idx" ON "team_code_tasks" USING btree ("pr_state", "ci_checked_at");
+
+-- Merge automatico delle PR delle squadre (docs/migrations/2026-11-merge-automatico.sql): valore 'merge' di pending_action_kind (sopra)
+ALTER TABLE "team_code_tasks" ADD COLUMN IF NOT EXISTS "botcave_merged_at" timestamp;
 
 -- Responsabile di Botcave da ogni area (docs/migrations/2026-11-responsabile-ovunque.sql)
 CREATE TABLE IF NOT EXISTS "lead_conversations" (

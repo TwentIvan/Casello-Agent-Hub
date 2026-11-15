@@ -20,7 +20,12 @@ import { startFakeGithub, type FakeGithub } from "./fake-github";
 import { catalogSkill, ensureUser, nodeRole, seedNodeTeam } from "./team-node-fixture";
 import { clearInstallationTokenCache } from "../src/lib/github/app";
 import { resetGithubConfigForTests } from "../src/lib/github/config";
-import { getCodeTask } from "../src/lib/code-writer/code-tasks";
+import { getCodeTask, upsertCodeTask } from "../src/lib/code-writer/code-tasks";
+import { commitFiles, createDraftPull, getBranchHead, getCommitTree } from "../src/lib/code-writer/github-git";
+import { MAX_MERGES_PER_HOUR, MERGE_MESSAGES, mergeTeamPull } from "../src/lib/code-writer/merge";
+import { approveAction, rejectAction } from "../src/lib/actions/decide";
+import { githubConfig } from "../src/lib/github/config";
+import { pendingActionsTable, teamCodeTasksTable } from "@workspace/db";
 import { watchCodeTasksOnce } from "../src/lib/code-writer/watcher";
 import { createNode } from "../src/lib/nodes/nodes";
 import { claimTask, gitTokenForTask, heartbeat, reportTask } from "../src/lib/nodes/protocol";
@@ -311,5 +316,193 @@ describe("flusso: compito node con codice, PR aperta da Botcave", () => {
     await watchCodeTasksOnce(new Date(Date.now() + 60_000));
     expect(await bulletins(instanceId)).toContain(`compito_finito: Compito t1: CI verde, PR #${pr.number} pronta per la revisione`);
     expect(await reasons(instanceId)).toEqual([{ type: "ci_finished", taskCodeId: row!.id, outcome: "success" }]);
+  });
+});
+
+describe("flusso: merge automatico (code: merge)", () => {
+  let userId: number;
+  let instanceId: number;
+
+  beforeEach(async () => {
+    process.env["CASELLO_SECRET_KEY"] = "a".repeat(64);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    script = [];
+    fake = await startFakeProvider({ chatReply: () => script.shift() ?? text("fatto") });
+    resetGithub();
+    await pool.query(TRUNCATE);
+    const [u] = await db.insert(usersTable).values({ email: "capo@example.com", name: "Ivan" }).returning();
+    userId = u!.id;
+    await db.insert(githubInstallationsTable).values({ userId, installationId: INST, accountLogin: "ivan", accountType: "User", repositorySelection: "selected" });
+    const [account] = await db
+      .insert(aiAccountsTable)
+      .values({ userId, name: "Account", provider: "custom", baseUrl: fake.baseUrl, allowPrivateNetwork: true, apiKeyEnc: encryptSecret("sk-test"), status: "ok" })
+      .returning();
+    const [model] = await db.insert(aiModelsTable).values({ accountId: account!.id, modelId: "fake-model", displayName: "Fake", priceInputPerMtok: "1000", priceOutputPerMtok: "2000" }).returning();
+    const [app] = await db
+      .insert(appsTable)
+      .values({ name: "The Hub Up", slug: "hub-up", baseUrl: "http://hub.example", sourceType: "github", sourceRepo: REPO, sourceInstallationId: INST })
+      .returning();
+    const base = { runsOn: "cloud" as const, aiModelId: model!.id, tools: [], skills: [], localSkills: [] };
+    const roles: InstanceRoleData[] = [
+      { ...base, key: "capo", name: "Capo", task: "Coordina.", isLead: true },
+      { ...base, key: "dev", name: "Sviluppatore", task: "Scrive e unisce.", isLead: false, code: "merge" },
+    ];
+    const [inst] = await db
+      .insert(teamInstancesTable)
+      .values({ name: "Squadra M", refAppId: app!.id, refType: "wi", refId: "1", refTitle: "WI 1", status: "active", roles, createdBy: userId, activatedBy: userId })
+      .returning();
+    instanceId = inst!.id;
+    const task = (id: string) => ({ id, title: `Compito ${id}`, roleKey: "dev", instructions: "Lavora", status: "planned" as const, outcome: null });
+    await writePlanVersion(instanceId, { objective: "Merge", constraints: [], openPoints: [], manualActions: [], tasks: [task("t1"), task("t2")] }, "approved");
+  });
+
+  afterEach(async () => {
+    await settleTaskExecutions();
+    vi.restoreAllMocks();
+    await fake.close();
+    if (savedKey === undefined) delete process.env["CASELLO_SECRET_KEY"];
+    else process.env["CASELLO_SECRET_KEY"] = savedKey;
+  });
+
+  /** PR in bozza del compito con i file dati, senza il modello (commit, PR e riga come gli strumenti del ruolo). */
+  const pushPr = async (planTaskId: string, files: Record<string, string>) => {
+    const r = { cfg: githubConfig()!, installationId: INST, repo: REPO };
+    const branch = `botcave/${instanceId}-${planTaskId}`;
+    const mainSha = (await getBranchHead(r, "main"))!;
+    const { sha } = await commitFiles(r, {
+      branch,
+      parentSha: mainSha,
+      baseTreeSha: await getCommitTree(r, mainSha),
+      changes: new Map(Object.entries(files)),
+      message: `Compito ${planTaskId}`,
+      createBranch: true,
+    });
+    const pull = await createDraftPull(r, { head: branch, base: "main", title: `Compito ${planTaskId}`, body: "" });
+    await upsertCodeTask({ instanceId, planTaskId, repo: REPO, branch, baseBranch: "main", headSha: sha, pr: { number: pull.number, url: pull.url }, committedAt: new Date() });
+    return { sha, number: pull.number };
+  };
+  const green = (sha: string) => gh.checkRuns.set(sha, [{ id: 1, name: "test", status: "completed", conclusion: "success", annotations: [] }]);
+  const pull = (n: number) => gh.pulls.get(REPO)!.find((p) => p.number === n)!;
+
+  it("il ruolo unisce con unisci_pr: CI rossa rifiutata, poi CI verde → bozza tolta, squash sul base → pr_closed", async () => {
+    // Il ruolo scrive e apre la PR come un ruolo write
+    script = [
+      call("modifica_file", { percorso: "src/a.ts", vecchio: "a = 1", nuovo: "a = 2" }),
+      call("crea_commit", { messaggio: "Aggiorna a" }),
+      call("apri_pr", { titolo: "Aggiorna a", corpo: "Porta a a 2" }),
+      report("PR aperta, CI in corso"),
+    ];
+    const started = await startTask(instanceId, "t1");
+    await settleTaskExecutions();
+    expect((await db.select().from(teamTasksTable).where(eq(teamTasksTable.id, started.id)))[0]).toMatchObject({ status: "done" });
+    const row = (await getCodeTask(instanceId, "t1"))!;
+    const pr = pull(row.prNumber!);
+    expect(pr.draft).toBe(true);
+
+    // CI rossa: nessun merge
+    gh.checkRuns.set(row.headSha!, [{ id: 1, name: "test", status: "completed", conclusion: "failure", annotations: [] }]);
+    expect(await mergeTeamPull(instanceId, { compito: "t1" })).toEqual({ ok: false, content: MERGE_MESSAGES.ciFailure });
+    gh.checkRuns.delete(row.headSha!);
+    expect(await mergeTeamPull(instanceId, { compito: "t1" })).toEqual({ ok: false, content: MERGE_MESSAGES.ciPending });
+    expect(pr).toMatchObject({ state: "open", merged: false });
+
+    // CI verde: il ruolo unisce con lo strumento durante un compito
+    green(row.headSha!);
+    script = [call("unisci_pr", { compito: "t1" }), report("PR unita")];
+    const before = fake.requests.length;
+    await startTask(instanceId, "t1");
+    await settleTaskExecutions();
+    const tools = (fake.requests[before]!.body as { tools: { function: { name: string } }[] }).tools.map((t) => t.function.name);
+    expect(tools).toContain("unisci_pr");
+    expect(pr).toMatchObject({ state: "closed", merged: true, draft: false, mergeMethod: "squash" });
+    expect(gh.filesAt(REPO, "main")["src/a.ts"]).toBe("export const a = 2;\n");
+    const merge = gh.requests.find((r) => r.method === "PUT" && r.path.endsWith(`/pulls/${pr.number}/merge`))!;
+    expect(merge.body).toMatchObject({ merge_method: "squash", sha: row.headSha });
+    expect((await getCodeTask(instanceId, "t1"))!.botcaveMergedAt).not.toBeNull();
+
+    // La sorveglianza vede la PR unita: evento e motivo pr_closed come per un merge dell'utente
+    await watchCodeTasksOnce(new Date(Date.now() + 60_000));
+    expect(await reasons(instanceId)).toContainEqual({ type: "pr_closed", taskCodeId: row.id, merged: true });
+    expect(await mergeTeamPull(instanceId, { compito: "t1" })).toEqual({ ok: false, content: MERGE_MESSAGES.alreadyMerged });
+  });
+
+  it("PR con una migrazione → voce merge in «Da confermare» → approvazione → merge; rifiuto → motivo al capo", async () => {
+    const { sha, number } = await pushPr("t1", { "docs/migrations/2026-11-x.sql": "select 1;\n", "src/a.ts": "export const a = 5;\n" });
+    green(sha);
+    const res = await mergeTeamPull(instanceId, { numero: number });
+    expect(res.ok).toBe(false);
+    const [item] = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.kind, "merge"));
+    expect(item).toMatchObject({ status: "pending", teamInstanceId: instanceId, recipient: REPO, toolId: null, appId: null });
+    expect(res.content).toBe(MERGE_MESSAGES.queued(item!.number, number));
+    expect(item!.argsPublic).toMatchObject({ prNumber: number, headSha: sha, files: ["docs/migrations/2026-11-x.sql"] });
+    expect(pull(number).state).toBe("open");
+    // Una sola voce per PR
+    expect(await mergeTeamPull(instanceId, { compito: "t1" })).toEqual({ ok: false, content: MERGE_MESSAGES.alreadyQueued(item!.number, number) });
+
+    const approved = await approveAction(userId, item!.number);
+    expect(approved).toMatchObject({ ok: true, action: { status: "done", result: MERGE_MESSAGES.done(number) } });
+    expect(pull(number)).toMatchObject({ state: "closed", merged: true });
+    expect(gh.filesAt(REPO, "main")["docs/migrations/2026-11-x.sql"]).toBe("select 1;\n");
+
+    // Seconda PR con lo schema: rifiutata dall'utente → motivo decision per il capo
+    const second = await pushPr("t2", { "docs/schema-casello.sql": "-- nuovo\n" });
+    green(second.sha);
+    await mergeTeamPull(instanceId, { compito: "t2" });
+    const [item2] = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.status, "pending"));
+    expect(await rejectAction(userId, item2!.number, "prima la migrazione")).toMatchObject({ ok: true });
+    const all = (await db.select().from(teamTurnsTable).where(eq(teamTurnsTable.instanceId, instanceId))).flatMap((t) => t.reasons);
+    expect(all).toContainEqual({ type: "decision", number: item2!.number, outcome: "rejected", note: "prima la migrazione" });
+    expect(pull(second.number).state).toBe("open");
+  });
+
+  it("approvazione con la testa cambiata dopo la richiesta: voce failed e motivo merge_failed al capo", async () => {
+    const { sha, number } = await pushPr("t1", { "lib/db/src/schema/x.ts": "export {};\n" });
+    green(sha);
+    await mergeTeamPull(instanceId, { compito: "t1" });
+    const [item] = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.kind, "merge"));
+    // Un commit nuovo sul branch dopo la richiesta
+    const r = { cfg: githubConfig()!, installationId: INST, repo: REPO };
+    const { sha: newSha } = await commitFiles(r, {
+      branch: `botcave/${instanceId}-t1`,
+      parentSha: sha,
+      baseTreeSha: await getCommitTree(r, sha),
+      changes: new Map([["src/b.ts", "x\n"]]),
+      message: "altro",
+      createBranch: false,
+    });
+    green(newSha);
+    const res = await approveAction(userId, item!.number);
+    expect(res).toMatchObject({ ok: true, action: { status: "failed", errorMessage: MERGE_MESSAGES.itemChanged } });
+    expect(pull(number).state).toBe("open");
+    const code = (await getCodeTask(instanceId, "t1"))!;
+    const all = (await db.select().from(teamTurnsTable).where(eq(teamTurnsTable.instanceId, instanceId))).flatMap((t) => t.reasons);
+    expect(all).toContainEqual({ type: "merge_failed", taskCodeId: code.id, message: MERGE_MESSAGES.itemChanged });
+  });
+
+  it("rifiuti: workflow della CI, testa cambiata dall'ultimo controllo, limite orario, PR di un'altra squadra", async () => {
+    const wf = await pushPr("t1", { ".github/workflows/ci.yml": "on: push\n" });
+    green(wf.sha);
+    expect(await mergeTeamPull(instanceId, { compito: "t1" })).toEqual({ ok: false, content: MERGE_MESSAGES.workflows });
+
+    const p2 = await pushPr("t2", { "src/c.ts": "c\n" });
+    green(p2.sha);
+    // La riga ha una testa diversa (la sorveglianza non ha ancora visto il commit)
+    await db.update(teamCodeTasksTable).set({ headSha: "f".repeat(40) }).where(eq(teamCodeTasksTable.planTaskId, "t2"));
+    expect(await mergeTeamPull(instanceId, { compito: "t2" })).toEqual({ ok: false, content: MERGE_MESSAGES.headMoved });
+    await db.update(teamCodeTasksTable).set({ headSha: p2.sha }).where(eq(teamCodeTasksTable.planTaskId, "t2"));
+
+    // Limite orario: altri merge della squadra nell'ultima ora
+    const now = new Date();
+    for (let i = 0; i < MAX_MERGES_PER_HOUR; i++) {
+      await db.insert(teamCodeTasksTable).values({ instanceId, planTaskId: `x${i}`, repo: REPO, branch: `botcave/${instanceId}-x${i}`, baseBranch: "main", botcaveMergedAt: now });
+    }
+    expect(await mergeTeamPull(instanceId, { compito: "t2" })).toEqual({ ok: false, content: MERGE_MESSAGES.tooManyMerges });
+    expect(pull(p2.number).state).toBe("open");
+
+    // Argomenti e PR non della squadra
+    expect(await mergeTeamPull(instanceId, {})).toEqual({ ok: false, content: MERGE_MESSAGES.badArgs });
+    expect(await mergeTeamPull(instanceId, { numero: 999 })).toEqual({ ok: false, content: MERGE_MESSAGES.noPull("la PR #999") });
+    await db.update(teamCodeTasksTable).set({ branch: "botcave/999-t2" }).where(eq(teamCodeTasksTable.planTaskId, "t2"));
+    expect(await mergeTeamPull(instanceId, { compito: "t2" })).toEqual({ ok: false, content: MERGE_MESSAGES.notTeamBranch });
   });
 });

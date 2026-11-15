@@ -46,7 +46,7 @@ export type RoleView = {
   task: string;
   isLead: boolean;
   runsOn: "cloud" | "node";
-  code: "none" | "read" | "write";
+  code: "none" | "read" | "write" | "merge";
   model: { id: number; name: string } | null;
   tools: ToolView[];
   skills: SkillRoleView[];

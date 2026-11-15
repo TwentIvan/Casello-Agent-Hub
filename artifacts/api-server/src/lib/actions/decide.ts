@@ -5,6 +5,7 @@ import { decryptSecret } from "../secrets";
 import { loadAppConnection, toCatalogTool } from "../tools/catalog";
 import { executeTool, redact } from "../tools/executor";
 import { effectiveLevel } from "../tools/levels";
+import { approveMerge, notifyMergeRejected } from "../code-writer/merge";
 import { decidePlanItem } from "../teams/plan-decisions";
 import { PROPOSAL_MESSAGES } from "./proposal";
 import { approveProposal } from "./proposal-exec";
@@ -81,6 +82,8 @@ export async function approveAction(
   // Piani e modifiche del piano non hanno tool né app: si decidono sul PLAN della squadra (nessun token utente)
   if (action.kind === "plan" || action.kind === "plan_change") return decidePlanItem(action, true, null);
   if (action.kind === "proposal") return approveProposal(userId, action, exclude);
+  // Merge di una PR di una squadra (migrazioni applicate dall'utente): stessi controlli dello strumento `unisci_pr`
+  if (action.kind === "merge") return approveMerge(userId, action);
   const { toolId, appId } = action;
   if (toolId === null || appId === null) return fail(409, ACTION_MESSAGES.notExecutable);
 
@@ -172,7 +175,14 @@ export async function rejectAction(userId: number, number: number, note: string 
     }
     return rejected;
   });
-  if (row) return { ok: true, action: row };
+  if (row) {
+    if (row.kind === "merge") {
+      await notifyMergeRejected(row).catch((err: unknown) =>
+        logger.error({ actionId: row.id, errName: err instanceof Error ? err.name : "unknown" }, "Rifiuto del merge non comunicato al capo"),
+      );
+    }
+    return { ok: true, action: row };
+  }
   // Nessuna riga: non esiste (404) o non è più in attesa (409)
   const [existing] = await db
     .select({ id: pendingActionsTable.id })

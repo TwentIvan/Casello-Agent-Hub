@@ -8,6 +8,7 @@ import { isUniqueViolation } from "../pg-errors";
 import { listAttachments, type AttachmentView } from "./attachments";
 import { MAX_BULLETIN, emitEvent } from "./events";
 import { BUDGET_RESUME_REQUEST, INSTANCE_MESSAGES, InstanceError, getInstance, type InstanceView } from "./instances";
+import { MERGE_TOOL } from "../code-writer/merge";
 import { LEAD_TOOLS, leadToolHandler, planForModel } from "./lead-tools";
 import { InstanceRoleSchema, type InstanceRole } from "./manifest";
 import { getPlan, type PlanView } from "./plan";
@@ -59,6 +60,23 @@ const LEAD_TOOLS_INSTRUCTION = [
   "- Non chiedere mai all'utente di eseguire comandi sul Mac o nel terminale, e in nessun caso comandi che cancellano file o storia (`rm`, `git reset`, `git clean`, `git push --force`): quello che serve si sistema in Botcave.",
   "- Se un compito `node` è bloccato per spazio di lavoro, Git, accesso al repository o nodo, usa `segnala` con il motivo dell'esito e la soluzione indicata nei problemi di prontezza, e non riassegnarlo finché l'utente non scrive che ha risolto.",
 ].join("\n");
+
+/** Regola del merge, secondo i ruoli della squadra: con un ruolo che può unire la squadra porta il PLAN fino in fondo. */
+export function mergeInstruction(roles: InstanceRole[]): string {
+  const mergers = roles.filter((r) => r.code === "merge" && r.runsOn === "cloud");
+  if (mergers.length === 0) {
+    return "- Il merge delle PR è dell'utente su GitHub: con la CI verde segnala che la PR è pronta e aspetta il motivo pr_closed prima dei compiti che ne dipendono.";
+  }
+  const lead = mergers.find((r) => r.isLead);
+  const others = mergers.filter((r) => !r.isLead).map((r) => r.key);
+  const who = [lead ? "tu stesso con `unisci_pr`" : null, others.length ? `il ruolo ${others.join(" o ")} (assegnagli un compito di merge)` : null]
+    .filter(Boolean)
+    .join(" oppure ");
+  return [
+    `- La squadra unisce da sé le PR: può farlo ${who}. Dopo la CI verde (e l'eventuale revisione prevista dal PLAN) fai unire la PR, poi passa al compito successivo quando arriva il motivo pr_closed.`,
+    "- Botcave unisce solo con la CI verde sull'ultima testa e mai i workflow della CI. Una PR che tocca migrazioni o schema del DB finisce in «Da confermare»: usa `segnala` (decisione_richiesta) perché l'utente applichi l'SQL su Neon e approvi il merge.",
+  ].join("\n");
+}
 
 // ─── Esecuzioni in background ───────────────────────────────────────────────
 
@@ -148,6 +166,7 @@ function systemPrompt(
     TOOL_RESULTS_INSTRUCTION,
     "",
     LEAD_TOOLS_INSTRUCTION,
+    mergeInstruction(roles),
     "",
     `Squadra: ${instance.name}`,
     `Lavoro di riferimento: ${instance.refTitle}`,
@@ -270,6 +289,12 @@ async function reasonMessages(instanceId: number, reasons: TeamTurnReason[], pla
         out.push(`Novità: la PR #${code.prNumber ?? "?"} del compito ${code.planTaskId} è stata ${reason.merged ? "unita" : "chiusa senza merge"}.`);
         break;
       }
+      case "merge_failed": {
+        const code = await codeTaskOf(instanceId, reason.taskCodeId);
+        if (!code) break;
+        out.push(`Novità: il merge approvato dall'utente della PR #${code.prNumber ?? "?"} del compito ${code.planTaskId} non è riuscito: ${reason.message}`);
+        break;
+      }
       case "decision":
         out.push(...decisionMessages(reason, plan));
         break;
@@ -340,7 +365,8 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
     reasonMessages(instance.id, allReasons, plan),
     listAttachments(instance.id),
   ]);
-  const tools = [...roleTools.tools, ...LEAD_TOOLS];
+  const leadTools = lead.code === "merge" ? [...LEAD_TOOLS, MERGE_TOOL] : LEAD_TOOLS;
+  const tools = [...roleTools.tools, ...leadTools];
   const userRequested = hasUserRequest(allReasons);
   const internal = leadToolHandler({
     instanceId: instance.id,
@@ -354,7 +380,7 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
   const deps: LoopDeps = {
     chat: modelChatDeps({
       aiModelId,
-      functionTools: roleFunctionTools(roleTools.tools, LEAD_TOOLS),
+      functionTools: roleFunctionTools(roleTools.tools, leadTools),
       caller: "team-turn",
       usage,
       signal,

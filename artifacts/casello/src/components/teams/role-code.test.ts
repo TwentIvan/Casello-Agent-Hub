@@ -4,7 +4,7 @@ import { ciLabel } from "./task-code";
 
 describe("tendina «Codice» del ruolo", () => {
   it("con GitHub offre tutti i valori del luogo", () => {
-    expect(selectableCodeOptions("cloud", "none", true, false)).toEqual(["none", "read", "write"]);
+    expect(selectableCodeOptions("cloud", "none", true, false)).toEqual(["none", "read", "write", "merge"]);
     expect(selectableCodeOptions("node", "none", true, false)).toEqual(["none", "write"]);
   });
 
@@ -14,9 +14,11 @@ describe("tendina «Codice» del ruolo", () => {
     expect(selectableCodeOptions("node", "read", false, false)).toEqual(["none"]);
   });
 
-  it("per il capo come senza GitHub", () => {
-    expect(selectableCodeOptions("cloud", "none", true, true)).toEqual(["none"]);
-    expect(selectableCodeOptions("cloud", "read", true, true)).toEqual(["none", "read"]);
+  it("per il capo solo «Nessuno» e «Scrittura e merge» (più il valore attuale)", () => {
+    expect(selectableCodeOptions("cloud", "none", true, true)).toEqual(["none", "merge"]);
+    expect(selectableCodeOptions("cloud", "read", true, true)).toEqual(["none", "merge", "read"]);
+    expect(selectableCodeOptions("cloud", "none", false, true)).toEqual(["none"]);
+    expect(selectableCodeOptions("node", "none", true, true)).toEqual(["none"]);
   });
 });
 

@@ -3339,7 +3339,7 @@ export const ListTeamTemplatesResponseItem = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
-  "code": zod.enum(['none', 'read', 'write']).default(listTeamTemplatesResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(listTeamTemplatesResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3393,7 +3393,7 @@ export const CreateTeamTemplateBody = zod.object({
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
   "aiModelId": zod.number().nullable(),
-  "code": zod.enum(['none', 'read', 'write']).default(createTeamTemplateBodyRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento (i ruoli node non usano read)'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(createTeamTemplateBodyRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento (i ruoli node non usano read né merge; merge comprende write e unisce le PR)'),
   "tools": zod.array(zod.number()),
   "skills": zod.array(zod.string().regex(createTeamTemplateBodyRolesItemSkillsItemRegExp))
 }).describe('Ruolo di un modello di squadra (manifesto in ingresso)'))
@@ -3414,7 +3414,7 @@ export const CreateTeamTemplateResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
-  "code": zod.enum(['none', 'read', 'write']).default(createTeamTemplateResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(createTeamTemplateResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3463,7 +3463,7 @@ export const GetTeamTemplateResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
-  "code": zod.enum(['none', 'read', 'write']).default(getTeamTemplateResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(getTeamTemplateResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3521,7 +3521,7 @@ export const SaveTeamTemplateBody = zod.object({
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
   "aiModelId": zod.number().nullable(),
-  "code": zod.enum(['none', 'read', 'write']).default(saveTeamTemplateBodyRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento (i ruoli node non usano read)'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(saveTeamTemplateBodyRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento (i ruoli node non usano read né merge; merge comprende write e unisce le PR)'),
   "tools": zod.array(zod.number()),
   "skills": zod.array(zod.string().regex(saveTeamTemplateBodyRolesItemSkillsItemRegExp))
 }).describe('Ruolo di un modello di squadra (manifesto in ingresso)'))
@@ -3542,7 +3542,7 @@ export const SaveTeamTemplateResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
-  "code": zod.enum(['none', 'read', 'write']).default(saveTeamTemplateResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(saveTeamTemplateResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3601,7 +3601,7 @@ export const GetTeamTemplateVersionResponseItem = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
-  "code": zod.enum(['none', 'read', 'write']).default(getTeamTemplateVersionResponseCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(getTeamTemplateVersionResponseCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3660,7 +3660,7 @@ export const ListTeamInstancesResponseItem = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
-  "code": zod.enum(['none', 'read', 'write']).default(listTeamInstancesResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(listTeamInstancesResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3738,7 +3738,7 @@ export const CreateTeamInstanceBody = zod.object({
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
   "aiModelId": zod.number().nullable(),
-  "code": zod.enum(['none', 'read', 'write']).default(createTeamInstanceBodyRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento (i ruoli node non usano read)'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(createTeamInstanceBodyRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento (i ruoli node non usano read né merge; merge comprende write e unisce le PR)'),
   "tools": zod.array(zod.number()),
   "skills": zod.array(zod.object({
   "code": zod.string().regex(createTeamInstanceBodyRolesItemSkillsItemCodeRegExp),
@@ -3772,7 +3772,7 @@ export const CreateTeamInstanceResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
-  "code": zod.enum(['none', 'read', 'write']).default(createTeamInstanceResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(createTeamInstanceResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3842,7 +3842,7 @@ export const GetTeamInstanceResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
-  "code": zod.enum(['none', 'read', 'write']).default(getTeamInstanceResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(getTeamInstanceResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -3919,7 +3919,7 @@ export const SaveTeamInstanceBody = zod.object({
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
   "aiModelId": zod.number().nullable(),
-  "code": zod.enum(['none', 'read', 'write']).default(saveTeamInstanceBodyRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento (i ruoli node non usano read)'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(saveTeamInstanceBodyRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento (i ruoli node non usano read né merge; merge comprende write e unisce le PR)'),
   "tools": zod.array(zod.number()),
   "skills": zod.array(zod.object({
   "code": zod.string().regex(saveTeamInstanceBodyRolesItemSkillsItemCodeRegExp),
@@ -3962,7 +3962,7 @@ export const SaveTeamInstanceResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
-  "code": zod.enum(['none', 'read', 'write']).default(saveTeamInstanceResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(saveTeamInstanceResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -4096,7 +4096,7 @@ export const CloseTeamInstanceResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
-  "code": zod.enum(['none', 'read', 'write']).default(closeTeamInstanceResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(closeTeamInstanceResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -4223,7 +4223,7 @@ export const ApplyTeamInstanceUpdatesResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
-  "code": zod.enum(['none', 'read', 'write']).default(applyTeamInstanceUpdatesResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(applyTeamInstanceUpdatesResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -4300,7 +4300,7 @@ export const SaveTeamInstanceAsTemplateResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
-  "code": zod.enum(['none', 'read', 'write']).default(saveTeamInstanceAsTemplateResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(saveTeamInstanceAsTemplateResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -4607,7 +4607,7 @@ export const ActivateTeamInstanceResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
-  "code": zod.enum(['none', 'read', 'write']).default(activateTeamInstanceResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(activateTeamInstanceResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -4708,7 +4708,7 @@ export const SetTeamBudgetResponse = zod.object({
   "task": zod.string(),
   "isLead": zod.boolean(),
   "runsOn": zod.enum(['cloud', 'node']),
-  "code": zod.enum(['none', 'read', 'write']).default(setTeamBudgetResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
+  "code": zod.enum(['none', 'read', 'write', 'merge']).default(setTeamBudgetResponseRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento'),
   "model": zod.object({
   "id": zod.number(),
   "name": zod.string()
@@ -7042,7 +7042,7 @@ export const ListPendingActionsResponse = zod.object({
   "actions": zod.array(zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),
@@ -7100,7 +7100,7 @@ export const GetPendingActionParams = zod.object({
 export const GetPendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),
@@ -7171,7 +7171,7 @@ export const ApprovePendingActionBody = zod.object({
 export const ApprovePendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),
@@ -7236,7 +7236,7 @@ export const RejectPendingActionBody = zod.object({
 export const RejectPendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),

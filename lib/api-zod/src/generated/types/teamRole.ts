@@ -24,7 +24,7 @@ export interface TeamRole {
   isLead: boolean;
   runsOn: TeamRoleRunsOn;
   aiModelId: number | null;
-  /** Accesso al codice dell'App di riferimento (i ruoli node non usano read) */
+  /** Accesso al codice dell'App di riferimento (i ruoli node non usano read né merge; merge comprende write e unisce le PR) */
   code?: TeamRoleCode;
   tools: number[];
   /** @items.pattern ^[a-z0-9][a-z0-9._-]{1,63}$ */

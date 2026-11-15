@@ -12,12 +12,13 @@ import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
 import { ACTION_KIND_LABELS, isPlanItem } from "./plan-proposal";
+import { MergeDetail } from "./merge-detail";
 import { ProposalSteps } from "./proposal-steps";
 import { useProposalSelection } from "./use-proposal-selection";
 
 /** «Azione n. 3 approvata», «Piano n. 4 rifiutato», «Modifica del piano n. 5 approvata». */
 export function decidedTitle(action: QueuedAction, approved: boolean): string {
-  const masculine = action.kind === "plan";
+  const masculine = action.kind === "plan" || action.kind === "merge";
   const ending = masculine ? (approved ? "approvato" : "rifiutato") : approved ? "approvata" : "rifiutata";
   return `${ACTION_KIND_LABELS[action.kind]} n. ${action.number} ${ending}`;
 }
@@ -100,6 +101,8 @@ export function PendingActionItem({
             {proposal.reason && <span className="block whitespace-pre-wrap">{proposal.reason}</span>}
             <span className="block">Destinatario: {action.recipient}</span>
           </>
+        ) : action.kind === "merge" ? (
+          <>Merge chiesto dalla squadra: applica prima su Neon le migrazioni elencate.</>
         ) : plan ? (
           <>
             {ACTION_KIND_LABELS[action.kind]} proposto dal capo della squadra:{" "}
@@ -151,6 +154,7 @@ export function PendingActionItem({
       }
     >
       {proposal && <ProposalSteps proposal={proposal} excluded={excluded} onToggle={toggle} />}
+      {action.kind === "merge" && <MergeDetail args={action.args} />}
     </ConfirmItem>
   );
 }

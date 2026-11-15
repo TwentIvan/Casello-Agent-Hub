@@ -212,6 +212,12 @@ describe("ruoli con accesso al codice", () => {
     await expect(template([role({ runsOn: "node", aiModelId: null, code: "write" })])).resolves.toBeUndefined();
   });
 
+  it("node con code merge → 400 nodeCodeMerge; merge su un ruolo cloud richiede GitHub come write", async () => {
+    await expectError(template([role({ runsOn: "node", aiModelId: null, code: "merge" })]), TEAM_MESSAGES.nodeCodeMerge);
+    await expectError(instance([instRole({ code: "merge" })]), TEAM_MESSAGES.codeUnavailable);
+    await expect(instance([instRole({ code: "merge" })], github)).resolves.toBeUndefined();
+  });
+
   it("ruolo senza code si legge come none", () => {
     const { code: _code, ...legacy } = role();
     expect(TemplateRoleSchema.parse(legacy).code).toBe("none");

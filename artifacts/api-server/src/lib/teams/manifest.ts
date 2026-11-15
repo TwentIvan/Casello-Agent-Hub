@@ -15,8 +15,14 @@ const noRepeats = <T>(items: T[], keyOf: (item: T) => string): boolean =>
 
 const skillCode = z.string().regex(SKILL_CODE);
 
-export const ROLE_CODES = ["none", "read", "write"] as const;
+// `merge` comprende `write` e aggiunge lo strumento `unisci_pr` (solo ruoli cloud e capo)
+export const ROLE_CODES = ["none", "read", "write", "merge"] as const;
 export type RoleCode = (typeof ROLE_CODES)[number];
+
+/** Il ruolo scrive il codice (branch, commit, PR): `write` e `merge`. */
+export function codeWrites(code: RoleCode): boolean {
+  return code === "write" || code === "merge";
+}
 
 const baseRole = {
   key: z.string().regex(RoleKey),

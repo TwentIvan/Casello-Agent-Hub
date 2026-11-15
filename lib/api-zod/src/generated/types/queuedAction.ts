@@ -15,7 +15,7 @@ import type { QueuedProposal } from './queuedProposal';
 export interface QueuedAction {
   number: number;
   status: QueuedActionStatus;
-  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente */
+  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima) */
   kind: QueuedActionKind;
   /** Passi della proposta; null per le voci che non sono una proposta */
   proposal: QueuedProposal | null;

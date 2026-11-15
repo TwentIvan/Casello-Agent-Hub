@@ -1026,7 +1026,7 @@ export const QueuedActionStatus = {
 } as const;
 
 /**
- * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente
+ * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)
  */
 export type QueuedActionKind = typeof QueuedActionKind[keyof typeof QueuedActionKind];
 
@@ -1036,6 +1036,7 @@ export const QueuedActionKind = {
   plan: 'plan',
   plan_change: 'plan_change',
   proposal: 'proposal',
+  merge: 'merge',
 } as const;
 
 /**
@@ -1120,7 +1121,7 @@ export interface QueuedProposal {
 export interface QueuedAction {
   number: number;
   status: QueuedActionStatus;
-  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente */
+  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima) */
   kind: QueuedActionKind;
   /** Passi della proposta; null per le voci che non sono una proposta */
   proposal: QueuedProposal | null;
@@ -3584,7 +3585,7 @@ export const TeamRoleRunsOn = {
 } as const;
 
 /**
- * Accesso al codice dell'App di riferimento (i ruoli node non usano read)
+ * Accesso al codice dell'App di riferimento (i ruoli node non usano read né merge; merge comprende write e unisce le PR)
  */
 export type TeamRoleCode = typeof TeamRoleCode[keyof typeof TeamRoleCode];
 
@@ -3593,6 +3594,7 @@ export const TeamRoleCode = {
   none: 'none',
   read: 'read',
   write: 'write',
+  merge: 'merge',
 } as const;
 
 /**
@@ -3611,7 +3613,7 @@ export interface TeamRole {
   isLead: boolean;
   runsOn: TeamRoleRunsOn;
   aiModelId: number | null;
-  /** Accesso al codice dell'App di riferimento (i ruoli node non usano read) */
+  /** Accesso al codice dell'App di riferimento (i ruoli node non usano read né merge; merge comprende write e unisce le PR) */
   code?: TeamRoleCode;
   tools: number[];
   /** @items.pattern ^[a-z0-9][a-z0-9._-]{1,63}$ */
@@ -3636,6 +3638,7 @@ export const TeamRoleViewCode = {
   none: 'none',
   read: 'read',
   write: 'write',
+  merge: 'merge',
 } as const;
 
 export type TeamRoleViewModel = {
@@ -3727,7 +3730,7 @@ export const TeamInstanceRoleRunsOn = {
 } as const;
 
 /**
- * Accesso al codice dell'App di riferimento (i ruoli node non usano read)
+ * Accesso al codice dell'App di riferimento (i ruoli node non usano read né merge; merge comprende write e unisce le PR)
  */
 export type TeamInstanceRoleCode = typeof TeamInstanceRoleCode[keyof typeof TeamInstanceRoleCode];
 
@@ -3736,6 +3739,7 @@ export const TeamInstanceRoleCode = {
   none: 'none',
   read: 'read',
   write: 'write',
+  merge: 'merge',
 } as const;
 
 export type TeamInstanceRoleSkillsItem = {
@@ -3761,7 +3765,7 @@ export interface TeamInstanceRole {
   isLead: boolean;
   runsOn: TeamInstanceRoleRunsOn;
   aiModelId: number | null;
-  /** Accesso al codice dell'App di riferimento (i ruoli node non usano read) */
+  /** Accesso al codice dell'App di riferimento (i ruoli node non usano read né merge; merge comprende write e unisce le PR) */
   code?: TeamInstanceRoleCode;
   tools: number[];
   skills: TeamInstanceRoleSkillsItem[];

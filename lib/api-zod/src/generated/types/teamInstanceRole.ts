@@ -25,7 +25,7 @@ export interface TeamInstanceRole {
   isLead: boolean;
   runsOn: TeamInstanceRoleRunsOn;
   aiModelId: number | null;
-  /** Accesso al codice dell'App di riferimento (i ruoli node non usano read) */
+  /** Accesso al codice dell'App di riferimento (i ruoli node non usano read né merge; merge comprende write e unisce le PR) */
   code?: TeamInstanceRoleCode;
   tools: number[];
   skills: TeamInstanceRoleSkillsItem[];

@@ -34,7 +34,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   accettare; Alfred e Lucius hanno una memoria (appunti e storico dei riassunti), visibile e modificabile in Account (vedi "Lucius
   sulla squadra e memorie").
 - Strumenti GitHub delle squadre: i ruoli `cloud` con `code: read|write` leggono il codice dell'App di riferimento, lo modificano su un branch dedicato, aprono una PR in bozza («Closes #n») e Botcave sorveglia la CI
-  e rimette in moto il capo; per i ruoli `node` il nodo prepara la copia di lavoro e pubblica il branch con il token di Botcave, e la PR la apre Botcave (vedi "Nodi (esecuzione dei ruoli node)"); il merge resta all'utente (vedi "Strumenti GitHub delle squadre"). Spec: `docs/superpowers/specs/2026-11-10-botcave-strumenti-github-squadre-design.md`.
+  e rimette in moto il capo; per i ruoli `node` il nodo prepara la copia di lavoro e pubblica il branch con il token di Botcave, e la PR la apre Botcave (vedi "Nodi (esecuzione dei ruoli node)"); il merge è dell'utente, salvo che un ruolo cloud o il capo abbia `code: merge` (vedi "Strumenti GitHub delle squadre"). Spec: `docs/superpowers/specs/2026-11-10-botcave-strumenti-github-squadre-design.md`.
+- Merge automatico delle PR delle squadre: un ruolo `cloud` o il capo con `code: merge` unisce con `unisci_pr` (squash, solo CI verde sull'ultima testa, mai i workflow); una PR con migrazioni o schema diventa una voce `merge` in «Da confermare» che l'utente approva dopo aver applicato l'SQL su Neon (vedi "Strumenti GitHub delle squadre"). Spec: `docs/superpowers/specs/2026-11-14-botcave-merge-automatico-squadre-design.md`.
 - Spazio di lavoro automatico dei ruoli `node` con codice: un ruolo `node` con `code: write` lavora appena la squadra è attiva, senza clonare a mano, senza `gh` e senza scegliere una cartella: il nodo (0.4.0) clona il repository in `<radice>/.botcave/`,
   usa una copia di lavoro per compito e fa fetch e push con un token d'installazione per Git (`git-token`); la PR in bozza la apre Botcave al report; la carta «Pronta a lavorare» e il dialogo di «Attiva» avvisano dei problemi (vedi "Strumenti GitHub delle squadre" e
   "Nodi (esecuzione dei ruoli node)"). Spec: `docs/superpowers/specs/2026-11-13-botcave-spazio-di-lavoro-automatico-design.md`.
@@ -346,7 +347,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `plan_change` (piano o modifica del PLAN proposti dal capo di una squadra, vedi "Squadre (esecuzione)"); colonne
   `team_instance_id` (squadra, `SET NULL`) e `plan_version`; per `plan`/`plan_change` `tool_id` e `app_id` sono null
   (CHECK: obbligatori solo con `kind = action`) e `args_enc`/`args_public` contengono la proposta; l'approvazione non
-  vuole `userToken`. Tipo `proposal`: proposta multipla di un agente, con i passi in `pending_action_steps` (vedi "Proposte multiple"). Numerazione e limite di 50 valgono per tutti i tipi.
+  vuole `userToken`. Tipo `proposal`: proposta multipla di un agente, con i passi in `pending_action_steps` (vedi "Proposte multiple"). Tipo `merge`: merge di una PR di una squadra che tocca migrazioni o schema (vedi "Strumenti GitHub delle squadre"). Numerazione e limite di 50 valgono per tutti i tipi.
 - Route (`routes/pending-actions.ts`; il limite di 20/min per utente vale solo per approvare e rifiutare, non per le GET,
   ed è lo stesso contatore degli strumenti MCP `approva`/`rifiuta`, `consumeActionDecision`): `GET /api/pending-actions`, `GET /api/pending-actions/:number`,
   `POST …/approve` (con `userToken` se l'identità del tool è `user`), `POST …/reject` (nota ≤ 500 caratteri). Ambiti
@@ -737,9 +738,10 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 ## Strumenti GitHub delle squadre
 
 - Spec: `docs/superpowers/specs/2026-11-10-botcave-strumenti-github-squadre-design.md` (con «Differenze dal codice» in fondo). Dove il codice differisce dalla spec vale il codice, descritto qui. I ruoli `cloud` di una squadra, con
-  qualunque modello cloud, leggono e modificano il codice dell'App di riferimento **senza il Mac**: branch dedicato, commit, PR in bozza, correzioni finché la CI è verde. Il merge è sempre dell'utente su GitHub (nessun merge,
-  nessuna chiusura di PR, nessuna scrittura sul branch base). Codice in `lib/code-writer/`.
-- **Campo `code` del ruolo** (`manifest.ts`): `none | read | write`, default `none` (campo assente = `none`); ruoli `node` solo `none | write`. Su un'istanza (`validateRoles`) `code ≠ none` richiede l'App di riferimento con codice da
+  qualunque modello cloud, leggono e modificano il codice dell'App di riferimento **senza il Mac**: branch dedicato, commit, PR in bozza, correzioni finché la CI è verde. Il merge è dell'utente su GitHub, salvo i ruoli con `code: merge` (vedi «Merge automatico» qui sotto);
+  nessuna chiusura di PR e nessuna scrittura diretta sul branch base (il base cambia solo con lo squash di `unisci_pr`). Codice in `lib/code-writer/`.
+- **Campo `code` del ruolo** (`manifest.ts`): `none | read | write | merge`, default `none` (campo assente = `none`); `merge` comprende `write` (`codeWrites`) e aggiunge `unisci_pr`; ruoli `node` solo `none | write`
+  (`merge` su un ruolo node → 400 «un ruolo sul nodo non può unire le PR: usa un ruolo cloud o il capo»). Su un'istanza (`validateRoles`) `code ≠ none` richiede l'App di riferimento con codice da
   GitHub tramite installazione (`source_repo` e `source_installation_id`, altrimenti 400 «l'app di riferimento non ha il codice collegato tramite l'App GitHub»; il token manuale resta in sola lettura). A ogni esecuzione chi ha
   attivato la squadra deve possedere l'installazione (`userHasInstallation`), altrimenti il compito chiude `blocked` «accesso al repository non disponibile». Branch base = `apps.source_branch` o il predefinito del repository.
   Aggiornamenti proposti: `role_changed:<key>:code`. Lucius non propone il campo `code` (si imposta dall'editor dei ruoli).
@@ -765,7 +767,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `pr_closed`; esito finale della CI su uno sha nuovo → verde o senza CI: evento «CI verde» (`compito_finito`), rossa: compito del PLAN `blocked` «CI non superata: <check>» e evento `bloccato`, sempre turno `ci_finished`; `pending` da oltre
   2 ore: evento una volta. **Con un'esecuzione del compito ancora attiva (`queued|running|waiting_node`) la notifica si rimanda al giro dopo la sua fine** (niente turni spuri né PLAN sovrascritto). Errori di GitHub: riga saltata, si riprova.
   Una CI rilanciata sullo stesso sha non si riferisce di nuovo (una volta per sha). Nessuna chiamata a modelli.
-- **Capo**: strumento `leggi_piano_app` (voci `approved` di endpoint, completion ed evolution del piano dell'App, con `key` per risolvere le dipendenze, issue e stato; ≤ 100 voci), motivi di turno `ci_finished` e `pr_closed`, prompt: un
+- **Capo**: strumento `leggi_piano_app` (e `unisci_pr` con `code: merge`) (voci `approved` di endpoint, completion ed evolution del piano dell'App, con `key` per risolvere le dipendenze, issue e stato; ≤ 100 voci), motivi di turno `ci_finished` e `pr_closed`, prompt: un
   compito con codice è finito con la CI verde, con la CI rossa si riassegna (riparte dallo stesso branch), ogni compito parte dal base. Freno ai giri: `assegna_compito` rifiuta con «compito fallito 3 volte: segnala
   all'utente» (`MAX_TASK_FAILURES` = 3) sia dopo 3 esecuzioni di fila `failed|blocked` sia quando la PR del compito ha 3 CI rosse di fila (`team_code_tasks.ci_failures`: la sorveglianza lo incrementa nella stessa
   transazione della notifica di una CI rossa e lo azzera con una verde o senza CI; l'esecuzione di un compito con la CI rossa resta `done`, quindi il primo freno da solo non basta).
@@ -777,14 +779,28 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   502 con GitHub in errore). Il nodo fa clone, fetch e push; al report `done` `adoptNodePull` adotta la PR aperta sul branch oppure, se il branch esiste su GitHub con una testa diversa dal base (anche se pubblicato da un'esecuzione precedente non `done`: `git {pushed, headSha, commits}` del report è solo informativo) e chi ha attivato la squadra possiede l'installazione, **la apre Botcave in bozza** (`createDraftPull`: titolo del
   compito, «Closes #n», esito, piè di pagina, controllo dei segreti) e crea la riga da sorvegliare; `blocked`/`failed` non aprono PR (errori di GitHub: il report riesce comunque).
 - **Console**: tendina «Codice» nell'editor dei ruoli (senza GitHub tramite installazione offre solo «Nessuno» più il valore attuale, così un ruolo con il codice può tornare a «Nessuno», con il motivo sotto; mentre l'App
-  si legge o se la lettura fallisce resta attiva e decide il server; per il capo solo la nota «Il capo non esegue compiti: il codice vale per gli altri ruoli»), campo «Issue» nell'editor del PLAN, nella carta «Piano» link a branch e PR con LED della CI (`work` in corso,
+  si legge o se la lettura fallisce resta attiva e decide il server; per il capo «Nessuno» o «Scrittura e merge» con la nota «Il capo non esegue compiti: per lui conta solo «Scrittura e merge», che gli fa unire le PR della squadra»), campo «Issue» nell'editor del PLAN, nella carta «Piano» link a branch e PR con LED della CI (`work` in corso,
   `ok` verde, `ko` rossa, `idle` nessuna CI o PR chiusa). Niente scorrimento orizzontale a 1280 px.
+- **Merge automatico** (spec `docs/superpowers/specs/2026-11-14-botcave-merge-automatico-squadre-design.md`, `lib/code-writer/merge.ts`): strumento interno `unisci_pr {compito | numero}` offerto ai ruoli `cloud` con
+  `code: merge` (accanto agli strumenti di scrittura, istruzioni `CODE_MERGE_INSTRUCTIONS`) e al capo con `code: merge` (tra gli strumenti del capo; per il capo è l'unico valore di `code` che conta). Controlli tutti lato server
+  (`mergeTeamPull`, risultati `{ok:false}` con `MERGE_MESSAGES`): squadra attiva; riga di `team_code_tasks` della squadra con PR `open` e branch uguale a `botcave/<squadra>-<compito>` ricalcolato; App con installazione posseduta da chi
+  ha attivato la squadra e repository uguale alla riga; PR letta da GitHub aperta, `head.ref` = branch, `base.ref` = base della riga, testa = `head_sha` della riga («la PR è cambiata dall'ultimo controllo: aspetta l'esito della CI»);
+  CI dell'head letta dal vivo: solo `success` (in corso, rossa o assente → rifiuto); file della PR (`GET /pulls/{n}/files`, ≤ 10 pagine, nomi precedenti compresi; oltre → rifiuto): `.github/workflows/` → rifiuto sempre;
+  `docs/migrations/`, `lib/db/src/schema/` o `docs/schema-casello.sql` → nessun merge e voce `merge` in «Da confermare» (una sola aperta per PR). Limite: 6 merge all'ora per squadra (`MAX_MERGES_PER_HOUR`) contati su
+  `team_code_tasks.botcave_merged_at`, che prenota anche la riga (con la riga della squadra bloccata; tolta se il merge fallisce, ripresa dopo 10 minuti). Poi la PR esce dalla bozza (GraphQL `markPullRequestReadyForReview`) e si unisce con
+  squash (`PUT /pulls/{n}/merge`, `sha` = testa controllata: se cambia GitHub risponde 409), token ristretto al repository con `contents: write` e `pull_requests: write`; log solo id, numero e sha a 7. Dopo il merge valgono
+  la sorveglianza, l'evento e il motivo `pr_closed` di sempre. **Voce `merge`** (`pending_actions.kind = 'merge'`, squadra, niente app né tool; `args_public` con `taskCodeId`, `planTaskId`, `repo`, `prNumber`, `prUrl`, `headSha`,
+  `baseBranch`, `files` ≤ 50): approvarla (`approveMerge`, nessun token utente) rifà gli stessi controlli tranne le migrazioni e il limite orario, con la testa uguale a quella della voce («la PR è cambiata dopo la richiesta:
+  chiedi un nuovo merge»), poi unisce; esito `done` «PR #n unita» o `failed` col messaggio e motivo di turno `merge_failed` per il capo; rifiutarla accoda il motivo `decision`; chiudere la squadra la rifiuta. Console: tipo «Merge»,
+  link alla PR e file (`components/actions/merge-detail.tsx`), «Approva e unisci», valore «Scrittura e merge» della tendina «Codice» (per il capo «Nessuno» o «Scrittura e merge»). Prompt del capo (`mergeInstruction` in
+  `turn-runner.ts`): con un ruolo `merge` fa unire la PR dopo la CI verde e passa al compito successivo al `pr_closed`, e con una voce in coda usa `segnala`; senza, il merge resta dell'utente. Migrazione
+  `docs/migrations/2026-11-merge-automatico.sql` (additiva e idempotente, niente `-post`, fuori da una transazione esplicita): valore `merge` di `pending_action_kind`, colonna `team_code_tasks.botcave_merged_at`; PRIMA del merge su Neon.
 - **Permessi**: vedi «Autenticazione» (Contents, Pull requests, Checks, Statuses e Actions): ogni installazione deve accettarli.
 - Migrazione: `docs/migrations/2026-11-strumenti-github-squadre.sql` (additiva e idempotente, niente `-post`): enum `code_pr_state` e `code_ci_state`, tabella `team_code_tasks` con indice su `(pr_state, ci_checked_at)`. Da applicare su
   Neon PRIMA del merge (SQL completo in chat) e da segnalare nella PR; riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
 - Prova: `artifacts/api-server/test/code-team-flow.test.ts` (finto provider e finto GitHub: compito con issue → commit e PR → CI rossa → `ci_finished` → correzione sullo stesso branch → CI verde → merge → `pr_closed`; compito node con PR
-  sorvegliata). Dopo il deploy: far accettare i nuovi permessi all'installazione e provare un compito reale su The Hub Up.
-- Fuori ambito: merge, chiusura o approvazione di PR da Botcave; PR in pila; pulsante «Affida alla squadra» dal Piano; scrittura con il token manuale; modifica dei workflow della CI; file binari; strumenti del codice per le run degli
+  sorvegliata; merge automatico: CI rossa rifiutata → `unisci_pr` → squash → `pr_closed`, PR con migrazione → voce `merge` → approvazione → merge, testa cambiata, workflow, limite orario). Dopo il deploy: far accettare i nuovi permessi all'installazione e provare un compito reale su The Hub Up.
+- Fuori ambito: merge senza `code: merge` o di PR non della squadra, chiusura o approvazione (review) di PR da Botcave, applicazione delle migrazioni su Neon; PR in pila; pulsante «Affida alla squadra» dal Piano; scrittura con il token manuale; modifica dei workflow della CI; file binari; strumenti del codice per le run degli
   agenti fuori dalle squadre e per Lucius in scrittura.
 
 ## Dal piano alle issue

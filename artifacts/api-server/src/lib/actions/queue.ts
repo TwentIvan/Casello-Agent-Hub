@@ -165,3 +165,24 @@ export async function enqueueProposal(input: EnqueueProposalInput): Promise<Enqu
     return queued;
   });
 }
+
+export interface EnqueueMergeInput {
+  userId: number;
+  instanceId: number;
+  /** Repository della PR. */
+  recipient: string;
+  summary: string;
+  detail: Record<string, unknown>;
+}
+
+/** Accoda il merge di una PR di una squadra che tocca migrazioni o schema (voce `merge`, senza app né tool). */
+export async function enqueueMergeItem(input: EnqueueMergeInput): Promise<EnqueueResult> {
+  return insertQueued(input.userId, {
+    kind: "merge",
+    teamInstanceId: input.instanceId,
+    argsEnc: encryptSecret(JSON.stringify(input.detail)),
+    argsPublic: input.detail,
+    recipient: input.recipient,
+    summary: input.summary,
+  });
+}

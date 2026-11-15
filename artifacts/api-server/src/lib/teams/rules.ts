@@ -36,6 +36,7 @@ export const TEAM_MESSAGES = {
   nodeRoleHasModel: "un ruolo sul nodo non ha un modello cloud",
   codeUnavailable: "l'app di riferimento non ha il codice collegato tramite l'App GitHub",
   nodeCodeRead: "un ruolo node non usa la lettura del codice: scegli Nessuno o Scrittura",
+  nodeCodeMerge: "un ruolo sul nodo non può unire le PR: usa un ruolo cloud o il capo",
 } as const;
 
 export class TeamRuleError extends Error {
@@ -100,6 +101,7 @@ export async function validateRoles(input: ValidateRolesInput): Promise<void> {
   // Codice: i ruoli node non leggono; sull'istanza serve un'App con il codice su GitHub tramite installazione
   for (const role of roles) {
     if (role.runsOn === "node" && role.code === "read") fail(TEAM_MESSAGES.nodeCodeRead);
+    if (role.runsOn === "node" && role.code === "merge") fail(TEAM_MESSAGES.nodeCodeMerge);
   }
   if (mode === "instance" && roles.some((r) => r.code !== "none")) {
     const ok = refApp && refApp.sourceType === "github" && !!refApp.sourceRepo && refApp.sourceInstallationId != null;

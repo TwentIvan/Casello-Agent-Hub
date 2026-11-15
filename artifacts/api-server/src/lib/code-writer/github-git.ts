@@ -68,7 +68,7 @@ async function tokenFor(r: RepoRef, permissions: Record<string, string>): Promis
 }
 
 interface Call {
-  method: "GET" | "POST" | "PATCH";
+  method: "GET" | "POST" | "PATCH" | "PUT";
   path: string;
   body?: unknown;
 }
@@ -274,6 +274,110 @@ export async function getPull(r: RepoRef, n: number): Promise<{ state: "open" | 
   const o = json as Record<string, unknown>;
   const state = o["merged"] === true || typeof o["merged_at"] === "string" ? "merged" : o["state"] === "open" ? "open" : "closed";
   return { state, headSha: info.headSha, url: info.url };
+}
+
+// --- Merge ------------------------------------------------------------------------------
+
+export interface PullDetail {
+  number: number;
+  url: string;
+  state: "open" | "merged" | "closed";
+  draft: boolean;
+  nodeId: string;
+  headRef: string;
+  baseRef: string;
+  headSha: string;
+  title: string;
+}
+
+/** PR con i dati che servono al merge: bozza, `node_id` (GraphQL), branch di testa e di base. */
+export async function getPullDetail(r: RepoRef, n: number): Promise<PullDetail> {
+  const token = await tokenFor(r, PULLS);
+  const { status, json } = await call(r, token, "pull_requests: write", { method: "GET", path: repoPath(r, `/pulls/${n}`) }, [404]);
+  if (status === 404) throw new CodeWriteError(CODE_WRITE_MESSAGES.pullNotFound(n), 404);
+  const info = pullInfo(json, status);
+  const o = json as Record<string, unknown>;
+  const head = o["head"] as Record<string, unknown>;
+  const base = isObj(o["base"]) ? o["base"] : {};
+  const state = o["merged"] === true || typeof o["merged_at"] === "string" ? "merged" : o["state"] === "open" ? "open" : "closed";
+  return {
+    number: info.number,
+    url: info.url,
+    state,
+    draft: o["draft"] === true,
+    nodeId: str(o["node_id"], status),
+    headRef: str(head["ref"], status),
+    baseRef: str(base["ref"], status),
+    headSha: info.headSha,
+    title: typeof o["title"] === "string" ? o["title"] : "",
+  };
+}
+
+/** Pagine di file di una PR lette al più (100 file l'una): oltre, la PR è troppo grande per un merge automatico. */
+export const MAX_PULL_FILE_PAGES = 10;
+
+/** Percorsi toccati da una PR, compresi i nomi precedenti dei file rinominati; null se i file sono troppi da leggere. */
+export async function listPullFiles(r: RepoRef, n: number): Promise<string[] | null> {
+  const token = await tokenFor(r, PULLS);
+  const out: string[] = [];
+  for (let page = 1; page <= MAX_PULL_FILE_PAGES; page++) {
+    const { status, json } = await call(r, token, "pull_requests: write", {
+      method: "GET",
+      path: repoPath(r, `/pulls/${n}/files?per_page=${PER_PAGE}&page=${page}`),
+    });
+    if (!Array.isArray(json)) throw badShape(status);
+    for (const f of json as unknown[]) {
+      if (!isObj(f) || typeof f["filename"] !== "string") throw badShape(status);
+      out.push(f["filename"]);
+      if (typeof f["previous_filename"] === "string") out.push(f["previous_filename"]);
+    }
+    if (json.length < PER_PAGE) return out;
+  }
+  return null;
+}
+
+const MERGE = { contents: "write", pull_requests: "write" };
+
+/** Toglie la PR dalla bozza (GraphQL `markPullRequestReadyForReview`): la REST non lo permette. */
+export async function markReadyForReview(r: RepoRef, nodeId: string): Promise<void> {
+  const token = await tokenFor(r, MERGE);
+  const { status, json } = await call(r, token, "pull_requests: write", {
+    method: "POST",
+    path: "/graphql",
+    body: {
+      query: "mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { pullRequest { isDraft } } }",
+      variables: { id: nodeId },
+    },
+  });
+  if (!isObj(json)) throw badShape(status);
+  const data = isObj(json["data"]) ? json["data"] : null;
+  const mutation = data && isObj(data["markPullRequestReadyForReview"]) ? data["markPullRequestReadyForReview"] : null;
+  const pr = mutation && isObj(mutation["pullRequest"]) ? mutation["pullRequest"] : null;
+  if (Array.isArray(json["errors"]) && json["errors"].length > 0) {
+    const forbidden = (json["errors"] as unknown[]).some((e) => isObj(e) && e["type"] === "FORBIDDEN");
+    if (forbidden) throw new CodeWriteError(CODE_WRITE_MESSAGES.permission("pull_requests: write"), 403);
+    throw new CodeWriteError(CODE_WRITE_MESSAGES.notReady, status);
+  }
+  if (!pr || pr["isDraft"] !== false) throw new CodeWriteError(CODE_WRITE_MESSAGES.notReady, status);
+}
+
+/**
+ * Unisce la PR con squash, solo se la testa è ancora `sha` (GitHub risponde 409 altrimenti). 405: non unibile (conflitti,
+ * regole del branch base, bozza); 409: testa cambiata; 422: rifiutata.
+ */
+export async function squashMerge(r: RepoRef, n: number, input: { sha: string; title: string }): Promise<{ sha: string }> {
+  const token = await tokenFor(r, MERGE);
+  const { status, json } = await call(
+    r,
+    token,
+    "contents: write, pull_requests: write",
+    { method: "PUT", path: repoPath(r, `/pulls/${n}/merge`), body: { merge_method: "squash", sha: input.sha, commit_title: input.title } },
+    [405, 409, 422],
+  );
+  if (status === 409) throw new CodeWriteError(CODE_WRITE_MESSAGES.headMoved, 409);
+  if (status === 405 || status === 422) throw new CodeWriteError(CODE_WRITE_MESSAGES.notMergeable, status);
+  if (!isObj(json) || json["merged"] !== true) throw new CodeWriteError(CODE_WRITE_MESSAGES.notMergeable, status);
+  return { sha: str(json["sha"], status) };
 }
 
 // --- Issue ------------------------------------------------------------------------------

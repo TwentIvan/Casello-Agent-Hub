@@ -29,6 +29,8 @@ export const teamCodeTasksTable = pgTable(
     // CI rosse notificate di fila (azzerate da un esito verde o senza CI): freno ai giri «CI rossa → riassegna»
     ciFailures: integer("ci_failures").notNull().default(0),
     lastCommitAt: timestamp("last_commit_at"),
+    // Merge fatto (o prenotato) da Botcave con `unisci_pr`: limite orario per squadra e niente merge doppi
+    botcaveMergedAt: timestamp("botcave_merged_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

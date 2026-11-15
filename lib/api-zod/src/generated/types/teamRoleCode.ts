@@ -7,7 +7,7 @@
  */
 
 /**
- * Accesso al codice dell'App di riferimento (i ruoli node non usano read)
+ * Accesso al codice dell'App di riferimento (i ruoli node non usano read né merge; merge comprende write e unisce le PR)
  */
 export type TeamRoleCode = typeof TeamRoleCode[keyof typeof TeamRoleCode];
 
@@ -16,4 +16,5 @@ export const TeamRoleCode = {
   none: 'none',
   read: 'read',
   write: 'write',
+  merge: 'merge',
 } as const;

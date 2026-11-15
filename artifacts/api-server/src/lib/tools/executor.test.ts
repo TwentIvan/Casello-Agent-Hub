@@ -82,6 +82,16 @@ function handle(req: IncomingMessage, res: ServerResponse, body: string): void {
     res.end(JSON.stringify({ auth: req.headers.authorization ?? null, key: req.headers["x-api-key"] ?? null }));
     return;
   }
+  if (url.startsWith("/composite/team")) {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ id: 7, info: { code: "abc" }, token: req.headers.authorization ?? null }));
+    return;
+  }
+  if (url.startsWith("/composite/members")) {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ path: url, received: body ? (JSON.parse(body) as unknown) : null }));
+    return;
+  }
   if (url.startsWith("/players")) {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify([{ id: 1, nome: "Rossi", extra: "x" }]));
@@ -480,14 +490,113 @@ describe("executeTool", () => {
     });
     expect(ui.ok).toBe(false);
     expect(ui.content).toContain("eseguito dal client");
+    // Un composto senza passi collegati (`resolveCompositeTools`) non si esegue
     const comp = await executeTool({
       conn: conn(),
       tool: { ...teamTool, kind: "composite", definition: { steps: [{ tool: "a", args: {} }], output: {} } },
-      args: {},
+      args: { teamId: "1" },
     });
     expect(comp.ok).toBe(false);
-    expect(comp.content).toContain("tool composti non ancora supportati");
+    expect(comp.content).toBe("passi del tool composto non disponibili");
     expect(requests).toHaveLength(0);
+  });
+
+  describe("tool composite", () => {
+    const readTeam = tool(
+      { method: "GET", path: "/composite/team/{teamId}", paramLocations: { teamId: "path" } },
+      { type: "object", properties: { teamId: { type: "string" } }, required: ["teamId"] },
+      { name: "leggi_squadra" },
+    );
+    const addMember = tool(
+      { method: "POST", path: "/composite/members/{teamId}", paramLocations: { teamId: "path" } },
+      {
+        type: "object",
+        properties: { teamId: { type: "integer" }, nome: { type: "string" }, codice: { type: "string" }, ruolo: { type: "string" } },
+        required: ["teamId", "nome"],
+      },
+      { name: "aggiungi_membro", level: "L1" },
+    );
+    function composite(definition: unknown, steps: CatalogTool[] = [readTeam, addMember]): CatalogTool {
+      return tool(definition as HttpDefinition, {
+        type: "object",
+        properties: { squadra: { type: "string" }, nome: { type: "string" } },
+        required: ["squadra", "nome"],
+      }, { name: "aggiungi_alla_squadra", kind: "composite", compositeSteps: steps });
+    }
+    const definition = {
+      steps: [
+        { tool: "leggi_squadra", args: { teamId: "$input.squadra" } },
+        { tool: "aggiungi_membro", args: { teamId: "$steps.0.id", nome: "$input.nome", codice: "$steps.0.info.code", ruolo: "$$membro", assente: "$steps.0.manca" } },
+      ],
+      output: { squadra: "$steps.0.id", esito: "$steps.1.received", fonte: "app" },
+    };
+
+    it("esegue due passi http in ordine, con i riferimenti tipizzati, e combina l'output", async () => {
+      const r = await executeTool({ conn: conn(), tool: composite(definition), args: { squadra: "12", nome: "Rossi" }, userToken: "tok-segreto" });
+      expect(r).toMatchObject({ ok: true, status: 200 });
+      expect(requests.map((q) => `${q.method} ${q.url}`)).toEqual(["GET /composite/team/12", "POST /composite/members/7"]);
+      expect(requests[1]!.headers.authorization).toBe("Bearer tok-segreto");
+      expect(JSON.parse(r.content)).toEqual({
+        squadra: 7,
+        esito: { nome: "Rossi", codice: "abc", ruolo: "$membro" },
+        fonte: "app",
+      });
+    });
+
+    it("output vuoto: risultato dell'ultimo passo, con le credenziali oscurate", async () => {
+      const def = { steps: [{ tool: "leggi_squadra", args: { teamId: "$input.squadra" } }], output: {} };
+      const r = await executeTool({ conn: conn(), tool: composite(def, [readTeam]), args: { squadra: "1", nome: "x" }, userToken: "tok-segreto" });
+      expect(r.ok).toBe(true);
+      expect(r.content).not.toContain("tok-segreto");
+      expect(JSON.parse(r.content)).toMatchObject({ id: 7, token: "***" });
+    });
+
+    it("si ferma al primo passo fallito e dice quale", async () => {
+      const missing = tool({ method: "GET", path: "/missing", paramLocations: {} }, undefined, { name: "manca" });
+      const def = { steps: [{ tool: "manca", args: {} }, { tool: "leggi_squadra", args: { teamId: "1" } }], output: {} };
+      const r = await executeTool({ conn: conn(), tool: composite(def, [missing, readTeam]), args: { squadra: "1", nome: "x" }, userToken: "t" });
+      expect(r).toEqual({ ok: false, status: 404, content: "passo 0 (manca): HTTP 404: Squadra non trovata" });
+      expect(requests).toHaveLength(1);
+    });
+
+    it("valida gli argomenti del composto e quelli di ogni passo", async () => {
+      const bad = await executeTool({ conn: conn(), tool: composite(definition), args: { squadra: "1" }, userToken: "t" });
+      expect(bad.content).toBe('argomenti non validi: parametro "nome" obbligatorio mancante');
+      // Il passo 1 riceve teamId come stringa: lo schema del passo vuole un intero
+      const def = { steps: [{ tool: "aggiungi_membro", args: { teamId: "$input.squadra", nome: "$input.nome" } }], output: {} };
+      const r = await executeTool({ conn: conn(), tool: composite(def, [addMember]), args: { squadra: "1", nome: "x" }, userToken: "t" });
+      expect(r.ok).toBe(false);
+      expect(r.content).toMatch(/^passo 0 \(aggiungi_membro\): argomenti non validi/);
+      expect(requests).toHaveLength(0);
+    });
+
+    it("rifiuta passi non http/mcp o vietati e definizioni non valide", async () => {
+      const ui = { ...readTeam, kind: "ui" as const, definition: { action: "apri" } };
+      const def = { steps: [{ tool: "leggi_squadra", args: {} }], output: {} };
+      const r1 = await executeTool({ conn: conn(), tool: composite(def, [ui]), args: { squadra: "1", nome: "x" } });
+      expect(r1.content).toBe("passo 0 (leggi_squadra): tool non utilizzabile in un tool composto");
+      const l3 = { ...readTeam, levelOverride: "L3" as const };
+      const r2 = await executeTool({ conn: conn(), tool: composite(def, [l3]), args: { squadra: "1", nome: "x" } });
+      expect(r2.ok).toBe(false);
+      const r3 = await executeTool({
+        conn: conn(),
+        tool: composite({ steps: [{ tool: "leggi_squadra", args: { teamId: "$steps.0.id" } }], output: {} }, [readTeam]),
+        args: { squadra: "1", nome: "x" },
+      });
+      expect(r3.content).toMatch(/^definizione del tool non valida: definition\.steps\.0\.args\.teamId: /);
+      expect(requests).toHaveLength(0);
+    });
+
+    it("tempo massimo complessivo e annullamento", async () => {
+      const slow = tool({ method: "GET", path: "/slow", paramLocations: {} }, undefined, { name: "lento" });
+      const def = { steps: [{ tool: "lento", args: {} }, { tool: "leggi_squadra", args: { teamId: "1" } }], output: {} };
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), 50);
+      const r = await executeTool({ conn: conn(), tool: composite(def, [slow, readTeam]), args: { squadra: "1", nome: "x" }, userToken: "t", signal: controller.signal });
+      expect(r.ok).toBe(false);
+      expect(r.content).toMatch(/^passo 0 \(lento\): /);
+      expect(requests.map((q) => q.url)).toEqual(["/slow"]);
+    });
   });
 
   it("errore di rete non lancia e non espone il token", async () => {

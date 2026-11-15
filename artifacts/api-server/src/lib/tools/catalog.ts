@@ -4,8 +4,9 @@ import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { MAX_SUMMARY_CHARS, RECIPIENT_PARAM, SUMMARY_PARAM } from "../agent-loop";
 import { logger } from "../logger";
 import { parseDefinition } from "./definition";
+import { buildComposite } from "./composite";
 import { effectiveLevel, type ToolLevel } from "./levels";
-import type { AppConnection, CatalogTool } from "./types";
+import type { AppConnection, CatalogTool, CompositeDefinition } from "./types";
 
 // Oscuramento degli argomenti: modulo puro, usato anche dal ciclo dell'agente
 export { maskArgsWithSchema, maskSensitiveArgs, stepArgsWithSchema } from "./sensitive";
@@ -28,9 +29,9 @@ export function toCatalogTool(row: AppTool): CatalogTool | null {
   return { ...row, paramsSchema: schema, definition: parsed.value };
 }
 
-// Solo i tool `http` e `mcp` sono eseguibili. I tool `ui` e `composite` restano nel catalogo
-// ma non vengono offerti al modello finché non esiste un client che li esegue.
-const EXECUTABLE_KINDS = ["http", "mcp"] as const;
+// Tool eseguibili dal server: `http`, `mcp` e `composite` (passi `http`/`mcp` della stessa app). I tool `ui`
+// restano nel catalogo ma non vengono offerti al modello finché non esiste un client che li esegue.
+const EXECUTABLE_KINDS = ["http", "mcp", "composite"] as const;
 
 function isOffered(t: { kind: string; level: ToolLevel; levelOverride: ToolLevel | null }): boolean {
   return (EXECUTABLE_KINDS as readonly string[]).includes(t.kind) && effectiveLevel(t) !== "L3";
@@ -39,7 +40,8 @@ function isOffered(t: { kind: string; level: ToolLevel; levelOverride: ToolLevel
 /**
  * Tool disponibili per un agente: l'agente `general` usa tutti i tool `active` della sua app,
  * un agente `area` solo quelli collegati in `agent_tools` e `active`. In entrambi i casi solo
- * i tool `http` e `mcp` con livello effettivo diverso da L3.
+ * i tool `http`, `mcp` e `composite` con livello effettivo diverso da L3 (per i composti: il più alto tra il
+ * loro e quello dei passi).
  */
 export async function loadAgentTools(agentId: number): Promise<CatalogTool[]> {
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId)).limit(1);
@@ -75,7 +77,50 @@ export async function loadAgentTools(agentId: number): Promise<CatalogTool[]> {
       .orderBy(asc(appToolsTable.id));
     rows = linked.map((r) => r.tool);
   }
-  return rows.filter(isOffered).map(toCatalogTool).filter((t): t is CatalogTool => t !== null);
+  const catalog = rows.filter(isOffered).map(toCatalogTool).filter((t): t is CatalogTool => t !== null);
+  // Dopo il collegamento dei passi un composto può essere diventato L3 (un passo vietato): si rifiltra
+  return (await resolveCompositeTools(catalog)).filter(isOffered);
+}
+
+/**
+ * Collega i tool `composite` ai tool dei loro passi (stessa app, per nome, in qualunque stato: le regole le
+ * applica `buildComposite`) e ne alza il livello al più alto dei passi. Un composto con un passo non valido
+ * si esclude (con un avviso nel log); gli altri tool restano come sono.
+ */
+export async function resolveCompositeTools(tools: CatalogTool[]): Promise<CatalogTool[]> {
+  const composites = tools.filter((t) => t.kind === "composite");
+  if (composites.length === 0) return tools;
+  const byApp = new Map<number, Map<string, CatalogTool>>();
+  for (const appId of new Set(composites.map((t) => t.appId))) {
+    const names = new Set<string>();
+    for (const t of composites.filter((c) => c.appId === appId)) {
+      for (const step of (t.definition as CompositeDefinition).steps ?? []) names.add(step.tool);
+    }
+    const rows =
+      names.size === 0
+        ? []
+        : await db
+            .select()
+            .from(appToolsTable)
+            .where(and(eq(appToolsTable.appId, appId), inArray(appToolsTable.name, [...names])));
+    const map = new Map<string, CatalogTool>();
+    for (const row of rows) {
+      const t = toCatalogTool(row);
+      if (t) map.set(t.name, t);
+    }
+    byApp.set(appId, map);
+  }
+  const out: CatalogTool[] = [];
+  for (const t of tools) {
+    if (t.kind !== "composite") {
+      out.push(t);
+      continue;
+    }
+    const built = buildComposite(t, byApp.get(t.appId) ?? new Map());
+    if (built.ok) out.push(built.tool);
+    else logger.warn({ toolId: t.id, tool: t.name, error: built.error }, "Tool composto con un passo non valido: escluso");
+  }
+  return out;
 }
 
 /** Copia dello schema senza le estensioni `x-*` (es. x-sensitive), che alcuni provider rifiutano. */

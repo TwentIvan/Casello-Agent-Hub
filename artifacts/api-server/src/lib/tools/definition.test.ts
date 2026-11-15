@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   checkParamsSchema,
   checkPathPlaceholders,
+  parseCompositeTemplate,
   parseDefinition,
   validateArgs,
 } from "./definition";
@@ -60,6 +61,37 @@ describe("parseDefinition", () => {
       }).ok,
     ).toBe(true);
     expect(parseDefinition("ui", { action: "openTeam", args: { a: 1 } }).ok).toBe(true);
+  });
+
+  it("composite: riferimenti $input e $steps.N solo verso passi precedenti, $$ letterale", () => {
+    const ok = parseDefinition("composite", {
+      steps: [
+        { tool: "a", args: { id: "$input.id", tutto: "$input", fisso: "testo", prezzo: "$$5" } },
+        { tool: "b", args: { id: "$steps.0.dati.id" } },
+      ],
+      output: { x: "$steps.1", y: "$steps.0.a.b.c.d.e" },
+    });
+    expect(ok.ok).toBe(true);
+    expect(parseDefinition("composite", { steps: [{ tool: "a", args: { id: "$steps.0.id" } }], output: {} })).toEqual({
+      ok: false,
+      error: 'definition.steps.0.args.id: il riferimento "$steps.0.id" usa il passo 0, che non è precedente',
+    });
+    expect(parseDefinition("composite", { steps: [{ tool: "a", args: {} }], output: { x: "$steps.1.id" } }).ok).toBe(false);
+    for (const bad of ["$input.", "$inputs.id", "$steps.x", "$steps.0.a.b.c.d.e.f", "$input.__proto__ x", "$steps.01"]) {
+      const r = parseDefinition("composite", { steps: [{ tool: "a", args: { v: bad } }], output: {} });
+      expect(r.ok === false && r.error).toMatch(/^definition\.steps\.0\.args\.v: riferimento non valido/);
+    }
+    expect(parseDefinition("composite", { steps: [{ tool: "nome con spazi", args: {} }], output: {} }).ok).toBe(false);
+    const many = Array.from({ length: 11 }, () => ({ tool: "a", args: {} }));
+    expect(parseDefinition("composite", { steps: many, output: {} })).toEqual({ ok: false, error: "definition.steps: al più 10 elementi" });
+  });
+
+  it("parseCompositeTemplate", () => {
+    expect(parseCompositeTemplate("ciao")).toEqual({ kind: "literal", value: "ciao" });
+    expect(parseCompositeTemplate("$$x")).toEqual({ kind: "literal", value: "$x" });
+    expect(parseCompositeTemplate("$input")).toEqual({ kind: "input", path: [] });
+    expect(parseCompositeTemplate("$steps.2.a.b")).toEqual({ kind: "step", step: 2, path: ["a", "b"] });
+    expect(parseCompositeTemplate("$boh")).toBeNull();
   });
 
   it("rifiuta composite senza passi e ui senza action", () => {

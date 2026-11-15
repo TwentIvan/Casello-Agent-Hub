@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { WandSparkles, Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, Sparkles, LayoutTemplate, Users, type LucideIcon } from "lucide-react";
+import { Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, Sparkles, LayoutTemplate, Users, type LucideIcon } from "lucide-react";
 import {
   getGetDashboardStatsQueryKey,
   getListUnreadTeamEventsQueryKey,
@@ -24,7 +24,7 @@ import {
 import { BudgetGuard } from "@/components/budget/budget";
 import { CaveVault } from "@/components/brand/cave";
 import { LedDot } from "@/components/brand/led";
-import { AlfredMark } from "@/components/brand/marks";
+import { AlfredMark, BarbaraMark } from "@/components/brand/marks";
 import { usePanel } from "@/components/panel/panel-context";
 import { useSharedAlfredVoice } from "@/components/panel/voice-context";
 import { Button } from "@/components/ui/button";
@@ -125,7 +125,8 @@ function CaveHeader() {
           title="Chiedi a Barbara, la Responsabile di Botcave"
           onClick={() => openPanel("lead")}
         >
-          <WandSparkles aria-hidden="true" className="size-5" />
+          {/* Barra della caverna buia in entrambi i temi: chiave chiara */}
+          <BarbaraMark size={20} tone="dark" />
         </Button>
         <Button
           variant="ghost"

@@ -71,7 +71,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   incluso, abbinamento dal browser con un codice, aggiornamento automatico dal manifest, verifica e installazione di Claude Code, impostazioni, diagnosi
   e disinstallazione dalla console (vedi "Botcave Nodo (app per Mac)").
 - Responsabile di Botcave stesso: l'App 4 (Botcave come app di sé stessa) con token di servizio d'ambito `agent`, che legge e scrive ma non decide mai al posto dell'utente (vedi "Token personali su `/api`").
-- Responsabile da ogni area: pulsante AI nella caverna e quinta scheda «Barbara» del pannello (solo console) per conversare con Barbara, la Responsabile di Botcave; ogni messaggio
+- Responsabile da ogni area: pulsante con il segno di Barbara (chiave) nella caverna e quinta scheda «Barbara» del pannello (solo console) per conversare con Barbara, la Responsabile di Botcave; ogni messaggio
   è una run con la pagina corrente e la cronologia recente nell'input (vedi "Responsabile da ogni area"). Spec: `docs/superpowers/specs/2026-11-13-botcave-responsabile-ovunque-design.md`.
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
@@ -89,13 +89,15 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   per titoli, etichette, numeri e codice (`text-h2`, `text-label`, `font-mono`), Space Grotesk per testi e controlli. Niente ombre.
 - Componenti di marca in `artifacts/casello/src/components/brand/`: `Led` (stati: `idle`, `work`, `ask`, `ok`, `ko`; fermi con la
   riduzione del movimento), `ConfirmItem` (voce della coda: il numero è quello del server, stabile, letto a voce da Alfred), `marks.tsx`
-  (logo, segno, Alfred, Lucius dai file di `design/assets/`, versione chiara o scura secondo il tema). `Button` è `ui/button.tsx`
+  (logo, segno, Alfred, Lucius e Barbara dai file di `design/assets/`, versione chiara o scura secondo il tema; `tone` forza la versione, e nella
+  barra della caverna, buia in entrambi i temi, è sempre `tone="dark"`). Segni dei personaggi, stessa griglia e un pixel ambra ciascuno, alti come
+  le loro righe (5 : 4 : 3): Alfred papillon (`AlfredMark`), Lucius occhiali (`LuciusMark`), Barbara chiave (`BarbaraMark`, `design/assets/Barbara/`). `Button` è `ui/button.tsx`
   (principale = `default`, secondario = `secondary`/`outline`, discreto = `ghost`/`link`). Gli stati si mostrano con i LED, non con
   badge colorati.
 - Menu in un solo elenco (Dashboard, Squadre, Da confermare, Run, App, Agenti, Skill, Modelli di squadra, Modelli AI), senza aree.
   La caverna: `components/brand/cave.tsx` (`CaveVault`): la barra in alto di ogni pagina (`CaveHeader` in `app-shell.tsx`, 112 px,
   buia in entrambi i temi) ha la volta di stalattiti con il LED, sotto il logo chiaro su scuro, che è anche il pulsante del menu
-  dell'account (`user-menu.tsx`), e a destra il pulsante di Alfred (segno chiaro su scuro, contatore delle voci da confermare, LED `work` mentre la voce è accesa) che apre il pannello sulla scheda Alfred (non il microfono verso `/alfred`; `/alfred` non è una voce di menu), poi il pavimento di
+  dell'account (`user-menu.tsx`), e a destra il pulsante di Barbara (chiave chiara, apre la scheda «Barbara» del pannello) e quello di Alfred (segno chiaro su scuro, contatore delle voci da confermare, LED `work` mentre la voce è accesa) che apre il pannello sulla scheda Alfred (non il microfono verso `/alfred`; `/alfred` non è una voce di menu), poi il pavimento di
   roccia; niente titolo della pagina. Fondi e bordi in grigi neutri, senza dominanti calde o fredde. Alfred (il maggiordomo: a voce su
   `/alfred` e per iscritto nel pannello laterale) e Lucius (l'ingegnere del laboratorio: analisi, proposte, chat del piano e delle aree,
   nei prompt di `architect/prompts.ts`, `plan-chat/context.ts` e, per i due personaggi nel pannello, `lib/characters/instructions.ts`)
@@ -1480,7 +1482,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   (`running` se la run dell'ultimo messaggio è aperta), token e costo sommati sulle run (null se una run con token non ha prezzo) e `progress` dagli ultimi 8 `run_steps`
   (`describeRunStep`: «Pensa», «Consulta <tool>», «Mette in coda <tool>», «Prepara una proposta»; mai argomenti; `startedAt` = creazione della run).
 - **Accesso**: sessione o token personale con gli ambiti per metodo; i token d'ambito `agent` o `runs` e il pannello incorporato (`via: "embed"`) ricevono 403.
-- **Console**: pulsante AI (`WandSparkles`) a sinistra di quello di Alfred nella caverna, apre il pannello sulla scheda «Barbara» (`tabOrder("console")`: le app ospiti
+- **Console**: pulsante con il segno di Barbara (`BarbaraMark`, chiave) a sinistra di quello di Alfred nella caverna, apre il pannello sulla scheda «Barbara» (`tabOrder("console")`: le app ospiti
   restano a quattro schede, che ora vanno a capo invece di troncarsi). `CharacterChat` con `useLeadChatAdapter`: personaggio `responsabile`, «Nuova» senza dialogo del modello
   (`createWithoutDialog`), messaggi fino a 4 000 caratteri (`maxChars`), modello dell'agente mostrato ma non modificabile, sotto ogni risposta le voci in coda con il LED (clic → scheda «Da confermare») e «Apri la run #n».
   Barbara non disponibile: motivo e «Apri l'agente di Barbara».

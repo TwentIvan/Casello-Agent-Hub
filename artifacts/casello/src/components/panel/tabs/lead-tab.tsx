@@ -3,6 +3,7 @@
 import { getGetLeadChatQueryKey, useGetLeadChat } from "@workspace/api-client-react";
 import { useLocation } from "wouter";
 import { Led } from "@/components/brand/led";
+import { BarbaraMark } from "@/components/brand/marks";
 import { CharacterChat } from "@/components/characters/character-chat";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,6 +29,7 @@ export function LeadTab() {
   if (!a.available) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
+        <BarbaraMark size={24} />
         <Led state="idle" label={a.reason ?? "Barbara non è disponibile"} />
         {a.agentId != null && (
           <Button asChild variant="secondary">

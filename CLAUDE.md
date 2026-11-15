@@ -995,6 +995,13 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   chiude con il messaggio del riavvio i turni `running` con `updated_at` più vecchio di 5 minuti (`STALE_TURN_MS`) che non girano in questo
   processo, con le stesse `failInterrupted*` dell'avvio (filtro `olderThan`/`exclude`).
 - Ferma, Invia subito e Accoda valgono anche qui (`/api/plan-conversations/:id/stop|queued`, `mode` su `…/messages`): vedi "Ferma, Invia subito, Accoda".
+- **Implementa** (`components/plan/implement-plan-dialog.tsx`, logica pura in `src/lib/implement-plan.ts`; solo route esistenti, nessuna migrazione): il pulsante «Implementa» della pagina
+  del piano (attivo con almeno una voce approvata dei capitoli endpoint, completion ed evolution) apre un dialogo che sceglie la squadra, una delle squadre dell'App non chiuse
+  (`GET /api/team-instances?appId=…`, prima le attive) o una nuova da un modello (`POST /api/team-instances` con `ref` `{type: "piano", id: <id dell'App>, title: "Piano di <app>"}`), e
+  facoltativamente le voci approvate (nessuna = tutto il piano). Alla conferma: squadra in bozza → `POST …/activate` (con i ruoli `node` il dialogo mostra i problemi di «Pronta a
+  lavorare» e il pulsante diventa «Attiva comunque e implementa»; una squadra nuova con problemi resta in bozza, selezionata nel dialogo), poi sempre `POST …/messages` con il testo
+  di `implementMessage` (implementare il piano con `leggi_piano_app`, un compito per voce con `issue`, ordine delle dipendenze; le voci scelte con id e issue, entro i 4 000 caratteri) e
+  infine si apre la scheda della squadra. Il messaggio dopo l'attivazione si accoda al turno `activation` se è ancora in coda.
 - La rianalisi dell'architetto riceve le voci da chat approvate (e quelle con un'issue) come "già pianificate" (fasi
   completion ed evolution; la fase catalog solo quelle `endpoint`) e non le ripropone. Nel piano restano anche le voci
   da chat approvate delle analisi precedenti.

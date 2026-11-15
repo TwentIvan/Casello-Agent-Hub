@@ -46,7 +46,7 @@ export default function AppPlanPage() {
           </div>
           <div className="grid gap-8 lg:grid-cols-2">
             <section aria-label="Piano" className="min-w-0">
-              <PlanList appId={appId} />
+              <PlanList appId={appId} appName={app.data.name} />
             </section>
             <section aria-label="Conversazioni" className="min-w-0">
               <CharacterChat target={{ kind: "plan", appId }} layout="page" />

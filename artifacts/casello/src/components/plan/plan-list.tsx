@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { CircleDot, FileDown } from "lucide-react";
+import { CircleDot, FileDown, Play } from "lucide-react";
 import { getGetAppPlanQueryKey, useGetAppPlan, type AnalysisChapter } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -12,6 +12,8 @@ import {
   dependencyOrder,
 } from "@/components/analysis/payload";
 import { CreateIssuesDialog } from "@/components/plan/create-issues-dialog";
+import { ImplementPlanDialog } from "@/components/plan/implement-plan-dialog";
+import { implementableItems } from "@/lib/implement-plan";
 import { IssuesSummary } from "@/components/plan/issues-summary";
 import { MAX_ISSUES_PER_REQUEST, useIssueSelection } from "@/components/plan/use-issue-selection";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,10 +23,11 @@ const PLAN_CHAPTERS: AnalysisChapter[] = ["endpoint", "completion", "evolution"]
 const EMPTY: never[] = [];
 
 /** Il piano dell'app: endpoint mancanti, completamento ed evoluzione, con le voci nate in chat. */
-export function PlanList({ appId }: { appId: number }) {
+export function PlanList({ appId, appName }: { appId: number; appName: string }) {
   const plan = useGetAppPlan(appId, { query: { queryKey: getGetAppPlanQueryKey(appId) } });
   const [exportOpen, setExportOpen] = useState(false);
   const [issuesOpen, setIssuesOpen] = useState(false);
+  const [implementOpen, setImplementOpen] = useState(false);
   const selection = useIssueSelection(plan.data?.items ?? EMPTY);
 
   const sections = useMemo(() => {
@@ -56,6 +59,7 @@ export function PlanList({ appId }: { appId: number }) {
 
   const issues = plan.data.issues;
   const selectedCount = selection.selectedIds.length;
+  const implementable = implementableItems(plan.data.items).length;
 
   return (
     <div className="space-y-6">
@@ -69,6 +73,16 @@ export function PlanList({ appId }: { appId: number }) {
           )}
           <Button
             size="sm"
+            disabled={implementable === 0}
+            title={implementable === 0 ? "Nessuna voce approvata da implementare" : undefined}
+            onClick={() => setImplementOpen(true)}
+          >
+            <Play />
+            Implementa
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
             disabled={!issues.available || selectedCount === 0 || selectedCount > MAX_ISSUES_PER_REQUEST}
             onClick={() => setIssuesOpen(true)}
           >
@@ -94,6 +108,9 @@ export function PlanList({ appId }: { appId: number }) {
           </p>
         )}
       </div>
+      {implementOpen && (
+        <ImplementPlanDialog appId={appId} appName={appName} items={plan.data.items} open onOpenChange={setImplementOpen} />
+      )}
       <ExportDialog analysisId={plan.data.analysisId} open={exportOpen} onOpenChange={setExportOpen} />
       <CreateIssuesDialog
         appId={appId}

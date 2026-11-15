@@ -7,6 +7,8 @@ import alfredLight from "@design/assets/Alfred/alfred-mark-light.svg";
 import alfredDark from "@design/assets/Alfred/alfred-mark-dark.svg";
 import luciusLight from "@design/assets/Lucius/lucius-mark-light.svg";
 import luciusDark from "@design/assets/Lucius/lucius-mark-dark.svg";
+import barbaraLight from "@design/assets/Barbara/barbara-mark-light.svg";
+import barbaraDark from "@design/assets/Barbara/barbara-mark-dark.svg";
 
 // Logo e segni di Botcave: si usano solo i file di design/assets, mai ricomposti. Ogni elemento esiste in versione
 // chiara e scura; si mostra quella del tema corrente con le classi theme-light-only / theme-dark-only (index.css).
@@ -44,10 +46,12 @@ export function BotcaveMark({ className }: { className?: string }) {
 }
 
 /*
- * Alfred e Lucius si mostrano con i pixel della stessa grandezza: il papillon ha 5 righe (39 unità), gli occhiali 4
- * (31 unità). Le altezze sono quindi in proporzione 39 : 31; `size` è l'altezza del papillon in px.
+ * Alfred, Lucius e Barbara si mostrano con i pixel della stessa grandezza: il papillon ha 5 righe (39 unità), gli
+ * occhiali 4 (31 unità), la chiave 3 (23 unità). Le altezze sono quindi in proporzione 39 : 31 : 23; `size` è l'altezza
+ * del papillon in px.
  */
 const LUCIUS_RATIO = 31 / 39;
+const BARBARA_RATIO = 23 / 39;
 
 /** Segno di Alfred (papillon), il maggiordomo: Quartier generale e voce. */
 export function AlfredMark({
@@ -84,6 +88,30 @@ export function LuciusMark({
       tone={tone}
       className={cn("w-auto", className)}
       height={size * LUCIUS_RATIO}
+    />
+  );
+}
+
+/** Segno di Barbara (chiave), la Responsabile di Botcave: chat dalla caverna e dal pannello. */
+export function BarbaraMark({
+  size = 15,
+  alt = "",
+  tone,
+  className,
+}: {
+  size?: number;
+  alt?: string;
+  tone?: "light" | "dark";
+  className?: string;
+}) {
+  return (
+    <Themed
+      light={barbaraLight}
+      dark={barbaraDark}
+      alt={alt}
+      tone={tone}
+      className={cn("w-auto", className)}
+      height={size * BARBARA_RATIO}
     />
   );
 }

@@ -57,6 +57,8 @@ Usare sempre i file: non ricomporre il logo con testo e quadrati. I percorsi son
 | Alfred su scuro | `assets/Alfred/alfred-mark-dark.svg` |
 | Lucius su chiaro | `assets/Lucius/lucius-mark-light.svg` |
 | Lucius su scuro | `assets/Lucius/lucius-mark-dark.svg` |
+| Barbara su chiaro | `assets/Barbara/barbara-mark-light.svg` |
+| Barbara su scuro | `assets/Barbara/barbara-mark-dark.svg` |
 
 **Il segno.** Griglia di 5 colonne × 4 righe, cella 8 unità, pixel 7 × 7, spazio 1. Legenda: R = roccia (`mark-rock`), P = pipistrello (`mark-bat`), O = occhio (`ambra`), · = vuoto.
 
@@ -171,7 +173,21 @@ I · · I · · · I · · I
 - Da evitare: «Ho fatto un sacco di miglioramenti fantastici al codice!»
 - Da evitare: «Ho già attivato i nuovi agenti.» Lucius propone, non attiva.
 
-**Due personaggi, una famiglia.** Papillon e occhiali usano la stessa griglia, lo stesso inchiostro e un solo pixel ambra ciascuno. Si mostrano sempre con i pixel della stessa grandezza: il papillon (5 righe) è quindi alto 5/4 degli occhiali (4 righe). Nell'interfaccia stanno sullo stesso allineamento e non si affiancano al logo come se fossero marchi a sé.
+## Barbara
+
+Barbara è la Responsabile di Botcave: conosce squadre, agenti, run, skill e la coda, risponde da ogni pagina della console e propone le scritture, che finiscono in «Da confermare». Come Lucius propone e non decide al posto dell'utente.
+
+Il suo segno è una chiave in pixel, con l'anello ambra: chi ha le chiavi di casa. Si usa come icona di Barbara, nel pulsante per parlarle (nella barra della caverna, accanto a quello di Alfred) e nella sua chat, mai al posto del logo Botcave. File nel gruppo Barbara degli asset.
+
+**Il segno, in griglia.** 9 colonne × 3 righe, stessa cella del logo. I = inchiostro, O = LED ambra.
+
+```
+I I I · · · · · ·
+I O I I I I I I I
+I I I · · · I · I
+```
+
+**Tre personaggi, una famiglia.** Papillon, occhiali e chiave usano la stessa griglia, lo stesso inchiostro e un solo pixel ambra ciascuno. Si mostrano sempre con i pixel della stessa grandezza: le altezze stanno come le righe, 5 per il papillon, 4 per gli occhiali, 3 per la chiave. Nell'interfaccia stanno sullo stesso allineamento e non si affiancano al logo come se fossero marchi a sé. Nella barra della caverna, buia in entrambi i temi, si usa sempre la versione scura.
 
 ## Tono di voce dell'interfaccia
 

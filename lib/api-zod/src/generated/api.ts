@@ -2044,7 +2044,7 @@ export const ListRunsQueryParams = zod.object({
 export const ListRunsResponseItem = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.'),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client: la run aspetta l\'esito di un\'azione ui dal client (`clientAction`, vedi POST \/runs\/{id}\/client-result). All\'avvio del server le run in attesa diventano failed; quelle rimaste nella vecchia pausa per conferma (senza azione) diventano cancelled.'),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
@@ -2058,7 +2058,15 @@ export const ListRunsResponseItem = zod.object({
   "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
   "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})'),
   "triggerId": zod.number().nullish().describe('Innesco che ha avviato la run (null se avviata a mano o innesco eliminato)'),
-  "triggerName": zod.string().nullish().describe('Nome dell\'innesco che ha avviato la run')
+  "triggerName": zod.string().nullish().describe('Nome dell\'innesco che ha avviato la run'),
+  "clientTools": zod.boolean().optional().describe('La run è stata avviata da un client che esegue i tool ui dell\'app'),
+  "clientAction": zod.union([zod.object({
+  "id": zod.string().describe('Id dell\'azione, da rimandare in POST \/runs\/{id}\/client-result'),
+  "tool": zod.string().describe('Nome del tool ui chiamato dal modello'),
+  "action": zod.string().describe('Azione della definizione del tool (es. navigate)'),
+  "args": zod.record(zod.string(), zod.unknown()).describe('Argomenti del modello più quelli fissi della definizione (che vincono)'),
+  "requestedAt": zod.coerce.date()
+}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null')
 })
 export const ListRunsResponse = zod.array(ListRunsResponseItem)
 
@@ -2076,13 +2084,14 @@ export const TriggerRunHeader = zod.object({
 })
 
 export const TriggerRunBody = zod.object({
-  "input": zod.string().optional().describe('Input testuale da passare all\'agente')
+  "input": zod.string().optional().describe('Input testuale da passare all\'agente'),
+  "clientTools": zod.boolean().optional().describe('Il chiamante esegue i tool ui dell\'app (default false): la run li offre al modello (salvo quelli che andrebbero in «Da confermare») e, quando ne chiama uno, aspetta l\'esito con awaiting_client (vedi POST \/runs\/{id}\/client-result)')
 })
 
 export const TriggerRunResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.'),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client: la run aspetta l\'esito di un\'azione ui dal client (`clientAction`, vedi POST \/runs\/{id}\/client-result). All\'avvio del server le run in attesa diventano failed; quelle rimaste nella vecchia pausa per conferma (senza azione) diventano cancelled.'),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
@@ -2096,7 +2105,15 @@ export const TriggerRunResponse = zod.object({
   "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
   "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})'),
   "triggerId": zod.number().nullish().describe('Innesco che ha avviato la run (null se avviata a mano o innesco eliminato)'),
-  "triggerName": zod.string().nullish().describe('Nome dell\'innesco che ha avviato la run')
+  "triggerName": zod.string().nullish().describe('Nome dell\'innesco che ha avviato la run'),
+  "clientTools": zod.boolean().optional().describe('La run è stata avviata da un client che esegue i tool ui dell\'app'),
+  "clientAction": zod.union([zod.object({
+  "id": zod.string().describe('Id dell\'azione, da rimandare in POST \/runs\/{id}\/client-result'),
+  "tool": zod.string().describe('Nome del tool ui chiamato dal modello'),
+  "action": zod.string().describe('Azione della definizione del tool (es. navigate)'),
+  "args": zod.record(zod.string(), zod.unknown()).describe('Argomenti del modello più quelli fissi della definizione (che vincono)'),
+  "requestedAt": zod.coerce.date()
+}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null')
 })
 
 
@@ -2110,7 +2127,7 @@ export const GetRunParams = zod.object({
 export const GetRunResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.'),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client: la run aspetta l\'esito di un\'azione ui dal client (`clientAction`, vedi POST \/runs\/{id}\/client-result). All\'avvio del server le run in attesa diventano failed; quelle rimaste nella vecchia pausa per conferma (senza azione) diventano cancelled.'),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
@@ -2124,7 +2141,15 @@ export const GetRunResponse = zod.object({
   "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
   "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})'),
   "triggerId": zod.number().nullish().describe('Innesco che ha avviato la run (null se avviata a mano o innesco eliminato)'),
-  "triggerName": zod.string().nullish().describe('Nome dell\'innesco che ha avviato la run')
+  "triggerName": zod.string().nullish().describe('Nome dell\'innesco che ha avviato la run'),
+  "clientTools": zod.boolean().optional().describe('La run è stata avviata da un client che esegue i tool ui dell\'app'),
+  "clientAction": zod.union([zod.object({
+  "id": zod.string().describe('Id dell\'azione, da rimandare in POST \/runs\/{id}\/client-result'),
+  "tool": zod.string().describe('Nome del tool ui chiamato dal modello'),
+  "action": zod.string().describe('Azione della definizione del tool (es. navigate)'),
+  "args": zod.record(zod.string(), zod.unknown()).describe('Argomenti del modello più quelli fissi della definizione (che vincono)'),
+  "requestedAt": zod.coerce.date()
+}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null')
 })
 
 
@@ -2153,7 +2178,7 @@ export const ListRunStepsResponse = zod.array(ListRunStepsResponseItem)
 
 
 /**
- * Porta a cancelled una run pending o running, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
+ * Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
  * @summary Annulla un'esecuzione non ancora conclusa
  */
 export const CancelRunParams = zod.object({
@@ -2163,7 +2188,7 @@ export const CancelRunParams = zod.object({
 export const CancelRunResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.'),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client: la run aspetta l\'esito di un\'azione ui dal client (`clientAction`, vedi POST \/runs\/{id}\/client-result). All\'avvio del server le run in attesa diventano failed; quelle rimaste nella vecchia pausa per conferma (senza azione) diventano cancelled.'),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
@@ -2177,8 +2202,39 @@ export const CancelRunResponse = zod.object({
   "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
   "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})'),
   "triggerId": zod.number().nullish().describe('Innesco che ha avviato la run (null se avviata a mano o innesco eliminato)'),
-  "triggerName": zod.string().nullish().describe('Nome dell\'innesco che ha avviato la run')
+  "triggerName": zod.string().nullish().describe('Nome dell\'innesco che ha avviato la run'),
+  "clientTools": zod.boolean().optional().describe('La run è stata avviata da un client che esegue i tool ui dell\'app'),
+  "clientAction": zod.union([zod.object({
+  "id": zod.string().describe('Id dell\'azione, da rimandare in POST \/runs\/{id}\/client-result'),
+  "tool": zod.string().describe('Nome del tool ui chiamato dal modello'),
+  "action": zod.string().describe('Azione della definizione del tool (es. navigate)'),
+  "args": zod.record(zod.string(), zod.unknown()).describe('Argomenti del modello più quelli fissi della definizione (che vincono)'),
+  "requestedAt": zod.coerce.date()
+}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null')
 })
+
+
+/**
+ * Protocollo dei tool ui per le app integrate: una run avviata con `clientTools: true` può chiamare i tool `ui` dell'app; allora passa a awaiting_client e GET /runs/{id} riporta `clientAction` (id, tool, azione, argomenti). Il client esegue l'azione nella sua interfaccia e manda qui l'esito con lo stesso `actionId`: la run torna running e il modello riceve l'esito come risultato del tool (dati, non istruzioni). Un esito si accetta una volta sola; senza esito entro 120 s il modello riceve «il client non ha mandato l'esito…» e la run prosegue. Valido anche con un token d'ambito `runs`.
+ * @summary Manda l'esito di un'azione ui eseguita dal client
+ */
+export const SubmitRunClientResultParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const submitRunClientResultBodyActionIdMax = 100;
+
+export const submitRunClientResultBodyResultMax = 20000;
+
+
+
+export const SubmitRunClientResultBody = zod.object({
+  "actionId": zod.string().min(1).max(submitRunClientResultBodyActionIdMax),
+  "ok": zod.boolean().describe('true se il client ha eseguito l\'azione, false se non ha potuto (result = motivo)'),
+  "result": zod.string().max(submitRunClientResultBodyResultMax).nullish().describe('Esito in testo per il modello (al più 20 000 caratteri)')
+})
+
+export const SubmitRunClientResultResponse = zod.void()
 
 
 /**
@@ -2607,7 +2663,7 @@ export const ListTriggerRunsParams = zod.object({
 export const ListTriggerRunsResponseItem = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.'),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client: la run aspetta l\'esito di un\'azione ui dal client (`clientAction`, vedi POST \/runs\/{id}\/client-result). All\'avvio del server le run in attesa diventano failed; quelle rimaste nella vecchia pausa per conferma (senza azione) diventano cancelled.'),
   "input": zod.string().nullish().describe('Input testuale passato all\'agente'),
   "output": zod.string().nullish().describe('Output prodotto dall\'agente'),
   "errorMessage": zod.string().nullish(),
@@ -2621,7 +2677,15 @@ export const ListTriggerRunsResponseItem = zod.object({
   "parentRunId": zod.number().nullish().describe('Run che ha segnalato al Responsabile di prodotto e da cui è nata questa run'),
   "childRunIds": zod.array(zod.number()).optional().describe('Run del Responsabile di prodotto nate da una segnalazione di questa run, in ordine di id (solo nel dettaglio, GET \/runs\/{id})'),
   "triggerId": zod.number().nullish().describe('Innesco che ha avviato la run (null se avviata a mano o innesco eliminato)'),
-  "triggerName": zod.string().nullish().describe('Nome dell\'innesco che ha avviato la run')
+  "triggerName": zod.string().nullish().describe('Nome dell\'innesco che ha avviato la run'),
+  "clientTools": zod.boolean().optional().describe('La run è stata avviata da un client che esegue i tool ui dell\'app'),
+  "clientAction": zod.union([zod.object({
+  "id": zod.string().describe('Id dell\'azione, da rimandare in POST \/runs\/{id}\/client-result'),
+  "tool": zod.string().describe('Nome del tool ui chiamato dal modello'),
+  "action": zod.string().describe('Azione della definizione del tool (es. navigate)'),
+  "args": zod.record(zod.string(), zod.unknown()).describe('Argomenti del modello più quelli fissi della definizione (che vincono)'),
+  "requestedAt": zod.coerce.date()
+}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null')
 })
 export const ListTriggerRunsResponse = zod.array(ListTriggerRunsResponseItem)
 
@@ -3076,7 +3140,7 @@ export const GetBudgetResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
   "agentName": zod.string(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.')
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client: la run aspetta l\'esito di un\'azione ui dal client (`clientAction`, vedi POST \/runs\/{id}\/client-result). All\'avvio del server le run in attesa diventano failed; quelle rimaste nella vecchia pausa per conferma (senza azione) diventano cancelled.')
 })).describe('Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell\'utente, del loro agente, del loro modello o del suo account)')
 })
 
@@ -3128,7 +3192,7 @@ export const UpdateBudgetResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
   "agentName": zod.string(),
-  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all\'avvio le run ancora in pausa diventano cancelled.')
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'awaiting_client', 'cancelled']).describe('awaiting_client: la run aspetta l\'esito di un\'azione ui dal client (`clientAction`, vedi POST \/runs\/{id}\/client-result). All\'avvio del server le run in attesa diventano failed; quelle rimaste nella vecchia pausa per conferma (senza azione) diventano cancelled.')
 })).describe('Run pending, running o awaiting_client che spendono su un tetto già raggiunto (dell\'utente, del loro agente, del loro modello o del suo account)')
 })
 

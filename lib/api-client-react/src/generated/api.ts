@@ -175,6 +175,7 @@ import type {
   QueuedActionList,
   RejectActionRequest,
   Run,
+  RunClientResult,
   RunStep,
   RunTrigger,
   StartZipAnalysisParams,
@@ -5655,7 +5656,7 @@ export const getCancelRunUrl = (id: number,) => {
 }
 
 /**
- * Porta a cancelled una run pending o running, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
+ * Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
  * @summary Annulla un'esecuzione non ancora conclusa
  */
 export const cancelRun = async (id: number, options?: RequestInit): Promise<Run> => {
@@ -5715,6 +5716,78 @@ export const useCancelRun = <TError = ErrorType<NotFoundResponse | ConflictRespo
         TContext
       > => {
       return useMutation(getCancelRunMutationOptions(options));
+    }
+
+export const getSubmitRunClientResultUrl = (id: number,) => {
+
+
+
+
+  return `/api/runs/${id}/client-result`
+}
+
+/**
+ * Protocollo dei tool ui per le app integrate: una run avviata con `clientTools: true` può chiamare i tool `ui` dell'app; allora passa a awaiting_client e GET /runs/{id} riporta `clientAction` (id, tool, azione, argomenti). Il client esegue l'azione nella sua interfaccia e manda qui l'esito con lo stesso `actionId`: la run torna running e il modello riceve l'esito come risultato del tool (dati, non istruzioni). Un esito si accetta una volta sola; senza esito entro 120 s il modello riceve «il client non ha mandato l'esito…» e la run prosegue. Valido anche con un token d'ambito `runs`.
+ * @summary Manda l'esito di un'azione ui eseguita dal client
+ */
+export const submitRunClientResult = async (id: number,
+    runClientResult: RunClientResult, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getSubmitRunClientResultUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(runClientResult)
+  }
+);}
+
+
+
+
+export const getSubmitRunClientResultMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitRunClientResult>>, TError,{id: number;data: BodyType<RunClientResult>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitRunClientResult>>, TError,{id: number;data: BodyType<RunClientResult>}, TContext> => {
+
+const mutationKey = ['submitRunClientResult'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitRunClientResult>>, {id: number;data: BodyType<RunClientResult>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  submitRunClientResult(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitRunClientResultMutationResult = NonNullable<Awaited<ReturnType<typeof submitRunClientResult>>>
+    export type SubmitRunClientResultMutationBody = BodyType<RunClientResult>
+    export type SubmitRunClientResultMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>
+
+    /**
+ * @summary Manda l'esito di un'azione ui eseguita dal client
+ */
+export const useSubmitRunClientResult = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitRunClientResult>>, TError,{id: number;data: BodyType<RunClientResult>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitRunClientResult>>,
+        TError,
+        {id: number;data: BodyType<RunClientResult>},
+        TContext
+      > => {
+      return useMutation(getSubmitRunClientResultMutationOptions(options));
     }
 
 export const getListAgentTriggersUrl = (id: number,) => {

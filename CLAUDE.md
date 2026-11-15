@@ -449,7 +449,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `restart`, `request` con testo, `task_finished` con id, `decision` con numero, esito e nota). Al più un turno `queued` e uno
   `running` per squadra (indici unici parziali): un motivo nuovo si accoda al turno `queued` con un'unica INSERT … ON CONFLICT
   (`turn-queue.ts`); presa in carico con UPDATE condizionato `queued` → `running`; finito un turno parte quello accumulato.
-  Limiti: 6 giri, 90 s di tempo attivo, 40 000 token. Il modello è quello del ruolo capo (ruolo `node` → turno `failed`).
+  Limiti (`LEAD_LIMITS`): 10 giri, 240 s di tempo attivo, 150 000 token, risposta di ogni chiamata fino a 8 000 token (`LEAD_COMPLETION_TOKENS`: una proposta di PLAN con molti compiti non si tronca). Il modello è quello del ruolo capo (ruolo `node` → turno `failed`).
   Richieste e note di rifiuto dell'utente arrivano come messaggi `user`, mai nel prompt di sistema; i risultati degli
   strumenti sono dati. Un turno fallito chiude `failed` con l'errore ed emette `bloccato`; `team_instances.last_turn_at`.
   Motivi non consegnati (`carriedReasons`): un turno che fallisce prima del modello (tetto, modello mancante, squadra non

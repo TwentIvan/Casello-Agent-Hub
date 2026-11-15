@@ -24,7 +24,12 @@ import { enqueueTurnReason, notifyTurnQueued } from "./turn-queue";
 // in coda. Ogni turno legge il PLAN e i motivi, usa gli strumenti del capo e si ferma. Esecuzione in background nel
 // processo dell'API: nessun errore esce come promise rifiutata.
 
-export const LEAD_LIMITS: LoopLimits = { maxRounds: 6, maxActiveMs: 90_000, maxTokens: 40_000 };
+// Limiti del turno del capo. Un turno che propone o rivede il PLAN legge il piano dell'app (fino a 100 voci) e scrive
+// una proposta lunga: con un modello che ragiona prima di rispondere una sola chiamata può superare il minuto, quindi
+// il tempo attivo è quello del Responsabile di prodotto con margine (240 s), e la risposta di una chiamata arriva a
+// LEAD_COMPLETION_TOKENS perché `proponi_piano` con molti compiti non venga troncato.
+export const LEAD_LIMITS: LoopLimits = { maxRounds: 10, maxActiveMs: 240_000, maxTokens: 150_000 };
+export const LEAD_COMPLETION_TOKENS = 8000;
 
 export const TURN_MESSAGES = {
   noLead: "la squadra non ha un capo",
@@ -383,6 +388,7 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
       functionTools: roleFunctionTools(roleTools.tools, leadTools),
       caller: "team-turn",
       usage,
+      maxTokens: LEAD_COMPLETION_TOKENS,
       signal,
       logContext: { teamTurnId: turn.id },
     }),

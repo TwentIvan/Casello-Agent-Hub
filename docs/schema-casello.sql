@@ -1354,3 +1354,7 @@ CREATE TABLE IF NOT EXISTS "lead_messages" (
 	CONSTRAINT "lead_messages_run_id_runs_id_fk" FOREIGN KEY ("run_id") REFERENCES "public"."runs"("id") ON DELETE set null ON UPDATE no action
 );
 CREATE INDEX IF NOT EXISTS "lead_messages_conversation_idx" ON "lead_messages" USING btree ("conversation_id", "id");
+
+-- Tool ui eseguiti dal client (docs/migrations/2026-11-tool-ui-client.sql)
+ALTER TABLE "runs" ADD COLUMN IF NOT EXISTS "client_tools" boolean DEFAULT false NOT NULL;
+ALTER TABLE "runs" ADD COLUMN IF NOT EXISTS "client_action" jsonb;

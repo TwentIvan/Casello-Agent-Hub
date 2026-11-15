@@ -30,6 +30,8 @@ import {
   type RunOptions,
 } from "./run-executor";
 import { clearUserToken, getUserToken, setUserToken } from "./user-tokens";
+import { CLIENT_ACTION_MESSAGES, CLIENT_RESULT_HEADER, requestClientAction, submitClientResult } from "./client-actions";
+import { toCatalogTool } from "./tools/catalog";
 import { approveAction } from "./actions/decide";
 import { decryptSecret } from "./secrets";
 import { logger } from "./logger";
@@ -662,6 +664,146 @@ describe("tool composite nelle run", () => {
     ]);
     const [done] = await db.select().from(pendingActionsTable);
     expect(done!.status).toBe("done");
+  });
+});
+
+describe("tool ui eseguiti dal client", () => {
+  const NAVIGATE: Partial<InsertAppTool> = {
+    name: "apri_pagina",
+    description: "Apre una pagina dell'app",
+    kind: "ui",
+    identity: "user",
+    level: "L0",
+    status: "active",
+    paramsSchema: { type: "object", properties: { pagina: { type: "string" } }, required: ["pagina"] },
+    definition: { action: "navigate", args: { target: "main" } },
+  };
+
+  async function addUiTool(tool: Partial<InsertAppTool> = NAVIGATE): Promise<void> {
+    const [a] = await db.select().from(appsTable);
+    await db.insert(appToolsTable).values({ appId: a!.id, ...tool } as InsertAppTool);
+  }
+
+  async function waitForStatus(id: number, status: string, ms = 3_000) {
+    const t0 = Date.now();
+    for (;;) {
+      const run = await getRun(id);
+      if (run.status === status) return run;
+      if (Date.now() - t0 > ms) throw new Error(`stato atteso ${status}, trovato ${run.status}`);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
+  it("senza clientTools il tool ui non è offerto al modello", async () => {
+    const id = await seedRun(GET_ITEM);
+    await addUiTool();
+    llmReplies = [textReply("Fatto")];
+    await startWithToken(id, "t");
+    expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["get_item"]);
+  });
+
+  it("con clientTools: la run va in awaiting_client con l'azione e riprende con l'esito del client", async () => {
+    const id = await seedRun(GET_ITEM);
+    await addUiTool();
+    await pool.query("update runs set client_tools = true where id = $1", [id]);
+    llmReplies = [toolCallReply("apri_pagina", { pagina: "/clienti/7" }), textReply("Pagina aperta")];
+
+    const running = startWithToken(id, "t");
+    const waiting = await waitForStatus(id, "awaiting_client");
+    expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["get_item", "apri_pagina"]);
+    const action = waiting.clientAction!;
+    expect(action).toMatchObject({ tool: "apri_pagina", action: "navigate", args: { pagina: "/clienti/7", target: "main" } });
+    expect(appRequests).toHaveLength(0);
+
+    expect(await submitClientResult(id, { actionId: "altro", ok: true, result: "x" })).toEqual({ kind: "not_waiting" });
+    expect(await submitClientResult(id, { actionId: action.id, ok: true, result: "aperta /clienti/7" })).toEqual({ kind: "ok" });
+    // Una volta sola
+    expect(await submitClientResult(id, { actionId: action.id, ok: true, result: "di nuovo" })).toEqual({ kind: "not_waiting" });
+    await running;
+
+    const run = await getRun(id);
+    expect(run.status).toBe("succeeded");
+    expect(run.output).toBe("Pagina aperta");
+    expect(run.clientAction).toBeNull();
+    expect(llmRequests[1].messages.at(-1).content).toBe(`${CLIENT_RESULT_HEADER}\naperta /clienti/7`);
+    const steps = await getSteps(id);
+    expect(steps.map((s) => [s.type, s.toolName, s.ok])).toEqual([
+      ["model", null, true],
+      ["tool", "apri_pagina", true],
+      ["model", null, true],
+    ]);
+    expect(await submitClientResult(9999, { actionId: action.id, ok: true })).toEqual({ kind: "not_found" });
+  });
+
+  it("esito negativo del client: il modello riceve l'errore e la run prosegue", async () => {
+    const id = await seedRun(GET_ITEM);
+    await addUiTool();
+    await pool.query("update runs set client_tools = true where id = $1", [id]);
+    llmReplies = [toolCallReply("apri_pagina", { pagina: "/x" }), textReply("Non riuscito")];
+    const running = startWithToken(id, "t");
+    const waiting = await waitForStatus(id, "awaiting_client");
+    await submitClientResult(id, { actionId: waiting.clientAction!.id, ok: false, result: "pagina inesistente" });
+    await running;
+    expect((await getRun(id)).status).toBe("succeeded");
+    expect(llmRequests[1].messages.at(-1).content).toBe("Errore dal client: pagina inesistente");
+    expect((await getSteps(id))[1]!.ok).toBe(false);
+  });
+
+  it("annullata durante l'attesa: cancelled, azione tolta, nessun'altra chiamata al modello", async () => {
+    const id = await seedRun(GET_ITEM);
+    await addUiTool();
+    await pool.query("update runs set client_tools = true where id = $1", [id]);
+    llmReplies = [toolCallReply("apri_pagina", { pagina: "/x" }), textReply("non deve arrivare")];
+    const running = startWithToken(id, "t");
+    const waiting = await waitForStatus(id, "awaiting_client");
+
+    expect((await cancelRun(id)).kind).toBe("cancelled");
+    await running;
+    const run = await getRun(id);
+    expect(run.status).toBe("cancelled");
+    expect(run.clientAction).toBeNull();
+    expect(llmRequests).toHaveLength(1);
+    expect(await submitClientResult(id, { actionId: waiting.clientAction!.id, ok: true })).toEqual({ kind: "not_waiting" });
+  });
+
+  it("tempo scaduto: la run torna running e il modello riceve il messaggio fisso", async () => {
+    const id = await seedRun(NAVIGATE);
+    await pool.query("update runs set status = 'running' where id = $1", [id]);
+    const [row] = await db.select().from(appToolsTable).where(eq(appToolsTable.name, "apri_pagina"));
+    const tool = toCatalogTool(row!)!;
+    const result = await requestClientAction({ runId: id, tool, args: { pagina: "/x" }, timeoutMs: 50 });
+    expect(result).toEqual({ ok: false, content: CLIENT_ACTION_MESSAGES.timeout });
+    const run = await getRun(id);
+    expect(run.status).toBe("running");
+    expect(run.clientAction).toBeNull();
+    // Argomenti non validi: nessuna attesa
+    expect((await requestClientAction({ runId: id, tool, args: {} })).content).toMatch(/^argomenti non validi/);
+    expect((await getRun(id)).status).toBe("running");
+  });
+
+  it("un tool ui L2 (o L1 con la conferma delle scritture) non è offerto", async () => {
+    const id = await seedRun(GET_ITEM);
+    await addUiTool({ ...NAVIGATE, name: "invia", level: "L2" });
+    await addUiTool({ ...NAVIGATE, name: "salva_bozza", level: "L1" });
+    await addUiTool();
+    await pool.query("update runs set client_tools = true where id = $1", [id]);
+    llmReplies = [textReply("Fatto")];
+    await startWithToken(id, "t");
+    // Agente general: conferma delle scritture sempre attiva, il L1 diventerebbe L2
+    expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["get_item", "apri_pagina"]);
+  });
+
+  it("failInterruptedRuns: una run in attesa del client fallisce come una in corso", async () => {
+    const id = await seedRun(GET_ITEM);
+    await pool.query(
+      `update runs set status = 'awaiting_client', client_action = '{"id":"a","tool":"t","action":"x","args":{},"requestedAt":"2026-11-15T00:00:00Z"}' where id = $1`,
+      [id],
+    );
+    expect(await failInterruptedRuns()).toEqual({ failed: 1, cancelled: 0, userTokenLost: 0 });
+    const run = await getRun(id);
+    expect(run.status).toBe("failed");
+    expect(run.errorMessage).toBe("Esecuzione interrotta dal riavvio del server.");
+    expect(run.clientAction).toBeNull();
   });
 });
 

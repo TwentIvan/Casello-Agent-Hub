@@ -590,6 +590,23 @@ describe("runAgentLoop", () => {
     expectValidHistory(out.state.messages);
   });
 
+  it("attesa del client per un tool ui: non conta nel tempo attivo del turno", async () => {
+    let clock = 0;
+    const responses = [callTools([{ id: "c1", name: "apri_pagina", args: "{}" }]), reply("fatto")];
+    const chat = vi.fn(async () => {
+      clock += 10_000;
+      return responses.shift()!;
+    });
+    const executeTool = vi.fn(async (): Promise<ToolResult> => {
+      clock += 115_000; // il client risponde dopo quasi due minuti
+      return { ok: true, content: "aperta" };
+    });
+    const { deps } = makeDeps([], { now: () => clock, chat, executeTool });
+    const out = await runAgentLoop(initialState(), deps);
+    expect(out.type).toBe("finished");
+    expect(out.state.activeMs).toBe(20_000);
+  });
+
   it("errore del modello → failed con il messaggio", async () => {
     const { deps, steps } = makeDeps([], {
       chat: async () => {

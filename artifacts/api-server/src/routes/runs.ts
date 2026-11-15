@@ -11,9 +11,12 @@ import {
   ListRunStepsResponse,
   CancelRunParams,
   CancelRunResponse,
+  SubmitRunClientResultParams,
+  SubmitRunClientResultBody,
 } from "@workspace/api-zod";
 import { cancelRateLimit } from "../middlewares/rate-limit";
 import { cancelRun } from "../lib/run-executor";
+import { CLIENT_ACTION_MESSAGES, CLIENT_RESULT_MAX_CHARS, submitClientResult } from "../lib/client-actions";
 import { toPublicRun, toPublicRuns, triggerNamesFor } from "./serializers";
 import { parseRequest } from "../middlewares/error-handler";
 
@@ -88,6 +91,28 @@ router.post("/runs/:id/cancel", cancelRateLimit, async (req, res) => {
   }
   const [publicRun] = await toPublicRuns([result.run]);
   res.json(CancelRunResponse.parse(publicRun));
+});
+
+// Esito di un'azione ui eseguita dal client (protocollo in lib/client-actions.ts): una volta sola, solo per
+// l'azione che la run sta aspettando.
+const ClientResultBody = SubmitRunClientResultBody.extend({
+  actionId: z.string().min(1).max(100),
+  result: z.string().max(CLIENT_RESULT_MAX_CHARS).nullish(),
+});
+
+router.post("/runs/:id/client-result", async (req, res) => {
+  const { id } = parseRequest(SubmitRunClientResultParams, req.params);
+  const body = parseRequest(ClientResultBody, req.body);
+  const outcome = await submitClientResult(id, body);
+  if (outcome.kind === "not_found") {
+    res.status(404).json({ error: CLIENT_ACTION_MESSAGES.runNotFound });
+    return;
+  }
+  if (outcome.kind === "not_waiting") {
+    res.status(409).json({ error: CLIENT_ACTION_MESSAGES.notWaiting });
+    return;
+  }
+  res.status(204).end();
 });
 
 export default router;

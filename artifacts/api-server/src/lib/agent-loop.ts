@@ -110,8 +110,10 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
   const state = cloneState(initial);
   const startedAt = now();
   const baseActiveMs = state.activeMs;
+  // Attesa dei tool `ui` (li esegue il client): non è tempo di lavoro del turno
+  let clientWaitMs = 0;
   const syncActive = (): void => {
-    state.activeMs = baseActiveMs + (now() - startedAt);
+    state.activeMs = baseActiveMs + (now() - startedAt) - clientWaitMs;
   };
 
   const finish = <T extends LoopOutcome>(outcome: T): T => {
@@ -123,6 +125,7 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
   const execute = (p: Extract<PreparedCall, { kind: "ready" }>) => executePrepared(p, deps.executeTool, now);
 
   const record = async (p: Extract<PreparedCall, { kind: "ready" }>, result: ToolResult, durationMs: number) => {
+    if (p.tool.kind === "ui") clientWaitMs += durationMs;
     state.messages.push(toolMessage(p.call.id, result.content));
     await deps.onStep(toolStep(p, result, durationMs));
   };

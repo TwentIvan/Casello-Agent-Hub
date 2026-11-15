@@ -29,21 +29,23 @@ export function toCatalogTool(row: AppTool): CatalogTool | null {
   return { ...row, paramsSchema: schema, definition: parsed.value };
 }
 
-// Tool eseguibili dal server: `http`, `mcp` e `composite` (passi `http`/`mcp` della stessa app). I tool `ui`
-// restano nel catalogo ma non vengono offerti al modello finché non esiste un client che li esegue.
+// Tool eseguibili dal server: `http`, `mcp` e `composite` (passi `http`/`mcp` della stessa app). I tool `ui` li
+// esegue il client che ha avviato la run: si offrono solo alle run avviate con `clientTools` (lib/client-actions.ts).
 const EXECUTABLE_KINDS = ["http", "mcp", "composite"] as const;
+const WITH_UI_KINDS = [...EXECUTABLE_KINDS, "ui"] as const;
 
-function isOffered(t: { kind: string; level: ToolLevel; levelOverride: ToolLevel | null }): boolean {
-  return (EXECUTABLE_KINDS as readonly string[]).includes(t.kind) && effectiveLevel(t) !== "L3";
+function isOffered(t: { kind: string; level: ToolLevel; levelOverride: ToolLevel | null }, kinds: readonly string[]): boolean {
+  return kinds.includes(t.kind) && effectiveLevel(t) !== "L3";
 }
 
 /**
  * Tool disponibili per un agente: l'agente `general` usa tutti i tool `active` della sua app,
  * un agente `area` solo quelli collegati in `agent_tools` e `active`. In entrambi i casi solo
- * i tool `http`, `mcp` e `composite` con livello effettivo diverso da L3 (per i composti: il più alto tra il
- * loro e quello dei passi).
+ * i tool `http`, `mcp` e `composite` (più i `ui` con `includeUi`) con livello effettivo diverso da L3 (per i
+ * composti: il più alto tra il loro e quello dei passi).
  */
-export async function loadAgentTools(agentId: number): Promise<CatalogTool[]> {
+export async function loadAgentTools(agentId: number, opts: { includeUi?: boolean } = {}): Promise<CatalogTool[]> {
+  const kinds: readonly string[] = opts.includeUi ? WITH_UI_KINDS : EXECUTABLE_KINDS;
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId)).limit(1);
   if (!agent) throw new Error(`Agente ${agentId} non trovato`);
 
@@ -56,7 +58,7 @@ export async function loadAgentTools(agentId: number): Promise<CatalogTool[]> {
         and(
           eq(appToolsTable.appId, agent.appId),
           eq(appToolsTable.status, "active"),
-          inArray(appToolsTable.kind, [...EXECUTABLE_KINDS]),
+          inArray(appToolsTable.kind, [...kinds] as AppTool["kind"][]),
         ),
       )
       .orderBy(asc(appToolsTable.id));
@@ -71,15 +73,16 @@ export async function loadAgentTools(agentId: number): Promise<CatalogTool[]> {
           // Difesa: un collegamento verso il tool di un'altra app non conta
           eq(appToolsTable.appId, agent.appId),
           eq(appToolsTable.status, "active"),
-          inArray(appToolsTable.kind, [...EXECUTABLE_KINDS]),
+          inArray(appToolsTable.kind, [...kinds] as AppTool["kind"][]),
         ),
       )
       .orderBy(asc(appToolsTable.id));
     rows = linked.map((r) => r.tool);
   }
-  const catalog = rows.filter(isOffered).map(toCatalogTool).filter((t): t is CatalogTool => t !== null);
+  const offered = (t: CatalogTool | AppTool) => isOffered(t, kinds);
+  const catalog = rows.filter(offered).map(toCatalogTool).filter((t): t is CatalogTool => t !== null);
   // Dopo il collegamento dei passi un composto può essere diventato L3 (un passo vietato): si rifiltra
-  return (await resolveCompositeTools(catalog)).filter(isOffered);
+  return (await resolveCompositeTools(catalog)).filter(offered);
 }
 
 /**
@@ -165,7 +168,8 @@ function withQueueParams(parameters: Record<string, unknown>): Record<string, un
 }
 
 export function toFunctionTools(tools: CatalogTool[]): ChatCompletionTool[] {
-  return tools.filter(isOffered).map((t) => {
+  // I tool `ui` arrivano qui solo se chi li ha caricati li ha chiesti (run con un client che li esegue)
+  return tools.filter((t) => isOffered(t, WITH_UI_KINDS)).map((t) => {
     const parameters = stripExtensions(t.paramsSchema) as Record<string, unknown>;
     return {
       type: "function" as const,

@@ -1,7 +1,7 @@
 import type { Run, RunStatus } from "@workspace/api-client-react";
 
-// awaiting_client resta solo nelle run storiche (all'avvio dell'API diventano cancelled): non è uno stato attivo
-export const ACTIVE_RUN_STATUSES: RunStatus[] = ["pending", "running"];
+// awaiting_client: la run aspetta l'esito di un tool ui dal client, è ancora attiva (si segue e si annulla)
+export const ACTIVE_RUN_STATUSES: RunStatus[] = ["pending", "running", "awaiting_client"];
 
 export function isRunActive(run: Pick<Run, "status">): boolean {
   return ACTIVE_RUN_STATUSES.includes(run.status);

@@ -15,6 +15,7 @@ import {
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { ChatCompletionFunctionTool, ChatCompletionTool } from "openai/resources/chat/completions";
 import { enqueueAction } from "./actions/queue";
+import { requestClientAction } from "./client-actions";
 import { PROPOSE_TOOL_NAME, handlePropose, proposalEligible, proposeTool } from "./actions/propose";
 import { dispatchAgentCall } from "./agent-dispatch";
 import {
@@ -116,15 +117,15 @@ export type CancelRunResult =
   | { kind: "concluded" };
 
 /**
- * Annulla una run `pending` o `running`: UPDATE condizionato (una run già conclusa
+ * Annulla una run `pending`, `running` o `awaiting_client` (in attesa del client): UPDATE condizionato (una run già conclusa
  * non cambia), poi interrompe le chiamate in volo. Durata, token e costo già registrati restano.
  * Il ciclo in corso non scrive più lo stato: tutte le sue scritture finali sono condizionate a `running`.
  */
 export async function cancelRun(runId: number): Promise<CancelRunResult> {
   const [run] = await db
     .update(runsTable)
-    .set({ status: "cancelled", errorMessage: RUN_CANCELLED_MESSAGE, finishedAt: new Date() })
-    .where(and(eq(runsTable.id, runId), inArray(runsTable.status, ["pending", "running"])))
+    .set({ status: "cancelled", errorMessage: RUN_CANCELLED_MESSAGE, finishedAt: new Date(), clientAction: null })
+    .where(and(eq(runsTable.id, runId), inArray(runsTable.status, ["pending", "running", "awaiting_client"])))
     .returning();
   if (!run) {
     const [existing] = await db.select({ id: runsTable.id }).from(runsTable).where(eq(runsTable.id, runId)).limit(1);
@@ -224,8 +225,15 @@ async function loadContext(run: Run): Promise<RunContext & { app: App }> {
   if (!agent) throw new Error(`agente ${run.agentId} non trovato`);
   const [app] = await db.select().from(appsTable).where(eq(appsTable.id, agent.appId)).limit(1);
   if (!app) throw new Error(`app ${agent.appId} non trovata`);
-  const [loaded, conn] = await Promise.all([loadAgentTools(agent.id), loadAppConnection(app.id)]);
-  let tools = writesNeedConfirmation(agent) ? withConfirmedWrites(loaded) : loaded;
+  const [loaded, conn] = await Promise.all([
+    loadAgentTools(agent.id, { includeUi: run.clientTools }),
+    loadAppConnection(app.id),
+  ]);
+  // I tool `ui` (solo con un client che li esegue) non passano dalla coda delle conferme: quelli che vi
+  // finirebbero (L2, anche per la conferma delle scritture) non si offrono
+  let tools = (writesNeedConfirmation(agent) ? withConfirmedWrites(loaded) : loaded).filter(
+    (t) => t.kind !== "ui" || effectiveLevel(t) !== "L2",
+  );
   // La segnalazione al Responsabile si aggiunge dopo withConfirmedWrites: è interna e non va mai in coda.
   // Solo agli agenti di area, solo nelle run senza madre (un livello), e vince su un tool dell'app omonimo.
   if (agent.role === "area" && run.parentRunId === null && (await productLead(app.id)) !== null) {
@@ -404,6 +412,7 @@ function runToolDeps(
   return {
     tools: ctx.tools,
     executeTool: (tool, args) => {
+      if (tool.kind === "ui") return requestClientAction({ runId, tool, args, signal: abort });
       if (!isInternalTool(tool)) return runTool(ctx, tool, args, abort);
       if (tool.name === PROPOSE_TOOL_NAME) {
         return handlePropose(
@@ -768,7 +777,8 @@ async function modelOwner(aiModelId: number): Promise<number | null> {
  * finiranno mai. All'avvio si chiudono come fallite, così la UI non le mostra "in corso" per sempre.
  * Le run in attesa restano in coda e le riprende lo scheduler (run-queue.ts), tranne quelle partite con un
  * token utente: il token viveva solo in memoria, quindi falliscono con USER_TOKEN_LOST.
- * Le run rimaste in pausa per conferma (meccanismo dismesso) si chiudono come annullate. Le colonne
+ * Le run in attesa del client (tool `ui`, `client_action` presente) falliscono come quelle in corso; quelle rimaste
+ * nella vecchia pausa per conferma (meccanismo dismesso, senza `client_action`) si chiudono come annullate. Le colonne
  * storiche della pausa non esistono più (le toglie `2026-11-strumenti-mcp-post.sql`): qui non si toccano.
  */
 export async function failInterruptedRuns(): Promise<{ failed: number; cancelled: number; userTokenLost: number }> {
@@ -776,6 +786,13 @@ export async function failInterruptedRuns(): Promise<{ failed: number; cancelled
     update runs
        set status = 'failed', error_message = ${"Esecuzione interrotta dal riavvio del server."}, finished_at = now()
      where status = 'running'
+    returning id`);
+  // In attesa del client (tool `ui`): il ciclo viveva nel processo fermato, la run non può riprendere
+  const clientWait = await db.execute(sql`
+    update runs
+       set status = 'failed', error_message = ${"Esecuzione interrotta dal riavvio del server."}, finished_at = now(),
+           client_action = null
+     where status = 'awaiting_client' and client_action is not null
     returning id`);
   const userTokenLost = await db.execute(sql`
     update runs
@@ -787,5 +804,5 @@ export async function failInterruptedRuns(): Promise<{ failed: number; cancelled
        set status = 'cancelled', error_message = ${PAUSE_REPLACED_MESSAGE}, finished_at = now()
      where status = 'awaiting_client'
     returning id`);
-  return { failed: failed.rows.length, cancelled: cancelled.rows.length, userTokenLost: userTokenLost.rows.length };
+  return { failed: failed.rows.length + clientWait.rows.length, cancelled: cancelled.rows.length, userTokenLost: userTokenLost.rows.length };
 }

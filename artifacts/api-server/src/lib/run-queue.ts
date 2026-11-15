@@ -37,6 +37,8 @@ export async function createQueuedRun(input: {
   parentRunId?: number | null;
   userToken?: string;
   triggerId?: number | null;
+  /** Il chiamante esegue i tool `ui` dell'app (lib/client-actions.ts) */
+  clientTools?: boolean;
   tx?: DbTransaction;
 }): Promise<CreateQueuedRunResult> {
   const { agent, userToken } = input;
@@ -57,6 +59,7 @@ export async function createQueuedRun(input: {
       parentRunId: input.parentRunId ?? null,
       triggerId: input.triggerId ?? null,
       hasUserToken: Boolean(userToken),
+      clientTools: input.clientTools ?? false,
     })
     .returning();
   if (userToken) setUserToken(run!.id, userToken);

@@ -32,7 +32,7 @@ async function seed() {
       { appId: app!.id, name: "mcp_f", kind: "mcp", status: "active", level: "L1", definition: { mcpName: "cerca" } },
       // Definizione non più valida: va saltata
       { appId: app!.id, name: "broken_d", kind: "http", status: "active", definition: { method: "GET" } },
-      // Nessun client esegue i tool ui: non vanno offerti al modello
+      // I tool ui li esegue il client: offerti solo con `includeUi` (run avviate con clientTools)
       { appId: app!.id, name: "open_page", kind: "ui", status: "active", definition: { action: "navigate" } },
       {
         appId: app!.id,
@@ -68,6 +68,14 @@ describe("catalogo dei tool", () => {
     const tools = await loadAgentTools(general.id);
     expect(tools.map((t) => t.name).sort()).toEqual(["combo", "list_a", "list_b", "mcp_f"]);
     expect(tools[0]!.definition).toMatchObject({ method: "GET", path: "/items" });
+  });
+
+  it("con includeUi si aggiungono i tool ui active (general e area collegati)", async () => {
+    const { general, area } = await seed();
+    expect((await loadAgentTools(general.id, { includeUi: true })).map((t) => t.name).sort()).toEqual([
+      "combo", "list_a", "list_b", "mcp_f", "open_page",
+    ]);
+    expect((await loadAgentTools(area.id, { includeUi: true })).map((t) => t.name)).toEqual(["list_b", "open_page", "combo"]);
   });
 
   it("l'agente area vede solo i tool collegati e active", async () => {
@@ -165,11 +173,14 @@ describe("toFunctionTools", () => {
     ]);
   });
 
-  it("non offre al modello i tool ui; i composite sì", () => {
+  it("presenta i tool ui e composite ricevuti (li filtra chi carica i tool), mai i L3", () => {
     const http = tool({ type: "object", properties: {} });
     const ui = { ...http, name: "apri", kind: "ui" as const, definition: { action: "navigate" } };
     const composite = { ...http, name: "combo", kind: "composite" as const, definition: { steps: [], output: {} } };
-    expect(toFunctionTools([http, ui, composite]).map((t) => (t.type === "function" ? t.function.name : t.type))).toEqual(["login", "combo"]);
+    const blocked = { ...http, name: "vietato", levelOverride: "L3" as const };
+    expect(
+      toFunctionTools([http, ui, composite, blocked]).map((t) => (t.type === "function" ? t.function.name : t.type)),
+    ).toEqual(["login", "apri", "combo"]);
   });
 
   it("strumento L2: aggiunge destinatario e sintesi obbligatori, senza toccare lo schema salvato", () => {

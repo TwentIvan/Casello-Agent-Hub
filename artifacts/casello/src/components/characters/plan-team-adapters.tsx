@@ -170,6 +170,16 @@ export function usePlanChatAdapter(appId: number): ChatAdapter {
         refreshList();
       }
     },
+    bestPractice: {
+      get: (conv) => conv.bestPractice,
+      set: async (id, value) => {
+        try {
+          await update.mutateAsync({ id, data: { bestPractice: value } });
+        } finally {
+          refreshConv(id);
+        }
+      },
+    },
     decide: async (proposalId, action) => {
       try {
         await decide.mutateAsync({ id: proposalId, data: { action } });

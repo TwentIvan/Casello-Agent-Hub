@@ -1993,8 +1993,8 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
   nginx: `^~ /downloads/nodo/` (cache di 1 anno, il manifest 1 ora; `Cache-Control` senza `always`, così un 404 non resta in cache), `= /nodes/pair` e `^~ /api/account/node-pairings/` con `access_log off` (il codice di abbinamento sta
   nella query o nel percorso; la seconda anche con `error_log /dev/stderr crit`, controllata dalla CI). API e nodo pubblicati vanno sempre insieme.
 - Healthcheck di `casello-api`: `GET /api/healthz` sulla porta 3000. È nel `HEALTHCHECK` di
-  `docker/api.Dockerfile` (con `node`, l'immagine slim non ha curl/wget); su Coolify impostarlo anche
-  in Health Check (path `/api/healthz`, porta 3000), altrimenti Coolify non lo usa per il deploy.
+  `docker/api.Dockerfile` (con `node`); su Coolify impostarlo anche in Health Check (path `/api/healthz`, porta 3000),
+  altrimenti Coolify non lo usa per il deploy. Coolify esegue un suo comando con curl o wget: per questo l'immagine installa curl.
 - `POST /api/agents/:id/runs` ha un rate limit in memoria (`runTriggerRateLimit`, `middlewares/rate-limit.ts`): 60/min per token con
   qualunque token personale `cas_…`, 10 run/minuto per IP con sessione o pannello incorporato:
   l'IP reale arriva da `trust proxy` = 2 (Traefik di Coolify + nginx di `casello-web`).

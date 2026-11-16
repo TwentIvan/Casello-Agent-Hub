@@ -26,6 +26,8 @@ RUN pnpm --filter @workspace/api-server --prod deploy --legacy /deploy \
 # ---------- stage 2: runtime ----------
 FROM node:24-slim AS runtime
 ENV NODE_ENV=production
+# curl per l'Health Check di Coolify, che esegue un suo comando con curl o wget e ignora il HEALTHCHECK qui sotto
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /deploy /app
 # Manifest di Botcave Nodo (versione corrente e minima, letto da lib/nodes/manifest.ts) senza zip né binario, che
@@ -34,7 +36,7 @@ COPY --from=build /deploy /app
 COPY docker/nodo-downloads/.gitkeep docker/nodo-downloads/nodo-manifest.jso[n] /app/nodo/
 USER node
 EXPOSE 3000
-# node:24-slim non ha curl/wget: l'healthcheck usa fetch di Node
+# Healthcheck di Docker con fetch di Node (indipendente da curl)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://localhost:'+(process.env.PORT||3000)+'/api/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 CMD ["node", "--enable-source-maps", "dist/index.mjs"]

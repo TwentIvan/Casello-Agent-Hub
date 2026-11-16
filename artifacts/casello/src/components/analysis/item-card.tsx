@@ -454,6 +454,7 @@ export function ItemCard({ item, appId, dependsOnTitles = [] }: ItemCardProps) {
             </Badge>
             <Led state={ITEM_STATUS_LED[item.status]} label={ITEM_STATUS_LABELS[item.status]} />
             {item.issue && <IssueBadge issue={item.issue} />}
+            {item.approvedByCycle && <span className="text-xs text-ink-muted">dal ciclo</span>}
             {item.origin === "chat" && (
               <Badge variant="secondary" className="font-normal">
                 da chat

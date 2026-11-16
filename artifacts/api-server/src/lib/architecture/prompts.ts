@@ -52,9 +52,15 @@ export function scrubSummary(text: string): string {
     .split(/(\s+)/)
     .map((part) => {
       if (!part.trim()) return part;
-      const [pre, core, post] = trimEdges(part);
-      if (core && looksLikeCredential(core)) return `${pre}***${post}`;
-      return looksLikeCredential(part) ? "***" : part;
+      // Anche i valori dentro JSON o assegnazioni (`"key":"sk-…"`, `KEY=sk-…`, elenchi con la virgola)
+      return part
+        .split(/([":=,']+)/)
+        .map((piece) => {
+          if (!piece.trim() || /^[":=,']+$/.test(piece)) return piece;
+          const [pre, core, post] = trimEdges(piece);
+          return core && looksLikeCredential(core) ? `${pre}***${post}` : piece;
+        })
+        .join("");
     })
     .join("");
 }
@@ -71,7 +77,7 @@ export const ARCH_INSTRUCTIONS = [
 ].join("\n");
 
 /** Toglie i delimitatori dal testo dei dati: un `<dati>` o `</dati>` (anche con spazi o attributi) diventa `‹dati›`. */
-function neutralize(text: string): string {
+export function neutralize(text: string): string {
   return text.replace(/<\s*(\/?)\s*dati\b[^>]*>/gi, (_m, slash: string) => `‹${slash}dati›`);
 }
 

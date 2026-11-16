@@ -258,7 +258,7 @@ async function doMerge(ctx: Context, pull: PullDetail): Promise<void> {
       "PR della squadra unita da Botcave",
     );
     // Il codice dell'App è cambiato: la sintesi dell'architettura si aggiorna (in background, mai a scapito del merge)
-    void requestArchitectureRefresh(ctx.instance.refAppId, { bypassOff: false }).catch((e: unknown) =>
+    void requestArchitectureRefresh(ctx.instance.refAppId, { bypassOff: false, clearBackoff: false }).catch((e: unknown) =>
       logger.error({ appId: ctx.instance.refAppId, errName: e instanceof Error ? e.name : "Error" }, "Aggiornamento della sintesi dell'architettura non richiesto"),
     );
   } catch (err) {

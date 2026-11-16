@@ -263,6 +263,11 @@ describe("PATCH /apps/:id architectureRefresh", () => {
     expect((await api("PATCH", `/apps/${appId}`, { body: { architectureRefresh: "ogni-tanto" } })).status).toBe(400);
   });
 
+  it("token d'ambito agent: «Aggiorna ora» 403 (generazione a pagamento)", async () => {
+    const r = await api("POST", `/apps/${appId}/architecture/refresh`, { token: await tokenWith(["agent"]) });
+    expect(r.status).toBe(403);
+  });
+
   it("token d'ambito agent: 403", async () => {
     const r = await api("PATCH", `/apps/${appId}`, { token: await tokenWith(["agent"]), body: { architectureRefresh: "off" } });
     expect(r.status).toBe(403);

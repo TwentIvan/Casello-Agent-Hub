@@ -226,6 +226,8 @@ export const AGENT_DENIED_ROUTES: ReadonlyArray<{ method: "POST" | "PUT" | "PATC
   { method: "PUT", path: /^\/team-instances\/[^/]+\/plan\/?$/i },
   { method: "POST", path: /^\/apps\/?$/i },
   { method: "PATCH", path: /^\/apps\/[^/]+\/?$/i },
+  // Generazione a pagamento della sintesi dell'architettura: la avvia solo l'utente
+  { method: "POST", path: /^\/apps\/[^/]+\/architecture\/refresh\/?$/i },
   { method: "DELETE", path: /^\// },
 ];
 

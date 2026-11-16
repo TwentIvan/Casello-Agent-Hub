@@ -122,6 +122,13 @@ describe("validateSummary e scrubSummary", () => {
     expect(out).not.toContain(secret);
     expect(out).toBe("chiave *** e `***` nel codice\n## Dati");
   });
+  it("segreti dentro JSON o assegnazioni", () => {
+    const secret = `sk-${"A1b2C3d4E5".repeat(2)}`;
+    const out = scrubSummary(`{"key":"${secret}","altro":'${secret}'} KEY=${secret}, x:${secret}`);
+    expect(out).not.toContain(secret);
+    expect(out).toContain('"key":"***"');
+    expect(out).toContain("KEY=***");
+  });
 });
 
 describe("generateSummary", () => {

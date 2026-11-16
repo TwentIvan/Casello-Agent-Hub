@@ -117,7 +117,7 @@ router.post("/apps/:id/architecture/refresh", async (req, res) => {
     res.status(429).json({ error: ARCH_MESSAGES.tooMany });
     return;
   }
-  const outcome = await requestArchitectureRefresh(id, { bypassOff: true });
+  const outcome = await requestArchitectureRefresh(id, { bypassOff: true, clearBackoff: true });
   if (outcome === "queued") {
     res.status(202).json(RefreshAppArchitectureResponse.parse({ queued: true }));
     return;

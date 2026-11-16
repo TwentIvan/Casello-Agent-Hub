@@ -304,7 +304,7 @@ describe("checkApp e generateForApp", () => {
     gh.commits.set(REPO, SHA2);
     gh.zipballs.set(REPO, buildZip([{ name: "proj/src/index.ts", content: Buffer.from("export const v = 2;\n") }]));
     fake.chatReply = () => deliver(validSummary("nuova"));
-    expect(await requestArchitectureRefresh(app.id, { bypassOff: false })).toBe("queued");
+    expect(await requestArchitectureRefresh(app.id, { bypassOff: false, clearBackoff: false })).toBe("queued");
     await waitArchitectureIdleForTests();
     expect(await archRow()).toMatchObject({ sha: SHA2, forceRequested: false, status: "idle", summary: validSummary("nuova") });
     expect(await runs()).toHaveLength(2);
@@ -312,18 +312,18 @@ describe("checkApp e generateForApp", () => {
 
   it("requestArchitectureRefresh con off: nulla senza bypassOff, generazione con bypassOff", async () => {
     await db.update(appsTable).set({ architectureRefresh: "off" }).where(eq(appsTable.id, app.id));
-    expect(await requestArchitectureRefresh(app.id, { bypassOff: false })).toBe("off");
+    expect(await requestArchitectureRefresh(app.id, { bypassOff: false, clearBackoff: false })).toBe("off");
     await waitArchitectureIdleForTests();
     expect(chatCalls()).toBe(0);
-    expect(await requestArchitectureRefresh(app.id, { bypassOff: true })).toBe("queued");
+    expect(await requestArchitectureRefresh(app.id, { bypassOff: true, clearBackoff: true })).toBe("queued");
     await waitArchitectureIdleForTests();
     expect(await archRow()).toMatchObject({ sha: SHA, status: "idle" });
   });
 
   it("requestArchitectureRefresh: app inesistente e generazione in corso", async () => {
-    expect(await requestArchitectureRefresh(99_999, { bypassOff: true })).toBe(ARCH_MESSAGES.appNotFound);
+    expect(await requestArchitectureRefresh(99_999, { bypassOff: true, clearBackoff: true })).toBe(ARCH_MESSAGES.appNotFound);
     expect(await claimGeneration(app.id)).toBeInstanceOf(Date);
-    expect(await requestArchitectureRefresh(app.id, { bypassOff: true })).toBe("running");
+    expect(await requestArchitectureRefresh(app.id, { bypassOff: true, clearBackoff: true })).toBe("running");
   });
 
   it("due claimGeneration concorrenti: una sola vera (Review Focus)", async () => {
@@ -386,9 +386,40 @@ describe("checkApp e generateForApp", () => {
     expect(await archRow()).toMatchObject({ status: "error", lastError: ARCH_MESSAGES.interrupted });
   });
 
-  it("il giro chiude le generazioni perse e le riprende", async () => {
+  it("generazione interrotta: consecutive_errors + 1 e backoff", async () => {
     expect(await claimGeneration(app.id)).toBeInstanceOf(Date);
     await db.update(appArchitectureTable).set({ startedAt: new Date(Date.now() - 11 * 60_000) }).where(eq(appArchitectureTable.appId, app.id));
+    expect(await failInterruptedArchitecture()).toBe(1);
+    const r = await archRow();
+    expect(r).toMatchObject({ status: "error", lastError: ARCH_MESSAGES.interrupted, consecutiveErrors: 1 });
+    expect(r!.nextAttemptAt!.getTime() - Date.now()).toBeGreaterThan(29 * 60_000);
+    expect(r!.nextAttemptAt!.getTime() - Date.now()).toBeLessThan(31 * 60_000);
+  });
+
+  it("backoff: la richiesta del merge lo conserva, «Aggiorna ora» lo toglie", async () => {
+    await checkApp(app);
+    gh.commits.set(REPO, SHA2);
+    const later = new Date(Date.now() + 3_600_000);
+    await db.update(appArchitectureTable).set({ status: "error", consecutiveErrors: 2, nextAttemptAt: later }).where(eq(appArchitectureTable.appId, app.id));
+    expect(await requestArchitectureRefresh(app.id, { bypassOff: false, clearBackoff: false })).toBe("queued");
+    await waitArchitectureIdleForTests();
+    let r = await archRow();
+    expect(r!.nextAttemptAt!.getTime()).toBe(later.getTime());
+    expect(r).toMatchObject({ forceRequested: true, sha: SHA });
+    expect(chatCalls()).toBe(1);
+    expect(await requestArchitectureRefresh(app.id, { bypassOff: true, clearBackoff: true })).toBe("queued");
+    await waitArchitectureIdleForTests();
+    r = await archRow();
+    expect(r).toMatchObject({ sha: SHA2, nextAttemptAt: null, status: "idle" });
+  });
+
+  it("il giro chiude le generazioni perse con backoff e le riprende a backoff finito", async () => {
+    expect(await claimGeneration(app.id)).toBeInstanceOf(Date);
+    await db.update(appArchitectureTable).set({ startedAt: new Date(Date.now() - 11 * 60_000) }).where(eq(appArchitectureTable.appId, app.id));
+    expect(await runArchitectureRound()).toBe(1);
+    expect(await archRow()).toMatchObject({ status: "error", sha: null, consecutiveErrors: 1, lastError: ARCH_MESSAGES.interrupted });
+    expect(chatCalls()).toBe(0);
+    await db.update(appArchitectureTable).set({ nextAttemptAt: new Date(Date.now() - 1_000) }).where(eq(appArchitectureTable.appId, app.id));
     expect(await runArchitectureRound()).toBe(1);
     expect(await archRow()).toMatchObject({ status: "idle", sha: SHA, lastError: null });
   });
@@ -422,7 +453,7 @@ describe("checkApp e generateForApp", () => {
 
   it("«Aggiorna ora» con lo stesso SHA: force_requested torna falso, il prossimo SHA rispetta l'intervallo", async () => {
     await checkApp(app);
-    expect(await requestArchitectureRefresh(app.id, { bypassOff: false })).toBe("queued");
+    expect(await requestArchitectureRefresh(app.id, { bypassOff: false, clearBackoff: false })).toBe("queued");
     await waitArchitectureIdleForTests();
     expect(await archRow()).toMatchObject({ forceRequested: false, sha: SHA });
     gh.commits.set(REPO, SHA2);

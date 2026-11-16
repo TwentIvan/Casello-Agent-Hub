@@ -380,11 +380,12 @@ function inBackground(p: Promise<void>): void {
 }
 
 /**
- * «Aggiorna ora» e merge riusciti: imposta `force_requested` (e toglie un backoff in corso: è una richiesta
- * esplicita) e avvia `checkApp` senza attendere. Con frequenza `off` e senza `bypassOff` non fa nulla.
+ * «Aggiorna ora» e merge riusciti: imposta `force_requested` e avvia `checkApp` senza attendere. Con frequenza `off` e senza `bypassOff` non fa nulla.
+ * Il backoff in corso si toglie solo con `clearBackoff` (la richiesta esplicita dell'utente, «Aggiorna ora»): un merge
+ * non deve far ritentare, e pagare, a ogni merge una generazione che continua a fallire.
  * Risponde `queued`, `running`, `off` o un messaggio fisso (app inesistente o non idonea).
  */
-export async function requestArchitectureRefresh(appId: number, opts: { bypassOff: boolean }): Promise<"queued" | "running" | "off" | string> {
+export async function requestArchitectureRefresh(appId: number, opts: { bypassOff: boolean; clearBackoff: boolean }): Promise<"queued" | "running" | "off" | string> {
   const [app] = await db.select().from(appsTable).where(eq(appsTable.id, appId));
   if (!app) return ARCH_MESSAGES.appNotFound;
   if (app.architectureRefresh === "off" && !opts.bypassOff) return "off";
@@ -393,7 +394,7 @@ export async function requestArchitectureRefresh(appId: number, opts: { bypassOf
   await ensureRow(appId);
   const rows = await db
     .update(appArchitectureTable)
-    .set({ forceRequested: true, nextAttemptAt: null })
+    .set(opts.clearBackoff ? { forceRequested: true, nextAttemptAt: null } : { forceRequested: true })
     .where(and(eq(appArchitectureTable.appId, appId), ne(appArchitectureTable.status, "running")))
     .returning({ appId: appArchitectureTable.appId });
   if (rows.length === 0) return "running";
@@ -403,13 +404,14 @@ export async function requestArchitectureRefresh(appId: number, opts: { bypassOf
 
 /**
  * Generazioni perse: righe `running` con `started_at` più vecchio di `ARCH_STALE_MS` diventano `error`
- * («generazione interrotta dal riavvio»). All'avvio e a ogni giro; quelle più recenti possono essere di un altro
+ * («generazione interrotta dal riavvio») con lo stesso backoff degli altri errori (una generazione che uccide il
+ * processo non si ritenta a ogni giro); il costo di una generazione interrotta non si registra. All'avvio e a ogni giro; quelle più recenti possono essere di un altro
  * container ancora acceso durante un deploy e restano sue. Risponde quante.
  */
 export async function failInterruptedArchitecture(): Promise<number> {
   const rows = await db
     .update(appArchitectureTable)
-    .set({ status: "error", lastError: ARCH_MESSAGES.interrupted })
+    .set(errorSet(ARCH_MESSAGES.interrupted))
     .where(
       and(
         eq(appArchitectureTable.status, "running"),

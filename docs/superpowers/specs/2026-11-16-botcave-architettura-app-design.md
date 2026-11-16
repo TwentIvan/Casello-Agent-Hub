@@ -187,4 +187,9 @@ GitHub, sintesi modificabile a mano, agenti di area.
 - Il modulo usa date JavaScript al posto di `now()` del DB.
 - `isDue` con frequenza `off` è vero solo con una richiesta forzata.
 - Il primo giro parte 60 s dopo l'avvio.
-- `requestArchitectureRefresh` azzera anche il backoff.
+- Il backoff lo toglie solo «Aggiorna ora» (`clearBackoff: true`); la richiesta dopo un merge lo conserva, così una generazione che continua a fallire non si ritenta (e paga) a ogni merge.
+- Una generazione interrotta (`failInterruptedArchitecture`) applica `consecutive_errors + 1` e il backoff; il suo costo non si registra (il processo è morto prima di scrivere la riga di spesa).
+- La sintesi nel prompt del Responsabile e l'uscita di `leggi_architettura` sono delimitate da `<dati>`…`</dati>` con i delimitatori interni neutralizzati.
+- `POST /api/apps/:id/architecture/refresh` è negata al token d'ambito `agent` (`AGENT_DENIED_ROUTES`).
+- `app_architecture_runs.created_at` usa l'orologio del DB (UTC su Neon), il resto del modulo le date JavaScript.
+- Eliminando un'App si eliminano anche le sue righe di `app_architecture_runs` (`CASCADE`, come le run): la spesa esce dal conteggio.

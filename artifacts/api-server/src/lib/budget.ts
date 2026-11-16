@@ -5,6 +5,7 @@ import {
   aiAccountsTable,
   aiModelsTable,
   alfredSessionsTable,
+  appArchitectureRunsTable,
   analysesTable,
   characterConversationsTable,
   characterHistoryTable,
@@ -71,6 +72,7 @@ function toSpend(rows: { spent: string; unpriced: number }[]): Spend {
   );
 }
 
+const unpricedArch = sql<number>`(count(*) filter (where ${appArchitectureRunsTable.costUsd} is null and coalesce(${appArchitectureRunsTable.promptTokens}, 0) + coalesce(${appArchitectureRunsTable.completionTokens}, 0) > 0))::int`;
 const runUnpriced = sql<number>`(count(*) filter (where ${runsTable.costUsd} is null and coalesce(${runsTable.promptTokens}, 0) + coalesce(${runsTable.completionTokens}, 0) > 0))::int`;
 
 /** Esecuzioni con token consumati ma costo null (stessa regola delle run), per compiti, turni delle squadre e sessioni di Alfred. */
@@ -89,7 +91,7 @@ async function spendsBy(key: SpendKey, ids: number[], since: Date): Promise<Map<
   const result = new Map<number, Spend>(ids.map((id) => [id, { spentUsd: 0, unpricedCount: 0 }]));
   if (ids.length === 0) return result;
   const scope = inArray(key, ids);
-  const [runs, analyses, chats, tasks, turns, alfred, teamChats, summaries, characterChats] = await Promise.all([
+  const [runs, analyses, chats, tasks, turns, alfred, teamChats, summaries, characterChats, architecture] = await Promise.all([
     db
       .select({ key, spent: sumOf(runsTable.costUsd), unpriced: runUnpriced })
       .from(runsTable)
@@ -180,8 +182,16 @@ async function spendsBy(key: SpendKey, ids: number[], since: Date): Promise<Map<
       .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
       .where(and(scope, gte(characterConversationsTable.updatedAt, since)))
       .groupBy(key),
+    // Generazioni della sintesi dell'architettura delle App
+    db
+      .select({ key, spent: sumOf(appArchitectureRunsTable.costUsd), unpriced: unpricedArch })
+      .from(appArchitectureRunsTable)
+      .innerJoin(aiModelsTable, eq(appArchitectureRunsTable.aiModelId, aiModelsTable.id))
+      .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
+      .where(and(scope, gte(appArchitectureRunsTable.createdAt, since)))
+      .groupBy(key),
   ]);
-  for (const r of [...runs, ...analyses, ...chats, ...tasks, ...turns, ...alfred, ...teamChats, ...summaries, ...characterChats]) {
+  for (const r of [...runs, ...analyses, ...chats, ...tasks, ...turns, ...alfred, ...teamChats, ...summaries, ...characterChats, ...architecture]) {
     if (r.key === null) continue;
     const acc = result.get(r.key)!;
     result.set(r.key, { spentUsd: acc.spentUsd + Number(r.spent), unpricedCount: acc.unpricedCount + r.unpriced });
@@ -252,6 +262,16 @@ export async function agentSpends(agentIds: number[], since: Date = monthStart()
     .where(and(inArray(runsTable.agentId, agentIds), gte(runsTable.createdAt, since)))
     .groupBy(runsTable.agentId);
   for (const r of rows) result.set(r.agentId, toSpend([r]));
+  const gens = await db
+    .select({ agentId: appArchitectureRunsTable.agentId, spent: sumOf(appArchitectureRunsTable.costUsd), unpriced: unpricedArch })
+    .from(appArchitectureRunsTable)
+    .where(and(inArray(appArchitectureRunsTable.agentId, agentIds), gte(appArchitectureRunsTable.createdAt, since)))
+    .groupBy(appArchitectureRunsTable.agentId);
+  for (const g of gens) {
+    if (g.agentId === null) continue;
+    const acc = result.get(g.agentId)!;
+    result.set(g.agentId, { spentUsd: acc.spentUsd + Number(g.spent), unpricedCount: acc.unpricedCount + g.unpriced });
+  }
   return result;
 }
 

@@ -14,6 +14,7 @@ import { startRunQueue } from "./lib/run-queue";
 import { startTriggerPoller } from "./lib/triggers/poller";
 import { failInterruptedArchitecture, startArchitectureScheduler } from "./lib/architecture/scheduler";
 import { startCodeWatcher } from "./lib/code-writer/watcher";
+import { startEvolutionScheduler } from "./lib/evolution/scheduler";
 import { failInterruptedTeamWork } from "./lib/teams/task-runner";
 import { pumpTurnInBackground, resumeQueuedTurns } from "./lib/teams/turn-runner";
 import { setOnTurnQueued } from "./lib/teams/turn-queue";
@@ -85,6 +86,8 @@ failInterruptedRuns()
     startTriggerPoller();
     // Sintesi dell'architettura delle App: controllo dello SHA e rigenerazione, primo giro poco dopo l'avvio.
     startArchitectureScheduler();
+    // Ciclo di evoluzione automatica: giri rimasti senza analisi viva chiusi, poi un controllo ogni 5 minuti.
+    startEvolutionScheduler();
     // Sorveglianza della CI delle PR dei compiti con codice.
     startCodeWatcher();
   });

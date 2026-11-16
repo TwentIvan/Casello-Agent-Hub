@@ -16,6 +16,10 @@ export const EVOLUTION_MESSAGES = {
   paused: "il ciclo è in pausa",
   stopBeforeDelete: "ferma il ciclo prima di eliminarlo",
   waitingArchitecture: "in attesa della sintesi dell'architettura",
+  appNotFound: "App non trovata",
+  invalidSettings: "impostazioni del ciclo non valide",
+  templateUnavailable: "modello di squadra non disponibile",
+  analysisBusy: "c'è già un'analisi in corso per questa app: riprova quando finisce",
 } as const;
 
 /** Esito di un giro che ha approvato `n` voci. */

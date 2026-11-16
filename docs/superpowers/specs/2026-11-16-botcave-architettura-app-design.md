@@ -178,3 +178,13 @@ validazione, scrub); prompt del Responsabile; `leggi_architettura`; route; carta
 
 Lucius e la ricerca web (2), ciclo di evoluzione automatica (3), App senza GitHub tramite installazione, webhook di
 GitHub, sintesi modificabile a mano, agenti di area.
+
+## Differenze dal codice
+
+- `app_architecture` non ha `user_id` (il pagatore sta nelle righe di `app_architecture_runs`).
+- `full` è vero anche senza una sintesi precedente.
+- «Aggiorna ora» con lo stesso SHA non rigenera e azzera la richiesta (l'API risponde comunque 202).
+- Il modulo usa date JavaScript al posto di `now()` del DB.
+- `isDue` con frequenza `off` è vero solo con una richiesta forzata.
+- Il primo giro parte 60 s dopo l'avvio.
+- `requestArchitectureRefresh` azzera anche il backoff.

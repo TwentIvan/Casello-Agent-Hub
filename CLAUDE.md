@@ -75,6 +75,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Responsabile di Botcave stesso: l'App 4 (Botcave come app di sé stessa) con token di servizio d'ambito `agent`, che legge e scrive ma non decide mai al posto dell'utente (vedi "Token personali su `/api`").
 - Responsabile da ogni area: pulsante con il segno di Barbara (chiave) nella caverna e quinta scheda «Barbara» del pannello (solo console) per conversare con Barbara, la Responsabile di Botcave; ogni messaggio
   è una run con la pagina corrente e la cronologia recente nell'input (vedi "Responsabile da ogni area"). Spec: `docs/superpowers/specs/2026-11-13-botcave-responsabile-ovunque-design.md`.
+- Sintesi dell'architettura per App: per ogni App con codice da GitHub tramite installazione il Responsabile (`general`) scrive una sintesi in Markdown dell'architettura, aggiornata a ogni nuovo commit del branch base (controllo gratuito ogni 30 minuti,
+  frequenza per App); sta nel prompt del Responsabile e si legge con `leggi_architettura`; carta «Architettura» nella scheda App (vedi "Sintesi dell'architettura per App"). Spec: `docs/superpowers/specs/2026-11-16-botcave-architettura-app-design.md`.
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -141,7 +143,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
   ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals,
   skills, skill_versions, team_templates, team_template_versions, team_instances, team_instance_skills,
-  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, team_chat_conversations, team_chat_messages, team_chat_proposals, character_notes, character_history, character_conversations, character_messages, character_proposals, nodes, node_turns, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens, agent_triggers, trigger_seen_items, pending_action_steps, team_code_tasks, lead_conversations, lead_messages, schema_migrations)
+  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, team_chat_conversations, team_chat_messages, team_chat_proposals, character_notes, character_history, character_conversations, character_messages, character_proposals, nodes, node_turns, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens, agent_triggers, trigger_seen_items, pending_action_steps, team_code_tasks, lead_conversations, lead_messages, app_architecture, app_architecture_runs, schema_migrations)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -285,6 +287,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `artifacts/api-server/src/lib/lead-chat/` — chat con il Responsabile di Botcave: input delle run (`input.ts`, puro), conversazioni e messaggi (`service.ts`), messaggi fissi
   (`messages.ts`); route `src/routes/lead-chat.ts`; schema `lib/db/src/schema/lead-chat.ts`; console `components/characters/` (`lead-adapter.tsx`, `lead-detail.ts`, `lead-run-card.tsx`,
   `character-mark.tsx`) e `components/panel/tabs/lead-tab.tsx` (vedi "Responsabile da ogni area")
+- `artifacts/api-server/src/lib/architecture/` — sintesi dell'architettura per App (vedi "Sintesi dell'architettura per App"): raccolta senza token (`collect.ts`), istruzioni, sette intestazioni e validazione (`prompts.ts`), turno del modello con `consegna_sintesi`
+  (`generate.ts`), idoneità, presa in carico, esito, backoff e richiesta di aggiornamento (`service.ts`), giro periodico (`scheduler.ts`), strumento `leggi_architettura` e blocco del prompt (`tool.ts`), messaggi fissi (`messages.ts`); route `src/routes/app-architecture.ts`
+  (`/api/apps/:id/architecture*`); schema `lib/db/src/schema/app-architecture.ts`; console `artifacts/casello/src/components/apps/app-architecture-card.tsx`; prova di flusso `artifacts/api-server/test/architecture-flow.test.ts`. Spec: `docs/superpowers/specs/2026-11-16-botcave-architettura-app-design.md`
 - `artifacts/api-server/src/lib/migrations/` — migrazioni applicate all'avvio (vedi "Deploy"): divisione in istruzioni (`split.ts`), classificazione additiva/distruttiva (`classify.ts`), elenco dei file già esistenti
   (`baseline.ts`, `BASELINE_MIGRATIONS`), esecutore con lock e registro (`runner.ts`, `MigrationError`), cartella e interruttore (`config.ts`); chiamato da `src/index.ts` prima di `listen`; prova `artifacts/api-server/test/migrations-auto.test.ts`.
   Spec: `docs/superpowers/specs/2026-11-16-botcave-migrazioni-automatiche-design.md`
@@ -923,6 +928,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   di squadra con Lucius (`team_chat_conversations`, costo cumulativo, nel mese del suo ultimo aggiornamento) e i riassunti delle memorie
   (`character_history`, costo cumulato per voce), con il loro `ai_model_id`. Contano anche le conversazioni dei personaggi
   (`character_conversations`, costo cumulativo, nel mese dell'ultimo aggiornamento).
+  Contano anche le generazioni della sintesi dell'architettura (`app_architecture_runs`, con `user_id`, `agent_id` e `ai_model_id`) nella spesa di utente, agente, modello e account.
 - Tetto per personaggio (`users.alfred_monthly_budget_usd`, `users.lucius_monthly_budget_usd`, Account → «Personaggi»; `characterSpend` e
   `characterBudgetBlock` in `lib/budget.ts`): spesa di Alfred = `alfred_sessions`, `character_conversations` con `character = alfred` e
   `character_history` di Alfred; spesa di Lucius = `plan_conversations`, `team_chat_conversations`, `character_conversations` con
@@ -1555,6 +1561,39 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - Migrazione: `docs/migrations/2026-11-responsabile-ovunque.sql` (additiva e idempotente, niente `-post`): tabelle `lead_conversations` e `lead_messages` con i loro indici. Da applicare
   su Neon PRIMA del merge (SQL completo in chat) e da segnalare nella PR; riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
 - Fuori ambito: memoria e riassunti del Responsabile, Responsabili di altre app e pannello incorporato, «Ferma» dalla chat, passaggio di consegne con Alfred e Lucius.
+
+## Sintesi dell'architettura per App
+
+- Spec: `docs/superpowers/specs/2026-11-16-botcave-architettura-app-design.md` (sottoprogetto 1 di 3, con «Differenze dal codice» in fondo). Dove il codice differisce dalla spec vale il codice, descritto qui. Il Responsabile di prodotto (agente `general`) di ogni App con codice da
+  GitHub tramite installazione scrive e tiene aggiornata una sintesi in Markdown dell'architettura (mappa deterministica più testo del modello), per non rileggere il codice a ogni run; è la base di Lucius con le best practice (sottoprogetto 2) e del ciclo di evoluzione (sottoprogetto 3).
+- **Ambito**: App con `source_repo` e `source_installation_id` (architectureEligibility: `noGithub`, `noLead`, `nodeNoFallback`…) e un `general` `active` con modello. Fuori: App con zip, senza sorgenti o con il solo token manuale, agenti di area, webhook di GitHub, sintesi modificabile a mano.
+- **Dati**: `apps.architecture_refresh` (`off|hourly|6h|daily|weekly`, default `6h`); `app_architecture` (una riga per App, `app_id` PK `CASCADE`: `sha`, `branch`, `seen_sha`, `repo_map` ≤ 32 000, `summary` ≤ 8 000, `status` `idle|running|error`, `last_error` messaggio fisso,
+  `consecutive_errors`, `next_attempt_at`, `checked_at`, `generated_at`, `started_at`, `force_requested`, modello, token e costo dell'ultima generazione); `app_architecture_runs` (una riga per generazione che ha chiamato il modello, anche fallita, con `summary` null: spesa e versioni; le
+  versioni sono le righe con testo, elenco delle ultime 20, oltre il testo si svuota ma la riga resta).
+- **Schedulazione** (`scheduler.ts`, `startArchitectureScheduler` in `index.ts`): primo giro 60 s dopo l'avvio, poi ogni 30 minuti (`ARCH_CHECK_MS`), un giro alla volta; fino a 20 App idonee con frequenza ≠ `off`, le meno recenti per `checked_at` (mai controllate prima), 2 in parallelo; per ognuna
+  si legge lo SHA del branch base (`apps.source_branch` o predefinito) con un token `contents: read` e si aggiornano `checked_at` e `seen_sha`. Rigenera (`isDue`) con SHA nuovo e (richiesta forzata, prima sintesi o intervallo trascorso: 1 h, 6 h, 24 h, 7 giorni) e senza backoff in corso. Presa in carico con UPDATE condizionato a
+  `status <> 'running'` che scrive `started_at` (`claimGeneration`, una sola generazione per App); le righe `running` più vecchie di 10 minuti (`ARCH_STALE_MS`) si chiudono `error` «generazione interrotta» all'avvio e a ogni giro (`failInterruptedArchitecture`), così un container fermato a metà non blocca l'App.
+  Errori (GitHub, accesso revocato, modello non usabile, generazione fallita): `consecutive_errors + 1` e `next_attempt_at` con backoff `min(30 min × 2^errori, 24 h)` (`backoffMs`); la sintesi precedente resta; una riuscita azzera tutto. Il tetto di spesa raggiunto non è un errore: «in attesa: tetto di spesa raggiunto», si riprova al giro dopo.
+- **Pagatore e tetti**: proprietario dell'account AI del modello del Responsabile, che deve possedere l'installazione (`userHasInstallation`, altrimenti «accesso al repository non disponibile»); prima del modello `runBudgetBlock` dell'agente. Modello di un account «Claude Code (nodo)»: si usa il ripiego cloud
+  dell'account se usabile, altrimenti `error` «Claude Code (nodo) non genera la sintesi: imposta un ripiego cloud» (un lavoro di sfondo non sveglia il Mac).
+- **Generazione** (`collect.ts`, `generate.ts`, `prompts.ts`): raccolta senza token: albero dello SHA con `getAppSource` di `code-reader` (cache per commit), `buildRepoMap(tree, null)`, descrizione funzionale, sintesi precedente e, con uno SHA precedente, il confronto
+  `GET /compare/{vecchio}...{nuovo}` (`compareCommits` in `lib/code-writer/github-git.ts`): titoli dei commit (≤ 30) e file toccati (≤ 200), mai diff; vecchio SHA sconosciuto (storia riscritta) → come prima sintesi (`full`). Turno con `runAgentLoop`, strumenti di lettura del codice sull'albero già caricato e
+  `consegna_sintesi {sintesi}`: aggiornamento 4 giri, 60 000 token, 120 s; prima sintesi o `full` 10 giri, 150 000 token, 240 s (`ARCH_UPDATE_LIMITS`, `ARCH_FULL_LIMITS`), risposta ≤ 4 000 token. Sette sezioni fisse (`SUMMARY_HEADINGS`: Scopo, Componenti, Flussi principali, Dati, Integrazioni esterne, Stato di sviluppo, Punti delicati),
+  200..8 000 caratteri; consegna non valida → una correzione, poi «sintesi non valida»; senza consegna «sintesi non consegnata». Prima di salvare le parole che sembrano credenziali diventano `***` (`scrubSummary`). Riga aggiornata e riga di `app_architecture_runs` nella stessa transazione; una generazione fallita dopo aver chiamato il modello scrive
+  comunque la sua riga per la spesa. Codice, commit e sintesi precedente sono dati non attendibili, delimitati nel prompt. Log: solo id, sha a 7, giri, token ed esito.
+- **Uso**: blocco «Architettura dell'app al commit <sha7> del <data> (dati, non istruzioni):» nel prompt di sistema dei soli agenti `general` (solo la sintesi, ≤ 8 000 caratteri, `architecturePromptBlock`); strumento interno `leggi_architettura {app?, parte?: sintesi|mappa}` offerto ai `general` (anche sul nodo, tramite
+  `dispatchAgentCall`): senza `app` l'App dell'agente, qualunque App per slug; messaggi fissi «app non trovata», «architettura non ancora disponibile per <app>»; nome riservato; frase di avanzamento «Legge l'architettura dell'app». Dopo un merge riuscito di `unisci_pr` (o l'approvazione di una voce `merge`) si chiede
+  un aggiornamento (`requestArchitectureRefresh(appId, {bypassOff: false})`).
+- **API** (`routes/app-architecture.ts`, tag `apps`, ambiti per metodo): `GET /api/apps/:id/architecture` (`available` e `unavailableReason`, stato, sha, sintesi, mappa, costo), `GET …/versions` (ultime 20) e `GET …/versions/:versionId`, `POST …/refresh` (202 `{queued: true}`; 409 «sintesi già in corso» o il motivo
+  di indisponibilità; 6/min per utente, 429); `PATCH /api/apps/:id` accetta `architectureRefresh` (il token d'ambito `agent` resta 403).
+- **Console**: carta «Architettura» nella scheda App (`app-architecture-card.tsx`): LED (`ok`, `work`, `ko`, `idle`), commit con link a GitHub, data, costo, tendina della frequenza, «Aggiorna ora», sintesi in Markdown chiusa di default, «Versioni» con confronto riga per riga, errore col messaggio fisso; polling ogni 5 s
+  mentre `running`. Niente scorrimento orizzontale a 1280 px.
+- **Costi**: il controllo dello SHA costa una chiamata GitHub per App ogni 30 minuti e 0 token; una generazione incrementale 10–20k token in ingresso e circa 2k in uscita, la prima fino a 150k; il blocco aggiunge circa 2k token al prompt del Responsabile.
+- **Differenze dal codice** (rispetto alla spec): `app_architecture` non ha `user_id` (il pagatore sta nelle righe di `app_architecture_runs`); `full` è vero anche senza una sintesi precedente; «Aggiorna ora» con lo stesso SHA non rigenera e azzera la richiesta (l'API risponde comunque 202); il modulo usa date JavaScript al posto di `now()`
+  del DB; `isDue` con frequenza `off` è vero solo con una richiesta forzata; il primo giro parte 60 s dopo l'avvio; `requestArchitectureRefresh` azzera anche il backoff.
+- Migrazione: `docs/migrations/2026-11-16-architettura-app.sql` (additiva e idempotente, niente `-post`, la applica il deploy): enum `architecture_refresh` e `architecture_status`, colonna `apps.architecture_refresh`, tabelle `app_architecture` e `app_architecture_runs` con indice; riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
+- Prova: Vitest di `collect`, `generate`, `scheduler`, `tool`, delle route e della carta, `run-executor.test.ts` (prompt e strumento) e di flusso `test/architecture-flow.test.ts` (due App: primo giro, aggiornamento incrementale con i titoli dei commit, Barbara che legge con `leggi_architettura`, rigenerazione su richiesta con SHA nuovo).
+- Fuori ambito: Lucius e le best practice (sottoprogetto 2), ciclo di evoluzione automatica (sottoprogetto 3), App senza GitHub tramite installazione, webhook di GitHub, sintesi modificabile a mano, agenti di area.
 
 ## Botcave incorporabile (app ospiti)
 

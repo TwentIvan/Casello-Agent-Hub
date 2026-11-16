@@ -65,6 +65,21 @@ describe("classifyMigration", () => {
     ["SELECT E'\\''; DROP TABLE t; --'", "DROP TABLE"],
     ["SELECT e'\\\\'; DROP TABLE t;", "DROP TABLE"],
     ["WITH x AS (SELECT E'\\''), d AS (DELETE FROM t RETURNING 1) SELECT 1;", "DELETE"],
+    // IDENTITY ed EXPRESSION non sono riservate: dopo ALTER TABLE sono nomi di colonna
+    ["ALTER TABLE t DROP identity;", "DROP COLUMN"],
+    ["ALTER TABLE t DROP expression CASCADE;", "DROP COLUMN"],
+    ["ALTER TABLE t ALTER COLUMN c DROP DEFAULT, DROP identity;", "DROP COLUMN"],
+    ["DO $$ BEGIN ALTER TABLE t DROP identity; END $$;", "DROP COLUMN"],
+    // impostazioni che cambiano la lettura delle stringhe: split non sarebbe più allineato al server
+    ["SET standard_conforming_strings = off;", "impostazione di sessione"],
+    ["SELECT set_config('standard_conforming_strings', 'off', false);", "impostazione di sessione"],
+    ["SET client_encoding = 'SJIS';", "impostazione di sessione"],
+    ["SET NAMES 'SJIS';", "impostazione di sessione"],
+    ["SET backslash_quote = on;", "impostazione di sessione"],
+    ["ALTER DATABASE d SET standard_conforming_strings TO off;", "impostazione di sessione"],
+    // comandi del sistema e SQL in background
+    ["COPY t TO PROGRAM 'rm -rf /';", "COPY PROGRAM"],
+    ["SELECT pg_background_launch('DROP TABLE t');", "DROP TABLE"],
   ];
   it.each(destructive)("%s è distruttivo", (sql, reason) => {
     const r = classifyMigration(ok, sql);
@@ -95,9 +110,18 @@ describe("classifyMigration", () => {
     "DO $$ BEGIN ALTER TABLE t DROP CONSTRAINT IF EXISTS k; END $$;",
     "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'e') THEN CREATE TYPE e AS ENUM ('a'); END IF; END $$;",
     "SELECT selected FROM t WHERE e'' = '';",
+    "ALTER TABLE t ALTER COLUMN c DROP IDENTITY;",
+    "ALTER TABLE t ALTER c DROP EXPRESSION IF EXISTS;",
+    'ALTER TABLE t ALTER COLUMN "identity" DROP IDENTITY IF EXISTS;',
   ];
   it.each(additive)("%s è additivo", (sql) => {
     expect(classifyMigration(ok, sql)).toEqual({ destructive: false, reasons: [] });
+  });
+
+  it("standard_conforming_strings spento prima di una stringa con \\': distruttivo", () => {
+    const sql = "SET standard_conforming_strings = off;\nSELECT '\\''; DROP TABLE t; --';\n";
+    expect(classifyMigration(ok, sql)).toMatchObject({ destructive: true });
+    expect(classifyMigration(ok, sql).reasons).toContain("impostazione di sessione");
   });
 
   it("reasons non contiene il testo dell'istruzione", () => {

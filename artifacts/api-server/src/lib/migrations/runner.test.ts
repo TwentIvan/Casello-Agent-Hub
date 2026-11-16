@@ -8,7 +8,7 @@ import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { serializeExtendedProtocol } from "../../../test/pglite-protocol";
-import { errorCode, MigrationError, runMigrations } from "./runner";
+import { errorCode, extendedQuery, MigrationError, runMigrations } from "./runner";
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -127,6 +127,37 @@ describe("runMigrations", () => {
       "CREATE TYPE e AS ENUM ('a'); ALTER TYPE e ADD VALUE IF NOT EXISTS 'b'; CREATE TABLE t (v e DEFAULT 'b');",
     );
     expect((await run()).applied).toEqual(["2026-11-16-e.sql"]);
+  });
+
+  it("protocollo esteso: ADD VALUE, DO $$, BEGIN/COMMIT e CREATE INDEX funzionano", async () => {
+    write(
+      "2026-11-16-p.sql",
+      [
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'pe') THEN CREATE TYPE pe AS ENUM ('a'); END IF; END $$;",
+        "ALTER TYPE pe ADD VALUE IF NOT EXISTS 'b';",
+        "BEGIN;",
+        "CREATE TABLE IF NOT EXISTS p (id int, v pe DEFAULT 'b');",
+        "COMMIT;",
+        "CREATE INDEX IF NOT EXISTS p_id_idx ON p (id);",
+        "INSERT INTO p (id) VALUES (1);",
+      ].join("\n"),
+    );
+    expect((await run()).applied).toEqual(["2026-11-16-p.sql"]);
+    const { rows } = await pool.query("SELECT v::text AS v FROM p");
+    expect(rows).toEqual([{ v: "b" }]);
+    expect((await pool.query("SELECT 1 FROM pg_indexes WHERE indexname = 'p_id_idx'")).rowCount).toBe(1);
+  });
+
+  it("protocollo esteso: un pezzo che il server leggerebbe come più istruzioni è rifiutato", async () => {
+    // Il classificatore lo considera distruttivo: qui si prova solo l'esecutore (elenco iniziale vuoto, rifiuto del protocollo)
+    const pg2 = await pool.connect();
+    try {
+      const err = await pg2.query(extendedQuery("CREATE TABLE IF NOT EXISTS m1 (id int); CREATE TABLE IF NOT EXISTS m2 (id int)")).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(await tableExists("m1")).toBe(false);
+    } finally {
+      pg2.release();
+    }
   });
 
   it("gestisce i file con CRLF", async () => {

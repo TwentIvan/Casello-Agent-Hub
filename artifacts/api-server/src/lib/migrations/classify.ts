@@ -63,7 +63,13 @@ function normalize(text: string): string {
  * (anche con il corpo tra `'…'`), EXECUTE, regole, trigger e le funzioni di sistema che eseguono testo.
  * Per queste si controlla anche il testo grezzo, stringhe e commenti compresi (falsi positivi ammessi).
  */
-const CODE_RE = /\b(?:DO|FUNCTION|PROCEDURE|EXECUTE|CALL|PREPARE|RULE|TRIGGER)\b|DBLINK|_TO_XML/;
+const CODE_RE = /\b(?:DO|FUNCTION|PROCEDURE|EXECUTE|CALL|PREPARE|RULE|TRIGGER|PROGRAM)\b|DBLINK|_TO_XML|PG_BACKGROUND/;
+
+/**
+ * Impostazioni che cambiano come il server legge le stringhe (barre rovesciate, codifica): dopo, `splitSql` non
+ * sarebbe più allineato al server. Si cercano nel testo grezzo, anche dentro stringhe (`set_config('…')`) e commenti.
+ */
+const SESSION_RE = /STANDARD_CONFORMING_STRINGS|CLIENT_ENCODING|BACKSLASH_QUOTE|\bSET\s+NAMES\b/;
 
 /** Nomi di oggetto noti dopo DROP: solo questi entrano nel motivo (mai un identificatore dell'istruzione). */
 const DROP_OBJECTS = new Set([
@@ -73,8 +79,17 @@ const DROP_OBJECTS = new Set([
   "TEXT", "TRANSFORM", "TRIGGER", "TYPE", "USER", "VIEW",
 ]);
 
-/** Ogni DROP è distruttivo, tranne quelli dentro ALTER che non tolgono dati (vincolo, NOT NULL, default…). */
-const DROP_RE = /\bDROP\b(?!\s*(?:CONSTRAINT|NOT\s+NULL|DEFAULT|IDENTITY|EXPRESSION)\b)\s*([A-Z_]*)/g;
+/** Ogni DROP, con la parola che lo segue (per il motivo e per i casi ammessi). */
+const DROP_RE = /\bDROP\b\s*([A-Z_]*)/g;
+/** Ammessi ovunque: parole riservate, quindi mai il nome di una colonna senza virgolette. */
+const DROP_ALLOWED_RE = /^\s*(?:CONSTRAINT|NOT\s+NULL|DEFAULT)\b/;
+/**
+ * IDENTITY ed EXPRESSION non sono riservate (`ALTER TABLE t DROP identity` toglie la colonna «identity»): ammesse solo
+ * subito dopo `ALTER [COLUMN] <colonna>`, cioè `ALTER COLUMN c DROP IDENTITY [IF EXISTS]`.
+ */
+const DROP_COLUMN_ATTR_RE = /^\s*(?:IDENTITY|EXPRESSION)\b/;
+const ALTER_COLUMN_BEFORE_RE = /\bALTER\s+(?:COLUMN\s+)?(?!TABLE\b)\S+\s*$/;
+const ALTER_TABLE_RE = /\bALTER\s+TABLE\b/;
 
 /** Ogni DELETE è distruttivo (anche MERGE … THEN DELETE), tranne l'azione di una chiave esterna (ON DELETE CASCADE…). */
 const DELETE_RE = /\bDELETE\b/g;
@@ -82,10 +97,8 @@ const FK_ACTION_RE = /^\s*(?:CASCADE|SET\s+NULL|SET\s+DEFAULT|RESTRICT|NO\s+ACTI
 const ON_BEFORE_RE = /\bON\s*$/;
 
 const RULES: { reason: string; re: RegExp }[] = [
-  {
-    reason: "DROP COLUMN",
-    re: /\bALTER TABLE\b.*\bDROP (?!CONSTRAINT\b|NOT NULL\b|DEFAULT\b|IDENTITY\b|EXPRESSION\b)/,
-  },
+  // COPY … TO/FROM PROGRAM esegue un comando del sistema
+  { reason: "COPY PROGRAM", re: /\bPROGRAM\b/ },
   { reason: "RENAME", re: /\bRENAME\b/ },
   { reason: "TRUNCATE", re: /\bTRUNCATE\b/ },
   { reason: "ALTER COLUMN TYPE", re: /\bALTER (?:COLUMN )?\S+ (?:SET DATA )?TYPE\b/ },
@@ -94,9 +107,14 @@ const RULES: { reason: string; re: RegExp }[] = [
 
 function check(text: string, add: (r: string) => void): void {
   for (const m of text.matchAll(DROP_RE)) {
+    const before = text.slice(0, m.index);
+    const after = text.slice(m.index + 4, m.index + 40);
+    if (DROP_ALLOWED_RE.test(after)) continue;
+    if (DROP_COLUMN_ATTR_RE.test(after) && ALTER_COLUMN_BEFORE_RE.test(before)) continue;
     const word = m[1] ?? "";
     if (word === "MATERIALIZED") add("DROP MATERIALIZED VIEW");
     else add(DROP_OBJECTS.has(word) ? `DROP ${word}` : "DROP");
+    if (ALTER_TABLE_RE.test(before)) add("DROP COLUMN");
   }
   for (const m of text.matchAll(DELETE_RE)) {
     const before = text.slice(Math.max(0, m.index - 20), m.index);
@@ -120,6 +138,7 @@ export function classifyMigration(
   for (const statement of splitSql(normalized)) {
     const text = strip(statement);
     check(text, add);
+    if (SESSION_RE.test(normalize(statement))) add("impostazione di sessione");
     // SQL dinamico (EXECUTE '…', corpi tra '…' o $$…$$): anche il testo grezzo, così le parole nelle stringhe si vedono
     if (statement.includes("$") || CODE_RE.test(text)) check(normalize(statement), add);
   }

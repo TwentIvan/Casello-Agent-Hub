@@ -31,15 +31,20 @@ Moduli:
 - `classify.ts` (puro): `classifyMigration(name, sql)` → `{ destructive: boolean, reasons: string[] }`. Distruttivo se il nome
   finisce con `-post.sql` oppure se un'istruzione (con commenti e stringhe tolti, `E'…'` letti come in `split.ts`, maiuscole
   ignorate, spazi normalizzati) contiene:
-  - **qualunque** `DROP`, tranne se seguito subito da `CONSTRAINT`, `NOT NULL`, `DEFAULT`, `IDENTITY` o `EXPRESSION` (motivo
-    `DROP <oggetto>` per i nomi di oggetto noti, altrimenti `DROP`: mai un identificatore); `DROP` dopo `ALTER TABLE … ` dà anche `DROP COLUMN`;
+  - **qualunque** `DROP`, tranne se seguito subito da `CONSTRAINT`, `NOT NULL` o `DEFAULT` (parole riservate), oppure da
+    `IDENTITY` o `EXPRESSION` subito dopo `ALTER [COLUMN] <colonna>` (non sono riservate: `ALTER TABLE t DROP identity` toglie
+    una colonna); motivo `DROP <oggetto>` per i nomi di oggetto noti, altrimenti `DROP` (mai un identificatore); un `DROP` non
+    ammesso dopo `ALTER TABLE` dà anche `DROP COLUMN`;
+  - una menzione di `standard_conforming_strings`, `client_encoding`, `backslash_quote` o `SET NAMES`, anche in stringhe e
+    commenti (motivo «impostazione di sessione»: cambiano come il server legge le stringhe, e `split.ts` non sarebbe più allineato);
+  - `PROGRAM` (`COPY … PROGRAM` esegue un comando del sistema);
   - **qualunque** `DELETE` (anche `MERGE … THEN DELETE` o una CTE), tranne l'azione di una chiave esterna
     (`ON DELETE CASCADE|SET NULL|SET DEFAULT|RESTRICT|NO ACTION`);
   - `RENAME` (qualunque forma), `TRUNCATE`;
   - `ALTER COLUMN … TYPE` / `SET DATA TYPE`, `ALTER COLUMN … SET NOT NULL`.
 
   SQL dinamico: se l'istruzione contiene un dollar quoting o una parola che può eseguire testo (`DO`, `FUNCTION`, `PROCEDURE`,
-  `EXECUTE`, `CALL`, `PREPARE`, `RULE`, `TRIGGER`, `dblink…`, `…_to_xml`), le stesse regole si applicano anche al testo grezzo,
+  `EXECUTE`, `CALL`, `PREPARE`, `RULE`, `TRIGGER`, `PROGRAM`, `dblink…`, `…_to_xml`, `pg_background…`), le stesse regole si applicano anche al testo grezzo,
   stringhe e commenti compresi: `EXECUTE 'ALTER TABLE t DROP COLUMN c'` in un blocco `DO`, un corpo di funzione tra `'…'` o
   `dblink_exec('…', 'DROP TABLE t')` sono distruttivi.
 
@@ -79,7 +84,8 @@ crea: è l'esecutore stesso.
    - registrato con lo stesso sha256 → niente;
    - registrato con sha diverso → avviso nel log (nome, sha a 7), niente riesecuzione, l'avvio prosegue;
    - non registrato: se `classifyMigration` lo dice distruttivo → errore «migrazione distruttiva fuori da un file -post: <nome>»;
-     altrimenti si eseguono le istruzioni di `split.ts` una alla volta in autocommit, ognuna preceduta da
+     altrimenti si eseguono le istruzioni di `split.ts` una alla volta in autocommit con il protocollo esteso (un pezzo che il
+     server leggerebbe come più istruzioni è rifiutato invece di eseguirle), ognuna preceduta da
      `SET lock_timeout = '10s'` (impostato una volta sulla connessione), come `psql -f` con `ON_ERROR_STOP`; poi
      `INSERT INTO schema_migrations (name, sha256)`. Log: nome e durata.
 5. `pg_advisory_unlock`, rilascio della connessione (anche in caso d'errore, `finally`).

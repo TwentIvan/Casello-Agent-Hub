@@ -12,13 +12,21 @@ import { splitSql } from "./split.js";
 /** Chiave fissa del lock di sessione (bigint costante, hash di "botcave:schema_migrations"). */
 export const MIGRATION_LOCK_KEY = 7243065828119433191n;
 
-/** Errore di una migrazione: solo nome del file e numero dell'istruzione, mai il testo SQL. */
 /** Codice dell'errore se è una stringa (SQLSTATE di pg o di sistema, es. ENOENT): mai il messaggio. */
 export function errorCode(err: unknown): string | undefined {
   const code = typeof err === "object" && err !== null ? (err as { code?: unknown }).code : undefined;
   return typeof code === "string" ? code : undefined;
 }
 
+/**
+ * Una istruzione con il protocollo esteso (`queryMode` di pg 8, assente dai tipi): il server rifiuta un testo con più
+ * istruzioni, così un pezzo che `splitSql` legge male non ne esegue altre di nascosto.
+ */
+export function extendedQuery(text: string): pg.QueryConfig {
+  return { text, queryMode: "extended" } as pg.QueryConfig;
+}
+
+/** Errore di una migrazione: solo nome del file e numero dell'istruzione, mai il testo SQL. */
 export class MigrationError extends Error {
   constructor(
     message: string,
@@ -106,7 +114,8 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<{ basel
       const statements = splitSql(sql);
       for (let i = 0; i < statements.length; i++) {
         try {
-          await client.query(statements[i]!);
+          // Protocollo esteso: difesa se split e server non concordano
+          await client.query(extendedQuery(statements[i]!));
         } catch (err) {
           throw new MigrationError(`migrazione ${name} non riuscita all'istruzione ${i + 1}`, name, i + 1, errorCode(err));
         }

@@ -390,6 +390,15 @@ interface ModelChatOptions {
   abortSignal: AbortSignal;
 }
 
+/**
+ * Analisi ancora `running` nel DB: «Ferma» chiude la riga anche quando l'analisi gira in un altro processo o arriva in
+ * mezzo alla presa in carico (il segnale in memoria non c'è). Una lettura per chiave primaria prima di ogni chiamata.
+ */
+async function assertStillRunning(analysisId: number): Promise<void> {
+  const [row] = await db.select({ status: analysesTable.status }).from(analysesTable).where(eq(analysesTable.id, analysisId)).limit(1);
+  if (row?.status !== "running") throw new AnalysisError(EVOLUTION_MESSAGES.analysisStopped);
+}
+
 function architectChat({
   resolved,
   cost,
@@ -405,6 +414,7 @@ function architectChat({
 }: ModelChatOptions) {
   return async (messages: ChatCompletionMessageParam[], tools: ChatCompletionTool[]): Promise<ChatResult> => {
     if (abortSignal.aborted) throw new AnalysisError(EVOLUTION_MESSAGES.analysisStopped);
+    await assertStillRunning(analysisId);
     // La chiamata non può superare la scadenza complessiva (minimo 1 s) e si ferma con l'annullamento
     const timeout = AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, deadline - now()));
     const signal = AbortSignal.any([timeout, abortSignal]);
@@ -638,6 +648,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
 
       // Annullamento arrivato dopo l'ultima chiamata: nessuna voce scritta
       if (abortSignal.aborted) throw new AnalysisError(EVOLUTION_MESSAGES.analysisStopped);
+      await assertStillRunning(analysisId);
       // Elementi della fase in un'unica INSERT, con `position` che prosegue nell'analisi
       const inserted = await recordPhaseResult({ analysisId, appId: app.id, phase, result });
 

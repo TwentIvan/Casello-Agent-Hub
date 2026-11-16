@@ -56,7 +56,7 @@ function roundView(r: EvolutionRound) {
   };
 }
 
-async function cycleView(cycle: EvolutionCycle) {
+async function cycleView(cycle: EvolutionCycle, userId: number) {
   const [model] =
     cycle.analysisAiModelId === null
       ? []
@@ -65,7 +65,7 @@ async function cycleView(cycle: EvolutionCycle) {
     cycle.activatedBy === null
       ? []
       : await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, cycle.activatedBy)).limit(1);
-  const spend = await cycleSpend(cycle.id);
+  const spend = await cycleSpend(cycle.appId);
   const rounds = await listRounds(cycle.appId);
   const open = rounds.find((r) => OPEN_STATUSES.has(r.status));
   return {
@@ -84,6 +84,7 @@ async function cycleView(cycle: EvolutionCycle) {
     spentUsd: spend.spentUsd,
     unpricedCount: spend.unpricedCount,
     activatedByName: payer?.name ?? null,
+    isPayer: cycle.activatedBy !== null && cycle.activatedBy === userId,
     consentAt: cycle.consentAt,
     consentValid: consentValid(cycle),
     nextRoundAt: cycle.nextRoundAt,
@@ -104,7 +105,7 @@ router.get("/apps/:id/evolution", async (req, res) => {
     return;
   }
   const cycle = await getCycle(id);
-  res.json(GetAppEvolutionResponse.parse(cycle ? await cycleView(cycle) : null));
+  res.json(GetAppEvolutionResponse.parse(cycle ? await cycleView(cycle, currentUserId(req)) : null));
 });
 
 router.get("/apps/:id/evolution/consent-text", async (req, res) => {
@@ -146,7 +147,7 @@ router.put("/apps/:id/evolution", sessionOnly, async (req, res) => {
       ...body,
       consent: body.consent === undefined ? undefined : { ...body.consent, accepted: body.consent.accepted as true },
     });
-    res.json(SaveAppEvolutionResponse.parse(await cycleView(cycle)));
+    res.json(SaveAppEvolutionResponse.parse(await cycleView(cycle, currentUserId(req))));
   } catch (err) {
     if (!handleEvolutionError(err, res)) throw err;
   }
@@ -165,7 +166,7 @@ router.delete("/apps/:id/evolution", sessionOnly, async (req, res) => {
 router.post("/apps/:id/evolution/stop", sessionOnly, async (req, res) => {
   const { id } = parseRequest(StopAppEvolutionParams, req.params);
   try {
-    res.json(StopAppEvolutionResponse.parse(await cycleView(await stopCycle(id))));
+    res.json(StopAppEvolutionResponse.parse(await cycleView(await stopCycle(id), currentUserId(req))));
   } catch (err) {
     if (!handleEvolutionError(err, res)) throw err;
   }
@@ -174,7 +175,7 @@ router.post("/apps/:id/evolution/stop", sessionOnly, async (req, res) => {
 router.post("/apps/:id/evolution/resume", sessionOnly, async (req, res) => {
   const { id } = parseRequest(ResumeAppEvolutionParams, req.params);
   try {
-    res.json(ResumeAppEvolutionResponse.parse(await cycleView(await resumeCycle(id, currentUserId(req)))));
+    res.json(ResumeAppEvolutionResponse.parse(await cycleView(await resumeCycle(id, currentUserId(req)), currentUserId(req))));
   } catch (err) {
     if (!handleEvolutionError(err, res)) throw err;
   }
@@ -185,6 +186,11 @@ router.post("/apps/:id/evolution/run-now", sessionOnly, async (req, res) => {
   const cycle = await getCycle(id);
   if (!cycle) {
     res.status(404).json({ error: EVOLUTION_MESSAGES.notFound });
+    return;
+  }
+  // Come «Riprendi»: avvia un giro solo chi paga (chi ha attivato il ciclo)
+  if (cycle.activatedBy !== currentUserId(req)) {
+    res.status(403).json({ error: EVOLUTION_MESSAGES.notPayer });
     return;
   }
   if (!consumeEvolutionRunNow(id)) {

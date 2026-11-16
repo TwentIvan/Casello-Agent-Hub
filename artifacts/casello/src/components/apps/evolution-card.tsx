@@ -115,25 +115,33 @@ export function EvolutionCard({ app }: { app: App }) {
             {!cycle.consentValid && (
               <p className="text-sm text-ink-muted">Il consenso non è più valido: riattiva il ciclo per confermarlo di nuovo.</p>
             )}
+            {cycle.consentValid && !cycle.isPayer && (
+              <p className="text-sm text-ink-muted">
+                Paga chi ha attivato il ciclo: per avviare o riprendere i giri riattivalo con il tuo consenso.
+              </p>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               {cycle.status === "active" ? (
                 <Button variant="secondary" onClick={() => stop.mutate({ id: app.id })} disabled={stop.isPending}>
                   Ferma
                 </Button>
-              ) : cycle.consentValid ? (
+              ) : cycle.consentValid && cycle.isPayer ? (
                 <Button variant="secondary" onClick={() => resume.mutate({ id: app.id })} disabled={resume.isPending}>
                   Riprendi
                 </Button>
               ) : (
                 <Button onClick={() => setDialog("activate")}>Attiva…</Button>
               )}
-              <Button
-                variant="secondary"
-                onClick={() => runNow.mutate({ id: app.id })}
-                disabled={runNow.isPending || cycle.status !== "active" || !!cycle.openRound}
-              >
-                Esegui ora
-              </Button>
+              {/* Avvia i giri solo chi paga (chi ha attivato il ciclo) */}
+              {cycle.isPayer && (
+                <Button
+                  variant="secondary"
+                  onClick={() => runNow.mutate({ id: app.id })}
+                  disabled={runNow.isPending || cycle.status !== "active" || !!cycle.openRound}
+                >
+                  Esegui ora
+                </Button>
+              )}
               <Button variant="ghost" onClick={() => setDialog("settings")}>
                 Impostazioni…
               </Button>

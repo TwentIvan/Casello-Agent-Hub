@@ -2,7 +2,7 @@
 // `startPlanTurn` risponde subito con il messaggio dell'utente e lancia il turno in background.
 // Nei log solo id e conteggi: mai il contenuto dei messaggi.
 
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm";
 import {
   db,
   analysesTable,
@@ -59,20 +59,32 @@ export class TurnBusyError extends Error {
   }
 }
 
-/** Id dell'ultima analisi completata dell'app. */
+/**
+ * Id dell'analisi base del piano dell'app: l'ultima analisi completa (`mode = full`) completata; solo se non ce n'è
+ * nessuna, l'ultima completata del ciclo di evoluzione. Un'analisi ridotta del ciclo non sostituisce mai l'analisi
+ * completa: le sue voci entrano nel piano con `loadPlanItems`.
+ */
 export async function latestCompletedAnalysisId(appId: number): Promise<number | null> {
-  const [row] = await db
+  const [full] = await db
+    .select({ id: analysesTable.id })
+    .from(analysesTable)
+    .where(and(eq(analysesTable.appId, appId), eq(analysesTable.status, "completed"), eq(analysesTable.mode, "full")))
+    .orderBy(desc(analysesTable.id))
+    .limit(1);
+  if (full) return full.id;
+  const [any] = await db
     .select({ id: analysesTable.id })
     .from(analysesTable)
     .where(and(eq(analysesTable.appId, appId), eq(analysesTable.status, "completed")))
     .orderBy(desc(analysesTable.id))
     .limit(1);
-  return row?.id ?? null;
+  return any?.id ?? null;
 }
 
 /**
- * Voci del piano: i capitoli endpoint/completion/evolution dell'analisi della conversazione, più le voci
- * approvate delle altre analisi della stessa app nate in chat o già collegate a un'issue GitHub.
+ * Voci del piano: i capitoli endpoint/completion/evolution dell'analisi della conversazione (la base), le voci approvate o
+ * in attesa delle analisi del ciclo di evoluzione completate dopo la base, più le voci approvate delle altre analisi della
+ * stessa app nate in chat o già collegate a un'issue GitHub (ogni voce una volta sola).
  */
 export async function loadPlanItems(analysisId: number, appId: number): Promise<AnalysisItem[]> {
   const chapters = PLAN_CHAPTERS as string[];
@@ -81,6 +93,21 @@ export async function loadPlanItems(analysisId: number, appId: number): Promise<
     .from(analysisItemsTable)
     .where(and(eq(analysisItemsTable.analysisId, analysisId), inArray(analysisItemsTable.chapter, chapters as never[])))
     .orderBy(asc(analysisItemsTable.position), asc(analysisItemsTable.id));
+  const cycle = await db
+    .select({ item: analysisItemsTable })
+    .from(analysisItemsTable)
+    .innerJoin(analysesTable, eq(analysesTable.id, analysisItemsTable.analysisId))
+    .where(
+      and(
+        eq(analysesTable.appId, appId),
+        eq(analysesTable.mode, "evolution"),
+        eq(analysesTable.status, "completed"),
+        gt(analysesTable.id, analysisId),
+        inArray(analysisItemsTable.status, ["approved", "pending"]),
+        inArray(analysisItemsTable.chapter, chapters as never[]),
+      ),
+    )
+    .orderBy(asc(analysisItemsTable.analysisId), asc(analysisItemsTable.position), asc(analysisItemsTable.id));
   const earlier = await db
     .select({ item: analysisItemsTable })
     .from(analysisItemsTable)
@@ -95,7 +122,14 @@ export async function loadPlanItems(analysisId: number, appId: number): Promise<
       ),
     )
     .orderBy(asc(analysisItemsTable.id));
-  return [...current, ...earlier.map((r) => r.item)];
+  const seen = new Set(current.map((i) => i.id));
+  const out = [...current];
+  for (const { item } of [...cycle, ...earlier]) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    out.push(item);
+  }
+  return out;
 }
 
 /** Salva il messaggio dell'utente e avvia il turno in background. Un solo turno alla volta per conversazione. */

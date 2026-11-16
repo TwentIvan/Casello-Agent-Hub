@@ -36,11 +36,15 @@ describe("roundStatusLed", () => {
 });
 
 describe("needsConsent", () => {
-  const saved = { analysisAiModelId: 1, itemsPerRound: 3, monthlyBudgetUsd: 10, consentValid: true };
+  const saved = { analysisAiModelId: 1, itemsPerRound: 3, monthlyBudgetUsd: 10, consentValid: true, isPayer: true };
   const same = { analysisAiModelId: 1, itemsPerRound: 3, monthlyBudgetUsd: 10 };
   it("senza ciclo o con consenso non valido serve", () => {
     expect(needsConsent(null, same)).toBe(true);
     expect(needsConsent({ ...saved, consentValid: false }, same)).toBe(true);
+  });
+  it("serve sempre se salva chi non ha attivato il ciclo, anche senza cambiare nulla", () => {
+    expect(needsConsent({ ...saved, isPayer: false }, same)).toBe(true);
+    expect(needsConsent({ ...saved, isPayer: false }, { ...same, monthlyBudgetUsd: 5 })).toBe(true);
   });
   it("serve se cambiano modello o voci o sale il tetto", () => {
     expect(needsConsent(saved, { ...same, analysisAiModelId: 2 })).toBe(true);

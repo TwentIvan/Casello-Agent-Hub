@@ -1359,6 +1359,39 @@ describe("startAnalysis in modalità evolution e annullamento", () => {
     expect(finished).toEqual([id]);
   });
 
+  it("riga chiusa nel DB durante l'analisi (Ferma da un altro processo): nessun'altra chiamata, nessuna voce", async () => {
+    const roundId = await seedCycle();
+    await db.insert(appArchitectureTable).values({ appId, summary: SUMMARY, repoMap: REPO_MAP });
+    const id = await createAnalysis(appId, { mode: "evolution", evolutionRoundId: roundId });
+    // Il finto provider chiude la riga nel DB (senza abortAnalysis) prima di consegnare la prima risposta
+    const original = llm.listeners("request")[0] as (...args: any[]) => void;
+    llm.removeAllListeners("request");
+    let closedRow = false;
+    llm.on("request", (req, res) => {
+      const end = res.end.bind(res);
+      res.end = ((chunk: any) => {
+        if (!closedRow && typeof chunk === "string") {
+          closedRow = true;
+          void db
+            .update(analysesTable)
+            .set({ status: "failed", error: EVOLUTION_MESSAGES.analysisStopped, finishedAt: new Date() })
+            .where(eq(analysesTable.id, id))
+            .then(() => end(chunk));
+          return res;
+        }
+        return end(chunk);
+      }) as typeof res.end;
+      original(req, res);
+    });
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe(EVOLUTION_MESSAGES.analysisStopped);
+    expect(llmRequests).toHaveLength(1);
+    expect(await loadItems(id)).toHaveLength(0);
+    expect(finished).toEqual([id]);
+  });
+
   it("costanti della modalità evolution", () => {
     expect(PHASES_BY_MODE.evolution).toEqual(["completion", "evolution"]);
     expect(PHASES_BY_MODE.full).toEqual(["map", "capabilities", "catalog", "agents", "completion", "evolution"]);

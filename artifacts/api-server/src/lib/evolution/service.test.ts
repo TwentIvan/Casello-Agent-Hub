@@ -367,6 +367,50 @@ describe("avanzamento del giro", () => {
     expect((await cycleRow()).consecutiveErrors).toBe(1);
   });
 
+  it("ciclo in pausa durante l'analisi: il giro si chiude stopped col motivo, nessuna voce approvata", async () => {
+    const cycle = await saveCycle(appId, userId, input());
+    const round = await startRound(cycle.id, { manual: true });
+    await addItems(round.analysisId!);
+    await db.update(analysesTable).set({ status: "completed" }).where(eq(analysesTable.id, round.analysisId!));
+    await db
+      .update(evolutionCyclesTable)
+      .set({ status: "paused", pausedReason: EVOLUTION_MESSAGES.budgetReached })
+      .where(eq(evolutionCyclesTable.id, cycle.id));
+    await advanceRound(round.id);
+    expect((await roundRows())[0]).toMatchObject({ status: "stopped", outcome: EVOLUTION_MESSAGES.budgetReached, itemIds: [] });
+    expect(await db.select().from(analysisItemsTable).where(eq(analysisItemsTable.status, "approved"))).toHaveLength(0);
+    expect(await cycleRow()).toMatchObject({ status: "paused", pausedReason: EVOLUTION_MESSAGES.budgetReached, consecutiveErrors: 0 });
+  });
+
+  it("consenso non più valido durante l'analisi: giro chiuso e ciclo in pausa «consenso da rinnovare», nulla approvato", async () => {
+    const cycle = await saveCycle(appId, userId, input());
+    const round = await startRound(cycle.id, { manual: true });
+    await addItems(round.analysisId!);
+    await db.update(analysesTable).set({ status: "completed" }).where(eq(analysesTable.id, round.analysisId!));
+    await db.update(evolutionCyclesTable).set({ consentHash: "vecchia" }).where(eq(evolutionCyclesTable.id, cycle.id));
+    await advanceRound(round.id);
+    expect((await roundRows())[0]).toMatchObject({ status: "stopped", outcome: EVOLUTION_MESSAGES.consentRenew, itemIds: [] });
+    expect(await db.select().from(analysisItemsTable).where(eq(analysisItemsTable.status, "approved"))).toHaveLength(0);
+    expect(await cycleRow()).toMatchObject({ status: "paused", pausedReason: EVOLUTION_MESSAGES.consentRenew });
+  });
+
+  it("analisi rimasta in coda oltre 30 minuti: il tick la chiude e il giro fallisce «giro interrotto dal riavvio»", async () => {
+    const cycle = await saveCycle(appId, userId, input());
+    const round = await startRound(cycle.id, { manual: true });
+    // Ancora in coda ma da poco: nulla cambia
+    expect(await runEvolutionTick()).toBe(0);
+    expect((await roundRows())[0]!.status).toBe("analyzing");
+    await db
+      .update(evolutionRoundsTable)
+      .set({ startedAt: new Date(Date.now() - 31 * 60_000) })
+      .where(eq(evolutionRoundsTable.id, round.id));
+    expect(await runEvolutionTick()).toBe(0);
+    const [analysis] = await db.select().from(analysesTable).where(eq(analysesTable.id, round.analysisId!));
+    expect(analysis).toMatchObject({ status: "failed", error: EVOLUTION_MESSAGES.restartInterrupted });
+    expect((await roundRows())[0]).toMatchObject({ status: "failed", outcome: EVOLUTION_MESSAGES.restartInterrupted });
+    expect(await cycleRow()).toMatchObject({ consecutiveErrors: 1, status: "active" });
+  });
+
   it("cinque fallimenti di fila mettono il ciclo in pausa", async () => {
     const cycle = await saveCycle(appId, userId, input());
     for (let i = 0; i < 5; i++) {

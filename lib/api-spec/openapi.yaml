@@ -1718,7 +1718,7 @@ paths:
     post:
       operationId: runAppEvolutionNow
       tags: [evolution]
-      summary: Avvia subito un giro (solo con il login, 2 all'ora per App)
+      summary: Avvia subito un giro (solo con il login e solo chi ha attivato il ciclo, 2 all'ora per App)
       parameters:
         - $ref: "#/components/parameters/IdParam"
       responses:
@@ -1728,6 +1728,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EvolutionRoundView"
+        "403":
+          description: Solo chi ha attivato il ciclo (chi paga) può avviare un giro
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -6894,7 +6900,7 @@ components:
 
     EvolutionCycleView:
       type: object
-      required: [appId, status, pausedReason, frequency, itemsPerRound, analysisAiModelId, analysisModelName, teamTemplateId, mergeMode, stagingBranch, stagingUrl, monthlyBudgetUsd, spentUsd, unpricedCount, activatedByName, consentAt, consentValid, nextRoundAt, lastError, openRound]
+      required: [appId, status, pausedReason, frequency, itemsPerRound, analysisAiModelId, analysisModelName, teamTemplateId, mergeMode, stagingBranch, stagingUrl, monthlyBudgetUsd, spentUsd, unpricedCount, activatedByName, isPayer, consentAt, consentValid, nextRoundAt, lastError, openRound]
       properties:
         appId:
           type: integer
@@ -6929,6 +6935,9 @@ components:
           type: integer
         activatedByName:
           type: ["string", "null"]
+        isPayer:
+          type: boolean
+          description: L'utente della richiesta è chi ha attivato il ciclo (chi paga); solo lui avvia e riprende i giri
         consentAt:
           type: ["string", "null"]
           format: date-time

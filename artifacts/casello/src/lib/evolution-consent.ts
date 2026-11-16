@@ -56,9 +56,12 @@ export const MAX_MONTHLY_BUDGET_USD = 10000;
 
 type Settings = { analysisAiModelId: number | null; itemsPerRound: number; monthlyBudgetUsd: number };
 
-/** Il consenso va rinnovato se non c'è un ciclo o un consenso valido, o se cambiano modello e voci o sale il tetto; frequenza e tetto più basso no. */
-export function needsConsent(saved: (Settings & { consentValid: boolean }) | null, next: Settings): boolean {
-  if (!saved || !saved.consentValid) return true;
+/**
+ * Il consenso va rinnovato se non c'è un ciclo o un consenso valido, se salva chi non ha attivato il ciclo (con il consenso
+ * diventa lui a pagare), o se cambiano modello e voci o sale il tetto; frequenza e tetto più basso no.
+ */
+export function needsConsent(saved: (Settings & { consentValid: boolean; isPayer: boolean }) | null, next: Settings): boolean {
+  if (!saved || !saved.consentValid || !saved.isPayer) return true;
   return (
     saved.analysisAiModelId !== next.analysisAiModelId ||
     saved.itemsPerRound !== next.itemsPerRound ||

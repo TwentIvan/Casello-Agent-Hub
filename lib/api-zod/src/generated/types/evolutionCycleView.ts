@@ -34,6 +34,8 @@ export interface EvolutionCycleView {
   unpricedCount: number;
   /** @nullable */
   activatedByName: string | null;
+  /** L'utente della richiesta è chi ha attivato il ciclo (chi paga); solo lui avvia e riprende i giri */
+  isPayer: boolean;
   /** @nullable */
   consentAt: Date | null;
   consentValid: boolean;

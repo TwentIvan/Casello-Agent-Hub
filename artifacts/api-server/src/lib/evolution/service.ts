@@ -465,15 +465,34 @@ export async function advanceRound(roundId: number): Promise<void> {
   }
 
   const result = await db.transaction(async (tx) => {
+    // Prima la riga del ciclo, poi il giro: lo stesso ordine di lock di «Ferma»
+    const [cycle] = await tx.select().from(evolutionCyclesTable).where(eq(evolutionCyclesTable.id, round.cycleId)).for("update");
+    if (!cycle) return null;
+    // Ciclo messo in pausa o consenso non più valido durante l'analisi: il giro si chiude senza approvare nulla
+    const blocked = cycle.status !== "active" ? (cycle.pausedReason ?? EVOLUTION_MESSAGES.paused) : !consentValid(cycle) ? EVOLUTION_MESSAGES.consentRenew : null;
+    if (blocked !== null) {
+      const now = new Date();
+      const [closed] = await tx
+        .update(evolutionRoundsTable)
+        .set({ status: "stopped", outcome: truncate(blocked), finishedAt: now })
+        .where(and(eq(evolutionRoundsTable.id, roundId), eq(evolutionRoundsTable.status, "analyzing")))
+        .returning({ id: evolutionRoundsTable.id });
+      if (closed && cycle.status === "active") {
+        await tx
+          .update(evolutionCyclesTable)
+          .set({ status: "paused", pausedReason: EVOLUTION_MESSAGES.consentRenew, updatedAt: now })
+          .where(eq(evolutionCyclesTable.id, cycle.id));
+      }
+      return closed ? { ids: [] as number[], cycle, blocked } : null;
+    }
     const [approving] = await tx
       .update(evolutionRoundsTable)
       .set({ status: "approving" })
       .where(and(eq(evolutionRoundsTable.id, roundId), eq(evolutionRoundsTable.status, "analyzing")))
       .returning();
     if (!approving) return null;
-    const [cycle] = await tx.select().from(evolutionCyclesTable).where(eq(evolutionCyclesTable.id, approving.cycleId));
     const items = await tx.select().from(analysisItemsTable).where(eq(analysisItemsTable.analysisId, round.analysisId!));
-    const chosen = selectRoundItems(items, cycle!.itemsPerRound);
+    const chosen = selectRoundItems(items, cycle.itemsPerRound);
     const now = new Date();
     const approved =
       chosen.length === 0
@@ -499,9 +518,13 @@ export async function advanceRound(roundId: number): Promise<void> {
       .update(evolutionCyclesTable)
       .set({ consecutiveErrors: 0, lastError: null, nextAttemptAt: null, updatedAt: now })
       .where(eq(evolutionCyclesTable.id, approving.cycleId));
-    return { ids, cycle: cycle! };
+    return { ids, cycle, blocked: null };
   });
   if (!result) return;
+  if (result.blocked !== null) {
+    logger.info({ cycleId: round.cycleId, roundId }, "Giro del ciclo di evoluzione chiuso senza approvazioni: ciclo in pausa o consenso da rinnovare");
+    return;
+  }
   logger.info({ cycleId: round.cycleId, roundId, approved: result.ids.length }, "Giro del ciclo di evoluzione concluso");
 
   if (result.ids.length > 0 && result.cycle.activatedBy !== null) {

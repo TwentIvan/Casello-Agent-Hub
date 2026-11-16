@@ -20,7 +20,7 @@ async function addItem(
   analysisId: number,
   chapter: "endpoint" | "completion" | "evolution" | "tool",
   payload: unknown,
-  over: { origin?: "architect" | "chat"; status?: "pending" | "approved"; issueNumber?: number } = {},
+  over: { origin?: "architect" | "chat"; status?: "pending" | "approved"; issueNumber?: number; approvedByCycle?: boolean } = {},
 ) {
   seq += 1;
   await db.insert(analysisItemsTable).values({
@@ -33,10 +33,22 @@ async function addItem(
     origin: over.origin ?? "chat",
     status: over.status ?? "approved",
     issueNumber: over.issueNumber ?? null,
+    approvedByCycle: over.approvedByCycle ?? false,
   });
 }
 
 describe("chatPlannedItems", () => {
+  it("voce approvata dal ciclo di evoluzione senza issue → già pianificata", async () => {
+    const app = await newApp("planned-cycle");
+    const prev = await newAnalysis(app.id);
+    const current = await newAnalysis(app.id);
+
+    await addItem(prev.id, "completion", { title: "Dal ciclo" }, { origin: "architect", approvedByCycle: true });
+    await addItem(prev.id, "evolution", { title: "In attesa" }, { origin: "architect", status: "pending" });
+
+    expect(await chatPlannedItems(app.id, current.id)).toEqual([{ chapter: "completion", title: "Dal ciclo" }]);
+  });
+
   it("prende solo le voci chat approvate delle analisi precedenti della stessa app", async () => {
     const app = await newApp("planned-a");
     const other = await newApp("planned-b");

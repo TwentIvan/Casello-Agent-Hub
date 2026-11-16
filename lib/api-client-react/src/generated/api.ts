@@ -5227,7 +5227,7 @@ export const getRunAppEvolutionNowUrl = (id: number,) => {
 }
 
 /**
- * @summary Avvia subito un giro (solo con il login, 2 all'ora per App)
+ * @summary Avvia subito un giro (solo con il login e solo chi ha attivato il ciclo, 2 all'ora per App)
  */
 export const runAppEvolutionNow = async (id: number, options?: RequestInit): Promise<EvolutionRoundView> => {
 
@@ -5243,7 +5243,7 @@ export const runAppEvolutionNow = async (id: number, options?: RequestInit): Pro
 
 
 
-export const getRunAppEvolutionNowMutationOptions = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
+export const getRunAppEvolutionNowMutationOptions = <TError = ErrorType<ErrorResponse | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAppEvolutionNow>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof runAppEvolutionNow>>, TError,{id: number}, TContext> => {
 
@@ -5272,12 +5272,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type RunAppEvolutionNowMutationResult = NonNullable<Awaited<ReturnType<typeof runAppEvolutionNow>>>
 
-    export type RunAppEvolutionNowMutationError = ErrorType<NotFoundResponse | ErrorResponse>
+    export type RunAppEvolutionNowMutationError = ErrorType<ErrorResponse | NotFoundResponse>
 
     /**
- * @summary Avvia subito un giro (solo con il login, 2 all'ora per App)
+ * @summary Avvia subito un giro (solo con il login e solo chi ha attivato il ciclo, 2 all'ora per App)
  */
-export const useRunAppEvolutionNow = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
+export const useRunAppEvolutionNow = <TError = ErrorType<ErrorResponse | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAppEvolutionNow>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof runAppEvolutionNow>>,

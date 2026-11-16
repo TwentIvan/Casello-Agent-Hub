@@ -1755,6 +1755,7 @@ export const GetAppEvolutionResponse = zod.union([zod.object({
   "spentUsd": zod.number().describe('Spesa del mese'),
   "unpricedCount": zod.number(),
   "activatedByName": zod.string().nullable(),
+  "isPayer": zod.boolean().describe('L\'utente della richiesta è chi ha attivato il ciclo (chi paga); solo lui avvia e riprende i giri'),
   "consentAt": zod.coerce.date().nullable(),
   "consentValid": zod.boolean(),
   "nextRoundAt": zod.coerce.date().nullable(),
@@ -1812,6 +1813,7 @@ export const SaveAppEvolutionResponse = zod.object({
   "spentUsd": zod.number().describe('Spesa del mese'),
   "unpricedCount": zod.number(),
   "activatedByName": zod.string().nullable(),
+  "isPayer": zod.boolean().describe('L\'utente della richiesta è chi ha attivato il ciclo (chi paga); solo lui avvia e riprende i giri'),
   "consentAt": zod.coerce.date().nullable(),
   "consentValid": zod.boolean(),
   "nextRoundAt": zod.coerce.date().nullable(),
@@ -1884,6 +1886,7 @@ export const StopAppEvolutionResponse = zod.object({
   "spentUsd": zod.number().describe('Spesa del mese'),
   "unpricedCount": zod.number(),
   "activatedByName": zod.string().nullable(),
+  "isPayer": zod.boolean().describe('L\'utente della richiesta è chi ha attivato il ciclo (chi paga); solo lui avvia e riprende i giri'),
   "consentAt": zod.coerce.date().nullable(),
   "consentValid": zod.boolean(),
   "nextRoundAt": zod.coerce.date().nullable(),
@@ -1924,6 +1927,7 @@ export const ResumeAppEvolutionResponse = zod.object({
   "spentUsd": zod.number().describe('Spesa del mese'),
   "unpricedCount": zod.number(),
   "activatedByName": zod.string().nullable(),
+  "isPayer": zod.boolean().describe('L\'utente della richiesta è chi ha attivato il ciclo (chi paga); solo lui avvia e riprende i giri'),
   "consentAt": zod.coerce.date().nullable(),
   "consentValid": zod.boolean(),
   "nextRoundAt": zod.coerce.date().nullable(),
@@ -1942,7 +1946,7 @@ export const ResumeAppEvolutionResponse = zod.object({
 
 
 /**
- * @summary Avvia subito un giro (solo con il login, 2 all'ora per App)
+ * @summary Avvia subito un giro (solo con il login e solo chi ha attivato il ciclo, 2 all'ora per App)
  */
 export const RunAppEvolutionNowParams = zod.object({
   "id": zod.coerce.number()

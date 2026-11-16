@@ -298,6 +298,70 @@ describe("ciclo di evoluzione automatica: flusso completo", () => {
     expect((await api("GET", "/dashboard/stats")).json.evolutionCyclesPaused).toBe(1);
   }, 60_000);
 
+  it("il giro non sostituisce l'analisi completa nel piano e le voci approvate dal ciclo restano già pianificate senza issue", async () => {
+    // Analisi completa già fatta dall'utente: è la base del piano
+    const [full] = await db
+      .insert(analysesTable)
+      .values({
+        appId,
+        model: "fake-model",
+        aiModelId: modelId,
+        status: "completed",
+        mode: "full",
+        maxTokens: 1_000_000,
+        sources: { code: "github", openapi: false, mcp: false, description: false },
+      })
+      .returning();
+    const [fullItem] = await db
+      .insert(analysisItemsTable)
+      .values({ analysisId: full!.id, chapter: "evolution", ref: "evolution:full", position: 0, payload: evolutionItem("Voce dell'analisi completa", 1), diff: "new" })
+      .returning();
+    // Issue rifiutate da GitHub: le voci del giro restano approvate senza issue
+    gh.failWith = (req) => (req.method === "POST" && /\/(issues|labels)/.test(req.path) ? 403 : null);
+
+    const put = await api("PUT", `/apps/${appId}/evolution`, {
+      frequency: "weekly",
+      itemsPerRound: 3,
+      analysisAiModelId: modelId,
+      teamTemplateId: null,
+      mergeMode: "direct",
+      stagingBranch: null,
+      stagingUrl: null,
+      monthlyBudgetUsd: 10,
+      consent: { accepted: true, appSlug: "botcave", version: CONSENT_VERSION },
+    });
+    expect(put.status).toBe(200);
+    expect(await runEvolutionTick()).toBe(1);
+    await waitFor(async () => (await rounds())[0]?.status !== "analyzing", "fine del primo giro");
+    await waitEvolutionIdleForTests();
+    const [first] = await rounds();
+    expect(first).toMatchObject({ number: 1, status: "done", outcome: roundOutcome(3) });
+    const items1 = await db.select().from(analysisItemsTable).where(eq(analysisItemsTable.analysisId, first.analysisId));
+    expect(items1.filter((i) => i.approvedByCycle).every((i) => i.issueNumber === null)).toBe(true);
+
+    // Il piano resta sull'analisi completa e mostra anche le voci del giro (approvate e in attesa)
+    const plan = await api("GET", `/apps/${appId}/plan`);
+    expect(plan.status).toBe(200);
+    expect(plan.json.analysisId).toBe(full!.id);
+    const planIds = new Set(plan.json.items.map((i: { id: number }) => i.id));
+    expect(planIds.has(fullItem!.id)).toBe(true);
+    for (const item of items1) expect(planIds.has(item.id)).toBe(true);
+    expect(plan.json.items).toHaveLength(1 + items1.length);
+
+    // Il secondo giro riceve le voci approvate dal primo come già pianificate, anche senza issue
+    const before = chatBodies().length;
+    const runNow = await api("POST", `/apps/${appId}/evolution/run-now`);
+    expect(runNow.status).toBe(202);
+    await waitFor(() => chatBodies().length > before, "prima chiamata del secondo giro");
+    const prompt2 = userPrompt(chatBodies()[before]!);
+    const planned = prompt2.slice(prompt2.indexOf("Voci già pianificate"));
+    expect(prompt2).toContain("Voci già pianificate");
+    for (const title of ["Classifica delle squadre", "Calendario delle partite", "Statistiche dei giocatori"]) expect(planned).toContain(title);
+    await waitFor(async () => (await rounds())[0]?.status !== "analyzing", "fine del secondo giro");
+    await waitEvolutionIdleForTests();
+    expect((await api("GET", `/apps/${appId}/plan`)).json.analysisId).toBe(full!.id);
+  }, 60_000);
+
   it("tetto del ciclo raggiunto e consenso da rinnovare mettono in pausa senza chiamare il modello", async () => {
     const body = {
       frequency: "weekly",

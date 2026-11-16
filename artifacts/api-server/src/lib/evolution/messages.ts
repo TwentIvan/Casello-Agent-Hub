@@ -20,6 +20,7 @@ export const EVOLUTION_MESSAGES = {
   invalidSettings: "impostazioni del ciclo non valide",
   templateUnavailable: "modello di squadra non disponibile",
   tooManyRuns: "Troppe richieste: riprova tra poco",
+  notPayer: "solo chi ha attivato il ciclo può avviare un giro",
   analysisBusy: "c'è già un'analisi in corso per questa app: riprova quando finisce",
 } as const;
 

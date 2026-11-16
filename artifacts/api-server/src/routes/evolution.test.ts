@@ -192,6 +192,20 @@ describe("API del ciclo di evoluzione", () => {
     expect(rounds.json).toHaveLength(1);
   });
 
+  it("run_now_e_isPayer_solo_per_chi_ha_attivato_il_ciclo", async () => {
+    const put = await api("PUT", `/apps/${appId}/evolution`, putBody());
+    expect(put.json.isPayer).toBe(true);
+    // Il ciclo l'ha attivato un altro utente: chi guarda non paga, non avvia giri e il limite orario non si consuma
+    const [other] = await db.insert(usersTable).values({ email: "altro@example.com", name: "Altro" }).returning();
+    await db.update(evolutionCyclesTable).set({ activatedBy: other!.id });
+    expect((await api("GET", `/apps/${appId}/evolution`)).json.isPayer).toBe(false);
+    for (let i = 0; i < 3; i++) {
+      const r = await api("POST", `/apps/${appId}/evolution/run-now`);
+      expect([r.status, r.json.error]).toEqual([403, "solo chi ha attivato il ciclo può avviare un giro"]);
+    }
+    expect((await api("GET", `/apps/${appId}/evolution/rounds`)).json).toHaveLength(0);
+  });
+
   it("stop_resume_e_delete_seguono_le_regole_del_servizio", async () => {
     expect((await api("POST", `/apps/${appId}/evolution/stop`)).status).toBe(404);
     await api("PUT", `/apps/${appId}/evolution`, putBody());

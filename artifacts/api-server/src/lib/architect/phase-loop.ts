@@ -37,6 +37,9 @@ export const PHASE_TOKEN_SHARES: Record<PhaseName, number> = {
   evolution: 0.09,
 };
 
+/** Quote delle fasi di un'analisi ridotta del ciclo di evoluzione (`mode = evolution`). */
+export const EVOLUTION_PHASE_SHARES = { completion: 0.5, evolution: 0.4 } as const satisfies Partial<Record<PhaseName, number>>;
+
 /** Frazione della quota di token (o dei giri) oltre la quale si sollecita la consegna. */
 export const PHASE_NUDGE_RATIO = 0.8;
 /** Giri concessi dopo il sollecito prima che la fase fallisca. */

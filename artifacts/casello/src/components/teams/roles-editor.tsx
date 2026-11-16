@@ -40,7 +40,7 @@ interface RolesEditorProps {
 
 export const CODE_DISABLED_HINT = "Collega il repository dell'app tramite l'App GitHub per dare il codice ai ruoli";
 export const CODE_LEAD_HINT = "Il capo non esegue compiti: per lui conta solo «Scrittura e merge», che gli fa unire le PR della squadra";
-export const CODE_MERGE_HINT = "Unisce le PR della squadra con la CI verde; quelle con migrazioni passano da «Da confermare»";
+export const CODE_MERGE_HINT = "Unisce le PR della squadra con la CI verde; quelle con uno script -post passano da «Da confermare»";
 
 
 /** Il ruolo ha le istruzioni se tra le sue skill specializzate c'è `ruolo-<key>`. */

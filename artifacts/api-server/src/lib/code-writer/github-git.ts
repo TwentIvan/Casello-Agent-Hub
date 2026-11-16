@@ -142,6 +142,49 @@ async function githubCallSafe(r: RepoRef, token: string, path: string): Promise<
   return call(r, token, "contents: read", { method: "GET", path }, [404]);
 }
 
+/** Confronto tra due commit: titoli dei commit (i più recenti) e file toccati, con tetti fissi. */
+export interface CommitComparison {
+  commits: string[];
+  files: { filename: string; status: "added" | "modified" | "removed" | "renamed" }[];
+  truncated: boolean;
+}
+
+/** Commit e file letti al più da un confronto (il resto si scarta e `truncated` lo segnala). */
+export const COMPARE_MAX_COMMITS = 30;
+export const COMPARE_MAX_FILES = 200;
+
+/** Confronta `base...head`; null se uno dei due riferimenti non esiste (404 o 422 di GitHub). */
+export async function compareCommits(r: RepoRef, base: string, head: string): Promise<CommitComparison | null> {
+  const token = await tokenFor(r, READ);
+  const { status, json } = await call(
+    r,
+    token,
+    "contents: read",
+    { method: "GET", path: repoPath(r, `/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`) },
+    [404, 422],
+  );
+  if (status === 404 || status === 422) return null;
+  if (!isObj(json) || !Array.isArray(json["commits"]) || !Array.isArray(json["files"])) throw badShape(status);
+  const allCommits: string[] = [];
+  for (const c of json["commits"] as unknown[]) {
+    if (!isObj(c) || !isObj(c["commit"]) || typeof c["commit"]["message"] !== "string") throw badShape(status);
+    allCommits.push(c["commit"]["message"].split("\n")[0] ?? "");
+  }
+  const allFiles: CommitComparison["files"] = [];
+  for (const f of json["files"] as unknown[]) {
+    if (!isObj(f) || typeof f["filename"] !== "string" || typeof f["status"] !== "string") throw badShape(status);
+    const s = f["status"];
+    allFiles.push({ filename: f["filename"], status: s === "added" || s === "removed" || s === "renamed" ? s : "modified" });
+  }
+  // Con più di 250 commit GitHub ne taglia l'elenco: totale dichiarato oltre a quelli ricevuti = troncato.
+  const total = typeof json["total_commits"] === "number" ? json["total_commits"] : allCommits.length;
+  return {
+    commits: allCommits.slice(-COMPARE_MAX_COMMITS),
+    files: allFiles.slice(0, COMPARE_MAX_FILES),
+    truncated: allCommits.length > COMPARE_MAX_COMMITS || total > allCommits.length || allFiles.length > COMPARE_MAX_FILES,
+  };
+}
+
 export async function getCommitTree(r: RepoRef, sha: string): Promise<string> {
   const token = await tokenFor(r, READ);
   const { status, json } = await call(r, token, "contents: read", { method: "GET", path: repoPath(r, `/git/commits/${encodeURIComponent(sha)}`) });

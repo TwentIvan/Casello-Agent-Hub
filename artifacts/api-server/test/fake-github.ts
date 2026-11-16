@@ -172,6 +172,8 @@ export interface FakeGithub {
   git: Map<string, FakeGitRepo>;
   /** proprietario/nome → pull request. */
   pulls: Map<string, FakePull[]>;
+  /** `proprietario/nome:base...head` → confronto (`GET /repos/{repo}/compare/{base}...{head}`; commit dal più vecchio, senza voce: 404). */
+  comparisons: Map<string, { commits: string[]; files: { filename: string; status: string }[] }>;
   /** sha → check run. */
   checkRuns: Map<string, FakeCheckRun[]>;
   /** sha → stati di commit. */
@@ -346,6 +348,7 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
     commits: new Map(),
     git: new Map(),
     pulls: new Map(),
+    comparisons: new Map(),
     checkRuns: new Map(),
     statuses: new Map(),
     jobLogs: new Map(),
@@ -651,6 +654,19 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
       if (content === undefined) return send(res, 404, NOT_FOUND);
       const buf = Buffer.from(content, "utf8");
       return send(res, 200, { type: "file", encoding: "base64", content: buf.toString("base64"), size: buf.length, path: filePath });
+    }
+
+    let cmp: RegExpExecArray | null;
+    if (repoMatch && method === "GET" && (cmp = /^\/compare\/(.+)$/.exec(rest))) {
+      const fullName = access("contents", "read");
+      if (!fullName) return;
+      const found = fake.comparisons.get(`${fullName}:${decodeURIComponent(cmp[1]!)}`);
+      if (!found) return send(res, 404, NOT_FOUND);
+      return send(res, 200, {
+        total_commits: found.commits.length,
+        commits: found.commits.map((message, i) => ({ sha: `c${i}`, commit: { message } })),
+        files: found.files,
+      });
     }
 
     let pm: RegExpExecArray | null;

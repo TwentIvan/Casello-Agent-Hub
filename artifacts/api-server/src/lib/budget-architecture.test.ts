@@ -64,6 +64,8 @@ const generation = (
   });
 
 afterAll(async () => {
+  // Il database di prova è condiviso: l'App (e con lei agenti, run e generazioni) non deve restare agli altri test
+  await pool.query("DELETE FROM apps");
   await pool.end();
 });
 

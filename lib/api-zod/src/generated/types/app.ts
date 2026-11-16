@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AppStatus } from './appStatus';
+import type { ArchitectureRefresh } from './architectureRefresh';
 import type { AuthConfig } from './authConfig';
 import type { ExtraHeader } from './extraHeader';
 import type { SourceType } from './sourceType';
@@ -61,6 +62,7 @@ export interface App {
      * @nullable
      */
   functionalDescription: string | null;
+  architectureRefresh: ArchitectureRefresh;
   status: AppStatus;
   createdAt: Date;
   updatedAt: Date;

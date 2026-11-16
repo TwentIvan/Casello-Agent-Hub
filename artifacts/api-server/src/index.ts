@@ -12,6 +12,7 @@ import { startCodeCacheSweeper } from "./lib/code-reader/source-cache";
 import { failInterruptedRuns } from "./lib/run-executor";
 import { startRunQueue } from "./lib/run-queue";
 import { startTriggerPoller } from "./lib/triggers/poller";
+import { failInterruptedArchitecture, startArchitectureScheduler } from "./lib/architecture/scheduler";
 import { startCodeWatcher } from "./lib/code-writer/watcher";
 import { failInterruptedTeamWork } from "./lib/teams/task-runner";
 import { pumpTurnInBackground, resumeQueuedTurns } from "./lib/teams/turn-runner";
@@ -82,6 +83,8 @@ failInterruptedRuns()
     startRunQueue();
     // Sorveglianza degli inneschi: dopo la coda delle run, che riceve le run create dai giri.
     startTriggerPoller();
+    // Sintesi dell'architettura delle App: controllo dello SHA e rigenerazione, primo giro poco dopo l'avvio.
+    startArchitectureScheduler();
     // Sorveglianza della CI delle PR dei compiti con codice.
     startCodeWatcher();
   });
@@ -117,6 +120,13 @@ try {
   if (count > 0) logger.warn({ count }, "Turni del nodo interrotti dal riavvio chiusi come falliti");
 } catch (err) {
   logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Chiusura dei turni del nodo interrotti non riuscita");
+}
+
+// Sintesi dell'architettura rimaste in corso: `error` «generazione interrotta dal riavvio», prima di `listen` e del primo giro.
+try {
+  await failInterruptedArchitecture();
+} catch (err) {
+  logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Chiusura delle sintesi dell'architettura interrotte non riuscita");
 }
 
 // I turni della chat del piano rimasti in corso: la conversazione torna libera, con un messaggio d'errore.

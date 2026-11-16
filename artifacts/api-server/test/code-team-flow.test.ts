@@ -41,6 +41,19 @@ const INST = 31;
 const GH_VARS = ["GITHUB_APP_ID", "GITHUB_APP_SLUG", "GITHUB_APP_CLIENT_ID", "GITHUB_APP_CLIENT_SECRET", "GITHUB_APP_PRIVATE_KEY", "GITHUB_API_BASE", "GITHUB_WEB_BASE"];
 const savedEnv: Record<string, string | undefined> = {};
 const PERMISSIONS = { contents: "write", pull_requests: "write", checks: "read", statuses: "read", actions: "read", issues: "write", metadata: "read" };
+// La richiesta di sintesi dopo un merge: si osserva la chiamata, poi gira quella vera
+const archRequests = vi.hoisted(() => [] as { appId: number; bypassOff: boolean }[]);
+vi.mock("../src/lib/architecture/scheduler", async (orig) => {
+  const real = await orig<typeof import("../src/lib/architecture/scheduler")>();
+  return {
+    ...real,
+    requestArchitectureRefresh: (appId: number, opts: { bypassOff: boolean }) => {
+      archRequests.push({ appId, bypassOff: opts.bypassOff });
+      return real.requestArchitectureRefresh(appId, opts);
+    },
+  };
+});
+
 const TRUNCATE = "TRUNCATE users, apps, skills, ai_accounts, team_instances RESTART IDENTITY CASCADE";
 
 let gh: FakeGithub;
@@ -425,6 +438,32 @@ describe("flusso: merge automatico (code: merge)", () => {
     await watchCodeTasksOnce(new Date(Date.now() + 60_000));
     expect(await reasons(instanceId)).toContainEqual({ type: "pr_closed", taskCodeId: row.id, merged: true });
     expect(await mergeTeamPull(instanceId, { compito: "t1" })).toEqual({ ok: false, content: MERGE_MESSAGES.alreadyMerged });
+  });
+
+  it("dopo un merge riuscito la sintesi dell'architettura dell'App di riferimento è richiesta (non con frequenza off)", async () => {
+    const { waitArchitectureIdleForTests } = await import("../src/lib/architecture/scheduler");
+    const [inst] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, instanceId));
+    const appId = inst!.refAppId;
+    archRequests.length = 0;
+    // Merge rifiutato (CI assente): nessuna richiesta
+    const first = await pushPr("t1", { "src/a.ts": "export const a = 7;\n" });
+    expect((await mergeTeamPull(instanceId, { compito: "t1" })).ok).toBe(false);
+    expect(archRequests).toEqual([]);
+    green(first.sha);
+    expect((await mergeTeamPull(instanceId, { compito: "t1" })).ok).toBe(true);
+    await waitArchitectureIdleForTests();
+    expect(archRequests).toEqual([{ appId, bypassOff: false }]);
+    expect(pull(first.number)).toMatchObject({ merged: true });
+
+    // Con frequenza off il merge riesce e non si prenota nulla
+    await db.update(appsTable).set({ architectureRefresh: "off" }).where(eq(appsTable.id, appId));
+    await pool.query("DELETE FROM app_architecture");
+    const second = await pushPr("t2", { "src/b.ts": "export const b = 1;\n" });
+    green(second.sha);
+    expect((await mergeTeamPull(instanceId, { compito: "t2" })).ok).toBe(true);
+    await waitArchitectureIdleForTests();
+    const rows = await pool.query("SELECT force_requested FROM app_architecture WHERE app_id = $1", [appId]);
+    expect(rows.rows.filter((r: { force_requested: boolean }) => r.force_requested)).toEqual([]);
   });
 
   it("PR con una migrazione additiva: si unisce da sola; poi una modifica della migrazione esistente è rifiutata", async () => {

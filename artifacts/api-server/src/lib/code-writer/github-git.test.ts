@@ -4,6 +4,7 @@ import { clearInstallationTokenCache } from "../github/app";
 import { loadGithubConfig, type GithubConfig } from "../github/config";
 import {
   commitFiles,
+  compareCommits,
   createDraftPull,
   failedJobLogTail,
   findOpenPull,
@@ -288,5 +289,34 @@ describe("client GitHub dei compiti", () => {
   it("readFileAt senza il permesso contents → messaggio fisso del permesso", async () => {
     gh.installationPermissions.set(INST, { metadata: "read", pull_requests: "write" });
     expect((await rejects(readFileAt(r, "a.txt", "main"))).message).toBe(CODE_WRITE_MESSAGES.permission("contents: read"));
+  });
+
+  it("compareCommits: 30 commit più recenti (prima riga), 200 file, troncato", async () => {
+    const commits = Array.from({ length: 35 }, (_, i) => `commit ${i + 1}\n\ncorpo ${i + 1}`);
+    const files = Array.from({ length: 250 }, (_, i) => ({ filename: `f${i}.ts`, status: i === 0 ? "copied" : i === 1 ? "renamed" : "added" }));
+    gh.comparisons.set(`${REPO}:aaa...bbb`, { commits, files });
+    const out = await compareCommits(r, "aaa", "bbb");
+    expect(out!.commits).toHaveLength(30);
+    expect(out!.commits[0]).toBe("commit 6");
+    expect(out!.commits[29]).toBe("commit 35");
+    expect(out!.files).toHaveLength(200);
+    expect(out!.files[0]).toEqual({ filename: "f0.ts", status: "modified" });
+    expect(out!.files[1]!.status).toBe("renamed");
+    expect(out!.truncated).toBe(true);
+  });
+
+  it("compareCommits: confronto piccolo non troncato; base sconosciuto → null", async () => {
+    gh.comparisons.set(`${REPO}:aaa...bbb`, { commits: ["uno"], files: [{ filename: "a.ts", status: "removed" }] });
+    expect(await compareCommits(r, "aaa", "bbb")).toEqual({ commits: ["uno"], files: [{ filename: "a.ts", status: "removed" }], truncated: false });
+    expect(await compareCommits(r, "zzz", "bbb")).toBeNull();
+  });
+
+  it("compareCommits: accesso perso → messaggio fisso", async () => {
+    gh.revoked.add(INST);
+    try {
+      expect((await rejects(compareCommits(r, "aaa", "bbb"))).message).toBe(CODE_WRITE_MESSAGES.noAccess);
+    } finally {
+      gh.revoked.delete(INST);
+    }
   });
 });

@@ -114,6 +114,10 @@ const DESCRIBERS: Record<string, Describer> = {
     return app ? `Chiede al Responsabile di ${app}` : "Chiede al Responsabile di prodotto";
   },
   leggi_run: fixed("Legge l'esito di una run"),
+  leggi_architettura: (a) => {
+    const slug = text(a, "app");
+    return slug ? `Legge l'architettura di ${slug}` : "Legge l'architettura dell'app";
+  },
 };
 
 /**
@@ -125,6 +129,7 @@ export function describeRunStep(step: { type: string; toolName: string | null })
   const name = text({ name: step.toolName }, "name");
   if (!name || (step.type !== "tool" && step.type !== "queued")) return FALLBACK;
   if (step.type === "tool" && step.toolName === "proponi") return "Prepara una proposta";
+  if (step.type === "tool" && step.toolName === "leggi_architettura") return "Legge l'architettura dell'app";
   return step.type === "queued" ? `Mette in coda ${name}` : `Consulta ${name}`;
 }
 

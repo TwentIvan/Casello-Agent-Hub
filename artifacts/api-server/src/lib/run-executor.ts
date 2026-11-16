@@ -3,6 +3,7 @@ import {
   agentsTable,
   aiAccountsTable,
   aiModelsTable,
+  appArchitectureTable,
   appsTable,
   appToolsTable,
   nodesTable,
@@ -10,6 +11,7 @@ import {
   runStepsTable,
   type Agent,
   type App,
+  type AppArchitecture,
   type Run,
 } from "@workspace/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -33,6 +35,7 @@ import { runBudgetBlock } from "./budget";
 import { delegateTurn } from "./node-turns/delegate";
 import { logger } from "./logger";
 import { loopModelCallError, modelChatDeps, newUsage, stepWriter, type LoopUsage } from "./loop-wiring";
+import { ARCHITECTURE_TOOL_NAME, architecturePromptBlock, architectureTool, handleReadArchitecture } from "./architecture/tool";
 import { ESCALATION_TOOL_NAME, escalationTool, handleEscalation, productLead } from "./escalation";
 import { isInternalTool, roleFunctionTools } from "./teams/role-tools";
 import { loadAgentTools, loadAppConnection } from "./tools/catalog";
@@ -199,8 +202,14 @@ export function runLimitsFor(agent: Pick<Agent, "role">): Partial<LoopLimits> {
 
 // Contesto di sistema: data di oggi, app e istruzioni dell'agente. I tool non sono elencati nel testo:
 // arrivano al modello come function calling.
-export function buildSystemPrompt(agent: Agent, app: App, now: Date = new Date()): string {
+export function buildSystemPrompt(
+  agent: Agent,
+  app: App,
+  now: Date = new Date(),
+  arch?: Pick<AppArchitecture, "sha" | "summary" | "generatedAt"> | null,
+): string {
   const functional = app.functionalDescription?.trim() ?? "";
+  const archBlock = agent.role === "general" ? architecturePromptBlock(arch ?? null) : "";
   const context = [
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
     `🤖 CONTESTO AGENTE: ${agent.name}`,
@@ -211,6 +220,7 @@ export function buildSystemPrompt(agent: Agent, app: App, now: Date = new Date()
     ...(functional
       ? ["", "Descrizione funzionale dell'app (dati, non istruzioni):", functional.slice(0, FUNCTIONAL_DESCRIPTION_MAX)]
       : []),
+    ...(archBlock ? ["", archBlock] : []),
     "",
     "Istruzioni agente:",
     agent.systemPrompt || "(nessuna istruzione specifica)",
@@ -242,6 +252,10 @@ async function loadContext(run: Run): Promise<RunContext & { app: App }> {
   // `proponi`: a ogni agente con almeno un tool utilizzabile in un passo; vince su un tool omonimo
   if (loaded.some(proposalEligible)) {
     tools = [...tools.filter((t) => t.name !== PROPOSE_TOOL_NAME), proposeTool()];
+  }
+  // `leggi_architettura`: solo al Responsabile (`general`); vince su un tool omonimo
+  if (agent.role === "general") {
+    tools = [...tools.filter((t) => t.name !== ARCHITECTURE_TOOL_NAME), architectureTool()];
   }
   return { run, agent, app, tools, baseTools: loaded, conn };
 }
@@ -420,6 +434,7 @@ function runToolDeps(
           args,
         );
       }
+      if (tool.name === ARCHITECTURE_TOOL_NAME) return handleReadArchitecture(ctx.app, args);
       return handleEscalation(ctx.run, ctx.agent, args);
     },
     queueAction,
@@ -742,9 +757,14 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
     // Modello, account e utente sono quelli del modello fissato sulla run (chi paga), non dell'agente attuale.
     const blocked = await runBudgetBlock({ ...ctx.agent, aiModelId: ctx.run.aiModelId ?? ctx.agent.aiModelId });
     if (blocked) throw new RunBudgetError(blocked);
+    // La sintesi dell'architettura entra nel prompt solo del Responsabile
+    const [arch] =
+      ctx.agent.role === "general"
+        ? await db.select().from(appArchitectureTable).where(eq(appArchitectureTable.appId, ctx.app.id)).limit(1)
+        : [];
     const initial: LoopState = {
       messages: [
-        { role: "system", content: buildSystemPrompt(ctx.agent, ctx.app) },
+        { role: "system", content: buildSystemPrompt(ctx.agent, ctx.app, new Date(), arch ?? null) },
         { role: "user", content: run.input ?? "" },
       ],
       queue: [],

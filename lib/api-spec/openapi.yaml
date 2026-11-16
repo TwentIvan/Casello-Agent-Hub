@@ -1470,6 +1470,97 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /apps/{id}/architecture:
+    get:
+      operationId: getAppArchitecture
+      tags: [apps]
+      summary: Sintesi dell'architettura dell'app
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Stato e ultima sintesi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppArchitecture"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/architecture/versions:
+    get:
+      operationId: listAppArchitectureVersions
+      tags: [apps]
+      summary: Ultime versioni della sintesi (senza testo)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Fino a 20 versioni con sintesi, dalla più recente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AppArchitectureVersion"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/architecture/versions/{versionId}:
+    get:
+      operationId: getAppArchitectureVersion
+      tags: [apps]
+      summary: Una versione della sintesi, con il testo
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Versione con testo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppArchitectureVersion"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/architecture/refresh:
+    post:
+      operationId: refreshAppArchitecture
+      tags: [apps]
+      summary: Aggiorna ora la sintesi dell'architettura
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "202":
+          description: Aggiornamento accodato
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [queued]
+                properties:
+                  queued:
+                    type: boolean
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Sintesi già in corso o App non idonea
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Troppe richieste
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # ─── Agents ─────────────────────────────────────────────────────────────────
 
   /agents:
@@ -5420,9 +5511,71 @@ components:
       enum: [github, zip, none]
       description: Da dove l'architetto legge il codice dell'app
 
+    ArchitectureRefresh:
+      type: string
+      enum: [off, hourly, 6h, daily, weekly]
+      description: Frequenza di controllo della sintesi dell'architettura
+
+    AppArchitecture:
+      type: object
+      required: [appId, refresh, available, unavailableReason, status, sha, branch, generatedAt, checkedAt, summary, repoMap, lastError, promptTokens, completionTokens, costUsd, aiModelName]
+      properties:
+        appId:
+          type: integer
+        refresh:
+          $ref: "#/components/schemas/ArchitectureRefresh"
+        available:
+          type: boolean
+        unavailableReason:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [idle, running, error]
+        sha:
+          type: ["string", "null"]
+        branch:
+          type: ["string", "null"]
+        generatedAt:
+          type: ["string", "null"]
+          format: date-time
+        checkedAt:
+          type: ["string", "null"]
+          format: date-time
+        summary:
+          type: ["string", "null"]
+        repoMap:
+          type: ["string", "null"]
+        lastError:
+          type: ["string", "null"]
+        promptTokens:
+          type: ["integer", "null"]
+        completionTokens:
+          type: ["integer", "null"]
+        costUsd:
+          type: ["number", "null"]
+        aiModelName:
+          type: ["string", "null"]
+
+    AppArchitectureVersion:
+      type: object
+      required: [id, sha, createdAt, costUsd]
+      properties:
+        id:
+          type: integer
+        sha:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        costUsd:
+          type: ["number", "null"]
+        summary:
+          type: string
+          description: Testo della sintesi (solo nel dettaglio di una versione)
+
     App:
       type: object
-      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, createdAt, updatedAt]
+      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, architectureRefresh, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -5478,6 +5631,8 @@ components:
         functionalDescription:
           type: ["string", "null"]
           description: Descrizione funzionale dell'app per l'architetto
+        architectureRefresh:
+          $ref: "#/components/schemas/ArchitectureRefresh"
         status:
           $ref: "#/components/schemas/AppStatus"
         createdAt:
@@ -5792,6 +5947,8 @@ components:
           type: ["string", "null"]
         functionalDescription:
           type: ["string", "null"]
+        architectureRefresh:
+          $ref: "#/components/schemas/ArchitectureRefresh"
         status:
           $ref: "#/components/schemas/AppStatus"
 

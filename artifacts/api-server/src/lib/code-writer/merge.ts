@@ -9,6 +9,7 @@ import { internalTool } from "../teams/role-tools";
 import { enqueueTurnReason, notifyTurnQueued } from "../teams/turn-queue";
 import type { CatalogTool, ToolResult } from "../tools/types";
 import { ciState } from "./ci-state";
+import { requestArchitectureRefresh } from "../architecture/scheduler";
 import { getPullDetail, listPullFiles, markReadyForReview, readCi, readFileAt, squashMerge, type PullDetail, type PullFile, type RepoRef } from "./github-git";
 import { classifyMigration, isPostMigration, MIGRATION_NAME_RE } from "../migrations/classify";
 import { codeBranch, codeErrorMessage } from "./session";
@@ -154,7 +155,7 @@ class MergeRefused extends Error {
 }
 
 interface Context {
-  instance: { id: number; name: string; status: string; activatedBy: number | null };
+  instance: { id: number; name: string; status: string; activatedBy: number | null; refAppId: number };
   row: TeamCodeTaskRow;
   repo: RepoRef;
 }
@@ -255,6 +256,10 @@ async function doMerge(ctx: Context, pull: PullDetail): Promise<void> {
     logger.info(
       { instanceId: ctx.instance.id, planTaskId: ctx.row.planTaskId, pr: pull.number, head: pull.headSha.slice(0, 7), sha: merged.sha.slice(0, 7) },
       "PR della squadra unita da Botcave",
+    );
+    // Il codice dell'App è cambiato: la sintesi dell'architettura si aggiorna (in background, mai a scapito del merge)
+    void requestArchitectureRefresh(ctx.instance.refAppId, { bypassOff: false, clearBackoff: false }).catch((e: unknown) =>
+      logger.error({ appId: ctx.instance.refAppId, errName: e instanceof Error ? e.name : "Error" }, "Aggiornamento della sintesi dell'architettura non richiesto"),
     );
   } catch (err) {
     await release(ctx.row.id).catch((e: unknown) =>

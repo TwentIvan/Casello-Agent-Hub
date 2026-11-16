@@ -1429,6 +1429,7 @@ export const ListAppsResponseItem = zod.object({
   "sourceInstallationId": zod.number().nullable().describe('Installazione della GitHub App da cui l\'architetto scarica il repo (con un token ristretto a quel repo); null = token manuale della fase 3'),
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
+  "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -1509,6 +1510,7 @@ export const CreateAppResponse = zod.object({
   "sourceInstallationId": zod.number().nullable().describe('Installazione della GitHub App da cui l\'architetto scarica il repo (con un token ristretto a quel repo); null = token manuale della fase 3'),
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
+  "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -1556,6 +1558,7 @@ export const GetAppResponse = zod.object({
   "sourceInstallationId": zod.number().nullable().describe('Installazione della GitHub App da cui l\'architetto scarica il repo (con un token ristretto a quel repo); null = token manuale della fase 3'),
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
+  "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -1601,6 +1604,7 @@ export const UpdateAppBody = zod.object({
   "sourceInstallationId": zod.number().nullish().describe('Installazione della GitHub App dell\'utente che vede sourceRepo; null torna al token manuale. Passando a un sourceType diverso da github diventa null da sola'),
   "openapiUrl": zod.string().nullish(),
   "functionalDescription": zod.string().nullish(),
+  "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).optional().describe('Frequenza di controllo della sintesi dell\'architettura'),
   "status": zod.enum(['active', 'inactive']).optional()
 })
 
@@ -1638,6 +1642,7 @@ export const UpdateAppResponse = zod.object({
   "sourceInstallationId": zod.number().nullable().describe('Installazione della GitHub App da cui l\'architetto scarica il repo (con un token ristretto a quel repo); null = token manuale della fase 3'),
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
+  "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -1652,6 +1657,79 @@ export const DeleteAppParams = zod.object({
 })
 
 export const DeleteAppResponse = zod.void()
+
+
+/**
+ * @summary Sintesi dell'architettura dell'app
+ */
+export const GetAppArchitectureParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetAppArchitectureResponse = zod.object({
+  "appId": zod.number(),
+  "refresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "available": zod.boolean(),
+  "unavailableReason": zod.string().nullable(),
+  "status": zod.enum(['idle', 'running', 'error']),
+  "sha": zod.string().nullable(),
+  "branch": zod.string().nullable(),
+  "generatedAt": zod.coerce.date().nullable(),
+  "checkedAt": zod.coerce.date().nullable(),
+  "summary": zod.string().nullable(),
+  "repoMap": zod.string().nullable(),
+  "lastError": zod.string().nullable(),
+  "promptTokens": zod.number().nullable(),
+  "completionTokens": zod.number().nullable(),
+  "costUsd": zod.number().nullable(),
+  "aiModelName": zod.string().nullable()
+})
+
+
+/**
+ * @summary Ultime versioni della sintesi (senza testo)
+ */
+export const ListAppArchitectureVersionsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListAppArchitectureVersionsResponseItem = zod.object({
+  "id": zod.number(),
+  "sha": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "costUsd": zod.number().nullable(),
+  "summary": zod.string().optional().describe('Testo della sintesi (solo nel dettaglio di una versione)')
+})
+export const ListAppArchitectureVersionsResponse = zod.array(ListAppArchitectureVersionsResponseItem)
+
+
+/**
+ * @summary Una versione della sintesi, con il testo
+ */
+export const GetAppArchitectureVersionParams = zod.object({
+  "id": zod.coerce.number(),
+  "versionId": zod.coerce.number()
+})
+
+export const GetAppArchitectureVersionResponse = zod.object({
+  "id": zod.number(),
+  "sha": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "costUsd": zod.number().nullable(),
+  "summary": zod.string().optional().describe('Testo della sintesi (solo nel dettaglio di una versione)')
+})
+
+
+/**
+ * @summary Aggiorna ora la sintesi dell'architettura
+ */
+export const RefreshAppArchitectureParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RefreshAppArchitectureResponse = zod.object({
+  "queued": zod.boolean()
+})
 
 
 /**

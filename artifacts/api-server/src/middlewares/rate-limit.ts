@@ -119,6 +119,19 @@ export function consumeTeamMessage(userId: number): boolean {
   return teamMessageCounter.consume(`user:${userId}`).ok;
 }
 
+// «Aggiorna ora» della sintesi dell'architettura (ogni richiesta può far partire una generazione con un modello): 6 al minuto per utente.
+const architectureRefreshCounter = fixedWindowCounter({ limit: 6, windowMs: 60_000 });
+
+/** Conta un «Aggiorna ora» dell'utente: false se il limite è raggiunto. */
+export function consumeArchitectureRefresh(userId: number): boolean {
+  return architectureRefreshCounter.consume(`user:${userId}`).ok;
+}
+
+/** Solo per i test: azzera il contatore di «Aggiorna ora». */
+export function resetArchitectureRefreshLimit(): void {
+  architectureRefreshCounter.reset();
+}
+
 // Messaggi a Lucius nella chat di squadra (ognuno fa partire un turno che consuma token): 10 al minuto per utente,
 // contatore proprio (non condiviso con i messaggi al capo né con la chat del piano).
 const teamChatMessageCounter = fixedWindowCounter({ limit: 10, windowMs: 60_000 });

@@ -15,7 +15,7 @@
 - Italiano per commenti, documentazione e commit (`feat(casello): …`, con la riga `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`); identificatori in inglese.
 - Nessun file `*-post.sql` si esegue mai in automatico.
 - Nomi dei file nuovi: `^\d{4}-\d{2}-\d{2}-[a-z0-9-]+(-post)?\.sql$`.
-- `BASELINE_MIGRATIONS` = i 37 file non `-post` presenti oggi in `docs/migrations/`.
+- `BASELINE_MIGRATIONS` = i 38 file non `-post` presenti oggi in `docs/migrations/`.
 - Istruzioni eseguite una alla volta in autocommit, `lock_timeout` 10 s; errore = file non registrato, l'API esce con 1.
 - Log: mai testo SQL, contenuti di file, token; solo nomi, sha a 7, conteggi, durate.
 - Script `-post` nella voce: al più 100 KB in tutto.
@@ -71,7 +71,7 @@
   - due `runMigrations` concorrenti (`Promise.all`) con un file nuovo che inserisce una riga in una tabella di controllo → una sola riga, nessun errore;
   - CRLF nel file → applicato come con LF.
 - [ ] **Step 2: eseguire** `pnpm --filter @workspace/api-server exec vitest run src/lib/migrations/runner.test.ts` → FAIL.
-- [ ] **Step 3: implementare** `baseline.ts` (i 37 nomi, in ordine, da `ls docs/migrations | grep -v -- -post`), lo schema Drizzle `schemaMigrationsTable` (`name` text pk, `sha256` text not null, `baseline` boolean not null default false, `appliedAt` timestamptz not null default now) e `runner.ts` secondo l'algoritmo della spec §1 (connessione dedicata, `SET statement_timeout = 0`, `SET lock_timeout = '10s'`, `pg_advisory_lock`/`unlock` in `finally`, registrazione iniziale solo a registro vuoto e solo per i nomi presenti in cartella).
+- [ ] **Step 3: implementare** `baseline.ts` (i 38 nomi, in ordine, da `ls docs/migrations | grep -v -- -post`), lo schema Drizzle `schemaMigrationsTable` (`name` text pk, `sha256` text not null, `baseline` boolean not null default false, `appliedAt` timestamptz not null default now) e `runner.ts` secondo l'algoritmo della spec §1 (connessione dedicata, `SET statement_timeout = 0`, `SET lock_timeout = '10s'`, `pg_advisory_lock`/`unlock` in `finally`, registrazione iniziale solo a registro vuoto e solo per i nomi presenti in cartella).
 - [ ] **Step 4: eseguire** → PASS; `pnpm --filter @workspace/api-server run test` → verde (lo schema di test ora ha la tabella); typecheck verde.
 - [ ] **Step 5: commit** `feat(casello): esecutore delle migrazioni con registro e lock`.
 
@@ -94,7 +94,7 @@
 - [ ] **Step 2: eseguire** `pnpm --filter @workspace/api-server exec vitest run test/migrations-auto.test.ts` → FAIL.
 - [ ] **Step 3: implementare** `config.ts` e in `index.ts`, prima di `failInterruptedRuns()`: se non disattivate, `await runMigrations({ pool, dir: migrationsDir(), logger })` in `try/catch`; sull'errore `logger.error({ file, statement, errName }, "Migrazioni non applicate: l'API non parte")` e `process.exit(1)`; log `info` con `baselined` e `applied`.
 - [ ] **Step 4: eseguire** → PASS; typecheck verde; `docker build -f docker/api.Dockerfile .` se Docker è disponibile, altrimenti verificare a vista la riga `COPY`.
-- [ ] **Step 5: prova a mano** in locale con un Postgres di sviluppo se disponibile (`AUTH_DISABLED=true pnpm run dev:api`): log «Migrazioni esistenti registrate senza eseguirle» con 37; secondo avvio senza registrazioni. Se non c'è un DB di sviluppo, dirlo nella PR.
+- [ ] **Step 5: prova a mano** in locale con un Postgres di sviluppo se disponibile (`AUTH_DISABLED=true pnpm run dev:api`): log «Migrazioni esistenti registrate senza eseguirle» con 38; secondo avvio senza registrazioni. Se non c'è un DB di sviluppo, dirlo nella PR.
 - [ ] **Step 6: commit** `feat(casello): migrazioni applicate all'avvio dell'API`.
 
 ### Task 4: file della PR con stato e lettura del contenuto
@@ -152,4 +152,4 @@
 - [ ] **Step 1:** scrivere in CLAUDE.md le regole della spec §5 (esecutore all'avvio, registro, lock, `-post` esclusi e manuali dopo il deploy, nomi `YYYY-MM-DD-slug.sql` idempotenti, `MIGRATIONS_DIR`/`MIGRATIONS_DISABLED`, tabella dei casi di `unisci_pr`, voce `merge` solo per i `-post` con l'SQL).
 - [ ] **Step 2:** aggiornare la memoria: l'SQL completo in chat vale solo per gli script `-post`, da applicare dopo il deploy.
 - [ ] **Step 3:** `pnpm run typecheck` e `pnpm --filter @workspace/api-server run test` e `pnpm --filter @workspace/casello run test` → tutti verdi (riportare l'esito reale).
-- [ ] **Step 4: commit** `docs(casello): migrazioni applicate dal deploy`; push del branch; PR verso `main` con `gh` che dice: cosa cambia, come si è provato, **come si comporta il primo deploy** (crea `schema_migrations`, registra i 37 file `baseline` senza eseguirli, nessuna modifica a tabelle o dati), la query di verifica da lanciare prima del merge (oggetti degli ultimi script: `team_code_tasks.botcave_merged_at`, enum `pending_action_kind` con `merge`, `nodes.git_status`, tabella `lead_conversations`), nessuna variabile obbligatoria nuova. Merge solo con un sì esplicito di Ivan.
+- [ ] **Step 4: commit** `docs(casello): migrazioni applicate dal deploy`; push del branch; PR verso `main` con `gh` che dice: cosa cambia, come si è provato, **come si comporta il primo deploy** (crea `schema_migrations`, registra i 38 file `baseline` senza eseguirli, nessuna modifica a tabelle o dati), la query di verifica da lanciare prima del merge (oggetti degli ultimi script: `team_code_tasks.botcave_merged_at`, enum `pending_action_kind` con `merge`, `nodes.git_status`, tabella `lead_conversations`), nessuna variabile obbligatoria nuova. Merge solo con un sì esplicito di Ivan.

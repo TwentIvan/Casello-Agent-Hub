@@ -38,4 +38,5 @@ export const BASELINE_MIGRATIONS: readonly string[] = [
   "2026-11-strumenti-github-squadre.sql",
   "2026-11-strumenti-mcp.sql",
   "2026-11-thu-5c-tappa1.sql",
+  "2026-11-tool-ui-client.sql",
 ];

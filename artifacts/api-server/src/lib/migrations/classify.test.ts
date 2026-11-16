@@ -4,6 +4,12 @@ import { classifyMigration, isPostMigration, MIGRATION_NAME_RE } from "./classif
 const ok = "2026-11-16-a.sql";
 
 describe("classifyMigration", () => {
+  it("un \\r da solo chiude il commento -- come un a capo (stesso esito dell'esecutore)", () => {
+    expect(classifyMigration(ok, "-- nota\rDROP TABLE t;\n")).toMatchObject({ destructive: true, reasons: ["DROP TABLE"] });
+    expect(classifyMigration(ok, "-- nota\r\nDROP TABLE t;\r\n")).toMatchObject({ destructive: true, reasons: ["DROP TABLE"] });
+    expect(classifyMigration(ok, "-- DROP TABLE t;\rSELECT 1;\n")).toEqual({ destructive: false, reasons: [] });
+  });
+
   it("un file -post è distruttivo anche con SQL innocuo", () => {
     expect(classifyMigration("2026-11-16-a-post.sql", "SELECT 1;")).toEqual({
       destructive: true,

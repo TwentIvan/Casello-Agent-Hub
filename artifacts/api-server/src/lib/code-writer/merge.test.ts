@@ -31,6 +31,28 @@ describe("classificazione della PR", () => {
     expect(classifyPull([f("docs/migrations/a/2026-11-16-x.sql")], { "docs/migrations/a/2026-11-16-x.sql": ADD })).toEqual({ kind: "refuse", message: MERGE_MESSAGES.migrationName });
   });
 
+  it("meccanismo delle migrazioni (cartella o Dockerfile dell'API, anche come nome precedente): rifiuto, subito dopo i workflow", () => {
+    for (const file of [
+      f("artifacts/api-server/src/lib/migrations/runner.ts", "modified"),
+      f("artifacts/api-server/src/lib/migrations/nuovo.ts"),
+      f("docker/api.Dockerfile", "modified"),
+      f("altro.ts", "renamed", "artifacts/api-server/src/lib/migrations/classify.ts"),
+      f("docker/api2.Dockerfile", "renamed", "docker/api.Dockerfile"),
+    ]) {
+      expect(classifyPull([file, f("docs/migrations/2026-11-a.sql", "modified")], {})).toEqual({ kind: "refuse", message: MERGE_MESSAGES.migrationMachinery });
+    }
+    expect(classifyPull([f(".github/workflows/ci.yml"), f("docker/api.Dockerfile", "modified")], {})).toEqual({ kind: "refuse", message: MERGE_MESSAGES.workflows });
+    expect(classifyPull([f("docker/web.Dockerfile", "modified"), f("artifacts/api-server/src/lib/migrationsx.ts")], {})).toEqual({ kind: "merge" });
+    expect(MERGE_MESSAGES.migrationMachinery).toBe("la PR modifica il meccanismo delle migrazioni: Botcave non la unisce, la unisce l'utente su GitHub");
+  });
+
+  it("un \\r da solo dopo un commento non nasconde un DROP", () => {
+    expect(classifyPull([f("docs/migrations/2026-11-16-x.sql")], { "docs/migrations/2026-11-16-x.sql": "-- nota\rDROP TABLE t;\n" })).toEqual({
+      kind: "refuse",
+      message: MERGE_MESSAGES.migrationDestructive("2026-11-16-x.sql"),
+    });
+  });
+
   it("migrazione nuova distruttiva non -post: rifiuto con il nome", () => {
     expect(classifyPull([f("docs/migrations/2026-11-16-x.sql")], { "docs/migrations/2026-11-16-x.sql": "DROP TABLE t;\n" })).toEqual({
       kind: "refuse",

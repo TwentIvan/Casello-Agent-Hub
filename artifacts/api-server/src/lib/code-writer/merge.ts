@@ -43,6 +43,7 @@ export const MERGE_MESSAGES = {
   ciFailure: "CI non superata: correggi prima di unire",
   ciNone: "nessuna CI sulla PR: senza CI verde Botcave non unisce",
   workflows: "la PR modifica i workflow della CI: Botcave non la unisce, la unisce l'utente su GitHub",
+  migrationMachinery: "la PR modifica il meccanismo delle migrazioni: Botcave non la unisce, la unisce l'utente su GitHub",
   tooManyFiles: "la PR tocca troppi file per un merge automatico: la unisce l'utente su GitHub",
   tooManyMerges: `limite di merge raggiunto (al massimo ${MAX_MERGES_PER_HOUR} all'ora per squadra): riprova più tardi`,
   inProgress: "merge già in corso per questa PR",
@@ -65,6 +66,9 @@ export const MERGE_MESSAGES = {
 
 /** Percorsi che un merge automatico non tocca mai (workflow), migrazioni e schema del DB. */
 const WORKFLOW_PREFIX = ".github/workflows/";
+/** Meccanismo che applica le migrazioni al deploy: come i workflow, lo unisce solo l'utente. */
+const MACHINERY_PREFIX = "artifacts/api-server/src/lib/migrations/";
+const MACHINERY_FILE = "docker/api.Dockerfile";
 const MIGRATIONS_DIR = "docs/migrations/";
 const SCHEMA_PREFIX = "lib/db/src/schema/";
 const SCHEMA_FILE = "docs/schema-casello.sql";
@@ -86,12 +90,13 @@ export type PullClass =
 
 /**
  * Classifica i file della PR (puro; `contents` = contenuto delle migrazioni nuove, vedi `migrationsToRead`). Ordine dei
- * rifiuti: workflow, migrazione esistente toccata, nome, istruzioni distruttive, schema senza migrazione. Una PR con script
+ * rifiuti: workflow, meccanismo delle migrazioni, migrazione esistente toccata, nome, istruzioni distruttive, schema senza migrazione. Una PR con script
  * `-post` va all'utente, ogni altra (anche con migrazioni additive) si unisce: le migrazioni additive le applica il deploy.
  */
 export function classifyPull(files: PullFile[], contents: Record<string, string>): PullClass {
   const all = files.flatMap(pathsOf);
   if (all.some((p) => p.startsWith(WORKFLOW_PREFIX))) return { kind: "refuse", message: MERGE_MESSAGES.workflows };
+  if (all.some((p) => p === MACHINERY_FILE || p.startsWith(MACHINERY_PREFIX))) return { kind: "refuse", message: MERGE_MESSAGES.migrationMachinery };
   if (files.some((f) => f.status !== "added" && pathsOf(f).some(isMigration))) return { kind: "refuse", message: MERGE_MESSAGES.migrationModified };
   const added = migrationsToRead(files);
   if (added.some((p) => !MIGRATION_NAME_RE.test(p.slice(MIGRATIONS_DIR.length)))) return { kind: "refuse", message: MERGE_MESSAGES.migrationName };

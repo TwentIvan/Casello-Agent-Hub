@@ -92,7 +92,9 @@ export function classifyMigration(
     if (!reasons.includes(r)) reasons.push(r);
   };
   if (isPostMigration(name)) add("-post");
-  for (const statement of splitSql(sql)) {
+  // Stessi a capo per tutti i chiamanti (esecutore e merge delle squadre): un \r da solo chiude un commento --
+  const normalized = sql.replace(/\r\n?/g, "\n");
+  for (const statement of splitSql(normalized)) {
     const text = strip(statement);
     for (const m of text.matchAll(DROP_OBJECT_RE)) add(`DROP ${m[1]}`);
     for (const rule of RULES) if (rule.re.test(text)) add(rule.reason);

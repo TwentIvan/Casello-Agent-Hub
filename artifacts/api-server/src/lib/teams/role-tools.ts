@@ -41,6 +41,8 @@ export const INTERNAL_TOOL_NAMES = [
   "leggi_esito_ci",
   // Merge delle PR della squadra (code-writer/merge.ts), ruoli con code: merge
   "unisci_pr",
+  // Consegna della sintesi dell'architettura (architecture/generate.ts)
+  "consegna_sintesi",
 ] as const;
 
 export type InternalToolName = (typeof INTERNAL_TOOL_NAMES)[number];

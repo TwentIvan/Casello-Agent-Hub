@@ -119,6 +119,11 @@ export class CodeToolRunner {
     private readonly defaultAppId: number | null,
   ) {}
 
+  /** Usa un albero già caricato per l'app (es. quello della raccolta della sintesi), senza rileggerlo. */
+  preload(appId: number, source: AppSource): void {
+    this.sources.set(appId, source);
+  }
+
   async run(call: ChatToolCall): Promise<string> {
     try {
       return await this.dispatch(call);

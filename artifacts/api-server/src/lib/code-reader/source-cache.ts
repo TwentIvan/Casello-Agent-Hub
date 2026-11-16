@@ -54,6 +54,11 @@ export function setCodeCacheOptionsForTests(o: TestOptions | null): void {
 const now = (): number => (testOptions?.now ?? Date.now)();
 const cfgNow = (): GithubConfig | null => (testOptions?.githubConfig !== undefined ? testOptions.githubConfig : githubConfig());
 
+/** Configurazione GitHub usata dalla lettura del codice (nei test quella di `setCodeCacheOptionsForTests`). */
+export function codeReaderGithubConfig(): GithubConfig | null {
+  return cfgNow();
+}
+
 type Availability = { ok: true; repo: string; branch: string | null } | { ok: false; reason: string };
 
 /** Accesso e sorgente GitHub dell'app, senza rete (passo 1 della spec): controllato a ogni chiamata. */

@@ -24,6 +24,7 @@ import { getCodeTask, upsertCodeTask } from "../src/lib/code-writer/code-tasks";
 import { commitFiles, createDraftPull, getBranchHead, getCommitTree } from "../src/lib/code-writer/github-git";
 import { MAX_MERGES_PER_HOUR, MERGE_MESSAGES, mergeTeamPull } from "../src/lib/code-writer/merge";
 import { approveAction, rejectAction } from "../src/lib/actions/decide";
+import { enqueueMergeItem } from "../src/lib/actions/queue";
 import { githubConfig } from "../src/lib/github/config";
 import { pendingActionsTable, teamCodeTasksTable } from "@workspace/db";
 import { watchCodeTasksOnce } from "../src/lib/code-writer/watcher";
@@ -426,37 +427,67 @@ describe("flusso: merge automatico (code: merge)", () => {
     expect(await mergeTeamPull(instanceId, { compito: "t1" })).toEqual({ ok: false, content: MERGE_MESSAGES.alreadyMerged });
   });
 
-  it("PR con una migrazione → voce merge in «Da confermare» → approvazione → merge; rifiuto → motivo al capo", async () => {
-    const { sha, number } = await pushPr("t1", { "docs/migrations/2026-11-x.sql": "select 1;\n", "src/a.ts": "export const a = 5;\n" });
+  it("PR con una migrazione additiva: si unisce da sola; poi una modifica della migrazione esistente è rifiutata", async () => {
+    const add = "CREATE TABLE IF NOT EXISTS x (id int);\n";
+    const { sha, number } = await pushPr("t1", { "docs/migrations/2026-11-16-x.sql": add, "docs/schema-casello.sql": "-- x\n", "src/a.ts": "export const a = 5;\n" });
+    green(sha);
+    expect(await mergeTeamPull(instanceId, { numero: number })).toEqual({ ok: true, content: MERGE_MESSAGES.merged(number, "main") });
+    expect(await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.kind, "merge"))).toEqual([]);
+    expect(pull(number)).toMatchObject({ state: "closed", merged: true });
+    expect(gh.filesAt(REPO, "main")["docs/migrations/2026-11-16-x.sql"]).toBe(add);
+
+    const second = await pushPr("t2", { "docs/migrations/2026-11-16-x.sql": add + "CREATE INDEX IF NOT EXISTS x_idx ON x (id);\n" });
+    green(second.sha);
+    expect(await mergeTeamPull(instanceId, { compito: "t2" })).toEqual({ ok: false, content: MERGE_MESSAGES.migrationModified });
+    expect(pull(second.number).state).toBe("open");
+  });
+
+  it("PR con uno script -post → voce merge con l'SQL → approvazione → merge; rifiuto → motivo al capo", async () => {
+    const post = "ALTER TABLE x DROP COLUMN IF EXISTS y;\n";
+    const { sha, number } = await pushPr("t1", { "docs/migrations/2026-11-16-x-post.sql": post, "src/a.ts": "export const a = 5;\n" });
     green(sha);
     const res = await mergeTeamPull(instanceId, { numero: number });
     expect(res.ok).toBe(false);
     const [item] = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.kind, "merge"));
-    expect(item).toMatchObject({ status: "pending", teamInstanceId: instanceId, recipient: REPO, toolId: null, appId: null });
+    expect(item).toMatchObject({ status: "pending", teamInstanceId: instanceId, recipient: REPO, toolId: null, appId: null, summary: MERGE_MESSAGES.summary(number, "t1") });
     expect(res.content).toBe(MERGE_MESSAGES.queued(item!.number, number));
-    expect(item!.argsPublic).toMatchObject({ prNumber: number, headSha: sha, files: ["docs/migrations/2026-11-x.sql"] });
+    expect(item!.argsPublic).toMatchObject({
+      prNumber: number,
+      headSha: sha,
+      files: ["docs/migrations/2026-11-16-x-post.sql"],
+      postScripts: [{ path: "docs/migrations/2026-11-16-x-post.sql", sql: post }],
+    });
     expect(pull(number).state).toBe("open");
     // Una sola voce per PR
     expect(await mergeTeamPull(instanceId, { compito: "t1" })).toEqual({ ok: false, content: MERGE_MESSAGES.alreadyQueued(item!.number, number) });
 
     const approved = await approveAction(userId, item!.number);
     expect(approved).toMatchObject({ ok: true, action: { status: "done", result: MERGE_MESSAGES.done(number) } });
+    expect(MERGE_MESSAGES.done(number)).toBe(`PR #${number} unita: dopo il deploy applica lo script -post`);
     expect(pull(number)).toMatchObject({ state: "closed", merged: true });
-    expect(gh.filesAt(REPO, "main")["docs/migrations/2026-11-x.sql"]).toBe("select 1;\n");
+    expect(gh.filesAt(REPO, "main")["docs/migrations/2026-11-16-x-post.sql"]).toBe(post);
 
-    // Seconda PR con lo schema: rifiutata dall'utente → motivo decision per il capo
-    const second = await pushPr("t2", { "docs/schema-casello.sql": "-- nuovo\n" });
+    // Seconda PR con un -post: rifiutata dall'utente → motivo decision per il capo
+    const second = await pushPr("t2", { "docs/migrations/2026-11-16-z-post.sql": "DROP TABLE IF EXISTS z;\n" });
     green(second.sha);
     await mergeTeamPull(instanceId, { compito: "t2" });
     const [item2] = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.status, "pending"));
-    expect(await rejectAction(userId, item2!.number, "prima la migrazione")).toMatchObject({ ok: true });
+    expect(await rejectAction(userId, item2!.number, "non ora")).toMatchObject({ ok: true });
     const all = (await db.select().from(teamTurnsTable).where(eq(teamTurnsTable.instanceId, instanceId))).flatMap((t) => t.reasons);
-    expect(all).toContainEqual({ type: "decision", number: item2!.number, outcome: "rejected", note: "prima la migrazione" });
+    expect(all).toContainEqual({ type: "decision", number: item2!.number, outcome: "rejected", note: "non ora" });
     expect(pull(second.number).state).toBe("open");
   });
 
+  it("schema cambiato senza migrazione: rifiutata alla squadra, nessuna voce", async () => {
+    const { sha, number } = await pushPr("t1", { "docs/schema-casello.sql": "-- nuovo\n" });
+    green(sha);
+    expect(await mergeTeamPull(instanceId, { compito: "t1" })).toEqual({ ok: false, content: MERGE_MESSAGES.schemaWithoutMigration });
+    expect(await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.kind, "merge"))).toEqual([]);
+    expect(pull(number).state).toBe("open");
+  });
+
   it("approvazione con la testa cambiata dopo la richiesta: voce failed e motivo merge_failed al capo", async () => {
-    const { sha, number } = await pushPr("t1", { "lib/db/src/schema/x.ts": "export {};\n" });
+    const { sha, number } = await pushPr("t1", { "lib/db/src/schema/x.ts": "export {};\n", "docs/migrations/2026-11-16-x-post.sql": "DROP TABLE IF EXISTS x;\n" });
     green(sha);
     await mergeTeamPull(instanceId, { compito: "t1" });
     const [item] = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.kind, "merge"));
@@ -477,6 +508,25 @@ describe("flusso: merge automatico (code: merge)", () => {
     const code = (await getCodeTask(instanceId, "t1"))!;
     const all = (await db.select().from(teamTurnsTable).where(eq(teamTurnsTable.instanceId, instanceId))).flatMap((t) => t.reasons);
     expect(all).toContainEqual({ type: "merge_failed", taskCodeId: code.id, message: MERGE_MESSAGES.itemChanged });
+  });
+
+  it("voce accodata con la regola precedente per una PR con sola migrazione additiva: l'approvazione unisce", async () => {
+    const add = "CREATE TABLE IF NOT EXISTS w (id int);\n";
+    const { sha, number } = await pushPr("t1", { "docs/migrations/2026-11-16-w.sql": add, "docs/schema-casello.sql": "-- w\n" });
+    green(sha);
+    const row = (await getCodeTask(instanceId, "t1"))!;
+    // Voce come quelle scritte prima di questo ramo (oggi la stessa PR si unirebbe da sola)
+    const queued = await enqueueMergeItem({
+      userId,
+      instanceId,
+      recipient: REPO,
+      summary: MERGE_MESSAGES.summary(number, "t1"),
+      detail: { taskCodeId: row.id, planTaskId: "t1", repo: REPO, prNumber: number, prUrl: "", headSha: sha, baseBranch: "main", files: ["docs/migrations/2026-11-16-w.sql"] },
+    });
+    expect(queued.ok).toBe(true);
+    const [item] = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.kind, "merge"));
+    expect(await approveAction(userId, item!.number)).toMatchObject({ ok: true, action: { status: "done" } });
+    expect(pull(number)).toMatchObject({ state: "closed", merged: true });
   });
 
   it("rifiuti: workflow della CI, testa cambiata dall'ultimo controllo, limite orario, PR di un'altra squadra", async () => {

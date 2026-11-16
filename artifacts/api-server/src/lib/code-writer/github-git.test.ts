@@ -12,6 +12,8 @@ import {
   getDefaultBranch,
   getIssue,
   getPull,
+  listPullFiles,
+  readFileAt,
   checkRunAnnotations,
   readCi,
   setLogHostsForTests,
@@ -258,5 +260,33 @@ describe("client GitHub dei compiti", () => {
     expect(lines[0]).toBe("fine 51");
     expect(lines[149]).toBe("fine 200");
     setLogHostsForTests(null);
+  });
+
+  it("listPullFiles riporta lo stato dei file e readFileAt legge il contenuto alla testa della PR", async () => {
+    const tree = await getCommitTree(r, base);
+    const { sha } = await commitFiles(r, {
+      branch: "botcave/1-t20",
+      parentSha: base,
+      baseTreeSha: tree,
+      changes: new Map<string, string | null>([["a.txt", "UNO"], ["docs/migrations/x è.sql", "select 1;"], ["c.txt", null]]),
+      message: "m",
+      createBranch: true,
+    });
+    const pr = await createDraftPull(r, { head: "botcave/1-t20", base: "main", title: "T", body: "" });
+    const files = await listPullFiles(r, pr.number);
+    expect(files).toEqual([
+      { filename: "a.txt", status: "modified", previousFilename: null },
+      { filename: "c.txt", status: "removed", previousFilename: null },
+      { filename: "docs/migrations/x è.sql", status: "added", previousFilename: null },
+    ]);
+    expect(await readFileAt(r, "docs/migrations/x è.sql", sha)).toBe("select 1;");
+    expect(await readFileAt(r, "a.txt", "botcave/1-t20")).toBe("UNO");
+    expect(await readFileAt(r, "a.txt", "main")).toBe("uno");
+    expect(await readFileAt(r, "assente.sql", sha)).toBeNull();
+  });
+
+  it("readFileAt senza il permesso contents → messaggio fisso del permesso", async () => {
+    gh.installationPermissions.set(INST, { metadata: "read", pull_requests: "write" });
+    expect((await rejects(readFileAt(r, "a.txt", "main"))).message).toBe(CODE_WRITE_MESSAGES.permission("contents: read"));
   });
 });

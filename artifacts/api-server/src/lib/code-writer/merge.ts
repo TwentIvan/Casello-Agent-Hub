@@ -9,12 +9,13 @@ import { internalTool } from "../teams/role-tools";
 import { enqueueTurnReason, notifyTurnQueued } from "../teams/turn-queue";
 import type { CatalogTool, ToolResult } from "../tools/types";
 import { ciState } from "./ci-state";
-import { getPullDetail, listPullFiles, markReadyForReview, readCi, squashMerge, type PullDetail, type RepoRef } from "./github-git";
+import { getPullDetail, listPullFiles, markReadyForReview, readCi, readFileAt, squashMerge, type PullDetail, type PullFile, type RepoRef } from "./github-git";
+import { classifyMigration, isPostMigration, MIGRATION_NAME_RE } from "../migrations/classify";
 import { codeBranch, codeErrorMessage } from "./session";
 
 /**
- * Merge delle PR delle squadre (spec 2026-11-14): strumento `unisci_pr` dei ruoli con `code: merge` e voce `merge` di
- * «Da confermare» per le PR che toccano migrazioni o schema. Tutti i controlli stanno qui, lato server: PR della squadra
+ * Merge delle PR delle squadre (spec 2026-11-14 e 2026-11-16): strumento `unisci_pr` dei ruoli con `code: merge` e voce
+ * `merge` di «Da confermare» per le PR con script `-post` (le migrazioni additive le applica il deploy). Tutti i controlli stanno qui, lato server: PR della squadra
  * aperta verso il base registrato, testa uguale all'ultimo controllo, CI verde letta dal vivo, nessun workflow, limite
  * orario per squadra. Messaggi fissi, mai testo di GitHub né token nei log.
  */
@@ -26,6 +27,8 @@ const HOUR_MS = 3_600_000;
 const RESERVATION_STALE_MS = 10 * 60_000;
 /** File di migrazione elencati nella voce in coda. */
 const MAX_LISTED_FILES = 50;
+/** Byte UTF-8 complessivi degli script `-post` copiati nella voce in coda. */
+export const MAX_POST_SQL_BYTES = 100_000;
 
 export const MERGE_MESSAGES = {
   badArgs: "argomenti non validi: indica compito (id del PLAN) oppure numero (della PR)",
@@ -40,31 +43,81 @@ export const MERGE_MESSAGES = {
   ciFailure: "CI non superata: correggi prima di unire",
   ciNone: "nessuna CI sulla PR: senza CI verde Botcave non unisce",
   workflows: "la PR modifica i workflow della CI: Botcave non la unisce, la unisce l'utente su GitHub",
+  migrationMachinery: "la PR modifica il meccanismo delle migrazioni: Botcave non la unisce, la unisce l'utente su GitHub",
   tooManyFiles: "la PR tocca troppi file per un merge automatico: la unisce l'utente su GitHub",
   tooManyMerges: `limite di merge raggiunto (al massimo ${MAX_MERGES_PER_HOUR} all'ora per squadra): riprova più tardi`,
   inProgress: "merge già in corso per questa PR",
+  migrationModified: "la PR modifica una migrazione esistente: scrivi una migrazione nuova",
+  migrationName: "nome della migrazione non valido: usa YYYY-MM-DD-slug.sql",
+  migrationDestructive: (name: string) =>
+    `la migrazione ${name} contiene istruzioni distruttive: dividila in una parte additiva e uno script -post`,
+  schemaWithoutMigration: "lo schema cambia senza migrazione: aggiungi uno script in docs/migrations/",
+  postTooLong: "script -post troppo lunghi per la voce: dividili",
   queued: (n: number, pr: number) =>
-    `la PR #${pr} tocca migrazioni o schema del DB: è in «Da confermare» (voce n. ${n}). L'utente applica l'SQL su Neon e approva: segnalaglielo con segnala`,
+    `la PR #${pr} contiene uno script -post: è in «Da confermare» (voce n. ${n}). Dopo il merge l'utente lo applica su Neon: segnalaglielo con segnala`,
   alreadyQueued: (n: number, pr: number) => `la PR #${pr} è già in «Da confermare» (voce n. ${n}): aspetta la decisione dell'utente`,
   merged: (pr: number, base: string) => `PR #${pr} unita con squash in ${base}: l'esito arriva al capo con la sorveglianza (pr_closed)`,
   internal: "errore interno nel merge della PR",
   /** Esito della voce in coda. */
-  done: (pr: number) => `PR #${pr} unita`,
+  done: (pr: number) => `PR #${pr} unita: dopo il deploy applica lo script -post`,
   itemChanged: "la PR è cambiata dopo la richiesta: chiedi un nuovo merge",
-  summary: (pr: number, task: string) => `Unisci la PR #${pr} (compito ${task}): applica prima le migrazioni su Neon`,
+  summary: (pr: number, task: string) => `Unisci la PR #${pr} (compito ${task}): dopo il deploy applica su Neon lo script -post`,
 } as const;
 
-/** Percorsi che un merge automatico non tocca mai (workflow) e quelli che passano dall'utente (migrazioni e schema). */
-const WORKFLOW_PREFIXES = [".github/workflows/"];
-const MIGRATION_PREFIXES = ["docs/migrations/", "lib/db/src/schema/"];
-const MIGRATION_FILES = ["docs/schema-casello.sql"];
+/** Percorsi che un merge automatico non tocca mai (workflow), migrazioni e schema del DB. */
+const WORKFLOW_PREFIX = ".github/workflows/";
+/** Meccanismo che applica le migrazioni al deploy: come i workflow, lo unisce solo l'utente. */
+const MACHINERY_PREFIX = "artifacts/api-server/src/lib/migrations/";
+const MACHINERY_FILE = "docker/api.Dockerfile";
+const MIGRATIONS_DIR = "docs/migrations/";
+const SCHEMA_PREFIX = "lib/db/src/schema/";
+const SCHEMA_FILE = "docs/schema-casello.sql";
 
-export function classifyPullFiles(files: string[]): { workflows: string[]; migrations: string[] } {
-  const unique = [...new Set(files)];
-  return {
-    workflows: unique.filter((f) => WORKFLOW_PREFIXES.some((p) => f.startsWith(p))),
-    migrations: unique.filter((f) => MIGRATION_FILES.includes(f) || MIGRATION_PREFIXES.some((p) => f.startsWith(p))),
-  };
+const isMigration = (path: string) => path.startsWith(MIGRATIONS_DIR) && path.endsWith(".sql");
+const isSchema = (path: string) => path === SCHEMA_FILE || path.startsWith(SCHEMA_PREFIX);
+/** Percorsi di un file della PR: il nome e, per un rinominato, quello precedente. */
+const pathsOf = (f: PullFile) => (f.previousFilename === null ? [f.filename] : [f.filename, f.previousFilename]);
+
+/** Migrazioni nuove della PR, di cui serve il contenuto per classificarla. */
+export function migrationsToRead(files: PullFile[]): string[] {
+  return [...new Set(files.filter((f) => f.status === "added" && isMigration(f.filename)).map((f) => f.filename))];
+}
+
+export type PullClass =
+  | { kind: "refuse"; message: string }
+  | { kind: "queue"; postScripts: { path: string; sql: string }[]; files: string[] }
+  | { kind: "merge" };
+
+/**
+ * Classifica i file della PR (puro; `contents` = contenuto delle migrazioni nuove, vedi `migrationsToRead`). Ordine dei
+ * rifiuti: workflow, meccanismo delle migrazioni, migrazione esistente toccata, nome, istruzioni distruttive, schema senza migrazione. Una PR con script
+ * `-post` va all'utente, ogni altra (anche con migrazioni additive) si unisce: le migrazioni additive le applica il deploy.
+ */
+export function classifyPull(files: PullFile[], contents: Record<string, string>): PullClass {
+  const all = files.flatMap(pathsOf);
+  if (all.some((p) => p.startsWith(WORKFLOW_PREFIX))) return { kind: "refuse", message: MERGE_MESSAGES.workflows };
+  if (all.some((p) => p === MACHINERY_FILE || p.startsWith(MACHINERY_PREFIX))) return { kind: "refuse", message: MERGE_MESSAGES.migrationMachinery };
+  if (files.some((f) => f.status !== "added" && pathsOf(f).some(isMigration))) return { kind: "refuse", message: MERGE_MESSAGES.migrationModified };
+  const added = migrationsToRead(files);
+  if (added.some((p) => !MIGRATION_NAME_RE.test(p.slice(MIGRATIONS_DIR.length)))) return { kind: "refuse", message: MERGE_MESSAGES.migrationName };
+  for (const path of added) {
+    const name = path.slice(MIGRATIONS_DIR.length);
+    if (isPostMigration(name)) continue;
+    const sql = contents[path];
+    if (sql === undefined) return { kind: "refuse", message: MERGE_MESSAGES.internal };
+    if (classifyMigration(name, sql).destructive) return { kind: "refuse", message: MERGE_MESSAGES.migrationDestructive(name) };
+  }
+  if (added.length === 0 && all.some(isSchema)) return { kind: "refuse", message: MERGE_MESSAGES.schemaWithoutMigration };
+  const posts = added.filter((p) => isPostMigration(p.slice(MIGRATIONS_DIR.length)));
+  if (posts.length === 0) return { kind: "merge" };
+  const postScripts: { path: string; sql: string }[] = [];
+  for (const path of posts) {
+    const sql = contents[path];
+    if (sql === undefined) return { kind: "refuse", message: MERGE_MESSAGES.internal };
+    postScripts.push({ path, sql });
+  }
+  if (postScripts.reduce((n, s) => n + Buffer.byteLength(s.sql, "utf8"), 0) > MAX_POST_SQL_BYTES) return { kind: "refuse", message: MERGE_MESSAGES.postTooLong };
+  return { kind: "queue", postScripts, files: [...new Set(all.filter((p) => isMigration(p) || isSchema(p)))] };
 }
 
 export type MergeTarget = { compito: string } | { numero: number };
@@ -82,7 +135,7 @@ export function parseMergeArgs(args: Record<string, unknown>): MergeTarget | nul
 
 export const MERGE_TOOL: CatalogTool = internalTool(
   "unisci_pr",
-  "Unisce con squash la PR di un compito della squadra nel branch base, solo con la CI verde sull'ultima testa controllata. Una PR che tocca migrazioni o schema del DB va in «Da confermare» per l'utente; i workflow della CI non si uniscono mai.",
+  "Unisce con squash la PR di un compito della squadra nel branch base, solo con la CI verde sull'ultima testa controllata; i workflow della CI non si uniscono mai. Le migrazioni additive le applica il deploy: una PR con migrazioni additive si unisce come le altre. Lo schema del DB cambia solo con uno script nuovo docs/migrations/YYYY-MM-DD-slug.sql idempotente; le parti distruttive vanno in uno script -post, e una PR con un -post va in «Da confermare»: l'utente lo applica su Neon dopo il deploy.",
   {
     type: "object",
     properties: {
@@ -131,6 +184,22 @@ async function loadContext(instanceId: number, find: (t: typeof teamCodeTasksTab
     throw new MergeRefused(MERGE_MESSAGES.access);
   }
   return { instance, row, repo: { cfg, installationId: app.sourceInstallationId, repo: app.sourceRepo } };
+}
+
+/**
+ * File della PR e contenuto delle migrazioni nuove alla testa controllata, poi la classificazione. File troppi →
+ * rifiuto; una migrazione nuova che non si legge → errore interno.
+ */
+async function classifyLivePull(repo: RepoRef, pull: PullDetail): Promise<PullClass> {
+  const files = await listPullFiles(repo, pull.number);
+  if (files === null) return { kind: "refuse", message: MERGE_MESSAGES.tooManyFiles };
+  const contents: Record<string, string> = {};
+  for (const path of migrationsToRead(files)) {
+    const text = await readFileAt(repo, path, pull.headSha);
+    if (text === null) throw new MergeRefused(MERGE_MESSAGES.internal);
+    contents[path] = text;
+  }
+  return classifyPull(files, contents);
 }
 
 /** PR e CI dal vivo: PR aperta sul branch e verso il base del compito, testa attesa, CI verde. */
@@ -228,11 +297,9 @@ export async function mergeTeamPull(instanceId: number, args: Record<string, unk
         ? await loadContext(instanceId, (t) => eq(t.planTaskId, target.compito), `il compito ${target.compito}`)
         : await loadContext(instanceId, (t) => eq(t.prNumber, target.numero), `la PR #${target.numero}`);
     const pull = await checkPull(ctx, null);
-    const files = await listPullFiles(ctx.repo, pull.number);
-    if (files === null) return { ok: false, content: MERGE_MESSAGES.tooManyFiles };
-    const { workflows, migrations } = classifyPullFiles(files);
-    if (workflows.length > 0) return { ok: false, content: MERGE_MESSAGES.workflows };
-    if (migrations.length > 0) {
+    const verdict = await classifyLivePull(ctx.repo, pull);
+    if (verdict.kind === "refuse") return { ok: false, content: verdict.message };
+    if (verdict.kind === "queue") {
       const userId = ctx.instance.activatedBy!;
       const existing = await openMergeItem(userId, instanceId, ctx.row.id);
       if (existing !== null) return { ok: false, content: MERGE_MESSAGES.alreadyQueued(existing, pull.number) };
@@ -249,12 +316,16 @@ export async function mergeTeamPull(instanceId: number, args: Record<string, unk
           prUrl: pull.url,
           headSha: pull.headSha,
           baseBranch: ctx.row.baseBranch,
-          files: migrations.slice(0, MAX_LISTED_FILES),
-          moreFiles: Math.max(0, migrations.length - MAX_LISTED_FILES),
+          files: verdict.files.slice(0, MAX_LISTED_FILES),
+          moreFiles: Math.max(0, verdict.files.length - MAX_LISTED_FILES),
+          postScripts: verdict.postScripts,
         },
       });
       if (!queued.ok) return { ok: false, content: queued.message };
-      logger.info({ instanceId, planTaskId: ctx.row.planTaskId, pr: pull.number, files: migrations.length }, "Merge con migrazioni messo in coda");
+      logger.info(
+        { instanceId, planTaskId: ctx.row.planTaskId, pr: pull.number, files: verdict.files.length, postScripts: verdict.postScripts.length },
+        "Merge con script -post messo in coda",
+      );
       return { ok: false, content: MERGE_MESSAGES.queued(queued.number, pull.number) };
     }
     await reserve(ctx, true);
@@ -276,8 +347,8 @@ async function finishItem(id: number, set: { status: "done" | "failed"; result?:
 }
 
 /**
- * Approvazione di una voce `merge`: stessi controlli dello strumento tranne le migrazioni (l'utente le ha applicate), testa
- * uguale a quella della voce, niente limite orario (decide l'utente). Esito sulla voce; un fallimento torna al capo.
+ * Approvazione di una voce `merge`: stessi controlli dello strumento con la testa uguale a quella della voce e la PR ancora
+ * con lo script `-post` (lo applica l'utente dopo il deploy), niente limite orario (decide l'utente). Esito sulla voce; un fallimento torna al capo.
  */
 export async function approveMerge(userId: number, action: PendingActionRow): Promise<MergeDecision> {
   const [claimed] = await db
@@ -302,9 +373,10 @@ export async function approveMerge(userId: number, action: PendingActionRow): Pr
     const ctx = await loadContext(instanceId, (t) => eq(t.id, taskCodeId), "questa voce");
     prNumber = ctx.row.prNumber;
     const pull = await checkPull(ctx, headSha);
-    const files = await listPullFiles(ctx.repo, pull.number);
-    if (files === null) throw new MergeRefused(MERGE_MESSAGES.tooManyFiles);
-    if (classifyPullFiles(files).workflows.length > 0) throw new MergeRefused(MERGE_MESSAGES.workflows);
+    // Stessa testa, quindi stessi file: la voce resta valida se la PR va ancora all'utente o se oggi si unirebbe da sola
+    // (voci accodate con la regola precedente per PR con sole migrazioni additive: l'utente ha già approvato)
+    const verdict = await classifyLivePull(ctx.repo, pull);
+    if (verdict.kind !== "queue" && verdict.kind !== "merge") throw new MergeRefused(MERGE_MESSAGES.itemChanged);
     await reserve(ctx, false);
     await doMerge(ctx, pull);
     const row = await finishItem(action.id, { status: "done", result: MERGE_MESSAGES.done(pull.number) });

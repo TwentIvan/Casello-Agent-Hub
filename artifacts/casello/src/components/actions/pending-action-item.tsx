@@ -102,7 +102,7 @@ export function PendingActionItem({
             <span className="block">Destinatario: {action.recipient}</span>
           </>
         ) : action.kind === "merge" ? (
-          <>Merge chiesto dalla squadra: applica prima su Neon le migrazioni elencate.</>
+          <>Merge chiesto dalla squadra: dopo il deploy applica su Neon lo script -post.</>
         ) : plan ? (
           <>
             {ACTION_KIND_LABELS[action.kind]} proposto dal capo della squadra:{" "}

@@ -35,7 +35,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   sulla squadra e memorie").
 - Strumenti GitHub delle squadre: i ruoli `cloud` con `code: read|write` leggono il codice dell'App di riferimento, lo modificano su un branch dedicato, aprono una PR in bozza («Closes #n») e Botcave sorveglia la CI
   e rimette in moto il capo; per i ruoli `node` il nodo prepara la copia di lavoro e pubblica il branch con il token di Botcave, e la PR la apre Botcave (vedi "Nodi (esecuzione dei ruoli node)"); il merge è dell'utente, salvo che un ruolo cloud o il capo abbia `code: merge` (vedi "Strumenti GitHub delle squadre"). Spec: `docs/superpowers/specs/2026-11-10-botcave-strumenti-github-squadre-design.md`.
-- Merge automatico delle PR delle squadre: un ruolo `cloud` o il capo con `code: merge` unisce con `unisci_pr` (squash, solo CI verde sull'ultima testa, mai i workflow); una PR con migrazioni o schema diventa una voce `merge` in «Da confermare» che l'utente approva dopo aver applicato l'SQL su Neon (vedi "Strumenti GitHub delle squadre"). Spec: `docs/superpowers/specs/2026-11-14-botcave-merge-automatico-squadre-design.md`.
+- Migrazioni applicate dal deploy: `casello-api` applica all'avvio, prima di `listen`, le migrazioni additive di `docs/migrations/` (registro `schema_migrations`, lock, ordine per nome, `-post` esclusi): niente più SQL a mano su Neon
+  prima del merge, solo gli script `-post` dopo il deploy (vedi "Deploy" e "Strumenti GitHub delle squadre"). Spec: `docs/superpowers/specs/2026-11-16-botcave-migrazioni-automatiche-design.md`.
+- Merge automatico delle PR delle squadre: un ruolo `cloud` o il capo con `code: merge` unisce con `unisci_pr` (squash, solo CI verde sull'ultima testa, mai i workflow); le migrazioni additive della PR le applica il deploy, quindi si unisce da sola; solo una PR con uno script `-post` diventa una voce `merge` in «Da confermare» con l'SQL da applicare dopo il deploy (vedi "Strumenti GitHub delle squadre"). Spec: `docs/superpowers/specs/2026-11-14-botcave-merge-automatico-squadre-design.md`.
 - Spazio di lavoro automatico dei ruoli `node` con codice: un ruolo `node` con `code: write` lavora appena la squadra è attiva, senza clonare a mano, senza `gh` e senza scegliere una cartella: il nodo (0.4.0) clona il repository in `<radice>/.botcave/`,
   usa una copia di lavoro per compito e fa fetch e push con un token d'installazione per Git (`git-token`); la PR in bozza la apre Botcave al report; la carta «Pronta a lavorare» e il dialogo di «Attiva» avvisano dei problemi (vedi "Strumenti GitHub delle squadre" e
   "Nodi (esecuzione dei ruoli node)"). Spec: `docs/superpowers/specs/2026-11-13-botcave-spazio-di-lavoro-automatico-design.md`.
@@ -139,7 +141,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
   ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals,
   skills, skill_versions, team_templates, team_template_versions, team_instances, team_instance_skills,
-  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, team_chat_conversations, team_chat_messages, team_chat_proposals, character_notes, character_history, character_conversations, character_messages, character_proposals, nodes, node_turns, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens, agent_triggers, trigger_seen_items, pending_action_steps, team_code_tasks, lead_conversations, lead_messages)
+  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, team_chat_conversations, team_chat_messages, team_chat_proposals, character_notes, character_history, character_conversations, character_messages, character_proposals, nodes, node_turns, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens, agent_triggers, trigger_seen_items, pending_action_steps, team_code_tasks, lead_conversations, lead_messages, schema_migrations)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -283,6 +285,9 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - `artifacts/api-server/src/lib/lead-chat/` — chat con il Responsabile di Botcave: input delle run (`input.ts`, puro), conversazioni e messaggi (`service.ts`), messaggi fissi
   (`messages.ts`); route `src/routes/lead-chat.ts`; schema `lib/db/src/schema/lead-chat.ts`; console `components/characters/` (`lead-adapter.tsx`, `lead-detail.ts`, `lead-run-card.tsx`,
   `character-mark.tsx`) e `components/panel/tabs/lead-tab.tsx` (vedi "Responsabile da ogni area")
+- `artifacts/api-server/src/lib/migrations/` — migrazioni applicate all'avvio (vedi "Deploy"): divisione in istruzioni (`split.ts`), classificazione additiva/distruttiva (`classify.ts`), elenco dei file già esistenti
+  (`baseline.ts`, `BASELINE_MIGRATIONS`), esecutore con lock e registro (`runner.ts`, `MigrationError`), cartella e interruttore (`config.ts`); chiamato da `src/index.ts` prima di `listen`; prova `artifacts/api-server/test/migrations-auto.test.ts`.
+  Spec: `docs/superpowers/specs/2026-11-16-botcave-migrazioni-automatiche-design.md`
 - `artifacts/api-server/src/lib/web-reader/` — lettura di pagine web per Lucius e Alfred: scaricamento con DNS guardato (`fetch-page.ts`), estrazione del testo (`extract.ts`), strumento con limiti e messaggi
   (`tool.ts`); contatore `consumeWebRead` in `middlewares/rate-limit.ts`, frase dell'avanzamento in `lib/turn-progress/describe.ts` (vedi "Lucius e Alfred leggono il web"). Spec: `docs/superpowers/specs/2026-11-12-botcave-leggi-pagina-web-design.md`
 - `docs/skills/casello-architetto-locale/` — skill dell'agente locale (da copiare in `~/.claude/skills/`)
@@ -839,16 +844,18 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `code: merge` (accanto agli strumenti di scrittura, istruzioni `CODE_MERGE_INSTRUCTIONS`) e al capo con `code: merge` (tra gli strumenti del capo; per il capo è l'unico valore di `code` che conta). Controlli tutti lato server
   (`mergeTeamPull`, risultati `{ok:false}` con `MERGE_MESSAGES`): squadra attiva; riga di `team_code_tasks` della squadra con PR `open` e branch uguale a `botcave/<squadra>-<compito>` ricalcolato; App con installazione posseduta da chi
   ha attivato la squadra e repository uguale alla riga; PR letta da GitHub aperta, `head.ref` = branch, `base.ref` = base della riga, testa = `head_sha` della riga («la PR è cambiata dall'ultimo controllo: aspetta l'esito della CI»);
-  CI dell'head letta dal vivo: solo `success` (in corso, rossa o assente → rifiuto); file della PR (`GET /pulls/{n}/files`, ≤ 10 pagine, nomi precedenti compresi; oltre → rifiuto): `.github/workflows/` → rifiuto sempre;
-  `docs/migrations/`, `lib/db/src/schema/` o `docs/schema-casello.sql` → nessun merge e voce `merge` in «Da confermare» (una sola aperta per PR). Limite: 6 merge all'ora per squadra (`MAX_MERGES_PER_HOUR`) contati su
+  CI dell'head letta dal vivo: solo `success` (in corso, rossa o assente → rifiuto); file della PR (`GET /pulls/{n}/files`, ≤ 10 pagine, nomi precedenti compresi; oltre → rifiuto): `.github/workflows/` → rifiuto sempre, e così il meccanismo delle migrazioni
+  (`artifacts/api-server/src/lib/migrations/**` e `docker/api.Dockerfile`). Migrazioni (`classifyPull`, classificatore di `lib/migrations/classify.ts`, che normalizza da solo CRLF e CR): un file esistente di `docs/migrations/` modificato, tolto o rinominato → rifiuto;
+  nome che non è `YYYY-MM-DD-slug.sql` → rifiuto; file nuovo non `-post` con istruzioni distruttive → rifiuto («usa un file `-post`»); modifica di `lib/db/src/schema/` o `docs/schema-casello.sql` senza una migrazione nuova → rifiuto; PR con uno o più `-post`
+  nuovi → nessun merge e voce `merge` in «Da confermare» con `postScripts` (SQL completo, ≤ 100 KB in tutto, `MAX_POST_SQL_BYTES`; una sola voce aperta per PR); altrimenti (anche con migrazioni additive: le applica il deploy) si unisce da sola. Limite: 6 merge all'ora per squadra (`MAX_MERGES_PER_HOUR`) contati su
   `team_code_tasks.botcave_merged_at`, che prenota anche la riga (con la riga della squadra bloccata; tolta se il merge fallisce, ripresa dopo 10 minuti). Poi la PR esce dalla bozza (GraphQL `markPullRequestReadyForReview`) e si unisce con
   squash (`PUT /pulls/{n}/merge`, `sha` = testa controllata: se cambia GitHub risponde 409), token ristretto al repository con `contents: write` e `pull_requests: write`; log solo id, numero e sha a 7. Dopo il merge valgono
   la sorveglianza, l'evento e il motivo `pr_closed` di sempre. **Voce `merge`** (`pending_actions.kind = 'merge'`, squadra, niente app né tool; `args_public` con `taskCodeId`, `planTaskId`, `repo`, `prNumber`, `prUrl`, `headSha`,
-  `baseBranch`, `files` ≤ 50): approvarla (`approveMerge`, nessun token utente) rifà gli stessi controlli tranne le migrazioni e il limite orario, con la testa uguale a quella della voce («la PR è cambiata dopo la richiesta:
+  `baseBranch`, `files` ≤ 50): approvarla (`approveMerge`, nessun token utente) rifà gli stessi controlli, con la classificazione che deve restare «voce in coda», tranne il limite orario, con la testa uguale a quella della voce («la PR è cambiata dopo la richiesta:
   chiedi un nuovo merge»), poi unisce; esito `done` «PR #n unita» o `failed` col messaggio e motivo di turno `merge_failed` per il capo; rifiutarla accoda il motivo `decision`; chiudere la squadra la rifiuta. Console: tipo «Merge»,
-  link alla PR e file (`components/actions/merge-detail.tsx`), «Approva e unisci», valore «Scrittura e merge» della tendina «Codice» (per il capo «Nessuno» o «Scrittura e merge»). Prompt del capo (`mergeInstruction` in
+  link alla PR, file e SQL degli script `-post` «Da applicare su Neon dopo il deploy» (`components/actions/merge-detail.tsx`), «Approva e unisci», valore «Scrittura e merge» della tendina «Codice» (per il capo «Nessuno» o «Scrittura e merge»). Prompt del capo (`mergeInstruction` in
   `turn-runner.ts`): con un ruolo `merge` fa unire la PR dopo la CI verde e passa al compito successivo al `pr_closed`, e con una voce in coda usa `segnala`; senza, il merge resta dell'utente. Migrazione
-  `docs/migrations/2026-11-merge-automatico.sql` (additiva e idempotente, niente `-post`, fuori da una transazione esplicita): valore `merge` di `pending_action_kind`, colonna `team_code_tasks.botcave_merged_at`; PRIMA del merge su Neon.
+  `docs/migrations/2026-11-merge-automatico.sql` (additiva e idempotente, niente `-post`, fuori da una transazione esplicita): valore `merge` di `pending_action_kind`, colonna `team_code_tasks.botcave_merged_at`.
 - **Permessi**: vedi «Autenticazione» (Contents, Pull requests, Checks, Statuses e Actions): ogni installazione deve accettarli.
 - Migrazione: `docs/migrations/2026-11-strumenti-github-squadre.sql` (additiva e idempotente, niente `-post`): enum `code_pr_state` e `code_ci_state`, tabella `team_code_tasks` con indice su `(pr_state, ci_checked_at)`. Da applicare su
   Neon PRIMA del merge (SQL completo in chat) e da segnalare nella PR; riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
@@ -2027,23 +2034,24 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
 - `POST /api/agents/:id/runs` ha un rate limit in memoria (`runTriggerRateLimit`, `middlewares/rate-limit.ts`): 60/min per token con
   qualunque token personale `cas_…`, 10 run/minuto per IP con sessione o pannello incorporato:
   l'IP reale arriva da `trust proxy` = 2 (Traefik di Coolify + nginx di `casello-web`).
-- Schema DB: le modifiche arrivano in produzione SOLO con gli script SQL in `docs/migrations/`, applicati
-  al DB Neon con `psql -v ON_ERROR_STOP=1 -f docs/migrations/<file>.sql` (prima del deploy dell'API
-  che li usa: cioè PRIMA del merge, perché il merge deploya da solo). MAI `drizzle-kit push` in produzione: cancellerebbe dati (es. la vecchia tabella `tools`
-  convertita dalla migrazione). Ogni modifica a `lib/db/src/schema/` va riportata in
-  `docs/schema-casello.sql` (usato anche dai test) e in uno script di `docs/migrations/`, e va segnalata nella PR.
-  Se uno script elimina tabelle o colonne che la versione in produzione usa ancora, si divide in due: la parte
-  additiva prima del merge, quella distruttiva (`…-post.sql`) dopo il deploy.
+- Schema DB (spec `docs/superpowers/specs/2026-11-16-botcave-migrazioni-automatiche-design.md`): le migrazioni **additive** le applica `casello-api` da sola all'avvio, prima di `listen` (`lib/migrations/`, `docker/api.Dockerfile` copia
+  `docs/migrations` in `/app/migrations`): registro `schema_migrations`, lock advisory (due container non migrano insieme; `lock_timeout` 10 s impostato solo dopo averlo preso, connessione distrutta alla fine), file in ordine di nome, `-post` esclusi,
+  ogni istruzione in autocommit (così `ALTER TYPE … ADD VALUE` funziona), righe registrate solo a riuscita. Un errore (`MigrationError` con file, numero dell'istruzione, 0 = rifiutata prima di eseguire, e codice SQLSTATE, mai il testo SQL)
+  fa uscire l'API con 1: Coolify tiene il container vecchio. Al primo avvio i 37 file già in produzione (`BASELINE_MIGRATIONS`) si registrano senza eseguirli. I file nuovi si chiamano `YYYY-MM-DD-slug.sql`, sono idempotenti e senza istruzioni distruttive
+  (la prova `migrations-auto.test.ts` della CI applica ogni file due volte su `docs/schema-casello.sql`); la parte distruttiva (tabelle o colonne che la versione in produzione usa ancora) va in un file `…-post.sql`, che NON si applica da solo: va
+  applicato a mano su Neon (`psql -v ON_ERROR_STOP=1 -f`) DOPO il deploy. `MIGRATIONS_DIR` (default `/app/migrations` in produzione, `docs/migrations` altrove) e `MIGRATIONS_DISABLED=true` (solo sviluppo, ignorata in produzione). MAI `drizzle-kit push`
+  in produzione: cancellerebbe dati (es. la vecchia tabella `tools` convertita dalla migrazione). Ogni modifica a `lib/db/src/schema/` va riportata in `docs/schema-casello.sql` (usato anche dai test) e in un file di `docs/migrations/`, e va segnalata nella PR.
 
 ## Flusso di lavoro
 
 1. Ogni lavoro parte da una GitHub Issue; branch `feat/<slug-issue>`.
 2. `pnpm run typecheck` verde prima del commit; commit piccoli, messaggi in italiano, tipo `feat(casello): ...`.
-3. PR verso `main` con: cosa cambia, come si è provato, eventuali modifiche allo schema DB o alle variabili.
+3. PR verso `main` con: cosa cambia, come si è provato, eventuali modifiche allo schema DB o alle variabili. Le migrazioni additive le applica il deploy: niente SQL in chat; solo gli script `-post` si danno in chat completi e si applicano dopo il deploy.
 4. Il merge su `main` deploya in produzione da solo: niente merge di lavoro a metà.
 
 ## Gotchas
 
+- Migrazioni: un file nuovo di `docs/migrations/` parte da solo con il deploy, quindi deve essere idempotente e non distruttivo; i file esistenti non si modificano né si rinominano (il merge automatico rifiuta la PR); il distruttivo va in `…-post.sql`.
 - Dopo ogni modifica a `openapi.yaml` rieseguire il codegen e committare anche i file generati.
 - Non aggiungere `artifacts/casello` ai `references` del `tsconfig.json` di root (leaf package).
 - `pnpm-workspace.yaml` ha `minimumReleaseAge`: una versione npm uscita da meno di un giorno non si installa.

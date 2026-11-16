@@ -10,6 +10,8 @@ export const ARCH_MESSAGES = {
   githubDown: "GitHub non raggiungibile",
   notAvailable: (app: string) => `architettura non ancora disponibile per ${app}`,
   appNotFound: "app non trovata",
+  versionNotFound: "versione non trovata",
+  tooMany: "Troppe richieste: riprova tra poco",
   running: "sintesi già in corso",
   noGithub: "collega il repository tramite l'App GitHub",
   noLead: "il Responsabile dell'app non ha un modello",

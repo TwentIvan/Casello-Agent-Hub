@@ -158,6 +158,70 @@ export const SourceType = {
   none: 'none',
 } as const;
 
+/**
+ * Frequenza di controllo della sintesi dell'architettura
+ */
+export type ArchitectureRefresh = typeof ArchitectureRefresh[keyof typeof ArchitectureRefresh];
+
+
+export const ArchitectureRefresh = {
+  off: 'off',
+  hourly: 'hourly',
+  '6h': '6h',
+  daily: 'daily',
+  weekly: 'weekly',
+} as const;
+
+export type AppArchitectureStatus = typeof AppArchitectureStatus[keyof typeof AppArchitectureStatus];
+
+
+export const AppArchitectureStatus = {
+  idle: 'idle',
+  running: 'running',
+  error: 'error',
+} as const;
+
+export interface AppArchitecture {
+  appId: number;
+  refresh: ArchitectureRefresh;
+  available: boolean;
+  /** @nullable */
+  unavailableReason: string | null;
+  status: AppArchitectureStatus;
+  /** @nullable */
+  sha: string | null;
+  /** @nullable */
+  branch: string | null;
+  /** @nullable */
+  generatedAt: string | null;
+  /** @nullable */
+  checkedAt: string | null;
+  /** @nullable */
+  summary: string | null;
+  /** @nullable */
+  repoMap: string | null;
+  /** @nullable */
+  lastError: string | null;
+  /** @nullable */
+  promptTokens: number | null;
+  /** @nullable */
+  completionTokens: number | null;
+  /** @nullable */
+  costUsd: number | null;
+  /** @nullable */
+  aiModelName: string | null;
+}
+
+export interface AppArchitectureVersion {
+  id: number;
+  sha: string;
+  createdAt: string;
+  /** @nullable */
+  costUsd: number | null;
+  /** Testo della sintesi (solo nel dettaglio di una versione) */
+  summary?: string;
+}
+
 export interface App {
   id: number;
   name: string;
@@ -209,6 +273,7 @@ export interface App {
      * @nullable
      */
   functionalDescription: string | null;
+  architectureRefresh: ArchitectureRefresh;
   status: AppStatus;
   createdAt: string;
   updatedAt: string;
@@ -437,6 +502,7 @@ export interface AppUpdate {
   openapiUrl?: string | null;
   /** @nullable */
   functionalDescription?: string | null;
+  architectureRefresh?: ArchitectureRefresh;
   status?: AppStatus;
 }
 
@@ -4420,6 +4486,10 @@ origin?: string;
 
 export type GetAlfredNotificationsParams = {
 after?: string;
+};
+
+export type RefreshAppArchitecture202 = {
+  queued: boolean;
 };
 
 export type ListAgentsParams = {

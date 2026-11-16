@@ -54,6 +54,8 @@ import type {
   ApiTokenCreated,
   ApiTokenInfo,
   App,
+  AppArchitecture,
+  AppArchitectureVersion,
   AppInput,
   AppPlan,
   AppTool,
@@ -173,6 +175,7 @@ import type {
   ProviderIssueText,
   QueuedAction,
   QueuedActionList,
+  RefreshAppArchitecture202,
   RejectActionRequest,
   Run,
   RunClientResult,
@@ -4455,6 +4458,312 @@ export const useDeleteApp = <TError = ErrorType<NotFoundResponse | ErrorResponse
         TContext
       > => {
       return useMutation(getDeleteAppMutationOptions(options));
+    }
+
+export const getGetAppArchitectureUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/architecture`
+}
+
+/**
+ * @summary Sintesi dell'architettura dell'app
+ */
+export const getAppArchitecture = async (id: number, options?: RequestInit): Promise<AppArchitecture> => {
+
+  return customFetch<AppArchitecture>(getGetAppArchitectureUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppArchitectureQueryKey = (id: number,) => {
+    return [
+    `/api/apps/${id}/architecture`
+    ] as const;
+    }
+
+
+export const getGetAppArchitectureQueryOptions = <TData = Awaited<ReturnType<typeof getAppArchitecture>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppArchitecture>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppArchitectureQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppArchitecture>>> = ({ signal }) => getAppArchitecture(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppArchitecture>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppArchitectureQueryResult = NonNullable<Awaited<ReturnType<typeof getAppArchitecture>>>
+export type GetAppArchitectureQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Sintesi dell'architettura dell'app
+ */
+
+export function useGetAppArchitecture<TData = Awaited<ReturnType<typeof getAppArchitecture>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppArchitecture>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppArchitectureQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListAppArchitectureVersionsUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/architecture/versions`
+}
+
+/**
+ * @summary Ultime versioni della sintesi (senza testo)
+ */
+export const listAppArchitectureVersions = async (id: number, options?: RequestInit): Promise<AppArchitectureVersion[]> => {
+
+  return customFetch<AppArchitectureVersion[]>(getListAppArchitectureVersionsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAppArchitectureVersionsQueryKey = (id: number,) => {
+    return [
+    `/api/apps/${id}/architecture/versions`
+    ] as const;
+    }
+
+
+export const getListAppArchitectureVersionsQueryOptions = <TData = Awaited<ReturnType<typeof listAppArchitectureVersions>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAppArchitectureVersions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAppArchitectureVersionsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAppArchitectureVersions>>> = ({ signal }) => listAppArchitectureVersions(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAppArchitectureVersions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAppArchitectureVersionsQueryResult = NonNullable<Awaited<ReturnType<typeof listAppArchitectureVersions>>>
+export type ListAppArchitectureVersionsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Ultime versioni della sintesi (senza testo)
+ */
+
+export function useListAppArchitectureVersions<TData = Awaited<ReturnType<typeof listAppArchitectureVersions>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAppArchitectureVersions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAppArchitectureVersionsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAppArchitectureVersionUrl = (id: number,
+    versionId: number,) => {
+
+
+
+
+  return `/api/apps/${id}/architecture/versions/${versionId}`
+}
+
+/**
+ * @summary Una versione della sintesi, con il testo
+ */
+export const getAppArchitectureVersion = async (id: number,
+    versionId: number, options?: RequestInit): Promise<AppArchitectureVersion> => {
+
+  return customFetch<AppArchitectureVersion>(getGetAppArchitectureVersionUrl(id,versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppArchitectureVersionQueryKey = (id: number,
+    versionId: number,) => {
+    return [
+    `/api/apps/${id}/architecture/versions/${versionId}`
+    ] as const;
+    }
+
+
+export const getGetAppArchitectureVersionQueryOptions = <TData = Awaited<ReturnType<typeof getAppArchitectureVersion>>, TError = ErrorType<NotFoundResponse>>(id: number,
+    versionId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppArchitectureVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppArchitectureVersionQueryKey(id,versionId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppArchitectureVersion>>> = ({ signal }) => getAppArchitectureVersion(id,versionId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && versionId !== null && versionId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppArchitectureVersion>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppArchitectureVersionQueryResult = NonNullable<Awaited<ReturnType<typeof getAppArchitectureVersion>>>
+export type GetAppArchitectureVersionQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Una versione della sintesi, con il testo
+ */
+
+export function useGetAppArchitectureVersion<TData = Awaited<ReturnType<typeof getAppArchitectureVersion>>, TError = ErrorType<NotFoundResponse>>(
+ id: number,
+    versionId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppArchitectureVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppArchitectureVersionQueryOptions(id,versionId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRefreshAppArchitectureUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/architecture/refresh`
+}
+
+/**
+ * @summary Aggiorna ora la sintesi dell'architettura
+ */
+export const refreshAppArchitecture = async (id: number, options?: RequestInit): Promise<RefreshAppArchitecture202> => {
+
+  return customFetch<RefreshAppArchitecture202>(getRefreshAppArchitectureUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRefreshAppArchitectureMutationOptions = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshAppArchitecture>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof refreshAppArchitecture>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['refreshAppArchitecture'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshAppArchitecture>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  refreshAppArchitecture(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RefreshAppArchitectureMutationResult = NonNullable<Awaited<ReturnType<typeof refreshAppArchitecture>>>
+
+    export type RefreshAppArchitectureMutationError = ErrorType<NotFoundResponse | ErrorResponse>
+
+    /**
+ * @summary Aggiorna ora la sintesi dell'architettura
+ */
+export const useRefreshAppArchitecture = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshAppArchitecture>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof refreshAppArchitecture>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRefreshAppArchitectureMutationOptions(options));
     }
 
 export const getListAgentsUrl = (params?: ListAgentsParams,) => {

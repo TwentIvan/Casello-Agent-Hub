@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, describe, expect, it } from "vitest";
-import { BASELINE_MIGRATIONS } from "../src/lib/migrations/baseline";
+import { BASELINE_MIGRATIONS, LEGACY_APPLIED_BY_DEPLOY } from "../src/lib/migrations/baseline";
 import { migrationsDir } from "../src/lib/migrations/config";
 import { MIGRATION_NAME_RE, classifyMigration, isPostMigration } from "../src/lib/migrations/classify";
 import { splitSql } from "../src/lib/migrations/split";
@@ -14,6 +14,7 @@ const repoRoot = join(here, "..", "..", "..");
 const dir = join(repoRoot, "docs", "migrations");
 const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
 const baseline = new Set(BASELINE_MIGRATIONS);
+const legacyByDeploy = new Set(LEGACY_APPLIED_BY_DEPLOY);
 const fresh = files.filter((f) => !baseline.has(f) && !isPostMigration(f));
 
 describe("file di migrazione", () => {
@@ -22,13 +23,14 @@ describe("file di migrazione", () => {
     for (const f of BASELINE_MIGRATIONS) expect(files).toContain(f);
   });
 
-  it("BASELINE_MIGRATIONS = file non -post che non rispettano il nome standard", () => {
+  it("BASELINE_MIGRATIONS + LEGACY_APPLIED_BY_DEPLOY = file non -post che non rispettano il nome standard", () => {
     const legacy = files.filter((f) => !isPostMigration(f) && !MIGRATION_NAME_RE.test(f));
-    expect([...baseline].sort()).toEqual(legacy);
+    expect([...baseline, ...legacyByDeploy].sort()).toEqual(legacy);
+    for (const f of legacyByDeploy) expect(baseline.has(f), f).toBe(false);
   });
 
   it("ogni file non -post fuori dall'insieme di base rispetta il nome standard", () => {
-    for (const f of files.filter((x) => !baseline.has(x) && !isPostMigration(x))) {
+    for (const f of files.filter((x) => !baseline.has(x) && !legacyByDeploy.has(x) && !isPostMigration(x))) {
       expect(MIGRATION_NAME_RE.test(f), f).toBe(true);
     }
   });

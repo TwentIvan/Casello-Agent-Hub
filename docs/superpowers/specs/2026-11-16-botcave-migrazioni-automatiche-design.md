@@ -51,7 +51,7 @@ Moduli:
   Ammessi: `DROP CONSTRAINT`, `DROP NOT NULL`, `DROP DEFAULT` (lo schema «togli e ricrea un vincolo» è già in uso), `UPDATE`,
   `INSERT`, `ON DELETE CASCADE` nelle chiavi esterne, blocchi `DO $$ … $$` senza parole distruttive (anche nelle loro stringhe).
   La regola è volutamente prudente: un falso positivo sposta lo script in un `-post`, mai il contrario.
-- `baseline.ts`: `BASELINE_MIGRATIONS`, elenco fisso dei 38 file non `-post` presenti il 2026-11-16 (dal
+- `baseline.ts`: `BASELINE_MIGRATIONS`, elenco fisso dei 37 file non `-post` già applicati presenti il 2026-11-16 (dal
   `2026-10-account-ai.sql` al `2026-11-thu-5c-tappa1.sql`).
 - `runner.ts`: `runMigrations({ pool, dir, logger })`.
 
@@ -114,16 +114,16 @@ dentro `try/catch` che registra l'errore ed esegue `process.exit(1)`. Cartella d
 Rieseguire i file esistenti **non è sicuro**: alcuni cambiano dati, non solo lo schema (`2026-10-tetti-di-spesa` riscrive
 `runs.ai_model_id`, `2026-11-lucius-squadra` riscrive `plan_conversations.summarized_at`, `2026-11-strumenti-mcp` ricalcola
 `app_tools.level`, `2026-10-fase-1` converte la vecchia tabella `tools` con un `DROP TABLE`, `2026-10-catalogo-universale`
-cancella righe di `catalog_runs`). Per questo i 38 file di `BASELINE_MIGRATIONS` si registrano senza eseguirli.
+cancella righe di `catalog_runs`). Per questo i 37 file di `BASELINE_MIGRATIONS` si registrano senza eseguirli.
 
 Elenco fisso e non «tutti i file presenti»: se il primo deploy fallisse e intanto si unisse una PR con una migrazione nuova,
 «tutti i file presenti» la registrerebbe senza averla mai eseguita.
 
-Prerequisito: i 38 file sono già applicati su Neon (regola in vigore finora). La PR riporta una query di verifica sugli oggetti
+Prerequisito: i 37 file sono già applicati su Neon (regola in vigore finora). La PR riporta una query di verifica sugli oggetti
 degli ultimi script (es. `team_code_tasks.botcave_merged_at`, valore `merge` di `pending_action_kind`, `nodes.git_status`,
 `lead_conversations`, `runs.client_tools` e `runs.client_action` di `2026-11-tool-ui-client.sql`, anch'esso nella baseline).
 
-Primo deploy: crea `schema_migrations`, inserisce 38 righe `baseline = true`, non esegue nessuna migrazione, non cambia tabelle
+Primo deploy: crea `schema_migrations`, inserisce 37 righe `baseline = true` ed esegue solo `2026-11-risposta-capo.sql` (`LEGACY_APPLIED_BY_DEPLOY`: la verifica su Neon del 2026-11-16 ha mostrato che non era mai stato applicato), non cambia tabelle
 né dati esistenti, poi l'avvio prosegue come oggi.
 
 ## 3. Immagine, nomi dei file e prove

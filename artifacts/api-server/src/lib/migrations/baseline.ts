@@ -31,7 +31,6 @@ export const BASELINE_MIGRATIONS: readonly string[] = [
   "2026-11-plugin-incorporabile.sql",
   "2026-11-proposte-multiple.sql",
   "2026-11-responsabile-ovunque.sql",
-  "2026-11-risposta-capo.sql",
   "2026-11-spazio-di-lavoro-automatico.sql",
   "2026-11-squadre-esecuzione.sql",
   "2026-11-squadre.sql",
@@ -40,3 +39,7 @@ export const BASELINE_MIGRATIONS: readonly string[] = [
   "2026-11-thu-5c-tappa1.sql",
   "2026-11-tool-ui-client.sql",
 ];
+
+// File del vecchio formato NON applicati in produzione (verificato su Neon il 2026-11-16): fuori da BASELINE_MIGRATIONS,
+// li applica il primo deploy come una migrazione nuova (devono essere additivi e idempotenti, come prova la CI).
+export const LEGACY_APPLIED_BY_DEPLOY: readonly string[] = ["2026-11-risposta-capo.sql"];

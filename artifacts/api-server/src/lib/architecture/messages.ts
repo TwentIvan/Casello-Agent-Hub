@@ -13,5 +13,7 @@ export const ARCH_MESSAGES = {
   running: "sintesi già in corso",
   noGithub: "collega il repository tramite l'App GitHub",
   noLead: "il Responsabile dell'app non ha un modello",
+  invalidPart: "parte non valida: usa sintesi o mappa",
+  toolFailed: "lettura dell'architettura non riuscita: riprova più tardi",
   internal: "generazione non riuscita: riprova più tardi",
 } as const;

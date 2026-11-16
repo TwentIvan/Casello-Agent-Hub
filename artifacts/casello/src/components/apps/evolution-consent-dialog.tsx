@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { canActivate, FREQUENCY_LABELS } from "@/lib/evolution-consent";
+import { budgetError, canActivate, FREQUENCY_LABELS, MAX_ITEMS_PER_ROUND, needsConsent } from "@/lib/evolution-consent";
 
 interface Props {
   app: App;
@@ -36,19 +36,25 @@ export function EvolutionConsentDialog({ app, cycle, activating, onClose }: Prop
   const [itemsPerRound, setItemsPerRound] = useState(String(cycle?.itemsPerRound ?? 3));
   const [modelId, setModelId] = useState<number | null>(cycle?.analysisAiModelId ?? null);
   const [budget, setBudget] = useState(String(cycle?.monthlyBudgetUsd ?? 10));
+  const [forceConsent, setForceConsent] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [typedSlug, setTypedSlug] = useState("");
 
   const items = Number(itemsPerRound);
   const budgetNum = Number(budget);
-  const itemsValid = Number.isInteger(items) && items >= 1 && items <= 20;
-  const budgetValid = budget.trim() !== "" && Number.isFinite(budgetNum) && budgetNum > 0;
+  const itemsValid = Number.isInteger(items) && items >= 1 && items <= MAX_ITEMS_PER_ROUND;
+  const budgetMsg = budgetError(budget);
+  const budgetValid = budgetMsg === null;
   const settingsValid = itemsValid && budgetValid && modelId !== null;
+  const consentNeeded =
+    activating ||
+    forceConsent ||
+    needsConsent(cycle, { analysisAiModelId: modelId, itemsPerRound: items, monthlyBudgetUsd: budgetNum });
 
   const consent = useGetAppEvolutionConsentText(
     app.id,
     { mergeMode: "direct", analysisAiModelId: modelId ?? 0, itemsPerRound: itemsValid ? items : 1, monthlyBudgetUsd: budgetValid ? budgetNum : 1 },
-    { query: { queryKey: ["evolution-consent-text", app.id, modelId, items, budgetNum], enabled: activating && settingsValid } },
+    { query: { queryKey: ["evolution-consent-text", app.id, modelId, items, budgetNum], enabled: consentNeeded && settingsValid } },
   );
 
   const save = useSaveAppEvolution({
@@ -59,8 +65,12 @@ export function EvolutionConsentDialog({ app, cycle, activating, onClose }: Prop
         toast({ title: activating ? "Ciclo attivato" : "Impostazioni salvate" });
         onClose();
       },
-      onError: (error) =>
-        toast({ variant: "destructive", title: "Salvataggio non riuscito", description: apiErrorMessage(error) }),
+      onError: (error) => {
+        const message = apiErrorMessage(error);
+        // Consenso da rinnovare (es. salva un altro utente): il dialogo passa in modalità consenso
+        if (!consentNeeded && /consenso/i.test(message)) setForceConsent(true);
+        toast({ variant: "destructive", title: "Salvataggio non riuscito", description: message });
+      },
     },
   });
 
@@ -68,7 +78,7 @@ export function EvolutionConsentDialog({ app, cycle, activating, onClose }: Prop
   const canSubmit =
     settingsValid &&
     !save.isPending &&
-    (!activating ||
+    (!consentNeeded ||
       (consentVersion !== undefined &&
         canActivate({ accepted, typedSlug, appSlug: app.slug, mergeMode: "direct", directAccepted: true })));
 
@@ -85,7 +95,7 @@ export function EvolutionConsentDialog({ app, cycle, activating, onClose }: Prop
         stagingBranch: null,
         stagingUrl: null,
         monthlyBudgetUsd: budgetNum,
-        ...(activating && consentVersion !== undefined
+        ...(consentNeeded && consentVersion !== undefined
           ? { consent: { accepted: true, appSlug: app.slug, version: consentVersion } }
           : {}),
       },
@@ -117,8 +127,9 @@ export function EvolutionConsentDialog({ app, cycle, activating, onClose }: Prop
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="evo-items">Voci per giro (1–20)</Label>
+              <Label htmlFor="evo-items">Voci per giro (1–10)</Label>
               <Input id="evo-items" inputMode="numeric" value={itemsPerRound} onChange={(e) => setItemsPerRound(e.target.value)} aria-invalid={!itemsValid} />
+              {!itemsValid && <p className="text-xs text-danger">Da 1 a {MAX_ITEMS_PER_ROUND} voci.</p>}
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="evo-model">Modello per l'analisi e la scelta</Label>
@@ -127,10 +138,11 @@ export function EvolutionConsentDialog({ app, cycle, activating, onClose }: Prop
             <div className="space-y-1.5">
               <Label htmlFor="evo-budget">Tetto mensile (USD)</Label>
               <Input id="evo-budget" inputMode="decimal" value={budget} onChange={(e) => setBudget(e.target.value)} aria-invalid={!budgetValid} />
+              {budgetMsg && <p className="text-xs text-danger">{budgetMsg}</p>}
             </div>
           </div>
 
-          {activating && (
+          {consentNeeded && (
             <div className="min-w-0 space-y-3 rounded-md border border-border bg-surface-1 p-3">
               {!settingsValid && <p className="text-sm text-ink-muted">Scegli un modello e valori validi per leggere il consenso.</p>}
               {settingsValid && consent.isLoading && <p className="text-sm text-ink-muted">Caricamento…</p>}

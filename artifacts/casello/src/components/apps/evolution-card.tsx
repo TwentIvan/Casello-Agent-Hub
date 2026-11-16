@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { FREQUENCY_LABELS, ROUND_STATUS_LABELS, roundStatusLed } from "@/lib/evolution-consent";
+import { cycleLed, FREQUENCY_LABELS, USER_PAUSE_REASON, ROUND_STATUS_LABELS, roundStatusLed } from "@/lib/evolution-consent";
 import { formatRelative, formatUsd } from "@/lib/format";
 import { EvolutionConsentDialog } from "./evolution-consent-dialog";
 
@@ -56,23 +56,14 @@ export function EvolutionCard({ app }: { app: App }) {
     },
   });
 
-  let led: LedState = "idle";
-  let ledLabel = "Non attivo";
-  if (cycle) {
-    if (cycle.openRound) {
-      led = "work";
-      ledLabel = "Giro in corso";
-    } else if (cycle.status === "active") {
-      led = "ok";
-      ledLabel = "Attivo, in attesa del prossimo giro";
-    } else if (cycle.pausedReason) {
-      led = "ko";
-      ledLabel = "In pausa";
-    } else {
-      led = "idle";
-      ledLabel = "In pausa";
-    }
-  }
+  const led: LedState = cycle ? cycleLed(cycle) : "idle";
+  const ledLabel = !cycle
+    ? "Non attivo"
+    : cycle.openRound
+      ? "Giro in corso"
+      : cycle.status === "active"
+        ? "Attivo, in attesa del prossimo giro"
+        : "In pausa";
 
   return (
     <Card>
@@ -116,7 +107,9 @@ export function EvolutionCard({ app }: { app: App }) {
               </p>
             )}
             {cycle.status === "paused" && cycle.pausedReason && (
-              <p className="text-sm text-danger break-words">{cycle.pausedReason}</p>
+              <p className={cycle.pausedReason === USER_PAUSE_REASON ? "text-sm text-ink-muted" : "text-sm text-danger break-words"}>
+                {cycle.pausedReason}
+              </p>
             )}
             {cycle.lastError && <p className="text-sm text-danger break-words">{cycle.lastError}</p>}
             {!cycle.consentValid && (

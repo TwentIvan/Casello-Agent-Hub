@@ -79,7 +79,8 @@ export function mergeInstruction(roles: InstanceRole[]): string {
     .join(" oppure ");
   return [
     `- La squadra unisce da sé le PR: può farlo ${who}. Dopo la CI verde (e l'eventuale revisione prevista dal PLAN) fai unire la PR, poi passa al compito successivo quando arriva il motivo pr_closed.`,
-    "- Botcave unisce solo con la CI verde sull'ultima testa e mai i workflow della CI. Una PR che tocca migrazioni o schema del DB finisce in «Da confermare»: usa `segnala` (decisione_richiesta) perché l'utente applichi l'SQL su Neon e approvi il merge.",
+    "- Botcave unisce solo con la CI verde sull'ultima testa e mai i workflow della CI. Le migrazioni additive le applica il deploy: una PR con migrazioni additive si unisce come le altre. Lo schema del DB cambia solo con uno script nuovo `docs/migrations/YYYY-MM-DD-slug.sql` idempotente; le parti distruttive vanno in uno script `-post`.",
+    "- Una PR con uno script `-post` finisce in «Da confermare»: usa `segnala` (decisione_richiesta) perché l'utente approvi il merge e applichi lo script su Neon dopo il deploy.",
   ].join("\n");
 }
 

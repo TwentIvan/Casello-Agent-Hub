@@ -84,7 +84,8 @@ export const CODE_TASK_INSTRUCTIONS = [
 export const CODE_MERGE_INSTRUCTIONS = [
   "Puoi unire le PR dei compiti della squadra con unisci_pr (compito del PLAN o numero della PR): Botcave unisce con squash solo con la CI verde sull'ultima testa, mai i workflow della CI.",
   "Se il compito è un merge, prima controlla la PR (leggi_esito_ci, file toccati) e poi unisci; se unisci_pr rifiuta, riferisci blocked con il motivo.",
-  "Una PR che tocca migrazioni o schema del DB finisce in «Da confermare»: riferisci done con «PR #n in Da confermare: l'utente applica la migrazione su Neon e approva».",
+  "Le migrazioni additive le applica il deploy: una PR con migrazioni additive si unisce come le altre. Lo schema del DB cambia solo con uno script nuovo docs/migrations/YYYY-MM-DD-slug.sql idempotente; le parti distruttive vanno in uno script -post.",
+  "Una PR con uno script -post finisce in «Da confermare»: riferisci done con «PR #n in Da confermare: dopo il deploy l'utente applica lo script -post su Neon».",
 ].join("\n");
 
 /** Istruzioni del ruolo con il codice in sola lettura. */

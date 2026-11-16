@@ -175,7 +175,7 @@ export interface EnqueueMergeInput {
   detail: Record<string, unknown>;
 }
 
-/** Accoda il merge di una PR di una squadra che tocca migrazioni o schema (voce `merge`, senza app né tool). */
+/** Accoda il merge di una PR di una squadra con script `-post` (voce `merge`, senza app né tool; `detail` porta anche `postScripts`). */
 export async function enqueueMergeItem(input: EnqueueMergeInput): Promise<EnqueueResult> {
   return insertQueued(input.userId, {
     kind: "merge",

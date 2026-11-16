@@ -2377,6 +2377,13 @@ paths:
           schema:
             $ref: "#/components/schemas/AnalysisExecutor"
           description: Con local risponde 400 "con l'agente locale lo zip non serve"
+        - name: bestPractice
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["true", "false"]
+          description: Verifica delle best practice (default dalle impostazioni di Lucius)
       requestBody:
         required: true
         content:
@@ -7107,7 +7114,7 @@ components:
 
     Analysis:
       type: object
-      required: [id, appId, model, aiModelId, status, executor, sources, maxTokens, tokensUsed, cachedTokens, costUsd, phase, error, leaseLabel, leaseUntil, createdAt, finishedAt]
+      required: [id, appId, model, aiModelId, status, executor, sources, maxTokens, tokensUsed, cachedTokens, costUsd, bestPractice, bestPracticeNotes, phase, error, leaseLabel, leaseUntil, createdAt, finishedAt]
       properties:
         id:
           type: integer
@@ -7134,6 +7141,14 @@ components:
         costUsd:
           type: ["number", "null"]
           description: Costo in USD; null se un prezzo manca o l'analisi usa il vecchio gateway (costo parziale)
+        bestPractice:
+          type: boolean
+          description: Verifica delle best practice per app simili prima della fase di completamento
+        bestPracticeNotes:
+          type: ["string", "null"]
+          description: >-
+            Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita);
+            null se non eseguita (anche nelle analisi locali, dove cerca l'agente)
         phase:
           type: ["string", "null"]
           description: Fase corrente
@@ -8202,6 +8217,11 @@ components:
           minimum: 50000
           maximum: 2000000
           description: Tetto di token per l'analisi (default 1000000)
+        bestPractice:
+          type: boolean
+          description: >-
+            Verifica le best practice per app simili prima della fase di completamento (default: true se le best practice
+            di Lucius sono «Sempre» in Account → Personaggi)
 
     AnalysisItemUpdate:
       type: object

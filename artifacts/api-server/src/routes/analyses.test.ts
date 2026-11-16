@@ -526,6 +526,34 @@ describe("analisi con l'agente locale", () => {
     expect((await api("POST", "/analyses/9999/release")).status).toBe(404);
   });
 
+  it("bestPractice: senza valore vale il default di Lucius dell'utente; il valore esplicito vince", async () => {
+    const [dev] = await db.select().from(usersTable).where(eq(usersTable.email, "dev@localhost"));
+    const start = async (body: Record<string, unknown>) => {
+      const app = await createApp();
+      const res = await api("POST", `/apps/${app.id}/analyses`, { executor: "local", ...body });
+      expect(res.status, res.text).toBe(202);
+      // Le analisi locali restano in coda: si chiudono subito
+      await db.update(analysesTable).set({ status: "failed" }).where(eq(analysesTable.id, res.json.id));
+      return res.json as { bestPractice: boolean; bestPracticeNotes: string | null };
+    };
+    try {
+      expect(await start({})).toMatchObject({ bestPractice: false, bestPracticeNotes: null });
+      await db.update(usersTable).set({ luciusBestPractice: "always" }).where(eq(usersTable.id, dev!.id));
+      expect((await start({})).bestPractice).toBe(true);
+      expect((await start({ bestPractice: false })).bestPractice).toBe(false);
+      await db.update(usersTable).set({ luciusBestPractice: "on_request" }).where(eq(usersTable.id, dev!.id));
+      expect((await start({ bestPractice: true })).bestPractice).toBe(true);
+
+      const app = await createApp();
+      const zip = zipSync({ "src/a.ts": strToU8("export const a = 1;\n") });
+      const res = await postZip(`/apps/${app.id}/analyses/zip?aiModelId=${modelId}&bestPractice=true`, zip);
+      expect(res.status, res.text).toBe(202);
+      expect(res.json).toMatchObject({ bestPractice: true });
+    } finally {
+      await db.update(usersTable).set({ luciusBestPractice: "on_request" }).where(eq(usersTable.id, dev!.id));
+    }
+  });
+
   it("release e cancel su un'analisi cloud → 409; executor non valido → 400", async () => {
     const app = await createApp();
     const cloud = await newAnalysis(app.id, "running");

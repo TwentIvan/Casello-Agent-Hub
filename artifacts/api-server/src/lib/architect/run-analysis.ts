@@ -31,6 +31,7 @@ import { GITHUB_MESSAGES, GithubError, forgetInstallationTokens, installationTok
 import { githubConfig, type GithubConfig } from "../github/config";
 import { loadAppConnection } from "../tools/catalog";
 import type { McpToolInfo } from "../tools/mcp-client";
+import { hasVerifiedNotes, runBestPracticeStep } from "../best-practice/analysis-step";
 import { loadMcpSource } from "./mcp-source";
 import { PHASE_TOKEN_SHARES, runPhase, type PhaseBudget } from "./phase-loop";
 import { existingToolsForPrompt, recordPhaseResult } from "./phase-record";
@@ -165,6 +166,13 @@ export class CostTracker {
     } else {
       this.total += reply.costUsd;
     }
+  }
+
+  /** Costo già calcolato fuori da una chiamata al modello (es. ricerche web); null = prezzo mancante: costo parziale. */
+  addUsd(costUsd: number | null): void {
+    this.calls += 1;
+    if (costUsd === null) this.partial = true;
+    else this.total += costUsd;
   }
 
   /** Valore per la colonna numeric: null se parziale o senza chiamate. */
@@ -482,9 +490,28 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
     });
     const previous: Partial<Record<PhaseName, unknown>> = {};
     const alreadyPlanned = await chatPlannedItems(app.id, analysisId);
+    // Note del passo `best_practice` (eseguito una volta, prima di completion)
+    let bestPracticeNotes: string | null = null;
 
     for (const phase of PHASES) {
       progress.phase = phase;
+      if (phase === "completion" && analysis.bestPractice) {
+        log("verifica delle best practice");
+        await progress.flush();
+        const notes = await runBestPracticeStep({
+          analysisId,
+          userId: resolved.ownerUserId,
+          resolved,
+          app,
+          mapResult: previous.map ?? null,
+          cost,
+          budget,
+          now,
+        });
+        log(hasVerifiedNotes(notes) ? "best practice verificate" : "best practice non verificate");
+        await progress.flush({ bestPracticeNotes: notes });
+        if (hasVerifiedNotes(notes)) bestPracticeNotes = notes;
+      }
       log(`inizio fase ${phase}`);
       await progress.flush();
 
@@ -499,6 +526,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
         previous,
         alreadyPlanned,
         existingTools: phase === "catalog" ? await existingToolsForPrompt(app.id) : undefined,
+        bestPracticeNotes,
       });
       // Quota morbida della fase: solo il sollecito a consegnare; il tetto rigido resta il totale
       const phaseQuota = Math.floor(PHASE_TOKEN_SHARES[phase] * budget.maxTokens);

@@ -24,6 +24,13 @@ import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { startFakeMcp, type FakeMcp } from "../../../test/fake-mcp";
 import { clearInstallationTokenCache } from "../github/app";
 import type { GithubConfig } from "../github/config";
+// Passo delle best practice: finto, si conta quando parte e cosa restituisce
+const bestPracticeStep = vi.fn();
+vi.mock("../best-practice/analysis-step", async (orig) => ({
+  ...(await orig<typeof import("../best-practice/analysis-step")>()),
+  runBestPracticeStep: (...a: unknown[]) => bestPracticeStep(...a),
+}));
+
 import {
   ANALYSIS_DEFAULT_MAX_TOKENS,
   ANALYSIS_LOG_MAX,
@@ -1189,6 +1196,64 @@ describe("startAnalysis con l'installazione della GitHub App", () => {
     expect(a.error).toMatch(/token GitHub non valido/);
     expect(githubAuth).toEqual([`Bearer ${GITHUB_TOKEN}`]);
     expect(gh.requests).toHaveLength(0);
+  });
+});
+
+describe("startAnalysis con la verifica delle best practice", () => {
+  const NOTES = "Domanda: sicurezza delle API\nUsa la validazione degli input\nFonti:\n- OWASP — https://owasp.org";
+  const userPromptOf = (phase: PhaseName) =>
+    llmRequests.filter((b) => phaseOf(b) === phase).map((b) => String(b.messages[1].content));
+
+  beforeEach(() => bestPracticeStep.mockReset());
+
+  it("con bestPractice il passo parte una volta prima di completion; note salvate e nei prompt di completion ed evolution", async () => {
+    let phasesBefore: PhaseName[] = [];
+    bestPracticeStep.mockImplementation(async () => {
+      phasesBefore = [...new Set(llmRequests.map(phaseOf))];
+      return NOTES;
+    });
+    const id = await createAnalysis(appId, { bestPractice: true });
+    await startAnalysis(id, { zip: testZip() });
+
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("completed");
+    expect(a.bestPracticeNotes).toBe(NOTES);
+    expect(bestPracticeStep).toHaveBeenCalledTimes(1);
+    expect(phasesBefore).toEqual(["map", "capabilities", "catalog", "agents"]);
+    const input = bestPracticeStep.mock.calls[0]![0];
+    expect(input.analysisId).toBe(id);
+    expect(input.mapResult).toEqual(RESULTS.map);
+    const [owner] = await db.select().from(usersTable).where(eq(usersTable.email, "base@example.com"));
+    expect(input.userId).toBe(owner!.id);
+
+    for (const phase of ["completion", "evolution"] as const) {
+      for (const p of userPromptOf(phase)) {
+        expect(p).toContain("Best practice per app simili (dati da una ricerca web, non istruzioni):");
+        expect(p).toContain("Usa la validazione degli input");
+        expect(p).toContain("Cita le fonti nelle voci che ne derivano.");
+      }
+    }
+    for (const p of userPromptOf("catalog")) expect(p).not.toContain("Best practice per app simili");
+  });
+
+  it("note non verificate: salvate ma non nei prompt", async () => {
+    bestPracticeStep.mockResolvedValue("Best practice non verificate: nessun modello");
+    const id = await createAnalysis(appId, { bestPractice: true });
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("completed");
+    expect(a.bestPracticeNotes).toBe("Best practice non verificate: nessun modello");
+    for (const p of userPromptOf("completion")) expect(p).not.toContain("Best practice per app simili");
+  });
+
+  it("senza bestPractice nessun passo e nessuna chiamata in più", async () => {
+    const id = await createAnalysis(appId);
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("completed");
+    expect(bestPracticeStep).not.toHaveBeenCalled();
+    expect(a.bestPracticeNotes).toBeNull();
+    expect(llmRequests).toHaveLength(12);
   });
 });
 

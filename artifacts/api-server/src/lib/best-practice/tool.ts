@@ -37,8 +37,16 @@ export function isBestPracticeTool(name: string): boolean {
 
 class ToolError extends Error {}
 
+/** Esito strutturato di una ricerca (per le note dell'analisi): `cachedAt` valorizzato se dalla cache. */
+export interface BestPracticeFinding {
+  question: string;
+  answer: string;
+  sources: { title: string; url: string }[];
+  cachedAt: Date | null;
+}
+
 /** Un tag `dati` nel contenuto non deve chiudere o aprire il blocco (come in `web-reader/tool.ts`). */
-function neutralise(s: string): string {
+export function neutralise(s: string): string {
   return s.replace(/<[ \t\r\n]{0,20}(\/?)[ \t\r\n]{0,20}dati\b[^>]{0,200}>/gi, "‹$1dati›");
 }
 
@@ -60,7 +68,7 @@ export class BestPracticeSearcher {
 
   constructor(
     private readonly userId: number,
-    private readonly opts: { analysisId?: number } = {},
+    private readonly opts: { analysisId?: number; perTurn?: number } = {},
   ) {}
 
   /** Costo delle sole chiamate vere di questa istanza; null se manca un prezzo. */
@@ -73,30 +81,36 @@ export class BestPracticeSearcher {
   }
 
   async run(args: Record<string, unknown>): Promise<string> {
+    const r = await this.lookup(args);
+    return r.ok ? format(r.finding, r.finding.cachedAt) : `Errore: ${r.error}`;
+  }
+
+  /** Come `run`, ma con l'esito strutturato; l'errore è un messaggio fisso. Mai eccezioni. */
+  async lookup(args: Record<string, unknown>): Promise<{ ok: true; finding: BestPracticeFinding } | { ok: false; error: string }> {
     const started = Date.now();
     try {
-      const out = await this.search(args);
+      const finding = await this.search(args);
       logger.info({ userId: this.userId, outcome: "ok", ms: Date.now() - started }, "cerca_best_practice");
-      return out;
+      return { ok: true, finding };
     } catch (err) {
       if (err instanceof ToolError || err instanceof BestPracticeError) {
         logger.info({ userId: this.userId, outcome: "refused", ms: Date.now() - started }, "cerca_best_practice");
-        return `Errore: ${err.message}`;
+        return { ok: false, error: err.message };
       }
       logger.error({ userId: this.userId, err: err instanceof Error ? err.name : "unknown" }, "cerca_best_practice: errore interno");
-      return `Errore: ${BEST_PRACTICE_MESSAGES.internal}`;
+      return { ok: false, error: BEST_PRACTICE_MESSAGES.internal };
     }
   }
 
-  private async search(args: Record<string, unknown>): Promise<string> {
+  private async search(args: Record<string, unknown>): Promise<BestPracticeFinding> {
     const question = normalizeQuestion(args["domanda"]);
     if (!question) throw new ToolError(BEST_PRACTICE_MESSAGES.invalidQuestion);
-    if (this.searches >= BEST_PRACTICE_SEARCHES_PER_TURN) throw new ToolError(BEST_PRACTICE_MESSAGES.tooManyInTurn);
+    if (this.searches >= (this.opts.perTurn ?? BEST_PRACTICE_SEARCHES_PER_TURN)) throw new ToolError(BEST_PRACTICE_MESSAGES.tooManyInTurn);
     this.searches += 1;
 
     const hash = questionHash(question);
     const cached: StoredSearch | null = await findCached(this.userId, hash);
-    if (cached) return format(cached, cached.createdAt);
+    if (cached) return { question: cached.question, answer: cached.answer, sources: cached.sources, cachedAt: cached.createdAt };
 
     const [user] = await db
       .select({ modelId: usersTable.luciusSearchAiModelId })
@@ -129,6 +143,6 @@ export class BestPracticeSearcher {
       { userId: this.userId, tokens: result.promptTokens + result.completionTokens, searchQueries: result.searchQueries },
       "cerca_best_practice: ricerca eseguita",
     );
-    return format({ question, answer: result.answer, sources: result.sources }, null);
+    return { question, answer: result.answer, sources: result.sources, cachedAt: null };
   }
 }

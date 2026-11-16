@@ -10,6 +10,9 @@ export const BEST_PRACTICE_MESSAGES = {
   rateLimited: "troppe ricerche al minuto: riprova tra poco",
   invalidQuestion: "domanda non valida: da 3 a 300 caratteri",
   internal: "ricerca non riuscita: riprova più tardi",
+  analysisNoQuestions: "il modello dell'analisi non ha proposto domande valide",
+  analysisModelFailed: "chiamata al modello dell'analisi non riuscita",
+  analysisLimit: "tetto di token o tempo dell'analisi raggiunto",
 } as const;
 
 /** Costo stimato (prudente) di una query di ricerca Google di Gemini, in USD. */

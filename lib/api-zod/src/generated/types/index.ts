@@ -318,6 +318,7 @@ export * from './runStepArgs';
 export * from './runTrigger';
 export * from './skillKind';
 export * from './sourceType';
+export * from './startZipAnalysisBestPractice';
 export * from './startZipAnalysisParams';
 export * from './teamAttachment';
 export * from './teamBudgetInput';

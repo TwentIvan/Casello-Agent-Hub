@@ -1483,6 +1483,13 @@ export interface Analysis {
      * @nullable
      */
   costUsd: number | null;
+  /** Verifica delle best practice per app simili prima della fase di completamento */
+  bestPractice: boolean;
+  /**
+     * Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l'agente)
+     * @nullable
+     */
+  bestPracticeNotes: string | null;
   /**
      * Fase corrente
      * @nullable
@@ -2419,6 +2426,8 @@ export interface AnalysisStart {
      * @maximum 2000000
      */
   maxTokens?: number;
+  /** Verifica le best practice per app simili prima della fase di completamento (default: true se le best practice di Lucius sono «Sempre» in Account → Personaggi) */
+  bestPractice?: boolean;
 }
 
 export type AnalysisItemUpdatePayload = { [key: string]: unknown };
@@ -4600,7 +4609,19 @@ maxTokens?: number;
  * Con local risponde 400 "con l'agente locale lo zip non serve"
  */
 executor?: AnalysisExecutor;
+/**
+ * Verifica delle best practice (default dalle impostazioni di Lucius)
+ */
+bestPractice?: StartZipAnalysisBestPractice;
 };
+
+export type StartZipAnalysisBestPractice = typeof StartZipAnalysisBestPractice[keyof typeof StartZipAnalysisBestPractice];
+
+
+export const StartZipAnalysisBestPractice = {
+  true: 'true',
+  false: 'false',
+} as const;
 
 export type ExportAnalysisIssuesParams = {
 chapter?: AnalysisChapter;

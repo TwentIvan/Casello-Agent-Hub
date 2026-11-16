@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { db, pool, analysesTable, analysisItemsTable, analysisPhaseResultsTable, appToolsTable, appsTable } from "@workspace/db";
+import { db, pool, analysesTable, analysisItemsTable, analysisPhaseResultsTable, appArchitectureTable, appToolsTable, appsTable } from "@workspace/db";
 import {
   LOCAL_LEASE_MS,
   LOCAL_MODEL,
@@ -17,7 +17,7 @@ import {
   submitLocalPhase,
 } from "./local-executor";
 import { failInterruptedAnalyses } from "./run-analysis";
-import { PHASE_EXAMPLES, SYSTEM_BASE } from "./prompts";
+import { LOCAL_BEST_PRACTICE_COMPLETION, LOCAL_BEST_PRACTICE_EVOLUTION, PHASE_EXAMPLES, SYSTEM_BASE } from "./prompts";
 import { PHASES } from "./schemas";
 
 // Ciclo di vita delle analisi eseguite da un agente locale: l'orologio arriva come `now`.
@@ -291,6 +291,39 @@ describe("localPhaseInstructions", () => {
     expect(ins.user.indexOf("### map")).toBeLessThan(ins.user.indexOf("### capabilities"));
 
     await expectLocalError(localPhaseInstructions(analysisId, "altro", at(3000)), "lease scaduta: chiedi di nuovo il compito");
+  });
+});
+
+describe("localPhaseInstructions: best practice", () => {
+  /** Istruzioni di completion ed evolution, consegnando le fasi precedenti. */
+  async function completionAndEvolution() {
+    const { leaseToken } = await claimLocalAnalysis(analysisId, "Mac", T0);
+    let t = 1000;
+    for (const phase of ["map", "capabilities", "catalog", "agents"] as const) {
+      await submitLocalPhase(analysisId, leaseToken, phase, PHASE_EXAMPLES[phase], undefined, at((t += 1000)));
+    }
+    const completion = await localPhaseInstructions(analysisId, leaseToken, at((t += 1000)));
+    expect(completion.phase).toBe("completion");
+    await submitLocalPhase(analysisId, leaseToken, "completion", PHASE_EXAMPLES.completion, undefined, at((t += 1000)));
+    const evolution = await localPhaseInstructions(analysisId, leaseToken, at((t += 1000)));
+    expect(evolution.phase).toBe("evolution");
+    return { completion: completion.user, evolution: evolution.user };
+  }
+
+  it("con la verifica: ricerca web locale in completion (con la sintesi dell'architettura) e riuso in evolution", async () => {
+    await db.update(analysesTable).set({ bestPractice: true }).where(eq(analysesTable.id, analysisId));
+    await db.insert(appArchitectureTable).values({ appId, sha: "abcdef12", summary: "Monolite Express e React", generatedAt: new Date() });
+    const { completion, evolution } = await completionAndEvolution();
+    expect(completion).toContain(LOCAL_BEST_PRACTICE_COMPLETION);
+    expect(completion).toContain("Monolite Express e React");
+    expect(evolution).toContain(LOCAL_BEST_PRACTICE_EVOLUTION);
+    expect(evolution).not.toContain(LOCAL_BEST_PRACTICE_COMPLETION);
+  });
+
+  it("senza la verifica nessuna frase sulla ricerca web", async () => {
+    const { completion, evolution } = await completionAndEvolution();
+    expect(completion).not.toContain(LOCAL_BEST_PRACTICE_COMPLETION);
+    expect(evolution).not.toContain(LOCAL_BEST_PRACTICE_EVOLUTION);
   });
 });
 

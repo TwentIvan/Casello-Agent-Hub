@@ -2838,6 +2838,8 @@ export const ListAnalysesResponseItem = zod.object({
   "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
   "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
+  "bestPractice": zod.boolean().describe('Verifica delle best practice per app simili prima della fase di completamento'),
+  "bestPracticeNotes": zod.string().nullable().describe('Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l\'agente)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
@@ -2864,7 +2866,8 @@ export const startAnalysisBodyMaxTokensMax = 2000000;
 export const StartAnalysisBody = zod.object({
   "executor": zod.enum(['cloud', 'local']).optional().describe('Chi esegue l\'analisi, il cloud di Casello o un agente locale via MCP'),
   "aiModelId": zod.number().optional().describe('Modello di un account AI dell\'utente'),
-  "maxTokens": zod.number().min(startAnalysisBodyMaxTokensMin).max(startAnalysisBodyMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)')
+  "maxTokens": zod.number().min(startAnalysisBodyMaxTokensMin).max(startAnalysisBodyMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)'),
+  "bestPractice": zod.boolean().optional().describe('Verifica le best practice per app simili prima della fase di completamento (default: true se le best practice di Lucius sono «Sempre» in Account → Personaggi)')
 }).describe('Con executor cloud (default) aiModelId è obbligatorio (altrimenti 400 \"scegli un modello\"); con executor local non si indica.')
 
 export const StartAnalysisResponse = zod.object({
@@ -2884,6 +2887,8 @@ export const StartAnalysisResponse = zod.object({
   "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
   "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
+  "bestPractice": zod.boolean().describe('Verifica delle best practice per app simili prima della fase di completamento'),
+  "bestPracticeNotes": zod.string().nullable().describe('Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l\'agente)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
@@ -2909,7 +2914,8 @@ export const startZipAnalysisQueryMaxTokensMax = 2000000;
 export const StartZipAnalysisQueryParams = zod.object({
   "aiModelId": zod.coerce.number().optional().describe('Modello di un account AI (obbligatorio, altrimenti 400 \"scegli un modello\")'),
   "maxTokens": zod.coerce.number().min(startZipAnalysisQueryMaxTokensMin).max(startZipAnalysisQueryMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)'),
-  "executor": zod.enum(['cloud', 'local']).optional().describe('Con local risponde 400 \"con l\'agente locale lo zip non serve\"')
+  "executor": zod.enum(['cloud', 'local']).optional().describe('Con local risponde 400 \"con l\'agente locale lo zip non serve\"'),
+  "bestPractice": zod.enum(['true', 'false']).optional().describe('Verifica delle best practice (default dalle impostazioni di Lucius)')
 })
 
 export const StartZipAnalysisResponse = zod.object({
@@ -2929,6 +2935,8 @@ export const StartZipAnalysisResponse = zod.object({
   "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
   "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
+  "bestPractice": zod.boolean().describe('Verifica delle best practice per app simili prima della fase di completamento'),
+  "bestPracticeNotes": zod.string().nullable().describe('Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l\'agente)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
@@ -2962,6 +2970,8 @@ export const GetAnalysisResponse = zod.object({
   "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
   "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
+  "bestPractice": zod.boolean().describe('Verifica delle best practice per app simili prima della fase di completamento'),
+  "bestPracticeNotes": zod.string().nullable().describe('Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l\'agente)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
@@ -3033,6 +3043,8 @@ export const ReleaseAnalysisResponse = zod.object({
   "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
   "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
+  "bestPractice": zod.boolean().describe('Verifica delle best practice per app simili prima della fase di completamento'),
+  "bestPracticeNotes": zod.string().nullable().describe('Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l\'agente)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
@@ -3067,6 +3079,8 @@ export const CancelAnalysisResponse = zod.object({
   "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
   "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
+  "bestPractice": zod.boolean().describe('Verifica delle best practice per app simili prima della fase di completamento'),
+  "bestPracticeNotes": zod.string().nullable().describe('Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l\'agente)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),

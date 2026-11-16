@@ -27,7 +27,7 @@ import { startCatalogScheduler } from "./lib/catalog/scheduler";
 import { ensureProviderRegistry } from "./lib/catalog/provider-registry";
 import { assertSecretKey } from "./lib/secrets";
 import { pool } from "@workspace/db";
-import { runMigrations, MigrationError } from "./lib/migrations/runner";
+import { runMigrations, MigrationError, errorCode } from "./lib/migrations/runner";
 import { migrationsDir, migrationsDisabled } from "./lib/migrations/config";
 
 // In produzione la chiave dei segreti è obbligatoria: meglio fallire all'avvio che alla prima cifratura.
@@ -57,7 +57,8 @@ if (!migrationsDisabled()) {
       {
         file: err instanceof MigrationError ? err.file : undefined,
         statement: err instanceof MigrationError ? err.statement : undefined,
-        code: err instanceof MigrationError ? err.code : undefined,
+        // Codice SQLSTATE o di sistema (ENOENT, ECONNREFUSED…) anche fuori da MigrationError; mai il messaggio
+        code: err instanceof MigrationError ? err.code : errorCode(err),
         errName: err instanceof Error ? err.name : "unknown",
       },
       "Migrazioni non applicate: l'API non parte",

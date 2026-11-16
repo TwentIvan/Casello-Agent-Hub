@@ -15,6 +15,16 @@ describe("splitSql", () => {
       'SELECT "col;x"',
     ]);
   });
+  it("stringhe E: \\' non chiude la stringa, la E di un identificatore non conta", () => {
+    expect(splitSql("SELECT E'\\''; DROP TABLE t; --'")).toEqual(["SELECT E'\\''", "DROP TABLE t"]);
+    expect(splitSql("SELECT e'a\\\\'; SELECT 2;")).toEqual(["SELECT e'a\\\\'", "SELECT 2"]);
+    expect(splitSql("SELECT E'a;b''c\\'d'; SELECT 2;")).toEqual(["SELECT E'a;b''c\\'d'", "SELECT 2"]);
+    // ELSE'a\': stringa normale, la barra non fa escape
+    expect(splitSql("SELECT CASE WHEN x THEN 'b' ELSE'a\\' END; SELECT 2;")).toEqual([
+      "SELECT CASE WHEN x THEN 'b' ELSE'a\\' END",
+      "SELECT 2",
+    ]);
+  });
   it("un blocco DO resta una istruzione", () => {
     const s = "DO $$ BEGIN x; y; END $$;";
     expect(splitSql(`${s} SELECT 1;`)).toEqual(["DO $$ BEGIN x; y; END $$", "SELECT 1"]);

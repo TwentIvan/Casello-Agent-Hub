@@ -24,6 +24,7 @@ import { getCodeTask, upsertCodeTask } from "../src/lib/code-writer/code-tasks";
 import { commitFiles, createDraftPull, getBranchHead, getCommitTree } from "../src/lib/code-writer/github-git";
 import { MAX_MERGES_PER_HOUR, MERGE_MESSAGES, mergeTeamPull } from "../src/lib/code-writer/merge";
 import { approveAction, rejectAction } from "../src/lib/actions/decide";
+import { enqueueMergeItem } from "../src/lib/actions/queue";
 import { githubConfig } from "../src/lib/github/config";
 import { pendingActionsTable, teamCodeTasksTable } from "@workspace/db";
 import { watchCodeTasksOnce } from "../src/lib/code-writer/watcher";
@@ -507,6 +508,25 @@ describe("flusso: merge automatico (code: merge)", () => {
     const code = (await getCodeTask(instanceId, "t1"))!;
     const all = (await db.select().from(teamTurnsTable).where(eq(teamTurnsTable.instanceId, instanceId))).flatMap((t) => t.reasons);
     expect(all).toContainEqual({ type: "merge_failed", taskCodeId: code.id, message: MERGE_MESSAGES.itemChanged });
+  });
+
+  it("voce accodata con la regola precedente per una PR con sola migrazione additiva: l'approvazione unisce", async () => {
+    const add = "CREATE TABLE IF NOT EXISTS w (id int);\n";
+    const { sha, number } = await pushPr("t1", { "docs/migrations/2026-11-16-w.sql": add, "docs/schema-casello.sql": "-- w\n" });
+    green(sha);
+    const row = (await getCodeTask(instanceId, "t1"))!;
+    // Voce come quelle scritte prima di questo ramo (oggi la stessa PR si unirebbe da sola)
+    const queued = await enqueueMergeItem({
+      userId,
+      instanceId,
+      recipient: REPO,
+      summary: MERGE_MESSAGES.summary(number, "t1"),
+      detail: { taskCodeId: row.id, planTaskId: "t1", repo: REPO, prNumber: number, prUrl: "", headSha: sha, baseBranch: "main", files: ["docs/migrations/2026-11-16-w.sql"] },
+    });
+    expect(queued.ok).toBe(true);
+    const [item] = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.kind, "merge"));
+    expect(await approveAction(userId, item!.number)).toMatchObject({ ok: true, action: { status: "done" } });
+    expect(pull(number)).toMatchObject({ state: "closed", merged: true });
   });
 
   it("rifiuti: workflow della CI, testa cambiata dall'ultimo controllo, limite orario, PR di un'altra squadra", async () => {

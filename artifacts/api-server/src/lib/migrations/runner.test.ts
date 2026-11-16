@@ -8,7 +8,7 @@ import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { serializeExtendedProtocol } from "../../../test/pglite-protocol";
-import { MigrationError, runMigrations } from "./runner";
+import { errorCode, MigrationError, runMigrations } from "./runner";
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -199,5 +199,16 @@ describe("runMigrations", () => {
       expect(log[log.length - 2]).toContain("pg_advisory_unlock");
       expect(log[log.length - 1]).toBe("release");
     });
+  });
+});
+
+describe("errorCode", () => {
+  it("solo un codice stringa: SQLSTATE o di sistema, mai il messaggio", () => {
+    expect(errorCode(Object.assign(new Error("connessione rifiutata"), { code: "ECONNREFUSED" }))).toBe("ECONNREFUSED");
+    expect(errorCode({ code: "55P03", message: "lock timeout" })).toBe("55P03");
+    expect(errorCode(Object.assign(new Error("x"), { code: 42 }))).toBeUndefined();
+    expect(errorCode(new Error("x"))).toBeUndefined();
+    expect(errorCode(null)).toBeUndefined();
+    expect(errorCode("ENOENT")).toBeUndefined();
   });
 });

@@ -13,6 +13,12 @@ import { splitSql } from "./split.js";
 export const MIGRATION_LOCK_KEY = 7243065828119433191n;
 
 /** Errore di una migrazione: solo nome del file e numero dell'istruzione, mai il testo SQL. */
+/** Codice dell'errore se è una stringa (SQLSTATE di pg o di sistema, es. ENOENT): mai il messaggio. */
+export function errorCode(err: unknown): string | undefined {
+  const code = typeof err === "object" && err !== null ? (err as { code?: unknown }).code : undefined;
+  return typeof code === "string" ? code : undefined;
+}
+
 export class MigrationError extends Error {
   constructor(
     message: string,
@@ -102,13 +108,7 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<{ basel
         try {
           await client.query(statements[i]!);
         } catch (err) {
-          const code = (err as { code?: unknown }).code;
-          throw new MigrationError(
-            `migrazione ${name} non riuscita all'istruzione ${i + 1}`,
-            name,
-            i + 1,
-            typeof code === "string" ? code : undefined,
-          );
+          throw new MigrationError(`migrazione ${name} non riuscita all'istruzione ${i + 1}`, name, i + 1, errorCode(err));
         }
       }
       await client.query(

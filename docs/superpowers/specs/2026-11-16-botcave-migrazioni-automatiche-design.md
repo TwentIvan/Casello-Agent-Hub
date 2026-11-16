@@ -24,21 +24,28 @@ quella di Botcave, come già oggi in `classifyPullFiles`; rollback automatico de
 
 Moduli:
 
-- `split.ts` (puro): divide il testo di un file SQL in istruzioni. Riconosce stringhe `'…'` (con `''`), identificatori `"…"`,
+- `split.ts` (puro): divide il testo di un file SQL in istruzioni. Riconosce stringhe `'…'` (con `''`), stringhe `E'…'` con gli
+  escape a barra rovesciata (`\'` non chiude; la `E` non deve far parte di un identificatore), identificatori `"…"`,
   dollar quoting `$tag$…$tag$` (anche `$$`), commenti `-- …` e `/* … */` (annidati). Il `;` separa solo fuori da questi.
   Istruzioni vuote o di soli commenti si scartano.
 - `classify.ts` (puro): `classifyMigration(name, sql)` → `{ destructive: boolean, reasons: string[] }`. Distruttivo se il nome
-  finisce con `-post.sql` oppure se un'istruzione (con commenti e stringhe tolti, maiuscole ignorate, spazi normalizzati)
-  contiene:
-  - `DROP TABLE`, `DROP COLUMN` (anche `DROP` dopo `ALTER TABLE … ` senza `CONSTRAINT`/`NOT NULL`/`DEFAULT`/`IDENTITY`/
-    `EXPRESSION`), `DROP TYPE`, `DROP SCHEMA`, `DROP VIEW`, `DROP MATERIALIZED VIEW`, `DROP FUNCTION`, `DROP PROCEDURE`,
-    `DROP SEQUENCE`, `DROP INDEX`, `DROP TRIGGER`, `DROP DOMAIN`, `DROP EXTENSION`, `DROP POLICY`;
-  - `RENAME` (qualunque forma), `TRUNCATE`, `DELETE FROM`;
+  finisce con `-post.sql` oppure se un'istruzione (con commenti e stringhe tolti, `E'…'` letti come in `split.ts`, maiuscole
+  ignorate, spazi normalizzati) contiene:
+  - **qualunque** `DROP`, tranne se seguito subito da `CONSTRAINT`, `NOT NULL`, `DEFAULT`, `IDENTITY` o `EXPRESSION` (motivo
+    `DROP <oggetto>` per i nomi di oggetto noti, altrimenti `DROP`: mai un identificatore); `DROP` dopo `ALTER TABLE … ` dà anche `DROP COLUMN`;
+  - **qualunque** `DELETE` (anche `MERGE … THEN DELETE` o una CTE), tranne l'azione di una chiave esterna
+    (`ON DELETE CASCADE|SET NULL|SET DEFAULT|RESTRICT|NO ACTION`);
+  - `RENAME` (qualunque forma), `TRUNCATE`;
   - `ALTER COLUMN … TYPE` / `SET DATA TYPE`, `ALTER COLUMN … SET NOT NULL`.
 
+  SQL dinamico: se l'istruzione contiene un dollar quoting o una parola che può eseguire testo (`DO`, `FUNCTION`, `PROCEDURE`,
+  `EXECUTE`, `CALL`, `PREPARE`, `RULE`, `TRIGGER`, `dblink…`, `…_to_xml`), le stesse regole si applicano anche al testo grezzo,
+  stringhe e commenti compresi: `EXECUTE 'ALTER TABLE t DROP COLUMN c'` in un blocco `DO`, un corpo di funzione tra `'…'` o
+  `dblink_exec('…', 'DROP TABLE t')` sono distruttivi.
+
   Ammessi: `DROP CONSTRAINT`, `DROP NOT NULL`, `DROP DEFAULT` (lo schema «togli e ricrea un vincolo» è già in uso), `UPDATE`,
-  `INSERT`, blocchi `DO $$ … $$` (il corpo si controlla con le stesse parole). La regola è volutamente prudente: un falso
-  positivo sposta lo script in un `-post`, mai il contrario.
+  `INSERT`, `ON DELETE CASCADE` nelle chiavi esterne, blocchi `DO $$ … $$` senza parole distruttive (anche nelle loro stringhe).
+  La regola è volutamente prudente: un falso positivo sposta lo script in un `-post`, mai il contrario.
 - `baseline.ts`: `BASELINE_MIGRATIONS`, elenco fisso dei 38 file non `-post` presenti il 2026-11-16 (dal
   `2026-10-account-ai.sql` al `2026-11-thu-5c-tappa1.sql`).
 - `runner.ts`: `runMigrations({ pool, dir, logger })`.
@@ -108,7 +115,7 @@ Elenco fisso e non «tutti i file presenti»: se il primo deploy fallisse e inta
 
 Prerequisito: i 38 file sono già applicati su Neon (regola in vigore finora). La PR riporta una query di verifica sugli oggetti
 degli ultimi script (es. `team_code_tasks.botcave_merged_at`, valore `merge` di `pending_action_kind`, `nodes.git_status`,
-`lead_conversations`).
+`lead_conversations`, `runs.client_tools` e `runs.client_action` di `2026-11-tool-ui-client.sql`, anch'esso nella baseline).
 
 Primo deploy: crea `schema_migrations`, inserisce 38 righe `baseline = true`, non esegue nessuna migrazione, non cambia tabelle
 né dati esistenti, poi l'avvio prosegue come oggi.
@@ -198,4 +205,5 @@ lo schema cambia solo con uno script nuovo `YYYY-MM-DD-slug.sql` idempotente; le
   merge. `lock_timeout` di 10 s evita di bloccare il servizio dietro un `ALTER TABLE`.
 - La classificazione per parole può sbagliare in eccesso (un falso positivo manda la PR in un `-post`); in difetto la protegge
   il controllo dell'esecutore, che rifiuta di partire con un file distruttivo non `-post`.
-- Un file registrato e poi modificato non si riesegue: la CI e il merge rifiutano la modifica, l'esecutore la segnala nel log.
+- Un file registrato e poi modificato non si riesegue: il merge delle squadre (`unisci_pr`) rifiuta la modifica, l'esecutore la segnala
+  con un avviso nel log (la CI non la controlla).

@@ -28,7 +28,7 @@ describe("classifyMigration", () => {
     ["ALTER TABLE t RENAME TO u;", "RENAME"],
     ["ALTER TYPE e RENAME VALUE 'a' TO 'b';", "RENAME"],
     ["TRUNCATE t;", "TRUNCATE"],
-    ["DELETE FROM t;", "DELETE FROM"],
+    ["DELETE FROM t;", "DELETE"],
     ["ALTER TABLE t ALTER COLUMN c TYPE text;", "ALTER COLUMN TYPE"],
     ["ALTER TABLE t ALTER COLUMN c SET DATA TYPE int;", "ALTER COLUMN TYPE"],
     ["ALTER TABLE t ALTER COLUMN c SET NOT NULL;", "SET NOT NULL"],
@@ -40,6 +40,31 @@ describe("classifyMigration", () => {
     ["DROP SEQUENCE q;", "DROP SEQUENCE"],
     ["DROP MATERIALIZED VIEW m;", "DROP MATERIALIZED VIEW"],
     ["ALTER TABLE t DROP CONSTRAINT k, DROP COLUMN c;", "DROP COLUMN"],
+    // ogni DROP, non solo un elenco chiuso di oggetti
+    ["DROP ROLE x;", "DROP ROLE"],
+    ["DROP OWNED BY x;", "DROP OWNED"],
+    ["DROP DATABASE other;", "DROP DATABASE"],
+    ["DROP RULE r ON t;", "DROP RULE"],
+    ["DROP AGGREGATE a(int);", "DROP AGGREGATE"],
+    ["DROP PUBLICATION p;", "DROP PUBLICATION"],
+    ["drop   table\n t;", "DROP TABLE"],
+    ["DROP \"t\";", "DROP"],
+    // ogni DELETE, anche fuori da DELETE FROM
+    ["MERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN DELETE;", "DELETE"],
+    ["WITH d AS (DELETE FROM t RETURNING 1) SELECT 1;", "DELETE"],
+    ["CREATE RULE r AS ON DELETE TO t DO INSTEAD NOTHING;", "DELETE"],
+    // SQL dinamico: le parole nelle stringhe dentro i corpi si vedono
+    ["DO $$ BEGIN IF EXISTS (SELECT 1) THEN EXECUTE 'ALTER TABLE t DROP COLUMN c'; END IF; END $$;", "DROP COLUMN"],
+    ["DO $b$ BEGIN EXECUTE 'DELETE' || ' FROM t'; END $b$;", "DELETE"],
+    ["DO $$ BEGIN EXECUTE 'SELECT 1 --'; EXECUTE 'DROP TABLE t'; END $$;", "DROP TABLE"],
+    ["DO 'BEGIN EXECUTE ''DROP TABLE t''; END';", "DROP TABLE"],
+    ["CREATE FUNCTION f() RETURNS void LANGUAGE sql AS 'DELETE FROM t';", "DELETE"],
+    ["SELECT dblink_exec('dbname=x', 'DROP TABLE t');", "DROP TABLE"],
+    ["SELECT query_to_xml('DELETE FROM t RETURNING 1', true, true, '');", "DELETE"],
+    // stringhe E con escape a barra rovesciata: split e strip restano allineati
+    ["SELECT E'\\''; DROP TABLE t; --'", "DROP TABLE"],
+    ["SELECT e'\\\\'; DROP TABLE t;", "DROP TABLE"],
+    ["WITH x AS (SELECT E'\\''), d AS (DELETE FROM t RETURNING 1) SELECT 1;", "DELETE"],
   ];
   it.each(destructive)("%s è distruttivo", (sql, reason) => {
     const r = classifyMigration(ok, sql);
@@ -58,6 +83,18 @@ describe("classifyMigration", () => {
     "-- DROP TABLE x\nSELECT 1;",
     "/* DELETE FROM t */ SELECT 1;",
     "SELECT 'drop table x';",
+    "SELECT E'drop table x';",
+    "SELECT E'it\\'s; drop table x';",
+    "CREATE TABLE IF NOT EXISTS t (id int, p int REFERENCES p(id) ON DELETE CASCADE);",
+    "ALTER TABLE t ADD CONSTRAINT k FOREIGN KEY (p) REFERENCES p(id) ON DELETE SET NULL;",
+    "ALTER TABLE t ADD FOREIGN KEY (p) REFERENCES p(id) ON DELETE NO ACTION ON UPDATE RESTRICT;",
+    "ALTER TABLE t ADD COLUMN deleted_at timestamp, ADD COLUMN dropped boolean;",
+    "ALTER TYPE e ADD VALUE IF NOT EXISTS 'deleted';",
+    "ALTER TABLE t ALTER COLUMN c DROP IDENTITY IF EXISTS;",
+    "ALTER TABLE t ALTER COLUMN c DROP EXPRESSION;",
+    "DO $$ BEGIN ALTER TABLE t DROP CONSTRAINT IF EXISTS k; END $$;",
+    "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'e') THEN CREATE TYPE e AS ENUM ('a'); END IF; END $$;",
+    "SELECT selected FROM t WHERE e'' = '';",
   ];
   it.each(additive)("%s è additivo", (sql) => {
     expect(classifyMigration(ok, sql)).toEqual({ destructive: false, reasons: [] });
@@ -65,7 +102,8 @@ describe("classifyMigration", () => {
 
   it("reasons non contiene il testo dell'istruzione", () => {
     const r = classifyMigration(ok, "DELETE FROM segreti WHERE token = 'abc';");
-    expect(r.reasons).toEqual(["DELETE FROM"]);
+    expect(r.reasons).toEqual(["DELETE"]);
+    expect(classifyMigration(ok, "ALTER TABLE segreti DROP token;").reasons).toEqual(["DROP", "DROP COLUMN"]);
   });
 });
 

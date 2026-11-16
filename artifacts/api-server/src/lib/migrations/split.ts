@@ -13,6 +13,30 @@ export function dollarTagLength(text: string, i: number): number {
   return text[j] === "$" ? j - i + 1 : 0;
 }
 
+/** `E'…'` (o `e'…'`) che comincia in `i`: la E non deve far parte di un identificatore più lungo. */
+export function isEStringStart(text: string, i: number): boolean {
+  const c = text[i];
+  if ((c !== "E" && c !== "e") || text[i + 1] !== "'") return false;
+  return i === 0 || !/[A-Za-z0-9_$]/.test(text[i - 1]!);
+}
+
+/**
+ * Fine (indice dopo la chiusura) del testo tra `quote` che si apre in `i`.
+ * La virgoletta raddoppiata non chiude; con `backslash` (stringhe E) `\x` salta sempre il carattere dopo.
+ */
+export function quotedEnd(text: string, i: number, quote: string, backslash: boolean): number {
+  let j = i + 1;
+  while (j < text.length) {
+    const ch = text[j];
+    if (backslash && ch === "\\") j += 2;
+    else if (ch === quote) {
+      if (text[j + 1] === quote) j += 2;
+      else return j + 1;
+    } else j++;
+  }
+  return text.length;
+}
+
 export function splitSql(input: string): string[] {
   const text = input.replace(/^﻿/, "").replace(/\r\n?/g, "\n");
   const out: string[] = [];
@@ -43,18 +67,13 @@ export function splitSql(input: string): string[] {
           i += 2;
         } else i++;
       }
+    } else if (isEStringStart(text, i)) {
+      // stringa con escape a barra rovesciata: \' non la chiude
+      hasCode = true;
+      i = quotedEnd(text, i + 1, "'", true);
     } else if (c === "'" || c === '"') {
       hasCode = true;
-      i++;
-      while (i < text.length) {
-        if (text[i] === c) {
-          if (text[i + 1] === c) i += 2;
-          else {
-            i++;
-            break;
-          }
-        } else i++;
-      }
+      i = quotedEnd(text, i, c, false);
     } else if (c === "$" && dollarTagLength(text, i) > 0) {
       hasCode = true;
       const tag = text.slice(i, i + dollarTagLength(text, i));

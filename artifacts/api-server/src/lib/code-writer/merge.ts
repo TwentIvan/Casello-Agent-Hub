@@ -373,9 +373,10 @@ export async function approveMerge(userId: number, action: PendingActionRow): Pr
     const ctx = await loadContext(instanceId, (t) => eq(t.id, taskCodeId), "questa voce");
     prNumber = ctx.row.prNumber;
     const pull = await checkPull(ctx, headSha);
-    // Stessa testa, quindi stessi file: la voce resta valida solo se la PR va ancora all'utente
+    // Stessa testa, quindi stessi file: la voce resta valida se la PR va ancora all'utente o se oggi si unirebbe da sola
+    // (voci accodate con la regola precedente per PR con sole migrazioni additive: l'utente ha già approvato)
     const verdict = await classifyLivePull(ctx.repo, pull);
-    if (verdict.kind !== "queue") throw new MergeRefused(MERGE_MESSAGES.itemChanged);
+    if (verdict.kind !== "queue" && verdict.kind !== "merge") throw new MergeRefused(MERGE_MESSAGES.itemChanged);
     await reserve(ctx, false);
     await doMerge(ctx, pull);
     const row = await finishItem(action.id, { status: "done", result: MERGE_MESSAGES.done(pull.number) });

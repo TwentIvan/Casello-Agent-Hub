@@ -46,6 +46,7 @@ export function mapLeadDetail(d: LeadConversationDetail): ConvDetail {
     tokensUsed: d.tokensUsed,
     costUsd: d.costUsd,
     turnStatus: d.turnStatus,
+    bestPractice: false,
     readOnlyReason: null,
     subjectId: null,
     progress: d.progress ?? null,

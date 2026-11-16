@@ -8,6 +8,8 @@
 import type { PlanTurnStatus } from './planTurnStatus';
 
 export interface TeamChatConversation {
+  /** Lucius cerca le best practice prima di proporre */
+  bestPractice: boolean;
   id: number;
   teamInstanceId: number;
   /** @nullable */

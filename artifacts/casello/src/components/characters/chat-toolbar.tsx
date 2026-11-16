@@ -1,5 +1,7 @@
 import { Plus, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ConvSummary } from "./adapters";
 
@@ -20,6 +22,8 @@ interface ChatToolbarProps {
   onCreate: () => void;
   onDelete: () => void;
   onRestart: () => void;
+  /** Solo Lucius: interruttore delle best practice della conversazione aperta. */
+  bestPractice?: { checked: boolean; disabled: boolean; onChange: (value: boolean) => void };
 }
 
 /** Scelta della conversazione dell'argomento, «Nuova», elimina; per Alfred «Ricomincia». */
@@ -66,6 +70,22 @@ export function ChatToolbar(props: ChatToolbarProps) {
           <RotateCcw />
           Ricomincia
         </Button>
+      )}
+      {props.bestPractice && (
+        <div
+          className="flex items-center gap-2"
+          title="Prima di proporre, Lucius cerca le best practice per app simili"
+        >
+          <Switch
+            id="chat-best-practice"
+            checked={props.bestPractice.checked}
+            disabled={props.bestPractice.disabled}
+            onCheckedChange={props.bestPractice.onChange}
+          />
+          <Label htmlFor="chat-best-practice" className="text-sm">
+            Best practice
+          </Label>
+        </div>
       )}
     </div>
   );

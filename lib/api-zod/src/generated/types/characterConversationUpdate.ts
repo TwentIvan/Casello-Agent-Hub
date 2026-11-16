@@ -17,4 +17,6 @@ export interface CharacterConversationUpdate {
      * @maxLength 80
      */
   title?: string;
+  /** Solo per le conversazioni di Lucius (Alfred → 400) */
+  bestPractice?: boolean;
 }

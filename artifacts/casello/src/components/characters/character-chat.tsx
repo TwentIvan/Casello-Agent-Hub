@@ -60,7 +60,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   useEffect(() => {
     if (draft !== undefined) setText(draft);
   }, [draft]);
-  const [busy, setBusy] = useState<null | "send" | "create" | "delete" | "restart" | "model" | "stop" | "cancel">(null);
+  const [busy, setBusy] = useState<null | "send" | "create" | "delete" | "restart" | "model" | "stop" | "cancel" | "best-practice">(null);
   const [decidingId, setDecidingId] = useState<number | null>(null);
   const [lock, setLock] = useState<{ id: number; reason: string } | null>(null);
   const [confirmAccept, setConfirmAccept] = useState<ProposalLike | null>(null);
@@ -254,6 +254,18 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
           }
           onDelete={() => setConfirmDelete(true)}
           onRestart={() => setConfirmRestart(true)}
+          bestPractice={
+            adapter.bestPractice && data
+              ? {
+                  checked: adapter.bestPractice.get(data),
+                  disabled: readOnly || busy !== null,
+                  onChange: (value) => {
+                    const bp = adapter.bestPractice;
+                    if (bp) void run("best-practice", "Best practice non cambiate", () => bp.set(data.id, value));
+                  },
+                }
+              : undefined
+          }
         />
 
         {data && (

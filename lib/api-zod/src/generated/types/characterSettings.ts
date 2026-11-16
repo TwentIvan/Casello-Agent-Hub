@@ -5,6 +5,8 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { CharacterSettingsLuciusBestPractice } from './characterSettingsLuciusBestPractice';
+import type { CharacterSettingsLuciusSourcesItem } from './characterSettingsLuciusSourcesItem';
 
 export interface CharacterSettings {
   /** @nullable */
@@ -23,4 +25,9 @@ export interface CharacterSettings {
      * @nullable
      */
   luciusMonthlyBudgetUsd: number | null;
+  luciusBestPractice?: CharacterSettingsLuciusBestPractice;
+  /** @nullable */
+  luciusSearchAiModelId?: number | null;
+  /** @maxItems 30 */
+  luciusSources?: CharacterSettingsLuciusSourcesItem[];
 }

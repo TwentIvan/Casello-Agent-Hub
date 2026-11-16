@@ -46,6 +46,8 @@ const readSkill: Describer = (a) => {
 };
 
 const DESCRIBERS: Record<string, Describer> = {
+  // Mai la domanda: potrebbe contenere dettagli dell'App.
+  cerca_best_practice: fixed("Cerca le best practice"),
   // Solo l'host dell'indirizzo: percorso e query possono contenere token.
   leggi_pagina_web: (a) => {
     const raw = typeof a.url === "string" ? a.url : "";

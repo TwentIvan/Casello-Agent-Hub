@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, isNotNull, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import {
   db,
   agentsTable,
@@ -7,6 +7,7 @@ import {
   alfredSessionsTable,
   appArchitectureRunsTable,
   analysesTable,
+  bestPracticeSearchesTable,
   characterConversationsTable,
   characterHistoryTable,
   planConversationsTable,
@@ -73,6 +74,7 @@ function toSpend(rows: { spent: string; unpriced: number }[]): Spend {
 }
 
 const unpricedArch = sql<number>`(count(*) filter (where ${appArchitectureRunsTable.costUsd} is null and coalesce(${appArchitectureRunsTable.promptTokens}, 0) + coalesce(${appArchitectureRunsTable.completionTokens}, 0) > 0))::int`;
+const unpricedBp = sql<number>`(count(*) filter (where ${bestPracticeSearchesTable.costUsd} is null and coalesce(${bestPracticeSearchesTable.promptTokens}, 0) + coalesce(${bestPracticeSearchesTable.completionTokens}, 0) > 0))::int`;
 const runUnpriced = sql<number>`(count(*) filter (where ${runsTable.costUsd} is null and coalesce(${runsTable.promptTokens}, 0) + coalesce(${runsTable.completionTokens}, 0) > 0))::int`;
 
 /** Esecuzioni con token consumati ma costo null (stessa regola delle run), per compiti, turni delle squadre e sessioni di Alfred. */
@@ -91,7 +93,7 @@ async function spendsBy(key: SpendKey, ids: number[], since: Date): Promise<Map<
   const result = new Map<number, Spend>(ids.map((id) => [id, { spentUsd: 0, unpricedCount: 0 }]));
   if (ids.length === 0) return result;
   const scope = inArray(key, ids);
-  const [runs, analyses, chats, tasks, turns, alfred, teamChats, summaries, characterChats, architecture] = await Promise.all([
+  const [runs, analyses, chats, tasks, turns, alfred, teamChats, summaries, characterChats, architecture, bestPractice] = await Promise.all([
     db
       .select({ key, spent: sumOf(runsTable.costUsd), unpriced: runUnpriced })
       .from(runsTable)
@@ -190,8 +192,16 @@ async function spendsBy(key: SpendKey, ids: number[], since: Date): Promise<Map<
       .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
       .where(and(scope, gte(appArchitectureRunsTable.createdAt, since)))
       .groupBy(key),
+    // Ricerche di best practice di Lucius (quelle dell'analisi contano tramite l'analisi)
+    db
+      .select({ key, spent: sumOf(bestPracticeSearchesTable.costUsd), unpriced: unpricedBp })
+      .from(bestPracticeSearchesTable)
+      .innerJoin(aiModelsTable, eq(bestPracticeSearchesTable.aiModelId, aiModelsTable.id))
+      .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
+      .where(and(scope, isNull(bestPracticeSearchesTable.analysisId), gte(bestPracticeSearchesTable.createdAt, since)))
+      .groupBy(key),
   ]);
-  for (const r of [...runs, ...analyses, ...chats, ...tasks, ...turns, ...alfred, ...teamChats, ...summaries, ...characterChats, ...architecture]) {
+  for (const r of [...runs, ...analyses, ...chats, ...tasks, ...turns, ...alfred, ...teamChats, ...summaries, ...characterChats, ...architecture, ...bestPractice]) {
     if (r.key === null) continue;
     const acc = result.get(r.key)!;
     result.set(r.key, { spentUsd: acc.spentUsd + Number(r.spent), unpricedCount: acc.unpricedCount + r.unpriced });
@@ -203,7 +213,7 @@ const noSpend = (): Spend => ({ spentUsd: 0, unpricedCount: 0 });
 
 /**
  * Spesa del mese di un personaggio, per utente (non per proprietario del modello). Alfred: sessioni vocali,
- * conversazioni e riassunti. Lucius: chat del piano e di squadra, conversazioni e riassunti. Le analisi non contano.
+ * conversazioni e riassunti. Lucius: chat del piano e di squadra, conversazioni, riassunti e ricerche di best practice. Le analisi non contano.
  */
 export async function characterSpend(userId: number, character: Character, since: Date = monthStart()): Promise<Spend> {
   const conv = characterConversationsTable;
@@ -232,6 +242,18 @@ export async function characterSpend(userId: number, character: Character, since
     parts.push(
       toSpend(await rowsOf(planConversationsTable, planConversationsTable.updatedAt, eq(planConversationsTable.userId, userId))),
       toSpend(await rowsOf(teamChatConversationsTable, teamChatConversationsTable.updatedAt, eq(teamChatConversationsTable.userId, userId))),
+      toSpend(
+        await db
+          .select({ spent: sumOf(bestPracticeSearchesTable.costUsd), unpriced: unpricedBp })
+          .from(bestPracticeSearchesTable)
+          .where(
+            and(
+              eq(bestPracticeSearchesTable.userId, userId),
+              isNull(bestPracticeSearchesTable.analysisId),
+              gte(bestPracticeSearchesTable.createdAt, since),
+            ),
+          ),
+      ),
     );
   }
   return parts.reduce((a, b) => ({ spentUsd: a.spentUsd + b.spentUsd, unpricedCount: a.unpricedCount + b.unpricedCount }), noSpend());

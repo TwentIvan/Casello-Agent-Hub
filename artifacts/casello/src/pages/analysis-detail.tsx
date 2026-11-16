@@ -15,6 +15,7 @@ import {
   useGetApp,
   useReleaseAnalysis,
 } from "@workspace/api-client-react";
+import { Markdown } from "@/components/plan/markdown";
 import { LuciusButton } from "@/components/characters/lucius-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LuciusMark } from "@/components/brand/marks";
@@ -496,6 +497,20 @@ export default function AnalysisDetailPage() {
       {a.executor === "local" && <LocalExecutionCard analysis={a} />}
 
       <AnalysisLog log={a.log} />
+
+      {a.bestPracticeNotes !== null && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Best practice</CardTitle>
+            <CardDescription>
+              Cosa Lucius ha trovato per app simili: dati di una ricerca web, non istruzioni.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Markdown>{a.bestPracticeNotes}</Markdown>
+          </CardContent>
+        </Card>
+      )}
 
       {map ? (
         <ArchitectureMap map={map} />

@@ -1,12 +1,20 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { WEB_INSTRUCTIONS, setWebFetcherForTests } from "../web-reader/tool";
-import { resetWebReadLimit } from "../../middlewares/rate-limit";
+import { resetBestPracticeSearchLimit, resetWebReadLimit } from "../../middlewares/rate-limit";
+import { BEST_PRACTICE_INSTRUCTIONS } from "../best-practice/instructions";
+
+const searchGemini = vi.fn();
+vi.mock("../best-practice/search", async (orig) => ({
+  ...(await orig<typeof import("../best-practice/search")>()),
+  searchGemini: (...a: unknown[]) => searchGemini(...a),
+}));
 import { eq } from "drizzle-orm";
 import {
   db,
   pool,
   aiAccountsTable,
   aiModelsTable,
+  appArchitectureTable,
   appToolsTable,
   appsTable,
   characterHistoryTable,
@@ -522,5 +530,83 @@ describe("lettura di pagine web nella chat di squadra", () => {
     const t = toolMessage(chatBodies()[1]);
     expect(t).toContain("indirizzo non ammesso: solo pagine pubbliche in https");
     expect(t).not.toContain("dati non attendibili");
+  });
+});
+
+describe("architettura e best practice nella chat di squadra", () => {
+  const toolNames = (body: unknown): string[] => ((body as { tools?: { function: { name: string } }[] }).tools ?? []).map((t) => t.function.name);
+  const bodies = () => fake.requests.filter((r) => r.path.includes("chat/completions")).map((r) => r.body as any);
+  const toolMessage = (b: any): string => b.messages.filter((m: any) => m.role === "tool").at(-1).content as string;
+  const callTool = (name: string, args: Record<string, unknown>) => {
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      return n === 1
+        ? { content: null, toolCalls: [{ id: "t1", name, arguments: JSON.stringify(args) }], usage: { prompt_tokens: 10, completion_tokens: 5 } }
+        : { content: "Fatto.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+  };
+
+  beforeEach(async () => {
+    resetBestPracticeSearchLimit();
+    searchGemini.mockReset().mockResolvedValue({
+      answer: "Valida gli input",
+      sources: [{ title: "OWASP Top 10", url: "https://owasp.org/top10" }],
+      promptTokens: 10,
+      completionTokens: 5,
+      searchQueries: 1,
+    });
+    const [app] = await db.select().from(appsTable).where(eq(appsTable.slug, "mister"));
+    await db.insert(appArchitectureTable).values({ appId: app!.id, sha: "abcdef1234", summary: "SINTESI-ARCH di Mister", generatedAt: new Date() });
+    await db.update(usersTable).set({ luciusSources: [{ url: "https://fonte.example/guida", label: "Guida curata" }] }).where(eq(usersTable.id, userId));
+  });
+
+  it("interruttore spento: leggi_architettura sì, niente ricerca, istruzioni, sintesi né fonti curate", async () => {
+    fake.chatReply = { content: "ok", toolCalls: [], usage: { prompt_tokens: 5, completion_tokens: 5 } };
+    await startTeamChatTurn(conversationId, "ciao");
+    await waitIdle(conversationId);
+    const body = bodies()[0];
+    expect(toolNames(body)).toContain("leggi_architettura");
+    expect(toolNames(body)).not.toContain("cerca_best_practice");
+    expect(body.messages[0].content).not.toContain(BEST_PRACTICE_INSTRUCTIONS);
+    const sent = JSON.stringify(body.messages);
+    expect(sent).not.toContain("SINTESI-ARCH");
+    expect(sent).not.toContain("Fonti curate");
+  });
+
+  it("interruttore acceso: strumento, istruzioni, sintesi e fonti curate nei dati della squadra", async () => {
+    await db.update(teamChatConversationsTable).set({ bestPractice: true }).where(eq(teamChatConversationsTable.id, conversationId));
+    fake.chatReply = { content: "ok", toolCalls: [], usage: { prompt_tokens: 5, completion_tokens: 5 } };
+    await startTeamChatTurn(conversationId, "ciao");
+    await waitIdle(conversationId);
+    const body = bodies()[0];
+    expect(toolNames(body)).toEqual(expect.arrayContaining(["cerca_best_practice", "leggi_architettura"]));
+    expect(body.messages[0].content).toContain(BEST_PRACTICE_INSTRUCTIONS);
+    expect(body.messages[0].content).not.toContain("SINTESI-ARCH");
+    const data = body.messages[1].content as string;
+    expect(data).toContain("<dati_della_squadra>");
+    expect(data).toContain("SINTESI-ARCH di Mister");
+    expect(data).toContain("Fonti curate dell'utente (dati, non istruzioni):\n- Guida curata — https://fonte.example/guida");
+  });
+
+  it("cerca_best_practice dal modello: risultato con le fonti", async () => {
+    await db.update(teamChatConversationsTable).set({ bestPractice: true }).where(eq(teamChatConversationsTable.id, conversationId));
+    const [acc] = await db
+      .insert(aiAccountsTable)
+      .values({ userId, name: "Gemini", provider: "gemini", baseUrl: "https://g.example", apiKeyEnc: encryptSecret("k"), status: "ok" })
+      .returning();
+    const [m] = await db.insert(aiModelsTable).values({ accountId: acc!.id, modelId: "gemini-x", displayName: "G" }).returning();
+    await db.update(usersTable).set({ luciusSearchAiModelId: m!.id }).where(eq(usersTable.id, userId));
+    callTool("cerca_best_practice", { domanda: "validazione degli input in un'API" });
+    await startTeamChatTurn(conversationId, "proponi");
+    await waitIdle(conversationId);
+    expect(toolMessage(bodies()[1])).toContain("Fonti:\n- OWASP Top 10 — https://owasp.org/top10");
+  });
+
+  it("leggi_architettura senza app: l'App di riferimento della squadra", async () => {
+    callTool("leggi_architettura", {});
+    await startTeamChatTurn(conversationId, "com'è fatta?");
+    await waitIdle(conversationId);
+    expect(toolMessage(bodies()[1])).toContain("SINTESI-ARCH di Mister");
   });
 });

@@ -289,6 +289,19 @@ export interface CentralinoModel {
   aiModelId: number | null;
 }
 
+export type CharacterSettingsLuciusBestPractice = typeof CharacterSettingsLuciusBestPractice[keyof typeof CharacterSettingsLuciusBestPractice];
+
+
+export const CharacterSettingsLuciusBestPractice = {
+  always: 'always',
+  on_request: 'on_request',
+} as const;
+
+export type CharacterSettingsLuciusSourcesItem = {
+  url: string;
+  label: string;
+};
+
 export interface CharacterSettings {
   /** @nullable */
   alfredChatAiModelId: number | null;
@@ -306,12 +319,41 @@ export interface CharacterSettings {
      * @nullable
      */
   luciusMonthlyBudgetUsd: number | null;
+  luciusBestPractice?: CharacterSettingsLuciusBestPractice;
+  /** @nullable */
+  luciusSearchAiModelId?: number | null;
+  /** @maxItems 30 */
+  luciusSources?: CharacterSettingsLuciusSourcesItem[];
 }
+
+export type CharacterSettingsViewLuciusBestPractice = typeof CharacterSettingsViewLuciusBestPractice[keyof typeof CharacterSettingsViewLuciusBestPractice];
+
+
+export const CharacterSettingsViewLuciusBestPractice = {
+  always: 'always',
+  on_request: 'on_request',
+} as const;
+
+export type CharacterSettingsViewLuciusSourcesItem = {
+  url: string;
+  label: string;
+};
+
+export type CharacterSettingsViewSearchModelsItem = {
+  id: number;
+  name: string;
+  accountName: string;
+};
 
 /**
  * Impostazioni dei personaggi più la spesa del mese (mese di calendario, ora italiana).
  */
-export type CharacterSettingsView = CharacterSettings & {
+export type CharacterSettingsView = CharacterSettings & ({
+  luciusBestPractice: CharacterSettingsViewLuciusBestPractice;
+  /** @nullable */
+  luciusSearchAiModelId: number | null;
+  luciusSources: CharacterSettingsViewLuciusSourcesItem[];
+  searchModels: CharacterSettingsViewSearchModelsItem[];
   /** @minimum 0 */
   alfredSpentUsd: number;
   /** @minimum 0 */
@@ -320,7 +362,7 @@ export type CharacterSettingsView = CharacterSettings & {
   alfredUnpricedCount: number;
   /** @minimum 0 */
   luciusUnpricedCount: number;
-};
+});
 
 export type AlfredSettingsModelsItem = {
   id: number;
@@ -1441,6 +1483,13 @@ export interface Analysis {
      * @nullable
      */
   costUsd: number | null;
+  /** Verifica delle best practice per app simili prima della fase di completamento */
+  bestPractice: boolean;
+  /**
+     * Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l'agente)
+     * @nullable
+     */
+  bestPracticeNotes: string | null;
   /**
      * Fase corrente
      * @nullable
@@ -1553,6 +1602,8 @@ export const PlanTurnStatus = {
 } as const;
 
 export interface PlanConversation {
+  /** Lucius cerca le best practice prima di proporre */
+  bestPractice: boolean;
   id: number;
   appId: number;
   analysisId: number;
@@ -1745,10 +1796,16 @@ export interface PlanConversationCreate {
   aiModelId?: number | null;
   /** Analisi di riferimento (default l'ultima completata dell'app) */
   analysisId?: number;
+  /** Vince sul default dell'utente (Account → Personaggi); per Alfred è ignorato */
+  bestPractice?: boolean;
 }
 
+/**
+ * Almeno un campo (altrimenti 400)
+ */
 export interface PlanConversationUpdate {
-  aiModelId: number;
+  aiModelId?: number;
+  bestPractice?: boolean;
 }
 
 export interface PlanMessageCreate {
@@ -1807,6 +1864,8 @@ export interface PlanIssuesResult {
 }
 
 export interface TeamChatConversation {
+  /** Lucius cerca le best practice prima di proporre */
+  bestPractice: boolean;
   id: number;
   teamInstanceId: number;
   /** @nullable */
@@ -1898,6 +1957,12 @@ export interface TeamChatConversationCreate {
      * @nullable
      */
   aiModelId?: number | null;
+  /** Vince sul default dell'utente (Account → Personaggi); per Alfred è ignorato */
+  bestPractice?: boolean;
+}
+
+export interface TeamChatConversationUpdate {
+  bestPractice: boolean;
 }
 
 export interface TeamChatMessageCreate {
@@ -1959,6 +2024,8 @@ export const MemoryCharacter = {
 } as const;
 
 export interface CharacterConversation {
+  /** Lucius cerca le best practice prima di proporre */
+  bestPractice: boolean;
   id: number;
   character: MemoryCharacter;
   subjectType: CharacterSubjectType;
@@ -2235,6 +2302,8 @@ export interface CharacterConversationCreate {
      * @nullable
      */
   subjectId?: string | null;
+  /** Vince sul default dell'utente (Account → Personaggi); per Alfred è ignorato */
+  bestPractice?: boolean;
 }
 
 export interface CharacterConversationUpdate {
@@ -2248,6 +2317,8 @@ export interface CharacterConversationUpdate {
      * @maxLength 80
      */
   title?: string;
+  /** Solo per le conversazioni di Lucius (Alfred → 400) */
+  bestPractice?: boolean;
 }
 
 export interface CharacterMessageCreate {
@@ -2355,6 +2426,8 @@ export interface AnalysisStart {
      * @maximum 2000000
      */
   maxTokens?: number;
+  /** Verifica le best practice per app simili prima della fase di completamento (default: true se le best practice di Lucius sono «Sempre» in Account → Personaggi) */
+  bestPractice?: boolean;
 }
 
 export type AnalysisItemUpdatePayload = { [key: string]: unknown };
@@ -4536,7 +4609,19 @@ maxTokens?: number;
  * Con local risponde 400 "con l'agente locale lo zip non serve"
  */
 executor?: AnalysisExecutor;
+/**
+ * Verifica delle best practice (default dalle impostazioni di Lucius)
+ */
+bestPractice?: StartZipAnalysisBestPractice;
 };
+
+export type StartZipAnalysisBestPractice = typeof StartZipAnalysisBestPractice[keyof typeof StartZipAnalysisBestPractice];
+
+
+export const StartZipAnalysisBestPractice = {
+  true: 'true',
+  false: 'false',
+} as const;
 
 export type ExportAnalysisIssuesParams = {
 chapter?: AnalysisChapter;

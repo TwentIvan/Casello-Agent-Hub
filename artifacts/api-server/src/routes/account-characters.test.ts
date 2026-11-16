@@ -19,6 +19,7 @@ import { encryptSecret } from "../lib/secrets";
 const ENV_KEYS = ["AUTH_DISABLED", "ALLOWED_EMAILS", "CASELLO_SECRET_KEY"] as const;
 const saved: Record<string, string | undefined> = {};
 const NO_SPEND = { alfredSpentUsd: 0, luciusSpentUsd: 0, alfredUnpricedCount: 0, luciusUnpricedCount: 0 };
+const BP_DEFAULTS = { luciusBestPractice: "on_request", luciusSearchAiModelId: null, luciusSources: [], searchModels: [] };
 const UNAVAILABLE = { error: "modello non disponibile" };
 
 let base: string;
@@ -53,14 +54,14 @@ async function otherUserId(): Promise<number> {
   return user!.id;
 }
 
-/** Modello su un account `custom` dell'utente indicato. */
-async function modelOf(userId: number, modelId: string): Promise<number> {
+/** Modello su un account dell'utente indicato (`custom` se non detto). */
+async function modelOf(userId: number, modelId: string, provider = "custom"): Promise<number> {
   const [account] = await db
     .insert(aiAccountsTable)
     .values({
       userId,
       name: `Account ${modelId}`,
-      provider: "custom",
+      provider,
       baseUrl: "https://llm.example.com/v1",
       apiKeyEnc: encryptSecret("sk-test"),
       status: "ok",
@@ -106,7 +107,7 @@ describe("modelli e tetti dei personaggi", () => {
   it("get_returns_nulls", async () => {
     const r = await api("GET", "/account/characters");
     expect(r.status).toBe(200);
-    expect(r.json).toEqual({ ...NO_SPEND, alfredChatAiModelId: null, luciusAiModelId: null, alfredMonthlyBudgetUsd: null, luciusMonthlyBudgetUsd: null });
+    expect(r.json).toEqual({ ...NO_SPEND, ...BP_DEFAULTS, alfredChatAiModelId: null, luciusAiModelId: null, alfredMonthlyBudgetUsd: null, luciusMonthlyBudgetUsd: null });
   });
 
   it("get_and_put_report_month_spend: spesa e senza prezzo di ciascun personaggio", async () => {
@@ -128,10 +129,10 @@ describe("modelli e tetti dei personaggi", () => {
     const body = { alfredChatAiModelId: a, luciusAiModelId: l, alfredMonthlyBudgetUsd: 5, luciusMonthlyBudgetUsd: 2.5 };
     const put = await api("PUT", "/account/characters", body);
     expect(put.status, put.text).toBe(200);
-    expect(put.json).toEqual({ ...NO_SPEND, ...body });
-    expect((await api("GET", "/account/characters")).json).toEqual({ ...NO_SPEND, ...body });
+    expect(put.json).toEqual({ ...NO_SPEND, ...BP_DEFAULTS, ...body });
+    expect((await api("GET", "/account/characters")).json).toEqual({ ...NO_SPEND, ...BP_DEFAULTS, ...body });
     const cleared = { alfredChatAiModelId: null, luciusAiModelId: null, alfredMonthlyBudgetUsd: null, luciusMonthlyBudgetUsd: null };
-    expect((await api("PUT", "/account/characters", cleared)).json).toEqual({ ...NO_SPEND, ...cleared });
+    expect((await api("PUT", "/account/characters", cleared)).json).toEqual({ ...NO_SPEND, ...BP_DEFAULTS, ...cleared });
   });
 
   it("put_foreign_model_400", async () => {
@@ -162,5 +163,72 @@ describe("modelli e tetti dei personaggi", () => {
       if (savedAllowed === undefined) delete process.env["ALLOWED_EMAILS"];
       else process.env["ALLOWED_EMAILS"] = savedAllowed;
     }
+  });
+
+  describe("best practice di Lucius", () => {
+    const BASE = { alfredChatAiModelId: null, luciusAiModelId: null, alfredMonthlyBudgetUsd: null, luciusMonthlyBudgetUsd: null };
+    const src = (n: number) => ({ url: `https://example${n}.com/guide`, label: `Fonte ${n}` });
+
+    it("put_saves_the_three_fields_and_get_lists_gemini_search_models", async () => {
+      const dev = await devUserId();
+      const g = await modelOf(dev, "gemini-3-flash", "gemini");
+      await modelOf(dev, "gemini-live-audio", "gemini");
+      await modelOf(dev, "altro", "custom");
+      const body = { ...BASE, luciusBestPractice: "always", luciusSearchAiModelId: g, luciusSources: [src(1), src(2)] };
+      const put = await api("PUT", "/account/characters", body);
+      expect(put.status, put.text).toBe(200);
+      expect(put.json).toMatchObject({ luciusBestPractice: "always", luciusSearchAiModelId: g, luciusSources: [src(1), src(2)] });
+      expect(put.json.searchModels).toEqual([{ id: g, name: "gemini-3-flash", accountName: "Account gemini-3-flash" }]);
+    });
+
+    it("put_without_the_fields_leaves_them_unchanged", async () => {
+      const dev = await devUserId();
+      const g = await modelOf(dev, "gemini-3-flash", "gemini");
+      await api("PUT", "/account/characters", { ...BASE, luciusBestPractice: "always", luciusSearchAiModelId: g, luciusSources: [src(1)] });
+      const r = await api("PUT", "/account/characters", BASE);
+      expect(r.status, r.text).toBe(200);
+      expect(r.json).toMatchObject({ luciusBestPractice: "always", luciusSearchAiModelId: g, luciusSources: [src(1)] });
+      const cleared = await api("PUT", "/account/characters", { ...BASE, luciusSearchAiModelId: null });
+      expect(cleared.json.luciusSearchAiModelId).toBeNull();
+    });
+
+    it("http_source_400", async () => {
+      await devUserId();
+      const r = await api("PUT", "/account/characters", { ...BASE, luciusSources: [{ url: "http://example.com/x", label: "x" }] });
+      expect(r.status).toBe(400);
+      expect(r.json.error).toMatch(/^fonti curate non valide: /);
+    });
+
+    it("too_many_duplicate_or_bad_label_sources_400", async () => {
+      await devUserId();
+      const many = Array.from({ length: 31 }, (_, i) => src(i));
+      expect((await api("PUT", "/account/characters", { ...BASE, luciusSources: many })).status).toBe(400);
+      const dup = await api("PUT", "/account/characters", { ...BASE, luciusSources: [src(1), src(1)] });
+      expect(dup.status).toBe(400);
+      expect(dup.json.error).toMatch(/^fonti curate non valide: /);
+      for (const label of ["", "a\nb", "x".repeat(81)]) {
+        const r = await api("PUT", "/account/characters", { ...BASE, luciusSources: [{ url: "https://example.com/a", label }] });
+        expect(r.status, label).toBe(400);
+      }
+    });
+
+    it("non_gemini_or_foreign_search_model_400", async () => {
+      const dev = await devUserId();
+      const msg = { error: "modello di ricerca non valido: scegli un modello Gemini dei tuoi account" };
+      const ds = await modelOf(dev, "deepseek-chat", "deepseek");
+      const r = await api("PUT", "/account/characters", { ...BASE, luciusSearchAiModelId: ds });
+      expect(r.status).toBe(400);
+      expect(r.json).toEqual(msg);
+      const theirs = await modelOf(await otherUserId(), "g-altrui", "gemini");
+      expect((await api("PUT", "/account/characters", { ...BASE, luciusSearchAiModelId: theirs })).json).toEqual(msg);
+    });
+
+    it("best_practice_default_follows_mode", async () => {
+      const dev = await devUserId();
+      const { luciusBestPracticeDefault } = await import("../lib/characters/settings");
+      expect(await luciusBestPracticeDefault(dev)).toBe(false);
+      await api("PUT", "/account/characters", { ...BASE, luciusBestPractice: "always" });
+      expect(await luciusBestPracticeDefault(dev)).toBe(true);
+    });
   });
 });

@@ -6,6 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Almeno un campo (altrimenti 400)
+ */
 export interface PlanConversationUpdate {
-  aiModelId: number;
+  aiModelId?: number;
+  bestPractice?: boolean;
 }

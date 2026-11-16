@@ -306,6 +306,18 @@ export function consumeWebRead(userId: number): boolean {
   return webReadCounter.consume(`user:${userId}`).ok;
 }
 
+// Ricerche di best practice di Lucius (Gemini con ricerca Google): 10 al minuto per utente.
+const bestPracticeCounter = fixedWindowCounter({ limit: 10, windowMs: 60_000 });
+/** Conta una ricerca di best practice: false oltre 10 al minuto per utente. */
+export function consumeBestPracticeSearch(userId: number): boolean {
+  return bestPracticeCounter.consume(`user:${userId}`).ok;
+}
+
+/** Azzera il contatore delle ricerche di best practice (solo per i test). */
+export function resetBestPracticeSearchLimit(): void {
+  bestPracticeCounter.reset();
+}
+
 /** Azzera il contatore delle letture web (solo per i test). */
 export function resetWebReadLimit(): void {
   webReadCounter.reset();

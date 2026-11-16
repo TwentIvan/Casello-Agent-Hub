@@ -134,6 +134,12 @@ async function loadContext(instanceId: number, find: (t: typeof teamCodeTasksTab
 }
 
 /** PR e CI dal vivo: PR aperta sul branch e verso il base del compito, testa attesa, CI verde. */
+/** Percorsi toccati dalla PR, nomi precedenti dei rinominati compresi; null se i file sono troppi. */
+async function pullPaths(repo: RepoRef, n: number): Promise<string[] | null> {
+  const files = await listPullFiles(repo, n);
+  return files === null ? null : files.flatMap((f) => (f.previousFilename === null ? [f.filename] : [f.filename, f.previousFilename]));
+}
+
 async function checkPull(ctx: Context, expectedHead: string | null): Promise<PullDetail> {
   const { row, repo } = ctx;
   const pull = await getPullDetail(repo, row.prNumber!);
@@ -228,7 +234,7 @@ export async function mergeTeamPull(instanceId: number, args: Record<string, unk
         ? await loadContext(instanceId, (t) => eq(t.planTaskId, target.compito), `il compito ${target.compito}`)
         : await loadContext(instanceId, (t) => eq(t.prNumber, target.numero), `la PR #${target.numero}`);
     const pull = await checkPull(ctx, null);
-    const files = await listPullFiles(ctx.repo, pull.number);
+    const files = await pullPaths(ctx.repo, pull.number);
     if (files === null) return { ok: false, content: MERGE_MESSAGES.tooManyFiles };
     const { workflows, migrations } = classifyPullFiles(files);
     if (workflows.length > 0) return { ok: false, content: MERGE_MESSAGES.workflows };
@@ -302,7 +308,7 @@ export async function approveMerge(userId: number, action: PendingActionRow): Pr
     const ctx = await loadContext(instanceId, (t) => eq(t.id, taskCodeId), "questa voce");
     prNumber = ctx.row.prNumber;
     const pull = await checkPull(ctx, headSha);
-    const files = await listPullFiles(ctx.repo, pull.number);
+    const files = await pullPaths(ctx.repo, pull.number);
     if (files === null) throw new MergeRefused(MERGE_MESSAGES.tooManyFiles);
     if (classifyPullFiles(files).workflows.length > 0) throw new MergeRefused(MERGE_MESSAGES.workflows);
     await reserve(ctx, false);

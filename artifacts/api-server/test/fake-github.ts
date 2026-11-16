@@ -639,6 +639,20 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
       return send(res, 200, { data: { markPullRequestReadyForReview: null }, errors: [{ type: "NOT_FOUND", message: "Could not resolve to a node" }] });
     }
 
+    let cm: RegExpExecArray | null;
+    if (repoMatch && method === "GET" && (cm = /^\/contents\/(.+)$/.exec(rest))) {
+      const fullName = access("contents", "read");
+      if (!fullName) return;
+      const repo = gitOf(fullName);
+      const ref = url.searchParams.get("ref") ?? repo?.defaultBranch ?? "";
+      const sha = repo ? (repo.refs.get(`heads/${ref}`) ?? (repo.commits.has(ref) ? ref : undefined)) : undefined;
+      const filePath = cm[1]!.split("/").map(decodeURIComponent).join("/");
+      const content = repo && sha ? filesOfCommit(repo, sha)[filePath] : undefined;
+      if (content === undefined) return send(res, 404, NOT_FOUND);
+      const buf = Buffer.from(content, "utf8");
+      return send(res, 200, { type: "file", encoding: "base64", content: buf.toString("base64"), size: buf.length, path: filePath });
+    }
+
     let pm: RegExpExecArray | null;
     if (repoMatch && (pm = /^\/pulls\/(\d+)\/(files|merge)$/.exec(rest))) {
       const merge = pm[2] === "merge";

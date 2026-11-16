@@ -316,10 +316,13 @@ export async function getPullDetail(r: RepoRef, n: number): Promise<PullDetail> 
 /** Pagine di file di una PR lette al più (100 file l'una): oltre, la PR è troppo grande per un merge automatico. */
 export const MAX_PULL_FILE_PAGES = 10;
 
-/** Percorsi toccati da una PR, compresi i nomi precedenti dei file rinominati; null se i file sono troppi da leggere. */
-export async function listPullFiles(r: RepoRef, n: number): Promise<string[] | null> {
+/** File di una PR: percorso, stato assegnato da GitHub (`added`, `modified`, `removed`, `renamed`…) e nome precedente se rinominato. */
+export type PullFile = { filename: string; status: string; previousFilename: string | null };
+
+/** File toccati da una PR con il loro stato; null se i file sono troppi da leggere. */
+export async function listPullFiles(r: RepoRef, n: number): Promise<PullFile[] | null> {
   const token = await tokenFor(r, PULLS);
-  const out: string[] = [];
+  const out: PullFile[] = [];
   for (let page = 1; page <= MAX_PULL_FILE_PAGES; page++) {
     const { status, json } = await call(r, token, "pull_requests: write", {
       method: "GET",
@@ -327,13 +330,36 @@ export async function listPullFiles(r: RepoRef, n: number): Promise<string[] | n
     });
     if (!Array.isArray(json)) throw badShape(status);
     for (const f of json as unknown[]) {
-      if (!isObj(f) || typeof f["filename"] !== "string") throw badShape(status);
-      out.push(f["filename"]);
-      if (typeof f["previous_filename"] === "string") out.push(f["previous_filename"]);
+      if (!isObj(f) || typeof f["filename"] !== "string" || typeof f["status"] !== "string") throw badShape(status);
+      out.push({
+        filename: f["filename"],
+        status: f["status"],
+        previousFilename: typeof f["previous_filename"] === "string" ? f["previous_filename"] : null,
+      });
     }
     if (json.length < PER_PAGE) return out;
   }
   return null;
+}
+
+/** Dimensione massima di un file letto con `readFileAt`: oltre, la contents API non dà il contenuto. */
+export const MAX_READ_FILE_BYTES = 1024 * 1024;
+
+/** Contenuto UTF-8 di un file a un ref (branch, tag o sha); null se il file non esiste a quel ref. */
+export async function readFileAt(r: RepoRef, path: string, ref: string): Promise<string | null> {
+  const token = await tokenFor(r, READ);
+  const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+  const { status, json } = await call(
+    r,
+    token,
+    "contents: read",
+    { method: "GET", path: repoPath(r, `/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`) },
+    [404],
+  );
+  if (status === 404) return null;
+  if (!isObj(json) || json["type"] !== "file" || json["encoding"] !== "base64" || typeof json["content"] !== "string") throw badShape(status);
+  if (typeof json["size"] === "number" && json["size"] > MAX_READ_FILE_BYTES) throw badShape(status);
+  return Buffer.from(json["content"], "base64").toString("utf8");
 }
 
 const MERGE = { contents: "write", pull_requests: "write" };

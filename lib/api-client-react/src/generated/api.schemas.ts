@@ -289,6 +289,19 @@ export interface CentralinoModel {
   aiModelId: number | null;
 }
 
+export type CharacterSettingsLuciusBestPractice = typeof CharacterSettingsLuciusBestPractice[keyof typeof CharacterSettingsLuciusBestPractice];
+
+
+export const CharacterSettingsLuciusBestPractice = {
+  always: 'always',
+  on_request: 'on_request',
+} as const;
+
+export type CharacterSettingsLuciusSourcesItem = {
+  url: string;
+  label: string;
+};
+
 export interface CharacterSettings {
   /** @nullable */
   alfredChatAiModelId: number | null;
@@ -306,12 +319,41 @@ export interface CharacterSettings {
      * @nullable
      */
   luciusMonthlyBudgetUsd: number | null;
+  luciusBestPractice?: CharacterSettingsLuciusBestPractice;
+  /** @nullable */
+  luciusSearchAiModelId?: number | null;
+  /** @maxItems 30 */
+  luciusSources?: CharacterSettingsLuciusSourcesItem[];
 }
+
+export type CharacterSettingsViewLuciusBestPractice = typeof CharacterSettingsViewLuciusBestPractice[keyof typeof CharacterSettingsViewLuciusBestPractice];
+
+
+export const CharacterSettingsViewLuciusBestPractice = {
+  always: 'always',
+  on_request: 'on_request',
+} as const;
+
+export type CharacterSettingsViewLuciusSourcesItem = {
+  url: string;
+  label: string;
+};
+
+export type CharacterSettingsViewSearchModelsItem = {
+  id: number;
+  name: string;
+  accountName: string;
+};
 
 /**
  * Impostazioni dei personaggi più la spesa del mese (mese di calendario, ora italiana).
  */
-export type CharacterSettingsView = CharacterSettings & {
+export type CharacterSettingsView = CharacterSettings & ({
+  luciusBestPractice: CharacterSettingsViewLuciusBestPractice;
+  /** @nullable */
+  luciusSearchAiModelId: number | null;
+  luciusSources: CharacterSettingsViewLuciusSourcesItem[];
+  searchModels: CharacterSettingsViewSearchModelsItem[];
   /** @minimum 0 */
   alfredSpentUsd: number;
   /** @minimum 0 */
@@ -320,7 +362,7 @@ export type CharacterSettingsView = CharacterSettings & {
   alfredUnpricedCount: number;
   /** @minimum 0 */
   luciusUnpricedCount: number;
-};
+});
 
 export type AlfredSettingsModelsItem = {
   id: number;

@@ -1158,6 +1158,8 @@ export const getCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax = 1000000;
 export const getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin = 0;
 export const getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax = 1000000;
 
+export const getCharacterSettingsResponseOneLuciusSourcesMax = 30;
+
 export const getCharacterSettingsResponseTwoAlfredSpentUsdMin = 0;
 
 export const getCharacterSettingsResponseTwoLuciusSpentUsdMin = 0;
@@ -1172,8 +1174,25 @@ export const GetCharacterSettingsResponse = zod.object({
   "alfredChatAiModelId": zod.number().nullable(),
   "luciusAiModelId": zod.number().nullable(),
   "alfredMonthlyBudgetUsd": zod.number().min(getCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMin).max(getCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax).nullable(),
-  "luciusMonthlyBudgetUsd": zod.number().min(getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin).max(getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax).nullable()
+  "luciusMonthlyBudgetUsd": zod.number().min(getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin).max(getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax).nullable(),
+  "luciusBestPractice": zod.enum(['always', 'on_request']),
+  "luciusSearchAiModelId": zod.number().nullable(),
+  "luciusSources": zod.array(zod.object({
+  "url": zod.string(),
+  "label": zod.string()
+})).max(getCharacterSettingsResponseOneLuciusSourcesMax)
 }).and(zod.object({
+  "luciusBestPractice": zod.enum(['always', 'on_request']),
+  "luciusSearchAiModelId": zod.number().nullable(),
+  "luciusSources": zod.array(zod.object({
+  "url": zod.string(),
+  "label": zod.string()
+})),
+  "searchModels": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string()
+})),
   "alfredSpentUsd": zod.number().min(getCharacterSettingsResponseTwoAlfredSpentUsdMin),
   "luciusSpentUsd": zod.number().min(getCharacterSettingsResponseTwoLuciusSpentUsdMin),
   "alfredUnpricedCount": zod.number().min(getCharacterSettingsResponseTwoAlfredUnpricedCountMin),
@@ -1191,13 +1210,21 @@ export const updateCharacterSettingsBodyAlfredMonthlyBudgetUsdMax = 1000000;
 export const updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMin = 0;
 export const updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMax = 1000000;
 
+export const updateCharacterSettingsBodyLuciusSourcesMax = 30;
+
 
 
 export const UpdateCharacterSettingsBody = zod.object({
   "alfredChatAiModelId": zod.number().nullable(),
   "luciusAiModelId": zod.number().nullable(),
   "alfredMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsBodyAlfredMonthlyBudgetUsdMin).max(updateCharacterSettingsBodyAlfredMonthlyBudgetUsdMax).nullable(),
-  "luciusMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMin).max(updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMax).nullable()
+  "luciusMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMin).max(updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMax).nullable(),
+  "luciusBestPractice": zod.enum(['always', 'on_request']).optional(),
+  "luciusSearchAiModelId": zod.number().nullish(),
+  "luciusSources": zod.array(zod.object({
+  "url": zod.string(),
+  "label": zod.string()
+})).max(updateCharacterSettingsBodyLuciusSourcesMax).optional()
 })
 
 export const updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMin = 0;
@@ -1205,6 +1232,8 @@ export const updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax = 10000
 
 export const updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin = 0;
 export const updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax = 1000000;
+
+export const updateCharacterSettingsResponseOneLuciusSourcesMax = 30;
 
 export const updateCharacterSettingsResponseTwoAlfredSpentUsdMin = 0;
 
@@ -1220,8 +1249,25 @@ export const UpdateCharacterSettingsResponse = zod.object({
   "alfredChatAiModelId": zod.number().nullable(),
   "luciusAiModelId": zod.number().nullable(),
   "alfredMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMin).max(updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax).nullable(),
-  "luciusMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin).max(updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax).nullable()
+  "luciusMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin).max(updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax).nullable(),
+  "luciusBestPractice": zod.enum(['always', 'on_request']),
+  "luciusSearchAiModelId": zod.number().nullable(),
+  "luciusSources": zod.array(zod.object({
+  "url": zod.string(),
+  "label": zod.string()
+})).max(updateCharacterSettingsResponseOneLuciusSourcesMax)
 }).and(zod.object({
+  "luciusBestPractice": zod.enum(['always', 'on_request']),
+  "luciusSearchAiModelId": zod.number().nullable(),
+  "luciusSources": zod.array(zod.object({
+  "url": zod.string(),
+  "label": zod.string()
+})),
+  "searchModels": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string()
+})),
   "alfredSpentUsd": zod.number().min(updateCharacterSettingsResponseTwoAlfredSpentUsdMin),
   "luciusSpentUsd": zod.number().min(updateCharacterSettingsResponseTwoLuciusSpentUsdMin),
   "alfredUnpricedCount": zod.number().min(updateCharacterSettingsResponseTwoAlfredUnpricedCountMin),

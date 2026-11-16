@@ -5672,14 +5672,57 @@ components:
           type: ["number", "null"]
           minimum: 0
           maximum: 1000000
+        luciusBestPractice:
+          type: string
+          enum: [always, on_request]
+        luciusSearchAiModelId:
+          type: ["integer", "null"]
+        luciusSources:
+          type: array
+          maxItems: 30
+          items:
+            type: object
+            required: [url, label]
+            properties:
+              url:
+                type: string
+              label:
+                type: string
 
     CharacterSettingsView:
       description: Impostazioni dei personaggi più la spesa del mese (mese di calendario, ora italiana).
       allOf:
         - $ref: "#/components/schemas/CharacterSettings"
         - type: object
-          required: [alfredSpentUsd, luciusSpentUsd, alfredUnpricedCount, luciusUnpricedCount]
+          required: [alfredSpentUsd, luciusSpentUsd, alfredUnpricedCount, luciusUnpricedCount, luciusBestPractice, luciusSearchAiModelId, luciusSources, searchModels]
           properties:
+            luciusBestPractice:
+              type: string
+              enum: [always, on_request]
+            luciusSearchAiModelId:
+              type: ["integer", "null"]
+            luciusSources:
+              type: array
+              items:
+                type: object
+                required: [url, label]
+                properties:
+                  url:
+                    type: string
+                  label:
+                    type: string
+            searchModels:
+              type: array
+              items:
+                type: object
+                required: [id, name, accountName]
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string
+                  accountName:
+                    type: string
             alfredSpentUsd:
               type: number
               minimum: 0

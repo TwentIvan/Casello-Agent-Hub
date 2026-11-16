@@ -6,11 +6,19 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CharacterSettings } from './characterSettings';
+import type { CharacterSettingsViewLuciusBestPractice } from './characterSettingsViewLuciusBestPractice';
+import type { CharacterSettingsViewLuciusSourcesItem } from './characterSettingsViewLuciusSourcesItem';
+import type { CharacterSettingsViewSearchModelsItem } from './characterSettingsViewSearchModelsItem';
 
 /**
  * Impostazioni dei personaggi più la spesa del mese (mese di calendario, ora italiana).
  */
-export type CharacterSettingsView = CharacterSettings & {
+export type CharacterSettingsView = CharacterSettings & ({
+  luciusBestPractice: CharacterSettingsViewLuciusBestPractice;
+  /** @nullable */
+  luciusSearchAiModelId: number | null;
+  luciusSources: CharacterSettingsViewLuciusSourcesItem[];
+  searchModels: CharacterSettingsViewSearchModelsItem[];
   /** @minimum 0 */
   alfredSpentUsd: number;
   /** @minimum 0 */
@@ -19,4 +27,4 @@ export type CharacterSettingsView = CharacterSettings & {
   alfredUnpricedCount: number;
   /** @minimum 0 */
   luciusUnpricedCount: number;
-};
+});

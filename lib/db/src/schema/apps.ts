@@ -7,6 +7,9 @@ export const appStatusEnum = pgEnum("app_status", ["active", "inactive"]);
 // Da dove l'architetto legge il codice dell'app
 export const sourceTypeEnum = pgEnum("source_type", ["github", "zip", "none"]);
 
+// Frequenza con cui si aggiorna la sintesi dell'architettura dell'App
+export const architectureRefreshEnum = pgEnum("architecture_refresh", ["off", "hourly", "6h", "daily", "weekly"]);
+
 export type AuthConfig = { header: string; scheme: string | null };
 
 // Header HTTP fisso (non segreto) che l'esecutore manda su ogni chiamata ai tool dell'app
@@ -37,6 +40,7 @@ export const appsTable = pgTable("apps", {
   // Server MCP dell'app (se espone i suoi strumenti via MCP)
   mcpUrl: text("mcp_url"),
   functionalDescription: text("functional_description"),
+  architectureRefresh: architectureRefreshEnum("architecture_refresh").notNull().default("6h"),
   status: appStatusEnum("status").notNull().default("active"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

@@ -34,6 +34,8 @@ COPY --from=build /deploy /app
 # serve solo casello-web. Il glob con .gitkeep: senza manifest (build locale) la COPY non fallisce e non si propone
 # nessun aggiornamento.
 COPY docker/nodo-downloads/.gitkeep docker/nodo-downloads/nodo-manifest.jso[n] /app/nodo/
+# Script SQL delle migrazioni, applicati all'avvio dall'API (lib/migrations/)
+COPY docs/migrations /app/migrations
 USER node
 EXPOSE 3000
 # Healthcheck di Docker con fetch di Node (indipendente da curl)

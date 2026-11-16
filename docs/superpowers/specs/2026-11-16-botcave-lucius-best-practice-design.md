@@ -148,3 +148,17 @@ Il testo di Gemini e delle pagine è dato non attendibile: sta tra `<dati>`, mai
 
 Brave, Tavily e altri servizi di ricerca; fonti curate per App; best practice nelle run degli agenti, nei compiti delle squadre, in Alfred e in Barbara;
 note di best practice salvate per App e rigenerate (approccio B); prezzo reale della ricerca Gemini con le quote gratuite.
+
+## Differenze dal codice
+
+- `BestPracticeSearcher` ha l'opzione `perTurn` (default 2; l'analisi usa 3) e un metodo `lookup()` che restituisce un esito strutturato (`BestPracticeFinding`), usato anche dal passo dell'analisi; `run()` lo avvolge per la chat.
+- Lo zip dell'analisi (corpo grezzo) riceve `bestPractice` come parametro di query `"true"`/`"false"`; assente = default dell'utente (vale anche per le analisi locali).
+- Le note non verificate («Best practice non verificate: …») si salvano in `best_practice_notes` ma non entrano nei prompt di completion ed evolution; entrano solo le note verificate. Anche un JSON delle domande non valido produce queste note, invece di «passo saltato» senza note.
+- Senza modello di ricerca il passo dell'analisi non fa nessuna chiamata (nemmeno al modello dell'analisi).
+- `leggi_architettura` con `app` legge qualunque App per slug (le App non hanno un proprietario), non solo quelle «dell'utente»; la descrizione del parametro `app` dice «default: quella di partenza».
+- Nei personaggi il default dell'App (`architectureApp`) esiste solo per l'argomento `agent`; per gli altri argomenti `app` è obbligatorio.
+- Gli indirizzi delle fonti curate si salvano normalizzati (`URL.toString`, frammento tolto).
+- `PlanConversationUpdate` accetta anche solo `bestPractice`, senza il vincolo di turno `idle`; con corpo vuoto risponde 400.
+- Il costo comprende anche `toolUsePromptTokenCount` e `thoughtsTokenCount` di Gemini; il costo delle ricerche non si somma alla conversazione (lo registra `best_practice_searches`, nella spesa di Lucius). Le risposte dalla cache non costano.
+- La pulizia delle righe oltre 90 giorni sta nello sweeper delle memorie (`summaries.ts`); `bestPracticeModeEnum` è definito in `users.ts` per evitare un import circolare.
+- Contatore al minuto: `consumeBestPracticeSearch` / `resetBestPracticeSearchLimit` in `middlewares/rate-limit.ts`.

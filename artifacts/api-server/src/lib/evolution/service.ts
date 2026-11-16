@@ -122,7 +122,7 @@ function settingsOf(cycle: EvolutionCycle): ConsentSettings | null {
  * Consenso valido: dato da un utente ancora presente, con l'impronta delle impostazioni attuali. L'impronta contiene
  * CONSENT_VERSION: una versione nuova del testo invalida i consensi precedenti.
  */
-function consentValid(cycle: EvolutionCycle): boolean {
+export function consentValid(cycle: EvolutionCycle): boolean {
   const settings = settingsOf(cycle);
   return (
     cycle.consentAt !== null &&

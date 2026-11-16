@@ -1733,6 +1733,254 @@ export const RefreshAppArchitectureResponse = zod.object({
 
 
 /**
+ * @summary Ciclo di evoluzione dell'app (null se non c'è)
+ */
+export const GetAppEvolutionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetAppEvolutionResponse = zod.union([zod.object({
+  "appId": zod.number(),
+  "status": zod.enum(['active', 'paused']),
+  "pausedReason": zod.string().nullable(),
+  "frequency": zod.enum(['daily', 'every_3_days', 'weekly', 'monthly']),
+  "itemsPerRound": zod.number(),
+  "analysisAiModelId": zod.number().nullable(),
+  "analysisModelName": zod.string().nullable(),
+  "teamTemplateId": zod.number().nullable(),
+  "mergeMode": zod.enum(['staging', 'direct']),
+  "stagingBranch": zod.string().nullable(),
+  "stagingUrl": zod.string().nullable(),
+  "monthlyBudgetUsd": zod.number(),
+  "spentUsd": zod.number().describe('Spesa del mese'),
+  "unpricedCount": zod.number(),
+  "activatedByName": zod.string().nullable(),
+  "consentAt": zod.coerce.date().nullable(),
+  "consentValid": zod.boolean(),
+  "nextRoundAt": zod.coerce.date().nullable(),
+  "lastError": zod.string().nullable(),
+  "openRound": zod.union([zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "status": zod.enum(['analyzing', 'approving', 'implementing', 'awaiting_release', 'done', 'blocked', 'rejected', 'stopped', 'failed']),
+  "analysisId": zod.number().nullable(),
+  "itemIds": zod.array(zod.number()),
+  "outcome": zod.string().nullable(),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+}),zod.null()])
+}),zod.null()])
+
+
+/**
+ * @summary Crea o aggiorna il ciclo di evoluzione (solo con il login)
+ */
+export const SaveAppEvolutionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SaveAppEvolutionBody = zod.object({
+  "frequency": zod.enum(['daily', 'every_3_days', 'weekly', 'monthly']),
+  "itemsPerRound": zod.number(),
+  "analysisAiModelId": zod.number(),
+  "teamTemplateId": zod.number().nullable(),
+  "mergeMode": zod.enum(['staging', 'direct']),
+  "stagingBranch": zod.string().nullable(),
+  "stagingUrl": zod.string().nullable(),
+  "monthlyBudgetUsd": zod.number(),
+  "consent": zod.object({
+  "accepted": zod.boolean(),
+  "appSlug": zod.string(),
+  "version": zod.string(),
+  "directMerge": zod.boolean().optional()
+}).optional()
+})
+
+export const SaveAppEvolutionResponse = zod.object({
+  "appId": zod.number(),
+  "status": zod.enum(['active', 'paused']),
+  "pausedReason": zod.string().nullable(),
+  "frequency": zod.enum(['daily', 'every_3_days', 'weekly', 'monthly']),
+  "itemsPerRound": zod.number(),
+  "analysisAiModelId": zod.number().nullable(),
+  "analysisModelName": zod.string().nullable(),
+  "teamTemplateId": zod.number().nullable(),
+  "mergeMode": zod.enum(['staging', 'direct']),
+  "stagingBranch": zod.string().nullable(),
+  "stagingUrl": zod.string().nullable(),
+  "monthlyBudgetUsd": zod.number(),
+  "spentUsd": zod.number().describe('Spesa del mese'),
+  "unpricedCount": zod.number(),
+  "activatedByName": zod.string().nullable(),
+  "consentAt": zod.coerce.date().nullable(),
+  "consentValid": zod.boolean(),
+  "nextRoundAt": zod.coerce.date().nullable(),
+  "lastError": zod.string().nullable(),
+  "openRound": zod.union([zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "status": zod.enum(['analyzing', 'approving', 'implementing', 'awaiting_release', 'done', 'blocked', 'rejected', 'stopped', 'failed']),
+  "analysisId": zod.number().nullable(),
+  "itemIds": zod.array(zod.number()),
+  "outcome": zod.string().nullable(),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+}),zod.null()])
+})
+
+
+/**
+ * @summary Elimina il ciclo (solo con il login; va prima fermato)
+ */
+export const DeleteAppEvolutionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteAppEvolutionResponse = zod.void()
+
+
+/**
+ * @summary Testo del consenso per le impostazioni indicate
+ */
+export const GetAppEvolutionConsentTextParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetAppEvolutionConsentTextQueryParams = zod.object({
+  "mergeMode": zod.enum(['staging', 'direct']),
+  "stagingBranch": zod.coerce.string().optional(),
+  "teamTemplateId": zod.coerce.number().optional(),
+  "analysisAiModelId": zod.coerce.number(),
+  "itemsPerRound": zod.coerce.number(),
+  "monthlyBudgetUsd": zod.coerce.number()
+})
+
+export const GetAppEvolutionConsentTextResponse = zod.object({
+  "version": zod.string(),
+  "lines": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Ferma il ciclo (solo con il login)
+ */
+export const StopAppEvolutionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const StopAppEvolutionResponse = zod.object({
+  "appId": zod.number(),
+  "status": zod.enum(['active', 'paused']),
+  "pausedReason": zod.string().nullable(),
+  "frequency": zod.enum(['daily', 'every_3_days', 'weekly', 'monthly']),
+  "itemsPerRound": zod.number(),
+  "analysisAiModelId": zod.number().nullable(),
+  "analysisModelName": zod.string().nullable(),
+  "teamTemplateId": zod.number().nullable(),
+  "mergeMode": zod.enum(['staging', 'direct']),
+  "stagingBranch": zod.string().nullable(),
+  "stagingUrl": zod.string().nullable(),
+  "monthlyBudgetUsd": zod.number(),
+  "spentUsd": zod.number().describe('Spesa del mese'),
+  "unpricedCount": zod.number(),
+  "activatedByName": zod.string().nullable(),
+  "consentAt": zod.coerce.date().nullable(),
+  "consentValid": zod.boolean(),
+  "nextRoundAt": zod.coerce.date().nullable(),
+  "lastError": zod.string().nullable(),
+  "openRound": zod.union([zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "status": zod.enum(['analyzing', 'approving', 'implementing', 'awaiting_release', 'done', 'blocked', 'rejected', 'stopped', 'failed']),
+  "analysisId": zod.number().nullable(),
+  "itemIds": zod.array(zod.number()),
+  "outcome": zod.string().nullable(),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+}),zod.null()])
+})
+
+
+/**
+ * @summary Riprende il ciclo (solo con il login)
+ */
+export const ResumeAppEvolutionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ResumeAppEvolutionResponse = zod.object({
+  "appId": zod.number(),
+  "status": zod.enum(['active', 'paused']),
+  "pausedReason": zod.string().nullable(),
+  "frequency": zod.enum(['daily', 'every_3_days', 'weekly', 'monthly']),
+  "itemsPerRound": zod.number(),
+  "analysisAiModelId": zod.number().nullable(),
+  "analysisModelName": zod.string().nullable(),
+  "teamTemplateId": zod.number().nullable(),
+  "mergeMode": zod.enum(['staging', 'direct']),
+  "stagingBranch": zod.string().nullable(),
+  "stagingUrl": zod.string().nullable(),
+  "monthlyBudgetUsd": zod.number(),
+  "spentUsd": zod.number().describe('Spesa del mese'),
+  "unpricedCount": zod.number(),
+  "activatedByName": zod.string().nullable(),
+  "consentAt": zod.coerce.date().nullable(),
+  "consentValid": zod.boolean(),
+  "nextRoundAt": zod.coerce.date().nullable(),
+  "lastError": zod.string().nullable(),
+  "openRound": zod.union([zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "status": zod.enum(['analyzing', 'approving', 'implementing', 'awaiting_release', 'done', 'blocked', 'rejected', 'stopped', 'failed']),
+  "analysisId": zod.number().nullable(),
+  "itemIds": zod.array(zod.number()),
+  "outcome": zod.string().nullable(),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+}),zod.null()])
+})
+
+
+/**
+ * @summary Avvia subito un giro (solo con il login, 2 all'ora per App)
+ */
+export const RunAppEvolutionNowParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RunAppEvolutionNowResponse = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "status": zod.enum(['analyzing', 'approving', 'implementing', 'awaiting_release', 'done', 'blocked', 'rejected', 'stopped', 'failed']),
+  "analysisId": zod.number().nullable(),
+  "itemIds": zod.array(zod.number()),
+  "outcome": zod.string().nullable(),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Ultimi 20 giri del ciclo
+ */
+export const ListAppEvolutionRoundsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListAppEvolutionRoundsResponseItem = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "status": zod.enum(['analyzing', 'approving', 'implementing', 'awaiting_release', 'done', 'blocked', 'rejected', 'stopped', 'failed']),
+  "analysisId": zod.number().nullable(),
+  "itemIds": zod.array(zod.number()),
+  "outcome": zod.string().nullable(),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+})
+export const ListAppEvolutionRoundsResponse = zod.array(ListAppEvolutionRoundsResponseItem)
+
+
+/**
  * @summary Elenca tutti gli agenti
  */
 export const ListAgentsQueryParams = zod.object({
@@ -2957,7 +3205,8 @@ export const GetAnalysisResponse = zod.object({
   "state": zod.enum(['open', 'closed']),
   "stateReason": zod.string().nullable().describe('Motivo di chiusura riportato da GitHub (es. completed, not_planned)'),
   "checkedAt": zod.coerce.date().nullable().describe('Ultimo controllo dello stato su GitHub')
-}),zod.null()]).describe('Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)')
+}),zod.null()]).describe('Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)'),
+  "approvedByCycle": zod.boolean().describe('Approvata dal ciclo di evoluzione automatica')
 }))
 }))
 
@@ -3088,7 +3337,8 @@ export const UpdateAnalysisItemResponse = zod.object({
   "state": zod.enum(['open', 'closed']),
   "stateReason": zod.string().nullable().describe('Motivo di chiusura riportato da GitHub (es. completed, not_planned)'),
   "checkedAt": zod.coerce.date().nullable().describe('Ultimo controllo dello stato su GitHub')
-}),zod.null()]).describe('Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)')
+}),zod.null()]).describe('Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)'),
+  "approvedByCycle": zod.boolean().describe('Approvata dal ciclo di evoluzione automatica')
 })
 
 
@@ -3165,6 +3415,7 @@ export const GetDashboardStatsResponse = zod.object({
   "cancelledRuns": zod.number(),
   "pendingActions": zod.number().describe('Azioni dell\'utente corrente in attesa di conferma'),
   "triggersInError": zod.number().describe('Inneschi fermi in stato error (servono «Riprendi»)'),
+  "evolutionCyclesPaused": zod.number().describe('Cicli di evoluzione in pausa attivati dall\'utente corrente'),
   "recentlyPairedNodes": zod.array(zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -5899,7 +6150,8 @@ export const GetAppPlanResponse = zod.object({
   "state": zod.enum(['open', 'closed']),
   "stateReason": zod.string().nullable().describe('Motivo di chiusura riportato da GitHub (es. completed, not_planned)'),
   "checkedAt": zod.coerce.date().nullable().describe('Ultimo controllo dello stato su GitHub')
-}),zod.null()]).describe('Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)')
+}),zod.null()]).describe('Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)'),
+  "approvedByCycle": zod.boolean().describe('Approvata dal ciclo di evoluzione automatica')
 })),
   "issues": zod.object({
   "available": zod.boolean().describe('L\'utente può creare issue (repository collegato tramite un\'installazione sua)'),
@@ -6213,7 +6465,8 @@ export const DecidePlanProposalResponse = zod.object({
   "state": zod.enum(['open', 'closed']),
   "stateReason": zod.string().nullable().describe('Motivo di chiusura riportato da GitHub (es. completed, not_planned)'),
   "checkedAt": zod.coerce.date().nullable().describe('Ultimo controllo dello stato su GitHub')
-}),zod.null()]).describe('Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)')
+}),zod.null()]).describe('Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)'),
+  "approvedByCycle": zod.boolean().describe('Approvata dal ciclo di evoluzione automatica')
 }),zod.null()]).describe('Voce creata o modificata (null se rifiutata)')
 })
 

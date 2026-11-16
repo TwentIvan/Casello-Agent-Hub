@@ -19,6 +19,7 @@ export const EVOLUTION_MESSAGES = {
   appNotFound: "App non trovata",
   invalidSettings: "impostazioni del ciclo non valide",
   templateUnavailable: "modello di squadra non disponibile",
+  tooManyRuns: "Troppe richieste: riprova tra poco",
   analysisBusy: "c'è già un'analisi in corso per questa app: riprova quando finisce",
 } as const;
 

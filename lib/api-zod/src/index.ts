@@ -9,4 +9,5 @@ export {
   DeleteMemoryNoteParams,
   DeleteMemoryHistoryEntryParams,
   GetAlfredNotificationsParams,
+  GetAppEvolutionConsentTextParams,
 } from "./generated/api";

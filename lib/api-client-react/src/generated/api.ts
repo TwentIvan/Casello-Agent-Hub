@@ -99,9 +99,14 @@ import type {
   EmbedConfig,
   ErrorResponse,
   EstimateAnalysisCostParams,
+  EvolutionConsentText,
+  EvolutionCycleInput,
+  EvolutionCycleView,
+  EvolutionRoundView,
   ExportAnalysisIssuesParams,
   ForbiddenResponse,
   GetAlfredNotificationsParams,
+  GetAppEvolutionConsentTextParams,
   GetEmbedConfigParams,
   GetTeamInstanceUpdates200,
   GithubInstallations,
@@ -4765,6 +4770,600 @@ export const useRefreshAppArchitecture = <TError = ErrorType<NotFoundResponse | 
       > => {
       return useMutation(getRefreshAppArchitectureMutationOptions(options));
     }
+
+export const getGetAppEvolutionUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/evolution`
+}
+
+/**
+ * @summary Ciclo di evoluzione dell'app (null se non c'è)
+ */
+export const getAppEvolution = async (id: number, options?: RequestInit): Promise<EvolutionCycleView | null> => {
+
+  return customFetch<EvolutionCycleView | null>(getGetAppEvolutionUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppEvolutionQueryKey = (id: number,) => {
+    return [
+    `/api/apps/${id}/evolution`
+    ] as const;
+    }
+
+
+export const getGetAppEvolutionQueryOptions = <TData = Awaited<ReturnType<typeof getAppEvolution>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppEvolution>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppEvolutionQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppEvolution>>> = ({ signal }) => getAppEvolution(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppEvolution>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppEvolutionQueryResult = NonNullable<Awaited<ReturnType<typeof getAppEvolution>>>
+export type GetAppEvolutionQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Ciclo di evoluzione dell'app (null se non c'è)
+ */
+
+export function useGetAppEvolution<TData = Awaited<ReturnType<typeof getAppEvolution>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppEvolution>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppEvolutionQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveAppEvolutionUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/evolution`
+}
+
+/**
+ * @summary Crea o aggiorna il ciclo di evoluzione (solo con il login)
+ */
+export const saveAppEvolution = async (id: number,
+    evolutionCycleInput: EvolutionCycleInput, options?: RequestInit): Promise<EvolutionCycleView> => {
+
+  return customFetch<EvolutionCycleView>(getSaveAppEvolutionUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(evolutionCycleInput)
+  }
+);}
+
+
+
+
+export const getSaveAppEvolutionMutationOptions = <TError = ErrorType<ErrorResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveAppEvolution>>, TError,{id: number;data: BodyType<EvolutionCycleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveAppEvolution>>, TError,{id: number;data: BodyType<EvolutionCycleInput>}, TContext> => {
+
+const mutationKey = ['saveAppEvolution'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveAppEvolution>>, {id: number;data: BodyType<EvolutionCycleInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  saveAppEvolution(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveAppEvolutionMutationResult = NonNullable<Awaited<ReturnType<typeof saveAppEvolution>>>
+    export type SaveAppEvolutionMutationBody = BodyType<EvolutionCycleInput>
+    export type SaveAppEvolutionMutationError = ErrorType<ErrorResponse | NotFoundResponse>
+
+    /**
+ * @summary Crea o aggiorna il ciclo di evoluzione (solo con il login)
+ */
+export const useSaveAppEvolution = <TError = ErrorType<ErrorResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveAppEvolution>>, TError,{id: number;data: BodyType<EvolutionCycleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveAppEvolution>>,
+        TError,
+        {id: number;data: BodyType<EvolutionCycleInput>},
+        TContext
+      > => {
+      return useMutation(getSaveAppEvolutionMutationOptions(options));
+    }
+
+export const getDeleteAppEvolutionUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/evolution`
+}
+
+/**
+ * @summary Elimina il ciclo (solo con il login; va prima fermato)
+ */
+export const deleteAppEvolution = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteAppEvolutionUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteAppEvolutionMutationOptions = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAppEvolution>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteAppEvolution>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteAppEvolution'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteAppEvolution>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteAppEvolution(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteAppEvolutionMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAppEvolution>>>
+
+    export type DeleteAppEvolutionMutationError = ErrorType<NotFoundResponse | ErrorResponse>
+
+    /**
+ * @summary Elimina il ciclo (solo con il login; va prima fermato)
+ */
+export const useDeleteAppEvolution = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAppEvolution>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteAppEvolution>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteAppEvolutionMutationOptions(options));
+    }
+
+export const getGetAppEvolutionConsentTextUrl = (id: number,
+    params: GetAppEvolutionConsentTextParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/apps/${id}/evolution/consent-text?${stringifiedParams}` : `/api/apps/${id}/evolution/consent-text`
+}
+
+/**
+ * @summary Testo del consenso per le impostazioni indicate
+ */
+export const getAppEvolutionConsentText = async (id: number,
+    params: GetAppEvolutionConsentTextParams, options?: RequestInit): Promise<EvolutionConsentText> => {
+
+  return customFetch<EvolutionConsentText>(getGetAppEvolutionConsentTextUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppEvolutionConsentTextQueryKey = (id: number,
+    params?: GetAppEvolutionConsentTextParams,) => {
+    return [
+    `/api/apps/${id}/evolution/consent-text`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAppEvolutionConsentTextQueryOptions = <TData = Awaited<ReturnType<typeof getAppEvolutionConsentText>>, TError = ErrorType<NotFoundResponse>>(id: number,
+    params: GetAppEvolutionConsentTextParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppEvolutionConsentText>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppEvolutionConsentTextQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppEvolutionConsentText>>> = ({ signal }) => getAppEvolutionConsentText(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppEvolutionConsentText>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppEvolutionConsentTextQueryResult = NonNullable<Awaited<ReturnType<typeof getAppEvolutionConsentText>>>
+export type GetAppEvolutionConsentTextQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Testo del consenso per le impostazioni indicate
+ */
+
+export function useGetAppEvolutionConsentText<TData = Awaited<ReturnType<typeof getAppEvolutionConsentText>>, TError = ErrorType<NotFoundResponse>>(
+ id: number,
+    params: GetAppEvolutionConsentTextParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppEvolutionConsentText>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppEvolutionConsentTextQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getStopAppEvolutionUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/evolution/stop`
+}
+
+/**
+ * @summary Ferma il ciclo (solo con il login)
+ */
+export const stopAppEvolution = async (id: number, options?: RequestInit): Promise<EvolutionCycleView> => {
+
+  return customFetch<EvolutionCycleView>(getStopAppEvolutionUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getStopAppEvolutionMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopAppEvolution>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof stopAppEvolution>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['stopAppEvolution'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof stopAppEvolution>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  stopAppEvolution(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StopAppEvolutionMutationResult = NonNullable<Awaited<ReturnType<typeof stopAppEvolution>>>
+
+    export type StopAppEvolutionMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Ferma il ciclo (solo con il login)
+ */
+export const useStopAppEvolution = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopAppEvolution>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof stopAppEvolution>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getStopAppEvolutionMutationOptions(options));
+    }
+
+export const getResumeAppEvolutionUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/evolution/resume`
+}
+
+/**
+ * @summary Riprende il ciclo (solo con il login)
+ */
+export const resumeAppEvolution = async (id: number, options?: RequestInit): Promise<EvolutionCycleView> => {
+
+  return customFetch<EvolutionCycleView>(getResumeAppEvolutionUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getResumeAppEvolutionMutationOptions = <TError = ErrorType<ErrorResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeAppEvolution>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resumeAppEvolution>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['resumeAppEvolution'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resumeAppEvolution>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  resumeAppEvolution(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResumeAppEvolutionMutationResult = NonNullable<Awaited<ReturnType<typeof resumeAppEvolution>>>
+
+    export type ResumeAppEvolutionMutationError = ErrorType<ErrorResponse | NotFoundResponse>
+
+    /**
+ * @summary Riprende il ciclo (solo con il login)
+ */
+export const useResumeAppEvolution = <TError = ErrorType<ErrorResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeAppEvolution>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resumeAppEvolution>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getResumeAppEvolutionMutationOptions(options));
+    }
+
+export const getRunAppEvolutionNowUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/evolution/run-now`
+}
+
+/**
+ * @summary Avvia subito un giro (solo con il login, 2 all'ora per App)
+ */
+export const runAppEvolutionNow = async (id: number, options?: RequestInit): Promise<EvolutionRoundView> => {
+
+  return customFetch<EvolutionRoundView>(getRunAppEvolutionNowUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRunAppEvolutionNowMutationOptions = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAppEvolutionNow>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runAppEvolutionNow>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['runAppEvolutionNow'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runAppEvolutionNow>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  runAppEvolutionNow(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunAppEvolutionNowMutationResult = NonNullable<Awaited<ReturnType<typeof runAppEvolutionNow>>>
+
+    export type RunAppEvolutionNowMutationError = ErrorType<NotFoundResponse | ErrorResponse>
+
+    /**
+ * @summary Avvia subito un giro (solo con il login, 2 all'ora per App)
+ */
+export const useRunAppEvolutionNow = <TError = ErrorType<NotFoundResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAppEvolutionNow>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runAppEvolutionNow>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRunAppEvolutionNowMutationOptions(options));
+    }
+
+export const getListAppEvolutionRoundsUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/evolution/rounds`
+}
+
+/**
+ * @summary Ultimi 20 giri del ciclo
+ */
+export const listAppEvolutionRounds = async (id: number, options?: RequestInit): Promise<EvolutionRoundView[]> => {
+
+  return customFetch<EvolutionRoundView[]>(getListAppEvolutionRoundsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAppEvolutionRoundsQueryKey = (id: number,) => {
+    return [
+    `/api/apps/${id}/evolution/rounds`
+    ] as const;
+    }
+
+
+export const getListAppEvolutionRoundsQueryOptions = <TData = Awaited<ReturnType<typeof listAppEvolutionRounds>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAppEvolutionRounds>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAppEvolutionRoundsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAppEvolutionRounds>>> = ({ signal }) => listAppEvolutionRounds(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAppEvolutionRounds>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAppEvolutionRoundsQueryResult = NonNullable<Awaited<ReturnType<typeof listAppEvolutionRounds>>>
+export type ListAppEvolutionRoundsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Ultimi 20 giri del ciclo
+ */
+
+export function useListAppEvolutionRounds<TData = Awaited<ReturnType<typeof listAppEvolutionRounds>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAppEvolutionRounds>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAppEvolutionRoundsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListAgentsUrl = (params?: ListAgentsParams,) => {
   const normalizedParams = new URLSearchParams();

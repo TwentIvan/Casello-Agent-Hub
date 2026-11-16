@@ -127,6 +127,19 @@ export function consumeArchitectureRefresh(userId: number): boolean {
   return architectureRefreshCounter.consume(`user:${userId}`).ok;
 }
 
+// «Avvia ora» di un giro del ciclo di evoluzione (ogni giro è un'analisi a pagamento): 2 all'ora per App.
+const evolutionRunNowCounter = fixedWindowCounter({ limit: 2, windowMs: 3600_000 });
+
+/** Conta un «Avvia ora» dell'App: false se il limite è raggiunto. */
+export function consumeEvolutionRunNow(appId: number): boolean {
+  return evolutionRunNowCounter.consume(`app:${appId}`).ok;
+}
+
+/** Solo per i test: azzera il contatore di «Avvia ora». */
+export function resetEvolutionRunNowLimit(): void {
+  evolutionRunNowCounter.reset();
+}
+
 /** Solo per i test: azzera il contatore di «Aggiorna ora». */
 export function resetArchitectureRefreshLimit(): void {
   architectureRefreshCounter.reset();

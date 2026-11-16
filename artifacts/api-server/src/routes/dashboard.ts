@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { sql, eq, and, gte, desc } from "drizzle-orm";
 import { currentUserId } from "../lib/auth";
-import { db, aiAccountsTable, appsTable, agentsTable, agentTriggersTable, nodesTable, runsTable, pendingActionsTable } from "@workspace/db";
+import { db, aiAccountsTable, appsTable, agentsTable, agentTriggersTable, evolutionCyclesTable, nodesTable, runsTable, pendingActionsTable } from "@workspace/db";
 import { GetDashboardStatsResponse } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -68,6 +68,11 @@ router.get("/dashboard/stats", async (req, res) => {
     .where(eq(agentTriggersTable.status, "error"));
 
   const userId = currentUserId(req);
+  // Cicli di evoluzione in pausa attivati dall'utente (chi paga è chi ha acconsentito)
+  const [{ count: evolutionCyclesPaused }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(evolutionCyclesTable)
+    .where(and(eq(evolutionCyclesTable.status, "paused"), eq(evolutionCyclesTable.activatedBy, userId)));
   const now = Date.now();
   // Nodi dell'utente collegati nelle ultime 24 ore (l'avviso a ogni nuovo collegamento)
   const pairedRows = await db
@@ -98,6 +103,7 @@ router.get("/dashboard/stats", async (req, res) => {
       cancelledRuns,
       pendingActions,
       triggersInError,
+      evolutionCyclesPaused,
       recentlyPairedNodes,
       nodeClaudeWarnings,
       avgDurationMs,

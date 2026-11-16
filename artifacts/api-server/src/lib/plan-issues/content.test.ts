@@ -26,6 +26,7 @@ const row = (chapter: AnalysisItem["chapter"], payload: unknown, over: Partial<A
     issueStateReason: null,
     issueCreatedAt: null,
     issueCheckedAt: null,
+    approvedByCycle: false,
     createdAt: new Date(),
     ...over,
   };

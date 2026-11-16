@@ -12,6 +12,9 @@ export const analysisStatusEnum = pgEnum("analysis_status", [
 ]);
 
 // Chi esegue l'analisi: il cloud di Casello o un agente locale (via MCP)
+// Analisi completa o ridotta del ciclo di evoluzione automatica
+export const analysisModeEnum = pgEnum("analysis_mode", ["full", "evolution"]);
+
 export const analysisExecutorEnum = pgEnum("analysis_executor", ["cloud", "local"]);
 
 // `mcp` manca nelle analisi precedenti alla sorgente MCP (si legge come false)
@@ -51,6 +54,9 @@ export const analysesTable = pgTable(
     leaseLabel: text("lease_label"),
     // Commit del clone locale su cui l'agente ha lavorato
     sourceCommit: text("source_commit"),
+    mode: analysisModeEnum("mode").notNull().default("full"),
+    // Giro del ciclo di evoluzione che l'ha avviata (collegamento senza FK nello schema per evitare l'import circolare: la FK sta nel DB)
+    evolutionRoundId: integer("evolution_round_id"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     finishedAt: timestamp("finished_at"),
   },

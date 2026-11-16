@@ -43,6 +43,7 @@ const row = (payload: unknown, chapter: AnalysisItem["chapter"] = "completion"):
     issueStateReason: null,
     issueCreatedAt: null,
     issueCheckedAt: null,
+    approvedByCycle: false,
     createdAt: new Date(),
   };
 };

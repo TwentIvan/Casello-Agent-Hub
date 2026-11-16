@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, unique, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, unique, index, boolean } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { analysesTable } from "./analyses";
 import { planConversationsTable } from "./plan-conversations";
@@ -44,6 +44,8 @@ export const analysisItemsTable = pgTable(
     issueStateReason: text("issue_state_reason"),
     issueCreatedAt: timestamp("issue_created_at"),
     issueCheckedAt: timestamp("issue_checked_at"),
+    // Approvata automaticamente dal ciclo di evoluzione
+    approvedByCycle: boolean("approved_by_cycle").notNull().default(false),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [

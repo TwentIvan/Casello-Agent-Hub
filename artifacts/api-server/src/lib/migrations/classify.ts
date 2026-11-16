@@ -32,6 +32,19 @@ function strip(sql: string): string {
         } else i++;
       }
       out += " ";
+    } else if (c === '"') {
+      // identificatore tra virgolette: sostituito da un segnaposto, così \S+ lo legge come una parola
+      i++;
+      while (i < sql.length) {
+        if (sql[i] === '"') {
+          if (sql[i + 1] === '"') i += 2;
+          else {
+            i++;
+            break;
+          }
+        } else i++;
+      }
+      out += " IDENT ";
     } else if (c === "'") {
       i++;
       while (i < sql.length) {

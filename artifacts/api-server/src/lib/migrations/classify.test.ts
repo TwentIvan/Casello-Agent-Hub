@@ -27,6 +27,13 @@ describe("classifyMigration", () => {
     ["ALTER TABLE t ALTER COLUMN c SET DATA TYPE int;", "ALTER COLUMN TYPE"],
     ["ALTER TABLE t ALTER COLUMN c SET NOT NULL;", "SET NOT NULL"],
     ["DO $$ BEGIN DROP TABLE x; END $$;", "DROP TABLE"],
+    ['ALTER TABLE "a--b" DROP COLUMN c;', "DROP COLUMN"],
+    ['ALTER TABLE t ALTER COLUMN "a b" TYPE text;', "ALTER COLUMN TYPE"],
+    ['ALTER TABLE t ALTER COLUMN "a b" SET NOT NULL;', "SET NOT NULL"],
+    ["DROP SCHEMA s;", "DROP SCHEMA"],
+    ["DROP SEQUENCE q;", "DROP SEQUENCE"],
+    ["DROP MATERIALIZED VIEW m;", "DROP MATERIALIZED VIEW"],
+    ["ALTER TABLE t DROP CONSTRAINT k, DROP COLUMN c;", "DROP COLUMN"],
   ];
   it.each(destructive)("%s è distruttivo", (sql, reason) => {
     const r = classifyMigration(ok, sql);

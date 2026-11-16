@@ -1209,7 +1209,9 @@ describe("startAnalysis in modalità evolution e annullamento", () => {
 
   beforeEach(() => {
     finished = [];
-    onAnalysisFinished((id) => finished.push(id));
+    onAnalysisFinished((id) => {
+      finished.push(id);
+    });
   });
   afterEach(() => clearAnalysisFinishedListeners());
 
@@ -1302,10 +1304,58 @@ describe("startAnalysis in modalità evolution e annullamento", () => {
     onAnalysisFinished(() => {
       throw new Error("rotto");
     });
-    onAnalysisFinished((id) => finished.push(id));
+    onAnalysisFinished((id) => {
+      finished.push(id);
+    });
     const id = await createAnalysis();
     await startAnalysis(id, { zip: testZip() });
     expect((await loadAnalysis(id)).status).toBe("completed");
+    expect(finished).toEqual([id]);
+  });
+
+  it("un listener asincrono che rifiuta: l'analisi si completa, nessun rifiuto non gestito", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      clearAnalysisFinishedListeners();
+      onAnalysisFinished(async () => {
+        throw new Error("rotto");
+      });
+      onAnalysisFinished(async (id) => {
+        finished.push(id);
+      });
+      const id = await createAnalysis();
+      await startAnalysis(id, { zip: testZip() });
+      await new Promise((r) => setTimeout(r, 50));
+      expect((await loadAnalysis(id)).status).toBe("completed");
+      expect(finished).toEqual([id]);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("annullamento dopo l'ultima chiamata della fase: nessuna voce scritta, failed col messaggio fisso", async () => {
+    const roundId = await seedCycle();
+    await db.insert(appArchitectureTable).values({ appId, summary: SUMMARY, repoMap: REPO_MAP });
+    const id = await createAnalysis(appId, { mode: "evolution", evolutionRoundId: roundId });
+    // Il finto provider ferma l'analisi mentre consegna l'esito della prima fase
+    const original = llm.listeners("request")[0] as (...args: any[]) => void;
+    llm.removeAllListeners("request");
+    llm.on("request", (req, res) => {
+      const end = res.end.bind(res);
+      res.end = ((chunk: any) => {
+        if (typeof chunk === "string" && chunk.includes("submit_result")) abortAnalysis(id);
+        return end(chunk);
+      }) as typeof res.end;
+      original(req, res);
+    });
+    await startAnalysis(id, { zip: testZip() });
+    const a = await loadAnalysis(id);
+    expect(a.status).toBe("failed");
+    expect(a.error).toBe(EVOLUTION_MESSAGES.analysisStopped);
+    expect(await loadItems(id)).toHaveLength(0);
     expect(finished).toEqual([id]);
   });
 

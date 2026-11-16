@@ -66,7 +66,7 @@ const REJECTED_TITLES_MAX = 50;
 
 // --- Fine delle analisi: avvisi a chi aspetta (es. il ciclo di evoluzione) ---
 
-type AnalysisFinishedListener = (analysisId: number) => void;
+type AnalysisFinishedListener = (analysisId: number) => void | Promise<void>;
 const finishedListeners: AnalysisFinishedListener[] = [];
 
 /** Chiamato a ogni fine di un'analisi cloud presa in carico, con qualunque esito, dopo la chiusura. */
@@ -80,12 +80,13 @@ export function clearAnalysisFinishedListeners(): void {
 }
 
 function notifyFinished(analysisId: number): void {
+  // Senza attesa: un listener lento non trattiene l'analisi; errori sincroni e promesse rifiutate finiscono nel log
   for (const listener of finishedListeners) {
-    try {
-      listener(analysisId);
-    } catch (err) {
-      logger.error({ analysisId, errName: err instanceof Error ? err.name : "unknown" }, "Avviso di fine analisi non riuscito");
-    }
+    void Promise.resolve()
+      .then(() => listener(analysisId))
+      .catch((err: unknown) => {
+        logger.error({ analysisId, errName: err instanceof Error ? err.name : "unknown" }, "Avviso di fine analisi non riuscito");
+      });
   }
 }
 
@@ -635,6 +636,8 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       }
       previous[phase] = result;
 
+      // Annullamento arrivato dopo l'ultima chiamata: nessuna voce scritta
+      if (abortSignal.aborted) throw new AnalysisError(EVOLUTION_MESSAGES.analysisStopped);
       // Elementi della fase in un'unica INSERT, con `position` che prosegue nell'analisi
       const inserted = await recordPhaseResult({ analysisId, appId: app.id, phase, result });
 
@@ -642,6 +645,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       await progress.flush(phase === "map" ? { architectureMap: { ...(result as object), repoMap } } : {});
     }
 
+    if (abortSignal.aborted) throw new AnalysisError(EVOLUTION_MESSAGES.analysisStopped);
     await close("completed", null);
   } catch (err) {
     if (!(err instanceof AnalysisError || err instanceof SourceError || err instanceof SourceTreeError)) {

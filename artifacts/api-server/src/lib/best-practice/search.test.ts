@@ -75,6 +75,16 @@ describe("searchGemini", () => {
     expect(new Set(r.sources.map((s) => s.url)).size).toBe(8);
   });
 
+  it("somma ragionamento e token degli strumenti", async () => {
+    reply(200, {
+      candidates: [{ content: { parts: [{ text: "ok" }] } }],
+      usageMetadata: { promptTokenCount: 10, toolUsePromptTokenCount: 4, candidatesTokenCount: 20, thoughtsTokenCount: 7 },
+    });
+    const r = await searchGemini(model, "q");
+    expect(r.promptTokens).toBe(14);
+    expect(r.completionTokens).toBe(27);
+  });
+
   it("tronca la risposta a 4000 caratteri", async () => {
     reply(200, { candidates: [{ content: { parts: [{ text: "x".repeat(6000) }] } }] });
     expect((await searchGemini(model, "q")).answer).toHaveLength(4000);

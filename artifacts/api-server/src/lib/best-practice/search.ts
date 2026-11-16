@@ -93,8 +93,9 @@ export async function searchGemini(resolved: ResolvedModel, question: string): P
   const result: GeminiSearchResult = {
     answer: text.slice(0, MAX_ANSWER_CHARS),
     sources,
-    promptTokens: num(usage["promptTokenCount"]),
-    completionTokens: num(usage["candidatesTokenCount"]),
+    // Il ragionamento si paga come output e i token degli strumenti come input
+    promptTokens: num(usage["promptTokenCount"]) + num(usage["toolUsePromptTokenCount"]),
+    completionTokens: num(usage["candidatesTokenCount"]) + num(usage["thoughtsTokenCount"]),
     searchQueries,
   };
   logger.info(

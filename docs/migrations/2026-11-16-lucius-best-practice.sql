@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS "best_practice_searches" (
 	"cached_from" integer,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "best_practice_searches_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action,
-	CONSTRAINT "best_practice_searches_analysis_id_analyses_id_fk" FOREIGN KEY ("analysis_id") REFERENCES "public"."analyses"("id") ON DELETE set null ON UPDATE no action,
+	CONSTRAINT "best_practice_searches_analysis_id_analyses_id_fk" FOREIGN KEY ("analysis_id") REFERENCES "public"."analyses"("id") ON DELETE cascade ON UPDATE no action,
 	CONSTRAINT "best_practice_searches_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action,
 	CONSTRAINT "best_practice_searches_cached_from_best_practice_searches_id_fk" FOREIGN KEY ("cached_from") REFERENCES "public"."best_practice_searches"("id") ON DELETE set null ON UPDATE no action
 );

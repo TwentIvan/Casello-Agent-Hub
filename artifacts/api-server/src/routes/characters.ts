@@ -183,7 +183,7 @@ export function createCharactersRouter(): IRouter {
           ? await db.select().from(characterConversationsTable).where(eq(characterConversationsTable.id, id))
           : await db
               .update(characterConversationsTable)
-              .set({ ...set, updatedAt: new Date() })
+              .set(Object.keys(set).length === 1 && "bestPractice" in set ? set : { ...set, updatedAt: new Date() })
               .where(and(eq(characterConversationsTable.id, id), eq(characterConversationsTable.userId, userId)))
               .returning();
       if (!row) throw new CharacterError(404, CHARACTER_MESSAGES.notFound);

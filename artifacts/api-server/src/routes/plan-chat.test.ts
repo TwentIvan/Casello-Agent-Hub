@@ -624,4 +624,16 @@ describe("interruttore delle best practice (piano)", () => {
     expect((await api("PATCH", `/plan-conversations/${id}`, {})).status).toBe(400);
     expect((await api("PATCH", `/plan-conversations/${id}`, { aiModelId: modelId, bestPractice: true })).json.bestPractice).toBe(true);
   });
+
+  it("PATCH solo bestPractice non tocca updatedAt (cambiando il modello sì)", async () => {
+    const { id } = await createConv();
+    const old = new Date("2026-01-15T10:00:00Z");
+    await db.update(planConversationsTable).set({ updatedAt: old }).where(eq(planConversationsTable.id, id));
+    expect((await api("PATCH", `/plan-conversations/${id}`, { bestPractice: true })).status).toBe(200);
+    const [row] = await db.select().from(planConversationsTable).where(eq(planConversationsTable.id, id));
+    expect(row!.updatedAt.getTime()).toBe(old.getTime());
+    expect((await api("PATCH", `/plan-conversations/${id}`, { aiModelId: modelId, bestPractice: true })).status).toBe(200);
+    const [after] = await db.select().from(planConversationsTable).where(eq(planConversationsTable.id, id));
+    expect(after!.updatedAt.getTime()).toBeGreaterThan(old.getTime());
+  });
 });

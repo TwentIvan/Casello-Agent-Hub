@@ -5,10 +5,19 @@ import { BEST_PRACTICE_MESSAGES } from "./messages";
 
 /** Errore dello strumento: il messaggio è fisso, italiano e sicuro da restituire al modello. */
 export class BestPracticeError extends Error {
-  constructor(message: string) {
+  /** Consumi già pagati quando la ricerca è andata a vuoto (risposta vuota): da registrare comunque. */
+  readonly usage?: SearchUsage;
+  constructor(message: string, usage?: SearchUsage) {
     super(message);
+    this.usage = usage;
     this.name = "BestPracticeError";
   }
+}
+
+export interface SearchUsage {
+  promptTokens: number;
+  completionTokens: number;
+  searchQueries: number;
 }
 
 export interface GeminiSearchResult {
@@ -45,7 +54,8 @@ export async function searchGemini(resolved: ResolvedModel, question: string): P
         systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
         contents: [{ role: "user", parts: [{ text: question }] }],
         tools: [{ google_search: {} }],
-        generationConfig: { maxOutputTokens: 1500, temperature: 0.2 },
+        // Il budget di ragionamento è separato: senza, i thinking token consumano maxOutputTokens e la risposta può uscire vuota
+        generationConfig: { maxOutputTokens: 1500, temperature: 0.2, thinkingConfig: { thinkingBudget: 512 } },
       }),
       redirect: "manual",
       signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
@@ -76,11 +86,15 @@ export async function searchGemini(resolved: ResolvedModel, question: string): P
     .map((p) => (p && typeof (p as { text?: unknown }).text === "string" ? (p as { text: string }).text : ""))
     .join("")
     .trim();
-  if (!text) throw new BestPracticeError(BEST_PRACTICE_MESSAGES.empty);
-
   const usage = (root["usageMetadata"] ?? {}) as Record<string, unknown>;
   const grounding = (candidate?.["groundingMetadata"] ?? {}) as { webSearchQueries?: unknown; groundingChunks?: unknown };
   const searchQueries = Array.isArray(grounding.webSearchQueries) ? grounding.webSearchQueries.length : 0;
+  const promptTokens = num(usage["promptTokenCount"]) + num(usage["toolUsePromptTokenCount"]);
+  const completionTokens = num(usage["candidatesTokenCount"]) + num(usage["thoughtsTokenCount"]);
+  if (!text) {
+    logger.warn({ operation: "best-practice", outcome: "empty", promptTokens, completionTokens, searchQueries, ms: Date.now() - started }, "Ricerca best practice senza testo");
+    throw new BestPracticeError(BEST_PRACTICE_MESSAGES.empty, { promptTokens, completionTokens, searchQueries });
+  }
   const sources: { title: string; url: string }[] = [];
   const seen = new Set<string>();
   for (const chunk of Array.isArray(grounding.groundingChunks) ? grounding.groundingChunks : []) {
@@ -94,8 +108,8 @@ export async function searchGemini(resolved: ResolvedModel, question: string): P
     answer: text.slice(0, MAX_ANSWER_CHARS),
     sources,
     // Il ragionamento si paga come output e i token degli strumenti come input
-    promptTokens: num(usage["promptTokenCount"]) + num(usage["toolUsePromptTokenCount"]),
-    completionTokens: num(usage["candidatesTokenCount"]) + num(usage["thoughtsTokenCount"]),
+    promptTokens,
+    completionTokens,
     searchQueries,
   };
   logger.info(

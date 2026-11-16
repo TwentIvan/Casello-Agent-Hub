@@ -65,17 +65,20 @@ describe("migrazione 2026-11-16-lucius-best-practice", () => {
     expect(r.rows).toEqual([{ sources: [], search_queries: 0, cost_usd: null, cached_from: null }]);
   });
 
-  it("FK: SET NULL su analisi, modello e riga riusata; CASCADE sull'utente", async () => {
+  it("FK: CASCADE su analisi e utente; SET NULL su modello e riga riusata", async () => {
     await db.exec(`
       INSERT INTO best_practice_searches (user_id, analysis_id, query_hash, query, answer, ai_model_id, cached_from)
-        SELECT u.id, (SELECT id FROM analyses LIMIT 1), 'h2', 'q', 'a', (SELECT id FROM ai_models LIMIT 1), (SELECT min(id) FROM best_practice_searches)
+        SELECT u.id, NULL, 'h2', 'q', 'a', (SELECT id FROM ai_models LIMIT 1), (SELECT min(id) FROM best_practice_searches)
         FROM users u;
+      INSERT INTO best_practice_searches (user_id, analysis_id, query_hash, query, answer)
+        SELECT u.id, (SELECT id FROM analyses LIMIT 1), 'h3', 'q', 'a' FROM users u;
     `);
     await db.exec("UPDATE users SET lucius_search_ai_model_id = (SELECT id FROM ai_models LIMIT 1)");
     await db.exec("DELETE FROM best_practice_searches WHERE query_hash = 'h'");
     await db.exec("DELETE FROM analyses");
     await db.exec("DELETE FROM ai_models");
     const r = await db.query<any>("SELECT analysis_id, ai_model_id, cached_from FROM best_practice_searches");
+    // la riga dell'analisi sparisce con l'analisi, quella di chat resta
     expect(r.rows).toEqual([{ analysis_id: null, ai_model_id: null, cached_from: null }]);
     const u = await db.query<any>("SELECT lucius_search_ai_model_id FROM users");
     expect(u.rows).toEqual([{ lucius_search_ai_model_id: null }]);

@@ -12,7 +12,7 @@ export const bestPracticeSearchesTable = pgTable(
       .notNull()
       .references(() => usersTable.id, { onDelete: "cascade" }),
     // Valorizzato per le ricerche dell'analisi: il costo conta tramite l'analisi, non due volte
-    analysisId: integer("analysis_id").references(() => analysesTable.id, { onDelete: "set null" }),
+    analysisId: integer("analysis_id").references(() => analysesTable.id, { onDelete: "cascade" }),
     // SHA-256 della domanda normalizzata in minuscolo
     queryHash: text("query_hash").notNull(),
     query: text("query").notNull(),

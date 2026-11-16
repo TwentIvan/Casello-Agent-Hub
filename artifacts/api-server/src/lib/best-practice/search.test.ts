@@ -120,6 +120,20 @@ describe("searchGemini", () => {
       AbortSignal.timeout = orig;
     }
   });
+  it("chiede un budget di ragionamento separato", async () => {
+    reply(200, { candidates: [{ content: { parts: [{ text: "ok" }] } }] });
+    await searchGemini(model, "domanda");
+    expect(last!.body.generationConfig).toMatchObject({ maxOutputTokens: 1500, thinkingConfig: { thinkingBudget: 512 } });
+  });
+  it("testo vuoto con usageMetadata → empty e consumi nell'errore", async () => {
+    reply(200, {
+      candidates: [{ content: { parts: [] }, groundingMetadata: { webSearchQueries: ["a"] } }],
+      usageMetadata: { promptTokenCount: 10, toolUsePromptTokenCount: 5, thoughtsTokenCount: 1500 },
+    });
+    const err = (await searchGemini(model, "domanda").catch((e) => e)) as BestPracticeError;
+    expect(err.message).toBe(BEST_PRACTICE_MESSAGES.empty);
+    expect(err.usage).toEqual({ promptTokens: 15, completionTokens: 1500, searchQueries: 1 });
+  });
   it("testo vuoto o senza candidati → empty", async () => {
     reply(200, { candidates: [{ content: { parts: [{ text: "  " }] } }] });
     await fails(BEST_PRACTICE_MESSAGES.empty);

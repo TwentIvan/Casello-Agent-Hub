@@ -113,7 +113,7 @@ async function askQuestions(input: BestPracticeStepInput, now: () => number): Pr
 function formatNotes(findings: BestPracticeFinding[]): string {
   const per = Math.floor(BEST_PRACTICE_NOTES_MAX / findings.length);
   const blocks = findings.map((f) => {
-    const sources = f.sources.map((s) => `- ${neutralise(s.title.replace(/\s+/g, " "))} — ${s.url}`);
+    const sources = f.sources.map((s) => `- ${neutralise(s.title.replace(/\s+/g, " "))} — ${neutralise(s.url)}`);
     const tail = sources.length ? `\nFonti:\n${sources.join("\n")}` : "\nFonti: nessuna";
     const head = `Domanda: ${neutralise(f.question)}\n`;
     const room = Math.max(200, per - head.length - tail.length - 4);

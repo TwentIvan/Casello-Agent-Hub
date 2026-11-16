@@ -261,7 +261,8 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
       // Solo l'interruttore: vale dal turno successivo, nessun vincolo sul turno in corso
       const [row] = await db
         .update(planConversationsTable)
-        .set({ bestPractice: bestPractice!, updatedAt: new Date() })
+        // updatedAt non si tocca (mese del costo, riassunti)
+        .set({ bestPractice: bestPractice! })
         .where(and(eq(planConversationsTable.id, id), eq(planConversationsTable.userId, userId)))
         .returning();
       if (!row) {

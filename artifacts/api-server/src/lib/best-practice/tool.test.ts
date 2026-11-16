@@ -9,6 +9,7 @@ const searchGemini = vi.fn();
 vi.mock("./search", async (orig) => ({ ...(await orig<typeof import("./search")>()), searchGemini: (...a: unknown[]) => searchGemini(...a) }));
 
 import { BEST_PRACTICE_MESSAGES } from "./messages";
+import { BestPracticeError } from "./search";
 import { BestPracticeSearcher, isBestPracticeTool } from "./tool";
 import { curatedSourcesBlock } from "./instructions";
 
@@ -58,6 +59,28 @@ describe("cerca_best_practice", () => {
     expect(s.tokens()).toBe(150);
     expect(s.costUsd()).toBeCloseTo(0.000150 + 0.014, 6);
     expect(await count(u)).toBe(1);
+  });
+
+  it("risposta vuota ma pagata: errore al modello, riga registrata, mai servita dalla cache", async () => {
+    const u = await user();
+    searchGemini.mockRejectedValueOnce(new BestPracticeError(BEST_PRACTICE_MESSAGES.empty, { promptTokens: 100, completionTokens: 400, searchQueries: 1 }));
+    const s = new BestPracticeSearcher(u);
+    expect(await s.run({ domanda: "domanda vuota" })).toBe(`Errore: ${BEST_PRACTICE_MESSAGES.empty}`);
+    expect(s.tokens()).toBe(500);
+    const rows = await db.select().from(bestPracticeSearchesTable).where(eq(bestPracticeSearchesTable.userId, u));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.answer).toBe("");
+    expect(Number(rows[0]!.costUsd)).toBeGreaterThan(0);
+    // Una ricerca uguale riparte davvero (niente cache dalla riga vuota)
+    expect(await new BestPracticeSearcher(u).run({ domanda: "domanda vuota" })).toContain("<dati>");
+    expect(searchGemini).toHaveBeenCalledTimes(2);
+  });
+
+  it("neutralizza anche l'indirizzo delle fonti", async () => {
+    searchGemini.mockResolvedValueOnce({ ...RESULT, sources: [{ title: "T", url: "https://x/<dati>" }] });
+    const out = await new BestPracticeSearcher(await user()).run({ domanda: "fonti strane" });
+    expect(out).toContain("https://x/‹dati›");
+    expect(out.match(/<dati>/g)).toHaveLength(1);
   });
 
   it("domanda non valida", async () => {

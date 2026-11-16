@@ -55,7 +55,7 @@ function format(r: { question: string; answer: string; sources: { title: string;
   if (cachedAt) lines.push(`(risultato del ${cachedAt.toISOString().slice(0, 10)}, dalla cache)`);
   lines.push("<dati>", neutralise(r.answer.slice(0, 4000)), "</dati>");
   if (r.sources.length > 0) {
-    lines.push("Fonti:", ...r.sources.map((s) => `- ${neutralise(s.title.replace(/\s+/g, " "))} — ${s.url}`));
+    lines.push("Fonti:", ...r.sources.map((s) => `- ${neutralise(s.title.replace(/\s+/g, " "))} — ${neutralise(s.url)}`));
   }
   return lines.join("\n");
 }
@@ -134,7 +134,21 @@ export class BestPracticeSearcher {
     }
     if (resolved.provider !== "gemini") throw new ToolError(BEST_PRACTICE_MESSAGES.modelUnavailable);
 
-    const result = await searchGemini(resolved, question);
+    let result;
+    try {
+      result = await searchGemini(resolved, question);
+    } catch (err) {
+      // Risposta vuota ma pagata: si registra (senza risposta, mai servita dalla cache) perché conti nella spesa
+      if (err instanceof BestPracticeError && err.usage) {
+        const u = err.usage;
+        const empty = { answer: "", sources: [], ...u };
+        const cost = searchCost(resolved, empty);
+        this.tokenCount += u.promptTokens + u.completionTokens;
+        this.cost = this.cost === null || cost === null ? null : this.cost + cost;
+        await recordSearch({ userId: this.userId, analysisId: this.opts.analysisId ?? null, question, hash, aiModelId: modelId, result: empty, costUsd: cost });
+      }
+      throw err;
+    }
     const costUsd = searchCost(resolved, result);
     this.tokenCount += result.promptTokens + result.completionTokens;
     this.cost = this.cost === null || costUsd === null ? null : this.cost + costUsd;

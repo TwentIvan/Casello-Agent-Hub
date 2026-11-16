@@ -219,6 +219,15 @@ describe("interruttore delle best practice (squadra)", () => {
     const [conv] = await db.insert(teamChatConversationsTable).values({ teamInstanceId: instanceId, userId: stranger!.id, aiModelId: null, title: "" }).returning();
     expect((await api("PATCH", `/team-chat-conversations/${conv!.id}`, { bestPractice: true })).status).toBe(404);
   });
+
+  it("PATCH solo bestPractice non tocca updatedAt", async () => {
+    const { id } = await createConv();
+    const old = new Date("2026-01-15T10:00:00Z");
+    await db.update(teamChatConversationsTable).set({ updatedAt: old }).where(eq(teamChatConversationsTable.id, id));
+    expect((await api("PATCH", `/team-chat-conversations/${id}`, { bestPractice: true })).status).toBe(200);
+    const [row] = await db.select().from(teamChatConversationsTable).where(eq(teamChatConversationsTable.id, id));
+    expect(row!.updatedAt.getTime()).toBe(old.getTime());
+  });
 });
 
 describe("messaggi", () => {

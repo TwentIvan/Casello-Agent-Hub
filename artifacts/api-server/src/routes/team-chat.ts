@@ -189,7 +189,8 @@ export function createTeamChatRouter(): IRouter {
     // Vale dal turno successivo: nessun vincolo sul turno in corso
     const [row] = await db
       .update(teamChatConversationsTable)
-      .set({ bestPractice, updatedAt: new Date() })
+      // updatedAt non si tocca: il costo conta nel mese di updated_at e i riassunti ripartono se cambia
+      .set({ bestPractice })
       .where(and(eq(teamChatConversationsTable.id, id), eq(teamChatConversationsTable.userId, currentUserId(req))))
       .returning();
     if (!row) {

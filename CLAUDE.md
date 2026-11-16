@@ -1156,6 +1156,8 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - Prova: Vitest con Gemini finto (`GEMINI_NATIVE_BASE`) di ricerca, cache, strumento, spesa, tre turni, impostazioni, PATCH, passo dell'analisi e funzioni pure della console; `test/migration-lucius-best-practice.test.ts`.
 - Migrazione: `docs/migrations/2026-11-16-lucius-best-practice.sql` (additiva e idempotente, niente `-post`, la applica il deploy): enum `best_practice_mode`, colonne su `users`, `plan_conversations`, `character_conversations`, `team_chat_conversations`, `analyses`, tabella `best_practice_searches` con indice; riportata in `docs/schema-casello.sql`.
 - Fuori ambito: Brave, Tavily e altri servizi di ricerca; fonti curate per App; best practice nelle run degli agenti, nei compiti delle squadre, in Alfred e Barbara; note salvate per App e rigenerate; prezzo reale della ricerca con le quote gratuite.
+- Revisione finale: la richiesta a Gemini ha `thinkingConfig.thinkingBudget` 512 accanto a `maxOutputTokens` 1500 (i thinking token non consumano la risposta); una risposta comunque vuota dà l'errore `empty` con i consumi (`BestPracticeError.usage`) e il searcher registra una riga con risposta vuota e il suo costo (conta nella spesa, mai servita dalla cache: `findCached` ignora `answer = ''`). `best_practice_searches.analysis_id` è `ON DELETE CASCADE`. I PATCH che cambiano solo `bestPractice` non toccano `updated_at`. Anche gli indirizzi delle fonti passano da `neutralise`.
+
 
 ## Avanzamento dei turni
 

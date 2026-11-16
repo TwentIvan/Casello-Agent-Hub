@@ -598,4 +598,16 @@ describe("interruttore delle best practice (personaggi)", () => {
     expect(bad.status).toBe(400);
     expect(bad.json.error).toBe("le best practice valgono solo per Lucius");
   });
+
+  it("PATCH solo bestPractice non tocca updatedAt (cambiando il titolo sì)", async () => {
+    const { id } = await createConv();
+    const old = new Date("2026-01-15T10:00:00Z");
+    await db.update(characterConversationsTable).set({ updatedAt: old }).where(eq(characterConversationsTable.id, id));
+    expect((await api("PATCH", `/character-conversations/${id}`, { bestPractice: true })).status).toBe(200);
+    const [row] = await db.select().from(characterConversationsTable).where(eq(characterConversationsTable.id, id));
+    expect(row!.updatedAt.getTime()).toBe(old.getTime());
+    expect((await api("PATCH", `/character-conversations/${id}`, { title: "Nuovo titolo" })).status).toBe(200);
+    const [after] = await db.select().from(characterConversationsTable).where(eq(characterConversationsTable.id, id));
+    expect(after!.updatedAt.getTime()).toBeGreaterThan(old.getTime());
+  });
 });

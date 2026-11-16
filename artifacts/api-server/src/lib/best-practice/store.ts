@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, desc, eq, gte, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, ne } from "drizzle-orm";
 import { db, bestPracticeSearchesTable } from "@workspace/db";
 import { computeCost, type ResolvedModel } from "../ai/executor";
 import { BEST_PRACTICE_CACHE_MS, GROUNDING_QUERY_USD } from "./messages";
@@ -72,6 +72,8 @@ export async function findCached(userId: number, hash: string, now: Date = new D
         eq(bestPracticeSearchesTable.userId, userId),
         eq(bestPracticeSearchesTable.queryHash, hash),
         isNull(bestPracticeSearchesTable.cachedFrom),
+        // Le ricerche andate a vuoto (solo registro dei costi) non si servono dalla cache
+        ne(bestPracticeSearchesTable.answer, ""),
         gte(bestPracticeSearchesTable.createdAt, since),
       ),
     )

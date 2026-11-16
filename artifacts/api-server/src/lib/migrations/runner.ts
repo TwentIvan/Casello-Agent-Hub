@@ -17,7 +17,10 @@ export class MigrationError extends Error {
   constructor(
     message: string,
     readonly file: string,
+    /** Numero (1-based) dell'istruzione fallita; 0 = file rifiutato prima di eseguirlo. */
     readonly statement: number,
+    /** Solo il codice SQLSTATE di pg (es. 55P03), mai messaggio né SQL. */
+    readonly code?: string,
   ) {
     super(message);
     this.name = "MigrationError";
@@ -46,9 +49,10 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<{ basel
   let locked = false;
   try {
     await client.query("SET statement_timeout = 0");
-    await client.query("SET lock_timeout = '10s'");
+    // lock_timeout vale anche per le attese di pg_advisory_lock: si imposta solo dopo averlo ottenuto
     await client.query("SELECT pg_advisory_lock($1)", [MIGRATION_LOCK_KEY.toString()]);
     locked = true;
+    await client.query("SET lock_timeout = '10s'");
 
     await client.query(
       `CREATE TABLE IF NOT EXISTS "schema_migrations" (
@@ -64,15 +68,16 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<{ basel
 
     let baselined = 0;
     if (known.size === 0) {
-      for (const name of baseline) {
-        if (!contents.has(name)) continue;
-        const sum = shaOf(name);
+      // Un solo INSERT: o tutto il registro iniziale o niente
+      const names = baseline.filter((n) => contents.has(n));
+      if (names.length > 0) {
+        const sums = names.map(shaOf);
         await client.query(
-          "INSERT INTO schema_migrations (name, sha256, baseline) VALUES ($1, $2, true) ON CONFLICT (name) DO NOTHING",
-          [name, sum],
+          "INSERT INTO schema_migrations (name, sha256, baseline) SELECT n, s, true FROM unnest($1::text[], $2::text[]) AS t(n, s) ON CONFLICT (name) DO NOTHING",
+          [names, sums],
         );
-        known.set(name, sum);
-        baselined++;
+        names.forEach((n, i) => known.set(n, sums[i]!));
+        baselined = names.length;
       }
       if (baselined > 0) logger.info({ count: baselined }, "Migrazioni esistenti registrate senza eseguirle");
     }
@@ -96,8 +101,14 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<{ basel
       for (let i = 0; i < statements.length; i++) {
         try {
           await client.query(statements[i]!);
-        } catch {
-          throw new MigrationError(`migrazione ${name} non riuscita all'istruzione ${i + 1}`, name, i + 1);
+        } catch (err) {
+          const code = (err as { code?: unknown }).code;
+          throw new MigrationError(
+            `migrazione ${name} non riuscita all'istruzione ${i + 1}`,
+            name,
+            i + 1,
+            typeof code === "string" ? code : undefined,
+          );
         }
       }
       await client.query(
@@ -109,10 +120,15 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<{ basel
     }
     return { baselined, applied };
   } finally {
-    try {
-      if (locked) await client.query("SELECT pg_advisory_unlock($1)", [MIGRATION_LOCK_KEY.toString()]);
-    } finally {
-      client.release();
+    if (locked) {
+      try {
+        await client.query("SELECT pg_advisory_unlock($1)", [MIGRATION_LOCK_KEY.toString()]);
+      } catch {
+        // Sessione forse in transazione interrotta: il lock cade comunque con la connessione distrutta sotto
+        logger.warn("Rilascio del lock delle migrazioni non riuscito: la connessione viene chiusa");
+      }
     }
+    // Connessione distrutta, non restituita al pool: ha timeout cambiati e può essere in uno stato sporco
+    client.release(true);
   }
 }

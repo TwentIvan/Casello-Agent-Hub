@@ -135,6 +135,23 @@ describe("runMigrations", () => {
     expect(await tableExists("g")).toBe(true);
   });
 
+  it("mantiene l'errore originale se il file con BEGIN esplicito fallisce a metà", async () => {
+    write("2026-11-16-t.sql", "BEGIN; CREATE TABLE x (id int); SELECT * FROM nonesiste; COMMIT;");
+    const err = await run().catch((e) => e);
+    expect(err).toBeInstanceOf(MigrationError);
+    expect(err.file).toBe("2026-11-16-t.sql");
+    expect(err.statement).toBe(3);
+    expect(err.code).toBe("42P01");
+    expect(await registered()).toEqual([]);
+  });
+
+  it("registra l'elenco iniziale in blocco", async () => {
+    write("2026-10-a.sql", "SELECT 1;");
+    write("2026-10-b.sql", "SELECT 2;");
+    expect(await run(["2026-10-a.sql", "2026-10-b.sql", "2026-10-assente.sql"])).toEqual({ baselined: 2, applied: [] });
+    expect((await registered()).map((r) => r.name)).toEqual(["2026-10-a.sql", "2026-10-b.sql"]);
+  });
+
   describe("lock", () => {
     function recording() {
       const log: string[] = [];
@@ -169,6 +186,7 @@ describe("runMigrations", () => {
       const lock = log.findIndex((q) => q.includes("pg_advisory_lock"));
       const firstRead = log.findIndex((q) => q.includes("schema_migrations"));
       expect(lock).toBeGreaterThanOrEqual(0);
+      expect(lock).toBeLessThan(log.findIndex((q) => q.includes("lock_timeout")));
       expect(lock).toBeLessThan(firstRead);
       expect(log[log.length - 2]).toContain("pg_advisory_unlock");
       expect(log[log.length - 1]).toBe("release");

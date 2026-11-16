@@ -98,3 +98,9 @@ describe("leggi_architettura", () => {
     expect(describeRunStep({ type: "tool", toolName: "leggi_architettura" })).toBe("Legge l'architettura dell'app");
   });
 });
+
+describe("describeStep cerca_best_practice", () => {
+  it("frase fissa, senza la domanda", () => {
+    expect(describeStep("cerca_best_practice", '{"domanda":"segreto"}')).toBe("Cerca le best practice");
+  });
+});

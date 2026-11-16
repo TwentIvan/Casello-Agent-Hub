@@ -2247,7 +2247,7 @@
   },
   {
     "name": "create_team_template",
-    "description": "Crea un modello di squadra (versione 1) con i suoi ruoli.",
+    "description": "Crea un modello di squadra (versione 1) con i suoi ruoli. Regole: un solo capo, sempre runsOn cloud con un modello cloud; ogni ruolo node ha aiModelId null; i ruoli cloud hanno un modello.",
     "kind": "http",
     "identity": "service",
     "level": "L2",
@@ -2299,7 +2299,7 @@
               },
               "isLead": {
                 "type": "boolean",
-                "description": "true per il capo: una squadra ha esattamente un capo"
+                "description": "true per il capo: una squadra ha esattamente un capo, e il capo ha sempre runsOn cloud (i suoi turni girano in Botcave, mai sul nodo)"
               },
               "runsOn": {
                 "type": "string",
@@ -2307,23 +2307,24 @@
                   "cloud",
                   "node"
                 ],
-                "description": "cloud = eseguito da Botcave, node = dal nodo locale"
+                "description": "cloud = eseguito da Botcave con aiModelId; node = dal nodo locale con Claude Code, aiModelId null. Il capo è sempre cloud"
               },
               "aiModelId": {
                 "type": [
                   "integer",
                   "null"
                 ],
-                "description": "Modello del ruolo (obbligatorio per cloud, null per node)"
+                "description": "Modello del ruolo: obbligatorio per cloud (id di un modello cloud dei tuoi account), sempre null per node (anche se vuoi lo stesso modello degli altri ruoli)"
               },
               "code": {
                 "type": "string",
                 "enum": [
                   "none",
                   "read",
-                  "write"
+                  "write",
+                  "merge"
                 ],
-                "description": "Accesso al codice dell'App di riferimento: none (default), read, write = branch, commit e PR in bozza. I ruoli node usano solo none o write. Non va mai in localSkills."
+                "description": "Accesso al codice dell'App di riferimento: none (default), read, write = branch, commit e PR in bozza, merge = write più unione delle PR della squadra con la CI verde. I ruoli node usano solo none o write; per il capo contano solo none o merge. Non va mai in localSkills."
               },
               "tools": {
                 "type": "array",
@@ -2361,7 +2362,7 @@
   },
   {
     "name": "update_team_template",
-    "description": "Salva un modello di squadra: nome, descrizione e ruoli insieme creano la versione successiva.",
+    "description": "Salva un modello di squadra: nome, descrizione e ruoli insieme creano la versione successiva. Regole: un solo capo, sempre runsOn cloud con un modello cloud; ogni ruolo node ha aiModelId null; i ruoli cloud hanno un modello.",
     "kind": "http",
     "identity": "service",
     "level": "L2",
@@ -2417,7 +2418,7 @@
               },
               "isLead": {
                 "type": "boolean",
-                "description": "true per il capo: una squadra ha esattamente un capo"
+                "description": "true per il capo: una squadra ha esattamente un capo, e il capo ha sempre runsOn cloud (i suoi turni girano in Botcave, mai sul nodo)"
               },
               "runsOn": {
                 "type": "string",
@@ -2425,23 +2426,24 @@
                   "cloud",
                   "node"
                 ],
-                "description": "cloud = eseguito da Botcave, node = dal nodo locale"
+                "description": "cloud = eseguito da Botcave con aiModelId; node = dal nodo locale con Claude Code, aiModelId null. Il capo è sempre cloud"
               },
               "aiModelId": {
                 "type": [
                   "integer",
                   "null"
                 ],
-                "description": "Modello del ruolo (obbligatorio per cloud, null per node)"
+                "description": "Modello del ruolo: obbligatorio per cloud (id di un modello cloud dei tuoi account), sempre null per node (anche se vuoi lo stesso modello degli altri ruoli)"
               },
               "code": {
                 "type": "string",
                 "enum": [
                   "none",
                   "read",
-                  "write"
+                  "write",
+                  "merge"
                 ],
-                "description": "Accesso al codice dell'App di riferimento: none (default), read, write = branch, commit e PR in bozza. I ruoli node usano solo none o write. Non va mai in localSkills."
+                "description": "Accesso al codice dell'App di riferimento: none (default), read, write = branch, commit e PR in bozza, merge = write più unione delle PR della squadra con la CI verde. I ruoli node usano solo none o write; per il capo contano solo none o merge. Non va mai in localSkills."
               },
               "tools": {
                 "type": "array",
@@ -2481,7 +2483,7 @@
   },
   {
     "name": "create_team_instance",
-    "description": "Crea una squadra in bozza per un lavoro, da un modello o da zero; non lavora finché non si attiva.",
+    "description": "Crea una squadra in bozza per un lavoro, da un modello o da zero; non lavora finché non si attiva. Regole: un solo capo, sempre runsOn cloud con un modello cloud; ogni ruolo node ha aiModelId null; i ruoli cloud hanno un modello.",
     "kind": "http",
     "identity": "service",
     "level": "L2",
@@ -2563,7 +2565,7 @@
               },
               "isLead": {
                 "type": "boolean",
-                "description": "true per il capo: una squadra ha esattamente un capo"
+                "description": "true per il capo: una squadra ha esattamente un capo, e il capo ha sempre runsOn cloud (i suoi turni girano in Botcave, mai sul nodo)"
               },
               "runsOn": {
                 "type": "string",
@@ -2571,23 +2573,24 @@
                   "cloud",
                   "node"
                 ],
-                "description": "cloud = eseguito da Botcave, node = dal nodo locale"
+                "description": "cloud = eseguito da Botcave con aiModelId; node = dal nodo locale con Claude Code, aiModelId null. Il capo è sempre cloud"
               },
               "aiModelId": {
                 "type": [
                   "integer",
                   "null"
                 ],
-                "description": "Modello del ruolo (obbligatorio per cloud, null per node)"
+                "description": "Modello del ruolo: obbligatorio per cloud (id di un modello cloud dei tuoi account), sempre null per node (anche se vuoi lo stesso modello degli altri ruoli)"
               },
               "code": {
                 "type": "string",
                 "enum": [
                   "none",
                   "read",
-                  "write"
+                  "write",
+                  "merge"
                 ],
-                "description": "Accesso al codice dell'App di riferimento: none (default), read, write = branch, commit e PR in bozza. I ruoli node usano solo none o write. Non va mai in localSkills."
+                "description": "Accesso al codice dell'App di riferimento: none (default), read, write = branch, commit e PR in bozza, merge = write più unione delle PR della squadra con la CI verde. I ruoli node usano solo none o write; per il capo contano solo none o merge. Non va mai in localSkills."
               },
               "tools": {
                 "type": "array",
@@ -2646,7 +2649,7 @@
   },
   {
     "name": "update_team_instance",
-    "description": "Salva una squadra: ruoli e skill specializzate si sostituiscono insieme. Non attiva la squadra.",
+    "description": "Salva una squadra: ruoli e skill specializzate si sostituiscono insieme. Non attiva la squadra. Regole: un solo capo, sempre runsOn cloud con un modello cloud; ogni ruolo node ha aiModelId null; i ruoli cloud hanno un modello.",
     "kind": "http",
     "identity": "service",
     "level": "L2",
@@ -2703,7 +2706,7 @@
               },
               "isLead": {
                 "type": "boolean",
-                "description": "true per il capo: una squadra ha esattamente un capo"
+                "description": "true per il capo: una squadra ha esattamente un capo, e il capo ha sempre runsOn cloud (i suoi turni girano in Botcave, mai sul nodo)"
               },
               "runsOn": {
                 "type": "string",
@@ -2711,23 +2714,24 @@
                   "cloud",
                   "node"
                 ],
-                "description": "cloud = eseguito da Botcave, node = dal nodo locale"
+                "description": "cloud = eseguito da Botcave con aiModelId; node = dal nodo locale con Claude Code, aiModelId null. Il capo è sempre cloud"
               },
               "aiModelId": {
                 "type": [
                   "integer",
                   "null"
                 ],
-                "description": "Modello del ruolo (obbligatorio per cloud, null per node)"
+                "description": "Modello del ruolo: obbligatorio per cloud (id di un modello cloud dei tuoi account), sempre null per node (anche se vuoi lo stesso modello degli altri ruoli)"
               },
               "code": {
                 "type": "string",
                 "enum": [
                   "none",
                   "read",
-                  "write"
+                  "write",
+                  "merge"
                 ],
-                "description": "Accesso al codice dell'App di riferimento: none (default), read, write = branch, commit e PR in bozza. I ruoli node usano solo none o write. Non va mai in localSkills."
+                "description": "Accesso al codice dell'App di riferimento: none (default), read, write = branch, commit e PR in bozza, merge = write più unione delle PR della squadra con la CI verde. I ruoli node usano solo none o write; per il capo contano solo none o merge. Non va mai in localSkills."
               },
               "tools": {
                 "type": "array",

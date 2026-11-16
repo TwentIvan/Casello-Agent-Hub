@@ -40,6 +40,7 @@ interface RolesEditorProps {
 
 export const CODE_DISABLED_HINT = "Collega il repository dell'app tramite l'App GitHub per dare il codice ai ruoli";
 export const CODE_LEAD_HINT = "Il capo non esegue compiti: per lui conta solo «Scrittura e merge», che gli fa unire le PR della squadra";
+export const LEAD_RUNS_ON_HINT = "Il capo gira sempre in cloud: i suoi turni li esegue Botcave";
 export const CODE_MERGE_HINT = "Unisce le PR della squadra con la CI verde; quelle con uno script -post passano da «Da confermare»";
 
 
@@ -174,12 +175,13 @@ function RoleCard({
               </SelectTrigger>
               <SelectContent>
                 {(Object.keys(RUNS_ON_LABELS) as TeamRoleRunsOn[]).map((k) => (
-                  <SelectItem key={k} value={k}>
+                  <SelectItem key={k} value={k} disabled={role.isLead && k === "node"}>
                     {RUNS_ON_LABELS[k]}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {role.isLead && <p className="text-xs text-muted-foreground">{LEAD_RUNS_ON_HINT}</p>}
           </div>
           {role.runsOn === "cloud" && (
             <div className="min-w-0 space-y-1.5">
@@ -331,7 +333,9 @@ function RoleCard({
 export function RolesEditor({ roles, onChange, mode, localSkills = [], readOnly = false, teamId, codeEnabled = true }: RolesEditorProps) {
   const update = (uid: string, patch: Partial<RoleDraft>) =>
     onChange(roles.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
-  const makeLead = (uid: string) => onChange(roles.map((r) => ({ ...r, isLead: r.uid === uid })));
+  // Il capo gira sempre in cloud: un ruolo sul nodo scelto come capo passa al cloud (il modello si sceglie nella scheda)
+  const makeLead = (uid: string) =>
+    onChange(roles.map((r) => (r.uid === uid ? { ...r, isLead: true, ...(r.runsOn === "node" ? { runsOn: "cloud" as const } : {}) } : { ...r, isLead: false })));
 
   return (
     <div className="space-y-3">

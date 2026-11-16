@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
 import {
+  aiAccountsTable,
+  aiModelsTable,
   appsTable,
   db,
   skillVersionsTable,
@@ -9,6 +11,7 @@ import {
   usersTable,
   type InstanceRoleData,
 } from "@workspace/db";
+import { encryptSecret } from "../src/lib/secrets";
 import { writePlanVersion, type PlanTask } from "../src/lib/teams/plan";
 
 // Squadre con ruoli `node` per i test del protocollo dei nodi: utente, app di riferimento, skill del catalogo
@@ -41,6 +44,17 @@ export const nodeRole = (over: Partial<InstanceRoleData> = {}): InstanceRoleData
 });
 
 const leadRole = (): InstanceRoleData => ({ ...nodeRole(), key: "capo", name: "Capo", isLead: true, runsOn: "cloud", task: "Coordina." });
+
+/** Capo cloud con un modello dell'utente, per i salvataggi che passano da `validateRoles` (il capo non gira mai sul nodo). */
+export async function cloudLeadRole(userId: number): Promise<InstanceRoleData> {
+  process.env["CASELLO_SECRET_KEY"] ??= "a".repeat(64);
+  const [account] = await db
+    .insert(aiAccountsTable)
+    .values({ userId, name: `Capo ${Date.now()}-${Math.random()}`, provider: "custom", baseUrl: "https://llm.example.com/v1", apiKeyEnc: encryptSecret("sk-test"), status: "ok" })
+    .returning();
+  const [model] = await db.insert(aiModelsTable).values({ accountId: account!.id, modelId: "capo-model", displayName: "capo-model" }).returning();
+  return { ...leadRole(), aiModelId: model!.id };
+}
 
 const planTask = (id: string, roleKey: string): PlanTask => ({
   id,

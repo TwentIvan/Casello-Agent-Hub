@@ -127,9 +127,14 @@ describe("modello e luogo", () => {
     expect(TEAM_MESSAGES.nodeModelNotAllowed).toBe("Claude Code (nodo) non è disponibile qui: scegli un modello cloud");
   });
 
+  it("capo sul nodo → 400 con il messaggio fisso", async () => {
+    await expectError(template([role({ runsOn: "node", aiModelId: null })]), TEAM_MESSAGES.leadOnNode);
+    expect(TEAM_MESSAGES.leadOnNode).toBe("il capo gira in cloud: scegli «cloud» e un modello cloud per il capo");
+  });
+
   it("node con modello", async () => {
-    await expectError(template([role({ runsOn: "node", aiModelId: myModel })]), TEAM_MESSAGES.nodeRoleHasModel);
-    await expect(template([role({ runsOn: "node", aiModelId: null })])).resolves.toBeUndefined();
+    await expectError(template([role({ key: "l", name: "L" }), role({ isLead: false, runsOn: "node", aiModelId: myModel })]), TEAM_MESSAGES.nodeRoleHasModel);
+    await expect(template([role({ key: "l", name: "L" }), role({ isLead: false, runsOn: "node", aiModelId: null })])).resolves.toBeUndefined();
   });
 });
 
@@ -137,7 +142,7 @@ describe("skill", () => {
   it("skill node su ruolo cloud", async () => {
     await skill("sap.nodo", "node");
     await expectError(template([role({ skills: ["sap.nodo"] })]), TEAM_MESSAGES.skillNodeOnly("sap.nodo"));
-    await expect(template([role({ runsOn: "node", aiModelId: null, skills: ["sap.nodo"] })])).resolves.toBeUndefined();
+    await expect(template([role({ key: "l", name: "L" }), role({ isLead: false, runsOn: "node", aiModelId: null, skills: ["sap.nodo"] })])).resolves.toBeUndefined();
   });
 
   it("codice inesistente", async () => {
@@ -164,7 +169,13 @@ describe("skill", () => {
 
   it("istanza: skill specializzate", async () => {
     const run = (localSkills: string[], map: Map<string, SkillKind>, roleOver: Partial<InstanceRole> = {}) =>
-      validateRoles({ roles: [instRole({ localSkills, ...roleOver })], mode: "instance", userId, previous: null, localSkillCodes: map });
+      validateRoles({
+        roles: roleOver.runsOn === "node" ? [instRole({ key: "l", name: "L" }), instRole({ isLead: false, localSkills, ...roleOver })] : [instRole({ localSkills, ...roleOver })],
+        mode: "instance",
+        userId,
+        previous: null,
+        localSkillCodes: map,
+      });
     await expectError(run(["loc"], new Map()), TEAM_MESSAGES.localSkillNotFound("loc"));
     await expect(run(["loc"], new Map([["loc", "casello" as SkillKind]]))).resolves.toBeUndefined();
     await expectError(run(["loc"], new Map([["loc", "node" as SkillKind]])), TEAM_MESSAGES.skillNodeOnly("loc"));
@@ -208,12 +219,12 @@ describe("ruoli con accesso al codice", () => {
   });
 
   it("node con code read → 400 nodeCodeRead", async () => {
-    await expectError(template([role({ runsOn: "node", aiModelId: null, code: "read" })]), TEAM_MESSAGES.nodeCodeRead);
-    await expect(template([role({ runsOn: "node", aiModelId: null, code: "write" })])).resolves.toBeUndefined();
+    await expectError(template([role({ key: "l", name: "L" }), role({ isLead: false, runsOn: "node", aiModelId: null, code: "read" })]), TEAM_MESSAGES.nodeCodeRead);
+    await expect(template([role({ key: "l", name: "L" }), role({ isLead: false, runsOn: "node", aiModelId: null, code: "write" })])).resolves.toBeUndefined();
   });
 
   it("node con code merge → 400 nodeCodeMerge; merge su un ruolo cloud richiede GitHub come write", async () => {
-    await expectError(template([role({ runsOn: "node", aiModelId: null, code: "merge" })]), TEAM_MESSAGES.nodeCodeMerge);
+    await expectError(template([role({ key: "l", name: "L" }), role({ isLead: false, runsOn: "node", aiModelId: null, code: "merge" })]), TEAM_MESSAGES.nodeCodeMerge);
     await expectError(instance([instRole({ code: "merge" })]), TEAM_MESSAGES.codeUnavailable);
     await expect(instance([instRole({ code: "merge" })], github)).resolves.toBeUndefined();
   });

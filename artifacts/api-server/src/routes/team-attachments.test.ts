@@ -2,7 +2,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { pool } from "@workspace/db";
-import { ensureUser, nodeRole, seedNodeTeam } from "../../test/team-node-fixture";
+import { cloudLeadRole, ensureUser, nodeRole, seedNodeTeam } from "../../test/team-node-fixture";
 
 // Allegati delle squadre e spazio di lavoro sulle route (app completa, senza login)
 
@@ -112,7 +112,7 @@ describe("spazio di lavoro", () => {
     return fetch(`${base}/api/team-instances/${instanceId}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Squadra WI", roles: [nodeRole({ key: "capo", name: "Capo", isLead: true })], localSkills: [], ...extra }),
+      body: JSON.stringify({ name: "Squadra WI", roles: [await cloudLeadRole(userId)], localSkills: [], ...extra }),
     });
   };
 

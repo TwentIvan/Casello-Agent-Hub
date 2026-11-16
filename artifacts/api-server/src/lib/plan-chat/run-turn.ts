@@ -43,6 +43,9 @@ import { drainQueued, isTurnOpen } from "../chat-turns/control";
 import { turnTotals } from "../chat-turns/totals";
 import type { ChatKindSpec } from "../chat-turns/spec";
 import { WEB_TOOLS, WebPageReader, isWebTool } from "../web-reader/tool";
+import { ARCHITECTURE_CHAT_TOOL, isArchitectureTool, runArchitectureChatTool } from "../architecture/tool";
+import { BEST_PRACTICE_TOOLS, BestPracticeSearcher, isBestPracticeTool } from "../best-practice/tool";
+import { bestPracticeData, parseToolArgs } from "../best-practice/context";
 
 export const PLAN_MESSAGE_MAX_CHARS = 8_000;
 export const INTERRUPTED_TURN_MESSAGE = "Turno interrotto dal riavvio di Botcave: riscrivi il messaggio.";
@@ -300,6 +303,8 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
         history: await loadHistory(conversationId, assistantMessageId),
         memory: await memoryContextBlock(conv.userId, "lucius"),
         code: codeInfo.ok ? { available: true, repo: codeInfo.repo, branch: codeInfo.branch } : { available: false, reason: codeInfo.reason },
+        // Il valore dell'interruttore si legge all'inizio del turno
+        ...(conv.bestPractice ? { bestPractice: { data: await bestPracticeData(conv.userId, app.id) } } : {}),
       });
 
       const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
@@ -331,6 +336,8 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
       const codeRunner = codeInfo.ok ? new CodeToolRunner(conv.userId, app.id) : null;
       // Un solo lettore di pagine web per turno (sempre offerto)
       const webReader = new WebPageReader(conv.userId);
+      // Una sola ricerca delle best practice per turno (con l'interruttore acceso)
+      const searcher = conv.bestPractice ? new BestPracticeSearcher(conv.userId) : null;
       const outcome = await runChatTurn({
         resolved,
         userId: conv.userId,
@@ -338,10 +345,25 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
         refId: conversationId,
         messageId: assistantMessageId,
         messages,
-        tools: codeRunner ? [...PLAN_TOOLS, ...MEMORY_TOOLS, ...CODE_TOOLS, ...WEB_TOOLS] : [...PLAN_TOOLS, ...MEMORY_TOOLS, ...WEB_TOOLS],
+        tools: [
+          ...PLAN_TOOLS,
+          ...MEMORY_TOOLS,
+          ...(codeRunner ? CODE_TOOLS : []),
+          ...WEB_TOOLS,
+          ARCHITECTURE_CHAT_TOOL,
+          ...(searcher ? BEST_PRACTICE_TOOLS : []),
+        ],
         ...(codeRunner ? { limits: CODE_TURN_LIMITS } : {}),
         runTool: (call) =>
-          codeRunner && isCodeTool(call.name) ? codeRunner.run(call) : isWebTool(call.name) ? webReader.run(call) : runner.run(call),
+          codeRunner && isCodeTool(call.name)
+            ? codeRunner.run(call)
+            : isWebTool(call.name)
+              ? webReader.run(call)
+              : isArchitectureTool(call.name)
+                ? runArchitectureChatTool(app, call.arguments)
+                : searcher && isBestPracticeTool(call.name)
+                  ? searcher.run(parseToolArgs(call.arguments))
+                  : runner.run(call),
         caller: "plan-chat",
         budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, "lucius", aiModelId),
         signal,

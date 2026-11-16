@@ -10,6 +10,7 @@ import {
   characterConversationsTable,
   characterMessagesTable,
   characterProposalsTable,
+  type App,
   type CharacterMessage,
 } from "@workspace/db";
 import { logger } from "../logger";
@@ -30,6 +31,10 @@ import { drainQueued, isTurnOpen } from "../chat-turns/control";
 import { turnTotals } from "../chat-turns/totals";
 import type { ChatKindSpec } from "../chat-turns/spec";
 import { WEB_INSTRUCTIONS, WEB_TOOLS, WebPageReader, isWebTool } from "../web-reader/tool";
+import { ARCHITECTURE_CHAT_TOOL, isArchitectureTool, runArchitectureChatTool } from "../architecture/tool";
+import { BEST_PRACTICE_TOOLS, BestPracticeSearcher, isBestPracticeTool } from "../best-practice/tool";
+import { BEST_PRACTICE_INSTRUCTIONS } from "../best-practice/instructions";
+import { bestPracticeData } from "../best-practice/context";
 import { HANDOFF_TOOL, runHandoff } from "./handoff";
 import { CHARACTER_NAMES, characterInstructions } from "./instructions";
 import { createTurnContext } from "./proposals";
@@ -85,6 +90,8 @@ export interface CharacterContextInput {
   userMessage: string;
   /** Istruzioni in più, in fondo al messaggio `system` (es. lettura del codice) */
   extraInstructions?: string;
+  /** Best practice accese (solo Lucius): sintesi dell'App e fonti curate, in un messaggio di dati; vuoto = nessun messaggio */
+  bestPracticeData?: string;
 }
 
 const stripDelimiters = (text: string) => text.split(DATA_OPEN).join("").split(DATA_CLOSE).join("");
@@ -145,6 +152,7 @@ export function buildCharacterMessages(input: CharacterContextInput): ChatComple
     ...input.subjectData.map((d) =>
       dataMessage("Dati dell'argomento", dataChars === null || d.length <= dataChars ? d : `${sliceChars(d, dataChars)}\n… (troncato)`),
     ),
+    ...(input.bestPracticeData?.trim() ? [dataMessage("Per le best practice: architettura dell'app e fonti curate", input.bestPracticeData)] : []),
     ...(memory ? [dataMessage(`Memoria di ${CHARACTER_NAMES[input.character]} (appunti e conversazioni recenti)`, memory)] : []),
     ...renderHistory(input.history, input.userMessage, historyChars),
     ...(input.page ? [{ role: "user" as const, content: pageLine(input.page) }] : []),
@@ -279,8 +287,18 @@ async function runCharacterTool(
   ctx: TurnContext,
   codeRunner: CodeToolRunner | null,
   webReader: WebPageReader,
+  lucius: { architectureApp: App | null; searcher: BestPracticeSearcher | null } | null,
 ): Promise<string> {
   try {
+    // Architettura e best practice (solo Lucius): testo semplice, avvolto come gli altri lettori
+    if (lucius && isArchitectureTool(call.name)) {
+      const text = await runArchitectureChatTool(lucius.architectureApp, call.arguments);
+      return text.startsWith("Errore: ") ? toolFail(text.slice("Errore: ".length)) : toolOk(text);
+    }
+    if (lucius?.searcher && isBestPracticeTool(call.name)) {
+      const text = await lucius.searcher.run(parseArgs(call.arguments) ?? {});
+      return text.startsWith("Errore: ") ? toolFail(text.slice("Errore: ".length)) : toolOk(text);
+    }
     // Lettura di pagine web: stesso avvolgimento del codice
     if (isWebTool(call.name)) {
       const text = await webReader.run(call);
@@ -373,6 +391,12 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
         const codeRunner = code?.available ? new CodeToolRunner(conv.userId, code.defaultAppId) : null;
         // Un solo lettore di pagine web per turno (sempre offerto)
         const webReader = new WebPageReader(conv.userId);
+        // Lucius: `leggi_architettura` sempre; best practice (ricerca, istruzioni e dati) solo con l'interruttore della conversazione
+        const isLucius = character === "lucius";
+        const bestPractice = isLucius && conv.bestPractice;
+        const architectureApp = isLucius && handler.architectureApp ? await handler.architectureApp(conv.userId, conv.subjectId) : null;
+        const lucius = isLucius ? { architectureApp, searcher: bestPractice ? new BestPracticeSearcher(conv.userId) : null } : null;
+        const extraInstructions = [...(codeRunner ? [CODE_INSTRUCTIONS_GENERAL] : []), ...(bestPractice ? [BEST_PRACTICE_INSTRUCTIONS] : [])].join("\n");
         const messages = buildCharacterMessages({
           character,
           subjectData,
@@ -380,7 +404,8 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
           page,
           history,
           userMessage,
-          ...(codeRunner ? { extraInstructions: CODE_INSTRUCTIONS_GENERAL } : {}),
+          ...(extraInstructions ? { extraInstructions } : {}),
+          ...(bestPractice ? { bestPracticeData: await bestPracticeData(conv.userId, architectureApp?.id ?? null) } : {}),
         });
         const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
         const ctx = createTurnContext({ userId: conv.userId, conversationId, messageId: assistantMessageId, subjectId: conv.subjectId, page });
@@ -391,9 +416,17 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
           refId: conversationId,
           messageId: assistantMessageId,
           messages,
-          tools: [...handler.tools, ...MEMORY_TOOLS, HANDOFF_TOOL, ...(codeRunner ? CODE_TOOLS : []), ...WEB_TOOLS],
+          tools: [
+            ...handler.tools,
+            ...MEMORY_TOOLS,
+            HANDOFF_TOOL,
+            ...(codeRunner ? CODE_TOOLS : []),
+            ...WEB_TOOLS,
+            ...(lucius ? [ARCHITECTURE_CHAT_TOOL] : []),
+            ...(lucius?.searcher ? BEST_PRACTICE_TOOLS : []),
+          ],
           ...(codeRunner ? { limits: CODE_TURN_LIMITS } : {}),
-          runTool: (call) => runCharacterTool(character, handler, call, ctx, codeRunner, webReader),
+          runTool: (call) => runCharacterTool(character, handler, call, ctx, codeRunner, webReader, lucius),
           caller: "character-chat",
           budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, character, aiModelId),
           signal,

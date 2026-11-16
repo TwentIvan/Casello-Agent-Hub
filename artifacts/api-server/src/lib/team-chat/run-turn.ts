@@ -28,6 +28,9 @@ import { drainQueued, isTurnOpen } from "../chat-turns/control";
 import { turnTotals } from "../chat-turns/totals";
 import type { ChatKindSpec } from "../chat-turns/spec";
 import { WEB_TOOLS, WebPageReader, isWebTool } from "../web-reader/tool";
+import { ARCHITECTURE_CHAT_TOOL, isArchitectureTool, runArchitectureChatTool } from "../architecture/tool";
+import { BEST_PRACTICE_TOOLS, BestPracticeSearcher, isBestPracticeTool } from "../best-practice/tool";
+import { bestPracticeData, parseToolArgs } from "../best-practice/context";
 import { InstanceError, INSTANCE_MESSAGES } from "../teams/instances";
 import { buildTeamChatMessages, type HistoryMessage } from "./context";
 import { currentValueHash } from "./decide";
@@ -180,9 +183,13 @@ async function executeTeamChatTurnInner(conversationId: number, assistantMessage
         history,
         userMessage,
         ...(codeRunner ? { codeInstructions: CODE_INSTRUCTIONS_GENERAL } : {}),
+        // Il valore dell'interruttore si legge all'inizio del turno
+        ...(conv.bestPractice ? { bestPractice: { data: await bestPracticeData(conv.userId, refApp?.app.id ?? null) } } : {}),
       });
       const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
       const runner = new TeamChatToolRunner(conv.teamInstanceId, conv.userId, team);
+      // Una sola ricerca delle best practice per turno (con l'interruttore acceso)
+      const searcher = conv.bestPractice ? new BestPracticeSearcher(conv.userId) : null;
       try {
         const outcome = await runChatTurn({
           resolved,
@@ -191,10 +198,24 @@ async function executeTeamChatTurnInner(conversationId: number, assistantMessage
           refId: conversationId,
           messageId: assistantMessageId,
           messages,
-          tools: codeRunner ? [...TEAM_CHAT_TOOLS, ...CODE_TOOLS, ...WEB_TOOLS] : [...TEAM_CHAT_TOOLS, ...WEB_TOOLS],
+          tools: [
+            ...TEAM_CHAT_TOOLS,
+            ...(codeRunner ? CODE_TOOLS : []),
+            ...WEB_TOOLS,
+            ARCHITECTURE_CHAT_TOOL,
+            ...(searcher ? BEST_PRACTICE_TOOLS : []),
+          ],
           ...(codeRunner ? { limits: CODE_TURN_LIMITS } : {}),
           runTool: (call) =>
-            codeRunner && isCodeTool(call.name) ? codeRunner.run(call) : isWebTool(call.name) ? webReader.run(call) : runner.run(call),
+            codeRunner && isCodeTool(call.name)
+              ? codeRunner.run(call)
+              : isWebTool(call.name)
+                ? webReader.run(call)
+                : isArchitectureTool(call.name)
+                  ? runArchitectureChatTool(refApp?.app ?? null, call.arguments)
+                  : searcher && isBestPracticeTool(call.name)
+                    ? searcher.run(parseToolArgs(call.arguments))
+                    : runner.run(call),
           caller: "team-chat",
           budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, "lucius", aiModelId),
           signal,

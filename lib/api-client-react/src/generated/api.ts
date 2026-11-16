@@ -187,6 +187,7 @@ import type {
   TeamChatConversation,
   TeamChatConversationCreate,
   TeamChatConversationDetail,
+  TeamChatConversationUpdate,
   TeamChatMessage,
   TeamChatMessageCreate,
   TeamChatProposal,
@@ -12889,8 +12890,8 @@ export const getUpdatePlanConversationUrl = (id: number,) => {
 }
 
 /**
- * Solo con nessun turno in corso (altrimenti 409).
- * @summary Cambia il modello della conversazione
+ * Il modello solo con nessun turno in corso (altrimenti 409); `bestPractice` vale dal turno successivo. Almeno un campo (altrimenti 400).
+ * @summary Cambia il modello o le best practice della conversazione
  */
 export const updatePlanConversation = async (id: number,
     planConversationUpdate: PlanConversationUpdate, options?: RequestInit): Promise<PlanConversation> => {
@@ -12939,7 +12940,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UpdatePlanConversationMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
 
     /**
- * @summary Cambia il modello della conversazione
+ * @summary Cambia il modello o le best practice della conversazione
  */
 export const useUpdatePlanConversation = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePlanConversation>>, TError,{id: number;data: BodyType<PlanConversationUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -13533,6 +13534,77 @@ export function useGetTeamChatConversation<TData = Awaited<ReturnType<typeof get
 
 
 
+
+export const getUpdateTeamChatConversationUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-chat-conversations/${id}`
+}
+
+/**
+ * @summary Attiva o disattiva le best practice di Lucius
+ */
+export const updateTeamChatConversation = async (id: number,
+    teamChatConversationUpdate: TeamChatConversationUpdate, options?: RequestInit): Promise<TeamChatConversation> => {
+
+  return customFetch<TeamChatConversation>(getUpdateTeamChatConversationUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamChatConversationUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateTeamChatConversationMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamChatConversation>>, TError,{id: number;data: BodyType<TeamChatConversationUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTeamChatConversation>>, TError,{id: number;data: BodyType<TeamChatConversationUpdate>}, TContext> => {
+
+const mutationKey = ['updateTeamChatConversation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTeamChatConversation>>, {id: number;data: BodyType<TeamChatConversationUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateTeamChatConversation(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTeamChatConversationMutationResult = NonNullable<Awaited<ReturnType<typeof updateTeamChatConversation>>>
+    export type UpdateTeamChatConversationMutationBody = BodyType<TeamChatConversationUpdate>
+    export type UpdateTeamChatConversationMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Attiva o disattiva le best practice di Lucius
+ */
+export const useUpdateTeamChatConversation = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamChatConversation>>, TError,{id: number;data: BodyType<TeamChatConversationUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateTeamChatConversation>>,
+        TError,
+        {id: number;data: BodyType<TeamChatConversationUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateTeamChatConversationMutationOptions(options));
+    }
 
 export const getDeleteTeamChatConversationUrl = (id: number,) => {
 

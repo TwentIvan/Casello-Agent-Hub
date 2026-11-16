@@ -18,6 +18,9 @@ import {
   GetTeamChatConversationParams,
   GetTeamChatConversationResponse,
   DeleteTeamChatConversationParams,
+  UpdateTeamChatConversationParams,
+  UpdateTeamChatConversationBody,
+  UpdateTeamChatConversationResponse,
   SendTeamChatMessageParams,
   SendTeamChatMessageBody,
   SendTeamChatMessageResponse,
@@ -33,7 +36,7 @@ import {
 import { currentUserId } from "../lib/auth";
 import { ModelChoiceError, chooseOwnModel } from "../lib/ai/choice";
 import { characterBudgetBlock } from "../lib/budget";
-import { characterModelFor } from "../lib/characters/settings";
+import { characterModelFor, luciusBestPracticeDefault } from "../lib/characters/settings";
 import { buildZip } from "../lib/zip-writer";
 import { TeamChatError, decideTeamChatProposal, toProposalView, type ProposalView } from "../lib/team-chat/decide";
 import { instructionsSkillCode } from "../lib/team-chat/instructions-file";
@@ -143,7 +146,7 @@ export function createTeamChatRouter(): IRouter {
         // Modello di Lucius, con ripiego sul predefinito (solo se ancora di un account dell'utente)
         aiModelId = await characterModelFor(userId, "lucius");
       }
-      const [conv] = await db.insert(teamChatConversationsTable).values({ teamInstanceId: id, userId, aiModelId, title: "" }).returning();
+      const [conv] = await db.insert(teamChatConversationsTable).values({ teamInstanceId: id, userId, aiModelId, title: "", bestPractice: body.bestPractice ?? (await luciusBestPracticeDefault(userId)) }).returning();
       res.status(201).json(toPublicConversation(conv!));
     });
   });
@@ -178,6 +181,22 @@ export function createTeamChatRouter(): IRouter {
         }),
       );
     });
+  });
+
+  router.patch("/team-chat-conversations/:id", async (req, res) => {
+    const { id } = parseRequest(UpdateTeamChatConversationParams, req.params);
+    const { bestPractice } = parseRequest(UpdateTeamChatConversationBody, req.body);
+    // Vale dal turno successivo: nessun vincolo sul turno in corso
+    const [row] = await db
+      .update(teamChatConversationsTable)
+      .set({ bestPractice, updatedAt: new Date() })
+      .where(and(eq(teamChatConversationsTable.id, id), eq(teamChatConversationsTable.userId, currentUserId(req))))
+      .returning();
+    if (!row) {
+      res.status(404).json({ error: CONVERSATION_NOT_FOUND });
+      return;
+    }
+    res.json(UpdateTeamChatConversationResponse.parse(toPublicConversation(row)));
   });
 
   router.delete("/team-chat-conversations/:id", async (req, res) => {

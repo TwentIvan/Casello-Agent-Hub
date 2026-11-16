@@ -198,6 +198,29 @@ describe("conversazioni", () => {
   });
 });
 
+const setBestPracticeDefault = (mode: "always" | "on_request") =>
+  db.update(usersTable).set({ luciusBestPractice: mode }).where(eq(usersTable.id, userId));
+
+describe("interruttore delle best practice (squadra)", () => {
+  afterEach(() => setBestPracticeDefault("on_request"));
+
+  it("default e corpo del POST; PATCH cambia il valore; corpo non valido → 400; altrui → 404", async () => {
+    expect((await createConv()).id).toBeGreaterThan(0);
+    await setBestPracticeDefault("always");
+    const on = await createConv();
+    expect((await api("GET", `/team-chat-conversations/${on.id}`)).json.bestPractice).toBe(true);
+    const off = await createConv({ bestPractice: false });
+    expect((await api("GET", `/team-chat-conversations/${off.id}`)).json.bestPractice).toBe(false);
+    const r = await api("PATCH", `/team-chat-conversations/${off.id}`, { bestPractice: true });
+    expect(r.status, r.text).toBe(200);
+    expect(r.json.bestPractice).toBe(true);
+    expect((await api("PATCH", `/team-chat-conversations/${off.id}`, {})).status).toBe(400);
+    const [stranger] = await db.insert(usersTable).values({ email: "altro-bp@x.it" }).returning();
+    const [conv] = await db.insert(teamChatConversationsTable).values({ teamInstanceId: instanceId, userId: stranger!.id, aiModelId: null, title: "" }).returning();
+    expect((await api("PATCH", `/team-chat-conversations/${conv!.id}`, { bestPractice: true })).status).toBe(404);
+  });
+});
+
 describe("messaggi", () => {
   it("202, turno in background, risposta di Lucius", async () => {
     const { id } = await createConv();

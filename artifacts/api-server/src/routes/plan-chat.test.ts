@@ -590,3 +590,38 @@ describe("Ferma e Accoda nella chat del piano", () => {
     expect((await history(id)).messages).toHaveLength(2);
   });
 });
+
+const setBestPracticeDefault = (mode: "always" | "on_request") =>
+  db.update(usersTable).set({ luciusBestPractice: mode }).where(eq(usersTable.id, userId));
+
+describe("interruttore delle best practice (piano)", () => {
+  afterEach(() => setBestPracticeDefault("on_request"));
+
+  it("default on_request → false; always → true; il corpo del POST vince", async () => {
+    expect((await createConv()).id).toBeGreaterThan(0);
+    const off = await api("POST", `/apps/${appId}/plan-conversations`, { aiModelId: modelId });
+    expect(off.json.bestPractice).toBe(false);
+    await setBestPracticeDefault("always");
+    const on = await api("POST", `/apps/${appId}/plan-conversations`, { aiModelId: modelId });
+    expect(on.json.bestPractice).toBe(true);
+    const forcedOff = await api("POST", `/apps/${appId}/plan-conversations`, { aiModelId: modelId, bestPractice: false });
+    expect(forcedOff.json.bestPractice).toBe(false);
+    await setBestPracticeDefault("on_request");
+    const forcedOn = await api("POST", `/apps/${appId}/plan-conversations`, { aiModelId: modelId, bestPractice: true });
+    expect(forcedOn.json.bestPractice).toBe(true);
+    expect((await api("GET", `/plan-conversations/${on.json.id}`)).json.bestPractice).toBe(true);
+  });
+
+  it("PATCH: cambia solo bestPractice (anche con turno in corso), corpo vuoto → 400, altrui → 404", async () => {
+    const { id } = await createConv();
+    const r = await api("PATCH", `/plan-conversations/${id}`, { bestPractice: true });
+    expect(r.status, r.text).toBe(200);
+    expect(r.json).toMatchObject({ bestPractice: true, aiModelId: modelId });
+    await db.update(planConversationsTable).set({ turnStatus: "running" }).where(eq(planConversationsTable.id, id));
+    expect((await api("PATCH", `/plan-conversations/${id}`, { bestPractice: false })).json.bestPractice).toBe(false);
+    expect((await api("PATCH", `/plan-conversations/${id}`, { aiModelId: modelId })).status).toBe(409);
+    await db.update(planConversationsTable).set({ turnStatus: "idle" }).where(eq(planConversationsTable.id, id));
+    expect((await api("PATCH", `/plan-conversations/${id}`, {})).status).toBe(400);
+    expect((await api("PATCH", `/plan-conversations/${id}`, { aiModelId: modelId, bestPractice: true })).json.bestPractice).toBe(true);
+  });
+});

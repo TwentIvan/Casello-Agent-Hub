@@ -4278,8 +4278,8 @@ paths:
     patch:
       operationId: updatePlanConversation
       tags: [plan-chat]
-      summary: Cambia il modello della conversazione
-      description: Solo con nessun turno in corso (altrimenti 409).
+      summary: Cambia il modello o le best practice della conversazione
+      description: Il modello solo con nessun turno in corso (altrimenti 409); `bestPractice` vale dal turno successivo. Almeno un campo (altrimenti 400).
       parameters:
         - $ref: "#/components/parameters/IdParam"
       requestBody:
@@ -4471,6 +4471,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TeamChatConversationDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateTeamChatConversation
+      tags: [team-chat]
+      summary: Attiva o disattiva le best practice di Lucius
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamChatConversationUpdate"
+      responses:
+        "200":
+          description: Conversazione aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamChatConversation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
     delete:
@@ -7238,8 +7261,11 @@ components:
 
     PlanConversation:
       type: object
-      required: [id, appId, analysisId, aiModelId, title, tokensUsed, costUsd, turnStatus, createdAt, updatedAt]
+      required: [id, appId, analysisId, aiModelId, title, tokensUsed, costUsd, turnStatus, createdAt, updatedAt, bestPractice]
       properties:
+        bestPractice:
+          type: boolean
+          description: Lucius cerca le best practice prima di proporre
         id:
           type: integer
         appId:
@@ -7463,13 +7489,18 @@ components:
         analysisId:
           type: integer
           description: Analisi di riferimento (default l'ultima completata dell'app)
+        bestPractice:
+          type: boolean
+          description: Vince sul default dell'utente (Account → Personaggi); per Alfred è ignorato
 
     PlanConversationUpdate:
       type: object
-      required: [aiModelId]
+      description: Almeno un campo (altrimenti 400)
       properties:
         aiModelId:
           type: integer
+        bestPractice:
+          type: boolean
 
     PlanMessageCreate:
       type: object
@@ -7549,8 +7580,11 @@ components:
 
     TeamChatConversation:
       type: object
-      required: [id, teamInstanceId, aiModelId, title, tokensUsed, costUsd, turnStatus, createdAt, updatedAt]
+      required: [id, teamInstanceId, aiModelId, title, tokensUsed, costUsd, turnStatus, createdAt, updatedAt, bestPractice]
       properties:
+        bestPractice:
+          type: boolean
+          description: Lucius cerca le best practice prima di proporre
         id:
           type: integer
         teamInstanceId:
@@ -7654,6 +7688,16 @@ components:
         aiModelId:
           type: ["integer", "null"]
           description: Modello di un account AI dell'utente; null o assente = modello predefinito
+        bestPractice:
+          type: boolean
+          description: Vince sul default dell'utente (Account → Personaggi); per Alfred è ignorato
+
+    TeamChatConversationUpdate:
+      type: object
+      required: [bestPractice]
+      properties:
+        bestPractice:
+          type: boolean
 
     TeamChatMessageCreate:
       type: object
@@ -7684,8 +7728,11 @@ components:
 
     CharacterConversation:
       type: object
-      required: [id, character, subjectType, subjectId, subjectTitle, aiModelId, title, tokensUsed, costUsd, turnStatus, archivedAt, createdAt, updatedAt]
+      required: [id, character, subjectType, subjectId, subjectTitle, aiModelId, title, tokensUsed, costUsd, turnStatus, archivedAt, createdAt, updatedAt, bestPractice]
       properties:
+        bestPractice:
+          type: boolean
+          description: Lucius cerca le best practice prima di proporre
         id:
           type: integer
         character:
@@ -7999,6 +8046,9 @@ components:
           type: ["string", "null"]
           minLength: 1
           maxLength: 100
+        bestPractice:
+          type: boolean
+          description: Vince sul default dell'utente (Account → Personaggi); per Alfred è ignorato
 
     CharacterConversationUpdate:
       type: object
@@ -8010,6 +8060,9 @@ components:
           type: string
           minLength: 1
           maxLength: 80
+        bestPractice:
+          type: boolean
+          description: Solo per le conversazioni di Lucius (Alfred → 400)
 
     CharacterMessageCreate:
       type: object

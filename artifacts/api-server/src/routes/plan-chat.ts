@@ -40,7 +40,7 @@ import {
 import { currentUserId } from "../lib/auth";
 import { ModelChoiceError, chooseOwnModel } from "../lib/ai/choice";
 import { characterBudgetBlock } from "../lib/budget";
-import { characterModelFor } from "../lib/characters/settings";
+import { characterModelFor, luciusBestPracticeDefault } from "../lib/characters/settings";
 import { effectiveStatus } from "../lib/ai/model-status";
 import { itemTitle, type PlanChapter } from "../lib/plan-chat/context";
 import { ProposalConflictError, ProposalNotFoundError, decideProposal } from "../lib/plan-chat/decide";
@@ -203,7 +203,7 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
 
     const [conv] = await db
       .insert(planConversationsTable)
-      .values({ appId: id, analysisId, userId, aiModelId, title: "" })
+      .values({ appId: id, analysisId, userId, aiModelId, title: "", bestPractice: body.bestPractice ?? (await luciusBestPracticeDefault(userId)) })
       .returning();
     res.status(201).json(toPublicPlanConversation(conv!));
   });
@@ -246,11 +246,29 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
 
   router.patch("/plan-conversations/:id", async (req, res) => {
     const { id } = parseRequest(UpdatePlanConversationParams, req.params);
-    const { aiModelId } = parseRequest(UpdatePlanConversationBody, req.body);
+    const { aiModelId, bestPractice } = parseRequest(UpdatePlanConversationBody, req.body);
     const userId = currentUserId(req);
+    if (aiModelId === undefined && bestPractice === undefined) {
+      res.status(400).json({ error: "indica il modello o le best practice" });
+      return;
+    }
     const conv = await findConversation(id, userId);
     if (!conv) {
       res.status(404).json({ error: CONVERSATION_NOT_FOUND });
+      return;
+    }
+    if (aiModelId === undefined) {
+      // Solo l'interruttore: vale dal turno successivo, nessun vincolo sul turno in corso
+      const [row] = await db
+        .update(planConversationsTable)
+        .set({ bestPractice: bestPractice!, updatedAt: new Date() })
+        .where(and(eq(planConversationsTable.id, id), eq(planConversationsTable.userId, userId)))
+        .returning();
+      if (!row) {
+        res.status(404).json({ error: CONVERSATION_NOT_FOUND });
+        return;
+      }
+      res.json(UpdatePlanConversationResponse.parse(toPublicPlanConversation(row)));
       return;
     }
     if (conv.turnStatus !== "idle") {
@@ -271,7 +289,7 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
     // Condizionato su idle: un turno partito nel frattempo non si perde il modello a metà
     const [updated] = await db
       .update(planConversationsTable)
-      .set({ aiModelId, updatedAt: new Date() })
+      .set({ aiModelId, ...(bestPractice !== undefined ? { bestPractice } : {}), updatedAt: new Date() })
       .where(and(eq(planConversationsTable.id, id), eq(planConversationsTable.turnStatus, "idle")))
       .returning();
     if (!updated) {

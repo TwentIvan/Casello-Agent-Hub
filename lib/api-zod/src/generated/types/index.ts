@@ -324,6 +324,7 @@ export * from './teamBudgetInput';
 export * from './teamChatConversation';
 export * from './teamChatConversationCreate';
 export * from './teamChatConversationDetail';
+export * from './teamChatConversationUpdate';
 export * from './teamChatMessage';
 export * from './teamChatMessageCreate';
 export * from './teamChatMessageRole';

@@ -146,7 +146,7 @@ export function createCharactersRouter(): IRouter {
   router.post("/character-conversations", async (req, res) => {
     const body = parseRequest(CreateCharacterConversationBody, req.body);
     await guarded(res, async () => {
-      const conv = await createConversation(currentUserId(req), body.character, body.subjectType, body.subjectId ?? null);
+      const conv = await createConversation(currentUserId(req), body.character, body.subjectType, body.subjectId ?? null, body.bestPractice);
       res.status(201).json(CreateCharacterConversationResponse.parse(toPublicConversation(conv)));
     });
   });
@@ -165,8 +165,12 @@ export function createCharactersRouter(): IRouter {
     const body = parseRequest(UpdateCharacterConversationBody, req.body);
     const userId = currentUserId(req);
     await guarded(res, async () => {
-      await getConversation(userId, id);
+      const current = await getConversation(userId, id);
       const set: Partial<typeof characterConversationsTable.$inferInsert> = {};
+      if (body.bestPractice !== undefined) {
+        if (current.character !== "lucius") throw new CharacterError(400, CHARACTER_MESSAGES.bestPracticeOnlyLucius);
+        set.bestPractice = body.bestPractice;
+      }
       if (body.aiModelId !== undefined) {
         if (body.aiModelId !== null && !(await ownModel(userId, body.aiModelId, db))) {
           throw new CharacterError(400, CHARACTER_MESSAGES.modelUnavailable);

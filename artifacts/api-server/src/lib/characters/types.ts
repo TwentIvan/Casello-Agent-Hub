@@ -74,6 +74,7 @@ export const RATIONALE_MAX = 1_000;
 
 export const CHARACTER_MESSAGES = {
   modelUnavailable: "modello non disponibile",
+  bestPracticeOnlyLucius: "le best practice valgono solo per Lucius",
   notFound: "conversazione non trovata",
   subjectNotFound: "argomento non trovato",
   subjectGone: "argomento eliminato",

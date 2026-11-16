@@ -6024,6 +6024,7 @@ export const ListPlanConversationsParams = zod.object({
 })
 
 export const ListPlanConversationsResponseItem = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "appId": zod.number(),
   "analysisId": zod.number(),
@@ -6048,10 +6049,12 @@ export const CreatePlanConversationParams = zod.object({
 
 export const CreatePlanConversationBody = zod.object({
   "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente; null o assente = modello di Lucius (o predefinito)'),
-  "analysisId": zod.number().optional().describe('Analisi di riferimento (default l\'ultima completata dell\'app)')
+  "analysisId": zod.number().optional().describe('Analisi di riferimento (default l\'ultima completata dell\'app)'),
+  "bestPractice": zod.boolean().optional().describe('Vince sul default dell\'utente (Account → Personaggi); per Alfred è ignorato')
 })
 
 export const CreatePlanConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "appId": zod.number(),
   "analysisId": zod.number(),
@@ -6073,6 +6076,7 @@ export const GetPlanConversationParams = zod.object({
 })
 
 export const GetPlanConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "appId": zod.number(),
   "analysisId": zod.number(),
@@ -6123,18 +6127,20 @@ export const GetPlanConversationResponse = zod.object({
 
 
 /**
- * Solo con nessun turno in corso (altrimenti 409).
- * @summary Cambia il modello della conversazione
+ * Il modello solo con nessun turno in corso (altrimenti 409); `bestPractice` vale dal turno successivo. Almeno un campo (altrimenti 400).
+ * @summary Cambia il modello o le best practice della conversazione
  */
 export const UpdatePlanConversationParams = zod.object({
   "id": zod.coerce.number()
 })
 
 export const UpdatePlanConversationBody = zod.object({
-  "aiModelId": zod.number()
-})
+  "aiModelId": zod.number().optional(),
+  "bestPractice": zod.boolean().optional()
+}).describe('Almeno un campo (altrimenti 400)')
 
 export const UpdatePlanConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "appId": zod.number(),
   "analysisId": zod.number(),
@@ -6272,6 +6278,7 @@ export const ListTeamChatConversationsParams = zod.object({
 })
 
 export const ListTeamChatConversationsResponseItem = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "teamInstanceId": zod.number(),
   "aiModelId": zod.number().nullable(),
@@ -6294,10 +6301,12 @@ export const CreateTeamChatConversationParams = zod.object({
 })
 
 export const CreateTeamChatConversationBody = zod.object({
-  "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente; null o assente = modello predefinito')
+  "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente; null o assente = modello predefinito'),
+  "bestPractice": zod.boolean().optional().describe('Vince sul default dell\'utente (Account → Personaggi); per Alfred è ignorato')
 })
 
 export const CreateTeamChatConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "teamInstanceId": zod.number(),
   "aiModelId": zod.number().nullable(),
@@ -6318,6 +6327,7 @@ export const GetTeamChatConversationParams = zod.object({
 })
 
 export const GetTeamChatConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "teamInstanceId": zod.number(),
   "aiModelId": zod.number().nullable(),
@@ -6361,6 +6371,31 @@ export const GetTeamChatConversationResponse = zod.object({
   "createdAt": zod.coerce.date()
 }),zod.null()]).describe('Messaggio in coda che parte alla fine del turno in corso, altrimenti null')
 }))
+
+
+/**
+ * @summary Attiva o disattiva le best practice di Lucius
+ */
+export const UpdateTeamChatConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateTeamChatConversationBody = zod.object({
+  "bestPractice": zod.boolean()
+})
+
+export const UpdateTeamChatConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
+  "id": zod.number(),
+  "teamInstanceId": zod.number(),
+  "aiModelId": zod.number().nullable(),
+  "title": zod.string(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)'),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
 
 
 /**
@@ -6498,6 +6533,7 @@ export const getAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleRegExp
 
 
 export const GetAlfredThreadResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "character": zod.enum(['alfred', 'lucius']),
   "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
@@ -6581,6 +6617,7 @@ export const restartAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleRe
 
 
 export const RestartAlfredThreadResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "character": zod.enum(['alfred', 'lucius']),
   "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
@@ -6654,6 +6691,7 @@ export const ListCharacterConversationsQueryParams = zod.object({
 })
 
 export const ListCharacterConversationsResponseItem = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "character": zod.enum(['alfred', 'lucius']),
   "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
@@ -6683,10 +6721,12 @@ export const createCharacterConversationBodySubjectIdMax = 100;
 export const CreateCharacterConversationBody = zod.object({
   "character": zod.enum(['alfred', 'lucius']),
   "subjectType": zod.enum(['agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
-  "subjectId": zod.string().min(1).max(createCharacterConversationBodySubjectIdMax).nullish()
+  "subjectId": zod.string().min(1).max(createCharacterConversationBodySubjectIdMax).nullish(),
+  "bestPractice": zod.boolean().optional().describe('Vince sul default dell\'utente (Account → Personaggi); per Alfred è ignorato')
 })
 
 export const CreateCharacterConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "character": zod.enum(['alfred', 'lucius']),
   "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
@@ -6733,6 +6773,7 @@ export const getCharacterConversationResponseTwoMessagesItemPageContextOneHostTi
 
 
 export const GetCharacterConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "character": zod.enum(['alfred', 'lucius']),
   "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
@@ -6804,10 +6845,12 @@ export const updateCharacterConversationBodyTitleMax = 80;
 
 export const UpdateCharacterConversationBody = zod.object({
   "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente'),
-  "title": zod.string().min(1).max(updateCharacterConversationBodyTitleMax).optional()
+  "title": zod.string().min(1).max(updateCharacterConversationBodyTitleMax).optional(),
+  "bestPractice": zod.boolean().optional().describe('Solo per le conversazioni di Lucius (Alfred → 400)')
 })
 
 export const UpdateCharacterConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "character": zod.enum(['alfred', 'lucius']),
   "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),

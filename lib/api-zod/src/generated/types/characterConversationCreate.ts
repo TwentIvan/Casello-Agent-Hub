@@ -17,4 +17,6 @@ export interface CharacterConversationCreate {
      * @nullable
      */
   subjectId?: string | null;
+  /** Vince sul default dell'utente (Account → Personaggi); per Alfred è ignorato */
+  bestPractice?: boolean;
 }

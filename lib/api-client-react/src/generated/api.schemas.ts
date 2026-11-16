@@ -1595,6 +1595,8 @@ export const PlanTurnStatus = {
 } as const;
 
 export interface PlanConversation {
+  /** Lucius cerca le best practice prima di proporre */
+  bestPractice: boolean;
   id: number;
   appId: number;
   analysisId: number;
@@ -1787,10 +1789,16 @@ export interface PlanConversationCreate {
   aiModelId?: number | null;
   /** Analisi di riferimento (default l'ultima completata dell'app) */
   analysisId?: number;
+  /** Vince sul default dell'utente (Account → Personaggi); per Alfred è ignorato */
+  bestPractice?: boolean;
 }
 
+/**
+ * Almeno un campo (altrimenti 400)
+ */
 export interface PlanConversationUpdate {
-  aiModelId: number;
+  aiModelId?: number;
+  bestPractice?: boolean;
 }
 
 export interface PlanMessageCreate {
@@ -1849,6 +1857,8 @@ export interface PlanIssuesResult {
 }
 
 export interface TeamChatConversation {
+  /** Lucius cerca le best practice prima di proporre */
+  bestPractice: boolean;
   id: number;
   teamInstanceId: number;
   /** @nullable */
@@ -1940,6 +1950,12 @@ export interface TeamChatConversationCreate {
      * @nullable
      */
   aiModelId?: number | null;
+  /** Vince sul default dell'utente (Account → Personaggi); per Alfred è ignorato */
+  bestPractice?: boolean;
+}
+
+export interface TeamChatConversationUpdate {
+  bestPractice: boolean;
 }
 
 export interface TeamChatMessageCreate {
@@ -2001,6 +2017,8 @@ export const MemoryCharacter = {
 } as const;
 
 export interface CharacterConversation {
+  /** Lucius cerca le best practice prima di proporre */
+  bestPractice: boolean;
   id: number;
   character: MemoryCharacter;
   subjectType: CharacterSubjectType;
@@ -2277,6 +2295,8 @@ export interface CharacterConversationCreate {
      * @nullable
      */
   subjectId?: string | null;
+  /** Vince sul default dell'utente (Account → Personaggi); per Alfred è ignorato */
+  bestPractice?: boolean;
 }
 
 export interface CharacterConversationUpdate {
@@ -2290,6 +2310,8 @@ export interface CharacterConversationUpdate {
      * @maxLength 80
      */
   title?: string;
+  /** Solo per le conversazioni di Lucius (Alfred → 400) */
+  bestPractice?: boolean;
 }
 
 export interface CharacterMessageCreate {

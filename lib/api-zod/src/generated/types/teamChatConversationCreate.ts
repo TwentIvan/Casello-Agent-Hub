@@ -12,4 +12,6 @@ export interface TeamChatConversationCreate {
      * @nullable
      */
   aiModelId?: number | null;
+  /** Vince sul default dell'utente (Account → Personaggi); per Alfred è ignorato */
+  bestPractice?: boolean;
 }

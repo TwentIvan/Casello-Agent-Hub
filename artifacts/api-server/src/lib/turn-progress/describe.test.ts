@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeStep } from "./describe";
+import { describeRunStep, describeStep } from "./describe";
 
 describe("describeStep", () => {
   it("leggi_file con e senza righe", () => {
@@ -88,5 +88,13 @@ describe("describeStep leggi_pagina_web", () => {
   it("host lungo tagliato a 80", () => {
     const host = `${"a".repeat(60)}.${"b".repeat(39)}`;
     expect(describeStep("leggi_pagina_web", JSON.stringify({ url: `https://${host}/` }))).toBe(`Legge la pagina ${host.slice(0, 80)}…`);
+  });
+});
+
+describe("leggi_architettura", () => {
+  it("frase con e senza slug, anche nei passi di una run", () => {
+    expect(describeStep("leggi_architettura", '{"app":"fanta"}')).toBe("Legge l'architettura di fanta");
+    expect(describeStep("leggi_architettura", "{}")).toBe("Legge l'architettura dell'app");
+    expect(describeRunStep({ type: "tool", toolName: "leggi_architettura" })).toBe("Legge l'architettura dell'app");
   });
 });

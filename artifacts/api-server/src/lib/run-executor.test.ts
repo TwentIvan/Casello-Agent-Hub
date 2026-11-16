@@ -306,7 +306,7 @@ describe("orchestrazione delle run", () => {
     // Contesto di sistema con app e istruzioni, tool come function calling (non in elenco testuale)
     const first = llmRequests[0];
     expect(first.model).toBe("modello-base");
-    expect(first.tools.map((t: any) => t.function.name)).toEqual(["get_item"]);
+    expect(first.tools.map((t: any) => t.function.name)).toEqual(["get_item", "leggi_architettura"]);
     const system = first.messages[0];
     expect(system.role).toBe("system");
     expect(system.content).toContain("Mister");
@@ -623,7 +623,7 @@ describe("tool composite nelle run", () => {
     await startWithToken(id, "tok-1");
 
     expect((await getRun(id)).status).toBe("succeeded");
-    expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["get_item", "get_linked", "leggi_collegato"]);
+    expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["get_item", "get_linked", "leggi_collegato", "leggi_architettura"]);
     expect(appRequests.map((r) => `${r.method} ${r.url} ${r.auth}`)).toEqual([
       "GET /api/items/7 Bearer tok-1",
       "GET /api/items/42 Bearer tok-1",
@@ -699,7 +699,7 @@ describe("tool ui eseguiti dal client", () => {
     await addUiTool();
     llmReplies = [textReply("Fatto")];
     await startWithToken(id, "t");
-    expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["get_item"]);
+    expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["get_item", "leggi_architettura"]);
   });
 
   it("con clientTools: la run va in awaiting_client con l'azione e riprende con l'esito del client", async () => {
@@ -710,7 +710,7 @@ describe("tool ui eseguiti dal client", () => {
 
     const running = startWithToken(id, "t");
     const waiting = await waitForStatus(id, "awaiting_client");
-    expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["get_item", "apri_pagina"]);
+    expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["get_item", "apri_pagina", "leggi_architettura"]);
     const action = waiting.clientAction!;
     expect(action).toMatchObject({ tool: "apri_pagina", action: "navigate", args: { pagina: "/clienti/7", target: "main" } });
     expect(appRequests).toHaveLength(0);
@@ -790,7 +790,7 @@ describe("tool ui eseguiti dal client", () => {
     llmReplies = [textReply("Fatto")];
     await startWithToken(id, "t");
     // Agente general: conferma delle scritture sempre attiva, il L1 diventerebbe L2
-    expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["get_item", "apri_pagina"]);
+    expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["get_item", "apri_pagina", "leggi_architettura"]);
   });
 
   it("failInterruptedRuns: una run in attesa del client fallisce come una in corso", async () => {
@@ -1284,7 +1284,7 @@ describe("strumento proponi", () => {
     await startRun(id);
 
     expect((await getRun(id)).status).toBe("succeeded");
-    expect(llmRequests[0].tools.map((t: any) => t.function.name).sort()).toEqual(["create_item", "proponi"]);
+    expect(llmRequests[0].tools.map((t: any) => t.function.name).sort()).toEqual(["create_item", "leggi_architettura", "proponi"]);
     expect(JSON.parse(llmRequests[1].messages.at(-1).content)).toEqual({ ok: true, numero: 1 });
     const [row] = await db.select().from(pendingActionsTable);
     expect(row).toMatchObject({ kind: "proposal", toolId: null, runId: id, status: "pending", summary: "Crea due elementi" });
@@ -1326,6 +1326,6 @@ describe("strumento proponi", () => {
     const id = await seedRun(DELETE_ITEM);
     llmReplies = [textReply("Ok.")];
     await startRun(id);
-    expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["delete_item"]);
+    expect(llmRequests[0].tools.map((t: any) => t.function.name)).toEqual(["delete_item", "leggi_architettura"]);
   });
 });

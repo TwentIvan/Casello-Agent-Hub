@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { RunClientAction } from './runClientAction';
 import type { RunStatus } from './runStatus';
 
 export interface Run {
@@ -56,4 +57,8 @@ export interface Run {
      * @nullable
      */
   triggerName?: string | null;
+  /** La run è stata avviata da un client che esegue i tool ui dell'app */
+  clientTools?: boolean;
+  /** Azione ui in attesa del client (solo con status awaiting_client), altrimenti null */
+  clientAction?: RunClientAction | null;
 }

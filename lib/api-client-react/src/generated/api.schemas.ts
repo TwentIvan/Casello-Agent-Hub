@@ -674,7 +674,7 @@ export interface AppToolUpdate {
 }
 
 /**
- * awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all'avvio le run ancora in pausa diventano cancelled.
+ * awaiting_client: la run aspetta l'esito di un'azione ui dal client (`clientAction`, vedi POST /runs/{id}/client-result). All'avvio del server le run in attesa diventano failed; quelle rimaste nella vecchia pausa per conferma (senza azione) diventano cancelled.
  */
 export type RunStatus = typeof RunStatus[keyof typeof RunStatus];
 
@@ -687,6 +687,39 @@ export const RunStatus = {
   awaiting_client: 'awaiting_client',
   cancelled: 'cancelled',
 } as const;
+
+/**
+ * Argomenti del modello più quelli fissi della definizione (che vincono)
+ */
+export type RunClientActionArgs = { [key: string]: unknown };
+
+export interface RunClientAction {
+  /** Id dell'azione, da rimandare in POST /runs/{id}/client-result */
+  id: string;
+  /** Nome del tool ui chiamato dal modello */
+  tool: string;
+  /** Azione della definizione del tool (es. navigate) */
+  action: string;
+  /** Argomenti del modello più quelli fissi della definizione (che vincono) */
+  args: RunClientActionArgs;
+  requestedAt: string;
+}
+
+export interface RunClientResult {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  actionId: string;
+  /** true se il client ha eseguito l'azione, false se non ha potuto (result = motivo) */
+  ok: boolean;
+  /**
+     * Esito in testo per il modello (al più 20 000 caratteri)
+     * @maxLength 20000
+     * @nullable
+     */
+  result?: string | null;
+}
 
 export interface Run {
   id: number;
@@ -737,6 +770,10 @@ export interface Run {
      * @nullable
      */
   triggerName?: string | null;
+  /** La run è stata avviata da un client che esegue i tool ui dell'app */
+  clientTools?: boolean;
+  /** Azione ui in attesa del client (solo con status awaiting_client), altrimenti null */
+  clientAction?: RunClientAction | null;
 }
 
 /**
@@ -773,6 +810,8 @@ export interface RunStep {
 export interface RunTrigger {
   /** Input testuale da passare all'agente */
   input?: string;
+  /** Il chiamante esegue i tool ui dell'app (default false): la run li offre al modello (salvo quelli che andrebbero in «Da confermare») e, quando ne chiama uno, aspetta l'esito con awaiting_client (vedi POST /runs/{id}/client-result) */
+  clientTools?: boolean;
 }
 
 export type TriggerKind = typeof TriggerKind[keyof typeof TriggerKind];

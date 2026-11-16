@@ -148,6 +148,33 @@ describe("ambito runs e limite delle run per token", () => {
     expect((await api("GET", `/runs/${post.json.id}/steps`, { token })).status).toBe(200);
   });
 
+  it("solo runs: protocollo dei tool ui (clientTools, clientAction, POST /runs/:id/client-result)", async () => {
+    const token = await tokenWith(["runs"]);
+    const agentId = await runnableAgent();
+    const post = await api("POST", `/agents/${agentId}/runs`, { token, body: { input: "ciao", clientTools: true } });
+    expect(post.status, post.text).toBe(202);
+    expect(post.json).toMatchObject({ clientTools: true, clientAction: null });
+    const id = post.json.id;
+    // Nessuna azione in attesa
+    const early = await api("POST", `/runs/${id}/client-result`, { token, body: { actionId: "a1", ok: true } });
+    expect(early.status).toBe(409);
+    expect(early.json).toEqual({ error: "nessuna azione del client in attesa con questo id" });
+
+    const action = { id: "a1", tool: "apri_pagina", action: "navigate", args: { pagina: "/x" }, requestedAt: "2026-11-15T10:00:00.000Z" };
+    await pool.query("update runs set status = 'awaiting_client', client_action = $2 where id = $1", [id, JSON.stringify(action)]);
+    const get = await api("GET", `/runs/${id}`, { token });
+    expect(get.json).toMatchObject({ status: "awaiting_client", clientAction: action });
+
+    const bad = await api("POST", `/runs/${id}/client-result`, { token, body: { actionId: "a1", ok: true, result: "x".repeat(20_001) } });
+    expect(bad.status).toBe(400);
+    const ok = await api("POST", `/runs/${id}/client-result`, { token, body: { actionId: "a1", ok: true, result: "aperta" } });
+    expect(ok.status, ok.text).toBe(204);
+    // L'esito già mandato non si ripete nell'azione pubblica né si accetta due volte
+    expect((await api("GET", `/runs/${id}`, { token })).json.clientAction).toBeNull();
+    expect((await api("POST", `/runs/${id}/client-result`, { token, body: { actionId: "a1", ok: true } })).status).toBe(409);
+    expect((await api("POST", `/runs/999999/client-result`, { token, body: { actionId: "a1", ok: true } })).status).toBe(404);
+  });
+
   it("solo runs: GET /runs, GET /apps, POST /runs/:id/cancel → 403 scope", async () => {
     const token = await tokenWith(["runs"]);
     for (const [method, path] of [["GET", "/runs"], ["GET", "/apps"], ["POST", "/runs/1/cancel"]] as const) {

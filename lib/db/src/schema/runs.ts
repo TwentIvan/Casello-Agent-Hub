@@ -1,16 +1,27 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, numeric, index, boolean, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, numeric, index, boolean, jsonb, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { agentsTable } from "./agents";
 import { aiModelsTable } from "./ai-models";
 import { agentTriggersTable } from "./agent-triggers";
 
+/** Azione `ui` di una run in attesa del client (`runs.client_action`). */
+export interface ClientActionRow {
+  id: string;
+  tool: string;
+  action: string;
+  args: Record<string, unknown>;
+  requestedAt: string;
+  /** Esito mandato dal client: presente solo dopo la risposta */
+  result?: { ok: boolean; content: string };
+}
+
 export const runStatusEnum = pgEnum("run_status", [
   "pending",
   "running",
   "succeeded",
   "failed",
-  // Solo run storiche: la pausa per conferma non esiste più (all'avvio diventano cancelled)
+  // Run in attesa dell'esito di un'azione `ui` eseguita dal client (client_action)
   "awaiting_client",
   "cancelled",
 ]);
@@ -42,6 +53,10 @@ export const runsTable = pgTable(
     hasUserToken: boolean("has_user_token").notNull().default(false),
     // Innesco che ha avviato la run (sorveglianza o webhook): null se avviata a mano o da un'altra run
     triggerId: integer("trigger_id").references(() => agentTriggersTable.id, { onDelete: "set null" }),
+    // Il client che ha avviato la run esegue i tool `ui` dell'app (lib/client-actions.ts)
+    clientTools: boolean("client_tools").notNull().default(false),
+    // Azione `ui` in attesa del client, con l'esito quando arriva; null fuori dall'attesa
+    clientAction: jsonb("client_action").$type<ClientActionRow>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     finishedAt: timestamp("finished_at"),
   },

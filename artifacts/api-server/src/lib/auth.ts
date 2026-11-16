@@ -207,6 +207,8 @@ export const RUNS_SCOPE_ROUTES: ReadonlyArray<{ method: "GET" | "POST"; path: Re
   { method: "POST", path: /^\/agents\/\d+\/runs$/ },
   { method: "GET", path: /^\/runs\/\d+$/ },
   { method: "GET", path: /^\/runs\/\d+\/steps$/ },
+  // Esito dei tool ui eseguiti dall'app ospite (lib/client-actions.ts)
+  { method: "POST", path: /^\/runs\/\d+\/client-result$/ },
 ];
 
 /**

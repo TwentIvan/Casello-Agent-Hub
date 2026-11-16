@@ -9,4 +9,6 @@
 export interface RunTrigger {
   /** Input testuale da passare all'agente */
   input?: string;
+  /** Il chiamante esegue i tool ui dell'app (default false): la run li offre al modello (salvo quelli che andrebbero in «Da confermare») e, quando ne chiama uno, aspetta l'esito con awaiting_client (vedi POST /runs/{id}/client-result) */
+  clientTools?: boolean;
 }

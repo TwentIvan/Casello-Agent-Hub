@@ -1881,7 +1881,7 @@ paths:
       tags: [runs]
       summary: Annulla un'esecuzione non ancora conclusa
       description: >-
-        Porta a cancelled una run pending o running, interrompe le chiamate
+        Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate
         in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati
         restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
       parameters:
@@ -1897,6 +1897,41 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  /runs/{id}/client-result:
+    post:
+      operationId: submitRunClientResult
+      tags: [runs]
+      summary: Manda l'esito di un'azione ui eseguita dal client
+      description: >-
+        Protocollo dei tool ui per le app integrate: una run avviata con `clientTools: true` può chiamare i tool
+        `ui` dell'app; allora passa a awaiting_client e GET /runs/{id} riporta `clientAction` (id, tool, azione,
+        argomenti). Il client esegue l'azione nella sua interfaccia e manda qui l'esito con lo stesso `actionId`:
+        la run torna running e il modello riceve l'esito come risultato del tool (dati, non istruzioni). Un esito si
+        accetta una volta sola; senza esito entro 120 s il modello riceve «il client non ha mandato l'esito…» e la
+        run prosegue. Valido anche con un token d'ambito `runs`.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunClientResult"
+      responses:
+        "204":
+          description: Esito registrato, la run riprende
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >-
+            La run non aspetta un'azione con questo id (esito già mandato, tempo scaduto, run annullata o conclusa)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   # ─── Inneschi ───────────────────────────────────────────────────────────────
 
@@ -6059,9 +6094,47 @@ components:
     RunStatus:
       type: string
       description: >-
-        awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla
-        coda delle azioni e all'avvio le run ancora in pausa diventano cancelled.
+        awaiting_client: la run aspetta l'esito di un'azione ui dal client (`clientAction`, vedi POST
+        /runs/{id}/client-result). All'avvio del server le run in attesa diventano failed; quelle rimaste nella
+        vecchia pausa per conferma (senza azione) diventano cancelled.
       enum: [pending, running, succeeded, failed, awaiting_client, cancelled]
+
+    RunClientAction:
+      type: object
+      required: [id, tool, action, args, requestedAt]
+      properties:
+        id:
+          type: string
+          description: Id dell'azione, da rimandare in POST /runs/{id}/client-result
+        tool:
+          type: string
+          description: Nome del tool ui chiamato dal modello
+        action:
+          type: string
+          description: Azione della definizione del tool (es. navigate)
+        args:
+          type: object
+          additionalProperties: true
+          description: Argomenti del modello più quelli fissi della definizione (che vincono)
+        requestedAt:
+          type: string
+          format: date-time
+
+    RunClientResult:
+      type: object
+      required: [actionId, ok]
+      properties:
+        actionId:
+          type: string
+          minLength: 1
+          maxLength: 100
+        ok:
+          type: boolean
+          description: true se il client ha eseguito l'azione, false se non ha potuto (result = motivo)
+        result:
+          type: ["string", "null"]
+          maxLength: 20000
+          description: Esito in testo per il modello (al più 20 000 caratteri)
 
     Run:
       type: object
@@ -6115,6 +6188,14 @@ components:
         triggerName:
           type: ["string", "null"]
           description: Nome dell'innesco che ha avviato la run
+        clientTools:
+          type: boolean
+          description: La run è stata avviata da un client che esegue i tool ui dell'app
+        clientAction:
+          description: Azione ui in attesa del client (solo con status awaiting_client), altrimenti null
+          oneOf:
+            - $ref: "#/components/schemas/RunClientAction"
+            - type: "null"
 
     RunStep:
       type: object
@@ -6160,6 +6241,12 @@ components:
         input:
           type: string
           description: Input testuale da passare all'agente
+        clientTools:
+          type: boolean
+          description: >-
+            Il chiamante esegue i tool ui dell'app (default false): la run li offre al modello (salvo quelli che
+            andrebbero in «Da confermare») e, quando ne chiama uno, aspetta l'esito con awaiting_client (vedi POST
+            /runs/{id}/client-result)
 
     # ── Inneschi ───────────────────────────────────────────────────────────────
 

@@ -6,8 +6,8 @@ export const RUN_STATUS_LABELS: Record<RunStatus, string> = {
   running: "In corso",
   succeeded: "Riuscita",
   failed: "Fallita",
-  // Stato storico: le run non si fermano più in attesa (le azioni L2 vanno in coda)
-  awaiting_client: "In attesa (storico)",
+  // In attesa dell'esito di un tool ui dall'app che ha avviato la run
+  awaiting_client: "In attesa del client",
   cancelled: "Annullata",
 };
 
@@ -16,7 +16,7 @@ const LED: Record<RunStatus, LedState> = {
   running: "work",
   succeeded: "ok",
   failed: "ko",
-  awaiting_client: "idle",
+  awaiting_client: "ask",
   cancelled: "idle",
 };
 

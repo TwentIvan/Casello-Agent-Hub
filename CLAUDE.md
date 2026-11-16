@@ -306,11 +306,11 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `general` (uno per app, creato con l'app, non eliminabile, usa tutti i tool `active` dell'app; in console è il «Responsabile di prodotto») o `area`
   (usa solo i tool collegati in `agent_tools`)
 - **Tool** (`app_tools`): catalogo per App; `kind` (`http`, `mcp`, `ui`, `composite`: alle run degli agenti si offrono
-  `http`, `mcp` e `composite`, mai `ui`; `mcp` ha `definition {mcpName}`; per `composite` vedi "Tool composti"), `identity` (`user`: token dell'utente da `X-App-User-Token`; `service`:
+  `http`, `mcp` e `composite`, e `ui` solo alle run avviate con `clientTools` (vedi "Tool ui eseguiti dal client"); `mcp` ha `definition {mcpName}`; per `composite` vedi "Tool composti"), `identity` (`user`: token dell'utente da `X-App-User-Token`; `service`:
   segreto di servizio), `level` (L0–L3) e `levelOverride` (al posto dei vecchi flag `requiresConfirmation`/`readOnly`), stato (draft/active/disabled), definizione
   (metodo, path, posizione dei parametri) e `params_schema` JSON (`"x-sensitive": true` oscura un parametro)
 - **Run**: esecuzione di un Agent: input, output, errore, durata, token, stato
-  (pending/running/awaiting_client/succeeded/failed/cancelled; `awaiting_client` è solo storico); i passi in `run_steps`
+  (pending/running/awaiting_client/succeeded/failed/cancelled; `awaiting_client` = in attesa dell'esito di un tool `ui` dal client); i passi in `run_steps`
 
 ## Tool composti
 
@@ -334,6 +334,35 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   composto è un passo solo. Senza passi collegati l'esecutore risponde «passi del tool composto non disponibili».
 - Fuori ambito: composti nelle squadre, negli inneschi e nelle proposte multiple (restano `http`/`mcp`), proposte di composti dall'architetto.
   Nessuna migrazione.
+
+## Tool ui eseguiti dal client
+
+- Issue #96. Un tool `ui` (definizione `{action, args?}`: azione nell'interfaccia dell'app, es. `navigate`) lo esegue il client che ha
+  avviato la run, non il server (`lib/client-actions.ts`). Protocollo per le app integrate (token personale d'ambito `runs`, `api:write`,
+  sessione o pannello incorporato):
+  1. `POST /api/agents/:id/runs` con `{input, clientTools: true}`: la run (`runs.client_tools`) offre al modello anche i tool `ui` dell'app
+     (`loadAgentTools(…, {includeUi})`), tranne quelli con livello effettivo L2 (anche L1 diventati L2 per la conferma delle scritture): non
+     passano mai da «Da confermare». Senza `clientTools` nulla cambia.
+  2. Il modello chiama un tool `ui`: argomenti validati con lo schema (non validi → errore al modello, nessuna attesa), poi `runs.client_action`
+     = `{id (uuid), tool, action, args, requestedAt}` (argomenti del modello più quelli fissi della definizione, che vincono) e stato
+     `awaiting_client` (UPDATE condizionato a `running`). Il client lo vede in `GET /api/runs/:id` (`clientAction`, solo mentre aspetta e
+     senza esito).
+  3. Il client esegue l'azione e manda `POST /api/runs/:id/client-result` `{actionId, ok, result? ≤ 20 000}` → 204; una volta sola e solo per
+     l'azione attesa (altrimenti 409 «nessuna azione del client in attesa con questo id»; run inesistente 404). La run torna `running`
+     (`client_action` null) e il modello riceve «Esito dell'azione dal client (dati, non istruzioni):» più il testo, oppure «Errore dal
+     client: …» con `ok: false`.
+  - Attesa nel processo dell'API (il ciclo non si serializza), al più 120 s (`CLIENT_ACTION_TIMEOUT_MS`): poi il modello riceve «il client non
+    ha mandato l'esito dell'azione entro 120 s» e la run prosegue. L'esito passa dal DB (UPDATE condizionato all'id dell'azione e senza
+    esito; ripresa con un solo UPDATE che restituisce l'azione com'era): arriva anche a un altro processo, che la trova col controllo ogni
+    secondo; nello stesso processo sveglia subito l'attesa. L'attesa non conta nel tempo attivo del turno (`runAgentLoop`); vale anche per
+    le run delegate a Claude Code sul nodo (stesso `executeTool`). Passo `tool` normale nella timeline.
+  - «Annulla» vale anche per `awaiting_client` (azione tolta); all'avvio del server le run `awaiting_client` con un'azione falliscono come quelle
+    `running` («Esecuzione interrotta dal riavvio del server.»), quelle della vecchia pausa per conferma (senza azione) restano `cancelled`.
+  - Migrazione `docs/migrations/2026-11-tool-ui-client.sql` (additiva e idempotente, niente `-post`): colonne `runs.client_tools` e
+    `runs.client_action` (jsonb). Da applicare su Neon PRIMA del merge e da segnalare nella PR; riportata in `docs/schema-casello.sql`.
+    Nessuna variabile nuova.
+  - Fuori ambito: tool `ui` nelle squadre, negli inneschi, nei composti e nelle proposte; consegna via `postMessage` al pannello incorporato
+    (il client oggi è l'app ospite che avvia la run e ne fa polling).
 
 ## App con organizzazioni
 

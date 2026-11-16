@@ -285,7 +285,7 @@ router.post("/agents/:id/runs", runTriggerRateLimit, async (req, res) => {
   // Il modello si fissa sulla run: la spesa resta di chi pagava alla partenza anche se l'agente cambia modello.
   // La run va in coda: la avvia lo scheduler (run-queue.ts) quando c'è posto, e la UI ne segue lo stato con
   // GET /runs/:id. Tetti e modello si ricontrollano alla partenza.
-  const queued = await createQueuedRun({ agent, input: body.input ?? null, userToken });
+  const queued = await createQueuedRun({ agent, input: body.input ?? null, userToken, clientTools: body.clientTools ?? false });
   if (!queued.ok) {
     res.status(429).json({ error: RUN_QUEUE_MESSAGES.queueFull });
     return;

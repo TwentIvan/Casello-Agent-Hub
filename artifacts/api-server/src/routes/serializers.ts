@@ -14,6 +14,7 @@ import {
   type PlanProposal,
   type Run,
 } from "@workspace/db";
+import { publicClientAction } from "../lib/client-actions";
 import { normalizeStoredToolPayload } from "../lib/architect/schemas";
 
 // Forma pubblica delle risorse: cosa esce dall'API e cosa no.
@@ -40,10 +41,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * `childRunIds` (run nate da una segnalazione al Responsabile) solo nel dettaglio.
  */
 export function toPublicRun(run: Run, opts: { childRunIds?: number[]; triggerName?: string | null } = {}) {
-  const { costUsd, ...rest } = run;
+  const { costUsd, clientAction, ...rest } = run;
   return {
     ...rest,
     costUsd: toNumberOrNull(costUsd),
+    // Azione ui in attesa del client; l'esito già mandato non si ripete
+    clientAction: publicClientAction(run.status, clientAction),
     triggerName: opts.triggerName ?? null,
     ...(opts.childRunIds ? { childRunIds: opts.childRunIds } : {}),
   };

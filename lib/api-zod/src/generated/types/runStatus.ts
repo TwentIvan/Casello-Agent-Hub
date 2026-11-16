@@ -7,7 +7,7 @@
  */
 
 /**
- * awaiting_client resta solo per le run storiche: la pausa per conferma è stata sostituita dalla coda delle azioni e all'avvio le run ancora in pausa diventano cancelled.
+ * awaiting_client: la run aspetta l'esito di un'azione ui dal client (`clientAction`, vedi POST /runs/{id}/client-result). All'avvio del server le run in attesa diventano failed; quelle rimaste nella vecchia pausa per conferma (senza azione) diventano cancelled.
  */
 export type RunStatus = typeof RunStatus[keyof typeof RunStatus];
 

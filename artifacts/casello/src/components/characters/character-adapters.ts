@@ -69,6 +69,7 @@ function mapCharacterDetail(d: CharacterConversationDetail): ConvDetail {
     turnStatus: d.turnStatus,
     queuedMessage: d.queuedMessage ? { id: d.queuedMessage.id, content: d.queuedMessage.content } : null,
     progress: d.progress ?? null,
+    bestPractice: d.bestPractice,
     readOnlyReason: readOnlyReasonOf(d),
     subjectId: d.subjectId,
     messages: d.messages.map((m) => ({ id: m.id, role: m.role, content: m.content, error: m.error })),
@@ -283,6 +284,16 @@ export function useLuciusSubjectAdapter(target: Extract<ChatTarget, { kind: "cha
     stop: common.stop,
     cancelQueued: common.cancelQueued,
     setModel: common.setModel,
+    bestPractice: {
+      get: (conv) => conv.bestPractice,
+      set: async (id, value) => {
+        try {
+          await update.mutateAsync({ id, data: { bestPractice: value } });
+        } finally {
+          common.refresh();
+        }
+      },
+    },
     decide: common.decide,
   };
 }

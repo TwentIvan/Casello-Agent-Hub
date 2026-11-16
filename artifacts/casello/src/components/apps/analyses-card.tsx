@@ -6,8 +6,10 @@ import {
   type Analysis,
   type App,
   getEstimateAnalysisCostQueryKey,
+  getGetCharacterSettingsQueryKey,
   getListAnalysesQueryKey,
   useEstimateAnalysisCost,
+  useGetCharacterSettings,
   useListAnalyses,
   useStartAnalysis,
   useStartZipAnalysis,
@@ -66,6 +68,10 @@ export function AnalysesCard({ app }: { app: App }) {
   const [local, setLocal] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
+  // undefined: vale il default di Lucius (Account → Personaggi)
+  const [bestPracticeChoice, setBestPracticeChoice] = useState<boolean | undefined>(undefined);
+  const characterSettings = useGetCharacterSettings({ query: { queryKey: getGetCharacterSettingsQueryKey() } });
+  const bestPractice = bestPracticeChoice ?? characterSettings.data?.luciusBestPractice === "always";
   const isZip = app.sourceType === "zip";
   const aiModelId = chosenModelId ?? defaultModelId;
 
@@ -141,15 +147,15 @@ export function AnalysesCard({ app }: { app: App }) {
   const start = () => {
     // Agente locale: nessun modello né file (l'agente legge il proprio clone)
     if (local) {
-      startAnalysis.mutate({ id: app.id, data: { executor: "local" } });
+      startAnalysis.mutate({ id: app.id, data: { executor: "local", bestPractice } });
       return;
     }
     if (aiModelId === null || !tokensValid) return;
     if (isZip) {
       if (!file) return;
-      startZip.mutate({ id: app.id, data: file, params: { aiModelId, maxTokens } });
+      startZip.mutate({ id: app.id, data: file, params: { aiModelId, maxTokens, bestPractice: bestPractice ? "true" : "false" } });
     } else {
-      startAnalysis.mutate({ id: app.id, data: { aiModelId, maxTokens } });
+      startAnalysis.mutate({ id: app.id, data: { aiModelId, maxTokens, bestPractice } });
     }
   };
 
@@ -174,6 +180,15 @@ export function AnalysesCard({ app }: { app: App }) {
         {local && (
           <p className="text-sm text-muted-foreground">
             Nessun costo API: l'analisi la esegue un agente sul tuo computer.
+          </p>
+        )}
+        <div className="flex items-center gap-3">
+          <Switch id="analysis-best-practice" checked={bestPractice} onCheckedChange={setBestPracticeChoice} />
+          <Label htmlFor="analysis-best-practice">Verifica le best practice</Label>
+        </div>
+        {bestPractice && (
+          <p className="text-sm text-muted-foreground">
+            Prima del completamento e dell'evoluzione Lucius cerca le best practice per app simili e le cita nelle voci.
           </p>
         )}
         {!local && (

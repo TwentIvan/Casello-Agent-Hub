@@ -1358,3 +1358,10 @@ CREATE INDEX IF NOT EXISTS "lead_messages_conversation_idx" ON "lead_messages" U
 -- Tool ui eseguiti dal client (docs/migrations/2026-11-tool-ui-client.sql)
 ALTER TABLE "runs" ADD COLUMN IF NOT EXISTS "client_tools" boolean DEFAULT false NOT NULL;
 ALTER TABLE "runs" ADD COLUMN IF NOT EXISTS "client_action" jsonb;
+
+CREATE TABLE IF NOT EXISTS "schema_migrations" (
+  "name" text PRIMARY KEY,
+  "sha256" text NOT NULL,
+  "baseline" boolean NOT NULL DEFAULT false,
+  "applied_at" timestamp with time zone NOT NULL DEFAULT now()
+);

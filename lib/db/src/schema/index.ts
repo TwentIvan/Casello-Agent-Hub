@@ -41,3 +41,4 @@ export * from "./characters";
 export * from "./agent-triggers";
 export * from "./team-code-tasks";
 export * from "./lead-chat";
+export * from "./schema-migrations";

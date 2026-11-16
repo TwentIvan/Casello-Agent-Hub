@@ -145,7 +145,11 @@ export function AppArchitectureCard({ app }: { app: App }) {
                 </Button>
               )}
             </div>
-            {showSummary && data.summary && <Markdown>{data.summary}</Markdown>}
+            {showSummary && data.summary && (
+              <div className="min-w-0 overflow-x-auto">
+                <Markdown>{data.summary}</Markdown>
+              </div>
+            )}
           </>
         )}
       </CardContent>
@@ -195,19 +199,19 @@ function VersionsDialog({ appId, onClose }: { appId: number; onClose: () => void
         {list.isError && <p className="text-sm text-danger">{apiErrorMessage(list.error)}</p>}
         {!list.isLoading && versions.length === 0 && <p className="text-sm text-ink-muted">Nessuna versione generata.</p>}
         {versions.length > 0 && (
-          <div className="space-y-3">
+          <div className="min-w-0 space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row">
               {picker("Da", from, setFromId)}
               {picker("A", to, setToId)}
             </div>
             {versions.length < 2 && <p className="text-sm text-ink-muted">Serve almeno un'altra versione per il confronto.</p>}
             {diff && (
-              <div className="rounded-md border border-border bg-surface-1 p-2 font-mono text-xs">
+              <div className="min-w-0 rounded-md border border-border bg-surface-1 p-2 font-mono text-xs">
                 {diff.map((line, index) => (
                   <div
                     key={index}
                     className={
-                      "whitespace-pre-wrap break-words " +
+                      "whitespace-pre-wrap [overflow-wrap:anywhere] " +
                       (line.kind === "added" ? "text-success" : line.kind === "removed" ? "text-danger" : "text-ink-muted")
                     }
                   >

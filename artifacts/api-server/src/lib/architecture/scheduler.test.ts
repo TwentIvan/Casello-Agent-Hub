@@ -322,13 +322,13 @@ describe("checkApp e generateForApp", () => {
 
   it("requestArchitectureRefresh: app inesistente e generazione in corso", async () => {
     expect(await requestArchitectureRefresh(99_999, { bypassOff: true })).toBe(ARCH_MESSAGES.appNotFound);
-    expect(await claimGeneration(app.id)).toBe(true);
+    expect(await claimGeneration(app.id)).toBeInstanceOf(Date);
     expect(await requestArchitectureRefresh(app.id, { bypassOff: true })).toBe("running");
   });
 
   it("due claimGeneration concorrenti: una sola vera (Review Focus)", async () => {
     const out = await Promise.all([claimGeneration(app.id), claimGeneration(app.id), claimGeneration(app.id)]);
-    expect(out.filter(Boolean)).toHaveLength(1);
+    expect(out.filter((d) => d !== null)).toHaveLength(1);
     const r = await archRow();
     expect(r).toMatchObject({ status: "running" });
     expect(r!.startedAt).not.toBeNull();
@@ -376,10 +376,73 @@ describe("checkApp e generateForApp", () => {
     expect(rs[0]).toMatchObject({ summary: null, promptTokens: 100, userId, aiModelId: modelId });
   });
 
-  it("failInterruptedArchitecture chiude le running", async () => {
-    expect(await claimGeneration(app.id)).toBe(true);
-    await failInterruptedArchitecture();
+  it("failInterruptedArchitecture chiude solo le running più vecchie di 10 minuti (Review Focus)", async () => {
+    expect(await claimGeneration(app.id)).toBeInstanceOf(Date);
+    // Recente: può essere del container vecchio ancora acceso durante un deploy
+    expect(await failInterruptedArchitecture()).toBe(0);
+    expect(await archRow()).toMatchObject({ status: "running" });
+    await db.update(appArchitectureTable).set({ startedAt: new Date(Date.now() - 11 * 60_000) }).where(eq(appArchitectureTable.appId, app.id));
+    expect(await failInterruptedArchitecture()).toBe(1);
     expect(await archRow()).toMatchObject({ status: "error", lastError: ARCH_MESSAGES.interrupted });
+  });
+
+  it("il giro chiude le generazioni perse e le riprende", async () => {
+    expect(await claimGeneration(app.id)).toBeInstanceOf(Date);
+    await db.update(appArchitectureTable).set({ startedAt: new Date(Date.now() - 11 * 60_000) }).where(eq(appArchitectureTable.appId, app.id));
+    expect(await runArchitectureRound()).toBe(1);
+    expect(await archRow()).toMatchObject({ status: "idle", sha: SHA, lastError: null });
+  });
+
+  it("riga ripresa da un'altra generazione: le scritture finali non la toccano, resta la spesa (Review Focus)", async () => {
+    fake.delayMs = 400;
+    const gen = generateForApp(app.id);
+    for (let i = 0; i < 100 && fake.requests.filter((r) => r.path.endsWith("/chat/completions")).length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    // Un altro container ha chiuso la riga come persa e l'ha ripresa
+    const other = new Date(Date.now() + 1_000);
+    await db.update(appArchitectureTable).set({ status: "running", startedAt: other, summary: "altra" }).where(eq(appArchitectureTable.appId, app.id));
+    await gen;
+    const r = await archRow();
+    expect(r).toMatchObject({ status: "running", summary: "altra", sha: null, consecutiveErrors: 0 });
+    expect(r!.startedAt!.getTime()).toBe(other.getTime());
+    const rs = await runs();
+    expect(rs).toHaveLength(1);
+    expect(rs[0]).toMatchObject({ summary: null, promptTokens: 1_000 });
+  });
+
+  it("presa in carico con lo SHA già sintetizzato: nessuna generazione ripetuta", async () => {
+    await generateForApp(app.id);
+    expect(chatCalls()).toBe(1);
+    expect(await claimGeneration(app.id)).toBeNull();
+    await generateForApp(app.id);
+    expect(chatCalls()).toBe(1);
+    expect(await runs()).toHaveLength(1);
+  });
+
+  it("«Aggiorna ora» con lo stesso SHA: force_requested torna falso, il prossimo SHA rispetta l'intervallo", async () => {
+    await checkApp(app);
+    expect(await requestArchitectureRefresh(app.id, { bypassOff: false })).toBe("queued");
+    await waitArchitectureIdleForTests();
+    expect(await archRow()).toMatchObject({ forceRequested: false, sha: SHA });
+    gh.commits.set(REPO, SHA2);
+    await checkApp(app);
+    expect(chatCalls()).toBe(1);
+    expect(await archRow()).toMatchObject({ seenSha: SHA2, sha: SHA });
+  });
+
+  it("errori di fila: backoff calcolato nel DB (30 min, poi 1 h)", async () => {
+    gh.commits.delete(REPO);
+    await checkApp(app);
+    let r = await archRow();
+    expect(r!.nextAttemptAt!.getTime() - Date.now()).toBeGreaterThan(29 * 60_000);
+    expect(r!.nextAttemptAt!.getTime() - Date.now()).toBeLessThan(31 * 60_000);
+    await db.update(appArchitectureTable).set({ nextAttemptAt: null }).where(eq(appArchitectureTable.appId, app.id));
+    await checkApp(app);
+    r = await archRow();
+    expect(r!.consecutiveErrors).toBe(2);
+    expect(r!.nextAttemptAt!.getTime() - Date.now()).toBeGreaterThan(59 * 60_000);
+    expect(r!.nextAttemptAt!.getTime() - Date.now()).toBeLessThan(61 * 60_000);
   });
 
   it("oltre 20 versioni: la più vecchia ha summary null", async () => {

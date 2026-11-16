@@ -2,7 +2,7 @@
 // dello SHA del branch base, presa in carico, generazione ed esito. Una sola generazione per App (UPDATE
 // condizionato). La sintesi precedente resta finché una nuova non riesce. Nei log solo id, sha a 7, conteggi ed esito.
 
-import { and, desc, eq, isNotNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { db, appArchitectureRunsTable, appArchitectureTable, appsTable, type Agent, type App, type AppArchitecture } from "@workspace/db";
 import { resolveModel, ModelAccessError } from "../ai/executor";
 import { SourceError } from "../architect/sources";
@@ -109,56 +109,88 @@ async function readRow(appId: number): Promise<AppArchitecture | undefined> {
   return row;
 }
 
-/** Presa in carico: la riga passa a `running` solo se non lo è già. Vero = questa chiamata genera. */
-export async function claimGeneration(appId: number): Promise<boolean> {
+/** Una generazione `running` più vecchia di così è persa (riavvio, container fermato): oltre i 240 s del turno pieno. */
+export const ARCH_STALE_MS = 10 * 60_000;
+
+/** C'è qualcosa da generare: prima sintesi, SHA non ancora letto o SHA letto diverso da quello sintetizzato. */
+const somethingToGenerate = sql`(${appArchitectureTable.sha} is null or ${appArchitectureTable.seenSha} is null or ${appArchitectureTable.seenSha} <> ${appArchitectureTable.sha})`;
+
+/**
+ * Presa in carico: la riga passa a `running` solo se non lo è già e c'è qualcosa da generare (una generazione appena
+ * finita sullo stesso SHA non si ripete). Risponde il `started_at` scritto, che identifica la presa in carico: tutte
+ * le scritture finali sono condizionate a quel valore; null = presa in carico non riuscita.
+ */
+export async function claimGeneration(appId: number): Promise<Date | null> {
   await ensureRow(appId);
+  // Valore JS (millisecondi): si confronta così com'è nelle scritture finali
+  const startedAt = new Date();
   const rows = await db
     .update(appArchitectureTable)
-    .set({ status: "running", startedAt: sql`now()` })
-    .where(and(eq(appArchitectureTable.appId, appId), ne(appArchitectureTable.status, "running")))
+    .set({ status: "running", startedAt })
+    .where(and(eq(appArchitectureTable.appId, appId), ne(appArchitectureTable.status, "running"), somethingToGenerate))
     .returning({ appId: appArchitectureTable.appId });
-  return rows.length === 1;
+  return rows.length === 1 ? startedAt : null;
 }
 
-/** Errore con backoff; con `onlyIfNotRunning` non tocca una generazione in corso (controllo dello SHA). */
-async function markError(appId: number, reason: string, opts: { onlyIfNotRunning?: boolean } = {}): Promise<void> {
-  const where = opts.onlyIfNotRunning
-    ? and(eq(appArchitectureTable.appId, appId), ne(appArchitectureTable.status, "running"))
-    : eq(appArchitectureTable.appId, appId);
-  const [cur] = await db.select({ errors: appArchitectureTable.consecutiveErrors }).from(appArchitectureTable).where(where);
-  if (!cur) return;
+/**
+ * Istante come lo scrive Drizzle in una colonna `timestamp` senza fuso (ISO in UTC senza «Z»): tutte le date del modulo
+ * nascono in JS, così non dipendono dal fuso della sessione del DB.
+ */
+function dbTimestamp(d: Date) {
+  return sql`${d.toISOString().replace("T", " ").replace("Z", "")}::timestamp`;
+}
+
+/** Backoff calcolato nello stesso UPDATE: `min(30 min × 2^errori, 24 h)` sugli errori già registrati. */
+const backoffSql = () => sql`${dbTimestamp(new Date())} + least(interval '30 minutes' * power(2, least(${appArchitectureTable.consecutiveErrors}, 30)), interval '24 hours')`;
+
+const errorSet = (reason: string) => ({
+  status: "error" as const,
+  lastError: reason,
+  consecutiveErrors: sql`${appArchitectureTable.consecutiveErrors} + 1`,
+  nextAttemptAt: backoffSql(),
+});
+
+/** Condizione delle scritture di una generazione: la riga è ancora sua (stesso `started_at`, ancora `running`). */
+const owned = (appId: number, startedAt: Date) =>
+  and(eq(appArchitectureTable.appId, appId), eq(appArchitectureTable.status, "running"), eq(appArchitectureTable.startedAt, startedAt));
+
+/** Errore con backoff del controllo dello SHA: non tocca una generazione in corso. */
+async function markCheckError(appId: number, reason: string): Promise<void> {
   await db
     .update(appArchitectureTable)
-    .set({
-      status: "error",
-      lastError: reason,
-      consecutiveErrors: sql`${appArchitectureTable.consecutiveErrors} + 1`,
-      nextAttemptAt: new Date(Date.now() + backoffMs(cur.errors)),
-    })
-    .where(where);
+    .set(errorSet(reason))
+    .where(and(eq(appArchitectureTable.appId, appId), ne(appArchitectureTable.status, "running")));
+}
+
+/** Errore con backoff di una generazione, solo se la riga è ancora sua. */
+async function markOwnedError(appId: number, startedAt: Date, reason: string): Promise<void> {
+  await db.update(appArchitectureTable).set(errorSet(reason)).where(owned(appId, startedAt));
 }
 
 // --- generazione --------------------------------------------------------------------------------------------------
 
 /**
  * Genera la sintesi dell'App se la presa in carico riesce. Errori con messaggio fisso, `consecutive_errors + 1` e
- * backoff; tetto di spesa = attesa senza errore. La sintesi precedente resta finché una nuova non riesce.
+ * backoff; tetto di spesa = attesa senza errore. La sintesi precedente resta finché una nuova non riesce. Ogni
+ * scrittura finale vale solo se la riga è ancora di questa presa in carico (un altro container può averla ripresa
+ * dopo averla chiusa come persa); la riga di spesa si scrive comunque se il modello è stato chiamato.
  */
 export async function generateForApp(appId: number): Promise<void> {
   const [app] = await db.select().from(appsTable).where(eq(appsTable.id, appId));
   if (!app) return;
-  if (!(await claimGeneration(appId))) return;
+  const startedAt = await claimGeneration(appId);
+  if (!startedAt) return;
   let settled = false;
   try {
     const elig = await architectureEligibility(app);
     if (!elig.ok) {
-      await markError(appId, elig.reason);
+      await markOwnedError(appId, startedAt, elig.reason);
       settled = true;
       logger.info({ appId, outcome: "ineligible" }, "Sintesi dell'architettura non generata");
       return;
     }
     if (!(await userHasInstallation(elig.payerUserId, app.sourceInstallationId!))) {
-      await markError(appId, ARCH_MESSAGES.noAccess);
+      await markOwnedError(appId, startedAt, ARCH_MESSAGES.noAccess);
       settled = true;
       logger.info({ appId, outcome: "no_access" }, "Sintesi dell'architettura non generata");
       return;
@@ -166,7 +198,7 @@ export async function generateForApp(appId: number): Promise<void> {
     const block = await runBudgetBlock({ id: elig.lead.id, aiModelId: elig.aiModelId, monthlyBudgetUsd: elig.lead.monthlyBudgetUsd });
     if (block) {
       // Non è un errore: si riprova al giro dopo
-      await db.update(appArchitectureTable).set({ status: "idle", lastError: ARCH_MESSAGES.budgetWait }).where(eq(appArchitectureTable.appId, appId));
+      await db.update(appArchitectureTable).set({ status: "idle", lastError: ARCH_MESSAGES.budgetWait }).where(owned(appId, startedAt));
       settled = true;
       logger.info({ appId, outcome: "budget" }, "Sintesi dell'architettura in attesa del tetto di spesa");
       return;
@@ -179,7 +211,7 @@ export async function generateForApp(appId: number): Promise<void> {
     } catch (err) {
       const reason = err instanceof ArchitectureError ? err.message : ARCH_MESSAGES.internal;
       if (!(err instanceof ArchitectureError)) logger.error({ appId, errName: err instanceof Error ? err.name : "Error" }, "Raccolta dell'architettura non riuscita");
-      await markError(appId, reason);
+      await markOwnedError(appId, startedAt, reason);
       settled = true;
       return;
     }
@@ -198,8 +230,8 @@ export async function generateForApp(appId: number): Promise<void> {
     };
 
     if (outcome.ok) {
-      await db.transaction(async (tx) => {
-        await tx
+      const stored = await db.transaction(async (tx) => {
+        const updated = await tx
           .update(appArchitectureTable)
           .set({
             sha: materials.sha,
@@ -207,7 +239,7 @@ export async function generateForApp(appId: number): Promise<void> {
             branch: materials.branch,
             repoMap: materials.repoMap,
             summary: outcome.summary,
-            generatedAt: sql`now()`,
+            generatedAt: new Date(),
             aiModelId: elig.aiModelId,
             promptTokens: usage.promptTokens,
             completionTokens: usage.completionTokens,
@@ -218,7 +250,13 @@ export async function generateForApp(appId: number): Promise<void> {
             nextAttemptAt: null,
             forceRequested: false,
           })
-          .where(eq(appArchitectureTable.appId, appId));
+          .where(owned(appId, startedAt))
+          .returning({ appId: appArchitectureTable.appId });
+        if (updated.length === 0) {
+          // Riga ripresa da un'altra generazione: resta solo la spesa
+          await tx.insert(appArchitectureRunsTable).values({ ...runRow, summary: null });
+          return false;
+        }
         await tx.insert(appArchitectureRunsTable).values({ ...runRow, summary: outcome.summary });
         // Oltre le ultime versioni il testo si svuota: la riga resta, così il costo continua a contare
         const kept = tx
@@ -237,30 +275,25 @@ export async function generateForApp(appId: number): Promise<void> {
               sql`${appArchitectureRunsTable.id} not in (${kept})`,
             ),
           );
+        return true;
       });
       settled = true;
       logger.info(
-        { appId, sha7: materials.sha.slice(0, 7), full: materials.full, promptTokens: usage.promptTokens, completionTokens: usage.completionTokens, outcome: "ok" },
+        {
+          appId,
+          sha7: materials.sha.slice(0, 7),
+          full: materials.full,
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          outcome: stored ? "ok" : "superseded",
+        },
         "Sintesi dell'architettura generata",
       );
       return;
     }
 
     await db.transaction(async (tx) => {
-      const [cur] = await tx
-        .select({ errors: appArchitectureTable.consecutiveErrors })
-        .from(appArchitectureTable)
-        .where(eq(appArchitectureTable.appId, appId))
-        .for("update");
-      await tx
-        .update(appArchitectureTable)
-        .set({
-          status: "error",
-          lastError: outcome.error,
-          consecutiveErrors: sql`${appArchitectureTable.consecutiveErrors} + 1`,
-          nextAttemptAt: new Date(Date.now() + backoffMs(cur?.errors ?? 0)),
-        })
-        .where(eq(appArchitectureTable.appId, appId));
+      await tx.update(appArchitectureTable).set(errorSet(outcome.error)).where(owned(appId, startedAt));
       // Il modello è stato chiamato: la riga serve alla spesa anche senza sintesi
       if (outcome.calledModel) await tx.insert(appArchitectureRunsTable).values({ ...runRow, summary: null });
     });
@@ -272,8 +305,8 @@ export async function generateForApp(appId: number): Promise<void> {
   } catch (err) {
     logger.error({ appId, errName: err instanceof Error ? err.name : "Error" }, "Generazione dell'architettura non riuscita");
   } finally {
-    // Mai una riga lasciata `running` da un errore inatteso
-    if (!settled) await markError(appId, ARCH_MESSAGES.internal).catch(() => {});
+    // Mai una riga lasciata `running` da un errore inatteso (solo se è ancora nostra)
+    if (!settled) await markOwnedError(appId, startedAt, ARCH_MESSAGES.internal).catch(() => {});
   }
 }
 
@@ -297,7 +330,7 @@ export async function checkApp(app: App): Promise<void> {
   await ensureRow(app.id);
   const row = await readRow(app.id);
   if (!row) return;
-  const touch = () => db.update(appArchitectureTable).set({ checkedAt: sql`now()` }).where(eq(appArchitectureTable.appId, app.id));
+  const touch = () => db.update(appArchitectureTable).set({ checkedAt: new Date() }).where(eq(appArchitectureTable.appId, app.id));
   if (row.nextAttemptAt && row.nextAttemptAt.getTime() > Date.now()) {
     await touch();
     return;
@@ -314,13 +347,19 @@ export async function checkApp(app: App): Promise<void> {
   } catch (err) {
     const reason = shaReadError(err);
     await touch();
-    await markError(app.id, reason, { onlyIfNotRunning: true });
+    await markCheckError(app.id, reason);
     logger.info({ appId: app.id, outcome: "sha_error" }, "Controllo dello SHA dell'architettura non riuscito");
     return;
   }
   const [updated] = await db
     .update(appArchitectureTable)
-    .set({ checkedAt: sql`now()`, seenSha: sha })
+    .set({
+      checkedAt: new Date(),
+      seenSha: sha,
+      // Niente da generare (SHA già sintetizzato): una richiesta esplicita è soddisfatta e non deve far saltare
+      // l'intervallo al prossimo SHA
+      forceRequested: sql`case when ${appArchitectureTable.sha} = ${sha} then false else ${appArchitectureTable.forceRequested} end`,
+    })
     .where(eq(appArchitectureTable.appId, app.id))
     .returning();
   if (updated && updated.status !== "running" && isDue(updated, app.architectureRefresh, new Date())) {
@@ -362,14 +401,24 @@ export async function requestArchitectureRefresh(appId: number, opts: { bypassOf
   return "queued";
 }
 
-/** All'avvio: le generazioni rimaste `running` diventano `error` («generazione interrotta dal riavvio»). */
-export async function failInterruptedArchitecture(): Promise<void> {
+/**
+ * Generazioni perse: righe `running` con `started_at` più vecchio di `ARCH_STALE_MS` diventano `error`
+ * («generazione interrotta dal riavvio»). All'avvio e a ogni giro; quelle più recenti possono essere di un altro
+ * container ancora acceso durante un deploy e restano sue. Risponde quante.
+ */
+export async function failInterruptedArchitecture(): Promise<number> {
   const rows = await db
     .update(appArchitectureTable)
     .set({ status: "error", lastError: ARCH_MESSAGES.interrupted })
-    .where(eq(appArchitectureTable.status, "running"))
+    .where(
+      and(
+        eq(appArchitectureTable.status, "running"),
+        or(isNull(appArchitectureTable.startedAt), lt(appArchitectureTable.startedAt, new Date(Date.now() - ARCH_STALE_MS))),
+      ),
+    )
     .returning({ appId: appArchitectureTable.appId });
-  if (rows.length > 0) logger.warn({ count: rows.length }, "Sintesi dell'architettura interrotte dal riavvio");
+  if (rows.length > 0) logger.warn({ count: rows.length }, "Sintesi dell'architettura interrotte chiuse");
+  return rows.length;
 }
 
 /** Solo per i test: attende i controlli avviati in background. */

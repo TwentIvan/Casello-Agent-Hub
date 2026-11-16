@@ -5,9 +5,10 @@
 import { and, asc, eq, isNotNull, ne, sql } from "drizzle-orm";
 import { db, agentsTable, appArchitectureTable, appsTable } from "@workspace/db";
 import { logger } from "../logger";
-import { checkApp } from "./service";
+import { checkApp, failInterruptedArchitecture } from "./service";
 
 export {
+  ARCH_STALE_MS,
   ARCH_VERSIONS_KEPT,
   REFRESH_INTERVAL_MS,
   architectureEligibility,
@@ -30,6 +31,8 @@ export const ARCH_PARALLEL = 2;
 
 /** Un giro: App idonee (frequenza ≠ off, GitHub tramite installazione, Responsabile attivo con modello). Risponde quante. */
 export async function runArchitectureRound(): Promise<number> {
+  // Generazioni perse (come `lib/stale-turns.ts` per le chat): un container fermato a metà non blocca l'App
+  await failInterruptedArchitecture();
   const apps = await db
     .select({ app: appsTable })
     .from(appsTable)

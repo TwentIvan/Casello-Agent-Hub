@@ -25,7 +25,13 @@ vi.mock("../architecture/service", async (importOriginal) => {
   return { ...orig, requestArchitectureRefresh: vi.fn(async () => "queued") };
 });
 
+vi.mock("../github/installations", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../github/installations")>();
+  return { ...orig, userHasInstallation: vi.fn(orig.userHasInstallation) };
+});
+
 import { startAnalysis } from "../architect/run-analysis";
+import { userHasInstallation } from "../github/installations";
 import { requestArchitectureRefresh } from "../architecture/service";
 import { ensureProviderRegistry } from "../catalog/provider-registry";
 import { encryptSecret } from "../secrets";
@@ -369,6 +375,59 @@ describe("avanzamento del giro", () => {
       await advanceRound(round.id);
     }
     expect(await cycleRow()).toMatchObject({ status: "paused", pausedReason: EVOLUTION_MESSAGES.tooManyErrors, consecutiveErrors: 5 });
+  });
+});
+
+describe("correzioni: nuovo tentativo, giro senza analisi, pausa condizionata", () => {
+  /** Il tick fa partire il giro dovuto e lo fa fallire con l'analisi `failed`. */
+  async function tickAndFail(): Promise<void> {
+    expect(await runEvolutionTick()).toBe(1);
+    const rounds = await roundRows();
+    const open = rounds.find((r) => r.status === "analyzing")!;
+    await db.update(analysesTable).set({ status: "failed", error: "errore" }).where(eq(analysesTable.id, open.analysisId!));
+    // Il tick dopo chiude il giro; il ciclo non riparte finché l'attesa non è passata
+    expect(await runEvolutionTick()).toBe(0);
+  }
+
+  it("un giro fallito si riprova dal tick dopo l'attesa (30, 60 min…), non dopo la frequenza; al quinto pausa", async () => {
+    await saveCycle(appId, userId, input({ frequency: "weekly" }));
+    const waits = [30, 60, 120, 240];
+    for (let i = 0; i < 4; i++) {
+      const before = Date.now();
+      await tickAndFail();
+      const row = await cycleRow();
+      expect(row).toMatchObject({ status: "active", consecutiveErrors: i + 1 });
+      expect(row.nextRoundAt!.getTime()).toBeLessThanOrEqual(Date.now());
+      const wait = row.nextAttemptAt!.getTime() - before;
+      expect(wait).toBeGreaterThanOrEqual(waits[i]! * 60_000 - 1000);
+      expect(wait).toBeLessThan(waits[i]! * 60_000 + 5_000);
+      // Passata l'attesa (non sette giorni) il tick riparte
+      await db.update(evolutionCyclesTable).set({ nextAttemptAt: new Date(Date.now() - 1000) }).where(eq(evolutionCyclesTable.id, row.id));
+    }
+    await tickAndFail();
+    expect(await cycleRow()).toMatchObject({ status: "paused", pausedReason: EVOLUTION_MESSAGES.tooManyErrors, consecutiveErrors: 5 });
+    expect(await roundRows()).toHaveLength(5);
+  });
+
+  it("il tick chiude un giro rimasto senza analisi", async () => {
+    const cycle = await saveCycle(appId, userId, input());
+    const round = await startRound(cycle.id, { manual: true });
+    await db.update(evolutionRoundsTable).set({ analysisId: null }).where(eq(evolutionRoundsTable.id, round.id));
+    await runEvolutionTick();
+    expect((await roundRows()).find((r) => r.id === round.id)).toMatchObject({ status: "failed", outcome: EVOLUTION_MESSAGES.restartInterrupted });
+    expect((await cycleRow()).consecutiveErrors).toBe(1);
+  });
+
+  it("una pausa da una lettura vecchia non sovrascrive «fermato dall'utente»", async () => {
+    const cycle = await saveCycle(appId, userId, input());
+    // startRound ha già letto il ciclo attivo; l'utente lo ferma prima del controllo dell'installazione, che fallisce
+    vi.mocked(userHasInstallation).mockImplementationOnce(async () => {
+      await stopCycle(appId);
+      return false;
+    });
+    const err = await rejection(startRound(cycle.id, { manual: true }));
+    expect(err.message).toBe(EVOLUTION_MESSAGES.noAccess);
+    expect(await cycleRow()).toMatchObject({ status: "paused", pausedReason: EVOLUTION_MESSAGES.stoppedByUser });
   });
 });
 

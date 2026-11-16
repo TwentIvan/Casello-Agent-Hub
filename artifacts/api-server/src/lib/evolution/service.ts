@@ -259,11 +259,13 @@ export async function saveCycle(appId: number, userId: number, input: CycleInput
 // --- Pausa ed errori ---
 
 async function pauseCycle(cycleId: number, reason: string): Promise<void> {
-  await db
+  const rows = await db
     .update(evolutionCyclesTable)
     .set({ status: "paused", pausedReason: reason, updatedAt: new Date() })
-    .where(eq(evolutionCyclesTable.id, cycleId));
-  logger.warn({ cycleId, reason }, "Ciclo di evoluzione in pausa");
+    // Solo un ciclo ancora attivo: una lettura vecchia non sovrascrive «fermato dall'utente» né rimette in pausa un ciclo appena ripreso
+    .where(and(eq(evolutionCyclesTable.id, cycleId), eq(evolutionCyclesTable.status, "active")))
+    .returning({ id: evolutionCyclesTable.id });
+  if (rows.length > 0) logger.warn({ cycleId, reason }, "Ciclo di evoluzione in pausa");
 }
 
 async function pauseAndThrow(cycleId: number, reason: string): Promise<never> {
@@ -275,7 +277,7 @@ async function pauseAndThrow(cycleId: number, reason: string): Promise<never> {
 async function recordError(cycleId: number, message: string): Promise<void> {
   const errors = await db.transaction(async (tx) => {
     const [cycle] = await tx
-      .select({ errors: evolutionCyclesTable.consecutiveErrors })
+      .select({ errors: evolutionCyclesTable.consecutiveErrors, status: evolutionCyclesTable.status })
       .from(evolutionCyclesTable)
       .where(eq(evolutionCyclesTable.id, cycleId))
       .for("update");
@@ -288,7 +290,9 @@ async function recordError(cycleId: number, message: string): Promise<void> {
         consecutiveErrors: count,
         lastError: message,
         nextAttemptAt: new Date(now.getTime() + backoffMs(cycle.errors)),
-        ...(count >= MAX_CONSECUTIVE_ERRORS ? { status: "paused" as const, pausedReason: EVOLUTION_MESSAGES.tooManyErrors } : {}),
+        // Il nuovo tentativo lo decide l'attesa, non la frequenza: il giro fallito è già dovuto
+        nextRoundAt: now,
+        ...(count >= MAX_CONSECUTIVE_ERRORS && cycle.status === "active" ? { status: "paused" as const, pausedReason: EVOLUTION_MESSAGES.tooManyErrors } : {}),
         updatedAt: now,
       })
       .where(eq(evolutionCyclesTable.id, cycleId));

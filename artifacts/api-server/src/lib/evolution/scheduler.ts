@@ -33,8 +33,14 @@ export async function runEvolutionTick(): Promise<number> {
   const finished = await db
     .select({ id: evolutionRoundsTable.id })
     .from(evolutionRoundsTable)
-    .innerJoin(analysesTable, eq(analysesTable.id, evolutionRoundsTable.analysisId))
-    .where(and(eq(evolutionRoundsTable.status, "analyzing"), sql`${analysesTable.status} not in ('queued', 'running')`))
+    // leftJoin: un giro rimasto senza analisi (riga eliminata) si chiude come interrotto
+    .leftJoin(analysesTable, eq(analysesTable.id, evolutionRoundsTable.analysisId))
+    .where(
+      and(
+        eq(evolutionRoundsTable.status, "analyzing"),
+        sql`(${analysesTable.id} is null or ${analysesTable.status} not in ('queued', 'running'))`,
+      ),
+    )
     .limit(EVOLUTION_CYCLES_PER_TICK);
   for (const r of finished) {
     try {

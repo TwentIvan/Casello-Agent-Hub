@@ -11,6 +11,7 @@ import { ConsolePanelSheet } from "@/components/panel/console-panel-sheet";
 import { isClientError } from "@/lib/api-errors";
 import { isUnauthorized } from "@/lib/auth";
 import Dashboard from "@/pages/dashboard";
+import AppBugDetailPage from "@/pages/app-bug-detail";
 import AppsPage from "@/pages/apps";
 import AppDetailPage from "@/pages/app-detail";
 import AppPlanPage from "@/pages/app-plan";
@@ -65,6 +66,7 @@ function Router() {
           <Switch>
             <Route path="/" component={Dashboard} />
             <Route path="/apps" component={AppsPage} />
+            <Route path="/apps/:id/bugs/:number" component={AppBugDetailPage} />
             <Route path="/apps/:id" component={AppDetailPage} />
             <Route path="/apps/:id/plan" component={AppPlanPage} />
             <Route path="/agents" component={AgentsPage} />

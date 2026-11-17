@@ -9,6 +9,8 @@ import { AgentModelsCard } from "@/components/apps/agent-models-card";
 import { AnalysesCard } from "@/components/apps/analyses-card";
 import { AppSourcesCard } from "@/components/apps/app-sources-card";
 import { BugReportsCard } from "@/components/apps/bug-reports-card";
+import { BotNamesCard } from "@/components/apps/bot-names-card";
+import { PageActionsCard } from "@/components/apps/page-actions-card";
 import { AppArchitectureCard } from "@/components/apps/app-architecture-card";
 import { EvolutionCard } from "@/components/apps/evolution-card";
 import { ToolCatalog } from "@/components/apps/tool-catalog";
@@ -77,6 +79,8 @@ export default function AppDetailPage() {
           <AppArchitectureCard app={app.data} />
           <EvolutionCard app={app.data} />
           <BugReportsCard app={app.data} />
+          <BotNamesCard app={app.data} />
+          <PageActionsCard app={app.data} />
           <AnalysesCard app={app.data} />
         </>
       )}

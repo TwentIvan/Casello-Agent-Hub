@@ -58,6 +58,8 @@ export function BugReportsCard({ app }: { app: App }) {
   });
   const create = useCreateIdentitySecret({
     mutation: {
+      // Il segreto non resta nella MutationCache: gcTime 0 la toglie appena reset() stacca l'osservatore
+      gcTime: 0,
       onSuccess: (res) => {
         setSecret(res.secret);
         setRegenOpen(false);
@@ -153,10 +155,8 @@ export function BugReportsCard({ app }: { app: App }) {
               ) : (
                 <p className="text-ink-muted">Nessuna squadra per i bug: designala nella scheda squadra.</p>
               )}
-              {(!data.bugTeam || data.bugTeam.status !== "active") && (
-                <p className="text-ink-muted">
-                  Senza una squadra attiva per i bug né un modello per il Responsabile, nessuno può approvare: designa una squadra per i bug o un modello per il Responsabile.
-                </p>
+              {!data.approverAvailable && (
+                <p className="text-danger">Nessuno può approvare: designa una squadra per i bug o un modello per il Responsabile.</p>
               )}
             </div>
           </>

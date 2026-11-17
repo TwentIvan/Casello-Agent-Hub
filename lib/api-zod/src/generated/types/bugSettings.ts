@@ -13,5 +13,7 @@ export interface BugSettings {
   identitySecretSet: boolean;
   identitySecretSetAt: Date | null;
   bugTeam: BugSettingsBugTeam;
+  /** Qualcuno può approvare le segnalazioni (proprietario del modello del Responsabile o, senza, chi ha attivato la squadra designata) */
+  approverAvailable: boolean;
   todayCount: number;
 }

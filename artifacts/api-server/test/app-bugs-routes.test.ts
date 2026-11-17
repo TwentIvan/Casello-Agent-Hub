@@ -3,7 +3,18 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { appsTable, bugReportMessagesTable, bugReportsTable, db, pendingActionsTable, pool, usersTable } from "@workspace/db";
+import {
+  agentsTable,
+  aiAccountsTable,
+  aiModelsTable,
+  appsTable,
+  bugReportMessagesTable,
+  bugReportsTable,
+  db,
+  pendingActionsTable,
+  pool,
+  usersTable,
+} from "@workspace/db";
 
 vi.mock("../src/lib/bugs/triage", () => ({ startTriage: vi.fn(async () => {}) }));
 
@@ -102,11 +113,39 @@ describe("impostazioni", () => {
   it("GET e PATCH", async () => {
     const g = await api("GET", `/apps/${appId}/bug-settings`);
     expect(g.status).toBe(200);
-    expect(g.json).toEqual({ enabled: true, dailyLimit: 20, identitySecretSet: false, identitySecretSetAt: null, bugTeam: null, todayCount: 0 });
+    expect(g.json).toEqual({
+      enabled: true,
+      dailyLimit: 20,
+      identitySecretSet: false,
+      identitySecretSetAt: null,
+      bugTeam: null,
+      approverAvailable: false,
+      todayCount: 0,
+    });
     await newBug();
     const p = await api("PATCH", `/apps/${appId}/bug-settings`, { enabled: false, dailyLimit: 5 });
     expect(p.status).toBe(200);
     expect(p.json).toMatchObject({ enabled: false, dailyLimit: 5, todayCount: 1 });
+  });
+
+  it("approverAvailable vero con un modello per il Responsabile, anche senza squadra per i bug", async () => {
+    const [user] = await db.insert(usersTable).values({ email: "approver-bug@example.com", name: "Approva" }).returning();
+    const [account] = await db
+      .insert(aiAccountsTable)
+      .values({ userId: user!.id, name: "Account", provider: "custom", baseUrl: "https://llm.example/v1", apiKeyEnc: encryptSecret("sk-x"), status: "ok" })
+      .returning();
+    const [model] = await db.insert(aiModelsTable).values({ accountId: account!.id, modelId: "m", displayName: "M" }).returning();
+    const [lead] = await db
+      .insert(agentsTable)
+      .values({ appId, name: "Responsabile", role: "general", status: "active", aiModelId: model!.id })
+      .returning();
+    try {
+      const g = await api("GET", `/apps/${appId}/bug-settings`);
+      expect(g.json).toMatchObject({ bugTeam: null, approverAvailable: true });
+    } finally {
+      await db.delete(agentsTable).where(eq(agentsTable.id, lead!.id));
+      await db.delete(usersTable).where(eq(usersTable.id, user!.id));
+    }
   });
 
   it("limite fuori 1..500 → 400, App inesistente → 404", async () => {

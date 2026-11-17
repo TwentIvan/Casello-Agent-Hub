@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import { appsTable, bugReportMessagesTable, bugReportsTable, db, pendingActionsTable, type BugReportRow } from "@workspace/db";
 import { dayStart } from "../budget";
 import { encryptSecret } from "../secrets";
-import { designatedBugTeam } from "./approval";
+import { approverFor, designatedBugTeam } from "./approval";
 import { appIdentitySecret, generateIdentitySecret, verifyIdentityToken } from "./identity";
 import { BUG_LIMITS, BUG_MESSAGES, BUG_STATUS_LABELS, BugError, type BugReportStatus } from "./messages";
 import { cleanBugText, setStatus } from "./reports";
@@ -24,7 +24,7 @@ const appNotFound = () => new BugError(404, APP_NOT_FOUND);
 export async function bugSettings(appId: number) {
   const [app] = await db.select().from(appsTable).where(eq(appsTable.id, appId));
   if (!app) throw appNotFound();
-  const team = await designatedBugTeam(appId);
+  const [team, approver] = await Promise.all([designatedBugTeam(appId), approverFor(appId)]);
   const [{ n }] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(bugReportsTable)
@@ -35,6 +35,8 @@ export async function bugSettings(appId: number) {
     identitySecretSet: app.identitySecretEnc !== null,
     identitySecretSetAt: app.identitySecretSetAt,
     bugTeam: team ? { id: team.id, name: team.name, status: team.status } : null,
+    // Qualcuno riceverebbe la voce in «Da confermare» (stessa regola di ensureApprovalItem)
+    approverAvailable: approver !== null,
     todayCount: n!,
   };
 }

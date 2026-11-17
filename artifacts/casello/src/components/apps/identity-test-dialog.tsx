@@ -17,7 +17,7 @@ const REASONS: Record<string, string> = {
 export function IdentityTestDialog({ appId, open, onOpenChange }: { appId: number; open: boolean; onOpenChange: (open: boolean) => void }) {
   const [token, setToken] = useState("");
   const [result, setResult] = useState<IdentityTestResult | null>(null);
-  const test = useTestIdentity({ mutation: { onSuccess: setResult } });
+  const test = useTestIdentity({ mutation: { gcTime: 0, onSuccess: setResult } });
 
   function close(next: boolean) {
     if (!next) {

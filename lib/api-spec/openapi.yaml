@@ -6151,7 +6151,7 @@ components:
           type: integer
     BugSettings:
       type: object
-      required: [enabled, dailyLimit, identitySecretSet, identitySecretSetAt, bugTeam, todayCount]
+      required: [enabled, dailyLimit, identitySecretSet, identitySecretSetAt, bugTeam, approverAvailable, todayCount]
       properties:
         enabled:
           type: boolean
@@ -6174,6 +6174,9 @@ components:
               type: string
             status:
               type: string
+        approverAvailable:
+          type: boolean
+          description: Qualcuno può approvare le segnalazioni (proprietario del modello del Responsabile o, senza, chi ha attivato la squadra designata)
         todayCount:
           type: integer
     BugSettingsUpdate:

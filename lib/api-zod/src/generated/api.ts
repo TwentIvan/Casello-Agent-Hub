@@ -1993,6 +1993,7 @@ export const GetBugSettingsResponse = zod.object({
   "name": zod.string(),
   "status": zod.string()
 }).nullable(),
+  "approverAvailable": zod.boolean().describe('Qualcuno può approvare le segnalazioni (proprietario del modello del Responsabile o, senza, chi ha attivato la squadra designata)'),
   "todayCount": zod.number()
 })
 
@@ -2023,6 +2024,7 @@ export const UpdateBugSettingsResponse = zod.object({
   "name": zod.string(),
   "status": zod.string()
 }).nullable(),
+  "approverAvailable": zod.boolean().describe('Qualcuno può approvare le segnalazioni (proprietario del modello del Responsabile o, senza, chi ha attivato la squadra designata)'),
   "todayCount": zod.number()
 })
 

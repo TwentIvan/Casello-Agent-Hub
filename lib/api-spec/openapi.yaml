@@ -84,6 +84,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: app
+          in: query
+          required: false
+          description: Slug dell'App ospite, per sapere se le segnalazioni dei bug sono attive.
+          schema:
+            type: string
       responses:
         "200":
           description: Configurazione
@@ -91,6 +97,171 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EmbedConfig"
+
+  # ─── Segnalazioni dei bug dal plugin (pubbliche) ────────────────────────────
+  /embed/bugs:
+    get:
+      operationId: listEmbedBugs
+      tags: [embed]
+      summary: Le segnalazioni del visitatore in un'App (pubblica)
+      description: >-
+        Al più 50, le più recenti prima. Origine non ammessa o diversa da quella dell'App, App inesistente o con le
+        segnalazioni spente: sempre 404 «segnalazioni non disponibili». 60 richieste al minuto per IP.
+      parameters:
+        - $ref: "#/components/parameters/EmbedBugApp"
+        - $ref: "#/components/parameters/EmbedBugOrigin"
+        - $ref: "#/components/parameters/EmbedBrowserKey"
+        - $ref: "#/components/parameters/EmbedIdentity"
+      responses:
+        "200":
+          description: Segnalazioni del richiedente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmbedBugSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    post:
+      operationId: createEmbedBug
+      tags: [embed]
+      summary: Registra una segnalazione (pubblica)
+      description: >-
+        Limiti: segnalazioni per App al giorno, 5 al giorno per richiedente, 10 all'ora per IP. Corpo al più 32 KB.
+      parameters:
+        - $ref: "#/components/parameters/EmbedBugApp"
+        - $ref: "#/components/parameters/EmbedBugOrigin"
+        - $ref: "#/components/parameters/EmbedBrowserKey"
+        - $ref: "#/components/parameters/EmbedIdentity"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmbedBugCreate"
+      responses:
+        "201":
+          description: Segnalazione registrata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedBugCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          description: Corpo troppo grande
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /embed/bugs/seen:
+    post:
+      operationId: markEmbedBugsSeen
+      tags: [embed]
+      summary: Segna come lette le segnalazioni del visitatore (pubblica)
+      parameters:
+        - $ref: "#/components/parameters/EmbedBugApp"
+        - $ref: "#/components/parameters/EmbedBugOrigin"
+        - $ref: "#/components/parameters/EmbedBrowserKey"
+        - $ref: "#/components/parameters/EmbedIdentity"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmbedBugSeen"
+      responses:
+        "200":
+          description: Quante ne ha toccate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedBugSeenResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /embed/bugs/{id}:
+    get:
+      operationId: getEmbedBug
+      tags: [embed]
+      summary: Dettaglio di una segnalazione del visitatore (pubblica)
+      parameters:
+        - $ref: "#/components/parameters/EmbedBugId"
+        - $ref: "#/components/parameters/EmbedBugApp"
+        - $ref: "#/components/parameters/EmbedBugOrigin"
+        - $ref: "#/components/parameters/EmbedBrowserKey"
+        - $ref: "#/components/parameters/EmbedIdentity"
+      responses:
+        "200":
+          description: Segnalazione con i messaggi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedBugDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /embed/bugs/{id}/messages:
+    post:
+      operationId: addEmbedBugMessage
+      tags: [embed]
+      summary: Risposta del visitatore alla domanda del Responsabile (pubblica)
+      description: Solo con la segnalazione in «Serve una tua risposta»; la rimette in esame. 20 messaggi all'ora per segnalazione.
+      parameters:
+        - $ref: "#/components/parameters/EmbedBugId"
+        - $ref: "#/components/parameters/EmbedBugApp"
+        - $ref: "#/components/parameters/EmbedBugOrigin"
+        - $ref: "#/components/parameters/EmbedBrowserKey"
+        - $ref: "#/components/parameters/EmbedIdentity"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmbedBugMessage"
+      responses:
+        "200":
+          description: Segnalazione aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedBugDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
   /node-pairing/start:
     post:
@@ -1560,6 +1731,210 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Segnalazioni dei bug: amministratore ───────────────────────────────────
+  /apps/{id}/bug-settings:
+    get:
+      operationId: getBugSettings
+      tags: [apps]
+      summary: Impostazioni delle segnalazioni dei bug dell'App
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Impostazioni
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BugSettings"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateBugSettings
+      tags: [apps]
+      summary: Accende o spegne le segnalazioni e cambia il limite giornaliero
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BugSettingsUpdate"
+      responses:
+        "200":
+          description: Impostazioni aggiornate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BugSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/identity-secret:
+    post:
+      operationId: createIdentitySecret
+      tags: [apps]
+      summary: Genera o rigenera il segreto d'identità (solo con il login)
+      description: Il segreto esce una sola volta; rigenerarlo invalida i token firmati con il precedente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "201":
+          description: Nuovo segreto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentitySecret"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteIdentitySecret
+      tags: [apps]
+      summary: Toglie il segreto d'identità (solo con il login)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Segreto tolto
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/identity-test:
+    post:
+      operationId: testIdentity
+      tags: [apps]
+      summary: Verifica un token d'identità con il segreto dell'App
+      description: Non salva nulla.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentityTest"
+      responses:
+        "200":
+          description: Esito della verifica
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityTestResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/bugs:
+    get:
+      operationId: listAppBugs
+      tags: [apps]
+      summary: Segnalazioni dei bug dell'App
+      description: Al più 200, le più recenti prima.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/EmbedBugStatus"
+      responses:
+        "200":
+          description: Segnalazioni
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminBugSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/bugs/{number}:
+    get:
+      operationId: getAppBug
+      tags: [apps]
+      summary: Dettaglio di una segnalazione
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/BugNumberParam"
+      responses:
+        "200":
+          description: Segnalazione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminBugDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/bugs/{number}/messages:
+    post:
+      operationId: addAppBugMessage
+      tags: [apps]
+      summary: Messaggio dell'amministratore al segnalante
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/BugNumberParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmbedBugMessage"
+      responses:
+        "201":
+          description: Messaggio registrato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedBugMessageView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /apps/{id}/bugs/{number}/close:
+    post:
+      operationId: closeAppBug
+      tags: [apps]
+      summary: Chiude una segnalazione come corretta o non un problema
+      description: >-
+        Vale dagli stati non finali. Una voce «Da confermare» ancora in attesa della segnalazione si rifiuta con la nota
+        «chiusa dall'amministratore».
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/BugNumberParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminBugClose"
+      responses:
+        "200":
+          description: Segnalazione chiusa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminBugDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   # ─── Agents ─────────────────────────────────────────────────────────────────
 
@@ -5497,6 +5872,46 @@ paths:
 
 components:
   parameters:
+    BugNumberParam:
+      name: number
+      in: path
+      required: true
+      schema:
+        type: integer
+    EmbedBugId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    EmbedBugApp:
+      name: app
+      in: query
+      required: true
+      description: Slug dell'App ospite
+      schema:
+        type: string
+    EmbedBugOrigin:
+      name: origin
+      in: query
+      required: true
+      description: Origine della pagina ospite
+      schema:
+        type: string
+    EmbedBrowserKey:
+      name: X-Botcave-Browser-Key
+      in: header
+      required: true
+      description: 32 byte base64url generati dall'iframe e tenuti nel suo storage
+      schema:
+        type: string
+    EmbedIdentity:
+      name: X-Botcave-Identity
+      in: header
+      required: false
+      description: Token d'identità firmato dall'app ospite
+      schema:
+        type: string
     NodePairingCodeParam:
       name: code
       in: path
@@ -5613,10 +6028,331 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
+    EmbedBugCreate:
+      type: object
+      required: [title, description]
+      properties:
+        title:
+          type: string
+          maxLength: 1000
+        description:
+          type: string
+          maxLength: 10000
+        steps:
+          type: string
+          maxLength: 10000
+        expected:
+          type: string
+          maxLength: 10000
+        pageContext:
+          type: object
+          properties:
+            page:
+              type: string
+              maxLength: 1000
+            id:
+              type: string
+              maxLength: 1000
+            title:
+              type: string
+              maxLength: 1000
+            url:
+              type: string
+              maxLength: 5000
+    EmbedBugCreated:
+      type: object
+      required: [id, number, status]
+      properties:
+        id:
+          type: integer
+        number:
+          type: integer
+        status:
+          $ref: "#/components/schemas/EmbedBugStatus"
+    EmbedBugStatus:
+      type: string
+      enum: [received, triage, needs_info, pending_approval, in_progress, fixed, not_a_bug, duplicate, rejected]
+    EmbedBugSummary:
+      type: object
+      required: [id, number, title, status, statusLabel, publicMessage, unseen, createdAt, statusChangedAt]
+      properties:
+        id:
+          type: integer
+        number:
+          type: integer
+        title:
+          type: string
+        status:
+          $ref: "#/components/schemas/EmbedBugStatus"
+        statusLabel:
+          type: string
+        publicMessage:
+          type: string
+          nullable: true
+        unseen:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        statusChangedAt:
+          type: string
+          format: date-time
+    EmbedBugMessageView:
+      type: object
+      required: [author, content, createdAt]
+      properties:
+        author:
+          type: string
+          enum: [reporter, lead, owner]
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    EmbedBugDetail:
+      allOf:
+        - $ref: "#/components/schemas/EmbedBugSummary"
+        - type: object
+          required: [description, steps, expected, messages]
+          properties:
+            description:
+              type: string
+            steps:
+              type: string
+              nullable: true
+            expected:
+              type: string
+              nullable: true
+            messages:
+              type: array
+              items:
+                $ref: "#/components/schemas/EmbedBugMessageView"
+    EmbedBugMessage:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          maxLength: 10000
+    EmbedBugSeen:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          maxItems: 50
+          items:
+            type: integer
+    EmbedBugSeenResult:
+      type: object
+      required: [updated]
+      properties:
+        updated:
+          type: integer
+    BugSettings:
+      type: object
+      required: [enabled, dailyLimit, identitySecretSet, identitySecretSetAt, bugTeam, approverAvailable, todayCount]
+      properties:
+        enabled:
+          type: boolean
+        dailyLimit:
+          type: integer
+        identitySecretSet:
+          type: boolean
+        identitySecretSetAt:
+          type: string
+          format: date-time
+          nullable: true
+        bugTeam:
+          type: object
+          nullable: true
+          required: [id, name, status]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            status:
+              type: string
+        approverAvailable:
+          type: boolean
+          description: Qualcuno può approvare le segnalazioni (proprietario del modello del Responsabile o, senza, chi ha attivato la squadra designata)
+        todayCount:
+          type: integer
+    BugSettingsUpdate:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        dailyLimit:
+          type: integer
+          minimum: 1
+          maximum: 500
+    IdentitySecret:
+      type: object
+      required: [secret]
+      properties:
+        secret:
+          type: string
+    IdentityTest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          maxLength: 10000
+    IdentityTestResult:
+      type: object
+      required: [valid, reason, sub, name, email, expiresAt]
+      properties:
+        valid:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+          enum: [invalid, expired, no_secret]
+        sub:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+    AdminBugSummary:
+      allOf:
+        - $ref: "#/components/schemas/EmbedBugSummary"
+        - type: object
+          required: [reporterLabel]
+          properties:
+            reporterLabel:
+              type: string
+    AdminBugMessage:
+      type: object
+      required: [id, author, content, createdAt]
+      properties:
+        id:
+          type: integer
+        author:
+          type: string
+          enum: [reporter, lead, owner]
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    AdminBugDetail:
+      allOf:
+        - $ref: "#/components/schemas/AdminBugSummary"
+        - type: object
+          required:
+            - description
+            - steps
+            - expected
+            - reporterKind
+            - reporterName
+            - reporterEmail
+            - pageContext
+            - triage
+            - pendingActionNumber
+            - teamInstanceId
+            - issueNumber
+            - issueUrl
+            - prUrl
+            - messages
+          properties:
+            description:
+              type: string
+            steps:
+              type: string
+              nullable: true
+            expected:
+              type: string
+              nullable: true
+            reporterKind:
+              type: string
+              enum: [identity, browser]
+            reporterName:
+              type: string
+              nullable: true
+            reporterEmail:
+              type: string
+              nullable: true
+            pageContext:
+              type: object
+              nullable: true
+              properties:
+                page:
+                  type: string
+                id:
+                  type: string
+                title:
+                  type: string
+                url:
+                  type: string
+            triage:
+              type: object
+              nullable: true
+              required: [verdict, summary]
+              properties:
+                verdict:
+                  type: string
+                summary:
+                  type: string
+                question:
+                  type: string
+                duplicateOf:
+                  type: integer
+                userMessage:
+                  type: string
+            pendingActionNumber:
+              type: integer
+              nullable: true
+            teamInstanceId:
+              type: integer
+              nullable: true
+            issueNumber:
+              type: integer
+              nullable: true
+            issueUrl:
+              type: string
+              nullable: true
+            prUrl:
+              type: string
+              nullable: true
+            messages:
+              type: array
+              items:
+                $ref: "#/components/schemas/AdminBugMessage"
+    AdminBugClose:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [fixed, not_a_bug]
+        message:
+          type: string
+          maxLength: 10000
+    EmbedBugsConfig:
+      type: object
+      required: [enabled, identity]
+      properties:
+        enabled:
+          type: boolean
+        identity:
+          type: boolean
     EmbedConfig:
       type: object
-      required: [allowed, clientId, appName]
+      required: [allowed, clientId, appName, bugs]
       properties:
+        bugs:
+          $ref: "#/components/schemas/EmbedBugsConfig"
         allowed:
           type: boolean
         clientId:
@@ -7147,10 +7883,11 @@ components:
           enum: [pending, executing, done, failed, rejected]
         kind:
           type: string
-          enum: [action, plan, plan_change, proposal, merge]
+          enum: [action, plan, plan_change, proposal, merge, bug]
           description: >-
             Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure
-            proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)
+            proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima),
+            oppure segnalazione di un bug da affidare alla squadra per i bug dell'App
         proposal:
           description: Passi della proposta; null per le voci che non sono una proposta
           oneOf:
@@ -10378,6 +11115,11 @@ components:
           description: >-
             Spazio di lavoro sul nodo: percorso relativo, solo lettere, cifre, `._ -` e `/`, senza `/` iniziale né
             `..` (altrimenti 400 «spazio di lavoro non valido»). Omesso = invariato, null = tolto.
+        bugTeam:
+          type: boolean
+          description: >-
+            Squadra per i bug dell'App di riferimento: omesso = invariato. Un'altra squadra non chiusa già designata per la
+            stessa App → 409 «l'App ha già una squadra per i bug: <nome>».
 
     TeamAttachment:
       type: object
@@ -10630,7 +11372,7 @@ components:
 
     TeamInstance:
       type: object
-      required: [id, name, status, template, ref, roles, localSkills, createdAt, updatedAt, closedAt, activatedBy, monthlyBudgetUsd, lastTurnAt, nodeWorkspace]
+      required: [id, name, status, template, ref, roles, localSkills, createdAt, updatedAt, closedAt, activatedBy, monthlyBudgetUsd, lastTurnAt, nodeWorkspace, bugTeam]
       properties:
         id:
           type: integer
@@ -10713,6 +11455,9 @@ components:
           type: string
           nullable: true
           description: Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)
+        bugTeam:
+          type: boolean
+          description: Squadra per i bug dell'App di riferimento (riceve le segnalazioni approvate)
 
     TeamMessageInput:
       type: object

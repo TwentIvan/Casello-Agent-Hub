@@ -9,6 +9,9 @@ import { cleanAppSlug } from "./panel-helpers";
 
 export type HostOpenRequest = { tab?: EmbedTab; seq: number };
 
+/** Attesa massima della risposta a `identity_request`. */
+const IDENTITY_WAIT_MS = 5_000;
+
 export type HostState = {
   /** null finché la configurazione non è letta. */
   allowed: boolean | null;
@@ -17,12 +20,22 @@ export type HostState = {
   clientId: string | null;
   appName: string | null;
   appSlug: string;
+  /** Origine della pagina ospite (dalla query, già validata), o null. */
+  origin: string | null;
+  /** Segnalazioni dei bug dell'App: attive e con l'identità degli utenti configurata. */
+  bugs: { enabled: boolean; identity: boolean };
+  /** Ultimo token d'identità mandato dalla pagina ospite (`identity`), o null. */
+  identity: string | null;
+  /** La pagina ospite ha mandato almeno un messaggio `identity` (anche con token null). */
+  identityReceived: boolean;
   theme: HostTheme | null;
   context: HostContextMsg | null;
   /** Ultima richiesta `open` della pagina ospite (seq cresce a ogni richiesta). */
   openRequest: HostOpenRequest | null;
   post(m: FromFrame): void;
   retry(): void;
+  /** Chiede alla pagina ospite un'identità nuova: risolve al prossimo `identity` o dopo 5 s con quella attuale. */
+  requestIdentity(): Promise<string | null>;
 };
 
 const FONT_LINK_ID = "botcave-host-font";
@@ -80,8 +93,13 @@ export function useHost(): HostState {
   const [theme, setTheme] = useState<HostTheme | null>(null);
   const [context, setContext] = useState<HostContextMsg | null>(null);
   const [openRequest, setOpenRequest] = useState<HostOpenRequest | null>(null);
+  const [bugs, setBugs] = useState<HostState["bugs"]>({ enabled: false, identity: false });
+  const [identity, setIdentity] = useState<string | null>(null);
+  const [identityReceived, setIdentityReceived] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const allowedRef = useRef(false);
+  const identityRef = useRef<string | null>(null);
+  const identityWaiters = useRef<((token: string | null) => void)[]>([]);
 
   const post = useCallback(
     (m: FromFrame) => {
@@ -102,7 +120,7 @@ export function useHost(): HostState {
       post({ botcave: 1, type: "error", payload: { code: "host_not_allowed" } });
       return;
     }
-    getEmbedConfig({ origin })
+    getEmbedConfig(appSlug ? { origin, app: appSlug } : { origin })
       .then((cfg) => {
         if (cancelled) return;
         const ok = cfg.allowed && cfg.clientId !== null;
@@ -110,6 +128,7 @@ export function useHost(): HostState {
         setAllowed(ok);
         setClientId(cfg.clientId);
         setAppName(cfg.appName);
+        setBugs({ enabled: ok && cfg.bugs.enabled, identity: ok && cfg.bugs.identity });
         post(ok ? { botcave: 1, type: "ready" } : { botcave: 1, type: "error", payload: { code: "host_not_allowed" } });
       })
       .catch(() => {
@@ -120,7 +139,7 @@ export function useHost(): HostState {
     return () => {
       cancelled = true;
     };
-  }, [origin, post, attempt]);
+  }, [origin, appSlug, post, attempt]);
 
   // Messaggi della pagina ospite: solo dal genitore, dalla sua origine e se ammessa; il resto si ignora.
   useEffect(() => {
@@ -142,6 +161,16 @@ export function useHost(): HostState {
           seq += 1;
           setOpenRequest({ tab: msg.payload.tab, seq });
           break;
+        case "identity": {
+          const token = msg.payload.token;
+          identityRef.current = token;
+          setIdentity(token);
+          setIdentityReceived(true);
+          const waiters = identityWaiters.current;
+          identityWaiters.current = [];
+          for (const resolve of waiters) resolve(token);
+          break;
+        }
       }
     };
     window.addEventListener("message", onMessage);
@@ -150,5 +179,39 @@ export function useHost(): HostState {
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
-  return { allowed, unreachable, clientId, appName, appSlug, theme, context, openRequest, post, retry };
+  const requestIdentity = useCallback(
+    () =>
+      new Promise<string | null>((resolve) => {
+        let done = false;
+        const finish = (token: string | null) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          identityWaiters.current = identityWaiters.current.filter((w) => w !== finish);
+          resolve(token);
+        };
+        const timer = setTimeout(() => finish(identityRef.current), IDENTITY_WAIT_MS);
+        identityWaiters.current.push(finish);
+        post({ botcave: 1, type: "identity_request" });
+      }),
+    [post],
+  );
+
+  return {
+    allowed,
+    unreachable,
+    clientId,
+    appName,
+    appSlug,
+    origin,
+    bugs,
+    identity,
+    identityReceived,
+    theme,
+    context,
+    openRequest,
+    post,
+    retry,
+    requestIdentity,
+  };
 }

@@ -1,4 +1,5 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, unique, index, numeric } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, unique, index, uniqueIndex, numeric, boolean } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { appsTable } from "./apps";
 import { usersTable } from "./users";
 import { teamTemplatesTable } from "./team-templates";
@@ -49,8 +50,15 @@ export const teamInstancesTable = pgTable(
     lastTurnAt: timestamp("last_turn_at"),
     // Cartella di lavoro relativa alla radice del nodo (ruoli `node`), null = non impostata
     nodeWorkspace: text("node_workspace"),
+    // Squadra designata per i bug dell'App (una sola non chiusa per App)
+    bugTeam: boolean("bug_team").notNull().default(false),
   },
-  (table) => [index("team_instances_ref_idx").on(table.refAppId, table.refType, table.refId)],
+  (table) => [
+    index("team_instances_ref_idx").on(table.refAppId, table.refType, table.refId),
+    uniqueIndex("team_instances_bug_team_uidx")
+      .on(table.refAppId)
+      .where(sql`${table.bugTeam} and ${table.status} <> 'closed'`),
+  ],
 );
 
 // Skill specializzate di una sola istanza (codice unico per istanza)

@@ -335,3 +335,31 @@ export function resetBestPracticeSearchLimit(): void {
 export function resetWebReadLimit(): void {
   webReadCounter.reset();
 }
+
+// Segnalazioni dei bug dal plugin (route pubbliche /api/embed/bugs): 60 richieste al minuto e 10 segnalazioni all'ora
+// per IP, 20 messaggi all'ora per segnalazione. Contatori in memoria.
+const bugIpRequestCounter = fixedWindowCounter({ limit: 60, windowMs: 60_000 });
+const bugIpReportCounter = fixedWindowCounter({ limit: 10, windowMs: 3_600_000 });
+const bugMessageCounter = fixedWindowCounter({ limit: 20, windowMs: 3_600_000 });
+
+/** Conta una richiesta alle route delle segnalazioni da un IP: false oltre 60 al minuto. */
+export function consumeBugIpRequest(ip: string): boolean {
+  return bugIpRequestCounter.consume(`ip:${ip}`).ok;
+}
+
+/** Conta una nuova segnalazione da un IP: false oltre 10 all'ora. */
+export function consumeBugIpReport(ip: string): boolean {
+  return bugIpReportCounter.consume(`ip:${ip}`).ok;
+}
+
+/** Conta un messaggio del segnalante su una segnalazione: false oltre 20 all'ora. */
+export function consumeBugMessage(reportId: number): boolean {
+  return bugMessageCounter.consume(`report:${reportId}`).ok;
+}
+
+/** Azzera i contatori delle segnalazioni dei bug (solo per i test). */
+export function resetBugLimits(): void {
+  bugIpRequestCounter.reset();
+  bugIpReportCounter.reset();
+  bugMessageCounter.reset();
+}

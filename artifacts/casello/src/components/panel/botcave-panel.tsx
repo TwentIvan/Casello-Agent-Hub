@@ -1,4 +1,4 @@
-// Corpo del pannello unico: intestazione con le quattro schede e «Chiudi», sotto la scheda attiva.
+// Corpo del pannello unico: intestazione con le schede della superficie e «Chiudi», sotto la scheda attiva.
 // Lo stesso nella console (dentro lo Sheet) e nell'iframe delle app ospiti (a piena altezza).
 import { BotcaveMark } from "@/components/brand/marks";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { usePanel } from "./panel-context";
 import { TAB_LABELS, tabOrder, type PanelTab } from "./tabs";
 import { AlfredTab } from "./tabs/alfred-tab";
+import { BugsTab } from "./tabs/bugs-tab";
 import { BulletinTab } from "./tabs/bulletin-tab";
 import { LeadTab } from "./tabs/lead-tab";
 import { LuciusTab } from "./tabs/lucius-tab";
@@ -23,6 +24,8 @@ function ActiveTab({ tab }: { tab: PanelTab }) {
       return <LuciusTab />;
     case "lead":
       return <LeadTab />;
+    case "bugs":
+      return <BugsTab />;
   }
 }
 

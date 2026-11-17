@@ -5,7 +5,232 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+export type EmbedBugCreatePageContext = {
+  /** @maxLength 1000 */
+  page?: string;
+  /** @maxLength 1000 */
+  id?: string;
+  /** @maxLength 1000 */
+  title?: string;
+  /** @maxLength 5000 */
+  url?: string;
+};
+
+export interface EmbedBugCreate {
+  /** @maxLength 1000 */
+  title: string;
+  /** @maxLength 10000 */
+  description: string;
+  /** @maxLength 10000 */
+  steps?: string;
+  /** @maxLength 10000 */
+  expected?: string;
+  pageContext?: EmbedBugCreatePageContext;
+}
+
+export type EmbedBugStatus = typeof EmbedBugStatus[keyof typeof EmbedBugStatus];
+
+
+export const EmbedBugStatus = {
+  received: 'received',
+  triage: 'triage',
+  needs_info: 'needs_info',
+  pending_approval: 'pending_approval',
+  in_progress: 'in_progress',
+  fixed: 'fixed',
+  not_a_bug: 'not_a_bug',
+  duplicate: 'duplicate',
+  rejected: 'rejected',
+} as const;
+
+export interface EmbedBugCreated {
+  id: number;
+  number: number;
+  status: EmbedBugStatus;
+}
+
+export interface EmbedBugSummary {
+  id: number;
+  number: number;
+  title: string;
+  status: EmbedBugStatus;
+  statusLabel: string;
+  publicMessage: string | null;
+  unseen: boolean;
+  createdAt: string;
+  statusChangedAt: string;
+}
+
+export type EmbedBugMessageViewAuthor = typeof EmbedBugMessageViewAuthor[keyof typeof EmbedBugMessageViewAuthor];
+
+
+export const EmbedBugMessageViewAuthor = {
+  reporter: 'reporter',
+  lead: 'lead',
+  owner: 'owner',
+} as const;
+
+export interface EmbedBugMessageView {
+  author: EmbedBugMessageViewAuthor;
+  content: string;
+  createdAt: string;
+}
+
+export type EmbedBugDetail = EmbedBugSummary & ({
+  description: string;
+  steps: string | null;
+  expected: string | null;
+  messages: EmbedBugMessageView[];
+});
+
+export interface EmbedBugMessage {
+  /** @maxLength 10000 */
+  content: string;
+}
+
+export interface EmbedBugSeen {
+  /** @maxItems 50 */
+  ids: number[];
+}
+
+export interface EmbedBugSeenResult {
+  updated: number;
+}
+
+export type BugSettingsBugTeam = {
+  id: number;
+  name: string;
+  status: string;
+} | null;
+
+export interface BugSettings {
+  enabled: boolean;
+  dailyLimit: number;
+  identitySecretSet: boolean;
+  identitySecretSetAt: string | null;
+  bugTeam: BugSettingsBugTeam;
+  /** Qualcuno può approvare le segnalazioni (proprietario del modello del Responsabile o, senza, chi ha attivato la squadra designata) */
+  approverAvailable: boolean;
+  todayCount: number;
+}
+
+export interface BugSettingsUpdate {
+  enabled?: boolean;
+  /**
+     * @minimum 1
+     * @maximum 500
+     */
+  dailyLimit?: number;
+}
+
+export interface IdentitySecret {
+  secret: string;
+}
+
+export interface IdentityTest {
+  /** @maxLength 10000 */
+  token: string;
+}
+
+export type IdentityTestResultReason = typeof IdentityTestResultReason[keyof typeof IdentityTestResultReason] | null;
+
+
+export const IdentityTestResultReason = {
+  invalid: 'invalid',
+  expired: 'expired',
+  no_secret: 'no_secret',
+} as const;
+
+export interface IdentityTestResult {
+  valid: boolean;
+  reason: IdentityTestResultReason;
+  sub: string | null;
+  name: string | null;
+  email: string | null;
+  expiresAt: string | null;
+}
+
+export type AdminBugSummary = EmbedBugSummary & {
+  reporterLabel: string;
+};
+
+export type AdminBugMessageAuthor = typeof AdminBugMessageAuthor[keyof typeof AdminBugMessageAuthor];
+
+
+export const AdminBugMessageAuthor = {
+  reporter: 'reporter',
+  lead: 'lead',
+  owner: 'owner',
+} as const;
+
+export interface AdminBugMessage {
+  id: number;
+  author: AdminBugMessageAuthor;
+  content: string;
+  createdAt: string;
+}
+
+export type AdminBugDetailReporterKind = typeof AdminBugDetailReporterKind[keyof typeof AdminBugDetailReporterKind];
+
+
+export const AdminBugDetailReporterKind = {
+  identity: 'identity',
+  browser: 'browser',
+} as const;
+
+export type AdminBugDetailPageContext = {
+  page?: string;
+  id?: string;
+  title?: string;
+  url?: string;
+} | null;
+
+export type AdminBugDetailTriage = {
+  verdict: string;
+  summary: string;
+  question?: string;
+  duplicateOf?: number;
+  userMessage?: string;
+} | null;
+
+export type AdminBugDetail = AdminBugSummary & ({
+  description: string;
+  steps: string | null;
+  expected: string | null;
+  reporterKind: AdminBugDetailReporterKind;
+  reporterName: string | null;
+  reporterEmail: string | null;
+  pageContext: AdminBugDetailPageContext;
+  triage: AdminBugDetailTriage;
+  pendingActionNumber: number | null;
+  teamInstanceId: number | null;
+  issueNumber: number | null;
+  issueUrl: string | null;
+  prUrl: string | null;
+  messages: AdminBugMessage[];
+});
+
+export type AdminBugCloseStatus = typeof AdminBugCloseStatus[keyof typeof AdminBugCloseStatus];
+
+
+export const AdminBugCloseStatus = {
+  fixed: 'fixed',
+  not_a_bug: 'not_a_bug',
+} as const;
+
+export interface AdminBugClose {
+  status: AdminBugCloseStatus;
+  /** @maxLength 10000 */
+  message?: string;
+}
+
+export interface EmbedBugsConfig {
+  enabled: boolean;
+  identity: boolean;
+}
+
 export interface EmbedConfig {
+  bugs: EmbedBugsConfig;
   allowed: boolean;
   clientId: string | null;
   appName: string | null;
@@ -1269,7 +1494,7 @@ export const QueuedActionStatus = {
 } as const;
 
 /**
- * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)
+ * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell'App
  */
 export type QueuedActionKind = typeof QueuedActionKind[keyof typeof QueuedActionKind];
 
@@ -1280,6 +1505,7 @@ export const QueuedActionKind = {
   plan_change: 'plan_change',
   proposal: 'proposal',
   merge: 'merge',
+  bug: 'bug',
 } as const;
 
 /**
@@ -1364,7 +1590,7 @@ export interface QueuedProposal {
 export interface QueuedAction {
   number: number;
   status: QueuedActionStatus;
-  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima) */
+  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell'App */
   kind: QueuedActionKind;
   /** Passi della proposta; null per le voci che non sono una proposta */
   proposal: QueuedProposal | null;
@@ -4122,6 +4348,8 @@ export interface TeamInstanceSave {
      * @maxLength 300
      */
   nodeWorkspace?: string | null;
+  /** Squadra per i bug dell'App di riferimento: omesso = invariato. Un'altra squadra non chiusa già designata per la stessa App → 409 «l'App ha già una squadra per i bug: <nome>». */
+  bugTeam?: boolean;
 }
 
 export interface TeamAttachment {
@@ -4405,6 +4633,8 @@ export interface TeamInstance {
   lastTurnAt: string | null;
   /** Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato) */
   nodeWorkspace: string | null;
+  /** Squadra per i bug dell'App di riferimento (riceve le segnalazioni approvate) */
+  bugTeam: boolean;
 }
 
 export interface TeamMessageInput {
@@ -4647,10 +4877,89 @@ export type BadGatewayResponse = ErrorResponse;
  */
 export type PayloadTooLargeResponse = ErrorResponse;
 
+/**
+ * Slug dell'App ospite
+ */
+export type EmbedBugAppParameter = string;
+
+/**
+ * Origine della pagina ospite
+ */
+export type EmbedBugOriginParameter = string;
+
+/**
+ * 32 byte base64url generati dall'iframe e tenuti nel suo storage
+ */
+export type EmbedBrowserKeyParameter = string;
+
+/**
+ * Token d'identità firmato dall'app ospite
+ */
+export type EmbedIdentityParameter = string;
+
 export type CharacterQueryParameter = MemoryCharacter;
 
 export type GetEmbedConfigParams = {
 origin?: string;
+/**
+ * Slug dell'App ospite, per sapere se le segnalazioni dei bug sono attive.
+ */
+app?: string;
+};
+
+export type ListEmbedBugsParams = {
+/**
+ * Slug dell'App ospite
+ */
+app: EmbedBugAppParameter;
+/**
+ * Origine della pagina ospite
+ */
+origin: EmbedBugOriginParameter;
+};
+
+export type CreateEmbedBugParams = {
+/**
+ * Slug dell'App ospite
+ */
+app: EmbedBugAppParameter;
+/**
+ * Origine della pagina ospite
+ */
+origin: EmbedBugOriginParameter;
+};
+
+export type MarkEmbedBugsSeenParams = {
+/**
+ * Slug dell'App ospite
+ */
+app: EmbedBugAppParameter;
+/**
+ * Origine della pagina ospite
+ */
+origin: EmbedBugOriginParameter;
+};
+
+export type GetEmbedBugParams = {
+/**
+ * Slug dell'App ospite
+ */
+app: EmbedBugAppParameter;
+/**
+ * Origine della pagina ospite
+ */
+origin: EmbedBugOriginParameter;
+};
+
+export type AddEmbedBugMessageParams = {
+/**
+ * Slug dell'App ospite
+ */
+app: EmbedBugAppParameter;
+/**
+ * Origine della pagina ospite
+ */
+origin: EmbedBugOriginParameter;
 };
 
 export type GetAlfredNotificationsParams = {
@@ -4659,6 +4968,10 @@ after?: string;
 
 export type RefreshAppArchitecture202 = {
   queued: boolean;
+};
+
+export type ListAppBugsParams = {
+status?: EmbedBugStatus;
 };
 
 export type ListAgentsParams = {

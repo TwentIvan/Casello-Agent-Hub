@@ -1,5 +1,6 @@
 // Caricatore del pannello Botcave incorporabile: un solo file, nessuna dipendenza.
 import { contextMessage, parseFromFrame, type EmbedTab, type HostContextMsg, type ToFrame } from "../protocol";
+import { IDENTITY_MIN_INTERVAL_MS, createRequestGate, fetchIdentity, identityPath, refreshDelayMs, tokenExpiry } from "./identity";
 import { createOutbox } from "./queue";
 import { readHostTheme } from "./read-theme";
 import { themeToCss } from "../theme";
@@ -58,6 +59,11 @@ function start(): void {
   const origin = new URL(script.src).origin;
   const side = script.dataset.position === "left" ? "left" : "right";
   const mountSel = script.dataset.mount;
+  const rawIdentity = script.dataset.identityUrl;
+  const identityUrl = identityPath(rawIdentity);
+  if (rawIdentity !== undefined && !identityUrl) {
+    console.warn("Botcave: data-identity-url ignorato, serve un percorso che inizia con / (non //), fino a 500 caratteri");
+  }
 
   const mount = () => {
     const host = document.createElement("div");
@@ -104,6 +110,7 @@ function start(): void {
       clearTimeout(timer);
       iframe?.remove();
       iframe = null;
+      clearTimeout(identityTimer);
       const p = document.createElement("div");
       p.className = "msg";
       p.textContent = text;
@@ -144,6 +151,26 @@ function start(): void {
       outbox.send({ botcave: 1, type: "theme", payload: theme });
     };
 
+    // Identità: richiesta all'apertura, a ogni identity_request e prima della scadenza del token.
+    let identityTimer: ReturnType<typeof setTimeout> | undefined;
+    let identityBusy = false;
+    const gate = createRequestGate(IDENTITY_MIN_INTERVAL_MS);
+    // `force` solo per il giro pianificato dal timer; apertura e identity_request rispettano l'intervallo minimo.
+    const refreshIdentity = async (force = false) => {
+      if (!identityUrl || identityBusy || !gate.allow(force)) return;
+      identityBusy = true;
+      try {
+        const token = await fetchIdentity(identityUrl);
+        clearTimeout(identityTimer);
+        if (!iframe) return;
+        outbox.send({ botcave: 1, type: "identity", payload: { token } });
+        const delay = token ? refreshDelayMs(tokenExpiry(token), Date.now()) : null;
+        if (delay !== null) identityTimer = setTimeout(() => void refreshIdentity(true), delay);
+      } finally {
+        identityBusy = false;
+      }
+    };
+
     const ensureFrame = () => {
       if (iframe) return;
       const f = document.createElement("iframe");
@@ -155,11 +182,15 @@ function start(): void {
       panel.replaceChildren(f);
       sendTheme();
       timer = setTimeout(() => showMessage(MSG_DISABLED, false), READY_TIMEOUT_MS);
+      void refreshIdentity(true);
     };
 
     const setOpen = (open: boolean) => {
       panel.classList.toggle("open", open);
-      if (open) ensureFrame();
+      if (open) {
+        if (iframe) void refreshIdentity();
+        else ensureFrame();
+      }
     };
 
     window.addEventListener("message", (ev: MessageEvent) => {
@@ -173,6 +204,9 @@ function start(): void {
           break;
         case "close":
           setOpen(false);
+          break;
+        case "identity_request":
+          void refreshIdentity();
           break;
         case "badge":
           count.hidden = m.payload.pending === 0;

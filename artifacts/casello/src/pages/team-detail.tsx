@@ -29,6 +29,7 @@ import {
   getGetTeamReadinessQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -66,8 +67,10 @@ function toSave(
   roles: RoleDraft[],
   localSkills: LocalSkillDraft[],
   nodeWorkspace: string,
+  bugTeam: boolean,
 ): TeamInstanceSave {
   return {
+    bugTeam,
     nodeWorkspace: nodeWorkspace.trim() === "" ? null : nodeWorkspace.trim(),
     name: name.trim(),
     refTitle: refTitle.trim(),
@@ -163,6 +166,7 @@ function TeamEditor({
   const [name, setName] = useState(team.name);
   const [refTitle, setRefTitle] = useState(team.ref.title);
   const [nodeWorkspace, setNodeWorkspace] = useState(team.nodeWorkspace ?? "");
+  const [bugTeam, setBugTeam] = useState(team.bugTeam);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [roles, setRoles] = useState<RoleDraft[]>(() => team.roles.map(draftFromView));
   const [localSkills, setLocalSkills] = useState<LocalSkillDraft[]>(() => team.localSkills.map(localSkillDraft));
@@ -185,11 +189,11 @@ function TeamEditor({
   const savedJson = useMemo(
     () =>
       JSON.stringify(
-        toSave(team.name, team.ref.title, team.roles.map(draftFromView), team.localSkills.map(localSkillDraft), team.nodeWorkspace ?? ""),
+        toSave(team.name, team.ref.title, team.roles.map(draftFromView), team.localSkills.map(localSkillDraft), team.nodeWorkspace ?? "", team.bugTeam),
       ),
     [team],
   );
-  const current = toSave(name, refTitle, roles, localSkills, nodeWorkspace);
+  const current = toSave(name, refTitle, roles, localSkills, nodeWorkspace, bugTeam);
   const dirty = savedJson !== JSON.stringify(current);
   dirtyRef.current = dirty;
 
@@ -333,6 +337,22 @@ function TeamEditor({
                 maxLength={300}
                 disabled={closed}
               />
+            </div>
+          </div>
+          <div className="flex items-start gap-2">
+            <Checkbox
+              id="team-bug-team"
+              checked={bugTeam}
+              onCheckedChange={(v) => setBugTeam(v === true)}
+              disabled={closed}
+              className="mt-0.5"
+            />
+            <div className="min-w-0">
+              <Label htmlFor="team-bug-team">Squadra per i bug di questa App</Label>
+              <p className="text-xs text-muted-foreground">
+                Le segnalazioni approvate dall'app ({team.ref.appName}) vengono affidate a questa squadra: serve che sia attiva. Una sola squadra
+                per App; se ce n'è già un'altra il salvataggio lo dice. Si salva con «Salva».
+              </p>
             </div>
           </div>
         </CardContent>

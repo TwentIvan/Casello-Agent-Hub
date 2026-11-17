@@ -1,5 +1,6 @@
-import { pgTable, serial, bigint, text, timestamp, pgEnum, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, bigint, text, timestamp, pgEnum, jsonb, integer, boolean, check } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
+import { sql } from "drizzle-orm";
 import { z } from "zod/v4";
 
 export const appStatusEnum = pgEnum("app_status", ["active", "inactive"]);
@@ -15,36 +16,44 @@ export type AuthConfig = { header: string; scheme: string | null };
 // Header HTTP fisso (non segreto) che l'esecutore manda su ogni chiamata ai tool dell'app
 export type ExtraHeader = { name: string; value: string };
 
-export const appsTable = pgTable("apps", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  slug: text("slug").notNull().unique(),
-  description: text("description"),
-  baseUrl: text("base_url").notNull(),
-  internalBaseUrl: text("internal_base_url"),
-  // Come l'app riceve le credenziali: { header, scheme } (scheme null = valore grezzo)
-  userAuth: jsonb("user_auth").$type<AuthConfig>(),
-  serviceAuth: jsonb("service_auth").$type<AuthConfig>(),
-  // Segreto di servizio cifrato (AES-256-GCM): mai in chiaro
-  serviceSecretEnc: text("service_secret_enc"),
-  // Header fissi (non segreti) su ogni chiamata ai tool, HTTP e MCP, con entrambe le identità
-  extraHeaders: jsonb("extra_headers").$type<ExtraHeader[]>().notNull().default([]),
-  // Sorgenti per l'architetto: il token GitHub (sola lettura) è cifrato, mai in chiaro
-  sourceType: sourceTypeEnum("source_type").notNull().default("none"),
-  sourceRepo: text("source_repo"), // formato owner/nome
-  sourceBranch: text("source_branch"),
-  sourceTokenEnc: text("source_token_enc"),
-  // Installazione dell'App GitHub di Casello da cui si legge il repo (alternativa al token)
-  sourceInstallationId: bigint("source_installation_id", { mode: "number" }),
-  openapiUrl: text("openapi_url"),
-  // Server MCP dell'app (se espone i suoi strumenti via MCP)
-  mcpUrl: text("mcp_url"),
-  functionalDescription: text("functional_description"),
-  architectureRefresh: architectureRefreshEnum("architecture_refresh").notNull().default("6h"),
-  status: appStatusEnum("status").notNull().default("active"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export const appsTable = pgTable(
+  "apps",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull().unique(),
+    description: text("description"),
+    baseUrl: text("base_url").notNull(),
+    internalBaseUrl: text("internal_base_url"),
+    // Come l'app riceve le credenziali: { header, scheme } (scheme null = valore grezzo)
+    userAuth: jsonb("user_auth").$type<AuthConfig>(),
+    serviceAuth: jsonb("service_auth").$type<AuthConfig>(),
+    // Segreto di servizio cifrato (AES-256-GCM): mai in chiaro
+    serviceSecretEnc: text("service_secret_enc"),
+    // Header fissi (non segreti) su ogni chiamata ai tool, HTTP e MCP, con entrambe le identità
+    extraHeaders: jsonb("extra_headers").$type<ExtraHeader[]>().notNull().default([]),
+    // Sorgenti per l'architetto: il token GitHub (sola lettura) è cifrato, mai in chiaro
+    sourceType: sourceTypeEnum("source_type").notNull().default("none"),
+    sourceRepo: text("source_repo"), // formato owner/nome
+    sourceBranch: text("source_branch"),
+    sourceTokenEnc: text("source_token_enc"),
+    // Installazione dell'App GitHub di Casello da cui si legge il repo (alternativa al token)
+    sourceInstallationId: bigint("source_installation_id", { mode: "number" }),
+    openapiUrl: text("openapi_url"),
+    // Server MCP dell'app (se espone i suoi strumenti via MCP)
+    mcpUrl: text("mcp_url"),
+    functionalDescription: text("functional_description"),
+    architectureRefresh: architectureRefreshEnum("architecture_refresh").notNull().default("6h"),
+    bugReportsEnabled: boolean("bug_reports_enabled").notNull().default(false),
+    bugReportsDailyLimit: integer("bug_reports_daily_limit").notNull().default(20),
+    identitySecretEnc: text("identity_secret_enc"),
+    identitySecretSetAt: timestamp("identity_secret_set_at"),
+    status: appStatusEnum("status").notNull().default("active"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [check("apps_bug_reports_daily_limit_check", sql`${table.bugReportsDailyLimit} between 1 and 500`)],
+);
 
 export const insertAppSchema = createInsertSchema(appsTable).omit({
   id: true,

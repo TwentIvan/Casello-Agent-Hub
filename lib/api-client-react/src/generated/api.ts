@@ -20,6 +20,10 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AddEmbedBugMessageParams,
+  AdminBugClose,
+  AdminBugDetail,
+  AdminBugSummary,
   Agent,
   AgentInput,
   AgentModelAssignments,
@@ -68,6 +72,8 @@ import type {
   BadRequestResponse,
   Budget,
   BudgetUpdate,
+  BugSettings,
+  BugSettingsUpdate,
   CatalogModelPage,
   CatalogOffer,
   CatalogProvider,
@@ -98,22 +104,35 @@ import type {
   ChatTurnStopResult,
   ConflictResponse,
   CostEstimate,
+  CreateEmbedBugParams,
   CurrentUser,
   DashboardStats,
   DefaultModel,
   DeleteMemoryHistoryEntryParams,
   DeleteMemoryNoteParams,
+  EmbedBugCreate,
+  EmbedBugCreated,
+  EmbedBugDetail,
+  EmbedBugMessage,
+  EmbedBugMessageView,
+  EmbedBugSeen,
+  EmbedBugSeenResult,
+  EmbedBugSummary,
   EmbedConfig,
   ErrorResponse,
   EstimateAnalysisCostParams,
   ExportAnalysisIssuesParams,
   ForbiddenResponse,
   GetAlfredNotificationsParams,
+  GetEmbedBugParams,
   GetEmbedConfigParams,
   GetTeamInstanceUpdates200,
   GithubInstallations,
   GithubRepo,
   HealthStatus,
+  IdentitySecret,
+  IdentityTest,
+  IdentityTestResult,
   IssueExport,
   LeadChatAvailability,
   LeadConversation,
@@ -121,10 +140,12 @@ import type {
   LeadMessageAccepted,
   LeadMessageCreate,
   ListAgentsParams,
+  ListAppBugsParams,
   ListCatalogModelsParams,
   ListCatalogProvidersParams,
   ListCharacterConversationsParams,
   ListCharacterInstructionProposalsParams,
+  ListEmbedBugsParams,
   ListMemoryHistoryParams,
   ListMemoryNotesParams,
   ListPendingActionsParams,
@@ -133,6 +154,7 @@ import type {
   ListTeamInstancesParams,
   ListTeamTemplatesParams,
   ListUnreadTeamEventsParams,
+  MarkEmbedBugsSeenParams,
   MarkTeamEventsRead200,
   McpSyncResult,
   MemoryHistoryEntry,
@@ -419,6 +441,418 @@ export function useGetEmbedConfig<TData = Awaited<ReturnType<typeof getEmbedConf
 
 
 
+
+export const getListEmbedBugsUrl = (params: ListEmbedBugsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/embed/bugs?${stringifiedParams}` : `/api/embed/bugs`
+}
+
+/**
+ * Al più 50, le più recenti prima. Origine non ammessa o diversa da quella dell'App, App inesistente o con le segnalazioni spente: sempre 404 «segnalazioni non disponibili». 60 richieste al minuto per IP.
+ * @summary Le segnalazioni del visitatore in un'App (pubblica)
+ */
+export const listEmbedBugs = async (params: ListEmbedBugsParams, options?: RequestInit): Promise<EmbedBugSummary[]> => {
+
+  return customFetch<EmbedBugSummary[]>(getListEmbedBugsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEmbedBugsQueryKey = (params?: ListEmbedBugsParams,) => {
+    return [
+    `/api/embed/bugs`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListEmbedBugsQueryOptions = <TData = Awaited<ReturnType<typeof listEmbedBugs>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>>(params: ListEmbedBugsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmbedBugs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEmbedBugsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEmbedBugs>>> = ({ signal }) => listEmbedBugs(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEmbedBugs>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEmbedBugsQueryResult = NonNullable<Awaited<ReturnType<typeof listEmbedBugs>>>
+export type ListEmbedBugsQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>
+
+
+/**
+ * @summary Le segnalazioni del visitatore in un'App (pubblica)
+ */
+
+export function useListEmbedBugs<TData = Awaited<ReturnType<typeof listEmbedBugs>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>>(
+ params: ListEmbedBugsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmbedBugs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEmbedBugsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateEmbedBugUrl = (params: CreateEmbedBugParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/embed/bugs?${stringifiedParams}` : `/api/embed/bugs`
+}
+
+/**
+ * Limiti: segnalazioni per App al giorno, 5 al giorno per richiedente, 10 all'ora per IP. Corpo al più 32 KB.
+ * @summary Registra una segnalazione (pubblica)
+ */
+export const createEmbedBug = async (embedBugCreate: EmbedBugCreate,
+    params: CreateEmbedBugParams, options?: RequestInit): Promise<EmbedBugCreated> => {
+
+  return customFetch<EmbedBugCreated>(getCreateEmbedBugUrl(params),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(embedBugCreate)
+  }
+);}
+
+
+
+
+export const getCreateEmbedBugMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | ErrorResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmbedBug>>, TError,{data: BodyType<EmbedBugCreate>;params: CreateEmbedBugParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createEmbedBug>>, TError,{data: BodyType<EmbedBugCreate>;params: CreateEmbedBugParams}, TContext> => {
+
+const mutationKey = ['createEmbedBug'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEmbedBug>>, {data: BodyType<EmbedBugCreate>;params: CreateEmbedBugParams}> = (props) => {
+          const {data,params} = props ?? {};
+
+          return  createEmbedBug(data,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateEmbedBugMutationResult = NonNullable<Awaited<ReturnType<typeof createEmbedBug>>>
+    export type CreateEmbedBugMutationBody = BodyType<EmbedBugCreate>
+    export type CreateEmbedBugMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | ErrorResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Registra una segnalazione (pubblica)
+ */
+export const useCreateEmbedBug = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | ErrorResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmbedBug>>, TError,{data: BodyType<EmbedBugCreate>;params: CreateEmbedBugParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createEmbedBug>>,
+        TError,
+        {data: BodyType<EmbedBugCreate>;params: CreateEmbedBugParams},
+        TContext
+      > => {
+      return useMutation(getCreateEmbedBugMutationOptions(options));
+    }
+
+export const getMarkEmbedBugsSeenUrl = (params: MarkEmbedBugsSeenParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/embed/bugs/seen?${stringifiedParams}` : `/api/embed/bugs/seen`
+}
+
+/**
+ * @summary Segna come lette le segnalazioni del visitatore (pubblica)
+ */
+export const markEmbedBugsSeen = async (embedBugSeen: EmbedBugSeen,
+    params: MarkEmbedBugsSeenParams, options?: RequestInit): Promise<EmbedBugSeenResult> => {
+
+  return customFetch<EmbedBugSeenResult>(getMarkEmbedBugsSeenUrl(params),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(embedBugSeen)
+  }
+);}
+
+
+
+
+export const getMarkEmbedBugsSeenMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markEmbedBugsSeen>>, TError,{data: BodyType<EmbedBugSeen>;params: MarkEmbedBugsSeenParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markEmbedBugsSeen>>, TError,{data: BodyType<EmbedBugSeen>;params: MarkEmbedBugsSeenParams}, TContext> => {
+
+const mutationKey = ['markEmbedBugsSeen'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markEmbedBugsSeen>>, {data: BodyType<EmbedBugSeen>;params: MarkEmbedBugsSeenParams}> = (props) => {
+          const {data,params} = props ?? {};
+
+          return  markEmbedBugsSeen(data,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkEmbedBugsSeenMutationResult = NonNullable<Awaited<ReturnType<typeof markEmbedBugsSeen>>>
+    export type MarkEmbedBugsSeenMutationBody = BodyType<EmbedBugSeen>
+    export type MarkEmbedBugsSeenMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Segna come lette le segnalazioni del visitatore (pubblica)
+ */
+export const useMarkEmbedBugsSeen = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markEmbedBugsSeen>>, TError,{data: BodyType<EmbedBugSeen>;params: MarkEmbedBugsSeenParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markEmbedBugsSeen>>,
+        TError,
+        {data: BodyType<EmbedBugSeen>;params: MarkEmbedBugsSeenParams},
+        TContext
+      > => {
+      return useMutation(getMarkEmbedBugsSeenMutationOptions(options));
+    }
+
+export const getGetEmbedBugUrl = (id: number,
+    params: GetEmbedBugParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/embed/bugs/${id}?${stringifiedParams}` : `/api/embed/bugs/${id}`
+}
+
+/**
+ * @summary Dettaglio di una segnalazione del visitatore (pubblica)
+ */
+export const getEmbedBug = async (id: number,
+    params: GetEmbedBugParams, options?: RequestInit): Promise<EmbedBugDetail> => {
+
+  return customFetch<EmbedBugDetail>(getGetEmbedBugUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEmbedBugQueryKey = (id: number,
+    params?: GetEmbedBugParams,) => {
+    return [
+    `/api/embed/bugs/${id}`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetEmbedBugQueryOptions = <TData = Awaited<ReturnType<typeof getEmbedBug>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>>(id: number,
+    params: GetEmbedBugParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmbedBug>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEmbedBugQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEmbedBug>>> = ({ signal }) => getEmbedBug(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEmbedBug>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEmbedBugQueryResult = NonNullable<Awaited<ReturnType<typeof getEmbedBug>>>
+export type GetEmbedBugQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>
+
+
+/**
+ * @summary Dettaglio di una segnalazione del visitatore (pubblica)
+ */
+
+export function useGetEmbedBug<TData = Awaited<ReturnType<typeof getEmbedBug>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>>(
+ id: number,
+    params: GetEmbedBugParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmbedBug>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEmbedBugQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAddEmbedBugMessageUrl = (id: number,
+    params: AddEmbedBugMessageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/embed/bugs/${id}/messages?${stringifiedParams}` : `/api/embed/bugs/${id}/messages`
+}
+
+/**
+ * Solo con la segnalazione in «Serve una tua risposta»; la rimette in esame. 20 messaggi all'ora per segnalazione.
+ * @summary Risposta del visitatore alla domanda del Responsabile (pubblica)
+ */
+export const addEmbedBugMessage = async (id: number,
+    embedBugMessage: EmbedBugMessage,
+    params: AddEmbedBugMessageParams, options?: RequestInit): Promise<EmbedBugDetail> => {
+
+  return customFetch<EmbedBugDetail>(getAddEmbedBugMessageUrl(id,params),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(embedBugMessage)
+  }
+);}
+
+
+
+
+export const getAddEmbedBugMessageMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addEmbedBugMessage>>, TError,{id: number;data: BodyType<EmbedBugMessage>;params: AddEmbedBugMessageParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addEmbedBugMessage>>, TError,{id: number;data: BodyType<EmbedBugMessage>;params: AddEmbedBugMessageParams}, TContext> => {
+
+const mutationKey = ['addEmbedBugMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addEmbedBugMessage>>, {id: number;data: BodyType<EmbedBugMessage>;params: AddEmbedBugMessageParams}> = (props) => {
+          const {id,data,params} = props ?? {};
+
+          return  addEmbedBugMessage(id,data,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddEmbedBugMessageMutationResult = NonNullable<Awaited<ReturnType<typeof addEmbedBugMessage>>>
+    export type AddEmbedBugMessageMutationBody = BodyType<EmbedBugMessage>
+    export type AddEmbedBugMessageMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Risposta del visitatore alla domanda del Responsabile (pubblica)
+ */
+export const useAddEmbedBugMessage = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addEmbedBugMessage>>, TError,{id: number;data: BodyType<EmbedBugMessage>;params: AddEmbedBugMessageParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof addEmbedBugMessage>>,
+        TError,
+        {id: number;data: BodyType<EmbedBugMessage>;params: AddEmbedBugMessageParams},
+        TContext
+      > => {
+      return useMutation(getAddEmbedBugMessageMutationOptions(options));
+    }
 
 export const getStartNodePairingUrl = () => {
 
@@ -4773,6 +5207,686 @@ export const useRefreshAppArchitecture = <TError = ErrorType<NotFoundResponse | 
         TContext
       > => {
       return useMutation(getRefreshAppArchitectureMutationOptions(options));
+    }
+
+export const getGetBugSettingsUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/bug-settings`
+}
+
+/**
+ * @summary Impostazioni delle segnalazioni dei bug dell'App
+ */
+export const getBugSettings = async (id: number, options?: RequestInit): Promise<BugSettings> => {
+
+  return customFetch<BugSettings>(getGetBugSettingsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBugSettingsQueryKey = (id: number,) => {
+    return [
+    `/api/apps/${id}/bug-settings`
+    ] as const;
+    }
+
+
+export const getGetBugSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getBugSettings>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBugSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBugSettingsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBugSettings>>> = ({ signal }) => getBugSettings(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBugSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBugSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getBugSettings>>>
+export type GetBugSettingsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Impostazioni delle segnalazioni dei bug dell'App
+ */
+
+export function useGetBugSettings<TData = Awaited<ReturnType<typeof getBugSettings>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBugSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBugSettingsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateBugSettingsUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/bug-settings`
+}
+
+/**
+ * @summary Accende o spegne le segnalazioni e cambia il limite giornaliero
+ */
+export const updateBugSettings = async (id: number,
+    bugSettingsUpdate: BugSettingsUpdate, options?: RequestInit): Promise<BugSettings> => {
+
+  return customFetch<BugSettings>(getUpdateBugSettingsUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bugSettingsUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateBugSettingsMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateBugSettings>>, TError,{id: number;data: BodyType<BugSettingsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateBugSettings>>, TError,{id: number;data: BodyType<BugSettingsUpdate>}, TContext> => {
+
+const mutationKey = ['updateBugSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateBugSettings>>, {id: number;data: BodyType<BugSettingsUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateBugSettings(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateBugSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateBugSettings>>>
+    export type UpdateBugSettingsMutationBody = BodyType<BugSettingsUpdate>
+    export type UpdateBugSettingsMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Accende o spegne le segnalazioni e cambia il limite giornaliero
+ */
+export const useUpdateBugSettings = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateBugSettings>>, TError,{id: number;data: BodyType<BugSettingsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateBugSettings>>,
+        TError,
+        {id: number;data: BodyType<BugSettingsUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateBugSettingsMutationOptions(options));
+    }
+
+export const getCreateIdentitySecretUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/identity-secret`
+}
+
+/**
+ * Il segreto esce una sola volta; rigenerarlo invalida i token firmati con il precedente.
+ * @summary Genera o rigenera il segreto d'identità (solo con il login)
+ */
+export const createIdentitySecret = async (id: number, options?: RequestInit): Promise<IdentitySecret> => {
+
+  return customFetch<IdentitySecret>(getCreateIdentitySecretUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCreateIdentitySecretMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createIdentitySecret>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createIdentitySecret>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['createIdentitySecret'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createIdentitySecret>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  createIdentitySecret(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateIdentitySecretMutationResult = NonNullable<Awaited<ReturnType<typeof createIdentitySecret>>>
+
+    export type CreateIdentitySecretMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Genera o rigenera il segreto d'identità (solo con il login)
+ */
+export const useCreateIdentitySecret = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createIdentitySecret>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createIdentitySecret>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getCreateIdentitySecretMutationOptions(options));
+    }
+
+export const getDeleteIdentitySecretUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/identity-secret`
+}
+
+/**
+ * @summary Toglie il segreto d'identità (solo con il login)
+ */
+export const deleteIdentitySecret = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteIdentitySecretUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteIdentitySecretMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteIdentitySecret>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteIdentitySecret>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteIdentitySecret'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteIdentitySecret>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteIdentitySecret(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteIdentitySecretMutationResult = NonNullable<Awaited<ReturnType<typeof deleteIdentitySecret>>>
+
+    export type DeleteIdentitySecretMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Toglie il segreto d'identità (solo con il login)
+ */
+export const useDeleteIdentitySecret = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteIdentitySecret>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteIdentitySecret>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteIdentitySecretMutationOptions(options));
+    }
+
+export const getTestIdentityUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/identity-test`
+}
+
+/**
+ * Non salva nulla.
+ * @summary Verifica un token d'identità con il segreto dell'App
+ */
+export const testIdentity = async (id: number,
+    identityTest: IdentityTest, options?: RequestInit): Promise<IdentityTestResult> => {
+
+  return customFetch<IdentityTestResult>(getTestIdentityUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(identityTest)
+  }
+);}
+
+
+
+
+export const getTestIdentityMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testIdentity>>, TError,{id: number;data: BodyType<IdentityTest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof testIdentity>>, TError,{id: number;data: BodyType<IdentityTest>}, TContext> => {
+
+const mutationKey = ['testIdentity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof testIdentity>>, {id: number;data: BodyType<IdentityTest>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  testIdentity(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TestIdentityMutationResult = NonNullable<Awaited<ReturnType<typeof testIdentity>>>
+    export type TestIdentityMutationBody = BodyType<IdentityTest>
+    export type TestIdentityMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Verifica un token d'identità con il segreto dell'App
+ */
+export const useTestIdentity = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testIdentity>>, TError,{id: number;data: BodyType<IdentityTest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof testIdentity>>,
+        TError,
+        {id: number;data: BodyType<IdentityTest>},
+        TContext
+      > => {
+      return useMutation(getTestIdentityMutationOptions(options));
+    }
+
+export const getListAppBugsUrl = (id: number,
+    params?: ListAppBugsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/apps/${id}/bugs?${stringifiedParams}` : `/api/apps/${id}/bugs`
+}
+
+/**
+ * Al più 200, le più recenti prima.
+ * @summary Segnalazioni dei bug dell'App
+ */
+export const listAppBugs = async (id: number,
+    params?: ListAppBugsParams, options?: RequestInit): Promise<AdminBugSummary[]> => {
+
+  return customFetch<AdminBugSummary[]>(getListAppBugsUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAppBugsQueryKey = (id: number,
+    params?: ListAppBugsParams,) => {
+    return [
+    `/api/apps/${id}/bugs`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAppBugsQueryOptions = <TData = Awaited<ReturnType<typeof listAppBugs>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(id: number,
+    params?: ListAppBugsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAppBugs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAppBugsQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAppBugs>>> = ({ signal }) => listAppBugs(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAppBugs>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAppBugsQueryResult = NonNullable<Awaited<ReturnType<typeof listAppBugs>>>
+export type ListAppBugsQueryError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+
+/**
+ * @summary Segnalazioni dei bug dell'App
+ */
+
+export function useListAppBugs<TData = Awaited<ReturnType<typeof listAppBugs>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(
+ id: number,
+    params?: ListAppBugsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAppBugs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAppBugsQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAppBugUrl = (id: number,
+    number: number,) => {
+
+
+
+
+  return `/api/apps/${id}/bugs/${number}`
+}
+
+/**
+ * @summary Dettaglio di una segnalazione
+ */
+export const getAppBug = async (id: number,
+    number: number, options?: RequestInit): Promise<AdminBugDetail> => {
+
+  return customFetch<AdminBugDetail>(getGetAppBugUrl(id,number),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppBugQueryKey = (id: number,
+    number: number,) => {
+    return [
+    `/api/apps/${id}/bugs/${number}`
+    ] as const;
+    }
+
+
+export const getGetAppBugQueryOptions = <TData = Awaited<ReturnType<typeof getAppBug>>, TError = ErrorType<NotFoundResponse>>(id: number,
+    number: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppBug>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppBugQueryKey(id,number);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppBug>>> = ({ signal }) => getAppBug(id,number, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && number !== null && number !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppBug>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppBugQueryResult = NonNullable<Awaited<ReturnType<typeof getAppBug>>>
+export type GetAppBugQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Dettaglio di una segnalazione
+ */
+
+export function useGetAppBug<TData = Awaited<ReturnType<typeof getAppBug>>, TError = ErrorType<NotFoundResponse>>(
+ id: number,
+    number: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppBug>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppBugQueryOptions(id,number,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAddAppBugMessageUrl = (id: number,
+    number: number,) => {
+
+
+
+
+  return `/api/apps/${id}/bugs/${number}/messages`
+}
+
+/**
+ * @summary Messaggio dell'amministratore al segnalante
+ */
+export const addAppBugMessage = async (id: number,
+    number: number,
+    embedBugMessage: EmbedBugMessage, options?: RequestInit): Promise<EmbedBugMessageView> => {
+
+  return customFetch<EmbedBugMessageView>(getAddAppBugMessageUrl(id,number),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(embedBugMessage)
+  }
+);}
+
+
+
+
+export const getAddAppBugMessageMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addAppBugMessage>>, TError,{id: number;number: number;data: BodyType<EmbedBugMessage>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addAppBugMessage>>, TError,{id: number;number: number;data: BodyType<EmbedBugMessage>}, TContext> => {
+
+const mutationKey = ['addAppBugMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addAppBugMessage>>, {id: number;number: number;data: BodyType<EmbedBugMessage>}> = (props) => {
+          const {id,number,data} = props ?? {};
+
+          return  addAppBugMessage(id,number,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddAppBugMessageMutationResult = NonNullable<Awaited<ReturnType<typeof addAppBugMessage>>>
+    export type AddAppBugMessageMutationBody = BodyType<EmbedBugMessage>
+    export type AddAppBugMessageMutationError = ErrorType<BadRequestResponse | NotFoundResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Messaggio dell'amministratore al segnalante
+ */
+export const useAddAppBugMessage = <TError = ErrorType<BadRequestResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addAppBugMessage>>, TError,{id: number;number: number;data: BodyType<EmbedBugMessage>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof addAppBugMessage>>,
+        TError,
+        {id: number;number: number;data: BodyType<EmbedBugMessage>},
+        TContext
+      > => {
+      return useMutation(getAddAppBugMessageMutationOptions(options));
+    }
+
+export const getCloseAppBugUrl = (id: number,
+    number: number,) => {
+
+
+
+
+  return `/api/apps/${id}/bugs/${number}/close`
+}
+
+/**
+ * Vale dagli stati non finali. Una voce «Da confermare» ancora in attesa della segnalazione si rifiuta con la nota «chiusa dall'amministratore».
+ * @summary Chiude una segnalazione come corretta o non un problema
+ */
+export const closeAppBug = async (id: number,
+    number: number,
+    adminBugClose: AdminBugClose, options?: RequestInit): Promise<AdminBugDetail> => {
+
+  return customFetch<AdminBugDetail>(getCloseAppBugUrl(id,number),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminBugClose)
+  }
+);}
+
+
+
+
+export const getCloseAppBugMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeAppBug>>, TError,{id: number;number: number;data: BodyType<AdminBugClose>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof closeAppBug>>, TError,{id: number;number: number;data: BodyType<AdminBugClose>}, TContext> => {
+
+const mutationKey = ['closeAppBug'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof closeAppBug>>, {id: number;number: number;data: BodyType<AdminBugClose>}> = (props) => {
+          const {id,number,data} = props ?? {};
+
+          return  closeAppBug(id,number,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CloseAppBugMutationResult = NonNullable<Awaited<ReturnType<typeof closeAppBug>>>
+    export type CloseAppBugMutationBody = BodyType<AdminBugClose>
+    export type CloseAppBugMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Chiude una segnalazione come corretta o non un problema
+ */
+export const useCloseAppBug = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeAppBug>>, TError,{id: number;number: number;data: BodyType<AdminBugClose>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof closeAppBug>>,
+        TError,
+        {id: number;number: number;data: BodyType<AdminBugClose>},
+        TContext
+      > => {
+      return useMutation(getCloseAppBugMutationOptions(options));
     }
 
 export const getListAgentsUrl = (params?: ListAgentsParams,) => {

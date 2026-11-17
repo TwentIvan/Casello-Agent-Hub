@@ -31,6 +31,7 @@ const LEAD_LISTS: Record<string, string> = {
 };
 const LEAD_DETAILS: [RegExp, string][] = [
   [/^\/apps\/([^/]+)\/plan$/, "app_plan"],
+  [/^\/apps\/([^/]+)\/bugs\/[^/]+$/, "app"],
   [/^\/apps\/([^/]+)$/, "app"],
   [/^\/analyses\/([^/]+)$/, "analysis"],
   [/^\/agents\/([^/]+)$/, "agent"],

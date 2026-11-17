@@ -46,7 +46,7 @@ describe("GET /api/embed/config", () => {
   it("senza login: origine ammessa, nome = host", async () => {
     const r = await get("/api/embed/config?origin=https://hubup.fantamister.cloud");
     expect(r.status).toBe(200);
-    expect(r.json).toEqual({ allowed: true, clientId: "embed:https://hubup.fantamister.cloud", appName: "hubup.fantamister.cloud" });
+    expect(r.json).toEqual({ allowed: true, clientId: "embed:https://hubup.fantamister.cloud", appName: "hubup.fantamister.cloud", bugs: { enabled: false, identity: false } });
   });
   it("usa il nome dell'App con quella origine", async () => {
     await db.insert(appsTable).values({ name: "The Hub Up", slug: "hubup", baseUrl: "https://hubup.fantamister.cloud/api" });
@@ -54,7 +54,7 @@ describe("GET /api/embed/config", () => {
     expect(r.json).toMatchObject({ allowed: true, appName: "The Hub Up" });
   });
   it("origine non in lista, mancante o non valida", async () => {
-    const none = { allowed: false, clientId: null, appName: null };
+    const none = { allowed: false, clientId: null, appName: null, bugs: { enabled: false, identity: false } };
     expect((await get("/api/embed/config?origin=https://evil.example")).json).toEqual(none);
     expect((await get("/api/embed/config")).json).toEqual(none);
     expect((await get("/api/embed/config?origin=non-un-url")).json).toEqual(none);

@@ -27,6 +27,9 @@ export function findAppBySlug<T extends { slug: string }>(apps: readonly T[] | u
 
 export const BADGE_OPEN_MS = 5_000;
 export const BADGE_CLOSED_MS = 30_000;
+/** Contatore delle segnalazioni del visitatore: 10 s a pannello aperto, 60 s chiuso (solo con almeno una segnalazione). */
+export const VISITOR_BADGE_OPEN_MS = 10_000;
+export const VISITOR_BADGE_CLOSED_MS = 60_000;
 
 /** Pannello aperto: documento visibile e iframe mostrato dal caricatore. */
 export function isPanelOpen(state: { visible: boolean; shown: boolean }): boolean {

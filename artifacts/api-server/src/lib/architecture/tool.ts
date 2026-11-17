@@ -88,13 +88,21 @@ export function architecturePromptBlock(
 
 const fail = (message: string): ToolResult => ({ ok: false, content: message });
 
-/** `app` null (chat senza App di partenza): `app` negli argomenti è obbligatorio. */
-export async function handleReadArchitecture(app: App | null, args: Record<string, unknown>): Promise<ToolResult> {
+/**
+ * `app` null (chat senza App di partenza): `app` negli argomenti è obbligatorio. Con `onlyOwnApp` (run di vaglio delle
+ * segnalazioni) si legge solo l'App di partenza: un'altra App è «app non trovata».
+ */
+export async function handleReadArchitecture(
+  app: App | null,
+  args: Record<string, unknown>,
+  opts: { onlyOwnApp?: boolean } = {},
+): Promise<ToolResult> {
   try {
     let target = app;
     if (args["app"] !== undefined) {
       const slug = typeof args["app"] === "string" ? args["app"].trim().toLowerCase() : "";
       if (!SLUG_RE.test(slug)) return fail(ARCH_MESSAGES.appNotFound);
+      if (opts.onlyOwnApp && slug !== app?.slug) return fail(ARCH_MESSAGES.appNotFound);
       const [found] = await db.select().from(appsTable).where(eq(appsTable.slug, slug)).limit(1);
       if (!found) return fail(ARCH_MESSAGES.appNotFound);
       target = found;

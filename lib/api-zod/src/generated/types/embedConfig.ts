@@ -5,8 +5,10 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { EmbedBugsConfig } from './embedBugsConfig';
 
 export interface EmbedConfig {
+  bugs: EmbedBugsConfig;
   allowed: boolean;
   clientId: string | null;
   appName: string | null;

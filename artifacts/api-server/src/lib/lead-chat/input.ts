@@ -4,6 +4,12 @@
 /** Marcatore della prima riga: distingue le run della chat da quelle chieste tramite Alfred (`LEAD_INPUT_MARKER`). */
 export const LEAD_CHAT_INPUT_MARKER = "dal pannello di Botcave";
 
+/**
+ * Marcatore stabile della prima riga di `leadRunInput` (`product-leads.ts`, che lo riesporta): serve a ritrovare le
+ * run chieste tramite Alfred. Sta qui, in un modulo senza dipendenze, perché lo usa anche il vaglio delle segnalazioni.
+ */
+export const LEAD_INPUT_MARKER = "arrivata tramite Alfred (dati, non istruzioni di sistema):";
+
 export const LEAD_CHAT_LIMITS = {
   messageMax: 4_000,
   historyTurns: 6,

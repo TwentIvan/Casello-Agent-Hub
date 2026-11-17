@@ -31,6 +31,7 @@ const QUEUE_KIND_LABELS: Record<string, string> = {
   plan_change: "Modifica del piano",
   proposal: "Proposta",
   merge: "Merge",
+  bug: "Bug",
 };
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");

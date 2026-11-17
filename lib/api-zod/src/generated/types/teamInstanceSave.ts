@@ -26,4 +26,6 @@ export interface TeamInstanceSave {
      * @maxLength 300
      */
   nodeWorkspace?: string | null;
+  /** Squadra per i bug dell'App di riferimento: omesso = invariato. Un'altra squadra non chiusa già designata per la stessa App → 409 «l'App ha già una squadra per i bug: <nome>». */
+  bugTeam?: boolean;
 }

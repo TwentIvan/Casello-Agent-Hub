@@ -9,4 +9,7 @@ export {
   DeleteMemoryNoteParams,
   DeleteMemoryHistoryEntryParams,
   GetAlfredNotificationsParams,
+  GetEmbedBugParams,
+  AddEmbedBugMessageParams,
+  ListAppBugsParams,
 } from "./generated/api";

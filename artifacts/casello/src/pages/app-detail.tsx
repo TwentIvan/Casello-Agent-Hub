@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AgentModelsCard } from "@/components/apps/agent-models-card";
 import { AnalysesCard } from "@/components/apps/analyses-card";
 import { AppSourcesCard } from "@/components/apps/app-sources-card";
+import { BugReportsCard } from "@/components/apps/bug-reports-card";
 import { AppArchitectureCard } from "@/components/apps/app-architecture-card";
 import { ToolCatalog } from "@/components/apps/tool-catalog";
 import { StatusBadge } from "@/components/status-badge";
@@ -73,6 +74,7 @@ export default function AppDetailPage() {
           <AgentModelsCard appId={appId} />
           <AppSourcesCard app={app.data} />
           <AppArchitectureCard app={app.data} />
+          <BugReportsCard app={app.data} />
           <AnalysesCard app={app.data} />
         </>
       )}

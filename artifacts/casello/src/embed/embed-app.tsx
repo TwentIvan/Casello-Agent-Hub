@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { QueryCache, QueryClient, QueryClientProvider, MutationCache } from "@tanstack/react-query";
 import { Router } from "wouter";
-import { getCurrentUser, setAuthTokenGetter, setBaseUrl, setRequestCredentials } from "@workspace/api-client-react";
+import { ApiError, getCurrentUser, setAuthTokenGetter, setBaseUrl, setRequestCredentials } from "@workspace/api-client-react";
 import { BotcavePanel } from "@/components/panel/botcave-panel";
 import { PanelProvider, usePanel, type PanelEnv } from "@/components/panel/panel-context";
 import { AlfredVoiceProvider } from "@/components/panel/voice-context";
@@ -28,9 +28,13 @@ import {
 import { useHost } from "./use-host";
 import { useBadge, usePanelOpen } from "./use-badge";
 import { embedHrefs, useEmbedLocation } from "./embed-location";
+import { VisitorBugsProvider } from "./bugs/visitor-bugs";
+import { VisitorPanel } from "./bugs/visitor-panel";
+import { embedTokenGetter, isVisitorBugUrl } from "./bugs/visitor-request";
 
 setBaseUrl(null);
-setAuthTokenGetter(getAccessToken);
+// Le route pubbliche delle segnalazioni dei bug (visitatore) non portano mai il token di Botcave
+setAuthTokenGetter(embedTokenGetter(getAccessToken));
 // Sugli host dello stesso sito di Botcave il cookie SameSite=Lax arriverebbe all'API anche dall'iframe: mai cookie
 setRequestCredentials("omit");
 
@@ -42,8 +46,10 @@ const MESSAGES = {
   failed: "Collegamento non completato: riprova",
 } as const;
 
-// Un 401 vuol dire token revocato o non più valido: si torna a «Collega con Botcave».
+// Un 401 vuol dire token revocato o non più valido: si torna a «Collega con Botcave». Non sulle route del visitatore,
+// dove il 401 riguarda l'identità dell'app ospite e non il collegamento a Botcave.
 function onApiError(error: unknown) {
+  if (error instanceof ApiError && isVisitorBugUrl(error.url)) return;
   if (isUnauthorized(error)) clearTokens();
 }
 
@@ -200,10 +206,21 @@ function EmbedRoot() {
     );
   }
   // Durante la verifica dell'utente si resta sulla schermata di collegamento
-  if (!connected || connect.busy) {
-    return <ConnectScreen busy={connect.busy} error={connect.error} onConnect={connect.connect} />;
+  if (connect.busy) return <ConnectScreen busy error={connect.error} onConnect={connect.connect} />;
+  // Senza collegamento: con le segnalazioni attive il pannello del visitatore, altrimenti «Collega con Botcave»
+  if (!connected) {
+    if (!host.bugs.enabled) return <ConnectScreen busy={false} error={connect.error} onConnect={connect.connect} />;
+    return (
+      <VisitorBugsProvider host={host}>
+        <VisitorPanel host={host} connectError={connect.error} onConnect={connect.connect} />
+      </VisitorBugsProvider>
+    );
   }
-  return <Shell host={host} />;
+  return (
+    <VisitorBugsProvider host={host}>
+      <Shell host={host} />
+    </VisitorBugsProvider>
+  );
 }
 
 export function EmbedApp() {

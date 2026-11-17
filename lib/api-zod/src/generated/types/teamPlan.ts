@@ -9,8 +9,11 @@ import type { TeamCodeTask } from './teamCodeTask';
 import type { TeamManualAction } from './teamManualAction';
 import type { TeamPlanStatus } from './teamPlanStatus';
 import type { TeamPlanTasksItem } from './teamPlanTasksItem';
+import type { TeamWork } from './teamWork';
 
 export interface TeamPlan {
+  /** Ultimo lavoro su branch unico della squadra (null se non ne ha mai aperto uno) */
+  work: TeamWork | null;
   /** Branch, PR e CI dei compiti che hanno scritto codice (vuoto se nessuno) */
   codeTasks: TeamCodeTask[];
   objective: string;

@@ -285,3 +285,112 @@ export async function sweepWorks(): Promise<void> {
     }
   }
 }
+
+// --- Viste del lavoro (capo e console) -----------------------------------------------------------------------------
+
+export interface WorkSummary {
+  numero: number;
+  stato: TeamWork["status"];
+  branch: string;
+  prUnite: number;
+  compitoInFila: string | null;
+}
+
+async function mergedCount(workId: number): Promise<number> {
+  const [{ n } = { n: 0 }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(teamCodeTasksTable)
+    .where(and(eq(teamCodeTasksTable.workId, workId), eq(teamCodeTasksTable.prState, "merged")));
+  return n;
+}
+
+/** Compito con codice in fila: PR aperta nel lavoro, altrimenti un compito di un ruolo che scrive codice in corso. */
+async function queuedTask(instance: TeamInstanceRow, workId: number): Promise<string | null> {
+  const [open] = await db
+    .select({ id: teamCodeTasksTable.planTaskId })
+    .from(teamCodeTasksTable)
+    .where(and(eq(teamCodeTasksTable.workId, workId), eq(teamCodeTasksTable.prState, "open")))
+    .limit(1);
+  if (open) return open.id;
+  const writers = instance.roles.filter((r) => codeWrites(r.code ?? "none")).map((r) => r.key);
+  if (writers.length === 0) return null;
+  const [busy] = await db
+    .select({ id: teamTasksTable.planTaskId })
+    .from(teamTasksTable)
+    .where(and(eq(teamTasksTable.instanceId, instance.id), inArray(teamTasksTable.roleKey, writers), inArray(teamTasksTable.status, ["queued", "running", "waiting_node"])))
+    .limit(1);
+  return busy?.id ?? null;
+}
+
+/** Ultimo lavoro della squadra per `leggi_piano` (null se la squadra non ne ha mai aperto uno). */
+export async function workSummary(instanceId: number): Promise<WorkSummary | null> {
+  const [work] = await db.select().from(teamWorksTable).where(eq(teamWorksTable.instanceId, instanceId)).orderBy(sql`${teamWorksTable.number} desc`).limit(1);
+  if (!work) return null;
+  const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, instanceId)).limit(1);
+  return {
+    numero: work.number,
+    stato: work.status,
+    branch: work.branch,
+    prUnite: await mergedCount(work.id),
+    compitoInFila: instance && work.status === "open" ? await queuedTask(instance, work.id) : null,
+  };
+}
+
+export interface WorkView {
+  id: number;
+  number: number;
+  status: TeamWork["status"];
+  repo: string;
+  branch: string;
+  baseBranch: string;
+  headSha: string | null;
+  mergedPulls: number;
+  queuedTask: string | null;
+  postScripts: string[];
+  stagingBranch: string | null;
+  stagingUrl: string | null;
+  releaseActionNumber: number | null;
+  releasePrNumber: number | null;
+  releasePrUrl: string | null;
+  rejectionNote: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
+/** Ultimi lavori della squadra (al più 20), dal più recente, per la console. */
+export async function listWorks(instanceId: number, limit = 20): Promise<WorkView[]> {
+  const rows = await db
+    .select({ work: teamWorksTable, actionNumber: pendingActionsTable.number })
+    .from(teamWorksTable)
+    .leftJoin(pendingActionsTable, eq(pendingActionsTable.id, teamWorksTable.pendingActionId))
+    .where(eq(teamWorksTable.instanceId, instanceId))
+    .orderBy(sql`${teamWorksTable.number} desc`)
+    .limit(Math.min(limit, 20));
+  if (rows.length === 0) return [];
+  const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, instanceId)).limit(1);
+  const [app] = instance ? await db.select().from(appsTable).where(eq(appsTable.id, instance.refAppId)).limit(1) : [];
+  const out: WorkView[] = [];
+  for (const { work, actionNumber } of rows) {
+    out.push({
+      id: work.id,
+      number: work.number,
+      status: work.status,
+      repo: work.repo,
+      branch: work.branch,
+      baseBranch: work.baseBranch,
+      headSha: work.headSha,
+      mergedPulls: await mergedCount(work.id),
+      queuedTask: instance && work.status === "open" ? await queuedTask(instance, work.id) : null,
+      postScripts: work.postScripts,
+      stagingBranch: app?.stagingBranch ?? null,
+      stagingUrl: app?.stagingUrl ?? null,
+      releaseActionNumber: actionNumber ?? null,
+      releasePrNumber: work.releasePrNumber,
+      releasePrUrl: work.releasePrUrl,
+      rejectionNote: work.rejectionNote,
+      createdAt: work.createdAt.toISOString(),
+      finishedAt: work.finishedAt ? work.finishedAt.toISOString() : null,
+    });
+  }
+  return out;
+}

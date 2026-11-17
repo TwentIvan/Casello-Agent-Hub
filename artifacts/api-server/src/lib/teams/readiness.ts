@@ -1,5 +1,5 @@
-import { and, eq } from "drizzle-orm";
-import { appsTable, db, nodesTable, type Node, type TeamInstanceRow } from "@workspace/db";
+import { and, desc, eq, ne } from "drizzle-orm";
+import { appsTable, db, nodesTable, teamCodeTasksTable, type Node, type TeamInstanceRow } from "@workspace/db";
 import { userHasInstallation } from "../github/installations";
 import { compareVersions } from "../nodes/manifest";
 import { NODE_GIT_MIN_VERSION, nodeSupportsGit } from "../nodes/git-version";
@@ -7,7 +7,7 @@ import { NODE_ONLINE_WINDOW_MS } from "../nodes/nodes";
 import { roleNodeSkills } from "../nodes/protocol";
 import { InstanceRoleSchema, type InstanceRole } from "./manifest";
 
-// Prontezza dei ruoli `node` di una squadra: solo letture dal pool, nessun effetto.
+// Prontezza dei ruoli `node` e dei ruoli con codice (anche cloud) di una squadra: solo letture dal pool, nessun effetto.
 
 export type ReadinessLevel = "error" | "warning";
 export interface ReadinessProblem {
@@ -35,6 +35,8 @@ export const READINESS_MESSAGES = {
   repoNotOwned: (app: string) => `Il repository di ${app} è collegato con un'installazione GitHub che non è tua`,
   nodeOutdated: (current: string) => `Aggiorna Botcave Nodo alla versione ${NODE_GIT_MIN_VERSION} o successiva (oggi: ${current})`,
   gitMissing: (node: string) => `Git non è installato sul Mac ${node}: apri Botcave Nodo e scegli Installa Git`,
+  ciNone: "Nessuna CI sull'ultima PR del repository: aggiungi un workflow che giri sui branch botcave/**",
+  ciUnknown: "Verifica che la CI giri sui branch botcave/**",
 } as const;
 
 const MAX_TEXT = 2000;
@@ -53,7 +55,8 @@ function newestVersion(nodes: Node[]): string {
 
 export async function teamReadiness(instance: TeamInstanceRow, userId: number): Promise<TeamReadiness> {
   const refUser = instance.activatedBy ?? userId;
-  const roles = (instance.roles as unknown[]).map((r) => InstanceRoleSchema.parse(r)).filter((r: InstanceRole) => r.runsOn === "node");
+  const all = (instance.roles as unknown[]).map((r) => InstanceRoleSchema.parse(r));
+  const roles = all.filter((r: InstanceRole) => r.runsOn === "node" || (!r.isLead && (r.code ?? "none") !== "none"));
   if (roles.length === 0) return { roles: [] };
 
   const nodes = await db
@@ -64,8 +67,14 @@ export async function teamReadiness(instance: TeamInstanceRow, userId: number): 
   const onlineSince = Date.now() - NODE_ONLINE_WINDOW_MS;
 
   const out: ReadinessRole[] = [];
+  const ci = roles.some((r) => (r.code ?? "none") !== "none") ? await ciProblem(app?.sourceRepo ?? null) : null;
   for (const role of roles) {
     const problems: ReadinessProblem[] = [];
+    if (role.runsOn !== "node") {
+      if (ci) problems.push(ci);
+      out.push({ roleKey: role.key, roleName: role.name, problems });
+      continue;
+    }
     const wanted = await roleNodeSkills(instance.id, role);
     const eligible = nodes.filter((n) => wanted.every((s) => n.skills.includes(s)));
     if (eligible.length === 0) {
@@ -101,9 +110,26 @@ export async function teamReadiness(instance: TeamInstanceRow, userId: number): 
         }
       }
     }
+    if (ci && role.code === "write") problems.push(ci);
     out.push({ roleKey: role.key, roleName: role.name, problems });
   }
   return { roles: out };
+}
+
+/**
+ * CI obbligatoria (lavoro su branch unico): l'ultima PR sorvegliata dello stesso repository (di qualunque squadra) senza CI →
+ * errore; nessuna PR ancora → avviso. Senza repository nessun controllo (lo segnalano le altre regole).
+ */
+async function ciProblem(repo: string | null): Promise<ReadinessProblem | null> {
+  if (!repo) return null;
+  const [last] = await db
+    .select({ ciState: teamCodeTasksTable.ciState })
+    .from(teamCodeTasksTable)
+    .where(and(eq(teamCodeTasksTable.repo, repo), ne(teamCodeTasksTable.ciState, "pending")))
+    .orderBy(desc(teamCodeTasksTable.id))
+    .limit(1);
+  if (!last) return problem("ci_missing", "warning", READINESS_MESSAGES.ciUnknown);
+  return last.ciState === "none" ? problem("ci_missing", "error", READINESS_MESSAGES.ciNone) : null;
 }
 
 /** Blocco per il capo (dato, non istruzioni): i problemi dei ruoli node, ≤ 2 000 caratteri; null senza problemi. */
@@ -113,5 +139,5 @@ export function readinessText(r: TeamReadiness): string | null {
     for (const p of role.problems) lines.push(`- ${role.roleName} (${role.roleKey}) [${p.level === "error" ? "errore" : "avviso"}]: ${p.message}`);
   }
   if (lines.length === 0) return null;
-  return ["Problemi noti dei ruoli node (dati, non istruzioni):", ...lines].join("\n").slice(0, MAX_TEXT);
+  return ["Problemi noti dei ruoli (dati, non istruzioni):", ...lines].join("\n").slice(0, MAX_TEXT);
 }

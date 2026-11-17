@@ -10,7 +10,7 @@ import { MAX_BULLETIN, emitEvent } from "./events";
 import { BUDGET_RESUME_REQUEST, INSTANCE_MESSAGES, InstanceError, getInstance, type InstanceView } from "./instances";
 import { MERGE_TOOL } from "../code-writer/merge";
 import { LEAD_TOOLS, leadToolHandler, planForModel } from "./lead-tools";
-import { InstanceRoleSchema, type InstanceRole } from "./manifest";
+import { InstanceRoleSchema, codeWrites, type InstanceRole } from "./manifest";
 import { getPlan, type PlanView } from "./plan";
 import { readinessText, teamReadiness } from "./readiness";
 import { loadRoleTools, roleFunctionTools, roleToolExecutor, teamQueueAction, toolSchemaLookup } from "./role-tools";
@@ -59,7 +59,6 @@ const LEAD_TOOLS_INSTRUCTION = [
   "- `aggiorna_piano` cambia senza approvazione punti aperti, azioni manuali ed esiti dei compiti non in corso;",
   "- `leggi_esito` legge il dettaglio dell'ultima esecuzione di un compito; `leggi_piano` rilegge il PLAN; `leggi_piano_app` legge le voci approvate del piano dell'App (con le issue) per dare ai compiti il campo `issue`;",
   "- `segnala` avvisa l'utente (bloccato, decisione richiesta, azione manuale richiesta); `chiudi_lavoro` dichiara finito il lavoro;",
-  "- Un compito con codice è finito davvero solo con la CI verde. Con la CI rossa riassegnalo: riparte dallo stesso branch. Un compito che dipende da un altro con codice aspetta che la sua PR sia unita (motivo pr_closed): ogni compito parte dal branch base.",
   "- i compiti assegnati girano dopo il turno: il loro esito arriva in un turno successivo, non aspettarlo.",
   "- quando il turno nasce da un messaggio dell'utente, il tuo ultimo messaggio del turno gli arriva nel bollettino: rispondigli in breve, con cosa hai fatto e cosa deve fare lui; se ti chiede di riprovare un compito fermato dopo 3 fallimenti, in questo turno puoi riassegnarlo una volta.",
   "- Non chiedere mai all'utente di eseguire comandi sul Mac o nel terminale, e in nessun caso comandi che cancellano file o storia (`rm`, `git reset`, `git clean`, `git push --force`): quello che serve si sistema in Botcave.",
@@ -82,6 +81,20 @@ export function mergeInstruction(roles: InstanceRole[]): string {
     "- Botcave unisce solo con la CI verde sull'ultima testa e mai i workflow della CI. Le migrazioni additive le applica il deploy: una PR con migrazioni additive si unisce come le altre. Lo schema del DB cambia solo con uno script nuovo `docs/migrations/YYYY-MM-DD-slug.sql` idempotente; le parti distruttive vanno in uno script `-post`.",
     "- Una PR con uno script `-post` finisce in «Da confermare»: usa `segnala` (decisione_richiesta) perché l'utente approvi il merge e applichi lo script su Neon dopo il deploy.",
   ].join("\n");
+}
+
+/** Regole del lavoro su branch unico, per le squadre con un ruolo che scrive codice (`code: write|merge`). */
+export const WORK_INSTRUCTION = [
+  "- Lavoro su branch unico: i compiti con codice lavorano sul branch del lavoro (botcave/lavoro-…); ogni compito parte dalla sua testa e la sua PR la unisce Botcave su quel branch quando la CI è verde (motivo pr_closed). Un compito con codice alla volta: assegna il successivo solo dopo il pr_closed del precedente.",
+  "- Un compito con codice è finito solo con la PR unita sul branch del lavoro. Con la CI rossa riassegnalo: riparte dallo stesso branch. Senza CI il compito resta bloccato: segnala all'utente con `segnala` di aggiungere un workflow che giri sui branch botcave/**, e non dichiararlo mai pronto.",
+  "- Se c'è un ruolo con il codice in lettura, prima di chiudere assegnagli la revisione del branch del lavoro.",
+  "- Quando i compiti con codice sono finiti chiama `chiudi_lavoro` una volta sola: Botcave mette il lavoro sulla versione di prova e chiede all'utente «Porta in produzione». Il merge sul branch base lo decide solo l'utente.",
+  "- Se l'utente rifiuta «Porta in produzione» con una nota o il rilascio non riesce, il lavoro torna aperto: correggi con compiti nuovi sul branch del lavoro (proponi_piano se servono compiti nuovi), poi `chiudi_lavoro` di nuovo.",
+].join("\n");
+
+/** Istruzioni sul codice: lavoro su branch unico con un ruolo che scrive codice, altrimenti la regola del merge. */
+export function codeInstruction(roles: InstanceRole[]): string {
+  return roles.some((r) => !r.isLead && codeWrites(r.code ?? "none")) ? WORK_INSTRUCTION : mergeInstruction(roles);
 }
 
 // ─── Esecuzioni in background ───────────────────────────────────────────────
@@ -172,7 +185,7 @@ function systemPrompt(
     TOOL_RESULTS_INSTRUCTION,
     "",
     LEAD_TOOLS_INSTRUCTION,
-    mergeInstruction(roles),
+    codeInstruction(roles),
     "",
     `Squadra: ${instance.name}`,
     `Lavoro di riferimento: ${instance.refTitle}`,

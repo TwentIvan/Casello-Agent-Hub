@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
-import { WORK_MESSAGES, WorkError, closeWorkIfDone, codeQueueBlock, ensureWorkForCodeTask, getOpenWork, roleWritesCode } from "./works";
+import { WORK_MESSAGES, WorkError, closeWorkIfDone, codeQueueBlock, ensureWorkForCodeTask, getOpenWork, roleWritesCode, workSummary, type WorkSummary } from "./works";
 import { codeErrorMessage } from "../code-writer/session";
 import { z } from "zod";
 import { db, pendingActionsTable, teamCodeTasksTable, teamInstancesTable, teamPlanVersionsTable, teamTasksTable } from "@workspace/db";
@@ -128,7 +128,7 @@ function zodDetail(error: z.ZodError): string {
 }
 
 /** PLAN in forma compatta per il modello (senza timestamp). */
-export function planForModel(plan: PlanView): string {
+export function planForModel(plan: PlanView, lavoro: WorkSummary | null = null): string {
   return JSON.stringify({
     version: plan.version,
     status: plan.status,
@@ -138,6 +138,7 @@ export function planForModel(plan: PlanView): string {
     openPoints: plan.openPoints,
     tasks: plan.tasks.map((t) => ({ id: t.id, title: t.title, roleKey: t.roleKey, instructions: t.instructions, status: t.status, outcome: t.outcome, ...(t.issue ? { issue: t.issue } : {}) })),
     manualActions: plan.manualActions.map((a) => ({ id: a.id, text: a.text, done: a.done })),
+    ...(lavoro ? { lavoro } : {}),
   });
 }
 
@@ -320,7 +321,8 @@ const BUSY = new Set<PlanTask["status"]>(["running", "waiting_node"]);
 // ─── Strumenti ──────────────────────────────────────────────────────────────
 
 async function readPlan(ctx: LeadContext): Promise<ToolResult> {
-  return done(planForModel(await getPlan(ctx.instanceId)));
+  // Con il lavoro su branch unico: numero, stato, branch, PR unite e compito con codice in fila
+  return done(planForModel(await getPlan(ctx.instanceId), await workSummary(ctx.instanceId)));
 }
 
 /**

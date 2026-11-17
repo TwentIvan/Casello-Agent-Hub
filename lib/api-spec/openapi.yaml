@@ -3766,10 +3766,10 @@ paths:
     get:
       operationId: getTeamReadiness
       tags: [teams]
-      summary: Prontezza dei ruoli node della squadra
+      summary: Prontezza dei ruoli node e dei ruoli con codice della squadra
       description: >-
         Per ogni ruolo `node` i problemi che gli impedirebbero di lavorare (nodo con le skill, online e aggiornato, Git,
-        spazio di lavoro, repository).
+        spazio di lavoro, repository); per ogni ruolo con codice, anche cloud, la CI sui branch botcave/** (`ci_missing`).
         Utente di riferimento: chi ha attivato la squadra o, se non è attivata, chi chiede. Squadra chiusa → 409.
       parameters:
         - $ref: "#/components/parameters/IdParam"
@@ -3784,6 +3784,28 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  /team-instances/{id}/works:
+    get:
+      operationId: listTeamWorks
+      tags: [teams]
+      summary: Lavori su branch unico della squadra
+      description: >-
+        Ultimi 20 lavori, dal più recente: stato, branch, PR unite, compito in fila, versione di prova dell'App, voce
+        «Porta in produzione» e PR di rilascio.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Lavori della squadra
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamWork"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /team-instances/{id}/updates:
     get:
@@ -8237,7 +8259,7 @@ components:
           enum: [pending, executing, done, failed, rejected]
         kind:
           type: string
-          enum: [action, plan, plan_change, proposal, merge, bug]
+          enum: [action, plan, plan_change, proposal, merge, bug, release]
           description: >-
             Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure
             proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima),
@@ -11681,10 +11703,75 @@ components:
           format: date-time
           nullable: true
 
+    TeamWork:
+      type: object
+      description: Lavoro su branch unico di una squadra con codice (compiti in fila, versione di prova, «Porta in produzione»)
+      required: [id, number, status, repo, branch, baseBranch, headSha, mergedPulls, queuedTask, postScripts, stagingBranch, stagingUrl, releaseActionNumber, releasePrNumber, releasePrUrl, rejectionNote, createdAt, finishedAt]
+      properties:
+        id:
+          type: integer
+        number:
+          type: integer
+        status:
+          type: string
+          enum: [open, awaiting_release, releasing, released, abandoned]
+        repo:
+          type: string
+        branch:
+          type: string
+        baseBranch:
+          type: string
+        headSha:
+          type: string
+          nullable: true
+        mergedPulls:
+          type: integer
+          description: PR dei compiti unite sul branch del lavoro
+        queuedTask:
+          type: string
+          nullable: true
+          description: Compito con codice in corso o con la PR aperta (solo per un lavoro aperto)
+        postScripts:
+          type: array
+          items:
+            type: string
+          description: Script -post uniti nel lavoro, da applicare su Neon dopo il deploy
+        stagingBranch:
+          type: string
+          nullable: true
+        stagingUrl:
+          type: string
+          nullable: true
+        releaseActionNumber:
+          type: integer
+          nullable: true
+          description: Numero della voce «Porta in produzione» in «Da confermare»
+        releasePrNumber:
+          type: integer
+          nullable: true
+        releasePrUrl:
+          type: string
+          nullable: true
+        rejectionNote:
+          type: string
+          nullable: true
+          description: Nota del rifiuto o motivo del rilascio non riuscito (il lavoro è tornato aperto)
+        createdAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          nullable: true
+          format: date-time
     TeamPlan:
       type: object
-      required: [objective, constraints, openPoints, tasks, manualActions, codeTasks, version, status, approvedVersion, updatedAt]
+      required: [objective, constraints, openPoints, tasks, manualActions, codeTasks, work, version, status, approvedVersion, updatedAt]
       properties:
+        work:
+          description: Ultimo lavoro su branch unico della squadra (null se non ne ha mai aperto uno)
+          oneOf:
+            - $ref: "#/components/schemas/TeamWork"
+            - type: "null"
         codeTasks:
           type: array
           description: Branch, PR e CI dei compiti che hanno scritto codice (vuoto se nessuno)

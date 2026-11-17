@@ -9,6 +9,7 @@ export const TAB_LABELS: Record<PanelTab, string> = {
   pending: "Da confermare",
   bulletin: "Bollettino",
   lucius: "Lucius",
+  bugs: "Segnalazioni",
   lead: "Barbara",
 };
 

@@ -23,6 +23,9 @@ function ActiveTab({ tab }: { tab: PanelTab }) {
       return <LuciusTab />;
     case "lead":
       return <LeadTab />;
+    case "bugs":
+      // La scheda arriva con il suo contenuto in un compito successivo; per ora non è in `tabOrder`.
+      return null;
   }
 }
 

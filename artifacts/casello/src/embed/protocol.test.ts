@@ -107,3 +107,35 @@ describe("contextMessage (Botcave.setContext del caricatore)", () => {
     expect(contextMessage("workitem")).toBeNull();
   });
 });
+
+describe("identità e scheda bugs", () => {
+  it("accetta identity con stringa o null e scarta il resto", () => {
+    expect(parseToFrame({ botcave: 1, type: "identity", payload: { token: "a.b-c_d" } })).toEqual({
+      botcave: 1,
+      type: "identity",
+      payload: { token: "a.b-c_d" },
+    });
+    expect(parseToFrame({ botcave: 1, type: "identity", payload: { token: null } })).toEqual({
+      botcave: 1,
+      type: "identity",
+      payload: { token: null },
+    });
+    expect(parseToFrame({ botcave: 1, type: "identity", payload: { token: {} } })).toBeNull();
+    expect(parseToFrame({ botcave: 1, type: "identity", payload: { token: "a b" } })).toBeNull();
+    expect(parseToFrame({ botcave: 1, type: "identity", payload: { token: "a".repeat(4097) } })).toBeNull();
+    expect(parseToFrame({ botcave: 1, type: "identity" })).toBeNull();
+  });
+  it("open accetta bugs", () => {
+    expect(parseToFrame({ botcave: 1, type: "open", payload: { tab: "bugs" } })).toEqual({
+      botcave: 1,
+      type: "open",
+      payload: { tab: "bugs" },
+    });
+  });
+  it("parseFromFrame accetta identity_request", () => {
+    expect(parseFromFrame({ botcave: 1, type: "identity_request", x: 1 })).toEqual({
+      botcave: 1,
+      type: "identity_request",
+    });
+  });
+});

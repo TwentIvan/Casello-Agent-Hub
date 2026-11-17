@@ -4,22 +4,25 @@ import { THEME_VARS, cleanFontUrl, cleanThemeValue, type HostTheme } from "./the
 
 export type { HostTheme, ThemeVar } from "./theme";
 
-export type EmbedTab = "alfred" | "pending" | "bulletin" | "lucius";
+export type EmbedTab = "alfred" | "pending" | "bulletin" | "lucius" | "bugs";
 
 export type HostContextMsg = { page: string; id?: string; title?: string };
 
 export type ToFrame =
   | { botcave: 1; type: "theme"; payload: HostTheme }
   | { botcave: 1; type: "context"; payload: HostContextMsg }
-  | { botcave: 1; type: "open"; payload: { tab?: EmbedTab } };
+  | { botcave: 1; type: "open"; payload: { tab?: EmbedTab } }
+  | { botcave: 1; type: "identity"; payload: { token: string | null } };
 
 export type FromFrame =
   | { botcave: 1; type: "ready" }
   | { botcave: 1; type: "close" }
+  | { botcave: 1; type: "identity_request" }
   | { botcave: 1; type: "badge"; payload: { pending: number } }
   | { botcave: 1; type: "error"; payload: { code: "host_not_allowed" | "unreachable" } };
 
-const TABS: readonly string[] = ["alfred", "pending", "bulletin", "lucius"];
+const TABS: readonly string[] = ["alfred", "pending", "bulletin", "lucius", "bugs"];
+const TOKEN_RE = /^[A-Za-z0-9_.-]{1,4096}$/;
 const ID_RE = /^[A-Za-z0-9._:-]{1,40}$/;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -79,6 +82,13 @@ export function parseToFrame(data: unknown): ToFrame | null {
       if (typeof tab !== "string" || !TABS.includes(tab)) return null;
       return { botcave: 1, type: "open", payload: { tab: tab as EmbedTab } };
     }
+    case "identity": {
+      if (!isRecord(data.payload)) return null;
+      const token = data.payload.token;
+      if (token === null) return { botcave: 1, type: "identity", payload: { token: null } };
+      if (typeof token !== "string" || !TOKEN_RE.test(token)) return null;
+      return { botcave: 1, type: "identity", payload: { token } };
+    }
     default:
       return null;
   }
@@ -97,6 +107,8 @@ export function parseFromFrame(data: unknown): FromFrame | null {
       return { botcave: 1, type: "ready" };
     case "close":
       return { botcave: 1, type: "close" };
+    case "identity_request":
+      return { botcave: 1, type: "identity_request" };
     case "badge": {
       const p = data.payload;
       if (!isRecord(p)) return null;

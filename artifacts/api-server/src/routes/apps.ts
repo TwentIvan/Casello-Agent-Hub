@@ -18,9 +18,13 @@ import {
   UpdateAppParams,
   UpdateAppBody,
   UpdateAppResponse,
+  UpdateAppPageActionsParams,
+  UpdateAppPageActionsBody,
+  UpdateAppPageActionsResponse,
   DeleteAppParams,
 } from "@workspace/api-zod";
 import { encryptSecret } from "../lib/secrets";
+import { validatePageActions } from "../lib/apps/page-actions";
 import { parseAppBaseUrl } from "../lib/tools/executor";
 import { checkAuthHeaderName, checkExtraHeaders, normalizeExtraHeaders } from "../lib/tools/headers";
 import type { AuthConfig, ExtraHeader } from "../lib/tools/types";
@@ -372,6 +376,22 @@ router.patch("/apps/:id", async (req, res) => {
     return;
   }
   res.json(UpdateAppResponse.parse(toPublicApp(app)));
+});
+
+router.put("/apps/:id/page-actions", async (req, res) => {
+  const { id } = parseRequest(UpdateAppPageActionsParams, req.params);
+  const { actions } = parseRequest(UpdateAppPageActionsBody, req.body);
+  const checked = validatePageActions(actions);
+  if (!checked.ok) {
+    res.status(400).json({ error: checked.error });
+    return;
+  }
+  const [app] = await db.update(appsTable).set({ pageActions: checked.actions, updatedAt: new Date() }).where(eq(appsTable.id, id)).returning();
+  if (!app) {
+    res.status(404).json({ error: "App non trovata" });
+    return;
+  }
+  res.json(UpdateAppPageActionsResponse.parse(toPublicApp(app)));
 });
 
 router.delete("/apps/:id", async (req, res) => {

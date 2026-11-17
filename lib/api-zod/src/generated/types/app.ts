@@ -10,6 +10,7 @@ import type { AppStatus } from './appStatus';
 import type { ArchitectureRefresh } from './architectureRefresh';
 import type { AuthConfig } from './authConfig';
 import type { ExtraHeader } from './extraHeader';
+import type { PageAction } from './pageAction';
 import type { SourceType } from './sourceType';
 
 export interface App {
@@ -91,6 +92,10 @@ export interface App {
      * @nullable
      */
   stagingUrl: string | null;
+  /** Azioni della pagina (richieste al Responsabile configurate per tipo di pagina) */
+  pageActions: PageAction[];
+  /** Tipi di pagina visti dal pannello incorporato (più recente in testa) */
+  embedPagesSeen: string[];
   status: AppStatus;
   createdAt: Date;
   updatedAt: Date;

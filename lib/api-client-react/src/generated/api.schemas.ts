@@ -229,6 +229,35 @@ export interface EmbedBugsConfig {
   identity: boolean;
 }
 
+export interface PageAction {
+  page: string;
+  label: string;
+  request: string;
+}
+
+export interface PageActionsUpdate {
+  actions: PageAction[];
+}
+
+export interface BotNames {
+  alfred: string;
+  lucius: string;
+  lead: string;
+}
+
+export type EmbedStatusActionsItem = {
+  label: string;
+};
+
+export interface EmbedStatus {
+  pending: number;
+  bugs: number;
+  actions: EmbedStatusActionsItem[];
+  leadAvailable: boolean;
+  leadWorking: boolean;
+  botNames: BotNames;
+}
+
 export interface EmbedConfig {
   bugs: EmbedBugsConfig;
   allowed: boolean;
@@ -535,6 +564,10 @@ export interface App {
      * @nullable
      */
   stagingUrl: string | null;
+  /** Azioni della pagina (richieste al Responsabile configurate per tipo di pagina) */
+  pageActions: PageAction[];
+  /** Tipi di pagina visti dal pannello incorporato (più recente in testa) */
+  embedPagesSeen: string[];
   status: AppStatus;
   createdAt: string;
   updatedAt: string;
@@ -5186,6 +5219,14 @@ origin?: string;
  * Slug dell'App ospite, per sapere se le segnalazioni dei bug sono attive.
  */
 app?: string;
+};
+
+export type GetEmbedStatusParams = {
+app?: string;
+/**
+ * Tipo di pagina (1..40 caratteri A-Za-z0-9._:-)
+ */
+page: string;
 };
 
 export type ListEmbedBugsParams = {

@@ -235,6 +235,8 @@ export const AGENT_DENIED_ROUTES: ReadonlyArray<{ method: "POST" | "PUT" | "PATC
   { method: "PUT", path: /^\/team-instances\/[^/]+\/plan\/?$/i },
   { method: "POST", path: /^\/apps\/?$/i },
   { method: "PATCH", path: /^\/apps\/[^/]+\/?$/i },
+  // Azioni della pagina: richieste che il pannello manda al Responsabile, le configura solo l'utente
+  { method: "PUT", path: /^\/apps\/[^/]+\/page-actions\/?$/i },
   // Generazione a pagamento della sintesi dell'architettura: la avvia solo l'utente
   { method: "POST", path: /^\/apps\/[^/]+\/architecture\/refresh\/?$/i },
   // Ciclo di evoluzione: lo configura, lo ferma e lo fa girare solo l'utente (DELETE è già negato)

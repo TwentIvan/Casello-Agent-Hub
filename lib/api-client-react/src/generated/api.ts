@@ -121,6 +121,7 @@ import type {
   EmbedBugSeenResult,
   EmbedBugSummary,
   EmbedConfig,
+  EmbedStatus,
   ErrorResponse,
   EstimateAnalysisCostParams,
   EvolutionConsentText,
@@ -133,6 +134,7 @@ import type {
   GetAppEvolutionConsentTextParams,
   GetEmbedBugParams,
   GetEmbedConfigParams,
+  GetEmbedStatusParams,
   GetLeadChatParams,
   GetLeadConversationParams,
   GetTeamInstanceUpdates200,
@@ -199,6 +201,7 @@ import type {
   NodeTurnReport,
   NotFoundResponse,
   OAuthGrant,
+  PageActionsUpdate,
   PayloadTooLargeResponse,
   PlanConversation,
   PlanConversationCreate,
@@ -442,6 +445,91 @@ export function useGetEmbedConfig<TData = Awaited<ReturnType<typeof getEmbedConf
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetEmbedConfigQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetEmbedStatusUrl = (params: GetEmbedStatusParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/embed/status?${stringifiedParams}` : `/api/embed/status`
+}
+
+/**
+ * Solo sessione o token del pannello. Con il token del pannello `app` deve essere l'App ospite del client (altrimenti 404 «App non trovata»). Registra il tipo di pagina visto. 60 richieste al minuto per collegamento.
+ * @summary Stato del pannello incorporato per una pagina
+ */
+export const getEmbedStatus = async (params: GetEmbedStatusParams, options?: RequestInit): Promise<EmbedStatus> => {
+
+  return customFetch<EmbedStatus>(getGetEmbedStatusUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEmbedStatusQueryKey = (params?: GetEmbedStatusParams,) => {
+    return [
+    `/api/embed/status`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetEmbedStatusQueryOptions = <TData = Awaited<ReturnType<typeof getEmbedStatus>>, TError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>>(params: GetEmbedStatusParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmbedStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEmbedStatusQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEmbedStatus>>> = ({ signal }) => getEmbedStatus(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEmbedStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEmbedStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getEmbedStatus>>>
+export type GetEmbedStatusQueryError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>
+
+
+/**
+ * @summary Stato del pannello incorporato per una pagina
+ */
+
+export function useGetEmbedStatus<TData = Awaited<ReturnType<typeof getEmbedStatus>>, TError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>>(
+ params: GetEmbedStatusParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmbedStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEmbedStatusQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -4913,6 +5001,78 @@ export const useDeleteApp = <TError = ErrorType<NotFoundResponse | ErrorResponse
         TContext
       > => {
       return useMutation(getDeleteAppMutationOptions(options));
+    }
+
+export const getUpdateAppPageActionsUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/page-actions`
+}
+
+/**
+ * Al più 6 azioni per tipo di pagina e 40 per App, etichette uniche per tipo di pagina. Non vale con il token `agent`.
+ * @summary Sostituisce le azioni della pagina dell'App
+ */
+export const updateAppPageActions = async (id: number,
+    pageActionsUpdate: PageActionsUpdate, options?: RequestInit): Promise<App> => {
+
+  return customFetch<App>(getUpdateAppPageActionsUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(pageActionsUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateAppPageActionsMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAppPageActions>>, TError,{id: number;data: BodyType<PageActionsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAppPageActions>>, TError,{id: number;data: BodyType<PageActionsUpdate>}, TContext> => {
+
+const mutationKey = ['updateAppPageActions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAppPageActions>>, {id: number;data: BodyType<PageActionsUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateAppPageActions(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAppPageActionsMutationResult = NonNullable<Awaited<ReturnType<typeof updateAppPageActions>>>
+    export type UpdateAppPageActionsMutationBody = BodyType<PageActionsUpdate>
+    export type UpdateAppPageActionsMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Sostituisce le azioni della pagina dell'App
+ */
+export const useUpdateAppPageActions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAppPageActions>>, TError,{id: number;data: BodyType<PageActionsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAppPageActions>>,
+        TError,
+        {id: number;data: BodyType<PageActionsUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateAppPageActionsMutationOptions(options));
     }
 
 export const getGetAppArchitectureUrl = (id: number,) => {

@@ -100,6 +100,44 @@ paths:
               schema:
                 $ref: "#/components/schemas/EmbedConfig"
 
+  /embed/status:
+    get:
+      operationId: getEmbedStatus
+      tags: [embed]
+      summary: Stato del pannello incorporato per una pagina
+      description: >-
+        Solo sessione o token del pannello. Con il token del pannello `app` deve essere l'App ospite del client (altrimenti
+        404 «App non trovata»). Registra il tipo di pagina visto. 60 richieste al minuto per collegamento.
+      parameters:
+        - name: app
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: true
+          description: Tipo di pagina (1..40 caratteri A-Za-z0-9._:-)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedStatus"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          description: Troppe richieste
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # ─── Segnalazioni dei bug dal plugin (pubbliche) ────────────────────────────
   /embed/bugs:
     get:
@@ -1642,6 +1680,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /apps/{id}/page-actions:
+    put:
+      operationId: updateAppPageActions
+      tags: [apps]
+      summary: Sostituisce le azioni della pagina dell'App
+      description: >-
+        Al più 6 azioni per tipo di pagina e 40 per App, etichette uniche per tipo di pagina. Non vale con il token `agent`.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PageActionsUpdate"
+      responses:
+        "200":
+          description: App aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/App"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /apps/{id}/architecture:
     get:
@@ -6605,6 +6670,56 @@ components:
           type: boolean
         identity:
           type: boolean
+    PageAction:
+      type: object
+      required: [page, label, request]
+      properties:
+        page:
+          type: string
+        label:
+          type: string
+        request:
+          type: string
+    PageActionsUpdate:
+      type: object
+      required: [actions]
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PageAction"
+    BotNames:
+      type: object
+      required: [alfred, lucius, lead]
+      properties:
+        alfred:
+          type: string
+        lucius:
+          type: string
+        lead:
+          type: string
+    EmbedStatus:
+      type: object
+      required: [pending, bugs, actions, leadAvailable, leadWorking, botNames]
+      properties:
+        pending:
+          type: integer
+        bugs:
+          type: integer
+        actions:
+          type: array
+          items:
+            type: object
+            required: [label]
+            properties:
+              label:
+                type: string
+        leadAvailable:
+          type: boolean
+        leadWorking:
+          type: boolean
+        botNames:
+          $ref: "#/components/schemas/BotNames"
     EmbedConfig:
       type: object
       required: [allowed, clientId, appName, bugs]
@@ -6845,7 +6960,7 @@ components:
 
     App:
       type: object
-      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, architectureRefresh, stagingBranch, stagingUrl, alfredName, luciusName, leadName, botNames, createdAt, updatedAt]
+      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, architectureRefresh, stagingBranch, stagingUrl, alfredName, luciusName, leadName, botNames, pageActions, embedPagesSeen, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -6929,6 +7044,16 @@ components:
         stagingUrl:
           type: ["string", "null"]
           description: Indirizzo https dove la CI dell'App pubblica il branch di prova
+        pageActions:
+          type: array
+          description: Azioni della pagina (richieste al Responsabile configurate per tipo di pagina)
+          items:
+            $ref: "#/components/schemas/PageAction"
+        embedPagesSeen:
+          type: array
+          description: Tipi di pagina visti dal pannello incorporato (più recente in testa)
+          items:
+            type: string
         status:
           $ref: "#/components/schemas/AppStatus"
         createdAt:

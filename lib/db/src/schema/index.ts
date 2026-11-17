@@ -44,3 +44,4 @@ export * from "./lead-chat";
 export * from "./schema-migrations";
 export * from "./app-architecture";
 export * from "./best-practice";
+export * from "./character-instructions";

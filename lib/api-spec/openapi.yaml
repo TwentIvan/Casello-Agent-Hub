@@ -4826,6 +4826,86 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  /character-instruction-proposals:
+    get:
+      operationId: listCharacterInstructionProposals
+      tags: [characters]
+      summary: Schede di istruzioni personali di una conversazione
+      description: >-
+        Le schede che Alfred o Lucius hanno proposto in una conversazione dell'utente (la conversazione di un altro utente è 404).
+        Valida con il login e con il pannello incorporato.
+      parameters:
+        - name: conversationKind
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [character, plan_chat, team_chat]
+        - name: conversationId
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Schede in ordine di creazione
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CharacterInstructionProposal"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /character-instruction-proposals/{id}/decision:
+    post:
+      operationId: decideCharacterInstructionProposal
+      tags: [characters]
+      summary: Accetta o rifiuta una scheda di istruzioni personali
+      description: >-
+        Accettare scrive la versione successiva delle istruzioni; se sono cambiate dopo la proposta la scheda diventa superata (409).
+        Valida con il login e con il pannello incorporato; 20 scritture al minuto per utente.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CharacterInstructionProposalDecision"
+      responses:
+        "200":
+          description: Scheda decisa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterInstructionProposal"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
 
   /characters/alfred/thread:
     get:
@@ -5916,6 +5996,40 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    CharacterInstructionProposal:
+      type: object
+      required: [id, character, content, reason, status, baseVersion, currentContent, messageId, createdAt]
+      properties:
+        id:
+          type: integer
+        character:
+          type: string
+          enum: [alfred, lucius]
+        content:
+          type: string
+        reason:
+          type: string
+        status:
+          type: string
+          enum: [pending, accepted, rejected, stale]
+        baseVersion:
+          type: integer
+        currentContent:
+          type: string
+        messageId:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    CharacterInstructionProposalDecision:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [accept, reject]
 
     CharacterSettings:
       type: object

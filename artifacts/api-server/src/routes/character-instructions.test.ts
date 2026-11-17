@@ -1,7 +1,15 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { db, pool, usersTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import {
+  db,
+  pool,
+  usersTable,
+  characterConversationsTable,
+  characterInstructionProposalsTable,
+  characterMessagesTable,
+} from "@workspace/db";
 
 // Istruzioni personali dei personaggi: route sull'app completa senza login (AUTH_DISABLED=true: utente dev@localhost).
 
@@ -48,6 +56,7 @@ afterAll(async () => {
 beforeEach(async () => {
   vi.spyOn(console, "log").mockImplementation(() => {});
   await pool.query("TRUNCATE users RESTART IDENTITY CASCADE");
+  (await import("../middlewares/rate-limit")).resetInstructionWriteLimit();
 });
 
 afterEach(() => {
@@ -142,5 +151,102 @@ describe("istruzioni personali dei personaggi", () => {
     }
     expect(last).toBe(429);
     expect(body).toEqual({ error: "Troppe richieste: riprova tra poco" });
+  });
+
+  describe("proposte", () => {
+    const PBASE = "/character-instruction-proposals";
+
+    async function devConversation(ownerEmail = "dev@localhost") {
+      await api("GET", `${BASE}/alfred`); // crea l'utente di sviluppo
+      let [u] = await db.select().from(usersTable).where(eq(usersTable.email, ownerEmail));
+      if (!u) [u] = await db.insert(usersTable).values({ email: ownerEmail, name: "Altro" }).returning();
+      const [c] = await db
+        .insert(characterConversationsTable)
+        .values({ userId: u!.id, character: "lucius", subjectType: "skill", subjectId: "x", title: "" })
+        .returning();
+      const [m] = await db.insert(characterMessagesTable).values({ conversationId: c!.id, role: "assistant", content: "ok" }).returning();
+      return { userId: u!.id, conversationId: c!.id, messageId: m!.id };
+    }
+
+    async function proposal(conv: { userId: number; conversationId: number; messageId: number }, baseVersion = 0) {
+      const [p] = await db
+        .insert(characterInstructionProposalsTable)
+        .values({
+          userId: conv.userId,
+          character: "lucius",
+          conversationKind: "character",
+          conversationId: conv.conversationId,
+          messageId: conv.messageId,
+          content: "Sii breve",
+          reason: "richiesta dell'utente",
+          baseVersion,
+        })
+        .returning();
+      return p!.id;
+    }
+
+    it("elenco e decisione con la sessione", async () => {
+      const conv = await devConversation();
+      const id = await proposal(conv);
+      const list = await api("GET", `${PBASE}?conversationKind=character&conversationId=${conv.conversationId}`);
+      expect(list.status, list.text).toBe(200);
+      expect(list.json).toHaveLength(1);
+      expect(list.json[0]).toMatchObject({ id, character: "lucius", content: "Sii breve", status: "pending", baseVersion: 0, currentContent: "", messageId: conv.messageId });
+      expect(typeof list.json[0].createdAt).toBe("string");
+      const ok = await api("POST", `${PBASE}/${id}/decision`, { action: "accept" });
+      expect(ok.status, ok.text).toBe(200);
+      expect(ok.json).toMatchObject({ id, status: "accepted", currentContent: "Sii breve" });
+      const again = await api("POST", `${PBASE}/${id}/decision`, { action: "reject" });
+      expect(again.status).toBe(409);
+      expect(again.json).toEqual({ error: "proposta già decisa" });
+    });
+
+    it("scheda superata: 409", async () => {
+      const conv = await devConversation();
+      const id = await proposal(conv, 0);
+      expect((await api("PUT", `${BASE}/lucius`, { content: "Altro testo", baseVersion: 0 })).status).toBe(200);
+      const r = await api("POST", `${PBASE}/${id}/decision`, { action: "accept" });
+      expect(r.status).toBe(409);
+      const list = await api("GET", `${PBASE}?conversationKind=character&conversationId=${conv.conversationId}`);
+      expect(list.json[0].status).toBe("stale");
+    });
+
+    it("conversazione o scheda di un altro utente: 404", async () => {
+      const other = await devConversation("altro@example.com");
+      const id = await proposal(other);
+      const list = await api("GET", `${PBASE}?conversationKind=character&conversationId=${other.conversationId}`);
+      expect(list.status).toBe(404);
+      const dec = await api("POST", `${PBASE}/${id}/decision`, { action: "accept" });
+      expect(dec.status).toBe(404);
+    });
+
+    it("parametri non validi: 400", async () => {
+      expect((await api("GET", `${PBASE}?conversationKind=run&conversationId=1`)).status).toBe(400);
+      expect((await api("GET", `${PBASE}?conversationKind=character`)).status).toBe(400);
+      expect((await api("POST", `${PBASE}/1/decision`, { action: "boh" })).status).toBe(400);
+    });
+
+    it("token: lettura e decisione solo con il login", async () => {
+      const savedAllowed = process.env["ALLOWED_EMAILS"];
+      try {
+        process.env["ALLOWED_EMAILS"] = "token@example.com";
+        const [user] = await db.insert(usersTable).values({ email: "token@example.com", name: "Token" }).returning();
+        const write = (await createApiToken(user!.id, "W", 30, ["api:read", "api:write"])).token;
+        const agent = (await createApiToken(user!.id, "A", 30, ["agent"])).token;
+        for (const t of [write, agent]) {
+          expect((await api("GET", `${PBASE}?conversationKind=character&conversationId=1`, undefined, t)).status).toBe(403);
+          expect((await api("POST", `${PBASE}/1/decision`, { action: "accept" }, t)).status).toBe(403);
+        }
+      } finally {
+        if (savedAllowed === undefined) delete process.env["ALLOWED_EMAILS"];
+        else process.env["ALLOWED_EMAILS"] = savedAllowed;
+      }
+    });
+
+    it("decisione: 429 oltre 20 scritture al minuto", async () => {
+      let last = 0;
+      for (let i = 0; i < 21; i++) last = (await api("POST", `${PBASE}/999999/decision`, { action: "reject" })).status;
+      expect(last).toBe(429);
+    });
   });
 });

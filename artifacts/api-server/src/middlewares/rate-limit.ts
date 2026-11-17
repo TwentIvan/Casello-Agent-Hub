@@ -158,6 +158,11 @@ export function consumeInstructionWrite(userId: number): boolean {
   return instructionWriteCounter.consume(`user:${userId}`).ok;
 }
 
+/** Solo per i test: azzera il contatore delle scritture delle istruzioni personali. */
+export function resetInstructionWriteLimit(): void {
+  instructionWriteCounter.reset();
+}
+
 // «Ferma» sui turni delle chat (personaggi, piano, squadra): 30 al minuto per utente, un solo contatore.
 const turnStopCounter = fixedWindowCounter({ limit: 30, windowMs: 60_000 });
 

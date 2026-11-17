@@ -82,6 +82,8 @@ import type {
   CharacterConversationCreate,
   CharacterConversationDetail,
   CharacterConversationUpdate,
+  CharacterInstructionProposal,
+  CharacterInstructionProposalDecision,
   CharacterInstructionVersion,
   CharacterInstructionVersionSummary,
   CharacterInstructions,
@@ -122,6 +124,7 @@ import type {
   ListCatalogModelsParams,
   ListCatalogProvidersParams,
   ListCharacterConversationsParams,
+  ListCharacterInstructionProposalsParams,
   ListMemoryHistoryParams,
   ListMemoryNotesParams,
   ListPendingActionsParams,
@@ -14507,6 +14510,163 @@ export const useRestoreCharacterInstructions = <TError = ErrorType<BadRequestRes
         TContext
       > => {
       return useMutation(getRestoreCharacterInstructionsMutationOptions(options));
+    }
+
+export const getListCharacterInstructionProposalsUrl = (params: ListCharacterInstructionProposalsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/character-instruction-proposals?${stringifiedParams}` : `/api/character-instruction-proposals`
+}
+
+/**
+ * Le schede che Alfred o Lucius hanno proposto in una conversazione dell'utente (la conversazione di un altro utente è 404). Valida con il login e con il pannello incorporato.
+ * @summary Schede di istruzioni personali di una conversazione
+ */
+export const listCharacterInstructionProposals = async (params: ListCharacterInstructionProposalsParams, options?: RequestInit): Promise<CharacterInstructionProposal[]> => {
+
+  return customFetch<CharacterInstructionProposal[]>(getListCharacterInstructionProposalsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCharacterInstructionProposalsQueryKey = (params?: ListCharacterInstructionProposalsParams,) => {
+    return [
+    `/api/character-instruction-proposals`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCharacterInstructionProposalsQueryOptions = <TData = Awaited<ReturnType<typeof listCharacterInstructionProposals>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>>(params: ListCharacterInstructionProposalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCharacterInstructionProposals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCharacterInstructionProposalsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCharacterInstructionProposals>>> = ({ signal }) => listCharacterInstructionProposals(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCharacterInstructionProposals>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCharacterInstructionProposalsQueryResult = NonNullable<Awaited<ReturnType<typeof listCharacterInstructionProposals>>>
+export type ListCharacterInstructionProposalsQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+
+/**
+ * @summary Schede di istruzioni personali di una conversazione
+ */
+
+export function useListCharacterInstructionProposals<TData = Awaited<ReturnType<typeof listCharacterInstructionProposals>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>>(
+ params: ListCharacterInstructionProposalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCharacterInstructionProposals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCharacterInstructionProposalsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDecideCharacterInstructionProposalUrl = (id: number,) => {
+
+
+
+
+  return `/api/character-instruction-proposals/${id}/decision`
+}
+
+/**
+ * Accettare scrive la versione successiva delle istruzioni; se sono cambiate dopo la proposta la scheda diventa superata (409). Valida con il login e con il pannello incorporato; 20 scritture al minuto per utente.
+ * @summary Accetta o rifiuta una scheda di istruzioni personali
+ */
+export const decideCharacterInstructionProposal = async (id: number,
+    characterInstructionProposalDecision: CharacterInstructionProposalDecision, options?: RequestInit): Promise<CharacterInstructionProposal> => {
+
+  return customFetch<CharacterInstructionProposal>(getDecideCharacterInstructionProposalUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(characterInstructionProposalDecision)
+  }
+);}
+
+
+
+
+export const getDecideCharacterInstructionProposalMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decideCharacterInstructionProposal>>, TError,{id: number;data: BodyType<CharacterInstructionProposalDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof decideCharacterInstructionProposal>>, TError,{id: number;data: BodyType<CharacterInstructionProposalDecision>}, TContext> => {
+
+const mutationKey = ['decideCharacterInstructionProposal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof decideCharacterInstructionProposal>>, {id: number;data: BodyType<CharacterInstructionProposalDecision>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  decideCharacterInstructionProposal(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DecideCharacterInstructionProposalMutationResult = NonNullable<Awaited<ReturnType<typeof decideCharacterInstructionProposal>>>
+    export type DecideCharacterInstructionProposalMutationBody = BodyType<CharacterInstructionProposalDecision>
+    export type DecideCharacterInstructionProposalMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Accetta o rifiuta una scheda di istruzioni personali
+ */
+export const useDecideCharacterInstructionProposal = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decideCharacterInstructionProposal>>, TError,{id: number;data: BodyType<CharacterInstructionProposalDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof decideCharacterInstructionProposal>>,
+        TError,
+        {id: number;data: BodyType<CharacterInstructionProposalDecision>},
+        TContext
+      > => {
+      return useMutation(getDecideCharacterInstructionProposalMutationOptions(options));
     }
 
 export const getGetAlfredThreadUrl = () => {

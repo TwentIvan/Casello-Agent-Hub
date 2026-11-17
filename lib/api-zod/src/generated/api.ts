@@ -6624,6 +6624,60 @@ export const RestoreCharacterInstructionsResponse = zod.object({
 
 
 /**
+ * Le schede che Alfred o Lucius hanno proposto in una conversazione dell'utente (la conversazione di un altro utente è 404). Valida con il login e con il pannello incorporato.
+ * @summary Schede di istruzioni personali di una conversazione
+ */
+
+
+
+export const ListCharacterInstructionProposalsQueryParams = zod.object({
+  "conversationKind": zod.enum(['character', 'plan_chat', 'team_chat']),
+  "conversationId": zod.coerce.number().min(1)
+})
+
+export const ListCharacterInstructionProposalsResponseItem = zod.object({
+  "id": zod.number(),
+  "character": zod.enum(['alfred', 'lucius']),
+  "content": zod.string(),
+  "reason": zod.string(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
+  "baseVersion": zod.number(),
+  "currentContent": zod.string(),
+  "messageId": zod.number().nullable(),
+  "createdAt": zod.coerce.date()
+})
+export const ListCharacterInstructionProposalsResponse = zod.array(ListCharacterInstructionProposalsResponseItem)
+
+
+/**
+ * Accettare scrive la versione successiva delle istruzioni; se sono cambiate dopo la proposta la scheda diventa superata (409). Valida con il login e con il pannello incorporato; 20 scritture al minuto per utente.
+ * @summary Accetta o rifiuta una scheda di istruzioni personali
+ */
+
+
+
+export const DecideCharacterInstructionProposalParams = zod.object({
+  "id": zod.coerce.number().min(1)
+})
+
+export const DecideCharacterInstructionProposalBody = zod.object({
+  "action": zod.enum(['accept', 'reject'])
+})
+
+export const DecideCharacterInstructionProposalResponse = zod.object({
+  "id": zod.number(),
+  "character": zod.enum(['alfred', 'lucius']),
+  "content": zod.string(),
+  "reason": zod.string(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
+  "baseVersion": zod.number(),
+  "currentContent": zod.string(),
+  "messageId": zod.number().nullable(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * Restituisce il filo aperto di Alfred; crea il filo se non esiste (la GET può quindi scrivere).
  * @summary Il filo aperto di Alfred scritto (lo crea se manca)
  */

@@ -1,15 +1,20 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import {
+  DecideCharacterInstructionProposalBody,
+  DecideCharacterInstructionProposalParams,
+  DecideCharacterInstructionProposalResponse,
   GetCharacterInstructionVersionParams,
   GetCharacterInstructionVersionResponse,
   GetCharacterInstructionsResponse,
+  ListCharacterInstructionProposalsQueryParams,
+  ListCharacterInstructionProposalsResponse,
   ListCharacterInstructionVersionsResponse,
   RestoreCharacterInstructionsBody,
   RestoreCharacterInstructionsResponse,
   UpdateCharacterInstructionsBody,
   UpdateCharacterInstructionsResponse,
 } from "@workspace/api-zod";
-import { currentUserId, sessionOnly } from "../lib/auth";
+import { currentUserId, sessionOnly, sessionOrEmbed } from "../lib/auth";
 import {
   INSTRUCTION_MESSAGES,
   InstructionError,
@@ -19,11 +24,13 @@ import {
   restoreInstructions,
   saveInstructions,
 } from "../lib/characters/personal-instructions";
+import { decideInstructionProposal, listInstructionProposals } from "../lib/characters/instruction-proposals";
 import type { Character } from "../lib/memory/types";
 import { parseRequest } from "../middlewares/error-handler";
 import { consumeInstructionWrite } from "../middlewares/rate-limit";
 
 // Istruzioni personali di Alfred e Lucius: lettura con il login o un token di lettura, scritture solo con il login.
+// Le schede proposte si leggono e si decidono con il login o con il pannello incorporato.
 
 function fail(res: Response, err: unknown): void {
   if (!(err instanceof InstructionError)) throw err;
@@ -95,6 +102,31 @@ export function createCharacterInstructionsRouter(): IRouter {
     try {
       const saved = await restoreInstructions(userId, character, body.version, body.baseVersion);
       res.json(RestoreCharacterInstructionsResponse.parse({ character, ...saved }));
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  router.get("/character-instruction-proposals", sessionOrEmbed, async (req, res) => {
+    const q = parseRequest(ListCharacterInstructionProposalsQueryParams, req.query);
+    try {
+      const views = await listInstructionProposals(currentUserId(req), q.conversationKind, q.conversationId);
+      res.json(ListCharacterInstructionProposalsResponse.parse(views));
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  router.post("/character-instruction-proposals/:id/decision", sessionOrEmbed, async (req, res) => {
+    const { id } = parseRequest(DecideCharacterInstructionProposalParams, req.params);
+    const body = parseRequest(DecideCharacterInstructionProposalBody, req.body);
+    const userId = currentUserId(req);
+    if (!consumeInstructionWrite(userId)) {
+      res.status(429).json({ error: INSTRUCTION_MESSAGES.rateLimited });
+      return;
+    }
+    try {
+      res.json(DecideCharacterInstructionProposalResponse.parse(await decideInstructionProposal(userId, id, body.action)));
     } catch (err) {
       fail(res, err);
     }

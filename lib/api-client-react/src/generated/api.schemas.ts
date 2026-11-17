@@ -342,6 +342,49 @@ export interface CharacterInstructionVersion {
   createdAt: string;
 }
 
+export type CharacterInstructionProposalCharacter = typeof CharacterInstructionProposalCharacter[keyof typeof CharacterInstructionProposalCharacter];
+
+
+export const CharacterInstructionProposalCharacter = {
+  alfred: 'alfred',
+  lucius: 'lucius',
+} as const;
+
+export type CharacterInstructionProposalStatus = typeof CharacterInstructionProposalStatus[keyof typeof CharacterInstructionProposalStatus];
+
+
+export const CharacterInstructionProposalStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  rejected: 'rejected',
+  stale: 'stale',
+} as const;
+
+export interface CharacterInstructionProposal {
+  id: number;
+  character: CharacterInstructionProposalCharacter;
+  content: string;
+  reason: string;
+  status: CharacterInstructionProposalStatus;
+  baseVersion: number;
+  currentContent: string;
+  /** @nullable */
+  messageId: number | null;
+  createdAt: string;
+}
+
+export type CharacterInstructionProposalDecisionAction = typeof CharacterInstructionProposalDecisionAction[keyof typeof CharacterInstructionProposalDecisionAction];
+
+
+export const CharacterInstructionProposalDecisionAction = {
+  accept: 'accept',
+  reject: 'reject',
+} as const;
+
+export interface CharacterInstructionProposalDecision {
+  action: CharacterInstructionProposalDecisionAction;
+}
+
 export type CharacterSettingsLuciusBestPractice = typeof CharacterSettingsLuciusBestPractice[keyof typeof CharacterSettingsLuciusBestPractice];
 
 
@@ -4845,6 +4888,23 @@ export type ListCatalogProvidersParams = {
 q?: string;
 status?: AiProviderStatus;
 };
+
+export type ListCharacterInstructionProposalsParams = {
+conversationKind: ListCharacterInstructionProposalsConversationKind;
+/**
+ * @minimum 1
+ */
+conversationId: number;
+};
+
+export type ListCharacterInstructionProposalsConversationKind = typeof ListCharacterInstructionProposalsConversationKind[keyof typeof ListCharacterInstructionProposalsConversationKind];
+
+
+export const ListCharacterInstructionProposalsConversationKind = {
+  character: 'character',
+  plan_chat: 'plan_chat',
+  team_chat: 'team_chat',
+} as const;
 
 export type ListCharacterConversationsParams = {
 character: MemoryCharacter;

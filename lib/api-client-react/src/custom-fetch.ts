@@ -6,7 +6,8 @@ export type ErrorType<T = unknown> = ApiError<T>;
 
 export type BodyType<T> = T;
 
-export type AuthTokenGetter = () => Promise<string | null> | string | null;
+/** Riceve l'indirizzo della richiesta: può restituire null per le route che non devono portare il token. */
+export type AuthTokenGetter = (url: string) => Promise<string | null> | string | null;
 
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
@@ -361,7 +362,7 @@ export async function customFetch<T = unknown>(
   // Attach bearer token when an auth getter is configured and no
   // Authorization header has been explicitly provided.
   if (_authTokenGetter && !headers.has("authorization")) {
-    const token = await _authTokenGetter();
+    const token = await _authTokenGetter(resolveUrl(input));
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
     }

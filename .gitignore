@@ -55,3 +55,6 @@ Thumbs.db
 docker/nodo-downloads/*
 !docker/nodo-downloads/.gitkeep
 *.bak
+
+# Identità finta della pagina di prova del plugin (solo sviluppo)
+artifacts/casello/embed-demo-identity.json

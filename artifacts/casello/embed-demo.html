@@ -16,6 +16,13 @@
   4. Apri http://localhost:5174/embed-demo.html, premi il pulsante Botcave, «Collega con Botcave».
   Aprendo la pagina da un'origine non elencata in EMBED_ALLOWED_ORIGINS compare «Questa app non è abilitata a Botcave».
   Il valore di data-app va allineato all'identificativo dell'app ospite configurato in Botcave.
+
+  Segnalazione dei bug: con le segnalazioni attive per l'App (scheda App in Botcave) il pannello senza collegamento è quello
+  del visitatore («Segnala un problema»). data-identity-url punta a un endpoint finto di questa pagina: senza il file
+  embed-demo-identity.json il caricatore riceve 404 e il visitatore resta anonimo (chiave del browser). Per provare
+  l'identità, creare in questa cartella embed-demo-identity.json con {"token": "<token HS256 firmato con il segreto
+  d'identità dell'App>"}; un token non valido mostra il nuovo tentativo dopo il 401 (identity_request) e poi l'errore.
+  Il file è solo per lo sviluppo: non va committato.
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
@@ -77,7 +84,11 @@
       btn.textContent = dark ? "Tema chiaro" : "Tema scuro";
     });
   </script>
-  <script src="http://localhost:5173/embed/v1/botcave.js" data-app="hub-up"></script>
+  <script
+    src="http://localhost:5173/embed/v1/botcave.js"
+    data-app="hub-up"
+    data-identity-url="/embed-demo-identity.json"
+  ></script>
   <script>
     Botcave.setContext({ page: "workitem", id: "1174", title: "Fix ordini" });
   </script>

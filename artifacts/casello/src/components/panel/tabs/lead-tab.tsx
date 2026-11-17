@@ -13,7 +13,7 @@ import { PanelLink } from "../panel-link";
 
 export function LeadTab() {
   const [location] = useLocation();
-  const availability = useGetLeadChat({ query: { queryKey: getGetLeadChatQueryKey() } });
+  const availability = useGetLeadChat(undefined, { query: { queryKey: getGetLeadChatQueryKey() } });
 
   if (availability.isError) {
     return <p className="p-4 text-body-sm text-danger">Impossibile leggere Barbara, la Responsabile di Botcave: {apiErrorMessage(availability.error)}</p>;

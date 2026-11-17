@@ -49,6 +49,8 @@ async function seedUser(name = "Ivan") {
   return { userId: user!.id, modelId: model!.id };
 }
 
+let botcaveId = 0;
+
 async function seedBotcave(modelId: number | null, opts: { appStatus?: "active" | "inactive"; leadStatus?: "active" | "draft" } = {}) {
   const [app] = await db
     .insert(appsTable)
@@ -58,6 +60,7 @@ async function seedBotcave(modelId: number | null, opts: { appStatus?: "active" 
     .insert(agentsTable)
     .values({ appId: app!.id, name: "Responsabile di Botcave", role: "general", status: opts.leadStatus ?? "active", aiModelId: modelId })
     .returning();
+  botcaveId = app!.id;
   return { app: app!, lead: lead! };
 }
 
@@ -81,35 +84,115 @@ async function expectError(p: Promise<unknown>, status: number, message: string)
 }
 
 describe("resolveLeadChat", () => {
+  const casello = { leadName: "Barbara", appSlug: "casello" };
+
   it("motivi di indisponibilità e caso disponibile", async () => {
     const me = await seedUser();
-    expect(await resolveLeadChat(me.userId)).toEqual({ available: false, reason: LEAD_CHAT_MESSAGES.noApp, agentId: null });
+    expect(await resolveLeadChat(me.userId, 999_999)).toEqual({
+      available: false,
+      reason: LEAD_CHAT_MESSAGES.appNotFound,
+      agentId: null,
+      leadName: "Responsabile",
+      appSlug: "",
+    });
 
-    const { lead } = await seedBotcave(me.modelId, { leadStatus: "draft" });
-    expect(await resolveLeadChat(me.userId)).toEqual({ available: false, reason: LEAD_CHAT_MESSAGES.inactive, agentId: lead.id });
+    const { app, lead } = await seedBotcave(me.modelId, { leadStatus: "draft" });
+    expect(await resolveLeadChat(me.userId, app.id)).toEqual({ available: false, reason: LEAD_CHAT_MESSAGES.inactive, agentId: lead.id, ...casello });
 
     await db.update(agentsTable).set({ status: "active", aiModelId: null }).where(eq(agentsTable.id, lead.id));
-    expect(await resolveLeadChat(me.userId)).toEqual({ available: false, reason: LEAD_CHAT_MESSAGES.noModel, agentId: lead.id });
+    expect(await resolveLeadChat(me.userId, app.id)).toEqual({ available: false, reason: LEAD_CHAT_MESSAGES.noModel, agentId: lead.id, ...casello });
 
     const other = await seedUser("Altro");
     await db.update(agentsTable).set({ aiModelId: other.modelId }).where(eq(agentsTable.id, lead.id));
-    expect(await resolveLeadChat(me.userId)).toEqual({ available: false, reason: LEAD_CHAT_MESSAGES.noModel, agentId: lead.id });
+    expect(await resolveLeadChat(me.userId, app.id)).toEqual({ available: false, reason: LEAD_CHAT_MESSAGES.noModel, agentId: lead.id, ...casello });
 
     await db.update(agentsTable).set({ aiModelId: me.modelId }).where(eq(agentsTable.id, lead.id));
-    expect(await resolveLeadChat(me.userId)).toEqual({
+    expect(await resolveLeadChat(me.userId, app.id)).toEqual({
       available: true,
       agentId: lead.id,
       agentName: "Responsabile di Botcave",
       appName: "Botcave",
       aiModelId: me.modelId,
       modelName: "Modello M",
+      ...casello,
     });
   });
 
-  it("App inattiva: Botcave non disponibile", async () => {
+  it("App inattiva: Botcave non disponibile, un'altra App «App non trovata»", async () => {
     const me = await seedUser();
-    await seedBotcave(me.modelId, { appStatus: "inactive" });
-    expect(await resolveLeadChat(me.userId)).toEqual({ available: false, reason: LEAD_CHAT_MESSAGES.noApp, agentId: null });
+    const { app } = await seedBotcave(me.modelId, { appStatus: "inactive" });
+    expect(await resolveLeadChat(me.userId, app.id)).toEqual({ available: false, reason: LEAD_CHAT_MESSAGES.noApp, agentId: null, ...casello });
+    const [thu] = await db.insert(appsTable).values({ name: "The Hub Up", slug: "thu", baseUrl: "https://hubup.example", status: "inactive" }).returning();
+    expect(await resolveLeadChat(me.userId, thu!.id)).toEqual({
+      available: false,
+      reason: LEAD_CHAT_MESSAGES.appNotFound,
+      agentId: null,
+      leadName: "Responsabile",
+      appSlug: "thu",
+    });
+  });
+
+  it("un'altra App: testi neutri col suo nome, anche se si chiama Barbara", async () => {
+    const me = await seedUser();
+    const [thu] = await db.insert(appsTable).values({ name: "The Hub Up", slug: "thu", baseUrl: "https://hubup.example", leadName: "Barbara" }).returning();
+    await db.insert(agentsTable).values({ appId: thu!.id, name: "Resp", role: "general", status: "active", aiModelId: null });
+    expect(await resolveLeadChat(me.userId, thu!.id)).toMatchObject({
+      available: false,
+      reason: "scegli per Barbara un modello di uno dei tuoi account AI",
+      leadName: "Barbara",
+      appSlug: "thu",
+    });
+    await db.update(agentsTable).set({ status: "draft" });
+    expect(await resolveLeadChat(me.userId, thu!.id)).toMatchObject({ reason: "Barbara non è attivo" });
+  });
+});
+
+describe("conversazioni per App", () => {
+  it("ogni App vede le sue; casello anche quelle senza App", async () => {
+    const me = await seedUser();
+    const { lead } = await seedBotcave(me.modelId);
+    const [thu] = await db.insert(appsTable).values({ name: "The Hub Up", slug: "thu", baseUrl: "https://hubup.example" }).returning();
+    await db.insert(agentsTable).values({ appId: thu!.id, name: "Resp", role: "general", status: "active", aiModelId: me.modelId });
+    const legacy = await db.insert(leadConversationsTable).values({ userId: me.userId, agentId: lead.id, title: "vecchia" }).returning();
+    const mine = await createLeadConversation(me.userId, botcaveId);
+    const hub = await createLeadConversation(me.userId, thu!.id);
+    expect(mine.appId).toBe(botcaveId);
+    expect(hub.appId).toBe(thu!.id);
+    expect((await listLeadConversations(me.userId, botcaveId)).map((c) => c.id).sort()).toEqual([legacy[0]!.id, mine.id].sort());
+    expect((await listLeadConversations(me.userId, thu!.id)).map((c) => c.id)).toEqual([hub.id]);
+  });
+
+  it("azione della pagina: richiesta salvata nell'input, non trovata → 400 senza run", async () => {
+    const me = await seedUser();
+    const [thu] = await db
+      .insert(appsTable)
+      .values({
+        name: "The Hub Up",
+        slug: "thu",
+        baseUrl: "https://hubup.example",
+        pageActions: [{ page: "task", label: "Esegui il task", request: "Leggi l'esecuzione e avvia" }],
+      })
+      .returning();
+    await db.insert(agentsTable).values({ appId: thu!.id, name: "Resp", role: "general", status: "active", aiModelId: me.modelId });
+    const conv = await createLeadConversation(me.userId, thu!.id);
+    const host = { app: "thu", page: "task", id: "7", title: "T" };
+    await expectError(
+      sendLeadMessage(me.userId, conv.id, { content: "x", pageContext: { page: "host", host }, actionLabel: "Inventata" }),
+      400,
+      LEAD_CHAT_MESSAGES.actionNotFound,
+    );
+    await expectError(sendLeadMessage(me.userId, conv.id, { content: "x", actionLabel: "Esegui il task" }), 400, LEAD_CHAT_MESSAGES.actionNotFound);
+    await expectError(
+      sendLeadMessage(me.userId, conv.id, { content: "x", pageContext: { page: "host", host: { ...host, page: "proposal" } }, actionLabel: "Esegui il task" }),
+      400,
+      LEAD_CHAT_MESSAGES.actionNotFound,
+    );
+    expect(await db.select().from(runsTable)).toHaveLength(0);
+    const sent = await sendLeadMessage(me.userId, conv.id, { content: "Esegui il task", pageContext: { page: "host", host }, actionLabel: "Esegui il task" });
+    const input = await runInput(sent.runId);
+    expect(input).toContain("Azione «Esegui il task» scelta dall'utente: Leggi l'esecuzione e avvia");
+    expect(input).toContain(`<dati>app thu, pagina task, id 7, "T"</dati>`);
+    await expectError(sendLeadMessage(me.userId, conv.id, { content: "y" }), 409, "Responsabile sta già rispondendo");
   });
 });
 
@@ -117,7 +200,7 @@ describe("conversazioni e messaggi", () => {
   it("un messaggio crea una run del Responsabile con pagina e marcatore, e dà il titolo", async () => {
     const me = await seedUser();
     const { lead } = await seedBotcave(me.modelId);
-    const conv = await createLeadConversation(me.userId);
+    const conv = await createLeadConversation(me.userId, botcaveId);
     expect(conv.agentId).toBe(lead.id);
 
     const sent = await sendLeadMessage(me.userId, conv.id, { content: "Cosa manca a questa squadra?\nseconda riga", pageContext: { page: "team", id: "12" } });
@@ -130,7 +213,7 @@ describe("conversazioni e messaggi", () => {
     expect(msg!.runId).toBe(sent.runId);
     expect(msg!.pageContext).toEqual({ page: "team", id: "12" });
 
-    const list = await listLeadConversations(me.userId);
+    const list = await listLeadConversations(me.userId, botcaveId);
     expect(list).toHaveLength(1);
     expect(list[0]!.title).toBe("Cosa manca a questa squadra?");
   });
@@ -138,7 +221,7 @@ describe("conversazioni e messaggi", () => {
   it("un messaggio alla volta; la cronologia riporta esito, errore o nessuna risposta", async () => {
     const me = await seedUser();
     await seedBotcave(me.modelId);
-    const conv = await createLeadConversation(me.userId);
+    const conv = await createLeadConversation(me.userId, botcaveId);
     const first = await sendLeadMessage(me.userId, conv.id, { content: "uno" });
     await expectError(sendLeadMessage(me.userId, conv.id, { content: "due" }), 409, LEAD_CHAT_MESSAGES.busy);
 
@@ -161,7 +244,7 @@ describe("conversazioni e messaggi", () => {
   it("due invii simultanei: una sola run", async () => {
     const me = await seedUser();
     await seedBotcave(me.modelId);
-    const conv = await createLeadConversation(me.userId);
+    const conv = await createLeadConversation(me.userId, botcaveId);
     const results = await Promise.allSettled([
       sendLeadMessage(me.userId, conv.id, { content: "uno" }),
       sendLeadMessage(me.userId, conv.id, { content: "due" }),
@@ -177,7 +260,7 @@ describe("conversazioni e messaggi", () => {
     const me = await seedUser();
     const other = await seedUser("Altro");
     await seedBotcave(me.modelId);
-    const conv = await createLeadConversation(me.userId);
+    const conv = await createLeadConversation(me.userId, botcaveId);
     await expectError(sendLeadMessage(me.userId, conv.id, { content: "   " }), 400, LEAD_CHAT_MESSAGES.empty);
     await expectError(sendLeadMessage(me.userId, conv.id, { content: "x".repeat(4001) }), 400, LEAD_CHAT_MESSAGES.tooLong);
     await expectError(sendLeadMessage(me.userId, conv.id, { content: "x", pageContext: { page: "admin" } }), 400, LEAD_CHAT_MESSAGES.badPage);
@@ -190,11 +273,11 @@ describe("conversazioni e messaggi", () => {
   it("Responsabile senza modello o cambiato: 409, la conversazione resta leggibile", async () => {
     const me = await seedUser();
     const { app, lead } = await seedBotcave(me.modelId);
-    const conv = await createLeadConversation(me.userId);
+    const conv = await createLeadConversation(me.userId, botcaveId);
     await db.update(agentsTable).set({ aiModelId: null }).where(eq(agentsTable.id, lead.id));
     await expectError(sendLeadMessage(me.userId, conv.id, { content: "x" }), 409, LEAD_CHAT_MESSAGES.noModel);
     expect((await getLeadConversation(me.userId, conv.id)).id).toBe(conv.id);
-    await expectError(createLeadConversation(me.userId), 409, LEAD_CHAT_MESSAGES.noModel);
+    await expectError(createLeadConversation(me.userId, botcaveId), 409, LEAD_CHAT_MESSAGES.noModel);
 
     await db.update(agentsTable).set({ aiModelId: me.modelId, role: "area" }).where(eq(agentsTable.id, lead.id));
     await db.insert(agentsTable).values({ appId: app.id, name: "Nuovo", role: "general", status: "active", aiModelId: me.modelId });
@@ -204,7 +287,7 @@ describe("conversazioni e messaggi", () => {
   it("dettaglio: avanzamento dagli ultimi 8 passi, voci in coda, run eliminata", async () => {
     const me = await seedUser();
     await seedBotcave(me.modelId);
-    const conv = await createLeadConversation(me.userId);
+    const conv = await createLeadConversation(me.userId, botcaveId);
     const sent = await sendLeadMessage(me.userId, conv.id, { content: "uno" });
     await setRun(sent.runId, { status: "running" });
     for (let i = 0; i < 10; i++) {
@@ -249,7 +332,7 @@ describe("conversazioni e messaggi", () => {
   it("eliminare la conversazione lascia le run", async () => {
     const me = await seedUser();
     await seedBotcave(me.modelId);
-    const conv = await createLeadConversation(me.userId);
+    const conv = await createLeadConversation(me.userId, botcaveId);
     const sent = await sendLeadMessage(me.userId, conv.id, { content: "uno" });
     await deleteLeadConversation(me.userId, conv.id);
     expect(await db.select().from(leadConversationsTable)).toHaveLength(0);
@@ -262,13 +345,13 @@ describe("conversazioni e messaggi", () => {
     const me = await seedUser();
     const { lead } = await seedBotcave(me.modelId);
     await db.insert(leadConversationsTable).values(Array.from({ length: 100 }, () => ({ userId: me.userId, agentId: lead.id })));
-    await expectError(createLeadConversation(me.userId), 409, LEAD_CHAT_MESSAGES.tooManyConversations);
+    await expectError(createLeadConversation(me.userId, botcaveId), 409, LEAD_CHAT_MESSAGES.tooManyConversations);
   });
 
   it("al più 10 messaggi al minuto per utente", async () => {
     const me = await seedUser();
     await seedBotcave(me.modelId);
-    const conv = await createLeadConversation(me.userId);
+    const conv = await createLeadConversation(me.userId, botcaveId);
     for (let i = 0; i < 10; i++) {
       const sent = await sendLeadMessage(me.userId, conv.id, { content: `m${i}` });
       await setRun(sent.runId, { status: "succeeded", output: "ok" });

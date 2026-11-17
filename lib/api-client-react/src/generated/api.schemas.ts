@@ -2588,6 +2588,10 @@ export interface LeadChatAvailability {
   aiModelId?: number | null;
   /** @nullable */
   modelName?: string | null;
+  /** Nome del Responsabile dell'App */
+  leadName: string;
+  /** Slug dell'App del Responsabile */
+  appSlug: string;
 }
 
 export interface LeadConversation {
@@ -2625,12 +2629,41 @@ export const LeadPageContextPage = {
   models: 'models',
   account: 'account',
   console: 'console',
+  host: 'host',
 } as const;
+
+/**
+ * Pagina dell'app ospite (pannello incorporato); ammesso solo con page "host", che lo richiede
+ */
+export type LeadPageContextHost = {
+  /** @pattern ^[a-z0-9][a-z0-9-]{0,63}$ */
+  app: string;
+  /**
+     * @minLength 1
+     * @maxLength 40
+     * @pattern ^[A-Za-z0-9._:-]+$
+     */
+  page: string;
+  /**
+     * @minLength 1
+     * @maxLength 40
+     * @pattern ^[A-Za-z0-9._:-]+$
+     */
+  id?: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     * @pattern ^[^\r\n]+$
+     */
+  title?: string;
+};
 
 export interface LeadPageContext {
   page: LeadPageContextPage;
   /** @pattern ^[A-Za-z0-9._:-]{1,100}$ */
   id?: string;
+  /** Pagina dell'app ospite (pannello incorporato); ammesso solo con page "host", che lo richiede */
+  host?: LeadPageContextHost;
 }
 
 export interface LeadQueueItem {
@@ -2694,6 +2727,12 @@ export interface LeadMessageCreate {
   /** Da 1 a 4 000 caratteri (controllo del server con messaggi fissi) */
   content: string;
   pageContext?: LeadPageContext;
+  /**
+     * Etichetta di un'azione della pagina dell'app ospite (richiede pageContext.page = host)
+     * @minLength 1
+     * @maxLength 40
+     */
+  actionLabel?: string;
 }
 
 export interface LeadMessageAccepted {
@@ -5136,6 +5175,11 @@ export type EmbedIdentityParameter = string;
 
 export type CharacterQueryParameter = MemoryCharacter;
 
+/**
+ * Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client (senza: quella; un'altra App → 404 «App non trovata»).
+ */
+export type LeadAppParamParameter = string;
+
 export type GetEmbedConfigParams = {
 origin?: string;
 /**
@@ -5481,6 +5525,54 @@ subjectType?: CharacterSubjectType;
  * @maxLength 100
  */
 subjectId?: string;
+};
+
+export type GetLeadChatParams = {
+/**
+ * Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client (senza: quella; un'altra App → 404 «App non trovata»).
+ * @pattern ^[a-z0-9][a-z0-9-]{0,63}$
+ */
+app?: LeadAppParamParameter;
+};
+
+export type ListLeadConversationsParams = {
+/**
+ * Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client (senza: quella; un'altra App → 404 «App non trovata»).
+ * @pattern ^[a-z0-9][a-z0-9-]{0,63}$
+ */
+app?: LeadAppParamParameter;
+};
+
+export type CreateLeadConversationParams = {
+/**
+ * Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client (senza: quella; un'altra App → 404 «App non trovata»).
+ * @pattern ^[a-z0-9][a-z0-9-]{0,63}$
+ */
+app?: LeadAppParamParameter;
+};
+
+export type GetLeadConversationParams = {
+/**
+ * Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client (senza: quella; un'altra App → 404 «App non trovata»).
+ * @pattern ^[a-z0-9][a-z0-9-]{0,63}$
+ */
+app?: LeadAppParamParameter;
+};
+
+export type DeleteLeadConversationParams = {
+/**
+ * Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client (senza: quella; un'altra App → 404 «App non trovata»).
+ * @pattern ^[a-z0-9][a-z0-9-]{0,63}$
+ */
+app?: LeadAppParamParameter;
+};
+
+export type SendLeadMessageParams = {
+/**
+ * Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client (senza: quella; un'altra App → 404 «App non trovata»).
+ * @pattern ^[a-z0-9][a-z0-9-]{0,63}$
+ */
+app?: LeadAppParamParameter;
 };
 
 export type ListMemoryNotesParams = {

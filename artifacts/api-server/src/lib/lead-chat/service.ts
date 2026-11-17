@@ -1,5 +1,6 @@
-// Chat con il Responsabile di prodotto di Botcave (agente `general` dell'App `casello`): ogni messaggio è una run del
-// Responsabile con la cronologia recente nell'input. Le risposte non si copiano: si leggono dalle run.
+// Chat con il Responsabile di prodotto di un'App (agente `general`; senza App indicata quella di Botcave, `casello`): ogni
+// messaggio è una run del Responsabile con la cronologia recente nell'input. Le risposte non si copiano: si leggono dalle run.
+// Una conversazione è di un utente e di un'App (`app_id` null = `casello`, righe nate prima della colonna).
 // Log: solo id e conteggi, mai testi.
 
 import {
@@ -14,18 +15,20 @@ import {
   runStepsTable,
   runsTable,
   usersTable,
+  type App,
   type LeadConversation,
   type Run,
 } from "@workspace/db";
-import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import { runBudgetBlock } from "../budget";
 import { DEFAULT_LEAD_APP_SLUG } from "../product-leads";
 import { createQueuedRun, scheduleRuns } from "../run-queue";
 import { describeRunStep } from "../turn-progress/describe";
 import { PROGRESS_MAX_STEPS, type TurnProgressView } from "../turn-progress/progress";
 import { consumeLeadChatMessage } from "../../middlewares/rate-limit";
-import { LEAD_CHAT_LIMITS, leadChatRunInput, parseLeadPage, type LeadExchange, type LeadPage } from "./input";
-import { resolveBotNames } from "../apps/bot-names";
+import { LEAD_CHAT_LIMITS, leadChatRunInput, parseLeadPage, type LeadAction, type LeadExchange, type LeadPage } from "./input";
+import { BOT_NAME_DEFAULTS, resolveBotNames } from "../apps/bot-names";
+import { findPageAction } from "../apps/page-actions";
 import { LEAD_CHAT_MESSAGES, LeadChatError, leadChatMessages } from "./messages";
 
 export const LEAD_CONVERSATIONS_MAX = 100;
@@ -34,8 +37,17 @@ const ITEMS_PER_RUN = 10;
 const OPEN_STATUSES = new Set(["pending", "running"]);
 
 export type LeadChatAvailability =
-  | { available: true; agentId: number; agentName: string; appName: string; aiModelId: number; modelName: string }
-  | { available: false; reason: string; agentId: number | null };
+  | {
+      available: true;
+      agentId: number;
+      agentName: string;
+      appName: string;
+      aiModelId: number;
+      modelName: string;
+      leadName: string;
+      appSlug: string;
+    }
+  | { available: false; reason: string; agentId: number | null; leadName: string; appSlug: string };
 
 export type LeadQueueItem = { number: number; kind: string; status: string; summary: string };
 
@@ -84,31 +96,55 @@ async function userOwnsModel(userId: number, aiModelId: number): Promise<{ name:
   return row ? { name: row.displayName ?? row.modelId } : null;
 }
 
-/** Il Responsabile di Botcave è usabile dall'utente? App `casello` attiva, `general` attivo, modello di un suo account. */
-/** Testi fissi col nome del Responsabile dell'App di default. */
-async function leadMessages() {
-  const [app] = await db.select().from(appsTable).where(eq(appsTable.slug, DEFAULT_LEAD_APP_SLUG)).limit(1);
-  return leadChatMessages(app ? resolveBotNames(app).lead : "Barbara");
+async function appById(appId: number): Promise<App | null> {
+  const [app] = await db.select().from(appsTable).where(eq(appsTable.id, appId)).limit(1);
+  return app ?? null;
 }
 
-export async function resolveLeadChat(userId: number): Promise<LeadChatAvailability> {
-  const [app] = await db.select().from(appsTable).where(eq(appsTable.slug, DEFAULT_LEAD_APP_SLUG)).limit(1);
-  if (!app || app.status !== "active") return { available: false, reason: LEAD_CHAT_MESSAGES.noApp, agentId: null };
+/** App di una conversazione: la sua colonna, o `casello` per le righe senza (null se `casello` non c'è). */
+async function conversationAppId(conv: LeadConversation): Promise<number | null> {
+  if (conv.appId !== null) return conv.appId;
+  const [app] = await db.select({ id: appsTable.id }).from(appsTable).where(eq(appsTable.slug, DEFAULT_LEAD_APP_SLUG)).limit(1);
+  return app?.id ?? null;
+}
+
+/** Testi fissi col nome del Responsabile dell'App (quelli storici con Barbara solo per `casello`). */
+function leadMessagesOf(app: App) {
+  return leadChatMessages(resolveBotNames(app).lead, app.slug === DEFAULT_LEAD_APP_SLUG);
+}
+
+/** Il Responsabile dell'App è usabile dall'utente? App attiva, `general` attivo, modello di un suo account. */
+export async function resolveLeadChat(userId: number, appId: number): Promise<LeadChatAvailability> {
+  const app = await appById(appId);
+  if (!app) return { available: false, reason: LEAD_CHAT_MESSAGES.appNotFound, agentId: null, leadName: BOT_NAME_DEFAULTS.lead, appSlug: "" };
+  const names = { leadName: resolveBotNames(app).lead, appSlug: app.slug };
+  if (app.status !== "active") {
+    const reason = app.slug === DEFAULT_LEAD_APP_SLUG ? LEAD_CHAT_MESSAGES.noApp : LEAD_CHAT_MESSAGES.appNotFound;
+    return { available: false, reason, agentId: null, ...names };
+  }
   const [lead] = await db
     .select()
     .from(agentsTable)
     .where(and(eq(agentsTable.appId, app.id), eq(agentsTable.role, "general")))
     .orderBy(asc(agentsTable.id))
     .limit(1);
-  const msgs = leadChatMessages(resolveBotNames(app).lead);
-  if (!lead || lead.status !== "active") return { available: false, reason: msgs.inactive, agentId: lead?.id ?? null };
+  const msgs = leadMessagesOf(app);
+  if (!lead || lead.status !== "active") return { available: false, reason: msgs.inactive, agentId: lead?.id ?? null, ...names };
   const model = lead.aiModelId === null ? null : await userOwnsModel(userId, lead.aiModelId);
-  if (!model || lead.aiModelId === null) return { available: false, reason: msgs.noModel, agentId: lead.id };
-  return { available: true, agentId: lead.id, agentName: lead.name, appName: app.name, aiModelId: lead.aiModelId, modelName: model.name };
+  if (!model || lead.aiModelId === null) return { available: false, reason: msgs.noModel, agentId: lead.id, ...names };
+  return {
+    available: true,
+    agentId: lead.id,
+    agentName: lead.name,
+    appName: app.name,
+    aiModelId: lead.aiModelId,
+    modelName: model.name,
+    ...names,
+  };
 }
 
-async function requireAvailable(userId: number): Promise<Extract<LeadChatAvailability, { available: true }>> {
-  const a = await resolveLeadChat(userId);
+async function requireAvailable(userId: number, appId: number): Promise<Extract<LeadChatAvailability, { available: true }>> {
+  const a = await resolveLeadChat(userId, appId);
   if (!a.available) throw new LeadChatError(409, a.reason);
   return a;
 }
@@ -125,14 +161,19 @@ async function ownedConversation(userId: number, id: number): Promise<LeadConver
   return conv;
 }
 
-export async function createLeadConversation(userId: number): Promise<LeadConversation> {
-  const a = await requireAvailable(userId);
+/** App della conversazione dell'utente (404 se non è sua); `casello` per le righe senza App. */
+export async function leadConversationAppId(userId: number, id: number): Promise<number | null> {
+  return conversationAppId(await ownedConversation(userId, id));
+}
+
+export async function createLeadConversation(userId: number, appId: number): Promise<LeadConversation> {
+  const a = await requireAvailable(userId, appId);
   const [row] = await db
     .select({ n: count() })
     .from(leadConversationsTable)
     .where(and(eq(leadConversationsTable.userId, userId), isNull(leadConversationsTable.archivedAt)));
   if (Number(row?.n ?? 0) >= LEAD_CONVERSATIONS_MAX) throw new LeadChatError(409, LEAD_CHAT_MESSAGES.tooManyConversations);
-  const [conv] = await db.insert(leadConversationsTable).values({ userId, agentId: a.agentId }).returning();
+  const [conv] = await db.insert(leadConversationsTable).values({ userId, agentId: a.agentId, appId }).returning();
   return conv!;
 }
 
@@ -166,11 +207,18 @@ async function runsOf(conversationIds: number[]): Promise<{ conversationId: numb
     .where(inArray(leadMessagesTable.conversationId, conversationIds));
 }
 
-export async function listLeadConversations(userId: number): Promise<LeadConversationSummary[]> {
+/** Conversazioni dell'App: per `casello` anche quelle senza App (nate prima della colonna). */
+async function appCondition(appId: number): Promise<SQL | undefined> {
+  const app = await appById(appId);
+  const byApp = eq(leadConversationsTable.appId, appId);
+  return app?.slug === DEFAULT_LEAD_APP_SLUG ? or(byApp, isNull(leadConversationsTable.appId)) : byApp;
+}
+
+export async function listLeadConversations(userId: number, appId: number): Promise<LeadConversationSummary[]> {
   const convs = await db
     .select()
     .from(leadConversationsTable)
-    .where(and(eq(leadConversationsTable.userId, userId), isNull(leadConversationsTable.archivedAt)))
+    .where(and(eq(leadConversationsTable.userId, userId), isNull(leadConversationsTable.archivedAt), await appCondition(appId)))
     .orderBy(desc(leadConversationsTable.updatedAt), desc(leadConversationsTable.id))
     .limit(LEAD_CONVERSATIONS_MAX);
   const byConv = new Map<number, Run[]>();
@@ -192,7 +240,7 @@ function replyOf(run: Run | undefined): string {
 export async function sendLeadMessage(
   userId: number,
   conversationId: number,
-  input: { content: string; pageContext?: unknown },
+  input: { content: string; pageContext?: unknown; actionLabel?: string },
 ): Promise<{ messageId: number; runId: number }> {
   const conv = await ownedConversation(userId, conversationId);
   if (conv.archivedAt !== null) throw new LeadChatError(409, LEAD_CHAT_MESSAGES.archived);
@@ -202,7 +250,19 @@ export async function sendLeadMessage(
   const page = parseLeadPage(input.pageContext);
   if (page === "invalid") throw new LeadChatError(400, LEAD_CHAT_MESSAGES.badPage);
 
-  const a = await requireAvailable(userId);
+  const appId = await conversationAppId(conv);
+  const app = appId === null ? null : await appById(appId);
+  if (!app) throw new LeadChatError(409, LEAD_CHAT_MESSAGES.noApp);
+
+  // L'azione si cerca per pagina dell'app ospite ed etichetta tra quelle salvate dell'App: la richiesta arriva da lì, mai dal browser
+  let action: LeadAction | null = null;
+  if (input.actionLabel !== undefined) {
+    const found = page?.host ? findPageAction(app.pageActions, page.host.page, input.actionLabel) : null;
+    if (!found) throw new LeadChatError(400, LEAD_CHAT_MESSAGES.actionNotFound);
+    action = { label: found.label, request: found.request };
+  }
+
+  const a = await requireAvailable(userId, app.id);
   if (a.agentId !== conv.agentId) throw new LeadChatError(409, LEAD_CHAT_MESSAGES.changed);
 
   const previous = await db
@@ -212,7 +272,7 @@ export async function sendLeadMessage(
     .where(eq(leadMessagesTable.conversationId, conv.id))
     .orderBy(desc(leadMessagesTable.id))
     .limit(LEAD_CHAT_LIMITS.historyTurns);
-  const msgs = await leadMessages();
+  const msgs = leadMessagesOf(app);
   const last = previous[0];
   if (last?.run && OPEN_STATUSES.has(last.run.status)) throw new LeadChatError(409, msgs.busy);
 
@@ -227,7 +287,14 @@ export async function sendLeadMessage(
     .slice()
     .reverse()
     .map((p) => ({ message: p.message.content, reply: replyOf(p.run ?? undefined) }));
-  const runInput = leadChatRunInput({ userName: user?.name ?? null, page, history, message: content });
+  const runInput = leadChatRunInput({
+    userName: user?.name ?? null,
+    page: page?.host ? null : page,
+    hostPage: page?.host ?? null,
+    action,
+    history,
+    message: content,
+  });
 
   const result = await db.transaction(async (tx) => {
     // Un messaggio alla volta anche con due invii simultanei: riga della conversazione bloccata, stato dell'ultima run riletto

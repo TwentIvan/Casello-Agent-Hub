@@ -17,7 +17,7 @@ import { LEAD_RUN_KIND, mapLeadDetail, type LeadRunPayload } from "./lead-detail
 export function useLeadChatAdapter(page: { page: string; id?: string }): ChatAdapter {
   const queryClient = useQueryClient();
   const listKey = getListLeadConversationsQueryKey();
-  const list = useListLeadConversations({ query: { queryKey: listKey } });
+  const list = useListLeadConversations(undefined, { query: { queryKey: listKey } });
   const createConv = useCreateLeadConversation();
   const removeConv = useDeleteLeadConversation();
   const send = useSendLeadMessage();
@@ -37,7 +37,7 @@ export function useLeadChatAdapter(page: { page: string; id?: string }): ChatAda
       error: list.error ?? undefined,
     }),
     useConversation: (id) => {
-      const q = useGetLeadConversation(id ?? 0, {
+      const q = useGetLeadConversation(id ?? 0, undefined, {
         query: {
           queryKey: getGetLeadConversationQueryKey(id ?? 0),
           enabled: id !== null,
@@ -49,7 +49,7 @@ export function useLeadChatAdapter(page: { page: string; id?: string }): ChatAda
     },
     create: async () => {
       try {
-        const created = await createConv.mutateAsync();
+        const created = await createConv.mutateAsync({});
         return created.id;
       } finally {
         refresh();

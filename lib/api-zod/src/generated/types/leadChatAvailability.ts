@@ -23,4 +23,8 @@ export interface LeadChatAvailability {
   aiModelId?: number | null;
   /** @nullable */
   modelName?: string | null;
+  /** Nome del Responsabile dell'App */
+  leadName: string;
+  /** Slug dell'App del Responsabile */
+  appSlug: string;
 }

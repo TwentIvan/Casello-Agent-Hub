@@ -5729,7 +5729,9 @@ paths:
     get:
       operationId: getLeadChat
       tags: [lead-chat]
-      summary: Disponibilità del Responsabile di Botcave per l'utente
+      summary: Disponibilità del Responsabile di un'App per l'utente
+      parameters:
+        - $ref: "#/components/parameters/LeadAppParam"
       responses:
         "200":
           description: Disponibile o motivo
@@ -5737,12 +5739,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LeadChatAvailability"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /lead-conversations:
     get:
       operationId: listLeadConversations
       tags: [lead-chat]
-      summary: Conversazioni aperte con il Responsabile (al più 100)
+      summary: Conversazioni aperte con il Responsabile dell'App (al più 100)
+      parameters:
+        - $ref: "#/components/parameters/LeadAppParam"
       responses:
         "200":
           description: Elenco
@@ -5752,11 +5758,15 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/LeadConversation"
+        "404":
+          $ref: "#/components/responses/NotFound"
     post:
       operationId: createLeadConversation
       tags: [lead-chat]
       summary: Nuova conversazione con il Responsabile
       description: 409 se il Responsabile non è disponibile o se l'utente ha già 100 conversazioni aperte.
+      parameters:
+        - $ref: "#/components/parameters/LeadAppParam"
       responses:
         "201":
           description: Conversazione creata
@@ -5764,6 +5774,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LeadConversation"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
 
@@ -5772,8 +5784,10 @@ paths:
       operationId: getLeadConversation
       tags: [lead-chat]
       summary: Conversazione con i messaggi e le loro run
+      description: 404 anche se la conversazione è di un'altra App.
       parameters:
         - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/LeadAppParam"
       responses:
         "200":
           description: Conversazione trovata
@@ -5789,6 +5803,7 @@ paths:
       summary: Elimina la conversazione (le run restano)
       parameters:
         - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/LeadAppParam"
       responses:
         "204":
           description: Conversazione eliminata
@@ -5803,8 +5818,11 @@ paths:
       description: >-
         Un messaggio alla volta (409 se la run precedente è in coda o in corso), al più 10 al minuto per utente (429),
         409 col motivo se il Responsabile non è disponibile o il tetto di spesa è raggiunto, 429 se la coda è piena.
+        Con `actionLabel` (solo con `pageContext.page = host`) il server cerca l'azione per pagina ed etichetta nelle azioni
+        dell'App e usa la richiesta salvata; non trovata → 400 «azione non trovata: ricarica il pannello».
       parameters:
         - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/LeadAppParam"
       requestBody:
         required: true
         content:
@@ -6162,6 +6180,17 @@ components:
       required: true
       schema:
         type: integer
+
+    LeadAppParam:
+      name: app
+      in: query
+      required: false
+      description: >-
+        Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client
+        (senza: quella; un'altra App → 404 «App non trovata»).
+      schema:
+        type: string
+        pattern: "^[a-z0-9][a-z0-9-]{0,63}$"
 
     AttachmentIdParam:
       name: attachmentId
@@ -9278,7 +9307,7 @@ components:
 
     LeadChatAvailability:
       type: object
-      required: [available]
+      required: [available, leadName, appSlug]
       properties:
         available:
           type: boolean
@@ -9295,6 +9324,12 @@ components:
           type: ["integer", "null"]
         modelName:
           type: ["string", "null"]
+        leadName:
+          type: string
+          description: Nome del Responsabile dell'App
+        appSlug:
+          type: string
+          description: Slug dell'App del Responsabile
 
     LeadConversation:
       type: object
@@ -9320,10 +9355,34 @@ components:
       properties:
         page:
           type: string
-          enum: [dashboard, apps, app, app_plan, analysis, agents, agent, runs, run, pending_actions, skills, skill, team_templates, team_template, teams, team, models, account, console]
+          enum: [dashboard, apps, app, app_plan, analysis, agents, agent, runs, run, pending_actions, skills, skill, team_templates, team_template, teams, team, models, account, console, host]
         id:
           type: string
           pattern: "^[A-Za-z0-9._:-]{1,100}$"
+        host:
+          type: object
+          description: Pagina dell'app ospite (pannello incorporato); ammesso solo con page "host", che lo richiede
+          required: [app, page]
+          additionalProperties: false
+          properties:
+            app:
+              type: string
+              pattern: "^[a-z0-9][a-z0-9-]{0,63}$"
+            page:
+              type: string
+              minLength: 1
+              maxLength: 40
+              pattern: "^[A-Za-z0-9._:-]+$"
+            id:
+              type: string
+              minLength: 1
+              maxLength: 40
+              pattern: "^[A-Za-z0-9._:-]+$"
+            title:
+              type: string
+              minLength: 1
+              maxLength: 200
+              pattern: "^[^\\r\\n]+$"
 
     LeadQueueItem:
       type: object
@@ -9422,6 +9481,11 @@ components:
           description: Da 1 a 4 000 caratteri (controllo del server con messaggi fissi)
         pageContext:
           $ref: "#/components/schemas/LeadPageContext"
+        actionLabel:
+          type: string
+          minLength: 1
+          maxLength: 40
+          description: Etichetta di un'azione della pagina dell'app ospite (richiede pageContext.page = host)
 
     LeadMessageAccepted:
       type: object

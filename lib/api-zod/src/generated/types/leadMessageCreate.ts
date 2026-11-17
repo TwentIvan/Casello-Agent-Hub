@@ -11,4 +11,10 @@ export interface LeadMessageCreate {
   /** Da 1 a 4 000 caratteri (controllo del server con messaggi fissi) */
   content: string;
   pageContext?: LeadPageContext;
+  /**
+     * Etichetta di un'azione della pagina dell'app ospite (richiede pageContext.page = host)
+     * @minLength 1
+     * @maxLength 40
+     */
+  actionLabel?: string;
 }

@@ -13,4 +13,7 @@ export {
   GetEmbedBugParams,
   AddEmbedBugMessageParams,
   ListAppBugsParams,
+  GetLeadConversationParams,
+  DeleteLeadConversationParams,
+  SendLeadMessageParams,
 } from "./generated/api";

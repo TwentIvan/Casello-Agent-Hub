@@ -1,4 +1,6 @@
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { WorkError, codeQueueBlock, ensureWorkForCodeTask, roleWritesCode } from "./works";
+import { codeErrorMessage } from "../code-writer/session";
 import { z } from "zod";
 import { db, pendingActionsTable, teamCodeTasksTable, teamInstancesTable, teamPlanVersionsTable, teamTasksTable } from "@workspace/db";
 import { completionData } from "../architect/issues";
@@ -609,8 +611,29 @@ async function assignTask(ctx: LeadContext, args: Record<string, unknown>): Prom
     const blocked = await failureBrake(ctx.instanceId, taskId);
     if (blocked) return fail(LEAD_MESSAGES.tooManyFailures);
   }
+  // Lavoro su branch unico: un compito di un ruolo che scrive codice apre (o riusa) il lavoro e va in fila
+  let guard: Parameters<typeof startTask>[3] = {};
+  const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, ctx.instanceId)).limit(1);
+  const roleKey = approved.tasks.find((t) => t.id === taskId)!.roleKey;
+  if (instance && roleWritesCode(instance, roleKey)) {
+    let work;
+    try {
+      work = await ensureWorkForCodeTask(instance);
+    } catch (err) {
+      if (err instanceof WorkError) return fail(err.message);
+      const message = codeErrorMessage(err);
+      if (message !== null) return fail(message);
+      throw err;
+    }
+    guard = {
+      guard: async (tx) => {
+        const blocked = await codeQueueBlock(instance, work.id, tx);
+        if (blocked) throw new TeamRuleError(blocked);
+      },
+    };
+  }
   try {
-    const row = await startTask(ctx.instanceId, taskId, attachmentIds);
+    const row = await startTask(ctx.instanceId, taskId, attachmentIds, guard);
     return done(
       row.status === "waiting_node"
         ? `compito ${taskId} assegnato al ruolo ${row.roleKey}: in attesa del nodo locale`

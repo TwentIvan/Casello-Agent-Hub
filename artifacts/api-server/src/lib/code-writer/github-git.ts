@@ -26,6 +26,8 @@ export interface CiSnapshot {
 }
 
 const TASK_BRANCH_RE = /^botcave\/\d+-[A-Za-z0-9_-]{1,40}$/;
+/** Branch di un lavoro su branch unico (`botcave/lavoro-<squadra>-<numero>`): l'unico che Botcave crea fuori dai compiti. */
+export const WORK_BRANCH_RE = /^botcave\/lavoro-\d+-\d+$/;
 const PER_PAGE = 100;
 const MAX_PAGES = 5;
 const LOG_TIMEOUT_MS = 15_000;
@@ -140,6 +142,19 @@ export async function getBranchHead(r: RepoRef, branch: string): Promise<string 
 /** GET che tollera il 404 (ramo o risorsa assente) ma non lo confonde con l'accesso perso del repo. */
 async function githubCallSafe(r: RepoRef, token: string, path: string): Promise<{ status: number; json: unknown }> {
   return call(r, token, "contents: read", { method: "GET", path }, [404]);
+}
+
+/**
+ * Crea il branch di un lavoro allo sha dato (`contents: write`, mai forzato). Un branch già esistente alla stessa testa va
+ * bene (apertura ripetuta); a un'altra testa è un errore fisso. Solo nomi `botcave/lavoro-<squadra>-<numero>`.
+ */
+export async function createBranch(r: RepoRef, branch: string, sha: string): Promise<void> {
+  if (!WORK_BRANCH_RE.test(branch)) throw new Error("scrittura rifiutata: il branch deve essere del tipo botcave/lavoro-<squadra>-<numero>");
+  const token = await tokenFor(r, { contents: "write" });
+  const { status } = await call(r, token, "contents: write", { method: "POST", path: repoPath(r, "/git/refs"), body: { ref: `refs/heads/${branch}`, sha } }, [422]);
+  if (status !== 422) return;
+  const head = await getBranchHead(r, branch);
+  if (head !== sha) throw new CodeWriteError(CODE_WRITE_MESSAGES.unavailable, 422);
 }
 
 /** Confronto tra due commit: titoli dei commit (i più recenti) e file toccati, con tetti fissi. */

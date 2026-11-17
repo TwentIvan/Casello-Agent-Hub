@@ -1,4 +1,5 @@
 import { and, asc, count, eq, gt, inArray, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { getOpenWork } from "./works";
 import { z } from "zod";
 import {
   appsTable,
@@ -268,7 +269,8 @@ async function openCodeSession(
       planTaskId: task.planTaskId,
       issue,
       mode: mode === "read" ? "read" : "write",
-      baseBranch: app.sourceBranch,
+      // Lavoro su branch unico: con un lavoro aperto il base del compito è il suo branch
+      baseBranch: (await getOpenWork(instance.id))?.branch ?? app.sourceBranch,
     });
     return { session, repo: app.sourceRepo };
   } catch (err) {
@@ -324,7 +326,12 @@ function withDiscardedNote(result: TaskResult, discarded: number): TaskResult {
  * (controllo e inserimento con la riga della squadra bloccata, come la presa in carico). Il PLAN si aggiorna dopo il
  * commit (la transazione non blocca la riga del PLAN); se fallisce, la riga nuova si chiude `failed`.
  */
-export async function startTask(instanceId: number, planTaskId: string, attachmentIds: number[] = []): Promise<TeamTaskRow> {
+export async function startTask(
+  instanceId: number,
+  planTaskId: string,
+  attachmentIds: number[] = [],
+  opts: { guard?: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => Promise<void> } = {},
+): Promise<TeamTaskRow> {
   const instance = await instanceRow(instanceId);
   if (!instance) throw new InstanceError(404, INSTANCE_MESSAGES.notFound);
   if (instance.status !== "active") throw new InstanceError(409, TASK_MESSAGES.teamNotActive);
@@ -365,6 +372,8 @@ export async function startTask(instanceId: number, planTaskId: string, attachme
       )
       .limit(1);
     if (active) throw new InstanceError(409, TASK_MESSAGES.alreadyActive);
+    // Regole aggiuntive del chiamante con la squadra bloccata (fila dei compiti con codice del lavoro)
+    if (opts.guard) await opts.guard(tx);
     const [inserted] = await tx
       .insert(teamTasksTable)
       .values({

@@ -18,6 +18,13 @@ describe("esempio della guida all'integrazione", () => {
     }
   });
 
+  it("tronca name a 100 caratteri e il token resta valido", () => {
+    const token = signBotcaveToken({ id: "u-42", name: "n".repeat(150) }, { secret: SECRET, appSlug: "mia-app", now: NOW });
+    const r = verifyIdentityToken(token, SECRET, "mia-app", NOW);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.identity.name).toBe("n".repeat(100));
+  });
+
   it("rifiuta una durata oltre 600 secondi", () => {
     expect(() => signBotcaveToken({ id: "u-42" }, { secret: SECRET, appSlug: "mia-app", ttlSeconds: 601, now: NOW })).toThrow();
   });

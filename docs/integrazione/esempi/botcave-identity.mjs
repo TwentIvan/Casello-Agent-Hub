@@ -25,8 +25,8 @@ export function signBotcaveToken(user, { secret, appSlug, ttlSeconds = 300, now 
   }
   const iat = Math.floor(now.getTime() / 1000);
   const claims = { iss: appSlug, aud: "botcave", sub: user.id, iat, exp: iat + ttlSeconds };
-  if (user.name) claims.name = user.name.slice(0, 100);
-  if (user.email) claims.email = user.email.slice(0, 254);
+  if (user.name) claims.name = String(user.name).slice(0, 100);
+  if (user.email) claims.email = String(user.email).slice(0, 254);
 
   const header = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const payload = b64url(JSON.stringify(claims));

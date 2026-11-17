@@ -70,7 +70,7 @@ persona le sue segnalazioni su qualunque dispositivo e può rispondere con il no
 2. Il tuo server riconosce l'utente dalla sua sessione e risponde con un token firmato, oppure con `204` se nessuno è collegato.
 3. Il token passa al pannello, che lo manda a Botcave con la segnalazione. Botcave lo verifica con il segreto condiviso.
 
-Il percorso deve essere **relativo alla radice** della tua app: comincia con `/`, non con `//`, al più 500 caratteri. Un indirizzo
+Il percorso deve essere **relativo alla radice** della tua app: comincia con `/`, non con `//`, al più 500 caratteri, senza `\` né caratteri di controllo. Un indirizzo
 assoluto è ignorato con un avviso, perché i cookie della tua app non devono mai andare altrove. La richiesta non segue redirect: se
 l'endpoint risponde 3xx (per esempio verso una pagina di login) la richiesta fallisce e il pannello resta anonimo, quindi per un utente
 non collegato rispondi `204`, non un redirect.
@@ -100,8 +100,13 @@ JWT compatto (`header.payload.firma`, base64url senza padding), firmato HS256.
 | `sub` | id stabile dell'utente nella tua app, 1..200 caratteri |
 | `iat` | istante di emissione, secondi Unix |
 | `exp` | scadenza, secondi Unix, **al più `iat + 600`** |
-| `name` | facoltativo, al più 100 caratteri |
-| `email` | facoltativo, al più 254 caratteri |
+| `name` | facoltativo, al più 100 caratteri (unità UTF-16) |
+| `email` | facoltativo, al più 254 caratteri (unità UTF-16) |
+
+**Attenzione ai limiti di `name` ed `email`**: un `name` oltre 100 o un `email` oltre 254 caratteri rende **non valido l'intero token**
+(non vengono troncati da Botcave: l'utente resta anonimo). Tronca sempre questi campi nel tuo server, oppure omettili. Botcave conta
+le unità UTF-16, come `String.length` di JavaScript, Java e .NET; Python e PHP contano invece i punti di codice, quindi con nomi che
+contengono emoji o caratteri fuori dal piano base (due unità UTF-16 ciascuno) misura in UTF-16 o tronca in modo prudente (per esempio a 50).
 
 Botcave tollera 60 secondi di scarto tra gli orologi. I claim sconosciuti sono ignorati. Errori restituiti: «identità non valida»
 (formato, firma, `iss`, `aud`, lunghezze, `exp` oltre `iat + 600`) e «identità scaduta». Con un token non valido la segnalazione non
@@ -155,6 +160,7 @@ def botcave_token(user_id: str, name=None, email=None, ttl=300) -> str:
     now = int(time.time())
     claims = {"iss": os.environ["BOTCAVE_APP"], "aud": "botcave", "sub": user_id,
               "iat": now, "exp": now + min(ttl, 600)}
+    # [:100] conta punti di codice, Botcave unità UTF-16: con emoji tronca più corto (es. 50)
     if name: claims["name"] = name[:100]
     if email: claims["email"] = email[:254]
     header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
@@ -206,14 +212,20 @@ function b64url(string $data): string {
 }
 
 function botcave_token(string $id, ?string $name, ?string $email, int $ttl = 300): string {
+    $slug = getenv('BOTCAVE_APP');
+    $secret = getenv('BOTCAVE_IDENTITY_SECRET');
+    if ($slug === false || $secret === false || $slug === '' || $secret === '') {
+        throw new RuntimeException('BOTCAVE_APP e BOTCAVE_IDENTITY_SECRET devono essere impostate');
+    }
     $now = time();
-    $claims = ['iss' => getenv('BOTCAVE_APP'), 'aud' => 'botcave', 'sub' => $id,
+    $claims = ['iss' => $slug, 'aud' => 'botcave', 'sub' => $id,
                'iat' => $now, 'exp' => $now + min($ttl, 600)];
+    // mb_substr conta punti di codice, Botcave unità UTF-16: con emoji tronca più corto (es. 50)
     if ($name) $claims['name'] = mb_substr($name, 0, 100);
     if ($email) $claims['email'] = mb_substr($email, 0, 254);
     $header = b64url(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
     $payload = b64url(json_encode($claims, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    $sig = b64url(hash_hmac('sha256', "$header.$payload", getenv('BOTCAVE_IDENTITY_SECRET'), true));
+    $sig = b64url(hash_hmac('sha256', "$header.$payload", $secret, true));
     return "$header.$payload.$sig";
 }
 
@@ -256,6 +268,11 @@ class BotcaveIdentityController {
         claims.put("sub", principal.getName());           // id stabile dell'utente
         claims.put("iat", iat);
         claims.put("exp", iat + 300);
+        String displayName = null; // nome e email dal tuo archivio utenti (mai dai parametri della richiesta)
+        String mail = null;
+        // name/email facoltativi; String.length() conta unità UTF-16, come Botcave: oltre 100/254 il token sarebbe non valido
+        if (displayName != null && !displayName.isEmpty()) claims.put("name", clamp(displayName, 100));
+        if (mail != null && !mail.isEmpty()) claims.put("email", clamp(mail, 254));
         String header = b64(JSON.writeValueAsBytes(Map.of("alg", "HS256", "typ", "JWT")));
         String payload = b64(JSON.writeValueAsBytes(claims));
         Mac mac = Mac.getInstance("HmacSHA256");
@@ -263,6 +280,10 @@ class BotcaveIdentityController {
         String sig = b64(mac.doFinal((header + "." + payload).getBytes(StandardCharsets.UTF_8)));
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
             .body(Map.of("token", header + "." + payload + "." + sig));
+    }
+
+    private static String clamp(String s, int max) {
+        return s.length() <= max ? s : s.substring(0, max);
     }
 
     private static String b64(byte[] data) {
@@ -290,14 +311,21 @@ app.MapGet("/botcave/identity", (ClaimsPrincipal user, HttpResponse res) =>
 
     var iat = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     var header = B64(JsonSerializer.SerializeToUtf8Bytes(new { alg = "HS256", typ = "JWT" }));
-    var payload = B64(JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object>
+    // name/email facoltativi; string.Length conta unità UTF-16, come Botcave: oltre 100/254 il token sarebbe non valido
+    static string Clamp(string s, int max) => s.Length <= max ? s : s.Substring(0, max);
+    var name = user.FindFirstValue(ClaimTypes.Name);
+    var email = user.FindFirstValue(ClaimTypes.Email);
+    var claims = new Dictionary<string, object>
     {
         ["iss"] = Environment.GetEnvironmentVariable("BOTCAVE_APP")!,
         ["aud"] = "botcave",
         ["sub"] = id,
         ["iat"] = iat,
         ["exp"] = iat + 300,
-    }));
+    };
+    if (!string.IsNullOrEmpty(name)) claims["name"] = Clamp(name, 100);
+    if (!string.IsNullOrEmpty(email)) claims["email"] = Clamp(email, 254);
+    var payload = B64(JsonSerializer.SerializeToUtf8Bytes(claims));
     var key = Encoding.UTF8.GetBytes(Environment.GetEnvironmentVariable("BOTCAVE_IDENTITY_SECRET")!); // stringa intera bci_...
     var sig = B64(HMACSHA256.HashData(key, Encoding.ASCII.GetBytes($"{header}.{payload}")));
     res.Headers.CacheControl = "no-store";
@@ -317,7 +345,7 @@ con la chiave, aggiungi `"." + base64url(firma)`.
 | Sintomo | Causa |
 |---|---|
 | Pannello con «Questa app non è abilitata a Botcave» | l'origine non è in `EMBED_ALLOWED_ORIGINS` (su entrambi i container) |
-| Avviso «data-identity-url ignorato» | percorso assoluto, `//…` o più di 500 caratteri: usa `/botcave/identity` |
+| Avviso «data-identity-url ignorato» | percorso assoluto, `//…`, con `\` o caratteri di controllo, o più di 500 caratteri: usa `/botcave/identity` |
 | Avviso «identità non ottenuta (HTTP 3xx/401/…)» | l'endpoint reindirizza o rifiuta: per l'utente non collegato rispondi `204` |
 | Avviso «identità non ottenuta (risposta non valida)» | corpo non JSON, senza `token`, oppure token oltre 4 096 caratteri |
 | «identità non valida» in «Prova identità» | segreto sbagliato o decodificato, `iss` diverso dallo slug, `aud` diverso da `botcave`, `alg` diverso da HS256, `exp` oltre `iat + 600` |

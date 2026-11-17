@@ -82,6 +82,13 @@ import type {
   CharacterConversationCreate,
   CharacterConversationDetail,
   CharacterConversationUpdate,
+  CharacterInstructionProposal,
+  CharacterInstructionProposalDecision,
+  CharacterInstructionVersion,
+  CharacterInstructionVersionSummary,
+  CharacterInstructions,
+  CharacterInstructionsRestore,
+  CharacterInstructionsUpdate,
   CharacterMessage,
   CharacterMessageCreate,
   CharacterProposal,
@@ -117,6 +124,7 @@ import type {
   ListCatalogModelsParams,
   ListCatalogProvidersParams,
   ListCharacterConversationsParams,
+  ListCharacterInstructionProposalsParams,
   ListMemoryHistoryParams,
   ListMemoryNotesParams,
   ListPendingActionsParams,
@@ -14122,6 +14130,544 @@ export function useDownloadRolesExport<TData = Awaited<ReturnType<typeof downloa
 
 
 
+
+export const getGetCharacterInstructionsUrl = (character: string,) => {
+
+
+
+
+  return `/api/account/character-instructions/${character}`
+}
+
+/**
+ * Versione corrente delle istruzioni personali per Alfred o Lucius (versione 0 e testo vuoto se non ce ne sono). Altro personaggio: 404.
+ * @summary Istruzioni personali dell'utente per un personaggio
+ */
+export const getCharacterInstructions = async (character: string, options?: RequestInit): Promise<CharacterInstructions> => {
+
+  return customFetch<CharacterInstructions>(getGetCharacterInstructionsUrl(character),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCharacterInstructionsQueryKey = (character: string,) => {
+    return [
+    `/api/account/character-instructions/${character}`
+    ] as const;
+    }
+
+
+export const getGetCharacterInstructionsQueryOptions = <TData = Awaited<ReturnType<typeof getCharacterInstructions>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>>(character: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCharacterInstructions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCharacterInstructionsQueryKey(character);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCharacterInstructions>>> = ({ signal }) => getCharacterInstructions(character, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: character !== null && character !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCharacterInstructions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCharacterInstructionsQueryResult = NonNullable<Awaited<ReturnType<typeof getCharacterInstructions>>>
+export type GetCharacterInstructionsQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+
+/**
+ * @summary Istruzioni personali dell'utente per un personaggio
+ */
+
+export function useGetCharacterInstructions<TData = Awaited<ReturnType<typeof getCharacterInstructions>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>>(
+ character: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCharacterInstructions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCharacterInstructionsQueryOptions(character,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateCharacterInstructionsUrl = (character: string,) => {
+
+
+
+
+  return `/api/account/character-instructions/${character}`
+}
+
+/**
+ * Scrive la versione successiva. `baseVersion` è la versione che l'utente ha caricato: se è cambiata, 409. Testo fino a 8 000 caratteri, senza credenziali. Solo con il login; 20 scritture al minuto per utente.
+ * @summary Salva le istruzioni personali (nuova versione)
+ */
+export const updateCharacterInstructions = async (character: string,
+    characterInstructionsUpdate: CharacterInstructionsUpdate, options?: RequestInit): Promise<CharacterInstructions> => {
+
+  return customFetch<CharacterInstructions>(getUpdateCharacterInstructionsUrl(character),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(characterInstructionsUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateCharacterInstructionsMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCharacterInstructions>>, TError,{character: string;data: BodyType<CharacterInstructionsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCharacterInstructions>>, TError,{character: string;data: BodyType<CharacterInstructionsUpdate>}, TContext> => {
+
+const mutationKey = ['updateCharacterInstructions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCharacterInstructions>>, {character: string;data: BodyType<CharacterInstructionsUpdate>}> = (props) => {
+          const {character,data} = props ?? {};
+
+          return  updateCharacterInstructions(character,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCharacterInstructionsMutationResult = NonNullable<Awaited<ReturnType<typeof updateCharacterInstructions>>>
+    export type UpdateCharacterInstructionsMutationBody = BodyType<CharacterInstructionsUpdate>
+    export type UpdateCharacterInstructionsMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Salva le istruzioni personali (nuova versione)
+ */
+export const useUpdateCharacterInstructions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCharacterInstructions>>, TError,{character: string;data: BodyType<CharacterInstructionsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCharacterInstructions>>,
+        TError,
+        {character: string;data: BodyType<CharacterInstructionsUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateCharacterInstructionsMutationOptions(options));
+    }
+
+export const getListCharacterInstructionVersionsUrl = (character: string,) => {
+
+
+
+
+  return `/api/account/character-instructions/${character}/versions`
+}
+
+/**
+ * @summary Versioni delle istruzioni personali (le ultime 50)
+ */
+export const listCharacterInstructionVersions = async (character: string, options?: RequestInit): Promise<CharacterInstructionVersionSummary[]> => {
+
+  return customFetch<CharacterInstructionVersionSummary[]>(getListCharacterInstructionVersionsUrl(character),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCharacterInstructionVersionsQueryKey = (character: string,) => {
+    return [
+    `/api/account/character-instructions/${character}/versions`
+    ] as const;
+    }
+
+
+export const getListCharacterInstructionVersionsQueryOptions = <TData = Awaited<ReturnType<typeof listCharacterInstructionVersions>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>>(character: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCharacterInstructionVersions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCharacterInstructionVersionsQueryKey(character);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCharacterInstructionVersions>>> = ({ signal }) => listCharacterInstructionVersions(character, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: character !== null && character !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCharacterInstructionVersions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCharacterInstructionVersionsQueryResult = NonNullable<Awaited<ReturnType<typeof listCharacterInstructionVersions>>>
+export type ListCharacterInstructionVersionsQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+
+/**
+ * @summary Versioni delle istruzioni personali (le ultime 50)
+ */
+
+export function useListCharacterInstructionVersions<TData = Awaited<ReturnType<typeof listCharacterInstructionVersions>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>>(
+ character: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCharacterInstructionVersions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCharacterInstructionVersionsQueryOptions(character,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetCharacterInstructionVersionUrl = (character: string,
+    version: number,) => {
+
+
+
+
+  return `/api/account/character-instructions/${character}/versions/${version}`
+}
+
+/**
+ * @summary Una versione delle istruzioni personali
+ */
+export const getCharacterInstructionVersion = async (character: string,
+    version: number, options?: RequestInit): Promise<CharacterInstructionVersion> => {
+
+  return customFetch<CharacterInstructionVersion>(getGetCharacterInstructionVersionUrl(character,version),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCharacterInstructionVersionQueryKey = (character: string,
+    version: number,) => {
+    return [
+    `/api/account/character-instructions/${character}/versions/${version}`
+    ] as const;
+    }
+
+
+export const getGetCharacterInstructionVersionQueryOptions = <TData = Awaited<ReturnType<typeof getCharacterInstructionVersion>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>>(character: string,
+    version: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCharacterInstructionVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCharacterInstructionVersionQueryKey(character,version);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCharacterInstructionVersion>>> = ({ signal }) => getCharacterInstructionVersion(character,version, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: character !== null && character !== undefined && version !== null && version !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCharacterInstructionVersion>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCharacterInstructionVersionQueryResult = NonNullable<Awaited<ReturnType<typeof getCharacterInstructionVersion>>>
+export type GetCharacterInstructionVersionQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+
+/**
+ * @summary Una versione delle istruzioni personali
+ */
+
+export function useGetCharacterInstructionVersion<TData = Awaited<ReturnType<typeof getCharacterInstructionVersion>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>>(
+ character: string,
+    version: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCharacterInstructionVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCharacterInstructionVersionQueryOptions(character,version,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRestoreCharacterInstructionsUrl = (character: string,) => {
+
+
+
+
+  return `/api/account/character-instructions/${character}/restore`
+}
+
+/**
+ * Scrive una versione nuova col testo di quella indicata. Stesse regole di concorrenza e limite del salvataggio. Solo con il login.
+ * @summary Ripristina una versione delle istruzioni personali (come versione nuova)
+ */
+export const restoreCharacterInstructions = async (character: string,
+    characterInstructionsRestore: CharacterInstructionsRestore, options?: RequestInit): Promise<CharacterInstructions> => {
+
+  return customFetch<CharacterInstructions>(getRestoreCharacterInstructionsUrl(character),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(characterInstructionsRestore)
+  }
+);}
+
+
+
+
+export const getRestoreCharacterInstructionsMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreCharacterInstructions>>, TError,{character: string;data: BodyType<CharacterInstructionsRestore>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof restoreCharacterInstructions>>, TError,{character: string;data: BodyType<CharacterInstructionsRestore>}, TContext> => {
+
+const mutationKey = ['restoreCharacterInstructions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof restoreCharacterInstructions>>, {character: string;data: BodyType<CharacterInstructionsRestore>}> = (props) => {
+          const {character,data} = props ?? {};
+
+          return  restoreCharacterInstructions(character,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RestoreCharacterInstructionsMutationResult = NonNullable<Awaited<ReturnType<typeof restoreCharacterInstructions>>>
+    export type RestoreCharacterInstructionsMutationBody = BodyType<CharacterInstructionsRestore>
+    export type RestoreCharacterInstructionsMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Ripristina una versione delle istruzioni personali (come versione nuova)
+ */
+export const useRestoreCharacterInstructions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreCharacterInstructions>>, TError,{character: string;data: BodyType<CharacterInstructionsRestore>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof restoreCharacterInstructions>>,
+        TError,
+        {character: string;data: BodyType<CharacterInstructionsRestore>},
+        TContext
+      > => {
+      return useMutation(getRestoreCharacterInstructionsMutationOptions(options));
+    }
+
+export const getListCharacterInstructionProposalsUrl = (params: ListCharacterInstructionProposalsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/character-instruction-proposals?${stringifiedParams}` : `/api/character-instruction-proposals`
+}
+
+/**
+ * Le schede che Alfred o Lucius hanno proposto in una conversazione dell'utente (la conversazione di un altro utente è 404). Valida con il login e con il pannello incorporato.
+ * @summary Schede di istruzioni personali di una conversazione
+ */
+export const listCharacterInstructionProposals = async (params: ListCharacterInstructionProposalsParams, options?: RequestInit): Promise<CharacterInstructionProposal[]> => {
+
+  return customFetch<CharacterInstructionProposal[]>(getListCharacterInstructionProposalsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCharacterInstructionProposalsQueryKey = (params?: ListCharacterInstructionProposalsParams,) => {
+    return [
+    `/api/character-instruction-proposals`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCharacterInstructionProposalsQueryOptions = <TData = Awaited<ReturnType<typeof listCharacterInstructionProposals>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>>(params: ListCharacterInstructionProposalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCharacterInstructionProposals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCharacterInstructionProposalsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCharacterInstructionProposals>>> = ({ signal }) => listCharacterInstructionProposals(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCharacterInstructionProposals>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCharacterInstructionProposalsQueryResult = NonNullable<Awaited<ReturnType<typeof listCharacterInstructionProposals>>>
+export type ListCharacterInstructionProposalsQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+
+/**
+ * @summary Schede di istruzioni personali di una conversazione
+ */
+
+export function useListCharacterInstructionProposals<TData = Awaited<ReturnType<typeof listCharacterInstructionProposals>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>>(
+ params: ListCharacterInstructionProposalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCharacterInstructionProposals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCharacterInstructionProposalsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDecideCharacterInstructionProposalUrl = (id: number,) => {
+
+
+
+
+  return `/api/character-instruction-proposals/${id}/decision`
+}
+
+/**
+ * Accettare scrive la versione successiva delle istruzioni; se sono cambiate dopo la proposta la scheda diventa superata (409). Valida con il login e con il pannello incorporato; 20 scritture al minuto per utente.
+ * @summary Accetta o rifiuta una scheda di istruzioni personali
+ */
+export const decideCharacterInstructionProposal = async (id: number,
+    characterInstructionProposalDecision: CharacterInstructionProposalDecision, options?: RequestInit): Promise<CharacterInstructionProposal> => {
+
+  return customFetch<CharacterInstructionProposal>(getDecideCharacterInstructionProposalUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(characterInstructionProposalDecision)
+  }
+);}
+
+
+
+
+export const getDecideCharacterInstructionProposalMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decideCharacterInstructionProposal>>, TError,{id: number;data: BodyType<CharacterInstructionProposalDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof decideCharacterInstructionProposal>>, TError,{id: number;data: BodyType<CharacterInstructionProposalDecision>}, TContext> => {
+
+const mutationKey = ['decideCharacterInstructionProposal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof decideCharacterInstructionProposal>>, {id: number;data: BodyType<CharacterInstructionProposalDecision>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  decideCharacterInstructionProposal(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DecideCharacterInstructionProposalMutationResult = NonNullable<Awaited<ReturnType<typeof decideCharacterInstructionProposal>>>
+    export type DecideCharacterInstructionProposalMutationBody = BodyType<CharacterInstructionProposalDecision>
+    export type DecideCharacterInstructionProposalMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Accetta o rifiuta una scheda di istruzioni personali
+ */
+export const useDecideCharacterInstructionProposal = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decideCharacterInstructionProposal>>, TError,{id: number;data: BodyType<CharacterInstructionProposalDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof decideCharacterInstructionProposal>>,
+        TError,
+        {id: number;data: BodyType<CharacterInstructionProposalDecision>},
+        TContext
+      > => {
+      return useMutation(getDecideCharacterInstructionProposalMutationOptions(options));
+    }
 
 export const getGetAlfredThreadUrl = () => {
 

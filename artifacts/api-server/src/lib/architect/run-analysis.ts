@@ -37,6 +37,7 @@ import { PHASE_TOKEN_SHARES, runPhase, type PhaseBudget } from "./phase-loop";
 import { existingToolsForPrompt, recordPhaseResult } from "./phase-record";
 import { chatPlannedItems } from "./planned";
 import { phasePrompt, SYSTEM_BASE } from "./prompts";
+import { personalInstructionsBlock, withPersonalInstructions } from "../characters/personal-instructions";
 import { buildRepoMap } from "./repo-map";
 import { PHASES, type CatalogResult, type PhaseName } from "./schemas";
 import { SourceTree, SourceTreeError } from "./source-tree";
@@ -532,7 +533,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       const phaseQuota = Math.floor(PHASE_TOKEN_SHARES[phase] * budget.maxTokens);
       const outcome = await runPhase({
         phase,
-        system: SYSTEM_BASE,
+        system: withPersonalInstructions(SYSTEM_BASE, await personalInstructionsBlock(resolved.ownerUserId, "lucius")),
         user,
         tree,
         openapi,

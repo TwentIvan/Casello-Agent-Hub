@@ -3,6 +3,8 @@
 // messaggio `user` delimitato da <dati_del_piano>, dichiarato dato non attendibile. Non importa `architect/prompts.ts`: sarà quello
 // a importare `itemTitle` da qui.
 
+import { withPersonalInstructions } from "../characters/personal-instructions";
+import { INSTRUCTION_PROPOSAL_RULE, instructionProposalTag } from "../characters/instruction-proposals";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { estimateTokens } from "../architect/phase-loop";
 import { sliceChars } from "../architect/text";
@@ -42,6 +44,8 @@ export interface HistoryMessage {
   role: "user" | "assistant";
   content: string;
   proposals: HistoryProposal[];
+  /** Stati delle schede di istruzioni personali proposte in questo messaggio */
+  instructionProposals?: string[];
 }
 
 export interface PlanContextInput {
@@ -57,6 +61,8 @@ export interface PlanContextInput {
   history: HistoryMessage[];
   /** Blocco di memoria di Lucius (appunti e conversazioni recenti); vuoto se non c'è nulla. */
   memory: string;
+  /** Blocco delle istruzioni personali dell'utente, in fondo al messaggio `system`; vuoto = nessuno */
+  personalInstructions?: string;
   /** Lettura del codice dell'app: disponibile (repo e branch) oppure il motivo per cui manca. */
   code: { available: true; repo: string; branch: string | null } | { available: false; reason: string };
   /** Best practice accese nella conversazione: istruzioni nel prompt e `data` (sintesi dell'App e fonti curate) nei dati. */
@@ -91,6 +97,7 @@ export function planSystemPrompt(opts: { code: boolean; reason?: string; bestPra
   "Per un'integrazione tra due app proponi una voce per ciascuna app, e ognuna cita l'altra.",
   "Le voci riguardano solo i capitoli endpoint, completion ed evolution.",
   "Hai una memoria personale (strumenti `ricorda`, `aggiorna_appunto`, `dimentica`, `cerca_nello_storico`): salva solo fatti e preferenze stabili dell'utente, mai credenziali.",
+  INSTRUCTION_PROPOSAL_RULE,
   // Best practice: solo a interruttore acceso
   ...(opts.bestPractice ? [BEST_PRACTICE_INSTRUCTIONS] : []),
   ].join("\n");
@@ -128,6 +135,9 @@ function renderHistory(history: HistoryMessage[], maxChars: number): ChatComplet
     if (m.role === "assistant" && m.proposals.length > 0) {
       content +=
         "\n" + m.proposals.map((p) => `[proposta ${p.kind} «${p.title}»: ${p.status}]`).join("\n");
+    }
+    if (m.role === "assistant" && m.instructionProposals && m.instructionProposals.length > 0) {
+      content += "\n" + m.instructionProposals.map(instructionProposalTag).join("\n");
     }
     return { role: m.role, content };
   });
@@ -212,7 +222,7 @@ export function buildPlanMessages(input: PlanContextInput): ChatCompletionMessag
     input.code.available ? { code: true, bestPractice } : { code: false, reason: input.code.reason, bestPractice },
   );
   const build = (historyChars: number, includeOthers: boolean, titleMax: number | null) => [
-    { role: "system" as const, content: systemPrompt },
+    { role: "system" as const, content: withPersonalInstructions(systemPrompt, input.personalInstructions ?? "") },
     { role: "user" as const, content: dataBlock(input, { includeOthers, titleMax }) },
     ...renderHistory(input.history, historyChars),
   ];

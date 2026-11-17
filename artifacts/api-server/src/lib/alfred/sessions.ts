@@ -9,6 +9,7 @@ import { ALFRED_VOICES, DEFAULT_ALFRED_VOICE, bareModelName } from "./config";
 import { AlfredError, createEphemeralToken } from "./gemini";
 import { buildLiveConfig } from "./instructions";
 import { memoryContextBlock } from "../memory/context";
+import { personalInstructionsBlock } from "../characters/personal-instructions";
 import { summarizeConversation, TRANSCRIPT_MAX_CHARS } from "../memory/summaries";
 
 // Sessioni di Alfred (spec §3): riga di sessione, token temporaneo di Gemini Live, consumi e pulizia.
@@ -64,7 +65,8 @@ async function prepare(userId: number, sessionModelId?: number | null): Promise<
 async function issueToken(userId: number, resolved: ResolvedModel, voice: string, userName: string | null, resumptionHandle?: string) {
   // Appunti e titoli di Alfred entrano nelle istruzioni, che restano bloccate nel token
   const memory = await memoryContextBlock(userId, "alfred");
-  return createEphemeralToken(resolved, buildLiveConfig({ voice, userName, memory, resumptionHandle }));
+  const personal = await personalInstructionsBlock(userId, "alfred");
+  return createEphemeralToken(resolved, buildLiveConfig({ voice, userName, memory, personal, resumptionHandle }));
 }
 
 /**

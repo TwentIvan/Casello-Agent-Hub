@@ -6522,6 +6522,162 @@ export const DownloadRolesExportResponse = zod.unknown()
 
 
 /**
+ * Versione corrente delle istruzioni personali per Alfred o Lucius (versione 0 e testo vuoto se non ce ne sono). Altro personaggio: 404.
+ * @summary Istruzioni personali dell'utente per un personaggio
+ */
+export const GetCharacterInstructionsParams = zod.object({
+  "character": zod.coerce.string()
+})
+
+export const GetCharacterInstructionsResponse = zod.object({
+  "character": zod.string(),
+  "version": zod.number(),
+  "content": zod.string(),
+  "updatedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Scrive la versione successiva. `baseVersion` è la versione che l'utente ha caricato: se è cambiata, 409. Testo fino a 8 000 caratteri, senza credenziali. Solo con il login; 20 scritture al minuto per utente.
+ * @summary Salva le istruzioni personali (nuova versione)
+ */
+export const UpdateCharacterInstructionsParams = zod.object({
+  "character": zod.coerce.string()
+})
+
+export const updateCharacterInstructionsBodyBaseVersionMin = 0;
+
+
+
+export const UpdateCharacterInstructionsBody = zod.object({
+  "content": zod.string(),
+  "baseVersion": zod.number().min(updateCharacterInstructionsBodyBaseVersionMin)
+})
+
+export const UpdateCharacterInstructionsResponse = zod.object({
+  "character": zod.string(),
+  "version": zod.number(),
+  "content": zod.string(),
+  "updatedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Versioni delle istruzioni personali (le ultime 50)
+ */
+export const ListCharacterInstructionVersionsParams = zod.object({
+  "character": zod.coerce.string()
+})
+
+export const ListCharacterInstructionVersionsResponseItem = zod.object({
+  "version": zod.number(),
+  "source": zod.enum(['manual', 'proposal', 'restore']),
+  "createdAt": zod.coerce.date(),
+  "length": zod.number()
+})
+export const ListCharacterInstructionVersionsResponse = zod.array(ListCharacterInstructionVersionsResponseItem)
+
+
+/**
+ * @summary Una versione delle istruzioni personali
+ */
+
+
+
+export const GetCharacterInstructionVersionParams = zod.object({
+  "character": zod.coerce.string(),
+  "version": zod.coerce.number().min(1)
+})
+
+export const GetCharacterInstructionVersionResponse = zod.object({
+  "version": zod.number(),
+  "source": zod.enum(['manual', 'proposal', 'restore']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * Scrive una versione nuova col testo di quella indicata. Stesse regole di concorrenza e limite del salvataggio. Solo con il login.
+ * @summary Ripristina una versione delle istruzioni personali (come versione nuova)
+ */
+export const RestoreCharacterInstructionsParams = zod.object({
+  "character": zod.coerce.string()
+})
+
+
+export const restoreCharacterInstructionsBodyBaseVersionMin = 0;
+
+
+
+export const RestoreCharacterInstructionsBody = zod.object({
+  "version": zod.number().min(1),
+  "baseVersion": zod.number().min(restoreCharacterInstructionsBodyBaseVersionMin)
+})
+
+export const RestoreCharacterInstructionsResponse = zod.object({
+  "character": zod.string(),
+  "version": zod.number(),
+  "content": zod.string(),
+  "updatedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Le schede che Alfred o Lucius hanno proposto in una conversazione dell'utente (la conversazione di un altro utente è 404). Valida con il login e con il pannello incorporato.
+ * @summary Schede di istruzioni personali di una conversazione
+ */
+
+
+
+export const ListCharacterInstructionProposalsQueryParams = zod.object({
+  "conversationKind": zod.enum(['character', 'plan_chat', 'team_chat']),
+  "conversationId": zod.coerce.number().min(1)
+})
+
+export const ListCharacterInstructionProposalsResponseItem = zod.object({
+  "id": zod.number(),
+  "character": zod.enum(['alfred', 'lucius']),
+  "content": zod.string(),
+  "reason": zod.string(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
+  "baseVersion": zod.number(),
+  "currentContent": zod.string(),
+  "messageId": zod.number().nullable(),
+  "createdAt": zod.coerce.date()
+})
+export const ListCharacterInstructionProposalsResponse = zod.array(ListCharacterInstructionProposalsResponseItem)
+
+
+/**
+ * Accettare scrive la versione successiva delle istruzioni; se sono cambiate dopo la proposta la scheda diventa superata (409). Valida con il login e con il pannello incorporato; 20 scritture al minuto per utente.
+ * @summary Accetta o rifiuta una scheda di istruzioni personali
+ */
+
+
+
+export const DecideCharacterInstructionProposalParams = zod.object({
+  "id": zod.coerce.number().min(1)
+})
+
+export const DecideCharacterInstructionProposalBody = zod.object({
+  "action": zod.enum(['accept', 'reject'])
+})
+
+export const DecideCharacterInstructionProposalResponse = zod.object({
+  "id": zod.number(),
+  "character": zod.enum(['alfred', 'lucius']),
+  "content": zod.string(),
+  "reason": zod.string(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
+  "baseVersion": zod.number(),
+  "currentContent": zod.string(),
+  "messageId": zod.number().nullable(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * Restituisce il filo aperto di Alfred; crea il filo se non esiste (la GET può quindi scrivere).
  * @summary Il filo aperto di Alfred scritto (lo crea se manca)
  */

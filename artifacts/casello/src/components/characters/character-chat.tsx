@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ListPlus, Send, Square } from "lucide-react";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { Led } from "@/components/brand/led";
@@ -17,6 +17,8 @@ import { CHARACTER_TEXT } from "./targets";
 import { usePanel } from "@/components/panel/panel-context";
 import { handoffTarget } from "@/components/panel/page-subject";
 import { ChatMessages } from "./chat-messages";
+import { useInstructionProposals } from "./use-instruction-proposals";
+import { proposalsByMessage } from "@/lib/instruction-proposals";
 import { sendActions, sendModeOf, type SendAction } from "./chat-send";
 import { ChatToolbar } from "./chat-toolbar";
 import { TurnProgressView } from "./turn-progress-view";
@@ -74,6 +76,11 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   const readOnlyReason =
     data?.readOnlyReason ?? (lock && data && lock.id === data.id ? lock.reason : null) ?? adapter.closedReason ?? null;
   const readOnly = readOnlyReason !== null;
+  const instructions = useInstructionProposals(adapter.instructionProposalsKind, effectiveId, running);
+  const instructionGroups = useMemo(
+    () => (adapter.instructionProposalsKind ? proposalsByMessage(instructions.proposals, (data?.messages ?? []).map((m) => m.id)) : undefined),
+    [adapter.instructionProposalsKind, instructions.proposals, data?.messages],
+  );
   const texts = CHARACTER_TEXT[adapter.character];
   const maxChars = adapter.maxChars ?? MAX_CHARS;
   const name = texts.name;
@@ -82,7 +89,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [data?.messages.length, data?.proposals.length, running]);
+  }, [data?.messages.length, data?.proposals.length, instructions.proposals.length, running]);
 
   const fail = (title: string, error: unknown) => {
     const message = apiErrorMessage(error);
@@ -317,6 +324,8 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
               renderProposal={adapter.renderProposal}
               onDecide={requestDecide}
               onHandoff={(p) => void openHandoff(p)}
+              instructionProposals={instructionGroups}
+              onInstructionDecided={instructions.refresh}
             />
           )}
           {running && (

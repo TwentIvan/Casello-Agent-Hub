@@ -22,6 +22,7 @@ import {
   characterMessagesTable,
   characterNotesTable,
   characterProposalsTable,
+  characterInstructionProposalsTable,
   nodesTable,
   usersTable,
 } from "@workspace/db";
@@ -44,7 +45,9 @@ import { createTurnContext, decideCharacterProposal, recordProposal } from "./pr
 import { closeTurnAsStopped, queueChatMessage, stopChatTurn } from "../chat-turns/control";
 import { isLiveTurn } from "../stale-turns";
 import { registerSubject } from "./registry";
-import { CHARACTER_CHAT_SPEC, TurnBusyError, executeCharacterTurn, failInterruptedCharacterTurns, startCharacterTurn } from "./run-turn";
+import { PERSONAL_INSTRUCTIONS_HEADER, saveInstructions } from "./personal-instructions";
+import { INSTRUCTION_PROPOSAL_RULE } from "./instruction-proposals";
+import { CHARACTER_CHAT_SPEC, TurnBusyError, buildCharacterMessages, executeCharacterTurn, failInterruptedCharacterTurns, startCharacterTurn } from "./run-turn";
 import { CHARACTER_MESSAGES, CharacterError, toolOk, type SubjectHandler } from "./types";
 
 const ACCOUNT_KEY = "sk-CHIAVE-DEI-PERSONAGGI";
@@ -235,6 +238,68 @@ describe("conversazioni dei personaggi", () => {
     expect(memory?.content).toContain("Preferisce SAP");
     expect(JSON.stringify(body.messages)).not.toContain("Appunto di Alfred");
     expect(body.messages.find((m) => m.role === "system")?.content).not.toContain("Preferisce SAP");
+  });
+
+  it("personal_instructions_in_system: il testo salvato arriva nel system di Lucius, non in quello di un altro utente", async () => {
+    await saveInstructions(userId, "lucius", "Sempre il costo in euro", 0);
+    fake.chatReply = { content: "Ok", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    await startCharacterTurn(conversationId, "Ciao", null);
+    await waitIdle(conversationId);
+    const system = String(chatBodies()[0]!.messages.find((m) => m.role === "system")?.content);
+    expect(system.endsWith(`${PERSONAL_INSTRUCTIONS_HEADER}\nSempre il costo in euro`)).toBe(true);
+  });
+
+  it("personal_instructions_pure: buildCharacterMessages aggiunge il blocco in fondo al system, senza campo niente intestazione", () => {
+    const base = { character: "lucius" as const, subjectData: [], memory: "", page: null, history: [], userMessage: "ciao" };
+    const block = `${PERSONAL_INSTRUCTIONS_HEADER}\nSempre il costo`;
+    expect(String(buildCharacterMessages({ ...base, personalInstructions: block })[0]!.content).endsWith(block)).toBe(true);
+    expect(String(buildCharacterMessages(base)[0]!.content)).not.toContain(PERSONAL_INSTRUCTIONS_HEADER);
+  });
+
+  it("instruction_proposal: strumento offerto, proposta legata al messaggio, regola nel system prima del blocco, stato nella cronologia", async () => {
+    await saveInstructions(userId, "lucius", "Sempre il costo", 0);
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      return n === 1
+        ? {
+            content: null,
+            toolCalls: [{ id: "c1", name: "proponi_istruzioni_personali", arguments: JSON.stringify({ testo: "Sempre il costo\nMai emoji", motivazione: "chiesto dall'utente" }) }],
+            usage: { prompt_tokens: 10, completion_tokens: 5 },
+          }
+        : { content: "Ho preparato la scheda.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+    await startCharacterTurn(conversationId, "D'ora in poi mai emoji", null);
+    await waitIdle(conversationId);
+    const assistant = (await getMessages())[1]!;
+    const [row] = await db.select().from(characterInstructionProposalsTable).where(eq(characterInstructionProposalsTable.userId, userId));
+    expect(row).toMatchObject({ character: "lucius", conversationKind: "character", conversationId, messageId: assistant.id, baseVersion: 1, status: "pending" });
+    const first = chatBodies()[0]!;
+    expect(first.tools?.map((t) => t.function.name)).toContain("proponi_istruzioni_personali");
+    const system = String(first.messages.find((m) => m.role === "system")?.content);
+    expect(system).toContain(INSTRUCTION_PROPOSAL_RULE);
+    expect(system.indexOf(INSTRUCTION_PROPOSAL_RULE)).toBeLessThan(system.indexOf(PERSONAL_INSTRUCTIONS_HEADER));
+    fake.chatReply = { content: "Ok", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    await startCharacterTurn(conversationId, "Grazie", null);
+    await waitIdle(conversationId);
+    const second = chatBodies().at(-1)!;
+    expect(second.messages.some((m) => m.role === "assistant" && (m.content ?? "").includes("[scheda istruzioni personali: pending]"))).toBe(true);
+  });
+
+  it("instruction_proposal_history_pure: lo stato della scheda accompagna il messaggio dell'assistente", () => {
+    const msgs = buildCharacterMessages({
+      character: "alfred",
+      subjectData: [],
+      memory: "",
+      page: null,
+      history: [
+        { role: "user", content: "ciao", proposals: [] },
+        { role: "assistant", content: "ecco", proposals: [], instructionProposals: ["accepted"] },
+      ],
+      userMessage: "grazie",
+    });
+    expect(String(msgs[0]!.content)).toContain(INSTRUCTION_PROPOSAL_RULE);
+    expect(msgs.some((m) => m.role === "assistant" && String(m.content).includes("[scheda istruzioni personali: accepted]"))).toBe(true);
   });
 
   it("cost_and_tokens_accumulated: token e costo cumulati sulla conversazione", async () => {

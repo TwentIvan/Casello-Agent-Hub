@@ -86,6 +86,7 @@ const DESCRIBERS: Record<string, Describer> = {
     return slug ? `Legge l'app ${slug}` : "Legge un'app";
   },
   propose: fixed("Prepara una scheda"),
+  proponi_istruzioni_personali: fixed("Propone una modifica alle sue istruzioni"),
   leggi_squadra: fixed("Legge la squadra"),
   leggi_skill: readSkill,
   leggi_versione_skill: readSkill,

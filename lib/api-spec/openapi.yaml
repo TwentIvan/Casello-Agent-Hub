@@ -4661,6 +4661,252 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /account/character-instructions/{character}:
+    get:
+      operationId: getCharacterInstructions
+      tags: [characters]
+      summary: Istruzioni personali dell'utente per un personaggio
+      description: >-
+        Versione corrente delle istruzioni personali per Alfred o Lucius (versione 0 e testo vuoto se non ce ne sono).
+        Altro personaggio: 404.
+      parameters:
+        - name: character
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Istruzioni correnti
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterInstructions"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: updateCharacterInstructions
+      tags: [characters]
+      summary: Salva le istruzioni personali (nuova versione)
+      description: >-
+        Scrive la versione successiva. `baseVersion` è la versione che l'utente ha caricato: se è cambiata, 409.
+        Testo fino a 8 000 caratteri, senza credenziali. Solo con il login; 20 scritture al minuto per utente.
+      parameters:
+        - name: character
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CharacterInstructionsUpdate"
+      responses:
+        "200":
+          description: Istruzioni salvate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterInstructions"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /account/character-instructions/{character}/versions:
+    get:
+      operationId: listCharacterInstructionVersions
+      tags: [characters]
+      summary: Versioni delle istruzioni personali (le ultime 50)
+      parameters:
+        - name: character
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Elenco, dalla più recente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CharacterInstructionVersionSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /account/character-instructions/{character}/versions/{version}:
+    get:
+      operationId: getCharacterInstructionVersion
+      tags: [characters]
+      summary: Una versione delle istruzioni personali
+      parameters:
+        - name: character
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Versione con il testo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterInstructionVersion"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /account/character-instructions/{character}/restore:
+    post:
+      operationId: restoreCharacterInstructions
+      tags: [characters]
+      summary: Ripristina una versione delle istruzioni personali (come versione nuova)
+      description: >-
+        Scrive una versione nuova col testo di quella indicata. Stesse regole di concorrenza e limite del salvataggio. Solo con il login.
+      parameters:
+        - name: character
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CharacterInstructionsRestore"
+      responses:
+        "200":
+          description: Istruzioni ripristinate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterInstructions"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /character-instruction-proposals:
+    get:
+      operationId: listCharacterInstructionProposals
+      tags: [characters]
+      summary: Schede di istruzioni personali di una conversazione
+      description: >-
+        Le schede che Alfred o Lucius hanno proposto in una conversazione dell'utente (la conversazione di un altro utente è 404).
+        Valida con il login e con il pannello incorporato.
+      parameters:
+        - name: conversationKind
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [character, plan_chat, team_chat]
+        - name: conversationId
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Schede in ordine di creazione
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CharacterInstructionProposal"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /character-instruction-proposals/{id}/decision:
+    post:
+      operationId: decideCharacterInstructionProposal
+      tags: [characters]
+      summary: Accetta o rifiuta una scheda di istruzioni personali
+      description: >-
+        Accettare scrive la versione successiva delle istruzioni; se sono cambiate dopo la proposta la scheda diventa superata (409).
+        Valida con il login e con il pannello incorporato; 20 scritture al minuto per utente.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CharacterInstructionProposalDecision"
+      responses:
+        "200":
+          description: Scheda decisa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterInstructionProposal"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+
   /characters/alfred/thread:
     get:
       operationId: getAlfredThread
@@ -5685,6 +5931,105 @@ components:
       properties:
         aiModelId:
           type: ["integer", "null"]
+
+    CharacterInstructions:
+      type: object
+      required: [character, version, content, updatedAt]
+      properties:
+        character:
+          type: string
+        version:
+          type: integer
+        content:
+          type: string
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    CharacterInstructionsUpdate:
+      type: object
+      required: [content, baseVersion]
+      properties:
+        content:
+          type: string
+        baseVersion:
+          type: integer
+          minimum: 0
+
+    CharacterInstructionsRestore:
+      type: object
+      required: [version, baseVersion]
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        baseVersion:
+          type: integer
+          minimum: 0
+
+    CharacterInstructionVersionSummary:
+      type: object
+      required: [version, source, createdAt, length]
+      properties:
+        version:
+          type: integer
+        source:
+          type: string
+          enum: [manual, proposal, restore]
+        createdAt:
+          type: string
+          format: date-time
+        length:
+          type: integer
+
+    CharacterInstructionVersion:
+      type: object
+      required: [version, source, content, createdAt]
+      properties:
+        version:
+          type: integer
+        source:
+          type: string
+          enum: [manual, proposal, restore]
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    CharacterInstructionProposal:
+      type: object
+      required: [id, character, content, reason, status, baseVersion, currentContent, messageId, createdAt]
+      properties:
+        id:
+          type: integer
+        character:
+          type: string
+          enum: [alfred, lucius]
+        content:
+          type: string
+        reason:
+          type: string
+        status:
+          type: string
+          enum: [pending, accepted, rejected, stale]
+        baseVersion:
+          type: integer
+        currentContent:
+          type: string
+        messageId:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    CharacterInstructionProposalDecision:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [accept, reject]
 
     CharacterSettings:
       type: object

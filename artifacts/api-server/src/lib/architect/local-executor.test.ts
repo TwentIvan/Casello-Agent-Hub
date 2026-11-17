@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { db, pool, analysesTable, analysisItemsTable, analysisPhaseResultsTable, appArchitectureTable, appToolsTable, appsTable } from "@workspace/db";
+import { db, pool, analysesTable, analysisItemsTable, analysisPhaseResultsTable, appArchitectureTable, appToolsTable, appsTable, usersTable } from "@workspace/db";
+import { PERSONAL_INSTRUCTIONS_HEADER, saveInstructions } from "../characters/personal-instructions";
 import {
   LOCAL_LEASE_MS,
   LOCAL_MODEL,
@@ -268,6 +269,20 @@ describe("submitLocalPhase", () => {
     expect(row.sourceCommit).toBe("ABC1234");
     expect(row.log.some((e) => e.message === "analizzato il commit ABC1234, atteso fedcba9")).toBe(true);
     setExpectedCommit(analysisId, null);
+  });
+});
+
+describe("localPhaseInstructions: istruzioni personali", () => {
+  it("con userId il blocco chiude il system; senza userId no", async () => {
+    const [user] = await db.insert(usersTable).values({ email: "p@example.com", name: "P" }).returning();
+    await saveInstructions(user!.id, "lucius", "Cita sempre le fonti", 0);
+    const { leaseToken } = await claimLocalAnalysis(analysisId, "Mac", T0);
+    const withUser = await localPhaseInstructions(analysisId, leaseToken, at(1000), {}, user!.id);
+    expect(withUser.system.endsWith(`${PERSONAL_INSTRUCTIONS_HEADER}\nCita sempre le fonti`)).toBe(true);
+    expect(withUser.system).toContain(SYSTEM_BASE);
+    const without = await localPhaseInstructions(analysisId, leaseToken, at(1000));
+    expect(without.system).not.toContain(PERSONAL_INSTRUCTIONS_HEADER);
+    expect(without.system.endsWith(`\n\n${SYSTEM_BASE}`)).toBe(true);
   });
 });
 

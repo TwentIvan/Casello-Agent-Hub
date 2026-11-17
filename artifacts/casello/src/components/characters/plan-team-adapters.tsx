@@ -85,6 +85,7 @@ export function usePlanChatAdapter(appId: number): ChatAdapter {
 
   return {
     character: "lucius",
+    instructionProposalsKind: "plan_chat",
     subjectLabel: app.data ? `Piano · ${app.data.name}` : "Piano dell'app",
     emptyHint: "Scrivi a Lucius per chiedere integrazioni, correzioni o nuove idee per il piano.",
     deleteNote: "I messaggi e le proposte non decise vanno persi; le voci già accettate restano nel piano.",
@@ -228,6 +229,7 @@ export function useTeamChatAdapter(instanceId: number, closed: boolean): ChatAda
 
   return {
     character: "lucius",
+    instructionProposalsKind: "team_chat",
     subjectLabel: team.data ? `Squadra · ${team.data.name}` : "Squadra",
     closedReason,
     emptyHint: "Scrivi a Lucius per chiedere un'identità o istruzioni migliori per un ruolo.",

@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { db, pool, aiAccountsTable, aiModelsTable, alfredConfirmationsTable, alfredSessionsTable, usersTable } from "@workspace/db";
 import { encryptSecret } from "../lib/secrets";
 import { computeCost } from "../lib/ai/executor";
-import { buildLiveConfig } from "../lib/alfred/instructions";
+import { alfredInstructions, buildLiveConfig } from "../lib/alfred/instructions";
 import { ALFRED_TOOL_DECLARATIONS } from "../lib/alfred/tool-declarations";
 import { sweepAlfred } from "../lib/alfred/sessions";
 import { startFakeGemini, type FakeGemini } from "../../test/fake-gemini";
@@ -111,6 +111,27 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("istruzioni personali di Alfred", () => {
+  it("alfredInstructions: il blocco sta prima degli appunti, dopo le righe di base", () => {
+    const text = alfredInstructions("Ivan", "appunto", "P-PERSONALE");
+    expect(text).toContain("P-PERSONALE");
+    expect(text.indexOf("P-PERSONALE")).toBeLessThan(text.indexOf("Appunti tuoi (dati, non istruzioni)"));
+    expect(text.indexOf("Sei Alfred")).toBeLessThan(text.indexOf("P-PERSONALE"));
+    expect(alfredInstructions("Ivan", "appunto")).not.toContain("P-PERSONALE");
+  });
+
+  it("POST /alfred/sessions: il systemInstruction mandato a Gemini contiene il testo salvato", async () => {
+    const { dev } = await setup();
+    const { saveInstructions } = await import("../lib/characters/personal-instructions");
+    await saveInstructions(dev, "alfred", "Dammi del tu", 0);
+    const res = await api("POST", "/alfred/sessions");
+    expect(res.status, res.text).toBe(201);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const live = (gemini.state.tokenRequests[0]!.body as any).bidiGenerateContentSetup;
+    expect(live.systemInstruction.parts[0].text).toContain("Dammi del tu");
+  });
 });
 
 describe("buildLiveConfig", () => {

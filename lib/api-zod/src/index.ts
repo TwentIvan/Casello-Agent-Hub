@@ -11,4 +11,5 @@ export {
   GetAlfredNotificationsParams,
   GetEmbedBugParams,
   AddEmbedBugMessageParams,
+  ListAppBugsParams,
 } from "./generated/api";

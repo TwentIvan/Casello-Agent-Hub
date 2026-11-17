@@ -1732,6 +1732,210 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  # ─── Segnalazioni dei bug: amministratore ───────────────────────────────────
+  /apps/{id}/bug-settings:
+    get:
+      operationId: getBugSettings
+      tags: [apps]
+      summary: Impostazioni delle segnalazioni dei bug dell'App
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Impostazioni
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BugSettings"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateBugSettings
+      tags: [apps]
+      summary: Accende o spegne le segnalazioni e cambia il limite giornaliero
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BugSettingsUpdate"
+      responses:
+        "200":
+          description: Impostazioni aggiornate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BugSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/identity-secret:
+    post:
+      operationId: createIdentitySecret
+      tags: [apps]
+      summary: Genera o rigenera il segreto d'identità (solo con il login)
+      description: Il segreto esce una sola volta; rigenerarlo invalida i token firmati con il precedente.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "201":
+          description: Nuovo segreto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentitySecret"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteIdentitySecret
+      tags: [apps]
+      summary: Toglie il segreto d'identità (solo con il login)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Segreto tolto
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/identity-test:
+    post:
+      operationId: testIdentity
+      tags: [apps]
+      summary: Verifica un token d'identità con il segreto dell'App
+      description: Non salva nulla.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentityTest"
+      responses:
+        "200":
+          description: Esito della verifica
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityTestResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/bugs:
+    get:
+      operationId: listAppBugs
+      tags: [apps]
+      summary: Segnalazioni dei bug dell'App
+      description: Al più 200, le più recenti prima.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/EmbedBugStatus"
+      responses:
+        "200":
+          description: Segnalazioni
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminBugSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/bugs/{number}:
+    get:
+      operationId: getAppBug
+      tags: [apps]
+      summary: Dettaglio di una segnalazione
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/BugNumberParam"
+      responses:
+        "200":
+          description: Segnalazione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminBugDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/bugs/{number}/messages:
+    post:
+      operationId: addAppBugMessage
+      tags: [apps]
+      summary: Messaggio dell'amministratore al segnalante
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/BugNumberParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmbedBugMessage"
+      responses:
+        "201":
+          description: Messaggio registrato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedBugMessageView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /apps/{id}/bugs/{number}/close:
+    post:
+      operationId: closeAppBug
+      tags: [apps]
+      summary: Chiude una segnalazione come corretta o non un problema
+      description: >-
+        Vale dagli stati non finali. Una voce «Da confermare» ancora in attesa della segnalazione si rifiuta con la nota
+        «chiusa dall'amministratore».
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/BugNumberParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminBugClose"
+      responses:
+        "200":
+          description: Segnalazione chiusa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminBugDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   # ─── Agents ─────────────────────────────────────────────────────────────────
 
   /agents:
@@ -5668,6 +5872,12 @@ paths:
 
 components:
   parameters:
+    BugNumberParam:
+      name: number
+      in: path
+      required: true
+      schema:
+        type: integer
     EmbedBugId:
       name: id
       in: path
@@ -5939,6 +6149,193 @@ components:
       properties:
         updated:
           type: integer
+    BugSettings:
+      type: object
+      required: [enabled, dailyLimit, identitySecretSet, identitySecretSetAt, bugTeam, todayCount]
+      properties:
+        enabled:
+          type: boolean
+        dailyLimit:
+          type: integer
+        identitySecretSet:
+          type: boolean
+        identitySecretSetAt:
+          type: string
+          format: date-time
+          nullable: true
+        bugTeam:
+          type: object
+          nullable: true
+          required: [id, name, status]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            status:
+              type: string
+        todayCount:
+          type: integer
+    BugSettingsUpdate:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        dailyLimit:
+          type: integer
+          minimum: 1
+          maximum: 500
+    IdentitySecret:
+      type: object
+      required: [secret]
+      properties:
+        secret:
+          type: string
+    IdentityTest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          maxLength: 10000
+    IdentityTestResult:
+      type: object
+      required: [valid, reason, sub, name, email, expiresAt]
+      properties:
+        valid:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+          enum: [invalid, expired, no_secret]
+        sub:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+    AdminBugSummary:
+      allOf:
+        - $ref: "#/components/schemas/EmbedBugSummary"
+        - type: object
+          required: [reporterLabel]
+          properties:
+            reporterLabel:
+              type: string
+    AdminBugMessage:
+      type: object
+      required: [id, author, content, createdAt]
+      properties:
+        id:
+          type: integer
+        author:
+          type: string
+          enum: [reporter, lead, owner]
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    AdminBugDetail:
+      allOf:
+        - $ref: "#/components/schemas/AdminBugSummary"
+        - type: object
+          required:
+            - description
+            - steps
+            - expected
+            - reporterKind
+            - reporterName
+            - reporterEmail
+            - pageContext
+            - triage
+            - pendingActionNumber
+            - teamInstanceId
+            - issueNumber
+            - issueUrl
+            - prUrl
+            - messages
+          properties:
+            description:
+              type: string
+            steps:
+              type: string
+              nullable: true
+            expected:
+              type: string
+              nullable: true
+            reporterKind:
+              type: string
+              enum: [identity, browser]
+            reporterName:
+              type: string
+              nullable: true
+            reporterEmail:
+              type: string
+              nullable: true
+            pageContext:
+              type: object
+              nullable: true
+              properties:
+                page:
+                  type: string
+                id:
+                  type: string
+                title:
+                  type: string
+                url:
+                  type: string
+            triage:
+              type: object
+              nullable: true
+              required: [verdict, summary]
+              properties:
+                verdict:
+                  type: string
+                summary:
+                  type: string
+                question:
+                  type: string
+                duplicateOf:
+                  type: integer
+                userMessage:
+                  type: string
+            pendingActionNumber:
+              type: integer
+              nullable: true
+            teamInstanceId:
+              type: integer
+              nullable: true
+            issueNumber:
+              type: integer
+              nullable: true
+            issueUrl:
+              type: string
+              nullable: true
+            prUrl:
+              type: string
+              nullable: true
+            messages:
+              type: array
+              items:
+                $ref: "#/components/schemas/AdminBugMessage"
+    AdminBugClose:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [fixed, not_a_bug]
+        message:
+          type: string
+          maxLength: 10000
     EmbedBugsConfig:
       type: object
       required: [enabled, identity]

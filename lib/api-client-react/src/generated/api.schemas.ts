@@ -97,6 +97,131 @@ export interface EmbedBugSeenResult {
   updated: number;
 }
 
+export type BugSettingsBugTeam = {
+  id: number;
+  name: string;
+  status: string;
+} | null;
+
+export interface BugSettings {
+  enabled: boolean;
+  dailyLimit: number;
+  identitySecretSet: boolean;
+  identitySecretSetAt: string | null;
+  bugTeam: BugSettingsBugTeam;
+  todayCount: number;
+}
+
+export interface BugSettingsUpdate {
+  enabled?: boolean;
+  /**
+     * @minimum 1
+     * @maximum 500
+     */
+  dailyLimit?: number;
+}
+
+export interface IdentitySecret {
+  secret: string;
+}
+
+export interface IdentityTest {
+  /** @maxLength 10000 */
+  token: string;
+}
+
+export type IdentityTestResultReason = typeof IdentityTestResultReason[keyof typeof IdentityTestResultReason] | null;
+
+
+export const IdentityTestResultReason = {
+  invalid: 'invalid',
+  expired: 'expired',
+  no_secret: 'no_secret',
+} as const;
+
+export interface IdentityTestResult {
+  valid: boolean;
+  reason: IdentityTestResultReason;
+  sub: string | null;
+  name: string | null;
+  email: string | null;
+  expiresAt: string | null;
+}
+
+export type AdminBugSummary = EmbedBugSummary & {
+  reporterLabel: string;
+};
+
+export type AdminBugMessageAuthor = typeof AdminBugMessageAuthor[keyof typeof AdminBugMessageAuthor];
+
+
+export const AdminBugMessageAuthor = {
+  reporter: 'reporter',
+  lead: 'lead',
+  owner: 'owner',
+} as const;
+
+export interface AdminBugMessage {
+  id: number;
+  author: AdminBugMessageAuthor;
+  content: string;
+  createdAt: string;
+}
+
+export type AdminBugDetailReporterKind = typeof AdminBugDetailReporterKind[keyof typeof AdminBugDetailReporterKind];
+
+
+export const AdminBugDetailReporterKind = {
+  identity: 'identity',
+  browser: 'browser',
+} as const;
+
+export type AdminBugDetailPageContext = {
+  page?: string;
+  id?: string;
+  title?: string;
+  url?: string;
+} | null;
+
+export type AdminBugDetailTriage = {
+  verdict: string;
+  summary: string;
+  question?: string;
+  duplicateOf?: number;
+  userMessage?: string;
+} | null;
+
+export type AdminBugDetail = AdminBugSummary & ({
+  description: string;
+  steps: string | null;
+  expected: string | null;
+  reporterKind: AdminBugDetailReporterKind;
+  reporterName: string | null;
+  reporterEmail: string | null;
+  pageContext: AdminBugDetailPageContext;
+  triage: AdminBugDetailTriage;
+  pendingActionNumber: number | null;
+  teamInstanceId: number | null;
+  issueNumber: number | null;
+  issueUrl: string | null;
+  prUrl: string | null;
+  messages: AdminBugMessage[];
+});
+
+export type AdminBugCloseStatus = typeof AdminBugCloseStatus[keyof typeof AdminBugCloseStatus];
+
+
+export const AdminBugCloseStatus = {
+  fixed: 'fixed',
+  not_a_bug: 'not_a_bug',
+} as const;
+
+export interface AdminBugClose {
+  status: AdminBugCloseStatus;
+  /** @maxLength 10000 */
+  message?: string;
+}
+
 export interface EmbedBugsConfig {
   enabled: boolean;
   identity: boolean;
@@ -4841,6 +4966,10 @@ after?: string;
 
 export type RefreshAppArchitecture202 = {
   queued: boolean;
+};
+
+export type ListAppBugsParams = {
+status?: EmbedBugStatus;
 };
 
 export type ListAgentsParams = {

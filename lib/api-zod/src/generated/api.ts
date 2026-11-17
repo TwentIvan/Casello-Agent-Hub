@@ -1977,6 +1977,275 @@ export const RefreshAppArchitectureResponse = zod.object({
 
 
 /**
+ * @summary Impostazioni delle segnalazioni dei bug dell'App
+ */
+export const GetBugSettingsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetBugSettingsResponse = zod.object({
+  "enabled": zod.boolean(),
+  "dailyLimit": zod.number(),
+  "identitySecretSet": zod.boolean(),
+  "identitySecretSetAt": zod.coerce.date().nullable(),
+  "bugTeam": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.string()
+}).nullable(),
+  "todayCount": zod.number()
+})
+
+
+/**
+ * @summary Accende o spegne le segnalazioni e cambia il limite giornaliero
+ */
+export const UpdateBugSettingsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const updateBugSettingsBodyDailyLimitMax = 500;
+
+
+
+export const UpdateBugSettingsBody = zod.object({
+  "enabled": zod.boolean().optional(),
+  "dailyLimit": zod.number().min(1).max(updateBugSettingsBodyDailyLimitMax).optional()
+})
+
+export const UpdateBugSettingsResponse = zod.object({
+  "enabled": zod.boolean(),
+  "dailyLimit": zod.number(),
+  "identitySecretSet": zod.boolean(),
+  "identitySecretSetAt": zod.coerce.date().nullable(),
+  "bugTeam": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.string()
+}).nullable(),
+  "todayCount": zod.number()
+})
+
+
+/**
+ * Il segreto esce una sola volta; rigenerarlo invalida i token firmati con il precedente.
+ * @summary Genera o rigenera il segreto d'identità (solo con il login)
+ */
+export const CreateIdentitySecretParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CreateIdentitySecretResponse = zod.object({
+  "secret": zod.string()
+})
+
+
+/**
+ * @summary Toglie il segreto d'identità (solo con il login)
+ */
+export const DeleteIdentitySecretParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteIdentitySecretResponse = zod.void()
+
+
+/**
+ * Non salva nulla.
+ * @summary Verifica un token d'identità con il segreto dell'App
+ */
+export const TestIdentityParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const testIdentityBodyTokenMax = 10000;
+
+
+
+export const TestIdentityBody = zod.object({
+  "token": zod.string().max(testIdentityBodyTokenMax)
+})
+
+export const TestIdentityResponse = zod.object({
+  "valid": zod.boolean(),
+  "reason": zod.enum(['invalid', 'expired', 'no_secret']).nullable(),
+  "sub": zod.string().nullable(),
+  "name": zod.string().nullable(),
+  "email": zod.string().nullable(),
+  "expiresAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Al più 200, le più recenti prima.
+ * @summary Segnalazioni dei bug dell'App
+ */
+export const ListAppBugsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListAppBugsQueryParams = zod.object({
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected']).optional()
+})
+
+export const ListAppBugsResponseItem = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "title": zod.string(),
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected']),
+  "statusLabel": zod.string(),
+  "publicMessage": zod.string().nullable(),
+  "unseen": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "statusChangedAt": zod.coerce.date()
+}).and(zod.object({
+  "reporterLabel": zod.string()
+}))
+export const ListAppBugsResponse = zod.array(ListAppBugsResponseItem)
+
+
+/**
+ * @summary Dettaglio di una segnalazione
+ */
+export const GetAppBugParams = zod.object({
+  "id": zod.coerce.number(),
+  "number": zod.coerce.number()
+})
+
+export const GetAppBugResponse = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "title": zod.string(),
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected']),
+  "statusLabel": zod.string(),
+  "publicMessage": zod.string().nullable(),
+  "unseen": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "statusChangedAt": zod.coerce.date()
+}).and(zod.object({
+  "reporterLabel": zod.string()
+})).and(zod.object({
+  "description": zod.string(),
+  "steps": zod.string().nullable(),
+  "expected": zod.string().nullable(),
+  "reporterKind": zod.enum(['identity', 'browser']),
+  "reporterName": zod.string().nullable(),
+  "reporterEmail": zod.string().nullable(),
+  "pageContext": zod.object({
+  "page": zod.string().optional(),
+  "id": zod.string().optional(),
+  "title": zod.string().optional(),
+  "url": zod.string().optional()
+}).nullable(),
+  "triage": zod.object({
+  "verdict": zod.string(),
+  "summary": zod.string(),
+  "question": zod.string().optional(),
+  "duplicateOf": zod.number().optional(),
+  "userMessage": zod.string().optional()
+}).nullable(),
+  "pendingActionNumber": zod.number().nullable(),
+  "teamInstanceId": zod.number().nullable(),
+  "issueNumber": zod.number().nullable(),
+  "issueUrl": zod.string().nullable(),
+  "prUrl": zod.string().nullable(),
+  "messages": zod.array(zod.object({
+  "id": zod.number(),
+  "author": zod.enum(['reporter', 'lead', 'owner']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+
+
+/**
+ * @summary Messaggio dell'amministratore al segnalante
+ */
+export const AddAppBugMessageParams = zod.object({
+  "id": zod.coerce.number(),
+  "number": zod.coerce.number()
+})
+
+export const addAppBugMessageBodyContentMax = 10000;
+
+
+
+export const AddAppBugMessageBody = zod.object({
+  "content": zod.string().max(addAppBugMessageBodyContentMax)
+})
+
+export const AddAppBugMessageResponse = zod.object({
+  "author": zod.enum(['reporter', 'lead', 'owner']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * Vale dagli stati non finali. Una voce «Da confermare» ancora in attesa della segnalazione si rifiuta con la nota «chiusa dall'amministratore».
+ * @summary Chiude una segnalazione come corretta o non un problema
+ */
+export const CloseAppBugParams = zod.object({
+  "id": zod.coerce.number(),
+  "number": zod.coerce.number()
+})
+
+export const closeAppBugBodyMessageMax = 10000;
+
+
+
+export const CloseAppBugBody = zod.object({
+  "status": zod.enum(['fixed', 'not_a_bug']),
+  "message": zod.string().max(closeAppBugBodyMessageMax).optional()
+})
+
+export const CloseAppBugResponse = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "title": zod.string(),
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected']),
+  "statusLabel": zod.string(),
+  "publicMessage": zod.string().nullable(),
+  "unseen": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "statusChangedAt": zod.coerce.date()
+}).and(zod.object({
+  "reporterLabel": zod.string()
+})).and(zod.object({
+  "description": zod.string(),
+  "steps": zod.string().nullable(),
+  "expected": zod.string().nullable(),
+  "reporterKind": zod.enum(['identity', 'browser']),
+  "reporterName": zod.string().nullable(),
+  "reporterEmail": zod.string().nullable(),
+  "pageContext": zod.object({
+  "page": zod.string().optional(),
+  "id": zod.string().optional(),
+  "title": zod.string().optional(),
+  "url": zod.string().optional()
+}).nullable(),
+  "triage": zod.object({
+  "verdict": zod.string(),
+  "summary": zod.string(),
+  "question": zod.string().optional(),
+  "duplicateOf": zod.number().optional(),
+  "userMessage": zod.string().optional()
+}).nullable(),
+  "pendingActionNumber": zod.number().nullable(),
+  "teamInstanceId": zod.number().nullable(),
+  "issueNumber": zod.number().nullable(),
+  "issueUrl": zod.string().nullable(),
+  "prUrl": zod.string().nullable(),
+  "messages": zod.array(zod.object({
+  "id": zod.number(),
+  "author": zod.enum(['reporter', 'lead', 'owner']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+
+
+/**
  * @summary Elenca tutti gli agenti
  */
 export const ListAgentsQueryParams = zod.object({

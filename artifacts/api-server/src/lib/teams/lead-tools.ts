@@ -79,6 +79,8 @@ export const ENVIRONMENT_FAILURE_PREFIXES = [
   "Claude Code non avviabile",
   "interrotto dal riavvio",
   "tetto di spesa della squadra raggiunto",
+  // Lavoro su branch unico: CI mancante sui branch di Botcave (WORK_MESSAGES.noCi)
+  "nessuna CI sul branch",
 ] as const;
 
 /** Vero se l'esito (o l'errore) di un'esecuzione è un problema d'ambiente: confronto sull'inizio del testo, senza maiuscole. */

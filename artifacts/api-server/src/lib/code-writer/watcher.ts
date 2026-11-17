@@ -1,4 +1,6 @@
 import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { WORK_MESSAGES } from "../teams/works";
+import { mergeIntoWork } from "./merge";
 import { appsTable, db, teamCodeTasksTable, teamInstancesTable, teamTasksTable, type TeamCodeTaskRow } from "@workspace/db";
 import { githubConfig } from "../github/config";
 import { logger } from "../logger";
@@ -126,6 +128,10 @@ async function watchRow(code: TeamCodeTaskRow, r: RepoRef, now: Date): Promise<v
     if (notify) {
       if (state === "success") {
         await emitEvent({ instanceId: code.instanceId, type: "compito_finito", taskId, bulletin: `Compito ${code.planTaskId}: CI verde, PR #${n} pronta per la revisione` }, tx);
+      } else if (state === "none" && code.workId !== null) {
+        // Lavoro su branch unico: senza CI non si unisce nulla (CI obbligatoria)
+        await emitEvent({ instanceId: code.instanceId, type: "bloccato", taskId, bulletin: `Compito ${code.planTaskId}: nessuna CI sulla PR #${n}`, detail: WORK_MESSAGES.noCi }, tx);
+        await patchPlan(code.instanceId, { tasks: [{ id: code.planTaskId, status: "blocked", outcome: WORK_MESSAGES.noCi }] }, tx);
       } else if (state === "none") {
         await emitEvent({ instanceId: code.instanceId, type: "compito_finito", taskId, bulletin: `Compito ${code.planTaskId}: nessuna CI configurata, PR #${n} pronta per la revisione` }, tx);
       } else {
@@ -139,6 +145,20 @@ async function watchRow(code: TeamCodeTaskRow, r: RepoRef, now: Date): Promise<v
     return true;
   });
   if (won && notify) notifyTurnQueued(code.instanceId);
+  // Lavoro su branch unico: con la CI verde Botcave unisce la PR sul branch del lavoro (il pr_closed arriva al giro dopo)
+  if (won && notify && state === "success" && code.workId !== null) await mergeWorkPull({ ...code, headSha }, taskId);
+}
+
+/** Merge automatico sul branch del lavoro; un rifiuto blocca il compito con il messaggio fisso e lo dice al capo. */
+async function mergeWorkPull(code: TeamCodeTaskRow, taskId: number | undefined): Promise<void> {
+  const result = await mergeIntoWork(code);
+  if (result === "merged" || result === "skipped") return;
+  await db.transaction(async (tx) => {
+    await emitEvent({ instanceId: code.instanceId, type: "bloccato", taskId, bulletin: `Compito ${code.planTaskId}: PR #${code.prNumber} non unita nel lavoro`, detail: result.refused }, tx);
+    await patchPlan(code.instanceId, { tasks: [{ id: code.planTaskId, status: "blocked", outcome: result.refused }] }, tx);
+    await enqueueTurnReason(code.instanceId, { type: "merge_failed", taskCodeId: code.id, message: result.refused }, tx);
+  });
+  notifyTurnQueued(code.instanceId);
 }
 
 /** Un giro: fino a 20 PR aperte di squadre attive, le meno recenti per ultimo controllo per prime. */

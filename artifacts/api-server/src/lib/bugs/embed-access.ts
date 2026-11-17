@@ -39,8 +39,8 @@ async function secretOf(app: App): Promise<string | null> {
 }
 
 /** Se l'App ha un segreto d'identità configurato (per `GET /embed/config`). */
-export async function hasIdentitySecret(app: App): Promise<boolean> {
-  return (await secretOf(app)) !== null;
+export function hasIdentitySecret(app: App): boolean {
+  return app.identitySecretEnc !== null;
 }
 
 /**
@@ -52,7 +52,7 @@ export async function resolveRequester(
   browserKey: string | undefined,
   identityToken: string | undefined,
 ): Promise<Requester> {
-  if (!browserKey || !BROWSER_KEY.test(browserKey)) throw new BugError(400, "chiave del browser non valida");
+  if (!browserKey || !BROWSER_KEY.test(browserKey)) throw new BugError(400, BUG_MESSAGES.invalidBrowserKey);
   if (identityToken) {
     const secret = await secretOf(app);
     if (secret) {

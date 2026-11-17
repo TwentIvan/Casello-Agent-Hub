@@ -15,6 +15,7 @@ export const BUG_MESSAGES = {
   triageInconclusive: "vaglio non concluso: decidi tu",
   fixedMessage: "Corretta: la correzione è stata unita e sarà disponibile con il prossimo aggiornamento dell'app.",
   rejectedDefault: "Segnalazione non accolta.",
+  invalidBrowserKey: "chiave del browser non valida",
   tooMany: "Troppe richieste: riprova tra poco",
 } as const;
 

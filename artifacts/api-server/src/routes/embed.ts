@@ -16,7 +16,7 @@ router.get("/embed/config", async (req, res) => {
     return;
   }
   const bugApp = await resolveEmbedBugApp(app, normalized);
-  const bugs = { enabled: bugApp !== null, identity: bugApp ? await hasIdentitySecret(bugApp) : false };
+  const bugs = { enabled: bugApp !== null, identity: bugApp ? hasIdentitySecret(bugApp) : false };
   res.json(GetEmbedConfigResponse.parse({ allowed: true, clientId: embedClientId(normalized), appName: await embedAppName(normalized), bugs }));
 });
 

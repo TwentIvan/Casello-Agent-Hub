@@ -12,6 +12,7 @@ import {
   type Agent,
   type App,
   type AppArchitecture,
+  type BugReportRow,
   type Run,
 } from "@workspace/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -37,6 +38,7 @@ import { logger } from "./logger";
 import { loopModelCallError, modelChatDeps, newUsage, stepWriter, type LoopUsage } from "./loop-wiring";
 import { ARCHITECTURE_TOOL_NAME, architecturePromptBlock, architectureTool, handleReadArchitecture } from "./architecture/tool";
 import { ESCALATION_TOOL_NAME, escalationTool, handleEscalation, productLead } from "./escalation";
+import { handleTriageTool, isTriageToolName, triageReportForRun, triageTools } from "./bugs/triage-tools";
 import { isInternalTool, roleFunctionTools } from "./teams/role-tools";
 import { loadAgentTools, loadAppConnection } from "./tools/catalog";
 import { effectiveLevel } from "./tools/levels";
@@ -147,6 +149,8 @@ interface RunContext {
   /** Tool caricati dell'agente, prima di `withConfirmedWrites` e degli strumenti interni (per `proponi`). */
   baseTools: CatalogTool[];
   conn: AppConnection;
+  /** Segnalazione vagliata da questa run (strumenti di vaglio), null nelle altre run. */
+  bugReport?: BugReportRow | null;
 }
 
 /**
@@ -257,7 +261,12 @@ async function loadContext(run: Run): Promise<RunContext & { app: App }> {
   if (agent.role === "general") {
     tools = [...tools.filter((t) => t.name !== ARCHITECTURE_TOOL_NAME), architectureTool()];
   }
-  return { run, agent, app, tools, baseTools: loaded, conn };
+  // Strumenti di vaglio: solo al Responsabile nella run di vaglio di una segnalazione; vincono su tool omonimi
+  const bugReport = agent.role === "general" ? await triageReportForRun(run.id) : null;
+  if (bugReport) {
+    tools = [...tools.filter((t) => !isTriageToolName(t.name)), ...triageTools()];
+  }
+  return { run, agent, app, tools, baseTools: loaded, conn, bugReport };
 }
 
 async function nextPosition(runId: number): Promise<number> {
@@ -435,6 +444,7 @@ function runToolDeps(
         );
       }
       if (tool.name === ARCHITECTURE_TOOL_NAME) return handleReadArchitecture(ctx.app, args);
+      if (isTriageToolName(tool.name) && ctx.bugReport) return handleTriageTool(ctx.run, ctx.bugReport, tool.name, args);
       return handleEscalation(ctx.run, ctx.agent, args);
     },
     queueAction,

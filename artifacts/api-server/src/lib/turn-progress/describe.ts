@@ -117,6 +117,8 @@ const DESCRIBERS: Record<string, Describer> = {
     return app ? `Chiede al Responsabile di ${app}` : "Chiede al Responsabile di prodotto";
   },
   leggi_run: fixed("Legge l'esito di una run"),
+  elenca_segnalazioni: fixed("Elenca le segnalazioni"),
+  esito_vaglio: fixed("Registra l'esito del vaglio"),
   leggi_architettura: (a) => {
     const slug = text(a, "app");
     return slug ? `Legge l'architettura di ${slug}` : "Legge l'architettura dell'app";

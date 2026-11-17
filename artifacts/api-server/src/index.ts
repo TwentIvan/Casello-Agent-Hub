@@ -10,7 +10,9 @@ import { closeAllActiveSessions, startAlfredSweeper } from "./lib/alfred/session
 import { startMemorySweeper } from "./lib/memory/summaries";
 import { startCodeCacheSweeper } from "./lib/code-reader/source-cache";
 import { failInterruptedRuns } from "./lib/run-executor";
-import { startRunQueue } from "./lib/run-queue";
+import { setOnRunSettled, startRunQueue } from "./lib/run-queue";
+import { finalizeTriage } from "./lib/bugs/triage";
+import { startBugSweeper } from "./lib/bugs/sweeper";
 import { startTriggerPoller } from "./lib/triggers/poller";
 import { failInterruptedArchitecture, startArchitectureScheduler } from "./lib/architecture/scheduler";
 import { startCodeWatcher } from "./lib/code-writer/watcher";
@@ -81,6 +83,8 @@ failInterruptedRuns()
   .catch((err: unknown) => logger.error({ err }, "Chiusura delle run interrotte non riuscita"))
   .finally(() => {
     startRunQueue();
+    // Segnalazioni dei bug: vagli con la run chiusa altrove e voci di approvazione da riprovare, ogni 60 s.
+    startBugSweeper();
     // Sorveglianza degli inneschi: dopo la coda delle run, che riceve le run create dai giri.
     startTriggerPoller();
     // Sintesi dell'architettura delle App: controllo dello SHA e rigenerazione, primo giro poco dopo l'avvio.
@@ -91,6 +95,9 @@ failInterruptedRuns()
 
 // Ogni motivo accodato fa partire il turno del capo della squadra (se nessun turno è in corso).
 setOnTurnQueued(pumpTurnInBackground);
+
+// Fine di ogni run avviata da questo processo: se è il vaglio di una segnalazione se ne applica l'esito.
+setOnRunSettled(finalizeTriage);
 
 // Turni del capo e compiti delle squadre rimasti in corso: falliti con evento `interrotto` e turno `restart`;
 // poi ripartono i turni rimasti in coda delle squadre attive.

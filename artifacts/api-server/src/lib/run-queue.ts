@@ -143,6 +143,20 @@ async function schedulePass(): Promise<void> {
   }
 }
 
+// Aggancio a fine run (es. chiusura del vaglio di una segnalazione), registrato all'avvio: errori solo nel log.
+let onRunSettled: ((runId: number) => Promise<void>) | null = null;
+
+export function setOnRunSettled(fn: (runId: number) => Promise<void>): void {
+  onRunSettled = fn;
+}
+
+function settle(runId: number): void {
+  if (!onRunSettled) return;
+  onRunSettled(runId).catch((err: unknown) =>
+    logger.error({ runId, errName: err instanceof Error ? err.name : typeof err }, "Aggancio di fine run non riuscito"),
+  );
+}
+
 function launch(runId: number, agentId: number): void {
   launched.set(runId, agentId);
   let failed = false;
@@ -153,6 +167,7 @@ function launch(runId: number, agentId: number): void {
     })
     .finally(() => {
       launched.delete(runId);
+      settle(runId);
       if (failed) setTimeout(() => void scheduleRuns(), RETRY_AFTER_ERROR_MS).unref();
       else void scheduleRuns();
     });

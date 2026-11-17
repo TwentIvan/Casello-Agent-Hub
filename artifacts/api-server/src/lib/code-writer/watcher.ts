@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { WORK_MESSAGES, closeWorkIfDone, sweepWorks } from "../teams/works";
 import { mergeIntoWork } from "./merge";
+import { watchReleasesOnce } from "../teams/release";
 import { appsTable, db, teamCodeTasksTable, teamInstancesTable, teamTasksTable, type TeamCodeTaskRow } from "@workspace/db";
 import { githubConfig } from "../github/config";
 import { logger } from "../logger";
@@ -193,6 +194,8 @@ export async function watchCodeTasksOnce(now: Date = new Date()): Promise<void> 
   if (skipped > 0) logger.info({ count: skipped }, "PR dei compiti senza installazione GitHub: saltate");
   // Lavori su branch unico: chiusura quando non resta nulla da fare, voce «Porta in produzione» non ancora accodata
   await sweepWorks();
+  // «Porta in produzione» approvate: CI della PR di rilascio, poi merge o esito negativo
+  await watchReleasesOnce(now);
 }
 
 /** Avvia la sorveglianza ogni minuto, un giro alla volta; restituisce la funzione che la ferma. */

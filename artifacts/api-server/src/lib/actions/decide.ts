@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db, appToolsTable, pendingActionStepsTable, pendingActionsTable, type PendingActionRow } from "@workspace/db";
 import { logger } from "../logger";
 import { decryptSecret } from "../secrets";
@@ -8,6 +8,8 @@ import { effectiveLevel } from "../tools/levels";
 import { approveMerge, notifyMergeRejected } from "../code-writer/merge";
 import { approveBug, lockBugReportFor, rejectBug } from "../bugs/approval";
 import { decidePlanItem } from "../teams/plan-decisions";
+import { approveRelease, rejectRelease } from "../teams/release";
+import { notifyTurnQueued } from "../teams/turn-queue";
 import { PROPOSAL_MESSAGES } from "./proposal";
 import { approveProposal } from "./proposal-exec";
 
@@ -87,6 +89,8 @@ export async function approveAction(
   if (action.kind === "merge") return approveMerge(userId, action);
   // Segnalazione di un bug: si affida alla squadra per i bug dell'App (nessun token utente)
   if (action.kind === "bug") return approveBug(userId, action);
+  // «Porta in produzione» di un lavoro: PR del lavoro verso il base, unita dalla sorveglianza con la CI verde
+  if (action.kind === "release") return approveRelease(userId, action);
   const { toolId, appId } = action;
   if (toolId === null || appId === null) return fail(409, ACTION_MESSAGES.notExecutable);
 
@@ -160,6 +164,7 @@ export async function rejectAction(userId: number, number: number, note: string 
     .where(and(eq(pendingActionsTable.userId, userId), eq(pendingActionsTable.number, number)))
     .limit(1);
   if (item && (item.kind === "plan" || item.kind === "plan_change")) return decidePlanItem(item, false, note);
+  let releaseInstance: number | null = null;
   const row = await db.transaction(async (tx) => {
     // Segnalazione prima della voce: stesso ordine dei lock dell'approvazione
     if (item) await lockBugReportFor(tx, item);
@@ -176,6 +181,8 @@ export async function rejectAction(userId: number, number: number, note: string 
       .returning();
     // Segnalazione rifiutata nella stessa transazione: la nota (o la frase fissa) è il messaggio per l'utente
     if (rejected?.kind === "bug") await rejectBug(rejected, note, tx);
+    // Lavoro rifiutato: di nuovo aperto con la nota e turno del capo, nella stessa transazione
+    if (rejected?.kind === "release") releaseInstance = await rejectRelease(rejected, note, tx);
     // Proposta rifiutata: nessun passo verrà eseguito (console e `leggi_proposta` non mostrano «da eseguire»)
     if (rejected?.kind === "proposal") {
       await tx
@@ -186,6 +193,7 @@ export async function rejectAction(userId: number, number: number, note: string 
     return rejected;
   });
   if (row) {
+    if (releaseInstance !== null) notifyTurnQueued(releaseInstance);
     if (row.kind === "merge") {
       await notifyMergeRejected(row).catch((err: unknown) =>
         logger.error({ actionId: row.id, errName: err instanceof Error ? err.name : "unknown" }, "Rifiuto del merge non comunicato al capo"),
@@ -211,7 +219,8 @@ export async function failInterruptedActions(): Promise<number> {
   const rows = await db
     .update(pendingActionsTable)
     .set({ status: "failed", errorMessage: ACTION_MESSAGES.uncertain, finishedAt: sql`now()` })
-    .where(eq(pendingActionsTable.status, "executing"))
+    // «Porta in produzione» resta `executing`: la PR di rilascio è su GitHub e la sorveglianza ne conclude l'esito
+    .where(and(eq(pendingActionsTable.status, "executing"), ne(pendingActionsTable.kind, "release")))
     .returning({ id: pendingActionsTable.id });
   if (rows.length > 0) {
     const ids = rows.map((r) => r.id);

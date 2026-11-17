@@ -154,7 +154,8 @@ export async function closeWorkIfDone(instanceId: number, opts: { fromLead?: boo
   if (work.status !== "open") return "already";
   const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, instanceId)).limit(1);
   if (!instance) return "none";
-  if (!opts.fromLead && !(await workFinished(instance, work.id))) return "not_done";
+  // Un lavoro rimandato indietro (rifiuto o rilascio non riuscito) lo richiude solo il capo, dopo le correzioni
+  if (!opts.fromLead && (work.rejectionNote !== null || !(await workFinished(instance, work.id)))) return "not_done";
   const [{ merged } = { merged: 0 }] = await db
     .select({ merged: sql<number>`count(*)::int` })
     .from(teamCodeTasksTable)

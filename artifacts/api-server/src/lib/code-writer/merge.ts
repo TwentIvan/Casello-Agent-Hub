@@ -192,7 +192,7 @@ async function loadContext(instanceId: number, find: (t: typeof teamCodeTasksTab
  * File della PR e contenuto delle migrazioni nuove alla testa controllata, poi la classificazione. File troppi →
  * rifiuto; una migrazione nuova che non si legge → errore interno.
  */
-async function classifyLivePull(repo: RepoRef, pull: PullDetail): Promise<PullClass> {
+export async function classifyLivePull(repo: RepoRef, pull: PullDetail): Promise<PullClass> {
   const files = await listPullFiles(repo, pull.number);
   if (files === null) return { kind: "refuse", message: MERGE_MESSAGES.tooManyFiles };
   const contents: Record<string, string> = {};

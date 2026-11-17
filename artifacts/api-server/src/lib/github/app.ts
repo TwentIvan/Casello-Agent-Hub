@@ -111,6 +111,11 @@ export async function githubCall(
     await res.body?.cancel().catch(() => {});
     return { status: res.status, json: null };
   }
+  // 204 (es. `POST /merges` con il base che contiene già la testa): nessun corpo da leggere
+  if (res.status === 204) {
+    await res.body?.cancel().catch(() => {});
+    return { status: 204, json: null };
+  }
   try {
     const bytes = await readBytesLimited(res, MAX_JSON_BYTES);
     return { status: res.status, json: JSON.parse(new TextDecoder("utf-8").decode(bytes)) as unknown };

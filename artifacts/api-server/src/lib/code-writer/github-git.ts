@@ -484,6 +484,61 @@ export async function squashMerge(r: RepoRef, n: number, input: { sha: string; t
   return { sha: str(json["sha"], status) };
 }
 
+// --- Rilascio di un lavoro su branch unico --------------------------------------------------
+
+/**
+ * Unisce `head` (il base dell'App) nel branch di un lavoro (`POST /merges`): `up_to_date` se lo contiene già, `conflict` con
+ * un 409, altrimenti `merged` con lo sha del commit di merge. Solo verso branch `botcave/lavoro-…`.
+ */
+export async function mergeBranches(r: RepoRef, input: { base: string; head: string; message: string }): Promise<{ result: "merged"; sha: string } | { result: "up_to_date" | "conflict" }> {
+  if (!WORK_BRANCH_RE.test(input.base)) throw new Error("scrittura rifiutata: si unisce solo nel branch di un lavoro");
+  const token = await tokenFor(r, { contents: "write" });
+  const { status, json } = await call(
+    r,
+    token,
+    "contents: write",
+    { method: "POST", path: repoPath(r, "/merges"), body: { base: input.base, head: input.head, commit_message: input.message } },
+    [204, 409],
+  );
+  if (status === 204) return { result: "up_to_date" };
+  if (status === 409) return { result: "conflict" };
+  if (!isObj(json)) throw badShape(status);
+  return { result: "merged", sha: str(json["sha"], status) };
+}
+
+/** PR del lavoro verso il base (non in bozza): riusa quella aperta sullo stesso branch, altrimenti la apre. */
+export async function openReleasePull(r: RepoRef, input: { head: string; base: string; title: string; body: string }): Promise<PullInfo> {
+  if (!WORK_BRANCH_RE.test(input.head)) throw new Error("scrittura rifiutata: la PR di rilascio parte solo da un lavoro");
+  const existing = await findOpenPull(r, input.head);
+  if (existing) return existing;
+  const token = await tokenFor(r, PULLS);
+  const { status, json } = await call(
+    r,
+    token,
+    "pull_requests: write",
+    { method: "POST", path: repoPath(r, "/pulls"), body: { title: input.title, body: input.body, head: input.head, base: input.base, draft: false } },
+    [422],
+  );
+  if (status === 422) throw new CodeWriteError(CODE_WRITE_MESSAGES.pullRejected, 422);
+  return pullInfo(json, status);
+}
+
+/** Unisce la PR di rilascio con un commit di merge (conserva i commit dei compiti e i loro «Closes #n») sulla testa controllata. */
+export async function mergeCommit(r: RepoRef, n: number, input: { sha: string; title: string }): Promise<{ sha: string }> {
+  const token = await tokenFor(r, MERGE);
+  const { status, json } = await call(
+    r,
+    token,
+    "contents: write, pull_requests: write",
+    { method: "PUT", path: repoPath(r, `/pulls/${n}/merge`), body: { merge_method: "merge", sha: input.sha, commit_title: input.title } },
+    [405, 409, 422],
+  );
+  if (status === 409) throw new CodeWriteError(CODE_WRITE_MESSAGES.headMoved, 409);
+  if (status === 405 || status === 422) throw new CodeWriteError(CODE_WRITE_MESSAGES.notMergeable, status);
+  if (!isObj(json) || json["merged"] !== true) throw new CodeWriteError(CODE_WRITE_MESSAGES.notMergeable, status);
+  return { sha: str(json["sha"], status) };
+}
+
 // --- Issue ------------------------------------------------------------------------------
 
 export async function getIssue(r: RepoRef, n: number): Promise<{ title: string; state: string; labels: string[]; body: string }> {

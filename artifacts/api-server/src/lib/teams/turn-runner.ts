@@ -301,6 +301,9 @@ async function reasonMessages(instanceId: number, reasons: TeamTurnReason[], pla
         out.push(`Novità: il merge approvato dall'utente della PR #${code.prNumber ?? "?"} del compito ${code.planTaskId} non è riuscito: ${reason.message}`);
         break;
       }
+      case "release_failed":
+        out.push(`Novità: «Porta in produzione» del lavoro non è riuscito: ${reason.message}. Il lavoro è di nuovo aperto: correggi con un compito sul branch del lavoro, poi chiudi_lavoro.`);
+        break;
       case "decision":
         out.push(...decisionMessages(reason, plan));
         break;

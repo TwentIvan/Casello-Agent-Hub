@@ -176,6 +176,8 @@ export interface FakeGithub {
   comparisons: Map<string, { commits: string[]; files: { filename: string; status: string }[] }>;
   /** sha → check run. */
   checkRuns: Map<string, FakeCheckRun[]>;
+  /** Repository (`proprietario/nome`) in cui `POST /merges` risponde 409 (conflitto). */
+  mergeConflicts: Set<string>;
   /** sha → stati di commit. */
   statuses: Map<string, { context: string; state: string }[]>;
   /** id del job → log di testo. */
@@ -349,6 +351,7 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
     git: new Map(),
     pulls: new Map(),
     comparisons: new Map(),
+    mergeConflicts: new Set(),
     checkRuns: new Map(),
     statuses: new Map(),
     jobLogs: new Map(),
@@ -543,6 +546,30 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
       if (!fullName) return;
       const r = (fake.repos.get(liveToken(req)!.installationId) ?? []).find((x) => x.fullName === fullName)!;
       return send(res, 200, { ...repoJson(r, 0), default_branch: gitOf(fullName)?.defaultBranch ?? r.defaultBranch });
+    }
+
+    // Merge di un branch in un altro (`POST /repos/{repo}/merges`): 204 se il base contiene già la testa, 409 con un conflitto
+    // simulato, altrimenti un commit di merge con l'albero del base più i file della testa
+    if (repoMatch && method === "POST" && rest === "/merges") {
+      const fullName = access("contents", "write");
+      if (!fullName) return;
+      const repo = gitOf(fullName);
+      const b = (body ?? {}) as Record<string, unknown>;
+      if (!repo || typeof b["base"] !== "string" || typeof b["head"] !== "string") return send(res, 422, { message: "Validation Failed" });
+      const baseSha = repo.refs.get(`heads/${b["base"]}`);
+      const headSha = resolveRef(repo, b["head"]);
+      if (!baseSha || !headSha) return send(res, 404, NOT_FOUND);
+      if (isAncestor(repo, headSha, baseSha)) {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      if (fake.mergeConflicts.has(fullName)) return send(res, 409, { message: "Merge conflict" });
+      const entries = new Map((repo.trees.get(repo.commits.get(baseSha)!.tree) ?? []).map((e) => [e.path, e]));
+      for (const e of repo.trees.get(repo.commits.get(headSha)!.tree) ?? []) entries.set(e.path, e);
+      const sha = storeCommit(repo, storeTree(repo, [...entries.values()]), [baseSha, headSha], typeof b["commit_message"] === "string" ? b["commit_message"] : "merge");
+      repo.refs.set(`heads/${b["base"]}`, sha);
+      return send(res, 201, { sha });
     }
 
     if (repoMatch && /^\/git\//.test(rest)) {

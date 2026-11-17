@@ -218,6 +218,55 @@ describe("segnalazioni", () => {
     expect(again.json).toEqual({ error: "segnalazione già chiusa" });
   });
 
+  it("close not_a_bug senza messaggio usa l'etichetta; messaggio owner su segnalazione chiusa → 409", async () => {
+    const b = await newBug({ status: "received" });
+    const r = await api("POST", `/apps/${appId}/bugs/${b.number}/close`, { status: "not_a_bug", message: "   " });
+    expect(r.json.publicMessage).toBe("Non è un problema");
+    const m = await api("POST", `/apps/${appId}/bugs/${b.number}/messages`, { content: "ciao" });
+    expect(m.status).toBe(409);
+    expect(m.json).toEqual({ error: "segnalazione chiusa" });
+  });
+
+  it("close con voce in esecuzione → 409 e segnalazione invariata", async () => {
+    await api("GET", `/apps/${appId}/bug-settings`);
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.email, "dev@localhost"));
+    const b = await newBug({ status: "pending_approval" });
+    const [item] = await db
+      .insert(pendingActionsTable)
+      .values({ userId: user!.id, number: 910_000 + b.number, kind: "bug", status: "executing", appId, argsEnc: encryptSecret("{}"), argsPublic: { reportId: b.id }, recipient: "Hub admin", summary: "Bug" })
+      .returning();
+    await db.update(bugReportsTable).set({ pendingActionId: item!.id }).where(eq(bugReportsTable.id, b.id));
+    const r = await api("POST", `/apps/${appId}/bugs/${b.number}/close`, { status: "fixed" });
+    expect(r.status).toBe(409);
+    expect(r.json).toEqual({ error: "approvazione in corso: riprova tra poco" });
+    const [after] = await db.select().from(bugReportsTable).where(eq(bugReportsTable.id, b.id));
+    expect(after!.status).toBe("pending_approval");
+    await db.delete(bugReportsTable).where(eq(bugReportsTable.id, b.id));
+    await db.delete(pendingActionsTable).where(eq(pendingActionsTable.id, item!.id));
+  });
+
+  it("token agent: lettura sì, close/messages/PATCH impostazioni → 403; sessione sì", async () => {
+    await api("GET", `/apps/${appId}/bug-settings`);
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.email, "dev@localhost"));
+    const { token } = await createApiToken(user!.id, "agente", 1, ["agent"]);
+    const h = { authorization: `Bearer ${token}` };
+    const b = await newBug({ status: "in_progress" });
+    expect((await api("GET", `/apps/${appId}/bugs`, undefined, h)).status).toBe(200);
+    expect((await api("GET", `/apps/${appId}/bug-settings`, undefined, h)).status).toBe(200);
+    const denied = "il token non ha l'ambito per questa operazione";
+    for (const [m, path, body] of [
+      ["POST", `/apps/${appId}/bugs/${b.number}/close`, { status: "fixed" }],
+      ["POST", `/apps/${appId}/bugs/${b.number}/messages`, { content: "x" }],
+      ["PATCH", `/apps/${appId}/bug-settings`, { enabled: false }],
+    ] as const) {
+      const r = await api(m, path, body, h);
+      expect(r.status).toBe(403);
+      expect(r.json.error).toBe(denied);
+    }
+    expect((await api("POST", `/apps/${appId}/bugs/${b.number}/messages`, { content: "x" })).status).toBe(201);
+    expect((await db.select().from(bugReportsTable).where(eq(bugReportsTable.id, b.id)))[0]!.status).toBe("in_progress");
+  });
+
   it("close not_a_bug con messaggio proprio", async () => {
     const b = await newBug({ status: "received" });
     const r = await api("POST", `/apps/${appId}/bugs/${b.number}/close`, { status: "not_a_bug", message: "È voluto così" });

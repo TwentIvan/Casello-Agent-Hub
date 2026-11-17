@@ -228,6 +228,9 @@ export const AGENT_DENIED_ROUTES: ReadonlyArray<{ method: "POST" | "PUT" | "PATC
   { method: "PATCH", path: /^\/apps\/[^/]+\/?$/i },
   // Generazione a pagamento della sintesi dell'architettura: la avvia solo l'utente
   { method: "POST", path: /^\/apps\/[^/]+\/architecture\/refresh\/?$/i },
+  // Segnalazioni dei bug: l'agente le legge ma non le chiude, non scrive al segnalante né cambia le impostazioni
+  { method: "POST", path: /^\/apps\/[^/]+\/bugs\/[^/]+\/(close|messages)\/?$/i },
+  { method: "PATCH", path: /^\/apps\/[^/]+\/bug-settings\/?$/i },
   { method: "DELETE", path: /^\// },
 ];
 

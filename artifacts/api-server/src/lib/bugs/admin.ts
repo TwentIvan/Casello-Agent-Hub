@@ -12,6 +12,11 @@ import { cleanBugText, setStatus } from "./reports";
 export const ADMIN_BUG_LIST_MAX = 200;
 export const APP_NOT_FOUND = "App non trovata";
 export const CLOSE_NOTE = "chiusa dall'amministratore";
+const FINAL: BugReportStatus[] = ["fixed", "not_a_bug", "duplicate", "rejected"];
+export const ADMIN_BUG_MESSAGES = {
+  approvalInProgress: "approvazione in corso: riprova tra poco",
+  closed: "segnalazione chiusa",
+} as const;
 const CLOSABLE: BugReportStatus[] = ["received", "triage", "needs_info", "pending_approval", "in_progress"];
 
 const appNotFound = () => new BugError(404, APP_NOT_FOUND);
@@ -173,6 +178,7 @@ export async function getAppBug(appId: number, number: number): Promise<AdminBug
 export async function addOwnerMessage(appId: number, number: number, content: string) {
   const text = cleanBugText(content, BUG_LIMITS.message, true)!;
   const row = await findByNumber(appId, number);
+  if (FINAL.includes(row.status)) throw new BugError(409, ADMIN_BUG_MESSAGES.closed);
   const [msg] = await db
     .insert(bugReportMessagesTable)
     .values({ reportId: row.id, author: "owner", content: text })
@@ -191,8 +197,9 @@ export async function closeAppBug(
   message?: string | null,
   userId: number | null = null,
 ): Promise<AdminBugDetail> {
+  // Messaggio vuoto o di soli spazi = nessun messaggio: «fixed» usa la frase fissa, «not_a_bug» l'etichetta dello stato
   const custom = message ? cleanBugText(message, BUG_LIMITS.publicMessage, false) : null;
-  const publicMessage = custom ?? (status === "fixed" ? BUG_MESSAGES.fixedMessage : null);
+  const publicMessage = custom ?? (status === "fixed" ? BUG_MESSAGES.fixedMessage : BUG_STATUS_LABELS[status]);
   const closed = await db.transaction(async (tx) => {
     const [locked] = await tx
       .select()
@@ -200,6 +207,13 @@ export async function closeAppBug(
       .where(and(eq(bugReportsTable.appId, appId), eq(bugReportsTable.number, number)))
       .for("update");
     if (!locked) throw new BugError(404, BUG_MESSAGES.notFound);
+    if (locked.pendingActionId !== null) {
+      const [item] = await tx
+        .select({ status: pendingActionsTable.status })
+        .from(pendingActionsTable)
+        .where(eq(pendingActionsTable.id, locked.pendingActionId));
+      if (item?.status === "executing") throw new BugError(409, ADMIN_BUG_MESSAGES.approvalInProgress);
+    }
     const row = await setStatus(tx, locked.id, CLOSABLE, status, { publicMessage });
     if (!row) throw new BugError(409, BUG_MESSAGES.notClosable);
     if (locked.pendingActionId !== null) {

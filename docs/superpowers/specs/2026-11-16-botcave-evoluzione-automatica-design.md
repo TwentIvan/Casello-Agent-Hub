@@ -1,6 +1,8 @@
 # Botcave · Ciclo di evoluzione automatica di un'App (sottoprogetto 3 di 3)
 
-Data: 16 novembre 2026. Stato: approvata in brainstorming con Ivan, da rileggere prima del piano di 3a.
+Data: 16 novembre 2026. Stato: approvata in brainstorming con Ivan; 3a implementata. Rivista il 17 novembre 2026 (§15): la versione
+di prova e «Porta in produzione» diventano un meccanismo di tutte le squadre con codice (nuova 3b) che il ciclo riusa (nuova 3c).
+Dove §15 differisce dalle sezioni precedenti vale §15.
 
 ## 1. Perché
 
@@ -42,11 +44,11 @@ Una spec, tre piani e tre PR, in quest'ordine (ognuna utile da sola):
 
 - **3a · Ciclo, consenso, tetto, analisi ridotta, voci approvate** (§4, §5, §6.1–6.3, §8, §9, §10 parti di 3a). Il giro
   finisce con le voci approvate nel piano (`done`); l'utente può già implementarle con «Implementa».
-- **3b · Squadra del ciclo e PLAN automatico** (§6.4–6.6): il giro prosegue fino al merge delle PR; in 3b il merge va sul
-  branch del giro solo se 3c è presente, altrimenti la modalità disponibile è solo «unisci direttamente su main».
-- **3c · Versione di prova e voce `release`** (§7).
+- **3b · Lavoro su branch unico e «Porta in produzione» per tutte le squadre con codice** (§15.1–15.7, rivista il 17/11).
+- **3c · Squadra del ciclo e PLAN automatico** (§15.8, che sostituisce §6.4–6.6 e §7): il ciclo crea la sua squadra e riusa la 3b.
 
-Fino a 3c la modalità `staging` non si può scegliere (400 «modalità non ancora disponibile»).
+Fino a 3c la modalità `staging` del ciclo non si può scegliere (400 «modalità non ancora disponibile»); con la 3c `merge_mode`
+non decide più nulla (§15.8). La prima stesura (3b = squadra del ciclo, 3c = versione di prova del ciclo) è superata.
 
 ## 4. Dati
 
@@ -127,6 +129,8 @@ deploy), riportate in `docs/schema-casello.sql`; schema Drizzle in `lib/db/src/s
 
 In 3a, senza squadra del ciclo, il giro chiude `done` con «N voci approvate: usa Implementa per farle realizzare» ed evento
 nel bollettino dell'utente (§11).
+
+> §6.4–6.6 e §7 sono la prima stesura, superata dalla revisione del 17/11: vale §15.
 
 ### 6.4 Squadra del ciclo (3b)
 
@@ -257,3 +261,140 @@ Analisi completa periodica, preparazione dell'ambiente di prova (Coolify, branch
 installazione, tool/agenti/skill nel ciclo, approvazione automatica degli script `-post` o delle azioni L2, più cicli per App,
 scelta delle voci da parte di un modello (l'ordine è deterministico), Lucius e le best practice (sottoprogetto 2: quando ci sarà,
 l'analisi ridotta potrà riceverle come dati).
+
+## 15. Revisione del 17 novembre 2026: lavoro su branch unico per le squadre (3b) e squadra del ciclo (3c)
+
+### 15.0 Perché
+
+La squadra «Sviluppo The Hub Up in loop» (repository TwentIvan/AbapCrm) ha chiuso 23 compiti con 23 PR in bozza, tutte partite
+da `main`: dopo il primo merge le altre vanno in conflitto (21 toccano `server/routes.ts`), una PR contiene i commit di altre,
+il repository non ha CI sui branch `botcave/**` e il capo ha dichiarato ogni compito «nessuna CI, pronta», il revisore non ha avuto
+compiti, «Lavoro finito» è uscito 4 volte e diversi turni del capo sono falliti per il limite di 10 giri. Ivan vuole che
+l'implementazione di un piano arrivi fino al deploy di un **branch unico** su un ambiente di prova, e su `main` solo dopo la
+sua approvazione. Decisioni del 17/11:
+
+- versione di prova e «Porta in produzione» sono un **meccanismo di tutte le squadre con codice** (anche quelle di «Implementa»);
+  il ciclo lo riusa senza logica propria;
+- branch e indirizzo di prova sono **impostazioni dell'App**, non del ciclo;
+- **compiti con codice in fila**: uno alla volta per lavoro, ognuno parte dalla testa del branch dopo il merge del precedente
+  (niente conflitti tra le PR; i compiti senza codice restano in parallelo);
+- **CI obbligatoria**: senza CI che giri sui branch di Botcave nessun compito con codice si unisce;
+- **un solo «Lavoro finito»** per lavoro; «Porta in produzione» resta sempre una decisione dell'utente (mai del ciclo).
+
+### 15.1 Dati (migrazione additiva della 3b)
+
+- `apps.staging_branch` (testo, null = nessuna versione di prova) e `apps.staging_url` (https, facoltativo). Regole: nome di branch
+  valido, diverso dal branch base, non `main`/`master`, non con prefisso `botcave/`; il branch è **dedicato a Botcave** e viene
+  riscritto a ogni lavoro (lo dice la carta delle sorgenti dell'App, con conferma alla prima impostazione). Si modificano con
+  `PATCH /api/apps/:id` (stesse regole della PATCH: il token d'ambito `agent` resta 403).
+- Tabella `team_works` (un **lavoro** = un branch unico di una squadra): `id`, `instance_id` (`CASCADE`), `number` per squadra
+  (`UNIQUE(instance_id, number)`), `status` `open | awaiting_release | releasing | released | abandoned`, `repo`, `branch`
+  (`botcave/lavoro-<idSquadra>-<numero>`), `base_branch`, `base_sha` (testa del base alla creazione), `head_sha`, `post_scripts`
+  (jsonb: nomi dei file `-post` uniti nel lavoro), `pending_action_id` (voce `release`, `SET NULL`), `release_pr_number`,
+  `release_pr_url`, `rejection_note` (≤ 500), `finished_at`, `created_at`; indice unico parziale: al più un lavoro non chiuso
+  (`open|awaiting_release|releasing`) per squadra.
+- `team_code_tasks.work_id` (`SET NULL`): le righe dei compiti nati nel lavoro; il loro `base` è il branch del lavoro.
+- Valore `release` di `pending_action_kind` (fuori da una transazione esplicita) e tipo di evento `lavoro_in_prova` di
+  `team_event_type`.
+
+### 15.2 Il lavoro e il branch unico
+
+- **Apertura**: alla prima `assegna_compito` di un compito con codice (ruolo con `code ≠ none`, sia `cloud` sia `node`) senza un
+  lavoro aperto, Botcave crea il lavoro e il branch `botcave/lavoro-<squadra>-<n>` dallo sha del base dell'App (`contents: write`,
+  `force: false`). Le squadre senza ruoli con codice non hanno lavori.
+- **Base dei compiti**: con un lavoro aperto il base di ogni compito con codice è il branch del lavoro: il branch del compito
+  (`botcave/<squadra>-<compito>`) nasce dalla sua testa, la PR in bozza punta al branch del lavoro (`apri_pr` cloud e
+  `createDraftPull` per i ruoli `node`), `nodeGitContext.baseBranch` = branch del lavoro; il controllo che non si scriva mai sul base
+  vale anche per il branch del lavoro (lo scrive solo il merge).
+- **In fila**: `assegna_compito` di un compito con codice è rifiutato con «un compito con codice è già in corso nel lavoro:
+  aspetta che la sua PR sia unita» se nel lavoro c'è già un compito con codice `queued|running|waiting_node` oppure `done` con la PR
+  ancora aperta. Un compito finito senza commit, `blocked` o `failed` non tiene la fila. Riassegnato dopo una CI rossa, il compito
+  riparte dal suo branch (come oggi).
+- **Merge sul branch del lavoro (automatico)**: la sorveglianza (`watcher.ts`), quando la CI della testa di una PR di un compito del
+  lavoro è `success`, la unisce da sola sul branch del lavoro con gli stessi controlli di `mergeTeamPull` (squadra attiva,
+  installazione di chi ha attivato, testa invariata, workflow e meccanismo delle migrazioni rifiutati, classificazione delle
+  migrazioni) ma **senza** bisogno di un ruolo `code: merge` e **senza** voce `merge` per gli script `-post` (si uniscono e il loro
+  nome finisce in `team_works.post_scripts`: li vedrà l'utente in «Porta in produzione»); squash, come `unisci_pr`. Il capo riceve il
+  motivo `pr_closed` di sempre e assegna il compito successivo. `unisci_pr` resta per le PR verso il base delle squadre senza lavoro
+  (dati vecchi) e rifiuta le PR di un lavoro («le PR del lavoro le unisce Botcave quando la CI è verde»).
+- **CI obbligatoria**: una PR del lavoro con CI `none` sulla testa (nessun check dopo 10 minuti dal push) non si unisce: compito del
+  PLAN `blocked` «nessuna CI sul branch: aggiungi un workflow che giri sui branch botcave/**» (prefisso in
+  `ENVIRONMENT_FAILURE_PREFIXES`: non conta nel freno dei 3 fallimenti), evento `bloccato`, turno del capo che usa `segnala`
+  (azione manuale). La «Pronta a lavorare» aggiunge `ci_missing` per i ruoli con codice: `error` se l'ultima PR di Botcave sullo
+  stesso repository ha avuto CI `none`, `warning` «verifica che la CI giri sui branch botcave/**» se non ce n'è ancora una. Il prompt
+  del capo dice che un compito con codice è finito solo con la PR unita sul branch del lavoro, mai «nessuna CI, pronta».
+- **Revisore**: se la squadra ha un ruolo con `code: read`, il prompt del capo gli fa assegnare, prima di chiudere il lavoro, un
+  compito di revisione del branch del lavoro (lettura del codice e del confronto con il base); il suo esito entra nella voce
+  `release`. Senza un ruolo `read` nessun obbligo.
+
+### 15.3 Chiusura del lavoro e versione di prova
+
+- Il lavoro passa a `awaiting_release` quando il capo chiama `chiudi_lavoro` oppure quando tutti i compiti con codice del PLAN
+  approvato sono `done` con la PR unita o `blocked|failed` e nessuna PR del lavoro è aperta (controllo della sorveglianza). Nessuna
+  PR unita → lavoro `abandoned` con evento `bloccato` «nessun compito unito nel lavoro», nessuna voce.
+- **Un solo «Lavoro finito»**: l'evento `lavoro_finito` si emette una volta per lavoro; un `chiudi_lavoro` con il lavoro già
+  `awaiting_release|releasing` risponde `{ok:false}` «lavoro già chiuso: aspetta la decisione su Porta in produzione» senza evento.
+- **Versione di prova**: con `apps.staging_branch` impostato Botcave aggiorna `refs/heads/<staging_branch>` alla testa del lavoro
+  con `force: true` (unica scrittura forzata di Botcave, solo su quel branch, ricontrollato prima di scrivere; se non esiste lo
+  crea), evento `lavoro_in_prova` con l'indirizzo di prova. Il deploy di prova lo fa la CI/Coolify dell'App. Senza branch di prova la
+  voce dice «nessuna versione di prova configurata per l'App».
+- **Voce `release`** in «Da confermare» dell'utente che ha attivato la squadra: «Porta in produzione il lavoro N di <squadra>»
+  (`args_public`: squadra, lavoro, compiti con titolo e issue, PR unite, branch, testa, `staging_url`, script `-post`, esito del
+  revisore). Una sola aperta per lavoro. Non la decide mai un automatismo (né il ciclo né un ruolo).
+  - **Approva** (`approveRelease`, nessun token utente, ambito `api:write` per i token): lavoro `releasing`; apre (o riusa) la PR dal
+    branch del lavoro verso il base; se il base è avanzato prima `POST /repos/{repo}/merges` (base = branch del lavoro, head = base):
+    conflitto → voce `failed` «conflitto con <base>: va risolto nel lavoro», lavoro di nuovo `open` e turno del capo con motivo
+    `release_failed` (assegna un compito di allineamento al ruolo con codice); attende la CI della testa fino a 30 minuti (come la
+    sorveglianza): verde → `classifyPull` sulla PR (workflow e meccanismo delle migrazioni rifiutati; gli script `-post` sono ammessi e
+    la voce li mostra «da applicare su Neon dopo il deploy») → merge con **commit di merge** (conserva i commit dei compiti e i loro
+    «Closes #n») → voce `done` «lavoro N in produzione», lavoro `released`, `requestArchitectureRefresh`; CI rossa → voce `failed` col
+    nome dei check, lavoro `open`, turno `release_failed`.
+  - **Rifiuta** (nota ≤ 500): il lavoro torna `open` con `rejection_note`; il capo riceve un turno `request` con la nota (i compiti di
+    correzione ripartono dal branch del lavoro); a fine correzioni una nuova voce `release`. Per buttare il lavoro l'utente chiude la
+    squadra (il branch resta su GitHub).
+  - Con la squadra chiusa la voce si può solo rifiutare.
+
+### 15.4 Capo e limiti
+
+- Con i compiti in fila il capo assegna un compito con codice per turno e il merge non passa più da lui: meno giri per turno. Il prompt
+  (`turn-runner.ts`) spiega lavoro, fila, merge automatico, CI obbligatoria, revisore e chiusura unica; `leggi_piano` mostra il lavoro
+  aperto (branch, compiti uniti, compito in corso).
+- Un turno del capo che finisce per il limite di giri non perde i motivi (come oggi); i limiti `LEAD_LIMITS` non cambiano in 3b.
+
+### 15.5 «Implementa» e squadre esistenti
+
+- «Implementa» non cambia nell'interfaccia: la squadra lavora nel suo lavoro aperto e il testo del messaggio al capo lo dice.
+- Le righe di `team_code_tasks` create prima della 3b (senza `work_id`) restano con base `main` e PR verso `main` (merge dell'utente o
+  `unisci_pr` come oggi). Il primo compito con codice assegnato dopo il deploy apre un lavoro.
+
+### 15.6 API e console
+
+- `GET /api/team-instances/:id/works` (ultimi 20) e il lavoro aperto in `GET …/plan` (`work`: numero, stato, branch, testa, PR unite,
+  compito in fila, voce `release`). Voce `release` nelle route di «Da confermare» come gli altri tipi; centralino, Alfred
+  (`prepara_decisione`) e pannello la mostrano (nessun token utente).
+- Console: carta «Piano» della squadra con il lavoro (branch, LED, PR unite, indirizzo di prova); tipo «Rilascio» in «Da confermare» con
+  indirizzo di prova, compiti, PR, script `-post` e esito del revisore (`components/actions/release-detail.tsx`), «Porta in produzione»
+  / «Rifiuta»; carta delle sorgenti dell'App con branch e indirizzo di prova.
+
+### 15.7 Prove della 3b
+
+- Prova di flusso (estensione di `code-team-flow.test.ts`, finto GitHub): due compiti con codice in fila → il secondo rifiutato finché
+  la PR del primo non è unita → merge automatico sul branch del lavoro con CI verde → secondo compito dalla testa nuova → CI `none` →
+  compito bloccato → chiusura unica con branch di prova riscritto → voce `release` → approvazione con il base avanzato (merge del base
+  nel lavoro) → commit di merge su `main`; rifiuto con nota → lavoro di nuovo aperto e turno del capo.
+
+### 15.8 Squadra del ciclo (nuova 3c)
+
+- Il ciclo crea all'attivazione (o al primo giro) la sua squadra dal modello scelto (`ref` `{type: "evoluzione", id, title: "Evoluzione
+  di <app>"}`, `activated_by` = chi paga il ciclo); serve almeno un ruolo con codice e la CI (regole della 3b). Tetto della squadra =
+  tetto del ciclo, che somma analisi, turni e compiti.
+- A ogni giro, dopo l'approvazione delle voci, il capo riceve il messaggio di «Implementa» con le voci del giro (giro `implementing`);
+  le voci `plan`/`plan_change` della squadra del ciclo si approvano da sole con il ciclo attivo e il consenso valido
+  (`pending_actions.decided_by_cycle`).
+- Il giro segue il lavoro della squadra: `awaiting_release` quando il lavoro è in prova, `done` quando la voce `release` è approvata e
+  il lavoro è in produzione, di nuovo `implementing` se l'utente rifiuta con una nota (la nota entra anche nell'analisi del giro dopo);
+  nessun giro nuovo finché il lavoro non è chiuso. Durata massima in `implementing`: 72 ore, poi `blocked` «giro scaduto».
+- `merge_mode` e la modalità `direct` non decidono più nulla: «Porta in produzione» resta sempre all'utente. Il consenso della 3c elenca
+  squadra, PLAN approvato da solo, merge automatici sul branch del lavoro e riscrittura del branch di prova dell'App.
+- «Ferma» si estende alla squadra del ciclo (compiti in coda annullati, nessun turno nuovo, nessun merge automatico sul branch del lavoro
+  finché il ciclo è in pausa); la voce `release` aperta resta decidibile.
